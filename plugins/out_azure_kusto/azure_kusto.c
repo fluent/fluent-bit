@@ -143,6 +143,7 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
                                      flb_sds_len(ctx->o->access_token) + 2);
         if (!output) {
             flb_plg_error(ctx->ins, "error creating token buffer");
+            pthread_mutex_unlock(&ctx->token_mutex);
             return NULL;
         }
         flb_sds_snprintf(&output, flb_sds_alloc(output), "%s %s", ctx->o->token_type,
@@ -422,6 +423,9 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
     int is_compressed = FLB_FALSE;
     flb_sds_t tag_sds;
 
+    /* Lock to protect list iteration from concurrent modifications */
+    pthread_mutex_lock(&ctx->files_mutex);
+
     mk_list_foreach_safe(head, tmp, &ctx->fs->streams) {
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
         if (fs_stream == ctx->stream_upload) {
@@ -451,12 +455,19 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
                 continue;
             }
 
+            /* Mark chunk as locked before releasing mutex for I/O */
+            azure_kusto_store_file_lock(chunk);
+            pthread_mutex_unlock(&ctx->files_mutex);
+
             ret = construct_request_buffer(ctx, NULL, chunk,
                                            &buffer, &buffer_size);
             if (ret < 0) {
                 flb_plg_error(ctx->ins,
                               "ingest_all_old_buffer_files :: Could not construct request buffer for %s",
                               chunk->file_path);
+                pthread_mutex_lock(&ctx->files_mutex);
+                azure_kusto_store_file_unlock(chunk);
+                pthread_mutex_unlock(&ctx->files_mutex);
                 return -1;
             }
 
@@ -473,6 +484,9 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
                                   "ingest_all_old_buffer_files :: cannot gzip payload");
                     flb_sds_destroy(payload);
                     flb_sds_destroy(tag_sds);
+                    pthread_mutex_lock(&ctx->files_mutex);
+                    azure_kusto_store_file_unlock(chunk);
+                    pthread_mutex_unlock(&ctx->files_mutex);
                     return -1;
                 }
                 else {
@@ -488,6 +502,14 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
             ret = azure_kusto_load_ingestion_resources(ctx, config);
             if (ret != 0) {
                 flb_plg_error(ctx->ins, "ingest_all_old_buffer_files :: cannot load ingestion resources");
+                flb_sds_destroy(payload);
+                flb_sds_destroy(tag_sds);
+                if (is_compressed) {
+                    flb_free(final_payload);
+                }
+                pthread_mutex_lock(&ctx->files_mutex);
+                azure_kusto_store_file_unlock(chunk);
+                pthread_mutex_unlock(&ctx->files_mutex);
                 return -1;
             }
 
@@ -495,10 +517,12 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
             ret = azure_kusto_queued_ingestion(ctx, tag_sds, flb_sds_len(tag_sds), final_payload, final_payload_size, chunk);
             if (ret != 0) {
                 flb_plg_error(ctx->ins, "ingest_all_old_buffer_files :: Failed to ingest data to Azure Kusto");
+                pthread_mutex_lock(&ctx->files_mutex);
                 if (chunk){
                     azure_kusto_store_file_unlock(chunk);
                     chunk->failures += 1;
                 }
+                pthread_mutex_unlock(&ctx->files_mutex);
                 flb_sds_destroy(tag_sds);
                 flb_sds_destroy(payload);
                 if (is_compressed) {
@@ -513,10 +537,24 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
                 flb_free(final_payload);
             }
 
-            /* data was sent successfully- delete the local buffer */
-            azure_kusto_store_file_cleanup(ctx, chunk);
+            /* data was sent successfully- cleanup the local buffer */
+            if (ctx->buffer_file_delete_early == FLB_TRUE) {
+                /* File was already unlocked and deleted in azure_kusto_queued_ingestion */
+                flb_plg_debug(ctx->ins, "ingest_all_chunks: buffer file already deleted (early delete mode)");
+            }
+            else {
+                /* Unlock and delete the local buffer */
+                azure_kusto_store_file_unlock(chunk);
+                azure_kusto_store_file_cleanup(ctx, chunk);
+            }
+
+            /* Re-acquire lock before next iteration */
+            pthread_mutex_lock(&ctx->files_mutex);
         }
     }
+
+    /* Release lock after iteration completes */
+    pthread_mutex_unlock(&ctx->files_mutex);
 
     return 0;
 }
@@ -574,6 +612,9 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
     flb_plg_debug(ctx->ins, "Running upload timer callback (scheduler_kusto_ingest)..");
     now = time(NULL);
 
+    /* Lock to protect list iteration from concurrent modifications */
+    pthread_mutex_lock(&ctx->files_mutex);
+
     /* Iterate over all files in the active stream */
     mk_list_foreach_safe(head, tmp, &ctx->stream_active->files) {
         fsf = mk_list_entry(head, struct flb_fstore_file, _head);
@@ -591,6 +632,12 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
         if (file->locked == FLB_TRUE) {
             continue;
         }
+
+        /* Mark file as locked before releasing mutex to prevent concurrent access */
+        azure_kusto_store_file_lock(file);
+
+        /* Release lock before I/O operations */
+        pthread_mutex_unlock(&ctx->files_mutex);
 
         retry_count = 0;
         backoff_time = 2; /* Initial backoff time in seconds */
@@ -704,6 +751,8 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
             }
 
             /* Delete the file after successful ingestion */
+            /* Unlock file before delete so the delete helper can proceed */
+            azure_kusto_store_file_unlock(file);
             ret = azure_kusto_store_file_delete(ctx, file);
             if (ret == 0) {
                 flb_plg_debug(ctx->ins, "scheduler_kusto_ingest :: deleted successfully ingested file");
@@ -731,6 +780,8 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
         /* If the maximum number of retries is reached, log an error and move to the next file */
         if (retry_count >= ctx->scheduler_max_retries) {
             flb_plg_error(ctx->ins, "scheduler_kusto_ingest :: Max retries reached for file %s", file->fsf->name);
+            /* Unlock file before delete/inactive so the helper can proceed */
+            azure_kusto_store_file_unlock(file);
             if (ctx->delete_on_max_upload_error){
                 azure_kusto_store_file_delete(ctx, file);
             }
@@ -738,7 +789,14 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
                 azure_kusto_store_file_inactive(ctx, file);
             }
         }
+
+        /* Re-acquire lock before next iteration */
+        pthread_mutex_lock(&ctx->files_mutex);
     }
+
+    /* Release lock after iteration completes */
+    pthread_mutex_unlock(&ctx->files_mutex);
+
     /* Log the end of the upload timer callback */
     flb_plg_debug(ctx->ins, "Exited upload timer callback (cb_azure_kusto_ingest)..");
 }
@@ -912,6 +970,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         }
 
         ctx->timer_created = FLB_FALSE;
+        ctx->upload_timer = NULL;
         ctx->timer_ms = (int) (ctx->upload_timeout / 6) * 1000;
         flb_plg_info(ctx->ins, "Using upload size %lu bytes", ctx->file_size);
     }
@@ -929,6 +988,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
     pthread_mutex_init(&ctx->token_mutex, NULL);
     pthread_mutex_init(&ctx->resources_mutex, NULL);
     pthread_mutex_init(&ctx->blob_mutex, NULL);
+    pthread_mutex_init(&ctx->files_mutex, NULL);
 
     /*
      * Create upstream context for Kusto Ingestion endpoint
@@ -1197,7 +1257,7 @@ static void flush_init(void *out_context, struct flb_config *config)
         sched = flb_sched_ctx_get();
 
         ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
-                                        ctx->timer_ms, cb_azure_kusto_ingest, ctx, NULL);
+                                        ctx->timer_ms, cb_azure_kusto_ingest, ctx, &ctx->upload_timer);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create upload timer");
             FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -1276,6 +1336,8 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
         if (upload_file != NULL && upload_file->failures >= ctx->scheduler_max_retries) {
             flb_plg_warn(ctx->ins, "File with tag %s failed to send %d times, will not "
                                    "retry", event_chunk->tag, ctx->scheduler_max_retries);
+            /* Unlock file before delete/inactive since those skip locked files */
+            azure_kusto_store_file_unlock(upload_file);
             if (ctx->delete_on_max_upload_error){
                 azure_kusto_store_file_delete(ctx, upload_file);
             }
@@ -1319,16 +1381,18 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
             if (ret == 0){
                 if (ctx->buffering_enabled == FLB_TRUE && ctx->buffer_file_delete_early == FLB_TRUE){
                     flb_plg_debug(ctx->ins, "buffer file already deleted after blob creation");
+                    /* File was already unlocked and deleted in ingest_to_kusto, do not access upload_file */
                     ret = FLB_OK;
                     goto cleanup;
                 }
                 else{
+                    /* Unlock file before delete since delete skips locked files */
+                    azure_kusto_store_file_unlock(upload_file);
                     ret = azure_kusto_store_file_delete(ctx, upload_file);
                     if (ret != 0){
                         /* File couldn't be deleted */
                         ret = FLB_RETRY;
                         if (upload_file){
-                            azure_kusto_store_file_unlock(upload_file);
                             upload_file->failures += 1;
                         }
                         goto error;
@@ -1489,6 +1553,12 @@ static int cb_azure_kusto_exit(void *data, struct flb_config *config)
         return -1;
     }
 
+    /* Cancel upload timer first to prevent race with concurrent ingest callback */
+    if (ctx->upload_timer != NULL) {
+        flb_sched_timer_cb_destroy(ctx->upload_timer);
+        ctx->upload_timer = NULL;
+    }
+
 
     if (ctx->buffering_enabled == FLB_TRUE){
         if (azure_kusto_store_has_data(ctx) == FLB_TRUE) {
@@ -1509,6 +1579,7 @@ static int cb_azure_kusto_exit(void *data, struct flb_config *config)
     pthread_mutex_destroy(&ctx->resources_mutex);
     pthread_mutex_destroy(&ctx->token_mutex);
     pthread_mutex_destroy(&ctx->blob_mutex);
+    pthread_mutex_destroy(&ctx->files_mutex);
 
     flb_azure_kusto_conf_destroy(ctx);
 

@@ -53,6 +53,9 @@ void flb_test_azure_kusto_managed_identity_user(void);
 void flb_test_azure_kusto_service_principal(void);
 void flb_test_azure_kusto_workload_identity(void);
 void flb_test_azure_kusto_buffering_backlog(void);
+#ifndef _WIN32
+void flb_test_azure_kusto_timer_flush_race(void);
+#endif
 
 /* Test list */
 TEST_LIST = {
@@ -62,6 +65,9 @@ TEST_LIST = {
     {"service_principal", flb_test_azure_kusto_service_principal},
     {"workload_identity", flb_test_azure_kusto_workload_identity},
     {"buffering_backlog", flb_test_azure_kusto_buffering_backlog},
+#ifndef _WIN32
+    {"timer_flush_race", flb_test_azure_kusto_timer_flush_race},
+#endif
     {NULL, NULL}
 };
 
@@ -319,3 +325,93 @@ void flb_test_azure_kusto_buffering_backlog(void)
     /* Cleanup buffer directory after test */
     flb_kusto_rm_rf(buffer_dir);
 }
+
+#ifndef _WIN32
+/*
+ * TDD RED PHASE: Timer/Flush race condition test
+ *
+ * This test exercises the race where cb_azure_kusto_ingest (timer callback)
+ * iterates ctx->stream_active->files while concurrent flush/exit paths
+ * delete files without synchronization, leading to UAF/SIGSEGV.
+ *
+ * Expected behavior:
+ * - CURRENT (unfixed): Should crash/fail under ASan due to UAF
+ * - AFTER FIX: Should pass cleanly when mutex protects file list access
+ */
+void flb_test_azure_kusto_timer_flush_race(void)
+{
+    int i;
+    int ret;
+    int bytes;
+    char sample[] = "{\"race\":\"test\"}";
+    size_t sample_size = sizeof(sample) - 1;
+    char buffer_dir[PATH_MAX];
+    pid_t pid;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    pid = getpid();
+    snprintf(buffer_dir, sizeof(buffer_dir), "/tmp/flb-kusto-race-test-%d", (int) pid);
+
+    /* Ensure clean buffer directory */
+    flb_kusto_rm_rf(buffer_dir);
+    mkdir(buffer_dir, 0700);
+
+    /* Create context with aggressive timing to trigger race */
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "0.5", "Grace", "1", "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "race.test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "azure_kusto", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "race.test", NULL);
+    flb_output_set(ctx, out_ffd, "auth_type", "managed_identity", NULL);
+    flb_output_set(ctx, out_ffd, "client_id", "system", NULL);
+    flb_output_set(ctx, out_ffd, "ingestion_endpoint", "https://ingest-CLUSTER.kusto.windows.net", NULL);
+    flb_output_set(ctx, out_ffd, "database_name", "testdb", NULL);
+    flb_output_set(ctx, out_ffd, "table_name", "logs", NULL);
+
+    /* Enable buffering with small timeout to trigger concurrent timer/flush */
+    flb_output_set(ctx, out_ffd, "buffering_enabled", "true", NULL);
+    flb_output_set(ctx, out_ffd, "buffer_dir", buffer_dir, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "1s", NULL);         /* 1 second timeout triggers timer */
+    flb_output_set(ctx, out_ffd, "upload_file_size", "1M", NULL);       /* Minimum 1MB file size */
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Push data to create buffered chunks */
+    for (i = 0; i < 10; i++) {
+        bytes = flb_lib_push(ctx, in_ffd, sample, sample_size);
+        TEST_CHECK(bytes == (int) sample_size);
+    }
+
+    /*
+     * Sleep enough to let:
+     * 1. Flush write chunks to disk
+     * 2. Timer callback (cb_azure_kusto_ingest) start iterating files
+     * 3. Concurrent flush/exit delete files while timer is running
+     *
+     * This timing creates the race window where timer accesses freed memory.
+     */
+    sleep(2);
+
+    /*
+     * Stop quickly to trigger exit-path race:
+     * cb_azure_kusto_exit will delete files while timer callback
+     * may still be iterating the list.
+     *
+     * Expected on CURRENT code: UAF crash under ASan
+     * Expected AFTER fix: Clean shutdown
+     */
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    /* Cleanup */
+    flb_kusto_rm_rf(buffer_dir);
+}
+#endif /* _WIN32 */
