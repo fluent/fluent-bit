@@ -308,10 +308,10 @@ error:
     return -1;
 }
 
-static struct flush *new_flush_buffer(const char *tag, int tag_len)
+static struct flush *new_flush_buffer(struct flb_kinesis *ctx, const char *tag, int tag_len)
 {
     struct flush *buf;
-
+    int ret;
 
     buf = flb_calloc(1, sizeof(struct flush));
     if (!buf) {
@@ -338,6 +338,18 @@ static struct flush *new_flush_buffer(const char *tag, int tag_len)
     buf->tag = tag;
     buf->tag_len = tag_len;
 
+    /* Initialize aggregation buffer if simple_aggregation is enabled */
+    buf->agg_buf_initialized = FLB_FALSE;
+    if (ctx->simple_aggregation) {
+        ret = flb_aws_aggregation_init(&buf->agg_buf, MAX_EVENT_SIZE);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to initialize aggregation buffer");
+            kinesis_flush_destroy(buf);
+            return NULL;
+        }
+        buf->agg_buf_initialized = FLB_TRUE;
+    }
+
     return buf;
 }
 
@@ -353,7 +365,7 @@ static void cb_kinesis_flush(struct flb_event_chunk *event_chunk,
     (void) i_ins;
     (void) config;
 
-    buf = new_flush_buffer(event_chunk->tag, flb_sds_len(event_chunk->tag));
+    buf = new_flush_buffer(ctx, event_chunk->tag, flb_sds_len(event_chunk->tag));
     if (!buf) {
         flb_plg_error(ctx->ins, "Failed to construct flush buffer");
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -501,6 +513,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kinesis, profile),
      "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
      "$HOME/.aws/ directory."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "simple_aggregation", "false",
+     0, FLB_TRUE, offsetof(struct flb_kinesis, simple_aggregation),
+     "Enable simple aggregation to combine multiple records into single API calls. "
+     "This reduces the number of requests and can improve throughput."
     },
 
     /* EOF */
