@@ -414,6 +414,7 @@ static flb_sds_t oauth2_append_kv(flb_sds_t buffer, const char *key,
                                   const char *value)
 {
     flb_sds_t tmp;
+    flb_sds_t result;
 
     if (!value) {
         return buffer;
@@ -422,38 +423,60 @@ static flb_sds_t oauth2_append_kv(flb_sds_t buffer, const char *key,
     tmp = flb_uri_encode(value, strlen(value));
     if (!tmp) {
         flb_errno();
+        if (buffer) {
+            flb_sds_destroy(buffer);
+        }
         return NULL;
     }
 
     if (flb_sds_len(buffer) > 0) {
-        buffer = flb_sds_cat(buffer, "&", 1);
-        if (!buffer) {
+        result = flb_sds_cat(buffer, "&", 1);
+        if (!result) {
             flb_sds_destroy(tmp);
+            if (buffer) {
+                flb_sds_destroy(buffer);
+            }
             return NULL;
         }
+        buffer = result;
     }
 
-    buffer = flb_sds_cat(buffer, key, strlen(key));
-    if (!buffer) {
+    result = flb_sds_cat(buffer, key, strlen(key));
+    if (!result) {
         flb_sds_destroy(tmp);
+        if (buffer) {
+            flb_sds_destroy(buffer);
+        }
         return NULL;
     }
+    buffer = result;
 
-    buffer = flb_sds_cat(buffer, "=", 1);
-    if (!buffer) {
+    result = flb_sds_cat(buffer, "=", 1);
+    if (!result) {
         flb_sds_destroy(tmp);
+        if (buffer) {
+            flb_sds_destroy(buffer);
+        }
         return NULL;
     }
+    buffer = result;
 
-    buffer = flb_sds_cat(buffer, tmp, flb_sds_len(tmp));
+    result = flb_sds_cat(buffer, tmp, flb_sds_len(tmp));
     flb_sds_destroy(tmp);
+    if (!result) {
+        if (buffer) {
+            flb_sds_destroy(buffer);
+        }
+        return NULL;
+    }
 
-    return buffer;
+    return result;
 }
 
 static flb_sds_t oauth2_build_body(struct flb_oauth2 *ctx)
 {
     flb_sds_t body;
+    flb_sds_t tmp;
 
     if (ctx->payload_manual == FLB_TRUE && ctx->payload) {
         return flb_sds_create_len(ctx->payload, flb_sds_len(ctx->payload));
@@ -464,38 +487,48 @@ static flb_sds_t oauth2_build_body(struct flb_oauth2 *ctx)
         return NULL;
     }
 
-    body = oauth2_append_kv(body, "grant_type", "client_credentials");
-    if (!body) {
+    tmp = oauth2_append_kv(body, "grant_type", "client_credentials");
+    if (!tmp) {
+        flb_sds_destroy(body);
         return NULL;
     }
+    body = tmp;
 
     if (ctx->cfg.scope) {
-        body = oauth2_append_kv(body, "scope", ctx->cfg.scope);
-        if (!body) {
+        tmp = oauth2_append_kv(body, "scope", ctx->cfg.scope);
+        if (!tmp) {
+            flb_sds_destroy(body);
             return NULL;
         }
+        body = tmp;
     }
 
     if (ctx->cfg.audience) {
-        body = oauth2_append_kv(body, "audience", ctx->cfg.audience);
-        if (!body) {
+        tmp = oauth2_append_kv(body, "audience", ctx->cfg.audience);
+        if (!tmp) {
+            flb_sds_destroy(body);
             return NULL;
         }
+        body = tmp;
     }
 
     if (ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_POST) {
         if (ctx->cfg.client_id) {
-            body = oauth2_append_kv(body, "client_id", ctx->cfg.client_id);
-            if (!body) {
+            tmp = oauth2_append_kv(body, "client_id", ctx->cfg.client_id);
+            if (!tmp) {
+                flb_sds_destroy(body);
                 return NULL;
             }
+            body = tmp;
         }
 
         if (ctx->cfg.client_secret) {
-            body = oauth2_append_kv(body, "client_secret", ctx->cfg.client_secret);
-            if (!body) {
+            tmp = oauth2_append_kv(body, "client_secret", ctx->cfg.client_secret);
+            if (!tmp) {
+                flb_sds_destroy(body);
                 return NULL;
             }
+            body = tmp;
         }
     }
 
