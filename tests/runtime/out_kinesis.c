@@ -295,6 +295,154 @@ void flb_test_kinesis_invalid_port(void)
     flb_destroy(ctx);
 }
 
+void flb_test_kinesis_simple_aggregation(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    setenv("FLB_KINESIS_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "kinesis_streams", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "stream", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "simple_aggregation", "On", NULL);
+    flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Push multiple small records */
+    flb_lib_push(ctx, in_ffd, (char *) "[1, {\"message\":\"test1\"}]", 25);
+    flb_lib_push(ctx, in_ffd, (char *) "[1, {\"message\":\"test2\"}]", 25);
+    flb_lib_push(ctx, in_ffd, (char *) "[1, {\"message\":\"test3\"}]", 25);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_kinesis_aggregation_with_time_key(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    setenv("FLB_KINESIS_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "kinesis_streams", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "stream", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "simple_aggregation", "On", NULL);
+    flb_output_set(ctx, out_ffd, "time_key", "timestamp", NULL);
+    flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Push records with time_key enabled */
+    flb_lib_push(ctx, in_ffd, (char *) "[1, {\"message\":\"with_time1\"}]", 30);
+    flb_lib_push(ctx, in_ffd, (char *) "[1, {\"message\":\"with_time2\"}]", 30);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_kinesis_aggregation_with_log_key(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    const char *record = "[1, {\"message\":\"with_log_key\"}]";
+
+    setenv("FLB_KINESIS_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "kinesis_streams", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "stream", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "simple_aggregation", "On", NULL);
+    flb_output_set(ctx, out_ffd, "log_key", "log", NULL);
+    flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Push records with log_key enabled */
+    flb_lib_push(ctx, in_ffd, (char *) record, strlen(record));
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_kinesis_aggregation_many_records(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int i;
+    char record[100];
+
+    setenv("FLB_KINESIS_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "kinesis_streams", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "stream", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "simple_aggregation", "On", NULL);
+    flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Push many small records to test aggregation efficiency */
+    for (i = 0; i < 50; i++) {
+        ret = snprintf(record, sizeof(record), "[1, {\"id\":%d,\"msg\":\"test\"}]", i);
+        TEST_CHECK(ret < sizeof(record));
+        flb_lib_push(ctx, in_ffd, record, strlen(record));
+    }
+
+    sleep(3);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"success", flb_test_firehose_success },
@@ -305,5 +453,9 @@ TEST_LIST = {
     {"default_port", flb_test_kinesis_default_port },
     {"custom_port", flb_test_kinesis_custom_port },
     {"invalid_port", flb_test_kinesis_invalid_port },
+    {"simple_aggregation", flb_test_kinesis_simple_aggregation },
+    {"aggregation_with_time_key", flb_test_kinesis_aggregation_with_time_key },
+    {"aggregation_with_log_key", flb_test_kinesis_aggregation_with_log_key },
+    {"aggregation_many_records", flb_test_kinesis_aggregation_many_records },
     {NULL, NULL}
 };
