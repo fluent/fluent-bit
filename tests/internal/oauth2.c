@@ -1,24 +1,32 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
-#include <pthread.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <string.h>
-
+#include <fluent-bit/flb_pthread.h>
+#include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_oauth2.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_upstream.h>
+
+#include <string.h>
+
+#ifndef _WIN32
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#else
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
 
 #include "flb_tests_internal.h"
 
 #define MOCK_BODY_SIZE 1024
 
 struct oauth2_mock_server {
-    int listen_fd;
+    flb_sockfd_t listen_fd;
     int port;
     int stop;
     int token_requests;
@@ -29,10 +37,13 @@ struct oauth2_mock_server {
     pthread_t thread;
 };
 
-static void compose_http_response(int fd, int status, const char *body)
+static void compose_http_response(flb_sockfd_t fd, int status, const char *body)
 {
     char buffer[MOCK_BODY_SIZE];
     int body_len = 0;
+    ssize_t sent = 0;
+    ssize_t total = 0;
+    ssize_t len;
 
     if (body != NULL) {
         body_len = strlen(body);
@@ -46,10 +57,18 @@ static void compose_http_response(int fd, int status, const char *body)
              "%s",
              status, body_len, body ? body : "");
 
-    send(fd, buffer, strlen(buffer), 0);
+    len = strlen(buffer);
+    /* Ensure we send all data - loop until complete */
+    while (total < len) {
+        sent = send(fd, buffer + total, len - total, 0);
+        if (sent <= 0) {
+            break;
+        }
+        total += sent;
+    }
 }
 
-static void handle_token_request(struct oauth2_mock_server *server, int fd)
+static void handle_token_request(struct oauth2_mock_server *server, flb_sockfd_t fd)
 {
     char payload[MOCK_BODY_SIZE];
 
@@ -65,7 +84,7 @@ static void handle_token_request(struct oauth2_mock_server *server, int fd)
     compose_http_response(fd, 200, payload);
 }
 
-static void handle_resource_request(struct oauth2_mock_server *server, int fd,
+static void handle_resource_request(struct oauth2_mock_server *server, flb_sockfd_t fd,
                                     const char *request)
 {
     int authorized = 0;
@@ -95,10 +114,12 @@ static void handle_resource_request(struct oauth2_mock_server *server, int fd,
 static void *oauth2_mock_server_thread(void *data)
 {
     struct oauth2_mock_server *server = (struct oauth2_mock_server *) data;
-    int client_fd;
+    flb_sockfd_t client_fd;
     fd_set rfds;
     struct timeval tv;
     char buffer[MOCK_BODY_SIZE];
+    ssize_t total;
+    ssize_t n;
 
     while (!server->stop) {
         FD_ZERO(&rfds);
@@ -106,17 +127,35 @@ static void *oauth2_mock_server_thread(void *data)
         tv.tv_sec = 0;
         tv.tv_usec = 200000;
 
-        if (select(server->listen_fd + 1, &rfds, NULL, NULL, &tv) <= 0) {
+        if (select((int)(server->listen_fd + 1), &rfds, NULL, NULL, &tv) <= 0) {
             continue;
         }
 
         client_fd = accept(server->listen_fd, NULL, NULL);
-        if (client_fd < 0) {
+        if (client_fd == FLB_INVALID_SOCKET) {
             continue;
         }
 
+        /* Read the full HTTP request - loop until we get the complete request */
         memset(buffer, 0, sizeof(buffer));
-        recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+        total = 0;
+
+        /* Make socket blocking for both read and write to ensure reliable operation */
+        flb_net_socket_blocking(client_fd);
+
+        /* Read until we get the full HTTP request (ends with \r\n\r\n) */
+        while (total < sizeof(buffer) - 1) {
+            n = recv(client_fd, buffer + total, (int)(sizeof(buffer) - 1 - total), 0);
+            if (n <= 0) {
+                /* Connection closed or error */
+                break;
+            }
+            total += n;
+            /* Check if we've received the complete HTTP request */
+            if (strstr(buffer, "\r\n\r\n") != NULL) {
+                break;
+            }
+        }
 
         if (strstr(buffer, "/token")) {
             handle_token_request(server, client_fd);
@@ -125,7 +164,7 @@ static void *oauth2_mock_server_thread(void *data)
             handle_resource_request(server, client_fd, buffer);
         }
 
-        close(client_fd);
+        flb_socket_close(client_fd);
     }
 
     return NULL;
@@ -134,7 +173,6 @@ static void *oauth2_mock_server_thread(void *data)
 static int oauth2_mock_server_start(struct oauth2_mock_server *server, int expires_in,
                                     int resource_challenge)
 {
-    int flags;
     int on = 1;
     struct sockaddr_in addr;
     socklen_t len;
@@ -144,11 +182,12 @@ static int oauth2_mock_server_start(struct oauth2_mock_server *server, int expir
     server->resource_challenge = resource_challenge;
 
     server->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server->listen_fd < 0) {
+    if (server->listen_fd == FLB_INVALID_SOCKET) {
+        flb_errno();
         return -1;
     }
 
-    setsockopt(server->listen_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    setsockopt(server->listen_fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&on, sizeof(on));
 
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -156,41 +195,89 @@ static int oauth2_mock_server_start(struct oauth2_mock_server *server, int expir
     addr.sin_port = 0;
 
     if (bind(server->listen_fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
-        close(server->listen_fd);
+        flb_errno();
+        flb_socket_close(server->listen_fd);
         return -1;
     }
 
     len = sizeof(addr);
     if (getsockname(server->listen_fd, (struct sockaddr *) &addr, &len) < 0) {
-        close(server->listen_fd);
+        flb_errno();
+        flb_socket_close(server->listen_fd);
         return -1;
     }
 
     server->port = ntohs(addr.sin_port);
 
     if (listen(server->listen_fd, 4) < 0) {
-        close(server->listen_fd);
+        flb_errno();
+        flb_socket_close(server->listen_fd);
         return -1;
     }
 
-    flags = fcntl(server->listen_fd, F_GETFL, 0);
-    fcntl(server->listen_fd, F_SETFL, flags | O_NONBLOCK);
+    flb_net_socket_nonblocking(server->listen_fd);
 
     if (pthread_create(&server->thread, NULL, oauth2_mock_server_thread, server) != 0) {
-        close(server->listen_fd);
+        printf("pthread_create failed: %s\n", strerror(errno));
+        flb_socket_close(server->listen_fd);
         return -1;
     }
-
+    printf("server started on port %d\n", server->port);
     return 0;
+}
+
+static int oauth2_mock_server_wait_ready(struct oauth2_mock_server *server)
+{
+    /* On macOS, we need to give the server thread time to start and enter
+     * its select() loop. A simple delay is sufficient since pthread_create
+     * returns when the thread is created, but the thread may not have
+     * started executing yet. */
+    int retries = 50;
+    flb_sockfd_t test_fd;
+    struct sockaddr_in addr;
+    int ret;
+
+    while (retries-- > 0) {
+        /* Check if server is listening by attempting a non-blocking connect */
+        test_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (test_fd != FLB_INVALID_SOCKET) {
+            memset(&addr, 0, sizeof(addr));
+            addr.sin_family = AF_INET;
+            addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            addr.sin_port = htons(server->port);
+
+            flb_net_socket_nonblocking(test_fd);
+
+            ret = connect(test_fd, (struct sockaddr *) &addr, sizeof(addr));
+
+            /* If connect succeeds or is in progress, server is ready */
+#ifdef _WIN32
+            if (ret == 0 || (ret < 0 && WSAGetLastError() == WSAEWOULDBLOCK)) {
+#else
+            if (ret == 0 || (ret < 0 && (errno == EINPROGRESS || errno == EWOULDBLOCK))) {
+#endif
+                flb_socket_close(test_fd);
+                /* Give the server thread one more moment to be fully ready */
+                flb_time_msleep(10);
+                return 0;
+            }
+
+            flb_socket_close(test_fd);
+        }
+
+        flb_time_msleep(20);
+    }
+
+    return -1;
 }
 
 static void oauth2_mock_server_stop(struct oauth2_mock_server *server)
 {
-    if (server->listen_fd > 0) {
+    if (server->listen_fd != FLB_INVALID_SOCKET) {
         server->stop = 1;
         shutdown(server->listen_fd, SHUT_RDWR);
         pthread_join(server->thread, NULL);
-        close(server->listen_fd);
+        flb_socket_close(server->listen_fd);
     }
 }
 
@@ -252,6 +339,15 @@ void test_caching_and_refresh(void)
 
     ctx = create_oauth_ctx(config, &server, 1);
     TEST_CHECK(ctx != NULL);
+
+#ifdef FLB_SYSTEM_MACOS
+    /* On macOS, wait for the server thread to be ready to accept connections.
+     * This ensures the server has entered its select() loop before we make requests. */
+    ret = oauth2_mock_server_wait_ready(&server);
+    TEST_CHECK(ret == 0);
+    /* Give the server a moment to finish processing the test connection */
+    flb_time_msleep(50);
+#endif
 
     ret = flb_oauth2_get_access_token(ctx, &token, FLB_FALSE);
     TEST_CHECK(ret == 0);
