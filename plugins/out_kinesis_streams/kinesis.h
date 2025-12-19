@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/aws/flb_aws_aggregation.h>
 
 #define DEFAULT_TIME_KEY_FORMAT "%Y-%m-%dT%H:%M:%S"
 
@@ -55,6 +56,10 @@ struct flush {
     /* buffer used to temporarily hold an event during processing */
     char *event_buf;
     size_t event_buf_size;
+
+    /* aggregation buffer for simple_aggregation mode */
+    struct flb_aws_agg_buffer agg_buf;
+    int agg_buf_initialized;
 
     int records_sent;
     int records_processed;
@@ -92,6 +97,7 @@ struct flb_kinesis {
     const char *log_key;
     const char *external_id;
     int retry_requests;
+    int simple_aggregation;
     char *sts_endpoint;
     int custom_endpoint;
     uint16_t port;
