@@ -124,7 +124,7 @@ static void oauth2_reset_state(struct flb_oauth2 *ctx)
 
 static void oauth2_apply_defaults(struct flb_oauth2_config *cfg)
 {
-    cfg->enabled = FLB_TRUE;
+    cfg->enabled = FLB_FALSE;
     cfg->auth_method = FLB_OAUTH2_AUTH_METHOD_BASIC;
     cfg->refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
     cfg->timeout = 0;
@@ -903,6 +903,10 @@ struct mk_list *flb_oauth2_get_config_map(struct flb_config *config)
     struct mk_list *config_map;
 
     config_map = flb_config_map_create(config, oauth2_config_map);
+    if (!config_map) {
+        flb_error("[oauth2] error loading OAuth2 config map");
+        return NULL;
+    }
 
     return config_map;
 }
