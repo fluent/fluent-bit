@@ -241,6 +241,7 @@ static void cleanup_test_routing_scenario(struct flb_input_chunk *ic,
         /* Release properties */
         flb_kv_release(&in->properties);
         flb_kv_release(&in->net_properties);
+        flb_kv_release(&in->oauth2_jwt_properties);
 
         /* Destroy metrics (created by flb_input_instance_init) */
 #ifdef FLB_HAVE_METRICS
