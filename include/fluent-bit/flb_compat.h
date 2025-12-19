@@ -62,6 +62,7 @@
  */
 #define timezone _timezone
 #define tzname _tzname
+#define strcasecmp _stricmp
 #define strncasecmp _strnicmp
 #define timegm _mkgmtime
 
@@ -138,6 +139,7 @@ static inline int usleep(LONGLONG usec)
 #include <arpa/inet.h>
 #include <libgen.h>
 #include <dlfcn.h>
+#include <strings.h>
 
 #define FLB_DIRCHAR '/'
 #endif
@@ -148,33 +150,33 @@ static inline int usleep(LONGLONG usec)
 
 #ifdef FLB_ENFORCE_ALIGNMENT
 
-/* Please do not modify these functions without a very solid understanding of 
+/* Please do not modify these functions without a very solid understanding of
  * the reasoning behind.
  *
  * These functions deliverately abuse the volatile qualifier in order to prevent
- * the compiler from mistakenly optimizing the memory accesses into a singled 
- * DWORD read (which in some architecture and compiler combinations it does regardless 
+ * the compiler from mistakenly optimizing the memory accesses into a singled
+ * DWORD read (which in some architecture and compiler combinations it does regardless
  * of the flags).
- * 
- * The reason why we decided to include this is that according to PR 9096, 
- * when the linux kernel is built and configured to pass through memory alignment 
- * exceptions rather than remediate them fluent-bit generates one while accessing a 
- * packed field in the msgpack wire format (which we cannot modify due to interoperability 
+ *
+ * The reason why we decided to include this is that according to PR 9096,
+ * when the linux kernel is built and configured to pass through memory alignment
+ * exceptions rather than remediate them fluent-bit generates one while accessing a
+ * packed field in the msgpack wire format (which we cannot modify due to interoperability
  * reasons).
- * 
- * Because of this, a potential patch using memcpy was suggested, however, this patch did 
- * not yield consistent machine code accross architecture and compiler versions with most 
+ *
+ * Because of this, a potential patch using memcpy was suggested, however, this patch did
+ * not yield consistent machine code accross architecture and compiler versions with most
  * of them still generating optimized misaligned memory access instructions.
- * 
+ *
  * Keep in mind that these functions transform a single memory read into seven plus a few
- * writes as this was the only way to prevent the compiler from mistakenly optimizing the 
+ * writes as this was the only way to prevent the compiler from mistakenly optimizing the
  * operations.
- * 
- * In most cases, FLB_ENFORCE_ALIGNMENT should not be enabled and the operating system 
- * kernel should be left to handle these scenarios, however, this option is present for 
- * those users who deliverately and knowingly choose to set up their operating system in 
+ *
+ * In most cases, FLB_ENFORCE_ALIGNMENT should not be enabled and the operating system
+ * kernel should be left to handle these scenarios, however, this option is present for
+ * those users who deliverately and knowingly choose to set up their operating system in
  * a way that requires it.
- * 
+ *
  */
 
 #if FLB_BYTE_ORDER == FLB_LITTLE_ENDIAN
