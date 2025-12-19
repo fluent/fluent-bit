@@ -34,21 +34,23 @@
     "  offset  INTEGER,"                                                \
     "  inode   INTEGER,"                                                \
     "  created INTEGER,"                                                \
-    "  rotated INTEGER DEFAULT 0"                                       \
+    "  rotated INTEGER DEFAULT 0,"                                      \
+    "  skip    INTEGER DEFAULT 0,"                                      \
+    "  anchor  INTEGER DEFAULT 0"                                       \
     ");"
 
 #define SQL_GET_FILE                                                    \
     "SELECT * from in_tail_files WHERE inode=@inode order by id desc;"
 
-#define SQL_INSERT_FILE                                             \
-    "INSERT INTO in_tail_files (name, offset, inode, created)"      \
-    "  VALUES (@name, @offset, @inode, @created);"
+#define SQL_INSERT_FILE                                                 \
+    "INSERT INTO in_tail_files (name, offset, inode, created, skip, anchor)"    \
+    " VALUES (@name, @offset, @inode, @created, @skip, @anchor);"
 
 #define SQL_ROTATE_FILE                                                 \
     "UPDATE in_tail_files set name=@name,rotated=1 WHERE id=@id;"
 
-#define SQL_UPDATE_OFFSET                                   \
-    "UPDATE in_tail_files set offset=@offset WHERE id=@id;"
+#define SQL_UPDATE_OFFSET                                               \
+    "UPDATE in_tail_files set offset=@offset, skip=@skip, anchor=@anchor WHERE id=@id;"
 
 #define SQL_DELETE_FILE                                                 \
     "DELETE FROM in_tail_files WHERE id=@id;"
