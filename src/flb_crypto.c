@@ -32,6 +32,33 @@
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
 #define EVP_MD_CTX_new() EVP_MD_CTX_create()
 #define EVP_MD_CTX_free(ctx) EVP_MD_CTX_destroy(ctx)
+
+/*
+ * RSA_set0_key was introduced in OpenSSL 1.1.0
+ * For OpenSSL 1.0.2, provide compatibility implementation
+ */
+static int RSA_set0_key(RSA *rsa, BIGNUM *n, BIGNUM *e, BIGNUM *d)
+{
+    if (n == NULL || e == NULL) {
+        return 0;
+    }
+
+    if (rsa->n) {
+        BN_free(rsa->n);
+    }
+    if (rsa->e) {
+        BN_free(rsa->e);
+    }
+    if (rsa->d) {
+        BN_free(rsa->d);
+    }
+
+    rsa->n = n;
+    rsa->e = e;
+    rsa->d = d;
+
+    return 1;
+}
 #endif
 
 static int flb_crypto_get_rsa_padding_type_by_id(int padding_type_id)
