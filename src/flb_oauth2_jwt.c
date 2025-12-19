@@ -283,7 +283,7 @@ static int oauth2_jwt_base64url_decode(const char *segment,
 
     /* First, count non-whitespace characters */
     for (i = 0; i < segment_len; i++) {
-        if (!isspace((unsigned char)segment[i])) {
+        if (!isspace((unsigned char) segment[i])) {
             clean_len++;
         }
     }
@@ -303,7 +303,7 @@ static int oauth2_jwt_base64url_decode(const char *segment,
 
     /* Copy and convert base64url to base64, skipping whitespace */
     for (i = 0; i < segment_len && j < clean_len; i++) {
-        c = (unsigned char)segment[i];
+        c = (unsigned char) segment[i];
 
         if (isspace(c)) {
             continue; /* Skip whitespace */
@@ -340,8 +340,8 @@ static int oauth2_jwt_base64url_decode(const char *segment,
     padded[padded_len] = '\0';
 
     /* First pass: get required buffer size */
-    ret = flb_base64_decode(NULL, 0, decoded_len,
-                            (unsigned char *) padded, padded_len);
+    ret = flb_base64_decode(NULL, 0, decoded_len, (unsigned char *) padded, padded_len);
+
     /* Note: ret will be FLB_BASE64_ERR_BUFFER_TOO_SMALL (-42) on first pass, this is expected */
     if (ret != 0 && ret != FLB_BASE64_ERR_BUFFER_TOO_SMALL) {
         flb_free(padded);
@@ -360,8 +360,7 @@ static int oauth2_jwt_base64url_decode(const char *segment,
         return FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
     }
 
-    ret = flb_base64_decode(*decoded, *decoded_len, decoded_len,
-                            (unsigned char *) padded, padded_len);
+    ret = flb_base64_decode(*decoded, *decoded_len, decoded_len, (unsigned char *) padded, padded_len);
     flb_free(padded);
 
     if (ret != 0) {
@@ -431,8 +430,8 @@ static int oauth2_jwt_parse_header(const char *json, size_t json_len,
         if (v->type == MSGPACK_OBJECT_STR) {
             key_len = k->via.str.size;
             val_len = v->via.str.size;
-            key_str = (const char *)k->via.str.ptr;
-            val_str = (const char *)v->via.str.ptr;
+            key_str = (const char *) k->via.str.ptr;
+            val_str = (const char *) v->via.str.ptr;
 
             if (key_len == 3 && strncmp(key_str, "kid", 3) == 0) {
                 claims->kid = flb_sds_create_len(val_str, val_len);
@@ -511,7 +510,7 @@ static int oauth2_jwt_parse_payload(const char *json, size_t json_len,
         }
 
         key_len = k->via.str.size;
-        key_str = (const char *)k->via.str.ptr;
+        key_str = (const char *) k->via.str.ptr;
 
         if (key_len == 3 && strncmp(key_str, "exp", 3) == 0) {
             if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
@@ -924,14 +923,14 @@ static int oauth2_jwt_verify_signature_rsa(const char *signing_input,
 
     /* Decode base64url modulus and exponent */
     ret = oauth2_jwt_base64url_decode(modulus_b64, flb_sds_len(modulus_b64),
-                                      (unsigned char **)&modulus_bytes, &modulus_len,
+                                      (unsigned char **) &modulus_bytes, &modulus_len,
                                       FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT);
     if (ret != FLB_OAUTH2_JWT_OK) {
         goto cleanup;
     }
 
     ret = oauth2_jwt_base64url_decode(exponent_b64, flb_sds_len(exponent_b64),
-                                      (unsigned char **)&exponent_bytes, &exponent_len,
+                                      (unsigned char **) &exponent_bytes, &exponent_len,
                                       FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT);
     if (ret != FLB_OAUTH2_JWT_OK) {
         goto cleanup;
@@ -1184,13 +1183,13 @@ static int oauth2_jwt_check_audience(const char *json, size_t json_len,
         }
 
         key_len = k->via.str.size;
-        key_str = (const char *)k->via.str.ptr;
+        key_str = (const char *) k->via.str.ptr;
 
         if (key_len == 3 && strncmp(key_str, "aud", 3) == 0) {
             if (v->type == MSGPACK_OBJECT_STR) {
                 /* Single string audience */
                 if (v->via.str.size == strlen(allowed_audience) &&
-                    strncmp((const char *)v->via.str.ptr, allowed_audience,
+                    strncmp((const char *) v->via.str.ptr, allowed_audience,
                             v->via.str.size) == 0) {
                     found_match = 1;
                 }
@@ -1201,7 +1200,7 @@ static int oauth2_jwt_check_audience(const char *json, size_t json_len,
                     msgpack_object *elem = &v->via.array.ptr[j];
                     if (elem->type == MSGPACK_OBJECT_STR) {
                         if (elem->via.str.size == strlen(allowed_audience) &&
-                            strncmp((const char *)elem->via.str.ptr, allowed_audience,
+                            strncmp((const char *) elem->via.str.ptr, allowed_audience,
                                     elem->via.str.size) == 0) {
                             found_match = 1;
                             break;
@@ -1221,7 +1220,8 @@ static int oauth2_jwt_check_audience(const char *json, size_t json_len,
 
 static void oauth2_jwt_free_cfg(struct flb_oauth2_jwt_cfg *cfg)
 {
-    /* Note: cfg->issuer, cfg->jwks_url, and cfg->allowed_audience are pointers
+    /*
+     * Note: cfg->issuer, cfg->jwks_url, and cfg->allowed_audience are pointers
      * to strings owned by the Fluent Bit configuration system (flb_kv).
      * They will be freed automatically when the input instance properties are
      * destroyed, so we should NOT free them here to avoid double-free errors.
@@ -1256,9 +1256,6 @@ struct flb_oauth2_jwt_ctx *flb_oauth2_jwt_context_create(struct flb_config *conf
         flb_free(ctx);
         return NULL;
     }
-
-    /* Don't download JWKS during initialization - do it lazily on first validation */
-    /* This avoids blocking the initialization thread */
 
     return ctx;
 }
@@ -1374,33 +1371,24 @@ int flb_oauth2_jwt_validate(struct flb_oauth2_jwt_ctx *ctx,
         }
 
         /* Lookup key by kid */
-        jwks_key = (struct flb_oauth2_jwks_key *)flb_hash_table_get_ptr(ctx->jwks_cache.entries,
-                                         jwt.claims.kid,
-                                         flb_sds_len(jwt.claims.kid));
+        jwks_key = (struct flb_oauth2_jwks_key *) flb_hash_table_get_ptr(ctx->jwks_cache.entries,
+                                                                         jwt.claims.kid,
+                                                                         flb_sds_len(jwt.claims.kid));
         if (!jwks_key) {
-            /* Try to refresh JWKS and lookup again */
-            ret = oauth2_jwks_fetch_keys(ctx);
-            if (ret != 0) {
-                flb_debug("[oauth2_jwt] Failed to refresh JWKS: %d", ret);
-                status = FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
-                goto jwt_end;
-            }
-            jwks_key = (struct flb_oauth2_jwks_key *)flb_hash_table_get_ptr(ctx->jwks_cache.entries,
-                                                 jwt.claims.kid,
-                                                 flb_sds_len(jwt.claims.kid));
-        }
-
-        if (!jwks_key) {
+            /*
+             * Key not found in cache - reject the token.
+             * JWKS refresh is time-based only to prevent DoS attacks from malicious tokens with
+             * random kid values. If key rotation requires faster refresh, configure a shorter
+             * jwks_refresh_interval. */
             flb_debug("[oauth2_jwt] Key with kid '%s' not found in JWKS", jwt.claims.kid);
             status = FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
             goto jwt_end;
         }
 
         /* Verify RSA signature */
-        verify_ret = oauth2_jwt_verify_signature_rsa(
-            jwt.signing_input, flb_sds_len(jwt.signing_input),
-            jwt.signature, jwt.signature_len,
-            jwks_key->modulus, jwks_key->exponent);
+        verify_ret = oauth2_jwt_verify_signature_rsa(jwt.signing_input, flb_sds_len(jwt.signing_input),
+                                                     jwt.signature, jwt.signature_len,
+                                                     jwks_key->modulus, jwks_key->exponent);
         if (verify_ret != 0) {
             flb_debug("[oauth2_jwt] Signature verification failed: ret=%d", verify_ret);
             status = FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
@@ -1526,5 +1514,3 @@ struct mk_list *flb_oauth2_jwt_get_config_map(struct flb_config *config)
 
     return config_map;
 }
-
-
