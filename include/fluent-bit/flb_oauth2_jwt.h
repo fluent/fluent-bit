@@ -53,6 +53,7 @@ struct flb_oauth2_jwt_claims {
     flb_sds_t audience;
     flb_sds_t client_id;
     uint64_t expiration;
+    int has_azp;
 };
 
 struct flb_oauth2_jwt {

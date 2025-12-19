@@ -39,9 +39,8 @@
 
 #include <ctype.h>
 #include <string.h>
-#include <strings.h>
 #include <time.h>
-
+#include <fluent-bit/flb_compat.h>
 
 
 struct flb_oauth2_jwks_key {
@@ -124,7 +123,7 @@ static void oauth2_jwks_key_destroy(struct flb_oauth2_jwks_key *key)
     flb_free(key);
 }
 
-static void oauth2_jwks_cache_clear(struct flb_oauth2_jwks_cache *cache)
+static int oauth2_jwks_cache_clear(struct flb_oauth2_jwks_cache *cache)
 {
     int i;
     struct mk_list *head;
@@ -134,7 +133,7 @@ static void oauth2_jwks_cache_clear(struct flb_oauth2_jwks_cache *cache)
     int refresh_interval;
 
     if (!cache || !cache->entries) {
-        return;
+        return 0;
     }
 
     /* Save refresh interval before destroying */
@@ -157,10 +156,12 @@ static void oauth2_jwks_cache_clear(struct flb_oauth2_jwks_cache *cache)
     cache->entries = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 64, 0);
     if (!cache->entries) {
         flb_error("[oauth2_jwt] failed to recreate JWKS cache after clear");
+        return -1;
     }
 
     /* Restore refresh interval */
     cache->refresh_interval = refresh_interval;
+    return 0;
 }
 
 static void oauth2_jwks_cache_destroy(struct flb_oauth2_jwks_cache *cache)
@@ -561,15 +562,19 @@ static int oauth2_jwt_parse_payload(const char *json, size_t json_len,
                 }
                 claims->client_id = flb_sds_create_len((const char *)v->via.str.ptr,
                                                        v->via.str.size);
+                claims->has_azp = FLB_TRUE;
             }
         }
         else if (key_len == 9 && strncmp(key_str, "client_id", 9) == 0) {
             if (v->type == MSGPACK_OBJECT_STR) {
-                if (claims->client_id) {
-                    flb_sds_destroy(claims->client_id);
+                /* Only assign client_id if azp was not already set */
+                if (claims->has_azp == FLB_FALSE) {
+                    if (claims->client_id) {
+                        flb_sds_destroy(claims->client_id);
+                    }
+                    claims->client_id = flb_sds_create_len((const char *)v->via.str.ptr,
+                                                           v->via.str.size);
                 }
-                claims->client_id = flb_sds_create_len((const char *)v->via.str.ptr,
-                                                       v->via.str.size);
             }
         }
     }
@@ -1070,7 +1075,11 @@ static int oauth2_jwks_fetch_keys(struct flb_oauth2_jwt_ctx *ctx)
     }
 
     /* Clear existing cache entries before refreshing to ensure revoked/rotated keys are removed */
-    oauth2_jwks_cache_clear(&ctx->jwks_cache);
+    ret = oauth2_jwks_cache_clear(&ctx->jwks_cache);
+    if (ret != 0) {
+        flb_error("[oauth2_jwt] failed to clear JWKS cache");
+        goto cleanup;
+    }
 
     /* Parse JWKS JSON and store keys in cache */
     ret = oauth2_jwks_parse_json(jwks_json, &ctx->jwks_cache);
@@ -1359,8 +1368,8 @@ int flb_oauth2_jwt_validate(struct flb_oauth2_jwt_ctx *ctx,
             ret = oauth2_jwks_fetch_keys(ctx);
             if (ret != 0) {
                 flb_debug("[oauth2_jwt] Failed to fetch JWKS: %d", ret);
-        status = FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
-        goto jwt_end;
+                status = FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
+                goto jwt_end;
             }
         }
 
@@ -1373,19 +1382,19 @@ int flb_oauth2_jwt_validate(struct flb_oauth2_jwt_ctx *ctx,
             ret = oauth2_jwks_fetch_keys(ctx);
             if (ret != 0) {
                 flb_debug("[oauth2_jwt] Failed to refresh JWKS: %d", ret);
-        status = FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
-        goto jwt_end;
+                status = FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
+                goto jwt_end;
             }
             jwks_key = (struct flb_oauth2_jwks_key *)flb_hash_table_get_ptr(ctx->jwks_cache.entries,
                                                  jwt.claims.kid,
                                                  flb_sds_len(jwt.claims.kid));
-    }
+        }
 
         if (!jwks_key) {
             flb_debug("[oauth2_jwt] Key with kid '%s' not found in JWKS", jwt.claims.kid);
-        status = FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
-        goto jwt_end;
-    }
+            status = FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
+            goto jwt_end;
+        }
 
         /* Verify RSA signature */
         verify_ret = oauth2_jwt_verify_signature_rsa(
