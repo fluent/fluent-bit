@@ -200,6 +200,12 @@ static int oauth2_mock_server_start(struct oauth2_mock_server *server, int expir
         return -1;
     }
 
+    if (listen(server->listen_fd, 4) < 0) {
+        flb_errno();
+        flb_socket_close(server->listen_fd);
+        return -1;
+    }
+
     len = sizeof(addr);
     if (getsockname(server->listen_fd, (struct sockaddr *) &addr, &len) < 0) {
         flb_errno();
@@ -208,8 +214,7 @@ static int oauth2_mock_server_start(struct oauth2_mock_server *server, int expir
     }
 
     server->port = ntohs(addr.sin_port);
-
-    if (listen(server->listen_fd, 4) < 0) {
+    if (server->port == 0) {
         flb_errno();
         flb_socket_close(server->listen_fd);
         return -1;
