@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "filter_wasm.h"
 
@@ -55,6 +56,7 @@ static int cb_wasm_filter(const void *data, size_t bytes,
     char *json_buf = NULL;
     size_t json_size;
     int root_type;
+    int32_t record_type;
     /* Get the persistent WASM instance from the filter context. */
     struct flb_filter_wasm *ctx = filter_context;
     struct flb_wasm *wasm = ctx->wasm;
@@ -83,6 +85,15 @@ static int cb_wasm_filter(const void *data, size_t bytes,
         return FLB_FILTER_NOTOUCH;
     }
 
+
+    /* Preserve group markers (GROUP_START/GROUP_END) through the filter */
+    ret = flb_log_event_decoder_read_groups(&log_decoder, FLB_TRUE);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "failed to enable group marker decoding");
+        flb_log_event_decoder_destroy(&log_decoder);
+        return FLB_FILTER_NOTOUCH;
+    }
+
     ret = flb_log_event_encoder_init(&log_encoder,
                                      FLB_LOG_EVENT_FORMAT_DEFAULT);
 
@@ -98,6 +109,23 @@ static int cb_wasm_filter(const void *data, size_t bytes,
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+
+        /* Determine record type (normal vs group markers) */
+        record_type = FLB_LOG_EVENT_NORMAL;
+        flb_log_event_decoder_get_record_type(&log_event, &record_type);
+
+        if (record_type == FLB_LOG_EVENT_GROUP_START ||
+            record_type == FLB_LOG_EVENT_GROUP_END) {
+
+            /* RAW BYTES PASS THROUGH */
+            flb_log_event_encoder_emit_raw_record(
+                    &log_encoder,
+                    log_decoder.record_base,
+                    log_decoder.record_length);
+
+            continue;
+        }
+
         off = log_decoder.offset;
         alloc_size = (off - last_off) + 128; /* JSON is larger than msgpack */
         last_off = off;
