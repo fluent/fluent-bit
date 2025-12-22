@@ -140,6 +140,9 @@ struct azure_kusto_file *azure_kusto_store_file_get(struct flb_azure_kusto *ctx,
      * Based in the current ctx->stream_name, locate a candidate file to
      * store the incoming data using as a lookup pattern the content Tag.
      */
+    /* Lock to protect list iteration from concurrent modifications */
+    pthread_mutex_lock(&ctx->files_mutex);
+
     mk_list_foreach_safe(head, tmp, &ctx->stream_active->files) {
         fsf = mk_list_entry(head, struct flb_fstore_file, _head);
 
@@ -147,6 +150,7 @@ struct azure_kusto_file *azure_kusto_store_file_get(struct flb_azure_kusto *ctx,
         if (fsf->data == NULL) {
             flb_plg_warn(ctx->ins, "BAD: found flb_fstore_file with NULL data reference, tag=%s, file=%s, will try to delete", tag, fsf->name);
             flb_fstore_file_delete(ctx->fs, fsf);
+            continue;
         }
 
         if (fsf->meta_size != tag_len) {
@@ -170,6 +174,8 @@ struct azure_kusto_file *azure_kusto_store_file_get(struct flb_azure_kusto *ctx,
             break;
         }
     }
+
+    pthread_mutex_unlock(&ctx->files_mutex);
 
     if (!found) {
         return NULL;
@@ -239,9 +245,13 @@ int azure_kusto_store_buffer_put(struct flb_azure_kusto *ctx, struct azure_kusto
 
         flb_plg_debug(ctx->ins, "[azure_kusto] new buffer file: %s", name);
 
+        /* Lock to protect list modification and fsf->data assignment */
+        pthread_mutex_lock(&ctx->files_mutex);
+
         /* Create the file */
         fsf = flb_fstore_file_create(ctx->fs, ctx->stream_active, name, bytes);
         if (!fsf) {
+            pthread_mutex_unlock(&ctx->files_mutex);
             flb_plg_error(ctx->ins, "could not create the file '%s' in the store",
                           name);
             flb_sds_destroy(name);
@@ -253,6 +263,7 @@ int azure_kusto_store_buffer_put(struct flb_azure_kusto *ctx, struct azure_kusto
         if (ret == -1) {
             flb_plg_warn(ctx->ins, "Deleting buffer file because metadata could not be written");
             flb_fstore_file_delete(ctx->fs, fsf);
+            pthread_mutex_unlock(&ctx->files_mutex);
             return -1;
         }
 
@@ -262,6 +273,7 @@ int azure_kusto_store_buffer_put(struct flb_azure_kusto *ctx, struct azure_kusto
             flb_errno();
             flb_plg_warn(ctx->ins, "Deleting buffer file because azure_kusto context creation failed");
             flb_fstore_file_delete(ctx->fs, fsf);
+            pthread_mutex_unlock(&ctx->files_mutex);
             return -1;
         }
         azure_kusto_file->fsf = fsf;
@@ -270,6 +282,9 @@ int azure_kusto_store_buffer_put(struct flb_azure_kusto *ctx, struct azure_kusto
 
         /* Use fstore opaque 'data' reference to keep our context */
         fsf->data = azure_kusto_file;
+
+        pthread_mutex_unlock(&ctx->files_mutex);
+
         flb_sds_destroy(name);
 
     }
@@ -510,6 +525,9 @@ int azure_kusto_store_exit(struct flb_azure_kusto *ctx)
         return 0;
     }
 
+    /* Lock to protect list access during cleanup */
+    pthread_mutex_lock(&ctx->files_mutex);
+
     /* release local context on non-multi upload files */
     mk_list_foreach(head, &ctx->fs->streams) {
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
@@ -522,9 +540,12 @@ int azure_kusto_store_exit(struct flb_azure_kusto *ctx)
             if (fsf->data != NULL) {
                 azure_kusto_file = fsf->data;
                 flb_free(azure_kusto_file);
+                fsf->data = NULL;  /* Clear pointer to prevent use-after-free */
             }
         }
     }
+
+    pthread_mutex_unlock(&ctx->files_mutex);
 
     if (ctx->fs) {
         flb_fstore_destroy(ctx->fs);
@@ -639,10 +660,21 @@ int azure_kusto_store_file_inactive(struct flb_azure_kusto *ctx, struct azure_ku
     int ret;
     struct flb_fstore_file *fsf;
 
+    /* Lock to protect list modification from concurrent timer access */
+    pthread_mutex_lock(&ctx->files_mutex);
+
+    /* Skip if file is locked (being processed by timer callback) */
+    if (azure_kusto_file->locked == FLB_TRUE) {
+        pthread_mutex_unlock(&ctx->files_mutex);
+        return -1;
+    }
+
     fsf = azure_kusto_file->fsf;
 
     flb_free(azure_kusto_file);
     ret = flb_fstore_file_inactive(ctx->fs, fsf);
+
+    pthread_mutex_unlock(&ctx->files_mutex);
 
     return ret;
 }
@@ -663,11 +695,22 @@ int azure_kusto_store_file_cleanup(struct flb_azure_kusto *ctx, struct azure_kus
 {
     struct flb_fstore_file *fsf;
 
+    /* Lock to protect list modification from concurrent timer access */
+    pthread_mutex_lock(&ctx->files_mutex);
+
+    /* Skip if file is locked (being processed by timer callback) */
+    if (azure_kusto_file->locked == FLB_TRUE) {
+        pthread_mutex_unlock(&ctx->files_mutex);
+        return -1;
+    }
+
     fsf = azure_kusto_file->fsf;
 
     /* permanent deletion */
     flb_fstore_file_delete(ctx->fs, fsf);
     flb_free(azure_kusto_file);
+
+    pthread_mutex_unlock(&ctx->files_mutex);
 
     return 0;
 }
@@ -690,12 +733,23 @@ int azure_kusto_store_file_delete(struct flb_azure_kusto *ctx, struct azure_kust
 {
     struct flb_fstore_file *fsf;
 
+    /* Lock to protect list modification from concurrent timer access */
+    pthread_mutex_lock(&ctx->files_mutex);
+
+    /* Skip if file is locked (being processed by timer callback) */
+    if (azure_kusto_file->locked == FLB_TRUE) {
+        pthread_mutex_unlock(&ctx->files_mutex);
+        return -1;
+    }
+
     fsf = azure_kusto_file->fsf;
     ctx->current_buffer_size -= azure_kusto_file->size;
 
     /* permanent deletion */
     flb_fstore_file_delete(ctx->fs, fsf);
     flb_free(azure_kusto_file);
+
+    pthread_mutex_unlock(&ctx->files_mutex);
 
     return 0;
 }
