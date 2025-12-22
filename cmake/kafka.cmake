@@ -31,7 +31,7 @@ endif()
 # OAuth Bearer support:
 # - Windows: Built-in SASL, only needs SSL (no Cyrus SASL required)
 # - Linux/macOS: Needs both SSL and Cyrus SASL
-if(WIN32)
+if(FLB_SYSTEM_WINDOWS)
   if(FLB_TLS)
     set(FLB_SASL_OAUTHBEARER_ENABLED ON)
   else()
