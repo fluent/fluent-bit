@@ -41,6 +41,7 @@
 
 #include "s3.h"
 #include "s3_store.h"
+#include "s3_parquet.c"
 
 #define DEFAULT_S3_PORT 443
 #define DEFAULT_S3_INSECURE_PORT 80
@@ -66,9 +67,6 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
                                     struct s3_file *chunk,
                                     char **out_buf, size_t *out_size);
 
-static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_log_time,
-                         char *body, size_t body_size);
-
 static int put_all_chunks(struct flb_s3 *ctx);
 
 static void cb_s3_upload(struct flb_config *ctx, void *data);
@@ -92,14 +90,14 @@ static struct flb_aws_header *get_content_encoding_header(int compression_type)
         .val = "gzip",
         .val_len = 4,
     };
-    
+
     static struct flb_aws_header zstd_header = {
         .key = "Content-Encoding",
         .key_len = 16,
         .val = "zstd",
         .val_len = 4,
     };
-    
+
     switch (compression_type) {
         case FLB_AWS_COMPRESS_GZIP:
             return &gzip_header;
@@ -727,6 +725,22 @@ static int cb_s3_init(struct flb_output_instance *ins,
             ctx->use_put_object = FLB_TRUE;
     }
 
+    /* Parse format parameter */
+    tmp = flb_output_get_property("format", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "parquet") == 0) {
+            ctx->format = FLB_S3_FORMAT_PARQUET;
+        } else if (strcasecmp(tmp, "json") == 0) {
+            ctx->format = FLB_S3_FORMAT_JSON;
+        } else {
+            flb_plg_error(ctx->ins, "Invalid format '%s', must be 'json' or 'parquet'", tmp);
+            return -1;
+        }
+    } else {
+        ctx->format = FLB_S3_FORMAT_JSON;
+    }
+
+    /* Parse compression (for both JSON and Parquet formats) */
     tmp = flb_output_get_property("compression", ins);
     if (tmp) {
         ret = flb_aws_compression_get_type(tmp);
@@ -734,14 +748,36 @@ static int cb_s3_init(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
             return -1;
         }
-        if (ctx->use_put_object == FLB_FALSE &&
-            (ret == FLB_AWS_COMPRESS_ARROW ||
-             ret == FLB_AWS_COMPRESS_PARQUET)) {
-            flb_plg_error(ctx->ins,
-                          "use_put_object must be enabled when Apache Arrow or Parquet is enabled");
-            return -1;
+
+        /* Legacy: compression=arrow is deprecated */
+        if (ret == FLB_AWS_COMPRESS_ARROW) {
+            flb_plg_warn(ctx->ins,
+                "DEPRECATED: compression=arrow is deprecated and will be removed in a future version");
+            if (ctx->use_put_object == FLB_FALSE) {
+                flb_plg_error(ctx->ins,
+                              "use_put_object must be enabled when Apache Arrow is used");
+                return -1;
+            }
         }
+
+        /* Legacy: compression=parquet sets format */
+        if (ret == FLB_AWS_COMPRESS_PARQUET) {
+            flb_plg_warn(ctx->ins,
+                "DEPRECATED: compression=parquet is deprecated, use format=parquet instead");
+            ctx->format = FLB_S3_FORMAT_PARQUET;
+
+            if (ctx->use_put_object == FLB_FALSE) {
+                flb_plg_info(ctx->ins, "Parquet multipart mode enabled via legacy compression parameter");
+            }
+        }
+
         ctx->compression = ret;
+    }
+
+    /* For Parquet format, if no compression is specified, use Parquet compression */
+    if (ctx->format == FLB_S3_FORMAT_PARQUET && ctx->compression == FLB_AWS_COMPRESS_NONE) {
+        ctx->compression = FLB_AWS_COMPRESS_PARQUET;
+        flb_plg_info(ctx->ins, "Using Parquet compression (default for format=parquet)");
     }
 
     tmp = flb_output_get_property("content_type", ins);
@@ -789,7 +825,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
          */
         ctx->upload_chunk_size = ctx->file_size;
         if (ctx->file_size > MAX_FILE_SIZE_PUT_OBJECT) {
-            flb_plg_error(ctx->ins, "Max total_file_size is 50M when use_put_object is enabled");
+            flb_plg_error(ctx->ins, "max total_file_size is 1GB (1,000,000,000 bytes) when use_put_object is enabled");
             return -1;
         }
     }
@@ -1075,6 +1111,21 @@ static int cb_s3_init(struct flb_output_instance *ins,
         if (ret != FLB_BLOB_DB_SUCCESS) {
             return -1;
         }
+    }
+
+    /* Initialize Parquet batch manager for Parquet format with multipart */
+    if (ctx->format == FLB_S3_FORMAT_PARQUET && ctx->use_put_object == FLB_FALSE) {
+        /* Initialize Parquet batch manager */
+        ret = parquet_batch_init(ctx);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to initialize Parquet batch manager");
+            return -1;
+        }
+
+        flb_plg_debug(ctx->ins,
+                     "parquet multipart mode: batch_size=%zuMB, timeout=%ds",
+                     ctx->file_size / (1024 * 1024),
+                     (int)ctx->upload_timeout);
     }
 
     return 0;
@@ -1483,7 +1534,7 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
     return 0;
 }
 
-static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_log_time,
+int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_log_time,
                          char *body, size_t body_size)
 {
     flb_sds_t s3_key = NULL;
@@ -3786,6 +3837,66 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     }
     chunk_size = flb_sds_len(chunk);
 
+    /*
+     * Parquet multipart mode: accumulate JSON data in batches
+     * and convert to Parquet when thresholds are reached
+     */
+    if (ctx->format == FLB_S3_FORMAT_PARQUET && ctx->use_put_object == FLB_FALSE) {
+        struct parquet_batch *batch;
+        int should_convert;
+
+        /* Get or create batch for this tag */
+        batch = parquet_batch_get_or_create(ctx, event_chunk->tag,
+                                           flb_sds_len(event_chunk->tag));
+        if (!batch) {
+            flb_plg_error(ctx->ins, "failed to get/create parquet batch");
+            flb_sds_destroy(chunk);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        /* Accumulate JSON data to batch's buffer file */
+        if (batch->chunk == NULL) {
+            batch->chunk = s3_store_file_get(ctx, event_chunk->tag,
+                                            flb_sds_len(event_chunk->tag));
+        }
+
+        ret = s3_store_buffer_put(ctx, batch->chunk, event_chunk->tag,
+                                 flb_sds_len(event_chunk->tag), chunk,
+                                 (size_t) chunk_size, time(NULL));
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "failed to buffer data for parquet batch");
+            flb_sds_destroy(chunk);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        batch->accumulated_size += chunk_size;
+        batch->append_count++;
+        batch->last_append_time = time(NULL);
+
+        flb_sds_destroy(chunk);
+
+        /* Check if batch should be converted and uploaded */
+        should_convert = parquet_batch_should_convert(ctx, batch);
+        if (should_convert) {
+            m_upload_file = get_upload(ctx, event_chunk->tag,
+                                      flb_sds_len(event_chunk->tag));
+            if (!m_upload_file) {
+                m_upload_file = create_upload(ctx, event_chunk->tag,
+                                              flb_sds_len(event_chunk->tag),
+                                              batch->create_time);
+            }
+
+            ret = parquet_batch_convert_and_upload(ctx, batch, m_upload_file);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins,
+                             "failed to convert and upload parquet batch");
+                FLB_OUTPUT_RETURN(FLB_RETRY);
+            }
+        }
+
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
+
     /* Get a file candidate matching the given 'tag' */
     upload_file = s3_store_file_get(ctx,
                                     event_chunk->tag,
@@ -3959,6 +4070,11 @@ static int cb_s3_exit(void *data, struct flb_config *config)
         }
     }
 
+    /* Cleanup Parquet batch manager if enabled */
+    if (ctx->format == FLB_S3_FORMAT_PARQUET && ctx->use_put_object == FLB_FALSE) {
+        parquet_batch_destroy(ctx);
+    }
+
     if (ctx->blob_database_file != NULL &&
         ctx->blob_db.db != NULL) {
 
@@ -4047,6 +4163,14 @@ static struct flb_config_map config_map[] = {
     "Defaults to no compression. "
     "If 'gzip' is selected, the Content-Encoding HTTP Header will be set to 'gzip'."
     "If 'zstd' is selected, the Content-Encoding HTTP Header will be set to 'zstd'."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "format", "json",
+     0, FLB_FALSE, 0,
+     "Output file format: 'json' or 'parquet'. "
+     "Default: json. "
+     "When format=parquet with use_put_object=false, enables multipart upload for large files. "
+     "Batch parameters are automatically configured based on total_file_size and upload_timeout."
     },
     {
      FLB_CONFIG_MAP_STR, "content_type", NULL,

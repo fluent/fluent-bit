@@ -194,7 +194,22 @@ struct flb_s3 {
     flb_sds_t seq_index_file;
 
     struct flb_output_instance *ins;
+
+    /* ==================== Output Format ==================== */
+    int format;                              /* Output format: json or parquet */
+
+    /* ==================== Parquet Runtime State ==================== */
+    struct mk_list parquet_batches;          /* Active Parquet batch list */
+    pthread_mutex_t parquet_batch_lock;      /* Batch operation lock */
 };
+
+/* ==================== Format Types ==================== */
+#define FLB_S3_FORMAT_JSON     0
+#define FLB_S3_FORMAT_PARQUET  1
+
+/* ==================== Parquet Function Declarations ==================== */
+int parquet_batch_init(struct flb_s3 *ctx);
+void parquet_batch_destroy(struct flb_s3 *ctx);
 
 int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
                 char *body, size_t body_size, char *pre_signed_url);
@@ -223,5 +238,8 @@ int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_siz
 int create_headers(struct flb_s3 *ctx, char *body_md5,
                    struct flb_aws_header **headers, int *num_headers,
                    int multipart_upload);
+
+int s3_put_object(struct flb_s3 *ctx, const char *tag,
+                  time_t create_time, char *buffer, size_t size);
 
 #endif
