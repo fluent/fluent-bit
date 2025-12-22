@@ -46,6 +46,7 @@
 #define AWS_USER_AGENT_K8S "k8s"
 #define AWS_ECS_METADATA_URI "ECS_CONTAINER_METADATA_URI_V4"
 #define FLB_MAX_AWS_RESP_BUFFER_SIZE 0 /* 0 means unlimited capacity as per requirement */
+#define FLB_MAX_AWS_RESP_TIMEOUT 10 /* 10 seconds */
 
 #ifdef FLB_SYSTEM_WINDOWS
 #define FLB_AWS_BASE_USER_AGENT        "aws-fluent-bit-plugin-windows"
@@ -385,6 +386,9 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         }
         goto error;
     }
+
+    /* Set a HTTP response timeout */
+    flb_http_set_response_timeout(c, FLB_MAX_AWS_RESP_TIMEOUT);
 
     /* Increase the maximum HTTP response buffer size to fit large responses from AWS services */
     ret = flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE);
