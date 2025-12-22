@@ -41,6 +41,14 @@
 
 #include "s3.h"
 #include "s3_store.h"
+
+/* Forward declarations for functions used in s3_parquet.c */
+static struct multipart_upload *get_upload(struct flb_s3 *ctx,
+                                           const char *tag, int tag_len);
+static struct multipart_upload *create_upload(struct flb_s3 *ctx,
+                                              const char *tag, int tag_len,
+                                              time_t file_first_log_time);
+
 #include "s3_parquet.c"
 
 #define DEFAULT_S3_PORT 443
@@ -774,10 +782,20 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->compression = ret;
     }
 
-    /* For Parquet format, if no compression is specified, use Parquet compression */
-    if (ctx->format == FLB_S3_FORMAT_PARQUET && ctx->compression == FLB_AWS_COMPRESS_NONE) {
-        ctx->compression = FLB_AWS_COMPRESS_PARQUET;
-        flb_plg_info(ctx->ins, "Using Parquet compression (default for format=parquet)");
+    /* For Parquet format, validate support and set compression */
+    if (ctx->format == FLB_S3_FORMAT_PARQUET) {
+#ifndef FLB_HAVE_ARROW_PARQUET
+        flb_plg_error(ctx->ins,
+                     "format=parquet is not supported in this build. "
+                     "Fluent Bit must be compiled with Apache Arrow/Parquet support. "
+                     "Please rebuild with -DFLB_ARROW=On or use format=json instead.");
+        return -1;
+#else
+        if (ctx->compression == FLB_AWS_COMPRESS_NONE) {
+            ctx->compression = FLB_AWS_COMPRESS_PARQUET;
+            flb_plg_info(ctx->ins, "Using Parquet compression (default for format=parquet)");
+        }
+#endif
     }
 
     tmp = flb_output_get_property("content_type", ins);
@@ -3869,6 +3887,21 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
 
+        /*
+         * If batch->chunk was NULL, s3_store_buffer_put may have created a new file.
+         * Re-fetch the chunk to ensure batch->chunk is up to date.
+         */
+        if (batch->chunk == NULL) {
+            batch->chunk = s3_store_file_get(ctx, event_chunk->tag,
+                                            flb_sds_len(event_chunk->tag));
+            if (!batch->chunk) {
+                flb_plg_error(ctx->ins,
+                             "failed to retrieve chunk after buffering for parquet batch");
+                flb_sds_destroy(chunk);
+                FLB_OUTPUT_RETURN(FLB_RETRY);
+            }
+        }
+
         batch->accumulated_size += chunk_size;
         batch->append_count++;
         batch->last_append_time = time(NULL);
@@ -4072,6 +4105,14 @@ static int cb_s3_exit(void *data, struct flb_config *config)
 
     /* Cleanup Parquet batch manager if enabled */
     if (ctx->format == FLB_S3_FORMAT_PARQUET && ctx->use_put_object == FLB_FALSE) {
+        /* Flush all pending parquet batches before destroying */
+        flb_plg_info(ctx->ins, "Flushing pending parquet batches on shutdown");
+        ret = parquet_batch_flush_all(ctx);
+        if (ret < 0) {
+            flb_plg_warn(ctx->ins,
+                        "Some parquet batches could not be flushed on shutdown, "
+                        "data may have been lost");
+        }
         parquet_batch_destroy(ctx);
     }
 
