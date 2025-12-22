@@ -4,7 +4,7 @@ name: Deploy to staging
 on:
   push:
     tags:
-      - '*'
+      - "*"
 
   workflow_dispatch:
     inputs:
@@ -27,7 +27,6 @@ on:
 concurrency: staging-build-release
 
 jobs:
-
   # This job strips off the `v` at the start of any tag provided.
   # It then provides this metadata for the other jobs to use.
   staging-build-get-meta:
@@ -36,7 +35,6 @@ jobs:
     outputs:
       version: ${{ steps.formatted_version.outputs.replaced }}
     steps:
-
       - run: |
           echo "Version: ${{ inputs.version || github.ref_name }}"
         shell: bash
@@ -48,12 +46,12 @@ jobs:
       - name: Get the version
         id: get_version
         run: |
-            VERSION="${INPUT_VERSION}"
-            if [ -z "${VERSION}" ]; then
-              echo "Defaulting to master"
-              VERSION=master
-            fi
-            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          VERSION="${INPUT_VERSION}"
+          if [ -z "${VERSION}" ]; then
+            echo "Defaulting to master"
+            VERSION=master
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         shell: bash
         env:
           # Use the dispatch variable in preference, if empty use the context ref_name which should
@@ -64,21 +62,32 @@ jobs:
       - uses: frabert/replace-string-action@v2.5
         id: formatted_version
         with:
-          pattern: '[v]*(.*)$'
+          pattern: "[v]*(.*)$"
           string: "${{ steps.get_version.outputs.VERSION }}"
-          replace-with: '$1'
-          flags: 'g'
+          replace-with: "$1"
+          flags: "g"
 
   staging-build-images:
     needs: staging-build-get-meta
+    strategy:
+      matrix:
+        variant:
+          - name: standard
+            dockerfile: ./dockerfiles/Dockerfile
+            suffix: ""
+          - name: full
+            dockerfile: ./dockerfiles/Dockerfile.full
+            suffix: -full
+    name: Build ${{ matrix.variant.name }} images
     uses: ./.github/workflows/call-build-images.yaml
     with:
-      version: ${{ needs.staging-build-get-meta.outputs.version }}
+      version: ${{ needs.staging-build-get-meta.outputs.version }}${{ matrix.variant.suffix }}
       ref: ${{ inputs.version || github.ref_name }}
       registry: ghcr.io
       username: ${{ github.actor }}
       image: ${{ github.repository }}/staging
       environment: staging
+      dockerfile: ${{ matrix.variant.dockerfile }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
       cosign_private_key: ${{ secrets.COSIGN_PRIVATE_KEY }}

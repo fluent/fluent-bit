@@ -39,6 +39,11 @@ on:
         type: boolean
         required: false
         default: true
+      dockerfile:
+        description: The Dockerfile to use for building (relative to repo root).
+        type: string
+        required: false
+        default: ./dockerfiles/Dockerfile
     secrets:
       token:
         description: The Github token or similar to authenticate with for the registry.
@@ -118,7 +123,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           # Use path context rather than Git context as we want local files
-          file: ./dockerfiles/Dockerfile
+          file: ${{ inputs.dockerfile }}
           context: .
           target: ${{ matrix.target }}
           outputs: type=image,name=${{ inputs.registry }}/${{ inputs.image }},push-by-digest=true,name-canonical=true,push=${{ inputs.push }}
@@ -390,8 +395,8 @@ jobs:
       fail-fast: true
       matrix:
         windows-base-version:
-          - '2022'
-          - '2025'
+          - "2022"
+          - "2025"
     permissions:
       contents: read
       packages: write
