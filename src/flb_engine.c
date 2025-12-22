@@ -924,6 +924,12 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
+    /* Initialize network verifier plugins */
+    ret = flb_network_verifier_init_all(config);
+    if (ret == -1) {
+        return -1;
+    }
+
     /* Start the Storage engine */
     ret = flb_storage_create(config);
     if (ret == -1) {
@@ -1318,6 +1324,9 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_output_exit(config);
     flb_custom_exit(config);
     flb_input_exit_all(config);
+
+    /* cleanup network verifier after other plugins potentially using it */
+    flb_network_verifier_exit(config);
 
     /* scheduler */
     sched_params = (struct flb_sched_timer_coro_cb_params *) FLB_TLS_GET(sched_timer_coro_cb_params);

@@ -789,6 +789,7 @@ if(FLB_TLS)
   find_package(OpenSSL)
   if(OPENSSL_FOUND)
     FLB_DEFINITION(FLB_HAVE_OPENSSL)
+    include_directories(${OPENSSL_INCLUDE_DIR})
   endif()
 
   if (FLB_SYSTEM_WINDOWS AND NOT(OPENSSL_FOUND))

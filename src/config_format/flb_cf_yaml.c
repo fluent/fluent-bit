@@ -53,6 +53,7 @@ enum section {
     SECTION_SERVICE,
     SECTION_PIPELINE,
     SECTION_CUSTOM,
+    SECTION_NETWORK_VERIFIERS,
     SECTION_INPUT,
     SECTION_FILTER,
     SECTION_OUTPUT,
@@ -72,6 +73,7 @@ static char *section_names[] = {
     "service",
     "pipeline",
     "custom",
+    "network_verifiers",
     "input",
     "filter",
     "output",
@@ -124,6 +126,8 @@ enum state {
     STATE_OTHER,           /* any other unknown section */
 
     STATE_CUSTOM,          /* custom plugins */
+    STATE_NETWORK_VERIFIERS,/* Network verifiers plugins */
+
     STATE_PIPELINE,        /* pipeline groups customs inputs, filters and outputs */
 
     STATE_PLUGIN_INPUT,    /* input plugins section */
@@ -269,6 +273,8 @@ static char *state_str(enum state val)
         return "other";
     case STATE_CUSTOM:
         return "custom";
+    case STATE_NETWORK_VERIFIERS:
+        return "network_verifiers";
     case STATE_PIPELINE:
         return "pipeline";
     case STATE_PLUGIN_INPUT:
@@ -331,6 +337,9 @@ static int add_section_type(struct flb_cf *conf, struct parser_state *state)
     }
     else if (state->section == SECTION_CUSTOM) {
         state->cf_section = flb_cf_section_create(conf, "customs", 0);
+    }
+    else if (state->section == SECTION_NETWORK_VERIFIERS) {
+        state->cf_section = flb_cf_section_create(conf, "network_verifiers", 0);
     }
     else if (state->section == SECTION_PARSER) {
         state->cf_section = flb_cf_section_create(conf, "parser", 0);
@@ -1493,10 +1502,11 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
         break;
 
     /*
-     * 'customs'
+     * 'customs' & 'network_verifiers'
      *  --------
      */
     case STATE_CUSTOM:
+    case STATE_NETWORK_VERIFIERS:
         switch (event->type) {
         case YAML_SEQUENCE_START_EVENT:
             break;
@@ -1524,7 +1534,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             return YAML_FAILURE;
         }
         break;
-    /* end of 'customs' */
+    /* end of 'customs' & 'network_verifiers' */
 
     case STATE_PIPELINE:
         switch (event->type) {
@@ -1642,6 +1652,16 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             }
             else if (strcasecmp(value, "customs") == 0) {
                 state = state_push_section(ctx, STATE_CUSTOM, SECTION_CUSTOM);
+
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+            }
+            else if (strcasecmp(value, "network_verifiers") == 0) {
+                state = state_push_section(ctx,
+                                           STATE_NETWORK_VERIFIERS,
+                                           SECTION_NETWORK_VERIFIERS);
 
                 if (state == NULL) {
                     flb_error("unable to allocate state");

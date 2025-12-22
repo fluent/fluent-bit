@@ -48,6 +48,7 @@
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_network_verifier.h>
 
 #include <cfl/cfl.h>
 #include <cmetrics/cmetrics.h>
@@ -377,6 +378,8 @@ struct flb_output_instance {
     char *tls_win_thumbprints;               /* CertStore Thumbprints (Windows) */
 # endif
 #endif
+    char* network_verifier;           /* Connection Verifier alias */
+    struct flb_network_verifier_instance* verifier_ins;
 
     /*
      * network info:

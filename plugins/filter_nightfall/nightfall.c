@@ -96,8 +96,8 @@ static int cb_nightfall_init(struct flb_filter_instance *f_ins,
                               ctx->tls_debug,
                               ctx->tls_vhost,
                               ctx->tls_ca_path,
-                              NULL,
-                              NULL, NULL, NULL);
+                              NULL, NULL, NULL,
+                              NULL, NULL);
     if (!ctx->tls) {
         flb_plg_error(f_ins, "tls initialization error");
         flb_free(ctx);

@@ -602,7 +602,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     struct flb_split_entry *tok;
     struct mk_list *split;
     int list_size;
-
+	
     FLB_TLS_INIT(s3_worker_info);
 
     ctx = flb_calloc(1, sizeof(struct flb_s3));
@@ -869,7 +869,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
                                          ins->tls_ca_file,
                                          ins->tls_crt_file,
                                          ins->tls_key_file,
-                                         ins->tls_key_passwd);
+                                         ins->tls_key_passwd,
+                                         ins->verifier_ins);
         if (!ctx->client_tls) {
             flb_plg_error(ctx->ins, "Failed to create tls context");
             return -1;
@@ -885,7 +886,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
                                        ins->tls_ca_file,
                                        ins->tls_crt_file,
                                        ins->tls_key_file,
-                                       ins->tls_key_passwd);
+                                       ins->tls_key_passwd,
+                                       ins->verifier_ins);
     if (!ctx->provider_tls) {
         flb_errno();
         return -1;
@@ -919,7 +921,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
                                                ins->tls_ca_file,
                                                ins->tls_crt_file,
                                                ins->tls_key_file,
-                                               ins->tls_key_passwd);
+                                               ins->tls_key_passwd,
+                                               ins->verifier_ins);
 
         if (!ctx->sts_provider_tls) {
             flb_errno();
@@ -1985,6 +1988,7 @@ static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *contex
                                  FLB_FALSE,
                                  FLB_FALSE,
                                  host,
+                                 NULL,
                                  NULL,
                                  NULL,
                                  NULL,

@@ -55,12 +55,16 @@
  */
 #define OPENSSL_1_1_0 0x010100000L
 
+#define FLB_ERR_CONN_HEADER "Failed to establish tls connection: "
+#define FLB_ERR_CONN_HEADER_SIZE (sizeof(FLB_ERR_CONN_HEADER) - 1)
+
 /* OpenSSL library context */
 struct tls_context {
     int debug_level;
     SSL_CTX *ctx;
     int mode;
     char *alpn;
+    const struct flb_network_verifier_instance* verifier_ins;
 #if defined(FLB_SYSTEM_WINDOWS)
     char *certstore_name;
     int use_enterprise_store;
@@ -77,6 +81,22 @@ struct tls_session {
     int continuation_flag;
     struct tls_context *parent;    /* parent struct tls_context ref */
 };
+
+void flb_tls_notify_error(const struct tls_context* tls_context,
+    int error_code, const char* error_msg)
+{
+    struct flb_network_verifier_instance* conn_verifier = NULL;
+
+    if (tls_context != NULL) {
+        conn_verifier = tls_context->verifier_ins;
+    }
+
+    if (conn_verifier && conn_verifier->plugin &&
+        conn_verifier->plugin->cb_connection_failure) {
+        conn_verifier->plugin->cb_connection_failure(conn_verifier, NULL, 0,
+                                                     error_code, error_msg);
+    }
+}
 
 static int tls_init(void)
 {
@@ -725,13 +745,19 @@ static void *tls_context_create(int verify,
                                 const char *ca_file,
                                 const char *crt_file,
                                 const char *key_file,
-                                const char *key_passwd)
+                                const char *key_passwd,
+                                const struct flb_network_verifier_instance *conn_ins)
 {
     int ret;
     SSL_CTX *ssl_ctx;
     struct tls_context *ctx;
     char err_buf[256];
     char *key_log_filename;
+    X509_STORE* store = NULL;
+    SSL_verify_cb verify_cb = NULL;
+    if (conn_ins && conn_ins->plugin ) {
+        verify_cb = conn_ins->plugin->cb_verify_tls;
+    }
 
     /*
      * Init library ? based in the documentation on OpenSSL >= 1.1.0 is not longer
@@ -788,6 +814,7 @@ static void *tls_context_create(int verify,
     ctx->mode = mode;
     ctx->alpn = NULL;
     ctx->debug_level = debug;
+    ctx->verifier_ins = conn_ins;
 #if defined(FLB_SYSTEM_WINDOWS)
     ctx->certstore_name = NULL;
     ctx->use_enterprise_store = 0;
@@ -796,12 +823,28 @@ static void *tls_context_create(int verify,
 #endif
     pthread_mutex_init(&ctx->mutex, NULL);
 
+    if (verify_cb) {
+        store = SSL_CTX_get_cert_store(ssl_ctx);
+        if (!store) {
+            flb_error("[tls] failed to retrieve openssl certificate store.");
+            goto error;
+        }
+        ret = X509_STORE_set_ex_data(store,
+                                     FLB_X509_STORE_EX_INDEX,
+                                     (struct flb_network_verifier_instance *)conn_ins);
+        if (ret != 1) {
+            flb_error("[tls] Failed to set "
+                      "network_verifier_instance in X509_STORE ex data");
+            goto error;
+        }
+    }
+
     /* Verify peer: by default OpenSSL always verify peer */
     if (verify == FLB_FALSE) {
         SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_NONE, NULL);
     }
     else {
-        SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
+        SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, verify_cb);
     }
 
     /* ca_path | ca_file */
@@ -1326,6 +1369,8 @@ static int tls_net_read(struct flb_tls_session *session,
              * to the net_error field.
              */
 
+            flb_tls_notify_error(ctx, ret, err_buf);
+
             session->connection->net_error = errno;
 
             ret = -1;
@@ -1333,6 +1378,7 @@ static int tls_net_read(struct flb_tls_session *session,
         else if (ret < 0) {
             ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
             flb_error("[tls] error: %s", err_buf);
+            flb_tls_notify_error(ctx, ret, err_buf);
         }
         else {
             ret = -1;
@@ -1384,15 +1430,18 @@ static int tls_net_write(struct flb_tls_session *session,
             if (ERR_get_error() == 0) {
                 if (ret == 0) {
                     flb_debug("[tls] connection closed");
+                    flb_tls_notify_error(ctx, ret, "Connection Closed");
                 }
                 else {
                     flb_error("[tls] syscall error: %s", strerror(errno));
+                    flb_tls_notify_error(ctx, errno, strerror(errno));
                 }
             }
             else {
                 err_code = ERR_get_error();
                 ERR_error_string_n(err_code, err_buf, sizeof(err_buf) - 1);
                 flb_error("[tls] syscall error: %s", err_buf);
+                flb_tls_notify_error(ctx, err_code, err_buf);
             }
 
             /* According to the documentation these are non-recoverable
@@ -1408,10 +1457,12 @@ static int tls_net_write(struct flb_tls_session *session,
             err_code = ERR_get_error();
             if (err_code == 0) {
                 flb_error("[tls] unknown error");
+                flb_tls_notify_error(ctx, err_code, "Unknown error");
             }
             else {
                 ERR_error_string_n(err_code, err_buf, sizeof(err_buf) - 1);
                 flb_error("[tls] error: %s", err_buf);
+                flb_tls_notify_error(ctx, err_code, err_buf);
             }
 
             ret = -1;
@@ -1451,10 +1502,12 @@ static int tls_net_handshake(struct flb_tls *tls,
 {
     int ret = 0;
     long ssl_code = 0;
-    char err_buf[256];
+    char err_buf[FLB_ERR_CONN_HEADER_SIZE + 256] = {0};
     struct tls_session *session = ptr_session;
     struct tls_context *ctx;
     const char *x509_err;
+
+    strcpy(err_buf, FLB_ERR_CONN_HEADER);
 
     ctx = session->parent;
     pthread_mutex_lock(&ctx->mutex);
@@ -1524,7 +1577,7 @@ static int tls_net_handshake(struct flb_tls *tls,
             /* The SSL_ERROR_SYSCALL with errno value of 0 indicates unexpected
              *  EOF from the peer. This is fixed in OpenSSL 3.0.
              */
-
+            
             if (ret == 0) {
                 ssl_code = SSL_get_verify_result(session->ssl);
                 if (ssl_code != X509_V_OK) {
@@ -1533,11 +1586,18 @@ static int tls_net_handshake(struct flb_tls *tls,
                     flb_error("[tls] certificate verification failed, reason: %s (X509 code: %ld)", x509_err, ssl_code);
                 }
                 else {
-                    flb_error("[tls] error: unexpected EOF");
+                    strncpy(&err_buf[FLB_ERR_CONN_HEADER_SIZE],
+                            "unexpected EOF",
+                            sizeof(err_buf)-FLB_ERR_CONN_HEADER_SIZE);
+                    flb_error("[tls] error: %s", &err_buf[FLB_ERR_CONN_HEADER_SIZE]);
+                    flb_tls_notify_error(ctx, -1, err_buf);
                 }
             } else {
-                ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
-                flb_error("[tls] error: %s", err_buf);
+                ERR_error_string_n(ret,
+                                   &err_buf[FLB_ERR_CONN_HEADER_SIZE],
+                                   sizeof(err_buf)-FLB_ERR_CONN_HEADER_SIZE);
+                flb_error("[tls] error: %s", &err_buf[FLB_ERR_CONN_HEADER_SIZE]);
+                flb_tls_notify_error(ctx, -1, err_buf);
             }
 
             pthread_mutex_unlock(&ctx->mutex);
