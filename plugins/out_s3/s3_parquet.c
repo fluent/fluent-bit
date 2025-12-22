@@ -38,6 +38,11 @@ struct parquet_batch {
     struct mk_list _head;
 };
 
+/* Forward declarations */
+static int parquet_batch_convert_and_upload(struct flb_s3 *ctx,
+                                            struct parquet_batch *batch,
+                                            struct multipart_upload *m_upload);
+
 /* Initialize Parquet batch management */
 int parquet_batch_init(struct flb_s3 *ctx)
 {
@@ -58,6 +63,103 @@ int parquet_batch_init(struct flb_s3 *ctx)
     return 0;
 }
 
+/* Flush all pending Parquet batches before shutdown */
+static int parquet_batch_flush_all(struct flb_s3 *ctx)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct parquet_batch *batch;
+    struct multipart_upload *m_upload;
+    int ret;
+    int flushed_count = 0;
+    int error_count = 0;
+
+    flb_plg_info(ctx->ins, "Flushing all pending parquet batches before shutdown");
+
+    pthread_mutex_lock(&ctx->parquet_batch_lock);
+
+    mk_list_foreach_safe(head, tmp, &ctx->parquet_batches) {
+        batch = mk_list_entry(head, struct parquet_batch, _head);
+
+        /* Skip empty batches */
+        if (!batch->chunk || batch->accumulated_size == 0) {
+            flb_plg_debug(ctx->ins,
+                         "Skipping empty parquet batch for tag '%s'",
+                         batch->tag);
+
+            /* Clean up the batch structure even if skipping */
+            mk_list_del(&batch->_head);
+            if (batch->chunk) {
+                s3_store_file_delete(ctx, batch->chunk);
+                batch->chunk = NULL;
+            }
+            if (batch->tag) {
+                flb_free(batch->tag);
+            }
+            flb_free(batch);
+            continue;
+        }
+
+        flb_plg_info(ctx->ins,
+                    "Flushing parquet batch for tag '%s': %zu bytes, %d appends",
+                    batch->tag, batch->accumulated_size, batch->append_count);
+
+        /* Get or create multipart upload for this tag */
+        m_upload = get_upload(ctx, batch->tag, batch->tag_len);
+        if (!m_upload) {
+            m_upload = create_upload(ctx, batch->tag, batch->tag_len,
+                                    batch->create_time);
+            if (!m_upload) {
+                flb_plg_error(ctx->ins,
+                             "Failed to create upload for parquet batch '%s', "
+                             "data will be discarded",
+                             batch->tag);
+                error_count++;
+                continue;
+            }
+        }
+
+        /* Temporarily unlock to allow conversion and upload */
+        pthread_mutex_unlock(&ctx->parquet_batch_lock);
+
+        /* Convert and upload the batch */
+        ret = parquet_batch_convert_and_upload(ctx, batch, m_upload);
+
+        /* Re-lock for next iteration */
+        pthread_mutex_lock(&ctx->parquet_batch_lock);
+
+        if (ret < 0) {
+            flb_plg_error(ctx->ins,
+                         "Failed to flush parquet batch for tag '%s', "
+                         "data will be discarded",
+                         batch->tag);
+            error_count++;
+        } else {
+            flb_plg_info(ctx->ins,
+                        "Successfully flushed parquet batch for tag '%s'",
+                        batch->tag);
+            flushed_count++;
+        }
+    }
+
+    pthread_mutex_unlock(&ctx->parquet_batch_lock);
+
+    if (flushed_count > 0) {
+        flb_plg_info(ctx->ins,
+                    "Flushed %d parquet batch(es) on shutdown",
+                    flushed_count);
+    }
+
+    if (error_count > 0) {
+        flb_plg_warn(ctx->ins,
+                    "Failed to flush %d parquet batch(es), data was discarded",
+                    error_count);
+        return -1;
+    }
+
+    return 0;
+}
+
 /* Cleanup Parquet batch management */
 void parquet_batch_destroy(struct flb_s3 *ctx)
 {
@@ -70,6 +172,18 @@ void parquet_batch_destroy(struct flb_s3 *ctx)
     mk_list_foreach_safe(head, tmp, &ctx->parquet_batches) {
         batch = mk_list_entry(head, struct parquet_batch, _head);
         mk_list_del(&batch->_head);
+
+        /* Warn if batch still has data and clean up chunk */
+        if (batch->chunk) {
+            if (batch->accumulated_size > 0) {
+                flb_plg_warn(ctx->ins,
+                            "Discarding parquet batch for tag '%s' with %zu bytes of data",
+                            batch->tag, batch->accumulated_size);
+            }
+            /* Delete the temporary file */
+            s3_store_file_delete(ctx, batch->chunk);
+            batch->chunk = NULL;
+        }
 
         if (batch->tag) {
             flb_free(batch->tag);
@@ -288,19 +402,41 @@ static int parquet_batch_convert_and_upload(struct flb_s3 *ctx,
     } else if (parquet_size > MAX_FILE_SIZE_PUT_OBJECT) {
         /* Use multipart upload for large files */
         size_t offset = 0;
+        struct multipart_upload *local_upload = NULL;
+        int need_cleanup = FLB_FALSE;
 
         flb_plg_debug(ctx->ins,
                      "using multipart upload: %zu bytes",
                      parquet_size);
 
+        /* Ensure we have a valid multipart upload structure */
+        if (!m_upload) {
+            /* Create a local multipart upload structure */
+            local_upload = create_upload(ctx, batch->tag, batch->tag_len,
+                                        batch->create_time);
+            if (!local_upload) {
+                flb_plg_error(ctx->ins,
+                             "failed to create multipart upload structure for batch '%s'",
+                             batch->tag);
+                flb_free(parquet_buffer);
+                return -1;
+            }
+            m_upload = local_upload;
+            need_cleanup = FLB_TRUE;
+        }
+
         /* Ensure multipart upload is created */
-        if (m_upload && m_upload->upload_state == MULTIPART_UPLOAD_STATE_NOT_CREATED) {
+        if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_NOT_CREATED) {
             ret = create_multipart_upload(ctx, m_upload, NULL);
             if (ret < 0) {
                 flb_plg_error(ctx->ins,
                              "failed to create multipart upload for batch '%s'",
                              batch->tag);
                 flb_free(parquet_buffer);
+                if (need_cleanup) {
+                    mk_list_del(&local_upload->_head);
+                    multipart_upload_destroy(local_upload);
+                }
                 return -1;
             }
             m_upload->upload_state = MULTIPART_UPLOAD_STATE_CREATED;
@@ -318,12 +454,16 @@ static int parquet_batch_convert_and_upload(struct flb_s3 *ctx,
                              "failed to upload part for batch '%s'",
                              batch->tag);
                 flb_free(parquet_buffer);
+                if (need_cleanup) {
+                    mk_list_del(&local_upload->_head);
+                    multipart_upload_destroy(local_upload);
+                }
                 return -1;
             }
 
             offset += chunk_size;
             m_upload->part_number++;
-            m_upload->bytes += chunk_size;
+            /* Note: upload_part already updates m_upload->bytes, no need to add manually */
         }
 
         /* Mark for completion */
