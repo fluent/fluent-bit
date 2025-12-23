@@ -19,6 +19,7 @@
 #else
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <fluent-bit/flb_compat.h>
 #endif
 
 #include "flb_tests_internal.h"
@@ -35,6 +36,9 @@ struct oauth2_mock_server {
     int expires_in;
     char latest_token[64];
     pthread_t thread;
+#ifdef _WIN32
+    int wsa_initialized;
+#endif
 };
 
 static void compose_http_response(flb_sockfd_t fd, int status, const char *body)
@@ -176,14 +180,34 @@ static int oauth2_mock_server_start(struct oauth2_mock_server *server, int expir
     int on = 1;
     struct sockaddr_in addr;
     socklen_t len;
+#ifdef _WIN32
+    WSADATA wsa_data;
+    int wsa_result;
+#endif
 
     memset(server, 0, sizeof(struct oauth2_mock_server));
     server->expires_in = expires_in;
     server->resource_challenge = resource_challenge;
 
+#ifdef _WIN32
+    /* Initialize Winsock on Windows */
+    wsa_result = WSAStartup(MAKEWORD(2, 2), &wsa_data);
+    if (wsa_result != 0) {
+        flb_errno();
+        return -1;
+    }
+    server->wsa_initialized = 1;
+#endif
+
     server->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server->listen_fd == FLB_INVALID_SOCKET) {
         flb_errno();
+#ifdef _WIN32
+        if (server->wsa_initialized) {
+            WSACleanup();
+            server->wsa_initialized = 0;
+        }
+#endif
         return -1;
     }
 
@@ -197,19 +221,38 @@ static int oauth2_mock_server_start(struct oauth2_mock_server *server, int expir
     if (bind(server->listen_fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
         flb_errno();
         flb_socket_close(server->listen_fd);
+#ifdef _WIN32
+        if (server->wsa_initialized) {
+            WSACleanup();
+            server->wsa_initialized = 0;
+        }
+#endif
         return -1;
     }
 
     if (listen(server->listen_fd, 4) < 0) {
         flb_errno();
         flb_socket_close(server->listen_fd);
+#ifdef _WIN32
+        if (server->wsa_initialized) {
+            WSACleanup();
+            server->wsa_initialized = 0;
+        }
+#endif
         return -1;
     }
 
     len = sizeof(addr);
+    memset(&addr, 0, sizeof(addr));
     if (getsockname(server->listen_fd, (struct sockaddr *) &addr, &len) < 0) {
         flb_errno();
         flb_socket_close(server->listen_fd);
+#ifdef _WIN32
+        if (server->wsa_initialized) {
+            WSACleanup();
+            server->wsa_initialized = 0;
+        }
+#endif
         return -1;
     }
 
@@ -217,6 +260,12 @@ static int oauth2_mock_server_start(struct oauth2_mock_server *server, int expir
     if (server->port == 0) {
         flb_errno();
         flb_socket_close(server->listen_fd);
+#ifdef _WIN32
+        if (server->wsa_initialized) {
+            WSACleanup();
+            server->wsa_initialized = 0;
+        }
+#endif
         return -1;
     }
 
@@ -225,6 +274,12 @@ static int oauth2_mock_server_start(struct oauth2_mock_server *server, int expir
     if (pthread_create(&server->thread, NULL, oauth2_mock_server_thread, server) != 0) {
         printf("pthread_create failed: %s\n", strerror(errno));
         flb_socket_close(server->listen_fd);
+#ifdef _WIN32
+        if (server->wsa_initialized) {
+            WSACleanup();
+            server->wsa_initialized = 0;
+        }
+#endif
         return -1;
     }
     printf("server started on port %d\n", server->port);
@@ -283,7 +338,14 @@ static void oauth2_mock_server_stop(struct oauth2_mock_server *server)
         shutdown(server->listen_fd, SHUT_RDWR);
         pthread_join(server->thread, NULL);
         flb_socket_close(server->listen_fd);
+        server->listen_fd = FLB_INVALID_SOCKET;
     }
+#ifdef _WIN32
+    if (server->wsa_initialized) {
+        WSACleanup();
+        server->wsa_initialized = 0;
+    }
+#endif
 }
 
 static struct flb_oauth2 *create_oauth_ctx(struct flb_config *config,
