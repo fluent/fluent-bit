@@ -96,19 +96,38 @@ static int copy_label_values(struct cmt_metric *metric, char **out)
     return i;
 }
 
-static inline int cat_histogram_values(struct cmt_metric *metric_dst, struct cmt_histogram *histogram,
-                                       struct cmt_metric *metric_src)
+static inline int cat_histogram_values(struct cmt_metric *metric_dst, struct cmt_histogram *histogram_src,
+                                       struct cmt_metric *metric_src, struct cmt_histogram *histogram_dst)
 {
     int i;
+    size_t bucket_count_src;
+    size_t bucket_count_dst;
 
+    /* Validate source histogram buckets exist */
+    if (!metric_src->hist_buckets) {
+        /* Source has no bucket data, nothing to concatenate */
+        return 0;
+    }
+
+    bucket_count_src = histogram_src->buckets->count;
+    bucket_count_dst = histogram_dst->buckets->count;
+
+    /* Validate that source and destination have matching bucket structures */
+    if (bucket_count_src != bucket_count_dst) {
+        /* Histogram bucket structures don't match - cannot concatenate */
+        return -1;
+    }
+
+    /* Allocate destination buckets if needed */
     if (!metric_dst->hist_buckets) {
-        metric_dst->hist_buckets = calloc(1, sizeof(uint64_t) * (histogram->buckets->count + 1));
+        metric_dst->hist_buckets = calloc(1, sizeof(uint64_t) * (bucket_count_dst + 1));
         if (!metric_dst->hist_buckets) {
             return -1;
         }
     }
 
-    for (i = 0; i < histogram->buckets->count; i++) {
+    /* Concatenate bucket values including +Inf bucket at index bucket_count_dst */
+    for (i = 0; i <= bucket_count_dst; i++) {
         /* histogram buckets are always integers, no need to convert them */
         metric_dst->hist_buckets[i] += metric_src->hist_buckets[i];
     }
@@ -165,7 +184,8 @@ int cmt_cat_copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map 
     struct cmt_metric *metric_dst;
     struct cmt_metric *metric_src;
     struct cmt_summary *summary;
-    struct cmt_histogram *histogram;
+    struct cmt_histogram *histogram_src;
+    struct cmt_histogram *histogram_dst;
 
     /* Handle static metric (no labels case) */
     if (src->metric_static_set) {
@@ -176,8 +196,9 @@ int cmt_cat_copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map 
         metric_src = &src->metric;
 
         if (src->type == CMT_HISTOGRAM) {
-            histogram = (struct cmt_histogram *) src->parent;
-            ret = cat_histogram_values(metric_dst, histogram, metric_src);
+            histogram_src = (struct cmt_histogram *) src->parent;
+            histogram_dst = (struct cmt_histogram *) dst->parent;
+            ret = cat_histogram_values(metric_dst, histogram_src, metric_src, histogram_dst);
             if (ret == -1) {
                 return -1;
             }
@@ -214,8 +235,9 @@ int cmt_cat_copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map 
         }
 
         if (src->type == CMT_HISTOGRAM) {
-            histogram = (struct cmt_histogram *) src->parent;
-            ret = cat_histogram_values(metric_dst, histogram, metric_src);
+            histogram_src = (struct cmt_histogram *) src->parent;
+            histogram_dst = (struct cmt_histogram *) dst->parent;
+            ret = cat_histogram_values(metric_dst, histogram_src, metric_src, histogram_dst);
             if (ret == -1) {
                 return -1;
             }
