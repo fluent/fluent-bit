@@ -1431,11 +1431,101 @@ static char *flb_utils_copy_host_sds(const char *string, int pos_init, int pos_e
         if (string[pos_end-1] != ']') {
             return NULL;
         }
-        return flb_sds_create_len(string + pos_init + 1, pos_end - 1);
+        return flb_sds_create_len(string + pos_init + 1, pos_end - pos_init - 2);
     }
     else {
-        return flb_sds_create_len(string + pos_init, pos_end);
+        return flb_sds_create_len(string + pos_init, pos_end - pos_init);
     }
+}
+
+/* Validate IPv6 bracket syntax in URL host part */
+static int validate_ipv6_brackets(const char *p, const char **out_bracket)
+{
+    const char *host_end;
+    const char *bracket = NULL;
+    const char *closing;
+    const char *query_or_fragment;
+
+    /* Only inspect the host portion (up to the first '/', '?', or '#') */
+    host_end = strchr(p, '/');
+    query_or_fragment = strpbrk(p, "?#");
+    
+    /* Use the earliest delimiter found */
+    if (query_or_fragment && (!host_end || query_or_fragment < host_end)) {
+        host_end = query_or_fragment;
+    }
+    
+    if (!host_end) {
+        host_end = p + strlen(p);
+    }
+
+    if (p[0] == '[') {
+        closing = memchr(p, ']', host_end - p);
+        if (!closing || closing == p + 1) {
+            /* Missing closing bracket or empty brackets [] */
+            return -1;
+        }
+        bracket = closing;
+    }
+    else {
+        /* Non-bracketed hosts must not contain ']' before the first '/' */
+        closing = memchr(p, ']', host_end - p);
+        if (closing) {
+            return -1;
+        }
+    }
+
+    if (out_bracket) {
+        *out_bracket = bracket;
+    }
+    return 0;
+}
+
+/* Helper to create URI with prepended '/' if it starts with '?' or '#' */
+static char *create_uri_with_slash(const char *uri_part)
+{
+    char *uri;
+    size_t uri_part_len;
+
+    if (!uri_part || *uri_part == '\0') {
+        return flb_strdup("/");
+    }
+
+    /* If URI starts with '?' or '#', prepend '/' */
+    if (*uri_part == '?' || *uri_part == '#') {
+        uri_part_len = strlen(uri_part);
+        /* Allocate space for '/' + uri_part + '\0' */
+        uri = flb_malloc(uri_part_len + 2);
+        if (!uri) {
+            return NULL;
+        }
+        uri[0] = '/';
+        /* +1 to include '\0' */
+        memcpy(uri + 1, uri_part, uri_part_len + 1);
+        return uri;
+    }
+
+    /* URI already starts with '/' or is a normal path */
+    return flb_strdup(uri_part);
+}
+
+/* SDS version: Helper to create URI with prepended '/' if it starts with '?' or '#' */
+static flb_sds_t create_uri_with_slash_sds(const char *uri_part)
+{
+    char *result;
+    flb_sds_t uri;
+
+    /* Use the regular version to create the string */
+    result = create_uri_with_slash(uri_part);
+    if (!result) {
+        return NULL;
+    }
+
+    /* Convert to SDS */
+    uri = flb_sds_create(result);
+    flb_free(result);
+
+    return uri;
 }
 
 int flb_utils_url_split(const char *in_url, char **out_protocol,
@@ -1448,6 +1538,7 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
     char *p;
     char *tmp;
     char *sep;
+    const char *bracket = NULL;
 
     /* Protocol */
     p = strstr(in_url, "://");
@@ -1467,17 +1558,34 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
     /* Advance position after protocol */
     p += 3;
 
-    /* Check for first '/' */
+    /* Validate IPv6 brackets */
     sep = strchr(p, '/');
-    tmp = strchr(p, ':');
-
-    /* Validate port separator is found before the first slash */
-    if (sep && tmp) {
-        if (tmp > sep) {
-            tmp = NULL;
-        }
+    if (validate_ipv6_brackets(p, &bracket) < 0) {
+        flb_errno();
+        goto error;
     }
 
+    /* Compute end of host segment (before '/', '?', or '#') */
+    const char *host_end = sep;
+    const char *qf = strpbrk(p, "?#");
+
+    if (!host_end || (qf && qf < host_end)) {
+        host_end = qf;
+    }
+    if (!host_end) {
+        host_end = p + strlen(p);
+    }
+
+    if (bracket) {
+        /* For bracketed IPv6, only ports after ']' and before URI delimiters are valid */
+        tmp = memchr(bracket, ':', host_end - bracket);
+    }
+    else {
+        /* Non-IPv6: limit ':' search to the host portion */
+        tmp = memchr(p, ':', host_end - p);
+    }
+
+    /* Extract host if port separator was found */
     if (tmp) {
         host = flb_copy_host(p, 0, tmp - p);
         if (!host) {
@@ -1485,28 +1593,44 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
             goto error;
         }
         p = tmp + 1;
-
-        /* Look for an optional URI */
-        tmp = strchr(p, '/');
-        if (tmp) {
-            port = mk_string_copy_substr(p, 0, tmp - p);
-            uri = flb_strdup(tmp);
-        }
-        else {
-            port = flb_strdup(p);
-            uri = flb_strdup("/");
-        }
     }
-    else {
-        tmp = strchr(p, '/');
+
+    /* Find URI delimiter (/, ?, or #) */
+    tmp = strpbrk(p, "/?#");
+    
+    if (!host) {
+        /* No port: extract host */
         if (tmp) {
             host = flb_copy_host(p, 0, tmp - p);
-            uri = flb_strdup(tmp);
         }
         else {
             host = flb_copy_host(p, 0, strlen(p));
-            uri = flb_strdup("/");
         }
+        if (!host) {
+            flb_errno();
+            goto error;
+        }
+    }
+    else {
+        /* Port exists: extract port */
+        if (tmp) {
+            port = mk_string_copy_substr(p, 0, tmp - p);
+        }
+        else {
+            port = flb_strdup(p);
+        }
+    }
+
+    /* Extract URI */
+    if (tmp) {
+        uri = create_uri_with_slash(tmp);
+        if (!uri) {
+            flb_errno();
+            goto error;
+        }
+    }
+    else {
+        uri = flb_strdup("/");
     }
 
     if (!port) {
@@ -1529,6 +1653,15 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
     if (protocol) {
         flb_free(protocol);
     }
+    if (host) {
+        flb_free(host);
+    }
+    if (port) {
+        flb_free(port);
+    }
+    if (uri) {
+        flb_free(uri);
+    }
 
     return -1;
 }
@@ -1544,6 +1677,7 @@ int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
     char *p = NULL;
     char *tmp = NULL;
     char *sep = NULL;
+    const char *bracket = NULL;
 
     /* Protocol */
     p = strstr(in_url, "://");
@@ -1563,17 +1697,34 @@ int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
     /* Advance position after protocol */
     p += 3;
 
-    /* Check for first '/' */
+    /* Validate IPv6 brackets */
     sep = strchr(p, '/');
-    tmp = strchr(p, ':');
-
-    /* Validate port separator is found before the first slash */
-    if (sep && tmp) {
-        if (tmp > sep) {
-            tmp = NULL;
-        }
+    if (validate_ipv6_brackets(p, &bracket) < 0) {
+        flb_errno();
+        goto error;
     }
 
+    /* Compute end of host segment (before '/', '?', or '#') */
+    const char *host_end = sep;
+    const char *qf = strpbrk(p, "?#");
+
+    if (!host_end || (qf && qf < host_end)) {
+        host_end = qf;
+    }
+    if (!host_end) {
+        host_end = p + strlen(p);
+    }
+
+    if (bracket) {
+        /* For bracketed IPv6, only ports after ']' and before URI delimiters are valid */
+        tmp = memchr(bracket, ':', host_end - bracket);
+    }
+    else {
+        /* Non-IPv6: limit ':' search to the host portion */
+        tmp = memchr(p, ':', host_end - p);
+    }
+
+    /* Extract host if port separator was found */
     if (tmp) {
         host = flb_utils_copy_host_sds(p, 0, tmp - p);
         if (!host) {
@@ -1581,28 +1732,44 @@ int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
             goto error;
         }
         p = tmp + 1;
-
-        /* Look for an optional URI */
-        tmp = strchr(p, '/');
-        if (tmp) {
-            port = flb_sds_create_len(p, tmp - p);
-            uri = flb_sds_create(tmp);
-        }
-        else {
-            port = flb_sds_create_len(p, strlen(p));
-            uri = flb_sds_create("/");
-        }
     }
-    else {
-        tmp = strchr(p, '/');
+
+    /* Find URI delimiter (/, ?, or #) */
+    tmp = strpbrk(p, "/?#");
+    
+    if (!host) {
+        /* No port: extract host */
         if (tmp) {
             host = flb_utils_copy_host_sds(p, 0, tmp - p);
-            uri = flb_sds_create(tmp);
         }
         else {
             host = flb_utils_copy_host_sds(p, 0, strlen(p));
-            uri = flb_sds_create("/");
         }
+        if (!host) {
+            flb_errno();
+            goto error;
+        }
+    }
+    else {
+        /* Port exists: extract port */
+        if (tmp) {
+            port = flb_sds_create_len(p, tmp - p);
+        }
+        else {
+            port = flb_sds_create_len(p, strlen(p));
+        }
+    }
+
+    /* Extract URI */
+    if (tmp) {
+        uri = create_uri_with_slash_sds(tmp);
+        if (!uri) {
+            flb_errno();
+            goto error;
+        }
+    }
+    else {
+        uri = flb_sds_create("/");
     }
 
     if (!port) {
