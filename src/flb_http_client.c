@@ -33,7 +33,13 @@
 #define _GNU_SOURCE
 #include <string.h>
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
+
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
@@ -617,11 +623,55 @@ static int add_host_and_content_length(struct flb_http_client *c)
         out_port = c->port;
     }
 
-    if (c->flags & FLB_IO_TLS && out_port == 443) {
-        tmp = flb_sds_copy(host, out_host, strlen(out_host));
+    /* Check if out_host is an unbracketed IPv6 address */
+    struct in6_addr addr;
+    char *zone_id;
+    char addr_buf[INET6_ADDRSTRLEN];
+    int is_ipv6 = 0;
+    int is_https_default_port;
+    const char *host_for_header;
+
+    if (out_host && out_host[0] != '[') {
+        /* Strip zone ID if present (e.g., fe80::1%eth0 -> fe80::1) */
+        zone_id = strchr(out_host, '%');
+        if (zone_id) {
+            len = zone_id - out_host;
+            if (len < INET6_ADDRSTRLEN) {
+                memcpy(addr_buf, out_host, len);
+                addr_buf[len] = '\0';
+                is_ipv6 = (inet_pton(AF_INET6, addr_buf, &addr) == 1);
+            }
+        }
+        else {
+            is_ipv6 = (inet_pton(AF_INET6, out_host, &addr) == 1);
+        }
+    }
+
+    /* Use stripped address (without zone ID) for Host header if zone ID was present */
+    host_for_header = (is_ipv6 && zone_id) ? addr_buf : out_host;
+
+    /* Check if connection uses TLS and port is 443 (HTTPS default) */
+    is_https_default_port = flb_stream_get_flag_status(&u->base, FLB_IO_TLS) && out_port == 443;
+
+    if (is_https_default_port) {
+        if (is_ipv6) {
+            /* IPv6 address needs brackets for RFC compliance */
+            tmp = flb_sds_printf(&host, "[%s]", host_for_header);
+        }
+        else {
+            /* HTTPS on default port 443 - omit port from Host header */
+            tmp = flb_sds_copy(host, out_host, strlen(out_host));
+        }
     }
     else {
-        tmp = flb_sds_printf(&host, "%s:%i", out_host, out_port);
+        if (is_ipv6) {
+            /* IPv6 address needs brackets when combined with port */
+            tmp = flb_sds_printf(&host, "[%s]:%i", host_for_header, out_port);
+        }
+        else {
+            /* IPv4 address, domain name, or already bracketed IPv6 */
+            tmp = flb_sds_printf(&host, "%s:%i", out_host, out_port);
+        }
     }
 
     if (!tmp) {
