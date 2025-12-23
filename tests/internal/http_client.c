@@ -466,6 +466,178 @@ void test_http_add_proxy_auth_header()
     test_ctx_destroy(ctx);
 }
 
+/* Helper function to verify Host header value */
+static void check_host_header(struct flb_http_client *c, const char *expected)
+{
+    flb_sds_t ret_str = flb_http_get_header(c, "Host", 4);
+    if (!TEST_CHECK(ret_str != NULL)) {
+        TEST_MSG("flb_http_get_header failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if (!TEST_CHECK(flb_sds_cmp(ret_str, expected, strlen(expected)) == 0)) {
+        TEST_MSG("strcmp failed. got=%s expect=%s", ret_str, expected);
+    }
+
+    flb_sds_destroy(ret_str);
+}
+
+/* Helper to test basic host header formatting */
+static void test_host_header_format(const char *host, int port, const char *expected)
+{
+    struct test_ctx *ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    struct flb_http_client *c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", 
+                                                 NULL, 0, host, port, NULL, 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    check_host_header(c, expected);
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
+/* Helper to test TLS host header formatting */
+static void test_tls_host_header_format(const char *host, int port, const char *expected)
+{
+    struct test_ctx *ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    struct flb_upstream *u_tls = flb_upstream_create(ctx->config, host, port, FLB_IO_TLS, NULL);
+    if (!TEST_CHECK(u_tls != NULL)) {
+        TEST_MSG("flb_upstream_create failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    struct flb_connection *u_conn_tls = flb_calloc(1, sizeof(struct flb_connection));
+    if (!TEST_CHECK(u_conn_tls != NULL)) {
+        TEST_MSG("flb_calloc failed");
+        flb_upstream_destroy(u_tls);
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+    u_conn_tls->upstream = u_tls;
+
+    struct flb_http_client *c = flb_http_client(u_conn_tls, FLB_HTTP_GET, "/",
+                                                 NULL, 0, host, port, NULL, 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        flb_free(u_conn_tls);
+        flb_upstream_destroy(u_tls);
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    check_host_header(c, expected);
+    flb_http_client_destroy(c);
+    flb_free(u_conn_tls);
+    flb_upstream_destroy(u_tls);
+    test_ctx_destroy(ctx);
+}
+
+void test_http_ipv6_host_header()
+{
+    test_host_header_format("::1", 8080, "[::1]:8080");
+}
+
+void test_http_ipv6_bracketed_host_header()
+{
+    test_host_header_format("[::1]", 8080, "[::1]:8080");
+}
+
+void test_http_ipv4_host_header()
+{
+    test_host_header_format("192.168.1.1", 8080, "192.168.1.1:8080");
+}
+
+void test_http_domain_host_header()
+{
+    test_host_header_format("example.com", 8080, "example.com:8080");
+}
+
+void test_https_default_port_host_header()
+{
+    test_tls_host_header_format("example.com", 443, "example.com");
+}
+
+/* Test various IPv6 address formats */
+void test_ipv6_formats_host_header()
+{
+    size_t index;
+    struct {
+        const char *input;
+        const char *expected;
+    } test_cases[] = {
+        {"2001:db8::1", "[2001:db8::1]:8080"},
+        {"2001:0db8:0000:0000:0000:0000:0000:0001", "[2001:0db8:0000:0000:0000:0000:0000:0001]:8080"},
+        {"::ffff:192.0.2.1", "[::ffff:192.0.2.1]:8080"},
+        {"fe80::1", "[fe80::1]:8080"},
+        {"::1", "[::1]:8080"},
+        {"::", "[::]:8080"},
+        {NULL, NULL}
+    };
+
+    for (index = 0; test_cases[index].input != NULL; index++) {
+        test_host_header_format(test_cases[index].input, 8080, test_cases[index].expected);
+    }
+}
+
+void test_http_port_80_host_header()
+{
+    test_host_header_format("example.com", 80, "example.com:80");
+}
+
+void test_port_443_without_tls_host_header()
+{
+    test_host_header_format("example.com", 443, "example.com:443");
+}
+
+void test_ipv6_zone_id_host_header()
+{
+    test_host_header_format("fe80::1%eth0", 8080, "[fe80::1]:8080");
+}
+
+void test_https_non_standard_port_host_header()
+{
+    test_tls_host_header_format("example.com", 8443, "example.com:8443");
+}
+
+void test_ipv6_bracketed_zone_id_host_header()
+{
+    /* Already bracketed input - zone ID detection only works on unbracketed addresses,
+     * so this passes through as-is. In practice, bracketed input shouldn't have zone IDs. */
+    test_host_header_format("[fe80::1%eth0]", 8080, "[fe80::1%eth0]:8080");
+}
+
+void test_https_ipv6_default_port_host_header()
+{
+    test_tls_host_header_format("::1", 443, "[::1]");
+}
+
+void test_https_ipv6_non_standard_port_host_header()
+{
+    test_tls_host_header_format("::1", 8443, "[::1]:8443");
+}
+
+void test_https_ipv6_zone_id_default_port_host_header()
+{
+    test_tls_host_header_format("fe80::1%eth0", 443, "[fe80::1]");
+}
+
+void test_https_ipv6_zone_id_non_standard_port_host_header()
+{
+    test_tls_host_header_format("fe80::1%eth0", 8443, "[fe80::1]:8443");
+}
+
 TEST_LIST = {
     { "http_buffer_increase"  , test_http_buffer_increase},
     { "add_get_header"        , test_http_add_get_header},
@@ -474,5 +646,20 @@ TEST_LIST = {
     { "encoding_gzip"         , test_http_encoding_gzip},
     { "add_basic_auth_header" , test_http_add_basic_auth_header},
     { "add_proxy_auth_header" , test_http_add_proxy_auth_header},
+    { "ipv6_host_header"      , test_http_ipv6_host_header},
+    { "ipv6_bracketed_host_header", test_http_ipv6_bracketed_host_header},
+    { "ipv4_host_header"      , test_http_ipv4_host_header},
+    { "domain_host_header"    , test_http_domain_host_header},
+    { "https_default_port_host_header", test_https_default_port_host_header},
+    { "ipv6_formats_host_header", test_ipv6_formats_host_header},
+    { "http_port_80_host_header", test_http_port_80_host_header},
+    { "port_443_without_tls_host_header", test_port_443_without_tls_host_header},
+    { "ipv6_zone_id_host_header", test_ipv6_zone_id_host_header},
+    { "https_non_standard_port_host_header", test_https_non_standard_port_host_header},
+    { "ipv6_bracketed_zone_id_host_header", test_ipv6_bracketed_zone_id_host_header},
+    { "https_ipv6_default_port_host_header", test_https_ipv6_default_port_host_header},
+    { "https_ipv6_non_standard_port_host_header", test_https_ipv6_non_standard_port_host_header},
+    { "https_ipv6_zone_id_default_port_host_header", test_https_ipv6_zone_id_default_port_host_header},
+    { "https_ipv6_zone_id_non_standard_port_host_header", test_https_ipv6_zone_id_non_standard_port_host_header},
     { 0 }
 };
