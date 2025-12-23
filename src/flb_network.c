@@ -30,6 +30,7 @@
 #ifdef FLB_SYSTEM_WINDOWS
 #define poll WSAPoll
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #else
 #include <sys/poll.h>
 #endif
