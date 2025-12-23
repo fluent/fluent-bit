@@ -74,8 +74,9 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
     int ret;
     int set = MK_FALSE;
     struct mk_event *event;
-    struct kevent ke = {0, 0, 0, 0, 0, 0};
+    struct kevent ke;
 
+    EV_SET(&ke, 0, 0, 0, 0, 0, 0);
     mk_bug(ctx == NULL);
     mk_bug(data == NULL);
 
@@ -142,8 +143,9 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
 static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event)
 {
     int ret;
-    struct kevent ke = {0, 0, 0, 0, 0, 0};
+    struct kevent ke;
 
+    EV_SET(&ke, 0, 0, 0, 0, 0, 0);
     mk_bug(ctx == NULL);
     mk_bug(event == NULL);
 
@@ -208,12 +210,16 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     event->priority = MK_EVENT_PRIORITY_DEFAULT;
     mk_list_entry_init(&event->_priority_head);
 
-#if defined(NOTE_SECONDS) && !defined(__APPLE__)
-    /* FreeBSD or LINUX_KQUEUE defined */
-    /* TODO : high resolution interval support. */
+#if defined(NOTE_NSECONDS)
+    /* The modern FreeBSD & NetBSD & OpenBSD & macOS have a high-resolution
+       event timer. */
+    EV_SET(&ke, fd, EVFILT_TIMER, EV_ADD, NOTE_NSECONDS,
+           (sec * 1000000000) + nsec, event);
+#elif defined(NOTE_SECONDS) && !defined(__APPLE__)
+    /* LINUX_KQUEUE defined */
     EV_SET(&ke, fd, EVFILT_TIMER, EV_ADD, NOTE_SECONDS, sec, event);
 #else
-    /* Other BSD have no NOTE_SECONDS & specify milliseconds */
+    /* Keep backward compatibility; use the millisecond-resolution event timer. */
     /* Also, on macOS, NOTE_SECONDS has severe side effect that cause
      * performance degradation. */
     EV_SET(&ke, fd, EVFILT_TIMER, EV_ADD, 0, (sec * 1000) + (nsec / 1000000) , event);
@@ -239,8 +245,9 @@ static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data
 {
     int ret;
     struct mk_event *event;
-    struct kevent ke = {0, 0, 0, 0, 0, 0};
+    struct kevent ke;
 
+    EV_SET(&ke, 0, 0, 0, 0, 0, 0);
     if (data == NULL) {
         return 0;
     }
@@ -316,14 +323,11 @@ static inline int _mk_event_channel_destroy(struct mk_event_ctx *ctx,
     }
 
     ret = _mk_event_del(ctx, event);
-    if (ret != 0) {
-        return ret;
-    }
 
     close(r_fd);
     close(w_fd);
 
-    return 0;
+    return ret;
 }
 
 static inline int _mk_event_inject(struct mk_event_loop *loop,
