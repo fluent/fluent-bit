@@ -18,7 +18,7 @@ jobs:
       matrix:
         format: [ rpm, deb ]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: true
 
@@ -39,7 +39,7 @@ jobs:
             echo ${{ matrix.format }} | awk '{print toupper($0)}' | xargs -I{} cpack -G {}
 
       - name: Store the master package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.format }}-arm64
           path: |
@@ -54,7 +54,7 @@ jobs:
 
     runs-on: [ ubuntu-latest ]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: true
 
@@ -64,7 +64,7 @@ jobs:
           echo ${{ matrix.format }} | awk '{print toupper($0)}' | xargs -I{} cpack -G {}
 
       - name: Store the master package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.format }}-amd64
           path: |
@@ -81,7 +81,7 @@ jobs:
             ext: pkg
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: true
 
@@ -91,7 +91,7 @@ jobs:
           echo ${{ matrix.config.format }} | xargs -I{} cpack -G {}
 
       - name: Store the master package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.config.format }}-${{matrix.config.arch}}
           path: |
@@ -109,7 +109,7 @@ jobs:
       contents: write
     steps:
       - name: Download all artefacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           path: artifacts/
 
