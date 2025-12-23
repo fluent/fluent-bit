@@ -404,14 +404,11 @@ static inline int _mk_event_channel_destroy(struct mk_event_ctx *ctx,
     }
 
     ret = _mk_event_del(ctx, event);
-    if (ret != 0) {
-        return ret;
-    }
 
     evutil_closesocket(r_fd);
     evutil_closesocket(w_fd);
 
-    return 0;
+    return ret;
 }
 
 static inline int _mk_event_inject(struct mk_event_loop *loop,
