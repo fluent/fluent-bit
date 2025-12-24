@@ -199,7 +199,7 @@ option(FLB_SIMD                "Enable SIMD support"                         No)
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
 option(FLB_AVRO_ENCODER        "Build with Avro encoding support"            No)
 option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support"      No)
-option(FLB_ARROW               "Build with Apache Arrow support"             No)
+option(FLB_PARQUET_ENCODER     "Build with Parquet encoding support"         No)
 option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"     Yes)
 option(FLB_WASM                "Build with WASM runtime support"            Yes)
 option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
@@ -1334,22 +1334,24 @@ if(FLB_OUT_PGSQL AND (NOT PostgreSQL_FOUND))
    FLB_OPTION(FLB_OUT_PGSQL OFF)
 endif()
 
-# Arrow GLib
-# ==========
-find_package(PkgConfig)
-pkg_check_modules(ARROW_GLIB QUIET arrow-glib)
-if(FLB_ARROW AND ARROW_GLIB_FOUND)
-  FLB_DEFINITION(FLB_HAVE_ARROW)
-else()
-  set(FLB_ARROW OFF)
-endif()
+# Parquet
+if(FLB_PARQUET_ENCODER)
+  # Enable C++ for Parquet support
+  enable_language(CXX)
+  set(CMAKE_CXX_STANDARD 17)
 
-# Additional prerequisites for Apache Parquet
-pkg_check_modules(ARROW_GLIB_PARQUET QUIET parquet-glib)
-if(FLB_ARROW AND ARROW_GLIB_PARQUET_FOUND)
-  FLB_DEFINITION(FLB_HAVE_ARROW_PARQUET)
-else()
-  message(STATUS "Arrow GLib Parquet not found. Disabling parquet compression")
+  # Detect Arrow and Parquet libraries
+  include(cmake/parquet.cmake)
+
+  if(ARROW_FOUND AND PARQUET_FOUND)
+    FLB_DEFINITION(FLB_HAVE_PARQUET_ENCODER)
+    include_directories(${ARROW_INCLUDE_DIRS})
+    include_directories(${PARQUET_INCLUDE_DIRS})
+  else()
+    message(WARNING "FLB_PARQUET_ENCODER is enabled but Arrow/Parquet libraries not found.")
+    message(WARNING "Disabling Parquet encoder support.")
+    set(FLB_PARQUET_ENCODER OFF)
+  endif()
 endif()
 
 # EBPF Support
