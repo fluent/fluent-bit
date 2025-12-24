@@ -274,6 +274,7 @@ struct flb_config *flb_config_init()
     config->init_time    = time(NULL);
     config->kernel       = flb_kernel_info();
     config->verbose      = 3;
+    config->banner       = FLB_TRUE;
     config->grace        = 5;
     config->grace_count  = 0;
     config->grace_input  = config->grace / 2;
