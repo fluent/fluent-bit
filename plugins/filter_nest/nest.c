@@ -385,7 +385,7 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
         }
         memcpy(tmp, key, klen);
         tmp[klen] = '\0';
-        flb_plg_warn(ctx->ins, "Value of key '%s' is not a map. "
+        flb_plg_info(ctx->ins, "Value of key '%s' is not a map. "
                      "Will not attempt to lift from here",
                      tmp);
         flb_free(tmp);
