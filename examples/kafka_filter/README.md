@@ -9,11 +9,13 @@ This directory contains examples for using Fluent Bit with Apache Kafka, includi
 A simple example demonstrating Kafka input and output with a Lua filter.
 
 **Features:**
+
 - Kafka consumer input
 - Lua filter for message transformation
 - Kafka producer output
 
 **Usage:**
+
 ```bash
 docker-compose up
 ```
@@ -23,6 +25,7 @@ docker-compose up
 Comprehensive examples for AWS MSK with IAM authentication, covering various deployment scenarios.
 
 **Scenarios covered:**
+
 - Standard MSK cluster (auto-detected region)
 - MSK via PrivateLink (explicit region)
 - MSK Serverless (auto-detected region)
@@ -37,6 +40,7 @@ AWS MSK supports IAM authentication, which eliminates the need to manage separat
 ### Configuration
 
 Enable MSK IAM authentication by setting:
+
 ```ini
 rdkafka.sasl.mechanism aws_msk_iam
 ```
@@ -44,6 +48,7 @@ rdkafka.sasl.mechanism aws_msk_iam
 ### Region Detection
 
 Fluent Bit can automatically detect the AWS region from standard MSK broker hostnames:
+
 - `b-1.example.kafka.us-east-1.amazonaws.com` → region: `us-east-1`
 - `boot-abc.kafka-serverless.us-west-2.amazonaws.com` → region: `us-west-2`
 - `vpce-123.kafka.eu-west-1.vpce.amazonaws.com` → region: `eu-west-1`
@@ -87,16 +92,19 @@ Your IAM role or user needs the following permissions:
         "kafka-cluster:WriteData"
       ],
       "Resource": [
-        "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
-        "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/*",
-        "arn:aws:kafka:REGION:ACCOUNT:group/CLUSTER_NAME/*"
+        "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/CLUSTER_UUID",
+        "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/CLUSTER_UUID/*",
+        "arn:aws:kafka:REGION:ACCOUNT:group/CLUSTER_NAME/CLUSTER_UUID/*"
       ]
     }
   ]
 }
 ```
 
+**Note:** The cluster UUID can be found via the AWS Console, the DescribeCluster API, or the AWS CLI (`aws kafka describe-cluster`).
+
 **Note:** Adjust permissions based on your use case:
+
 - Consumers need: `Connect`, `DescribeCluster`, `ReadData`
 - Producers need: `Connect`, `WriteData`
 
@@ -104,13 +112,13 @@ Your IAM role or user needs the following permissions:
 
 ### Common Parameters
 
-| Parameter | Description | Required |
-|-----------|-------------|----------|
-| `brokers` | Comma-separated list of Kafka brokers | Yes |
-| `topics` | Topic name(s) for input or output | Yes |
-| `rdkafka.sasl.mechanism` | Set to `aws_msk_iam` for MSK IAM auth | For MSK IAM |
-| `aws_region` | AWS region (auto-detected if not set) | Only for custom DNS |
-| `group_id` | Consumer group ID | For input |
+| Parameter                | Description                           | Required            |
+| ------------------------ | ------------------------------------- | ------------------- |
+| `brokers`                | Comma-separated list of Kafka brokers | Yes                 |
+| `topics`                 | Topic name(s) for input or output     | Yes                 |
+| `rdkafka.sasl.mechanism` | Set to `aws_msk_iam` for MSK IAM auth | For MSK IAM         |
+| `aws_region`             | AWS region (auto-detected if not set) | Only for custom DNS |
+| `group_id`               | Consumer group ID                     | For input           |
 
 ### Additional librdkafka Parameters
 
@@ -129,17 +137,20 @@ For a complete list of parameters, see the [librdkafka configuration documentati
 ### Local Kafka (Docker)
 
 1. Start the Kafka stack:
+
    ```bash
    cd examples/kafka_filter
    docker-compose up -d
    ```
 
 2. Run Fluent Bit:
+
    ```bash
    fluent-bit -c kafka.conf
    ```
 
 3. Produce test messages:
+
    ```bash
    ./scripts/kafka-produce.sh
    ```
@@ -165,6 +176,7 @@ For a complete list of parameters, see the [librdkafka configuration documentati
 **Error:** `failed to setup MSK IAM authentication OAuth callback`
 
 **Solutions:**
+
 - For custom DNS/PrivateLink: Add `aws_region` parameter
 - Verify AWS credentials are available
 - Check IAM permissions
@@ -175,6 +187,7 @@ For a complete list of parameters, see the [librdkafka configuration documentati
 
 **Solution:**
 Explicitly set the region:
+
 ```ini
 aws_region us-east-1
 ```
@@ -183,6 +196,7 @@ aws_region us-east-1
 
 **Solution:**
 Increase timeout values:
+
 ```ini
 rdkafka.socket.timeout.ms 60000
 rdkafka.metadata.max.age.ms 180000
@@ -197,5 +211,6 @@ rdkafka.metadata.max.age.ms 180000
 ## Support
 
 For issues or questions:
+
 - [Fluent Bit GitHub Issues](https://github.com/fluent/fluent-bit/issues)
 - [Fluent Bit Slack Community](https://fluentbit.io/slack)
