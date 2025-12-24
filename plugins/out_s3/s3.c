@@ -39,8 +39,21 @@
 
 #include <msgpack.h>
 
+#ifdef FLB_HAVE_PARQUET_ENCODER
+#include <fluent-bit/flb_parquet.h>
+#endif
+
 #include "s3.h"
 #include "s3_store.h"
+
+/* Forward declarations */
+static struct multipart_upload *get_upload(struct flb_s3 *ctx,
+                                           const char *tag, int tag_len);
+static struct multipart_upload *create_upload(struct flb_s3 *ctx,
+                                              const char *tag, int tag_len,
+                                              time_t file_first_log_time);
+static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char *data,
+                                                  uint64_t bytes, struct flb_config *config);
 
 #define DEFAULT_S3_PORT 443
 #define DEFAULT_S3_INSECURE_PORT 80
@@ -64,10 +77,7 @@ static int s3_timer_create(struct flb_s3 *ctx);
 
 static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
                                     struct s3_file *chunk,
-                                    char **out_buf, size_t *out_size);
-
-static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_log_time,
-                         char *body, size_t body_size);
+                                    flb_sds_t *out_buf, size_t *out_size);
 
 static int put_all_chunks(struct flb_s3 *ctx);
 
@@ -92,14 +102,14 @@ static struct flb_aws_header *get_content_encoding_header(int compression_type)
         .val = "gzip",
         .val_len = 4,
     };
-    
+
     static struct flb_aws_header zstd_header = {
         .key = "Content-Encoding",
         .key_len = 16,
         .val = "zstd",
         .val_len = 4,
     };
-    
+
     switch (compression_type) {
         case FLB_AWS_COMPRESS_GZIP:
             return &gzip_header;
@@ -182,7 +192,9 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->content_type != NULL) {
         headers_len++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP || ctx->compression == FLB_AWS_COMPRESS_ZSTD) {
+    /* Skip Content-Encoding header for Parquet format - no outer compression applied */
+    if ((ctx->compression == FLB_AWS_COMPRESS_GZIP || ctx->compression == FLB_AWS_COMPRESS_ZSTD) &&
+        ctx->format != FLB_S3_FORMAT_PARQUET) {
         headers_len++;
     }
     if (ctx->canned_acl != NULL) {
@@ -212,7 +224,9 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n].val_len = strlen(ctx->content_type);
         n++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP || ctx->compression == FLB_AWS_COMPRESS_ZSTD) {
+    /* Skip Content-Encoding header for Parquet format - no outer compression applied */
+    if ((ctx->compression == FLB_AWS_COMPRESS_GZIP || ctx->compression == FLB_AWS_COMPRESS_ZSTD) &&
+        ctx->format != FLB_S3_FORMAT_PARQUET) {
         encoding_header = get_content_encoding_header(ctx->compression);
 
         if (encoding_header == NULL) {
@@ -727,22 +741,86 @@ static int cb_s3_init(struct flb_output_instance *ins,
             ctx->use_put_object = FLB_TRUE;
     }
 
+    /* Step 1: Parse compression parameter (default is "none") */
+    ctx->compression = FLB_AWS_COMPRESS_NONE;  /* default */
+
     tmp = flb_output_get_property("compression", ins);
     if (tmp) {
         ret = flb_aws_compression_get_type(tmp);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
-            return -1;
-        }
-        if (ctx->use_put_object == FLB_FALSE &&
-            (ret == FLB_AWS_COMPRESS_ARROW ||
-             ret == FLB_AWS_COMPRESS_PARQUET)) {
+
+        /* Handle legacy compression values that should set format instead */
+        if (ret == FLB_AWS_COMPRESS_ARROW || ret == FLB_AWS_COMPRESS_PARQUET) {
+            flb_plg_warn(ctx->ins,
+                "DEPRECATED: compression=%s is deprecated. Use format=parquet instead.", tmp);
+
+            /* Check if Parquet support is available */
+#ifndef FLB_HAVE_PARQUET_ENCODER
             flb_plg_error(ctx->ins,
-                          "use_put_object must be enabled when Apache Arrow or Parquet is enabled");
+                         "Parquet format is not supported in this build. "
+                         "Rebuild with -DFLB_PARQUET_ENCODER=On.");
+            return -1;
+#else
+            ctx->format = FLB_S3_FORMAT_PARQUET;
+            /* Keep default no compression */
+#endif
+        }
+        else if (ret == -1) {
+            flb_plg_error(ctx->ins, "Unknown compression type: %s", tmp);
             return -1;
         }
-        ctx->compression = ret;
+        else {
+            /* Valid compression: none, gzip, snappy, or zstd */
+            ctx->compression = ret;
+        }
     }
+
+    /* Step 2: Parse format parameter (overrides legacy compression settings) */
+    tmp = flb_output_get_property("format", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "json") == 0) {
+            ctx->format = FLB_S3_FORMAT_JSON;
+        }
+#ifdef FLB_HAVE_PARQUET_ENCODER
+        else if (strcasecmp(tmp, "parquet") == 0) {
+            ctx->format = FLB_S3_FORMAT_PARQUET;
+        }
+#endif
+        else {
+            /* Build error message based on available formats */
+            flb_plg_error(ctx->ins, "Invalid format '%s'. Supported formats: json"
+#ifdef FLB_HAVE_PARQUET_ENCODER
+                ", parquet"
+#endif
+                , tmp);
+            return -1;
+        }
+    }
+    else if (ctx->format != FLB_S3_FORMAT_PARQUET) {
+        /* Default format is JSON (unless already set by legacy compression) */
+        ctx->format = FLB_S3_FORMAT_JSON;
+    }
+
+    /* Step 3: Validate format-specific requirements */
+#ifndef FLB_HAVE_PARQUET_ENCODER
+    if (ctx->format == FLB_S3_FORMAT_PARQUET) {
+        flb_plg_error(ctx->ins,
+                     "format=parquet requires compilation with -DFLB_PARQUET_ENCODER=On");
+        return -1;
+    }
+#else
+    /* Parquet format uses internal compression only - no outer compression layer */
+    if (ctx->format == FLB_S3_FORMAT_PARQUET) {
+        if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+            flb_plg_info(ctx->ins,
+                        "format=parquet: using %s compression",
+                        ctx->compression == FLB_AWS_COMPRESS_GZIP ? "GZIP" :
+                        ctx->compression == FLB_AWS_COMPRESS_ZSTD ? "ZSTD" :
+                        ctx->compression == FLB_AWS_COMPRESS_SNAPPY ? "SNAPPY" : "NONE");
+        }
+        /* Note: ctx->compression will be passed to flb_msgpack_raw_to_parquet for internal compression */
+        /* No outer compression layer is applied for Parquet format */
+    }
+#endif
 
     tmp = flb_output_get_property("content_type", ins);
     if (tmp) {
@@ -789,7 +867,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
          */
         ctx->upload_chunk_size = ctx->file_size;
         if (ctx->file_size > MAX_FILE_SIZE_PUT_OBJECT) {
-            flb_plg_error(ctx->ins, "Max total_file_size is 50M when use_put_object is enabled");
+            flb_plg_error(ctx->ins, "max total_file_size is 1GB (1,000,000,000 bytes) when use_put_object is enabled");
             return -1;
         }
     }
@@ -1138,7 +1216,7 @@ static int cb_s3_worker_exit(void *data, struct flb_config *config)
  */
 static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
                        struct multipart_upload *m_upload,
-                       char *body, size_t body_size,
+                       flb_sds_t body, size_t body_size,
                        const char *tag, int tag_len)
 {
     int init_upload = FLB_FALSE;
@@ -1147,10 +1225,11 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
     int part_num_check = FLB_FALSE;
     int timeout_check = FLB_FALSE;
     int ret;
-    void *payload_buf = NULL;
-    size_t payload_size = 0;
+    flb_sds_t compressed_body = NULL;
     size_t preCompress_size = 0;
     time_t file_first_log_time = time(NULL);
+    flb_sds_t body_to_send = body;
+    size_t size_to_send = body_size;
 
     /*
      * When chunk does not exist, file_first_log_time will be the current time.
@@ -1162,9 +1241,13 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
         file_first_log_time = chunk->first_log_time;
     }
 
-    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
-        /* Map payload */
-        ret = flb_aws_compression_compress(ctx->compression, body, body_size, &payload_buf, &payload_size);
+    /* Skip outer compression for Parquet format - it handles compression internally */
+    if (ctx->compression != FLB_AWS_COMPRESS_NONE && ctx->format != FLB_S3_FORMAT_PARQUET) {
+        void *temp_buf = NULL;
+        size_t temp_size = 0;
+
+        /* Compress data */
+        ret = flb_aws_compression_compress(ctx->compression, body, body_size, &temp_buf, &temp_size);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to compress data");
             if (chunk != NULL) {
@@ -1173,11 +1256,24 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
             }
             return FLB_RETRY;
         }
-        else {
-            preCompress_size = body_size;
-            body = (void *) payload_buf;
-            body_size = payload_size;
+
+        /* Convert compressed data to flb_sds_t for consistent memory management */
+        compressed_body = flb_sds_create_len(temp_buf, temp_size);
+        flb_free(temp_buf);
+        temp_buf = NULL;
+
+        if (!compressed_body) {
+            flb_plg_error(ctx->ins, "Failed to create sds for compressed data");
+            if (chunk != NULL) {
+                s3_store_file_unlock(chunk);
+                chunk->failures += 1;
+            }
+            return FLB_RETRY;
         }
+
+        preCompress_size = body_size;
+        body_to_send = compressed_body;
+        size_to_send = temp_size;
     }
 
     if (ctx->use_put_object == FLB_TRUE) {
@@ -1231,10 +1327,13 @@ put_object:
     /*
      * remove chunk from buffer list
      */
-    ret = s3_put_object(ctx, tag, file_first_log_time, body, body_size);
-    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
-        flb_free(payload_buf);
+    ret = s3_put_object(ctx, tag, file_first_log_time, body_to_send, size_to_send);
+
+    /* Cleanup compressed buffer if it was created */
+    if (compressed_body) {
+        flb_sds_destroy(compressed_body);
     }
+
     if (ret < 0) {
         /* re-add chunk to list */
         if (chunk) {
@@ -1259,8 +1358,9 @@ multipart:
             if (chunk) {
                 s3_store_file_unlock(chunk);
             }
-            if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
-                flb_free(payload_buf);
+            /* Cleanup compressed buffer if it was created */
+            if (compressed_body) {
+                flb_sds_destroy(compressed_body);
             }
             return FLB_RETRY;
         }
@@ -1273,19 +1373,24 @@ multipart:
             if (chunk) {
                 s3_store_file_unlock(chunk);
             }
-            if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
-                flb_free(payload_buf);
+            /* Cleanup compressed buffer if it was created */
+            if (compressed_body) {
+                flb_sds_destroy(compressed_body);
             }
             return FLB_RETRY;
         }
         m_upload->upload_state = MULTIPART_UPLOAD_STATE_CREATED;
     }
 
-    ret = upload_part(ctx, m_upload, body, body_size, NULL);
+    ret = upload_part(ctx, m_upload, body_to_send, size_to_send, NULL);
+
+    /* Cleanup compressed buffer if it was created */
+    if (compressed_body) {
+        flb_sds_destroy(compressed_body);
+        compressed_body = NULL;
+    }
+
     if (ret < 0) {
-        if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
-            flb_free(payload_buf);
-        }
         m_upload->upload_errors += 1;
         /* re-add chunk to list */
         if (chunk) {
@@ -1299,9 +1404,6 @@ multipart:
     if (chunk) {
         s3_store_file_delete(ctx, chunk);
         chunk = NULL;
-    }
-    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
-        flb_free(payload_buf);
     }
     if (m_upload->bytes >= ctx->file_size) {
         size_check = FLB_TRUE;
@@ -1345,9 +1447,7 @@ static int put_all_chunks(struct flb_s3 *ctx)
     struct mk_list *f_head;
     struct flb_fstore_file *fsf;
     struct flb_fstore_stream *fs_stream;
-    void *payload_buf = NULL;
-    size_t payload_size = 0;
-    char *buffer = NULL;
+    flb_sds_t buffer = NULL;
     size_t buffer_size;
     int ret;
 
@@ -1365,6 +1465,9 @@ static int put_all_chunks(struct flb_s3 *ctx)
         mk_list_foreach_safe(f_head, tmp, &fs_stream->files) {
             fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
             chunk = fsf->data;
+
+            /* Reset buffer for each chunk */
+            buffer = NULL;
 
             /* Locked chunks are being processed, skip */
             if (chunk->locked == FLB_TRUE) {
@@ -1388,24 +1491,13 @@ static int put_all_chunks(struct flb_s3 *ctx)
                 return -1;
             }
 
-            if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
-                /* Map payload */
-                ret = flb_aws_compression_compress(ctx->compression, buffer, buffer_size, &payload_buf, &payload_size);
-                if (ret == -1) {
-                    flb_plg_error(ctx->ins, "Failed to compress data, uploading uncompressed data instead to prevent data loss");
-                } else {
-                    flb_plg_info(ctx->ins, "Pre-compression chunk size is %zu, After compression, chunk is %zu bytes", buffer_size, payload_size);
-                    flb_free(buffer);
-
-                    buffer = (void *) payload_buf;
-                    buffer_size = payload_size;
-                }
-            }
-
             ret = s3_put_object(ctx, (const char *)
                                 fsf->meta_buf,
                                 chunk->create_time, buffer, buffer_size);
-            flb_free(buffer);
+
+            /* Always use flb_sds_destroy - buffer is always flb_sds_t now */
+            flb_sds_destroy(buffer);
+
             if (ret < 0) {
                 s3_store_file_unlock(chunk);
                 chunk->failures += 1;
@@ -1422,16 +1514,18 @@ static int put_all_chunks(struct flb_s3 *ctx)
 
 /*
  * Either new_data or chunk can be NULL, but not both
+ * Reads msgpack data from storage and converts to target format
+ * IMPORTANT: Always returns flb_sds_t for consistent memory management
  */
 static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
                                     struct s3_file *chunk,
-                                    char **out_buf, size_t *out_size)
+                                    flb_sds_t *out_buf, size_t *out_size)
 {
-    char *body;
+    char *msgpack_data = NULL;
+    size_t msgpack_size = 0;
+    flb_sds_t formatted_data = NULL;
+    size_t formatted_size = 0;
     char *tmp;
-    size_t body_size = 0;
-    char *buffered_data = NULL;
-    size_t buffer_size = 0;
     int ret;
 
     if (new_data == NULL && chunk == NULL) {
@@ -1440,51 +1534,134 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
         return -1;
     }
 
+    /* Read buffered msgpack data from file */
     if (chunk) {
-        ret = s3_store_file_read(ctx, chunk, &buffered_data, &buffer_size);
+        ret = s3_store_file_read(ctx, chunk, &msgpack_data, &msgpack_size);
         if (ret < 0) {
             flb_plg_error(ctx->ins, "Could not read locally buffered data %s",
                           chunk->file_path);
             return -1;
         }
-
-        /*
-         * lock the chunk from buffer list
-         */
         s3_store_file_lock(chunk);
-        body = buffered_data;
-        body_size = buffer_size;
     }
 
-    /*
-     * If new data is arriving, increase the original 'buffered_data' size
-     * to append the new one.
-     */
+    /* Append new msgpack data if provided */
     if (new_data) {
-        body_size += flb_sds_len(new_data);
-
-        tmp = flb_realloc(buffered_data, body_size + 1);
+        msgpack_size += flb_sds_len(new_data);
+        tmp = flb_realloc(msgpack_data, msgpack_size);
         if (!tmp) {
             flb_errno();
-            flb_free(buffered_data);
+            flb_free(msgpack_data);
             if (chunk) {
                 s3_store_file_unlock(chunk);
             }
             return -1;
         }
-        body = buffered_data = tmp;
-        memcpy(body + buffer_size, new_data, flb_sds_len(new_data));
-        body[body_size] = '\0';
+        msgpack_data = tmp;
+        memcpy(msgpack_data + (msgpack_size - flb_sds_len(new_data)),
+               new_data, flb_sds_len(new_data));
     }
 
-    *out_buf = body;
-    *out_size = body_size;
+    /* Convert msgpack to target format */
+    if (ctx->log_key) {
+        /* Extract log_key field */
+        formatted_data = flb_pack_msgpack_extract_log_key(ctx, msgpack_data,
+                                                          msgpack_size,
+                                                          ctx->ins->config);
+        formatted_size = formatted_data ? strlen(formatted_data) : 0;
+    }
+    else if (ctx->format == FLB_S3_FORMAT_JSON) {
+        /* Convert to JSON */
+        formatted_data = flb_pack_msgpack_to_json_format(msgpack_data, msgpack_size,
+                                                         FLB_PACK_JSON_FORMAT_LINES,
+                                                         ctx->json_date_format,
+                                                         ctx->date_key,
+                                                         ctx->ins->config->json_escape_unicode);
+        formatted_size = formatted_data ? flb_sds_len(formatted_data) : 0;
+    }
+#ifdef FLB_HAVE_PARQUET_ENCODER
+    else if (ctx->format == FLB_S3_FORMAT_PARQUET) {
+        /* Convert to Parquet with Arrow-managed allocation and user-defined schema */
+        void *parquet_buffer = NULL;
+        size_t parquet_size = 0;
+
+        if (!ctx->schema_str) {
+            flb_plg_error(ctx->ins, "schema_str is required when format=parquet");
+            flb_free(msgpack_data);
+            if (chunk) {
+                chunk->failures++;
+                s3_store_file_unlock(chunk);
+            }
+            return -1;
+        }
+
+        parquet_buffer = flb_msgpack_raw_to_parquet(
+            msgpack_data, msgpack_size,
+            ctx->schema_str,
+            ctx->compression,
+            &parquet_size
+        );
+
+        if (!parquet_buffer || parquet_size == 0) {
+            flb_plg_error(ctx->ins, "Parquet conversion failed");
+            flb_free(msgpack_data);
+            if (chunk) {
+                chunk->failures++;
+                s3_store_file_unlock(chunk);
+            }
+            return -1;
+        }
+
+        /* Convert to flb_sds_t for consistent memory management */
+        formatted_data = flb_sds_create_len(parquet_buffer, parquet_size);
+        flb_free(parquet_buffer);
+
+        if (!formatted_data) {
+            flb_plg_error(ctx->ins, "Failed to create sds for Parquet data");
+            flb_free(msgpack_data);
+            if (chunk) {
+                chunk->failures++;
+                s3_store_file_unlock(chunk);
+            }
+            return -1;
+        }
+
+        formatted_size = parquet_size;
+    }
+#endif
+    else {
+        /* Default: JSON */
+        formatted_data = flb_pack_msgpack_to_json_format(msgpack_data, msgpack_size,
+                                                         FLB_PACK_JSON_FORMAT_LINES,
+                                                         ctx->json_date_format,
+                                                         ctx->date_key,
+                                                         ctx->ins->config->json_escape_unicode);
+        formatted_size = formatted_data ? flb_sds_len(formatted_data) : 0;
+    }
+
+    /* Free msgpack buffer */
+    flb_free(msgpack_data);
+
+    /* Check conversion success */
+    if (!formatted_data || formatted_size == 0) {
+        flb_plg_error(ctx->ins, "Failed to convert msgpack to target format");
+        if (formatted_data) {
+            flb_sds_destroy(formatted_data);
+        }
+        if (chunk) {
+            s3_store_file_unlock(chunk);
+        }
+        return -1;
+    }
+
+    *out_buf = formatted_data;
+    *out_size = formatted_size;
 
     return 0;
 }
 
-static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_log_time,
-                         char *body, size_t body_size)
+int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_log_time,
+                         flb_sds_t body, size_t body_size)
 {
     flb_sds_t s3_key = NULL;
     struct flb_http_client *c = NULL;
@@ -1817,7 +1994,7 @@ static int send_upload_request(void *out_context, flb_sds_t chunk,
                                const char *tag, int tag_len)
 {
     int ret;
-    char *buffer;
+    flb_sds_t buffer = NULL;
     size_t buffer_size;
     struct flb_s3 *ctx = out_context;
 
@@ -1832,7 +2009,9 @@ static int send_upload_request(void *out_context, flb_sds_t chunk,
 
     /* Upload to S3 */
     ret = upload_data(ctx, upload_file, m_upload_file, buffer, buffer_size, tag, tag_len);
-    flb_free(buffer);
+
+    /* Always use flb_sds_destroy - buffer is always flb_sds_t */
+    flb_sds_destroy(buffer);
 
     return ret;
 }
@@ -3264,7 +3443,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
     struct s3_file *chunk = NULL;
     struct multipart_upload *m_upload = NULL;
     struct flb_fstore_file *fsf;
-    char *buffer = NULL;
+    flb_sds_t buffer = NULL;
     size_t buffer_size = 0;
     struct mk_list *tmp;
     struct mk_list *head;
@@ -3299,10 +3478,14 @@ static void cb_s3_upload(struct flb_config *config, void *data)
             continue;
         }
 
-        /* FYI: if construct_request_buffer() succeedeed, the s3_file is locked */
+        /* FYI: if construct_request_buffer() succeeded, the s3_file is locked */
         ret = upload_data(ctx, chunk, m_upload, buffer, buffer_size,
                           (const char *) fsf->meta_buf, fsf->meta_size);
-        flb_free(buffer);
+
+        /* Always use flb_sds_destroy - buffer is always flb_sds_t */
+        flb_sds_destroy(buffer);
+        buffer = NULL;
+
         if (ret != FLB_OK) {
             flb_plg_error(ctx->ins, "Could not send chunk with tag %s",
                           (char *) fsf->meta_buf);
@@ -3521,7 +3704,7 @@ static void unit_test_flush(void *out_context, struct s3_file *upload_file,
                             time_t file_first_log_time)
 {
     int ret;
-    char *buffer;
+    flb_sds_t buffer = NULL;
     size_t buffer_size;
     struct flb_s3 *ctx = out_context;
 
@@ -3535,7 +3718,9 @@ static void unit_test_flush(void *out_context, struct s3_file *upload_file,
     }
 
     ret = upload_data(ctx, upload_file, m_upload_file, buffer, buffer_size, tag, tag_len);
-    flb_free(buffer);
+
+    /* Always use flb_sds_destroy - buffer is always flb_sds_t */
+    flb_sds_destroy(buffer);
 
     FLB_OUTPUT_RETURN(ret);
 }
@@ -3690,7 +3875,7 @@ static int process_blob_chunk(struct flb_s3 *ctx, struct flb_event_chunk *event_
             return -1;
         }
 
-        flb_plg_debug(ctx->ins, "blob file '%s' (id=%zu) registered with %zu parts",
+        flb_plg_debug(ctx->ins, "blob file '%s' (id=%" PRId64 ") registered with %" PRId64 " parts",
                       file_path, file_id, ret);
 
 
@@ -3765,26 +3950,16 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     /* Cleanup old buffers and initialize upload timer */
     flush_init(ctx);
 
-    /* Process chunk */
-    if (ctx->log_key) {
-        chunk = flb_pack_msgpack_extract_log_key(ctx,
-                                                 event_chunk->data,
-                                                 event_chunk->size,
-                                                 config);
-    }
-    else {
-        chunk = flb_pack_msgpack_to_json_format(event_chunk->data,
-                                                event_chunk->size,
-                                                FLB_PACK_JSON_FORMAT_LINES,
-                                                ctx->json_date_format,
-                                                ctx->date_key,
-                                                config->json_escape_unicode);
-    }
+    /*
+     * Store raw msgpack data directly - format conversion happens during upload.
+     * This avoids repeated conversions and enables better batching for columnar formats.
+     */
+    chunk = flb_sds_create_len(event_chunk->data, event_chunk->size);
     if (chunk == NULL) {
-        flb_plg_error(ctx->ins, "Could not marshal msgpack to output string");
+        flb_plg_error(ctx->ins, "Failed to create buffer for msgpack data");
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
-    chunk_size = flb_sds_len(chunk);
+    chunk_size = event_chunk->size;
 
     /* Get a file candidate matching the given 'tag' */
     upload_file = s3_store_file_get(ctx,
@@ -4002,14 +4177,6 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_TIME, "upload_timeout", "10m",
-     0, FLB_TRUE, offsetof(struct flb_s3, upload_timeout),
-     "Optionally specify a timeout for uploads. "
-     "Whenever this amount of time has elapsed, Fluent Bit will complete an "
-     "upload and create a new file in S3. For example, set this value to 60m "
-     "and you will get a new file in S3 every hour. Default is 10m."
-    },
-    {
      FLB_CONFIG_MAP_STR, "bucket", NULL,
      0, FLB_TRUE, offsetof(struct flb_s3, bucket),
     "S3 bucket name."
@@ -4042,11 +4209,25 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compression", NULL,
      0, FLB_FALSE, 0,
-    "Compression type for S3 objects. 'gzip', 'arrow', 'parquet' and 'zstd' are the supported values. "
-    "'arrow' and 'parquet' are only available if Apache Arrow was enabled at compile time. "
-    "Defaults to no compression. "
-    "If 'gzip' is selected, the Content-Encoding HTTP Header will be set to 'gzip'."
-    "If 'zstd' is selected, the Content-Encoding HTTP Header will be set to 'zstd'."
+    "Compression type for S3 objects. Supported values: `none`, `gzip`, `snappy`, `zstd`. "
+    "Default: `none`. "
+    "`arrow` and `parquet` are deprecated legacy values that will set format=parquet. "
+    "If `gzip` is selected, the Content-Encoding HTTP Header will be set to `gzip`. "
+    "If `zstd` is selected, the Content-Encoding HTTP Header will be set to `zstd`."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "format", "json",
+     0, FLB_FALSE, 0,
+     "Output file format: `json` or `parquet`. "
+     "Default: `json`. "
+     "For Athena-compatible storage, use `parquet` for columnar storage with better query performance. "
+     "When `format=parquet` with `use_put_object=false`, enables multipart upload for large files."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "schema_str", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, schema_str),
+     "JSON schema for output format. Required when `format=parquet`. "
+     "Example: `{\"fields\":[{\"name\":\"message\",\"type\":{\"name\":\"utf8\"}}]}`"
     },
     {
      FLB_CONFIG_MAP_STR, "content_type", NULL,
@@ -4198,6 +4379,13 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_TIME, "upload_timeout", "10m",
+     0, FLB_TRUE, offsetof(struct flb_s3, upload_timeout),
+     "Timeout for complete file upload. When this timeout is reached, the plugin "
+     "will complete the multipart upload or send using PutObject. Default is 10 minutes."
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "authorization_endpoint_url", NULL,
      0, FLB_TRUE, offsetof(struct flb_s3, authorization_endpoint_url),
      "Authorization endpoint URL"
@@ -4215,14 +4403,14 @@ static struct flb_config_map config_map[] = {
      "Authorization endpoint basic authentication password"
     },
 
-    {
-     FLB_CONFIG_MAP_STR, "authorization_endpoint_bearer_token", NULL,
-     0, FLB_TRUE, offsetof(struct flb_s3, authorization_endpoint_bearer_token),
-     "Authorization endpoint bearer token"
-    },
+   {
+    FLB_CONFIG_MAP_STR, "authorization_endpoint_bearer_token", NULL,
+    0, FLB_TRUE, offsetof(struct flb_s3, authorization_endpoint_bearer_token),
+    "Authorization endpoint bearer token"
+   },
 
-    /* EOF */
-    {0}
+   /* EOF */
+   {0}
 };
 
 /* Plugin registration */
