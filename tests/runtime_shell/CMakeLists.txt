@@ -6,7 +6,6 @@ configure_file(
 set(UNIT_TESTS_SH
   custom_calyptia.sh
   in_dummy_expect.sh
-  in_tail_expect.sh
   in_http_tls_expect.sh
   in_syslog_tcp_tls_expect.sh
   in_syslog_tcp_plaintext_expect.sh
@@ -16,6 +15,12 @@ set(UNIT_TESTS_SH
   processor_conditional.sh
   processor_invalid.sh
   )
+
+if(FLB_SQLDB)
+set(UNIT_TESTS_SH
+    ${UNIT_TESTS_SH}
+    in_tail_expect.sh)
+endif()
 
 # Prepare list of unit tests
 foreach(script ${UNIT_TESTS_SH})
