@@ -1,5 +1,4 @@
 # Kafka CMake Configuration
-# kafka.cmake - Clean version without internal AWS check
 FLB_OPTION(RDKAFKA_BUILD_STATIC    On)
 FLB_OPTION(RDKAFKA_BUILD_EXAMPLES Off)
 FLB_OPTION(RDKAFKA_BUILD_TESTS    Off)
@@ -7,38 +6,46 @@ FLB_OPTION(ENABLE_LZ4_EXT         Off)
 
 include(FindPkgConfig)
 
-# Check for libsasl2 (required for SASL authentication)
-set(FLB_SASL_ENABLED OFF)
+# librdkafka has built-in support for:
+# - SASL/PLAIN (built-in, no external deps)
+# - SASL/SCRAM (built-in, no external deps)
+# - SASL/OAUTHBEARER (built-in, no external deps)
+# Only SASL/GSSAPI (Kerberos) requires cyrus-sasl library
+
+# Check for cyrus-sasl (optional, only needed for GSSAPI/Kerberos)
+set(FLB_SASL_CYRUS_ENABLED OFF)
 if(PkgConfig_FOUND)
   pkg_check_modules(SASL libsasl2)
   if(SASL_FOUND)
-    message(STATUS "Found libsasl2: ${SASL_VERSION}")
-    set(FLB_SASL_ENABLED ON)
+    message(STATUS "Found cyrus-sasl: ${SASL_VERSION}")
+    set(FLB_SASL_CYRUS_ENABLED ON)
   else()
-    message(WARNING "libsasl2 not found - SASL authentication will be disabled")
+    message(STATUS "cyrus-sasl not found - SASL/GSSAPI (Kerberos) will be disabled")
   endif()
 else()
-  message(WARNING "pkg-config not available - trying fallback SASL detection")
-  # Fallback detection
+  message(STATUS "pkg-config not available - trying fallback cyrus-sasl detection")
   find_library(SASL2_LIB NAMES sasl2)
   find_path(SASL2_INCLUDE NAMES sasl/sasl.h)
   if(SASL2_LIB AND SASL2_INCLUDE)
-    set(FLB_SASL_ENABLED ON)
-    message(STATUS "Found libsasl2 via fallback: ${SASL2_LIB}")
+    set(FLB_SASL_CYRUS_ENABLED ON)
+    message(STATUS "Found cyrus-sasl via fallback: ${SASL2_LIB}")
   endif()
 endif()
 
-# OAuth Bearer is built into librdkafka when SASL is available
-set(FLB_SASL_OAUTHBEARER_ENABLED ${FLB_SASL_ENABLED})
+# SASL is always enabled (built-in PLAIN/SCRAM/OAUTHBEARER support)
+set(FLB_SASL_ENABLED ON)
 
-# MSK IAM requires OAuth Bearer support
-set(FLB_KAFKA_MSK_IAM_ENABLED ${FLB_SASL_OAUTHBEARER_ENABLED})
+# OAuth Bearer is built into librdkafka (no external deps needed)
+set(FLB_SASL_OAUTHBEARER_ENABLED ON)
+
+# MSK IAM requires OAuth Bearer support (which is always available now)
+set(FLB_KAFKA_MSK_IAM_ENABLED ON)
 
 # Configure librdkafka options
-FLB_OPTION(WITH_SASL ${FLB_SASL_ENABLED})
-FLB_OPTION(WITH_SSL On)
-FLB_OPTION(WITH_SASL_OAUTHBEARER ${FLB_SASL_OAUTHBEARER_ENABLED})
-FLB_OPTION(WITH_SASL_CYRUS ${FLB_SASL_ENABLED})
+FLB_OPTION(WITH_SASL ON)                                        # Always ON (built-in PLAIN/SCRAM)
+FLB_OPTION(WITH_SSL On)                                        # SSL support
+FLB_OPTION(WITH_SASL_OAUTHBEARER ON)                          # Always ON (built-in)
+FLB_OPTION(WITH_SASL_CYRUS ${FLB_SASL_CYRUS_ENABLED})         # Only if cyrus-sasl found
 
 # Export compile-time definitions using FLB_DEFINITION macro
 if(FLB_SASL_ENABLED)

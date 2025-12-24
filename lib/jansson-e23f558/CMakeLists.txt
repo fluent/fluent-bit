@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.1)
+cmake_minimum_required (VERSION 3.12)
 project(jansson C)
 
 # Options
@@ -564,8 +564,9 @@ if (NOT JANSSON_WITHOUT_TESTS)
 
    # Enable using "make check" just like the autotools project.
    # By default cmake creates a target "make test"
-   add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
-                     DEPENDS json_process ${api_tests})
+   # Disabled to avoid conflicts with other libraries (e.g., nghttp2)
+   # add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
+   #                  DEPENDS json_process ${api_tests})
 endif ()
 
 #
