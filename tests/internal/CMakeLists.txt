@@ -64,6 +64,8 @@ if(FLB_TLS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     upstream_tls.c
+    oauth2_jwt.c
+    oauth2.c
     )
 endif()
 
