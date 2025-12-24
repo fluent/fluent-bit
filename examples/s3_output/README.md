@@ -198,40 +198,24 @@ s3://s3-bucket-kafka-sink/fluent-bit-logs/
 
 ### Parquet Schema Definition
 
-The configuration demonstrates the new **user-defined schema** approach for Parquet files.
+The configuration demonstrates the new **user-defined schema** approach for Parquet files:
 
-#### Design Philosophy: Schema as OUTPUT Format Declaration
-
-**CRITICAL UNDERSTANDING:** The `schema_str` defines the **OUTPUT Parquet file format**, NOT an input conversion specification.
-
-```json
-{
-  "fields": [
-    { "name": "timestamp", "type": "int64", "nullable": false },
-    { "name": "level", "type": "utf8", "nullable": false }
-  ]
-}
-```
-
-**What this means:**
-
-- ✅ Schema declares: "The output Parquet file will have these columns with these types"
-- ✅ Best Effort handles TYPE conversions: string→int, map→JSON, etc.
-- ❌ Schema does NOT mean: "Convert my data to match these types" (for things like units)
-- ❌ Best Effort does NOT handle UNIT conversions: milliseconds→seconds, etc.
-
-**Your responsibility:**
-
-- Ensure input data types are compatible with schema types (we'll do reasonable conversions)
-- For timestamps: Ensure input unit matches schema unit (we can't detect or convert units)
-- For numeric fields: Use appropriate precision (int32 vs int64) to avoid overflow
-
-#### Supported Types
-
-- **Basic types**: `bool`, `int32`, `int64`, `float`, `double`, `utf8`, `binary`
-- **Timestamp type**: `{"name": "timestamp", "unit": "s"|"ms"|"us"|"ns"}`
-  - **IMPORTANT**: The `unit` parameter declares the output unit in Parquet
-  - See "Timestamp Type and Unit Parameter" section below for critical details
+- **schema_str**: JSON string defining the Arrow schema
+- **Format**: `{"fields":[{"name":"column_name","type":"data_type","nullable":true|false}]}`
+- **Supported types**:
+  - Basic: `bool`, `int32`, `int64`, `float`, `double`, `utf8`, `binary`
+  - Complex: `timestamp` with units (s, ms, us, ns)
+- **Example**:
+  ```json
+  {
+    "fields": [
+      { "name": "timestamp", "type": "int64", "nullable": false },
+      { "name": "level", "type": "utf8", "nullable": false },
+      { "name": "message", "type": "utf8", "nullable": false },
+      { "name": "value", "type": "int64", "nullable": true }
+    ]
+  }
+  ```
 
 #### Type Mismatch and Data Handling
 
@@ -253,262 +237,7 @@ The configuration demonstrates the new **user-defined schema** approach for Parq
      - `utf8`, `binary`: empty string/bytes
      - `timestamp`: `0` (Unix epoch: 1970-01-01 00:00:00)
 
-3. **Automatic Type Conversions** (NEW):
-
-   **Best Effort Conversion Mode**: Fluent Bit uses a **best effort** approach for type conversions - it will try to convert data to match the schema type, but won't fail the entire record if conversion is impossible. Instead:
-
-   - Successful conversions are logged for monitoring
-   - Failed conversions fall back to NULL (for nullable fields) or default values (for non-nullable fields)
-   - This ensures maximum data ingestion while maintaining data quality visibility
-
-   **Best Effort Conversion Boundaries**:
-
-   ✅ **Reasonable conversions** (supported):
-
-   - String parsing: `"123"` → int, `"3.14"` → float, `"true"` → bool
-   - Type formatting: int/float/bool → string (e.g., `123` → `"123"`)
-   - JSON serialization: MAP/ARRAY → string (e.g., `{"a":1}` → `'{"a":1}'`)
-   - Basic type casting: int ↔ float ↔ bool with clear semantics
-
-   ❌ **Unreasonable conversions** (rejected):
-
-   - Binary semantics: int/float/bool → binary (loses type information)
-   - Complex collapse: MAP/ARRAY → int/float/bool (no clear semantics)
-   - Date parsing: ISO 8601 strings → timestamp (requires date library)
-
-   **Design principle**: Conversions should be **reversible or have clear semantics**.
-   Receivers should be able to understand the data without additional context.
-
-   Fluent Bit automatically converts between compatible types to maximize data compatibility:
-
-   **Complex types to string** (JSON serialization):
-
-   ```
-   Schema: {"name": "config", "type": "string"}
-   Data:   {"host": "localhost", "port": 8080}  →  '{"host":"localhost","port":8080}'
-   Data:   [1, 2, 3, 4, 5]                      →  '[1,2,3,4,5]'
-   ```
-
-   **String parsing to numbers**:
-
-   ```
-   Schema: {"name": "age", "type": "int32"}
-   Data:   "25"        →  25
-   Data:   "3.14"      →  3 (truncated)
-
-   Schema: {"name": "score", "type": "double"}
-   Data:   "3.14"      →  3.14
-   ```
-
-   **String parsing to boolean**:
-
-   ```
-   Schema: {"name": "active", "type": "bool"}
-   Data:   "true"      →  true
-   Data:   "1"         →  true
-   Data:   "yes"       →  true  (also: y, on)
-   Data:   "false"     →  false (also: 0, no, n, off)
-   ```
-
-   **Conversion statistics**: When conversions occur, you'll see detailed logs:
-
-   ```
-   [parquet] Data quality summary for 1000 records:
-   [parquet] Complex types serialized to JSON string:
-   [parquet]   field='metadata' count=500
-   [parquet] Strings parsed to integers:
-   [parquet]   field='user_id' count=200
-   [parquet] Strings parsed to floats:
-   [parquet]   field='amount' count=150
-   [parquet] Strings parsed to booleans:
-   [parquet]   field='is_active' count=100
-   ```
-
-   **Type conversion matrix**:
-   | Source Type | → string | → int | → float | → bool | → binary | → timestamp |
-   |-------------|----------|-------|---------|--------|----------|-------------|
-   | string | ✅ Direct | ✅ Parse | ✅ Parse | ✅ Parse | ✅ Direct | ✅ Parse Unix timestamp |
-   | int | ✅ To text | ✅ Direct | ✅ Convert | ✅ 0/non-zero | ❌ Rejected | ✅ Direct |
-   | float | ✅ To text | ✅ Truncate | ✅ Direct | ✅ 0/non-zero | ❌ Rejected | ✅ Truncate |
-   | bool | ✅ "true"/"false" | ✅ 0/1 | ✅ 0.0/1.0 | ✅ Direct | ❌ Rejected | ✅ 0 or 1 |
-   | map | ✅ JSON | ⚠️ NULL/default* | ⚠️ NULL/default* | ⚠️ NULL/default* | ❌ Rejected | ⚠️ NULL/default* |
-   | array | ✅ JSON | ⚠️ NULL/default* | ⚠️ NULL/default* | ⚠️ NULL/default* | ❌ Rejected | ⚠️ NULL/default* |
-   | binary | ✅ Direct | ⚠️ NULL/default* | ⚠️ NULL/default* | ⚠️ NULL/default* | ✅ Direct | ⚠️ NULL/default* |
-
-   _\*Cannot convert - returns NULL for nullable fields, or default value (0/false/empty) for non-nullable fields. Data is NOT discarded._
-
-   **Binary type restrictions**:
-
-   Binary fields only accept actual binary data to maintain data semantics:
-
-   ```
-   Schema: {"name":"data", "type":"binary"}
-   Data:   binary_blob   →  Direct bytes ✅
-   Data:   "hello"       →  Direct bytes ✅
-   Data:   123 (int)     →  Rejected ❌ (unclear semantics)
-   Data:   3.14 (float)  →  Rejected ❌ (unclear semantics)
-   Data:   true (bool)   →  Rejected ❌ (unclear semantics)
-   ```
-
-   **Why binary conversion is limited:**
-
-   - Binary fields should contain actual binary data, not arbitrary type conversions
-   - Converting int/float/bool to binary loses type information
-   - Receivers cannot correctly interpret the data without knowing the original type
-   - Use string type for formatted output of numbers/booleans
-
-   **Timestamp Type and Unit Parameter** (See detailed section below):
-
-   ```
-   Schema: {"name": "ts", "type": {"name": "timestamp", "unit": "s"}}
-   Data:   "1735088400"     →  Stored as 1735088400 (parsed from string)
-   Data:   1735088400       →  Stored as 1735088400 (direct integer)
-   Data:   true             →  Stored as 1 (best effort fallback)
-   ```
-
-   **⚠️ CRITICAL**: The `unit` parameter declares OUTPUT format, NOT input conversion.
-   See "Timestamp Type and Unit Parameter" section below for complete details.
-
-### Timestamp Type and Unit Parameter
-
-#### CRITICAL Understanding: Schema Defines OUTPUT Format
-
-The `unit` parameter in timestamp schema is an **output format declaration**, NOT a conversion instruction.
-
-```json
-{
-  "name": "ts",
-  "type": { "name": "timestamp", "unit": "s" }
-}
-```
-
-**What this declaration means:**
-
-- ✅ "The output Parquet file stores timestamps as int64 in **seconds**"
-- ✅ "Athena will interpret this int64 column as seconds-based timestamp"
-- ❌ NOT: "Convert my input data to seconds"
-- ❌ NOT: "Detect input unit and convert accordingly"
-
-**Why we cannot do automatic unit conversion:**
-
-```json
-// Input: {"timestamp": 1735088400}
-// Question: Is this seconds? milliseconds? microseconds?
-// Answer: WE CANNOT TELL from the number alone!
-```
-
-Numeric values don't carry unit metadata. The value `1735088400` could represent:
-
-- Seconds: 2024-12-25 00:00:00
-- Milliseconds: 1970-01-21 01:51:28
-- Microseconds: 1970-01-01 00:28:55
-
-**There is no way to automatically detect the input unit.**
-
-#### User Responsibility: Ensure Unit Match
-
-**YOU must ensure input data unit matches schema unit:**
-
-| Schema Unit | Input Must Be | Example Input    | Stored Value     | Athena Interprets As |
-| ----------- | ------------- | ---------------- | ---------------- | -------------------- |
-| `unit="s"`  | Seconds       | 1735088400       | 1735088400       | 2024-12-25 00:00:00  |
-| `unit="ms"` | Milliseconds  | 1735088400000    | 1735088400000    | 2024-12-25 00:00:00  |
-| `unit="us"` | Microseconds  | 1735088400000000 | 1735088400000000 | 2024-12-25 00:00:00  |
-
-**❌ What happens with unit mismatch:**
-
-```json
-Schema: {"name": "ts", "type": {"name": "timestamp", "unit": "s"}}
-Input:  {"ts": 1735088400000}  // This is milliseconds!
-
-Result:
-- Stored as: 1735088400000 (we store as-is)
-- Athena query: SELECT ts FROM table
-- Displays: Year 56951 ❌ (interpreting milliseconds as seconds!)
-```
-
-#### Best Effort: Type Conversion ONLY
-
-We do **TYPE conversion** (string→int64, float→int64), but NOT **UNIT conversion**:
-
-**✅ Supported conversions:**
-
-```
-Schema: {"name": "ts", "type": {"name": "timestamp", "unit": "s"}}
-
-Integer:  1735088400      → 1735088400 ✅
-Float:    1735088400.5    → 1735088400 ✅ (truncate to int64)
-String:   "1735088400"    → 1735088400 ✅ (parse numeric string)
-Boolean:  true            → 1          ✅ (best effort fallback)
-```
-
-**❌ NOT supported:**
-
-```
-ISO 8601 strings: "2024-12-25T16:00:00Z"  ❌ (requires date parsing library)
-Unit detection:   Cannot tell if 1735088400 is seconds or milliseconds ❌
-Unit conversion:  Will NOT convert milliseconds to seconds ❌
-```
-
-#### Practical Guidelines
-
-**1. Know Your Data Source:**
-
-```bash
-# Check your logs to see what unit they use
-tail -n 1 access.log
-# {"timestamp": 1735088400}        → likely seconds
-# {"timestamp": 1735088400000}     → likely milliseconds
-# {"ts": 1735088400000000}         → likely microseconds
-```
-
-**2. Set Schema to Match Data:**
-
-```json
-// If your data has timestamps in milliseconds
-{
-  "name": "timestamp",
-  "type": { "name": "timestamp", "unit": "ms" } // Match your data!
-}
-```
-
-**3. Verify in Athena:**
-
-```sql
--- Check if timestamps look reasonable
-SELECT
-  timestamp,
-  FROM_UNIXTIME(timestamp) as ts_seconds,      -- If unit="s"
-  FROM_UNIXTIME(timestamp/1000) as ts_millis   -- If unit="ms"
-FROM your_table
-LIMIT 5;
-
--- Timestamps should be in reasonable range (2020-203c
--- If you see dates in year 1970 or 56951, unit is mismatched!
-```
-
-**4. Common Patterns:**
-
-| Data Source              | Typical Unit    | Schema Unit |
-| ------------------------ | --------------- | ----------- |
-| time() in most languages | Seconds         | `"s"`       |
-| JavaScript Date.now()    | Milliseconds    | `"ms"`      |
-| Python time.time_ns()    | Nanoseconds     | `"ns"`      |
-| Database TIMESTAMP       | Usually seconds | `"s"`       |
-
-#### Type Conversion Matrix Update
-
-| Source Type | → timestamp (schema unit="s")                |
-| ----------- | -------------------------------------------- |
-| int         | ✅ Direct copy (no unit conversion)          |
-| float       | ✅ Truncate to int64 (no unit conversion)    |
-| string      | ✅ Parse numeric string (e.g., "1735088400") |
-| boolean     | ✅ Convert to 0/1                            |
-| map/array   | ⚠️ NULL or default                           |
-
-**Key point**: All conversions preserve the numeric value. If input is 1735088400000, output is 1735088400000 - we do NOT divide by 1000 even if schema says `unit="s"`.
-
-4. **Best practices**:
+3. **Best practices**:
    ```json
    {
      "fields": [
@@ -516,8 +245,7 @@ LIMIT 5;
        { "name": "timestamp", "type": "int64", "nullable": false }, // ✅ Use int64 for timestamps
        { "name": "amount", "type": "double", "nullable": true }, // ✅ Use double for amounts
        { "name": "status", "type": "int32", "nullable": false }, // ✅ int32 OK for small ranges
-       { "name": "message", "type": "utf8", "nullable": true }, // ✅ Nullable for optional fields
-       { "name": "metadata", "type": "utf8", "nullable": true } // ✅ Use string for complex data
+       { "name": "message", "type": "utf8", "nullable": true } // ✅ Nullable for optional fields
      ]
    }
    ```
