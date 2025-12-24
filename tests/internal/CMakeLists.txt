@@ -81,6 +81,13 @@ if(FLB_HAVE_LIBYAML)
       )
 endif()
 
+if (WIN32)
+  set(UNIT_TESTS_FILES
+      ${UNIT_TESTS_FILES}
+      win32_glob.c
+      )
+endif()
+
 if (NOT WIN32)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
