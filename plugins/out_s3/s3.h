@@ -46,8 +46,6 @@
 /* Allowed max file size 1 GB for publishing to S3 */
 #define MAX_FILE_SIZE_PUT_OBJECT        1000000000
 
-#define DEFAULT_UPLOAD_TIMEOUT 3600
-
 #define MAX_UPLOAD_ERRORS 5
 
 /*
@@ -122,7 +120,7 @@ struct flb_s3 {
     int use_put_object;
     int send_content_md5;
     int static_file_path;
-    int compression;
+    int compression;                        /* Compression type (for Parquet internal or outer layer) */
     int port;
     int insecure;
     size_t store_dir_limit_size;
@@ -194,7 +192,15 @@ struct flb_s3 {
     flb_sds_t seq_index_file;
 
     struct flb_output_instance *ins;
+
+    /* ==================== Output Format ==================== */
+    int format;                              /* Output format: json or parquet */
+    char *schema_str;                        /* JSON schema for Parquet format (user-defined) */
 };
+
+/* ==================== Format Types ==================== */
+#define FLB_S3_FORMAT_JSON     0
+#define FLB_S3_FORMAT_PARQUET  1
 
 int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
                 char *body, size_t body_size, char *pre_signed_url);
@@ -223,5 +229,8 @@ int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_siz
 int create_headers(struct flb_s3 *ctx, char *body_md5,
                    struct flb_aws_header **headers, int *num_headers,
                    int multipart_upload);
+
+int s3_put_object(struct flb_s3 *ctx, const char *tag,
+                  time_t create_time, flb_sds_t buffer, size_t size);
 
 #endif

@@ -154,6 +154,17 @@ if(FLB_AVRO_ENCODER)
     )
 endif()
 
+if(FLB_PARQUET_ENCODER)
+  # Parquet requires C++ implementation
+  set(src
+    ${src}
+    flb_parquet_impl.cpp
+    )
+
+  # Enable C++ for this target
+  set_source_files_properties(flb_parquet_impl.cpp PROPERTIES LANGUAGE CXX)
+endif()
+
 # Fluent Bit have TLS support
 if(FLB_TLS)
   # Register the TLS interface and functions
@@ -384,6 +395,15 @@ set(FLB_DEPS
   )
 endif()
 
+# Parquet Encoding
+if(FLB_PARQUET_ENCODER)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    ${ARROW_LIBRARIES}
+    ${PARQUET_LIBRARIES}
+    )
+endif()
+
 # WASM runtime
 if(FLB_WASM)
   set(FLB_DEPS
@@ -502,6 +522,11 @@ if(FLB_SHARED_LIB)
   set_target_properties(fluent-bit-shared
     PROPERTIES OUTPUT_NAME fluent-bit)
 
+  # KAFKA SPECIFIC - Link SASL library for shared library
+  if(FLB_SASL_ENABLED)
+    target_link_libraries(fluent-bit-shared sasl2)
+  endif()
+
   # Windows doesn't provide pthread (see winpthreads.c in mk_core).
   if(CMAKE_SYSTEM_NAME MATCHES "Windows")
     target_link_libraries(fluent-bit-shared ${FLB_DEPS})
@@ -572,12 +597,12 @@ if(FLB_BINARY)
     target_link_libraries(fluent-bit-bin ${LIBBACKTRACE_LIBRARIES})
   endif()
 
-  target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT})
-
-  # KAFKA SPECIFIC
+  # KAFKA SPECIFIC - Link SASL library for binary
   if(FLB_SASL_ENABLED)
     target_link_libraries(fluent-bit-bin sasl2)
   endif()
+
+  target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT})
 
   set_target_properties(fluent-bit-bin
     PROPERTIES
