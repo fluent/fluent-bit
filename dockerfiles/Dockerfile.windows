@@ -16,6 +16,9 @@ ARG WINDOWS_VERSION=ltsc2025
 # Builder Image - Windows Server Core
 FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS builder-base
 
+# Unified build argument for extra CMake flags (e.g., -DFLB_PARQUET_ENCODER=On)
+ARG EXTRA_CMAKE_FLAGS=""
+
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
 # Clean up any existing temp files and create fresh temp directory
@@ -154,6 +157,16 @@ RUN vcpkg install --recurse libyaml --triplet x64-windows-static; `
     Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
     Remove-Item -Path C:\dev\vcpkg\buildtrees -Recurse -Force -ErrorAction SilentlyContinue;
 
+# Install Apache Arrow with Parquet support if enabled via EXTRA_CMAKE_FLAGS
+RUN if ($env:EXTRA_CMAKE_FLAGS -like '*-DFLB_PARQUET_ENCODER=On*') { `
+        Write-Host 'Installing Apache Arrow with Parquet support...'; `
+        vcpkg install --recurse arrow[parquet] --triplet x64-windows-static; `
+        Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
+        Remove-Item -Path C:\dev\vcpkg\buildtrees -Recurse -Force -ErrorAction SilentlyContinue; `
+    } else { `
+        Write-Host 'Skipping Apache Arrow installation (FLB_PARQUET_ENCODER not in EXTRA_CMAKE_FLAGS)'; `
+    }
+
 # Final vcpkg cleanup to remove all build artifacts and save space
 RUN Remove-Item -Path C:\dev\vcpkg\downloads -Recurse -Force -ErrorAction SilentlyContinue; `
     Remove-Item -Path C:\dev\vcpkg\buildtrees -Recurse -Force -ErrorAction SilentlyContinue; `
@@ -167,11 +180,20 @@ WORKDIR /src/build
 COPY . /src/
 
 ARG BUILD_PARALLEL=1
+ARG EXTRA_CMAKE_FLAGS
+
+# Optional feature detection: Add cmake paths based on EXTRA_CMAKE_FLAGS
 SHELL ["cmd", "/S", "/C"]
 RUN call "%MSVS_HOME%\VC\Auxiliary\Build\vcvars64.bat" && `
+    set "OPTIONAL_CMAKE_ARGS=" && `
+    (echo %EXTRA_CMAKE_FLAGS% | findstr /C:"-DFLB_PARQUET_ENCODER=On" >nul && ( `
+        set "OPTIONAL_CMAKE_ARGS=%OPTIONAL_CMAKE_ARGS% -DArrow_DIR=C:\dev\vcpkg\packages\arrow_x64-windows-static\share\arrow -DParquet_DIR=C:\dev\vcpkg\packages\arrow_x64-windows-static\share\parquet" `
+    ) || cd .) & `
     cmake -G "NMake Makefiles" `
-      -DOPENSSL_ROOT_DIR='C:\dev\vcpkg\packages\openssl_x64-windows-static' `
-      -DFLB_LIBYAML_DIR='C:\dev\vcpkg\packages\libyaml_x64-windows-static' `
+      -DOPENSSL_ROOT_DIR=C:\dev\vcpkg\packages\openssl_x64-windows-static `
+      -DFLB_LIBYAML_DIR=C:\dev\vcpkg\packages\libyaml_x64-windows-static `
+      %OPTIONAL_CMAKE_ARGS% `
+      %EXTRA_CMAKE_FLAGS% `
       -DFLB_SIMD=On `
       -DCMAKE_BUILD_TYPE=Release `
       -DFLB_SHARED_LIB=Off `

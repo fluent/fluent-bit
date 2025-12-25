@@ -21,6 +21,10 @@ FROM multiarch/qemu-user-static:x86_64-aarch64 AS qemu-arm64
 
 FROM debian:trixie-slim AS builder-base
 
+# EXTRA_CMAKE_FLAGS can be used to enable optional features like Parquet
+ARG EXTRA_CMAKE_FLAGS
+ENV EXTRA_CMAKE_FLAGS=${EXTRA_CMAKE_FLAGS}
+
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 
@@ -34,7 +38,7 @@ RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# hadolint ignore=DL3008
+# hadolint ignore=DL3008,SC2015
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
@@ -54,6 +58,13 @@ RUN apt-get update && \
     flex \
     bison \
     libyaml-dev \
+    && if echo "${EXTRA_CMAKE_FLAGS}" | grep -q "FLB_PARQUET_ENCODER=On"; then \
+        curl -fsSL https://packages.apache.org/artifactory/arrow/debian/apache-arrow-apt-source-latest-trixie.deb -o apache-arrow-apt-source.deb && \
+        apt-get install -y -V ./apache-arrow-apt-source.deb && \
+        apt-get update && \
+        apt-get install -y -V libarrow-dev libparquet-dev && \
+        rm -f apache-arrow-apt-source.deb; \
+    fi \
     && apt-get satisfy -y cmake "cmake (<< 4.0)" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -122,12 +133,23 @@ FROM debian:trixie-slim AS deb-extractor
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 
+ARG EXTRA_CMAKE_FLAGS
+ENV EXTRA_CMAKE_FLAGS=${EXTRA_CMAKE_FLAGS}
+
 # We download all debs locally then extract them into a directory we can use as the root for distroless.
 # We also include some extra handling for the status files that some tooling uses for scanning, etc.
 WORKDIR /tmp
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# hadolint ignore=SC2015,DL3008
 RUN apt-get update && \
-    apt-get download \
+    if echo "${EXTRA_CMAKE_FLAGS}" | grep -q "FLB_PARQUET_ENCODER=On"; then \
+        apt-get install -y --no-install-recommends curl ca-certificates && \
+        curl -fsSL https://packages.apache.org/artifactory/arrow/debian/apache-arrow-apt-source-latest-trixie.deb -o apache-arrow-apt-source.deb && \
+        apt-get install -y -V ./apache-arrow-apt-source.deb && \
+        apt-get update && \
+        rm -f apache-arrow-apt-source.deb; \
+    fi \
+    && apt-get download \
     libssl3t64 \
     libcurl4t64 \
     libnghttp2-14 \
@@ -167,6 +189,19 @@ RUN apt-get update && \
     libyaml-0-2 \
     libcap2 \
     libldap2 \
+    # MAINTAINER: Arrow SONAME format: libarrow{major*100+minor*10} (e.g., 23.0.0 -> libarrow2300)
+    # Only update when upgrading Arrow version or if packages become unavailable in apt source.
+    && if echo "${EXTRA_CMAKE_FLAGS}" | grep -q "FLB_PARQUET_ENCODER=On"; then \
+        apt-get download \
+            libarrow2300 \
+            libparquet2300 \
+            libsnappy1v5 \
+            libabsl20240722 \
+            libbz2-1.0 \
+            libprotobuf32t64 \
+            libthrift-0.19.0t64 \
+            libxml2; \
+    fi \
     && \
     mkdir -p /dpkg/var/lib/dpkg/status.d/ && \
     for deb in *.deb; do \
@@ -231,9 +266,12 @@ LABEL description="Fluent Bit multi-architecture debug container image" \
 
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
+
+ARG EXTRA_CMAKE_FLAGS
+ENV EXTRA_CMAKE_FLAGS=${EXTRA_CMAKE_FLAGS}
 ENV DEBIAN_FRONTEND=noninteractive
 
-# hadolint ignore=DL3008
+# hadolint ignore=DL3008,SC2015
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     libssl3t64 \
@@ -263,6 +301,22 @@ RUN apt-get update && \
     htop atop strace iotop sysstat ncdu logrotate hdparm pciutils psmisc tree pv \
     make tar flex bison \
     libssl-dev libsasl2-dev libsystemd-dev zlib1g-dev libpq-dev libyaml-dev postgresql-server-dev-all \
+    # MAINTAINER: Keep Arrow packages in sync with deb-extractor stage.
+    && if echo "${EXTRA_CMAKE_FLAGS}" | grep -q "FLB_PARQUET_ENCODER=On"; then \
+        curl -fsSL https://packages.apache.org/artifactory/arrow/debian/apache-arrow-apt-source-latest-trixie.deb -o apache-arrow-apt-source.deb && \
+        apt-get install -y -V ./apache-arrow-apt-source.deb && \
+        apt-get update && \
+        apt-get install -y --no-install-recommends \
+            libarrow2300 \
+            libparquet2300 \
+            libsnappy1v5 \
+            libabsl20240722 \
+            libbz2-1.0 \
+            libprotobuf32t64 \
+            libthrift-0.19.0t64 \
+            libxml2 && \
+        rm -f apache-arrow-apt-source.deb; \
+    fi \
     && apt-get satisfy -y cmake "cmake (<< 4.0)" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
