@@ -19,20 +19,13 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_pack.h>
-#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_pack.h>
-#include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config_map.h>
-#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_log_event_decoder.h>
-#include <fluent-bit/flb_input_event.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_upstream.h>
-#include <fluent-bit/flb_io.h>
-#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_slist.h>
 #include <msgpack.h>
 
@@ -45,15 +38,16 @@
 #include <cmetrics/cmt_decode_msgpack.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
 
+/* Forward declarations for cmetrics opentelemetry encoding */
+extern cfl_sds_t cmt_encode_opentelemetry_create(struct cmt *cmt);
+extern void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
+
 #include <ctraces/ctraces.h>
 #include <ctraces/ctr_decode_msgpack.h>
 #include <ctraces/ctr_encode_opentelemetry.h>
 #include <ctraces/ctr_encode_text.h>
 
 #include <fluent-otel-proto/fluent-otel.h>
-
-extern cfl_sds_t cmt_encode_opentelemetry_create(struct cmt *cmt);
-extern void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
 
 #include "parseable.h"
 
@@ -151,7 +145,7 @@ static flb_sds_t extract_dynamic_stream(struct flb_out_parseable *ctx,
         if (val) {
             stream = get_str_value(val);
             if (stream) {
-                flb_plg_info(ctx->ins, "Using _parseable_dataset: %s", stream);
+                flb_plg_debug(ctx->ins, "Using _parseable_dataset: %s", stream);
                 msgpack_unpacked_destroy(&result);
                 return stream;
             }
@@ -183,7 +177,7 @@ static flb_sds_t extract_dynamic_stream(struct flb_out_parseable *ctx,
             if (val) {
                 stream = get_str_value(val);
                 if (stream) {
-                    flb_plg_info(ctx->ins, "Using annotation parseable/dataset: %s", stream);
+                    flb_plg_debug(ctx->ins, "Using annotation parseable/dataset: %s", stream);
                     msgpack_unpacked_destroy(&result);
                     return stream;
                 }
@@ -201,7 +195,7 @@ static flb_sds_t extract_dynamic_stream(struct flb_out_parseable *ctx,
                     stream = flb_sds_create_size(flb_sds_len(app) + 6);
                     flb_sds_cat_safe(&stream, app, flb_sds_len(app));
                     flb_sds_cat_safe(&stream, "-logs", 5);
-                    flb_plg_info(ctx->ins, "Derived stream from app label: %s", stream);
+                    flb_plg_debug(ctx->ins, "Derived stream from app label: %s", stream);
                     flb_sds_destroy(app);
                     msgpack_unpacked_destroy(&result);
                     return stream;
@@ -216,7 +210,7 @@ static flb_sds_t extract_dynamic_stream(struct flb_out_parseable *ctx,
                     stream = flb_sds_create_size(flb_sds_len(app) + 6);
                     flb_sds_cat_safe(&stream, app, flb_sds_len(app));
                     flb_sds_cat_safe(&stream, "-logs", 5);
-                    flb_plg_info(ctx->ins, "Derived stream from app.kubernetes.io/name label: %s", stream);
+                    flb_plg_debug(ctx->ins, "Derived stream from app.kubernetes.io/name label: %s", stream);
                     flb_sds_destroy(app);
                     msgpack_unpacked_destroy(&result);
                     return stream;
@@ -232,7 +226,7 @@ static flb_sds_t extract_dynamic_stream(struct flb_out_parseable *ctx,
                 stream = flb_sds_create_size(flb_sds_len(ns) + 6);
                 flb_sds_cat_safe(&stream, ns, flb_sds_len(ns));
                 flb_sds_cat_safe(&stream, "-logs", 5);
-                flb_plg_info(ctx->ins, "Derived stream from namespace: %s", stream);
+                flb_plg_debug(ctx->ins, "Derived stream from namespace: %s", stream);
                 flb_sds_destroy(ns);
                 msgpack_unpacked_destroy(&result);
                 return stream;
@@ -666,28 +660,28 @@ static int cb_parseable_init(struct flb_output_instance *ins,
                 strcasecmp(ctx->data_type, "otel-metrics") == 0) {
                 /* Metrics use /v1/metrics for OTEL format */
                 ctx->uri = flb_sds_create("/v1/metrics");
-                flb_plg_info(ins, "auto-set URI to /v1/metrics for metrics data");
+                flb_plg_debug(ins, "auto-set URI to /v1/metrics for metrics data");
             }
             else if (strcasecmp(ctx->data_type, "traces") == 0 || 
                      strcasecmp(ctx->data_type, "otel-trace") == 0 ||
                      strcasecmp(ctx->data_type, "otel-traces") == 0) {
                 ctx->uri = flb_sds_create("/v1/traces");
-                flb_plg_info(ins, "auto-set URI to /v1/traces for traces data");
+                flb_plg_debug(ins, "auto-set URI to /v1/traces for traces data");
             }
             else {
                 /* Logs use /v1/logs for OTEL format */
                 ctx->uri = flb_sds_create("/v1/logs");
-                flb_plg_info(ins, "auto-set URI to /v1/logs for logs data");
+                flb_plg_debug(ins, "auto-set URI to /v1/logs for logs data");
             }
         }
         else {
             /* Default to logs endpoint */
             ctx->uri = flb_sds_create("/v1/logs");
-            flb_plg_info(ins, "using default URI /v1/logs");
+            flb_plg_debug(ins, "using default URI /v1/logs");
         }
     }
     else {
-        flb_plg_info(ins, "using configured URI: %s", ctx->uri);
+        flb_plg_debug(ins, "using configured URI: %s", ctx->uri);
     }
 
     /* Compression configuration */
@@ -696,7 +690,7 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     if (tmp) {
         if (strcasecmp(tmp, "gzip") == 0) {
             ctx->compress_gzip = FLB_TRUE;
-            flb_plg_info(ins, "gzip compression enabled");
+            flb_plg_debug(ins, "gzip compression enabled");
         }
     }
 
@@ -793,8 +787,9 @@ static flb_sds_t add_flattened_attributes(flb_sds_t dest, const char *prefix,
 {
     size_t i;
     msgpack_object_kv *kv;
-    flb_sds_t tmp;
     flb_sds_t key_name;
+    
+    (void) dest; /* Used via flb_sds_cat/flb_sds_printf */
     
     if (obj->type == MSGPACK_OBJECT_MAP) {
         for (i = 0; i < obj->via.map.size; i++) {
@@ -836,9 +831,9 @@ static flb_sds_t add_flattened_attributes(flb_sds_t dest, const char *prefix,
                     if (item->type == MSGPACK_OBJECT_STR) {
                         dest = escape_json_string(dest, item->via.str.ptr, item->via.str.size);
                     } else if (item->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                        tmp = flb_sds_printf(&dest, "%llu", (unsigned long long)item->via.u64);
+                        flb_sds_printf(&dest, "%llu", (unsigned long long)item->via.u64);
                     } else if (item->type == MSGPACK_OBJECT_FLOAT || item->type == MSGPACK_OBJECT_FLOAT32) {
-                        tmp = flb_sds_printf(&dest, "%f", item->via.f64);
+                        flb_sds_printf(&dest, "%f", item->via.f64);
                     }
                 }
                 
@@ -862,15 +857,15 @@ static flb_sds_t add_flattened_attributes(flb_sds_t dest, const char *prefix,
                     dest = flb_sds_cat(dest, "\"", 1);
                 }
                 else if (kv->val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                    tmp = flb_sds_printf(&dest, "\"intValue\":%llu", 
+                    flb_sds_printf(&dest, "\"intValue\":%llu", 
                                         (unsigned long long)kv->val.via.u64);
                 }
                 else if (kv->val.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-                    tmp = flb_sds_printf(&dest, "\"intValue\":%lld", 
+                    flb_sds_printf(&dest, "\"intValue\":%lld", 
                                         (long long)kv->val.via.i64);
                 }
                 else if (kv->val.type == MSGPACK_OBJECT_FLOAT || kv->val.type == MSGPACK_OBJECT_FLOAT32) {
-                    tmp = flb_sds_printf(&dest, "\"doubleValue\":%f", kv->val.via.f64);
+                    flb_sds_printf(&dest, "\"doubleValue\":%f", kv->val.via.f64);
                 }
                 else if (kv->val.type == MSGPACK_OBJECT_BOOLEAN) {
                     dest = flb_sds_cat(dest, "\"stringValue\":\"", 15);
@@ -902,7 +897,6 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
 {
     int ret;
     flb_sds_t otel_json;
-    flb_sds_t tmp;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
     msgpack_object *map;
@@ -910,9 +904,6 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
     int i;
     int is_metrics = 0;
     int is_traces = 0;
-    char time_str[64];
-    struct tm tm;
-    time_t t;
 
     /* Check data type */
     if (ctx->data_type && (strcasecmp(ctx->data_type, "metrics") == 0 ||
@@ -944,7 +935,7 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
                                 strncmp(kv->key.via.str.ptr, "resourceMetrics", 15) == 0 ||
                                 strncmp(kv->key.via.str.ptr, "resourceLogs", 12) == 0) {
                                 /* Data is already in OTLP format, pass it through as-is */
-                                flb_plg_info(ctx->ins, "Data already in OTLP format, passing through");
+                                flb_plg_debug(ctx->ins, "Data already in OTLP format, passing through");
                                 flb_log_event_decoder_destroy(&log_decoder);
                                 
                                 /* Convert msgpack to JSON directly without OTEL formatting */
@@ -1017,8 +1008,8 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
                         resource_attrs = flb_sds_cat(resource_attrs, "\"", 1);
                     }
                     else if (kv->val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                        flb_sds_t tmp = flb_sds_printf(&resource_attrs, "\"intValue\":%llu", 
-                                                      (unsigned long long)kv->val.via.u64);
+                        flb_sds_printf(&resource_attrs, "\"intValue\":%llu", 
+                                       (unsigned long long)kv->val.via.u64);
                     }
                     else {
                         resource_attrs = flb_sds_cat(resource_attrs, "\"stringValue\":\"\"", 17);
@@ -1118,7 +1109,7 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
 
         if (is_metrics) {
             /* OTEL Metrics format */
-            tmp = flb_sds_printf(&otel_json, "{\"name\":\"");
+            flb_sds_printf(&otel_json, "{\"name\":\"");
             
             /* Extract metric_name if present */
             for (i = 0; i < map->via.map.size; i++) {
@@ -1134,7 +1125,7 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
                 otel_json = flb_sds_cat(otel_json, "unknown", 7);
             }
 
-            tmp = flb_sds_printf(&otel_json, "\",\"gauge\":{\"dataPoints\":[{\"timeUnixNano\":\"%llu\",\"attributes\":[", 
+            flb_sds_printf(&otel_json, "\",\"gauge\":{\"dataPoints\":[{\"timeUnixNano\":\"%llu\",\"attributes\":[", 
                                 (unsigned long long)time_nano);
 
             /* Add all fields as attributes */
@@ -1176,11 +1167,11 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
                     otel_json = flb_sds_cat(otel_json, "\"", 1);
                 }
                 else if (kv->val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                    tmp = flb_sds_printf(&otel_json, "\"intValue\":%llu", 
+                    flb_sds_printf(&otel_json, "\"intValue\":%llu", 
                                         (unsigned long long)kv->val.via.u64);
                 }
                 else if (kv->val.type == MSGPACK_OBJECT_FLOAT || kv->val.type == MSGPACK_OBJECT_FLOAT32) {
-                    tmp = flb_sds_printf(&otel_json, "\"doubleValue\":%f", kv->val.via.f64);
+                    flb_sds_printf(&otel_json, "\"doubleValue\":%f", kv->val.via.f64);
                 }
                 else if (kv->val.type == MSGPACK_OBJECT_BOOLEAN) {
                     otel_json = flb_sds_cat(otel_json, "\"stringValue\":\"", 15);
@@ -1200,9 +1191,9 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
                         if (item->type == MSGPACK_OBJECT_STR) {
                             otel_json = escape_json_string(otel_json, item->via.str.ptr, item->via.str.size);
                         } else if (item->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                            tmp = flb_sds_printf(&otel_json, "%llu", (unsigned long long)item->via.u64);
+                            flb_sds_printf(&otel_json, "%llu", (unsigned long long)item->via.u64);
                         } else if (item->type == MSGPACK_OBJECT_FLOAT || item->type == MSGPACK_OBJECT_FLOAT32) {
-                            tmp = flb_sds_printf(&otel_json, "%f", item->via.f64);
+                            flb_sds_printf(&otel_json, "%f", item->via.f64);
                         }
                     }
                     otel_json = flb_sds_cat(otel_json, "]\"", 2);
@@ -1319,11 +1310,11 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
                     otel_json = flb_sds_cat(otel_json, "\"", 1);
                 }
                 else if (kv->val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                    tmp = flb_sds_printf(&otel_json, "\"intValue\":%llu", 
+                    flb_sds_printf(&otel_json, "\"intValue\":%llu", 
                                         (unsigned long long)kv->val.via.u64);
                 }
                 else if (kv->val.type == MSGPACK_OBJECT_FLOAT || kv->val.type == MSGPACK_OBJECT_FLOAT32) {
-                    tmp = flb_sds_printf(&otel_json, "\"doubleValue\":%f", kv->val.via.f64);
+                    flb_sds_printf(&otel_json, "\"doubleValue\":%f", kv->val.via.f64);
                 }
                 else if (kv->val.type == MSGPACK_OBJECT_BOOLEAN) {
                     otel_json = flb_sds_cat(otel_json, "\"stringValue\":\"", 15);
@@ -1347,7 +1338,7 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
         }
         else {
             /* OTEL Logs format */
-            tmp = flb_sds_printf(&otel_json, "{\"timeUnixNano\":\"%llu\",\"observedTimeUnixNano\":\"%llu\",\"severityNumber\":9,\"severityText\":\"INFO\",\"body\":{\"stringValue\":\"", 
+            flb_sds_printf(&otel_json, "{\"timeUnixNano\":\"%llu\",\"observedTimeUnixNano\":\"%llu\",\"severityNumber\":9,\"severityText\":\"INFO\",\"body\":{\"stringValue\":\"", 
                                 (unsigned long long)time_nano, (unsigned long long)time_nano);
 
             /* Extract body/message */
@@ -1401,11 +1392,11 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
                     otel_json = flb_sds_cat(otel_json, "\"", 1);
                 }
                 else if (kv->val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                    tmp = flb_sds_printf(&otel_json, "\"intValue\":%llu", 
+                    flb_sds_printf(&otel_json, "\"intValue\":%llu", 
                                         (unsigned long long)kv->val.via.u64);
                 }
                 else if (kv->val.type == MSGPACK_OBJECT_FLOAT || kv->val.type == MSGPACK_OBJECT_FLOAT32) {
-                    tmp = flb_sds_printf(&otel_json, "\"doubleValue\":%f", kv->val.via.f64);
+                    flb_sds_printf(&otel_json, "\"doubleValue\":%f", kv->val.via.f64);
                 }
                 else if (kv->val.type == MSGPACK_OBJECT_BOOLEAN) {
                     otel_json = flb_sds_cat(otel_json, "\"stringValue\":\"", 15);
@@ -1425,9 +1416,9 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
                         if (item->type == MSGPACK_OBJECT_STR) {
                             otel_json = escape_json_string(otel_json, item->via.str.ptr, item->via.str.size);
                         } else if (item->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                            tmp = flb_sds_printf(&otel_json, "%llu", (unsigned long long)item->via.u64);
+                            flb_sds_printf(&otel_json, "%llu", (unsigned long long)item->via.u64);
                         } else if (item->type == MSGPACK_OBJECT_FLOAT || item->type == MSGPACK_OBJECT_FLOAT32) {
-                            tmp = flb_sds_printf(&otel_json, "%f", item->via.f64);
+                            flb_sds_printf(&otel_json, "%f", item->via.f64);
                         }
                     }
                     otel_json = flb_sds_cat(otel_json, "]\"", 2);
@@ -1471,21 +1462,8 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
         flb_sds_len_set(otel_json, write_pos);
     }
     
-    flb_plg_info(ctx->ins, "OTEL JSON complete: %zu bytes, %d records", 
-                 flb_sds_len(otel_json), record_count);
-
-    /* Debug: Log the generated JSON to file for inspection */
-    static int file_counter = 0;
-    char filename[256];
-    snprintf(filename, sizeof(filename), "/tmp/otel_debug_%d.json", file_counter++);
-    FILE *debug_file = fopen(filename, "wb");
-    if (debug_file) {
-        fwrite(otel_json, 1, flb_sds_len(otel_json), debug_file);
-        fwrite("\n", 1, 1, debug_file);
-        fclose(debug_file);
-        flb_plg_info(ctx->ins, "Generated OTEL JSON (%zu bytes) - saved to %s", 
-                      flb_sds_len(otel_json), filename);
-    }
+    flb_plg_debug(ctx->ins, "OTEL JSON complete: %zu bytes, %d records", 
+                  flb_sds_len(otel_json), record_count);
 
     *out_buf = otel_json;
     *out_size = flb_sds_len(otel_json);
@@ -1544,7 +1522,7 @@ static int parseable_format_metrics_protobuf(struct flb_out_parseable *ctx,
     }
     
     if (ret == CMT_DECODE_MSGPACK_INSUFFICIENT_DATA && flb_sds_len(buf) > 0) {
-        flb_plg_info(ctx->ins, "Packed protobuf: %zu bytes", flb_sds_len(buf));
+        flb_plg_debug(ctx->ins, "Packed protobuf: %zu bytes", flb_sds_len(buf));
         
         *out_buf = buf;
         *out_size = flb_sds_len(buf);
@@ -1620,7 +1598,7 @@ static int parseable_format_traces_json(struct flb_out_parseable *ctx,
     }
     
     if (flb_sds_len(buf) > 0) {
-        flb_plg_info(ctx->ins, "Formatted trace JSON: %zu bytes", flb_sds_len(buf));
+        flb_plg_debug(ctx->ins, "Formatted trace JSON: %zu bytes", flb_sds_len(buf));
         
         *out_buf = buf;
         *out_size = flb_sds_len(buf);
@@ -1686,7 +1664,7 @@ static int parseable_format_traces_protobuf(struct flb_out_parseable *ctx,
     }
     
     if (flb_sds_len(buf) > 0) {
-        flb_plg_info(ctx->ins, "Packed trace protobuf: %zu bytes", flb_sds_len(buf));
+        flb_plg_debug(ctx->ins, "Packed trace protobuf: %zu bytes", flb_sds_len(buf));
         
         *out_buf = buf;
         *out_size = flb_sds_len(buf);
@@ -1811,8 +1789,8 @@ static int parseable_http_post(struct flb_out_parseable *ctx,
                   payload_size, 0, NULL);
 
     /* Log request details */
-    flb_plg_info(ctx->ins, "Sending to %s:%d%s, size=%zu bytes", 
-                 u->tcp_host, u->tcp_port, ctx->uri, payload_size);
+    flb_plg_debug(ctx->ins, "Sending to %s:%d%s, size=%zu bytes", 
+                   u->tcp_host, u->tcp_port, ctx->uri, payload_size);
     
     /* Create HTTP client */
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
@@ -1862,11 +1840,8 @@ static int parseable_http_post(struct flb_out_parseable *ctx,
                             FLB_PARSEABLE_HEADER_STREAM,
                             sizeof(FLB_PARSEABLE_HEADER_STREAM) - 1,
                             stream_to_use, strlen(stream_to_use));
-        if (dynamic_stream) {
-            flb_plg_info(ctx->ins, "Header: X-P-Stream: %s (dynamic)", stream_to_use);
-        } else {
-            flb_plg_debug(ctx->ins, "Header: X-P-Stream: %s", stream_to_use);
-        }
+        flb_plg_debug(ctx->ins, "Header: X-P-Stream: %s%s", stream_to_use,
+                      dynamic_stream ? " (dynamic)" : "");
     }
 
     /* Add X-P-Log-Source header (optional) */
@@ -1883,7 +1858,7 @@ static int parseable_http_post(struct flb_out_parseable *ctx,
         flb_http_add_header(c,
                             "Authorization", 13,
                             ctx->auth_header, flb_sds_len(ctx->auth_header));
-        flb_plg_info(ctx->ins, "Header: Authorization: %s", ctx->auth_header);
+        flb_plg_debug(ctx->ins, "Header: Authorization: [REDACTED]");
     }
 
     /* Add custom headers */
@@ -1979,13 +1954,8 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     (void) i_ins;
     (void) out_flush;
 
-    /* Note: Retry limit checking is handled by Fluent Bit's core retry mechanism */
-    
-    /* Debug: Log event type and tag */
-    flb_plg_info(ctx->ins, "cb_parseable_flush called: type=%d tag=%s size=%zu", 
-                 event_chunk->type, event_chunk->tag, event_chunk->size);
-    flb_plg_debug(ctx->ins, "Event chunk type: %d (LOGS=%d, METRICS=%d, TRACES=%d)", 
-                  event_chunk->type, FLB_INPUT_LOGS, FLB_INPUT_METRICS, FLB_INPUT_TRACES);
+    flb_plg_debug(ctx->ins, "flush: type=%d tag=%s size=%zu", 
+                   event_chunk->type, event_chunk->tag, event_chunk->size);
 
     int is_protobuf = 0;
     
@@ -2009,14 +1979,14 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         }
         
         if (dynamic_stream) {
-            flb_plg_info(ctx->ins, "Using dynamic stream: %s", dynamic_stream);
+            flb_plg_debug(ctx->ins, "Using dynamic stream: %s", dynamic_stream);
         }
     }
     
     /* Handle based on event type */
     if (event_chunk->type == FLB_INPUT_TRACES) {
         /* Traces data from OpenTelemetry input - use protobuf encoding */
-        flb_plg_info(ctx->ins, "Processing FLB_INPUT_TRACES with protobuf");
+        flb_plg_debug(ctx->ins, "Processing traces with protobuf");
         
         /* Use protobuf format for traces */
         ret = parseable_format_traces_protobuf(ctx,
@@ -2033,7 +2003,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     }
     else if (event_chunk->type == FLB_INPUT_METRICS) {
         /* Real metrics data - use CMetrics protobuf encoding */
-        flb_plg_info(ctx->ins, "Processing FLB_INPUT_METRICS with protobuf");
+        flb_plg_debug(ctx->ins, "Processing metrics with protobuf");
         ret = parseable_format_metrics_protobuf(ctx,
                                                  event_chunk->data, event_chunk->size,
                                                  &out_buf, &out_size,

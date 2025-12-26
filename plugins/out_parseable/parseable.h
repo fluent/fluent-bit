@@ -17,26 +17,6 @@
  *  limitations under the License.
  */
 
-/*
- * Parseable Output Plugin Header
- * ================================
- * 
- * This header defines the structures, constants, and types for the
- * Parseable output plugin. Parseable is a log analytics system that
- * accepts logs via HTTP POST with JSON payloads.
- *
- * Features:
- * - HTTP/HTTPS transport with TLS support
- * - Gzip compression
- * - Custom HTTP headers
- * - Configurable batch size limits
- * - Retry configuration
- * - Comprehensive metrics (requests, errors, records, bytes)
- * - Multiple JSON date formats
- *
- * For usage examples and configuration details, see README.md
- */
-
 #ifndef FLB_OUT_PARSEABLE_H
 #define FLB_OUT_PARSEABLE_H
 
@@ -49,7 +29,6 @@
 #define FLB_PARSEABLE_DEFAULT_HOST        "127.0.0.1"
 #define FLB_PARSEABLE_DEFAULT_PORT        8000
 #define FLB_PARSEABLE_DEFAULT_TIME_KEY    "timestamp"
-#define FLB_PARSEABLE_DEFAULT_BATCH_SIZE  5242880  /* 5MB */
 
 /* HTTP headers */
 #define FLB_PARSEABLE_CONTENT_TYPE        "Content-Type"
@@ -57,64 +36,47 @@
 #define FLB_PARSEABLE_HEADER_STREAM       "X-P-Stream"
 #define FLB_PARSEABLE_HEADER_LOG_SOURCE   "X-P-Log-Source"
 
-/* JSON date format options */
-#define FLB_PARSEABLE_JSON_DATE_EPOCH              0
-#define FLB_PARSEABLE_JSON_DATE_ISO8601            1
-#define FLB_PARSEABLE_JSON_DATE_JAVA_SQL_TIMESTAMP 2
-
-/* Compression options */
-#define FLB_PARSEABLE_COMPRESS_NONE       0
-#define FLB_PARSEABLE_COMPRESS_GZIP       1
-
-/* Retry limits */
-#define FLB_PARSEABLE_RETRY_UNLIMITED     -1
-#define FLB_PARSEABLE_RETRY_NONE          0
-
 /* Plugin context structure */
 struct flb_out_parseable {
-    /* Parseable connection details */
-    flb_sds_t host;
-    int port;
+    /* Parseable configuration */
     flb_sds_t uri;
-    flb_sds_t data_type;    /* Data type: logs, metrics, or traces */
-    
-    /* Parseable-specific headers */
-    flb_sds_t stream;       /* X-P-Stream header (required) */
-    flb_sds_t log_source;   /* X-P-Log-Source header (optional) */
-    flb_sds_t auth_header;  /* Authorization header value */
-    
+    flb_sds_t data_type;
+    flb_sds_t stream;
+    flb_sds_t log_source;
+    flb_sds_t auth_header;
+
     /* Custom headers */
     struct mk_list *headers;
-    
+
     /* Output format */
     int json_date_format;
     flb_sds_t date_key;
-    
+
     /* Compression */
     int compress_gzip;
-    
-    /* Batch size limits */
-    size_t batch_size;      /* Maximum batch size in bytes */
-    
+
+    /* Batch size limit */
+    size_t batch_size;
+
     /* Retry configuration */
-    int retry_limit;        /* Maximum number of retries (-1 = unlimited) */
-    
-    /* Dynamic stream routing (for Kubernetes autodiscovery) */
-    int dynamic_stream;     /* Enable dynamic stream from record metadata */
-    
+    int retry_limit;
+
+    /* Dynamic stream routing */
+    int dynamic_stream;
+
     /* Kubernetes metadata enrichment */
-    int enrich_kubernetes;  /* Enable K8s metadata enrichment (adds k8s_*, env, service, version) */
-    
+    int enrich_kubernetes;
+
     /* Metrics */
     struct cmt_counter *cmt_requests_total;
     struct cmt_counter *cmt_errors_total;
     struct cmt_counter *cmt_records_total;
     struct cmt_counter *cmt_bytes_total;
     struct cmt_gauge *cmt_batch_size_bytes;
-    
+
     /* Upstream connection */
     struct flb_upstream *u;
-    
+
     /* Plugin instance reference */
     struct flb_output_instance *ins;
 };
