@@ -19,6 +19,9 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/flb_gzip.h>
+#include <monkey/mk_http_parser.h>
+#include <string.h>
 #include "prom.h"
 #include "prom_http.h"
 
@@ -157,10 +160,73 @@ static int http_server_mq_create(struct prom_http *ph)
     return 0;
 }
 
+/* Check if client accepts gzip encoding */
+static int client_accepts_gzip(mk_request_t *request)
+{
+    struct mk_http_header *header;
+    const char *accept_encoding;
+    size_t len;
+    const char *p;
+    const char *end;
+
+    /* Get Accept-Encoding header */
+    header = mk_http_header_get(MK_HEADER_ACCEPT_ENCODING, request, NULL, 0);
+    if (!header || header->val.len == 0) {
+        return 0;
+    }
+
+    accept_encoding = header->val.data;
+    len = header->val.len;
+
+    /* Check if "gzip" is present in Accept-Encoding header (case-insensitive) */
+    if (len < 4) {
+        return 0;
+    }
+
+    p = accept_encoding;
+    end = accept_encoding + len;
+
+    /* Search for "gzip" token */
+    while (p < end - 3) {
+        /* Case-insensitive comparison for "gzip" */
+        if ((p[0] == 'g' || p[0] == 'G') &&
+            (p[1] == 'z' || p[1] == 'Z') &&
+            (p[2] == 'i' || p[2] == 'I') &&
+            (p[3] == 'p' || p[3] == 'P')) {
+            /* Check if it's a complete token (not part of another word) */
+            /* Check character before "gzip" */
+            if (p > accept_encoding) {
+                char prev = p[-1];
+                if (prev != ',' && prev != ' ' && prev != '\t') {
+                    p++;
+                    continue;
+                }
+            }
+            /* Check character after "gzip" */
+            if (p + 4 < end) {
+                char next = p[4];
+                if (next != ',' && next != ' ' && next != '\t' && next != ';') {
+                    p++;
+                    continue;
+                }
+            }
+            /* Found valid "gzip" token */
+            return 1;
+        }
+        p++;
+    }
+
+    return 0;
+}
+
 /* HTTP endpoint: /metrics */
 static void cb_metrics(mk_request_t *request, void *data)
 {
     struct prom_http_buf *buf;
+    void *compressed_data = NULL;
+    size_t compressed_size = 0;
+    int use_gzip = 0;
+    int ret;
     (void) data;
 
     buf = metrics_get_latest();
@@ -172,9 +238,35 @@ static void cb_metrics(mk_request_t *request, void *data)
 
     buf->users++;
 
+    /* Check if client accepts gzip encoding */
+    use_gzip = client_accepts_gzip(request);
+
+    /* Compress data if client supports gzip */
+    if (use_gzip) {
+        ret = flb_gzip_compress(buf->buf_data, buf->buf_size,
+                                &compressed_data, &compressed_size);
+        if (ret != 0 || !compressed_data) {
+            /* Compression failed, fall back to uncompressed */
+            use_gzip = 0;
+            if (compressed_data) {
+                flb_free(compressed_data);
+                compressed_data = NULL;
+            }
+        }
+    }
+
     mk_http_status(request, 200);
     flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_PROMETHEUS);
-    mk_http_send(request, buf->buf_data, buf->buf_size, NULL);
+    
+    /* Add Content-Encoding header if compressed */
+    if (use_gzip && compressed_data) {
+        mk_http_header(request, "Content-Encoding", 16, "gzip", 4);
+        mk_http_send(request, compressed_data, compressed_size, NULL);
+        flb_free(compressed_data);
+    } else {
+        mk_http_send(request, buf->buf_data, buf->buf_size, NULL);
+    }
+    
     mk_http_done(request);
 
     buf->users--;
