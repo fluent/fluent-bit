@@ -269,7 +269,7 @@ static int package_content(struct flb_ml_stream *mst,
             truncated = FLB_TRUE;
         }
 
-        if (stream_group->mp_sbuf.size == 0) {
+        if (!truncated && stream_group->mp_sbuf.size == 0) {
             flb_ml_register_context(stream_group, tm, full_map);
         }
 
@@ -346,7 +346,7 @@ static int package_content(struct flb_ml_stream *mst,
         processed = FLB_TRUE;
     }
 
-    if (processed && metadata != NULL) {
+    if (!truncated && processed && metadata != NULL) {
         msgpack_pack_object(&stream_group->mp_md_pck, *metadata);
     }
 
