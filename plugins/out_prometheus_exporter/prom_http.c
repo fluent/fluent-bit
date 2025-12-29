@@ -21,7 +21,6 @@
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_gzip.h>
 #include <monkey/mk_http_parser.h>
-#include <string.h>
 #include "prom.h"
 #include "prom_http.h"
 
