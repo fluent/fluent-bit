@@ -25,6 +25,7 @@
 #include <string.h>
 #include <signal.h>
 #include <ctype.h>
+#include <stdatomic.h>
 
 #include <cfl/cfl.h>
 #include <cfl/cfl_array.h>
@@ -73,6 +74,10 @@ extern void win32_started(void);
 flb_ctx_t *ctx;
 struct flb_config *config;
 volatile sig_atomic_t exit_signal = 0;
+#define FLB_MAX_SIGNALS 32
+volatile sig_atomic_t caught_signals[FLB_MAX_SIGNALS] = {0};
+volatile atomic_uchar caught_signals_write = 0;
+volatile atomic_uchar caught_signals_read = 0;
 volatile sig_atomic_t flb_bin_restarting = FLB_RELOAD_IDLE;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
@@ -551,7 +556,7 @@ static void flb_signal_handler_break_loop(int signal)
     exit_signal = signal;
 }
 
-static void flb_signal_exit(int signal)
+static void flb_print_caught_signal(int signal)
 {
     int len;
     char ts[32];
@@ -582,49 +587,12 @@ static void flb_signal_exit(int signal)
         flb_print_signal(SIGTERM);
         flb_print_signal(SIGSEGV);
     };
-}
-
-static void flb_signal_handler_status_line(struct flb_cf *cf_opts)
-{
-    int len;
-    char ts[32];
-    char s[] = "[engine] caught signal (";
-    time_t now;
-    struct tm *cur;
-
-    now = time(NULL);
-    cur = localtime(&now);
-    len = snprintf(ts, sizeof(ts) - 1, "[%i/%02i/%02i %02i:%02i:%02i] ",
-                   cur->tm_year + 1900,
-                   cur->tm_mon + 1,
-                   cur->tm_mday,
-                   cur->tm_hour,
-                   cur->tm_min,
-                   cur->tm_sec);
-
-    /* write signal number */
-    write(STDERR_FILENO, ts, len);
-    write(STDERR_FILENO, s, sizeof(s) - 1);
 }
 
 static void flb_signal_handler(int signal)
 {
-    struct flb_cf *cf_opts = flb_cf_context_get();
-    flb_signal_handler_status_line(cf_opts);
-
-    switch (signal) {
-        flb_print_signal(SIGINT);
-#ifndef FLB_SYSTEM_WINDOWS
-        flb_print_signal(SIGQUIT);
-        flb_print_signal(SIGHUP);
-        flb_print_signal(SIGCONT);
-#endif
-        flb_print_signal(SIGTERM);
-        flb_print_signal(SIGSEGV);
-        flb_print_signal(SIGFPE);
-    };
-
-    flb_signal_init();
+    unsigned char cs_write = __atomic_fetch_add(&caught_signals_write, 1, __ATOMIC_SEQ_CST) % FLB_MAX_SIGNALS;
+    caught_signals[cs_write] = signal;
 
     switch(signal) {
     case SIGSEGV:
@@ -634,21 +602,6 @@ static void flb_signal_handler(int signal)
         flb_stacktrace_print(&flb_st);
 #endif
         abort();
-#ifndef FLB_SYSTEM_WINDOWS
-    case SIGCONT:
-        flb_dump(ctx->config);
-        break;
-#ifndef FLB_HAVE_STATIC_CONF
-    case SIGHUP:
-        if (flb_bin_restarting == FLB_RELOAD_IDLE) {
-            flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
-        }
-        else {
-            flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
-        }
-        break;
-#endif
-#endif
     }
 }
 
@@ -671,9 +624,8 @@ static BOOL WINAPI flb_console_handler(DWORD evType)
 
     switch(evType) {
     case 0 /* CTRL_C_EVENT_0 */:
-        cf_opts = flb_cf_context_get();
-        flb_signal_handler_status_line(cf_opts);
-        write (STDERR_FILENO, "SIGINT)\n", sizeof("SIGINT)\n")-1);
+        unsigned char cs_write = __atomic_fetch_add(&caught_signals_write, 1, __ATOMIC_SEQ_CST) % FLB_MAX_SIGNALS;
+        caught_signals[cs_write] = SIGINT;
         /* signal the main loop to execute reload even if CTRL_C event.
          * This is necessary because all signal handlers in win32
          * are executed on their own thread.
@@ -1525,10 +1477,37 @@ static int flb_main_run(int argc, char **argv)
             sleep(1);
             flb_bin_restarting = FLB_RELOAD_IDLE;
         }
+
+        unsigned char cs_write = __atomic_load_n(&caught_signals_write, __ATOMIC_SEQ_CST);
+        unsigned char cs_read = __atomic_load_n(&caught_signals_read, __ATOMIC_SEQ_CST);
+        while (cs_read != cs_write) {
+            int signal = caught_signals[cs_read % FLB_MAX_SIGNALS];
+            flb_print_caught_signal(signal);
+
+            switch (signal) {
+                #ifndef FLB_SYSTEM_WINDOWS
+                case SIGCONT:
+                    flb_dump(ctx->config);
+                    break;
+                #ifndef FLB_HAVE_STATIC_CONF
+                case SIGHUP:
+                    if (flb_bin_restarting == FLB_RELOAD_IDLE) {
+                        flb_bin_restarting = FLB_RELOAD_IN_PROGRESS;
+                    }
+                    else {
+                        flb_utils_error(FLB_ERR_RELOADING_IN_PROGRESS);
+                    }
+                    break;
+                #endif
+                #endif
+            }
+
+            cs_read = __atomic_fetch_add(&caught_signals_read, 1, __ATOMIC_SEQ_CST) + 1;
+        }
     }
 
     if (exit_signal) {
-        flb_signal_exit(exit_signal);
+        flb_print_caught_signal(exit_signal);
     }
     if (flb_bin_restarting != FLB_RELOAD_ABORTED) {
         ret = ctx->config->exit_status_code;
