@@ -2,7 +2,7 @@
 
 /*  Serial input plugin for Fluent Bit
  *  ==================================
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *  Copyright (C) 2015-2016 Takeshi HASEGAWA
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
