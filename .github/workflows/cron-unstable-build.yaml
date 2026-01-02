@@ -22,6 +22,7 @@ concurrency: unstable-build-release
 jobs:
   # This job provides this metadata for the other jobs to use.
   unstable-build-get-meta:
+    if: github.repository_owner == 'fluent'
     name: Get metadata to add to build
     runs-on: ubuntu-latest
     environment: unstable
