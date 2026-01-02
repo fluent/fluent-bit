@@ -706,6 +706,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
 
     flb_kv_release(&ctx->config_labels);
     flb_kv_release(&ctx->resource_labels_kvs);
+    pthread_mutex_destroy(&ctx->token_mutex);
     flb_free(ctx);
 
     return 0;

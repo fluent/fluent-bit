@@ -72,6 +72,13 @@ static void oauth2_cache_init()
     pthread_key_create(&oauth2_token_expires, oauth2_cache_free_expiration);
 }
 
+static void oauth2_cache_cleanup()
+{
+    pthread_key_delete(oauth2_type);
+    pthread_key_delete(oauth2_token);
+    pthread_key_delete(oauth2_token_expires);
+}
+
 /* Set oauth2 type and token in pthread keys */
 static void oauth2_cache_set(char *type, char *token, time_t expires)
 {
@@ -3084,6 +3091,7 @@ static int cb_stackdriver_exit(void *data, struct flb_config *config)
         return -1;
     }
 
+    oauth2_cache_cleanup();
     flb_stackdriver_conf_destroy(ctx);
     return 0;
 }
