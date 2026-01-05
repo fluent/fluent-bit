@@ -631,6 +631,12 @@ static void flb_test_annotations_parser_multiple_1_container_1_stdout()
     flb_test_annotations_parser("annotations-parser_multiple-1_container-1", "stdout", 1);
 }
 
+static void flb_test_annotations_parser_order_multiple_1_container_1_stdout()
+{
+    flb_test_annotations_parser("annotations-parser-order_multiple-1_container-1",
+                                "stdout", 1);
+}
+
 static void flb_test_annotations_parser_multiple_1_container_1_stderr()
 {
     flb_test_annotations_parser("annotations-parser_multiple-1_container-1", "stderr", 1);
@@ -1045,6 +1051,7 @@ TEST_LIST = {
     {"kube_annotations_parser_stderr_text_stdout", flb_test_annotations_parser_stderr_text_stdout},
     {"kube_annotations_parser_stderr_text_stderr", flb_test_annotations_parser_stderr_text_stderr},
     {"kube_annotations_parser_multiple_1_container_1_stdout", flb_test_annotations_parser_multiple_1_container_1_stdout},
+    {"kube_annotations_parser_order_multiple_1_container_1_stdout", flb_test_annotations_parser_order_multiple_1_container_1_stdout},
     {"kube_annotations_parser_multiple_1_container_1_stderr", flb_test_annotations_parser_multiple_1_container_1_stderr},
     {"kube_annotations_parser_multiple_1_container_2_stdout", flb_test_annotations_parser_multiple_1_container_2_stdout},
     {"kube_annotations_parser_multiple_1_container_2_stderr", flb_test_annotations_parser_multiple_1_container_2_stderr},
