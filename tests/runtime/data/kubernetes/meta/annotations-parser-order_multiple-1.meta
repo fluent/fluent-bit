@@ -1,0 +1,12 @@
+{
+    "metadata": {
+        "annotations": {
+            "fluentbit.io/parser": "default-parser",
+            "fluentbit.io/parser-container-1": "container-1-parser",
+            "fluentbit.io/parser_stdout-container-2": "container-2-stdout-parser",
+            "fluentbit.io/parser_stderr-container-2": "container-2-stderr-parser",
+            "fluentbit.io/parser_stdout-container-3": "container-3-stdout-parser",
+            "fluentbit.io/parser_stderr-container-4": "container-4-stderr-parser"
+        }
+    }
+}
