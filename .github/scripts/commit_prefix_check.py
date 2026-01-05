@@ -62,11 +62,14 @@ def infer_prefix_from_paths(paths):
                 component_prefixes.add(f"{parts[1]}:")
 
         # ----- src/ → flb_xxx.* → xxx: OR src/<dir>/ → <dir>: -----
+        # ----- src/fluent-bit.c → bin: -----
         if p.startswith("src/"):
             filename = os.path.basename(p)
             if filename.startswith("flb_"):
                 core = filename[4:].split(".")[0]
                 component_prefixes.add(f"{core}:")
+            elif filename == "fluent-bit.c":
+                component_prefixes.add("bin:")
             else:
                 parts = p.split("/")
                 if len(parts) > 1:
