@@ -719,11 +719,18 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_tail_config, skip_empty_lines),
      "Allows to skip empty lines."
     },
-
     {
-      FLB_CONFIG_MAP_BOOL, "truncate_long_lines", "false",
-      0, FLB_TRUE, offsetof(struct flb_tail_config, truncate_long_lines),
-      "Truncate overlong lines after input encoding to UTF-8"
+     FLB_CONFIG_MAP_BOOL, "skip_permission_errors", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, skip_permission_errors),
+     "Skip directories with permission errors instead of failing. When enabled, "
+     "the plugin will continue processing accessible directories even if some directories "
+     "cannot be read due to permission issues. When disabled (default), any permission error will "
+     "cause the plugin to fail entirely."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "truncate_long_lines", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, truncate_long_lines),
+     "Truncate overlong lines after input encoding to UTF-8"
     },
 #ifdef __linux__
     {
