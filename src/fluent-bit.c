@@ -74,6 +74,7 @@ flb_ctx_t *ctx;
 struct flb_config *config;
 volatile sig_atomic_t exit_signal = 0;
 volatile sig_atomic_t flb_bin_restarting = FLB_RELOAD_IDLE;
+volatile sig_atomic_t dump_requested = 0;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
 struct flb_stacktrace flb_st;
@@ -636,7 +637,7 @@ static void flb_signal_handler(int signal)
         abort();
 #ifndef FLB_SYSTEM_WINDOWS
     case SIGCONT:
-        flb_dump(ctx->config);
+        dump_requested = 1;
         break;
 #ifndef FLB_HAVE_STATIC_CONF
     case SIGHUP:
@@ -1491,6 +1492,11 @@ static int flb_main_run(int argc, char **argv)
 #ifdef FLB_SYSTEM_WINDOWS
         flb_console_handler_set_ctx(ctx, cf_opts);
 #endif
+        if (dump_requested) {
+            dump_requested = 0;
+            flb_dump(ctx->config);
+        }
+
         if (flb_bin_restarting == FLB_RELOAD_IN_PROGRESS) {
             if (supervisor_reload_notified == FLB_FALSE &&
                 ctx != NULL && ctx->config != NULL) {
