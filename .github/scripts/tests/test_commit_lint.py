@@ -66,6 +66,16 @@ def test_infer_multiple_prefixes():
     # At least one real component touched → build is optional
     assert build_optional is True
 
+def test_infer_prefix_fluent_bit_entrypoint():
+    """
+    Test that src/fluent-bit.c infers bin: prefix.
+
+    fluent-bit.c is the main entry point of the fluent-bit binary,
+    so commits touching this file should allow the 'bin:' prefix.
+    """
+    prefixes, build_optional = infer_prefix_from_paths(["src/fluent-bit.c"])
+    assert prefixes == {"bin:"}
+    assert build_optional is True
 
 # -----------------------------------------------------------
 # Tests: Bad Squash Detection
@@ -153,6 +163,21 @@ def test_valid_commit_multiple_signoffs_allowed():
         "Signed-off-by: User1\n"
         "Signed-off-by: User2",
         ["plugins/out_s3/s3.c"]
+    )
+    ok, _ = validate_commit(commit)
+    assert ok is True
+
+
+def test_valid_commit_bin_prefix_for_fluent_bit():
+    """
+    Test that commits modifying src/fluent-bit.c allow the 'bin:' prefix.
+
+    The fluent-bit.c file represents the binary entry point, so using
+    'bin:' as the commit prefix should be valid.
+    """
+    commit = make_commit(
+        "bin: adjust startup behavior\n\nSigned-off-by: User",
+        ["src/fluent-bit.c"]
     )
     ok, _ = validate_commit(commit)
     assert ok is True
