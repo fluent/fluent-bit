@@ -180,17 +180,6 @@ def validate_commit(commit):
     expected_lower = {p.lower() for p in expected}
     subj_lower = subject_prefix.lower()
 
-    # ------------------------------------------------
-    # config_format strict rule:
-    # If config_format: exists, it MUST be used as subject
-    # ------------------------------------------------
-    if "config_format:" in expected_lower and subj_lower != "config_format:":
-        expected_list = sorted(expected)
-        expected_str = ", ".join(expected_list)
-        return False, (
-            f"Subject prefix '{subject_prefix}' does not match files changed.\n"
-            f"Expected one of: config_format:"
-        )
 
     # ------------------------------------------------
     # config_format conditional umbrella rule
