@@ -415,6 +415,8 @@ int complete_multipart_upload(struct flb_s3 *ctx,
     struct flb_aws_client *s3_client;
     flb_sds_t presigned_host = NULL;
     const char *original_host = NULL;
+    char *original_upstream_host = NULL;
+    int original_upstream_port = 0;
     int presigned_port = 0;
     int result = -1;
 
@@ -438,7 +440,11 @@ int complete_multipart_upload(struct flb_s3 *ctx,
         }
 
         original_host = ctx->s3_client->host;
+        original_upstream_host = ctx->s3_client->upstream->tcp_host;
+        original_upstream_port = ctx->s3_client->upstream->tcp_port;
         ctx->s3_client->host = presigned_host;
+        ctx->s3_client->upstream->tcp_host = presigned_host;
+        ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
     }
     else {
         uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 11 +
@@ -505,6 +511,8 @@ cleanup:
 
     if (original_host != NULL) {
         ctx->s3_client->host = original_host;
+        ctx->s3_client->upstream->tcp_host = original_upstream_host;
+        ctx->s3_client->upstream->tcp_port = original_upstream_port;
         flb_sds_destroy(presigned_host);
     }
 
@@ -525,6 +533,8 @@ int abort_multipart_upload(struct flb_s3 *ctx,
     struct flb_aws_client *s3_client;
     flb_sds_t presigned_host = NULL;
     const char *original_host = NULL;
+    char *original_upstream_host = NULL;
+    int original_upstream_port = 0;
     int presigned_port = 0;
     int result = -1;
     int ret;
@@ -549,7 +559,11 @@ int abort_multipart_upload(struct flb_s3 *ctx,
         }
 
         original_host = ctx->s3_client->host;
+        original_upstream_host = ctx->s3_client->upstream->tcp_host;
+        original_upstream_port = ctx->s3_client->upstream->tcp_port;
         ctx->s3_client->host = presigned_host;
+        ctx->s3_client->upstream->tcp_host = presigned_host;
+        ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
     }
     else {
         uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 11 +
@@ -604,6 +618,8 @@ int abort_multipart_upload(struct flb_s3 *ctx,
 abort_cleanup:
     if (original_host != NULL) {
         ctx->s3_client->host = original_host;
+        ctx->s3_client->upstream->tcp_host = original_upstream_host;
+        ctx->s3_client->upstream->tcp_port = original_upstream_port;
         flb_sds_destroy(presigned_host);
     }
 
@@ -627,6 +643,8 @@ int create_multipart_upload(struct flb_s3 *ctx,
     int ret;
     flb_sds_t presigned_host = NULL;
     const char *original_host = NULL;
+    char *original_upstream_host = NULL;
+    int original_upstream_port = 0;
     int presigned_port = 0;
 
     if (pre_signed_url != NULL) {
@@ -643,7 +661,11 @@ int create_multipart_upload(struct flb_s3 *ctx,
         }
 
         original_host = ctx->s3_client->host;
+        original_upstream_host = ctx->s3_client->upstream->tcp_host;
+        original_upstream_port = ctx->s3_client->upstream->tcp_port;
         ctx->s3_client->host = presigned_host;
+        ctx->s3_client->upstream->tcp_host = presigned_host;
+        ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
     }
     else {
         uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 8);
@@ -681,6 +703,8 @@ int create_multipart_upload(struct flb_s3 *ctx,
 cleanup:
     if (original_host != NULL) {
         ctx->s3_client->host = original_host;
+        ctx->s3_client->upstream->tcp_host = original_upstream_host;
+        ctx->s3_client->upstream->tcp_port = original_upstream_port;
         flb_sds_destroy(presigned_host);
     }
 
@@ -779,6 +803,8 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
     char body_md5[25];
     flb_sds_t presigned_host = NULL;
     const char *original_host = NULL;
+    char *original_upstream_host = NULL;
+    int original_upstream_port = 0;
     int presigned_port = 0;
     int result = -1;
 
@@ -796,7 +822,11 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
         }
 
         original_host = ctx->s3_client->host;
+        original_upstream_host = ctx->s3_client->upstream->tcp_host;
+        original_upstream_port = ctx->s3_client->upstream->tcp_port;
         ctx->s3_client->host = presigned_host;
+        ctx->s3_client->upstream->tcp_host = presigned_host;
+        ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
     }
     else {
         uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 8);
@@ -899,6 +929,8 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
 cleanup:
     if (original_host != NULL) {
         ctx->s3_client->host = original_host;
+        ctx->s3_client->upstream->tcp_host = original_upstream_host;
+        ctx->s3_client->upstream->tcp_port = original_upstream_port;
         flb_sds_destroy(presigned_host);
     }
 

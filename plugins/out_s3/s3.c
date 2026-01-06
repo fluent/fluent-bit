@@ -2550,6 +2550,8 @@ static int put_blob_object(struct flb_s3 *ctx,
     flb_sds_t presigned_full = NULL;
     flb_sds_t presigned_host = NULL;
     const char *original_host = NULL;
+    char *original_upstream_host = NULL;
+    int original_upstream_port = 0;
     int presigned_port = 0;
     char final_body_md5[25];
 
@@ -2603,7 +2605,11 @@ static int put_blob_object(struct flb_s3 *ctx,
         }
 
         original_host = ctx->s3_client->host;
+        original_upstream_host = ctx->s3_client->upstream->tcp_host;
+        original_upstream_port = ctx->s3_client->upstream->tcp_port;
         ctx->s3_client->host = presigned_host;
+        ctx->s3_client->upstream->tcp_host = presigned_host;
+        ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
     }
 
     memset(final_body_md5, 0, sizeof(final_body_md5));
@@ -2660,6 +2666,8 @@ static int put_blob_object(struct flb_s3 *ctx,
 cleanup:
     if (original_host != NULL) {
         ctx->s3_client->host = original_host;
+        ctx->s3_client->upstream->tcp_host = original_upstream_host;
+        ctx->s3_client->upstream->tcp_port = original_upstream_port;
         flb_sds_destroy(presigned_host);
     }
 
