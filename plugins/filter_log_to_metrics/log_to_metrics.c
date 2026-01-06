@@ -937,7 +937,17 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                         else {
                             /* Read value from field */
                             if (rval->type == FLB_RA_STRING) {
-                                sscanf(rval->val.string, "%lf", &counter_value);
+                                int sscanf_ret = sscanf(rval->val.string, "%lf", &counter_value);
+                                if (sscanf_ret != 1) {
+                                    flb_plg_error(f_ins,
+                                                "cannot parse value_field '%s' as numeric, falling back to increment by 1",
+                                                rval->val.string);
+                                    flb_ra_key_value_destroy(rval);
+                                    rval = NULL;
+                                    ret = cmt_counter_inc(ctx->c, ts, label_count,
+                                                    label_values);
+                                    break;
+                                }
                             }
                             else if (rval->type == FLB_RA_FLOAT) {
                                 counter_value = rval->val.f64;
@@ -952,6 +962,19 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                                 rval = NULL;
                                 break;
                             }
+
+                            /* Validate counter value is non-negative */
+                            if (counter_value < 0) {
+                                flb_plg_error(f_ins,
+                                            "counter value_field contains negative value %.2f, falling back to increment by 1",
+                                            counter_value);
+                                flb_ra_key_value_destroy(rval);
+                                rval = NULL;
+                                ret = cmt_counter_inc(ctx->c, ts, label_count,
+                                                label_values);
+                                break;
+                            }
+
                             ret = cmt_counter_add(ctx->c, ts, counter_value,
                                             label_count, label_values);
                             flb_ra_key_value_destroy(rval);
