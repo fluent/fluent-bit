@@ -193,6 +193,22 @@ def validate_commit(commit):
         )
 
     # ------------------------------------------------
+    # config_format conditional umbrella rule
+    # ------------------------------------------------
+    if "config_format:" in expected_lower:
+        non_build = {
+            p for p in expected_lower
+            if p not in ("build:", "cmakelists.txt:")
+        }
+
+        # Allow ONLY if all non-build prefixes are config_format:
+        if non_build != {"config_format:"}:
+            return False, (
+                f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+                f"config_format commits must not include other components."
+            )
+
+    # ------------------------------------------------
     # Multiple-component detection
     # ------------------------------------------------
     # Treat pure build-related prefixes ("build:", "CMakeLists.txt:") as non-components.
@@ -205,7 +221,7 @@ def validate_commit(commit):
     }
 
     # Prefixes that are allowed to cover multiple subcomponents
-    umbrella_prefixes = {"lib:", "config_format:"}
+    umbrella_prefixes = {"lib:"}
 
     # If more than one non-build prefix is inferred AND the subject is not an umbrella
     # prefix, require split commits.
