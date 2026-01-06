@@ -849,6 +849,7 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
     char **label_values = NULL;
     int label_count = 0;
     int i;
+    int sscanf_ret = 0;
     double gauge_value = 0;
     double histogram_value = 0;
     double counter_value = 0;
@@ -937,7 +938,7 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                         else {
                             /* Read value from field */
                             if (rval->type == FLB_RA_STRING) {
-                                int sscanf_ret = sscanf(rval->val.string, "%lf", &counter_value);
+                                sscanf_ret = sscanf(rval->val.string, "%lf", &counter_value);
                                 if (sscanf_ret != 1) {
                                     flb_plg_error(f_ins,
                                                 "cannot parse value_field '%s' as numeric, falling back to increment by 1",
