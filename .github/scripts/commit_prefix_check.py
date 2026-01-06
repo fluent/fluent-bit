@@ -62,18 +62,28 @@ def infer_prefix_from_paths(paths):
                 component_prefixes.add(f"{parts[1]}:")
 
         # ----- src/ → flb_xxx.* → xxx: OR src/<dir>/ → <dir>: -----
-        # ----- src/fluent-bit.c → bin: -----
+        # ----- src/ handling -----
         if p.startswith("src/"):
+            parts = p.split("/")
             filename = os.path.basename(p)
-            if filename.startswith("flb_"):
+
+            # src/fluent-bit.c → bin:
+            if filename == "fluent-bit.c":
+                component_prefixes.add("bin:")
+                continue
+
+            # src/flb_xxx.c → xxx:
+            if len(parts) == 2 and filename.startswith("flb_"):
                 core = filename[4:].split(".")[0]
                 component_prefixes.add(f"{core}:")
-            elif filename == "fluent-bit.c":
-                component_prefixes.add("bin:")
-            else:
-                parts = p.split("/")
-                if len(parts) > 1:
-                    component_prefixes.add(f"{parts[1]}:")
+                continue
+
+            # src/<dir>/... → <dir>:
+            if len(parts) > 2:
+                src_dir = parts[1]
+                component_prefixes.add(f"{src_dir}:")
+                continue
+
 
     # prefixes = component prefixes + build: if needed
     prefixes |= component_prefixes
@@ -171,6 +181,18 @@ def validate_commit(commit):
     subj_lower = subject_prefix.lower()
 
     # ------------------------------------------------
+    # config_format strict rule:
+    # If config_format: exists, it MUST be used as subject
+    # ------------------------------------------------
+    if "config_format:" in expected_lower and subj_lower != "config_format:":
+        expected_list = sorted(expected)
+        expected_str = ", ".join(expected_list)
+        return False, (
+            f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+            f"Expected one of: config_format:"
+        )
+
+    # ------------------------------------------------
     # Multiple-component detection
     # ------------------------------------------------
     # Treat pure build-related prefixes ("build:", "CMakeLists.txt:") as non-components.
@@ -183,7 +205,7 @@ def validate_commit(commit):
     }
 
     # Prefixes that are allowed to cover multiple subcomponents
-    umbrella_prefixes = {"lib:"}
+    umbrella_prefixes = {"lib:", "config_format:"}
 
     # If more than one non-build prefix is inferred AND the subject is not an umbrella
     # prefix, require split commits.
