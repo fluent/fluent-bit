@@ -622,6 +622,75 @@ def test_valid_config_file_changes():
     ok, _ = validate_commit(commit)
     assert ok is True
 
+# -----------------------------------------------------------
+# config_format strict rules
+# -----------------------------------------------------------
+
+def test_valid_config_format_commit():
+    """
+    When files under src/config_format are modified, the subject MUST use
+    the umbrella prefix 'config_format:'.
+
+    This ensures config_format is treated as a logical subsystem rather than
+    exposing internal implementation names (cf_yaml, cf_fluentbit, etc.)
+    in commit subjects.
+    """
+    commit = make_commit(
+        "config_format: cf_yaml: fix include resolution\n\nSigned-off-by: User",
+        ["src/config_format/flb_cf_yaml.c"]
+    )
+    ok, _ = validate_commit(commit)
+    assert ok is True
+
+
+def test_error_cf_yaml_prefix_not_allowed():
+    """
+    Internal implementation prefixes like 'cf_yaml:' must NOT be allowed
+    as commit subjects when modifying src/config_format.
+
+    The umbrella prefix 'config_format:' must be used instead.
+    """
+    commit = make_commit(
+        "cf_yaml: fix include resolution\n\nSigned-off-by: User",
+        ["src/config_format/flb_cf_yaml.c"]
+    )
+    ok, msg = validate_commit(commit)
+    assert ok is False
+    assert "config_format:" in msg
+
+
+def test_error_yaml_prefix_not_allowed():
+    """
+    Generic implementation prefixes like 'yaml:' must NOT be allowed
+    for src/config_format changes.
+
+    This prevents leaking format-specific implementation details into
+    commit history.
+    """
+    commit = make_commit(
+        "yaml: fix include resolution\n\nSigned-off-by: User",
+        ["src/config_format/flb_cf_yaml.c"]
+    )
+    ok, msg = validate_commit(commit)
+    assert ok is False
+    assert "config_format:" in msg
+
+
+def test_valid_config_format_multiple_files():
+    """
+    Modifying multiple files under src/config_format should still require
+    the 'config_format:' umbrella prefix.
+    """
+    commit = make_commit(
+        "config_format: refactor include handling\n\nSigned-off-by: User",
+        [
+            "src/config_format/flb_cf_yaml.c",
+            "src/config_format/flb_cf_fluentbit.c",
+        ]
+    )
+    ok, _ = validate_commit(commit)
+    assert ok is True
+
 
 # -----------------------------------------------------------
 # Additional Tests: validate_commit Complex Scenarios
