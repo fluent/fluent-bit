@@ -96,7 +96,12 @@ static int flb_systemd_repack_map(struct flb_log_event_encoder *encoder,
                                      &offset);
 
         if (result == MSGPACK_UNPACK_SUCCESS) {
-            result = FLB_EVENT_ENCODER_SUCCESS;
+            if (source_map.data.type == MSGPACK_OBJECT_MAP) {
+                result = FLB_EVENT_ENCODER_SUCCESS;
+            }
+            else {
+                result = FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
+            }
         }
         else {
             result = FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
@@ -215,9 +220,10 @@ static int systemd_enumerate_data_store(struct flb_config *config,
     len = (sep - key);
     key_len = len;
 
-    /* Skip FLUENT_BIT_PARSER field - it's metadata, not log content */
+    /* Skip FLUENT_BIT_PARSER field - it's metadata, not log content
+     * Return -1 so it doesn't count toward max_fields */
     if (strncmp(key, "FLUENT_BIT_PARSER", key_len) == 0) {
-        return 0;
+        return -1;
     }
 
     /* If this is MESSAGE field and parser is specified, apply parser */
@@ -423,11 +429,16 @@ static int in_systemd_collect(struct flb_input_instance *ins,
         ret = sd_journal_get_data(ctx->j, "FLUENT_BIT_PARSER", &data, &length);
         if (ret == 0) {
             name = flb_strndup((const char *)(data+18), length-18);
-            parser = flb_parser_get(name, config);
-            if (!parser) {
-                flb_plg_error(ctx->ins, "no such parser: '%s'", name);
+            if (name == NULL) {
+                flb_plg_error(ctx->ins, "failed to allocate parser name");
             }
-            flb_free(name);
+            else {
+                parser = flb_parser_get(name, config);
+                if (!parser) {
+                    flb_plg_error(ctx->ins, "no such parser: '%s'", name);
+                }
+                flb_free(name);
+            }
         }
 
         if (last_tag_len == 0) {
