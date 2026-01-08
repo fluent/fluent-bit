@@ -88,7 +88,7 @@ char *flb_aws_endpoint(char* service, char* region)
         strcmp("cn-northwest-1", region) == 0) {
         domain_suffix = AWS_SERVICE_ENDPOINT_SUFFIX_COM_CN;
     }
-    else if (strcmp("eusc-de-east-1", region) == 0) {
+    else if (strncmp(region, "eusc-", 5) == 0) {
         domain_suffix = AWS_SERVICE_ENDPOINT_SUFFIX_EU;
     }
 
@@ -105,7 +105,7 @@ char *flb_aws_endpoint(char* service, char* region)
     }
 
     bytes = snprintf(endpoint, len, AWS_SERVICE_ENDPOINT_FORMAT, service, region, domain_suffix);
-    if (bytes < 0) {
+    if (bytes < 0 || bytes >= len) {
         flb_errno();
         flb_free(endpoint);
         return NULL;
