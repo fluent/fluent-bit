@@ -215,6 +215,10 @@ flb_sds_t custom_calyptia_pipeline_config_get(struct flb_config *ctx)
 
 int set_fleet_input_properties(struct calyptia *ctx, struct flb_input_instance *fleet)
 {
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_kv *keyval;
+
     if (!fleet) {
         flb_plg_error(ctx->ins, "invalid fleet input instance");
         return -1;
@@ -255,6 +259,12 @@ int set_fleet_input_properties(struct calyptia *ctx, struct flb_input_instance *
         flb_input_set_property(fleet, "interval_nsec", ctx->fleet_interval_nsec);
     }
 
+    mk_list_foreach(head, &ctx->ins->net_properties) {
+        keyval = mk_list_entry(head, struct flb_kv, _head);
+        flb_debug("set fleet net property: %s=%s", keyval->key, keyval->val);
+        flb_input_set_property(fleet, keyval->key, keyval->val);
+    }
+
     return 0;
 }
 
@@ -267,6 +277,8 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
     struct flb_slist_entry *val = NULL;
     flb_sds_t label;
     struct flb_config_map_val *mv;
+    struct mk_list *tmp;
+    struct flb_kv *keyval;
 
     cloud = flb_output_new(config, "calyptia", ctx, FLB_FALSE);
 
@@ -352,6 +364,12 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
         flb_sds_printf(&label, "fleet_id %s", ctx->fleet_id);
         flb_output_set_property(cloud, "add_label", label);
         flb_sds_destroy(label);
+    }
+
+    mk_list_foreach(head, &ctx->ins->net_properties) {
+        keyval = mk_list_entry(head, struct flb_kv, _head);
+        flb_debug("set cloud net property: %s=%s", keyval->key, keyval->val);
+        flb_output_set_property(cloud, keyval->key, keyval->val);
     }
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -727,6 +745,7 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct calyptia, add_labels),
      "Label to append to the generated metric."
     },
+
     {
      FLB_CONFIG_MAP_STR, "machine_id", NULL,
      0, FLB_TRUE, offsetof(struct calyptia, machine_id),
@@ -790,4 +809,5 @@ struct flb_custom_plugin custom_calyptia_plugin = {
     .config_map   = config_map,
     .cb_init      = cb_calyptia_init,
     .cb_exit      = cb_calyptia_exit,
+    .flags        = FLB_CUSTOM_NET_CLIENT,
 };
