@@ -69,8 +69,9 @@ static flb_sds_t add_aws_auth(struct flb_http_client *c,
 
     signature = flb_signv4_do(c, FLB_TRUE, FLB_TRUE, time(NULL),
                               ec->aws_region, ec->aws_service_name,
-                              S3_MODE_SIGNED_PAYLOAD, ec->aws_unsigned_headers,
-                              ec->aws_provider);
+                              S3_MODE_SIGNED_PAYLOAD,
+                              ec->aws_unsigned_headers.value,
+                              ec->aws_provider.value);
     if (!signature) {
         flb_plg_error(ctx->ins, "could not sign request with sigv4");
         return NULL;
@@ -214,15 +215,15 @@ static flb_sds_t es_get_id_value(struct flb_elasticsearch *ctx,
 {
     struct flb_ra_value *rval = NULL;
     flb_sds_t tmp_str;
-    rval = flb_ra_get_value_object(ec->ra_id_key, *map);
+    rval = flb_ra_get_value_object(ec->ra_id_key.value, *map);
     if (rval == NULL) {
         flb_plg_warn(ctx->ins, "the value of %s is missing",
-                     ec->id_key);
+                     ec->id_key.value);
         return NULL;
     }
     else if(rval->o.type != MSGPACK_OBJECT_STR) {
         flb_plg_warn(ctx->ins, "the value of %s is not string",
-                     ec->id_key);
+                     ec->id_key.value);
         flb_ra_key_value_destroy(rval);
         return NULL;
     }
@@ -253,7 +254,7 @@ static int compose_index_header(struct flb_elasticsearch_config *ec,
     if (es_index_custom_len > 0) {
         p = logstash_index + es_index_custom_len;
     } else {
-        p = logstash_index + flb_sds_len(ec->logstash_prefix);
+        p = logstash_index + flb_sds_len(ec->logstash_prefix.value);
     }
     len = p - logstash_index;
     ret = snprintf(p, logstash_index_size - len, "%s",
@@ -266,7 +267,7 @@ static int compose_index_header(struct flb_elasticsearch_config *ec,
     len += strlen(separator_str);
 
     s = strftime(p, logstash_index_size - len,
-                 ec->logstash_dateformat, tm);
+                 ec->logstash_dateformat.value, tm);
     if (s==0) {
         /* exceed limit */
         return -1;
@@ -351,7 +352,7 @@ static int elasticsearch_format(struct flb_config *config,
 
     /* Copy logstash prefix if logstash format is enabled */
     if (ec->logstash_format == FLB_TRUE) {
-        strncpy(logstash_index, ec->logstash_prefix, sizeof(logstash_index));
+        strncpy(logstash_index, ec->logstash_prefix.value, sizeof(logstash_index));
         logstash_index[sizeof(logstash_index) - 1] = '\0';
     }
 
@@ -366,7 +367,7 @@ static int elasticsearch_format(struct flb_config *config,
         flb_time_get(&tms);
         gmtime_r(&tms.tm.tv_sec, &tm);
         strftime(index_formatted, sizeof(index_formatted) - 1,
-                 ec->index, &tm);
+                 ec->index.value, &tm);
         es_index = index_formatted;
         if (ec->suppress_type_name) {
             index_len = flb_sds_snprintf(&j_index,
@@ -380,7 +381,7 @@ static int elasticsearch_format(struct flb_config *config,
                                          flb_sds_alloc(j_index),
                                          ES_BULK_INDEX_FMT,
                                          ec->es_action,
-                                         es_index, ec->type);
+                                         es_index, ec->type.value);
         }
     }
 
@@ -408,8 +409,8 @@ static int elasticsearch_format(struct flb_config *config,
         map_size = map.via.map.size;
 
         es_index_custom_len = 0;
-        if (ec->logstash_prefix_key) {
-            flb_sds_t v = flb_ra_translate(ec->ra_prefix_key,
+        if (ec->logstash_prefix_key.value) {
+            flb_sds_t v = flb_ra_translate(ec->ra_prefix_key.value,
                                            (char *) tag, tag_len,
                                            map, NULL);
             if (v) {
@@ -438,13 +439,14 @@ static int elasticsearch_format(struct flb_config *config,
         msgpack_pack_map(&tmp_pck, map_size + 1);
 
         /* Append the time key */
-        msgpack_pack_str(&tmp_pck, flb_sds_len(ec->time_key));
-        msgpack_pack_str_body(&tmp_pck, ec->time_key, flb_sds_len(ec->time_key));
+        msgpack_pack_str(&tmp_pck, flb_sds_len(ec->time_key.value));
+        msgpack_pack_str_body(&tmp_pck, ec->time_key.value,
+                              flb_sds_len(ec->time_key.value));
 
         /* Format the time */
         gmtime_r(&tms.tm.tv_sec, &tm);
         s = strftime(time_formatted, sizeof(time_formatted) - 1,
-                     ec->time_key_format, &tm);
+                     ec->time_key_format.value, &tm);
         if (ec->time_key_nanos) {
             len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
                            ".%09" PRIu64 "Z", (uint64_t) tms.tm.tv_nsec);
@@ -458,11 +460,11 @@ static int elasticsearch_format(struct flb_config *config,
         msgpack_pack_str(&tmp_pck, s);
         msgpack_pack_str_body(&tmp_pck, time_formatted, s);
 
-        es_index = ec->index;
+        es_index = ec->index.value;
         if (ec->logstash_format == FLB_TRUE) {
             ret = compose_index_header(ec, es_index_custom_len,
                                        &logstash_index[0], sizeof(logstash_index),
-                                       ec->logstash_prefix_separator, &tm);
+                                       ec->logstash_prefix_separator.value, &tm);
             if (ret < 0) {
                 /* retry with default separator */
                 compose_index_header(ec, es_index_custom_len,
@@ -484,21 +486,22 @@ static int elasticsearch_format(struct flb_config *config,
                                                  flb_sds_alloc(j_index),
                                                  ES_BULK_INDEX_FMT,
                                                  ec->es_action,
-                                                 es_index, ec->type);
+                                                 es_index, ec->type.value);
                 }
             }
         }
         else if (ec->current_time_index == FLB_TRUE) {
             /* Make sure we handle index time format for index */
             strftime(index_formatted, sizeof(index_formatted) - 1,
-                     ec->index, &tm);
+                     ec->index.value, &tm);
             es_index = index_formatted;
         }
 
         /* Tag Key */
         if (ec->include_tag_key == FLB_TRUE) {
-            msgpack_pack_str(&tmp_pck, flb_sds_len(ec->tag_key));
-            msgpack_pack_str_body(&tmp_pck, ec->tag_key, flb_sds_len(ec->tag_key));
+            msgpack_pack_str(&tmp_pck, flb_sds_len(ec->tag_key.value));
+            msgpack_pack_str_body(&tmp_pck, ec->tag_key.value,
+                                  flb_sds_len(ec->tag_key.value));
             msgpack_pack_str(&tmp_pck, tag_len);
             msgpack_pack_str_body(&tmp_pck, tag, tag_len);
         }
@@ -537,10 +540,10 @@ static int elasticsearch_format(struct flb_config *config,
                                              flb_sds_alloc(j_index),
                                              ES_BULK_INDEX_FMT_ID,
                                              ec->es_action,
-                                             es_index, ec->type, es_uuid);
+                                             es_index, ec->type.value, es_uuid);
             }
         }
-        if (ec->ra_id_key) {
+        if (ec->ra_id_key.value) {
             id_key_str = es_get_id_value(ctx, ec, &map);
             if (id_key_str) {
                 if (ec->suppress_type_name) {
@@ -555,7 +558,8 @@ static int elasticsearch_format(struct flb_config *config,
                                                  flb_sds_alloc(j_index),
                                                  ES_BULK_INDEX_FMT_ID,
                                                  ec->es_action,
-                                                 es_index, ec->type, id_key_str);
+                                                 es_index, ec->type.value,
+                                                 id_key_str);
                 }
                 flb_sds_destroy(id_key_str);
                 id_key_str = NULL;
@@ -574,13 +578,13 @@ static int elasticsearch_format(struct flb_config *config,
         }
 
         out_buf_len = flb_sds_len(out_buf);
-        if (strcasecmp(ec->write_operation, FLB_ES_WRITE_OP_UPDATE) == 0) {
+        if (strcasecmp(ec->write_operation.value, FLB_ES_WRITE_OP_UPDATE) == 0) {
             tmp_buf = out_buf;
             out_buf = flb_sds_create_len(NULL, out_buf_len = out_buf_len + sizeof(ES_BULK_UPDATE_OP_BODY) - 2);
             out_buf_len = snprintf(out_buf, out_buf_len, ES_BULK_UPDATE_OP_BODY, tmp_buf);
             flb_sds_destroy(tmp_buf);
         }
-        else if (strcasecmp(ec->write_operation, FLB_ES_WRITE_OP_UPSERT) == 0) {
+        else if (strcasecmp(ec->write_operation.value, FLB_ES_WRITE_OP_UPSERT) == 0) {
             tmp_buf = out_buf;
             out_buf = flb_sds_create_len(NULL, out_buf_len = out_buf_len + sizeof(ES_BULK_UPSERT_OP_BODY) - 2);
             out_buf_len = snprintf(out_buf, out_buf_len, ES_BULK_UPSERT_OP_BODY, tmp_buf);
@@ -929,8 +933,8 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     if (ec->http_user && ec->http_passwd) {
         flb_http_basic_auth(c, ec->http_user, ec->http_passwd);
     }
-    else if (ec->cloud_user && ec->cloud_passwd) {
-        flb_http_basic_auth(c, ec->cloud_user, ec->cloud_passwd);
+    else if (ec->cloud_user.value && ec->cloud_passwd.value) {
+        flb_http_basic_auth(c, ec->cloud_user.value, ec->cloud_passwd.value);
     }
     else if (ec->http_api_key) {
         /* 7 for ApiKey + space */
@@ -1146,12 +1150,14 @@ static int cb_es_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_INDEX, FLB_ES_DEFAULT_INDEX,
-     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, index),
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, index) +
+         offsetof(struct flb_es_str, value),
      "Set an index name"
     },
     {
      FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_TYPE, FLB_ES_DEFAULT_TYPE,
-     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, type),
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, type) +
+         offsetof(struct flb_es_str, value),
      "Set the document type property"
     },
     {
@@ -1244,7 +1250,9 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_LOGSTASH_PREFIX, FLB_ES_DEFAULT_PREFIX,
-     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, logstash_prefix),
+     0, FLB_TRUE,
+     offsetof(struct flb_elasticsearch_config, logstash_prefix) +
+         offsetof(struct flb_es_sds_t, value),
      "When Logstash_Format is enabled, the Index name is composed using a prefix "
      "and the date, e.g: If Logstash_Prefix is equals to 'mydata' your index will "
      "become 'mydata-YYYY.MM.DD'. The last string appended belongs to the date "
@@ -1252,12 +1260,16 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_LOGSTASH_PREFIX_SEPARATOR, "-",
-     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, logstash_prefix_separator),
+     0, FLB_TRUE,
+     offsetof(struct flb_elasticsearch_config, logstash_prefix_separator) +
+         offsetof(struct flb_es_sds_t, value),
      "Set a separator between logstash_prefix and date."
     },
     {
      FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_LOGSTASH_PREFIX_KEY, NULL,
-     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, logstash_prefix_key),
+     0, FLB_TRUE,
+     offsetof(struct flb_elasticsearch_config, logstash_prefix_key) +
+         offsetof(struct flb_es_sds_t, value),
      "When included: the value in the record that belongs to the key will be looked "
      "up and over-write the Logstash_Prefix for index generation. If the key/value "
      "is not found in the record then the Logstash_Prefix option will act as a "
@@ -1265,20 +1277,23 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_LOGSTASH_DATEFORMAT, FLB_ES_DEFAULT_TIME_FMT,
-     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, logstash_dateformat),
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, logstash_dateformat) +
+         offsetof(struct flb_es_sds_t, value),
      "Time format (based on strftime) to generate the second part of the Index name"
     },
 
     /* Custom Time and Tag keys */
     {
      FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_TIME_KEY, FLB_ES_DEFAULT_TIME_KEY,
-     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, time_key),
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, time_key) +
+         offsetof(struct flb_es_sds_t, value),
      "When Logstash_Format is enabled, each record will get a new timestamp field. "
      "The Time_Key property defines the name of that field"
     },
     {
      FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_TIME_KEY_FORMAT, FLB_ES_DEFAULT_TIME_KEYF,
-     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, time_key_format),
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, time_key_format) +
+         offsetof(struct flb_es_sds_t, value),
      "When Logstash_Format is enabled, this property defines the format of the "
      "timestamp"
     },
@@ -1295,7 +1310,8 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_TAG_KEY, FLB_ES_DEFAULT_TAG_KEY,
-     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, tag_key),
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, tag_key) +
+         offsetof(struct flb_es_sds_t, value),
      "When Include_Tag_Key is enabled, this property defines the key name for the tag"
     },
     {
@@ -1333,12 +1349,14 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_WRITE_OPERATION, "create",
-     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, write_operation),
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, write_operation) +
+         offsetof(struct flb_es_sds_t, value),
      "Operation to use to write in bulk requests"
     },
     {
      FLB_CONFIG_MAP_STR, FLB_ES_CONFIG_PROPERTY_ID_KEY, NULL,
-     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, id_key),
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, id_key) +
+         offsetof(struct flb_es_sds_t, value),
      "If set, _id will be the value of the key from incoming record."
     },
     {
