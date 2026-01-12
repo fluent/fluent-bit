@@ -33,6 +33,7 @@
 
 #include "es.h"
 #include "es_conf_parse.h"
+#include "es_type.h"
 
 int flb_es_conf_set_cloud_credentials(const char *cloud_auth,
                                       struct flb_elasticsearch_config *ec)
@@ -49,24 +50,20 @@ int flb_es_conf_set_cloud_credentials(const char *cloud_auth,
 
     toks = flb_utils_split((const char *)cloud_auth, ':', -1);
     mk_list_foreach(head, toks) {
-        items++;
         entry = mk_list_entry(head, struct flb_split_entry, _head);
-        if (items == 1) {
-            ec->cloud_user = flb_strdup(entry->value);
-            if (ec->cloud_user == NULL) {
+        if (!items) {
+            if (flb_es_str_copy_str(&ec->cloud_user, entry->value)) {
                 flb_utils_split_free(toks);
                 return -1;
             }
-            ec->own_cloud_user = FLB_TRUE;
+            items++;
+            continue;
         }
-        if (items == 2) {
-            ec->cloud_passwd = flb_strdup(entry->value);
-            if (ec->cloud_passwd == NULL) {
-                flb_utils_split_free(toks);
-                return -1;
-            }
-            ec->own_cloud_passwd = FLB_TRUE;
+        if (flb_es_str_copy_str(&ec->cloud_passwd, entry->value)) {
+            flb_utils_split_free(toks);
+            return -1;
         }
+        break;
     }
     flb_utils_split_free(toks);
 
@@ -199,15 +196,15 @@ int flb_es_set_aws_unsigned_headers(struct flb_elasticsearch_config *ec)
     int ret;
 
     /* AWS Auth Unsigned Headers */
-    ec->aws_unsigned_headers = flb_malloc(sizeof(struct mk_list));
-    if (!ec->aws_unsigned_headers) {
+    flb_es_slist_move_slist(&ec->aws_unsigned_headers,
+        flb_malloc(sizeof(struct mk_list)));
+    if (!ec->aws_unsigned_headers.value) {
         flb_errno();
         return -1;
     }
-    ec->own_aws_unsigned_headers = FLB_TRUE;
 
-    flb_slist_create(ec->aws_unsigned_headers);
-    ret = flb_slist_add(ec->aws_unsigned_headers, "Content-Length");
+    flb_slist_create(ec->aws_unsigned_headers.value);
+    ret = flb_slist_add(ec->aws_unsigned_headers.value, "Content-Length");
     if (ret != 0) {
         return -1;
     }
@@ -228,7 +225,7 @@ static int set_aws_sts_provider(const char *aws_external_id,
     }
 
     /* Use the STS Provider */
-    ec->base_aws_provider = ec->aws_provider;
+    flb_es_aws_provider_set(&ec->base_aws_provider, &ec->aws_provider);
 
     aws_session_name = flb_sts_session_name();
     if (!aws_session_name) {
@@ -237,39 +234,39 @@ static int set_aws_sts_provider(const char *aws_external_id,
     }
 
     /* STS provider needs yet another separate TLS instance */
-    ec->aws_sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
-                                     FLB_TRUE,
-                                     ctx->ins->tls_debug,
-                                     ctx->ins->tls_vhost,
-                                     ctx->ins->tls_ca_path,
-                                     ctx->ins->tls_ca_file,
-                                     ctx->ins->tls_crt_file,
-                                     ctx->ins->tls_key_file,
-                                     ctx->ins->tls_key_passwd);
-    if (!ec->aws_sts_tls) {
+    flb_es_tls_move_tls(&ec->aws_sts_tls,
+        flb_tls_create(FLB_TLS_CLIENT_MODE,
+                       FLB_TRUE,
+                       ctx->ins->tls_debug,
+                       ctx->ins->tls_vhost,
+                       ctx->ins->tls_ca_path,
+                       ctx->ins->tls_ca_file,
+                       ctx->ins->tls_crt_file,
+                       ctx->ins->tls_key_file,
+                       ctx->ins->tls_key_passwd));
+    if (!ec->aws_sts_tls.value) {
         flb_errno();
         flb_free(aws_session_name);
         return -1;
     }
-    ec->own_aws_sts_tls = FLB_TRUE;
 
-    ec->aws_provider = flb_sts_provider_create(config,
-                                               ec->aws_sts_tls,
-                                               ec->base_aws_provider,
-                                               (char *)aws_external_id,
-                                               (char *)aws_role_arn,
-                                               aws_session_name,
-                                               ec->aws_region,
-                                               ec->aws_sts_endpoint,
-                                               NULL,
-                                               flb_aws_client_generator());
-    ec->own_base_aws_provider = ec->own_aws_provider;
-    ec->own_aws_provider = FLB_TRUE;
+    flb_es_aws_provider_move(&ec->base_aws_provider, &ec->aws_provider);
+    flb_es_aws_provider_move_provider(&ec->aws_provider,
+        flb_sts_provider_create(config,
+                                ec->aws_sts_tls.value,
+                                ec->base_aws_provider.value,
+                                (char *)aws_external_id,
+                                (char *)aws_role_arn,
+                                aws_session_name,
+                                ec->aws_region,
+                                ec->aws_sts_endpoint,
+                                NULL,
+                                flb_aws_client_generator()));
 
     /* Session name can be freed once provider is created */
     flb_free(aws_session_name);
 
-    if (!ec->aws_provider) {
+    if (!ec->aws_provider.value) {
         flb_error("[out_es] Failed to create AWS STS Credential Provider");
         return -1;
     }
@@ -286,9 +283,9 @@ int flb_es_conf_set_aws_provider(const char *aws_external_id,
     int ret;
 
     if (ec->has_aws_auth == FLB_FALSE) {
-        ec->aws_tls = NULL;
-        ec->aws_provider = NULL;
-        ec->base_aws_provider = NULL;
+        flb_es_tls_move_tls(&ec->aws_tls, NULL);
+        flb_es_aws_provider_set(&ec->aws_provider, NULL);
+        flb_es_aws_provider_set(&ec->base_aws_provider, NULL);
         return 0;
     }
 
@@ -300,33 +297,33 @@ int flb_es_conf_set_aws_provider(const char *aws_external_id,
     }
 
     /* AWS provider needs a separate TLS instance */
-    ec->aws_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
-                                 FLB_TRUE,
-                                 ctx->ins->tls_debug,
-                                 ctx->ins->tls_vhost,
-                                 ctx->ins->tls_ca_path,
-                                 ctx->ins->tls_ca_file,
-                                 ctx->ins->tls_crt_file,
-                                 ctx->ins->tls_key_file,
-                                 ctx->ins->tls_key_passwd);
-    if (!ec->aws_tls) {
+    flb_es_tls_move_tls(&ec->aws_tls,
+        flb_tls_create(FLB_TLS_CLIENT_MODE,
+                       FLB_TRUE,
+                       ctx->ins->tls_debug,
+                       ctx->ins->tls_vhost,
+                       ctx->ins->tls_ca_path,
+                       ctx->ins->tls_ca_file,
+                       ctx->ins->tls_crt_file,
+                       ctx->ins->tls_key_file,
+                       ctx->ins->tls_key_passwd));
+    if (!ec->aws_tls.value) {
         flb_errno();
         return -1;
     }
-    ec->own_aws_tls = FLB_TRUE;
 
-    ec->aws_provider = flb_standard_chain_provider_create(config,
-                                                          ec->aws_tls,
-                                                          ec->aws_region,
-                                                          ec->aws_sts_endpoint,
-                                                          NULL,
-                                                          flb_aws_client_generator(),
-                                                          ec->aws_profile);
-    if (!ec->aws_provider) {
+    flb_es_aws_provider_move_provider(&ec->aws_provider,
+        flb_standard_chain_provider_create(config,
+                                           ec->aws_tls.value,
+                                           ec->aws_region,
+                                           ec->aws_sts_endpoint,
+                                           NULL,
+                                           flb_aws_client_generator(),
+                                           ec->aws_profile));
+    if (!ec->aws_provider.value) {
         flb_error("[out_es] Failed to create AWS Credential Provider");
         return -1;
     }
-    ec->own_aws_provider = FLB_TRUE;
 
     ret = set_aws_sts_provider(aws_external_id, aws_role_arn, ec, ctx, config);
     if (ret != 0) {
@@ -335,11 +332,12 @@ int flb_es_conf_set_aws_provider(const char *aws_external_id,
     }
 
     /* initialize credentials in sync mode */
-    ec->aws_provider->provider_vtable->sync(ec->aws_provider);
-    ec->aws_provider->provider_vtable->init(ec->aws_provider);
+    ec->aws_provider.value->provider_vtable->sync(ec->aws_provider.value);
+    ec->aws_provider.value->provider_vtable->init(ec->aws_provider.value);
     /* set back to async */
-    ec->aws_provider->provider_vtable->async(ec->aws_provider);
-    ec->aws_provider->provider_vtable->upstream_set(ec->aws_provider, ctx->ins);
+    ec->aws_provider.value->provider_vtable->async(ec->aws_provider.value);
+    ec->aws_provider.value->provider_vtable->upstream_set(
+        ec->aws_provider.value, ctx->ins);
 
     return 0;
 }
