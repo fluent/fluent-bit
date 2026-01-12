@@ -21,7 +21,8 @@
 #define FLB_OUT_ES_H
 
 #include <monkey/mk_core/mk_list.h>
-#include <fluent-bit/flb_sds.h>
+
+#include "es_type.h"
 
 #define FLB_ES_DEFAULT_HOST       "127.0.0.1"
 #define FLB_ES_DEFAULT_PORT       9200
@@ -48,19 +49,11 @@ struct flb_upstream;
 struct flb_upstream_ha;
 struct flb_upstream_node;
 struct flb_output_instance;
-struct flb_record_accessor;
-
-#ifdef FLB_HAVE_AWS
-struct flb_aws_provider;
-struct flb_tls;
-#endif
 
 struct flb_elasticsearch_config {
     /* Elasticsearch index (database) and type (table) */
-    char *index;
-    int own_index;
-    char *type;
-    int own_type;
+    struct flb_es_str index;
+    struct flb_es_str type;
     int suppress_type_name;
 
     /* HTTP Auth */
@@ -69,10 +62,8 @@ struct flb_elasticsearch_config {
     char *http_api_key;
 
     /* Elastic Cloud Auth */
-    char *cloud_user;
-    int own_cloud_user;
-    char *cloud_passwd;
-    int own_cloud_passwd;
+    struct flb_es_str cloud_user;
+    struct flb_es_str cloud_passwd;
 
     /* AWS Auth */
 #ifdef FLB_HAVE_AWS
@@ -80,18 +71,13 @@ struct flb_elasticsearch_config {
     char *aws_region;
     char *aws_sts_endpoint;
     char *aws_profile;
-    struct flb_aws_provider *aws_provider;
-    int own_aws_provider;
-    struct flb_aws_provider *base_aws_provider;
-    int own_base_aws_provider;
+    struct flb_es_aws_provider aws_provider;
+    struct flb_es_aws_provider base_aws_provider;
     /* tls instances can't be re-used; aws provider requires a separate one */
-    struct flb_tls *aws_tls;
-    int own_aws_tls;
-    struct flb_tls *aws_sts_tls;
-    int own_aws_sts_tls;
+    struct flb_es_tls aws_tls;
+    struct flb_es_tls aws_sts_tls;
     char *aws_service_name;
-    struct mk_list *aws_unsigned_headers;
-    int own_aws_unsigned_headers;
+    struct flb_es_slist aws_unsigned_headers;
 #endif
 
     /* HTTP Client Setup */
@@ -117,52 +103,41 @@ struct flb_elasticsearch_config {
     int current_time_index;
 
     /* prefix */
-    flb_sds_t logstash_prefix;
-    int own_logstash_prefix;
-    flb_sds_t logstash_prefix_separator;
-    int own_logstash_prefix_separator;
+    struct flb_es_sds_t logstash_prefix;
+    struct flb_es_sds_t logstash_prefix_separator;
 
     /* prefix key */
-    flb_sds_t logstash_prefix_key;
-    int own_logstash_prefix_key;
+    struct flb_es_sds_t logstash_prefix_key;
 
     /* date format */
-    flb_sds_t logstash_dateformat;
-    int own_logstash_dateformat;
+    struct flb_es_sds_t logstash_dateformat;
 
     /* time key */
-    flb_sds_t time_key;
-    int own_time_key;
+    struct flb_es_sds_t time_key;
 
     /* time key format */
-    flb_sds_t time_key_format;
-    int own_time_key_format;
+    struct flb_es_sds_t time_key_format;
 
     /* time key nanoseconds */
     int time_key_nanos;
 
     /* write operation */
-    flb_sds_t write_operation;
-    int own_write_operation;
+    struct flb_es_sds_t write_operation;
     /* write operation elasticsearch operation */
     const char *es_action;
 
     /* id_key */
-    flb_sds_t id_key;
-    int own_id_key;
-    struct flb_record_accessor *ra_id_key;
-    int own_ra_id_key;
+    struct flb_es_sds_t id_key;
+    struct flb_es_record_accessor ra_id_key;
 
     /* include_tag_key */
     int include_tag_key;
-    flb_sds_t tag_key;
-    int own_tag_key;
+    struct flb_es_sds_t tag_key;
 
     /* Elasticsearch HTTP API */
     char uri[256];
 
-    struct flb_record_accessor *ra_prefix_key;
-    int own_ra_prefix_key;
+    struct flb_es_record_accessor ra_prefix_key;
 
     /* Compression mode (gzip) */
     int compress_gzip;
