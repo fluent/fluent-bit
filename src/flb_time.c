@@ -101,6 +101,11 @@ uint64_t flb_time_to_millisec(struct flb_time *tm)
     return (((uint64_t)tm->tm.tv_sec * 1000L) + tm->tm.tv_nsec / 1000000L);
 }
 
+uint64_t flb_time_to_seconds(struct flb_time *tm)
+{
+    return (uint64_t)tm->tm.tv_sec;
+}
+
 int flb_time_add(struct flb_time *base, struct flb_time *duration, struct flb_time *result)
 {
     if (base == NULL || duration == NULL|| result == NULL) {
