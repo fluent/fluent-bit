@@ -103,7 +103,7 @@ static inline int log_push(struct log_message *msg, struct flb_log *log)
         return write(STDERR_FILENO, msg->msg, msg->size);
     }
     else if (log->type == FLB_LOG_FILE) {
-        fd = open(log->out, O_CREAT | O_WRONLY | O_APPEND, 0666);
+        fd = open(log->out, O_CREAT | O_WRONLY | O_APPEND, 0664);
         if (fd == -1) {
             fprintf(stderr, "[log] error opening log file %s. Using stderr.\n",
                     log->out);
