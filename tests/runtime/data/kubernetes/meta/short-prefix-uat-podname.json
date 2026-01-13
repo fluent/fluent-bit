@@ -1,0 +1,17 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "uat-myapp-12345",
+    "namespace": "core",
+    "uid": "00000000-0000-0000-0000-000000000000"
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "container"
+      }
+    ]
+  }
+}
+

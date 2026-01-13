@@ -1,0 +1,1 @@
+[1554141513.598656,{"log":"hello from uat pod","stream":"stdout","kubernetes":{"pod_name":"uat-myapp-12345","namespace_name":"core","container_name":"fluent-bit"}}]
