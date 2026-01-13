@@ -292,8 +292,9 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
 
         if (result.data.type == MSGPACK_OBJECT_MAP) {
             tag_from_record = NULL;
+            obj = &result.data;
+
             if (ctx->tag_key) {
-                obj = &result.data;
                 tag_from_record = tag_key(ctx, obj);
             }
 
@@ -404,6 +405,24 @@ static ssize_t parse_payload_json(struct flb_http *ctx, flb_sds_t tag,
     flb_free(pack);
 
     return ret;
+}
+
+static ssize_t parse_payload_json_ng(flb_sds_t tag,
+                                     struct flb_http_request *request)
+{
+    int ret;
+    int out_size;
+    char *pack;
+    struct flb_pack_state pack_state;
+    struct flb_http *ctx;
+    char *payload;
+    size_t size;
+
+    ctx = (struct flb_http *) request->stream->user_data;
+    payload = (char *) request->body;
+    size = cfl_sds_len(request->body);
+
+    return parse_payload_json(ctx, tag, payload, size);
 }
 
 static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
@@ -1068,146 +1087,6 @@ static int send_response_ng(struct flb_http_response *response,
     flb_http_response_commit(response);
 
     return 0;
-}
-
-static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
-{
-    int ret;
-    size_t off = 0;
-    msgpack_unpacked result;
-    struct flb_time tm;
-    int i = 0;
-    msgpack_object *obj;
-    msgpack_object record;
-    flb_sds_t tag_from_record = NULL;
-
-    flb_time_get(&tm);
-
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, buf, size, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type == MSGPACK_OBJECT_MAP) {
-            tag_from_record = NULL;
-            obj = &result.data;
-
-            if (ctx->tag_key) {
-                tag_from_record = tag_key(ctx, obj);
-            }
-
-            if (tag_from_record) {
-                ret = process_pack_record(ctx, &tm, tag_from_record, obj);
-                flb_sds_destroy(tag_from_record);
-            }
-            else if (tag) {
-                ret = process_pack_record(ctx, &tm, tag, obj);
-            }
-            else {
-                ret = process_pack_record(ctx, &tm, NULL, obj);
-            }
-
-            if (ret != 0) {
-                goto log_event_error;
-            }
-
-            flb_log_event_encoder_reset(&ctx->log_encoder);
-        }
-        else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
-            obj = &result.data;
-            for (i = 0; i < obj->via.array.size; i++)
-            {
-                record = obj->via.array.ptr[i];
-
-                tag_from_record = NULL;
-                if (ctx->tag_key) {
-                    tag_from_record = tag_key(ctx, &record);
-                }
-
-                if (tag_from_record) {
-                    ret = process_pack_record(ctx, &tm, tag_from_record, &record);
-                    flb_sds_destroy(tag_from_record);
-                }
-                else if (tag) {
-                    ret = process_pack_record(ctx, &tm, tag, &record);
-                }
-                else {
-                    ret = process_pack_record(ctx, &tm, NULL, &record);
-                }
-
-                if (ret != 0) {
-                    goto log_event_error;
-                }
-
-                /* TODO : Optimize this
-                 *
-                 * This is wasteful, considering that we are emitting a series
-                 * of records we should start and commit each one and then
-                 * emit them all at once after the loop.
-                 */
-
-                flb_log_event_encoder_reset(&ctx->log_encoder);
-            }
-
-            break;
-        }
-        else {
-            flb_plg_error(ctx->ins, "skip record from invalid type: %i",
-                         result.data.type);
-
-            msgpack_unpacked_destroy(&result);
-
-            return -1;
-        }
-    }
-
-    msgpack_unpacked_destroy(&result);
-    return 0;
-
-log_event_error:
-    flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
-    msgpack_unpacked_destroy(&result);
-    return -1;
-}
-
-static ssize_t parse_payload_json_ng(flb_sds_t tag,
-                                     struct flb_http_request *request)
-{
-    int ret;
-    int out_size;
-    char *pack;
-    struct flb_pack_state pack_state;
-    struct flb_http *ctx;
-    char *payload;
-    size_t size;
-
-    ctx = (struct flb_http *) request->stream->user_data;
-    payload = (char *) request->body;
-    size = cfl_sds_len(request->body);
-
-    /* Initialize packer */
-    flb_pack_state_init(&pack_state);
-
-    /* Pack JSON as msgpack */
-    ret = flb_pack_json_state(payload, size,
-                              &pack, &out_size, &pack_state);
-    flb_pack_state_reset(&pack_state);
-
-    /* Handle exceptions */
-    if (ret == FLB_ERR_JSON_PART) {
-        flb_plg_warn(ctx->ins, "JSON data is incomplete, skipping");
-        return -1;
-    }
-    else if (ret == FLB_ERR_JSON_INVAL) {
-        flb_plg_warn(ctx->ins, "invalid JSON message, skipping");
-        return -1;
-    }
-    else if (ret == -1) {
-        return -1;
-    }
-
-    /* Process the packaged JSON and return the last byte used */
-    ret = process_pack_ng(ctx, tag, pack, out_size);
-    flb_free(pack);
-
-    return ret;
 }
 
 static int process_payload_ng(flb_sds_t tag,
