@@ -260,7 +260,8 @@ static void cb_metrics(mk_request_t *request, void *data)
         mk_http_header(request, "Content-Encoding", 16, "gzip", 4);
         mk_http_send(request, compressed_data, compressed_size, NULL);
         flb_free(compressed_data);
-    } else {
+    }
+    else {
         mk_http_send(request, buf->buf_data, buf->buf_size, NULL);
     }
     
