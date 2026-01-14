@@ -86,7 +86,7 @@ static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
         return -1;
     }
 
-    buf = flb_malloc(st.st_size);
+    buf = flb_malloc(st.st_size + 1);
     if (!buf) {
         flb_errno();
         fclose(fp);
@@ -100,6 +100,7 @@ static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
         fclose(fp);
         return -1;
     }
+    buf[st.st_size] = '\0';
 
     fclose(fp);
     *out_buf = buf;
