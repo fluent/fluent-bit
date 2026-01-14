@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_gzip.h>
 #include <monkey/mk_http_parser.h>
+#include <strings.h>
 #include "prom.h"
 #include "prom_http.h"
 
@@ -188,10 +189,7 @@ static int client_accepts_gzip(mk_request_t *request)
     /* Search for "gzip" token */
     while (p < end - 3) {
         /* Case-insensitive comparison for "gzip" */
-        if ((p[0] == 'g' || p[0] == 'G') &&
-            (p[1] == 'z' || p[1] == 'Z') &&
-            (p[2] == 'i' || p[2] == 'I') &&
-            (p[3] == 'p' || p[3] == 'P')) {
+        if (strncasecmp(p, "gzip", 4) == 0) {
             /* Check if it's a complete token (not part of another word) */
             /* Check character before "gzip" */
             if (p > accept_encoding) {
