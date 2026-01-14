@@ -994,6 +994,11 @@ static int k8s_events_collect(struct flb_input_instance *ins,
     struct k8s_events *ctx = in_context;
     size_t bytes_consumed;
     int chunk_proc_ret;
+    int buf_ret;
+    int root_type;
+    size_t consumed;
+    char *buf_data;
+    size_t buf_size;
 
     if (pthread_mutex_trylock(&ctx->lock) != 0) {
         FLB_INPUT_RETURN(0);
@@ -1028,11 +1033,8 @@ static int k8s_events_collect(struct flb_input_instance *ins,
              * This handles the case where the last chunk doesn't end with a newline.
              */
             if (ctx->chunk_buffer && flb_sds_len(ctx->chunk_buffer) > 0) {
-                int buf_ret;
-                int root_type;
-                size_t consumed = 0;
-                char *buf_data = NULL;
-                size_t buf_size;
+                consumed = 0;
+                buf_data = NULL;
                 
                 buf_ret = flb_pack_json(ctx->chunk_buffer, flb_sds_len(ctx->chunk_buffer), 
                                        &buf_data, &buf_size, &root_type, &consumed);
