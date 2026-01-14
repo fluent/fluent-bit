@@ -749,6 +749,7 @@ static int process_http_chunk(struct k8s_events* ctx, struct flb_http_client *c,
     char *search_start;
     size_t remaining;
     flb_sds_t working_buffer = NULL;
+    size_t buffer_len;
 
     /* 
      * Prepend any buffered incomplete data from previous chunks.
@@ -756,7 +757,7 @@ static int process_http_chunk(struct k8s_events* ctx, struct flb_http_client *c,
      * so we need to buffer incomplete data until we find a complete JSON line.
      */
     if (ctx->chunk_buffer != NULL) {
-        size_t buffer_len = flb_sds_len(ctx->chunk_buffer);
+        buffer_len = flb_sds_len(ctx->chunk_buffer);
         flb_plg_debug(ctx->ins, "prepending %zu bytes from chunk_buffer to %zu new bytes", 
                       buffer_len, c->resp.payload_size);
         working_buffer = flb_sds_cat(ctx->chunk_buffer, c->resp.payload, c->resp.payload_size);
