@@ -1012,7 +1012,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     /*
      * S3 must ALWAYS use sync mode
-     * In the timer thread we do a mk_list_foreach_safe on the queue of uplaods and chunks
+     * In the timer thread we do a mk_list_foreach_safe on the queue of uploads and chunks
      * Iterating over those lists is not concurrent safe. If a flush call ran at the same time
      * And deleted an item from the list, this could cause a crash/corruption.
      */
@@ -3282,7 +3282,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
         chunk = fsf->data;
 
         if (now < (chunk->create_time + ctx->upload_timeout + ctx->retry_time)) {
-            continue; /* Only send chunks which have timed out */
+            continue; /* Only send chunks which haven't timed out */
         }
 
         /* Locked chunks are being processed, skip */
