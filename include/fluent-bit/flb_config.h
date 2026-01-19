@@ -72,6 +72,7 @@ struct flb_config {
     int grace;
     int grace_count;          /* Count of grace shutdown tries              */
     int grace_input;          /* Shutdown grace to keep inputs ingesting    */
+    int ensure_threaded_flush_on_shutdown; /* Ensure threaded inputs flush */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush               */
     int convert_nan_to_null;  /* Convert null to nan ?                      */
 
@@ -369,6 +370,7 @@ enum conf_type {
 
 #define FLB_CONF_STR_FLUSH        "Flush"
 #define FLB_CONF_STR_GRACE        "Grace"
+#define FLB_CONF_STR_THREAD_FLUSH_ON_SHUTDOWN "thread.flush_on_shutdown"
 #define FLB_CONF_STR_DAEMON       "Daemon"
 #define FLB_CONF_STR_LOGFILE      "Log_File"
 #define FLB_CONF_STR_LOGLEVEL     "Log_Level"
