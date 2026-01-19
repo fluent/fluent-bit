@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_thread_pool.h>
 #include <mpack/mpack.h>
+#include <signal.h>
 
 #define BUFFER_SIZE 65535
 
@@ -89,6 +90,13 @@ struct flb_input_thread_instance {
     int input_coro_id;
     struct mk_list input_coro_list;
     struct mk_list input_coro_list_destroy;
+
+    /*
+     * Pause state flag for shutdown synchronization.
+     * Set to 1 when thread completes pause processing.
+     * Checked by main thread to ensure safe shutdown.
+     */
+    volatile sig_atomic_t is_paused;
 };
 
 int flb_input_thread_instance_init(struct flb_config *config,
