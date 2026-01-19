@@ -515,7 +515,6 @@ void flb_test_events_with_chunkedrecv()
     test_ctx_destroy(ctx);
 }
 
-<<<<<<< HEAD
 #ifdef FLB_HAVE_SQLDB
 /* Test valid db.sync values */
 void flb_test_config_db_sync_values()
