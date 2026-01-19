@@ -59,6 +59,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, grace)},
 
+    {FLB_CONF_STR_THREAD_FLUSH_ON_SHUTDOWN,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, ensure_threaded_flush_on_shutdown)},
+
     {FLB_CONF_STR_CONV_NAN,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, convert_nan_to_null)},
@@ -277,6 +281,7 @@ struct flb_config *flb_config_init()
     config->grace        = 5;
     config->grace_count  = 0;
     config->grace_input  = config->grace / 2;
+    config->ensure_threaded_flush_on_shutdown = FLB_FALSE;
     config->exit_status_code = 0;
 
     /* json */
