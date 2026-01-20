@@ -593,7 +593,12 @@ void test_ipv6_formats_host_header()
 
 void test_http_port_80_host_header()
 {
-    test_host_header_format("example.com", 80, "example.com:80");
+    test_host_header_format("example.com", 80, "example.com");
+}
+
+void test_http_non_standard_port_host_header()
+{
+    test_host_header_format("example.com", 8080, "example.com:8080");
 }
 
 void test_port_443_without_tls_host_header()
@@ -653,6 +658,7 @@ TEST_LIST = {
     { "https_default_port_host_header", test_https_default_port_host_header},
     { "ipv6_formats_host_header", test_ipv6_formats_host_header},
     { "http_port_80_host_header", test_http_port_80_host_header},
+    { "http_non_standard_port_host_header", test_http_non_standard_port_host_header},
     { "port_443_without_tls_host_header", test_port_443_without_tls_host_header},
     { "ipv6_zone_id_host_header", test_ipv6_zone_id_host_header},
     { "https_non_standard_port_host_header", test_https_non_standard_port_host_header},
