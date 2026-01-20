@@ -760,7 +760,7 @@ static int opensearch_error_check(struct flb_opensearch *ctx,
         flb_plg_error(ctx->ins, "Cannot unpack response to find error\n%s",
                       c->resp.payload);
         check |= FLB_OS_STATUS_ERROR_UNPACK;
-        return check;
+        goto done;
     }
 
     root = result.data;
