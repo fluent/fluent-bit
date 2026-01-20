@@ -702,7 +702,7 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
         flb_plg_error(ctx->ins, "Cannot unpack response to find error\n%s",
                       c->resp.payload);
         check |= FLB_ES_STATUS_ERROR_UNPACK;
-        return check;
+        goto done;
     }
 
     root = result.data;
