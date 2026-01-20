@@ -144,7 +144,7 @@ void test_http_add_get_header()
     struct flb_http_client *c;
     flb_sds_t ret_str;
     char *ua = "Fluent-Bit";
-    char *host = "127.0.0.1:80";
+    char *host = "127.0.0.1:8080";
     int ret;
 
     ctx = test_ctx_create();
@@ -154,7 +154,7 @@ void test_http_add_get_header()
 
     /* Create HTTP client instance */
     c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
-                        "127.0.0.1", 80, NULL, 0);
+                        "127.0.0.1", 8080, NULL, 0);
     if(!TEST_CHECK(c != NULL)) {
         TEST_MSG("flb_http_client failed");
         test_ctx_destroy(ctx);
@@ -245,7 +245,7 @@ void test_http_strip_port_from_host()
     struct test_ctx *ctx;
     struct flb_http_client *c;
     flb_sds_t ret_str;
-    char *host_port = "127.0.0.1:80";
+    char *host_port = "127.0.0.1:8080";
     char *host = "127.0.0.1";
     int ret;
 
@@ -256,7 +256,7 @@ void test_http_strip_port_from_host()
 
     /* Create HTTP client instance */
     c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
-                        "127.0.0.1", 80, NULL, 0);
+                        "127.0.0.1", 8080, NULL, 0);
     if(!TEST_CHECK(c != NULL)) {
         TEST_MSG("flb_http_client failed");
         test_ctx_destroy(ctx);
