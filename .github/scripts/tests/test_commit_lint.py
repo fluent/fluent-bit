@@ -183,6 +183,31 @@ def test_valid_commit_bin_prefix_for_fluent_bit():
     assert ok is True
 
 
+def test_valid_commit_with_fenced_code_block_in_body():
+    """
+    Commits containing fenced code blocks in the body should NOT fail validation.
+
+    Code blocks often include YAML, shell output, or logs that may look like
+    subject prefixes or configuration directives. These must be ignored by
+    the linter to avoid false positives.
+    """
+    commit = make_commit(
+        "out_s3: validate config earlier\n\n"
+        "This commit improves validation.\n\n"
+        "```yaml\n"
+        "pipeline:\n"
+        "  inputs:\n"
+        "    - name: dummy\n"
+        "      tag: test\n"
+        "```\n\n"
+        "Signed-off-by: User",
+        ["plugins/out_s3/s3.c"]
+    )
+
+    ok, _ = validate_commit(commit)
+    assert ok is True
+
+
 # -----------------------------------------------------------
 # Tests: validate_commit ERROR CASES
 # -----------------------------------------------------------
