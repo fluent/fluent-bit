@@ -48,7 +48,10 @@ int flb_es_conf_set_cloud_credentials(const char *cloud_auth,
         return 0;
     }
 
-    toks = flb_utils_split((const char *)cloud_auth, ':', -1);
+    toks = flb_utils_split(cloud_auth, ':', -1);
+    if (!toks) {
+        return -1;
+    }
     mk_list_foreach(head, toks) {
         entry = mk_list_entry(head, struct flb_split_entry, _head);
         if (!items) {
