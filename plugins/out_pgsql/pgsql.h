@@ -36,10 +36,10 @@
 #define FLB_PGSQL_SYNC FLB_FALSE
 #define FLB_PGSQL_COCKROACH FLB_FALSE
 
-#define FLB_PGSQL_INSERT "INSERT INTO %s SELECT %s, "   \
+#define FLB_PGSQL_INSERT "INSERT INTO %s (tag, time, data) SELECT %s, "   \
     "to_timestamp(CAST(value->>'%s' as FLOAT)),"        \
     " * FROM json_array_elements(%s);"
-#define FLB_PGSQL_INSERT_COCKROACH "INSERT INTO %s SELECT %s,"  \
+#define FLB_PGSQL_INSERT_COCKROACH "INSERT INTO %s (tag, time, data) SELECT %s,"  \
     "CAST(value->>'%s' AS INTERVAL) + DATE'1970-01-01',"        \
     " * FROM json_array_elements(%s);"
 
