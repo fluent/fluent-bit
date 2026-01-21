@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_pipe.h>
+#include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_ring_buffer.h>
 #include <fluent-bit/flb_engine_macros.h>
 
@@ -52,6 +53,7 @@ struct flb_ring_buffer *flb_ring_buffer_create(uint64_t size)
         return NULL;
     }
     rb->data_size = size;
+    pthread_mutex_init(&rb->pth_mutex, NULL);
 
     /* lwrb context */
     lwrb = flb_malloc(sizeof(lwrb_t));
@@ -165,15 +167,19 @@ int flb_ring_buffer_write(struct flb_ring_buffer *rb, void *ptr, size_t size)
     size_t ret;
     size_t av;
 
+    pthread_mutex_lock(&rb->pth_mutex);
+
     /* make sure there is enough space available */
     av = lwrb_get_free(rb->ctx);
     if (av < size) {
+        pthread_mutex_unlock(&rb->pth_mutex);
         return -1;
     }
 
     /* write the content */
     ret = lwrb_write(rb->ctx, ptr, size);
     if (ret == 0) {
+        pthread_mutex_unlock(&rb->pth_mutex);
         return -1;
     }
 
@@ -186,15 +192,16 @@ int flb_ring_buffer_write(struct flb_ring_buffer *rb, void *ptr, size_t size)
             flb_pipe_write_all(rb->signal_channels[1], ".", 1);
         }
     }
-
+    pthread_mutex_unlock(&rb->pth_mutex);
     return 0;
 }
 
 int flb_ring_buffer_read(struct flb_ring_buffer *rb, void *ptr, size_t size)
 {
     size_t ret;
-
+    pthread_mutex_lock(&rb->pth_mutex);
     ret = lwrb_read(rb->ctx, ptr, size);
+    pthread_mutex_unlock(&rb->pth_mutex);
     if (ret == 0) {
         return -1;
     }
@@ -202,4 +209,9 @@ int flb_ring_buffer_read(struct flb_ring_buffer *rb, void *ptr, size_t size)
     return 0;
 }
 
-
+void flb_ring_buffer_set_flush_pending(struct flb_ring_buffer *rb, int bool_val)
+{
+    pthread_mutex_lock(&rb->pth_mutex);
+    rb->flush_pending = bool_val;
+    pthread_mutex_unlock(&rb->pth_mutex);
+}
