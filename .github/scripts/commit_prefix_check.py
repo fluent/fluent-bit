@@ -22,6 +22,21 @@ repo = Repo(".")
 # Regex patterns
 PREFIX_RE = re.compile(r"^[a-z0-9_]+:", re.IGNORECASE)
 SIGNED_OFF_RE = re.compile(r"Signed-off-by:", re.IGNORECASE)
+FENCED_BLOCK_RE = re.compile(
+    r"""
+    (```|~~~)        # fence start
+    [^\n]*\n         # optional language
+    .*?
+    \1               # matching fence end
+    """,
+    re.DOTALL | re.VERBOSE,
+)
+
+def strip_fenced_code_blocks(text: str) -> str:
+    """
+    Remove fenced code blocks (``` or ~~~) from commit message body.
+    """
+    return FENCED_BLOCK_RE.sub("", text)
 
 
 # ------------------------------------------------
@@ -109,6 +124,8 @@ def detect_bad_squash(body):
     - Multiple Signed-off-by lines in body → BAD (ONLY for this function)
     """
 
+    body = strip_fenced_code_blocks(body)
+
     # Normalize and discard empty lines
     lines = [l.strip() for l in body.splitlines() if l.strip()]
 
@@ -137,6 +154,8 @@ def validate_commit(commit):
     msg = commit.message.strip()
     first_line, *rest = msg.split("\n")
     body = "\n".join(rest)
+
+    body = strip_fenced_code_blocks(body)
 
     # Subject must start with a prefix
     subject_prefix_match = PREFIX_RE.match(first_line)
@@ -216,16 +235,15 @@ def validate_commit(commit):
     # prefix, check if the subject prefix is in the expected list. If it is, allow it
     # (because the corresponding file exists). Only reject if it's not in the expected list
     # or if it's an umbrella prefix that doesn't match.
-    if len(non_build_prefixes) > 1 and subj_lower not in umbrella_prefixes:
-        # If subject prefix is in expected list, it's valid (the corresponding file exists)
-        if subj_lower not in expected_lower:
+    if len(non_build_prefixes) > 1:
+        # Only umbrella prefixes are allowed to cover multiple components
+        if subj_lower not in umbrella_prefixes:
             expected_list = sorted(expected)
             expected_str = ", ".join(expected_list)
             return False, (
                 f"Subject prefix '{subject_prefix}' does not match files changed.\n"
                 f"Expected one of: {expected_str}"
             )
-        # Subject prefix is in expected list, so it's valid - no need to check further
 
     # Subject prefix must be one of the expected ones
     if subj_lower not in expected_lower:
