@@ -37,6 +37,8 @@ static inline void fini_nop() {};
 #define TEST_FINI { flb_test_env_config_destroy(); }
 #endif
 
+#include "../include/flb_tests_tmpdir.h"
+
 #include "../lib/acutest/acutest.h"
 #define FLB_TESTS_DATA_PATH "@FLB_TESTS_DATA_PATH@"
 
