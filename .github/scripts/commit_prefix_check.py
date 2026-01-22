@@ -237,7 +237,17 @@ def validate_commit(commit):
     # or if it's an umbrella prefix that doesn't match.
     if len(non_build_prefixes) > 1:
         # Only umbrella prefixes are allowed to cover multiple components
-        if subj_lower not in umbrella_prefixes:
+        if subj_lower in umbrella_prefixes:
+            # Ensure all changed paths are within the umbrella domain
+            norm_paths = [p.replace(os.sep, "/") for p in files]
+            if not all(p.startswith("lib/") for p in norm_paths):
+                expected_list = sorted(expected)
+                expected_str = ", ".join(expected_list)
+                return False, (
+                    f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+                    f"Expected one of: {expected_str}"
+                )
+        elif subj_lower not in umbrella_prefixes:
             expected_list = sorted(expected)
             expected_str = ", ".join(expected_list)
             return False, (
