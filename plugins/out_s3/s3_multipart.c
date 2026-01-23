@@ -429,8 +429,10 @@ int complete_multipart_upload(struct flb_s3 *ctx,
 
     if (pre_signed_url != NULL) {
         tmp = flb_sds_copy(uri, pre_signed_url, strlen(pre_signed_url));
-    }
-    else {
+    } else if (ctx->vhost_style_urls == FLB_TRUE) {
+        tmp = flb_sds_printf(&uri, "%s?uploadId=%s",
+                            m_upload->s3_key, m_upload->upload_id);
+    } else {
         tmp = flb_sds_printf(&uri, "/%s%s?uploadId=%s", ctx->bucket,
                             m_upload->s3_key, m_upload->upload_id);
     }
@@ -575,8 +577,9 @@ int create_multipart_upload(struct flb_s3 *ctx,
 
     if (pre_signed_url != NULL) {
         tmp = flb_sds_copy(uri, pre_signed_url, strlen(pre_signed_url));
-    }
-    else {
+    } else if (ctx->vhost_style_urls == FLB_TRUE) {
+        tmp = flb_sds_printf(&uri, "%s?uploads=", m_upload->s3_key);
+    } else {
         tmp = flb_sds_printf(&uri, "/%s%s?uploads=", ctx->bucket, m_upload->s3_key);
     }
 
@@ -702,8 +705,11 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
 
     if (pre_signed_url != NULL) {
         tmp = flb_sds_copy(uri, pre_signed_url, strlen(pre_signed_url));
-    }
-    else {
+    } else if (ctx->vhost_style_urls == FLB_TRUE) {
+        tmp = flb_sds_printf(&uri, "%s?partNumber=%d&uploadId=%s",
+                            m_upload->s3_key, m_upload->part_number,
+                            m_upload->upload_id);
+    } else {
         tmp = flb_sds_printf(&uri, "/%s%s?partNumber=%d&uploadId=%s",
                             ctx->bucket, m_upload->s3_key, m_upload->part_number,
                             m_upload->upload_id);
