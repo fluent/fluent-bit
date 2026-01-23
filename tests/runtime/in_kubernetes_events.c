@@ -660,6 +660,10 @@ void flb_test_events_with_3chunks()
         TEST_MSG("2 output records are expected found %d", num);
     }
 
+    /* Stop Fluent Bit before destroying mock server to properly close connections */
+    flb_stop(ctx->flb);
+    flb_time_msleep(500);  /* Give threads time to shut down */
+
     mock_k8s_api_destroy(k8s_server);
     test_ctx_destroy(ctx);
 }
