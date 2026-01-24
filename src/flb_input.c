@@ -67,11 +67,17 @@ pthread_key_t libco_in_param_key;
  * ring buffer will emit a flush request whenever the window threshold is reached.
  * The window percentage can be tuned per input instance using the
  * 'thread.ring_buffer.window' property.
+ *
+ * Ring buffer retry limit: when the ring buffer is full, the input thread will
+ * retry writing to the buffer up to 'retry_limit' times (with 100ms sleep between
+ * retries) before dropping the data. The default is 10 retries (1 second total).
+ * This can be tuned per input instance using 'thread.ring_buffer.retry_limit'.
  */
 
 #define FLB_INPUT_RING_BUFFER_CAPACITY 1024
 #define FLB_INPUT_RING_BUFFER_SIZE   (sizeof(void *) * FLB_INPUT_RING_BUFFER_CAPACITY)
 #define FLB_INPUT_RING_BUFFER_WINDOW (5)
+#define FLB_INPUT_RING_BUFFER_RETRY_LIMIT (10)
 
 /* config map to register options available for all input plugins */
 struct flb_config_map input_global_properties[] = {
@@ -137,6 +143,12 @@ struct flb_config_map input_global_properties[] = {
         FLB_CONFIG_MAP_INT, "thread.ring_buffer.window", STR(FLB_INPUT_RING_BUFFER_WINDOW),
         0, FLB_FALSE, 0,
         "Set custom ring buffer window percentage for threaded inputs"
+    },
+    {
+        FLB_CONFIG_MAP_INT, "thread.ring_buffer.retry_limit",
+        STR(FLB_INPUT_RING_BUFFER_RETRY_LIMIT),
+        0, FLB_FALSE, 0,
+        "Set maximum retry attempts when ring buffer is full before dropping data"
     },
 
     {0}
@@ -420,9 +432,10 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 
         }
 
-        /* set default ring buffer size and window */
+        /* set default ring buffer size, window, and retry limit */
         instance->ring_buffer_size = FLB_INPUT_RING_BUFFER_SIZE;
         instance->ring_buffer_window = FLB_INPUT_RING_BUFFER_WINDOW;
+        instance->ring_buffer_retry_limit = FLB_INPUT_RING_BUFFER_RETRY_LIMIT;
 
         /* allocate a ring buffer */
         instance->rb = flb_ring_buffer_create(instance->ring_buffer_size);
@@ -758,6 +771,15 @@ int flb_input_set_property(struct flb_input_instance *ins,
             return -1;
         }
         ins->ring_buffer_window = (uint8_t) ret;
+    }
+    else if (prop_key_check("thread.ring_buffer.retry_limit", k, len) == 0 && tmp) {
+        ret = atoi(tmp);
+        flb_sds_destroy(tmp);
+        if (ret <= 0) {
+            flb_error("[input] thread.ring_buffer.retry_limit must be greater than 0");
+            return -1;
+        }
+        ins->ring_buffer_retry_limit = ret;
     }
     else if (prop_key_check("storage.pause_on_chunks_overlimit", k, len) == 0 && tmp) {
         ret = flb_utils_bool(tmp);

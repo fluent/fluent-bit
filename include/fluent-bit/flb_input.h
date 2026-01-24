@@ -383,6 +383,7 @@ struct flb_input_instance {
     struct flb_ring_buffer *rb;
     size_t ring_buffer_size;           /* ring buffer size */
     uint8_t ring_buffer_window;        /* ring buffer window percentage */
+    int ring_buffer_retry_limit;       /* ring buffer write retry limit */
 
     /* List of upstreams */
     struct mk_list upstreams;
