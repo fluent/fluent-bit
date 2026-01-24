@@ -1037,7 +1037,7 @@ int pack_emf_payload(struct flb_cloudwatch *ctx,
     mk_list_foreach_safe(metric_head, metric_temp, flb_intermediate_metrics) {
         an_item = mk_list_entry(metric_head, struct flb_intermediate_metric, _head);
         if (should_add_to_emf(an_item) == 1) {
-            msgpack_pack_map(&mp_pck, 2);
+            msgpack_pack_map(&mp_pck, 3);
             msgpack_pack_str(&mp_pck, 4);
             msgpack_pack_str_body(&mp_pck, "Name", 4);
             msgpack_pack_object(&mp_pck, an_item->key);
@@ -1046,6 +1046,9 @@ int pack_emf_payload(struct flb_cloudwatch *ctx,
             msgpack_pack_str(&mp_pck, strlen(an_item->metric_unit));
             msgpack_pack_str_body(&mp_pck, an_item->metric_unit,
                                   strlen(an_item->metric_unit));
+            msgpack_pack_str(&mp_pck, 17);
+            msgpack_pack_str_body(&mp_pck, "StorageResolution", 17);
+            msgpack_pack_int(&mp_pck, ctx->metric_storage_resolution);
         }
     }
 
