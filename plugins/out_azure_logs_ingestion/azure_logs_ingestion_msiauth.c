@@ -38,7 +38,7 @@ char *flb_azure_li_msiauth_token_get(struct flb_oauth2 *ctx)
     now = time(NULL);
     if (ctx->access_token) {
         /* validate unexpired token */
-        if (ctx->expires > now && flb_sds_len(ctx->access_token) > 0) {
+        if (ctx->expires_at > now && flb_sds_len(ctx->access_token) > 0) {
             return ctx->access_token;
         }
     }
@@ -86,8 +86,7 @@ char *flb_azure_li_msiauth_token_get(struct flb_oauth2 *ctx)
                      ctx->host, ctx->port);
             flb_http_client_destroy(c);
             flb_upstream_conn_release(u_conn);
-            ctx->issued = time(NULL);
-            ctx->expires = ctx->issued + ctx->expires_in;
+            ctx->expires_at = time(NULL) + ctx->expires_in;
             return ctx->access_token;
         }
     }
