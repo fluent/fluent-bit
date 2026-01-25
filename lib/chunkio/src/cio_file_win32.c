@@ -18,6 +18,7 @@
  */
 
 #include <inttypes.h>
+#include <BaseTsd.h>
 #include <stdio.h>
 
 #include <chunkio/chunkio_compat.h>
@@ -133,7 +134,7 @@ int cio_file_native_map(struct cio_file *cf, size_t map_size)
     /* Use actual_map_size to ensure consistency */
     cf->backing_mapping = CreateFileMappingA(cf->backing_file, NULL,
                                              desired_protection,
-                                             (DWORD)(actual_map_size >> 32),
+                                             (DWORD)((DWORD64) actual_map_size >> 32),
                                              (DWORD)(actual_map_size & 0xFFFFFFFFUL),
                                              NULL);
 
