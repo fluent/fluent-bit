@@ -83,6 +83,26 @@ RUN if ([System.Version] \"${env:CMAKE_VERSION}\" -ge [System.Version] \"3.20.0\
     Write-Host \"${env:PATH}\"; `
     [Environment]::SetEnvironmentVariable(\"PATH\", \"${env:PATH}\", [EnvironmentVariableTarget]::Machine);
 
+ENV NINJA_HOME="C:\ninja"
+ARG NINJA_VERSION="1.13.2"
+ARG NINJA_URL="https://github.com/ninja-build/ninja/releases/download"
+
+RUN $ninja_dist_name=\"ninja-win.zip\"; `
+    $ninja_dist=\"${env:TMP}\${ninja_dist_name}\"; `
+    $ninja_download_url=\"${env:NINJA_URL}/v${env:NINJA_VERSION}/${ninja_dist_name}\"; `
+    Write-Host \"Downloading Ninja...\"; `
+    Write-Host \"${ninja_download_url} -> ${ninja_dist}\"; `
+    Invoke-WebRequest -OutFile \"${ninja_dist}\" \"${ninja_download_url}\"; `
+    New-Item -Path \"${env:NINJA_HOME}\" -ItemType \"directory\"; `
+    Write-Host \"Extracting Ninja...\"; `
+    Write-Host \"${ninja_dist} -> ${env:NINJA_HOME}\"; `
+    Expand-Archive \"${ninja_dist}\" -Destination \"${env:NINJA_HOME}\"; `
+    Remove-Item -Force \"${ninja_dist}\"; `
+    $env:PATH=\"${env:PATH};${env:NINJA_HOME}\"; `
+    Write-Host \"Setting PATH...\"; `
+    Write-Host \"${env:PATH}\"; `
+    [Environment]::SetEnvironmentVariable(\"PATH\", \"${env:PATH}\", [EnvironmentVariableTarget]::Machine);
+
 ENV WIN_FLEX_BISON_VERSION="2.5.22" `
     WIN_FLEX_BISON_HOME="C:\WinFlexBison" `
     WIN_FLEX_BISON_DOWNLOAD_URL="https://github.com/lexxmark/winflexbison/releases/download"
@@ -169,7 +189,7 @@ COPY . /src/
 ARG BUILD_PARALLEL=1
 SHELL ["cmd", "/S", "/C"]
 RUN call "%MSVS_HOME%\VC\Auxiliary\Build\vcvars64.bat" && `
-    cmake -G "NMake Makefiles" `
+    cmake -G "Ninja" `
       -DOPENSSL_ROOT_DIR='C:\dev\vcpkg\packages\openssl_x64-windows-static' `
       -DFLB_LIBYAML_DIR='C:\dev\vcpkg\packages\libyaml_x64-windows-static' `
       -DFLB_SIMD=On `
@@ -178,7 +198,7 @@ RUN call "%MSVS_HOME%\VC\Auxiliary\Build\vcvars64.bat" && `
       -DFLB_DEBUG=Off `
       -DFLB_RELEASE=On `
       ..\ && `
-    cmake --build . --config Release -j "%BUILD_PARALLEL%"
+    cmake --build . -j "%BUILD_PARALLEL%"
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
