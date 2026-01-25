@@ -853,7 +853,7 @@ The following steps have been tested on a Windows Server 2022 Datacenter edition
 7. **Run the binary build**
 
     ```bash
-    cmake --build . --parallel 4 --clean-first
+    cmake --build . --config Release --parallel 4 --clean-first
     ```
 
     **Notes**:
