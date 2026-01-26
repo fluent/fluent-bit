@@ -30,6 +30,8 @@ void flb_test_azure_kusto_managed_identity_system(void);
 void flb_test_azure_kusto_managed_identity_user(void);
 void flb_test_azure_kusto_service_principal(void);
 void flb_test_azure_kusto_workload_identity(void);
+void flb_test_azure_kusto_cloud_global_inference(void);
+void flb_test_azure_kusto_cloud_china_inference(void);
 
 /* Test list */
 TEST_LIST = {
@@ -38,6 +40,8 @@ TEST_LIST = {
     {"managed_identity_user", flb_test_azure_kusto_managed_identity_user},
     {"service_principal", flb_test_azure_kusto_service_principal},
     {"workload_identity", flb_test_azure_kusto_workload_identity},
+    {"cloud_global_inference", flb_test_azure_kusto_cloud_global_inference},
+    {"cloud_china_inference", flb_test_azure_kusto_cloud_china_inference},
     {NULL, NULL}
 };
 
@@ -202,6 +206,74 @@ void flb_test_azure_kusto_workload_identity(void)
     flb_output_set(ctx, out_ffd, "client_id", "your-client-id", NULL);
     flb_output_set(ctx, out_ffd, "workload_identity_token_file", "/path/to/token/file", NULL);
     flb_output_set(ctx, out_ffd, "ingestion_endpoint", "https://ingest-CLUSTER.kusto.windows.net", NULL);
+    flb_output_set(ctx, out_ffd, "database_name", "telemetrydb", NULL);
+    flb_output_set(ctx, out_ffd, "table_name", "logs", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+/* Test for cloud inference: "Global", based on ingestion_endpoint */
+void flb_test_azure_kusto_cloud_global_inference(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "azure_kusto", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "auth_type", "service_principal", NULL);
+    flb_output_set(ctx, out_ffd, "tenant_id", "your-tenant-id", NULL);
+    flb_output_set(ctx, out_ffd, "client_id", "your-client-id", NULL);
+    flb_output_set(ctx, out_ffd, "client_secret", "your-client-secret", NULL);
+    /* Global ingestion endpoint */
+    flb_output_set(ctx, out_ffd, "ingestion_endpoint", "https://ingest-CLUSTER.kusto.windows.net", NULL);
+    flb_output_set(ctx, out_ffd, "database_name", "telemetrydb", NULL);
+    flb_output_set(ctx, out_ffd, "table_name", "logs", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+/* Test for cloud inference: "China", based on ingestion_endpoint */
+void flb_test_azure_kusto_cloud_china_inference(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "azure_kusto", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "auth_type", "service_principal", NULL);
+    flb_output_set(ctx, out_ffd, "tenant_id", "your-tenant-id", NULL);
+    flb_output_set(ctx, out_ffd, "client_id", "your-client-id", NULL);
+    flb_output_set(ctx, out_ffd, "client_secret", "your-client-secret", NULL);
+    /* China ingestion endpoint */
+    flb_output_set(ctx, out_ffd, "ingestion_endpoint", "https://ingest-CLUSTER.kusto.chinacloudapi.cn", NULL);
     flb_output_set(ctx, out_ffd, "database_name", "telemetrydb", NULL);
     flb_output_set(ctx, out_ffd, "table_name", "logs", NULL);
 
