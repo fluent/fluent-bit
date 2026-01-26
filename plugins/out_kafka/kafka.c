@@ -39,7 +39,9 @@ void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
         flb_plg_warn(ctx->ins, "message delivery failed: %s",
                      rd_kafka_err2str(rkmessage->err));
 #ifdef FLB_HAVE_METRICS
-        cmt_counter_inc(ctx->cmt_kafka_errors, cfl_time_now(), 1, (char *[]){flb_output_name(ctx->ins)});
+        char *labels[1];
+        labels[0] = flb_output_name(ctx->ins);
+        cmt_counter_inc(ctx->cmt_kafka_errors, cfl_time_now(), 1, labels);
 #endif
     }
     else {
