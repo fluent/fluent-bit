@@ -184,7 +184,7 @@ int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *to
             cloud_env = FLB_AZURE_CLOUD_CHINA;
         }
         const char *scope = flb_azure_kusto_get_scope(cloud_env);
-        body = flb_sds_cat(body, "&scope=", -1);
+        body = flb_sds_cat(body, "&scope=", 7);
         body = flb_sds_cat(body, scope, strlen(scope));
     }
 
