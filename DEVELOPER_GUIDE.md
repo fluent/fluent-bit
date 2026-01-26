@@ -746,54 +746,54 @@ The following steps have been tested on a Windows Server 2022 Datacenter edition
 2. **Install Flex and Bison**
     1. Create a new file called `setup-flex-bison.ps1` and paste the following script:
 
-    ```powershell
-    # Define variables for Flex and Bison
-    $flexBisonUrl = "https://sourceforge.net/projects/winflexbison/files/win_flex_bison3-latest.zip/download"
-    $downloadPath = "$env:TEMP\win_flex_bison.zip"
-    $extractPath = "C:\win_flex_bison"
-    $flexExe = "flex.exe"
-    $bisonExe = "bison.exe"
+        ```powershell
+        # Define variables for Flex and Bison
+        $flexBisonUrl = "https://sourceforge.net/projects/winflexbison/files/win_flex_bison3-latest.zip/download"
+        $downloadPath = "$env:TEMP\win_flex_bison.zip"
+        $extractPath = "C:\win_flex_bison"
+        $flexExe = "flex.exe"
+        $bisonExe = "bison.exe"
 
-    # Step 2: Download and Setup Flex and Bison
-    Write-Output "Downloading win_flex_bison..."
-    Invoke-WebRequest -Uri $flexBisonUrl -OutFile $downloadPath
+        # Step 2: Download and Setup Flex and Bison
+        Write-Output "Downloading win_flex_bison..."
+        Invoke-WebRequest -Uri $flexBisonUrl -OutFile $downloadPath
 
-    # Create the extract directory if it does not exist
-    If (!(Test-Path -Path $extractPath)) {
-        New-Item -ItemType Directory -Path $extractPath
-    }
+        # Create the extract directory if it does not exist
+        If (!(Test-Path -Path $extractPath)) {
+            New-Item -ItemType Directory -Path $extractPath
+        }
 
-    # Extract the zip file
-    Write-Output "Extracting win_flex_bison..."
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [System.IO.Compression.ZipFile]::ExtractToDirectory($downloadPath, $extractPath)
+        # Extract the zip file
+        Write-Output "Extracting win_flex_bison..."
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($downloadPath, $extractPath)
 
-    # Rename the executables
-    Write-Output "Renaming executables..."
-    Rename-Item "$extractPath\win_flex.exe" "$extractPath\$flexExe" -Force
-    Rename-Item "$extractPath\win_bison.exe" "$extractPath\$bisonExe" -Force
+        # Rename the executables
+        Write-Output "Renaming executables..."
+        Rename-Item "$extractPath\win_flex.exe" "$extractPath\$flexExe" -Force
+        Rename-Item "$extractPath\win_bison.exe" "$extractPath\$bisonExe" -Force
 
-    # Add Flex and Bison path to system environment variables
-    Write-Output "Adding Flex and Bison path to environment variables..."
-    $envPath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
-    If ($envPath -notlike "*$extractPath*") {
-        [System.Environment]::SetEnvironmentVariable("Path", "$envPath;$extractPath", "Machine")
-        Write-Output "Path updated. Please restart your command prompt to apply changes."
-    } else {
-        Write-Output "Path already contains the Flex and Bison directory."
-    }
+        # Add Flex and Bison path to system environment variables
+        Write-Output "Adding Flex and Bison path to environment variables..."
+        $envPath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+        If ($envPath -notlike "*$extractPath*") {
+            [System.Environment]::SetEnvironmentVariable("Path", "$envPath;$extractPath", "Machine")
+            Write-Output "Path updated. Please restart your command prompt to apply changes."
+        } else {
+            Write-Output "Path already contains the Flex and Bison directory."
+        }
 
-    # Cleanup
-    Remove-Item $downloadPath
+        # Cleanup
+        Remove-Item $downloadPath
 
-    Write-Output "Flex and Bison setup complete."
-    ```
+        Write-Output "Flex and Bison setup complete."
+        ```
 
     2. Run the Script: Open PowerShell as administrator.
 
-    ```powershell
-    .\setup-flex-bison.ps1
-    ```
+        ```powershell
+        .\setup-flex-bison.ps1
+        ```
 
     3. Restart the command prompt: After the script completes, restart your command prompt or Visual Studio for the changes to take effect.
 
