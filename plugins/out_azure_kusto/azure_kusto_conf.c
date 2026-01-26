@@ -857,7 +857,7 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
     } else {
         /* Standard OAuth2 for service principal or workload identity */
         const char *tmpl = get_msal_auth_url_template(ctx->cloud_environment);
-        ctx->oauth_url = flb_sds_create_size(strlen(tmpl) - 1 + flb_sds_len(ctx->tenant_id));
+        ctx->oauth_url = flb_sds_create_size(sizeof(tmpl) - 1 + flb_sds_len(ctx->tenant_id));
         if (!ctx->oauth_url) {
             flb_errno();
             flb_azure_kusto_conf_destroy(ctx);
