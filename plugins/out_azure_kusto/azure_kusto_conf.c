@@ -825,6 +825,10 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
     if (ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM || 
         ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_USER) {
         /* MSI auth */
+        const char *imds_resource;
+
+        imds_resource = get_imds_resource(ctx->cloud_environment);
+
         /* Construct the URL template with or without client_id for managed identity */
         if (ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM) {
             ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1);
@@ -834,7 +838,8 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
                 return NULL;
             }
             flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "", "");
+                            FLB_AZURE_MSIAUTH_URL_TEMPLATE,
+                            "", "", imds_resource);
         } else {
             /* User-assigned managed identity */
             ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1 +
@@ -846,7 +851,8 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
                 return NULL;
             }
             flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "&client_id=", ctx->client_id);
+                            FLB_AZURE_MSIAUTH_URL_TEMPLATE,
+                            "&client_id=", ctx->client_id, imds_resource);
         }
     } else {
         /* Standard OAuth2 for service principal or workload identity */
