@@ -41,11 +41,6 @@ static const char *get_msal_auth_url_template(int cloud_env)
     return FLB_MSAL_AUTH_URL_TEMPLATE_GLOBAL;
 }
 
-static const char *get_kusto_scope(int cloud_env)
-{
-    return flb_azure_kusto_get_scope(cloud_env);
-}
-
 static const char *get_imds_resource(int cloud_env)
 {
     return flb_azure_kusto_get_imds_resource(cloud_env);
@@ -831,7 +826,7 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
 
         /* Construct the URL template with or without client_id for managed identity */
         if (ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM) {
-            ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1);
+           ctx->oauth_url = flb_sds_create_size(strlen(FLB_AZURE_MSIAUTH_URL_TEMPLATE) + strlen(imds_resource) + 1);
             if (!ctx->oauth_url) {
                 flb_errno();
                 flb_azure_kusto_conf_destroy(ctx);
@@ -842,9 +837,10 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
                             "", "", imds_resource);
         } else {
             /* User-assigned managed identity */
-            ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1 +
-                                                sizeof("&client_id=") - 1 +
-                                                flb_sds_len(ctx->client_id));
+            ctx->oauth_url = flb_sds_create_size(strlen(FLB_AZURE_MSIAUTH_URL_TEMPLATE) +
+                                                 strlen("&client_id=") +
+                                                 flb_sds_len(ctx->client_id) +
+                                                 strlen(imds_resource) + 1);
             if (!ctx->oauth_url) {
                 flb_errno();
                 flb_azure_kusto_conf_destroy(ctx);
