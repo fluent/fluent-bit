@@ -261,6 +261,16 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_splunk, tag_key),
      "Set a record key to specify the tag of the record"
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "add_remote_addr", "false",
+     0, FLB_TRUE, offsetof(struct flb_splunk, add_remote_addr),
+     "Inject a remote address using the X-Forwarded-For header or connection address"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "remote_addr_key", "remote_addr",
+     0, FLB_TRUE, offsetof(struct flb_splunk, remote_addr_key),
+     "Set a record key for storing the remote address"
+    },
 
 
     /* EOF */
