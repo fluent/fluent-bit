@@ -146,6 +146,9 @@ struct flb_splunk *splunk_config_create(struct flb_input_instance *ins)
 
     ctx->ingested_auth_header = NULL;
 
+    ctx->current_remote_addr = NULL;
+    ctx->current_remote_addr_len = 0;
+
     ret = setup_hec_tokens(ctx);
     if (ret != 0) {
         splunk_config_destroy(ctx);
