@@ -550,7 +550,7 @@ static int process_json_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char
                     tag_from_record = tag_key(ctx, &record);
                 }
 
-                process_flb_log_append(ctx, &result.data, tag, tag_from_record, tm,
+                process_flb_log_append(ctx, &record, tag, tag_from_record, tm,
                                        ctx->current_remote_addr,
                                        ctx->current_remote_addr_len);
 
