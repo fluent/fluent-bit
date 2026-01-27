@@ -100,11 +100,20 @@ static struct flb_aws_header *get_content_encoding_header(int compression_type)
         .val_len = 4,
     };
     
+    static struct flb_aws_header snappy_header = {
+        .key = "Content-Encoding",
+        .key_len = 16,
+        .val = "snappy",
+        .val_len = 6,
+    };
+    
     switch (compression_type) {
         case FLB_AWS_COMPRESS_GZIP:
             return &gzip_header;
         case FLB_AWS_COMPRESS_ZSTD:
             return &zstd_header;
+        case FLB_AWS_COMPRESS_SNAPPY:
+            return &snappy_header;
         default:
             return NULL;
     }
@@ -182,7 +191,9 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->content_type != NULL) {
         headers_len++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP || ctx->compression == FLB_AWS_COMPRESS_ZSTD) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP || 
+        ctx->compression == FLB_AWS_COMPRESS_ZSTD ||
+        ctx->compression == FLB_AWS_COMPRESS_SNAPPY) {
         headers_len++;
     }
     if (ctx->canned_acl != NULL) {
@@ -212,7 +223,9 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n].val_len = strlen(ctx->content_type);
         n++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP || ctx->compression == FLB_AWS_COMPRESS_ZSTD) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP || 
+        ctx->compression == FLB_AWS_COMPRESS_ZSTD ||
+        ctx->compression == FLB_AWS_COMPRESS_SNAPPY) {
         encoding_header = get_content_encoding_header(ctx->compression);
 
         if (encoding_header == NULL) {
@@ -4042,11 +4055,12 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compression", NULL,
      0, FLB_FALSE, 0,
-    "Compression type for S3 objects. 'gzip', 'arrow', 'parquet' and 'zstd' are the supported values. "
-    "'arrow' and 'parquet' are only available if Apache Arrow was enabled at compile time. "
+    "Compression type for S3 objects. Supported values: 'gzip', 'zstd', 'snappy'. "
+    "'arrow' and 'parquet' are also available if Apache Arrow was enabled at compile time. "
     "Defaults to no compression. "
-    "If 'gzip' is selected, the Content-Encoding HTTP Header will be set to 'gzip'."
-    "If 'zstd' is selected, the Content-Encoding HTTP Header will be set to 'zstd'."
+    "If 'gzip' is selected, the Content-Encoding HTTP Header will be set to 'gzip'. "
+    "If 'zstd' is selected, the Content-Encoding HTTP Header will be set to 'zstd'. "
+    "If 'snappy' is selected, the Content-Encoding HTTP Header will be set to 'snappy'."
     },
     {
      FLB_CONFIG_MAP_STR, "content_type", NULL,
