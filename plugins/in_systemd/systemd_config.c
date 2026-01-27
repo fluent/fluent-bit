@@ -33,6 +33,8 @@
 
 #include "systemd_config.h"
 
+static uint64_t realtime_since_n_minutes_ago(int minutes_ago);
+
 struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *ins,
                                                      struct flb_config *config)
 {
@@ -224,6 +226,14 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         flb_plg_debug(ctx->ins,
                       "jump to the end of journal and skip %d last entries", ret);
     }
+    else if (ctx->read_since_minutes_ago > 0) {
+        uint64_t ts = realtime_since_n_minutes_ago(ctx->read_since_minutes_ago);
+        if (ts == 0) {
+            flb_plg_error(ctx->ins, "failed to fetch wall clock");
+        } else {
+            sd_journal_seek_realtime_usec(ctx->j, ts);
+        }
+    }
     else {
         ret = sd_journal_seek_head(ctx->j);
     }
@@ -312,4 +322,20 @@ int flb_systemd_config_destroy(struct flb_systemd_config *ctx)
 
     flb_free(ctx);
     return 0;
+}
+
+static uint64_t realtime_since_n_minutes_ago(int minutes_ago)
+{
+    struct timespec tp = {
+        .tv_sec  = 0,
+        .tv_nsec = 0,
+    };
+    clockid_t clk_id = CLOCK_REALTIME;
+    if (clock_gettime(clk_id, &tp) != 0) {
+        return 0;
+    }
+
+    // Add minutes ago and return microseconds
+    time_t time_sec = tp.tv_sec - (minutes_ago * 60);
+    return (uint64_t)time_sec * 1000000 + tp.tv_nsec / 1000;
 }
