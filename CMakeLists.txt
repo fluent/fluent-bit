@@ -57,6 +57,10 @@ endif()
 set(FLB_EXTRA_CMAKE_CXX_FLAGS)
 set(FLB_EXTRA_CMAKE_CXX_LINK_FLAGS)
 
+# For consistency with MSVC debug C/C++ runtime (/MTd and /MDd options),
+# which is used for the Debug build and which automatically adds _DEBUG.
+add_compile_definitions($<$<CONFIG:Debug>:_DEBUG>)
+
 # Update CFLAGS
 if (MSVC)
   # Use static C runtime
