@@ -2905,7 +2905,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     }
 
     flb_debug("============ %s ============", cfg_file);
-    fh = fopen(include_file, "r");
+    fh = fopen(include_file, "rb");
 
     if (!fh) {
         flb_errno();
@@ -2925,9 +2925,48 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         return -1;
     }
     ctx->level++;
+    
+    /*
+     * On Windows, passing FILE* across DLL boundaries can cause crashes due to
+     * different C runtime libraries. Read the file into a buffer and use
+     * yaml_parser_set_input_string() instead of yaml_parser_set_input_file().
+     */
+    {
+        long file_size;
+        unsigned char *file_buffer = NULL;
+        size_t bytes_read;
 
+        /* Get file size */
+        fseek(fh, 0, SEEK_END);
+        file_size = ftell(fh);
+        fseek(fh, 0, SEEK_SET);
+
+        if (file_size < 0) {
+            flb_error("[config] could not determine file size for %s", cfg_file);
+            fclose(fh);
+            flb_sds_destroy(include_dir);
+            flb_sds_destroy(include_file);
+            return -1;
+        }
+
+        /* Allocate buffer */
+        file_buffer = flb_malloc(file_size + 1);
+        if (!file_buffer) {
+            flb_error("[config] could not allocate memory for config file %s", cfg_file);
+            fclose(fh);
+            flb_sds_destroy(include_dir);
+            flb_sds_destroy(include_file);
+            return -1;
+        }
+
+        /* Read file content */
+        bytes_read = fread(file_buffer, 1, file_size, fh);
+        fclose(fh);
+        fh = NULL;  /* Mark as closed */
+        file_buffer[bytes_read] = '\0';
+        
     yaml_parser_initialize(&parser);
-    yaml_parser_set_input_file(&parser, fh);
+    yaml_parser_set_input_string(&parser, file_buffer, bytes_read);
 
     do {
         status = yaml_parser_parse(&parser, &event);
@@ -2990,7 +3029,10 @@ done:
         state = state_pop(ctx);
     }
 
-    fclose(fh);
+    /* Free the file buffer that was allocated for yaml_parser_set_input_string */
+    flb_free(file_buffer);
+    }  /* End of block that declared file_buffer */
+
     ctx->level--;
 
     flb_sds_destroy(include_file);
