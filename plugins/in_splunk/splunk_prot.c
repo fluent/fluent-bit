@@ -439,15 +439,21 @@ static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *recor
                 &tm);
     }
 
-    /* Always build body by appending map entries so we can extend it */
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        kv = record->via.map.ptr;
-        for (i = 0; i < record->via.map.size &&
-                     ret == FLB_EVENT_ENCODER_SUCCESS; i++) {
-            ret = flb_log_event_encoder_append_body_values(
-                    &ctx->log_encoder,
-                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
-                    FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
+        /* Always build body by appending map entries so we can extend it */
+        if (record->type == MSGPACK_OBJECT_MAP) {
+            kv = record->via.map.ptr;
+            for (i = 0; i < record->via.map.size &&
+                         ret == FLB_EVENT_ENCODER_SUCCESS; i++) {
+                ret = flb_log_event_encoder_append_body_values(
+                        &ctx->log_encoder,
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
+            }
+        }
+        else {
+            ret = flb_log_event_encoder_set_body_from_msgpack_object(&ctx->log_encoder,
+                                                                     record);
         }
     }
 
