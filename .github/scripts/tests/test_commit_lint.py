@@ -611,7 +611,7 @@ def test_valid_test_file_changes():
     Generic prefixes like "tests:" are acceptable for test-related changes.
     """
     commit = make_commit(
-        "tests: add unit test\n\nSigned-off-by: User",
+        "tests: test_router: add unit test\n\nSigned-off-by: User",
         ["tests/unit/test_router.c"]
     )
     ok, _ = validate_commit(commit)
