@@ -1452,5 +1452,10 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     }
 
     flb_sds_destroy(tag);
+
+    /* Clear per-request remote address to avoid leakage across keep-alive/pipeline */
+    context->current_remote_addr = NULL;
+    context->current_remote_addr_len = 0;
+
     return ret;
 }
