@@ -494,12 +494,12 @@ if(FLB_UNICODE_ENCODER)
 endif()
 
 if(FLB_COVERAGE)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic")
   if (FLB_UNICODE_ENCODER)
     # CMAKE_CXX_FLAGS will be extended with FLB_EXTRA_CMAKE_CXX_FLAGS,
     # when / if C++ language support will be enabled.
     # Until C++ language support is enabled, CMAKE_CXX_FLAGS is empty / undefined.
-    set(FLB_EXTRA_CMAKE_CXX_FLAGS "${FLB_EXTRA_CMAKE_CXX_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+    set(FLB_EXTRA_CMAKE_CXX_FLAGS "${FLB_EXTRA_CMAKE_CXX_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic")
   endif()
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
