@@ -628,6 +628,12 @@ endif()
 
 # MPack
 add_definitions(-DMPACK_EXTENSIONS=1)
+# MPack read / write tracking seems to have issues with nested types,
+# so it needs to be disabled explicitly, because otherwise mpack
+# read / write tracking is automatically enabled for the Debug build
+# (when _DEBUG macro is defined) with some compilers, like MSVC
+# (refer to https://learn.microsoft.com/en-us/cpp/c-runtime-library/debug).
+add_definitions(-DMPACK_READ_TRACKING=0 -DMPACK_WRITE_TRACKING=0)
 add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 
 # Miniz (zip)
