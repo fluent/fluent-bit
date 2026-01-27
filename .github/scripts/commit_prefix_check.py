@@ -66,9 +66,19 @@ def infer_prefix_from_paths(paths):
         if p.startswith("lib/"):
             component_prefixes.add("lib:")
 
-        # ----- tests/ → tests: -----
+        # ----- tests/<category>/<file>.c → <file>: (strip flb_) -----
         if p.startswith("tests/"):
-            component_prefixes.add("tests:")
+            parts = p.split("/")
+            if len(parts) >= 3:
+                filename = os.path.basename(p)
+                name, _ = os.path.splitext(filename)
+                if name.startswith("flb_"):
+                    name = name[4:]
+                if name:
+                    component_prefixes.add(f"{name}:")
+                    component_prefixes.add("tests:")
+            else:
+                component_prefixes.add("tests:")
 
         # ----- plugins/<name>/ → <name>: -----
         if p.startswith("plugins/"):
@@ -229,25 +239,35 @@ def validate_commit(commit):
     }
 
     # Prefixes that are allowed to cover multiple subcomponents
-    umbrella_prefixes = {"lib:"}
+    umbrella_prefixes = {"lib:", "tests:"}
 
     # If more than one non-build prefix is inferred AND the subject is not an umbrella
     # prefix, check if the subject prefix is in the expected list. If it is, allow it
     # (because the corresponding file exists). Only reject if it's not in the expected list
     # or if it's an umbrella prefix that doesn't match.
     if len(non_build_prefixes) > 1:
-        # Only umbrella prefixes are allowed to cover multiple components
         if subj_lower in umbrella_prefixes:
-            # Ensure all changed paths are within the umbrella domain
             norm_paths = [p.replace(os.sep, "/") for p in files]
-            if not all(p.startswith("lib/") for p in norm_paths):
-                expected_list = sorted(expected)
-                expected_str = ", ".join(expected_list)
-                return False, (
-                    f"Subject prefix '{subject_prefix}' does not match files changed.\n"
-                    f"Expected one of: {expected_str}"
-                )
-        elif subj_lower not in umbrella_prefixes:
+
+            if subj_lower == "lib:":
+                if not all(p.startswith("lib/") for p in norm_paths):
+                    expected_list = sorted(expected)
+                    expected_str = ", ".join(expected_list)
+                    return False, (
+                        f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+                        f"Expected one of: {expected_str}"
+                    )
+
+            elif subj_lower == "tests:":
+                if not all(p.startswith("tests/") for p in norm_paths):
+                    expected_list = sorted(expected)
+                    expected_str = ", ".join(expected_list)
+                    return False, (
+                        f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+                        f"Expected one of: {expected_str}"
+                    )
+
+        else:
             expected_list = sorted(expected)
             expected_str = ", ".join(expected_list)
             return False, (
