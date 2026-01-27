@@ -2962,11 +2962,25 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
 
         /* Read file content */
         bytes_read = fread(file_buffer, 1, file_size, fh);
+        if (bytes_read != (size_t)file_size && ferror(fh)) {
+            flb_error("[config] error reading file %s", cfg_file);
+            fclose(fh);
+            fh = NULL;
+            flb_free(file_buffer);
+            file_buffer = NULL;
+            code = -1;
+            goto done;
+        }
         fclose(fh);
         fh = NULL;  /* Mark as closed */
         file_buffer[bytes_read] = '\0';
         
-    yaml_parser_initialize(&parser);
+        if (!yaml_parser_initialize(&parser)) {
+            flb_error("[config] failed to initialize YAML parser");
+            code = -1;
+            goto done;
+        }
+        
     parser_initialized = 1;    
     yaml_parser_set_input_string(&parser, file_buffer, bytes_read);
 
