@@ -1389,18 +1389,20 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     context->current_remote_addr_len = 0;
 
     parent_session = (struct flb_http_server_session *) request->stream->parent;
-    if (http_header_lookup(HTTP_PROTOCOL_VERSION_20, request,
-                           SPLUNK_XFF_HEADER, &hval, &hlen) == 0) {
-        extract_remote_address(hval, hlen, parent_session->connection,
-                               &context->current_remote_addr,
-                               &context->current_remote_addr_len);
-    }
-    else {
-        /* fallback to peer addr */
-        peer = flb_connection_get_remote_address(parent_session->connection);
-        if (peer) {
-            context->current_remote_addr = peer;
-            context->current_remote_addr_len = strlen(peer);
+    if (parent_session != NULL) {
+        if (http_header_lookup(HTTP_PROTOCOL_VERSION_20, request,
+                               SPLUNK_XFF_HEADER, &hval, &hlen) == 0) {
+            extract_remote_address(hval, hlen, parent_session->connection,
+                                   &context->current_remote_addr,
+                                   &context->current_remote_addr_len);
+        }
+        else {
+            /* fallback to peer addr */
+            peer = flb_connection_get_remote_address(parent_session->connection);
+            if (peer) {
+                context->current_remote_addr = peer;
+                context->current_remote_addr_len = strlen(peer);
+            }
         }
     }
 
