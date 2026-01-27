@@ -2936,6 +2936,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         unsigned char *file_buffer = NULL;
         size_t bytes_read;
         int parser_initialized = 0;
+        int event_needs_delete = 0;
 
         /* Get file size */
         fseek(fh, 0, SEEK_END);
@@ -2986,6 +2987,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
 
     do {
         status = yaml_parser_parse(&parser, &event);
+        event_needs_delete = 1;  /* Mark that event needs cleanup on error */
 
         if (status == YAML_FAILURE) {
             if (parser.problem) {
@@ -3024,6 +3026,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         }
 
         yaml_event_delete(&event);
+        event_needs_delete = 0;  /* Event has been deleted, reset flag */
         state = cfl_list_entry_last(&ctx->states, struct parser_state, _head);
 
     } while (state->state != STATE_STOP);
@@ -3031,7 +3034,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     flb_debug("==============================");
 done:
 
-    if (code == -1) {
+    if (code == -1 && event_needs_delete) {
         yaml_event_delete(&event);
     }
 
