@@ -24,12 +24,30 @@
 #include <fluent-bit/aws/flb_aws_compress.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_zstd.h>
+#include <fluent-bit/flb_snappy.h>
 
 #include <stdint.h>
 
 #ifdef FLB_HAVE_ARROW
 #include "compression/arrow/compress.h"
 #endif
+
+/* Wrapper function to adapt flb_snappy_compress to AWS compression interface */
+static int flb_snappy_compress_wrapper(void *in_data, size_t in_len,
+                                       void **out_data, size_t *out_len)
+{
+    int ret;
+    
+    ret = flb_snappy_compress((char *) in_data, in_len,
+                              (char **) out_data, out_len);
+    
+    /* Normalize all error codes to -1 per AWS compression interface contract */
+    if (ret < 0) {
+        return -1;
+    }
+    
+    return ret;
+}
 
 struct compression_option {
     int compression_type;
@@ -53,6 +71,11 @@ static const struct compression_option compression_options[] = {
         FLB_AWS_COMPRESS_ZSTD,
         "zstd",
         &flb_zstd_compress
+    },
+    {
+        FLB_AWS_COMPRESS_SNAPPY,
+        "snappy",
+        &flb_snappy_compress_wrapper
     },
 #ifdef FLB_HAVE_ARROW
     {
