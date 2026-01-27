@@ -37,6 +37,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/aws/flb_aws_aggregation.h>
+#include <fluent-bit/aws/flb_aws_compress.h>
 
 #include <monkey/mk_core.h>
 #include <msgpack.h>
@@ -383,13 +384,40 @@ static int process_event(struct flb_kinesis *ctx, struct flush *buf,
     }
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
-    ret = flb_base64_encode((unsigned char *) buf->event_buf, size, &b64_len,
-                                (unsigned char *) tmp_buf_ptr, written);
-    if (ret != 0) {
-        flb_errno();
-        return -1;
+    
+    /* Handle compression if enabled */
+    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+        void *compressed_buf = NULL;
+        size_t compressed_size = 0;
+        
+        ret = flb_aws_compression_b64_truncate_compress(ctx->compression,
+                                                       MAX_B64_EVENT_SIZE,
+                                                       tmp_buf_ptr,
+                                                       written,
+                                                       &compressed_buf,
+                                                       &compressed_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Unable to compress record, discarding, %s",
+                         ctx->stream_name);
+            return 2;
+        }
+        
+        /* Replace event buffer with compressed buffer */
+        flb_free(buf->event_buf);
+        buf->event_buf = compressed_buf;
+        buf->event_buf_size = compressed_size;
+        written = compressed_size;
     }
-    written = b64_len;
+    else {
+        /* Base64 encode the record */
+        ret = flb_base64_encode((unsigned char *) buf->event_buf, size, &b64_len,
+                                    (unsigned char *) tmp_buf_ptr, written);
+        if (ret != 0) {
+            flb_errno();
+            return -1;
+        }
+        written = b64_len;
+    }
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
     if ((buf->tmp_buf_size - buf->tmp_buf_offset) < written) {
@@ -431,25 +459,56 @@ static int send_aggregated_record(struct flb_kinesis *ctx, struct flush *buf) {
         return 0;
     }
 
-    /* Base64 encode the aggregated record */
-    size_t size = (agg_size * 1.5) + 4;
-    if (buf->event_buf == NULL || buf->event_buf_size < size) {
-        flb_free(buf->event_buf);
-        buf->event_buf = flb_malloc(size);
-        buf->event_buf_size = size;
-        if (buf->event_buf == NULL) {
+    /* Handle compression if enabled */
+    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+        void *compressed_buf = NULL;
+        size_t compressed_size = 0;
+        
+        ret = flb_aws_compression_b64_truncate_compress(ctx->compression,
+                                                       MAX_B64_EVENT_SIZE,
+                                                       buf->agg_buf.agg_buf,
+                                                       agg_size,
+                                                       &compressed_buf,
+                                                       &compressed_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Unable to compress aggregated record, discarding, %s",
+                         ctx->stream_name);
+            flb_aws_aggregation_reset(&buf->agg_buf);
+            return 0;
+        }
+        
+        /* Ensure event_buf is large enough */
+        if (buf->event_buf == NULL || buf->event_buf_size < compressed_size) {
+            flb_free(buf->event_buf);
+            buf->event_buf = compressed_buf;
+            buf->event_buf_size = compressed_size;
+        } else {
+            memcpy(buf->event_buf, compressed_buf, compressed_size);
+            flb_free(compressed_buf);
+        }
+        agg_size = compressed_size;
+    }
+    else {
+        /* Base64 encode the aggregated record */
+        size_t size = (agg_size * 1.5) + 4;
+        if (buf->event_buf == NULL || buf->event_buf_size < size) {
+            flb_free(buf->event_buf);
+            buf->event_buf = flb_malloc(size);
+            buf->event_buf_size = size;
+            if (buf->event_buf == NULL) {
+                flb_errno();
+                return -1;
+            }
+        }
+
+        ret = flb_base64_encode((unsigned char *) buf->event_buf, size, &b64_len,
+                                (unsigned char *) buf->agg_buf.agg_buf, agg_size);
+        if (ret != 0) {
             flb_errno();
             return -1;
         }
+        agg_size = b64_len;
     }
-
-    ret = flb_base64_encode((unsigned char *) buf->event_buf, size, &b64_len,
-                            (unsigned char *) buf->agg_buf.agg_buf, agg_size);
-    if (ret != 0) {
-        flb_errno();
-        return -1;
-    }
-    agg_size = b64_len;
 
     /* Copy to tmp_buf */
     if (buf->tmp_buf_size < agg_size) {
