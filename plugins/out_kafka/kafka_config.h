@@ -125,6 +125,9 @@ struct flb_out_kafka {
     struct flb_avro_fields avro_fields;
 #endif
 
+#ifdef FLB_HAVE_METRICS
+    struct cmt_counter *cmt_kafka_errors;
+#endif
 #ifdef FLB_HAVE_AWS_MSK_IAM
     flb_sds_t aws_msk_iam_cluster_arn;
     struct flb_aws_msk_iam *msk_iam;

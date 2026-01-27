@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/aws/flb_aws_msk_iam.h>
+#include <fluent-bit/flb_output.h>
 
 #include "kafka_config.h"
 #include "kafka_topic.h"
@@ -283,6 +284,18 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
             flb_utils_split_free(topics);
         }
     }
+
+    /* Metrics */
+#ifdef FLB_HAVE_METRICS
+    char *label_names[1];
+    char *label_values[1];
+
+    label_names[0] = "name";
+    label_values[0] = flb_output_name(ctx->ins);
+
+    ctx->cmt_kafka_errors = cmt_counter_create(ctx->ins->cmt, "fluentbit", "output", "kafka_errors_total", "Number of kafka errors processing queued messages", 1, label_names);
+    cmt_counter_set(ctx->cmt_kafka_errors, cfl_time_now(), 0, 1, label_values);
+#endif
 
     flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->kafka.brokers, tmp);
 #ifdef FLB_HAVE_AVRO_ENCODER
