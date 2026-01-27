@@ -2935,6 +2935,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         long file_size;
         unsigned char *file_buffer = NULL;
         size_t bytes_read;
+        int parser_initialized = 0;
 
         /* Get file size */
         fseek(fh, 0, SEEK_END);
@@ -2944,9 +2945,9 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         if (file_size < 0) {
             flb_error("[config] could not determine file size for %s", cfg_file);
             fclose(fh);
-            flb_sds_destroy(include_dir);
-            flb_sds_destroy(include_file);
-            return -1;
+            fh = NULL;
+            code = -1;
+            goto done;
         }
 
         /* Allocate buffer */
@@ -2954,9 +2955,9 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         if (!file_buffer) {
             flb_error("[config] could not allocate memory for config file %s", cfg_file);
             fclose(fh);
-            flb_sds_destroy(include_dir);
-            flb_sds_destroy(include_file);
-            return -1;
+            fh = NULL;
+            code = -1;
+            goto done;
         }
 
         /* Read file content */
@@ -2966,6 +2967,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         file_buffer[bytes_read] = '\0';
         
     yaml_parser_initialize(&parser);
+    parser_initialized = 1;    
     yaml_parser_set_input_string(&parser, file_buffer, bytes_read);
 
     do {
@@ -3019,7 +3021,9 @@ done:
         yaml_event_delete(&event);
     }
 
-    yaml_parser_delete(&parser);
+    if (parser_initialized) {
+        yaml_parser_delete(&parser);
+    }
 
     /* free all remaining states */
     if (code == -1) {
@@ -3030,7 +3034,10 @@ done:
     }
 
     /* Free the file buffer that was allocated for yaml_parser_set_input_string */
-    flb_free(file_buffer);
+    if (file_buffer) {
+        flb_free(file_buffer);
+    }
+        
     }  /* End of block that declared file_buffer */
 
     ctx->level--;
