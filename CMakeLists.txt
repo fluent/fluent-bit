@@ -121,11 +121,7 @@ else()
   endif()
 endif()
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FLB_FILENAME__=__FILE__")
-# CMAKE_CXX_FLAGS will be extended with FLB_EXTRA_CMAKE_CXX_FLAGS,
-# when / if C++ language support will be enabled.
-# Until C++ language support is enabled, CMAKE_CXX_FLAGS is empty / undefined.
-set(FLB_EXTRA_CMAKE_CXX_FLAGS "${FLB_EXTRA_CMAKE_CXX_FLAGS} -D__FLB_FILENAME__=__FILE__")
+add_compile_definitions(__FLB_FILENAME__=__FILE__)
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv7l")
   set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -latomic")
@@ -636,7 +632,7 @@ endif()
 # MPack
 add_definitions(-DMPACK_EXTENSIONS=1)
 # MPack read / write tracking seems to have issues with nested types,
-# so it needs to be disabled explicitly, because otherwise mpack
+# so it needs to be disabled explicitly, because otherwise MPack
 # read / write tracking is automatically enabled for the Debug build
 # (when _DEBUG macro is defined) with some compilers, like MSVC
 # (refer to https://learn.microsoft.com/en-us/cpp/c-runtime-library/debug).
@@ -736,8 +732,8 @@ if((FLB_UNICODE_ENCODER AND FLB_USE_SIMDUTF) OR FLB_RIPSER)
     set(upper_config_type)
     set(config_type)
   endif()
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${FLB_EXTRA_CMAKE_CXX_FLAGS}")
-  set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} ${FLB_EXTRA_CMAKE_CXX_LINK_FLAGS}")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}${FLB_EXTRA_CMAKE_CXX_FLAGS}")
+  set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS}${FLB_EXTRA_CMAKE_CXX_LINK_FLAGS}")
 
   set(CMAKE_CXX_STANDARD 11)
 endif()
