@@ -1238,8 +1238,8 @@ if(FLB_BACKTRACE)
     endif()
     set(FLB_LIBBACKTRACE_PATH "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
     ExternalProject_Add(backtrace
-      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/
-      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
+      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/${FLB_PATH_LIB_LIBBACKTRACE}/
+      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/${FLB_PATH_LIB_LIBBACKTRACE}/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
       BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
       BUILD_BYPRODUCTS ${FLB_LIBBACKTRACE_PATH}
       INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} DESTDIR= install
