@@ -66,6 +66,14 @@ struct log_to_metrics_ctx {
     int bucket_counter;
     double *buckets;
 
+
+    /* Pre-created record accessors for each label (including kubernetes labels) */
+    struct flb_record_accessor **label_ras;
+
+    /* Pre-allocated label value buffers, reused per record */
+    char *label_values_buf;   /* contiguous buffer: label_counter * MAX_LABEL_LENGTH */
+    char **label_values;      /* pointer view: label_values[i] points into label_values_buf */
+
     struct cmt_counter *c;
     struct cmt_gauge *g;
     struct cmt_histogram *h;
