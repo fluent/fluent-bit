@@ -1219,38 +1219,7 @@ endif()
 # LibBacktrace (friendly stacktrace support)
 # =========================================
 if(FLB_BACKTRACE)
-  if(FLB_PREFER_SYSTEM_LIB_BACKTRACE)
-    find_path(LIBBACKTRACE_INCLUDE_DIRS NAMES backtrace.h)
-    find_library(LIBBACKTRACE_LIBRARIES NAMES backtrace)
-  endif()
-  if(LIBBACKTRACE_INCLUDE_DIRS AND LIBBACKTRACE_LIBRARIES)
-    message(STATUS "libbacktrace found (${LIBBACKTRACE_LIBRARIES})")
-    include_directories(${LIBBACKTRACE_INCLUDE_DIRS})
-    link_directories(${LIBBACKTRACE_LIBRARY_DIRS})
-  else()
-    message(STATUS "libbacktrace not found, building ourselves")
-    if (CMAKE_OSX_SYSROOT)
-      # From macOS Mojave, /usr/include does not store C SDK headers.
-      # For libbacktrace building on macOS, we have to tell C headers where they are located.
-      set(DEPS_C_COMPILER "${CMAKE_C_COMPILER} -isysroot ${CMAKE_OSX_SYSROOT}")
-    else()
-      set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
-    endif()
-    set(FLB_LIBBACKTRACE_PATH "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
-    ExternalProject_Add(backtrace
-      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/${FLB_PATH_LIB_LIBBACKTRACE}/
-      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/${FLB_PATH_LIB_LIBBACKTRACE}/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-      BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
-      BUILD_BYPRODUCTS ${FLB_LIBBACKTRACE_PATH}
-      INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} DESTDIR= install
-      )
-    add_library(libbacktrace STATIC IMPORTED GLOBAL)
-    set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION ${FLB_LIBBACKTRACE_PATH})
-    add_dependencies(libbacktrace backtrace)
-    include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
-    set(LIBBACKTRACE_LIBRARIES "libbacktrace")
-  endif()
-  FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
+  include(cmake/libbacktrace.cmake)
 endif()
 
 # Onigmo (Regex Engine) options
