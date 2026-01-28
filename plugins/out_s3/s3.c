@@ -267,7 +267,7 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n].val_len = strlen(ctx->sse);
         n++;
     }
-    if (ctx->sse_kms_key_id != NULL) {
+    if (ctx->sse_kms_key_id != NULL && ctx->sse != NULL && (strcasecmp(ctx->sse, "aws:kms") == 0 || strcasecmp(ctx->sse, "aws:kms:dsse") == 0)) {
         s3_headers[n] = sse_kms_key_id_header;
         s3_headers[n].val = ctx->sse_kms_key_id;
         s3_headers[n].val_len = strlen(ctx->sse_kms_key_id);
@@ -906,6 +906,10 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("sse_kms_key_id", ins);
     if (tmp) {
+        if (ctx->sse == NULL || (strcasecmp(ctx->sse, "aws:kms") != 0 && strcasecmp(ctx->sse, "aws:kms:dsse") != 0)) {
+            flb_plg_error(ctx->ins, "Invalid 'sse_kms_key_id' value '%s'. 'sse_kms_key_id' is only applicable when 'sse' is set to 'aws:kms' or 'aws:kms:dsse'", tmp);
+            return -1;
+        }
         ctx->sse_kms_key_id = (char *) tmp;
     }
 
@@ -4216,7 +4220,7 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "sse_kms_key_id", NULL,
      0, FLB_FALSE, 0,
      "AWS KMS key ID (or key ARN) for server-side encryption. Only applicable when "
-     "'sse' is set to 'aws:kms'. If not specified, the default AWS-managed KMS key "
+     "'sse' is set to 'aws:kms' or 'aws:kms:dsse'. If not specified, the default AWS-managed KMS key "
      "for S3 will be used."
     },
 
