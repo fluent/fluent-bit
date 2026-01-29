@@ -21,24 +21,31 @@ With QEMU set up and buildkit support, you can build all targets in one simple c
 To set up for Ubuntu 20.04 development PC as an example:
 
 1. Add QEMU: https://askubuntu.com/a/1369504
+
 ```
 sudo add-apt-repository ppa:jacob/virtualisation
 sudo apt-get update && sudo apt-get install qemu qemu-user qemu-user-static
 ```
+
 2. Install buildkit: https://docs.docker.com/buildx/working-with-buildx/#install
+
 ```
 wget https://github.com/docker/buildx/releases/download/v0.7.1/buildx-v0.7.1.linux-amd64
 mv buildx-v0.7.1.linux-amd64 ~/.docker/cli-plugins/docker-buildx
 chmod a+x ~/.docker/cli-plugins/docker-buildx
 ```
+
 3. Configure and use: https://stackoverflow.com/a/60667468
+
 ```
 docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 docker buildx rm builder
 docker buildx create --name builder --use
 docker buildx inspect --bootstrap
 ```
+
 4. Build Fluent Bit from the **root of the Git repo (not from this directory)**:
+
 ```
 docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7,linux/s390x" --target=production -f dockerfiles/Dockerfile .
 ```
@@ -47,10 +54,25 @@ docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7,linux/s390x
 
 1. Checkout the branch you want, e.g. 1.8 for 1.8.X containers.
 2. Build Fluent Bit from the **root of the Git repo (not from this directory)**:
+
 ```
 $ docker build -t fluent/fluent-bit --target=production -f dockerfiles/Dockerfile .
 ```
+
+### Optional: Build with Parquet encoder support
+
+To enable Parquet encoding support (requires Apache Arrow/Parquet libraries), use the `EXTRA_CMAKE_FLAGS` build argument:
+
+```
+$ docker build -t fluent/fluent-bit --target=production \
+  --build-arg EXTRA_CMAKE_FLAGS="-DFLB_PARQUET_ENCODER=On" \
+  -f dockerfiles/Dockerfile .
+```
+
+Note: Enabling Parquet support will increase the image size by approximately 49MB due to Apache Arrow dependencies.
+
 3. Test the container.
+
 ```
 $ docker run --rm -it fluent/fluent-bit:latest
 ```
@@ -90,10 +112,11 @@ ______ _                  _    ______ _ _             ___   _____
 ## ghcr.io topology
 
 Containers are "staged" prior to release in the following ways to `ghcr.io`:
-* `ghcr.io/fluent/fluent-bit` - official releases, identical to DockerHub
-* `ghcr.io/fluent/fluent-bit/staging` - all architectures staging images used for testing prior to release
-* `ghcr.io/fluent/fluent-bit/master` - x86_64/AMD64 only images built on each push to master, used for integration tests
-* `ghcr.io/fluent/fluent-bit/pr-X` - x86_64/AMD64 only PR images where `X` is the PR number
+
+- `ghcr.io/fluent/fluent-bit` - official releases, identical to DockerHub
+- `ghcr.io/fluent/fluent-bit/staging` - all architectures staging images used for testing prior to release
+- `ghcr.io/fluent/fluent-bit/master` - x86_64/AMD64 only images built on each push to master, used for integration tests
+- `ghcr.io/fluent/fluent-bit/pr-X` - x86_64/AMD64 only PR images where `X` is the PR number
 
 ## Windows
 
@@ -109,20 +132,34 @@ More information is available at:
 In addition, metadata as defined in OCI image spec annotations, is leveraged in the generated image. This is the reason for the additional `--build-arg` parameters.
 
 ### Minimum set of build-args
+
 ```powershell
 docker build --no-cache `
   --build-arg WINDOWS_VERSION=ltsc2019 `
   -t fluent/fluent-bit:master-windows -f ./dockerfiles/Dockerfile.windows .
 ```
 
+### Optional: Build with Parquet encoder support
+
+To enable Parquet encoding support on Windows, add the `EXTRA_CMAKE_FLAGS` build argument:
+
+```powershell
+docker build --no-cache `
+  --build-arg WINDOWS_VERSION=ltsc2019 `
+  --build-arg EXTRA_CMAKE_FLAGS="-DFLB_PARQUET_ENCODER=On" `
+  -t fluent/fluent-bit:master-windows -f ./dockerfiles/Dockerfile.windows .
+```
+
+Note: Parquet support uses vcpkg to install Apache Arrow with static linking.
+
 ## Contact
 
 Feel free to join us on our Mailing List or IRC:
 
- - Slack: http://slack.fluentd.org / channel #fluent-bit
- - Mailing List: https://groups.google.com/forum/#!forum/fluent-bit
- - IRC: irc.freenode.net #fluent-bit
- - Twitter: http://twitter.com/fluentbit
+- Slack: http://slack.fluentd.org / channel #fluent-bit
+- Mailing List: https://groups.google.com/forum/#!forum/fluent-bit
+- IRC: irc.freenode.net #fluent-bit
+- Twitter: http://twitter.com/fluentbit
 
 ## License
 
