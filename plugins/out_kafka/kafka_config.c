@@ -49,6 +49,9 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     }
     ctx->ins = ins;
     ctx->blocked = FLB_FALSE;
+    
+    /* Initialize topics list early so it's always valid for cleanup */
+    mk_list_init(&ctx->topics);
 
     ret = flb_output_config_map_set(ins, (void*) ctx);
     if (ret == -1) {
@@ -313,7 +316,6 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
 #endif
 
     /* Config: Topic */
-    mk_list_init(&ctx->topics);
     tmp = flb_output_get_property("topics", ins);
     if (!tmp) {
         flb_kafka_topic_create(FLB_KAFKA_TOPIC, ctx);
@@ -337,7 +339,8 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         }
     }
 
-    flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->kafka.brokers, tmp);
+    flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->kafka.brokers, 
+                 tmp ? tmp : FLB_KAFKA_TOPIC);
 #ifdef FLB_HAVE_AVRO_ENCODER
     flb_plg_info(ctx->ins, "schemaID='%s' schema='%s'", ctx->avro_fields.schema_id, ctx->avro_fields.schema_str);
 #endif
