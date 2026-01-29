@@ -267,7 +267,7 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n].val_len = strlen(ctx->sse);
         n++;
     }
-    if (ctx->sse_kms_key_id != NULL && ctx->sse != NULL && (strcmp(ctx->sse, "aws:kms") == 0 || strcmp(ctx->sse, "aws:kms:dsse") == 0)) {
+    if (ctx->sse_kms_key_id != NULL && ctx->sse != NULL && (strncmp(ctx->sse, "aws:kms", sizeof("aws:kms")) == 0 || strncmp(ctx->sse, "aws:kms:dsse", sizeof("aws:kms:dsse")) == 0)) {
         s3_headers[n] = sse_kms_key_id_header;
         s3_headers[n].val = ctx->sse_kms_key_id;
         s3_headers[n].val_len = strlen(ctx->sse_kms_key_id);
@@ -895,9 +895,9 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("sse", ins);
     if (tmp) {
-        if (strcmp(tmp, "AES256") != 0 &&
-            strcmp(tmp, "aws:kms") != 0 &&
-            strcmp(tmp, "aws:kms:dsse") != 0) {
+        if (strncmp(tmp, "AES256", sizeof("AES256")) != 0 &&
+            strncmp(tmp, "aws:kms", sizeof("aws:kms")) != 0 &&
+            strncmp(tmp, "aws:kms:dsse", sizeof("aws:kms:dsse")) != 0) {
             flb_plg_error(ctx->ins, "Invalid 'sse' value '%s'. Must be 'AES256', 'aws:kms', or 'aws:kms:dsse'", tmp);
             return -1;
         }
@@ -906,7 +906,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("sse_kms_key_id", ins);
     if (tmp) {
-        if (ctx->sse == NULL || (strcmp(ctx->sse, "aws:kms") != 0 && strcmp(ctx->sse, "aws:kms:dsse") != 0)) {
+        if (ctx->sse == NULL || (strncmp(ctx->sse, "aws:kms", sizeof("aws:kms")) != 0 && strncmp(ctx->sse, "aws:kms:dsse", sizeof("aws:kms:dsse")) != 0)) {
             flb_plg_error(ctx->ins, "Invalid 'sse_kms_key_id' value '%s'. 'sse_kms_key_id' is only applicable when 'sse' is set to 'aws:kms' or 'aws:kms:dsse'", tmp);
             return -1;
         }
