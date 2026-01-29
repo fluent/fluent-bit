@@ -4213,13 +4213,13 @@ static struct flb_config_map config_map[] = {
      "Server-side encryption for S3 objects. Set to 'AES256' for S3-managed keys "
      "(SSE-S3), 'aws:kms' for AWS KMS-managed keys (SSE-KMS), or 'aws:kms:dsse' for "
      "dual-layer server-side encryption with KMS (DSSE-KMS). When using 'aws:kms' or "
-     "'aws:kms:dsse', you can optionally specify the KMS key ID with the 'sse_kms_key_id' option."
+     "'aws:kms:dsse'"
     },
 
     {
      FLB_CONFIG_MAP_STR, "sse_kms_key_id", NULL,
      0, FLB_FALSE, 0,
-     "AWS KMS key ID (or key ARN) for server-side encryption. Only applicable when "
+     "AWS key ARN for server-side encryption. Only applicable when "
      "'sse' is set to 'aws:kms' or 'aws:kms:dsse'. If not specified, the default AWS-managed KMS key "
      "for S3 will be used."
     },
