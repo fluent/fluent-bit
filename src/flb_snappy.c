@@ -116,6 +116,185 @@ static uint32_t calculate_checksum(char *buffer, size_t length)
             (checksum << 17)) + 0xa282ead8;
 }
 
+/*
+ * Compress data using Snappy Framing Format
+ * (Google's Snappy framing format specification)
+ *
+ * Unlike raw snappy, framed format supports streaming/concatenation because
+ * it includes frame headers with length and CRC information.
+ *
+ * Output format:
+ * - Stream identifier frame: 0xff + length(3 bytes LE) + "sNaPpY"
+ * - Data chunks: type(1) + length(3 bytes LE) + CRC32C(4 bytes) + data
+ *
+ * Max uncompressed block size is 64KB (65536 bytes).
+ */
+#define FLB_SNAPPY_MAX_BLOCK_SIZE  65536
+
+int flb_snappy_compress_framed_data(char *in_data, size_t in_len,
+                                    char **out_data, size_t *out_len)
+{
+    char   *output = NULL;
+    char   *compressed_block = NULL;
+    size_t  compressed_len;
+    size_t  output_offset = 0;
+    size_t  input_offset = 0;
+    size_t  max_output_size;
+    size_t  block_size;
+    size_t  num_blocks;
+    size_t  chunk_len;
+    uint32_t checksum;
+    int     result;
+
+    if (in_data == NULL || in_len == 0) {
+        return -1;
+    }
+
+    if (out_data == NULL || out_len == NULL) {
+        return -1;
+    }
+
+    /* Calculate number of blocks and estimate maximum output size */
+    /* Check for overflow in num_blocks calculation */
+    if (in_len > SIZE_MAX - FLB_SNAPPY_MAX_BLOCK_SIZE + 1) {
+        flb_error("[snappy] input length too large, would overflow num_blocks calculation");
+        return -1;
+    }
+    num_blocks = (in_len + FLB_SNAPPY_MAX_BLOCK_SIZE - 1) / FLB_SNAPPY_MAX_BLOCK_SIZE;
+
+    /*
+     * Maximum output size:
+     * - Stream identifier: 10 bytes (1 + 3 + 6)
+     * - Per block: 4 (frame header) + 4 (CRC) + max_compressed_size
+     * - Snappy worst case is input_size + input_size/6 + 32
+     */
+    
+    /* Calculate per-block overhead: 8 + FLB_SNAPPY_MAX_BLOCK_SIZE + FLB_SNAPPY_MAX_BLOCK_SIZE/6 + 32 */
+    size_t per_block_size = FLB_SNAPPY_MAX_BLOCK_SIZE;
+    size_t per_block_extra = FLB_SNAPPY_MAX_BLOCK_SIZE / 6;
+    
+    /* Check for overflow in per_block calculation */
+    if (per_block_size > SIZE_MAX - per_block_extra) {
+        flb_error("[snappy] per-block size calculation would overflow");
+        return -1;
+    }
+    per_block_size += per_block_extra;
+    
+    if (per_block_size > SIZE_MAX - 40) {  /* 40 = 8 + 32 */
+        flb_error("[snappy] per-block size calculation would overflow");
+        return -1;
+    }
+    per_block_size += 40;
+    
+    /* Check for overflow in multiplication: num_blocks * per_block_size */
+    if (num_blocks > 0 && per_block_size > SIZE_MAX / num_blocks) {
+        flb_error("[snappy] max_output_size calculation would overflow (multiplication)");
+        return -1;
+    }
+    max_output_size = num_blocks * per_block_size;
+    
+    /* Check for overflow in final addition: 10 + max_output_size */
+    if (max_output_size > SIZE_MAX - 10) {
+        flb_error("[snappy] max_output_size calculation would overflow (final addition)");
+        return -1;
+    }
+    max_output_size += 10;
+    
+    /* Sanity check: ensure max_output_size doesn't exceed a reasonable limit */
+    #define FLB_SNAPPY_MAX_REASONABLE_OUTPUT (1ULL << 30)  /* 1 GB */
+    if (max_output_size > FLB_SNAPPY_MAX_REASONABLE_OUTPUT) {
+        flb_error("[snappy] max_output_size %zu exceeds reasonable limit", max_output_size);
+        return -1;
+    }
+
+    output = flb_malloc(max_output_size);
+    if (output == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Write stream identifier frame: 0xff + 0x06 0x00 0x00 + "sNaPpY" */
+    output[output_offset++] = (char) FLB_SNAPPY_FRAME_TYPE_STREAM_IDENTIFIER;
+    output[output_offset++] = 0x06;  /* length = 6 (little-endian 24-bit) */
+    output[output_offset++] = 0x00;
+    output[output_offset++] = 0x00;
+    memcpy(&output[output_offset], FLB_SNAPPY_STREAM_IDENTIFIER_STRING, 6);
+    output_offset += 6;
+
+    /* Process input in blocks */
+    while (input_offset < in_len) {
+        block_size = in_len - input_offset;
+        if (block_size > FLB_SNAPPY_MAX_BLOCK_SIZE) {
+            block_size = FLB_SNAPPY_MAX_BLOCK_SIZE;
+        }
+
+        /* Compress block using raw snappy */
+        result = flb_snappy_compress(&in_data[input_offset], block_size,
+                                      &compressed_block, &compressed_len);
+        if (result != 0) {
+            flb_free(output);
+            return -2;
+        }
+
+        /* Calculate CRC32C checksum on uncompressed data */
+        checksum = calculate_checksum(&in_data[input_offset], block_size);
+
+        /* Decide whether to use compressed or uncompressed chunk */
+        if (compressed_len < block_size) {
+            /* Compressed chunk: 0x00 + length(3) + CRC(4) + compressed_data */
+            chunk_len = 4 + compressed_len;  /* CRC + compressed data */
+
+            output[output_offset++] = (char) FLB_SNAPPY_FRAME_TYPE_COMPRESSED_DATA;
+            output[output_offset++] = chunk_len & 0xFF;
+            output[output_offset++] = (chunk_len >> 8) & 0xFF;
+            output[output_offset++] = (chunk_len >> 16) & 0xFF;
+
+            /* CRC32C (little-endian) */
+            output[output_offset++] = checksum & 0xFF;
+            output[output_offset++] = (checksum >> 8) & 0xFF;
+            output[output_offset++] = (checksum >> 16) & 0xFF;
+            output[output_offset++] = (checksum >> 24) & 0xFF;
+
+            /* Compressed data */
+            memcpy(&output[output_offset], compressed_block, compressed_len);
+            output_offset += compressed_len;
+        }
+        else {
+            /* Uncompressed chunk: 0x01 + length(3) + CRC(4) + uncompressed_data */
+            chunk_len = 4 + block_size;  /* CRC + uncompressed data */
+
+            output[output_offset++] = (char) FLB_SNAPPY_FRAME_TYPE_UNCOMPRESSED_DATA;
+            output[output_offset++] = chunk_len & 0xFF;
+            output[output_offset++] = (chunk_len >> 8) & 0xFF;
+            output[output_offset++] = (chunk_len >> 16) & 0xFF;
+
+            /* CRC32C (little-endian) */
+            output[output_offset++] = checksum & 0xFF;
+            output[output_offset++] = (checksum >> 8) & 0xFF;
+            output[output_offset++] = (checksum >> 16) & 0xFF;
+            output[output_offset++] = (checksum >> 24) & 0xFF;
+
+            /* Uncompressed data */
+            memcpy(&output[output_offset], &in_data[input_offset], block_size);
+            output_offset += block_size;
+        }
+
+        flb_free(compressed_block);
+        compressed_block = NULL;
+
+        input_offset += block_size;
+    }
+
+    /* Shrink output buffer to actual size */
+    *out_data = flb_realloc(output, output_offset);
+    if (*out_data == NULL) {
+        *out_data = output;  /* realloc failed, use original */
+    }
+    *out_len = output_offset;
+
+    return 0;
+}
+
 int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
                                       char **out_data, size_t *out_len)
 {
@@ -282,7 +461,6 @@ int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
     }
 
     aggregated_data_buffer = NULL;
-    aggregated_data_length = 0;
 
     if (compressed_chunk_count == 1 &&
         uncompressed_chunk_count == 0 &&

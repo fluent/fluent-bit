@@ -54,4 +54,7 @@ int flb_snappy_uncompress(char *in_data, size_t in_len,
 int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
                                       char **out_data, size_t *out_len);
 
+int flb_snappy_compress_framed_data(char *in_data, size_t in_len,
+                                    char **out_data, size_t *out_len);
+
 #endif

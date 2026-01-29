@@ -44,6 +44,8 @@
 #define S3_KEY_SIZE 1024
 #define RANDOM_STRING "$UUID"
 #define INDEX_STRING "$INDEX"
+#define FILE_PATH_STRING "$FILE_PATH"
+#define FILE_NAME_STRING "$FILE_NAME"
 #define AWS_USER_AGENT_NONE "none"
 #define AWS_USER_AGENT_ECS "ecs"
 #define AWS_USER_AGENT_K8S "k8s"
@@ -177,6 +179,7 @@ struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client
                                                size_t dynamic_headers_len)
 {
     struct flb_http_client *c = NULL;
+    int auth_retry_done = 0;
 
     c = request_do(aws_client, method, uri, body, body_len,
                    dynamic_headers, dynamic_headers_len);
@@ -202,6 +205,23 @@ struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client
                 flb_info("[aws_client] auth error, refreshing creds");
                 aws_client->refresh_limit = time(NULL) + FLB_AWS_CREDENTIAL_REFRESH_LIMIT;
                 aws_client->provider->provider_vtable->refresh(aws_client->provider);
+
+                /*
+                 * Immediately retry with refreshed credentials.
+                 * This handles the common case where credentials expire during normal operation
+                 * (e.g., IAM role rotation in EKS/ECS). Without this retry, the request would
+                 * fail and require file-level retry with additional delay.
+                 * The auth_retry_done flag prevents infinite retry loops.
+                 */
+                if (!auth_retry_done) {
+                    auth_retry_done = 1;
+                    flb_http_client_destroy(c);
+                    c = NULL;
+
+                    flb_debug("[aws_client] retrying with refreshed credentials");
+                    c = request_do(aws_client, method, uri, body, body_len,
+                                   dynamic_headers, dynamic_headers_len);
+                }
             }
         }
     }
@@ -826,241 +846,271 @@ char* strtok_concurrent(
 #endif
 }
 
-/* Constructs S3 object key as per the blob format. */
-flb_sds_t flb_get_s3_blob_key(const char *format,
-                              const char *tag,
-                              char *tag_delimiter,
-                              const char *blob_path)
+/*
+ * Process $TZ[±N]{...} timezone patterns in the format string.
+ * Example: $TZ[+8]{%Y/%m/%d/%H} will format time in UTC+8
+ * Returns a new string with $TZ patterns replaced, or NULL on error.
+ */
+static flb_sds_t process_timezone_patterns(const char *format, time_t time)
 {
-    int i = 0;
-    int ret = 0;
-    char *tag_token = NULL;
-    char *random_alphanumeric;
-    /* concurrent safe strtok_r requires a tracking ptr */
-    char *strtok_saveptr;
+    flb_sds_t result = NULL;
     flb_sds_t tmp = NULL;
-    flb_sds_t buf = NULL;
-    flb_sds_t s3_key = NULL;
-    flb_sds_t tmp_key = NULL;
-    flb_sds_t tmp_tag = NULL;
-    flb_sds_t sds_result = NULL;
-    char *valid_blob_path = NULL;
+    const char *p = format;
+    const char *pattern_start;
+    const char *bracket_start;
+    const char *bracket_end;
+    const char *brace_start;
+    const char *brace_end;
+    char offset_str[8];
+    char time_format[256];
+    char time_buf[256];
+    int offset_hours;
+    int offset_len;
+    int format_len;
+    time_t adjusted_time;
+    struct tm adjusted_tm = {0};
+    size_t ret;
 
-    if (strlen(format) > S3_KEY_SIZE){
-        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    result = flb_sds_create_size(strlen(format) * 2);
+    if (!result) {
+        return NULL;
     }
 
-    tmp_tag = flb_sds_create_len(tag, strlen(tag));
-    if(!tmp_tag){
-        goto error;
-    }
-
-    s3_key = flb_sds_create_len(format, strlen(format));
-    if (!s3_key) {
-        goto error;
-    }
-
-    /* Check if delimiter(s) specifed exists in the tag. */
-    for (i = 0; i < strlen(tag_delimiter); i++){
-        if (strchr(tag, tag_delimiter[i])){
-            ret = 1;
+    while (*p) {
+        /* Look for $TZ[ pattern */
+        pattern_start = strstr(p, "$TZ[");
+        if (!pattern_start) {
+            /* No more patterns, append rest of string */
+            tmp = flb_sds_cat(result, p, strlen(p));
+            if (!tmp) {
+                flb_sds_destroy(result);
+                return NULL;
+            }
+            result = tmp;
             break;
         }
-    }
 
-    tmp = flb_sds_create_len(TAG_PART_DESCRIPTOR, 5);
-    if (!tmp) {
-        goto error;
-    }
-    if (strstr(s3_key, tmp)){
-        if(ret == 0){
-            flb_warn("[s3_key] Invalid Tag delimiter: does not exist in tag. "
-                    "tag=%s, format=%s", tag, format);
+        /* Append text before the pattern */
+        if (pattern_start > p) {
+            tmp = flb_sds_cat(result, p, pattern_start - p);
+            if (!tmp) {
+                flb_sds_destroy(result);
+                return NULL;
+            }
+            result = tmp;
         }
-    }
 
-    flb_sds_destroy(tmp);
-    tmp = NULL;
-
-    /* Split the string on the delimiters */
-    tag_token = strtok_concurrent(tmp_tag, tag_delimiter, &strtok_saveptr);
-
-    /* Find all occurences of $TAG[*] and
-     * replaces it with the right token from tag.
-     */
-    i = 0;
-    while(tag_token != NULL && i < MAX_TAG_PARTS) {
-        buf = flb_sds_create_size(10);
-        if (!buf) {
-            goto error;
+        /* Parse $TZ[±N]{...} */
+        bracket_start = pattern_start + 4; /* skip "$TZ[" */
+        bracket_end = strchr(bracket_start, ']');
+        if (!bracket_end) {
+            flb_warn("[s3_key] Invalid $TZ pattern: missing ']'");
+            /* Append the invalid pattern as-is and continue */
+            tmp = flb_sds_cat(result, pattern_start, 4);
+            if (!tmp) {
+                flb_sds_destroy(result);
+                return NULL;
+            }
+            result = tmp;
+            p = pattern_start + 4;
+            continue;
         }
-        tmp = flb_sds_printf(&buf, TAG_PART_DESCRIPTOR, i);
+
+        /* Extract offset (e.g., "+8", "-5", "+0") */
+        offset_len = bracket_end - bracket_start;
+        if (offset_len <= 0 || offset_len >= sizeof(offset_str)) {
+            flb_warn("[s3_key] Invalid $TZ pattern: invalid offset length");
+            tmp = flb_sds_cat(result, pattern_start, bracket_end - pattern_start + 1);
+            if (!tmp) {
+                flb_sds_destroy(result);
+                return NULL;
+            }
+            result = tmp;
+            p = bracket_end + 1;
+            continue;
+        }
+        memcpy(offset_str, bracket_start, offset_len);
+        offset_str[offset_len] = '\0';
+
+        /* Parse offset using strtol to avoid overflow */
+        {
+            char *endptr = NULL;
+            long offset_long;
+
+            errno = 0;
+            offset_long = strtol(offset_str, &endptr, 10);
+
+            /* Check if entire string was consumed */
+            if (endptr == offset_str || *endptr != '\0') {
+                flb_warn("[s3_key] Invalid $TZ pattern: invalid offset format '%s'", offset_str);
+                tmp = flb_sds_cat(result, pattern_start, bracket_end - pattern_start + 1);
+                if (!tmp) {
+                    flb_sds_destroy(result);
+                    return NULL;
+                }
+                result = tmp;
+                p = bracket_end + 1;
+                continue;
+            }
+
+            /* Check for overflow/underflow */
+            if (errno == ERANGE) {
+                flb_warn("[s3_key] Invalid $TZ pattern: offset out of range '%s'", offset_str);
+                tmp = flb_sds_cat(result, pattern_start, bracket_end - pattern_start + 1);
+                if (!tmp) {
+                    flb_sds_destroy(result);
+                    return NULL;
+                }
+                result = tmp;
+                p = bracket_end + 1;
+                continue;
+            }
+
+            /* Clamp to safe range: -24 to +24 hours (UTC-12 to UTC+14 extended to ±24 for safety) */
+            if (offset_long < -24 || offset_long > 24) {
+                flb_warn("[s3_key] Invalid $TZ pattern: offset must be between -24 and +24, got %ld", offset_long);
+                tmp = flb_sds_cat(result, pattern_start, bracket_end - pattern_start + 1);
+                if (!tmp) {
+                    flb_sds_destroy(result);
+                    return NULL;
+                }
+                result = tmp;
+                p = bracket_end + 1;
+                continue;
+            }
+
+            offset_hours = (int)offset_long;
+        }
+
+        /* Check for '{' after ']' */
+        brace_start = bracket_end + 1;
+        if (*brace_start != '{') {
+            flb_warn("[s3_key] Invalid $TZ pattern: missing '{' after ']'");
+            tmp = flb_sds_cat(result, pattern_start, brace_start - pattern_start);
+            if (!tmp) {
+                flb_sds_destroy(result);
+                return NULL;
+            }
+            result = tmp;
+            p = brace_start;
+            continue;
+        }
+        brace_start++; /* skip '{' */
+
+        /* Find closing '}' */
+        brace_end = strchr(brace_start, '}');
+        if (!brace_end) {
+            flb_warn("[s3_key] Invalid $TZ pattern: missing '}'");
+            tmp = flb_sds_cat(result, pattern_start, strlen(pattern_start));
+            if (!tmp) {
+                flb_sds_destroy(result);
+                return NULL;
+            }
+            result = tmp;
+            break;
+        }
+
+        /* Extract time format string */
+        format_len = brace_end - brace_start;
+        if (format_len <= 0 || format_len >= sizeof(time_format)) {
+            flb_warn("[s3_key] Invalid $TZ pattern: format string too long or empty");
+            tmp = flb_sds_cat(result, pattern_start, brace_end - pattern_start + 1);
+            if (!tmp) {
+                flb_sds_destroy(result);
+                return NULL;
+            }
+            result = tmp;
+            p = brace_end + 1;
+            continue;
+        }
+        memcpy(time_format, brace_start, format_len);
+        time_format[format_len] = '\0';
+
+        /* Apply timezone offset and format time */
+        adjusted_time = time + (offset_hours * 3600);
+        if (!gmtime_r(&adjusted_time, &adjusted_tm)) {
+            flb_error("[s3_key] Failed to create adjusted timestamp");
+            flb_sds_destroy(result);
+            return NULL;
+        }
+
+        ret = strftime(time_buf, sizeof(time_buf), time_format, &adjusted_tm);
+        if (ret == 0 && time_format[0] != '\0') {
+            flb_warn("[s3_key] strftime failed for $TZ pattern");
+            time_buf[0] = '\0';
+        }
+
+        /* Append formatted time */
+        tmp = flb_sds_cat(result, time_buf, strlen(time_buf));
         if (!tmp) {
-            goto error;
+            flb_sds_destroy(result);
+            return NULL;
         }
+        result = tmp;
 
-        tmp_key = replace_uri_tokens(s3_key, tmp, tag_token);
-        if (!tmp_key) {
-            goto error;
-        }
-
-        if(strlen(tmp_key) > S3_KEY_SIZE){
-            flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
-        }
-
-        if (buf != tmp) {
-            flb_sds_destroy(buf);
-        }
-        flb_sds_destroy(tmp);
-        tmp = NULL;
-        buf = NULL;
-        flb_sds_destroy(s3_key);
-        s3_key = tmp_key;
-        tmp_key = NULL;
-
-        tag_token = strtok_concurrent(NULL, tag_delimiter, &strtok_saveptr);
-        i++;
+        /* Move past the pattern */
+        p = brace_end + 1;
     }
 
-    tmp = flb_sds_create_len(TAG_PART_DESCRIPTOR, 5);
-    if (!tmp) {
-        goto error;
-    }
-
-    /* A match against "$TAG[" indicates an invalid or out of bounds tag part. */
-    if (strstr(s3_key, tmp)){
-        flb_warn("[s3_key] Invalid / Out of bounds tag part: At most 10 tag parts "
-                 "($TAG[0] - $TAG[9]) can be processed. tag=%s, format=%s, delimiters=%s",
-                 tag, format, tag_delimiter);
-    }
-
-    /* Find all occurences of $TAG and replace with the entire tag. */
-    tmp_key = replace_uri_tokens(s3_key, TAG_DESCRIPTOR, tag);
-    if (!tmp_key) {
-        goto error;
-    }
-
-    if(strlen(tmp_key) > S3_KEY_SIZE){
-        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
-    }
-
-    flb_sds_destroy(s3_key);
-    s3_key = tmp_key;
-    tmp_key = NULL;
-
-    flb_sds_len_set(s3_key, strlen(s3_key));
-
-    valid_blob_path = (char *) blob_path;
-
-    while (*valid_blob_path == '.' ||
-           *valid_blob_path == '/') {
-            valid_blob_path++;
-    }
-
-    /* Append the blob path. */
-    sds_result = flb_sds_cat(s3_key, valid_blob_path, strlen(valid_blob_path));
-
-    if (!sds_result) {
-        goto error;
-    }
-
-    s3_key = sds_result;
-
-    if(strlen(s3_key) > S3_KEY_SIZE){
-        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
-    }
-
-    /* Find all occurences of $UUID and replace with a random string. */
-    random_alphanumeric = flb_sts_session_name();
-    if (!random_alphanumeric) {
-        goto error;
-    }
-    /* only use 8 chars of the random string */
-    random_alphanumeric[8] = '\0';
-    tmp_key = replace_uri_tokens(s3_key, RANDOM_STRING, random_alphanumeric);
-    if (!tmp_key) {
-        flb_free(random_alphanumeric);
-        goto error;
-    }
-
-    if(strlen(tmp_key) > S3_KEY_SIZE){
-        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
-    }
-
-    flb_sds_destroy(s3_key);
-    s3_key = tmp_key;
-    tmp_key = NULL;
-
-    flb_free(random_alphanumeric);
-
-    flb_sds_destroy(tmp);
-    tmp = NULL;
-
-    flb_sds_destroy(tmp_tag);
-    tmp_tag = NULL;
-
-    return s3_key;
-
-    error:
-        flb_errno();
-
-        if (tmp_tag){
-            flb_sds_destroy(tmp_tag);
-        }
-
-        if (s3_key){
-            flb_sds_destroy(s3_key);
-        }
-
-        if (buf && buf != tmp){
-            flb_sds_destroy(buf);
-        }
-
-        if (tmp){
-            flb_sds_destroy(tmp);
-        }
-
-        return NULL;
+    return result;
 }
 
-/* Constructs S3 object key as per the format. */
-flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
-                         char *tag_delimiter, uint64_t seq_index)
+/*
+ * Common function to process S3 key template with standard variables and time formatting.
+ * Handles: $TAG, $TAG[0-9], $UUID, $INDEX, $TZ[±N]{...}, and strftime time formatting.
+ */
+static flb_sds_t process_s3_key_template(const char *format,
+                                         time_t time,
+                                         const char *tag,
+                                         char *tag_delimiter,
+                                         uint64_t seq_index)
 {
     int i = 0;
     int ret = 0;
+    int len;
     int seq_index_len;
     char *tag_token = NULL;
     char *key;
     char *random_alphanumeric;
     char *seq_index_str;
-    /* concurrent safe strtok_r requires a tracking ptr */
     char *strtok_saveptr;
-    int len;
     flb_sds_t tmp = NULL;
     flb_sds_t buf = NULL;
     flb_sds_t s3_key = NULL;
     flb_sds_t tmp_key = NULL;
     flb_sds_t tmp_tag = NULL;
+    flb_sds_t tz_processed = NULL;
     struct tm gmt = {0};
+    const char *working_format = format;
 
-    if (strlen(format) > S3_KEY_SIZE){
+    if (strlen(format) > S3_KEY_SIZE) {
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
     }
 
+    /* Process $TZ[±N]{...} timezone patterns first */
+    if (strstr(format, "$TZ[") != NULL) {
+        tz_processed = process_timezone_patterns(format, time);
+        if (tz_processed) {
+            working_format = tz_processed;
+        }
+        else {
+            flb_warn("[s3_key] Failed to process $TZ timezone patterns, using original format");
+        }
+    }
+
     tmp_tag = flb_sds_create_len(tag, strlen(tag));
-    if(!tmp_tag){
+    if (!tmp_tag) {
         goto error;
     }
 
-    s3_key = flb_sds_create_len(format, strlen(format));
+    s3_key = flb_sds_create_len(working_format, strlen(working_format));
     if (!s3_key) {
         goto error;
     }
 
-    /* Check if delimiter(s) specifed exists in the tag. */
-    for (i = 0; i < strlen(tag_delimiter); i++){
-        if (strchr(tag, tag_delimiter[i])){
+    /* Check if delimiter(s) specified exists in the tag. */
+    for (i = 0; i < strlen(tag_delimiter); i++) {
+        if (strchr(tag, tag_delimiter[i])) {
             ret = 1;
             break;
         }
@@ -1070,8 +1120,8 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     if (!tmp) {
         goto error;
     }
-    if (strstr(s3_key, tmp)){
-        if(ret == 0){
+    if (strstr(s3_key, tmp)) {
+        if (ret == 0) {
             flb_warn("[s3_key] Invalid Tag delimiter: does not exist in tag. "
                     "tag=%s, format=%s", tag, format);
         }
@@ -1083,11 +1133,9 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     /* Split the string on the delimiters */
     tag_token = strtok_concurrent(tmp_tag, tag_delimiter, &strtok_saveptr);
 
-    /* Find all occurences of $TAG[*] and
-     * replaces it with the right token from tag.
-     */
+    /* Find all occurrences of $TAG[*] and replace with the right token from tag. */
     i = 0;
-    while(tag_token != NULL && i < MAX_TAG_PARTS) {
+    while (tag_token != NULL && i < MAX_TAG_PARTS) {
         buf = flb_sds_create_size(10);
         if (!buf) {
             goto error;
@@ -1102,7 +1150,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
             goto error;
         }
 
-        if(strlen(tmp_key) > S3_KEY_SIZE){
+        if (strlen(tmp_key) > S3_KEY_SIZE) {
             flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
         }
 
@@ -1126,19 +1174,19 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     }
 
     /* A match against "$TAG[" indicates an invalid or out of bounds tag part. */
-    if (strstr(s3_key, tmp)){
+    if (strstr(s3_key, tmp)) {
         flb_warn("[s3_key] Invalid / Out of bounds tag part: At most 10 tag parts "
                  "($TAG[0] - $TAG[9]) can be processed. tag=%s, format=%s, delimiters=%s",
                  tag, format, tag_delimiter);
     }
 
-    /* Find all occurences of $TAG and replace with the entire tag. */
+    /* Find all occurrences of $TAG and replace with the entire tag. */
     tmp_key = replace_uri_tokens(s3_key, TAG_DESCRIPTOR, tag);
     if (!tmp_key) {
         goto error;
     }
 
-    if(strlen(tmp_key) > S3_KEY_SIZE){
+    if (strlen(tmp_key) > S3_KEY_SIZE) {
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
     }
 
@@ -1146,7 +1194,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     s3_key = tmp_key;
     tmp_key = NULL;
 
-    /* Find all occurences of $INDEX and replace with the appropriate index. */
+    /* Find all occurrences of $INDEX and replace with the appropriate index. */
     if (strstr((char *) format, INDEX_STRING)) {
         seq_index_len = snprintf(NULL, 0, "%"PRIu64, seq_index);
         seq_index_str = flb_calloc(seq_index_len + 1, sizeof(char));
@@ -1154,8 +1202,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
             goto error;
         }
 
-        sprintf(seq_index_str, "%"PRIu64, seq_index);
-        seq_index_str[seq_index_len] = '\0';
+        snprintf(seq_index_str, seq_index_len + 1, "%"PRIu64, seq_index);
         tmp_key = replace_uri_tokens(s3_key, INDEX_STRING, seq_index_str);
         if (tmp_key == NULL) {
             flb_free(seq_index_str);
@@ -1171,7 +1218,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         flb_free(seq_index_str);
     }
 
-    /* Find all occurences of $UUID and replace with a random string. */
+    /* Find all occurrences of $UUID and replace with a random string. */
     random_alphanumeric = flb_sts_session_name();
     if (!random_alphanumeric) {
         goto error;
@@ -1184,7 +1231,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         goto error;
     }
 
-    if(strlen(tmp_key) > S3_KEY_SIZE){
+    if (strlen(tmp_key) > S3_KEY_SIZE) {
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
     }
 
@@ -1193,6 +1240,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     tmp_key = NULL;
     flb_free(random_alphanumeric);
 
+    /* Perform time formatting using strftime */
     if (!gmtime_r(&time, &gmt)) {
         flb_error("[s3_key] Failed to create timestamp.");
         goto error;
@@ -1201,14 +1249,14 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     flb_sds_destroy(tmp);
     tmp = NULL;
 
-    /* A string no longer than S3_KEY_SIZE + 1 is created to store the formatted timestamp. */
+    /* Create buffer for formatted timestamp */
     key = flb_calloc(1, (S3_KEY_SIZE + 1) * sizeof(char));
     if (!key) {
         goto error;
     }
 
     ret = strftime(key, S3_KEY_SIZE, s3_key, &gmt);
-    if(ret == 0){
+    if (ret == 0) {
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
     }
     flb_sds_destroy(s3_key);
@@ -1224,34 +1272,124 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
         goto error;
     }
 
+    if (tz_processed) {
+        flb_sds_destroy(tz_processed);
+    }
     flb_sds_destroy(tmp_tag);
-    tmp_tag = NULL;
     return s3_key;
 
-    error:
-        flb_errno();
-        if (tmp_tag){
-            flb_sds_destroy(tmp_tag);
-        }
-        if (s3_key){
-            flb_sds_destroy(s3_key);
-        }
-        if (buf && buf != tmp){
-            flb_sds_destroy(buf);
-        }
-        if (tmp){
-            flb_sds_destroy(tmp);
-        }
-        if (tmp_key){
-            flb_sds_destroy(tmp_key);
-        }
-        return NULL;
+error:
+    flb_errno();
+    if (tz_processed) {
+        flb_sds_destroy(tz_processed);
+    }
+    if (tmp_tag) {
+        flb_sds_destroy(tmp_tag);
+    }
+    if (s3_key) {
+        flb_sds_destroy(s3_key);
+    }
+    if (buf && buf != tmp) {
+        flb_sds_destroy(buf);
+    }
+    if (tmp) {
+        flb_sds_destroy(tmp);
+    }
+    if (tmp_key) {
+        flb_sds_destroy(tmp_key);
+    }
+    return NULL;
 }
 
 /*
- * This function is an extension to strftime which can support milliseconds with %3N,
- * support nanoseconds with %9N or %L. The return value is the length of formatted
- * time string.
+ * Constructs S3 object key as per the format.
+ * Supports variables: $TAG, $TAG[0-9], $UUID, $INDEX, time formatters, $FILE_PATH, $FILE_NAME
+ * file_path: optional file path (can be NULL) - used only when format contains $FILE_PATH or $FILE_NAME
+ */
+flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
+                         char *tag_delimiter, uint64_t seq_index,
+                         const char *file_path)
+{
+    flb_sds_t s3_key = NULL;
+    flb_sds_t tmp_key = NULL;
+    char *valid_file_path = NULL;
+    char *file_name = NULL;
+
+    /* Use common template processing for standard variables */
+    s3_key = process_s3_key_template(format, time, tag, tag_delimiter, seq_index);
+    if (!s3_key) {
+        return NULL;
+    }
+
+    /* If file_path is NULL, just return the processed template */
+    if (file_path == NULL) {
+        return s3_key;
+    }
+
+    /* Clean up file_path: skip leading dots and slashes */
+    valid_file_path = (char *) file_path;
+    while (*valid_file_path == '.' || *valid_file_path == '/') {
+        valid_file_path++;
+    }
+
+    /* Validate that file_path is not empty after stripping */
+    if (*valid_file_path == '\0') {
+        flb_warn("[s3_key] file_path contains only dots/slashes, skipping $FILE_PATH substitution");
+        /* Return the processed template without file path modifications */
+        return s3_key;
+    }
+
+    /* Check if format contains $FILE_PATH or $FILE_NAME */
+    if (strstr(format, FILE_PATH_STRING) != NULL) {
+        /* Replace $FILE_PATH with the full file path */
+        tmp_key = replace_uri_tokens(s3_key, FILE_PATH_STRING, valid_file_path);
+        if (!tmp_key) {
+            flb_sds_destroy(s3_key);
+            return NULL;
+        }
+        flb_sds_destroy(s3_key);
+        s3_key = tmp_key;
+    }
+
+    if (strstr(format, FILE_NAME_STRING) != NULL) {
+        /* Extract just the filename from the path */
+        file_name = strrchr(valid_file_path, '/');
+        if (file_name) {
+            file_name++; /* skip the '/' */
+        } else {
+            file_name = valid_file_path; /* no slash, entire string is filename */
+        }
+
+        /* Replace $FILE_NAME with just the filename */
+        tmp_key = replace_uri_tokens(s3_key, FILE_NAME_STRING, file_name);
+        if (!tmp_key) {
+            flb_sds_destroy(s3_key);
+            return NULL;
+        }
+        flb_sds_destroy(s3_key);
+        s3_key = tmp_key;
+    }
+
+    /*
+     * S3 key is now strictly based on s3_key_format.
+     * If users want to include file path in the S3 key, they should use
+     * $FILE_PATH or $FILE_NAME variables in their s3_key_format configuration.
+     *
+     * Note: S3 keys should contain UTF-8 characters as-is (not URL-encoded).
+     * URL encoding is done separately when constructing HTTP requests.
+     */
+
+    if (strlen(s3_key) > S3_KEY_SIZE) {
+        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    }
+
+    return s3_key;
+}
+
+/*
+ * Constructs S3 object key as per the format.
+ * Supports variables: $TAG, $TAG[0-9], $UUID, $INDEX, time formatters, $FILE_PATH, $FILE_NAME
+ * file_path: optional log file path (can be NULL, e.g., nginx log file path) - used only when format contains $FILE_PATH or $FILE_NAME
  */
 size_t flb_aws_strftime_precision(char **out_buf, const char *time_format,
                                   struct flb_time *tms)
@@ -1339,4 +1477,48 @@ size_t flb_aws_strftime_precision(char **out_buf, const char *time_format,
     flb_free(tmp_parsed_time_str);
 
     return out_size;
+}
+
+/*
+ * AWS SigV4 compliant URI path encoding (RFC 3986).
+ * Only unreserved characters are NOT encoded: A-Z a-z 0-9 - _ . ~ /
+ * Characters like ?, &, = WILL be encoded as required by AWS SigV4.
+ * This should be used for S3 object keys and other AWS service paths.
+ */
+flb_sds_t flb_aws_uri_encode_path(const char *uri, size_t len)
+{
+    int i;
+    flb_sds_t buf = NULL;
+    flb_sds_t tmp = NULL;
+    char c;
+
+    buf = flb_sds_create_size(len * 3);
+    if (!buf) {
+        flb_error("[aws] cannot allocate buffer for AWS path encoding");
+        return NULL;
+    }
+
+    for (i = 0; i < len; i++) {
+        c = uri[i];
+        /* Only unreserved chars NOT encoded: A-Z a-z 0-9 - _ . ~ / */
+        if ((c >= 48 && c <= 57)  ||  /* 0-9 */
+            (c >= 65 && c <= 90)  ||  /* A-Z */
+            (c >= 97 && c <= 122) ||  /* a-z */
+            (c == '-' || c == '_' || c == '.' || c == '~' || c == '/')) {
+            tmp = flb_sds_cat(buf, uri + i, 1);
+            if (!tmp) {
+                flb_sds_destroy(buf);
+                return NULL;
+            }
+            buf = tmp;
+        }
+        else {
+            tmp = flb_sds_printf(&buf, "%%%02X", (unsigned char) c);
+            if (!tmp) {
+                flb_sds_destroy(buf);
+                return NULL;
+            }
+        }
+    }
+    return buf;
 }
