@@ -49,18 +49,12 @@ endif()
 # SASL is always enabled (built-in PLAIN/SCRAM/OAUTHBEARER support)
 set(FLB_SASL_ENABLED ON)
 
-# OAuth Bearer support:
-# - Windows: Requires SSL/TLS
-# - Linux/macOS: Built-in, always enabled (no external dependencies required)
-if(FLB_SYSTEM_WINDOWS)
-  if(FLB_TLS)
-    set(FLB_SASL_OAUTHBEARER_ENABLED ON)
-  else()
-    set(FLB_SASL_OAUTHBEARER_ENABLED OFF)
-  endif()
-else()
-  # Non-Windows platforms: OAuth Bearer is built-in, always enabled
+# OAuth Bearer support requires TLS on all platforms
+# librdkafka only enables WITH_SASL_OAUTHBEARER when WITH_SSL=ON
+if(FLB_TLS)
   set(FLB_SASL_OAUTHBEARER_ENABLED ON)
+else()
+  set(FLB_SASL_OAUTHBEARER_ENABLED OFF)
 endif()
 
 # MSK IAM requires OAuth Bearer support
@@ -70,7 +64,7 @@ set(FLB_KAFKA_MSK_IAM_ENABLED ${FLB_SASL_OAUTHBEARER_ENABLED})
 # WITH_SASL is always ON for built-in SASL support (PLAIN/SCRAM/OAUTHBEARER)
 # On Windows, this also enables SSPI support
 FLB_OPTION(WITH_SASL ON)
-FLB_OPTION(WITH_SSL On)                                        # SSL support
+FLB_OPTION(WITH_SSL ${FLB_TLS})                                # Honor Fluent Bit TLS setting
 FLB_OPTION(WITH_SASL_OAUTHBEARER ${FLB_SASL_OAUTHBEARER_ENABLED})
 
 # Explicitly set WITH_SASL_CYRUS based on detection
