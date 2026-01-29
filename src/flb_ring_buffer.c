@@ -202,4 +202,8 @@ int flb_ring_buffer_read(struct flb_ring_buffer *rb, void *ptr, size_t size)
     return 0;
 }
 
+size_t flb_ring_buffer_get_used(struct flb_ring_buffer *rb)
+{
+    return lwrb_get_full(rb->ctx);
+}
 
