@@ -7,7 +7,7 @@
 #include "../../plugins/filter_aws/aws.h"
 
 #include "../include/aws_client_mock.h"
-#include "../include/aws_client_mock.c"
+
 
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 char *output = NULL;
