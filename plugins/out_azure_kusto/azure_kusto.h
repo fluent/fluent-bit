@@ -43,12 +43,21 @@ typedef enum {
     FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY        /* Workload Identity */
 } flb_azure_kusto_auth_type;
 
-/* Kusto streaming inserts oauth scope */
-#define FLB_AZURE_KUSTO_SCOPE "https://help.kusto.windows.net/.default"
+/* Cloud environment */
+typedef enum {
+    FLB_AZURE_CLOUD_GLOBAL = 0,
+    FLB_AZURE_CLOUD_CHINA
+} flb_azure_cloud_environment;
 
-/* MSAL authorization URL  */
-#define FLB_MSAL_AUTH_URL_TEMPLATE \
+/* Kusto streaming inserts oauth scope (per cloud) */
+#define FLB_AZURE_KUSTO_SCOPE_GLOBAL "https://help.kusto.windows.net/.default"
+#define FLB_AZURE_KUSTO_SCOPE_CHINA  "https://help.kusto.chinacloudapi.cn/.default"
+
+/* MSAL authorization URL (per cloud) */
+#define FLB_MSAL_AUTH_URL_TEMPLATE_GLOBAL \
     "https://login.microsoftonline.com/%s/oauth2/v2.0/token"
+#define FLB_MSAL_AUTH_URL_TEMPLATE_CHINA \
+    "https://login.chinacloudapi.cn/%s/oauth2/v2.0/token"
 
 #define FLB_AZURE_KUSTO_MGMT_URI_PATH "/v1/rest/mgmt"
 #define FLB_AZURE_KUSTO_MGMT_BODY_TEMPLATE "{\"csl\":\"%s\", \"db\": \"NetDefaultDB\"}"
@@ -74,8 +83,8 @@ typedef enum {
 
 #define FLB_AZURE_IMDS_ENDPOINT "/metadata/identity/oauth2/token"
 #define FLB_AZURE_IMDS_API_VERSION "2018-02-01"
-#define FLB_AZURE_IMDS_RESOURCE "https://api.kusto.windows.net/"
-
+#define FLB_AZURE_IMDS_RESOURCE_GLOBAL "https://api.kusto.windows.net/"
+#define FLB_AZURE_IMDS_RESOURCE_CHINA  "https://api.kusto.chinacloudapi.cn/"
 
 struct flb_azure_kusto_resources {
     struct flb_upstream_ha *blob_ha;
@@ -104,6 +113,9 @@ struct flb_azure_kusto {
     int auth_type;
     char *auth_type_str;
     char *workload_identity_token_file;
+
+    /* Cloud environment selection (default: Global) */
+    int cloud_environment;
 
     /* compress payload */
     int compression_enabled;
@@ -175,6 +187,18 @@ struct flb_azure_kusto {
     /* Plugin output instance reference */
     struct flb_output_instance *ins;
 };
+
+/* Helper to get per-cloud scope string */
+static inline const char *flb_azure_kusto_get_scope(int cloud_env)
+{
+    return cloud_env == FLB_AZURE_CLOUD_CHINA ? FLB_AZURE_KUSTO_SCOPE_CHINA : FLB_AZURE_KUSTO_SCOPE_GLOBAL;
+}
+
+/* Helper to get IMDS resource per cloud */
+static inline const char *flb_azure_kusto_get_imds_resource(int cloud_env)
+{
+    return cloud_env == FLB_AZURE_CLOUD_CHINA ? FLB_AZURE_IMDS_RESOURCE_CHINA : FLB_AZURE_IMDS_RESOURCE_GLOBAL;
+}
 
 flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx);
 flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *csl);
