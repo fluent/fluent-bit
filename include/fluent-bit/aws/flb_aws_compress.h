@@ -21,11 +21,33 @@
 #define FLB_AWS_COMPRESS
 
 #include <sys/types.h>
+
+/*
+ * Compression algorithms (true compression)
+ * Valid values: none, gzip, snappy, zstd
+ *
+ * Note: Snappy compression uses the Snappy framing format (Google Snappy framing_format.txt)
+ * which supports streaming/concatenation. This is handled internally via flb_snappy_compress_framed_data().
+ */
 #define FLB_AWS_COMPRESS_NONE    0
 #define FLB_AWS_COMPRESS_GZIP    1
-#define FLB_AWS_COMPRESS_ARROW   2
-#define FLB_AWS_COMPRESS_PARQUET 3
-#define FLB_AWS_COMPRESS_ZSTD    4
+#define FLB_AWS_COMPRESS_SNAPPY  2
+#define FLB_AWS_COMPRESS_ZSTD    3
+
+/*
+ * File format conversion (NOT compression algorithms)
+ *
+ * DEPRECATED: FLB_AWS_COMPRESS_ARROW (4)
+ *   - Arrow is not a proper file format for S3
+ *   - This value is kept only for backward compatibility to avoid compilation errors
+ *   - DO NOT USE in new code
+ *
+ * Valid file format: PARQUET (5)
+ *   - Use format=parquet instead of compression=parquet (deprecated usage)
+ *   - Supported S3 output formats: json (FLB_S3_FORMAT_JSON), parquet (FLB_S3_FORMAT_PARQUET)
+ */
+#define FLB_AWS_COMPRESS_ARROW   4  /* DEPRECATED - Do not use */
+#define FLB_AWS_COMPRESS_PARQUET 5  /* Use format=parquet instead */
 
 /*
  * Get compression type from compression keyword. The return value is used to identify
