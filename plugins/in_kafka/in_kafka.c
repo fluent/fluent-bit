@@ -282,7 +282,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
 #ifdef FLB_HAVE_AWS_MSK_IAM
         /* Check if using aws_msk_iam as SASL mechanism */
         if (strcasecmp(conf, "aws_msk_iam") == 0) {
-            flb_sds new_sasl;
+            flb_sds_t new_sasl;
             
             /* Mark that user explicitly requested AWS MSK IAM */
             ctx->aws_msk_iam = FLB_TRUE;
