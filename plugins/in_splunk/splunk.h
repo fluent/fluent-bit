@@ -54,6 +54,8 @@ struct flb_splunk {
     size_t ingested_auth_header_len;
     int store_token_in_metadata;
     flb_sds_t store_token_key;
+    int add_remote_addr;
+    flb_sds_t remote_addr_key;
 
     struct flb_log_event_encoder log_encoder;
 
@@ -71,6 +73,10 @@ struct flb_splunk {
     struct flb_downstream *downstream; /* Client manager */
     struct mk_list connections;        /* linked list of connections */
     struct mk_server *server;
+
+    /* Remote address */
+    flb_sds_t current_remote_addr;
+    size_t current_remote_addr_len;
 };
 
 
