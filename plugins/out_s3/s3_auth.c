@@ -215,8 +215,10 @@ int s3_auth_request_presigned_url(struct flb_s3 *ctx,
     if (http_client->resp.status != 200) {
         if (http_client->resp.payload_size > 0) {
             flb_plg_error(ctx->ins,
-                         "Pre-signed URL retrieval failed with status %i\n%s",
-                         http_client->resp.status, http_client->resp.payload);
+                         "Pre-signed URL retrieval failed with status %i\n%.*s",
+                         http_client->resp.status,
+                         (int)http_client->resp.payload_size,
+                         http_client->resp.payload);
         }
         else {
             flb_plg_error(ctx->ins,
@@ -383,28 +385,29 @@ int s3_auth_fetch_presigned_url(struct flb_s3 *ctx,
         return -1;
     }
 
-    full_url = flb_sds_create_size(
-        flb_sds_len(ctx->authorization_endpoint_url) + flb_sds_len(url_path) + 1);
+    size_t auth_len = flb_sds_len(ctx->authorization_endpoint_url);
+    
+    full_url = flb_sds_create_size(auth_len + flb_sds_len(url_path) + 1);
     if (!full_url) {
         flb_sds_destroy(url_path);
         return -1;
     }
 
     /* Ensure exactly one slash between endpoint and path */
-    if (ctx->authorization_endpoint_url[flb_sds_len(ctx->authorization_endpoint_url) - 1] == '/'
+    if (auth_len > 0 && ctx->authorization_endpoint_url[auth_len - 1] == '/'
         && url_path[0] == '/') {
         /* Skip leading slash in url_path to avoid double slash */
         tmp = flb_sds_printf(&full_url, "%s%s",
                              ctx->authorization_endpoint_url, url_path + 1);
     }
-    else if (ctx->authorization_endpoint_url[flb_sds_len(ctx->authorization_endpoint_url) - 1] != '/'
+    else if (auth_len > 0 && ctx->authorization_endpoint_url[auth_len - 1] != '/'
              && url_path[0] != '/') {
         /* Add a slash between endpoint and path */
         tmp = flb_sds_printf(&full_url, "%s/%s",
                              ctx->authorization_endpoint_url, url_path);
     }
     else {
-        /* Exactly one slash already present */
+        /* Exactly one slash already present or endpoint is empty */
         tmp = flb_sds_printf(&full_url, "%s%s",
                              ctx->authorization_endpoint_url, url_path);
     }
