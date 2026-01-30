@@ -614,6 +614,7 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     struct flb_sched *sched;
     const char *emitter_alias = NULL;
     flb_sds_t emitter_alias_tmp = NULL;
+    flb_sds_t tmp = NULL;
     const char *fname;
 
     /* Create context */
@@ -813,12 +814,15 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
             log_to_metrics_destroy(ctx);
             return -1;
         }
-        emitter_alias_tmp = flb_sds_printf(&emitter_alias_tmp, "emitter_for_%s", fname);
-        if (!emitter_alias_tmp) {
+        tmp = flb_sds_printf(&emitter_alias_tmp, "emitter_for_%s", fname);
+        if (!tmp) {
+            flb_sds_destroy(emitter_alias_tmp);
+            emitter_alias_tmp = NULL;
             flb_errno();
             log_to_metrics_destroy(ctx);
             return -1;
         }
+        emitter_alias_tmp = tmp;
         emitter_alias = emitter_alias_tmp;
     }
 
