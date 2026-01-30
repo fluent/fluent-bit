@@ -207,7 +207,7 @@
     "ORDER BY part_id ASC;"
 
 #define SQL_GET_NEXT_PENDING_FILE                                                                 \
-    "SELECT DISTINCT f.id, f.path, f.destination, f.remote_id, f.tag, f.s3_key, "                 \
+    "SELECT f.id, f.path, f.destination, f.remote_id, f.tag, f.s3_key, "                          \
     "       (SELECT COUNT(*) FROM blob_parts p2 WHERE p2.file_id = f.id) as part_count "          \
     "FROM blob_files f "                                                                           \
     "JOIN blob_parts p ON f.id = p.file_id "                                                      \
