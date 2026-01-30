@@ -33,6 +33,9 @@
 #define FLB_TAIL_STATIC  0  /* Data is being consumed through read(2) */
 #define FLB_TAIL_EVENT   1  /* Data is being consumed through inotify */
 
+/* Database */
+#define FLB_TAIL_DB_ID_NONE  0  /* File not in database or deleted */
+
 /* Config */
 #define FLB_TAIL_CHUNK              "32768"   /* buffer chunk = 32KB      */
 #define FLB_TAIL_REFRESH                 60   /* refresh every 60 seconds */
