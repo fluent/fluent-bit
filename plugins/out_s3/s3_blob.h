@@ -21,6 +21,7 @@
 #define FLB_OUT_S3_BLOB_H
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <cfl/cfl_sds.h>
 #include "s3.h"
 
 /* Register blob file parts in database */
