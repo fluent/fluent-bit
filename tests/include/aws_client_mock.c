@@ -105,7 +105,12 @@ struct flb_aws_client_mock *flb_aws_client_mock_create(
     }
     mock->shared->request_chain = request_chain;
     mock->shared->next_request_index = 0;
-    pthread_mutex_init(&mock->shared->lock, NULL);
+    if (pthread_mutex_init(&mock->shared->lock, NULL) != 0) {
+        flb_free(mock->shared);
+        flb_aws_client_destroy(mock->surrogate);
+        flb_free(mock);
+        return NULL;
+    }
     mock->owns_shared = 1;
 
     return mock;
