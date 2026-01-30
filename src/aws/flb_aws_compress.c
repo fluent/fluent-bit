@@ -39,8 +39,15 @@
 static int flb_snappy_compress_wrapper(void *in_data, size_t in_len,
                                        void **out_data, size_t *out_len)
 {
-    return flb_snappy_compress_framed_data((char *)in_data, in_len,
-                                            (char **)out_data, out_len);
+    int ret;
+    
+    ret = flb_snappy_compress_framed_data((char *)in_data, in_len,
+                                           (char **)out_data, out_len);
+    /* Normalize -2 error to compression contract's -1 */
+    if (ret == -2) {
+        return -1;
+    }
+    return ret;
 }
 
 struct compression_option {
@@ -88,6 +95,10 @@ int flb_aws_compression_get_type(const char *compression_keyword)
 {
     int ret;
     const struct compression_option *o;
+
+    if (compression_keyword == NULL) {
+        return FLB_AWS_COMPRESS_NONE;
+    }
 
     if (strcmp(compression_keyword, "none") == 0) {
         return FLB_AWS_COMPRESS_NONE;
