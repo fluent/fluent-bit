@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_record_accessor.h>
 
+#include <stddef.h>
+
 /* rule types */
 #define GREP_REGEX 1
 #define GREP_EXCLUDE 2

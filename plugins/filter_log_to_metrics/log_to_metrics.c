@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
@@ -65,6 +66,46 @@ static void delete_rules(struct log_to_metrics_ctx *ctx)
     }
 }
 
+static int count_labels(struct log_to_metrics_ctx *ctx,
+                        struct flb_filter_instance *f_ins,
+                        int *out_k8s_count)
+{
+    struct mk_list *head;
+    struct flb_kv *kv;
+    int count = 0;
+    int k8s_count = 0;
+
+    if (out_k8s_count == NULL) {
+        return -1;
+    }
+
+    if (ctx->kubernetes_mode) {
+        k8s_count = NUMBER_OF_KUBERNETES_LABELS;
+        count += k8s_count;
+    }
+
+    mk_list_foreach(head, &f_ins->properties) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+
+        if (strcasecmp(kv->key, "label_field") == 0) {
+            count++;
+        }
+        else if (strcasecmp(kv->key, "add_label") == 0) {
+            count++;
+        }
+    }
+
+    *out_k8s_count = k8s_count;
+
+    if (count > MAX_LABEL_COUNT) {
+        flb_plg_error(ctx->ins,
+                      "too many labels configured: %d (max=%d)",
+                      count, MAX_LABEL_COUNT);
+        return -1;
+    }
+
+    return count;
+}
 
 static int prepare_label_runtime(struct log_to_metrics_ctx *ctx)
 {
@@ -306,27 +347,67 @@ static inline int grep_filter_data(msgpack_object map,
     return GREP_RET_KEEP;
 }
 
+/*
+ * set_labels()
+ *   Two-pass implementation:
+ *     1) Count labels (k8s + label_field + add_label)
+ *     2) Allocate exact-sized arrays and fill them
+ *
+ * Layout guarantee:
+ *   - If kubernetes_mode enabled, indices [0..k8s_count-1] are kubernetes labels.
+ *   - Remaining indices are user-defined labels in property iteration order.
+ */
 static int set_labels(struct log_to_metrics_ctx *ctx,
-                      char **label_accessors,
-                      char **label_keys,
                       struct flb_filter_instance *f_ins)
 {
-
     struct mk_list *head;
     struct mk_list *split;
-    flb_sds_t tmp;
     struct flb_kv *kv;
     struct flb_split_entry *sentry;
     int counter = 0;
+    int total = 0;
+    int k8s_count = 0;
     int i;
 
-    if (MAX_LABEL_COUNT < NUMBER_OF_KUBERNETES_LABELS){
+    total = count_labels(ctx, f_ins, &k8s_count);
+    if (total < 0) {
         return -1;
     }
 
-    if (ctx->kubernetes_mode){
-        for (i = 0; i < NUMBER_OF_KUBERNETES_LABELS; i++){
-            snprintf(label_keys[i], MAX_LABEL_LENGTH - 1, "%s", kubernetes_label_keys[i]);
+    ctx->label_counter = total;
+
+    if (ctx->label_counter == 0) {
+        ctx->label_keys = NULL;
+        ctx->label_accessors = NULL;
+        return 0;
+    }
+
+    ctx->label_keys = flb_calloc(ctx->label_counter, sizeof(char *));
+    if (!ctx->label_keys) {
+        flb_errno();
+        return -1;
+    }
+
+    ctx->label_accessors = flb_calloc(ctx->label_counter, sizeof(char *));
+    if (!ctx->label_accessors) {
+        flb_errno();
+        return -1;
+    }
+
+    if (ctx->kubernetes_mode) {
+        for (i = 0; i < NUMBER_OF_KUBERNETES_LABELS; i++) {
+            /* label key is the exported label name */
+            ctx->label_keys[i] = flb_strdup(kubernetes_label_keys[i]);
+            if (!ctx->label_keys[i]) {
+                flb_errno();
+                return -1;
+            }
+            /*
+             * We don't store kubernetes accessors here:
+             * runtime uses pre-created ctx->label_ras[0..k8s_count-1]
+             * built from kubernetes_label_keys[].
+             */
+            ctx->label_accessors[i] = NULL;
         }
         counter = NUMBER_OF_KUBERNETES_LABELS;
     }
@@ -335,13 +416,23 @@ static int set_labels(struct log_to_metrics_ctx *ctx,
     mk_list_foreach(head, &f_ins->properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
 
-        if (counter >= MAX_LABEL_COUNT) {
-            return MAX_LABEL_COUNT;
+        if (counter >= ctx->label_counter) {
+            flb_plg_error(ctx->ins, "internal label counter overflow");
+            return -1;
         }
 
         if (strcasecmp(kv->key, "label_field") == 0) {
-            snprintf(label_accessors[counter], MAX_LABEL_LENGTH - 1, "%s", kv->val);
-            snprintf(label_keys[counter], MAX_LABEL_LENGTH - 1, "%s", kv->val);
+            /* name and accessor are the same string */
+            ctx->label_keys[counter] = flb_strdup(kv->val);
+            if (!ctx->label_keys[counter]) {
+                flb_errno();
+                return -1;
+            }
+            ctx->label_accessors[counter] = flb_strdup(kv->val);
+            if (!ctx->label_accessors[counter]) {
+                flb_errno();
+                return -1;
+            }
             counter++;
         }
         else if (strcasecmp(kv->key, "add_label") == 0) {
@@ -353,14 +444,20 @@ static int set_labels(struct log_to_metrics_ctx *ctx,
             }
 
             sentry = mk_list_entry_first(split, struct flb_split_entry, _head);
-            tmp = flb_sds_create_len(sentry->value, sentry->len);
-            snprintf(label_keys[counter], MAX_LABEL_LENGTH - 1, "%s", tmp);
-            flb_sds_destroy(tmp);
+            ctx->label_keys[counter] = flb_strndup(sentry->value, sentry->len);
+            if (!ctx->label_keys[counter]) {
+                flb_errno();
+                flb_utils_split_free(split);
+                return -1;
+            }
 
             sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
-            tmp = flb_sds_create_len(sentry->value, sentry->len);
-            snprintf(label_accessors[counter], MAX_LABEL_LENGTH - 1, "%s", tmp);
-            flb_sds_destroy(tmp);
+            ctx->label_accessors[counter] = flb_strndup(sentry->value, sentry->len);
+            if (!ctx->label_accessors[counter]) {
+                flb_errno();
+                flb_utils_split_free(split);
+                return -1;
+            }
             counter++;
 
             flb_utils_split_free(split);
@@ -370,7 +467,15 @@ static int set_labels(struct log_to_metrics_ctx *ctx,
         }
     }
 
-    return counter;
+    /* Safety: counter should match computed total */
+    if (counter != ctx->label_counter) {
+        flb_plg_error(ctx->ins,
+                      "label count mismatch: computed=%d filled=%d",
+                      ctx->label_counter, counter);
+        return -1;
+    }
+
+    return ctx->label_counter;
 }
 
 static int convert_double(char *str, double *value)
@@ -509,8 +614,6 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     struct flb_input_instance *input_ins;
     struct flb_sched *sched;
 
-
-    int i;
     /* Create context */
     ctx = flb_calloc(1, sizeof(struct log_to_metrics_ctx));
     if (!ctx) {
@@ -554,40 +657,13 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
-    ctx->label_accessors = NULL;
-    ctx->label_accessors = (char **) flb_calloc(1, MAX_LABEL_COUNT * sizeof(char *));
-    if (!ctx->label_accessors) {
-        flb_errno();
-        log_to_metrics_destroy(ctx);
-        return -1;
-    }
-
-    for (i = 0; i < MAX_LABEL_COUNT; i++) {
-        ctx->label_accessors[i] = flb_calloc(1, MAX_LABEL_LENGTH * sizeof(char));
-        if (!ctx->label_accessors[i]) {
-            flb_errno();
-            log_to_metrics_destroy(ctx);
-            return -1;
-        }
-    }
-
-    /* Set label keys */
-    ctx->label_keys = (char **) flb_calloc(1, MAX_LABEL_COUNT * sizeof(char *));
-    for (i = 0; i < MAX_LABEL_COUNT; i++) {
-        ctx->label_keys[i] = flb_calloc(1, MAX_LABEL_LENGTH * sizeof(char));
-        if (!ctx->label_keys[i]) {
-            flb_errno();
-            log_to_metrics_destroy(ctx);
-            return -1;
-        }
-    }
-
-    ret = set_labels(ctx, ctx->label_accessors, ctx->label_keys, f_ins);
+    /* Set label keys/accessors dynamically based on configured properties */
+    /* ctx->label_counter is set inside set_labels() */
+    ret = set_labels(ctx, f_ins);
     if (ret < 0){
         log_to_metrics_destroy(ctx);
         return -1;
     }
-    ctx->label_counter = ret;
 
     /* prepare label runtime buffers + pre-create record accessors */
     if (prepare_label_runtime(ctx) < 0) {
@@ -850,7 +926,6 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
     uint64_t ts;
     struct log_to_metrics_ctx *ctx = context;
     struct flb_ra_value *rval = NULL;
-    char fmt[MAX_LABEL_LENGTH];
     int i;
     double gauge_value = 0;
     double histogram_value = 0;
