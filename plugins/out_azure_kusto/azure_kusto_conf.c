@@ -796,6 +796,24 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
         return NULL;
     }
 
+    /* Validate mutual exclusivity between buffering and streaming ingestion
+     * Prefer queued ingestion when buffering is explicitly enabled */
+    if (ctx->buffering_enabled && ctx->streaming_ingestion_enabled) {
+        ctx->streaming_ingestion_enabled = FLB_FALSE;
+        flb_plg_warn(ctx->ins, "buffering_enabled=true overrides streaming_ingestion_enabled; streaming disabled");
+    }
+
+    /* Log ingestion mode selection */
+    if (ctx->streaming_ingestion_enabled) {
+        flb_plg_info(ctx->ins, "streaming ingestion mode enabled - data will be sent directly to Kusto engine (4MB payload limit per request, no local buffering support)");
+    } else {
+        if (ctx->buffering_enabled) {
+            flb_plg_info(ctx->ins, "queued ingestion mode enabled with local file buffering - data will be sent via blob storage and ingestion queues");
+        } else {
+            flb_plg_info(ctx->ins, "queued ingestion mode enabled - data will be sent via blob storage and ingestion queues");
+        }
+    }
+
     /* Create oauth2 context */
     if (ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM || 
         ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_USER) {
