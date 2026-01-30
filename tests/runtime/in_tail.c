@@ -1385,6 +1385,262 @@ void flb_test_in_tail_multiline_json_and_regex()
     }
 }
 
+void flb_test_keep_file_handle_false()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"keep_file_handle_test.log"};
+    char *msg1 = "first message";
+    char *msg2 = "second message";
+    char *msg3 = "third message";
+    int ret;
+    int num;
+    int unused;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "keep_file_handle", "false",
+                        "read_from_head", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Write first message */
+    ret = write_msg(ctx, msg1, strlen(msg1));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    /* Write second message */
+    ret = write_msg(ctx, msg2, strlen(msg2));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    /* Write third message */
+    ret = write_msg(ctx, msg3, strlen(msg3));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 3))  {
+        TEST_MSG("output num error. expect=3 got=%d (keep_file_handle=false should read all messages)", num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
+void flb_test_keep_file_handle_true()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"keep_file_handle_true_test.log"};
+    char *msg1 = "first message";
+    char *msg2 = "second message";
+    char *msg3 = "third message";
+    int ret;
+    int num;
+    int unused;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "keep_file_handle", "true",
+                        "read_from_head", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Write first message */
+    ret = write_msg(ctx, msg1, strlen(msg1));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    /* Write second message */
+    ret = write_msg(ctx, msg2, strlen(msg2));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    /* Write third message */
+    ret = write_msg(ctx, msg3, strlen(msg3));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 3))  {
+        TEST_MSG("output num error. expect=3 got=%d (keep_file_handle=true should read all messages)", num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
+void flb_test_keep_file_handle_false_truncation()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"keep_file_handle_truncation_test.log"};
+    char *msg1 = "first message before truncation";
+    char *msg2 = "second message before truncation";
+    char *msg3 = "first message after truncation";
+    char *msg4 = "second message after truncation";
+    int ret;
+    int num;
+    int unused;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char*), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "keep_file_handle", "false",
+                        "read_from_head", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Write first message before truncation */
+    ret = write_msg(ctx, msg1, strlen(msg1));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    /* Write second message before truncation */
+    ret = write_msg(ctx, msg2, strlen(msg2));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    /* Verify we got the first 2 messages */
+    num = get_output_num();
+    if (!TEST_CHECK(num == 2)) {
+        TEST_MSG("output num error before truncation. expect=2 got=%d", num);
+    }
+
+    /* Truncate the file to 0 bytes */
+    ret = ftruncate(ctx->fds[0], 0);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ftruncate failed");
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+    fsync(ctx->fds[0]);
+    flb_time_msleep(500);
+
+    /* Write first message after truncation */
+    ret = write_msg(ctx, msg3, strlen(msg3));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    /* Write second message after truncation */
+    ret = write_msg(ctx, msg4, strlen(msg4));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(500);
+
+    /* Verify we got all 4 messages (2 before + 2 after truncation) */
+    num = get_output_num();
+    if (!TEST_CHECK(num == 4)) {
+        TEST_MSG("output num error after truncation. expect=4 got=%d (keep_file_handle=false should detect truncation and read from beginning)", num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
 void flb_test_path_comma()
 {
     struct flb_lib_out_cb cb_data;
@@ -1407,7 +1663,7 @@ void flb_test_path_comma()
         exit(EXIT_FAILURE);
     }
 
-    ret = flb_input_set(ctx->flb, ctx->o_ffd,
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
                         "path", path,
                         NULL);
     TEST_CHECK(ret == 0);
@@ -2658,6 +2914,9 @@ TEST_LIST = {
     {"skip_long_lines", flb_test_in_tail_skip_long_lines},
     {"truncate_long_lines",          flb_test_in_tail_truncate_long_lines},
     {"truncate_long_lines_utf8",     flb_test_in_tail_truncate_long_lines_utf8},
+    {"keep_file_handle_false", flb_test_keep_file_handle_false},
+    {"keep_file_handle_true", flb_test_keep_file_handle_true},
+    {"keep_file_handle_false_truncation", flb_test_keep_file_handle_false_truncation},
     {"path_comma", flb_test_path_comma},
     {"path_key", flb_test_path_key},
     {"exclude_path", flb_test_exclude_path},
