@@ -51,9 +51,19 @@ void flb_test_blob_database_custom_path(void)
     init_options.client_generator = flb_aws_client_get_mock_generator();
 
     db_path = s3_test_create_temp_db_path("blob_custom");
+    if (db_path == NULL) {
+        TEST_CHECK(0);
+        TEST_MSG("Failed to create temp db_path");
+        return;
+    }
+    
     store_dir = s3_test_create_temp_store_dir("blob_custom");
-    TEST_CHECK(db_path != NULL);
-    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        TEST_CHECK(0);
+        TEST_MSG("Failed to create temp store_dir");
+        flb_free(db_path);
+        return;
+    }
 
     s3_test_set_env_vars();
     ctx = flb_create();

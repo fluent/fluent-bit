@@ -15,8 +15,9 @@
 
 /*
  * Helper to pre-seed database with an existing upload using sqlite3 C API
+ * Returns 0 on success, non-zero on failure
  */
-static void seed_recovery_db(const char *db_path, const char *store_dir, int all_parts_uploaded)
+static int seed_recovery_db(const char *db_path, const char *store_dir, int all_parts_uploaded)
 {
     char file_path[1024];
     FILE *fp;
@@ -31,7 +32,7 @@ static void seed_recovery_db(const char *db_path, const char *store_dir, int all
     fp = fopen(file_path, "wb");
     if (!fp) {
         fprintf(stderr, "Failed to create dummy file: %s\n", file_path);
-        return;
+        return -1;
     }
     
     /* Write 6MB of data (enough for > 5M part size) */
@@ -39,7 +40,7 @@ static void seed_recovery_db(const char *db_path, const char *store_dir, int all
     if (!buf) {
         fprintf(stderr, "Failed to allocate buffer for dummy file\n");
         fclose(fp);
-        return;
+        return -1;
     }
     
     memset(buf, 'A', 6 * 1024 * 1024);
@@ -50,7 +51,7 @@ static void seed_recovery_db(const char *db_path, const char *store_dir, int all
         fprintf(stderr, "Failed to write full dummy file: wrote %zu of %d bytes\n", 
                 written, 6 * 1024 * 1024);
         fclose(fp);
-        return;
+        return -1;
     }
     
     fclose(fp);
@@ -62,7 +63,7 @@ static void seed_recovery_db(const char *db_path, const char *store_dir, int all
         if (db) {
             sqlite3_close(db);
         }
-        return;
+        return -1;
     }
 
     /* Create blob_files table */
@@ -87,7 +88,7 @@ static void seed_recovery_db(const char *db_path, const char *store_dir, int all
         fprintf(stderr, "SQL error creating blob_files: %s\n", err_msg);
         sqlite3_free(err_msg);
         sqlite3_close(db);
-        return;
+        return -1;
     }
 
     /* Create blob_parts table */
@@ -110,7 +111,7 @@ static void seed_recovery_db(const char *db_path, const char *store_dir, int all
         fprintf(stderr, "SQL error creating blob_parts: %s\n", err_msg);
         sqlite3_free(err_msg);
         sqlite3_close(db);
-        return;
+        return -1;
     }
 
     /* Insert file record using parameterized statement */
@@ -125,7 +126,7 @@ static void seed_recovery_db(const char *db_path, const char *store_dir, int all
     if (rc != SQLITE_OK) {
         fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(db));
         sqlite3_close(db);
-        return;
+        return -1;
     }
     
     sqlite3_bind_int(stmt, 1, 1);                                      /* id */
@@ -143,7 +144,7 @@ static void seed_recovery_db(const char *db_path, const char *store_dir, int all
         fprintf(stderr, "SQL error inserting file: %s\n", sqlite3_errmsg(db));
         sqlite3_finalize(stmt);
         sqlite3_close(db);
-        return;
+        return -1;
     }
     
     sqlite3_finalize(stmt);
@@ -165,10 +166,11 @@ static void seed_recovery_db(const char *db_path, const char *store_dir, int all
         fprintf(stderr, "SQL error inserting part: %s\n", err_msg);
         sqlite3_free(err_msg);
         sqlite3_close(db);
-        return;
+        return -1;
     }
 
     sqlite3_close(db);
+    return 0;
 }
 
 /*
@@ -218,7 +220,13 @@ void flb_test_recovery_phase2_upload_parts(void)
     S3_TEST_CREATE_PATHS("phase2");
 
     /* Pre-seed DB with existing upload, parts NOT uploaded */
-    seed_recovery_db(db_path, store_dir, 0);
+    ret = seed_recovery_db(db_path, store_dir, 0);
+    if (ret != 0) {
+        TEST_CHECK(0);
+        TEST_MSG("Failed to seed recovery database");
+        s3_test_cleanup(NULL, db_path, store_dir);
+        return;
+    }
 
     S3_TEST_INIT_CONTEXT();
     S3_TEST_SETUP_INPUT("test");
@@ -254,7 +262,13 @@ void flb_test_recovery_phase3_complete(void)
     S3_TEST_CREATE_PATHS("phase3");
 
     /* Pre-seed DB with existing upload, parts ALREADY uploaded */
-    seed_recovery_db(db_path, store_dir, 1);
+    ret = seed_recovery_db(db_path, store_dir, 1);
+    if (ret != 0) {
+        TEST_CHECK(0);
+        TEST_MSG("Failed to seed recovery database");
+        s3_test_cleanup(NULL, db_path, store_dir);
+        return;
+    }
 
     S3_TEST_INIT_CONTEXT();
     S3_TEST_SETUP_INPUT("test");
