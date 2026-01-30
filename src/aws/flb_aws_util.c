@@ -32,6 +32,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #define AWS_SERVICE_ENDPOINT_FORMAT            "%s.%s.amazonaws.com"
 #define AWS_SERVICE_ENDPOINT_BASE_LEN          15
