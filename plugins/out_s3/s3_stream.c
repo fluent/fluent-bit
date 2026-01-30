@@ -525,6 +525,10 @@ static int process_unpacked_records(struct flb_s3 *ctx,
                 }
                 proc_ctx->records_processed++;
             }
+            
+            /* Free the unpacked zone to prevent memory accumulation */
+            msgpack_unpacked_destroy(&stream_ctx->result);
+            msgpack_unpacked_init(&stream_ctx->result);
         }
         else if (ret == MSGPACK_UNPACK_NOMEM_ERROR) {
             flb_plg_error(ctx->ins, "Msgpack unpacker out of memory");
