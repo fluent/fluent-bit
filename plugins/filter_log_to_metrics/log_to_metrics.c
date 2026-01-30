@@ -416,7 +416,7 @@ static int set_labels(struct log_to_metrics_ctx *ctx,
     mk_list_foreach(head, &f_ins->properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
 
-        if (counter >= ctx->label_counter) {
+        if (counter > ctx->label_counter) {
             flb_plg_error(ctx->ins, "internal label counter overflow");
             return -1;
         }
