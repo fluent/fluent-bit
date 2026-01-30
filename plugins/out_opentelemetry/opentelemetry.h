@@ -138,6 +138,12 @@ struct opentelemetry_context {
     flb_sds_t logs_severity_number_message_key;
     struct flb_record_accessor *ra_severity_number_message;
 
+    flb_sds_t logs_event_name_metadata_key;
+    struct flb_record_accessor *ra_event_name_metadata;
+
+    flb_sds_t logs_event_name_message_key;
+    struct flb_record_accessor *ra_event_name_message;
+
     /* Number of logs to flush at a time */
     int batch_size;
 
@@ -207,6 +213,7 @@ struct opentelemetry_context {
     struct flb_record_accessor *ra_log_meta_otlp_trace_id;
     struct flb_record_accessor *ra_log_meta_otlp_span_id;
     struct flb_record_accessor *ra_log_meta_otlp_trace_flags;
+    struct flb_record_accessor *ra_log_meta_otlp_event_name;
 };
 
 int opentelemetry_post(struct opentelemetry_context *ctx,

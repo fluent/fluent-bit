@@ -1241,6 +1241,16 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_severity_number_message_key),
      "Specify a Severity Number key"
     },
+    {
+     FLB_CONFIG_MAP_STR, "logs_event_name_metadata_key", "$EventName",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_event_name_metadata_key),
+     "Specify an Event Name key for metadata"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logs_event_name_message_key", "$EventName",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_event_name_message_key),
+     "Specify an Event Name key for message body"
+    },
 
 
     /* EOF */
