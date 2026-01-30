@@ -1197,6 +1197,7 @@ static void test_error_null_input(void)
                                                       FLB_AWS_COMPRESS_NONE,
                                                       parquet_file, &parquet_size, 0);
     TEST_CHECK(ret == -1);
+    unlink(parquet_file);
 }
 
 /* NULL schema */
@@ -1229,6 +1230,7 @@ static void test_error_null_schema(void)
 
     msgpack_sbuffer_destroy(&sbuf);
     unlink(msgpack_file);
+    unlink(parquet_file);
 }
 
 /* Nonexistent input file */
@@ -1244,6 +1246,7 @@ static void test_error_missing_file(void)
                                                       FLB_AWS_COMPRESS_NONE,
                                                       parquet_file, &parquet_size, 0);
     TEST_CHECK(ret == -1);
+    unlink(parquet_file);
 }
 
 /* Invalid record format (not array) */
