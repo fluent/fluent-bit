@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_snappy.h>
 
 #include <snappy.h>
+#include <stdint.h>
 
 int flb_snappy_compress(char *in_data, size_t in_len,
                         char **out_data, size_t *out_len)
@@ -201,8 +202,8 @@ int flb_snappy_compress_framed_data(char *in_data, size_t in_len,
     max_output_size += 10;
     
     /* Sanity check: ensure max_output_size doesn't exceed a reasonable limit */
-    #define FLB_SNAPPY_MAX_REASONABLE_OUTPUT (1ULL << 30)  /* 1 GB */
-    if (max_output_size > FLB_SNAPPY_MAX_REASONABLE_OUTPUT) {
+    const size_t max_reasonable_output = (1ULL << 30);  /* 1 GB */
+    if (max_output_size > max_reasonable_output) {
         flb_error("[snappy] max_output_size %zu exceeds reasonable limit", max_output_size);
         return -1;
     }
