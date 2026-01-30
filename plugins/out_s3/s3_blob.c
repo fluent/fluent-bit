@@ -225,6 +225,9 @@ static int recover_stale_files(struct flb_s3 *ctx)
              * Since we can't abort, we skip it to avoid noisy errors.
              * Manual cleanup might be required for these stale parts.
              */
+            flb_plg_warn(ctx->ins, "Stale multipart upload (file_id=%" PRIu64 ", parts=%d) "
+                         "cannot be aborted without s3_key. Manual S3 cleanup may be required.",
+                         file_id, part_count);
         }
 
         flb_blob_file_update_remote_id(&ctx->blob_db, file_id, "");
