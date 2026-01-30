@@ -202,13 +202,13 @@ static int log_to_metrics_destroy(struct log_to_metrics_ctx *ctx)
     }
 
     if (ctx->label_accessors != NULL) {
-        for (i = 0; i < MAX_LABEL_COUNT; i++) {
+        for (i = 0; i < ctx->label_counter; i++) {
             flb_free(ctx->label_accessors[i]);
         }
         flb_free(ctx->label_accessors);
     }
     if (ctx->label_keys != NULL) {
-        for (i = 0; i < MAX_LABEL_COUNT; i++) {
+        for (i = 0; i < ctx->label_counter; i++) {
             flb_free(ctx->label_keys[i]);
         }
         flb_free(ctx->label_keys);
@@ -605,7 +605,6 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
 {
     int ret;
     struct log_to_metrics_ctx *ctx;
-    flb_sds_t tmp;
     char metric_description[MAX_METRIC_LENGTH];
     char metric_name[MAX_METRIC_LENGTH];
     char metric_namespace[MAX_METRIC_LENGTH];
@@ -613,6 +612,9 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     char value_field[MAX_METRIC_LENGTH];
     struct flb_input_instance *input_ins;
     struct flb_sched *sched;
+    const char *emitter_alias = NULL;
+    flb_sds_t emitter_alias_tmp = NULL;
+    const char *fname;
 
     /* Create context */
     ctx = flb_calloc(1, sizeof(struct log_to_metrics_ctx));
@@ -800,43 +802,61 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
             return -1;
     }
 
-    tmp = (char *) flb_filter_get_property("emitter_name", f_ins);
-    /* If emitter_name is not set, use the default name */
-    if (tmp == NULL) {
-        tmp = (char *) flb_filter_name(f_ins);
-        ctx->emitter_name = flb_sds_create_size(64);
-        ctx->emitter_name = flb_sds_printf(&ctx->emitter_name, "emitter_for_%s", tmp);
+    if (ctx->emitter_name != NULL && flb_sds_len(ctx->emitter_name) > 0) {
+        emitter_alias = ctx->emitter_name;
     }
     else {
-        ctx->emitter_name = flb_sds_create(tmp);
+        fname = (const char *) flb_filter_name(f_ins);
+        emitter_alias_tmp = flb_sds_create_size(64);
+        if (!emitter_alias_tmp) {
+            flb_errno();
+            log_to_metrics_destroy(ctx);
+            return -1;
+        }
+        emitter_alias_tmp = flb_sds_printf(&emitter_alias_tmp, "emitter_for_%s", fname);
+        if (!emitter_alias_tmp) {
+            flb_errno();
+            log_to_metrics_destroy(ctx);
+            return -1;
+        }
+        emitter_alias = emitter_alias_tmp;
     }
 
-    ret = flb_input_name_exists(ctx->emitter_name, config);
+    ret = flb_input_name_exists(emitter_alias, config);
     if (ret) {
         flb_plg_error(f_ins, "emitter_name '%s' already exists",
-                      ctx->emitter_name);
-        flb_sds_destroy(ctx->emitter_name);
+                      emitter_alias);
+        if (emitter_alias_tmp) {
+            flb_sds_destroy(emitter_alias_tmp);
+        }
         log_to_metrics_destroy(ctx);
         return -1;
     }
     input_ins = flb_input_new(config, "emitter", NULL, FLB_FALSE);
     if (!input_ins) {
         flb_plg_error(f_ins, "cannot create metrics emitter instance");
-        flb_sds_destroy(ctx->emitter_name);
+        if (emitter_alias_tmp) {
+            flb_sds_destroy(emitter_alias_tmp);
+        }
+
         log_to_metrics_destroy(ctx);
         return -1;
     }
     /* Set the alias for emitter */
-    ret = flb_input_set_property(input_ins, "alias", ctx->emitter_name);
+    ret = flb_input_set_property(input_ins, "alias", emitter_alias);
     if (ret == -1) {
         flb_plg_warn(ctx->ins,
                      "cannot set emitter_name");
-        flb_sds_destroy(ctx->emitter_name);
+        if (emitter_alias_tmp) {
+            flb_sds_destroy(emitter_alias_tmp);
+        }
         log_to_metrics_destroy(ctx);
         return -1;
     }
 
-    flb_sds_destroy(ctx->emitter_name);
+    if (emitter_alias_tmp) {
+        flb_sds_destroy(emitter_alias_tmp);
+    }
 
     /* Set the storage type for emitter */
     ret = flb_input_set_property(input_ins, "storage.type", "memory");
