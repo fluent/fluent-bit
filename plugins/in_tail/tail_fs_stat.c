@@ -93,6 +93,9 @@ static int tail_fs_check(struct flb_input_instance *ins,
     struct flb_tail_file *file = NULL;
     struct fs_stat *fst;
     struct stat st;
+    int pending_data_detected;
+
+    pending_data_detected = FLB_FALSE;
 
     /* Lookup watched file */
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
@@ -128,6 +131,9 @@ static int tail_fs_check(struct flb_input_instance *ins,
         if (size_delta < 0) {
             offset = lseek(file->fd, 0, SEEK_SET);
             if (offset == -1) {
+                if (pending_data_detected) {
+                    tail_signal_pending(ctx);
+                }
                 flb_errno();
                 return -1;
             }
@@ -148,7 +154,7 @@ static int tail_fs_check(struct flb_input_instance *ins,
 
         if (file->offset < st.st_size) {
             file->pending_bytes = (st.st_size - file->offset);
-            tail_signal_pending(ctx);
+            pending_data_detected = FLB_TRUE;
         }
         else {
             file->pending_bytes = 0;
@@ -177,6 +183,10 @@ static int tail_fs_check(struct flb_input_instance *ins,
         }
         flb_free(name);
 
+    }
+
+    if (pending_data_detected) {
+        tail_signal_pending(ctx);
     }
 
     return 0;
