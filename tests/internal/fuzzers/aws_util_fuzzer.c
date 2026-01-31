@@ -70,7 +70,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     if (format && tag && tag_delimiter) {
         if (!initialization_crutch()) {
             flb_sds_t s3_key_format = NULL;
-            s3_key_format = flb_get_s3_key(format, t, tag, tag_delimiter, 0);
+            s3_key_format = flb_get_s3_key(format, t, tag, tag_delimiter, 0, NULL);
             if (s3_key_format) {
                 flb_sds_destroy(s3_key_format);
             }

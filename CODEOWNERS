@@ -81,7 +81,7 @@
 /tests/runtime/out_firehose.c   @fluent/aws-fluent-bit-maintainers
 /tests/runtime/out_kinesis.c    @fluent/aws-fluent-bit-maintainers
 /tests/runtime/out_opensearch.c @fluent/aws-fluent-bit-maintainers
-/tests/runtime/out_s3.c         @fluent/aws-fluent-bit-maintainers
+/tests/runtime/out_s3_*.c       @fluent/aws-fluent-bit-maintainers
 
 # Google test code
 # --------------
