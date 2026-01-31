@@ -20,14 +20,23 @@
 #ifndef FLB_OUT_ES_CONF_H
 #define FLB_OUT_ES_CONF_H
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
-#include <fluent-bit/flb_config.h>
+struct flb_config;
+struct flb_output_instance;
+struct flb_upstream_node;
+struct flb_elasticsearch;
+struct flb_elasticsearch_config;
 
-#include "es.h"
+#define FLB_ES_WRITE_OP_INDEX  "index"
+#define FLB_ES_WRITE_OP_CREATE "create"
+#define FLB_ES_WRITE_OP_UPDATE "update"
+#define FLB_ES_WRITE_OP_UPSERT "upsert"
 
 struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                              struct flb_config *config);
-int flb_es_conf_destroy(struct flb_elasticsearch *ctx);
+
+void flb_es_conf_destroy(struct flb_elasticsearch *ctx);
+
+struct flb_elasticsearch_config *flb_es_upstream_conf(struct flb_elasticsearch *ctx,
+                                                      struct flb_upstream_node *node);
 
 #endif
