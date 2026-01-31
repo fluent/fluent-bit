@@ -202,8 +202,12 @@ struct flb_stackdriver {
     /* environment variable settings */
     struct flb_stackdriver_env *env;
 
+    /* oauth2 cache reference */
+    int oauth2_cache_acquired;
+
     /* mutex for acquiring oauth tokens */
     pthread_mutex_t token_mutex;
+    int token_mutex_initialized;
 
     /* upstream context for stackdriver write end-point */
     struct flb_upstream *u;
