@@ -507,6 +507,13 @@ static struct flb_config_map config_map[] = {
      "errors, which may help improve throughput when there are transient/random "
      "networking issues."
     },
+    
+    {
+     FLB_CONFIG_MAP_BOOL, "unescape_log_key", "false",
+     0, FLB_TRUE, offsetof(struct flb_kinesis, unescape_log_key),
+     "By default the resultant value of `log_key` will be a valid JSON value i.e. escaped."
+     "However, if this option is enabled, the resultant value of `log_key` will be invalid JSON i.e. unescaped."
+    },
 
     {
      FLB_CONFIG_MAP_STR, "profile", NULL,
