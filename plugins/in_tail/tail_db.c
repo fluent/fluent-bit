@@ -299,6 +299,8 @@ int flb_tail_db_file_offset(struct flb_tail_file *file,
     ret = sqlite3_step(ctx->stmt_offset);
 
     if (ret != SQLITE_DONE) {
+        flb_plg_error(ctx->ins, "db: cannot update file offset for %s (id=%"PRIu64"), ret=%d,
+                      file->name, file->db_id, ret");
         sqlite3_clear_bindings(ctx->stmt_offset);
         sqlite3_reset(ctx->stmt_offset);
         return -1;
