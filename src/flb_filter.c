@@ -331,6 +331,9 @@ int flb_filter_set_property(struct flb_filter_instance *ins,
     struct flb_kv *kv;
 
     len = strlen(k);
+    if (!v) {
+        return -1;
+    }
     tmp = flb_env_var_translate(ins->config->env, v);
     if (!tmp) {
         return -1;
