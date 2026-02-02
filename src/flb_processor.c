@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_processor_plugin.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_mp_chunk.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
@@ -579,9 +580,11 @@ static int flb_processor_unit_set_condition(struct flb_processor_unit *pu, struc
 
 int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k, struct cfl_variant *v)
 {
-    struct cfl_variant *val;
     int i;
     int ret;
+    char buf[64];
+    flb_sds_t str_val;
+    struct cfl_variant *val;
 
     /* Handle the "condition" property for processor units */
     if (strcasecmp(k, "condition") == 0) {
@@ -596,7 +599,33 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
         else if (v->type == CFL_VARIANT_ARRAY) {
             for (i = 0; i < v->data.as_array->entry_count; i++) {
                 val = v->data.as_array->entries[i];
-                ret = flb_filter_set_property(pu->ctx, k, val->data.as_string);
+
+                if (val->type == CFL_VARIANT_STRING) {
+                    ret = flb_filter_set_property(pu->ctx, k, val->data.as_string);
+                }
+                else if (val->type == CFL_VARIANT_INT) {
+                    snprintf(buf, sizeof(buf), "%" PRId64, val->data.as_int64);
+                    str_val = flb_sds_create(buf);
+                    ret = (str_val != NULL) ? flb_filter_set_property(pu->ctx, k, str_val) : -1;
+                    flb_sds_destroy(str_val);
+                }
+                else if (val->type == CFL_VARIANT_UINT) {
+                    snprintf(buf, sizeof(buf), "%" PRIu64, val->data.as_uint64);
+                    str_val = flb_sds_create(buf);
+                    ret = (str_val != NULL) ? flb_filter_set_property(pu->ctx, k, str_val) : -1;
+                    flb_sds_destroy(str_val);
+                }
+                else if (val->type == CFL_VARIANT_DOUBLE) {
+                    snprintf(buf, sizeof(buf), "%g", val->data.as_double);
+                    str_val = flb_sds_create(buf);
+                    ret = (str_val != NULL) ? flb_filter_set_property(pu->ctx, k, str_val) : -1;
+                    flb_sds_destroy(str_val);
+                }
+                else {
+                    flb_error("[processor] property '%s': array element type %d not supported for filter",
+                              k, val->type);
+                    return -1;
+                }
 
                 if (ret == -1) {
                     return ret;
