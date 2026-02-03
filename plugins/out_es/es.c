@@ -793,8 +793,17 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
                         if (item_val.via.i64 == 200 || item_val.via.i64 == 201) {
                             check |= FLB_ES_STATUS_SUCCESS;
                         }
-                        /* Check for errors other than version conflict (document already exists) */
-                        if (item_val.via.i64 != 409) {
+                        /* Check for version conflicts (document already exists) */
+                        if (item_val.via.i64 == 409) {
+                            check |= FLB_ES_STATUS_DUPLICATES;
+                        }
+                        /*
+                         * Check for actual errors, excluding:
+                         * - 200/201: success
+                         * - 409: version conflict
+                         */
+                        if (item_val.via.i64 != 200 && item_val.via.i64 != 201 &&
+                            item_val.via.i64 != 409) {
                             check |= FLB_ES_STATUS_ERROR;
                         }
                     }
@@ -959,34 +968,37 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
                 flb_plg_debug(ctx->ins, "Elasticsearch response\n%s",
                               c->resp.payload);
             }
-            else {
-                /* we got an error */
-                if (ctx->trace_error) {
-                    /*
-                     * If trace_error is set, trace the actual
-                     * response from Elasticsearch explaining the problem.
-                     * Trace_Output can be used to see the request.
-                     */
-                    if (pack_size < 4000) {
-                        flb_plg_debug(ctx->ins, "error caused by: Input\n%.*s\n",
-                                      (int) pack_size, pack);
-                    }
-                    if (c->resp.payload_size < 4000) {
-                        flb_plg_error(ctx->ins, "error: Output\n%s",
-                                      c->resp.payload);
-                    } else {
-                        /*
-                        * We must use fwrite since the flb_log functions
-                        * will truncate data at 4KB
-                        */
-                        fwrite(c->resp.payload, 1, c->resp.payload_size, stderr);
-                        fflush(stderr);
-                    }
+            /* Trace errors/duplicates if trace_error is enabled */
+            if (ctx->trace_error &&
+                ((ret & FLB_ES_STATUS_DUPLICATES) || (ret & FLB_ES_STATUS_ERROR))) {
+                /*
+                 * If trace_error is set, trace the actual
+                 * response from Elasticsearch explaining the problem.
+                 * Trace_Output can be used to see the request.
+                 */
+                if (pack_size < 4000) {
+                    flb_plg_debug(ctx->ins, "error caused by: Input\n%.*s\n",
+                                  (int) pack_size, pack);
                 }
+                if (c->resp.payload_size < 4000) {
+                    flb_plg_error(ctx->ins, "error: Output\n%s",
+                                  c->resp.payload);
+                } else {
+                    /*
+                    * We must use fwrite since the flb_log functions
+                    * will truncate data at 4KB
+                    */
+                    fwrite(c->resp.payload, 1, c->resp.payload_size, stderr);
+                    fflush(stderr);
+                }
+            }
+            /* Only retry on actual errors (not 409 version conflicts) */
+            if (ret & FLB_ES_STATUS_ERROR) {
                 goto retry;
             }
         }
         else {
+            /* No payload to parse, retry */
             goto retry;
         }
     }
