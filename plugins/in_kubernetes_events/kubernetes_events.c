@@ -852,23 +852,12 @@ static int process_http_chunk(struct k8s_events* ctx, struct flb_http_client *c,
         }
         
         /* 
-         * Calculate how many bytes of the NEW payload were consumed.
-         * working_buffer = old_tail + new_payload
-         * old_len = length of old tail, new_len = length of new payload
-         * consumed_new = bytes of NEW payload consumed = total_consumed - old_len
+         * Always report that we consumed the full NEW payload.
+         * Even if we buffered data without parsing, we ACCEPTED the bytes
+         * from the HTTP layer, so we must tell it to discard them.
+         * Reporting 0 would cause the HTTP client to re-send the same data.
          */
-        size_t new_len = c->resp.payload_size;
-        size_t old_len = (total_len > new_len) ? (total_len - new_len) : 0;
-        size_t consumed_new = 0;
-        
-        if (total_consumed > old_len) {
-            consumed_new = total_consumed - old_len;
-            if (consumed_new > new_len) {
-                consumed_new = new_len;
-            }
-        }
-        
-        *bytes_consumed = consumed_new;
+        *bytes_consumed = c->resp.payload_size;
     }
     else {
         /* No buffered data; token_start shows progress in current payload */
@@ -895,8 +884,11 @@ static int process_http_chunk(struct k8s_events* ctx, struct flb_http_client *c,
             flb_plg_debug(ctx->ins, "all data processed, no buffering needed");
         }
         
-        /* Report how much we consumed from current payload */
-        *bytes_consumed = consumed;
+        /* 
+         * Always report that we consumed the full payload.
+         * Even if we buffered data without parsing, we ACCEPTED the bytes.
+         */
+        *bytes_consumed = c->resp.payload_size;
     }
 
     if (working_buffer) {
