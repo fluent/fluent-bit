@@ -614,10 +614,17 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
                                     parse_ingestion_identity_token(ctx, response);
 
                             if (identity_token) {
-                                /* Deferred cleanup: destroy resources from two refresh cycles ago,
-                                 * then move current resources to 'old' before assigning new ones.
-                                 * This avoids use-after-free when other threads may still be using
-                                 * the current resources during high-volume operations. */
+                                /* 
+                                    Deferred cleanup: destroy resources from two refresh cycles ago,
+                                    then move current resources to 'old' before assigning new ones.
+                                    This avoids use-after-free when other threads may still be using
+                                    the current resources during high-volume operations.
+                                    
+                                    With a 1-hour refresh interval, the race condition requires an 
+                                    ingest operation to take >1 hour (the deferred cleanup grace period). 
+                                    This is extremely unlikely under normal conditions (and hence a lock based 
+                                    mechanism is avoided for performance).
+                                */
                                 if (ctx->resources->old_blob_ha) {
                                     flb_upstream_ha_destroy(ctx->resources->old_blob_ha);
                                     flb_plg_debug(ctx->ins, "clearing up old blob HA");
@@ -641,6 +648,9 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
                                 ctx->resources->queue_ha = queue_ha;
                                 ctx->resources->identity_token = identity_token;
                                 ctx->resources->load_time = now;
+
+                                flb_plg_info(ctx->ins, "ingestion resources rotated successfully, "
+                                             "previous resources moved to deferred cleanup");
 
                                 ret = 0;
                             }
