@@ -65,6 +65,34 @@ struct flb_hs_hc_buf {
     struct mk_list _head;
 };
 
+/*
+ * in/out records sample at a certain timestamp.
+ */
+struct flb_hs_throughput_sample {
+    uint64_t in_records;
+    uint64_t out_records;
+    uint64_t timestamp_seconds;
+};
+
+/* ring buffer + helper functions for storing samples */
+struct flb_hs_throughput_samples {
+    struct flb_hs_throughput_sample *items;
+    int size;
+    int count;
+    int insert;
+};
+
+/* throughput health check state */
+struct flb_hs_throughput_state {
+    int enabled;
+    struct mk_list *input_plugins;
+    struct mk_list *output_plugins;
+    double out_in_ratio_threshold;
+
+    struct flb_hs_throughput_samples samples;
+    int healthy;
+};
+
 /* health endpoint*/
 int api_v1_health(struct flb_hs *hs);
 
