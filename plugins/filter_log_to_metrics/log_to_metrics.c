@@ -643,13 +643,26 @@ static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
     snprintf(metric_description, sizeof(metric_description) - 1, "%s",
              ctx->metric_description);
 
-    /* Value field only needed for modes gauge and histogram */
-    if (ctx->mode > 0) {
+    /* Value field is required for gauge and histogram modes, optional for counter */
+    if (ctx->mode == FLB_LOG_TO_METRICS_GAUGE || ctx->mode == FLB_LOG_TO_METRICS_HISTOGRAM) {
         if (ctx->value_field == NULL || strlen(ctx->value_field) == 0) {
-            flb_plg_error(f_ins, "value_field is not set");
+            flb_plg_error(f_ins, "value_field is required for gauge and histogram modes");
             log_to_metrics_destroy(ctx);
             return -1;
         }
+        snprintf(value_field, sizeof(value_field) - 1, "%s",
+                    ctx->value_field);
+
+        ctx->value_ra = flb_ra_create(ctx->value_field, FLB_TRUE);
+        if (ctx->value_ra == NULL) {
+            flb_plg_error(f_ins, "invalid record accessor key for value_field");
+            log_to_metrics_destroy(ctx);
+            return -1;
+        }
+    }
+    else if (ctx->mode == FLB_LOG_TO_METRICS_COUNTER && 
+             ctx->value_field != NULL && strlen(ctx->value_field) > 0) {
+        /* value_field is optional for counter mode */
         snprintf(value_field, sizeof(value_field) - 1, "%s",
                     ctx->value_field);
 
@@ -836,8 +849,10 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
     char **label_values = NULL;
     int label_count = 0;
     int i;
+    int sscanf_ret = 0;
     double gauge_value = 0;
     double histogram_value = 0;
+    double counter_value = 0;
     char kubernetes_label_values
         [NUMBER_OF_KUBERNETES_LABELS][MAX_LABEL_LENGTH];
 
@@ -912,8 +927,66 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
             /* Calculating and setting metric depending on the mode */
             switch (ctx->mode) {
                 case FLB_LOG_TO_METRICS_COUNTER:
-                    ret = cmt_counter_inc(ctx->c, ts, label_count,
-                                    label_values);
+                    /* If value_field is set, use it; otherwise increment by 1 */
+                    if (ctx->value_ra != NULL) {
+                        rval = flb_ra_get_value_object(ctx->value_ra, map);
+                        if (!rval) {
+                            /* No value field, increment by 1 */
+                            ret = cmt_counter_inc(ctx->c, ts, label_count,
+                                            label_values);
+                        }
+                        else {
+                            /* Read value from field */
+                            if (rval->type == FLB_RA_STRING) {
+                                sscanf_ret = sscanf(rval->val.string, "%lf", &counter_value);
+                                if (sscanf_ret != 1) {
+                                    flb_plg_error(f_ins,
+                                                "cannot parse value_field '%s' as numeric, falling back to increment by 1",
+                                                rval->val.string);
+                                    flb_ra_key_value_destroy(rval);
+                                    rval = NULL;
+                                    ret = cmt_counter_inc(ctx->c, ts, label_count,
+                                                    label_values);
+                                    break;
+                                }
+                            }
+                            else if (rval->type == FLB_RA_FLOAT) {
+                                counter_value = rval->val.f64;
+                            }
+                            else if (rval->type == FLB_RA_INT) {
+                                counter_value = (double)rval->val.i64;
+                            }
+                            else {
+                                flb_plg_error(f_ins,
+                                            "cannot convert given value to metric");
+                                flb_ra_key_value_destroy(rval);
+                                rval = NULL;
+                                break;
+                            }
+
+                            /* Validate counter value is non-negative */
+                            if (counter_value < 0) {
+                                flb_plg_error(f_ins,
+                                            "counter value_field contains negative value %.2f, falling back to increment by 1",
+                                            counter_value);
+                                flb_ra_key_value_destroy(rval);
+                                rval = NULL;
+                                ret = cmt_counter_inc(ctx->c, ts, label_count,
+                                                label_values);
+                                break;
+                            }
+
+                            ret = cmt_counter_add(ctx->c, ts, counter_value,
+                                            label_count, label_values);
+                            flb_ra_key_value_destroy(rval);
+                            rval = NULL;
+                        }
+                    }
+                    else {
+                        /* No value_field configured, increment by 1 */
+                        ret = cmt_counter_inc(ctx->c, ts, label_count,
+                                        label_values);
+                    }
                     break;
 
                 case FLB_LOG_TO_METRICS_GAUGE:
@@ -1057,7 +1130,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "value_field", NULL,
      0, FLB_TRUE, offsetof(struct log_to_metrics_ctx, value_field),
-     "Numeric field to use for gauge or histogram"
+     "Numeric field to use for gauge, histogram, or counter (optional for counter)"
     },
     {
      FLB_CONFIG_MAP_STR, "metric_name", "a",
