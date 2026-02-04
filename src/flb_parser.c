@@ -145,6 +145,26 @@ static void flb_interim_parser_destroy(struct flb_parser *parser)
     flb_free(parser);
 }
 
+static double flb_parser_time_numeric_unit(const char *time_fmt)
+{
+    if (!time_fmt) {
+        return 0.0;
+    }
+    if (!strcmp(time_fmt, "SECONDS")) {
+        return 1.0;
+    }
+    if (!strcmp(time_fmt, "MILLISECONDS")) {
+        return 1000.0;
+    }
+    if (!strcmp(time_fmt, "MICROSECONDS")) {
+        return 1000000.0;
+    }
+    if (!strcmp(time_fmt, "NANOSECONDS")) {
+        return 1000000000.0;
+    }
+    return 0.0;
+}
+
 struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      const char *p_regex,
                                      int skip_empty,
@@ -230,6 +250,12 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     }
 
     p->name = flb_strdup(name);
+
+    p->time_numeric_unit = flb_parser_time_numeric_unit(time_fmt);
+    if (p->time_numeric_unit > 0) {
+        /* Don't try to use the fixed string (SECONDS/...) as a format */
+        time_fmt = NULL;
+    }
 
     if (time_fmt) {
         p->time_fmt_full = flb_strdup(time_fmt);
