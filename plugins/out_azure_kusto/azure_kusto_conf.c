@@ -145,6 +145,22 @@ static int flb_azure_kusto_resources_clear(struct flb_azure_kusto_resources *res
         resources->identity_token = NULL;
     }
 
+    /* Also clean up any old resources pending destruction */
+    if (resources->old_blob_ha) {
+        flb_upstream_ha_destroy(resources->old_blob_ha);
+        resources->old_blob_ha = NULL;
+    }
+
+    if (resources->old_queue_ha) {
+        flb_upstream_ha_destroy(resources->old_queue_ha);
+        resources->old_queue_ha = NULL;
+    }
+
+    if (resources->old_identity_token) {
+        flb_sds_destroy(resources->old_identity_token);
+        resources->old_identity_token = NULL;
+    }
+
     resources->load_time = 0;
 
     return 0;
@@ -598,6 +614,29 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
                                     parse_ingestion_identity_token(ctx, response);
 
                             if (identity_token) {
+                                /* Deferred cleanup: destroy resources from two refresh cycles ago,
+                                 * then move current resources to 'old' before assigning new ones.
+                                 * This avoids use-after-free when other threads may still be using
+                                 * the current resources during high-volume operations. */
+                                if (ctx->resources->old_blob_ha) {
+                                    flb_upstream_ha_destroy(ctx->resources->old_blob_ha);
+                                    flb_plg_debug(ctx->ins, "clearing up old blob HA");
+                                }
+                                if (ctx->resources->old_queue_ha) {
+                                    flb_upstream_ha_destroy(ctx->resources->old_queue_ha);
+                                    flb_plg_debug(ctx->ins, "clearing up old queue HA");
+                                }
+                                if (ctx->resources->old_identity_token) {
+                                    flb_sds_destroy(ctx->resources->old_identity_token);
+                                    flb_plg_debug(ctx->ins, "clearing up old identity token");
+                                }
+
+                                /* Move current to old */
+                                ctx->resources->old_blob_ha = ctx->resources->blob_ha;
+                                ctx->resources->old_queue_ha = ctx->resources->queue_ha;
+                                ctx->resources->old_identity_token = ctx->resources->identity_token;
+
+                                /* Assign new resources */
                                 ctx->resources->blob_ha = blob_ha;
                                 ctx->resources->queue_ha = queue_ha;
                                 ctx->resources->identity_token = identity_token;

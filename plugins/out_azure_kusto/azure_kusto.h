@@ -84,6 +84,12 @@ struct flb_azure_kusto_resources {
 
     /* used to reload resouces after some time */
     uint64_t load_time;
+
+    /* Old resources pending cleanup - deferred destruction to avoid use-after-free
+     * when other threads may still be using them during high-volume operations */
+    struct flb_upstream_ha *old_blob_ha;
+    struct flb_upstream_ha *old_queue_ha;
+    flb_sds_t old_identity_token;
 };
 
 struct flb_azure_kusto {
