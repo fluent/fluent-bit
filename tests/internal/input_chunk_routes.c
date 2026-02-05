@@ -30,9 +30,9 @@
 #include <cmetrics/cmetrics.h>
 
 
-#define TEST_STREAM_PATH "/tmp/flb-chunk-direct-test"
-#define TEST_STREAM_PATH_MATCH "/tmp/flb-chunk-direct-test-match"
-#define TEST_STREAM_PATH_NULL  "/tmp/flb-chunk-direct-test-null"
+#define TEST_STREAM_PATH       "/flb-chunk-direct-test"
+#define TEST_STREAM_PATH_MATCH "/flb-chunk-direct-test-match"
+#define TEST_STREAM_PATH_NULL  "/flb-chunk-direct-test-null"
 
 static int write_test_log_payload(struct cio_chunk *chunk)
 {
@@ -341,6 +341,7 @@ static void test_chunk_metadata_direct_routes()
     struct flb_input_chunk ic;
     struct flb_chunk_direct_route output_routes[2];
     struct flb_chunk_direct_route *loaded_routes;
+    char *stream_path;
     char *content_buf;
     const char *tag_buf;
     const char *tag_string;
@@ -353,18 +354,25 @@ static void test_chunk_metadata_direct_routes()
     size_t content_size;
     size_t payload_size;
 
+    stream_path = flb_test_tmpdir_cat(TEST_STREAM_PATH);
+    TEST_CHECK(stream_path != NULL);
+    if (!stream_path) {
+        return;
+    }
+
     payload_size = sizeof(payload) - 1;
     tag_string = "test.tag";
     expected_tag_len = strlen(tag_string);
 
-    cio_utils_recursive_delete(TEST_STREAM_PATH);
+    cio_utils_recursive_delete(stream_path);
     memset(&opts, 0, sizeof(opts));
     cio_options_init(&opts);
-    opts.root_path = TEST_STREAM_PATH;
+    opts.root_path = stream_path;
     opts.flags = CIO_OPEN;
     ctx = cio_create(&opts);
     TEST_CHECK(ctx != NULL);
     if (!ctx) {
+        flb_free(stream_path);
         return;
     }
 
@@ -372,6 +380,7 @@ static void test_chunk_metadata_direct_routes()
     TEST_CHECK(stream != NULL);
     if (!stream) {
         cio_destroy(ctx);
+        flb_free(stream_path);
         return;
     }
 
@@ -379,6 +388,7 @@ static void test_chunk_metadata_direct_routes()
     TEST_CHECK(chunk != NULL);
     if (!chunk) {
         cio_destroy(ctx);
+        flb_free(stream_path);
         return;
     }
 
@@ -478,7 +488,8 @@ static void test_chunk_metadata_direct_routes()
 
     cio_chunk_close(chunk, CIO_TRUE);
     cio_destroy(ctx);
-    cio_utils_recursive_delete(TEST_STREAM_PATH);
+    cio_utils_recursive_delete(stream_path);
+    flb_free(stream_path);
 }
 
 static void test_chunk_restore_alias_plugin_match_multiple()
@@ -497,11 +508,18 @@ static void test_chunk_restore_alias_plugin_match_multiple()
     struct flb_output_plugin stdout_plugin;
     struct flb_output_plugin http_plugin;
     struct flb_chunk_direct_route route;
+    char *stream_path;
     const char *tag_string;
     int tag_len;
     int ret;
     int err;
     int config_ready;
+
+    stream_path = flb_test_tmpdir_cat(TEST_STREAM_PATH_MATCH);
+    TEST_CHECK(stream_path != NULL);
+    if (!stream_path) {
+        return;
+    }
 
     ctx = NULL;
     stream = NULL;
@@ -511,15 +529,16 @@ static void test_chunk_restore_alias_plugin_match_multiple()
     tag_string = "test.tag";
     tag_len = (int) strlen(tag_string);
 
-    cio_utils_recursive_delete(TEST_STREAM_PATH_MATCH);
+    cio_utils_recursive_delete(stream_path);
     memset(&opts, 0, sizeof(opts));
     cio_options_init(&opts);
-    opts.root_path = TEST_STREAM_PATH_MATCH;
+    opts.root_path = stream_path;
     opts.flags = CIO_OPEN;
 
     ctx = cio_create(&opts);
     TEST_CHECK(ctx != NULL);
     if (!ctx) {
+        flb_free(stream_path);
         return;
     }
 
@@ -639,7 +658,8 @@ static void test_chunk_restore_alias_plugin_match_multiple()
 cleanup:
     cleanup_test_routing_scenario(ic, &stdout_one, &stdout_two, &http_out,
                                   &in, &config, chunk, ctx, config_ready,
-                                  TEST_STREAM_PATH_MATCH);
+                                  stream_path);
+    flb_free(stream_path);
 }
 
 static void test_chunk_restore_alias_plugin_null_matches_all()
@@ -658,11 +678,18 @@ static void test_chunk_restore_alias_plugin_null_matches_all()
     struct flb_output_plugin stdout_plugin;
     struct flb_output_plugin http_plugin;
     struct flb_chunk_direct_route route;
+    char *stream_path;
     const char *tag_string;
     int tag_len;
     int ret;
     int err;
     int config_ready;
+
+    stream_path = flb_test_tmpdir_cat(TEST_STREAM_PATH_NULL);
+    TEST_CHECK(stream_path != NULL);
+    if (!stream_path) {
+        return;
+    }
 
     ctx = NULL;
     stream = NULL;
@@ -672,15 +699,16 @@ static void test_chunk_restore_alias_plugin_null_matches_all()
     tag_string = "test.tag";
     tag_len = (int) strlen(tag_string);
 
-    cio_utils_recursive_delete(TEST_STREAM_PATH_NULL);
+    cio_utils_recursive_delete(stream_path);
     memset(&opts, 0, sizeof(opts));
     cio_options_init(&opts);
-    opts.root_path = TEST_STREAM_PATH_NULL;
+    opts.root_path = stream_path;
     opts.flags = CIO_OPEN;
 
     ctx = cio_create(&opts);
     TEST_CHECK(ctx != NULL);
     if (!ctx) {
+        flb_free(stream_path);
         return;
     }
 
@@ -800,7 +828,8 @@ static void test_chunk_restore_alias_plugin_null_matches_all()
 cleanup:
     cleanup_test_routing_scenario(ic, &stdout_one, &stdout_two, &http_out,
                                   &in, &config, chunk, ctx, config_ready,
-                                  TEST_STREAM_PATH_NULL);
+                                  stream_path);
+    flb_free(stream_path);
 }
 
 TEST_LIST = {
