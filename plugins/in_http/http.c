@@ -221,6 +221,12 @@ static int in_http_exit(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
+     FLB_CONFIG_MAP_STR, "fixed_tag", NULL,
+     0, FLB_TRUE, offsetof(struct flb_http, tag),
+     "Set a fixed tag for all incoming records, overriding URL path-based tags."
+    },
+
+    {
      FLB_CONFIG_MAP_BOOL, "http2", "true",
      0, FLB_TRUE, offsetof(struct flb_http, enable_http2),
      "Enable HTTP/2 support."

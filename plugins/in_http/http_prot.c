@@ -353,8 +353,16 @@ static int process_pack_record(struct flb_http *ctx, struct flb_time *tm,
                                    ctx->log_encoder.output_buffer,
                                    ctx->log_encoder.output_length);
     }
+    else if (ctx->tag) {
+        /* use user configured tag */
+        ret = flb_input_log_append(ctx->ins,
+                                   ctx->tag,
+                                   flb_sds_len(ctx->tag),
+                                   ctx->log_encoder.output_buffer,
+                                   ctx->log_encoder.output_length);
+    }
     else {
-        /* use default plugin Tag (it internal name, e.g: http.0 */
+        /* use default plugin Tag (its internal name, e.g: http.0) */
         ret = flb_input_log_append(ctx->ins, NULL, 0,
                                    ctx->log_encoder.output_buffer,
                                    ctx->log_encoder.output_length);
