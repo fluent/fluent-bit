@@ -325,7 +325,7 @@ void flb_test_invalid_parameter_combinations(void)
     if (ctx) {
         flb_destroy(ctx);
     }
-    flb_aws_client_mock_clear_generator_instance();
+    flb_aws_client_mock_destroy_generator();
     if (db_path) {
         s3_test_cleanup_temp_db(db_path);
         flb_free(db_path);
