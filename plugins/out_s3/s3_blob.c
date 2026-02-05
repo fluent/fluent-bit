@@ -388,7 +388,7 @@ int s3_blob_register_parts(struct flb_s3 *ctx, uint64_t file_id, size_t total_si
     size_t offset_start = 0;
     size_t offset_end;
     size_t actual_part_size;
-    int64_t parts = 0;
+    int64_t parts = 1;
     int64_t id;
     int ret;
 
@@ -415,7 +415,7 @@ int s3_blob_register_parts(struct flb_s3 *ctx, uint64_t file_id, size_t total_si
         parts++;
     }
 
-    return parts;
+    return parts - 1;
 }
 
 /*
