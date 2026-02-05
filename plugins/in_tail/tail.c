@@ -610,14 +610,18 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_TIME, "watcher_interval", "2s",
      0, FLB_TRUE, offsetof(struct flb_tail_config, watcher_interval),
+     "interval to check if monitored symbolic link files have been rotated."
     },
     {
      FLB_CONFIG_MAP_TIME, "progress_check_interval", "2s",
      0, FLB_TRUE, offsetof(struct flb_tail_config, progress_check_interval),
+     "interval to check for pending data in monitored files. This is used with "
+     "inotify to detect file changes that may have been missed."
     },
     {
      FLB_CONFIG_MAP_INT, "progress_check_interval_nsec", "0",
      0, FLB_TRUE, offsetof(struct flb_tail_config, progress_check_interval_nsec),
+     "nanosecond component of the progress check interval."
     },
     {
      FLB_CONFIG_MAP_TIME, "rotate_wait", FLB_TAIL_ROTATE_WAIT,

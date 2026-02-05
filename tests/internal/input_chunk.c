@@ -162,7 +162,17 @@ void do_test(char *system, const char *target, ...)
     int out_ffd;
     char path[PATH_MAX];
     struct tail_test_result result = {0};
+    char *tmpdir;
     char storage_path[PATH_MAX];
+
+    tmpdir = flb_test_env_tmpdir();
+    TEST_CHECK(tmpdir != NULL);
+    if (!tmpdir) {
+        return;
+    }
+    snprintf(storage_path, sizeof(storage_path) - 1, "%s/input-chunk-test-%s",
+             tmpdir, target);
+    flb_free(tmpdir);
 
     result.nMatched = 0;
     result.target = target;
@@ -175,8 +185,6 @@ void do_test(char *system, const char *target, ...)
     set_result(0);
 
     ctx = flb_create();
-
-    snprintf(storage_path, sizeof(storage_path) - 1, "/tmp/input-chunk-test-%s", target);
 
     /* create chunks in /tmp folder */
     ret = flb_service_set(ctx,
@@ -258,6 +266,13 @@ void flb_test_input_chunk_dropping_chunks()
     struct mk_list *head;
     struct flb_input_chunk *ic;
     struct flb_task *task;
+    char *storage_path;
+
+    storage_path = flb_test_tmpdir_cat("/input-chunk-test/");
+    TEST_CHECK(storage_path != NULL);
+    if (!storage_path) {
+        return;
+    }
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
@@ -265,7 +280,7 @@ void flb_test_input_chunk_dropping_chunks()
     /* create chunks in /tmp folder */
     ret = flb_service_set(ctx,
                           "flush", "2", "grace", "1",
-                          "storage.path", "/tmp/input-chunk-test/",
+                          "storage.path", storage_path,
                           "Log_Level", "error",
                           NULL);
 
@@ -307,6 +322,7 @@ void flb_test_input_chunk_dropping_chunks()
     flb_time_msleep(2100);
     flb_stop(ctx);
     flb_destroy(ctx);
+    flb_free(storage_path);
 }
 
 static int gen_buf(msgpack_sbuffer *mp_sbuf, char *buf, size_t buf_size)
@@ -365,6 +381,13 @@ void flb_test_input_chunk_fs_chunks_size_real()
     char buf[262144];
     struct mk_event_loop *evl;
     struct cio_options opts = {0};
+    char *root_path;
+
+    root_path = flb_test_tmpdir_cat("/input-chunk-fs_chunks-size_real");
+    TEST_CHECK(root_path != NULL);
+    if (!root_path) {
+        return;
+    }
 
     flb_init_env();
     cfg = flb_config_init();
@@ -380,7 +403,7 @@ void flb_test_input_chunk_fs_chunks_size_real()
 
     cio_options_init(&opts);
 
-    opts.root_path = "/tmp/input-chunk-fs_chunks-size_real";
+    opts.root_path = root_path;
     opts.log_cb = log_cb;
     opts.log_level = CIO_LOG_DEBUG;
     opts.flags = CIO_OPEN;
@@ -455,6 +478,7 @@ void flb_test_input_chunk_fs_chunks_size_real()
     flb_input_exit_all(cfg);
     flb_output_exit(cfg);
     flb_config_exit(cfg);
+    flb_free(root_path);
 }
 
 /* This tests uses the subsystems of the engine directly
@@ -475,6 +499,13 @@ void flb_test_input_chunk_correct_total_records(void)
     char buf[262144];
     struct mk_event_loop *evl;
     struct cio_options opts = {0};
+    char *root_path;
+
+    root_path = flb_test_tmpdir_cat("/input-chunk-fs_chunks-size_real");
+    TEST_CHECK(root_path != NULL);
+    if (!root_path) {
+        return;
+    }
 
     flb_init_env();
     cfg = flb_config_init();
@@ -490,7 +521,7 @@ void flb_test_input_chunk_correct_total_records(void)
 
     cio_options_init(&opts);
 
-    opts.root_path = "/tmp/input-chunk-fs_chunks-size_real";
+    opts.root_path = root_path;
     opts.log_cb = log_cb;
     opts.log_level = CIO_LOG_DEBUG;
     opts.flags = CIO_OPEN;
@@ -541,6 +572,7 @@ void flb_test_input_chunk_correct_total_records(void)
     flb_input_exit_all(cfg);
     flb_output_exit(cfg);
     flb_config_exit(cfg);
+    flb_free(root_path);
 }
 
 

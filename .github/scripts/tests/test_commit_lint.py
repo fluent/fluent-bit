@@ -611,11 +611,29 @@ def test_valid_test_file_changes():
     Generic prefixes like "tests:" are acceptable for test-related changes.
     """
     commit = make_commit(
-        "tests: add unit test\n\nSigned-off-by: User",
+        "tests: test_router: add unit test\n\nSigned-off-by: User",
         ["tests/unit/test_router.c"]
     )
     ok, _ = validate_commit(commit)
     assert ok is True
+
+
+def test_invalid_test_file_changes_without_umbrella_prefix():
+    """
+    Test that test file changes are disallowed without tests umbrella under tests components.
+
+
+    Test files (in tests/ directory) basically allows tests umbrella prefix.
+    Without "tests:" umbrella prefix are not acceptable for test-related changes.
+    """
+    commit = make_commit(
+        "test_router: add unit test\n\nSigned-off-by: User",
+        ["tests/internal/test_router.c"]
+    )
+    ok, msg = validate_commit(commit)
+    assert ok is False
+    assert "Expected one of: test_router:, tests:" in msg
+
 
 def test_valid_build_file_changes():
     """
