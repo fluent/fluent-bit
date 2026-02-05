@@ -23,13 +23,32 @@
 
 #include <fluent-bit/aws/flb_aws_compress.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_snappy.h>
 #include <fluent-bit/flb_zstd.h>
 
 #include <stdint.h>
+#include <string.h>
 
-#ifdef FLB_HAVE_ARROW
-#include "compression/arrow/compress.h"
-#endif
+/*
+ * Wrapper function to use Snappy Framing Format
+ * (as documented by Google's framing_format.txt specification)
+ *
+ * Unlike raw snappy, framed format supports streaming/concatenation.
+ * This makes it safe to compress data in chunks and concatenate the results.
+ */
+static int flb_snappy_compress_wrapper(void *in_data, size_t in_len,
+                                       void **out_data, size_t *out_len)
+{
+    int ret;
+    
+    ret = flb_snappy_compress_framed_data((char *)in_data, in_len,
+                                           (char **)out_data, out_len);
+    /* Normalize -2 error to compression contract's -1 */
+    if (ret == -2) {
+        return -1;
+    }
+    return ret;
+}
 
 struct compression_option {
     int compression_type;
@@ -38,36 +57,37 @@ struct compression_option {
 };
 
 /*
- * Library of compression options
+ * Library of compression options and format converters
  * AWS plugins that support compression will have these options.
  * Referenced function should return -1 on error and 0 on success.
+ *
+ * IMPORTANT NOTES:
+ * 1. True compression algorithms: none, gzip, snappy, zstd
+ * 2. Format converters:
+ *    - ARROW: REMOVED - Arrow support has been removed as it was not a proper file format for S3
+ *    - PARQUET: Valid file format converter (deprecated: use format=parquet instead)
+ * 3. Supported S3 output formats: json (FLB_S3_FORMAT_JSON), parquet (FLB_S3_FORMAT_PARQUET)
  */
 static const struct compression_option compression_options[] = {
     /* FLB_AWS_COMPRESS_NONE which is 0 is reserved for array footer */
+
+    /* True compression algorithms */
     {
         FLB_AWS_COMPRESS_GZIP,
         "gzip",
         &flb_gzip_compress
     },
     {
+        FLB_AWS_COMPRESS_SNAPPY,
+        "snappy",
+        &flb_snappy_compress_wrapper
+    },
+    {
         FLB_AWS_COMPRESS_ZSTD,
         "zstd",
         &flb_zstd_compress
     },
-#ifdef FLB_HAVE_ARROW
-    {
-        FLB_AWS_COMPRESS_ARROW,
-        "arrow",
-        &out_s3_compress_arrow
-    },
-#endif
-#ifdef FLB_HAVE_ARROW_PARQUET
-    {
-        FLB_AWS_COMPRESS_PARQUET,
-        "parquet",
-        &out_s3_compress_parquet
-    },
-#endif
+
     { 0 }
 };
 
@@ -75,6 +95,14 @@ int flb_aws_compression_get_type(const char *compression_keyword)
 {
     int ret;
     const struct compression_option *o;
+
+    if (compression_keyword == NULL) {
+        return FLB_AWS_COMPRESS_NONE;
+    }
+
+    if (strcmp(compression_keyword, "none") == 0) {
+        return FLB_AWS_COMPRESS_NONE;
+    }
 
     o = compression_options;
 
