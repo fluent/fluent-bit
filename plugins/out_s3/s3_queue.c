@@ -592,23 +592,30 @@ static int check_and_complete_multipart(struct flb_s3 *ctx, uint64_t file_id, co
         }
         return 0;
     }
-    
-    /* Clean up db_file_s3_key - we use the passed s3_key parameter instead */
-    if (db_file_s3_key) {
-        cfl_sds_destroy(db_file_s3_key);
-    }
 
     /* Setup multipart_upload structure */
     memset(&m_upload, 0, sizeof(m_upload));
 
     /*
-     * IMPORTANT: Use the s3_key from the part entry that was used during upload
-     * to ensure consistency. Do NOT regenerate s3_key here.
+     * CRITICAL FIX: Use s3_key from database file record (authoritative source).
+     * The database s3_key column stores the actual key used during CreateMultipartUpload.
+     * Fall back to the parameter (from part entry) only if database key is empty.
      */
-    m_upload.s3_key = flb_sds_create(s3_key);
-    if (!m_upload.s3_key) {
-        flb_plg_error(ctx->ins, "Failed to copy S3 key for complete");
-        goto cleanup;
+    if (db_file_s3_key && cfl_sds_len(db_file_s3_key) > 0) {
+        m_upload.s3_key = db_file_s3_key;
+        db_file_s3_key = NULL;  /* Transfer ownership */
+    }
+    else {
+        /* Fallback: use passed s3_key parameter (may be from part or regenerated) */
+        if (db_file_s3_key) {
+            cfl_sds_destroy(db_file_s3_key);
+            db_file_s3_key = NULL;
+        }
+        m_upload.s3_key = flb_sds_create(s3_key);
+        if (!m_upload.s3_key) {
+            flb_plg_error(ctx->ins, "Failed to copy S3 key for complete");
+            goto cleanup;
+        }
     }
 
     m_upload.tag = flb_sds_create(file_tag);
