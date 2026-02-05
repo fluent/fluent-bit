@@ -163,6 +163,13 @@ static void test_flb_aws_endpoint()
                       endpoint) == 0);
     flb_free(endpoint);
 
+    /* EU Sovereign Cloud regions have a different domain */
+    endpoint = flb_aws_endpoint("cloudwatch", "eusc-de-east-1");
+
+    TEST_CHECK(strcmp("cloudwatch.eusc-de-east-1.amazonaws.eu",
+                      endpoint) == 0);
+    flb_free(endpoint);
+
 }
 
 static void test_flb_get_s3_key_multi_tag_exists()
