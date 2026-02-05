@@ -76,13 +76,14 @@ void flb_test_blob_database_custom_path(void)
 
     out_ffd = flb_output(ctx, (char *)"s3", (struct flb_lib_out_cb *)&init_options);
     TEST_CHECK(out_ffd >= 0);
-    flb_output_set(ctx, out_ffd, "match", "*",
-                   "region", S3_TEST_DEFAULT_REGION,
-                   "bucket", S3_TEST_DEFAULT_BUCKET,
-                   "blob_database_file", db_path,
-                   "store_dir", store_dir,
-                   "total_file_size", "1M",
-                   "upload_timeout", "1s", NULL);
+    ret = flb_output_set(ctx, out_ffd, "match", "*",
+                         "region", S3_TEST_DEFAULT_REGION,
+                         "bucket", S3_TEST_DEFAULT_BUCKET,
+                         "blob_database_file", db_path,
+                         "store_dir", store_dir,
+                         "total_file_size", "1M",
+                         "upload_timeout", "1s", NULL);
+    TEST_CHECK(ret == 0);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
