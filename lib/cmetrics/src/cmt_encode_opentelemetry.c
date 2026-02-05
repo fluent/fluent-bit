@@ -1598,27 +1598,11 @@ static Opentelemetry__Proto__Metrics__V1__HistogramDataPoint *
 
     /*
      * In the OpenTelemetry Metrics protobuf definition, the `sum` field in HistogramDataPoint is
-     * marked as `optional`:
-     *
-     *   https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto#L456
-     *
-     * While `optional` is supported in proto3, the `protobuf-c` project does not handle proto3
-     * optional scalar fields using `has_*` booleans like the main protobuf implementations.
-     *
-     * Instead, `protobuf-c` represents optional fields internally using a synthetic `oneof`.
-     * This means that in the generated C code, the optional `sum` field is placed inside a union,
-     * and its presence is tracked using a corresponding `_sum_case` enum field.
-     *
-     * To correctly serialize the `sum` field, both the `sum` value and its `_sum_case` must be set:
-     *
-     *     data_point->sum = some_value;
-     *     data_point->_sum_case = OPENTELEMETRY__PROTO__METRICS__V1__HISTOGRAM_DATA_POINT___SUM_SUM;
-     *
-     * Failing to set `_sum_case` will result in the `sum` field being silently omitted from the
-     * serialized output.
+     * marked as `optional`. The generated C code uses a `has_sum` boolean to indicate presence.
+     * Set both so the sum is included in the serialized output.
      */
     data_point->sum = sum;
-    data_point->_sum_case = OPENTELEMETRY__PROTO__METRICS__V1__HISTOGRAM_DATA_POINT___SUM_SUM;
+    data_point->has_sum = 1;
 
 
     if (bucket_count > 0) {
