@@ -966,7 +966,7 @@ void flb_test_http_fixed_tag()
 
     /* Configure fixed tag */
     ret = flb_input_set(ctx->flb, ctx->i_ffd,
-                        "tag", "fixed_tag",
+                        "fixed_tag", "fixed_tag",
                         NULL);
     TEST_CHECK(ret == 0);
 
@@ -988,14 +988,14 @@ void flb_test_http_fixed_tag()
     c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", 
                         buf, strlen(buf),
                         "127.0.0.1", 9880, NULL, 0);
-    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, 
-                              strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
-                              JSON_CONTENT_TYPE, strlen(JSON_CONTENT_TYPE));
-    TEST_CHECK(ret == 0);
     if (!TEST_CHECK(c != NULL)) {
         TEST_MSG("http_client failed");
         exit(EXIT_FAILURE);
     }
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, 
+                              strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              JSON_CONTENT_TYPE, strlen(JSON_CONTENT_TYPE));
+    TEST_CHECK(ret == 0);
 
     ret = flb_http_do(c, &b_sent);
     if (!TEST_CHECK(ret == 0)) {
