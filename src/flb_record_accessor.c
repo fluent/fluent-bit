@@ -522,8 +522,9 @@ static flb_sds_t ra_translate_string(struct flb_ra_parser *rp, flb_sds_t buf)
     return tmp;
 }
 
-static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
-                                     msgpack_object map, int *found)
+/* Append string representation of a keymap value to buf. Does not take ownership of v. */
+static flb_sds_t ra_append_keymap_value(struct flb_ra_parser *rp, flb_sds_t buf,
+                                        struct flb_ra_value *v, int *found)
 {
     int i;
     int len;
@@ -531,22 +532,12 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
     char str[32];
     const char *p;
     flb_sds_t hex = NULL;
-    struct flb_ra_value *v;
 
-    /* Lookup key or subkey value */
-    if (rp->key == NULL) {
-      *found = FLB_FALSE;
-      return buf;
-    }
-
-    v = flb_ra_key_to_value_ext(rp->key->name, map, rp->key->subkeys, FLB_TRUE);
-    if (!v) {
+    if (rp->key == NULL || v == NULL) {
         *found = FLB_FALSE;
         return buf;
     }
-    else {
-        *found = FLB_TRUE;
-    }
+    *found = FLB_TRUE;
 
     /* Based on data type, convert to it string representation */
     if (v->type == FLB_RA_BOOL) {
@@ -614,6 +605,25 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
         flb_sds_cat_safe(&buf, "null", 4);
     }
 
+    return buf;
+}
+
+static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
+                                     msgpack_object map, int *found)
+{
+    struct flb_ra_value *v;
+
+    if (rp->key == NULL) {
+        *found = FLB_FALSE;
+        return buf;
+    }
+
+    v = flb_ra_key_to_value_ext(rp->key->name, map, rp->key->subkeys, FLB_TRUE);
+    if (!v) {
+        *found = FLB_FALSE;
+        return buf;
+    }
+    buf = ra_append_keymap_value(rp, buf, v, found);
     flb_ra_key_value_destroy(v);
     return buf;
 }
@@ -633,41 +643,115 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
 }
 
 /*
- * Translate a record accessor buffer, tag and records are optional
- * parameters.
- *
- * For safety, the function returns a newly created string that needs
- * to be destroyed by the caller.
- *
- * Returns NULL if `check` is FLB_TRUE and any key lookup in the record failed
+ * Optimized version: single pass over map to resolve all KEYMAP lookups,
+ * then translate using cached values. Same semantics as flb_ra_translate_check.
  */
 flb_sds_t flb_ra_translate_check(struct flb_record_accessor *ra,
                                  char *tag, int tag_len,
                                  msgpack_object map, struct flb_regex_search *result,
                                  int check)
 {
+    int i;
+    int keymap_idx;
+    int keymap_count;
+    int map_size;
     flb_sds_t tmp = NULL;
     flb_sds_t buf;
     struct mk_list *head;
     struct flb_ra_parser *rp;
     int found = FLB_FALSE;
+    msgpack_object key;
+    msgpack_object val;
+    struct flb_ra_value **keymap_cache = NULL;
+
+    /* Count KEYMAP entries to decide whether to use single-pass cache */
+    keymap_count = 0;
+    mk_list_foreach(head, &ra->list) {
+        rp = mk_list_entry(head, struct flb_ra_parser, _head);
+        if (rp->type == FLB_RA_PARSER_KEYMAP) {
+            keymap_count++;
+        }
+    }
+
+    /* Single pass over map: resolve all KEYMAP lookups at once */
+    if (keymap_count > 0 && map.type == MSGPACK_OBJECT_MAP) {
+        keymap_cache = flb_calloc((size_t) keymap_count, sizeof(struct flb_ra_value *));
+        if (keymap_cache) {
+            map_size = map.via.map.size;
+            for (i = 0; i < map_size; i++) {
+                key = map.via.map.ptr[i].key;
+                val = map.via.map.ptr[i].val;
+                if (key.type != MSGPACK_OBJECT_STR) {
+                    continue;
+                }
+                keymap_idx = 0;
+                mk_list_foreach(head, &ra->list) {
+                    rp = mk_list_entry(head, struct flb_ra_parser, _head);
+                    if (rp->type != FLB_RA_PARSER_KEYMAP) {
+                        continue;
+                    }
+                    if (rp->key == NULL) {
+                        keymap_idx++;
+                        continue;
+                    }
+                    if (flb_sds_cmp(rp->key->name, key.via.str.ptr,
+                                    key.via.str.size) != 0) {
+                        keymap_idx++;
+                        continue;
+                    }
+                    if (keymap_cache[keymap_idx]) {
+                        flb_ra_key_value_destroy(keymap_cache[keymap_idx]);
+                    }
+                    keymap_cache[keymap_idx] = flb_ra_value_from_object(&val,
+                                                                        rp->key->subkeys,
+                                                                        FLB_TRUE);
+                    keymap_idx++;
+                }
+            }
+        }
+    }
 
     buf = flb_sds_create_size(ra->size_hint);
     if (!buf) {
         flb_error("[record accessor] cannot create outgoing buffer");
+        if (keymap_cache) {
+            for (keymap_idx = 0; keymap_idx < keymap_count; keymap_idx++) {
+                if (keymap_cache[keymap_idx]) {
+                    flb_ra_key_value_destroy(keymap_cache[keymap_idx]);
+                }
+            }
+            flb_free(keymap_cache);
+        }
         return NULL;
     }
 
+    keymap_idx = 0;
     mk_list_foreach(head, &ra->list) {
         rp = mk_list_entry(head, struct flb_ra_parser, _head);
         if (rp->type == FLB_RA_PARSER_STRING) {
             tmp = ra_translate_string(rp, buf);
         }
         else if (rp->type == FLB_RA_PARSER_KEYMAP) {
-            tmp = ra_translate_keymap(rp, buf, map, &found);
+            if (keymap_cache) {
+                tmp = ra_append_keymap_value(rp, buf,
+                                             keymap_cache[keymap_idx],
+                                             &found);
+            }
+            else {
+                tmp = ra_translate_keymap(rp, buf, map, &found);
+            }
+            keymap_idx++;
             if (check == FLB_TRUE && found == FLB_FALSE) {
                 flb_warn("[record accessor] translation failed, root key=%s", rp->key->name);
                 flb_sds_destroy(buf);
+                if (keymap_cache) {
+                    for (i = 0; i < keymap_count; i++) {
+                        if (keymap_cache[i]) {
+                            flb_ra_key_value_destroy(keymap_cache[i]);
+                        }
+                    }
+                    flb_free(keymap_cache);
+                }
                 return NULL;
             }
         }
@@ -681,18 +765,31 @@ flb_sds_t flb_ra_translate_check(struct flb_record_accessor *ra,
             tmp = ra_translate_tag_part(rp, buf, tag, tag_len);
         }
 
-        //else if (rp->type == FLB_RA_PARSER_FUNC) {
-            //tmp = ra_translate_func(rp, buf, tag, tag_len);
-        //}
-
         if (!tmp) {
             flb_error("[record accessor] translation failed");
             flb_sds_destroy(buf);
+            if (keymap_cache) {
+                for (i = 0; i < keymap_count; i++) {
+                    if (keymap_cache[i]) {
+                        flb_ra_key_value_destroy(keymap_cache[i]);
+                    }
+                }
+                flb_free(keymap_cache);
+            }
             return NULL;
         }
         if (tmp != buf) {
             buf = tmp;
         }
+    }
+
+    if (keymap_cache) {
+        for (keymap_idx = 0; keymap_idx < keymap_count; keymap_idx++) {
+            if (keymap_cache[keymap_idx]) {
+                flb_ra_key_value_destroy(keymap_cache[keymap_idx]);
+            }
+        }
+        flb_free(keymap_cache);
     }
 
     return buf;
