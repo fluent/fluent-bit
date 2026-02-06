@@ -2461,7 +2461,7 @@ static int blob_fetch_multipart_abort_pre_signed_url(struct flb_s3 *context,
 
     return blob_fetch_pre_signed_url(context,
             result_url,
-            "/multipart_upload_presigned_url/%s/%s/%s/%s",
+            "/multipart_abort_presigned_url/%s/%s/%s/%s",
             bucket,
             tag,
             valid_path,
@@ -2552,6 +2552,7 @@ static int put_blob_object(struct flb_s3 *ctx,
     const char *original_host = NULL;
     char *original_upstream_host = NULL;
     int original_upstream_port = 0;
+    int original_upstream_flags = 0;
     int presigned_port = 0;
     char final_body_md5[25];
 
@@ -2597,19 +2598,26 @@ static int put_blob_object(struct flb_s3 *ctx,
             return -1;
         }
 
+        /* When using authorization_endpoint_url, the presigned URL may use a different port */
         if (presigned_port != 0 && presigned_port != ctx->port) {
-            flb_plg_error(ctx->ins, "Pre signed URL uses unexpected port %d", presigned_port);
-            flb_sds_destroy(presigned_host);
-            flb_sds_destroy(uri);
-            return -1;
+            flb_plg_debug(ctx->ins, "Pre signed URL uses port %d (configured: %d)", presigned_port, ctx->port);
         }
 
         original_host = ctx->s3_client->host;
         original_upstream_host = ctx->s3_client->upstream->tcp_host;
         original_upstream_port = ctx->s3_client->upstream->tcp_port;
+        original_upstream_flags = ctx->s3_client->upstream->base.flags;
         ctx->s3_client->host = presigned_host;
         ctx->s3_client->upstream->tcp_host = presigned_host;
         ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
+
+        /* Disable TLS for HTTP (port 80), enable for HTTPS (port 443) */
+        if (presigned_port == 80) {
+            ctx->s3_client->upstream->base.flags &= ~FLB_IO_TLS;
+        }
+
+        /* Disable keepalive to force new connection to the new host */
+        ctx->s3_client->upstream->base.flags &= ~FLB_IO_TCP_KA;
     }
 
     memset(final_body_md5, 0, sizeof(final_body_md5));
@@ -2668,6 +2676,7 @@ cleanup:
         ctx->s3_client->host = original_host;
         ctx->s3_client->upstream->tcp_host = original_upstream_host;
         ctx->s3_client->upstream->tcp_port = original_upstream_port;
+        ctx->s3_client->upstream->base.flags = original_upstream_flags;
         flb_sds_destroy(presigned_host);
     }
 

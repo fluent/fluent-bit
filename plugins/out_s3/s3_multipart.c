@@ -417,6 +417,7 @@ int complete_multipart_upload(struct flb_s3 *ctx,
     const char *original_host = NULL;
     char *original_upstream_host = NULL;
     int original_upstream_port = 0;
+    int original_upstream_flags = 0;
     int presigned_port = 0;
     int result = -1;
 
@@ -432,19 +433,26 @@ int complete_multipart_upload(struct flb_s3 *ctx,
             return -1;
         }
 
+        /* When using authorization_endpoint_url, the presigned URL may use a different port */
         if (presigned_port != 0 && presigned_port != ctx->port) {
-            flb_plg_error(ctx->ins, "Pre signed URL uses unexpected port %d", presigned_port);
-            flb_sds_destroy(presigned_host);
-            flb_sds_destroy(uri);
-            return -1;
+            flb_plg_debug(ctx->ins, "Pre signed URL uses port %d (configured: %d)", presigned_port, ctx->port);
         }
 
         original_host = ctx->s3_client->host;
         original_upstream_host = ctx->s3_client->upstream->tcp_host;
         original_upstream_port = ctx->s3_client->upstream->tcp_port;
+        original_upstream_flags = ctx->s3_client->upstream->base.flags;
         ctx->s3_client->host = presigned_host;
         ctx->s3_client->upstream->tcp_host = presigned_host;
         ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
+
+        /* Disable TLS for HTTP (port 80), enable for HTTPS (port 443) */
+        if (presigned_port == 80) {
+            ctx->s3_client->upstream->base.flags &= ~FLB_IO_TLS;
+        }
+
+        /* Disable keepalive to force new connection to the new host */
+        ctx->s3_client->upstream->base.flags &= ~FLB_IO_TCP_KA;
     }
     else {
         uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 11 +
@@ -513,6 +521,7 @@ cleanup:
         ctx->s3_client->host = original_host;
         ctx->s3_client->upstream->tcp_host = original_upstream_host;
         ctx->s3_client->upstream->tcp_port = original_upstream_port;
+        ctx->s3_client->upstream->base.flags = original_upstream_flags;
         flb_sds_destroy(presigned_host);
     }
 
@@ -535,6 +544,7 @@ int abort_multipart_upload(struct flb_s3 *ctx,
     const char *original_host = NULL;
     char *original_upstream_host = NULL;
     int original_upstream_port = 0;
+    int original_upstream_flags = 0;
     int presigned_port = 0;
     int result = -1;
     int ret;
@@ -551,19 +561,26 @@ int abort_multipart_upload(struct flb_s3 *ctx,
             return -1;
         }
 
+        /* When using authorization_endpoint_url, the presigned URL may use a different port */
         if (presigned_port != 0 && presigned_port != ctx->port) {
-            flb_plg_error(ctx->ins, "Pre signed URL uses unexpected port %d", presigned_port);
-            flb_sds_destroy(presigned_host);
-            flb_sds_destroy(uri);
-            return -1;
+            flb_plg_debug(ctx->ins, "Pre signed URL uses port %d (configured: %d)", presigned_port, ctx->port);
         }
 
         original_host = ctx->s3_client->host;
         original_upstream_host = ctx->s3_client->upstream->tcp_host;
         original_upstream_port = ctx->s3_client->upstream->tcp_port;
+        original_upstream_flags = ctx->s3_client->upstream->base.flags;
         ctx->s3_client->host = presigned_host;
         ctx->s3_client->upstream->tcp_host = presigned_host;
         ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
+
+        /* Disable TLS for HTTP (port 80), enable for HTTPS (port 443) */
+        if (presigned_port == 80) {
+            ctx->s3_client->upstream->base.flags &= ~FLB_IO_TLS;
+        }
+
+        /* Disable keepalive to force new connection to the new host */
+        ctx->s3_client->upstream->base.flags &= ~FLB_IO_TCP_KA;
     }
     else {
         uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 11 +
@@ -620,6 +637,7 @@ abort_cleanup:
         ctx->s3_client->host = original_host;
         ctx->s3_client->upstream->tcp_host = original_upstream_host;
         ctx->s3_client->upstream->tcp_port = original_upstream_port;
+        ctx->s3_client->upstream->base.flags = original_upstream_flags;
         flb_sds_destroy(presigned_host);
     }
 
@@ -645,6 +663,7 @@ int create_multipart_upload(struct flb_s3 *ctx,
     const char *original_host = NULL;
     char *original_upstream_host = NULL;
     int original_upstream_port = 0;
+    int original_upstream_flags = 0;
     int presigned_port = 0;
 
     if (pre_signed_url != NULL) {
@@ -653,19 +672,26 @@ int create_multipart_upload(struct flb_s3 *ctx,
             return -1;
         }
 
+        /* When using authorization_endpoint_url, the presigned URL may use a different port */
         if (presigned_port != 0 && presigned_port != ctx->port) {
-            flb_plg_error(ctx->ins, "Pre signed URL uses unexpected port %d", presigned_port);
-            flb_sds_destroy(presigned_host);
-            flb_sds_destroy(uri);
-            return -1;
+            flb_plg_debug(ctx->ins, "Pre signed URL uses port %d (configured: %d)", presigned_port, ctx->port);
         }
 
         original_host = ctx->s3_client->host;
         original_upstream_host = ctx->s3_client->upstream->tcp_host;
         original_upstream_port = ctx->s3_client->upstream->tcp_port;
+        original_upstream_flags = ctx->s3_client->upstream->base.flags;
         ctx->s3_client->host = presigned_host;
         ctx->s3_client->upstream->tcp_host = presigned_host;
         ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
+
+        /* Disable TLS for HTTP (port 80), enable for HTTPS (port 443) */
+        if (presigned_port == 80) {
+            ctx->s3_client->upstream->base.flags &= ~FLB_IO_TLS;
+        }
+
+        /* Disable keepalive to force new connection to the new host */
+        ctx->s3_client->upstream->base.flags &= ~FLB_IO_TCP_KA;
     }
     else {
         uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 8);
@@ -705,6 +731,7 @@ cleanup:
         ctx->s3_client->host = original_host;
         ctx->s3_client->upstream->tcp_host = original_upstream_host;
         ctx->s3_client->upstream->tcp_port = original_upstream_port;
+        ctx->s3_client->upstream->base.flags = original_upstream_flags;
         flb_sds_destroy(presigned_host);
     }
 
@@ -805,6 +832,7 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
     const char *original_host = NULL;
     char *original_upstream_host = NULL;
     int original_upstream_port = 0;
+    int original_upstream_flags = 0;
     int presigned_port = 0;
     int result = -1;
 
@@ -814,19 +842,26 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
             return -1;
         }
 
+        /* When using authorization_endpoint_url, the presigned URL may use a different port */
         if (presigned_port != 0 && presigned_port != ctx->port) {
-            flb_plg_error(ctx->ins, "Pre signed URL uses unexpected port %d", presigned_port);
-            flb_sds_destroy(presigned_host);
-            flb_sds_destroy(uri);
-            return -1;
+            flb_plg_debug(ctx->ins, "Pre signed URL uses port %d (configured: %d)", presigned_port, ctx->port);
         }
 
         original_host = ctx->s3_client->host;
         original_upstream_host = ctx->s3_client->upstream->tcp_host;
         original_upstream_port = ctx->s3_client->upstream->tcp_port;
+        original_upstream_flags = ctx->s3_client->upstream->base.flags;
         ctx->s3_client->host = presigned_host;
         ctx->s3_client->upstream->tcp_host = presigned_host;
         ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
+
+        /* Disable TLS for HTTP (port 80), enable for HTTPS (port 443) */
+        if (presigned_port == 80) {
+            ctx->s3_client->upstream->base.flags &= ~FLB_IO_TLS;
+        }
+
+        /* Disable keepalive to force new connection to the new host */
+        ctx->s3_client->upstream->base.flags &= ~FLB_IO_TCP_KA;
     }
     else {
         uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 8);
@@ -931,6 +966,7 @@ cleanup:
         ctx->s3_client->host = original_host;
         ctx->s3_client->upstream->tcp_host = original_upstream_host;
         ctx->s3_client->upstream->tcp_port = original_upstream_port;
+        ctx->s3_client->upstream->base.flags = original_upstream_flags;
         flb_sds_destroy(presigned_host);
     }
 
