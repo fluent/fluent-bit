@@ -32,6 +32,20 @@
 #include "azure_kusto_conf.h"
 #include "azure_msiauth.h"
 
+/* Cloud helpers: resolve MSAL auth URL template and Kusto scope/IMDS resource */
+static const char *get_msal_auth_url_template(int cloud_env)
+{
+    if (cloud_env == FLB_AZURE_CLOUD_CHINA) {
+        return FLB_MSAL_AUTH_URL_TEMPLATE_CHINA;
+    }
+    return FLB_MSAL_AUTH_URL_TEMPLATE_GLOBAL;
+}
+
+static const char *get_imds_resource(int cloud_env)
+{
+    return flb_azure_kusto_get_imds_resource(cloud_env);
+}
+
 /* Constants for PCG random number generator */
 #define PCG_DEFAULT_MULTIPLIER_64  6364136223846793005ULL
 #define PCG_DEFAULT_INCREMENT_64   1442695040888963407ULL
@@ -782,6 +796,12 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
         return NULL;
     }
 
+    /* Determine cloud environment dynamically from ingestion_endpoint */
+    ctx->cloud_environment = FLB_AZURE_CLOUD_GLOBAL; /* default */
+    if (ctx->ingestion_endpoint && strstr(ctx->ingestion_endpoint, "chinacloudapi.cn") != NULL) {
+        ctx->cloud_environment = FLB_AZURE_CLOUD_CHINA;
+    }
+
     /* config: 'database_name' */
     if (ctx->database_name == NULL) {
         flb_plg_error(ctx->ins, "property 'database_name' is not defined");
@@ -800,40 +820,47 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
     if (ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM || 
         ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_USER) {
         /* MSI auth */
+        const char *imds_resource;
+
+        imds_resource = get_imds_resource(ctx->cloud_environment);
+
         /* Construct the URL template with or without client_id for managed identity */
         if (ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM) {
-            ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1);
+           ctx->oauth_url = flb_sds_create_size(strlen(FLB_AZURE_MSIAUTH_URL_TEMPLATE) + strlen(imds_resource) + 1);
             if (!ctx->oauth_url) {
                 flb_errno();
                 flb_azure_kusto_conf_destroy(ctx);
                 return NULL;
             }
             flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "", "");
+                            FLB_AZURE_MSIAUTH_URL_TEMPLATE,
+                            "", "", imds_resource);
         } else {
             /* User-assigned managed identity */
-            ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1 +
-                                                sizeof("&client_id=") - 1 +
-                                                flb_sds_len(ctx->client_id));
+            ctx->oauth_url = flb_sds_create_size(strlen(FLB_AZURE_MSIAUTH_URL_TEMPLATE) +
+                                                 strlen("&client_id=") +
+                                                 flb_sds_len(ctx->client_id) +
+                                                 strlen(imds_resource) + 1);
             if (!ctx->oauth_url) {
                 flb_errno();
                 flb_azure_kusto_conf_destroy(ctx);
                 return NULL;
             }
             flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "&client_id=", ctx->client_id);
+                            FLB_AZURE_MSIAUTH_URL_TEMPLATE,
+                            "&client_id=", ctx->client_id, imds_resource);
         }
     } else {
         /* Standard OAuth2 for service principal or workload identity */
-        ctx->oauth_url = flb_sds_create_size(sizeof(FLB_MSAL_AUTH_URL_TEMPLATE) - 1 +
-                                            flb_sds_len(ctx->tenant_id));
+        const char *tmpl = get_msal_auth_url_template(ctx->cloud_environment);
+        ctx->oauth_url = flb_sds_create_size(strlen(tmpl) + flb_sds_len(ctx->tenant_id) + 1);
         if (!ctx->oauth_url) {
             flb_errno();
             flb_azure_kusto_conf_destroy(ctx);
             return NULL;
         }
         flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                        FLB_MSAL_AUTH_URL_TEMPLATE, ctx->tenant_id);
+                         tmpl, ctx->tenant_id);
     }
 
     ctx->resources = flb_calloc(1, sizeof(struct flb_azure_kusto_resources));
