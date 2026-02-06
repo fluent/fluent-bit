@@ -20,6 +20,7 @@
 #ifndef FLB_HTTP_CLIENT_H
 #define FLB_HTTP_CLIENT_H
 
+#include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_lock.h>
 #include <fluent-bit/flb_upstream.h>
@@ -71,12 +72,14 @@
 #define FLB_HTTP_CHUNK_AVAILABLE  3 /* means chunk is available, but there is more data. end of all chunks returns FLB_HTTP_OK */
 
 /* Useful headers */
-#define FLB_HTTP_HEADER_AUTH             "Authorization"
-#define FLB_HTTP_HEADER_PROXY_AUTH       "Proxy-Authorization"
-#define FLB_HTTP_HEADER_CONTENT_TYPE     "Content-Type"
-#define FLB_HTTP_HEADER_CONTENT_ENCODING "Content-Encoding"
-#define FLB_HTTP_HEADER_CONNECTION       "Connection"
-#define FLB_HTTP_HEADER_KA               "keep-alive"
+#define FLB_HTTP_HEADER_AUTH                "Authorization"
+#define FLB_HTTP_HEADER_PROXY_AUTH          "Proxy-Authorization"
+#define FLB_HTTP_HEADER_CONTENT_TYPE        "Content-Type"
+#define FLB_HTTP_HEADER_CONTENT_ENCODING    "Content-Encoding"
+#define FLB_HTTP_HEADER_CONNECTION          "Connection"
+#define FLB_HTTP_HEADER_KA                  "keep-alive"
+#define FLB_HTTP_HEADER_USER_AGENT          "User-Agent"
+#define FLB_HTTP_HEADER_USER_AGENT_DEFAULT  "Fluent-Bit/" FLB_VERSION_STR " (Git commit: " FLB_GIT_HASH ")"
 
 #define FLB_HTTP_CLIENT_HEADER_ARRAY                      0
 #define FLB_HTTP_CLIENT_HEADER_LIST                       1
