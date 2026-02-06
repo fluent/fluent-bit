@@ -185,7 +185,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__collector__metrics__
   {
     "partial_success",
     1,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceResponse, partial_success),
