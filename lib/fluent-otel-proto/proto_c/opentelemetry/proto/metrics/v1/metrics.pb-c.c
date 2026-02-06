@@ -692,7 +692,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__resourc
   {
     "resource",
     1,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Metrics__V1__ResourceMetrics, resource),
@@ -756,7 +756,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__scope_m
   {
     "scope",
     1,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Metrics__V1__ScopeMetrics, scope),
@@ -856,7 +856,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__metric_
   {
     "gauge",
     5,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, data_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, gauge),
@@ -868,7 +868,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__metric_
   {
     "sum",
     7,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, data_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, sum),
@@ -880,7 +880,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__metric_
   {
     "histogram",
     9,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, data_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, histogram),
@@ -892,7 +892,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__metric_
   {
     "exponential_histogram",
     10,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, data_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, exponential_histogram),
@@ -904,7 +904,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__metric_
   {
     "summary",
     11,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, data_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__Metric, summary),
@@ -1231,7 +1231,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__number_
   {
     "as_double",
     4,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_DOUBLE,
     offsetof(Opentelemetry__Proto__Metrics__V1__NumberDataPoint, value_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__NumberDataPoint, as_double),
@@ -1255,7 +1255,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__number_
   {
     "as_int",
     6,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_SFIXED64,
     offsetof(Opentelemetry__Proto__Metrics__V1__NumberDataPoint, value_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__NumberDataPoint, as_int),
@@ -1359,13 +1359,13 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__histogr
   {
     "sum",
     5,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_DOUBLE,
-    offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, _sum_case),
+    offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, has_sum),
     offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, sum),
     NULL,
     NULL,
-    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -1431,25 +1431,25 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__histogr
   {
     "min",
     11,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_DOUBLE,
-    offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, _min_case),
+    offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, has_min),
     offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, min),
     NULL,
     NULL,
-    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
     "max",
     12,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_DOUBLE,
-    offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, _max_case),
+    offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, has_max),
     offsetof(Opentelemetry__Proto__Metrics__V1__HistogramDataPoint, max),
     NULL,
     NULL,
-    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
 };
@@ -1590,13 +1590,13 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__exponen
   {
     "sum",
     5,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_DOUBLE,
-    offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, _sum_case),
+    offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, has_sum),
     offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, sum),
     NULL,
     NULL,
-    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -1626,7 +1626,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__exponen
   {
     "positive",
     8,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, positive),
@@ -1638,7 +1638,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__exponen
   {
     "negative",
     9,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, negative),
@@ -1674,25 +1674,25 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__exponen
   {
     "min",
     12,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_DOUBLE,
-    offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, _min_case),
+    offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, has_min),
     offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, min),
     NULL,
     NULL,
-    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
     "max",
     13,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_DOUBLE,
-    offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, _max_case),
+    offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, has_max),
     offsetof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint, max),
     NULL,
     NULL,
-    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -1928,7 +1928,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__exempla
   {
     "as_double",
     3,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_DOUBLE,
     offsetof(Opentelemetry__Proto__Metrics__V1__Exemplar, value_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__Exemplar, as_double),
@@ -1964,7 +1964,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__metrics__v1__exempla
   {
     "as_int",
     6,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_SFIXED64,
     offsetof(Opentelemetry__Proto__Metrics__V1__Exemplar, value_case),
     offsetof(Opentelemetry__Proto__Metrics__V1__Exemplar, as_int),

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2023, Dave Benson and the protobuf-c authors.
+ * Copyright (c) 2008-2025, Dave Benson and the protobuf-c authors.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,14 +28,14 @@
  */
 
 /*! \file
- * Support library for `protoc-c` generated code.
+ * Support library for `protoc-gen-c` generated code.
  *
  * This file implements the public API used by the code generated
- * by `protoc-c`.
+ * by `protoc-gen-c`.
  *
  * \authors Dave Benson and the protobuf-c authors
  *
- * \copyright 2008-2014. Licensed under the terms of the [BSD-2-Clause] license.
+ * \copyright 2008-2025. Licensed under the terms of the [BSD-2-Clause] license.
  */
 
 /**
@@ -3278,6 +3278,8 @@ protobuf_c_message_unpack(const ProtobufCMessageDescriptor *desc,
 					      n_unknown * sizeof(ProtobufCMessageUnknownField));
 		if (rv->unknown_fields == NULL)
 			goto error_cleanup;
+	} else {
+		rv->unknown_fields = NULL;
 	}
 
 	/* do real parsing */
