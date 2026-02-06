@@ -443,8 +443,11 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
 
     /* Add AWS Fluent Bit user agent header */
     if (strcasecmp(aws_client->extra_user_agent, AWS_USER_AGENT_NONE) == 0) {
-        ret = flb_http_add_header(c, "User-Agent", 10,
-                                  FLB_AWS_BASE_USER_AGENT, FLB_AWS_BASE_USER_AGENT_LEN);
+        ret = flb_http_add_header(c,
+                                  FLB_HTTP_HEADER_USER_AGENT,
+                                  sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                                  FLB_AWS_BASE_USER_AGENT,
+                                  FLB_AWS_BASE_USER_AGENT_LEN);
     }
     else {
         user_agent_prefix = flb_sds_create_size(64);
@@ -463,7 +466,10 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         }
         user_agent_prefix = tmp;
 
-        ret = flb_http_add_header(c, "User-Agent", 10, user_agent_prefix,
+        ret = flb_http_add_header(c,
+                                  FLB_HTTP_HEADER_USER_AGENT,
+                                  sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                                  user_agent_prefix,
                                   flb_sds_len(user_agent_prefix));
         flb_sds_destroy(user_agent_prefix);
     }

@@ -448,8 +448,10 @@ static int flb_azure_blob_apply_remote_configuration(struct flb_azure_blob *cont
 
     /* User Agent */
     flb_http_add_header(http_client,
-                        "User-Agent", 10,
-                        "Fluent-Bit", 10);
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
 
     if (context->configuration_endpoint_username != NULL &&
         context->configuration_endpoint_password != NULL) {

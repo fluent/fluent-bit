@@ -260,7 +260,11 @@ static int build_headers(struct flb_http_client *c,
     tmp[olen] = '\0';
 
     /* Append headers */
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
     flb_http_add_header(c, "Log-Type", 8,
                         log_type, flb_sds_len(log_type));
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
