@@ -1919,7 +1919,11 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     flb_http_set_callback_context(c, ctx->ins->callback);
 
     /* User Agent */
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
 
     /* Auth headers */
     if (ctx->http_user && ctx->http_passwd) { /* Basic */
