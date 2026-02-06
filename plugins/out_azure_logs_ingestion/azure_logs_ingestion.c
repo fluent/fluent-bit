@@ -310,7 +310,11 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Append headers */
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
     if (is_compressed) {
         flb_http_add_header(c, "Content-Encoding", 16, "gzip", 4);
