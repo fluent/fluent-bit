@@ -647,6 +647,9 @@ static void test_encoder()
         if (result == CPROF_ENCODE_TEXT_SUCCESS) {
             TEST_CHECK(cfl_sds_len(text_encoder_result) > 1);
 
+            printf("%s\n", text_encoder_result);
+            fflush(stdout);
+
             cprof_encode_text_destroy(text_encoder_result);
         }
 
