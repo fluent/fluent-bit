@@ -15,6 +15,12 @@ static int convert_kvarray_to_kvlist(struct cfl_kvlist *target,
                                      Opentelemetry__Proto__Common__V1__KeyValue **source,
                                      size_t source_length);
 
+static int convert_keyvalueandunit_array_to_kvlist(struct cfl_kvlist *target,
+    Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit **source,
+    size_t source_length,
+    char **string_table,
+    size_t string_table_len);
+
 
 static struct cfl_variant *clone_variant(Opentelemetry__Proto__Common__V1__AnyValue *source)
 {
@@ -181,6 +187,44 @@ static int clone_kvlist_entry(struct cfl_kvlist *target,
         cfl_variant_destroy(new_child_instance);
 
         return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
+    return CPROF_DECODE_OPENTELEMETRY_SUCCESS;
+}
+
+static int convert_keyvalueandunit_array_to_kvlist(struct cfl_kvlist *target,
+    Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit **source,
+    size_t source_length,
+    char **string_table,
+    size_t string_table_len)
+{
+    size_t              index;
+    const char         *key;
+    struct cfl_variant *val;
+
+    for (index = 0; index < source_length; index++) {
+        Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit *entry = source[index];
+
+        if (entry == NULL) {
+            continue;
+        }
+
+        key = "";
+        if (string_table != NULL && entry->key_strindex >= 0 &&
+            (size_t)entry->key_strindex < string_table_len &&
+            string_table[entry->key_strindex] != NULL) {
+            key = string_table[entry->key_strindex];
+        }
+
+        val = clone_variant(entry->value);
+        if (val == NULL) {
+            return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
+
+        if (cfl_kvlist_insert(target, (char *)key, val) != 0) {
+            cfl_variant_destroy(val);
+            return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
     }
 
     return CPROF_DECODE_OPENTELEMETRY_SUCCESS;
