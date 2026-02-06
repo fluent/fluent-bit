@@ -133,6 +133,13 @@ static int nginx_collect_stub_status(struct flb_input_instance *ins,
         goto client_error;
     }
 
+    /* User-Agent */
+    flb_http_add_header(client,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
+
     ret = flb_http_do(client, &b_sent);
     if (ret != 0) {
         flb_plg_error(ins, "http do error");
