@@ -287,7 +287,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__trace__v1__resource_
   {
     "resource",
     1,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Trace__V1__ResourceSpans, resource),
@@ -351,7 +351,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__trace__v1__scope_spa
   {
     "scope",
     1,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Trace__V1__ScopeSpans, scope),
@@ -799,7 +799,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__trace__v1__span__fie
   {
     "status",
     15,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Trace__V1__Span, status),

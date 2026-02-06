@@ -7,6 +7,51 @@
 #endif
 
 #include "opentelemetry/proto/profiles/v1development/profiles.pb-c.h"
+void   opentelemetry__proto__profiles__v1development__profiles_dictionary__init
+                     (Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary         *message)
+{
+  static const Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary init_value = OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__PROFILES_DICTIONARY__INIT;
+  *message = init_value;
+}
+size_t opentelemetry__proto__profiles__v1development__profiles_dictionary__get_packed_size
+                     (const Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary *message)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__profiles_dictionary__descriptor);
+  return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
+}
+size_t opentelemetry__proto__profiles__v1development__profiles_dictionary__pack
+                     (const Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary *message,
+                      uint8_t       *out)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__profiles_dictionary__descriptor);
+  return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
+}
+size_t opentelemetry__proto__profiles__v1development__profiles_dictionary__pack_to_buffer
+                     (const Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary *message,
+                      ProtobufCBuffer *buffer)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__profiles_dictionary__descriptor);
+  return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
+}
+Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary *
+       opentelemetry__proto__profiles__v1development__profiles_dictionary__unpack
+                     (ProtobufCAllocator  *allocator,
+                      size_t               len,
+                      const uint8_t       *data)
+{
+  return (Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary *)
+     protobuf_c_message_unpack (&opentelemetry__proto__profiles__v1development__profiles_dictionary__descriptor,
+                                allocator, len, data);
+}
+void   opentelemetry__proto__profiles__v1development__profiles_dictionary__free_unpacked
+                     (Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary *message,
+                      ProtobufCAllocator *allocator)
+{
+  if(!message)
+    return;
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__profiles_dictionary__descriptor);
+  protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
+}
 void   opentelemetry__proto__profiles__v1development__profiles_data__init
                      (Opentelemetry__Proto__Profiles__V1development__ProfilesData         *message)
 {
@@ -142,52 +187,573 @@ void   opentelemetry__proto__profiles__v1development__scope_profiles__free_unpac
   assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__scope_profiles__descriptor);
   protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
 }
-void   opentelemetry__proto__profiles__v1development__profile_container__init
-                     (Opentelemetry__Proto__Profiles__V1development__ProfileContainer         *message)
+void   opentelemetry__proto__profiles__v1development__profile__init
+                     (Opentelemetry__Proto__Profiles__V1development__Profile         *message)
 {
-  static const Opentelemetry__Proto__Profiles__V1development__ProfileContainer init_value = OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__PROFILE_CONTAINER__INIT;
+  static const Opentelemetry__Proto__Profiles__V1development__Profile init_value = OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__PROFILE__INIT;
   *message = init_value;
 }
-size_t opentelemetry__proto__profiles__v1development__profile_container__get_packed_size
-                     (const Opentelemetry__Proto__Profiles__V1development__ProfileContainer *message)
+size_t opentelemetry__proto__profiles__v1development__profile__get_packed_size
+                     (const Opentelemetry__Proto__Profiles__V1development__Profile *message)
 {
-  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__profile_container__descriptor);
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__profile__descriptor);
   return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
 }
-size_t opentelemetry__proto__profiles__v1development__profile_container__pack
-                     (const Opentelemetry__Proto__Profiles__V1development__ProfileContainer *message,
+size_t opentelemetry__proto__profiles__v1development__profile__pack
+                     (const Opentelemetry__Proto__Profiles__V1development__Profile *message,
                       uint8_t       *out)
 {
-  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__profile_container__descriptor);
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__profile__descriptor);
   return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
 }
-size_t opentelemetry__proto__profiles__v1development__profile_container__pack_to_buffer
-                     (const Opentelemetry__Proto__Profiles__V1development__ProfileContainer *message,
+size_t opentelemetry__proto__profiles__v1development__profile__pack_to_buffer
+                     (const Opentelemetry__Proto__Profiles__V1development__Profile *message,
                       ProtobufCBuffer *buffer)
 {
-  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__profile_container__descriptor);
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__profile__descriptor);
   return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
 }
-Opentelemetry__Proto__Profiles__V1development__ProfileContainer *
-       opentelemetry__proto__profiles__v1development__profile_container__unpack
+Opentelemetry__Proto__Profiles__V1development__Profile *
+       opentelemetry__proto__profiles__v1development__profile__unpack
                      (ProtobufCAllocator  *allocator,
                       size_t               len,
                       const uint8_t       *data)
 {
-  return (Opentelemetry__Proto__Profiles__V1development__ProfileContainer *)
-     protobuf_c_message_unpack (&opentelemetry__proto__profiles__v1development__profile_container__descriptor,
+  return (Opentelemetry__Proto__Profiles__V1development__Profile *)
+     protobuf_c_message_unpack (&opentelemetry__proto__profiles__v1development__profile__descriptor,
                                 allocator, len, data);
 }
-void   opentelemetry__proto__profiles__v1development__profile_container__free_unpacked
-                     (Opentelemetry__Proto__Profiles__V1development__ProfileContainer *message,
+void   opentelemetry__proto__profiles__v1development__profile__free_unpacked
+                     (Opentelemetry__Proto__Profiles__V1development__Profile *message,
                       ProtobufCAllocator *allocator)
 {
   if(!message)
     return;
-  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__profile_container__descriptor);
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__profile__descriptor);
   protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
 }
-static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1development__profiles_data__field_descriptors[1] =
+void   opentelemetry__proto__profiles__v1development__link__init
+                     (Opentelemetry__Proto__Profiles__V1development__Link         *message)
+{
+  static const Opentelemetry__Proto__Profiles__V1development__Link init_value = OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__LINK__INIT;
+  *message = init_value;
+}
+size_t opentelemetry__proto__profiles__v1development__link__get_packed_size
+                     (const Opentelemetry__Proto__Profiles__V1development__Link *message)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__link__descriptor);
+  return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
+}
+size_t opentelemetry__proto__profiles__v1development__link__pack
+                     (const Opentelemetry__Proto__Profiles__V1development__Link *message,
+                      uint8_t       *out)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__link__descriptor);
+  return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
+}
+size_t opentelemetry__proto__profiles__v1development__link__pack_to_buffer
+                     (const Opentelemetry__Proto__Profiles__V1development__Link *message,
+                      ProtobufCBuffer *buffer)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__link__descriptor);
+  return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
+}
+Opentelemetry__Proto__Profiles__V1development__Link *
+       opentelemetry__proto__profiles__v1development__link__unpack
+                     (ProtobufCAllocator  *allocator,
+                      size_t               len,
+                      const uint8_t       *data)
+{
+  return (Opentelemetry__Proto__Profiles__V1development__Link *)
+     protobuf_c_message_unpack (&opentelemetry__proto__profiles__v1development__link__descriptor,
+                                allocator, len, data);
+}
+void   opentelemetry__proto__profiles__v1development__link__free_unpacked
+                     (Opentelemetry__Proto__Profiles__V1development__Link *message,
+                      ProtobufCAllocator *allocator)
+{
+  if(!message)
+    return;
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__link__descriptor);
+  protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
+}
+void   opentelemetry__proto__profiles__v1development__value_type__init
+                     (Opentelemetry__Proto__Profiles__V1development__ValueType         *message)
+{
+  static const Opentelemetry__Proto__Profiles__V1development__ValueType init_value = OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__VALUE_TYPE__INIT;
+  *message = init_value;
+}
+size_t opentelemetry__proto__profiles__v1development__value_type__get_packed_size
+                     (const Opentelemetry__Proto__Profiles__V1development__ValueType *message)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__value_type__descriptor);
+  return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
+}
+size_t opentelemetry__proto__profiles__v1development__value_type__pack
+                     (const Opentelemetry__Proto__Profiles__V1development__ValueType *message,
+                      uint8_t       *out)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__value_type__descriptor);
+  return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
+}
+size_t opentelemetry__proto__profiles__v1development__value_type__pack_to_buffer
+                     (const Opentelemetry__Proto__Profiles__V1development__ValueType *message,
+                      ProtobufCBuffer *buffer)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__value_type__descriptor);
+  return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
+}
+Opentelemetry__Proto__Profiles__V1development__ValueType *
+       opentelemetry__proto__profiles__v1development__value_type__unpack
+                     (ProtobufCAllocator  *allocator,
+                      size_t               len,
+                      const uint8_t       *data)
+{
+  return (Opentelemetry__Proto__Profiles__V1development__ValueType *)
+     protobuf_c_message_unpack (&opentelemetry__proto__profiles__v1development__value_type__descriptor,
+                                allocator, len, data);
+}
+void   opentelemetry__proto__profiles__v1development__value_type__free_unpacked
+                     (Opentelemetry__Proto__Profiles__V1development__ValueType *message,
+                      ProtobufCAllocator *allocator)
+{
+  if(!message)
+    return;
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__value_type__descriptor);
+  protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
+}
+void   opentelemetry__proto__profiles__v1development__sample__init
+                     (Opentelemetry__Proto__Profiles__V1development__Sample         *message)
+{
+  static const Opentelemetry__Proto__Profiles__V1development__Sample init_value = OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__SAMPLE__INIT;
+  *message = init_value;
+}
+size_t opentelemetry__proto__profiles__v1development__sample__get_packed_size
+                     (const Opentelemetry__Proto__Profiles__V1development__Sample *message)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__sample__descriptor);
+  return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
+}
+size_t opentelemetry__proto__profiles__v1development__sample__pack
+                     (const Opentelemetry__Proto__Profiles__V1development__Sample *message,
+                      uint8_t       *out)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__sample__descriptor);
+  return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
+}
+size_t opentelemetry__proto__profiles__v1development__sample__pack_to_buffer
+                     (const Opentelemetry__Proto__Profiles__V1development__Sample *message,
+                      ProtobufCBuffer *buffer)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__sample__descriptor);
+  return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
+}
+Opentelemetry__Proto__Profiles__V1development__Sample *
+       opentelemetry__proto__profiles__v1development__sample__unpack
+                     (ProtobufCAllocator  *allocator,
+                      size_t               len,
+                      const uint8_t       *data)
+{
+  return (Opentelemetry__Proto__Profiles__V1development__Sample *)
+     protobuf_c_message_unpack (&opentelemetry__proto__profiles__v1development__sample__descriptor,
+                                allocator, len, data);
+}
+void   opentelemetry__proto__profiles__v1development__sample__free_unpacked
+                     (Opentelemetry__Proto__Profiles__V1development__Sample *message,
+                      ProtobufCAllocator *allocator)
+{
+  if(!message)
+    return;
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__sample__descriptor);
+  protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
+}
+void   opentelemetry__proto__profiles__v1development__mapping__init
+                     (Opentelemetry__Proto__Profiles__V1development__Mapping         *message)
+{
+  static const Opentelemetry__Proto__Profiles__V1development__Mapping init_value = OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__MAPPING__INIT;
+  *message = init_value;
+}
+size_t opentelemetry__proto__profiles__v1development__mapping__get_packed_size
+                     (const Opentelemetry__Proto__Profiles__V1development__Mapping *message)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__mapping__descriptor);
+  return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
+}
+size_t opentelemetry__proto__profiles__v1development__mapping__pack
+                     (const Opentelemetry__Proto__Profiles__V1development__Mapping *message,
+                      uint8_t       *out)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__mapping__descriptor);
+  return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
+}
+size_t opentelemetry__proto__profiles__v1development__mapping__pack_to_buffer
+                     (const Opentelemetry__Proto__Profiles__V1development__Mapping *message,
+                      ProtobufCBuffer *buffer)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__mapping__descriptor);
+  return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
+}
+Opentelemetry__Proto__Profiles__V1development__Mapping *
+       opentelemetry__proto__profiles__v1development__mapping__unpack
+                     (ProtobufCAllocator  *allocator,
+                      size_t               len,
+                      const uint8_t       *data)
+{
+  return (Opentelemetry__Proto__Profiles__V1development__Mapping *)
+     protobuf_c_message_unpack (&opentelemetry__proto__profiles__v1development__mapping__descriptor,
+                                allocator, len, data);
+}
+void   opentelemetry__proto__profiles__v1development__mapping__free_unpacked
+                     (Opentelemetry__Proto__Profiles__V1development__Mapping *message,
+                      ProtobufCAllocator *allocator)
+{
+  if(!message)
+    return;
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__mapping__descriptor);
+  protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
+}
+void   opentelemetry__proto__profiles__v1development__stack__init
+                     (Opentelemetry__Proto__Profiles__V1development__Stack         *message)
+{
+  static const Opentelemetry__Proto__Profiles__V1development__Stack init_value = OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__STACK__INIT;
+  *message = init_value;
+}
+size_t opentelemetry__proto__profiles__v1development__stack__get_packed_size
+                     (const Opentelemetry__Proto__Profiles__V1development__Stack *message)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__stack__descriptor);
+  return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
+}
+size_t opentelemetry__proto__profiles__v1development__stack__pack
+                     (const Opentelemetry__Proto__Profiles__V1development__Stack *message,
+                      uint8_t       *out)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__stack__descriptor);
+  return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
+}
+size_t opentelemetry__proto__profiles__v1development__stack__pack_to_buffer
+                     (const Opentelemetry__Proto__Profiles__V1development__Stack *message,
+                      ProtobufCBuffer *buffer)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__stack__descriptor);
+  return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
+}
+Opentelemetry__Proto__Profiles__V1development__Stack *
+       opentelemetry__proto__profiles__v1development__stack__unpack
+                     (ProtobufCAllocator  *allocator,
+                      size_t               len,
+                      const uint8_t       *data)
+{
+  return (Opentelemetry__Proto__Profiles__V1development__Stack *)
+     protobuf_c_message_unpack (&opentelemetry__proto__profiles__v1development__stack__descriptor,
+                                allocator, len, data);
+}
+void   opentelemetry__proto__profiles__v1development__stack__free_unpacked
+                     (Opentelemetry__Proto__Profiles__V1development__Stack *message,
+                      ProtobufCAllocator *allocator)
+{
+  if(!message)
+    return;
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__stack__descriptor);
+  protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
+}
+void   opentelemetry__proto__profiles__v1development__location__init
+                     (Opentelemetry__Proto__Profiles__V1development__Location         *message)
+{
+  static const Opentelemetry__Proto__Profiles__V1development__Location init_value = OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__LOCATION__INIT;
+  *message = init_value;
+}
+size_t opentelemetry__proto__profiles__v1development__location__get_packed_size
+                     (const Opentelemetry__Proto__Profiles__V1development__Location *message)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__location__descriptor);
+  return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
+}
+size_t opentelemetry__proto__profiles__v1development__location__pack
+                     (const Opentelemetry__Proto__Profiles__V1development__Location *message,
+                      uint8_t       *out)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__location__descriptor);
+  return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
+}
+size_t opentelemetry__proto__profiles__v1development__location__pack_to_buffer
+                     (const Opentelemetry__Proto__Profiles__V1development__Location *message,
+                      ProtobufCBuffer *buffer)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__location__descriptor);
+  return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
+}
+Opentelemetry__Proto__Profiles__V1development__Location *
+       opentelemetry__proto__profiles__v1development__location__unpack
+                     (ProtobufCAllocator  *allocator,
+                      size_t               len,
+                      const uint8_t       *data)
+{
+  return (Opentelemetry__Proto__Profiles__V1development__Location *)
+     protobuf_c_message_unpack (&opentelemetry__proto__profiles__v1development__location__descriptor,
+                                allocator, len, data);
+}
+void   opentelemetry__proto__profiles__v1development__location__free_unpacked
+                     (Opentelemetry__Proto__Profiles__V1development__Location *message,
+                      ProtobufCAllocator *allocator)
+{
+  if(!message)
+    return;
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__location__descriptor);
+  protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
+}
+void   opentelemetry__proto__profiles__v1development__line__init
+                     (Opentelemetry__Proto__Profiles__V1development__Line         *message)
+{
+  static const Opentelemetry__Proto__Profiles__V1development__Line init_value = OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__LINE__INIT;
+  *message = init_value;
+}
+size_t opentelemetry__proto__profiles__v1development__line__get_packed_size
+                     (const Opentelemetry__Proto__Profiles__V1development__Line *message)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__line__descriptor);
+  return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
+}
+size_t opentelemetry__proto__profiles__v1development__line__pack
+                     (const Opentelemetry__Proto__Profiles__V1development__Line *message,
+                      uint8_t       *out)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__line__descriptor);
+  return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
+}
+size_t opentelemetry__proto__profiles__v1development__line__pack_to_buffer
+                     (const Opentelemetry__Proto__Profiles__V1development__Line *message,
+                      ProtobufCBuffer *buffer)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__line__descriptor);
+  return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
+}
+Opentelemetry__Proto__Profiles__V1development__Line *
+       opentelemetry__proto__profiles__v1development__line__unpack
+                     (ProtobufCAllocator  *allocator,
+                      size_t               len,
+                      const uint8_t       *data)
+{
+  return (Opentelemetry__Proto__Profiles__V1development__Line *)
+     protobuf_c_message_unpack (&opentelemetry__proto__profiles__v1development__line__descriptor,
+                                allocator, len, data);
+}
+void   opentelemetry__proto__profiles__v1development__line__free_unpacked
+                     (Opentelemetry__Proto__Profiles__V1development__Line *message,
+                      ProtobufCAllocator *allocator)
+{
+  if(!message)
+    return;
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__line__descriptor);
+  protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
+}
+void   opentelemetry__proto__profiles__v1development__function__init
+                     (Opentelemetry__Proto__Profiles__V1development__Function         *message)
+{
+  static const Opentelemetry__Proto__Profiles__V1development__Function init_value = OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__FUNCTION__INIT;
+  *message = init_value;
+}
+size_t opentelemetry__proto__profiles__v1development__function__get_packed_size
+                     (const Opentelemetry__Proto__Profiles__V1development__Function *message)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__function__descriptor);
+  return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
+}
+size_t opentelemetry__proto__profiles__v1development__function__pack
+                     (const Opentelemetry__Proto__Profiles__V1development__Function *message,
+                      uint8_t       *out)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__function__descriptor);
+  return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
+}
+size_t opentelemetry__proto__profiles__v1development__function__pack_to_buffer
+                     (const Opentelemetry__Proto__Profiles__V1development__Function *message,
+                      ProtobufCBuffer *buffer)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__function__descriptor);
+  return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
+}
+Opentelemetry__Proto__Profiles__V1development__Function *
+       opentelemetry__proto__profiles__v1development__function__unpack
+                     (ProtobufCAllocator  *allocator,
+                      size_t               len,
+                      const uint8_t       *data)
+{
+  return (Opentelemetry__Proto__Profiles__V1development__Function *)
+     protobuf_c_message_unpack (&opentelemetry__proto__profiles__v1development__function__descriptor,
+                                allocator, len, data);
+}
+void   opentelemetry__proto__profiles__v1development__function__free_unpacked
+                     (Opentelemetry__Proto__Profiles__V1development__Function *message,
+                      ProtobufCAllocator *allocator)
+{
+  if(!message)
+    return;
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__function__descriptor);
+  protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
+}
+void   opentelemetry__proto__profiles__v1development__key_value_and_unit__init
+                     (Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit         *message)
+{
+  static const Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit init_value = OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__KEY_VALUE_AND_UNIT__INIT;
+  *message = init_value;
+}
+size_t opentelemetry__proto__profiles__v1development__key_value_and_unit__get_packed_size
+                     (const Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit *message)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__key_value_and_unit__descriptor);
+  return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
+}
+size_t opentelemetry__proto__profiles__v1development__key_value_and_unit__pack
+                     (const Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit *message,
+                      uint8_t       *out)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__key_value_and_unit__descriptor);
+  return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
+}
+size_t opentelemetry__proto__profiles__v1development__key_value_and_unit__pack_to_buffer
+                     (const Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit *message,
+                      ProtobufCBuffer *buffer)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__key_value_and_unit__descriptor);
+  return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
+}
+Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit *
+       opentelemetry__proto__profiles__v1development__key_value_and_unit__unpack
+                     (ProtobufCAllocator  *allocator,
+                      size_t               len,
+                      const uint8_t       *data)
+{
+  return (Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit *)
+     protobuf_c_message_unpack (&opentelemetry__proto__profiles__v1development__key_value_and_unit__descriptor,
+                                allocator, len, data);
+}
+void   opentelemetry__proto__profiles__v1development__key_value_and_unit__free_unpacked
+                     (Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit *message,
+                      ProtobufCAllocator *allocator)
+{
+  if(!message)
+    return;
+  assert(message->base.descriptor == &opentelemetry__proto__profiles__v1development__key_value_and_unit__descriptor);
+  protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
+}
+static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1development__profiles_dictionary__field_descriptors[7] =
+{
+  {
+    "mapping_table",
+    1,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_MESSAGE,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary, n_mapping_table),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary, mapping_table),
+    &opentelemetry__proto__profiles__v1development__mapping__descriptor,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "location_table",
+    2,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_MESSAGE,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary, n_location_table),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary, location_table),
+    &opentelemetry__proto__profiles__v1development__location__descriptor,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "function_table",
+    3,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_MESSAGE,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary, n_function_table),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary, function_table),
+    &opentelemetry__proto__profiles__v1development__function__descriptor,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "link_table",
+    4,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_MESSAGE,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary, n_link_table),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary, link_table),
+    &opentelemetry__proto__profiles__v1development__link__descriptor,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "string_table",
+    5,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_STRING,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary, n_string_table),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary, string_table),
+    NULL,
+    &protobuf_c_empty_string,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "attribute_table",
+    6,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_MESSAGE,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary, n_attribute_table),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary, attribute_table),
+    &opentelemetry__proto__profiles__v1development__key_value_and_unit__descriptor,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "stack_table",
+    7,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_MESSAGE,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary, n_stack_table),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary, stack_table),
+    &opentelemetry__proto__profiles__v1development__stack__descriptor,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+};
+static const unsigned opentelemetry__proto__profiles__v1development__profiles_dictionary__field_indices_by_name[] = {
+  5,   /* field[5] = attribute_table */
+  2,   /* field[2] = function_table */
+  3,   /* field[3] = link_table */
+  1,   /* field[1] = location_table */
+  0,   /* field[0] = mapping_table */
+  6,   /* field[6] = stack_table */
+  4,   /* field[4] = string_table */
+};
+static const ProtobufCIntRange opentelemetry__proto__profiles__v1development__profiles_dictionary__number_ranges[1 + 1] =
+{
+  { 1, 0 },
+  { 0, 7 }
+};
+const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__profiles_dictionary__descriptor =
+{
+  PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC,
+  "opentelemetry.proto.profiles.v1development.ProfilesDictionary",
+  "ProfilesDictionary",
+  "Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary",
+  "opentelemetry.proto.profiles.v1development",
+  sizeof(Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary),
+  7,
+  opentelemetry__proto__profiles__v1development__profiles_dictionary__field_descriptors,
+  opentelemetry__proto__profiles__v1development__profiles_dictionary__field_indices_by_name,
+  1,  opentelemetry__proto__profiles__v1development__profiles_dictionary__number_ranges,
+  (ProtobufCMessageInit) opentelemetry__proto__profiles__v1development__profiles_dictionary__init,
+  NULL,NULL,NULL    /* reserved[123] */
+};
+static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1development__profiles_data__field_descriptors[2] =
 {
   {
     "resource_profiles",
@@ -201,14 +767,27 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "dictionary",
+    2,
+    PROTOBUF_C_LABEL_OPTIONAL,
+    PROTOBUF_C_TYPE_MESSAGE,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfilesData, dictionary),
+    &opentelemetry__proto__profiles__v1development__profiles_dictionary__descriptor,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned opentelemetry__proto__profiles__v1development__profiles_data__field_indices_by_name[] = {
+  1,   /* field[1] = dictionary */
   0,   /* field[0] = resource_profiles */
 };
 static const ProtobufCIntRange opentelemetry__proto__profiles__v1development__profiles_data__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 1 }
+  { 0, 2 }
 };
 const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__profiles_data__descriptor =
 {
@@ -218,7 +797,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__
   "Opentelemetry__Proto__Profiles__V1development__ProfilesData",
   "opentelemetry.proto.profiles.v1development",
   sizeof(Opentelemetry__Proto__Profiles__V1development__ProfilesData),
-  1,
+  2,
   opentelemetry__proto__profiles__v1development__profiles_data__field_descriptors,
   opentelemetry__proto__profiles__v1development__profiles_data__field_indices_by_name,
   1,  opentelemetry__proto__profiles__v1development__profiles_data__number_ranges,
@@ -230,7 +809,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
   {
     "resource",
     1,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Profiles__V1development__ResourceProfiles, resource),
@@ -294,7 +873,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
   {
     "scope",
     1,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Profiles__V1development__ScopeProfiles, scope),
@@ -310,7 +889,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
     PROTOBUF_C_TYPE_MESSAGE,
     offsetof(Opentelemetry__Proto__Profiles__V1development__ScopeProfiles, n_profiles),
     offsetof(Opentelemetry__Proto__Profiles__V1development__ScopeProfiles, profiles),
-    &opentelemetry__proto__profiles__v1development__profile_container__descriptor,
+    &opentelemetry__proto__profiles__v1development__profile__descriptor,
     NULL,
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
@@ -353,63 +932,99 @@ const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__
   (ProtobufCMessageInit) opentelemetry__proto__profiles__v1development__scope_profiles__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1development__profile_container__field_descriptors[8] =
+static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1development__profile__field_descriptors[11] =
 {
   {
-    "profile_id",
+    "sample_type",
     1,
-    PROTOBUF_C_LABEL_NONE,
-    PROTOBUF_C_TYPE_BYTES,
+    PROTOBUF_C_LABEL_OPTIONAL,
+    PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
-    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfileContainer, profile_id),
-    NULL,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, sample_type),
+    &opentelemetry__proto__profiles__v1development__value_type__descriptor,
     NULL,
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
-    "start_time_unix_nano",
+    "samples",
     2,
-    PROTOBUF_C_LABEL_NONE,
-    PROTOBUF_C_TYPE_FIXED64,
-    0,   /* quantifier_offset */
-    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfileContainer, start_time_unix_nano),
-    NULL,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_MESSAGE,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, n_samples),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, samples),
+    &opentelemetry__proto__profiles__v1development__sample__descriptor,
     NULL,
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
-    "end_time_unix_nano",
+    "time_unix_nano",
     3,
     PROTOBUF_C_LABEL_NONE,
     PROTOBUF_C_TYPE_FIXED64,
     0,   /* quantifier_offset */
-    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfileContainer, end_time_unix_nano),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, time_unix_nano),
     NULL,
     NULL,
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
-    "attributes",
+    "duration_nano",
     4,
-    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_UINT64,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, duration_nano),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "period_type",
+    5,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
-    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfileContainer, n_attributes),
-    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfileContainer, attributes),
-    &opentelemetry__proto__common__v1__key_value__descriptor,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, period_type),
+    &opentelemetry__proto__profiles__v1development__value_type__descriptor,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "period",
+    6,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT64,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, period),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "profile_id",
+    7,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_BYTES,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, profile_id),
+    NULL,
     NULL,
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
     "dropped_attributes_count",
-    5,
+    8,
     PROTOBUF_C_LABEL_NONE,
     PROTOBUF_C_TYPE_UINT32,
     0,   /* quantifier_offset */
-    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfileContainer, dropped_attributes_count),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, dropped_attributes_count),
     NULL,
     NULL,
     0,             /* flags */
@@ -417,11 +1032,11 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
   },
   {
     "original_payload_format",
-    6,
+    9,
     PROTOBUF_C_LABEL_NONE,
     PROTOBUF_C_TYPE_STRING,
     0,   /* quantifier_offset */
-    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfileContainer, original_payload_format),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, original_payload_format),
     NULL,
     &protobuf_c_empty_string,
     0,             /* flags */
@@ -429,56 +1044,661 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
   },
   {
     "original_payload",
-    7,
+    10,
     PROTOBUF_C_LABEL_NONE,
     PROTOBUF_C_TYPE_BYTES,
     0,   /* quantifier_offset */
-    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfileContainer, original_payload),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, original_payload),
     NULL,
     NULL,
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
-    "profile",
-    8,
+    "attribute_indices",
+    11,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_INT32,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, n_attribute_indices),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Profile, attribute_indices),
+    NULL,
+    NULL,
+    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+};
+static const unsigned opentelemetry__proto__profiles__v1development__profile__field_indices_by_name[] = {
+  10,   /* field[10] = attribute_indices */
+  7,   /* field[7] = dropped_attributes_count */
+  3,   /* field[3] = duration_nano */
+  9,   /* field[9] = original_payload */
+  8,   /* field[8] = original_payload_format */
+  5,   /* field[5] = period */
+  4,   /* field[4] = period_type */
+  6,   /* field[6] = profile_id */
+  0,   /* field[0] = sample_type */
+  1,   /* field[1] = samples */
+  2,   /* field[2] = time_unix_nano */
+};
+static const ProtobufCIntRange opentelemetry__proto__profiles__v1development__profile__number_ranges[1 + 1] =
+{
+  { 1, 0 },
+  { 0, 11 }
+};
+const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__profile__descriptor =
+{
+  PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC,
+  "opentelemetry.proto.profiles.v1development.Profile",
+  "Profile",
+  "Opentelemetry__Proto__Profiles__V1development__Profile",
+  "opentelemetry.proto.profiles.v1development",
+  sizeof(Opentelemetry__Proto__Profiles__V1development__Profile),
+  11,
+  opentelemetry__proto__profiles__v1development__profile__field_descriptors,
+  opentelemetry__proto__profiles__v1development__profile__field_indices_by_name,
+  1,  opentelemetry__proto__profiles__v1development__profile__number_ranges,
+  (ProtobufCMessageInit) opentelemetry__proto__profiles__v1development__profile__init,
+  NULL,NULL,NULL    /* reserved[123] */
+};
+static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1development__link__field_descriptors[2] =
+{
+  {
+    "trace_id",
+    1,
     PROTOBUF_C_LABEL_NONE,
-    PROTOBUF_C_TYPE_MESSAGE,
+    PROTOBUF_C_TYPE_BYTES,
     0,   /* quantifier_offset */
-    offsetof(Opentelemetry__Proto__Profiles__V1development__ProfileContainer, profile),
-    &opentelemetry__proto__profiles__v1development__profile__descriptor,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Link, trace_id),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "span_id",
+    2,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_BYTES,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Link, span_id),
+    NULL,
     NULL,
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
 };
-static const unsigned opentelemetry__proto__profiles__v1development__profile_container__field_indices_by_name[] = {
-  3,   /* field[3] = attributes */
-  4,   /* field[4] = dropped_attributes_count */
-  2,   /* field[2] = end_time_unix_nano */
-  6,   /* field[6] = original_payload */
-  5,   /* field[5] = original_payload_format */
-  7,   /* field[7] = profile */
-  0,   /* field[0] = profile_id */
-  1,   /* field[1] = start_time_unix_nano */
+static const unsigned opentelemetry__proto__profiles__v1development__link__field_indices_by_name[] = {
+  1,   /* field[1] = span_id */
+  0,   /* field[0] = trace_id */
 };
-static const ProtobufCIntRange opentelemetry__proto__profiles__v1development__profile_container__number_ranges[1 + 1] =
+static const ProtobufCIntRange opentelemetry__proto__profiles__v1development__link__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 8 }
+  { 0, 2 }
 };
-const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__profile_container__descriptor =
+const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__link__descriptor =
 {
   PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC,
-  "opentelemetry.proto.profiles.v1development.ProfileContainer",
-  "ProfileContainer",
-  "Opentelemetry__Proto__Profiles__V1development__ProfileContainer",
+  "opentelemetry.proto.profiles.v1development.Link",
+  "Link",
+  "Opentelemetry__Proto__Profiles__V1development__Link",
   "opentelemetry.proto.profiles.v1development",
-  sizeof(Opentelemetry__Proto__Profiles__V1development__ProfileContainer),
-  8,
-  opentelemetry__proto__profiles__v1development__profile_container__field_descriptors,
-  opentelemetry__proto__profiles__v1development__profile_container__field_indices_by_name,
-  1,  opentelemetry__proto__profiles__v1development__profile_container__number_ranges,
-  (ProtobufCMessageInit) opentelemetry__proto__profiles__v1development__profile_container__init,
+  sizeof(Opentelemetry__Proto__Profiles__V1development__Link),
+  2,
+  opentelemetry__proto__profiles__v1development__link__field_descriptors,
+  opentelemetry__proto__profiles__v1development__link__field_indices_by_name,
+  1,  opentelemetry__proto__profiles__v1development__link__number_ranges,
+  (ProtobufCMessageInit) opentelemetry__proto__profiles__v1development__link__init,
+  NULL,NULL,NULL    /* reserved[123] */
+};
+static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1development__value_type__field_descriptors[2] =
+{
+  {
+    "type_strindex",
+    1,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ValueType, type_strindex),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "unit_strindex",
+    2,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__ValueType, unit_strindex),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+};
+static const unsigned opentelemetry__proto__profiles__v1development__value_type__field_indices_by_name[] = {
+  0,   /* field[0] = type_strindex */
+  1,   /* field[1] = unit_strindex */
+};
+static const ProtobufCIntRange opentelemetry__proto__profiles__v1development__value_type__number_ranges[1 + 1] =
+{
+  { 1, 0 },
+  { 0, 2 }
+};
+const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__value_type__descriptor =
+{
+  PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC,
+  "opentelemetry.proto.profiles.v1development.ValueType",
+  "ValueType",
+  "Opentelemetry__Proto__Profiles__V1development__ValueType",
+  "opentelemetry.proto.profiles.v1development",
+  sizeof(Opentelemetry__Proto__Profiles__V1development__ValueType),
+  2,
+  opentelemetry__proto__profiles__v1development__value_type__field_descriptors,
+  opentelemetry__proto__profiles__v1development__value_type__field_indices_by_name,
+  1,  opentelemetry__proto__profiles__v1development__value_type__number_ranges,
+  (ProtobufCMessageInit) opentelemetry__proto__profiles__v1development__value_type__init,
+  NULL,NULL,NULL    /* reserved[123] */
+};
+static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1development__sample__field_descriptors[5] =
+{
+  {
+    "stack_index",
+    1,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, stack_index),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "values",
+    2,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_INT64,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, n_values),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, values),
+    NULL,
+    NULL,
+    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "attribute_indices",
+    3,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_INT32,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, n_attribute_indices),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, attribute_indices),
+    NULL,
+    NULL,
+    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "link_index",
+    4,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, link_index),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "timestamps_unix_nano",
+    5,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_FIXED64,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, n_timestamps_unix_nano),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, timestamps_unix_nano),
+    NULL,
+    NULL,
+    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+};
+static const unsigned opentelemetry__proto__profiles__v1development__sample__field_indices_by_name[] = {
+  2,   /* field[2] = attribute_indices */
+  3,   /* field[3] = link_index */
+  0,   /* field[0] = stack_index */
+  4,   /* field[4] = timestamps_unix_nano */
+  1,   /* field[1] = values */
+};
+static const ProtobufCIntRange opentelemetry__proto__profiles__v1development__sample__number_ranges[1 + 1] =
+{
+  { 1, 0 },
+  { 0, 5 }
+};
+const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__sample__descriptor =
+{
+  PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC,
+  "opentelemetry.proto.profiles.v1development.Sample",
+  "Sample",
+  "Opentelemetry__Proto__Profiles__V1development__Sample",
+  "opentelemetry.proto.profiles.v1development",
+  sizeof(Opentelemetry__Proto__Profiles__V1development__Sample),
+  5,
+  opentelemetry__proto__profiles__v1development__sample__field_descriptors,
+  opentelemetry__proto__profiles__v1development__sample__field_indices_by_name,
+  1,  opentelemetry__proto__profiles__v1development__sample__number_ranges,
+  (ProtobufCMessageInit) opentelemetry__proto__profiles__v1development__sample__init,
+  NULL,NULL,NULL    /* reserved[123] */
+};
+static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1development__mapping__field_descriptors[5] =
+{
+  {
+    "memory_start",
+    1,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_UINT64,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Mapping, memory_start),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "memory_limit",
+    2,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_UINT64,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Mapping, memory_limit),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "file_offset",
+    3,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_UINT64,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Mapping, file_offset),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "filename_strindex",
+    4,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Mapping, filename_strindex),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "attribute_indices",
+    5,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_INT32,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Mapping, n_attribute_indices),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Mapping, attribute_indices),
+    NULL,
+    NULL,
+    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+};
+static const unsigned opentelemetry__proto__profiles__v1development__mapping__field_indices_by_name[] = {
+  4,   /* field[4] = attribute_indices */
+  2,   /* field[2] = file_offset */
+  3,   /* field[3] = filename_strindex */
+  1,   /* field[1] = memory_limit */
+  0,   /* field[0] = memory_start */
+};
+static const ProtobufCIntRange opentelemetry__proto__profiles__v1development__mapping__number_ranges[1 + 1] =
+{
+  { 1, 0 },
+  { 0, 5 }
+};
+const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__mapping__descriptor =
+{
+  PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC,
+  "opentelemetry.proto.profiles.v1development.Mapping",
+  "Mapping",
+  "Opentelemetry__Proto__Profiles__V1development__Mapping",
+  "opentelemetry.proto.profiles.v1development",
+  sizeof(Opentelemetry__Proto__Profiles__V1development__Mapping),
+  5,
+  opentelemetry__proto__profiles__v1development__mapping__field_descriptors,
+  opentelemetry__proto__profiles__v1development__mapping__field_indices_by_name,
+  1,  opentelemetry__proto__profiles__v1development__mapping__number_ranges,
+  (ProtobufCMessageInit) opentelemetry__proto__profiles__v1development__mapping__init,
+  NULL,NULL,NULL    /* reserved[123] */
+};
+static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1development__stack__field_descriptors[1] =
+{
+  {
+    "location_indices",
+    1,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_INT32,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Stack, n_location_indices),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Stack, location_indices),
+    NULL,
+    NULL,
+    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+};
+static const unsigned opentelemetry__proto__profiles__v1development__stack__field_indices_by_name[] = {
+  0,   /* field[0] = location_indices */
+};
+static const ProtobufCIntRange opentelemetry__proto__profiles__v1development__stack__number_ranges[1 + 1] =
+{
+  { 1, 0 },
+  { 0, 1 }
+};
+const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__stack__descriptor =
+{
+  PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC,
+  "opentelemetry.proto.profiles.v1development.Stack",
+  "Stack",
+  "Opentelemetry__Proto__Profiles__V1development__Stack",
+  "opentelemetry.proto.profiles.v1development",
+  sizeof(Opentelemetry__Proto__Profiles__V1development__Stack),
+  1,
+  opentelemetry__proto__profiles__v1development__stack__field_descriptors,
+  opentelemetry__proto__profiles__v1development__stack__field_indices_by_name,
+  1,  opentelemetry__proto__profiles__v1development__stack__number_ranges,
+  (ProtobufCMessageInit) opentelemetry__proto__profiles__v1development__stack__init,
+  NULL,NULL,NULL    /* reserved[123] */
+};
+static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1development__location__field_descriptors[4] =
+{
+  {
+    "mapping_index",
+    1,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Location, mapping_index),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "address",
+    2,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_UINT64,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Location, address),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "lines",
+    3,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_MESSAGE,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Location, n_lines),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Location, lines),
+    &opentelemetry__proto__profiles__v1development__line__descriptor,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "attribute_indices",
+    4,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_INT32,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Location, n_attribute_indices),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Location, attribute_indices),
+    NULL,
+    NULL,
+    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+};
+static const unsigned opentelemetry__proto__profiles__v1development__location__field_indices_by_name[] = {
+  1,   /* field[1] = address */
+  3,   /* field[3] = attribute_indices */
+  2,   /* field[2] = lines */
+  0,   /* field[0] = mapping_index */
+};
+static const ProtobufCIntRange opentelemetry__proto__profiles__v1development__location__number_ranges[1 + 1] =
+{
+  { 1, 0 },
+  { 0, 4 }
+};
+const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__location__descriptor =
+{
+  PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC,
+  "opentelemetry.proto.profiles.v1development.Location",
+  "Location",
+  "Opentelemetry__Proto__Profiles__V1development__Location",
+  "opentelemetry.proto.profiles.v1development",
+  sizeof(Opentelemetry__Proto__Profiles__V1development__Location),
+  4,
+  opentelemetry__proto__profiles__v1development__location__field_descriptors,
+  opentelemetry__proto__profiles__v1development__location__field_indices_by_name,
+  1,  opentelemetry__proto__profiles__v1development__location__number_ranges,
+  (ProtobufCMessageInit) opentelemetry__proto__profiles__v1development__location__init,
+  NULL,NULL,NULL    /* reserved[123] */
+};
+static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1development__line__field_descriptors[3] =
+{
+  {
+    "function_index",
+    1,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Line, function_index),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "line",
+    2,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT64,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Line, line),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "column",
+    3,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT64,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Line, column),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+};
+static const unsigned opentelemetry__proto__profiles__v1development__line__field_indices_by_name[] = {
+  2,   /* field[2] = column */
+  0,   /* field[0] = function_index */
+  1,   /* field[1] = line */
+};
+static const ProtobufCIntRange opentelemetry__proto__profiles__v1development__line__number_ranges[1 + 1] =
+{
+  { 1, 0 },
+  { 0, 3 }
+};
+const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__line__descriptor =
+{
+  PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC,
+  "opentelemetry.proto.profiles.v1development.Line",
+  "Line",
+  "Opentelemetry__Proto__Profiles__V1development__Line",
+  "opentelemetry.proto.profiles.v1development",
+  sizeof(Opentelemetry__Proto__Profiles__V1development__Line),
+  3,
+  opentelemetry__proto__profiles__v1development__line__field_descriptors,
+  opentelemetry__proto__profiles__v1development__line__field_indices_by_name,
+  1,  opentelemetry__proto__profiles__v1development__line__number_ranges,
+  (ProtobufCMessageInit) opentelemetry__proto__profiles__v1development__line__init,
+  NULL,NULL,NULL    /* reserved[123] */
+};
+static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1development__function__field_descriptors[4] =
+{
+  {
+    "name_strindex",
+    1,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Function, name_strindex),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "system_name_strindex",
+    2,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Function, system_name_strindex),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "filename_strindex",
+    3,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Function, filename_strindex),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "start_line",
+    4,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT64,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Function, start_line),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+};
+static const unsigned opentelemetry__proto__profiles__v1development__function__field_indices_by_name[] = {
+  2,   /* field[2] = filename_strindex */
+  0,   /* field[0] = name_strindex */
+  3,   /* field[3] = start_line */
+  1,   /* field[1] = system_name_strindex */
+};
+static const ProtobufCIntRange opentelemetry__proto__profiles__v1development__function__number_ranges[1 + 1] =
+{
+  { 1, 0 },
+  { 0, 4 }
+};
+const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__function__descriptor =
+{
+  PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC,
+  "opentelemetry.proto.profiles.v1development.Function",
+  "Function",
+  "Opentelemetry__Proto__Profiles__V1development__Function",
+  "opentelemetry.proto.profiles.v1development",
+  sizeof(Opentelemetry__Proto__Profiles__V1development__Function),
+  4,
+  opentelemetry__proto__profiles__v1development__function__field_descriptors,
+  opentelemetry__proto__profiles__v1development__function__field_indices_by_name,
+  1,  opentelemetry__proto__profiles__v1development__function__number_ranges,
+  (ProtobufCMessageInit) opentelemetry__proto__profiles__v1development__function__init,
+  NULL,NULL,NULL    /* reserved[123] */
+};
+static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1development__key_value_and_unit__field_descriptors[3] =
+{
+  {
+    "key_strindex",
+    1,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit, key_strindex),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "value",
+    2,
+    PROTOBUF_C_LABEL_OPTIONAL,
+    PROTOBUF_C_TYPE_MESSAGE,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit, value),
+    &opentelemetry__proto__common__v1__any_value__descriptor,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "unit_strindex",
+    3,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit, unit_strindex),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+};
+static const unsigned opentelemetry__proto__profiles__v1development__key_value_and_unit__field_indices_by_name[] = {
+  0,   /* field[0] = key_strindex */
+  2,   /* field[2] = unit_strindex */
+  1,   /* field[1] = value */
+};
+static const ProtobufCIntRange opentelemetry__proto__profiles__v1development__key_value_and_unit__number_ranges[1 + 1] =
+{
+  { 1, 0 },
+  { 0, 3 }
+};
+const ProtobufCMessageDescriptor opentelemetry__proto__profiles__v1development__key_value_and_unit__descriptor =
+{
+  PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC,
+  "opentelemetry.proto.profiles.v1development.KeyValueAndUnit",
+  "KeyValueAndUnit",
+  "Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit",
+  "opentelemetry.proto.profiles.v1development",
+  sizeof(Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit),
+  3,
+  opentelemetry__proto__profiles__v1development__key_value_and_unit__field_descriptors,
+  opentelemetry__proto__profiles__v1development__key_value_and_unit__field_indices_by_name,
+  1,  opentelemetry__proto__profiles__v1development__key_value_and_unit__number_ranges,
+  (ProtobufCMessageInit) opentelemetry__proto__profiles__v1development__key_value_and_unit__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
