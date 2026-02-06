@@ -109,7 +109,11 @@ static int collect_metrics(struct prom_scrape *ctx)
     }
 
     /* Add User-Agent */
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
 
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
