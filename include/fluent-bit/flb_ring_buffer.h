@@ -40,5 +40,6 @@ int flb_ring_buffer_add_event_loop(struct flb_ring_buffer *rb, void *evl, uint8_
 
 int flb_ring_buffer_write(struct flb_ring_buffer *rb, void *ptr, size_t size);
 int flb_ring_buffer_read(struct flb_ring_buffer *rb, void *ptr, size_t size);
+size_t flb_ring_buffer_get_used(struct flb_ring_buffer *rb);
 
 #endif

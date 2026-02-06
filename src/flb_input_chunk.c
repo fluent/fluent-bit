@@ -2413,6 +2413,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
     if (flb_input_chunk_is_mem_overlimit(in) == FLB_FALSE &&
         in->config->is_running == FLB_TRUE &&
         in->config->is_ingestion_active == FLB_TRUE &&
+        in->config->is_shutting_down == FLB_FALSE &&
         in->mem_buf_status == FLB_INPUT_PAUSED) {
         in->mem_buf_status = FLB_INPUT_RUNNING;
         if (in->p->cb_resume) {
@@ -2426,6 +2427,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
     if (flb_input_chunk_is_storage_overlimit(in) == FLB_FALSE &&
         in->config->is_running == FLB_TRUE &&
         in->config->is_ingestion_active == FLB_TRUE &&
+        in->config->is_shutting_down == FLB_FALSE &&
         in->storage_buf_status == FLB_INPUT_PAUSED) {
         in->storage_buf_status = FLB_INPUT_RUNNING;
         if (in->p->cb_resume) {
@@ -2667,11 +2669,20 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         }
     }
 
-    /* Check if the input plugin has been paused */
-    if (flb_input_buf_paused(in) == FLB_TRUE) {
-        flb_debug("[input chunk] %s is paused, cannot append records",
-                  flb_input_name(in));
-        return -1;
+    /*
+     * Check if the input plugin has been paused.
+     * During shutdown with ensure_threaded_flush_on_shutdown enabled, only
+     * threaded inputs can bypass the pause check to drain their ring buffers.
+     * Non-threaded inputs should still honor pause during shutdown.
+     */
+    if (in->config->is_shutting_down == FLB_FALSE ||
+        in->config->ensure_threaded_flush_on_shutdown == FLB_FALSE ||
+        flb_input_is_threaded(in) == FLB_FALSE) {
+        if (flb_input_buf_paused(in) == FLB_TRUE) {
+            flb_debug("[input chunk] %s is paused, cannot append records",
+                      flb_input_name(in));
+            return -1;
+        }
     }
 
     if (buf_size == 0) {
@@ -3063,8 +3074,22 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
         cr = NULL;
 
         while (1) {
-            if (flb_input_buf_paused(ins) == FLB_TRUE) {
-                break;
+            /*
+             * During normal operation we respect the pause state to maintain
+             * backpressure: if the input is paused we stop consuming from
+             * the ring buffer.
+             *
+             * During shutdown with ensure_threaded_flush_on_shutdown enabled,
+             * we skip this pause check so the ring buffer can be fully drained,
+             * even when backpressure would normally prevent further reads.
+             * This is critical to flush all enqueued records and avoid data
+             * loss during graceful shutdown.
+             */
+            if (ctx->is_shutting_down == FLB_FALSE ||
+                ctx->ensure_threaded_flush_on_shutdown == FLB_FALSE) {
+                if (flb_input_buf_paused(ins) == FLB_TRUE) {
+                    break;
+                }
             }
 
             ret = flb_ring_buffer_read(ins->rb,
@@ -3285,4 +3310,24 @@ void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic,
                       o_ins->name, chunk_size, o_ins->fs_chunks_size);
         }
     }
+}
+
+/*
+ * Calculate total size of all ring buffers across all threaded input instances.
+ * Returns 0 if no data is pending in ring buffers.
+ */
+size_t flb_input_chunk_get_total_ring_buffer_size(const struct flb_config *config)
+{
+    size_t total_size = 0;
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+
+    mk_list_foreach(head, &config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        if (flb_input_is_threaded(ins) && ins->rb) {
+            total_size += flb_ring_buffer_get_used(ins->rb);
+        }
+    }
+
+    return total_size;
 }
