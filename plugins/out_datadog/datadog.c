@@ -420,7 +420,11 @@ static void cb_datadog_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Add the required headers to the URI */
-    flb_http_add_header(client, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(client,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
     flb_http_add_header(client, FLB_DATADOG_API_HDR, sizeof(FLB_DATADOG_API_HDR) - 1, ctx->api_key, flb_sds_len(ctx->api_key));
     flb_http_add_header(client, FLB_DATADOG_ORIGIN_HDR, sizeof(FLB_DATADOG_ORIGIN_HDR) - 1, "Fluent-Bit", 10);
     flb_http_add_header(client, FLB_DATADOG_ORIGIN_VERSION_HDR, sizeof(FLB_DATADOG_ORIGIN_VERSION_HDR) - 1, FLB_VERSION_STR, sizeof(FLB_VERSION_STR) - 1);
