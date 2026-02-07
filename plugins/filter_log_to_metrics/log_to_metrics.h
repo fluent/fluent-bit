@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_record_accessor.h>
 
+#include <stddef.h>
+
 /* rule types */
 #define GREP_REGEX 1
 #define GREP_EXCLUDE 2
@@ -46,7 +48,7 @@
 #define NUMBER_OF_KUBERNETES_LABELS 5
 #define MAX_LABEL_LENGTH 253
 #define MAX_METRIC_LENGTH 253
-#define MAX_LABEL_COUNT 32
+#define MAX_LABEL_COUNT 128
 
 #define FLB_MEM_BUF_LIMIT_DEFAULT  "10M"
 #define DEFAULT_LOG_TO_METRICS_NAMESPACE "log_metric"
@@ -65,6 +67,14 @@ struct log_to_metrics_ctx {
     int label_counter;
     int bucket_counter;
     double *buckets;
+
+
+    /* Pre-created record accessors for each label (including kubernetes labels) */
+    struct flb_record_accessor **label_ras;
+
+    /* Pre-allocated label value buffers, reused per record */
+    char *label_values_buf;   /* contiguous buffer: label_counter * MAX_LABEL_LENGTH */
+    char **label_values;      /* pointer view: label_values[i] points into label_values_buf */
 
     struct cmt_counter *c;
     struct cmt_gauge *g;
