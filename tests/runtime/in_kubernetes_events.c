@@ -619,10 +619,60 @@ void flb_test_config_db_locking_values()
 }
 #endif
 
+/* Test with smaller chunks - splits single event into 3 chunks */
+void flb_test_events_with_3chunks()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    int trys;
+
+    int ret;
+    int num;
+    const char *filename = "eventlist_v1_with_lastTimestamp";
+    const char *stream_filename = "watch_v1_with_lastTimestamp";
+
+    clear_output_num();
+
+    /* Use 400 byte chunks to split 1176-byte JSON into 3 chunks */
+    struct test_k8s_server_ctx* k8s_server = initialize_mock_k8s_api(
+        filename, stream_filename, 400
+    );
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = (void *)k8s_server;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* waiting to flush */
+    for (trys = 0; trys < 5 && get_output_num() <= 1; trys++) {
+        flb_time_msleep(1000);
+    }
+
+    num = get_output_num();
+    if (!TEST_CHECK(num >= 2))  {
+        TEST_MSG("2 output records are expected found %d", num);
+    }
+
+    /* Stop Fluent Bit before destroying mock server to properly close connections */
+    flb_stop(ctx->flb);
+    flb_time_msleep(500);  /* Give threads time to shut down */
+
+    mock_k8s_api_destroy(k8s_server);
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     {"events_v1_with_lastTimestamp", flb_test_events_v1_with_lastTimestamp},
     {"events_v1_with_creationTimestamp", flb_test_events_v1_with_creationTimestamp},
     //{"events_v1_with_chunkedrecv", flb_test_events_with_chunkedrecv},
+    {"events_v1_with_3chunks", flb_test_events_with_3chunks},
 #ifdef FLB_HAVE_SQLDB
     {"config_db_sync_values", flb_test_config_db_sync_values},
     {"config_db_journal_mode_values", flb_test_config_db_journal_mode_values},
