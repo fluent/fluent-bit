@@ -270,7 +270,7 @@ if(ONIGMO_SHARED_LIB)
       PROPERTIES PDB_NAME onigmo.dll)
     target_link_options(onigmo-shared
       PUBLIC /pdb:$<TARGET_PDB_FILE:onigmo-shared>
-      PRIVATE /LTCG)
+      PRIVATE $<$<NOT:$<CONFIG:Debug>>:/LTCG>)
   endif()
 
   # Library install routines
