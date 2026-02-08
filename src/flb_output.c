@@ -1066,6 +1066,17 @@ int flb_output_set_property(struct flb_output_instance *ins,
         ins->tp_workers = atoi(tmp);
         flb_sds_destroy(tmp);
     }
+    else if (prop_key_check("multiplex", k, len) == 0 && tmp) {
+        if (strcasecmp(tmp, "off") == 0 ||
+            flb_utils_bool(tmp) == FLB_FALSE) {
+            /* disable multiplex for output plugin */
+            flb_info("[config] no multiplex for %s plugin", ins->name);
+            ins->flags = ins->flags | FLB_OUTPUT_NO_MULTIPLEX;
+        }
+        else {
+            ins->flags = ins->flags & ~FLB_OUTPUT_NO_MULTIPLEX;
+        }
+    }
     else {
         /*
          * Create the property, we don't pass the value since we will
