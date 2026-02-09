@@ -40,18 +40,13 @@ int cprof_sample_add_location_index(struct cprof_sample *sample, uint64_t locati
     uint64_t *reallocated_location_index;
 
     if (sample->location_index == NULL) {
-        /*
-         * if location index is NULL, assign a default location. We set an empty string to index 0
-         * since that's the way for protobuf differentiate between unset or  NULL
-         */
         sample->location_index = calloc(1, alloc_slots * sizeof(uint64_t));
 
         if (sample->location_index == NULL) {
             return -1;
         }
 
-        sample->location_index[0] = 0; /* an empty string */
-        sample->location_index_count = 1;
+        sample->location_index_count = 0;
         sample->location_index_size = alloc_slots;
     }
 
