@@ -20,7 +20,7 @@ from git import Repo
 repo = Repo(".")
 
 # Regex patterns
-PREFIX_RE = re.compile(r"^[a-z0-9_]+:", re.IGNORECASE)
+PREFIX_RE = re.compile(r"^[a-z0-9_]+:\s+\S", re.IGNORECASE)
 SIGNED_OFF_RE = re.compile(r"Signed-off-by:", re.IGNORECASE)
 FENCED_BLOCK_RE = re.compile(
     r"""
@@ -85,6 +85,10 @@ def infer_prefix_from_paths(paths):
             parts = p.split("/")
             if len(parts) > 1:
                 component_prefixes.add(f"{parts[1]}:")
+
+        # ----- benchmarks/ → benchmarks: -----
+        if p.startswith("benchmarks/"):
+            component_prefixes.add("benchmarks:")
 
         # ----- src/ → flb_xxx.* → xxx: OR src/<dir>/ → <dir>: -----
         # ----- src/ handling -----
