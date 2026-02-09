@@ -15,6 +15,12 @@ static int convert_kvarray_to_kvlist(struct cfl_kvlist *target,
                                      Opentelemetry__Proto__Common__V1__KeyValue **source,
                                      size_t source_length);
 
+static int convert_keyvalueandunit_array_to_kvlist(struct cfl_kvlist *target,
+    Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit **source,
+    size_t source_length,
+    char **string_table,
+    size_t string_table_len);
+
 
 static struct cfl_variant *clone_variant(Opentelemetry__Proto__Common__V1__AnyValue *source)
 {
@@ -24,10 +30,10 @@ static struct cfl_variant *clone_variant(Opentelemetry__Proto__Common__V1__AnyVa
     int                 result;
 
     if (source == NULL) {
-        return NULL;
+        return cfl_variant_create_from_string("");
     }
     if (source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
-        result_instance = cfl_variant_create_from_string(source->string_value);
+        result_instance = cfl_variant_create_from_string(source->string_value != NULL ? source->string_value : "");
     }
     else if (source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BOOL_VALUE) {
         result_instance = cfl_variant_create_from_bool(source->bool_value);
@@ -39,6 +45,10 @@ static struct cfl_variant *clone_variant(Opentelemetry__Proto__Common__V1__AnyVa
         result_instance = cfl_variant_create_from_double(source->double_value);
     }
     else if (source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_KVLIST_VALUE) {
+        if (source->kvlist_value == NULL) {
+            return cfl_variant_create_from_string("");
+        }
+
         new_child_kvlist = cfl_kvlist_create();
         if (new_child_kvlist == NULL) {
             return NULL;
@@ -60,6 +70,10 @@ static struct cfl_variant *clone_variant(Opentelemetry__Proto__Common__V1__AnyVa
         }
     }
     else if (source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_ARRAY_VALUE) {
+        if (source->array_value == NULL) {
+            return cfl_variant_create_from_string("");
+        }
+
         new_child_array = cfl_array_create(source->array_value->n_values);
 
         if (new_child_array == NULL) {
@@ -83,6 +97,9 @@ static struct cfl_variant *clone_variant(Opentelemetry__Proto__Common__V1__AnyVa
     else if (source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BYTES_VALUE) {
         result_instance = cfl_variant_create_from_bytes((char *) source->bytes_value.data, source->bytes_value.len,
                                                         CFL_FALSE);
+    }
+    else {
+        result_instance = cfl_variant_create_from_string("");
     }
 
     return result_instance;
@@ -141,7 +158,7 @@ static int clone_kvlist(struct cfl_kvlist *target,
         result = clone_kvlist_entry(target, source->values[index]);
     }
 
-    return 0;
+    return result;
 }
 
 static int convert_kvarray_to_kvlist(struct cfl_kvlist *target,
@@ -168,6 +185,13 @@ static int clone_kvlist_entry(struct cfl_kvlist *target,
 {
     struct cfl_variant *new_child_instance;
     int                 result;
+    char               *key;
+
+    if (source == NULL) {
+        return CPROF_DECODE_OPENTELEMETRY_SUCCESS;
+    }
+
+    key = source->key != NULL ? source->key : "";
 
     new_child_instance = clone_variant(source->value);
 
@@ -175,12 +199,60 @@ static int clone_kvlist_entry(struct cfl_kvlist *target,
         return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
     }
 
-    result = cfl_kvlist_insert(target, source->key, new_child_instance);
+    result = cfl_kvlist_insert(target, key, new_child_instance);
 
     if (result) {
         cfl_variant_destroy(new_child_instance);
 
         return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
+    return CPROF_DECODE_OPENTELEMETRY_SUCCESS;
+}
+
+static int convert_keyvalueandunit_array_to_kvlist(struct cfl_kvlist *target,
+    Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit **source,
+    size_t source_length,
+    char **string_table,
+    size_t string_table_len)
+{
+    size_t              index;
+    const char         *key;
+    struct cfl_variant *val;
+    Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit *entry;
+
+    for (index = 0; index < source_length; index++) {
+        entry = source[index];
+
+        key = "";
+        if (entry != NULL &&
+            string_table != NULL && entry->key_strindex >= 0 &&
+            (size_t)entry->key_strindex < string_table_len &&
+            string_table[entry->key_strindex] != NULL) {
+            key = string_table[entry->key_strindex];
+        }
+
+        /*
+         * Preserve positional alignment with OTLP attribute table indexes.
+         * Even null/sentinel source entries get a placeholder null value,
+         * so downstream index-based resolution remains stable.
+         */
+        if (entry == NULL || entry->value == NULL ||
+            entry->value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE__NOT_SET) {
+            val = cfl_variant_create_from_string("");
+        }
+        else {
+            val = clone_variant(entry->value);
+        }
+
+        if (val == NULL) {
+            return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
+
+        if (cfl_kvlist_insert(target, (char *)key, val) != 0) {
+            cfl_variant_destroy(val);
+            return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
     }
 
     return CPROF_DECODE_OPENTELEMETRY_SUCCESS;
