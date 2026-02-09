@@ -147,6 +147,7 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
                                      flb_sds_len(ctx->o->access_token) + 2);
         if (!output) {
             flb_plg_error(ctx->ins, "error creating token buffer");
+            pthread_mutex_unlock(&ctx->token_mutex);
             return NULL;
         }
         flb_sds_snprintf(&output, flb_sds_alloc(output), "%s %s", ctx->o->token_type,
@@ -896,6 +897,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to initialize kusto storage: %s",
                           ctx->store_dir);
+            flb_azure_kusto_conf_destroy(ctx);
             return -1;
         }
         ctx->has_old_buffers = azure_kusto_store_has_data(ctx);
@@ -903,14 +905,17 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         /* validate 'total_file_size' */
         if (ctx->file_size <= 0) {
             flb_plg_error(ctx->ins, "Failed to parse upload_file_size");
+            flb_azure_kusto_conf_destroy(ctx);
             return -1;
         }
         if (ctx->file_size < 1000000) {
             flb_plg_error(ctx->ins, "upload_file_size must be at least 1MB");
+            flb_azure_kusto_conf_destroy(ctx);
             return -1;
         }
         if (ctx->file_size > MAX_FILE_SIZE) {
             flb_plg_error(ctx->ins, "Max total_file_size must be lower than %ld bytes", MAX_FILE_SIZE);
+            flb_azure_kusto_conf_destroy(ctx);
             return -1;
         }
 
