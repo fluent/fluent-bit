@@ -186,7 +186,9 @@ static void print_profiles_text(struct flb_output_instance *ins,
                                               bytes, &off)) ==
                                                 CPROF_DECODE_MSGPACK_SUCCESS) {
         /* convert to text representation */
-        ret = cprof_encode_text_create(&text, profiles_context);
+        ret = cprof_encode_text_create(&text,
+                                       profiles_context,
+                                       CPROF_ENCODE_TEXT_RENDER_RESOLVED);
 
         if (ret != CPROF_ENCODE_TEXT_SUCCESS) {
             flb_plg_debug(ins, "cprofiles text encoder returned : %d", ret);
