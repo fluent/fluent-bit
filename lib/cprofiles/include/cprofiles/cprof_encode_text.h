@@ -27,16 +27,21 @@
 #define CPROF_ENCODE_TEXT_ALLOCATION_ERROR       1
 #define CPROF_ENCODE_TEXT_INVALID_ARGUMENT_ERROR 2
 
+#define CPROF_ENCODE_TEXT_RENDER_DICTIONARIES_AND_INDEXES 0
+#define CPROF_ENCODE_TEXT_RENDER_RESOLVED                 1
+
 struct cprof_text_encoding_context {
     cfl_sds_t output_buffer;
     size_t    indentation_level;
     cfl_sds_t indentation_buffer;
     size_t    indentation_level_size;
     char      indentation_character;
+    int       render_mode;
 };
 
 int cprof_encode_text_create(cfl_sds_t *result_buffer,
-                             struct cprof *profile);
+                             struct cprof *profile,
+                             int render_mode);
 
 void cprof_encode_text_destroy(cfl_sds_t instance);
 
