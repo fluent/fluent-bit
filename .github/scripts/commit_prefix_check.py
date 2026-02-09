@@ -20,7 +20,7 @@ from git import Repo
 repo = Repo(".")
 
 # Regex patterns
-PREFIX_RE = re.compile(r"^[a-z0-9_]+:\s+\S", re.IGNORECASE)
+PREFIX_RE = re.compile(r"^([a-z0-9_]+:)\s+\S", re.IGNORECASE)
 SIGNED_OFF_RE = re.compile(r"Signed-off-by:", re.IGNORECASE)
 FENCED_BLOCK_RE = re.compile(
     r"""
@@ -176,7 +176,7 @@ def validate_commit(commit):
     if not subject_prefix_match:
         return False, f"Missing prefix in commit subject: '{first_line}'"
 
-    subject_prefix = subject_prefix_match.group()
+    subject_prefix = subject_prefix_match.group(1)
 
     # Run squash detection (but ignore multi-signoff errors)
     bad_squash, reason = detect_bad_squash(body)
