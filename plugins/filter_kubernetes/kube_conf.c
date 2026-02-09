@@ -243,17 +243,16 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     if (ctx->kube_api_upstream) {
         flb_upstream_destroy(ctx->kube_api_upstream);
     }
-
-    if (ctx->aws_pod_association_tls) {
-        flb_tls_destroy(ctx->aws_pod_association_tls);
-    }
-
     if (ctx->aws_pod_association_upstream) {
         flb_upstream_destroy(ctx->aws_pod_association_upstream);
     }
 
     if (ctx->platform) {
         flb_free(ctx->platform);
+    }
+
+    if (ctx->aws_pod_association_tls) {
+        flb_tls_destroy(ctx->aws_pod_association_tls);
     }
 
 #ifdef FLB_HAVE_TLS
