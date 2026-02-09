@@ -464,8 +464,14 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    ns_per_span = (double) elapsed_ns / (double) spans_processed;
-    spans_per_sec = 1e9 / ns_per_span;
+    if (spans_processed > 0) {
+        ns_per_span = (double) elapsed_ns / (double) spans_processed;
+        spans_per_sec = 1e9 / ns_per_span;
+    }
+    else {
+        ns_per_span = 0.0;
+        spans_per_sec = 0.0;
+    }
 
     printf("Processor sampling benchmark\n");
     printf("----------------------------\n");
