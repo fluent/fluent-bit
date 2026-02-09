@@ -640,12 +640,17 @@ static void test_encoder()
     TEST_CHECK(offset == sizeof(serialized_data));
 
     if (result == CPROF_DECODE_MSGPACK_SUCCESS) {
-        result = cprof_encode_text_create(&text_encoder_result, context);
+        result = cprof_encode_text_create(&text_encoder_result,
+                                          context,
+                                          CPROF_ENCODE_TEXT_RENDER_DICTIONARIES_AND_INDEXES);
 
         TEST_CHECK(result == CPROF_ENCODE_TEXT_SUCCESS);
 
         if (result == CPROF_ENCODE_TEXT_SUCCESS) {
             TEST_CHECK(cfl_sds_len(text_encoder_result) > 1);
+
+            printf("%s\n", text_encoder_result);
+            fflush(stdout);
 
             cprof_encode_text_destroy(text_encoder_result);
         }
