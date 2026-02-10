@@ -480,6 +480,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     size_t len;
     int lines = 0;
     int ret;
+    int data_len;
     size_t processed_bytes = 0;
     char *data;
     char *end;
@@ -532,7 +533,9 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             end  = data + decoded_len;
         }
         else if (ret == FLB_UNICODE_CONVERT_NOP) {
-            flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'", end - data, data);
+            data_len = (int) (end - data);
+            flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'",
+                          data_len, data);
             /* Skip the UTF-8 BOM */
             if (file->buf_len >= 3 &&
                 data[0] == '\xEF' &&
@@ -543,7 +546,8 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             }
         }
         else {
-            flb_plg_error(ctx->ins, "encoding failed '%.*s'", end - data, data);
+            data_len = (int) (end - data);
+            flb_plg_error(ctx->ins, "encoding failed '%.*s'", data_len, data);
         }
     }
 #endif
@@ -559,7 +563,9 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             end  = data + (size_t) ret;
         }
         else {
-            flb_plg_error(ctx->ins, "encoding failed '%.*s' with status %d", end - data, data, ret);
+            data_len = (int) (end - data);
+            flb_plg_error(ctx->ins, "encoding failed '%.*s' with status %d",
+                          data_len, data, ret);
         }
     }
 
