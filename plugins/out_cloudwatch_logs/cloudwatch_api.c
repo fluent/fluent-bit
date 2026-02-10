@@ -1184,7 +1184,7 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity,
     };
     
     for (i = 0; field_map[i].path; i++) {
-        ra = flb_ra_create(field_map[i].path, FLB_FALSE);
+        ra = flb_ra_create((char *) field_map[i].path, FLB_FALSE);
         if (!ra) {
             continue;
         }
