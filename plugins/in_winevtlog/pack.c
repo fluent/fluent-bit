@@ -530,7 +530,8 @@ static int sid_to_utf8(struct winevtlog_config *ctx, PSID sid,
 {
 #define MAX_NAME 256
     LPWSTR wide_sid = NULL;
-    DWORD len = MAX_NAME, err = ERROR_SUCCESS;
+    DWORD acct_len = MAX_NAME, domain_len = MAX_NAME;
+    DWORD err = ERROR_SUCCESS;
     SID_NAME_USE sid_type = SidTypeUnknown;
     char account[MAX_NAME];
     char domain[MAX_NAME];
@@ -555,7 +556,9 @@ static int sid_to_utf8(struct winevtlog_config *ctx, PSID sid,
 
     /* Skip friendly-name resolution for capability SIDs */
     if (wcsnicmp(wide_sid, L"S-1-15-3-", 9) != 0) {
-        if (LookupAccountSidA(NULL, sid, account, &len, domain, &len, &sid_type)) {
+        if (LookupAccountSidA(NULL, sid,
+                              account, &acct_len, domain,
+                              &domain_len, &sid_type)) {
             _snprintf_s(formatted, sizeof(formatted), _TRUNCATE, "%s\\%s", domain, account);
             formatted_len = strlen(formatted);
             if (formatted_len > 0) {
@@ -628,7 +631,8 @@ static int pack_sid(struct winevtlog_config *ctx, PSID sid, int extract_sid)
 #define MAX_NAME 256
     size_t size;
     LPWSTR wide_sid = NULL;
-    DWORD len = MAX_NAME, err = ERROR_SUCCESS;
+    DWORD acct_len = MAX_NAME, domain_len = MAX_NAME;
+    DWORD err = ERROR_SUCCESS;
     int ret = -1;
     SID_NAME_USE sid_type = SidTypeUnknown;
     char account[MAX_NAME];
@@ -649,8 +653,8 @@ static int pack_sid(struct winevtlog_config *ctx, PSID sid, int extract_sid)
                 goto not_mapped_error;
             }
             if (!LookupAccountSidA(NULL, sid,
-                                   account, &len, domain,
-                                   &len, &sid_type)) {
+                                   account, &acct_len, domain,
+                                   &domain_len, &sid_type)) {
                 err = GetLastError();
                 if (err == ERROR_NONE_MAPPED) {
                     flb_plg_debug(ctx->ins, "AccountSid is not mapped. code: %u", err);
