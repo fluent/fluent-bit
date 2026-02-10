@@ -625,9 +625,6 @@ void flb_test_forward_gzip()
     int num;
     ssize_t w_size;
 
-    char *buf;
-    size_t size;
-
     msgpack_sbuffer sbuf;
 
     clear_output_num();
@@ -735,9 +732,6 @@ void flb_test_forward_zstd()
     int ret;
     int num;
     ssize_t w_size;
-
-    char *buf;
-    size_t size;
 
     msgpack_sbuffer sbuf;
 
