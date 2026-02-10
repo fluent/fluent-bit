@@ -51,6 +51,237 @@ struct flb_config_map processor_global_properties[] = {
     {0}
 };
 
+static int append_raw_record_to_encoder(struct flb_log_event_encoder *encoder,
+                                        char *record_base,
+                                        size_t record_length)
+{
+    int ret;
+
+    ret = flb_log_event_encoder_emit_raw_record(encoder,
+                                                record_base,
+                                                record_length);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int append_buffer_records_to_encoder(struct flb_log_event_encoder *encoder,
+                                            void *buf,
+                                            size_t size)
+{
+    int ret;
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event log_event;
+
+    ret = flb_log_event_decoder_init(&decoder, buf, size);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        return -1;
+    }
+
+    while ((ret = flb_log_event_decoder_next(&decoder, &log_event)) ==
+           FLB_EVENT_DECODER_SUCCESS) {
+        ret = append_raw_record_to_encoder(encoder,
+                                           decoder.record_base,
+                                           decoder.record_length);
+        if (ret != 0) {
+            flb_log_event_decoder_destroy(&decoder);
+            return -1;
+        }
+    }
+
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        decoder.offset == size) {
+        ret = FLB_EVENT_DECODER_SUCCESS;
+    }
+
+    flb_log_event_decoder_destroy(&decoder);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int evaluate_condition_for_log_event(struct flb_condition *condition,
+                                            struct flb_log_event *log_event)
+{
+    int ret;
+    struct flb_mp_chunk_record record = {0};
+
+    record.cobj_metadata = flb_mp_object_to_cfl(log_event->metadata);
+    if (!record.cobj_metadata) {
+        return FLB_FALSE;
+    }
+
+    record.cobj_record = flb_mp_object_to_cfl(log_event->body);
+    if (!record.cobj_record) {
+        cfl_object_destroy(record.cobj_metadata);
+        return FLB_FALSE;
+    }
+
+    ret = flb_condition_evaluate(condition, &record);
+
+    cfl_object_destroy(record.cobj_record);
+    cfl_object_destroy(record.cobj_metadata);
+
+    return ret;
+}
+
+static int run_filter_with_condition(struct flb_filter_instance *f_ins,
+                                     struct flb_condition *condition,
+                                     void *in_buf,
+                                     size_t in_size,
+                                     const char *tag,
+                                     int tag_len,
+                                     void **out_buf,
+                                     size_t *out_size,
+                                     struct flb_processor *proc)
+{
+    int ret;
+    int filter_ret;
+    int modified;
+    int condition_match;
+    size_t record_buf_size;
+    void *record_buf;
+    void *tmp_record_buf;
+    size_t tmp_record_size;
+    struct flb_log_event log_event;
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event_encoder record_encoder;
+    struct flb_log_event_encoder final_encoder;
+
+    *out_buf = NULL;
+    *out_size = 0;
+    modified = FLB_FALSE;
+
+    ret = flb_log_event_decoder_init(&decoder, in_buf, in_size);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    ret = flb_log_event_encoder_init(&final_encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_decoder_destroy(&decoder);
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    while ((ret = flb_log_event_decoder_next(&decoder, &log_event)) ==
+           FLB_EVENT_DECODER_SUCCESS) {
+        condition_match = evaluate_condition_for_log_event(condition, &log_event);
+
+        if (condition_match == FLB_FALSE) {
+            ret = append_raw_record_to_encoder(&final_encoder,
+                                               decoder.record_base,
+                                               decoder.record_length);
+            if (ret != 0) {
+                flb_log_event_decoder_destroy(&decoder);
+                flb_log_event_encoder_destroy(&final_encoder);
+                return FLB_FILTER_NOTOUCH;
+            }
+            continue;
+        }
+
+        ret = flb_log_event_encoder_init(&record_encoder,
+                                         FLB_LOG_EVENT_FORMAT_DEFAULT);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_log_event_decoder_destroy(&decoder);
+            flb_log_event_encoder_destroy(&final_encoder);
+            return FLB_FILTER_NOTOUCH;
+        }
+
+        ret = append_raw_record_to_encoder(&record_encoder,
+                                           decoder.record_base,
+                                           decoder.record_length);
+        if (ret != 0) {
+            flb_log_event_encoder_destroy(&record_encoder);
+            flb_log_event_decoder_destroy(&decoder);
+            flb_log_event_encoder_destroy(&final_encoder);
+            return FLB_FILTER_NOTOUCH;
+        }
+
+        record_buf = record_encoder.output_buffer;
+        record_buf_size = record_encoder.output_length;
+        flb_log_event_encoder_claim_internal_buffer_ownership(&record_encoder);
+        flb_log_event_encoder_destroy(&record_encoder);
+
+        tmp_record_buf = NULL;
+        tmp_record_size = 0;
+
+        filter_ret = f_ins->p->cb_filter(record_buf, record_buf_size,
+                                         tag, tag_len,
+                                         &tmp_record_buf, &tmp_record_size,
+                                         f_ins,
+                                         proc->data,
+                                         f_ins->context,
+                                         proc->config);
+
+        flb_free(record_buf);
+
+        if (filter_ret == FLB_FILTER_MODIFIED) {
+            modified = FLB_TRUE;
+
+            if (tmp_record_size > 0) {
+                ret = append_buffer_records_to_encoder(&final_encoder,
+                                                       tmp_record_buf,
+                                                       tmp_record_size);
+                if (tmp_record_buf != NULL) {
+                    flb_free(tmp_record_buf);
+                }
+                if (ret != 0) {
+                    flb_log_event_decoder_destroy(&decoder);
+                    flb_log_event_encoder_destroy(&final_encoder);
+                    return FLB_FILTER_NOTOUCH;
+                }
+            }
+            else if (tmp_record_buf != NULL) {
+                flb_free(tmp_record_buf);
+            }
+        }
+        else {
+            if (tmp_record_buf != NULL) {
+                flb_free(tmp_record_buf);
+            }
+
+            ret = append_raw_record_to_encoder(&final_encoder,
+                                               decoder.record_base,
+                                               decoder.record_length);
+            if (ret != 0) {
+                flb_log_event_decoder_destroy(&decoder);
+                flb_log_event_encoder_destroy(&final_encoder);
+                return FLB_FILTER_NOTOUCH;
+            }
+        }
+    }
+
+    if (ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+        decoder.offset == in_size) {
+        ret = FLB_EVENT_DECODER_SUCCESS;
+    }
+
+    flb_log_event_decoder_destroy(&decoder);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&final_encoder);
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    if (modified == FLB_FALSE) {
+        flb_log_event_encoder_destroy(&final_encoder);
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    *out_buf = final_encoder.output_buffer;
+    *out_size = final_encoder.output_length;
+    flb_log_event_encoder_claim_internal_buffer_ownership(&final_encoder);
+    flb_log_event_encoder_destroy(&final_encoder);
+
+    return FLB_FILTER_MODIFIED;
+}
+
 struct mk_list *flb_processor_get_global_config_map(struct flb_config *config)
 {
     return flb_config_map_create(config, processor_global_properties);
@@ -882,14 +1113,27 @@ int flb_processor_run(struct flb_processor *proc,
             /* get the filter context */
             f_ins = pu->ctx;
 
-            /* run the filtering callback */
-            ret = f_ins->p->cb_filter(cur_buf, cur_size,    /* msgpack buffer */
-                                      tag, tag_len,         /* tag */
-                                      &tmp_buf, &tmp_size,  /* output buffer */
-                                      f_ins,                /* filter instance */
-                                      proc->data,           /* (input/output) instance context */
-                                      f_ins->context,       /* filter context */
-                                      proc->config);
+            if (type == FLB_PROCESSOR_LOGS && pu->condition != NULL) {
+                ret = run_filter_with_condition(f_ins,
+                                                pu->condition,
+                                                cur_buf,
+                                                cur_size,
+                                                tag,
+                                                tag_len,
+                                                &tmp_buf,
+                                                &tmp_size,
+                                                proc);
+            }
+            else {
+                /* run the filtering callback */
+                ret = f_ins->p->cb_filter(cur_buf, cur_size,    /* msgpack buffer */
+                                          tag, tag_len,         /* tag */
+                                          &tmp_buf, &tmp_size,  /* output buffer */
+                                          f_ins,                /* filter instance */
+                                          proc->data,           /* (input/output) instance context */
+                                          f_ins->context,       /* filter context */
+                                          proc->config);
+            }
 #ifdef FLB_HAVE_METRICS
             name = (char *) (flb_filter_name(f_ins));
             in_records = flb_mp_count(cur_buf, cur_size);
