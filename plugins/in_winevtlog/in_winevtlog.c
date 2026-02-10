@@ -189,6 +189,24 @@ static int in_winevtlog_init(struct flb_input_instance *in,
         return -1;
     }
 
+    /* Rendering options are mutually exclusive */
+    if (ctx->render_event_as_xml && ctx->render_event_as_text) {
+        flb_plg_error(in,
+                      "render_event_as_xml and render_event_as_text cannot be enabled at the same time");
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+        flb_free(ctx);
+        return -1;
+    }
+
+    if (ctx->render_event_as_text) {
+        if (ctx->render_event_text_key == NULL || ctx->render_event_text_key[0] == '\0') {
+            flb_plg_error(in, "render_event_text_key cannot be empty when render_event_as_text is enabled");
+            flb_log_event_encoder_destroy(ctx->log_encoder);
+            flb_free(ctx);
+            return -1;
+        }
+    }
+
     if (ctx->backoff_multiplier_str && ctx->backoff_multiplier_str[0] != '\0') {
         mult = atof(ctx->backoff_multiplier_str);
         if (mult <= 0.0) {
@@ -464,7 +482,17 @@ static struct flb_config_map config_map[] = {
     {
       FLB_CONFIG_MAP_BOOL, "render_event_as_xml", "false",
       0, FLB_TRUE, offsetof(struct winevtlog_config, render_event_as_xml),
-      "Whether to consume at oldest records in channels"
+      "Render Windows EventLog as XML (System and Message fields)"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "render_event_as_text", "false",
+      0, FLB_TRUE, offsetof(struct winevtlog_config, render_event_as_text),
+      "Render Windows EventLog as newline-separated key=value text"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "render_event_text_key", "log",
+      0, FLB_TRUE, offsetof(struct winevtlog_config, render_event_text_key),
+      "Record key name used when render_event_as_text is enabled"
     },
     {
       FLB_CONFIG_MAP_BOOL, "use_ansi", "false",

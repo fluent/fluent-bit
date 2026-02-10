@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_sds.h>
 #include <stdlib.h>
 #include <msgpack.h>
 #include <sddl.h>
@@ -75,6 +76,70 @@ static int pack_str_codepage(struct winevtlog_config *ctx, const wchar_t *wstr,
 static int pack_wstr(struct winevtlog_config *ctx, const wchar_t *wstr)
 {
     return pack_str_codepage(ctx, wstr, CP_UTF8, ctx->use_ansi);
+}
+
+static int wstr_to_utf8(struct winevtlog_config *ctx, const wchar_t *wstr,
+                        char **out_buf, size_t *out_len)
+{
+    UINT cp = ctx->use_ansi ? CP_ACP : CP_UTF8;
+    DWORD flags = (cp == CP_UTF8) ? WC_ERR_INVALID_CHARS : 0;
+    int size;
+    char *buf;
+
+    if (out_buf == NULL || out_len == NULL) {
+        return -1;
+    }
+
+    *out_buf = NULL;
+    *out_len = 0;
+
+    if (wstr == NULL) {
+        return 0;
+    }
+
+    size = WideCharToMultiByte(cp, flags, wstr, -1, NULL, 0, NULL, NULL);
+    if (size == 0) {
+        return -1;
+    }
+
+    buf = flb_malloc(size);
+    if (buf == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    if (WideCharToMultiByte(cp, flags, wstr, -1, buf, size, NULL, NULL) == 0) {
+        flb_free(buf);
+        return -1;
+    }
+
+    *out_buf = buf;
+    *out_len = (size_t) (size - 1);
+
+    return 0;
+}
+
+static int append_kv_line(flb_sds_t *text, const char *key,
+                          const char *val, size_t val_len)
+{
+    if (text == NULL || *text == NULL || key == NULL) {
+        return -1;
+    }
+
+    *text = flb_sds_cat(*text, key, strlen(key));
+    *text = flb_sds_cat(*text, "=", 1);
+
+    if (val != NULL && val_len > 0) {
+        *text = flb_sds_cat(*text, val, val_len);
+    }
+
+    *text = flb_sds_cat(*text, "\n", 1);
+
+    if (*text == NULL) {
+        return -1;
+    }
+
+    return 0;
 }
 
 static int pack_astr(struct winevtlog_config *ctx, const char *astr)
@@ -336,6 +401,219 @@ static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
     return 0;
 }
 
+static int filetime_to_string(ULONGLONG filetime, char **out_buf, size_t *out_len)
+{
+    FILETIME ft;
+    SYSTEMTIME st_utc;
+    SYSTEMTIME st_local;
+    DYNAMIC_TIME_ZONE_INFORMATION dtzi;
+    CHAR buf[64];
+    size_t len;
+    LONG bias_minutes;
+    int offset_hours;
+    int offset_minutes;
+    char offset_sign;
+    DWORD tz_id;
+    char *out;
+
+    if (out_buf == NULL || out_len == NULL) {
+        return -1;
+    }
+
+    *out_buf = NULL;
+    *out_len = 0;
+
+    _tzset();
+
+    ft.dwHighDateTime = (DWORD)(filetime >> 32);
+    ft.dwLowDateTime  = (DWORD)(filetime & 0xFFFFFFFF);
+
+    if (!FileTimeToSystemTime(&ft, &st_utc)) {
+        return -1;
+    }
+
+    tz_id = GetDynamicTimeZoneInformation(&dtzi);
+
+    if (!SystemTimeToTzSpecificLocalTimeEx(&dtzi, &st_utc, &st_local)) {
+        return -1;
+    }
+
+    bias_minutes = dtzi.Bias;
+
+    if (tz_id == TIME_ZONE_ID_DAYLIGHT) {
+        bias_minutes += dtzi.DaylightBias;
+    }
+    else if (tz_id == TIME_ZONE_ID_STANDARD) {
+        bias_minutes += dtzi.StandardBias;
+    }
+
+    if (bias_minutes > 0) {
+        offset_sign = '-';
+    }
+    else {
+        offset_sign = '+';
+        bias_minutes = -bias_minutes;
+    }
+
+    offset_hours   = bias_minutes / 60;
+    offset_minutes = bias_minutes % 60;
+
+    len = _snprintf_s(buf, sizeof(buf), _TRUNCATE,
+                      "%04d-%02d-%02d %02d:%02d:%02d %c%02d%02d",
+                      st_local.wYear,
+                      st_local.wMonth,
+                      st_local.wDay,
+                      st_local.wHour,
+                      st_local.wMinute,
+                      st_local.wSecond,
+                      offset_sign,
+                      offset_hours,
+                      offset_minutes);
+
+    if ((int) len <= 0) {
+        return -1;
+    }
+
+    out = flb_malloc(len + 1);
+    if (out == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    memcpy(out, buf, len);
+    out[len] = '\0';
+
+    *out_buf = out;
+    *out_len = len;
+
+    return 0;
+}
+
+static int guid_to_utf8(struct winevtlog_config *ctx, const GUID *guid,
+                        char **out_buf, size_t *out_len)
+{
+    LPOLESTR wguid = NULL;
+    int ret;
+
+    if (out_buf == NULL || out_len == NULL) {
+        return -1;
+    }
+
+    *out_buf = NULL;
+    *out_len = 0;
+
+    if (guid == NULL) {
+        return 0;
+    }
+
+    if (FAILED(StringFromCLSID(guid, &wguid))) {
+        return -1;
+    }
+
+    ret = wstr_to_utf8(ctx, wguid, out_buf, out_len);
+    CoTaskMemFree(wguid);
+
+    return ret;
+}
+
+static int sid_to_utf8(struct winevtlog_config *ctx, PSID sid,
+                       char **out_buf, size_t *out_len)
+{
+#define MAX_NAME 256
+    LPWSTR wide_sid = NULL;
+    DWORD len = MAX_NAME, err = ERROR_SUCCESS;
+    SID_NAME_USE sid_type = SidTypeUnknown;
+    char account[MAX_NAME];
+    char domain[MAX_NAME];
+    char formatted[(MAX_NAME * 2) + 2];
+    size_t formatted_len;
+    char *out;
+
+    if (out_buf == NULL || out_len == NULL) {
+        return -1;
+    }
+
+    *out_buf = NULL;
+    *out_len = 0;
+
+    if (sid == NULL) {
+        return 0;
+    }
+
+    if (!ConvertSidToStringSidW(sid, &wide_sid)) {
+        return -1;
+    }
+
+    /* Skip friendly-name resolution for capability SIDs */
+    if (wcsnicmp(wide_sid, L"S-1-15-3-", 9) != 0) {
+        if (LookupAccountSidA(NULL, sid, account, &len, domain, &len, &sid_type)) {
+            _snprintf_s(formatted, sizeof(formatted), _TRUNCATE, "%s\\%s", domain, account);
+            formatted_len = strlen(formatted);
+            if (formatted_len > 0) {
+                out = flb_malloc(formatted_len + 1);
+                if (out == NULL) {
+                    flb_errno();
+                    LocalFree(wide_sid);
+                    return -1;
+                }
+                memcpy(out, formatted, formatted_len + 1);
+                *out_buf = out;
+                *out_len = formatted_len;
+                LocalFree(wide_sid);
+                return 0;
+            }
+        }
+        else {
+            err = GetLastError();
+            if (err != ERROR_NONE_MAPPED) {
+                flb_plg_debug(ctx->ins, "LookupAccountSidA failed with error code (%u)", err);
+            }
+        }
+    }
+
+    /* Fallback to SID string */
+    if (wstr_to_utf8(ctx, wide_sid, out_buf, out_len) != 0) {
+        LocalFree(wide_sid);
+        return -1;
+    }
+
+    LocalFree(wide_sid);
+    return 0;
+#undef MAX_NAME
+}
+
+static int uint_to_string_u64(uint64_t val, char **out_buf, size_t *out_len)
+{
+    char buf[32];
+    int len;
+    char *out;
+
+    if (out_buf == NULL || out_len == NULL) {
+        return -1;
+    }
+
+    *out_buf = NULL;
+    *out_len = 0;
+
+    len = _snprintf_s(buf, sizeof(buf), _TRUNCATE, "%llu", (unsigned long long) val);
+    if (len <= 0) {
+        return -1;
+    }
+
+    out = flb_malloc((size_t) len + 1);
+    if (out == NULL) {
+        flb_errno();
+        return -1;
+    }
+    memcpy(out, buf, (size_t) len);
+    out[len] = '\0';
+
+    *out_buf = out;
+    *out_len = (size_t) len;
+
+    return 0;
+}
+
 static int pack_sid(struct winevtlog_config *ctx, PSID sid, int extract_sid)
 {
 #define MAX_NAME 256
@@ -581,6 +859,244 @@ void winevtlog_pack_xml_event(WCHAR *system_xml, WCHAR *message,
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
     }
+}
+
+void winevtlog_pack_text_event(PEVT_VARIANT system, WCHAR *message,
+                               PEVT_VARIANT string_inserts, UINT count_inserts,
+                               struct winevtlog_channel *ch, struct winevtlog_config *ctx)
+{
+    int ret;
+    flb_sds_t text;
+    size_t out_len;
+    char *tmp = NULL;
+    size_t tmp_len = 0;
+    char numbuf[64];
+    int n;
+
+    (void) ch;
+
+    text = flb_sds_create_size(512);
+    if (text == NULL) {
+        return;
+    }
+
+    /* ProviderName */
+    if (wstr_to_utf8(ctx, system[EvtSystemProviderName].StringVal, &tmp, &tmp_len) == 0) {
+        append_kv_line(&text, "ProviderName", tmp, tmp_len);
+        if (tmp) {
+            flb_free(tmp);
+        }
+    }
+    else {
+        append_kv_line(&text, "ProviderName", NULL, 0);
+    }
+
+    /* ProviderGuid */
+    tmp = NULL;
+    tmp_len = 0;
+    if (system[EvtSystemProviderGuid].Type != EvtVarTypeNull &&
+        guid_to_utf8(ctx, system[EvtSystemProviderGuid].GuidVal, &tmp, &tmp_len) == 0) {
+        append_kv_line(&text, "ProviderGuid", tmp, tmp_len);
+        if (tmp) {
+            flb_free(tmp);
+        }
+    }
+    else {
+        append_kv_line(&text, "ProviderGuid", NULL, 0);
+    }
+
+    /* Qualifiers */
+    if (system[EvtSystemQualifiers].Type != EvtVarTypeNull) {
+        n = _snprintf_s(numbuf, sizeof(numbuf), _TRUNCATE, "%u", (unsigned int) system[EvtSystemQualifiers].UInt16Val);
+        append_kv_line(&text, "Qualifiers", numbuf, (size_t) (n > 0 ? n : 0));
+    }
+    else {
+        append_kv_line(&text, "Qualifiers", NULL, 0);
+    }
+
+    /* EventID */
+    if (system[EvtSystemEventID].Type != EvtVarTypeNull) {
+        n = _snprintf_s(numbuf, sizeof(numbuf), _TRUNCATE, "%u", (unsigned int) system[EvtSystemEventID].UInt16Val);
+        append_kv_line(&text, "EventID", numbuf, (size_t) (n > 0 ? n : 0));
+    }
+    else {
+        append_kv_line(&text, "EventID", NULL, 0);
+    }
+
+    /* Version */
+    n = _snprintf_s(numbuf, sizeof(numbuf), _TRUNCATE, "%u",
+                    (unsigned int) ((system[EvtSystemVersion].Type != EvtVarTypeNull) ? system[EvtSystemVersion].ByteVal : 0));
+    append_kv_line(&text, "Version", numbuf, (size_t) (n > 0 ? n : 0));
+
+    /* Level */
+    n = _snprintf_s(numbuf, sizeof(numbuf), _TRUNCATE, "%u",
+                    (unsigned int) ((system[EvtSystemLevel].Type != EvtVarTypeNull) ? system[EvtSystemLevel].ByteVal : 0));
+    append_kv_line(&text, "Level", numbuf, (size_t) (n > 0 ? n : 0));
+
+    /* Task */
+    n = _snprintf_s(numbuf, sizeof(numbuf), _TRUNCATE, "%u",
+                    (unsigned int) ((system[EvtSystemTask].Type != EvtVarTypeNull) ? system[EvtSystemTask].UInt16Val : 0));
+    append_kv_line(&text, "Task", numbuf, (size_t) (n > 0 ? n : 0));
+
+    /* Opcode */
+    n = _snprintf_s(numbuf, sizeof(numbuf), _TRUNCATE, "%u",
+                    (unsigned int) ((system[EvtSystemOpcode].Type != EvtVarTypeNull) ? system[EvtSystemOpcode].ByteVal : 0));
+    append_kv_line(&text, "Opcode", numbuf, (size_t) (n > 0 ? n : 0));
+
+    /* Keywords */
+    if (system[EvtSystemKeywords].Type != EvtVarTypeNull) {
+        n = _snprintf_s(numbuf, sizeof(numbuf), _TRUNCATE, "0x%llx",
+                        (unsigned long long) system[EvtSystemKeywords].UInt64Val);
+        append_kv_line(&text, "Keywords", numbuf, (size_t) (n > 0 ? n : 0));
+    }
+    else {
+        append_kv_line(&text, "Keywords", "0", 1);
+    }
+
+    /* TimeCreated */
+    tmp = NULL;
+    tmp_len = 0;
+    if (filetime_to_string(system[EvtSystemTimeCreated].FileTimeVal, &tmp, &tmp_len) == 0) {
+        append_kv_line(&text, "TimeCreated", tmp, tmp_len);
+        if (tmp) {
+            flb_free(tmp);
+        }
+    }
+    else {
+        append_kv_line(&text, "TimeCreated", NULL, 0);
+    }
+
+    /* EventRecordID */
+    n = _snprintf_s(numbuf, sizeof(numbuf), _TRUNCATE, "%llu",
+                    (unsigned long long) ((system[EvtSystemEventRecordId].Type != EvtVarTypeNull) ?
+                                           system[EvtSystemEventRecordId].UInt64Val : 0));
+    append_kv_line(&text, "EventRecordID", numbuf, (size_t) (n > 0 ? n : 0));
+
+    /* ActivityID */
+    tmp = NULL;
+    tmp_len = 0;
+    if (system[EvtSystemActivityID].Type != EvtVarTypeNull &&
+        guid_to_utf8(ctx, system[EvtSystemActivityID].GuidVal, &tmp, &tmp_len) == 0) {
+        append_kv_line(&text, "ActivityID", tmp, tmp_len);
+        if (tmp) {
+            flb_free(tmp);
+        }
+    }
+    else {
+        append_kv_line(&text, "ActivityID", NULL, 0);
+    }
+
+    /* RelatedActivityID */
+    tmp = NULL;
+    tmp_len = 0;
+    if (system[EvtSystemRelatedActivityID].Type != EvtVarTypeNull &&
+        guid_to_utf8(ctx, system[EvtSystemRelatedActivityID].GuidVal, &tmp, &tmp_len) == 0) {
+        append_kv_line(&text, "RelatedActivityID", tmp, tmp_len);
+        if (tmp) {
+            flb_free(tmp);
+        }
+    }
+    else {
+        append_kv_line(&text, "RelatedActivityID", NULL, 0);
+    }
+
+    /* ProcessID */
+    n = _snprintf_s(numbuf, sizeof(numbuf), _TRUNCATE, "%lu",
+                    (unsigned long) ((system[EvtSystemProcessID].Type != EvtVarTypeNull) ? system[EvtSystemProcessID].UInt32Val : 0));
+    append_kv_line(&text, "ProcessID", numbuf, (size_t) (n > 0 ? n : 0));
+
+    /* ThreadID */
+    n = _snprintf_s(numbuf, sizeof(numbuf), _TRUNCATE, "%lu",
+                    (unsigned long) ((system[EvtSystemThreadID].Type != EvtVarTypeNull) ? system[EvtSystemThreadID].UInt32Val : 0));
+    append_kv_line(&text, "ThreadID", numbuf, (size_t) (n > 0 ? n : 0));
+
+    /* Channel */
+    tmp = NULL;
+    tmp_len = 0;
+    if (wstr_to_utf8(ctx, system[EvtSystemChannel].StringVal, &tmp, &tmp_len) == 0) {
+        append_kv_line(&text, "Channel", tmp, tmp_len);
+        if (tmp) {
+            flb_free(tmp);
+        }
+    }
+    else {
+        append_kv_line(&text, "Channel", NULL, 0);
+    }
+
+    /* Computer */
+    tmp = NULL;
+    tmp_len = 0;
+    if (wstr_to_utf8(ctx, system[EvtSystemComputer].StringVal, &tmp, &tmp_len) == 0) {
+        append_kv_line(&text, "Computer", tmp, tmp_len);
+        if (tmp) {
+            flb_free(tmp);
+        }
+    }
+    else {
+        append_kv_line(&text, "Computer", NULL, 0);
+    }
+
+    /* UserID */
+    tmp = NULL;
+    tmp_len = 0;
+    if (sid_to_utf8(ctx, system[EvtSystemUserID].SidVal, &tmp, &tmp_len) == 0) {
+        append_kv_line(&text, "UserID", tmp, tmp_len);
+        if (tmp) {
+            flb_free(tmp);
+        }
+    }
+    else {
+        append_kv_line(&text, "UserID", NULL, 0);
+    }
+
+    /* Message */
+    tmp = NULL;
+    tmp_len = 0;
+    if (wstr_to_utf8(ctx, message, &tmp, &tmp_len) == 0) {
+        append_kv_line(&text, "Message", tmp, tmp_len);
+        if (tmp) {
+            flb_free(tmp);
+        }
+    }
+    else {
+        append_kv_line(&text, "Message", NULL, 0);
+    }
+
+    out_len = flb_sds_len(text);
+    if (out_len > 0 && text[out_len - 1] == '\n') {
+        out_len -= 1;
+    }
+
+    ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
+    }
+
+    ret = flb_log_event_encoder_append_body_string(ctx->log_encoder,
+                                                   ctx->render_event_text_key,
+                                                   flb_sds_len(ctx->render_event_text_key));
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_append_body_string(ctx->log_encoder, text, out_len);
+    }
+
+    /* StringInserts must not be embedded in the key=value text payload. When both
+     * render_event_as_text and string_inserts are enabled, we expose inserts as a
+     * structured field under the "StringInserts" key to preserve record-level
+     * fidelity and avoid mixing formats in TextFormat output.
+     */
+    if (ret == FLB_EVENT_ENCODER_SUCCESS && ctx->string_inserts) {
+        ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "StringInserts");
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            pack_string_inserts(ctx, string_inserts, count_inserts);
+        }
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_commit_record(ctx->log_encoder);
+    }
+
+    flb_sds_destroy(text);
 }
 
 void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
