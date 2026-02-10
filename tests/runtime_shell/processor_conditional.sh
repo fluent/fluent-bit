@@ -97,9 +97,7 @@ service:
 pipeline:
   inputs:
     - name: dummy
-      dummy: '{"endpoint":"localhost", "value":"something"},
-              {"endpoint":"localhost2", "value":"something"},
-              {"endpoint":"farhost", "value":"nothing"}'
+      dummy: '{"endpoint":"localhost", "value":"something"}'
       tag: dummy
       processors:
         logs:
@@ -112,7 +110,37 @@ pipeline:
               rules:
                 - field: \$endpoint
                   op: eq
-                  value: localhost2
+                  value: farhost
+    - name: dummy
+      dummy: '{"endpoint":"localhost2", "value":"something"}'
+      tag: dummy
+      processors:
+        logs:
+          - name: grep
+            logical_op: and
+            regex:
+              - value something
+            condition:
+              op: and
+              rules:
+                - field: \$endpoint
+                  op: eq
+                  value: farhost
+    - name: dummy
+      dummy: '{"endpoint":"farhost", "value":"nothing"}'
+      tag: dummy
+      processors:
+        logs:
+          - name: grep
+            logical_op: and
+            regex:
+              - value something
+            condition:
+              op: and
+              rules:
+                - field: \$endpoint
+                  op: eq
+                  value: farhost
 
   outputs:
     - name: stdout
@@ -140,7 +168,7 @@ fi
 echo "Output file content:"
 cat $OUTPUT_FILE
 
-LOCALHOST_COUNT=$(grep -c "\"endpoint\"=>\"localhost\"" $OUTPUT_FILE)
+LOCALHOST_COUNT=$(grep -c -E "\"endpoint\"=>\"localhost\"([^0-9]|$)" $OUTPUT_FILE)
 LOCALHOST2_COUNT=$(grep -c "\"endpoint\"=>\"localhost2\"" $OUTPUT_FILE)
 FARHOST_COUNT=$(grep -c "\"endpoint\"=>\"farhost\"" $OUTPUT_FILE)
 
@@ -150,8 +178,8 @@ rm -f /tmp/processor_conditional_grep.yaml
 rm -f $OUTPUT_FILE
 
 if [ "$LOCALHOST_COUNT" -gt 0 ] && [ "$LOCALHOST2_COUNT" -gt 0 ] &&
-   [ "$FARHOST_COUNT" -gt 0 ]; then
-    echo "Test passed: conditional grep processor keeps unmatched-condition records"
+   [ "$FARHOST_COUNT" -eq 0 ]; then
+    echo "Test passed: conditional grep processor drops only condition-matched records"
     exit 0
 fi
 
