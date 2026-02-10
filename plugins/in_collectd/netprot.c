@@ -260,8 +260,8 @@ int netprot_to_msgpack(char *buf, int len, struct mk_list *tdb,
              part_type == PART_INTERVAL ||
              part_type == PART_INTERVAL_HR) &&
             size < sizeof(uint64_t)) {
-            flb_error("[in_collectd] data truncated (%i < %i)",
-                        size, sizeof(uint64_t));
+            flb_error("[in_collectd] data truncated (%i < %zu)",
+                      size, sizeof(uint64_t));
 
             return -1;
         }
