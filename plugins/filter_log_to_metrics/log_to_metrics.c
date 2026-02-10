@@ -649,7 +649,6 @@ static void cb_send_metric_chunk(struct flb_config *config, void *data)
 static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
                         struct flb_config *config, void *data)
 {
-    int i;
     int ret;
     struct log_to_metrics_ctx *ctx;
     char metric_description[MAX_METRIC_LENGTH];
