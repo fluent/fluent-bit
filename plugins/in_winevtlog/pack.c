@@ -127,14 +127,23 @@ static int append_kv_line(flb_sds_t *text, const char *key,
     }
 
     *text = flb_sds_cat(*text, key, strlen(key));
+    if (*text == NULL) {
+        return -1;
+    }
+
     *text = flb_sds_cat(*text, "=", 1);
+    if (*text == NULL) {
+        return -1;
+    }
 
     if (val != NULL && val_len > 0) {
         *text = flb_sds_cat(*text, val, val_len);
+        if (*text == NULL) {
+            return -1;
+        }
     }
 
     *text = flb_sds_cat(*text, "\n", 1);
-
     if (*text == NULL) {
         return -1;
     }
@@ -1062,6 +1071,10 @@ void winevtlog_pack_text_event(PEVT_VARIANT system, WCHAR *message,
         append_kv_line(&text, "Message", NULL, 0);
     }
 
+    if (text == NULL) {
+        return;
+    }
+
     out_len = flb_sds_len(text);
     if (out_len > 0 && text[out_len - 1] == '\n') {
         out_len -= 1;
@@ -1072,9 +1085,11 @@ void winevtlog_pack_text_event(PEVT_VARIANT system, WCHAR *message,
         ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
     }
 
-    ret = flb_log_event_encoder_append_body_string(ctx->log_encoder,
-                                                   ctx->render_event_text_key,
-                                                   flb_sds_len(ctx->render_event_text_key));
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_append_body_string(ctx->log_encoder,
+                                                       ctx->render_event_text_key,
+                                                       flb_sds_len(ctx->render_event_text_key));
+    }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_append_body_string(ctx->log_encoder, text, out_len);

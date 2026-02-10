@@ -920,14 +920,16 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
                     read_size += (system_size + message_size + string_inserts_size);
                     winevtlog_pack_xml_event(system_xml, message, string_inserts,
                                              count_inserts, ch, ctx);
+                }
 
-                    flb_free(string_inserts);
-                    flb_free(system_xml);
-                    if (message)
-                        flb_free(message);
+                flb_free(string_inserts);
+                flb_free(system_xml);
+                if (message) {
+                    flb_free(message);
                 }
             }
             else if (ctx->render_event_as_text) {
+                rendered_system = NULL;
                 render_system_event(ch->events[i], &rendered_system, &system_size);
                 message = get_description(ch->events[i], LANG_NEUTRAL, &message_size, ch->remote);
                 get_string_inserts(ch->events[i], &string_inserts, &count_inserts, &string_inserts_size);
@@ -937,11 +939,12 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
                     winevtlog_pack_text_event(rendered_system, message, string_inserts,
                                               count_inserts, ch, ctx);
 
-                    flb_free(string_inserts);
-                    flb_free(rendered_system);
-                    if (message) {
-                        flb_free(message);
-                    }
+                }
+
+                flb_free(string_inserts);
+                flb_free(rendered_system);
+                if (message) {
+                    flb_free(message);
                 }
             }
             else {
@@ -953,11 +956,12 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
                     read_size += (system_size + message_size + string_inserts_size);
                     winevtlog_pack_event(rendered_system, message, string_inserts,
                                          count_inserts, ch, ctx);
+                }
 
-                    flb_free(string_inserts);
-                    flb_free(rendered_system);
-                    if (message)
-                        flb_free(message);
+                flb_free(string_inserts);
+                flb_free(rendered_system);
+                if (message) {
+                    flb_free(message);
                 }
             }
         }
