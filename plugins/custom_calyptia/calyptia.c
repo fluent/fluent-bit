@@ -216,7 +216,6 @@ flb_sds_t custom_calyptia_pipeline_config_get(struct flb_config *ctx)
 int set_fleet_input_properties(struct calyptia *ctx, struct flb_input_instance *fleet)
 {
     struct mk_list *head;
-    struct mk_list *tmp;
     struct flb_kv *keyval;
 
     if (!fleet) {
@@ -277,7 +276,6 @@ static struct flb_output_instance *setup_cloud_output(struct flb_config *config,
     struct flb_slist_entry *val = NULL;
     flb_sds_t label;
     struct flb_config_map_val *mv;
-    struct mk_list *tmp;
     struct flb_kv *keyval;
 
     cloud = flb_output_new(config, "calyptia", ctx, FLB_FALSE);
