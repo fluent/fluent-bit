@@ -332,7 +332,7 @@ static int traces_context_insert_attribute(struct ctrace *traces_context,
         span = cfl_list_entry(iterator,
                               struct ctrace_span, _head_global);
 
-        if (!span_contains_attribute(span, name) == FLB_TRUE) {
+        if (span_contains_attribute(span, name) != FLB_TRUE) {
             if (span_insert_attribute(span, name, value) != FLB_TRUE) {
                 return FLB_FALSE;
             }
