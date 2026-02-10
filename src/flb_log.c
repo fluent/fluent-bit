@@ -537,7 +537,7 @@ struct flb_log_metrics *flb_log_metrics_create()
         ret = cmt_counter_set(metrics->logs_total_counter,
                               ts,
                               0,
-                              1, (char *[]) {message_type_str});
+                              1, (char *[]) {(char *) message_type_str});
         if (ret == -1) {
             flb_log_metrics_destroy(metrics);
             return NULL;
@@ -828,7 +828,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
             ts = cfl_time_now();
             ret = cmt_counter_inc(config->log->metrics->logs_total_counter,
                                   ts,
-                                  1, (char *[]) {msg_type_str});
+                                  1, (char *[]) {(char *) msg_type_str});
             if (ret == -1) {
                 /* Not using flb_log_debug to avoid recursing into this same function. */
                 fprintf(stderr,
