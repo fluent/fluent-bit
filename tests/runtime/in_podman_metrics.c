@@ -59,14 +59,10 @@ int check_metric(flb_ctx_t *ctx, char *name) {
 
 void do_create(flb_ctx_t *ctx, char *system, ...)
 {
-    int64_t ret;
     int in_ffd;
-    int out_ffd;
     va_list va;
     char *key;
     char *value;
-    struct flb_lib_out_cb cb;
-    cb.data = NULL;
 
     in_ffd = flb_input(ctx, (char *) system, NULL);
 
