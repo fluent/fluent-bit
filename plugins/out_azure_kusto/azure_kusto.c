@@ -60,7 +60,8 @@ static int azure_kusto_get_workload_identity_token(struct flb_azure_kusto *ctx)
     ret = flb_azure_workload_identity_token_get(ctx->o, 
                                                ctx->workload_identity_token_file,
                                                ctx->client_id, 
-                                               ctx->tenant_id);
+                                               ctx->tenant_id,
+                                               ctx->kusto_scope);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error retrieving workload identity token");
         return -1;
@@ -83,7 +84,9 @@ static int azure_kusto_get_service_principal_token(struct flb_azure_kusto *ctx)
         return -1;
     }
 
-    ret = flb_oauth2_payload_append(ctx->o, "scope", 5, FLB_AZURE_KUSTO_SCOPE, 39);
+    ret = flb_oauth2_payload_append(ctx->o, "scope", 5,
+                                    ctx->kusto_scope,
+                                    flb_sds_len(ctx->kusto_scope));
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error appending oauth2 params");
         return -1;
@@ -1533,6 +1536,27 @@ static struct flb_config_map config_map[] = {
      offsetof(struct flb_azure_kusto, auth_type_str),
      "Set the authentication type: 'service_principal', 'managed_identity', or 'workload_identity'. "
      "For managed_identity, use 'system' as client_id for system-assigned identity, or specify the managed identity's client ID"},
+    {FLB_CONFIG_MAP_STR, "cloud_name", "AzureCloud", 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, cloud_name),
+     "Set the Azure cloud environment. Supported values: "
+     "'AzureCloud' (default), 'AzureChinaCloud', 'AzureUSGovernmentCloud'. "
+     "For private clouds (USSEC, USNAT, BLEU, etc.), set "
+     "cloud_login_host, cloud_kusto_scope, and cloud_kusto_resource instead"},
+    {FLB_CONFIG_MAP_STR, "cloud_login_host", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, custom_login_host),
+     "Custom OAuth login host for private/sovereign clouds "
+     "(e.g. login.microsoftonline.eaglex.ic.gov). When set, cloud_kusto_scope "
+     "and cloud_kusto_resource must also be provided"},
+    {FLB_CONFIG_MAP_STR, "cloud_kusto_scope", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, custom_kusto_scope),
+     "Custom Kusto OAuth scope for private/sovereign clouds "
+     "(e.g. https://help.kusto.core.eaglex.ic.gov/.default). When set, "
+     "cloud_login_host and cloud_kusto_resource must also be provided"},
+    {FLB_CONFIG_MAP_STR, "cloud_kusto_resource", (char *)NULL, 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, custom_kusto_resource),
+     "Custom Kusto IMDS resource URL for private/sovereign clouds "
+     "(e.g. https://api.kusto.core.eaglex.ic.gov/). When set, cloud_login_host "
+     "and cloud_kusto_scope must also be provided"},
     {FLB_CONFIG_MAP_STR, "ingestion_endpoint", (char *)NULL, 0, FLB_TRUE,
      offsetof(struct flb_azure_kusto, ingestion_endpoint),
      "Set the Kusto cluster's ingestion endpoint URL (e.g. "
