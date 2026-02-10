@@ -84,8 +84,76 @@ rm -f $OUTPUT_FILE
 # Check results
 if [ "$GET_FIELD" -gt 0 ] && [ "$POST_FIELD" -eq 0 ]; then
     echo "Test passed: GET condition applied, POST condition not applied"
-    exit 0
 else
     echo "Test failed: GET=$GET_FIELD, POST=$POST_FIELD"
     exit 1
 fi
+
+# Create a temporary YAML config file for grep filter used as processor
+cat > /tmp/processor_conditional_grep.yaml << EOL
+service:
+  log_level: trace
+  flush: 1
+pipeline:
+  inputs:
+    - name: dummy
+      dummy: '{"endpoint":"localhost", "value":"something"},
+              {"endpoint":"localhost2", "value":"something"},
+              {"endpoint":"farhost", "value":"nothing"}'
+      tag: dummy
+      processors:
+        logs:
+          - name: grep
+            logical_op: and
+            regex:
+              - value something
+            condition:
+              op: and
+              rules:
+                - field: \$endpoint
+                  op: eq
+                  value: localhost2
+
+  outputs:
+    - name: stdout
+      match: '*'
+EOL
+
+echo "Running Fluent Bit with conditional grep processor YAML config..."
+echo "YAML Config:"
+cat /tmp/processor_conditional_grep.yaml
+
+OUTPUT_FILE="/tmp/processor_conditional_grep_output.txt"
+$FLB_BIN -c /tmp/processor_conditional_grep.yaml -o stdout > $OUTPUT_FILE 2>&1 &
+FLB_PID=$!
+echo "Fluent Bit started with PID: $FLB_PID"
+
+echo "Waiting for processing to complete..."
+sleep 5
+
+if [ ! -f "$OUTPUT_FILE" ]; then
+    echo "Output file not found"
+    kill -15 $FLB_PID || true
+    exit 1
+fi
+
+echo "Output file content:"
+cat $OUTPUT_FILE
+
+LOCALHOST_COUNT=$(grep -c "\"endpoint\"=>\"localhost\"" $OUTPUT_FILE)
+LOCALHOST2_COUNT=$(grep -c "\"endpoint\"=>\"localhost2\"" $OUTPUT_FILE)
+FARHOST_COUNT=$(grep -c "\"endpoint\"=>\"farhost\"" $OUTPUT_FILE)
+
+echo "Cleaning up..."
+kill -15 $FLB_PID || true
+rm -f /tmp/processor_conditional_grep.yaml
+rm -f $OUTPUT_FILE
+
+if [ "$LOCALHOST_COUNT" -gt 0 ] && [ "$LOCALHOST2_COUNT" -gt 0 ] &&
+   [ "$FARHOST_COUNT" -gt 0 ]; then
+    echo "Test passed: conditional grep processor keeps unmatched-condition records"
+    exit 0
+fi
+
+echo "Test failed: localhost=$LOCALHOST_COUNT, localhost2=$LOCALHOST2_COUNT, farhost=$FARHOST_COUNT"
+exit 1
