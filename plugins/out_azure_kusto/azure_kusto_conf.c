@@ -27,6 +27,7 @@
 #include <openssl/sha.h>
 #include <openssl/rand.h>
 #include <fluent-bit/flb_time.h>
+#include <inttypes.h>
 
 #include "azure_kusto.h"
 #include "azure_kusto_conf.h"
@@ -168,7 +169,6 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
                                    struct flb_upstream_ha *queue_ha)
 {
     jsmn_parser parser;
-    jsmntok_t *t = NULL;
     jsmntok_t *tokens = NULL;
     int ret = -1;
     int i;
@@ -495,7 +495,7 @@ int azure_kusto_generate_random_integer() {
 
     /* Combine all sources of entropy into a single string */
     char combined[1024];
-    snprintf(combined, sizeof(combined), "%s%s%llu%p",
+    snprintf(combined, sizeof(combined), "%s%s%" PRIu64 "%p",
              pod_id, cluster_name, current_time, (void *)&combined);
 
     /* Hash the combined data using SHA256 */
@@ -543,9 +543,9 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
 
     flb_time_get(&tm_now);
     now = flb_time_to_millisec(&tm_now);
-    flb_plg_debug(ctx->ins, "current time %llu", now);
-    flb_plg_debug(ctx->ins, "load_time is %llu", ctx->resources->load_time);
-    flb_plg_debug(ctx->ins, "difference is  %llu", now - ctx->resources->load_time);
+    flb_plg_debug(ctx->ins, "current time %" PRIu64, now);
+    flb_plg_debug(ctx->ins, "load_time is %" PRIu64, ctx->resources->load_time);
+    flb_plg_debug(ctx->ins, "difference is  %" PRIu64, now - ctx->resources->load_time);
     flb_plg_debug(ctx->ins, "effective ingestion resource interval is %d", ctx->ingestion_resources_refresh_interval * 1000 + generated_random_integer);
 
     /* check if we have all resources and they are not stale */
