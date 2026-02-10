@@ -43,12 +43,31 @@ typedef enum {
     FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY        /* Workload Identity */
 } flb_azure_kusto_auth_type;
 
-/* Kusto streaming inserts oauth scope */
-#define FLB_AZURE_KUSTO_SCOPE "https://help.kusto.windows.net/.default"
+/* Azure cloud environment types */
+typedef enum {
+    FLB_AZURE_CLOUD_PUBLIC = 0,     /* AzureCloud (default) */
+    FLB_AZURE_CLOUD_CHINA,          /* AzureChinaCloud */
+    FLB_AZURE_CLOUD_US_GOVERNMENT   /* AzureUSGovernmentCloud */
+} flb_azure_cloud_type;
 
-/* MSAL authorization URL  */
+/* MSAL authorization URL template: %s = login host, %s = tenant_id */
 #define FLB_MSAL_AUTH_URL_TEMPLATE \
-    "https://login.microsoftonline.com/%s/oauth2/v2.0/token"
+    "https://%s/%s/oauth2/v2.0/token"
+
+/* Cloud-specific login hosts */
+#define FLB_AZURE_LOGIN_HOST_PUBLIC         "login.microsoftonline.com"
+#define FLB_AZURE_LOGIN_HOST_CHINA          "login.chinacloudapi.cn"
+#define FLB_AZURE_LOGIN_HOST_US_GOVERNMENT  "login.microsoftonline.us"
+
+/* Cloud-specific Kusto scopes */
+#define FLB_AZURE_KUSTO_SCOPE_PUBLIC         "https://help.kusto.windows.net/.default"
+#define FLB_AZURE_KUSTO_SCOPE_CHINA          "https://help.kusto.chinacloudapi.cn/.default"
+#define FLB_AZURE_KUSTO_SCOPE_US_GOVERNMENT  "https://help.kusto.usgovcloudapi.net/.default"
+
+/* Cloud-specific Kusto IMDS resources */
+#define FLB_AZURE_KUSTO_RESOURCE_PUBLIC         "https://api.kusto.windows.net/"
+#define FLB_AZURE_KUSTO_RESOURCE_CHINA          "https://api.kusto.chinacloudapi.cn/"
+#define FLB_AZURE_KUSTO_RESOURCE_US_GOVERNMENT  "https://api.kusto.usgovcloudapi.net/"
 
 #define FLB_AZURE_KUSTO_MGMT_URI_PATH "/v1/rest/mgmt"
 #define FLB_AZURE_KUSTO_MGMT_BODY_TEMPLATE "{\"csl\":\"%s\", \"db\": \"NetDefaultDB\"}"
@@ -74,7 +93,6 @@ typedef enum {
 
 #define FLB_AZURE_IMDS_ENDPOINT "/metadata/identity/oauth2/token"
 #define FLB_AZURE_IMDS_API_VERSION "2018-02-01"
-#define FLB_AZURE_IMDS_RESOURCE "https://api.kusto.windows.net/"
 
 
 struct flb_azure_kusto_resources {
@@ -104,6 +122,18 @@ struct flb_azure_kusto {
     int auth_type;
     char *auth_type_str;
     char *workload_identity_token_file;
+
+    /* Cloud environment */
+    int cloud_type;
+    char *cloud_name;
+    flb_sds_t kusto_scope;
+    flb_sds_t kusto_resource;
+    flb_sds_t login_host;
+
+    /* Custom cloud overrides (for private/sovereign clouds like USSEC, USNAT, BLEU) */
+    flb_sds_t custom_login_host;
+    flb_sds_t custom_kusto_scope;
+    flb_sds_t custom_kusto_resource;
 
     /* compress payload */
     int compression_enabled;
