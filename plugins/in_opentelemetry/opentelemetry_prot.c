@@ -141,6 +141,7 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
 static int process_payload_metrics(struct flb_opentelemetry *ctx, struct http_conn *conn,
                                    flb_sds_t tag,
                                    size_t tag_len,
+                                   flb_sds_t content_type,
                                    struct mk_http_session *session,
                                    struct mk_http_request *request)
 {
@@ -150,12 +151,24 @@ static int process_payload_metrics(struct flb_opentelemetry *ctx, struct http_co
     size_t           offset;
     int              result;
 
+    (void) conn;
+    (void) session;
+
     offset = 0;
 
-    result = cmt_decode_opentelemetry_create(&decoded_contexts,
-                                             request->data.data,
-                                             request->data.len,
-                                             &offset);
+    if (content_type != NULL &&
+        strcasecmp(content_type, "application/json") == 0) {
+        result = flb_opentelemetry_metrics_json_to_cmt(&decoded_contexts,
+                                                       request->data.data,
+                                                       request->data.len);
+    }
+    else {
+        result = cmt_decode_opentelemetry_create(&decoded_contexts,
+                                                 request->data.data,
+                                                 request->data.len,
+                                                 &offset);
+    }
+
     if (result != CMT_DECODE_OPENTELEMETRY_SUCCESS) {
         flb_plg_error(ctx->ins, "could not decode metrics payload");
         return -1;
@@ -605,7 +618,8 @@ int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *c
     }
 
     if (strcmp(uri, "/v1/metrics") == 0) {
-        ret = process_payload_metrics(ctx, conn, tag, tag_len, session, request);
+        ret = process_payload_metrics(ctx, conn, tag, tag_len, content_type,
+                                      session, request);
     }
     else if (strcmp(uri, "/v1/traces") == 0) {
         ret = opentelemetry_process_traces(ctx, content_type, tag, tag_len,
@@ -939,13 +953,13 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
 
     /* note: if the content type is gRPC, it was already decoded */
     if (strcasecmp(request->content_type, "application/json") == 0) {
-        flb_plg_error(ctx->ins, "Unsupported metrics with content type %s",
-                      request->content_type);
+        result = flb_opentelemetry_metrics_json_to_cmt(&decoded_contexts,
+                                                       payload,
+                                                       payload_size);
     }
     else if (is_grpc_content_type(request->content_type) == FLB_TRUE ||
-        strcasecmp(request->content_type, "application/x-protobuf") == 0 ||
-        strcasecmp(request->content_type, "application/json") == 0) {
-
+             strcasecmp(request->content_type, "application/x-protobuf") == 0 ||
+             strcasecmp(request->content_type, "application/protobuf") == 0) {
         result = cmt_decode_opentelemetry_create(&decoded_contexts,
                                                  payload,
                                                  payload_size,
