@@ -2651,9 +2651,179 @@ void flb_test_db_compare_filename()
 }
 #endif /* FLB_HAVE_SQLDB */
 
+void flb_test_in_tail_directory_recursion()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *dir = "recursion_test_dir";
+    char *subdir = "recursion_test_dir/subdir";
+    char *file1 = "recursion_test_dir/file1.log";
+    char *file2 = "recursion_test_dir/subdir/file2.log";
+    char *msg = "recursion check";
+    int ret;
+    int num;
+    int unused;
+
+    /* Clean up from previous runs */
+    unlink(file1);
+    unlink(file2);
+    rmdir(subdir);
+    rmdir(dir);
+
+    mkdir(dir, 0777);
+    mkdir(subdir, 0777);
+    
+    /* Create files */
+    int fd1 = open(file1, O_WRONLY | O_CREAT, 0666);
+    write(fd1, msg, strlen(msg));
+    write(fd1, "\n", 1);
+    close(fd1);
+
+    int fd2 = open(file2, O_WRONLY | O_CREAT, 0666);
+    write(fd2, msg, strlen(msg));
+    write(fd2, "\n", 1);
+    close(fd2);
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = flb_malloc(sizeof(struct test_tail_ctx));
+    ctx->fds = NULL;
+    ctx->filepaths = NULL;
+    ctx->fd_num = 0;
+    ctx->flb = flb_create();
+    flb_service_set(ctx->flb, "Flush", "0.5", "Grace", "1", "Log_Level", "info", NULL);
+    
+    int i_ffd = flb_input(ctx->flb, "tail", NULL);
+    ctx->i_ffd = i_ffd;
+    int o_ffd = flb_output(ctx->flb, "lib", &cb_data);
+    ctx->o_ffd = o_ffd;
+
+    ret = flb_input_set(ctx->flb, i_ffd,
+                        "path", dir,
+                        "refresh_interval", "1",
+                        "read_from_head", "true",
+                        "path_recursion", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Wait for scan */
+    wait_num_with_timeout(5000, &num);
+
+    num = get_output_num();
+    /* Expect 2 records: file1.log and subdir/file2.log */
+    if (!TEST_CHECK(num == 2)) {
+         TEST_MSG("Expected 2 records, got %d", num);
+    }
+
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+    unlink(file1);
+    unlink(file2);
+    rmdir(subdir);
+    rmdir(dir);
+}
+
+void flb_test_in_tail_directory_recursion_off()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *dir = "recursion_test_off_dir";
+    char *subdir = "recursion_test_off_dir/subdir";
+    char *file1 = "recursion_test_off_dir/file1.log";
+    char *file2 = "recursion_test_off_dir/subdir/file2.log";
+    char *msg = "recursion check off";
+    int ret;
+    int num;
+    int unused;
+
+    /* Clean up from previous runs */
+    unlink(file1);
+    unlink(file2);
+    rmdir(subdir);
+    rmdir(dir);
+
+    mkdir(dir, 0777);
+    mkdir(subdir, 0777);
+    
+    /* Create files */
+    int fd1 = open(file1, O_WRONLY | O_CREAT, 0666);
+    write(fd1, msg, strlen(msg));
+    write(fd1, "\n", 1);
+    close(fd1);
+
+    int fd2 = open(file2, O_WRONLY | O_CREAT, 0666);
+    write(fd2, msg, strlen(msg));
+    write(fd2, "\n", 1);
+    close(fd2);
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = flb_malloc(sizeof(struct test_tail_ctx));
+    ctx->fds = NULL;
+    ctx->filepaths = NULL;
+    ctx->fd_num = 0;
+    ctx->flb = flb_create();
+    flb_service_set(ctx->flb, "Flush", "0.5", "Grace", "1", "Log_Level", "info", NULL);
+    
+    int i_ffd = flb_input(ctx->flb, "tail", NULL);
+    ctx->i_ffd = i_ffd;
+    int o_ffd = flb_output(ctx->flb, "lib", &cb_data);
+    ctx->o_ffd = o_ffd;
+
+    ret = flb_input_set(ctx->flb, i_ffd,
+                        "path", dir,
+                        "refresh_interval", "1",
+                        "read_from_head", "true",
+                        "path_recursion", "false", /* Explicitly disable */
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Wait for scan */
+    wait_num_with_timeout(5000, &num);
+
+    num = get_output_num();
+    /* Expect 1 record: file1.log only (or 0 if dir matches nothing) */
+    /* Actually tail_scan_path skipping dir means it finds file1.log if globbing, but here path is dir */
+    /* If path is dir and recursion is off, it should match NOTHING or just files in that dir? */
+    /* The current logic: if S_ISDIR, scan_directory only if recursive=true. */
+    /* If not recursive, it skips directory. So if path IS the directory, it skips it entirely. */
+    /* But wait, readdir logic? No, tail_scan_path(dir) -> S_ISDIR -> skip. */
+    /* So it should find 0 files if path passed is the directory. */
+    
+    /* However, typically users might pass dir/*.log. But here we pass dir. */
+    /* If we pass dir, and recursion is off, it should not find anything. */
+    
+    if (!TEST_CHECK(num == 0)) {
+         TEST_MSG("Expected 0 records, got %d", num);
+    }
+
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+    unlink(file1);
+    unlink(file2);
+    rmdir(subdir);
+    rmdir(dir);
+}
+
 /* Test list */
 TEST_LIST = {
     {"issue_3943", flb_test_in_tail_issue_3943},
+    {"directory_recursion", flb_test_in_tail_directory_recursion},
+    {"directory_recursion_off", flb_test_in_tail_directory_recursion_off},
     /* Properties */
     {"skip_long_lines", flb_test_in_tail_skip_long_lines},
     {"truncate_long_lines",          flb_test_in_tail_truncate_long_lines},

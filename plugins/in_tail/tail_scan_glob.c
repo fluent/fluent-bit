@@ -21,6 +21,8 @@
 #include <sys/stat.h>
 #include <glob.h>
 #include <fnmatch.h>
+#include <dirent.h>
+#include <limits.h>
 
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_input_plugin.h>
@@ -183,6 +185,120 @@ static inline int do_glob(const char *pattern, int flags,
     return ret;
 }
 
+static int tail_process_file(char *path, struct stat *st,
+                             struct flb_tail_config *ctx, time_t now)
+{
+    int ret;
+    int64_t mtime;
+    ssize_t ignored_file_size;
+
+    /* Check if this file is blacklisted */
+    if (tail_is_excluded(path, ctx) == FLB_TRUE) {
+        flb_plg_debug(ctx->ins, "excluded=%s", path);
+        return -1;
+    }
+
+    if (ctx->ignore_older > 0) {
+        mtime = flb_tail_stat_mtime(st);
+        if (mtime > 0) {
+            if ((now - ctx->ignore_older) > mtime) {
+                flb_plg_debug(ctx->ins, "excluded=%s (ignore_older)",
+                              path);
+
+                flb_tail_scan_register_ignored_file_size(
+                    ctx,
+                    path,
+                    strlen(path),
+                    st->st_size);
+
+                return -1;
+            }
+        }
+    }
+
+    if (ctx->ignore_older > 0) {
+        ignored_file_size = flb_tail_scan_fetch_ignored_file_size(
+            ctx,
+            path,
+            strlen(path));
+
+        flb_tail_scan_unregister_ignored_file_size(
+            ctx,
+            path,
+            strlen(path));
+    }
+    else {
+        ignored_file_size = -1;
+    }
+
+    /* Append file to list */
+    ret = flb_tail_file_append(path, st,
+                               FLB_TAIL_STATIC,
+                               ignored_file_size,
+                               ctx);
+
+    if (ret == 0) {
+        flb_plg_debug(ctx->ins, "scan_glob add(): %s, inode %" PRIu64,
+                      path, (uint64_t) st->st_ino);
+        return 0;
+    }
+    else {
+        flb_plg_debug(ctx->ins, "scan_glob add(): dismissed: %s, inode %" PRIu64,
+                      path, (uint64_t) st->st_ino);
+    }
+
+    return -1;
+}
+
+static int tail_scan_directory(const char *dir, struct flb_tail_config *ctx, time_t now)
+{
+    int ret;
+    int count = 0;
+    struct dirent *entry;
+    DIR *d;
+    char path[PATH_MAX];
+    struct stat st;
+
+    d = opendir(dir);
+    if (!d) {
+        flb_errno();
+        flb_plg_error(ctx->ins, "cannot open directory: %s", dir);
+        return -1;
+    }
+
+    while ((entry = readdir(d))) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        ret = snprintf(path, sizeof(path), "%s/%s", dir, entry->d_name);
+        if (ret >= sizeof(path)) {
+            flb_plg_warn(ctx->ins, "path too long: %s/%s", dir, entry->d_name);
+            continue;
+        }
+
+        ret = stat(path, &st);
+        if (ret == -1) {
+            continue;
+        }
+
+        if (S_ISDIR(st.st_mode)) {
+            ret = tail_scan_directory(path, ctx, now);
+            if (ret > 0) {
+                count += ret;
+            }
+        }
+        else if (S_ISREG(st.st_mode)) {
+            ret = tail_process_file(path, &st, ctx, now);
+            if (ret == 0) {
+                count++;
+            }
+        }
+    }
+
+    closedir(d);
+    return count;
+}
 
 /* Scan a path, register the entries and return how many */
 static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
@@ -192,11 +308,7 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
     int count = 0;
     glob_t globbuf;
     time_t now;
-    int64_t mtime;
     struct stat st;
-    ssize_t ignored_file_size;
-
-    ignored_file_size = -1;
 
     flb_plg_debug(ctx->ins, "scanning path %s", path);
 
@@ -236,62 +348,29 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
     now = time(NULL);
     for (i = 0; i < globbuf.gl_pathc; i++) {
         ret = stat(globbuf.gl_pathv[i], &st);
-        if (ret == 0 && S_ISREG(st.st_mode)) {
-            /* Check if this file is blacklisted */
-            if (tail_is_excluded(globbuf.gl_pathv[i], ctx) == FLB_TRUE) {
-                flb_plg_debug(ctx->ins, "excluded=%s", globbuf.gl_pathv[i]);
-                continue;
-            }
-
-            if (ctx->ignore_older > 0) {
-                mtime = flb_tail_stat_mtime(&st);
-                if (mtime > 0) {
-                    if ((now - ctx->ignore_older) > mtime) {
-                        flb_plg_debug(ctx->ins, "excluded=%s (ignore_older)",
-                                      globbuf.gl_pathv[i]);
-
-                        flb_tail_scan_register_ignored_file_size(
-                            ctx,
-                            globbuf.gl_pathv[i],
-                            strlen(globbuf.gl_pathv[i]),
-                            st.st_size);
-
-                        continue;
-                    }
+        if (ret == 0) {
+            if (S_ISREG(st.st_mode)) {
+                ret = tail_process_file(globbuf.gl_pathv[i], &st, ctx, now);
+                if (ret == 0) {
+                    count++;
                 }
             }
-
-            if (ctx->ignore_older > 0) {
-                ignored_file_size = flb_tail_scan_fetch_ignored_file_size(
-                                        ctx,
-                                        globbuf.gl_pathv[i],
-                                        strlen(globbuf.gl_pathv[i]));
-
-                flb_tail_scan_unregister_ignored_file_size(
-                    ctx,
-                    globbuf.gl_pathv[i],
-                    strlen(globbuf.gl_pathv[i]));
-            }
-
-            /* Append file to list */
-            ret = flb_tail_file_append(globbuf.gl_pathv[i], &st,
-                                       FLB_TAIL_STATIC,
-                                       ignored_file_size,
-                                       ctx);
-
-            if (ret == 0) {
-                flb_plg_debug(ctx->ins, "scan_glob add(): %s, inode %" PRIu64,
-                              globbuf.gl_pathv[i], (uint64_t) st.st_ino);
-                count++;
+            else if (S_ISDIR(st.st_mode)) {
+                if (ctx->recursive == FLB_TRUE) {
+                    ret = tail_scan_directory(globbuf.gl_pathv[i], ctx, now);
+                    if (ret > 0) {
+                        count += ret;
+                    }
+                }
+                else {
+                    flb_plg_debug(ctx->ins, "skip directory %s (recursion disabled)",
+                                  globbuf.gl_pathv[i]);
+                }
             }
             else {
-                flb_plg_debug(ctx->ins, "scan_blog add(): dismissed: %s, inode %" PRIu64,
-                              globbuf.gl_pathv[i], (uint64_t) st.st_ino);
+                flb_plg_debug(ctx->ins, "skip (invalid) entry=%s",
+                              globbuf.gl_pathv[i]);
             }
-        }
-        else {
-            flb_plg_debug(ctx->ins, "skip (invalid) entry=%s",
-                          globbuf.gl_pathv[i]);
         }
     }
 

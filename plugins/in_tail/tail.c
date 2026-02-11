@@ -717,6 +717,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_tail_config, exit_on_eof),
      "exit Fluent Bit when reaching EOF on a monitored file."
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "path_recursion", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, recursive),
+     "Enable or disable recursive file scanning when a path is a directory."
+    },
 
     {
      FLB_CONFIG_MAP_BOOL, "skip_empty_lines", "false",

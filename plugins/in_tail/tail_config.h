@@ -100,6 +100,7 @@ struct flb_tail_config {
     int   skip_long_lines;     /* skip long lines              */
     int   skip_empty_lines;    /* skip empty lines (off)       */
     int   exit_on_eof;         /* exit fluent-bit on EOF, test */
+    int   recursive;           /* recursive scanning           */
 #ifdef __linux__
     int   file_cache_advise;   /* Use posix_fadvise for file access */
 #endif
