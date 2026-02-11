@@ -247,18 +247,85 @@ static int tail_filepath(char *buf, int len, const char *basedir, const char *fi
     return 0;
 }
 
+static int tail_scan_directory(const char *dir, struct flb_tail_config *ctx, time_t now)
+{
+    HANDLE hFind;
+    WIN32_FIND_DATA data;
+    char path[MAX_PATH];
+    int count = 0;
+    int ret;
+
+    /* Construct path for FindFirstFile: dir\* */
+    if (snprintf(path, sizeof(path), "%s\\*", dir) >= sizeof(path)) {
+        flb_plg_error(ctx->ins, "path too long: %s", dir);
+        return -1;
+    }
+
+    hFind = FindFirstFileA(path, &data);
+    if (hFind == INVALID_HANDLE_VALUE) {
+        flb_plg_error(ctx->ins, "cannot open directory: %s", dir);
+        return -1;
+    }
+
+    do {
+        if (strcmp(data.cFileName, ".") == 0 || strcmp(data.cFileName, "..") == 0) {
+            continue;
+        }
+
+        if (snprintf(path, sizeof(path), "%s\\%s", dir, data.cFileName) >= sizeof(path)) {
+            flb_plg_warn(ctx->ins, "path too long: %s\\%s", dir, data.cFileName);
+            continue;
+        }
+
+        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+                flb_plg_debug(ctx->ins, "skip reparse point directory %s", path);
+                continue;
+            }
+
+            ret = tail_scan_directory(path, ctx, now);
+            if (ret > 0) {
+                count += ret;
+            }
+        }
+        else {
+             /* It's a file */
+             ret = tail_register_file(path, ctx, now);
+             if (ret == 0) {
+                 count++;
+             }
+        }
+    } while (FindNextFileA(hFind, &data));
+
+    FindClose(hFind);
+    return count;
+}
+
 static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
 {
     int ret;
     int n_added = 0;
     time_t now;
+    DWORD attrs;
 
     if (strchr(path, '*')) {
         return tail_scan_pattern(path, ctx);
     }
 
-    /* No wildcard involved. Let's just handle the file... */
     now = time(NULL);
+
+    attrs = GetFileAttributesA(path);
+    if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        if (ctx->recursive == FLB_TRUE) {
+            return tail_scan_directory(path, ctx, now);
+        }
+        else {
+            flb_plg_debug(ctx->ins, "skip directory %s (recursion disabled)", path);
+            return 0;
+        }
+    }
+
+    /* No wildcard involved. Let's just handle the file... */
     ret = tail_register_file(path, ctx, now);
     if (ret == 0) {
         n_added++;

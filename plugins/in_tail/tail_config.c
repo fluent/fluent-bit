@@ -106,6 +106,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     ctx->ins = ins;
     ctx->ignore_older = 0;
     ctx->skip_long_lines = FLB_FALSE;
+    ctx->recursive = FLB_FALSE;
 #ifdef FLB_HAVE_SQLDB
     ctx->db_sync = 1;  /* sqlite sync 'normal' */
 #endif
