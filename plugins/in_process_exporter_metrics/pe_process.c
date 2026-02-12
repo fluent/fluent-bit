@@ -1108,6 +1108,8 @@ static int process_update(struct flb_pe *ctx)
                 tmp = entry->str;
                 /* Collect the number of RSS per process */
                 if (pe_utils_str_to_uint64(tmp, &val) != -1) {
+                    /* convert RSS memory in number of pages to bytes */
+                    val = val * ctx->page_size;
                     cmt_gauge_set(ctx->memory_bytes, ts, val, 4, (char *[]){ name, pid_str, ppid_str, "rss" });
                 }
 
