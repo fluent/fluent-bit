@@ -610,9 +610,15 @@ int flb_tls_session_create(struct flb_tls *tls,
     /* Create TLS session */
     session->ptr = tls->api->session_create(tls, connection->fd);
 
-    if (session == NULL) {
+    if (session->ptr == NULL) {
         flb_error("[tls] could not create TLS session for %s",
                   flb_connection_get_remote_address(connection));
+
+        if (vhost != NULL) {
+            flb_free(vhost);
+        }
+
+        flb_free(session);
 
         return -1;
     }
