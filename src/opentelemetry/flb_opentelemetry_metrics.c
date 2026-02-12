@@ -572,19 +572,64 @@ static int parse_datapoint_labels(msgpack_object *attributes_object,
 static int check_label_layout(int expected_count,
                               flb_sds_t *expected_keys,
                               int point_label_count,
-                              flb_sds_t *point_keys)
+                              flb_sds_t *point_keys,
+                              flb_sds_t *point_values)
 {
-    int index;
+    int        expected_index;
+    int        point_index;
+    int       *used_indexes;
+    flb_sds_t *ordered_values;
 
     if (expected_count != point_label_count) {
         return -1;
     }
 
-    for (index = 0 ; index < expected_count ; index++) {
-        if (strcmp(expected_keys[index], point_keys[index]) != 0) {
+    used_indexes = flb_calloc(point_label_count, sizeof(int));
+    if (used_indexes == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    ordered_values = flb_calloc(point_label_count, sizeof(flb_sds_t));
+    if (ordered_values == NULL) {
+        flb_errno();
+        flb_free(used_indexes);
+        return -1;
+    }
+
+    for (expected_index = 0 ; expected_index < expected_count ; expected_index++) {
+        point_index = -1;
+
+        for (point_index = 0 ; point_index < point_label_count ; point_index++) {
+            if (used_indexes[point_index] != FLB_FALSE) {
+                continue;
+            }
+
+            if (strcmp(expected_keys[expected_index], point_keys[point_index]) == 0) {
+                used_indexes[point_index] = FLB_TRUE;
+                ordered_values[expected_index] = point_values[point_index];
+                point_values[point_index] = NULL;
+                break;
+            }
+        }
+
+        if (point_index >= point_label_count) {
+            flb_free(ordered_values);
+            flb_free(used_indexes);
             return -1;
         }
     }
+
+    for (point_index = 0 ; point_index < point_label_count ; point_index++) {
+        if (point_values[point_index] != NULL) {
+            flb_sds_destroy(point_values[point_index]);
+        }
+        point_values[point_index] = ordered_values[point_index];
+    }
+
+    destroy_label_arrays(point_label_count, point_keys, NULL);
+    flb_free(ordered_values);
+    flb_free(used_indexes);
 
     return 0;
 }
@@ -1138,8 +1183,8 @@ static int process_metric_gauge_data_points(struct cmt *context,
             result = check_label_layout(metric_label_count,
                                         metric_label_keys,
                                         point_label_count,
-                                        point_label_keys);
-            destroy_label_arrays(point_label_count, point_label_keys, NULL);
+                                        point_label_keys,
+                                        point_label_values);
             if (result != 0) {
                 destroy_label_arrays(point_label_count, NULL, point_label_values);
                 continue;
@@ -1327,8 +1372,8 @@ static int process_metric_sum_data_points(struct cmt *context,
             result = check_label_layout(metric_label_count,
                                         metric_label_keys,
                                         point_label_count,
-                                        point_label_keys);
-            destroy_label_arrays(point_label_count, point_label_keys, NULL);
+                                        point_label_keys,
+                                        point_label_values);
             if (result != 0) {
                 destroy_label_arrays(point_label_count, NULL, point_label_values);
                 continue;
@@ -1989,7 +2034,8 @@ static int process_metric_histogram_data_points(struct cmt *context,
             result = check_label_layout(metric_label_count,
                                         metric_label_keys,
                                         point_label_count,
-                                        point_label_keys);
+                                        point_label_keys,
+                                        point_label_values);
             if (result == 0) {
                 result = check_double_array_layout(metric_bound_count,
                                                    metric_bounds,
@@ -1997,7 +2043,6 @@ static int process_metric_histogram_data_points(struct cmt *context,
                                                    point_bounds);
             }
 
-            destroy_label_arrays(point_label_count, point_label_keys, NULL);
             flb_free(point_bounds);
             point_bounds = NULL;
 
@@ -2279,7 +2324,8 @@ static int process_metric_summary_data_points(struct cmt *context,
             result = check_label_layout(metric_label_count,
                                         metric_label_keys,
                                         point_label_count,
-                                        point_label_keys);
+                                        point_label_keys,
+                                        point_label_values);
             if (result == 0) {
                 result = check_double_array_layout(metric_quantile_count,
                                                    metric_quantiles,
@@ -2287,7 +2333,6 @@ static int process_metric_summary_data_points(struct cmt *context,
                                                    point_quantiles);
             }
 
-            destroy_label_arrays(point_label_count, point_label_keys, NULL);
             flb_free(point_quantiles);
             point_quantiles = NULL;
 
@@ -2663,9 +2708,8 @@ static int process_metric_exponential_histogram_data_points(
             result = check_label_layout(metric_label_count,
                                         metric_label_keys,
                                         point_label_count,
-                                        point_label_keys);
-
-            destroy_label_arrays(point_label_count, point_label_keys, NULL);
+                                        point_label_keys,
+                                        point_label_values);
 
             if (result != 0) {
                 destroy_label_arrays(point_label_count, NULL, point_label_values);
