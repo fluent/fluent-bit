@@ -941,7 +941,9 @@ int pack_complex_metric_sample(struct cmt_prometheus_remote_write_context *conte
             context->sequence_number -= SYNTHETIC_METRIC_HISTOGRAM_COUNT_SEQUENCE_DELTA;
         }
 
-        if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+        if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS &&
+            (map->type == CMT_HISTOGRAM ||
+             (map->type == CMT_EXP_HISTOGRAM && metric->exp_hist_sum_set == CMT_TRUE))) {
             context->sequence_number += SYNTHETIC_METRIC_HISTOGRAM_SUM_SEQUENCE_DELTA;
 
             cfl_sds_len_set(synthetized_metric_name,
