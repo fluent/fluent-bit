@@ -34,6 +34,8 @@
 struct cmt_opentelemetry_context
 {
     size_t                                          resource_index;
+    size_t                                          scope_metrics_count;
+    Opentelemetry__Proto__Metrics__V1__ScopeMetrics **scope_metrics_list;
     Opentelemetry__Proto__Metrics__V1__MetricsData *metrics_data;
     struct cmt                                     *cmt;
 };

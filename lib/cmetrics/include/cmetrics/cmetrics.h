@@ -28,6 +28,7 @@
 #define CMT_HISTOGRAM 2
 #define CMT_SUMMARY   3
 #define CMT_UNTYPED   4
+#define CMT_EXP_HISTOGRAM 5
 
 #define CMT_AGGREGATION_TYPE_UNSPECIFIED 0
 #define CMT_AGGREGATION_TYPE_DELTA       1
@@ -65,6 +66,7 @@ struct cmt {
     struct cfl_list counters;
     struct cfl_list gauges;
     struct cfl_list histograms;
+    struct cfl_list exp_histograms;
     struct cfl_list summaries;
     struct cfl_list untypeds;
 

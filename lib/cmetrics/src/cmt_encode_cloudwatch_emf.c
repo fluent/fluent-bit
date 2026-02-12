@@ -24,6 +24,7 @@
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_exp_histogram.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_time.h>
 #include <cmetrics/cmt_compat.h>
@@ -107,6 +108,9 @@ static void pack_cmetrics_type(mpack_writer_t *writer, struct cmt *cmt,
     else if (map->type == CMT_HISTOGRAM) {
         mpack_write_cstr(writer, "histogram");
     }
+    else if (map->type == CMT_EXP_HISTOGRAM) {
+        mpack_write_cstr(writer, "histogram");
+    }
     else {
         mpack_write_cstr(writer, "");
     }
@@ -120,23 +124,56 @@ static void pack_histogram_metric(mpack_writer_t *writer, struct cmt *cmt,
     int index = 0;
     double val = 0.0;
     double tmp;
-    uint64_t *hist_metrics;
+    uint64_t *hist_metrics = NULL;
+    uint64_t *exp_bucket_counts = NULL;
+    double *exp_upper_bounds = NULL;
+    size_t exp_bucket_count = 0;
+    size_t exp_upper_bounds_count = 0;
+    size_t bucket_count = 0;
     struct cmt_opts      *opts   = map->opts;
     struct cmt_histogram *histogram = NULL;
     struct cmt_histogram_buckets *buckets = NULL;
 
-    histogram = (struct cmt_histogram *) map->parent;
-    buckets = histogram->buckets;
-    hist_metrics = calloc(buckets->count + 1, sizeof(uint64_t));
+    if (map->type == CMT_HISTOGRAM) {
+        histogram = (struct cmt_histogram *) map->parent;
+        buckets = histogram->buckets;
+        bucket_count = buckets->count;
+    }
+    else if (map->type == CMT_EXP_HISTOGRAM) {
+        if (cmt_exp_histogram_to_explicit(metric,
+                                          &exp_upper_bounds,
+                                          &exp_upper_bounds_count,
+                                          &exp_bucket_counts,
+                                          &exp_bucket_count) != 0) {
+            return;
+        }
 
-    for (i = 0; i <= buckets->count; i++) {
-        hist_metrics[i] = cmt_metric_hist_get_value(metric, i);
+        bucket_count = exp_upper_bounds_count;
+    }
+    else {
+        return;
     }
 
-    for (i = 0; i <= buckets->count; i++) {
+    hist_metrics = calloc(bucket_count + 1, sizeof(uint64_t));
+    if (hist_metrics == NULL) {
+        free(exp_bucket_counts);
+        free(exp_upper_bounds);
+        return;
+    }
+
+    for (i = 0; i <= bucket_count; i++) {
+        if (map->type == CMT_HISTOGRAM) {
+            hist_metrics[i] = cmt_metric_hist_get_value(metric, i);
+        }
+        else {
+            hist_metrics[i] = exp_bucket_counts[i];
+        }
+    }
+
+    for (i = 0; i <= bucket_count; i++) {
         index = i;
 
-        for (k = i + 1; k <= buckets->count; k++) {
+        for (k = i + 1; k <= bucket_count; k++) {
             if (hist_metrics[k] < hist_metrics[index]) {
                 index = k;
             }
@@ -151,16 +188,28 @@ static void pack_histogram_metric(mpack_writer_t *writer, struct cmt *cmt,
     mpack_write_cstr(writer, "Min");
     mpack_write_double(writer, hist_metrics[0]);
     mpack_write_cstr(writer, "Max");
-    mpack_write_double(writer, hist_metrics[buckets->count - 1]);
+    mpack_write_double(writer, hist_metrics[bucket_count - 1]);
     mpack_write_cstr(writer, "Sum");
-    val = cmt_metric_hist_get_sum_value(metric);
+    if (map->type == CMT_HISTOGRAM) {
+        val = cmt_metric_hist_get_sum_value(metric);
+    }
+    else {
+        val = cmt_math_uint64_to_d64(metric->exp_hist_sum);
+    }
     mpack_write_double(writer, val);
     mpack_write_cstr(writer, "Count");
-    val = cmt_metric_hist_get_count_value(metric);
+    if (map->type == CMT_HISTOGRAM) {
+        val = cmt_metric_hist_get_count_value(metric);
+    }
+    else {
+        val = metric->exp_hist_count;
+    }
     mpack_write_double(writer, val);
     mpack_finish_map(writer);
 
     free(hist_metrics);
+    free(exp_bucket_counts);
+    free(exp_upper_bounds);
 }
 
 static void pack_summary_metric(mpack_writer_t *writer, struct cmt *cmt,
@@ -272,7 +321,7 @@ static int pack_metric(mpack_writer_t *writer, struct cmt *cmt,
     if (map->type == CMT_SUMMARY) {
         pack_summary_metric(writer, cmt, map, metric);
     }
-    else if (map->type == CMT_HISTOGRAM) {
+    else if (map->type == CMT_HISTOGRAM || map->type == CMT_EXP_HISTOGRAM) {
         pack_histogram_metric(writer, cmt, map, metric);
     }
     else {
@@ -308,6 +357,7 @@ static size_t count_metrics(struct cmt *cmt)
 {
     size_t                metric_count;
     struct cmt_histogram *histogram;
+    struct cmt_exp_histogram *exp_histogram;
     struct cmt_summary   *summary;
     struct cmt_untyped   *untyped;
     struct cmt_counter   *counter;
@@ -366,6 +416,16 @@ static size_t count_metrics(struct cmt *cmt)
         metric_count += cfl_list_size(&map->metrics);
     }
 
+    /* Exponential Histogram */
+    cfl_list_foreach(head, &cmt->exp_histograms) {
+        exp_histogram = cfl_list_entry(head, struct cmt_exp_histogram, _head);
+        map = exp_histogram->map;
+        if (map->metric_static_set == 1) {
+            metric_count++;
+        }
+        metric_count += cfl_list_size(&map->metrics);
+    }
+
     return metric_count;
 }
 
@@ -373,6 +433,7 @@ static int pack_context_metrics(mpack_writer_t *writer, struct cmt *cmt, int wra
 {
     size_t                metric_count;
     struct cmt_histogram *histogram;
+    struct cmt_exp_histogram *exp_histogram;
     struct cmt_summary   *summary;
     struct cmt_untyped   *untyped;
     struct cmt_counter   *counter;
@@ -412,6 +473,12 @@ static int pack_context_metrics(mpack_writer_t *writer, struct cmt *cmt, int wra
     cfl_list_foreach(head, &cmt->histograms) {
         histogram = cfl_list_entry(head, struct cmt_histogram, _head);
         pack_metrics(writer, cmt, histogram->map);
+    }
+
+    /* Exponential Histogram */
+    cfl_list_foreach(head, &cmt->exp_histograms) {
+        exp_histogram = cfl_list_entry(head, struct cmt_exp_histogram, _head);
+        pack_metrics(writer, cmt, exp_histogram->map);
     }
 
     if (wrap_array == CMT_TRUE) {
