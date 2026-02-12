@@ -88,10 +88,25 @@ static inline int pack_cfl_variant_int64(mpack_writer_t *writer,
     return 0;
 }
 
+static inline int pack_cfl_variant_uint64(mpack_writer_t *writer,
+                                          uint64_t value)
+{
+    mpack_write_u64(writer, value);
+
+    return 0;
+}
+
 static inline int pack_cfl_variant_double(mpack_writer_t *writer,
                                           double value)
 {
     mpack_write_double(writer, value);
+
+    return 0;
+}
+
+static inline int pack_cfl_variant_null(mpack_writer_t *writer)
+{
+    mpack_write_nil(writer);
 
     return 0;
 }
@@ -169,8 +184,14 @@ static inline int pack_cfl_variant(mpack_writer_t *writer,
     else if (value->type == CFL_VARIANT_INT) {
         result = pack_cfl_variant_int64(writer, value->data.as_int64);
     }
+    else if (value->type == CFL_VARIANT_UINT) {
+        result = pack_cfl_variant_uint64(writer, value->data.as_uint64);
+    }
     else if (value->type == CFL_VARIANT_DOUBLE) {
         result = pack_cfl_variant_double(writer, value->data.as_double);
+    }
+    else if (value->type == CFL_VARIANT_NULL) {
+        result = pack_cfl_variant_null(writer);
     }
     else if (value->type == CFL_VARIANT_ARRAY) {
         result = pack_cfl_variant_array(writer, value->data.as_array);
@@ -552,6 +573,27 @@ static inline int unpack_cfl_variant_double(mpack_reader_t *reader,
     return 0;
 }
 
+static inline int unpack_cfl_variant_null(mpack_reader_t *reader,
+                                          struct cfl_variant **value)
+{
+    mpack_tag_t tag;
+    int         result;
+
+    result = unpack_cfl_variant_read_tag(reader, &tag, mpack_type_nil);
+
+    if (result != 0) {
+        return result;
+    }
+
+    *value = cfl_variant_create_from_null();
+
+    if (*value == NULL) {
+        return -3;
+    }
+
+    return 0;
+}
+
 static inline int unpack_cfl_variant_array(mpack_reader_t *reader,
                                            struct cfl_variant **value)
 {
@@ -623,6 +665,9 @@ static inline int unpack_cfl_variant(mpack_reader_t *reader,
     }
     else if (value_type == mpack_type_double) {
         result = unpack_cfl_variant_double(reader, value);
+    }
+    else if (value_type == mpack_type_nil) {
+        result = unpack_cfl_variant_null(reader, value);
     }
     else if (value_type == mpack_type_array) {
         result = unpack_cfl_variant_array(reader, value);

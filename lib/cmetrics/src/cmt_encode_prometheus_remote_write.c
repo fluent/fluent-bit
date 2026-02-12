@@ -22,6 +22,7 @@
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_exp_histogram.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_encode_prometheus_remote_write.h>
@@ -520,7 +521,7 @@ int set_up_time_series_for_label_set(struct cmt_prometheus_remote_write_context 
 
     *time_series = time_series_entry;
 
-    return CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
+    return result;
 }
 
 
@@ -551,6 +552,9 @@ int pack_metric_metadata(struct cmt_prometheus_remote_write_context *context,
     }
     else if (map->type == CMT_SUMMARY) {
         metadata_entry->data.type = PROMETHEUS__METRIC_METADATA__METRIC_TYPE__SUMMARY;
+    }
+    else if (map->type == CMT_HISTOGRAM || map->type == CMT_EXP_HISTOGRAM) {
+        metadata_entry->data.type = PROMETHEUS__METRIC_METADATA__METRIC_TYPE__HISTOGRAM;
     }
     else {
         return CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_UNEXPECTED_METRIC_TYPE;
@@ -721,13 +725,25 @@ int pack_complex_metric_sample(struct cmt_prometheus_remote_write_context *conte
     struct cmt_metric                  dummy_metric;
     struct cmt_prometheus_time_series *time_series;
     struct cmt_map_label              *dummy_label;
-    struct cmt_histogram              *histogram;
+    struct cmt_histogram              *histogram = NULL;
     struct cmt_summary                *summary;
+    double                            *exp_upper_bounds;
+    uint64_t                          *exp_bucket_counts;
+    size_t                             exp_upper_bounds_count;
+    size_t                             exp_bucket_count;
+    size_t                             bucket_count;
+    double                             bucket_value;
+    double                             sum_value;
+    double                             count_value;
     int                                result;
     size_t                             index;
     uint64_t                           now;
 
     now = cfl_time_now();
+    exp_upper_bounds = NULL;
+    exp_bucket_counts = NULL;
+    exp_upper_bounds_count = 0;
+    exp_bucket_count = 0;
 
     if (check_staled_timestamp(metric, now,
                                CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_THRESHOLD)) {
@@ -873,36 +889,57 @@ int pack_complex_metric_sample(struct cmt_prometheus_remote_write_context *conte
             }
         }
     }
-    else if (map->type == CMT_HISTOGRAM) {
-        histogram = (struct cmt_histogram *) map->parent;
-
-        context->sequence_number += SYNTHETIC_METRIC_HISTOGRAM_COUNT_SEQUENCE_DELTA;
-
-        map->opts->fqname = synthetized_metric_name;
-
-        cfl_sds_len_set(synthetized_metric_name,
-                        snprintf(synthetized_metric_name,
-                                 cfl_sds_alloc(synthetized_metric_name) -1,
-                                 "%s_count",
-                                 original_metric_name));
-
-        cmt_metric_set(&dummy_metric,
-                       dummy_metric.timestamp,
-                       cmt_metric_hist_get_count_value(metric));
-
-        result = set_up_time_series_for_label_set(context, map, metric, &time_series);
-
-        if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
-            if (add_metadata == CMT_TRUE) {
-                result = pack_metric_metadata(context, map, &dummy_metric);
+    else if (map->type == CMT_HISTOGRAM || map->type == CMT_EXP_HISTOGRAM) {
+        if (map->type == CMT_HISTOGRAM) {
+            histogram = (struct cmt_histogram *) map->parent;
+            bucket_count = histogram->buckets->count;
+        }
+        else {
+            result = cmt_exp_histogram_to_explicit(metric,
+                                                   &exp_upper_bounds,
+                                                   &exp_upper_bounds_count,
+                                                   &exp_bucket_counts,
+                                                   &exp_bucket_count);
+            if (result != 0) {
+                result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_ALLOCATION_ERROR;
             }
-
-            if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
-                result = append_metric_to_timeseries(time_series, &dummy_metric);
+            else {
+                bucket_count = exp_upper_bounds_count;
             }
         }
 
-        context->sequence_number -= SYNTHETIC_METRIC_HISTOGRAM_COUNT_SEQUENCE_DELTA;
+        if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+            context->sequence_number += SYNTHETIC_METRIC_HISTOGRAM_COUNT_SEQUENCE_DELTA;
+            map->opts->fqname = synthetized_metric_name;
+
+            cfl_sds_len_set(synthetized_metric_name,
+                            snprintf(synthetized_metric_name,
+                                     cfl_sds_alloc(synthetized_metric_name) -1,
+                                     "%s_count",
+                                     original_metric_name));
+
+            if (map->type == CMT_HISTOGRAM) {
+                count_value = cmt_metric_hist_get_count_value(metric);
+            }
+            else {
+                count_value = metric->exp_hist_count;
+            }
+
+            cmt_metric_set(&dummy_metric, dummy_metric.timestamp, count_value);
+            result = set_up_time_series_for_label_set(context, map, metric, &time_series);
+
+            if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                if (add_metadata == CMT_TRUE) {
+                    result = pack_metric_metadata(context, map, &dummy_metric);
+                }
+
+                if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                    result = append_metric_to_timeseries(time_series, &dummy_metric);
+                }
+            }
+
+            context->sequence_number -= SYNTHETIC_METRIC_HISTOGRAM_COUNT_SEQUENCE_DELTA;
+        }
 
         if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
             context->sequence_number += SYNTHETIC_METRIC_HISTOGRAM_SUM_SEQUENCE_DELTA;
@@ -913,10 +950,14 @@ int pack_complex_metric_sample(struct cmt_prometheus_remote_write_context *conte
                                      "%s_sum",
                                      original_metric_name));
 
-            cmt_metric_set(&dummy_metric,
-                           dummy_metric.timestamp,
-                           cmt_metric_hist_get_sum_value(metric));
+            if (map->type == CMT_HISTOGRAM) {
+                sum_value = cmt_metric_hist_get_sum_value(metric);
+            }
+            else {
+                sum_value = cmt_math_uint64_to_d64(metric->exp_hist_sum);
+            }
 
+            cmt_metric_set(&dummy_metric, dummy_metric.timestamp, sum_value);
             result = set_up_time_series_for_label_set(context, map, metric, &time_series);
 
             if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
@@ -957,29 +998,43 @@ int pack_complex_metric_sample(struct cmt_prometheus_remote_write_context *conte
 
             if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
                 additional_label = cfl_list_entry_last(&metric->labels, struct cmt_map_label, _head);
-
                 additional_label->name = (cfl_sds_t) additional_label_caption;
 
                 for(index = 0 ;
                     result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS &&
-                    index <= histogram->buckets->count ;
+                    index <= bucket_count ;
                     index++) {
-                    if (index < histogram->buckets->count) {
-                        cfl_sds_len_set(additional_label_caption,
+                    if (index < bucket_count) {
+                        if (map->type == CMT_HISTOGRAM) {
+                            cfl_sds_len_set(additional_label_caption,
                                             snprintf(additional_label_caption,
-                                            cfl_sds_alloc(additional_label_caption) - 1,
-                                            "%.17g", histogram->buckets->upper_bounds[index]));
+                                                     cfl_sds_alloc(additional_label_caption) - 1,
+                                                     "%.17g",
+                                                     histogram->buckets->upper_bounds[index]));
+                        }
+                        else {
+                            cfl_sds_len_set(additional_label_caption,
+                                            snprintf(additional_label_caption,
+                                                     cfl_sds_alloc(additional_label_caption) - 1,
+                                                     "%.17g",
+                                                     exp_upper_bounds[index]));
+                        }
                     }
                     else {
                         cfl_sds_len_set(additional_label_caption,
-                                            snprintf(additional_label_caption,
-                                            cfl_sds_alloc(additional_label_caption) - 1,
-                                            "+Inf"));
+                                        snprintf(additional_label_caption,
+                                                 cfl_sds_alloc(additional_label_caption) - 1,
+                                                 "+Inf"));
                     }
 
+                    if (map->type == CMT_HISTOGRAM) {
+                        bucket_value = cmt_metric_hist_get_value(metric, index);
+                    }
+                    else {
+                        bucket_value = exp_bucket_counts[index];
+                    }
 
-                    dummy_metric.val = cmt_math_d64_to_uint64(cmt_metric_hist_get_value(metric, index));
-
+                    dummy_metric.val = cmt_math_d64_to_uint64(bucket_value);
                     result = set_up_time_series_for_label_set(context, map, metric, &time_series);
 
                     if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
@@ -1014,6 +1069,9 @@ int pack_complex_metric_sample(struct cmt_prometheus_remote_write_context *conte
         }
     }
 
+    free(exp_upper_bounds);
+    free(exp_bucket_counts);
+
     if (additional_label_caption != NULL) {
         cfl_sds_destroy(additional_label_caption);
     }
@@ -1037,11 +1095,13 @@ int pack_complex_type(struct cmt_prometheus_remote_write_context *context,
     add_metadata = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_ADD_METADATA;
     result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
 
-    if (map->type == CMT_SUMMARY || map->type == CMT_HISTOGRAM) {
+    if (map->type == CMT_SUMMARY ||
+        map->type == CMT_HISTOGRAM ||
+        map->type == CMT_EXP_HISTOGRAM) {
         if (map->type == CMT_SUMMARY) {
             additional_label.name = (cfl_sds_t) "quantile";
         }
-        else if (map->type == CMT_HISTOGRAM) {
+        else {
             additional_label.name = (cfl_sds_t) "le";
         }
 
@@ -1078,7 +1138,9 @@ int pack_complex_type(struct cmt_prometheus_remote_write_context *context,
         }
     }
 
-    if (map->type == CMT_SUMMARY || map->type == CMT_HISTOGRAM) {
+    if (map->type == CMT_SUMMARY ||
+        map->type == CMT_HISTOGRAM ||
+        map->type == CMT_EXP_HISTOGRAM) {
         cfl_list_del(&additional_label._head);
     }
 
@@ -1089,6 +1151,7 @@ int pack_complex_type(struct cmt_prometheus_remote_write_context *context,
 cfl_sds_t cmt_encode_prometheus_remote_write_create(struct cmt *cmt)
 {
     struct cmt_histogram                      *histogram;
+    struct cmt_exp_histogram                  *exp_histogram;
     struct cmt_prometheus_remote_write_context context;
     struct cmt_untyped                        *untyped;
     struct cmt_counter                        *counter;
@@ -1173,6 +1236,22 @@ cfl_sds_t cmt_encode_prometheus_remote_write_create(struct cmt *cmt)
         cfl_list_foreach(head, &cmt->histograms) {
             histogram = cfl_list_entry(head, struct cmt_histogram, _head);
             result = pack_complex_type(&context, histogram->map);
+
+            if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_ERROR) {
+                continue;
+            }
+
+            if (result != CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                break;
+            }
+        }
+    }
+
+    if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+        /* Exponential Histograms */
+        cfl_list_foreach(head, &cmt->exp_histograms) {
+            exp_histogram = cfl_list_entry(head, struct cmt_exp_histogram, _head);
+            result = pack_complex_type(&context, exp_histogram->map);
 
             if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_ERROR) {
                 continue;
