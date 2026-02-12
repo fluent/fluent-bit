@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_opentelemetry.h>
 
 #include <fluent-bit/http_server/flb_http_server.h>
 
