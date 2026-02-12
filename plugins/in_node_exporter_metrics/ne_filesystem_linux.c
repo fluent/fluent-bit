@@ -146,6 +146,13 @@ static int filesystem_update(struct flb_ne *ctx,
                              char *mounts_file_path)
 {
     struct statfs           mount_point_info;
+    uint64_t                block_size;
+    uint64_t                blocks;
+    uint64_t                free_size;
+    uint64_t                avail_size;
+    uint64_t                size_bytes;
+    uint64_t                avail_bytes;
+    uint64_t                free_bytes;
     char                   *field_values[4];
     struct mk_list         *field_iterator;
     struct mk_list         *line_iterator;
@@ -224,10 +231,17 @@ static int filesystem_update(struct flb_ne *ctx,
                         readonly_flag = mount_point_info.f_flags & ST_RDONLY;
                         readonly_flag = (readonly_flag != 0);
 
+                        block_size = (uint64_t) mount_point_info.f_bsize;
+                        blocks     = (uint64_t) mount_point_info.f_blocks;
+                        free_size  = (uint64_t) mount_point_info.f_bfree;
+                        avail_size = (uint64_t) mount_point_info.f_bavail;
+                        avail_bytes = block_size * avail_size;
+                        size_bytes = block_size * blocks;
+                        free_bytes = block_size * free_size;
+
                         cmt_gauge_set(ctx->fs_avail_bytes,
                                       timestamp,
-                                      mount_point_info.f_bsize *
-                                      mount_point_info.f_bavail,
+                                      avail_bytes,
                                       3, labels);
 
                         /* We don't support device error couting yet */
@@ -238,18 +252,17 @@ static int filesystem_update(struct flb_ne *ctx,
 
                         cmt_gauge_set(ctx->fs_files,
                                       timestamp,
-                                      mount_point_info.f_files,
+                                      (uint64_t) mount_point_info.f_files,
                                       3, labels);
 
                         cmt_gauge_set(ctx->fs_files_free,
                                       timestamp,
-                                      mount_point_info.f_ffree,
+                                      (uint64_t) mount_point_info.f_ffree,
                                       3, labels);
 
                         cmt_gauge_set(ctx->fs_free_bytes,
                                       timestamp,
-                                      mount_point_info.f_bsize *
-                                      mount_point_info.f_bfree,
+                                      free_bytes,
                                       3, labels);
 
                         cmt_gauge_set(ctx->fs_readonly,
@@ -259,8 +272,7 @@ static int filesystem_update(struct flb_ne *ctx,
 
                         cmt_gauge_set(ctx->fs_size_bytes,
                                       timestamp,
-                                      mount_point_info.f_bsize *
-                                      mount_point_info.f_blocks,
+                                      size_bytes,
                                       3, labels);
                     }
                 }
