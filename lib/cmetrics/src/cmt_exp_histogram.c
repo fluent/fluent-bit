@@ -116,43 +116,67 @@ int cmt_exp_histogram_set_default(struct cmt_exp_histogram *exp_histogram,
                                   int labels_count, char **label_vals)
 {
     struct cmt_metric *metric;
+    uint64_t *new_positive_buckets;
+    uint64_t *new_negative_buckets;
 
     metric = exp_histogram_get_metric(exp_histogram, labels_count, label_vals);
     if (!metric) {
         return -1;
     }
 
+    new_positive_buckets = NULL;
+    new_negative_buckets = NULL;
+
+    if (positive_bucket_count > 0 && positive_bucket_counts != NULL) {
+        new_positive_buckets = calloc(positive_bucket_count, sizeof(uint64_t));
+        if (new_positive_buckets == NULL) {
+            return -1;
+        }
+
+        memcpy(new_positive_buckets, positive_bucket_counts,
+               sizeof(uint64_t) * positive_bucket_count);
+    }
+
+    if (negative_bucket_count > 0 && negative_bucket_counts != NULL) {
+        new_negative_buckets = calloc(negative_bucket_count, sizeof(uint64_t));
+        if (new_negative_buckets == NULL) {
+            if (new_positive_buckets != NULL) {
+                free(new_positive_buckets);
+            }
+            return -1;
+        }
+
+        memcpy(new_negative_buckets, negative_bucket_counts,
+               sizeof(uint64_t) * negative_bucket_count);
+    }
+    else if (negative_bucket_count > 0 && negative_bucket_counts == NULL) {
+        if (new_positive_buckets != NULL) {
+            free(new_positive_buckets);
+        }
+        return -1;
+    }
+
+    if (positive_bucket_count > 0 && positive_bucket_counts == NULL) {
+        if (new_positive_buckets != NULL) {
+            free(new_positive_buckets);
+        }
+        if (new_negative_buckets != NULL) {
+            free(new_negative_buckets);
+        }
+        return -1;
+    }
+
     if (metric->exp_hist_positive_buckets != NULL) {
         free(metric->exp_hist_positive_buckets);
-        metric->exp_hist_positive_buckets = NULL;
-        metric->exp_hist_positive_count = 0;
     }
-
     if (metric->exp_hist_negative_buckets != NULL) {
         free(metric->exp_hist_negative_buckets);
-        metric->exp_hist_negative_buckets = NULL;
-        metric->exp_hist_negative_count = 0;
     }
 
-    if (positive_bucket_count > 0) {
-        metric->exp_hist_positive_buckets = calloc(positive_bucket_count, sizeof(uint64_t));
-        if (metric->exp_hist_positive_buckets == NULL) {
-            return -1;
-        }
-        memcpy(metric->exp_hist_positive_buckets, positive_bucket_counts,
-               sizeof(uint64_t) * positive_bucket_count);
-        metric->exp_hist_positive_count = positive_bucket_count;
-    }
-
-    if (negative_bucket_count > 0) {
-        metric->exp_hist_negative_buckets = calloc(negative_bucket_count, sizeof(uint64_t));
-        if (metric->exp_hist_negative_buckets == NULL) {
-            return -1;
-        }
-        memcpy(metric->exp_hist_negative_buckets, negative_bucket_counts,
-               sizeof(uint64_t) * negative_bucket_count);
-        metric->exp_hist_negative_count = negative_bucket_count;
-    }
+    metric->exp_hist_positive_buckets = new_positive_buckets;
+    metric->exp_hist_negative_buckets = new_negative_buckets;
+    metric->exp_hist_positive_count = positive_bucket_count;
+    metric->exp_hist_negative_count = negative_bucket_count;
 
     metric->exp_hist_scale = scale;
     metric->exp_hist_zero_count = zero_count;

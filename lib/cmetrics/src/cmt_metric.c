@@ -22,7 +22,7 @@
 #include <cmetrics/cmt_math.h>
 #include <cmetrics/cmt_atomic.h>
 
-static inline int metric_exchange(struct cmt_metric *metric, uint64_t timestamp,
+static inline int metric_exchange(struct cmt_metric *metric,
                                   double new_value, double old_value)
 {
     uint64_t tmp_new;
@@ -38,8 +38,6 @@ static inline int metric_exchange(struct cmt_metric *metric, uint64_t timestamp,
         return 0;
     }
 
-    cmt_atomic_store(&metric->timestamp, timestamp);
-
     return 1;
 }
 
@@ -53,13 +51,14 @@ static inline void add(struct cmt_metric *metric, uint64_t timestamp, double val
         old = cmt_metric_get_value(metric);
         new = old + val;
 
-        result = metric_exchange(metric, timestamp, new, old);
+        result = metric_exchange(metric, new, old);
     }
     while(0 == result);
 
-    cmt_atomic_store(&metric->value_type, CMT_METRIC_VALUE_DOUBLE);
     cmt_atomic_store(&metric->val_int64, (uint64_t) ((int64_t) new));
     cmt_atomic_store(&metric->val_uint64, (uint64_t) new);
+    cmt_atomic_store(&metric->timestamp, timestamp);
+    cmt_atomic_store(&metric->value_type, CMT_METRIC_VALUE_DOUBLE);
 }
 
 void cmt_metric_set(struct cmt_metric *metric, uint64_t timestamp, double val)
@@ -74,10 +73,10 @@ void cmt_metric_set_double(struct cmt_metric *metric, uint64_t timestamp, double
     tmp = cmt_math_d64_to_uint64(val);
 
     cmt_atomic_store(&metric->val, tmp);
-    cmt_atomic_store(&metric->value_type, CMT_METRIC_VALUE_DOUBLE);
     cmt_atomic_store(&metric->val_int64, (uint64_t) ((int64_t) val));
     cmt_atomic_store(&metric->val_uint64, (uint64_t) val);
     cmt_atomic_store(&metric->timestamp, timestamp);
+    cmt_atomic_store(&metric->value_type, CMT_METRIC_VALUE_DOUBLE);
 }
 
 void cmt_metric_set_int64(struct cmt_metric *metric, uint64_t timestamp, int64_t val)
@@ -87,10 +86,10 @@ void cmt_metric_set_int64(struct cmt_metric *metric, uint64_t timestamp, int64_t
     tmp = cmt_math_d64_to_uint64((double) val);
 
     cmt_atomic_store(&metric->val, tmp);
-    cmt_atomic_store(&metric->value_type, CMT_METRIC_VALUE_INT64);
     cmt_atomic_store(&metric->val_int64, (uint64_t) val);
     cmt_atomic_store(&metric->val_uint64, (uint64_t) val);
     cmt_atomic_store(&metric->timestamp, timestamp);
+    cmt_atomic_store(&metric->value_type, CMT_METRIC_VALUE_INT64);
 }
 
 void cmt_metric_set_uint64(struct cmt_metric *metric, uint64_t timestamp, uint64_t val)
@@ -100,10 +99,10 @@ void cmt_metric_set_uint64(struct cmt_metric *metric, uint64_t timestamp, uint64
     tmp = cmt_math_d64_to_uint64((double) val);
 
     cmt_atomic_store(&metric->val, tmp);
-    cmt_atomic_store(&metric->value_type, CMT_METRIC_VALUE_UINT64);
     cmt_atomic_store(&metric->val_int64, (uint64_t) ((int64_t) val));
     cmt_atomic_store(&metric->val_uint64, val);
     cmt_atomic_store(&metric->timestamp, timestamp);
+    cmt_atomic_store(&metric->value_type, CMT_METRIC_VALUE_UINT64);
 }
 
 static inline int metric_hist_exchange(struct cmt_metric *metric,
