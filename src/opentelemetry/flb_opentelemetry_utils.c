@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_time.h>
 
+#include <ctype.h>
+
 int flb_otel_utils_find_map_entry_by_key(msgpack_object_map *map,
                                          char *key,
                                          size_t match_index,
@@ -621,6 +623,31 @@ uint64_t flb_otel_utils_convert_string_number_to_u64(char *str, size_t len)
     return val;
 }
 
+static int parse_u64_from_numeric_string(const char *str,
+                                         size_t len,
+                                         uint64_t *value)
+{
+    size_t index;
+
+    if (str == NULL || value == NULL || len == 0) {
+        return -1;
+    }
+
+    if (str[0] == '-' || len > 31) {
+        return -1;
+    }
+
+    for (index = 0; index < len; index++) {
+        if (!isdigit((unsigned char) str[index])) {
+            return -1;
+        }
+    }
+
+    *value = flb_otel_utils_convert_string_number_to_u64((char *) str, len);
+
+    return 0;
+}
+
 static int parse_u64_from_msgpack_object(msgpack_object *object, uint64_t *value)
 {
     if (object == NULL || value == NULL) {
@@ -640,10 +667,9 @@ static int parse_u64_from_msgpack_object(msgpack_object *object, uint64_t *value
         return 0;
     }
     else if (object->type == MSGPACK_OBJECT_STR) {
-        *value = flb_otel_utils_convert_string_number_to_u64(
-                    (char *) object->via.str.ptr,
-                    object->via.str.size);
-        return 0;
+        return parse_u64_from_numeric_string(object->via.str.ptr,
+                                             object->via.str.size,
+                                             value);
     }
 
     return -1;
