@@ -36,6 +36,7 @@ DEFINE_OPTION(FLB_IN_KMSG                     "Enable Kernel log input plugin"  
 DEFINE_OPTION(FLB_IN_KUBERNETES_EVENTS        "Enable Kubernetes Events plugin"              ON)
 DEFINE_OPTION(FLB_IN_LIB                      "Enable library mode input plugin"             ON)
 DEFINE_OPTION(FLB_IN_MEM                      "Enable Memory input plugin"                   ON)
+DEFINE_OPTION(FLB_IN_MEM_METRICS              "Enable memory metrics input plugin"           ON)
 DEFINE_OPTION(FLB_IN_MQTT                     "Enable MQTT Broker input plugin"              ON)
 DEFINE_OPTION(FLB_IN_NETIF                    "Enable NetworkIF input plugin"                ON)
 DEFINE_OPTION(FLB_IN_NGINX_EXPORTER_METRICS   "Enable Nginx Metrics input plugin"            ON)
