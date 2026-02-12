@@ -21,6 +21,7 @@
 #define FLB_OPENTELEMETRY_H
 
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <cfl/cfl.h>
 #include <msgpack.h>
 #include <stdint.h>
 
@@ -173,6 +174,9 @@ int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder
                                            const char *logs_body_key,
                                            int *error_status);
 
+int flb_opentelemetry_metrics_json_to_cmt(struct cfl_list *context_list,
+                                          const char *body, size_t len);
+
 struct ctrace *flb_opentelemetry_json_traces_to_ctrace(const char *body, size_t len,
                                                        int *error_status);
 
@@ -206,6 +210,12 @@ int flb_otel_utils_json_payload_append_converted_array(struct flb_log_event_enco
 int flb_otel_utils_json_payload_append_converted_kvlist(struct flb_log_event_encoder *encoder,
                                                         int target_field,
                                                         msgpack_object *object);
+
+struct cfl_variant *flb_otel_utils_msgpack_object_to_cfl_variant(
+                        msgpack_object *object);
+
+int flb_otel_utils_clone_kvlist_from_otlp_json_array(struct cfl_kvlist *target,
+                                                      msgpack_object *attributes_object);
 
 int flb_otel_utils_hex_to_id(const char *str, int len, unsigned char *out_buf, int out_size);
 
