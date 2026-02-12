@@ -1,0 +1,1177 @@
+{
+  "valid_payload": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "temperature_celsius",
+                  "gauge": {
+                    "dataPoints": [
+                      {
+                        "asDouble": 36.5,
+                        "timeUnixNano": "1704067200000000000"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "requests_total",
+                  "sum": {
+                    "isMonotonic": false,
+                    "aggregationTemporality": 2,
+                    "dataPoints": [
+                      {
+                        "asInt": 42,
+                        "timeUnixNano": "1704067201000000000"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge": {
+        "name": "temperature_celsius",
+        "value": 36.5
+      },
+      "counter": {
+        "name": "requests_total",
+        "value": 42.0,
+        "allow_reset": true,
+        "aggregation_type": 2
+      }
+    }
+  },
+  "valid_sum_monotonic_true": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "jobs_total",
+                  "sum": {
+                    "isMonotonic": true,
+                    "aggregationTemporality": 2,
+                    "dataPoints": [
+                      {
+                        "asInt": 12
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 0,
+      "counter_count": 1,
+      "counter": {
+        "name": "jobs_total",
+        "value": 12.0,
+        "allow_reset": false,
+        "aggregation_type": 2
+      }
+    }
+  },
+  "valid_sum_delta_temporality": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "requests_delta_total",
+                  "sum": {
+                    "isMonotonic": false,
+                    "aggregationTemporality": 1,
+                    "dataPoints": [
+                      {
+                        "asDouble": 9.5
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 0,
+      "counter_count": 1,
+      "counter": {
+        "name": "requests_delta_total",
+        "value": 9.5,
+        "allow_reset": true,
+        "aggregation_type": 1
+      }
+    }
+  },
+  "valid_numeric_string_values": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "cpu_temp",
+                  "gauge": {
+                    "dataPoints": [
+                      {
+                        "asDouble": "38.25",
+                        "timeUnixNano": "1704067200000000000"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "errors_total",
+                  "sum": {
+                    "isMonotonic": true,
+                    "aggregationTemporality": 2,
+                    "dataPoints": [
+                      {
+                        "asInt": "7"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge": {
+        "name": "cpu_temp",
+        "value": 38.25
+      },
+      "counter": {
+        "name": "errors_total",
+        "value": 7.0,
+        "allow_reset": false,
+        "aggregation_type": 2
+      }
+    }
+  },
+  "valid_missing_timestamp_defaults_zero": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "load",
+                  "gauge": {
+                    "dataPoints": [
+                      {
+                        "asDouble": 1.5
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 1,
+      "counter_count": 0,
+      "gauge": {
+        "name": "load",
+        "value": 1.5
+      }
+    }
+  },
+  "valid_multiple_resource_metrics_contexts": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "gauge_one",
+                  "gauge": {
+                    "dataPoints": [
+                      {
+                        "asInt": 1
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "counter_two",
+                  "sum": {
+                    "isMonotonic": false,
+                    "aggregationTemporality": 2,
+                    "dataPoints": [
+                      {
+                        "asInt": 2
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 2,
+      "gauge_count": 1,
+      "counter_count": 0,
+      "gauge": {
+        "name": "gauge_one",
+        "value": 1.0
+      }
+    }
+  },
+  "valid_invalid_numeric_skips_points": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "bad_numeric",
+                  "gauge": {
+                    "dataPoints": [
+                      {
+                        "asDouble": "12.0oops"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 0,
+      "counter_count": 0
+    }
+  },
+  "valid_histogram_payload": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "request_duration_seconds",
+                  "histogram": {
+                    "aggregationTemporality": 2,
+                    "dataPoints": [
+                      {
+                        "count": 6,
+                        "sum": 18.0,
+                        "bucketCounts": [1, 3, 6],
+                        "explicitBounds": [1.0, 5.0]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 0,
+      "counter_count": 0,
+      "histogram_count": 1,
+      "summary_count": 0,
+      "histogram": {
+        "name": "request_duration_seconds",
+        "count": 6,
+        "sum": 18.0
+      }
+    }
+  },
+  "valid_summary_payload": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "request_size_bytes",
+                  "summary": {
+                    "dataPoints": [
+                      {
+                        "count": 4,
+                        "sum": 420.0,
+                        "quantileValues": [
+                          {"quantile": 0.5, "value": 100.0},
+                          {"quantile": 0.9, "value": 180.0}
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 0,
+      "counter_count": 0,
+      "histogram_count": 0,
+      "summary_count": 1,
+      "summary": {
+        "name": "request_size_bytes",
+        "count": 4,
+        "sum": 420.0
+      }
+    }
+  },
+  "invalid_root": {
+    "input": [],
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_resource_metrics_missing": {
+    "input": {},
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_resource_metrics_type": {
+    "input": {
+      "resourceMetrics": {}
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_scope_metrics_missing": {
+    "input": {
+      "resourceMetrics": [
+        {}
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_scope_metrics_type": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": {}
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_metrics_missing": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {}
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_metrics_type": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": {}
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_metric_name_missing": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "gauge": {
+                    "dataPoints": []
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_metric_name_type": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": 123,
+                  "gauge": {
+                    "dataPoints": []
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "missing_metric_type": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "metric_without_data"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_gauge_type": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "broken_gauge",
+                  "gauge": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_gauge_datapoints_missing": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "broken_gauge_points",
+                  "gauge": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_gauge_datapoints_type": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "broken_gauge_points_type",
+                  "gauge": {
+                    "dataPoints": {}
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_sum_type": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "broken_sum",
+                  "sum": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_sum_datapoints_missing": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "broken_sum_points",
+                  "sum": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_sum_datapoints_type": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "broken_sum_points_type",
+                  "sum": {
+                    "dataPoints": {}
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_histogram_type": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "broken_histogram",
+                  "histogram": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_histogram_datapoints_missing": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "broken_histogram_points",
+                  "histogram": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_summary_type": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "broken_summary",
+                  "summary": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_summary_datapoints_missing": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "broken_summary_points",
+                  "summary": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "valid_exponential_histogram_payload": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "exp_hist",
+                  "exponentialHistogram": {
+                    "aggregationTemporality": 2,
+                    "dataPoints": [
+                      {
+                        "timeUnixNano": "1735689600000000000",
+                        "count": "8",
+                        "sum": "27.5",
+                        "scale": 0,
+                        "zeroCount": "2",
+                        "positive": {
+                          "offset": 0,
+                          "bucketCounts": [
+                            "3",
+                            "1"
+                          ]
+                        },
+                        "negative": {
+                          "offset": -1,
+                          "bucketCounts": [
+                            "1",
+                            "1"
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 0,
+      "counter_count": 0,
+      "histogram_count": 0,
+      "exp_histogram_count": 1,
+      "summary_count": 0,
+      "exp_histogram": {
+        "name": "exp_hist",
+        "count": 8,
+        "sum": 27.5,
+        "aggregation_type": 2
+      }
+    }
+  },
+  "valid_exponential_histogram_zero_only": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "exp_hist_zero",
+                  "exponentialHistogram": {
+                    "dataPoints": [
+                      {
+                        "timeUnixNano": 1735689600000000001,
+                        "count": 5,
+                        "sum": 0,
+                        "scale": 1,
+                        "zeroCount": 5
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 0,
+      "counter_count": 0,
+      "histogram_count": 0,
+      "exp_histogram_count": 1,
+      "summary_count": 0,
+      "exp_histogram": {
+        "name": "exp_hist_zero",
+        "count": 5,
+        "sum": 0
+      }
+    }
+  },
+  "invalid_exponential_histogram_type": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "exp_hist_broken",
+                  "exponentialHistogram": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_exponential_histogram_datapoints_missing": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "exp_hist_missing_datapoints",
+                  "exponentialHistogram": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected_error": {
+      "code": "CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR"
+    }
+  },
+  "invalid_exponential_histogram_count_mismatch": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "exp_hist_count_mismatch",
+                  "exponentialHistogram": {
+                    "dataPoints": [
+                      {
+                        "count": 99,
+                        "sum": 12.0,
+                        "scale": 0,
+                        "zeroCount": 1,
+                        "positive": {
+                          "offset": 0,
+                          "bucketCounts": [
+                            1,
+                            1
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 0,
+      "counter_count": 0,
+      "histogram_count": 0,
+      "exp_histogram_count": 1,
+      "summary_count": 0,
+      "exp_histogram": {
+        "name": "exp_hist_count_mismatch",
+        "count": 99,
+        "sum": 12.0
+      }
+    }
+  },
+  "invalid_exponential_histogram_inconsistent_layout": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "exp_hist_inconsistent_layout",
+                  "exponentialHistogram": {
+                    "dataPoints": [
+                      {
+                        "timeUnixNano": "1735689600000000002",
+                        "count": 3,
+                        "sum": 6.0,
+                        "scale": 0,
+                        "zeroCount": 1,
+                        "positive": {
+                          "offset": 0,
+                          "bucketCounts": [
+                            2
+                          ]
+                        }
+                      },
+                      {
+                        "timeUnixNano": "1735689600000000003",
+                        "count": 3,
+                        "sum": 10.0,
+                        "scale": 2,
+                        "zeroCount": 1,
+                        "positive": {
+                          "offset": 0,
+                          "bucketCounts": [
+                            2
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 0,
+      "counter_count": 0,
+      "histogram_count": 0,
+      "exp_histogram_count": 1,
+      "summary_count": 0,
+      "exp_histogram": {
+        "name": "exp_hist_inconsistent_layout",
+        "count": 3,
+        "sum": 10.0
+      }
+    }
+  },
+  "valid_gauge_description_and_unit": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "temperature_kelvin",
+                  "description": "temperature sensor gauge",
+                  "unit": "K",
+                  "gauge": {
+                    "dataPoints": [
+                      {
+                        "asDouble": 298.15
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 1,
+      "counter_count": 0,
+      "histogram_count": 0,
+      "exp_histogram_count": 0,
+      "summary_count": 0,
+      "gauge": {
+        "name": "temperature_kelvin",
+        "description": "temperature sensor gauge",
+        "unit": "K",
+        "value": 298.15
+      }
+    }
+  },
+  "valid_histogram_string_numeric_fields": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "latency_ms",
+                  "description": "request latency",
+                  "unit": "ms",
+                  "histogram": {
+                    "aggregationTemporality": 2,
+                    "dataPoints": [
+                      {
+                        "count": "6",
+                        "sum": "18.5",
+                        "bucketCounts": [
+                          "1",
+                          "2",
+                          "3"
+                        ],
+                        "explicitBounds": [
+                          "1.0",
+                          "3.0"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 0,
+      "counter_count": 0,
+      "histogram_count": 1,
+      "exp_histogram_count": 0,
+      "summary_count": 0,
+      "histogram": {
+        "name": "latency_ms",
+        "description": "request latency",
+        "unit": "ms",
+        "count": 6,
+        "sum": 18.5,
+        "aggregation_type": 2
+      }
+    }
+  },
+  "valid_summary_string_numeric_fields": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "payload_size",
+                  "description": "request payload bytes",
+                  "unit": "By",
+                  "summary": {
+                    "dataPoints": [
+                      {
+                        "count": "4",
+                        "sum": "1000.5",
+                        "quantileValues": [
+                          {
+                            "quantile": "0.5",
+                            "value": "100.0"
+                          },
+                          {
+                            "quantile": "0.9",
+                            "value": "450.0"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 0,
+      "counter_count": 0,
+      "histogram_count": 0,
+      "exp_histogram_count": 0,
+      "summary_count": 1,
+      "summary": {
+        "name": "payload_size",
+        "description": "request payload bytes",
+        "unit": "By",
+        "count": 4,
+        "sum": 1000.5
+      }
+    }
+  },
+  "valid_exponential_histogram_description_unit": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "exp_duration",
+                  "description": "exp duration histogram",
+                  "unit": "s",
+                  "exponentialHistogram": {
+                    "aggregationTemporality": 2,
+                    "dataPoints": [
+                      {
+                        "count": "10",
+                        "sum": "50.25",
+                        "scale": "2",
+                        "zeroCount": "1",
+                        "zeroThreshold": 0.01,
+                        "positive": {
+                          "offset": "0",
+                          "bucketCounts": [
+                            "4",
+                            "3"
+                          ]
+                        },
+                        "negative": {
+                          "offset": "-1",
+                          "bucketCounts": [
+                            "1",
+                            "1"
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 0,
+      "counter_count": 0,
+      "histogram_count": 0,
+      "exp_histogram_count": 1,
+      "summary_count": 0,
+      "exp_histogram": {
+        "name": "exp_duration",
+        "description": "exp duration histogram",
+        "unit": "s",
+        "count": 10,
+        "sum": 50.25,
+        "aggregation_type": 2
+      }
+    }
+  }
+}
