@@ -179,6 +179,7 @@ set(UNIT_TESTS_DATA
   data/input_chunk/log/a_thousand_plus_one_bytes.log
   data/input_chunk/log/test_buffer_valid.log
   data/opentelemetry/logs.json
+  data/opentelemetry/metrics.json
   )
 
 set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)
