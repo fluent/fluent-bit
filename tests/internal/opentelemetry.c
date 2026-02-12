@@ -812,10 +812,12 @@ static void run_metrics_case(msgpack_object *case_obj, const char *case_name)
     int               summary_index;
     msgpack_object   *exp_histogram_obj;
     uint64_t          expected_count;
+    int               decode_ret;
     int               expected_label_count;
     char            **expected_label_values;
 
     input_json = NULL;
+    decode_ret = CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
     expected_label_count = 0;
     expected_label_values = NULL;
     (void) case_name;
@@ -878,6 +880,7 @@ static void run_metrics_case(msgpack_object *case_obj, const char *case_name)
     ret = flb_opentelemetry_metrics_json_to_cmt(&context_list,
                                                 input_json,
                                                 strlen(input_json));
+    decode_ret = ret;
     TEST_CHECK(ret == expected_result);
 
     if (expected_result == CMT_DECODE_OPENTELEMETRY_SUCCESS) {
@@ -1356,7 +1359,7 @@ static void run_metrics_case(msgpack_object *case_obj, const char *case_name)
         }
     }
 
-    if (ret == CMT_DECODE_OPENTELEMETRY_SUCCESS) {
+    if (decode_ret == CMT_DECODE_OPENTELEMETRY_SUCCESS) {
         destroy_metrics_context_list(&context_list);
     }
 
