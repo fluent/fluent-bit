@@ -31,6 +31,11 @@ int json_payload_get_wrapped_value(msgpack_object *wrapper,
                                    msgpack_object **value,
                                    int            *type);
 
+int opentelemetry_is_grpc_content_type(const char *content_type);
+int opentelemetry_is_json_content_type(const char *content_type);
+int opentelemetry_is_protobuf_content_type(const char *content_type);
+int opentelemetry_payload_starts_with_json_object(const void *payload, size_t payload_size);
+
 int hex_to_id(char *str, int len, unsigned char *out_buf, int out_size);
 uint64_t convert_string_number_to_u64(char *str, size_t len);
 

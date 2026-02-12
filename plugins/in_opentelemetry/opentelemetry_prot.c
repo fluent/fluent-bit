@@ -46,25 +46,6 @@
 
 #define HTTP_CONTENT_JSON  0
 
-static int is_grpc_content_type(const char *content_type)
-{
-    if (content_type == NULL) {
-        return FLB_FALSE;
-    }
-
-    if (strncasecmp(content_type, "application/grpc", 16) != 0) {
-        return FLB_FALSE;
-    }
-
-    if (content_type[16] == '\0' ||
-        content_type[16] == '+' ||
-        content_type[16] == ';') {
-        return FLB_TRUE;
-    }
-
-    return FLB_FALSE;
-}
-
 static int is_profiles_export_path(const char *path)
 {
     if (path == NULL) {
@@ -157,7 +138,7 @@ static int process_payload_metrics(struct flb_opentelemetry *ctx, struct http_co
     offset = 0;
 
     if (content_type != NULL &&
-        strcasecmp(content_type, "application/json") == 0) {
+        opentelemetry_is_json_content_type(content_type) == FLB_TRUE) {
         result = flb_opentelemetry_metrics_json_to_cmt(&decoded_contexts,
                                                        request->data.data,
                                                        request->data.len);
@@ -952,14 +933,13 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
     offset = 0;
 
     /* note: if the content type is gRPC, it was already decoded */
-    if (strcasecmp(request->content_type, "application/json") == 0) {
+    if (opentelemetry_is_json_content_type(request->content_type) == FLB_TRUE) {
         result = flb_opentelemetry_metrics_json_to_cmt(&decoded_contexts,
                                                        payload,
                                                        payload_size);
     }
-    else if (is_grpc_content_type(request->content_type) == FLB_TRUE ||
-             strcasecmp(request->content_type, "application/x-protobuf") == 0 ||
-             strcasecmp(request->content_type, "application/protobuf") == 0) {
+    else if (opentelemetry_is_protobuf_content_type(request->content_type) ==
+             FLB_TRUE) {
         result = cmt_decode_opentelemetry_create(&decoded_contexts,
                                                  payload,
                                                  payload_size,
@@ -1070,15 +1050,14 @@ static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
         flb_error("[otel] content type missing");
         return -1;
     }
-    else if (strcasecmp(request->content_type, "application/json") == 0) {
+    else if (opentelemetry_is_json_content_type(request->content_type) == FLB_TRUE) {
         flb_error("[otel] unsuported profiles encoding type : %s",
                   request->content_type);
 
         return -1;
     }
-    else if (is_grpc_content_type(request->content_type) == FLB_TRUE ||
-             strcasecmp(request->content_type, "application/protobuf") == 0 ||
-             strcasecmp(request->content_type, "application/x-protobuf") == 0) {
+    else if (opentelemetry_is_protobuf_content_type(request->content_type) ==
+             FLB_TRUE) {
         profiles_context = NULL;
         offset = 0;
 
@@ -1250,7 +1229,8 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
     }
 
     /* Check if the payload is gRPC compressed */
-    if (grpc_request && is_grpc_content_type(request->content_type) == FLB_TRUE) {
+    if (grpc_request &&
+        opentelemetry_is_grpc_content_type(request->content_type) == FLB_TRUE) {
 
 next_grpc_message:
 

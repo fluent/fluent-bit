@@ -27,6 +27,7 @@
 
 #include "opentelemetry.h"
 #include "opentelemetry_traces.h"
+#include "opentelemetry_utils.h"
 
 int opentelemetry_traces_process_protobuf(struct flb_opentelemetry *ctx,
                                           flb_sds_t tag,
@@ -157,17 +158,15 @@ int opentelemetry_process_traces(struct flb_opentelemetry *ctx,
 
     /* Detect the type of payload */
     if (content_type) {
-        if (strcasecmp(content_type, "application/json") == 0) {
-            if (buf[0] != '{') {
+        if (opentelemetry_is_json_content_type(content_type) == FLB_TRUE) {
+            if (opentelemetry_payload_starts_with_json_object(buf, size) != FLB_TRUE) {
                 flb_plg_error(ctx->ins, "Invalid JSON payload");
                 return -1;
             }
 
             is_proto = FLB_FALSE;
         }
-        else if (strcasecmp(content_type, "application/protobuf") == 0 ||
-                 strcasecmp(content_type, "application/grpc") == 0 ||
-                 strcasecmp(content_type, "application/x-protobuf") == 0) {
+        else if (opentelemetry_is_protobuf_content_type(content_type) == FLB_TRUE) {
             is_proto = FLB_TRUE;
         }
         else {
