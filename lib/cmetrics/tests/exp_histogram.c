@@ -221,6 +221,34 @@ static int get_prometheus_bucket_value(cfl_sds_t encoded_prometheus,
     return 0;
 }
 
+static int remote_write_contains_metric_name(Prometheus__WriteRequest *request,
+                                             const char *metric_name)
+{
+    size_t index;
+    size_t label_index;
+
+    for (index = 0; index < request->n_timeseries; index++) {
+        if (request->timeseries[index] == NULL) {
+            continue;
+        }
+
+        for (label_index = 0; label_index < request->timeseries[index]->n_labels; label_index++) {
+            if (request->timeseries[index]->labels[label_index] == NULL) {
+                continue;
+            }
+
+            if (request->timeseries[index]->labels[label_index]->name != NULL &&
+                request->timeseries[index]->labels[label_index]->value != NULL &&
+                strcmp(request->timeseries[index]->labels[label_index]->name, "__name__") == 0 &&
+                strcmp(request->timeseries[index]->labels[label_index]->value, metric_name) == 0) {
+                return CMT_TRUE;
+            }
+        }
+    }
+
+    return CMT_FALSE;
+}
+
 static int assert_prometheus_bucket_monotonicity(cfl_sds_t encoded_prometheus,
                                                  double *out_last_finite,
                                                  double *out_plus_inf)
@@ -714,6 +742,47 @@ void test_exp_histogram_prometheus_no_sum()
     cmt_destroy(context);
 }
 
+void test_exp_histogram_remote_write_no_sum()
+{
+    uint64_t positive[3] = {3, 5, 7};
+    uint64_t negative[2] = {2, 1};
+    cfl_sds_t encoded_remote_write;
+    struct cmt *context;
+    Prometheus__WriteRequest *request;
+
+    cmt_initialize();
+
+    context = cmt_create();
+    TEST_CHECK(context != NULL);
+    if (context == NULL) {
+        return;
+    }
+
+    TEST_CHECK(create_test_metric_custom(context, cfl_time_now(),
+                                         2, 11, 0.0,
+                                         -2, 3, positive,
+                                         -1, 2, negative,
+                                         CMT_FALSE, 123.75, 29) != NULL);
+
+    encoded_remote_write = cmt_encode_prometheus_remote_write_create(context);
+    TEST_CHECK(encoded_remote_write != NULL);
+    if (encoded_remote_write != NULL) {
+        request = prometheus__write_request__unpack(NULL,
+                                                    cfl_sds_len(encoded_remote_write),
+                                                    (uint8_t *) encoded_remote_write);
+        TEST_CHECK(request != NULL);
+        if (request != NULL) {
+            TEST_CHECK(remote_write_contains_metric_name(request, "cm_native_exp_hist_count") == CMT_TRUE);
+            TEST_CHECK(remote_write_contains_metric_name(request, "cm_native_exp_hist_sum") == CMT_FALSE);
+            TEST_CHECK(remote_write_contains_metric_name(request, "cm_native_exp_hist_bucket") == CMT_TRUE);
+            prometheus__write_request__free_unpacked(request, NULL);
+        }
+    }
+
+    cmt_encode_prometheus_remote_write_destroy(encoded_remote_write);
+    cmt_destroy(context);
+}
+
 TEST_LIST = {
     {"exp_histogram_msgpack_roundtrip", test_exp_histogram_msgpack_roundtrip},
     {"exp_histogram_encoder_smoke",     test_exp_histogram_encoder_smoke},
@@ -721,5 +790,6 @@ TEST_LIST = {
     {"exp_histogram_cat_filter_smoke",  test_exp_histogram_cat_filter_smoke},
     {"exp_histogram_cat_sparse_merge",  test_exp_histogram_cat_sparse_merge},
     {"exp_histogram_prometheus_no_sum", test_exp_histogram_prometheus_no_sum},
+    {"exp_histogram_remote_write_no_sum", test_exp_histogram_remote_write_no_sum},
     { 0 }
 };
