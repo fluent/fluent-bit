@@ -408,9 +408,9 @@ void test_exp_histogram_encoder_smoke()
     cfl_sds_t encoded_prometheus;
     cfl_sds_t encoded_influx;
     cfl_sds_t encoded_splunk_hec;
-    cfl_sds_t encoded_remote_write;
-    cfl_sds_t encoded_opentelemetry;
-    char *encoded_cloudwatch_emf;
+    cfl_sds_t encoded_remote_write = NULL;
+    cfl_sds_t encoded_opentelemetry = NULL;
+    char *encoded_cloudwatch_emf = NULL;
     size_t encoded_cloudwatch_emf_size;
     struct cmt *context;
 
@@ -485,7 +485,9 @@ void test_exp_histogram_encoder_smoke()
         printf("========== EXP HIST CLOUDWATCH EMF ==========\n");
         printf("payload_size=%zu\n\n", encoded_cloudwatch_emf_size);
     }
-    cmt_encode_cloudwatch_emf_destroy(encoded_cloudwatch_emf);
+    if (encoded_cloudwatch_emf != NULL) {
+        cmt_encode_cloudwatch_emf_destroy(encoded_cloudwatch_emf);
+    }
 
     encoded_remote_write = cmt_encode_prometheus_remote_write_create(context);
     TEST_CHECK(encoded_remote_write != NULL);
@@ -493,7 +495,9 @@ void test_exp_histogram_encoder_smoke()
         printf("========== EXP HIST REMOTE WRITE ==========\n");
         printf("payload_size=%zu\n\n", cfl_sds_len(encoded_remote_write));
     }
-    cmt_encode_prometheus_remote_write_destroy(encoded_remote_write);
+    if (encoded_remote_write != NULL) {
+        cmt_encode_prometheus_remote_write_destroy(encoded_remote_write);
+    }
 
     encoded_opentelemetry = cmt_encode_opentelemetry_create(context);
     TEST_CHECK(encoded_opentelemetry != NULL);
@@ -501,7 +505,9 @@ void test_exp_histogram_encoder_smoke()
         printf("========== EXP HIST OPENTELEMETRY ==========\n");
         printf("payload_size=%zu\n\n", cfl_sds_len(encoded_opentelemetry));
     }
-    cmt_encode_opentelemetry_destroy(encoded_opentelemetry);
+    if (encoded_opentelemetry != NULL) {
+        cmt_encode_opentelemetry_destroy(encoded_opentelemetry);
+    }
 
     cmt_destroy(context);
 }

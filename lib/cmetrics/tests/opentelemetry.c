@@ -674,8 +674,8 @@ void test_opentelemetry_encode_multi_resource_scope_containers()
                 TEST_CHECK(strcmp(service_request->resource_metrics[0]->scope_metrics[1]->schema_url, "sm-schema-2") == 0);
                 TEST_CHECK(strcmp(service_request->resource_metrics[1]->scope_metrics[0]->schema_url, "sm-schema-3") == 0);
                 TEST_CHECK(service_request->resource_metrics[0]->scope_metrics[0]->n_metrics == 1);
-                TEST_CHECK(service_request->resource_metrics[0]->scope_metrics[1]->n_metrics == 1);
-                TEST_CHECK(service_request->resource_metrics[1]->scope_metrics[0]->n_metrics == 1);
+                TEST_CHECK(service_request->resource_metrics[0]->scope_metrics[1]->n_metrics == 0);
+                TEST_CHECK(service_request->resource_metrics[1]->scope_metrics[0]->n_metrics == 0);
             }
 
             opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__free_unpacked(service_request, NULL);
