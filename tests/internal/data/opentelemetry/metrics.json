@@ -260,6 +260,77 @@
       }
     }
   },
+  "valid_label_order_independent": {
+    "input": {
+      "resourceMetrics": [
+        {
+          "scopeMetrics": [
+            {
+              "metrics": [
+                {
+                  "name": "order_independent_gauge",
+                  "gauge": {
+                    "dataPoints": [
+                      {
+                        "asInt": 10,
+                        "attributes": [
+                          {
+                            "key": "k1",
+                            "value": {
+                              "stringValue": "v1"
+                            }
+                          },
+                          {
+                            "key": "k2",
+                            "value": {
+                              "stringValue": "v2"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "asInt": 20,
+                        "attributes": [
+                          {
+                            "key": "k2",
+                            "value": {
+                              "stringValue": "v2"
+                            }
+                          },
+                          {
+                            "key": "k1",
+                            "value": {
+                              "stringValue": "v1"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "context_count": 1,
+      "gauge_count": 1,
+      "counter_count": 0,
+      "histogram_count": 0,
+      "exp_histogram_count": 0,
+      "summary_count": 0,
+      "gauge": {
+        "name": "order_independent_gauge",
+        "label_values": [
+          "v1",
+          "v2"
+        ],
+        "value": 20.0
+      }
+    }
+  },
   "valid_invalid_numeric_skips_points": {
     "input": {
       "resourceMetrics": [
