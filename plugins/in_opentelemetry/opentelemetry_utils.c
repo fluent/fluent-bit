@@ -157,6 +157,7 @@ int json_payload_get_wrapped_value(msgpack_object *wrapper,
 static int opentelemetry_content_type_matches(const char *content_type,
                                               const char *expected_content_type)
 {
+    size_t content_length;
     size_t expected_length;
     char trailing_character;
 
@@ -165,6 +166,11 @@ static int opentelemetry_content_type_matches(const char *content_type,
     }
 
     expected_length = strlen(expected_content_type);
+    content_length = strlen(content_type);
+
+    if (content_length < expected_length) {
+        return FLB_FALSE;
+    }
 
     if (strncasecmp(content_type, expected_content_type, expected_length) != 0) {
         return FLB_FALSE;
@@ -184,7 +190,14 @@ static int opentelemetry_content_type_matches(const char *content_type,
 
 int opentelemetry_is_grpc_content_type(const char *content_type)
 {
+    size_t content_length;
+
     if (content_type == NULL) {
+        return FLB_FALSE;
+    }
+
+    content_length = strlen(content_type);
+    if (content_length < 16) {
         return FLB_FALSE;
     }
 
