@@ -35,6 +35,8 @@
 
 #include <msgpack.h>
 
+#include <ctype.h>
+
 #define OTEL_METRICS_JSON_DECODER_ERROR CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR
 
 static void destroy_context_list(struct cfl_list *context_list)
@@ -56,6 +58,12 @@ static void destroy_context_list(struct cfl_list *context_list)
 
 static int parse_u64_value(msgpack_object *obj, uint64_t *value)
 {
+    size_t index;
+
+    if (obj == NULL || value == NULL) {
+        return -1;
+    }
+
     if (obj->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
         *value = (uint64_t) obj->via.u64;
         return 0;
@@ -68,6 +76,18 @@ static int parse_u64_value(msgpack_object *obj, uint64_t *value)
         return 0;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
+        if (obj->via.str.size == 0 ||
+            obj->via.str.ptr[0] == '-' ||
+            obj->via.str.size > 31) {
+            return -1;
+        }
+
+        for (index = 0 ; index < obj->via.str.size ; index++) {
+            if (!isdigit((unsigned char) obj->via.str.ptr[index])) {
+                return -1;
+            }
+        }
+
         *value = flb_otel_utils_convert_string_number_to_u64(
                    (char *) obj->via.str.ptr, obj->via.str.size);
         return 0;
