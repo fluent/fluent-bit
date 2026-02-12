@@ -154,6 +154,106 @@ int json_payload_get_wrapped_value(msgpack_object *wrapper,
     return 0;
 }
 
+static int opentelemetry_content_type_matches(const char *content_type,
+                                              const char *expected_content_type)
+{
+    size_t expected_length;
+    char trailing_character;
+
+    if (content_type == NULL || expected_content_type == NULL) {
+        return FLB_FALSE;
+    }
+
+    expected_length = strlen(expected_content_type);
+
+    if (strncasecmp(content_type, expected_content_type, expected_length) != 0) {
+        return FLB_FALSE;
+    }
+
+    trailing_character = content_type[expected_length];
+
+    if (trailing_character == '\0' ||
+        trailing_character == ';' ||
+        trailing_character == ' ' ||
+        trailing_character == '\t') {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+int opentelemetry_is_grpc_content_type(const char *content_type)
+{
+    if (content_type == NULL) {
+        return FLB_FALSE;
+    }
+
+    if (strncasecmp(content_type, "application/grpc", 16) != 0) {
+        return FLB_FALSE;
+    }
+
+    if (content_type[16] == '\0' ||
+        content_type[16] == '+' ||
+        content_type[16] == ';' ||
+        content_type[16] == ' ' ||
+        content_type[16] == '\t') {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+int opentelemetry_is_json_content_type(const char *content_type)
+{
+    return opentelemetry_content_type_matches(content_type, "application/json");
+}
+
+int opentelemetry_is_protobuf_content_type(const char *content_type)
+{
+    if (opentelemetry_content_type_matches(content_type, "application/protobuf") ==
+        FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+    if (opentelemetry_content_type_matches(content_type,
+                                           "application/x-protobuf") == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+    if (opentelemetry_is_grpc_content_type(content_type) == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+int opentelemetry_payload_starts_with_json_object(const void *payload,
+                                                  size_t payload_size)
+{
+    size_t index;
+    const unsigned char *buffer;
+
+    if (payload == NULL || payload_size == 0) {
+        return FLB_FALSE;
+    }
+
+    buffer = (const unsigned char *) payload;
+
+    for (index = 0; index < payload_size; index++) {
+        if (isspace(buffer[index])) {
+            continue;
+        }
+
+        if (buffer[index] == '{') {
+            return FLB_TRUE;
+        }
+
+        return FLB_FALSE;
+    }
+
+    return FLB_FALSE;
+}
+
 static int hex_to_int(char ch)
 {
     if (ch >= '0' && ch <= '9') {
