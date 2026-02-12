@@ -646,6 +646,87 @@ static int test_msgpack_object_to_u64(msgpack_object *object, uint64_t *value)
     return -1;
 }
 
+static void test_destroy_label_values(int label_count, char **label_values)
+{
+    int index;
+
+    if (label_values == NULL) {
+        return;
+    }
+
+    for (index = 0; index < label_count; index++) {
+        if (label_values[index] != NULL) {
+            flb_free(label_values[index]);
+        }
+    }
+
+    flb_free(label_values);
+}
+
+static int test_extract_label_values(msgpack_object_map *container_map,
+                                     char *field_name,
+                                     int *out_label_count,
+                                     char ***out_label_values)
+{
+    int             index;
+    int             label_index;
+    char          **label_values;
+    msgpack_object *field_obj;
+    msgpack_object_array *label_array;
+
+    *out_label_count = 0;
+    *out_label_values = NULL;
+
+    index = flb_otel_utils_find_map_entry_by_key(container_map,
+                                                  field_name,
+                                                  0,
+                                                  FLB_TRUE);
+    if (index < 0) {
+        return 0;
+    }
+
+    field_obj = &container_map->ptr[index].val;
+    if (field_obj->type != MSGPACK_OBJECT_ARRAY) {
+        return -1;
+    }
+
+    label_array = &field_obj->via.array;
+    if (label_array->size == 0) {
+        return 0;
+    }
+
+    label_values = flb_calloc(label_array->size, sizeof(char *));
+    if (label_values == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    for (label_index = 0; label_index < label_array->size; label_index++) {
+        field_obj = &label_array->ptr[label_index];
+        if (field_obj->type != MSGPACK_OBJECT_STR) {
+            test_destroy_label_values((int) label_array->size, label_values);
+            return -1;
+        }
+
+        label_values[label_index] = flb_malloc(field_obj->via.str.size + 1);
+        if (label_values[label_index] == NULL) {
+            flb_errno();
+            test_destroy_label_values((int) label_array->size, label_values);
+            return -1;
+        }
+
+        memcpy(label_values[label_index],
+               field_obj->via.str.ptr,
+               field_obj->via.str.size);
+        label_values[label_index][field_obj->via.str.size] = '\0';
+    }
+
+    *out_label_count = (int) label_array->size;
+    *out_label_values = label_values;
+
+    return 0;
+}
+
 static void test_check_metric_description_unit(msgpack_object *metric_obj,
                                                struct cmt_opts *opts,
                                                struct cmt_map *map)
@@ -731,8 +812,12 @@ static void run_metrics_case(msgpack_object *case_obj, const char *case_name)
     int               summary_index;
     msgpack_object   *exp_histogram_obj;
     uint64_t          expected_count;
+    int               expected_label_count;
+    char            **expected_label_values;
 
     input_json = NULL;
+    expected_label_count = 0;
+    expected_label_values = NULL;
     (void) case_name;
     TEST_CHECK(case_obj->type == MSGPACK_OBJECT_MAP);
     if (case_obj->type != MSGPACK_OBJECT_MAP) {
@@ -936,9 +1021,21 @@ static void run_metrics_case(msgpack_object *case_obj, const char *case_name)
                                                                  &expected_value) == 0);
                         if (test_msgpack_object_to_double(field_obj,
                                                           &expected_value) == 0) {
-                            ret = cmt_gauge_get_val(gauge, 0, NULL, &value);
+                            ret = test_extract_label_values(&gauge_obj->via.map,
+                                                            "label_values",
+                                                            &expected_label_count,
+                                                            &expected_label_values);
+                            TEST_CHECK(ret == 0);
+                            ret = cmt_gauge_get_val(gauge,
+                                                    expected_label_count,
+                                                    expected_label_values,
+                                                    &value);
                             TEST_CHECK(ret == 0);
                             TEST_CHECK(value == expected_value);
+                            test_destroy_label_values(expected_label_count,
+                                                      expected_label_values);
+                            expected_label_count = 0;
+                            expected_label_values = NULL;
                         }
                     }
                 }
@@ -983,9 +1080,21 @@ static void run_metrics_case(msgpack_object *case_obj, const char *case_name)
                                                                  &expected_value) == 0);
                         if (test_msgpack_object_to_double(field_obj,
                                                           &expected_value) == 0) {
-                            ret = cmt_counter_get_val(counter, 0, NULL, &value);
+                            ret = test_extract_label_values(&counter_obj->via.map,
+                                                            "label_values",
+                                                            &expected_label_count,
+                                                            &expected_label_values);
+                            TEST_CHECK(ret == 0);
+                            ret = cmt_counter_get_val(counter,
+                                                      expected_label_count,
+                                                      expected_label_values,
+                                                      &value);
                             TEST_CHECK(ret == 0);
                             TEST_CHECK(value == expected_value);
+                            test_destroy_label_values(expected_label_count,
+                                                      expected_label_values);
+                            expected_label_count = 0;
+                            expected_label_values = NULL;
                         }
                     }
 
@@ -1250,6 +1359,8 @@ static void run_metrics_case(msgpack_object *case_obj, const char *case_name)
     if (ret == CMT_DECODE_OPENTELEMETRY_SUCCESS) {
         destroy_metrics_context_list(&context_list);
     }
+
+    test_destroy_label_values(expected_label_count, expected_label_values);
 
     flb_free(input_json);
 }
