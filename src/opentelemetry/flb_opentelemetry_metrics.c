@@ -36,6 +36,7 @@
 #include <msgpack.h>
 
 #include <ctype.h>
+#include <errno.h>
 
 #define OTEL_METRICS_JSON_DECODER_ERROR CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR
 
@@ -90,6 +91,57 @@ static int parse_u64_value(msgpack_object *obj, uint64_t *value)
 
         *value = flb_otel_utils_convert_string_number_to_u64(
                    (char *) obj->via.str.ptr, obj->via.str.size);
+        return 0;
+    }
+
+    return -1;
+}
+
+static int parse_i64_value(msgpack_object *obj, int64_t *value)
+{
+    char     *end;
+    flb_sds_t string_value;
+    uint64_t  temp_u64;
+    int64_t   temp_i64;
+
+    if (obj == NULL || value == NULL) {
+        return -1;
+    }
+
+    if (obj->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+        temp_u64 = obj->via.u64;
+
+        if (temp_u64 > INT64_MAX) {
+            return -1;
+        }
+
+        *value = (int64_t) temp_u64;
+        return 0;
+    }
+    else if (obj->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+        *value = obj->via.i64;
+        return 0;
+    }
+    else if (obj->type == MSGPACK_OBJECT_STR) {
+        string_value = flb_sds_create_len(obj->via.str.ptr, obj->via.str.size);
+        if (string_value == NULL) {
+            return -1;
+        }
+
+        errno = 0;
+        end = NULL;
+        temp_i64 = strtoll(string_value, &end, 10);
+
+        if (errno == ERANGE ||
+            end == string_value ||
+            (end != NULL && *end != '\0')) {
+            flb_sds_destroy(string_value);
+            return -1;
+        }
+
+        flb_sds_destroy(string_value);
+
+        *value = temp_i64;
         return 0;
     }
 
@@ -655,21 +707,28 @@ static int check_label_layout(int expected_count,
 }
 
 static int parse_number_datapoint_value(msgpack_object_map *point_map,
-                                        double *value)
+                                        int *number_value_case,
+                                        int64_t *integer_value,
+                                        double *double_value)
 {
     int             result;
     msgpack_object *obj;
 
+    *number_value_case = CMT_METRIC_VALUE_DOUBLE;
+    *integer_value = 0;
+    *double_value = 0;
+
     result = flb_otel_utils_find_map_entry_by_key(point_map, "asDouble", 0, FLB_TRUE);
     if (result >= 0) {
         obj = &point_map->ptr[result].val;
-        return parse_double_value(obj, value);
+        return parse_double_value(obj, double_value);
     }
 
     result = flb_otel_utils_find_map_entry_by_key(point_map, "asInt", 0, FLB_TRUE);
     if (result >= 0) {
         obj = &point_map->ptr[result].val;
-        return parse_double_value(obj, value);
+        *number_value_case = CMT_METRIC_VALUE_INT64;
+        return parse_i64_value(obj, integer_value);
     }
 
     return -1;
@@ -1071,6 +1130,255 @@ static int clone_metric_metadata(struct cmt *context,
     return 0;
 }
 
+static int clone_scope_metadata_and_attributes(struct cfl_kvlist *external_metadata,
+                                               msgpack_object *scope_object)
+{
+    int                result;
+    int                index;
+    uint64_t           dropped_attributes_count;
+    msgpack_object    *field_object;
+    msgpack_object_map *scope_map;
+    struct cfl_kvlist *root;
+    struct cfl_kvlist *metadata;
+    struct cfl_kvlist *attributes;
+
+    root = get_or_create_external_metadata_kvlist(external_metadata, "scope");
+    if (root == NULL) {
+        return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
+    metadata = get_or_create_external_metadata_kvlist(root, "metadata");
+    if (metadata == NULL) {
+        return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
+    attributes = get_or_create_external_metadata_kvlist(root, "attributes");
+    if (attributes == NULL) {
+        return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
+    if (scope_object == NULL) {
+        return 0;
+    }
+
+    if (scope_object->type != MSGPACK_OBJECT_MAP) {
+        return OTEL_METRICS_JSON_DECODER_ERROR;
+    }
+
+    scope_map = &scope_object->via.map;
+
+    index = flb_otel_utils_find_map_entry_by_key(scope_map, "name", 0, FLB_TRUE);
+    if (index >= 0) {
+        field_object = &scope_map->ptr[index].val;
+        if (field_object->type != MSGPACK_OBJECT_STR ||
+            cfl_kvlist_insert_string_s(metadata,
+                                       "name",
+                                       4,
+                                       (char *) field_object->via.str.ptr,
+                                       field_object->via.str.size,
+                                       CFL_FALSE) != 0) {
+            return OTEL_METRICS_JSON_DECODER_ERROR;
+        }
+    }
+
+    index = flb_otel_utils_find_map_entry_by_key(scope_map, "version", 0, FLB_TRUE);
+    if (index >= 0) {
+        field_object = &scope_map->ptr[index].val;
+        if (field_object->type != MSGPACK_OBJECT_STR ||
+            cfl_kvlist_insert_string_s(metadata,
+                                       "version",
+                                       7,
+                                       (char *) field_object->via.str.ptr,
+                                       field_object->via.str.size,
+                                       CFL_FALSE) != 0) {
+            return OTEL_METRICS_JSON_DECODER_ERROR;
+        }
+    }
+
+    index = flb_otel_utils_find_map_entry_by_key(scope_map,
+                                                  "droppedAttributesCount",
+                                                  0,
+                                                  FLB_TRUE);
+    if (index >= 0) {
+        field_object = &scope_map->ptr[index].val;
+
+        result = parse_u64_value(field_object, &dropped_attributes_count);
+        if (result != 0 ||
+            cfl_kvlist_insert_int64(metadata,
+                                    "dropped_attributes_count",
+                                    (int64_t) dropped_attributes_count) != 0) {
+            return OTEL_METRICS_JSON_DECODER_ERROR;
+        }
+    }
+
+    index = flb_otel_utils_find_map_entry_by_key(scope_map, "attributes", 0, FLB_TRUE);
+    if (index >= 0) {
+        field_object = &scope_map->ptr[index].val;
+        if (field_object->type != MSGPACK_OBJECT_ARRAY) {
+            return OTEL_METRICS_JSON_DECODER_ERROR;
+        }
+
+        if (flb_otel_utils_clone_kvlist_from_otlp_json_array(attributes,
+                                                             field_object) != 0) {
+            return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
+    }
+
+    return 0;
+}
+
+static int clone_scope_metrics_metadata(struct cfl_kvlist *external_metadata,
+                                        msgpack_object_map *scope_metrics_map)
+{
+    int                index;
+    msgpack_object    *schema_url;
+    struct cfl_kvlist *root;
+    struct cfl_kvlist *metadata;
+
+    root = get_or_create_external_metadata_kvlist(external_metadata, "scope_metrics");
+    if (root == NULL) {
+        return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
+    metadata = get_or_create_external_metadata_kvlist(root, "metadata");
+    if (metadata == NULL) {
+        return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
+    index = flb_otel_utils_find_map_entry_by_key(scope_metrics_map,
+                                                  "schemaUrl",
+                                                  0,
+                                                  FLB_TRUE);
+    if (index < 0) {
+        return 0;
+    }
+
+    schema_url = &scope_metrics_map->ptr[index].val;
+    if (schema_url->type != MSGPACK_OBJECT_STR ||
+        cfl_kvlist_insert_string_s(metadata,
+                                   "schema_url",
+                                   10,
+                                   (char *) schema_url->via.str.ptr,
+                                   schema_url->via.str.size,
+                                   CFL_FALSE) != 0) {
+        return OTEL_METRICS_JSON_DECODER_ERROR;
+    }
+
+    return 0;
+}
+
+static int clone_resource_metadata_and_attributes(struct cfl_kvlist *external_metadata,
+                                                  msgpack_object *resource_object)
+{
+    int                result;
+    int                index;
+    uint64_t           dropped_attributes_count;
+    msgpack_object    *field_object;
+    msgpack_object_map *resource_map;
+    struct cfl_kvlist *root;
+    struct cfl_kvlist *metadata;
+    struct cfl_kvlist *attributes;
+
+    root = get_or_create_external_metadata_kvlist(external_metadata, "resource");
+    if (root == NULL) {
+        return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
+    metadata = get_or_create_external_metadata_kvlist(root, "metadata");
+    if (metadata == NULL) {
+        return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
+    attributes = get_or_create_external_metadata_kvlist(root, "attributes");
+    if (attributes == NULL) {
+        return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
+    if (resource_object == NULL) {
+        return 0;
+    }
+
+    if (resource_object->type != MSGPACK_OBJECT_MAP) {
+        return OTEL_METRICS_JSON_DECODER_ERROR;
+    }
+
+    resource_map = &resource_object->via.map;
+
+    index = flb_otel_utils_find_map_entry_by_key(resource_map,
+                                                  "droppedAttributesCount",
+                                                  0,
+                                                  FLB_TRUE);
+    if (index >= 0) {
+        field_object = &resource_map->ptr[index].val;
+
+        result = parse_u64_value(field_object, &dropped_attributes_count);
+        if (result != 0 ||
+            cfl_kvlist_insert_int64(metadata,
+                                    "dropped_attributes_count",
+                                    (int64_t) dropped_attributes_count) != 0) {
+            return OTEL_METRICS_JSON_DECODER_ERROR;
+        }
+    }
+
+    index = flb_otel_utils_find_map_entry_by_key(resource_map,
+                                                  "attributes",
+                                                  0,
+                                                  FLB_TRUE);
+    if (index >= 0) {
+        field_object = &resource_map->ptr[index].val;
+        if (field_object->type != MSGPACK_OBJECT_ARRAY) {
+            return OTEL_METRICS_JSON_DECODER_ERROR;
+        }
+
+        if (flb_otel_utils_clone_kvlist_from_otlp_json_array(attributes,
+                                                             field_object) != 0) {
+            return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
+    }
+
+    return 0;
+}
+
+static int clone_resource_metrics_metadata(struct cfl_kvlist *external_metadata,
+                                           msgpack_object_map *resource_metrics_map)
+{
+    int                index;
+    msgpack_object    *schema_url;
+    struct cfl_kvlist *root;
+    struct cfl_kvlist *metadata;
+
+    root = get_or_create_external_metadata_kvlist(external_metadata, "resource_metrics");
+    if (root == NULL) {
+        return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
+    metadata = get_or_create_external_metadata_kvlist(root, "metadata");
+    if (metadata == NULL) {
+        return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
+    index = flb_otel_utils_find_map_entry_by_key(resource_metrics_map,
+                                                  "schemaUrl",
+                                                  0,
+                                                  FLB_TRUE);
+    if (index < 0) {
+        return 0;
+    }
+
+    schema_url = &resource_metrics_map->ptr[index].val;
+    if (schema_url->type != MSGPACK_OBJECT_STR ||
+        cfl_kvlist_insert_string_s(metadata,
+                                   "schema_url",
+                                   10,
+                                   (char *) schema_url->via.str.ptr,
+                                   schema_url->via.str.size,
+                                   CFL_FALSE) != 0) {
+        return OTEL_METRICS_JSON_DECODER_ERROR;
+    }
+
+    return 0;
+}
+
 static int process_metric_gauge_data_points(struct cmt *context,
                                             msgpack_object_map *metric_map,
                                             msgpack_object *name_object,
@@ -1086,6 +1394,7 @@ static int process_metric_gauge_data_points(struct cmt *context,
     flb_sds_t      *point_label_keys;
     flb_sds_t      *point_label_values;
     uint64_t        timestamp;
+    int64_t         int_value;
     double          value;
     int             index;
     int             result;
@@ -1115,7 +1424,10 @@ static int process_metric_gauge_data_points(struct cmt *context,
 
         point_map = &point->via.map;
 
-        result = parse_number_datapoint_value(point_map, &value);
+        result = parse_number_datapoint_value(point_map,
+                                              &number_value_case,
+                                              &int_value,
+                                              &value);
         if (result != 0) {
             continue;
         }
@@ -1211,16 +1523,19 @@ static int process_metric_gauge_data_points(struct cmt *context,
             }
         }
 
-        cmt_gauge_set(gauge, timestamp, value,
-                      point_label_count,
-                      (char **) point_label_values);
-
         sample = cmt_map_metric_get(&gauge->opts,
                                     gauge->map,
                                     point_label_count,
                                     (char **) point_label_values,
-                                    CMT_FALSE);
+                                    CMT_TRUE);
         if (sample != NULL) {
+            if (number_value_case == CMT_METRIC_VALUE_INT64) {
+                cmt_metric_set_int64(sample, timestamp, int_value);
+            }
+            else {
+                cmt_metric_set_double(sample, timestamp, value);
+            }
+
             point_metadata = get_or_create_data_point_metadata_context(context,
                                                                        gauge->map,
                                                                        sample,
@@ -1228,11 +1543,7 @@ static int process_metric_gauge_data_points(struct cmt *context,
             if (point_metadata != NULL) {
                 append_common_datapoint_metadata(point_metadata, point_map);
 
-                number_value_case = flb_otel_utils_find_map_entry_by_key(point_map,
-                                                                          "asInt",
-                                                                          0,
-                                                                          FLB_TRUE);
-                if (number_value_case >= 0) {
+                if (number_value_case == CMT_METRIC_VALUE_INT64) {
                     cfl_kvlist_insert_string(point_metadata,
                                              "number_value_case",
                                              "int");
@@ -1270,6 +1581,7 @@ static int process_metric_sum_data_points(struct cmt *context,
     flb_sds_t      *point_label_keys;
     flb_sds_t      *point_label_values;
     uint64_t        timestamp;
+    int64_t         int_value;
     double          value;
     int             index;
     int             result;
@@ -1299,7 +1611,10 @@ static int process_metric_sum_data_points(struct cmt *context,
 
         point_map = &point->via.map;
 
-        result = parse_number_datapoint_value(point_map, &value);
+        result = parse_number_datapoint_value(point_map,
+                                              &number_value_case,
+                                              &int_value,
+                                              &value);
         if (result != 0) {
             continue;
         }
@@ -1400,16 +1715,24 @@ static int process_metric_sum_data_points(struct cmt *context,
             }
         }
 
-        cmt_counter_set(counter, timestamp, value,
-                        point_label_count,
-                        (char **) point_label_values);
-
         sample = cmt_map_metric_get(&counter->opts,
                                     counter->map,
                                     point_label_count,
                                     (char **) point_label_values,
-                                    CMT_FALSE);
+                                    CMT_TRUE);
         if (sample != NULL) {
+            if (number_value_case == CMT_METRIC_VALUE_INT64) {
+                if (allow_reset == FLB_FALSE && int_value < 0) {
+                    cmt_metric_set_double(sample, timestamp, 0.0);
+                }
+                else {
+                    cmt_metric_set_int64(sample, timestamp, int_value);
+                }
+            }
+            else {
+                cmt_metric_set_double(sample, timestamp, value);
+            }
+
             point_metadata = get_or_create_data_point_metadata_context(context,
                                                                        counter->map,
                                                                        sample,
@@ -1417,11 +1740,7 @@ static int process_metric_sum_data_points(struct cmt *context,
             if (point_metadata != NULL) {
                 append_common_datapoint_metadata(point_metadata, point_map);
 
-                number_value_case = flb_otel_utils_find_map_entry_by_key(point_map,
-                                                                          "asInt",
-                                                                          0,
-                                                                          FLB_TRUE);
-                if (number_value_case >= 0) {
+                if (number_value_case == CMT_METRIC_VALUE_INT64) {
                     cfl_kvlist_insert_string(point_metadata,
                                              "number_value_case",
                                              "int");
@@ -3180,17 +3499,34 @@ static int decode_scope_metrics_entry(struct cfl_list *context_list,
                                       msgpack_object *scope_metrics_object)
 {
     int                 index;
-    int                 metrics_index;
+    int                 scope_index;
     int                 result;
+    int                 metrics_index;
+    int                 schema_index;
     msgpack_object     *metrics_object;
+    msgpack_object     *scope_object;
     msgpack_object_array *metrics_array;
+    msgpack_object_map *scope_metrics_map;
     struct cmt         *context;
 
     if (scope_metrics_object->type != MSGPACK_OBJECT_MAP) {
         return OTEL_METRICS_JSON_DECODER_ERROR;
     }
 
-    metrics_index = flb_otel_utils_find_map_entry_by_key(&scope_metrics_object->via.map,
+    scope_metrics_map = &scope_metrics_object->via.map;
+
+    scope_index = flb_otel_utils_find_map_entry_by_key(scope_metrics_map,
+                                                        "scope",
+                                                        0,
+                                                        FLB_TRUE);
+    if (scope_index >= 0) {
+        scope_object = &scope_metrics_map->ptr[scope_index].val;
+    }
+    else {
+        scope_object = NULL;
+    }
+
+    metrics_index = flb_otel_utils_find_map_entry_by_key(scope_metrics_map,
                                                           "metrics",
                                                           0,
                                                           FLB_TRUE);
@@ -3198,7 +3534,7 @@ static int decode_scope_metrics_entry(struct cfl_list *context_list,
         return OTEL_METRICS_JSON_DECODER_ERROR;
     }
 
-    metrics_object = &scope_metrics_object->via.map.ptr[metrics_index].val;
+    metrics_object = &scope_metrics_map->ptr[metrics_index].val;
     if (metrics_object->type != MSGPACK_OBJECT_ARRAY) {
         return OTEL_METRICS_JSON_DECODER_ERROR;
     }
@@ -3214,6 +3550,26 @@ static int decode_scope_metrics_entry(struct cfl_list *context_list,
     if (result != 0) {
         cmt_destroy(context);
         return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
+    result = clone_scope_metadata_and_attributes(context->external_metadata,
+                                                 scope_object);
+    if (result != 0) {
+        cmt_destroy(context);
+        return result;
+    }
+
+    schema_index = flb_otel_utils_find_map_entry_by_key(scope_metrics_map,
+                                                         "schemaUrl",
+                                                         0,
+                                                         FLB_TRUE);
+    if (schema_index >= 0) {
+        result = clone_scope_metrics_metadata(context->external_metadata,
+                                              scope_metrics_map);
+        if (result != 0) {
+            cmt_destroy(context);
+            return result;
+        }
     }
 
     metrics_array = &metrics_object->via.array;
@@ -3235,16 +3591,34 @@ static int decode_resource_metrics_entry(struct cfl_list *context_list,
                                          msgpack_object *resource_metrics_object)
 {
     int                 index;
+    int                 resource_index;
     int                 scope_metrics_index;
     int                 result;
+    int                 schema_index;
+    msgpack_object     *resource_object;
     msgpack_object     *scope_metrics_object;
     msgpack_object_array *scope_metrics_array;
+    msgpack_object_map *resource_metrics_map;
+    struct cmt         *context;
 
     if (resource_metrics_object->type != MSGPACK_OBJECT_MAP) {
         return OTEL_METRICS_JSON_DECODER_ERROR;
     }
 
-    scope_metrics_index = flb_otel_utils_find_map_entry_by_key(&resource_metrics_object->via.map,
+    resource_metrics_map = &resource_metrics_object->via.map;
+
+    resource_index = flb_otel_utils_find_map_entry_by_key(resource_metrics_map,
+                                                           "resource",
+                                                           0,
+                                                           FLB_TRUE);
+    if (resource_index >= 0) {
+        resource_object = &resource_metrics_map->ptr[resource_index].val;
+    }
+    else {
+        resource_object = NULL;
+    }
+
+    scope_metrics_index = flb_otel_utils_find_map_entry_by_key(resource_metrics_map,
                                                                 "scopeMetrics",
                                                                 0,
                                                                 FLB_TRUE);
@@ -3252,7 +3626,7 @@ static int decode_resource_metrics_entry(struct cfl_list *context_list,
         return OTEL_METRICS_JSON_DECODER_ERROR;
     }
 
-    scope_metrics_object = &resource_metrics_object->via.map.ptr[scope_metrics_index].val;
+    scope_metrics_object = &resource_metrics_map->ptr[scope_metrics_index].val;
     if (scope_metrics_object->type != MSGPACK_OBJECT_ARRAY) {
         return OTEL_METRICS_JSON_DECODER_ERROR;
     }
@@ -3262,6 +3636,29 @@ static int decode_resource_metrics_entry(struct cfl_list *context_list,
         result = decode_scope_metrics_entry(context_list, &scope_metrics_array->ptr[index]);
         if (result != 0) {
             return result;
+        }
+
+        context = cfl_list_entry_last(context_list, struct cmt, _head);
+        if (context == NULL) {
+            return OTEL_METRICS_JSON_DECODER_ERROR;
+        }
+
+        result = clone_resource_metadata_and_attributes(context->external_metadata,
+                                                        resource_object);
+        if (result != 0) {
+            return result;
+        }
+
+        schema_index = flb_otel_utils_find_map_entry_by_key(resource_metrics_map,
+                                                             "schemaUrl",
+                                                             0,
+                                                             FLB_TRUE);
+        if (schema_index >= 0) {
+            result = clone_resource_metrics_metadata(context->external_metadata,
+                                                     resource_metrics_map);
+            if (result != 0) {
+                return result;
+            }
         }
     }
 
