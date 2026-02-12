@@ -109,7 +109,7 @@ static struct cmt_metric *map_metric_create(uint64_t hash,
         return NULL;
     }
     cfl_list_init(&metric->labels);
-    metric->val = 0.0;
+    cmt_metric_set_double(metric, 0, 0.0);
     metric->hash = hash;
 
     for (i = 0; i < labels_count; i++) {
@@ -151,6 +151,12 @@ void cmt_map_metric_destroy(struct cmt_metric *metric)
 
     if (metric->hist_buckets) {
         free(metric->hist_buckets);
+    }
+    if (metric->exp_hist_positive_buckets) {
+        free(metric->exp_hist_positive_buckets);
+    }
+    if (metric->exp_hist_negative_buckets) {
+        free(metric->exp_hist_negative_buckets);
     }
     if (metric->sum_quantiles) {
         free(metric->sum_quantiles);
@@ -282,11 +288,23 @@ void cmt_map_destroy(struct cmt_map *map)
                 free(metric->hist_buckets);
             }
         }
+        else if (map->type == CMT_EXP_HISTOGRAM) {
+            if (metric->exp_hist_positive_buckets) {
+                free(metric->exp_hist_positive_buckets);
+            }
+            if (metric->exp_hist_negative_buckets) {
+                free(metric->exp_hist_negative_buckets);
+            }
+        }
         else if (map->type == CMT_SUMMARY) {
             if (metric->sum_quantiles) {
                 free(metric->sum_quantiles);
             }
         }
+    }
+
+    if (map->unit != NULL) {
+        cfl_sds_destroy(map->unit);
     }
 
     free(map);
@@ -315,4 +333,3 @@ void destroy_label_list(struct cfl_list *label_list)
         free(label);
     }
 }
-

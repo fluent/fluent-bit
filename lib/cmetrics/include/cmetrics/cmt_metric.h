@@ -21,15 +21,39 @@
 #define CMT_METRIC_H
 
 #include <cmetrics/cmetrics.h>
+#include <stdint.h>
+
+enum cmt_metric_value_type {
+    CMT_METRIC_VALUE_DOUBLE = 0,
+    CMT_METRIC_VALUE_INT64  = 1,
+    CMT_METRIC_VALUE_UINT64 = 2
+};
 
 struct cmt_metric {
     /* counters and gauges */
     uint64_t val;
+    uint64_t value_type;
+    uint64_t val_int64;
+    uint64_t val_uint64;
 
     /* histogram */
     uint64_t *hist_buckets;
     uint64_t hist_count;
     uint64_t hist_sum;
+
+    /* exponential histogram */
+    int exp_hist_sum_set;
+    int32_t exp_hist_scale;
+    uint64_t exp_hist_zero_count;
+    double exp_hist_zero_threshold;
+    int32_t exp_hist_positive_offset;
+    uint64_t *exp_hist_positive_buckets;
+    size_t exp_hist_positive_count;
+    int32_t exp_hist_negative_offset;
+    uint64_t *exp_hist_negative_buckets;
+    size_t exp_hist_negative_count;
+    uint64_t exp_hist_count;
+    uint64_t exp_hist_sum;
 
     /* summary */
     int sum_quantiles_set;     /* specify if quantive values has been set */
@@ -46,11 +70,21 @@ struct cmt_metric {
 };
 
 void cmt_metric_set(struct cmt_metric *metric, uint64_t timestamp, double val);
+void cmt_metric_set_double(struct cmt_metric *metric, uint64_t timestamp, double val);
+void cmt_metric_set_int64(struct cmt_metric *metric, uint64_t timestamp, int64_t val);
+void cmt_metric_set_uint64(struct cmt_metric *metric, uint64_t timestamp, uint64_t val);
 void cmt_metric_inc(struct cmt_metric *metric, uint64_t timestamp);
 void cmt_metric_dec(struct cmt_metric *metric, uint64_t timestamp);
 void cmt_metric_add(struct cmt_metric *metric, uint64_t timestamp, double val);
 void cmt_metric_sub(struct cmt_metric *metric, uint64_t timestamp, double val);
 double cmt_metric_get_value(struct cmt_metric *metric);
+int cmt_metric_get_value_type(struct cmt_metric *metric);
+int64_t cmt_metric_get_int64_value(struct cmt_metric *metric);
+uint64_t cmt_metric_get_uint64_value(struct cmt_metric *metric);
+void cmt_metric_get_value_snapshot(struct cmt_metric *metric,
+                                   int *out_type,
+                                   int64_t *out_int64,
+                                   uint64_t *out_uint64);
 uint64_t cmt_metric_get_timestamp(struct cmt_metric *metric);
 
 void cmt_metric_hist_inc(struct cmt_metric *metric, uint64_t timestamp,

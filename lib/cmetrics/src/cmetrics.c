@@ -25,6 +25,7 @@
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_exp_histogram.h>
 #include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_atomic.h>
 #include <cmetrics/cmt_compat.h>
@@ -76,6 +77,7 @@ struct cmt *cmt_create()
     cfl_list_init(&cmt->counters);
     cfl_list_init(&cmt->gauges);
     cfl_list_init(&cmt->histograms);
+    cfl_list_init(&cmt->exp_histograms);
     cfl_list_init(&cmt->summaries);
     cfl_list_init(&cmt->untypeds);
 
@@ -94,6 +96,7 @@ void cmt_destroy(struct cmt *cmt)
     struct cmt_gauge *g;
     struct cmt_summary *s;
     struct cmt_histogram *h;
+    struct cmt_exp_histogram *eh;
     struct cmt_untyped *u;
 
     cfl_list_foreach_safe(head, tmp, &cmt->counters) {
@@ -114,6 +117,11 @@ void cmt_destroy(struct cmt *cmt)
     cfl_list_foreach_safe(head, tmp, &cmt->histograms) {
         h = cfl_list_entry(head, struct cmt_histogram, _head);
         cmt_histogram_destroy(h);
+    }
+
+    cfl_list_foreach_safe(head, tmp, &cmt->exp_histograms) {
+        eh = cfl_list_entry(head, struct cmt_exp_histogram, _head);
+        cmt_exp_histogram_destroy(eh);
     }
 
     cfl_list_foreach_safe(head, tmp, &cmt->untypeds) {

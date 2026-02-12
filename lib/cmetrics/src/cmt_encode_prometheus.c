@@ -26,6 +26,7 @@
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_exp_histogram.h>
 
 #include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_compat.h>
@@ -128,6 +129,9 @@ static void metric_banner(cfl_sds_t *buf, struct cmt_map *map,
     else if (map->type == CMT_HISTOGRAM) {
         cfl_sds_cat_safe(buf, " histogram\n", 11);
     }
+    else if (map->type == CMT_EXP_HISTOGRAM) {
+        cfl_sds_cat_safe(buf, " histogram\n", 11);
+    }
     else if (map->type == CMT_UNTYPED) {
         cfl_sds_cat_safe(buf, " untyped\n", 9);
     }
@@ -169,6 +173,14 @@ static void append_metric_value(cfl_sds_t *buf,
             }
             else if (fmt->value_from == PROM_FMT_VAL_FROM_COUNT) {
                 val = cmt_metric_hist_get_count_value(metric);
+            }
+        }
+        else if (map->type == CMT_EXP_HISTOGRAM) {
+            if (fmt->value_from == PROM_FMT_VAL_FROM_SUM) {
+                val = cmt_math_uint64_to_d64(metric->exp_hist_sum);
+            }
+            else if (fmt->value_from == PROM_FMT_VAL_FROM_COUNT) {
+                val = metric->exp_hist_count;
             }
         }
         else if (map->type == CMT_SUMMARY) {
@@ -320,7 +332,8 @@ static cfl_sds_t bucket_value_to_string(double val)
 
 static void format_histogram_bucket(struct cmt *cmt,
                                     cfl_sds_t *buf, struct cmt_map *map,
-                                    struct cmt_metric *metric, int add_timestamp)
+                                    struct cmt_metric *metric, int add_timestamp,
+                                    int include_sum)
 {
     int i;
     cfl_sds_t val;
@@ -362,16 +375,20 @@ static void format_histogram_bucket(struct cmt *cmt,
         format_metric(cmt, buf, map, metric, add_timestamp, &fmt);
     }
 
-    /* sum */
-    prom_fmt_init(&fmt);
-    fmt.metric_name = CMT_TRUE;
-    fmt.value_from = PROM_FMT_VAL_FROM_SUM;
+    if (include_sum) {
+        /* sum */
+        prom_fmt_init(&fmt);
+        fmt.metric_name = CMT_TRUE;
+        fmt.value_from = PROM_FMT_VAL_FROM_SUM;
 
-    cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
-    cfl_sds_cat_safe(buf, "_sum", 4);
-    format_metric(cmt, buf, map, metric, add_timestamp, &fmt);
+        cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+        cfl_sds_cat_safe(buf, "_sum", 4);
+        format_metric(cmt, buf, map, metric, add_timestamp, &fmt);
+    }
 
     /* count */
+    prom_fmt_init(&fmt);
+    fmt.metric_name = CMT_TRUE;
     fmt.labels_count = 0;
     fmt.value_from = PROM_FMT_VAL_FROM_COUNT;
 
@@ -450,7 +467,56 @@ static void format_metrics(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
 
         if (map->type == CMT_HISTOGRAM) {
             /* Histogram needs to format the buckets, one line per bucket */
-            format_histogram_bucket(cmt, buf, map, &map->metric, add_timestamp);
+            format_histogram_bucket(cmt, buf, map, &map->metric, add_timestamp,
+                                    CMT_TRUE);
+        }
+        else if (map->type == CMT_EXP_HISTOGRAM) {
+            struct cmt_map fake_map;
+            struct cmt_histogram fake_histogram;
+            struct cmt_histogram_buckets fake_buckets;
+            uint64_t *original_hist_buckets;
+            uint64_t original_hist_count;
+            uint64_t original_hist_sum;
+            size_t bucket_count;
+            size_t upper_bounds_count;
+            uint64_t *bucket_values;
+            double *upper_bounds;
+
+            if (cmt_exp_histogram_to_explicit(&map->metric,
+                                              &upper_bounds,
+                                              &upper_bounds_count,
+                                              &bucket_values,
+                                              &bucket_count) == 0) {
+                memset(&fake_map, 0, sizeof(struct cmt_map));
+                memset(&fake_histogram, 0, sizeof(struct cmt_histogram));
+                memset(&fake_buckets, 0, sizeof(struct cmt_histogram_buckets));
+
+                fake_buckets.count = upper_bounds_count;
+                fake_buckets.upper_bounds = upper_bounds;
+                fake_histogram.buckets = &fake_buckets;
+
+                fake_map = *map;
+                fake_map.type = CMT_HISTOGRAM;
+                fake_map.parent = &fake_histogram;
+
+                original_hist_buckets = map->metric.hist_buckets;
+                original_hist_count = map->metric.hist_count;
+                original_hist_sum = map->metric.hist_sum;
+
+                map->metric.hist_buckets = bucket_values;
+                map->metric.hist_count = map->metric.exp_hist_count;
+                map->metric.hist_sum = map->metric.exp_hist_sum;
+
+                format_histogram_bucket(cmt, buf, &fake_map, &map->metric,
+                                        add_timestamp, map->metric.exp_hist_sum_set);
+
+                map->metric.hist_buckets = original_hist_buckets;
+                map->metric.hist_count = original_hist_count;
+                map->metric.hist_sum = original_hist_sum;
+
+                free(bucket_values);
+                free(upper_bounds);
+            }
         }
         else if (map->type == CMT_SUMMARY) {
             /* Histogram needs to format the buckets, one line per bucket */
@@ -475,7 +541,55 @@ static void format_metrics(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
         /* Format the metric based on its type */
         if (map->type == CMT_HISTOGRAM) {
             /* Histogram needs to format the buckets, one line per bucket */
-            format_histogram_bucket(cmt, buf, map, metric, add_timestamp);
+            format_histogram_bucket(cmt, buf, map, metric, add_timestamp, CMT_TRUE);
+        }
+        else if (map->type == CMT_EXP_HISTOGRAM) {
+            struct cmt_map fake_map;
+            struct cmt_histogram fake_histogram;
+            struct cmt_histogram_buckets fake_buckets;
+            uint64_t *original_hist_buckets;
+            uint64_t original_hist_count;
+            uint64_t original_hist_sum;
+            size_t bucket_count;
+            size_t upper_bounds_count;
+            uint64_t *bucket_values;
+            double *upper_bounds;
+
+            if (cmt_exp_histogram_to_explicit(metric,
+                                              &upper_bounds,
+                                              &upper_bounds_count,
+                                              &bucket_values,
+                                              &bucket_count) == 0) {
+                memset(&fake_map, 0, sizeof(struct cmt_map));
+                memset(&fake_histogram, 0, sizeof(struct cmt_histogram));
+                memset(&fake_buckets, 0, sizeof(struct cmt_histogram_buckets));
+
+                fake_buckets.count = upper_bounds_count;
+                fake_buckets.upper_bounds = upper_bounds;
+                fake_histogram.buckets = &fake_buckets;
+
+                fake_map = *map;
+                fake_map.type = CMT_HISTOGRAM;
+                fake_map.parent = &fake_histogram;
+
+                original_hist_buckets = metric->hist_buckets;
+                original_hist_count = metric->hist_count;
+                original_hist_sum = metric->hist_sum;
+
+                metric->hist_buckets = bucket_values;
+                metric->hist_count = metric->exp_hist_count;
+                metric->hist_sum = metric->exp_hist_sum;
+
+                format_histogram_bucket(cmt, buf, &fake_map, metric, add_timestamp,
+                                        metric->exp_hist_sum_set);
+
+                metric->hist_buckets = original_hist_buckets;
+                metric->hist_count = original_hist_count;
+                metric->hist_sum = original_hist_sum;
+
+                free(bucket_values);
+                free(upper_bounds);
+            }
         }
         else if (map->type == CMT_SUMMARY) {
             format_summary_quantiles(cmt, buf, map, metric, add_timestamp);
@@ -496,6 +610,7 @@ cfl_sds_t cmt_encode_prometheus_create(struct cmt *cmt, int add_timestamp)
     struct cmt_gauge *gauge;
     struct cmt_summary *summary;
     struct cmt_histogram *histogram;
+    struct cmt_exp_histogram *exp_histogram;
     struct cmt_untyped *untyped;
 
     /* Allocate a 1KB of buffer */
@@ -526,6 +641,12 @@ cfl_sds_t cmt_encode_prometheus_create(struct cmt *cmt, int add_timestamp)
     cfl_list_foreach(head, &cmt->histograms) {
         histogram = cfl_list_entry(head, struct cmt_histogram, _head);
         format_metrics(cmt, &buf, histogram->map, add_timestamp);
+    }
+
+    /* Exponential Histograms */
+    cfl_list_foreach(head, &cmt->exp_histograms) {
+        exp_histogram = cfl_list_entry(head, struct cmt_exp_histogram, _head);
+        format_metrics(cmt, &buf, exp_histogram->map, add_timestamp);
     }
 
     /* Untyped */
