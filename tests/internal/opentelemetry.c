@@ -1855,6 +1855,8 @@ void test_opentelemetry_metrics_cases()
     char             *case_name;
 
     tmp_buf = NULL;
+    cmt_initialize();
+
     cases_json = mk_file_to_buffer(OTEL_METRICS_TEST_CASES_PATH);
 
     TEST_CHECK(cases_json != NULL);
