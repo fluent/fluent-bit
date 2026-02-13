@@ -43,6 +43,16 @@ if(FLB_UNICODE_ENCODER)
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 endif()
 
+# ripser
+if(FLB_RIPSER)
+  file(GLOB headers "fluent-bit/ripser/*.h")
+  install(FILES ${headers}
+    DESTINATION ${FLB_INSTALL_INCLUDEDIR}/fluent-bit/ripser/
+    COMPONENT headers
+    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+endif()
+
+
 # flb_conv
 file(GLOB headers "fluent-bit/unicode/*.h")
 install(FILES ${headers}
