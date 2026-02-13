@@ -1650,12 +1650,15 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
             }
 
 #ifdef FLB_HAVE_METRICS
-            cmt_counter_inc(ctx->cmt_long_line_skipped,
-                            cfl_time_now(), 1,
-                            (char *[]) { (char *) flb_input_name(ctx->ins) });
+            if (file->skip_next == FLB_FALSE) {
+                cmt_counter_inc(ctx->cmt_long_line_skipped,
+                                cfl_time_now(), 1,
+                                (char *[]) { (char *) flb_input_name(ctx->ins) });
 
-            /* Old API */
-            flb_metrics_sum(FLB_TAIL_METRIC_L_SKIPPED, 1, ctx->ins->metrics);
+                /* Old API */
+                flb_metrics_sum(FLB_TAIL_METRIC_L_SKIPPED, 1, ctx->ins->metrics);
+
+            }
 #endif
 
             /* Warn the user */
