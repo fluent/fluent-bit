@@ -1643,6 +1643,15 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                 return FLB_TAIL_ERROR;
             }
 
+#ifdef FLB_HAVE_METRICS
+            cmt_counter_inc(ctx->cmt_long_line_skipped,
+                            cfl_time_now(), 1,
+                            (char *[]) { (char *) flb_input_name(ctx->ins) });
+
+            /* Old API */
+            flb_metrics_sum(FLB_TAIL_METRIC_L_SKIPPED, 1, ctx->ins->metrics);
+#endif
+
             /* Warn the user */
             if (file->skip_warn == FLB_FALSE) {
                 flb_plg_warn(ctx->ins, "file=%s have long lines. "
