@@ -31,6 +31,24 @@ struct query_status {
     int64_t offset;
 };
 
+static inline int tail_db_lock(struct flb_tail_config *ctx)
+{
+    if (ctx->db == NULL) {
+        return 0;
+    }
+
+    return flb_sqldb_lock(ctx->db);
+}
+
+static inline int tail_db_unlock(struct flb_tail_config *ctx)
+{
+    if (ctx->db == NULL) {
+        return 0;
+    }
+
+    return flb_sqldb_unlock(ctx->db);
+}
+
 /* Open or create database required by tail plugin */
 struct flb_sqldb *flb_tail_db_open(const char *path,
                                    struct flb_input_instance *in,
@@ -261,11 +279,21 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
     off_t offset = 0;
     uint64_t inode = 0;
 
+    flb_plg_debug(ctx->ins, "db file set called for %s inode=%"PRIu64,
+                  file->name, file->inode);
+
+    ret = tail_db_lock(ctx);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "db: could not acquire lock");
+        return -1;
+    }
+
     /* Check if the file exists */
     ret = db_file_exists(file, ctx, &id, &inode, &offset);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot execute query to check inode: %" PRIu64,
                       file->inode);
+        tail_db_unlock(ctx);
         return -1;
     }
 
@@ -283,6 +311,7 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
         file->offset = offset;
     }
 
+    tail_db_unlock(ctx);
     return 0;
 }
 
@@ -291,6 +320,12 @@ int flb_tail_db_file_offset(struct flb_tail_file *file,
                             struct flb_tail_config *ctx)
 {
     int ret;
+
+    ret = tail_db_lock(ctx);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "db: could not acquire lock");
+        return -1;
+    }
 
     /* Bind parameters */
     sqlite3_bind_int64(ctx->stmt_offset, 1, file->offset);
@@ -301,6 +336,7 @@ int flb_tail_db_file_offset(struct flb_tail_file *file,
     if (ret != SQLITE_DONE) {
         sqlite3_clear_bindings(ctx->stmt_offset);
         sqlite3_reset(ctx->stmt_offset);
+        tail_db_unlock(ctx);
         return -1;
     }
 
@@ -317,6 +353,7 @@ int flb_tail_db_file_offset(struct flb_tail_file *file,
     sqlite3_clear_bindings(ctx->stmt_offset);
     sqlite3_reset(ctx->stmt_offset);
 
+    tail_db_unlock(ctx);
     return 0;
 }
 
@@ -326,6 +363,12 @@ int flb_tail_db_file_rotate(const char *new_name,
                             struct flb_tail_config *ctx)
 {
     int ret;
+
+    ret = tail_db_lock(ctx);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "db: could not acquire lock");
+        return -1;
+    }
 
     /* Bind parameters */
     sqlite3_bind_text(ctx->stmt_rotate_file, 1, new_name, -1, 0);
@@ -337,9 +380,11 @@ int flb_tail_db_file_rotate(const char *new_name,
     sqlite3_reset(ctx->stmt_rotate_file);
 
     if (ret != SQLITE_DONE) {
+        tail_db_unlock(ctx);
         return -1;
     }
 
+    tail_db_unlock(ctx);
     return 0;
 }
 
@@ -348,6 +393,12 @@ int flb_tail_db_file_delete(struct flb_tail_file *file,
                             struct flb_tail_config *ctx)
 {
     int ret;
+
+    ret = tail_db_lock(ctx);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "db: could not acquire lock");
+        return -1;
+    }
 
     /* Bind parameters */
     sqlite3_bind_int64(ctx->stmt_delete_file, 1, file->db_id);
@@ -359,10 +410,12 @@ int flb_tail_db_file_delete(struct flb_tail_file *file,
     if (ret != SQLITE_DONE) {
         flb_plg_error(ctx->ins, "db: error deleting entry from database: %s",
                       file->name);
+        tail_db_unlock(ctx);
         return -1;
     }
 
     flb_plg_debug(ctx->ins, "db: file deleted from database: %s", file->name);
+    tail_db_unlock(ctx);
     return 0;
 }
 
@@ -388,6 +441,12 @@ int flb_tail_db_stale_file_delete(struct flb_input_instance *ins,
         return 0;
     }
 
+    ret = tail_db_lock(ctx);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "db: could not acquire lock");
+        return -1;
+    }
+
     /* Create a stmt sql buffer */
     sql_size = SQL_DELETE_STALE_FILE_START_LEN;
     sql_size += SQL_DELETE_STALE_FILE_WHERE_LEN;
@@ -402,6 +461,7 @@ int flb_tail_db_stale_file_delete(struct flb_input_instance *ins,
     if (!stale_delete_sql) {
         flb_plg_error(ctx->ins, "cannot allocate buffer for stale_delete_sql:"
                       " size: %zu", sql_size);
+        tail_db_unlock(ctx);
         return -1;
     }
 
@@ -412,6 +472,7 @@ int flb_tail_db_stale_file_delete(struct flb_input_instance *ins,
         flb_plg_error(ctx->ins,
                       "error concatenating stale_delete_sql: start");
         flb_sds_destroy(stale_delete_sql);
+        tail_db_unlock(ctx);
         return -1;
     }
     stale_delete_sql = sds_tmp;
@@ -423,6 +484,7 @@ int flb_tail_db_stale_file_delete(struct flb_input_instance *ins,
             flb_plg_error(ctx->ins,
                           "error concatenating stale_delete_sql: where");
             flb_sds_destroy(stale_delete_sql);
+            tail_db_unlock(ctx);
             return -1;
         }
         stale_delete_sql = sds_tmp;
@@ -432,6 +494,7 @@ int flb_tail_db_stale_file_delete(struct flb_input_instance *ins,
             flb_plg_error(ctx->ins,
                           "error concatenating stale_delete_sql: param");
             flb_sds_destroy(stale_delete_sql);
+            tail_db_unlock(ctx);
             return -1;
         }
     }
@@ -441,6 +504,7 @@ int flb_tail_db_stale_file_delete(struct flb_input_instance *ins,
         flb_plg_error(ctx->ins,
                       "error concatenating stale_delete_sql: end");
         flb_sds_destroy(stale_delete_sql);
+        tail_db_unlock(ctx);
         return -1;
     }
     stale_delete_sql = sds_tmp;
@@ -453,6 +517,7 @@ int flb_tail_db_stale_file_delete(struct flb_input_instance *ins,
                       " stmt_delete_inodes sql:%s, ret=%d", stale_delete_sql,
                       ret);
         flb_sds_destroy(stale_delete_sql);
+        tail_db_unlock(ctx);
         return -1;
     }
 
@@ -466,6 +531,7 @@ int flb_tail_db_stale_file_delete(struct flb_input_instance *ins,
                           " inode=%" PRIu64 ", ret=%d", file->inode, ret);
             sqlite3_finalize(stmt_delete_inodes);
             flb_sds_destroy(stale_delete_sql);
+            tail_db_unlock(ctx);
             return -1;
         }
         idx++;
@@ -478,6 +544,7 @@ int flb_tail_db_stale_file_delete(struct flb_input_instance *ins,
         flb_sds_destroy(stale_delete_sql);
         flb_plg_error(ctx->ins, "cannot execute delete stale inodes: ret=%d",
                       ret);
+        tail_db_unlock(ctx);
         return -1;
     }
 
@@ -488,5 +555,6 @@ int flb_tail_db_stale_file_delete(struct flb_input_instance *ins,
     sqlite3_finalize(stmt_delete_inodes);
     flb_sds_destroy(stale_delete_sql);
 
+    tail_db_unlock(ctx);
     return 0;
 }
