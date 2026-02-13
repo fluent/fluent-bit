@@ -42,7 +42,7 @@ int flb_lock_acquire(flb_lock_t *lock,
         result = pthread_mutex_trylock(lock);
 
         if (result != 0) {
-            if (result == EAGAIN) {
+            if (result == EAGAIN || result == EBUSY) {
                 if (retry_limit != FLB_LOCK_INFINITE_RETRY_LIMIT) {
                     retry_count++;
                 }
