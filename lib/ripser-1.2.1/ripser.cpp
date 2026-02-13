@@ -57,6 +57,11 @@
 #include <sstream>
 #include <unordered_map>
 
+// Include ripser core implementation.
+// Either include a header-only version or include ripser.cpp directly.
+// Only one compilation unit should compile ripser.cpp.
+#include "ripser_internal.hpp"
+
 #ifdef USE_ROBINHOOD_HASHMAP
 
 #include "robin-hood-hashing/src/include/robin_hood.h"
@@ -71,10 +76,6 @@ template <class Key, class T, class H, class E> using hash_map = std::unordered_
 template <class Key> using hash = std::hash<Key>;
 
 #endif
-
-typedef float value_t;
-typedef int64_t index_t;
-typedef uint16_t coefficient_t;
 
 #ifdef INDICATE_PROGRESS
 static const std::chrono::milliseconds time_step(40);
@@ -214,35 +215,6 @@ template <typename Entry> bool greater_diameter_or_smaller_index(const Entry& a,
 	return (get_diameter(a) > get_diameter(b)) ||
 	       ((get_diameter(a) == get_diameter(b)) && (get_index(a) < get_index(b)));
 }
-
-enum compressed_matrix_layout { LOWER_TRIANGULAR, UPPER_TRIANGULAR };
-
-template <compressed_matrix_layout Layout> struct compressed_distance_matrix {
-	std::vector<value_t> distances;
-	std::vector<value_t*> rows;
-
-	compressed_distance_matrix(std::vector<value_t>&& _distances)
-	    : distances(std::move(_distances)), rows((1 + std::sqrt(1 + 8 * distances.size())) / 2) {
-		assert(distances.size() == size() * (size() - 1) / 2);
-		init_rows();
-	}
-
-	template <typename DistanceMatrix>
-	compressed_distance_matrix(const DistanceMatrix& mat)
-	    : distances(mat.size() * (mat.size() - 1) / 2), rows(mat.size()) {
-		init_rows();
-
-		for (size_t i = 1; i < size(); ++i)
-			for (size_t j = 0; j < i; ++j) rows[i][j] = mat(i, j);
-	}
-
-	value_t operator()(const index_t i, const index_t j) const;
-	size_t size() const { return rows.size(); }
-	void init_rows();
-};
-
-typedef compressed_distance_matrix<LOWER_TRIANGULAR> compressed_lower_distance_matrix;
-typedef compressed_distance_matrix<UPPER_TRIANGULAR> compressed_upper_distance_matrix;
 
 template <> void compressed_lower_distance_matrix::init_rows() {
 	value_t* pointer = &distances[0];
@@ -396,21 +368,6 @@ index_t get_max(index_t top, const index_t bottom, const Predicate pred) {
 	}
 	return top;
 }
-
-/* Added for flexible retrieving of results. */
-struct interval_recorder {
-    using callback_t = void(*)(int dim, value_t birth, value_t death, void *user_data);
-
-    callback_t cb = nullptr;
-    void *user_data = nullptr;
-
-    void emit(int dim, value_t birth, value_t death) const {
-        if (cb) {
-            cb(dim, birth, death, user_data);
-        }
-    }
-};
-/* Adding end */
 
 template <typename DistanceMatrix> class ripser {
 	const DistanceMatrix dist;
@@ -753,7 +710,7 @@ public:
 #endif
 
 		compressed_sparse_matrix<diameter_entry_t> reduction_matrix;
-		
+
 #ifdef INDICATE_PROGRESS
 		std::chrono::steady_clock::time_point next = std::chrono::steady_clock::now() + time_step;
 #endif
@@ -1005,6 +962,26 @@ template <> std::vector<diameter_index_t> ripser<sparse_distance_matrix>::get_ed
 			if (i > j) edges.push_back({get_diameter(n), get_edge_index(i, j)});
 		}
 	return edges;
+}
+
+void ripser_run_from_compressed_lower(
+    compressed_lower_distance_matrix &&dist,
+    index_t dim_max,
+    value_t threshold,
+    float ratio,
+    interval_recorder recorder)
+{
+    coefficient_t modulus = 2; // Z/2Z
+
+    ripser<compressed_lower_distance_matrix> r(
+        std::move(dist),
+        dim_max,
+        threshold,
+        ratio,
+        modulus,
+        recorder);
+
+    r.compute_barcodes();
 }
 
 /* The below code is only used for the original ripser implementation
