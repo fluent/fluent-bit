@@ -219,8 +219,13 @@ static int tls_context_server_alpn_select_callback(SSL *ssl,
 int tls_context_alpn_set(void *ctx_backend, const char *alpn)
 {
     size_t              wire_format_alpn_index;
+    size_t              wire_format_alpn_length;
+    size_t              alpn_token_length;
+    unsigned int        active_alpn_length;
+    char               *active_alpn;
     char               *alpn_token_context;
     char               *alpn_working_copy;
+    char               *new_alpn;
     char               *wire_format_alpn;
     char               *alpn_token;
     int                 result;
@@ -229,6 +234,7 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
     ctx = (struct tls_context *) ctx_backend;
 
     result = 0;
+    new_alpn = NULL;
 
     if (alpn != NULL) {
         wire_format_alpn = flb_calloc(strlen(alpn) + 3,
@@ -254,13 +260,34 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
                               &alpn_token_context);
 
         while (alpn_token != NULL) {
+            alpn_token_length = strlen(alpn_token);
+            wire_format_alpn_length = wire_format_alpn_index - 1;
+
+            if (alpn_token_length > 255) {
+                flb_error("[tls] error: alpn token length exceeds 255 bytes");
+
+                free(alpn_working_copy);
+                flb_free(wire_format_alpn);
+                return -1;
+            }
+
+            if (wire_format_alpn_length + alpn_token_length + 1 > 255) {
+                flb_error("[tls] error: alpn wire format length exceeds "
+                          "255 bytes");
+
+                free(alpn_working_copy);
+                flb_free(wire_format_alpn);
+                return -1;
+            }
+
             wire_format_alpn[wire_format_alpn_index] = \
-                (char) strlen(alpn_token);
+                (char) alpn_token_length;
 
-            strcpy(&wire_format_alpn[wire_format_alpn_index + 1],
-                   alpn_token);
+            memcpy(&wire_format_alpn[wire_format_alpn_index + 1],
+                   alpn_token,
+                   alpn_token_length);
 
-            wire_format_alpn_index += strlen(alpn_token) + 1;
+            wire_format_alpn_index += alpn_token_length + 1;
 
             alpn_token = strtok_r(NULL,
                                   ",",
@@ -268,34 +295,65 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
         }
 
         if (wire_format_alpn_index > 1) {
-            wire_format_alpn[0] = (char) wire_format_alpn_index - 1;
-            ctx->alpn = wire_format_alpn;
+            if (wire_format_alpn_index - 1 > 255) {
+                flb_error("[tls] error: alpn wire format length exceeds "
+                          "255 bytes");
+
+                free(alpn_working_copy);
+                flb_free(wire_format_alpn);
+                return -1;
+            }
+
+            wire_format_alpn[0] = (char) (wire_format_alpn_index - 1);
+            new_alpn = wire_format_alpn;
+        }
+        else {
+            flb_free(wire_format_alpn);
         }
 
         free(alpn_working_copy);
     }
 
-    if (result != 0) {
-        result = -1;
+    active_alpn = ctx->alpn;
+
+    if (alpn != NULL) {
+        active_alpn = new_alpn;
+    }
+
+    if (ctx->mode == FLB_TLS_SERVER_MODE) {
+        SSL_CTX_set_alpn_select_cb(
+            ctx->ctx,
+            tls_context_server_alpn_select_callback,
+            ctx);
     }
     else {
-        if (ctx->mode == FLB_TLS_SERVER_MODE) {
-            SSL_CTX_set_alpn_select_cb(
-                ctx->ctx,
-                tls_context_server_alpn_select_callback,
-                ctx);
+        if (active_alpn == NULL) {
+            result = -1;
         }
         else {
-            if (ctx->alpn == NULL) {
-                return -1;
-            }
+            active_alpn_length =
+                (unsigned int) ((const unsigned char *) active_alpn)[0];
+
             if (SSL_CTX_set_alpn_protos(
-                ctx->ctx, 
-                (const unsigned char *) &ctx->alpn[1], 
-                (unsigned int) ctx->alpn[0]) != 0) {
-                return -1;
+                     ctx->ctx,
+                     (const unsigned char *) &active_alpn[1],
+                     active_alpn_length) != 0) {
+                result = -1;
             }
         }
+    }
+
+    if (result == 0 && alpn != NULL) {
+        if (ctx->alpn != NULL) {
+            flb_free(ctx->alpn);
+        }
+
+        ctx->alpn = new_alpn;
+        new_alpn = NULL;
+    }
+
+    if (new_alpn != NULL) {
+        flb_free(new_alpn);
     }
 
     return result;
@@ -772,6 +830,7 @@ static void *tls_context_create(int verify,
     ctx = flb_calloc(1, sizeof(struct tls_context));
     if (!ctx) {
         flb_errno();
+        SSL_CTX_free(ssl_ctx);
         return NULL;
     }
 
@@ -849,7 +908,7 @@ static void *tls_context_create(int verify,
         if (ret != 1) {
             ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
             flb_error("[tls] key_file '%s' %lu: %s",
-                      crt_file, ERR_get_error(), err_buf);
+                      key_file, ERR_get_error(), err_buf);
         }
 
         /* Make sure the key and certificate file match */
@@ -900,7 +959,7 @@ static int parse_proto_version(const char *proto_ver)
         return 0;
     }
 
-    for (i = 0; i < sizeof(defs) / sizeof(struct tls_proto_def); i++) {
+    for (i = 0; defs[i].name != NULL; i++) {
         if (strncasecmp(defs[i].name, proto_ver, strlen(proto_ver)) == 0) {
             return defs[i].ver;
         }
@@ -971,14 +1030,17 @@ static int tls_set_minmax_proto(struct flb_tls *tls,
 static int tls_set_ciphers(struct flb_tls *tls, const char *ciphers)
 {
     struct tls_context *ctx = tls->ctx;
+    int ret;
 
     pthread_mutex_lock(&ctx->mutex);
 
-    if (!SSL_CTX_set_cipher_list(ctx->ctx, ciphers)) {
-        return -1;
-    }
+    ret = SSL_CTX_set_cipher_list(ctx->ctx, ciphers);
 
     pthread_mutex_unlock(&ctx->mutex);
+
+    if (ret == 0) {
+        return -1;
+    }
 
     return 0;
 }
@@ -1287,6 +1349,7 @@ static int tls_net_read(struct flb_tls_session *session,
                         void *buf, size_t len)
 {
     int ret;
+    unsigned long err_code;
     char err_buf[256];
     struct tls_context *ctx;
     struct tls_session *backend_session;
@@ -1318,8 +1381,16 @@ static int tls_net_read(struct flb_tls_session *session,
         }
         else if (ret == SSL_ERROR_SYSCALL) {
             flb_errno();
-            ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
-            flb_error("[tls] syscall error: %s", err_buf);
+
+            err_code = ERR_get_error();
+
+            if (err_code != 0) {
+                ERR_error_string_n(err_code, err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] syscall error: %s", err_buf);
+            }
+            else {
+                flb_error("[tls] syscall error: %s", strerror(errno));
+            }
 
             /* According to the documentation these are non-recoverable
              * errors so we don't need to screen them before saving them
@@ -1331,8 +1402,15 @@ static int tls_net_read(struct flb_tls_session *session,
             ret = -1;
         }
         else if (ret < 0) {
-            ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
-            flb_error("[tls] error: %s", err_buf);
+            err_code = ERR_get_error();
+
+            if (err_code != 0) {
+                ERR_error_string_n(err_code, err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] error: %s", err_buf);
+            }
+            else {
+                flb_error("[tls] error: %s", strerror(errno));
+            }
         }
         else {
             ret = -1;
@@ -1348,7 +1426,7 @@ static int tls_net_write(struct flb_tls_session *session,
 {
     int ret;
     int ssl_ret;
-    int err_code;
+    unsigned long err_code;
     char err_buf[256];
     size_t total = 0;
     struct tls_context *ctx;
@@ -1381,7 +1459,9 @@ static int tls_net_write(struct flb_tls_session *session,
             ret = FLB_TLS_WANT_READ;
         }
         else if (ssl_ret == SSL_ERROR_SYSCALL) {
-            if (ERR_get_error() == 0) {
+            err_code = ERR_get_error();
+
+            if (err_code == 0) {
                 if (ret == 0) {
                     flb_debug("[tls] connection closed");
                 }
@@ -1390,7 +1470,6 @@ static int tls_net_write(struct flb_tls_session *session,
                 }
             }
             else {
-                err_code = ERR_get_error();
                 ERR_error_string_n(err_code, err_buf, sizeof(err_buf) - 1);
                 flb_error("[tls] syscall error: %s", err_buf);
             }
@@ -1450,7 +1529,9 @@ static int tls_net_handshake(struct flb_tls *tls,
                              void *ptr_session)
 {
     int ret = 0;
+    int ssl_error = 0;
     long ssl_code = 0;
+    unsigned long err_code = 0;
     char err_buf[256];
     struct tls_session *session = ptr_session;
     struct tls_context *ctx;
@@ -1517,15 +1598,17 @@ static int tls_net_handshake(struct flb_tls *tls,
     }
 
     if (ret != 1) {
-        ret = SSL_get_error(session->ssl, ret);
-        if (ret != SSL_ERROR_WANT_READ &&
-            ret != SSL_ERROR_WANT_WRITE) {
-            ret = SSL_get_error(session->ssl, ret);
+        ssl_error = SSL_get_error(session->ssl, ret);
+
+        if (ssl_error != SSL_ERROR_WANT_READ &&
+            ssl_error != SSL_ERROR_WANT_WRITE) {
             /* The SSL_ERROR_SYSCALL with errno value of 0 indicates unexpected
              *  EOF from the peer. This is fixed in OpenSSL 3.0.
              */
 
-            if (ret == 0) {
+            if (ssl_error == SSL_ERROR_SYSCALL &&
+                ERR_peek_error() == 0 &&
+                errno == 0) {
                 ssl_code = SSL_get_verify_result(session->ssl);
                 if (ssl_code != X509_V_OK) {
                     /* Refer to: https://x509errors.org/ */
@@ -1535,9 +1618,18 @@ static int tls_net_handshake(struct flb_tls *tls,
                 else {
                     flb_error("[tls] error: unexpected EOF");
                 }
-            } else {
-                ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
-                flb_error("[tls] error: %s", err_buf);
+            }
+            else {
+                err_code = ERR_get_error();
+
+                if (err_code != 0) {
+                    ERR_error_string_n(err_code, err_buf, sizeof(err_buf)-1);
+                    flb_error("[tls] error: %s", err_buf);
+                }
+                else {
+                    flb_error("[tls] error: tls handshake failed (ssl_error=%d)",
+                              ssl_error);
+                }
             }
 
             pthread_mutex_unlock(&ctx->mutex);
@@ -1545,14 +1637,14 @@ static int tls_net_handshake(struct flb_tls *tls,
             return -1;
         }
 
-        if (ret == SSL_ERROR_WANT_WRITE) {
+        if (ssl_error == SSL_ERROR_WANT_WRITE) {
             pthread_mutex_unlock(&ctx->mutex);
 
             session->continuation_flag = FLB_TRUE;
 
             return FLB_TLS_WANT_WRITE;
         }
-        else if (ret == SSL_ERROR_WANT_READ) {
+        else if (ssl_error == SSL_ERROR_WANT_READ) {
             pthread_mutex_unlock(&ctx->mutex);
 
             session->continuation_flag = FLB_TRUE;
