@@ -719,6 +719,8 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
 {
     int ret;
     struct flb_azure_kusto *ctx;
+    const char *imds_resource;
+    const char *auth_url_tmpl;
 
     /* Allocate config context */
     ctx = flb_calloc(1, sizeof(struct flb_azure_kusto));
@@ -820,7 +822,6 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
     if (ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM || 
         ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_USER) {
         /* MSI auth */
-        const char *imds_resource;
 
         imds_resource = get_imds_resource(ctx->cloud_environment);
 
@@ -852,15 +853,15 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
         }
     } else {
         /* Standard OAuth2 for service principal or workload identity */
-        const char *tmpl = get_msal_auth_url_template(ctx->cloud_environment);
-        ctx->oauth_url = flb_sds_create_size(strlen(tmpl) + flb_sds_len(ctx->tenant_id) + 1);
+        auth_url_tmpl = get_msal_auth_url_template(ctx->cloud_environment);
+        ctx->oauth_url = flb_sds_create_size(strlen(auth_url_tmpl) + flb_sds_len(ctx->tenant_id) + 1);
         if (!ctx->oauth_url) {
             flb_errno();
             flb_azure_kusto_conf_destroy(ctx);
             return NULL;
         }
         flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                         tmpl, ctx->tenant_id);
+                         auth_url_tmpl, ctx->tenant_id);
     }
 
     ctx->resources = flb_calloc(1, sizeof(struct flb_azure_kusto_resources));
