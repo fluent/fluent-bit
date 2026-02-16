@@ -230,6 +230,7 @@ size_t cprof_profile_string_add(struct cprof_profile *profile, char *str, int st
     int alloc_size = 64;
     size_t id;
     size_t new_size;
+    cfl_sds_t *new_table;
 
     if (!str) {
         return -1;
@@ -257,11 +258,12 @@ size_t cprof_profile_string_add(struct cprof_profile *profile, char *str, int st
     /* check there is enough room for a new entry */
     if (profile->string_table_count >= profile->string_table_size) {
         new_size = profile->string_table_size + alloc_size;
-        profile->string_table = realloc(profile->string_table, new_size * sizeof(cfl_sds_t));
-        if (!profile->string_table) {
+        new_table = realloc(profile->string_table, new_size * sizeof(cfl_sds_t));
+        if (!new_table) {
             return -1;
         }
-        profile->string_table_size = alloc_size;
+        profile->string_table = new_table;
+        profile->string_table_size = new_size;
     }
 
     id = profile->string_table_count;

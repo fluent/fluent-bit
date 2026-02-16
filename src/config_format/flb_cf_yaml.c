@@ -537,8 +537,10 @@ static char *dirname(char *path)
     ptr = strrchr(path, '\\');
 
     if (ptr == NULL) {
-        return path;
+        /* No directory component */
+        return ".";
     }
+
     *ptr++='\0';
     return path;
 }

@@ -186,7 +186,6 @@ static int dd_remap_ecs_task_arn(const char *tag_name,
     flb_sds_t buf;
     char *remain;
     char *split;
-    char *task_arn;
     char *task_id;
     int ret;
 

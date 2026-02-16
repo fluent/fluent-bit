@@ -220,7 +220,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,
      0, FLB_TRUE, offsetof(struct prom_scrape, buffer_max_size),
-     ""
+     "Set the maximum buffer size for the HTTP response."
     },
 
     {

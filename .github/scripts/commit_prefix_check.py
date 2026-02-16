@@ -20,8 +20,23 @@ from git import Repo
 repo = Repo(".")
 
 # Regex patterns
-PREFIX_RE = re.compile(r"^[a-z0-9_]+:", re.IGNORECASE)
+PREFIX_RE = re.compile(r"^([a-z0-9_]+:)\s+\S", re.IGNORECASE)
 SIGNED_OFF_RE = re.compile(r"Signed-off-by:", re.IGNORECASE)
+FENCED_BLOCK_RE = re.compile(
+    r"""
+    (```|~~~)        # fence start
+    [^\n]*\n         # optional language
+    .*?
+    \1               # matching fence end
+    """,
+    re.DOTALL | re.VERBOSE,
+)
+
+def strip_fenced_code_blocks(text: str) -> str:
+    """
+    Remove fenced code blocks (``` or ~~~) from commit message body.
+    """
+    return FENCED_BLOCK_RE.sub("", text)
 
 
 # ------------------------------------------------
@@ -51,15 +66,29 @@ def infer_prefix_from_paths(paths):
         if p.startswith("lib/"):
             component_prefixes.add("lib:")
 
-        # ----- tests/ → tests: -----
+        # ----- tests/<category>/<file>.c → <file>: (strip flb_) -----
         if p.startswith("tests/"):
-            component_prefixes.add("tests:")
+            parts = p.split("/")
+            if len(parts) >= 3:
+                filename = os.path.basename(p)
+                name, _ = os.path.splitext(filename)
+                if name.startswith("flb_"):
+                    name = name[4:]
+                if name:
+                    component_prefixes.add(f"{name}:")
+                    component_prefixes.add("tests:")
+            else:
+                component_prefixes.add("tests:")
 
         # ----- plugins/<name>/ → <name>: -----
         if p.startswith("plugins/"):
             parts = p.split("/")
             if len(parts) > 1:
                 component_prefixes.add(f"{parts[1]}:")
+
+        # ----- benchmarks/ → benchmarks: -----
+        if p.startswith("benchmarks/"):
+            component_prefixes.add("benchmarks:")
 
         # ----- src/ → flb_xxx.* → xxx: OR src/<dir>/ → <dir>: -----
         # ----- src/ handling -----
@@ -109,6 +138,8 @@ def detect_bad_squash(body):
     - Multiple Signed-off-by lines in body → BAD (ONLY for this function)
     """
 
+    body = strip_fenced_code_blocks(body)
+
     # Normalize and discard empty lines
     lines = [l.strip() for l in body.splitlines() if l.strip()]
 
@@ -138,12 +169,14 @@ def validate_commit(commit):
     first_line, *rest = msg.split("\n")
     body = "\n".join(rest)
 
+    body = strip_fenced_code_blocks(body)
+
     # Subject must start with a prefix
     subject_prefix_match = PREFIX_RE.match(first_line)
     if not subject_prefix_match:
         return False, f"Missing prefix in commit subject: '{first_line}'"
 
-    subject_prefix = subject_prefix_match.group()
+    subject_prefix = subject_prefix_match.group(1)
 
     # Run squash detection (but ignore multi-signoff errors)
     bad_squash, reason = detect_bad_squash(body)
@@ -210,22 +243,41 @@ def validate_commit(commit):
     }
 
     # Prefixes that are allowed to cover multiple subcomponents
-    umbrella_prefixes = {"lib:"}
+    umbrella_prefixes = {"lib:", "tests:"}
 
     # If more than one non-build prefix is inferred AND the subject is not an umbrella
     # prefix, check if the subject prefix is in the expected list. If it is, allow it
     # (because the corresponding file exists). Only reject if it's not in the expected list
     # or if it's an umbrella prefix that doesn't match.
-    if len(non_build_prefixes) > 1 and subj_lower not in umbrella_prefixes:
-        # If subject prefix is in expected list, it's valid (the corresponding file exists)
-        if subj_lower not in expected_lower:
+    if len(non_build_prefixes) > 1:
+        if subj_lower in umbrella_prefixes:
+            norm_paths = [p.replace(os.sep, "/") for p in files]
+
+            if subj_lower == "lib:":
+                if not all(p.startswith("lib/") for p in norm_paths):
+                    expected_list = sorted(expected)
+                    expected_str = ", ".join(expected_list)
+                    return False, (
+                        f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+                        f"Expected one of: {expected_str}"
+                    )
+
+            elif subj_lower == "tests:":
+                if not all(p.startswith("tests/") for p in norm_paths):
+                    expected_list = sorted(expected)
+                    expected_str = ", ".join(expected_list)
+                    return False, (
+                        f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+                        f"Expected one of: {expected_str}"
+                    )
+
+        else:
             expected_list = sorted(expected)
             expected_str = ", ".join(expected_list)
             return False, (
                 f"Subject prefix '{subject_prefix}' does not match files changed.\n"
                 f"Expected one of: {expected_str}"
             )
-        # Subject prefix is in expected list, so it's valid - no need to check further
 
     # Subject prefix must be one of the expected ones
     if subj_lower not in expected_lower:

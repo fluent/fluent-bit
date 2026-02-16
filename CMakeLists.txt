@@ -150,6 +150,18 @@ if (NOT DEFINED FLB_USE_SIMDUTF)
   endif()
 endif()
 
+# another try for CXX
+if (NOT DEFINED FLB_USE_RIPSER)
+  check_language(CXX)
+  if(CMAKE_CXX_COMPILER)
+    message(STATUS "CXX compiler found, enable ripser.")
+    set(FLB_USE_RIPSER Yes)
+  else()
+    message(STATUS "CXX compiler not found, disable ripser.")
+    set(FLB_USE_RIPSER No)
+  endif()
+endif()
+
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
@@ -207,6 +219,7 @@ option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protec
 option(FLB_ENFORCE_ALIGNMENT   "Enable limited platform specific aligned memory access" No)
 option(FLB_KAFKA               "Enable Kafka support"         Yes)
 option(FLB_ZIG                 "Enable zig integration"       Yes)
+option(FLB_RIPSER              "Enable Ripser support"        ${FLB_USE_RIPSER})
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
@@ -832,6 +845,14 @@ if(FLB_WASM)
   endif ()
 endif()
 
+# ripser
+if(FLB_RIPSER)
+  enable_language(CXX)
+  set (CMAKE_CXX_STANDARD 11)
+  add_subdirectory(${FLB_PATH_LIB_RIPSER} EXCLUDE_FROM_ALL)
+  FLB_DEFINITION(FLB_HAVE_RIPSER)
+endif()
+
 # Kafka support (library in general)
 if(FLB_KAFKA)
   if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
@@ -1219,38 +1240,7 @@ endif()
 # LibBacktrace (friendly stacktrace support)
 # =========================================
 if(FLB_BACKTRACE)
-  if(FLB_PREFER_SYSTEM_LIB_BACKTRACE)
-    find_path(LIBBACKTRACE_INCLUDE_DIRS NAMES backtrace.h)
-    find_library(LIBBACKTRACE_LIBRARIES NAMES backtrace)
-  endif()
-  if(LIBBACKTRACE_INCLUDE_DIRS AND LIBBACKTRACE_LIBRARIES)
-    message(STATUS "libbacktrace found (${LIBBACKTRACE_LIBRARIES})")
-    include_directories(${LIBBACKTRACE_INCLUDE_DIRS})
-    link_directories(${LIBBACKTRACE_LIBRARY_DIRS})
-  else()
-    message(STATUS "libbacktrace not found, building ourselves")
-    if (CMAKE_OSX_SYSROOT)
-      # From macOS Mojave, /usr/include does not store C SDK headers.
-      # For libbacktrace building on macOS, we have to tell C headers where they are located.
-      set(DEPS_C_COMPILER "${CMAKE_C_COMPILER} -isysroot ${CMAKE_OSX_SYSROOT}")
-    else()
-      set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
-    endif()
-    set(FLB_LIBBACKTRACE_PATH "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
-    ExternalProject_Add(backtrace
-      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/
-      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-      BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
-      BUILD_BYPRODUCTS ${FLB_LIBBACKTRACE_PATH}
-      INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} DESTDIR= install
-      )
-    add_library(libbacktrace STATIC IMPORTED GLOBAL)
-    set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION ${FLB_LIBBACKTRACE_PATH})
-    add_dependencies(libbacktrace backtrace)
-    include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
-    set(LIBBACKTRACE_LIBRARIES "libbacktrace")
-  endif()
-  FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
+  include(cmake/libbacktrace.cmake)
 endif()
 
 # Onigmo (Regex Engine) options

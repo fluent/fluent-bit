@@ -1928,7 +1928,7 @@ static struct flb_config_map config_map[] = {
         FLB_CONFIG_MAP_STR, "hash", NULL,
         FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct internal_processor_context,
                                                 hash_list),
-        "Replaces a labels value with its SHA1 hash. Usage : 'hash label_name'"
+        "Replaces a label's value with its SHA256 hash. Usage : 'hash label_name'"
     },
 
     /* EOF */
