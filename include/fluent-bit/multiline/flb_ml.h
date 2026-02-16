@@ -112,6 +112,10 @@ struct flb_ml_stream_group {
     msgpack_sbuffer mp_md_sbuf; /* temporary msgpack buffer              */
     msgpack_packer mp_md_pck;   /* temporary msgpack packer              */
 
+    /* Metadata snapshots (deep-copied) to avoid msgpack pack/unpack churn */
+    struct mk_list metadata_objects;          /* list of deep-copied msgpack_object maps */
+    int            metadata_objects_initialized;
+
     msgpack_sbuffer mp_sbuf;    /* temporary msgpack buffer              */
     msgpack_packer mp_pck;      /* temporary msgpack packer              */
     struct flb_time mp_time;    /* multiline time parsed from first line */
