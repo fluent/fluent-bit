@@ -22,11 +22,13 @@
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_hmac.h>
+#include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
 
 #include "azure_blob.h"
 #include "azure_blob_uri.h"
+#include "azure_blob_msiauth.h"
 
 static int hmac_sha256_sign(unsigned char out[32],
                             unsigned char *key, size_t key_len,
@@ -294,10 +296,12 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
                           ssize_t content_length, int blob_type,
                           int content_type, int content_encoding)
 {
+    int ret;
     int len;
     time_t now;
     struct tm tm;
     char tmp[64];
+    char *token;
     flb_sds_t can_req;
     flb_sds_t auth;
 
@@ -357,6 +361,53 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
         /* Release buffers */
         flb_sds_destroy(can_req);
         flb_sds_destroy(auth);
+    }
+    else if (ctx->atype == AZURE_BLOB_AUTH_MI_SYSTEM ||
+             ctx->atype == AZURE_BLOB_AUTH_MI_USER) {
+        pthread_mutex_lock(&ctx->token_mutex);
+
+        if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
+            token = flb_azure_blob_msiauth_token_get(ctx->o);
+            if (!token) {
+                flb_plg_error(ctx->ins, "error retrieving managed identity token");
+                pthread_mutex_unlock(&ctx->token_mutex);
+                return -1;
+            }
+        }
+
+        auth = flb_sds_create_size(flb_sds_len(ctx->o->access_token) + 8);
+        flb_sds_cat_safe(&auth, "Bearer ", 7);
+        flb_sds_cat_safe(&auth, ctx->o->access_token,
+                         flb_sds_len(ctx->o->access_token));
+        flb_http_add_header(c, "Authorization", 13, auth, flb_sds_len(auth));
+        flb_sds_destroy(auth);
+
+        pthread_mutex_unlock(&ctx->token_mutex);
+    }
+    else if (ctx->atype == AZURE_BLOB_AUTH_WI) {
+        pthread_mutex_lock(&ctx->token_mutex);
+
+        if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
+            ret = flb_azure_blob_workload_identity_token_get(
+                ctx->o,
+                ctx->workload_identity_token_file,
+                ctx->client_id,
+                ctx->tenant_id);
+            if (ret == -1) {
+                flb_plg_error(ctx->ins, "error retrieving workload identity token");
+                pthread_mutex_unlock(&ctx->token_mutex);
+                return -1;
+            }
+        }
+
+        auth = flb_sds_create_size(flb_sds_len(ctx->o->access_token) + 8);
+        flb_sds_cat_safe(&auth, "Bearer ", 7);
+        flb_sds_cat_safe(&auth, ctx->o->access_token,
+                         flb_sds_len(ctx->o->access_token));
+        flb_http_add_header(c, "Authorization", 13, auth, flb_sds_len(auth));
+        flb_sds_destroy(auth);
+
+        pthread_mutex_unlock(&ctx->token_mutex);
     }
 
     /* Set callback context to the HTTP client context */

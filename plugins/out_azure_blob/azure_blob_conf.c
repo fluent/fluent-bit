@@ -24,6 +24,7 @@
 #include "azure_blob.h"
 #include "azure_blob_conf.h"
 #include "azure_blob_db.h"
+#include "azure_blob_msiauth.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -599,6 +600,29 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         else if (strcasecmp(tmp, "sas") == 0) {
             ctx->atype = AZURE_BLOB_AUTH_SAS;
         }
+        else if (strcasecmp(tmp, "managed_identity") == 0) {
+            if (!ctx->client_id) {
+                flb_plg_error(ctx->ins,
+                              "managed_identity auth requires 'client_id' "
+                              "(set to 'system' for system-assigned)");
+                return NULL;
+            }
+            if (strcasecmp(ctx->client_id, "system") == 0) {
+                ctx->atype = AZURE_BLOB_AUTH_MI_SYSTEM;
+            }
+            else {
+                ctx->atype = AZURE_BLOB_AUTH_MI_USER;
+            }
+        }
+        else if (strcasecmp(tmp, "workload_identity") == 0) {
+            ctx->atype = AZURE_BLOB_AUTH_WI;
+            if (!ctx->tenant_id || !ctx->client_id) {
+                flb_plg_error(ctx->ins,
+                              "workload_identity auth requires "
+                              "'tenant_id' and 'client_id'");
+                return NULL;
+            }
+        }
         else {
             flb_plg_error(ctx->ins, "invalid auth_type value '%s'", tmp);
             return NULL;
@@ -755,6 +779,59 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         flb_sds_printf(&ctx->shared_key_prefix, "SharedKey %s:", ctx->account_name);
     }
 
+    /* Create OAuth2 context for managed identity / workload identity */
+    if (ctx->atype == AZURE_BLOB_AUTH_MI_SYSTEM ||
+        ctx->atype == AZURE_BLOB_AUTH_MI_USER) {
+        /* Construct IMDS URL */
+        if (ctx->atype == AZURE_BLOB_AUTH_MI_SYSTEM) {
+            ctx->oauth_url = flb_sds_create_size(
+                sizeof(FLB_AZURE_BLOB_MSIAUTH_URL_TEMPLATE) + 1);
+            if (!ctx->oauth_url) {
+                return NULL;
+            }
+            flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
+                             FLB_AZURE_BLOB_MSIAUTH_URL_TEMPLATE, "", "");
+        }
+        else {
+            ctx->oauth_url = flb_sds_create_size(
+                sizeof(FLB_AZURE_BLOB_MSIAUTH_URL_TEMPLATE) +
+                sizeof("&client_id=") + flb_sds_len(ctx->client_id));
+            if (!ctx->oauth_url) {
+                return NULL;
+            }
+            flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
+                             FLB_AZURE_BLOB_MSIAUTH_URL_TEMPLATE,
+                             "&client_id=", ctx->client_id);
+        }
+
+        ctx->o = flb_oauth2_create(config, ctx->oauth_url, 3000);
+        if (!ctx->o) {
+            flb_plg_error(ctx->ins, "cannot create OAuth2 context for IMDS");
+            return NULL;
+        }
+        flb_stream_disable_async_mode(&ctx->o->u->base);
+        pthread_mutex_init(&ctx->token_mutex, NULL);
+    }
+    else if (ctx->atype == AZURE_BLOB_AUTH_WI) {
+        /* Construct Azure AD token endpoint URL */
+        ctx->oauth_url = flb_sds_create_size(
+            sizeof(FLB_AZURE_BLOB_MSAL_AUTH_URL_TEMPLATE) +
+            flb_sds_len(ctx->tenant_id));
+        if (!ctx->oauth_url) {
+            return NULL;
+        }
+        flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
+                         FLB_AZURE_BLOB_MSAL_AUTH_URL_TEMPLATE, ctx->tenant_id);
+
+        ctx->o = flb_oauth2_create(config, ctx->oauth_url, 3000);
+        if (!ctx->o) {
+            flb_plg_error(ctx->ins, "cannot create OAuth2 context for workload identity");
+            return NULL;
+        }
+        flb_stream_disable_async_mode(&ctx->o->u->base);
+        pthread_mutex_init(&ctx->token_mutex, NULL);
+    }
+
     /* Sanitize path: remove any ending slash */
     if (ctx->path) {
         if (ctx->path[flb_sds_len(ctx->path) - 1] == '/') {
@@ -778,7 +855,11 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
                  ctx->btype == AZURE_BLOB_APPENDBLOB ? "appendblob" : "blockblob",
                  ctx->emulator_mode ? "yes" : "no",
                  ctx->real_endpoint ? ctx->real_endpoint : "no",
-                 ctx->atype == AZURE_BLOB_AUTH_KEY ? "key" : "sas");
+                 ctx->atype == AZURE_BLOB_AUTH_KEY ? "key" :
+                 ctx->atype == AZURE_BLOB_AUTH_SAS ? "sas" :
+                 ctx->atype == AZURE_BLOB_AUTH_MI_SYSTEM ? "managed_identity (system)" :
+                 ctx->atype == AZURE_BLOB_AUTH_MI_USER ? "managed_identity (user)" :
+                 "workload_identity");
     return ctx;
 }
 
@@ -820,6 +901,20 @@ void flb_azure_blob_conf_destroy(struct flb_azure_blob *ctx)
 
     if (ctx->shared_key_prefix) {
         flb_sds_destroy(ctx->shared_key_prefix);
+    }
+
+    if (ctx->oauth_url) {
+        flb_sds_destroy(ctx->oauth_url);
+    }
+
+    if (ctx->o) {
+        flb_oauth2_destroy(ctx->o);
+    }
+
+    if (ctx->atype == AZURE_BLOB_AUTH_MI_SYSTEM ||
+        ctx->atype == AZURE_BLOB_AUTH_MI_USER ||
+        ctx->atype == AZURE_BLOB_AUTH_WI) {
+        pthread_mutex_destroy(&ctx->token_mutex);
     }
 
     if (ctx->u) {

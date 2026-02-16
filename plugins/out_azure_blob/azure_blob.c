@@ -1826,13 +1826,39 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "auth_type", "key",
      0, FLB_TRUE, offsetof(struct flb_azure_blob, auth_type),
-     "Set the auth type: key or sas"
+     "Set the auth type: key, sas, managed_identity, or workload_identity"
     },
 
     {
      FLB_CONFIG_MAP_STR, "sas_token", NULL,
      0, FLB_TRUE, offsetof(struct flb_azure_blob, sas_token),
      "Azure Blob SAS token"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "client_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, client_id),
+     "Azure client ID for managed identity or workload identity auth. "
+     "For system-assigned managed identity, set to 'system'"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "tenant_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, tenant_id),
+     "Azure tenant ID (required for workload identity auth)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "client_secret", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, client_secret),
+     "Azure client secret (optional, for service principal auth)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "workload_identity_token_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, workload_identity_token_file),
+     "Path to the workload identity token file. "
+     "Default: /var/run/secrets/azure/tokens/azure-identity-token"
     },
 
     {
