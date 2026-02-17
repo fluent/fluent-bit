@@ -1241,8 +1241,6 @@ static int process_counter_map(struct flb_cumulative_to_delta_ctx *context,
         return 0;
     }
 
-    counter->aggregation_type = CMT_AGGREGATION_TYPE_DELTA;
-
     if (map->metric_static_set == FLB_TRUE) {
         result = process_counter_sample(context,
                                         counter,
@@ -1271,6 +1269,8 @@ static int process_counter_map(struct flb_cumulative_to_delta_ctx *context,
         }
     }
 
+    counter->aggregation_type = CMT_AGGREGATION_TYPE_DELTA;
+
     return 0;
 }
 
@@ -1289,8 +1289,6 @@ static int process_histogram_map(struct flb_cumulative_to_delta_ctx *context,
     if (histogram->aggregation_type != CMT_AGGREGATION_TYPE_CUMULATIVE) {
         return 0;
     }
-
-    histogram->aggregation_type = CMT_AGGREGATION_TYPE_DELTA;
 
     if (map->metric_static_set == FLB_TRUE) {
         result = process_histogram_sample(context,
@@ -1324,6 +1322,8 @@ static int process_histogram_map(struct flb_cumulative_to_delta_ctx *context,
         }
     }
 
+    histogram->aggregation_type = CMT_AGGREGATION_TYPE_DELTA;
+
     return 0;
 }
 
@@ -1342,8 +1342,6 @@ static int process_exp_histogram_map(struct flb_cumulative_to_delta_ctx *context
     if (exp_histogram->aggregation_type != CMT_AGGREGATION_TYPE_CUMULATIVE) {
         return 0;
     }
-
-    exp_histogram->aggregation_type = CMT_AGGREGATION_TYPE_DELTA;
 
     if (map->metric_static_set == FLB_TRUE) {
         result = process_exp_histogram_sample(context,
@@ -1380,6 +1378,8 @@ static int process_exp_histogram_map(struct flb_cumulative_to_delta_ctx *context
             cmt_map_metric_destroy(sample);
         }
     }
+
+    exp_histogram->aggregation_type = CMT_AGGREGATION_TYPE_DELTA;
 
     return 0;
 }
