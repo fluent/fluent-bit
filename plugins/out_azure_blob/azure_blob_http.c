@@ -351,6 +351,11 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
                                              content_encoding);
 
         auth = flb_sds_create_size(64 + flb_sds_len(can_req));
+        if (!auth) {
+            flb_plg_error(ctx->ins, "error creating auth buffer");
+            flb_sds_destroy(can_req);
+            return -1;
+        }
 
         flb_sds_cat_safe(&auth, ctx->shared_key_prefix, flb_sds_len(ctx->shared_key_prefix));
         flb_sds_cat_safe(&auth, can_req, flb_sds_len(can_req));
@@ -376,6 +381,11 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
         }
 
         auth = flb_sds_create_size(flb_sds_len(ctx->o->access_token) + 8);
+        if (!auth) {
+            flb_plg_error(ctx->ins, "error creating auth buffer");
+            pthread_mutex_unlock(&ctx->token_mutex);
+            return -1;
+        }
         flb_sds_cat_safe(&auth, "Bearer ", 7);
         flb_sds_cat_safe(&auth, ctx->o->access_token,
                          flb_sds_len(ctx->o->access_token));
@@ -401,6 +411,11 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
         }
 
         auth = flb_sds_create_size(flb_sds_len(ctx->o->access_token) + 8);
+        if (!auth) {
+            flb_plg_error(ctx->ins, "error creating auth buffer");
+            pthread_mutex_unlock(&ctx->token_mutex);
+            return -1;
+        }
         flb_sds_cat_safe(&auth, "Bearer ", 7);
         flb_sds_cat_safe(&auth, ctx->o->access_token,
                          flb_sds_len(ctx->o->access_token));
