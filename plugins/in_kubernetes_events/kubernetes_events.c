@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <inttypes.h>
+#include <string.h>
 
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_network.h>
@@ -42,8 +43,6 @@
 #include "kubernetes_events_sql.h"
 static int k8s_events_sql_insert_event(struct k8s_events *ctx, msgpack_object *item);
 #endif
-
-#define JSON_ARRAY_DELIM "\r\n"
 
 static int file_to_buffer(const char *path,
                           char **out_buf, size_t *out_size)
@@ -745,35 +744,123 @@ static int process_http_chunk(struct k8s_events* ctx, struct flb_http_client *c,
     char *buf_data = NULL;
     size_t buf_size;
     size_t token_size = 0;
-    char *token_start = 0;
-    char *token_end = NULL;
+    char *token_start;
+    char *token_end;
+    char *data_start;
+    char *data_end;
+    size_t data_len;
+    size_t remaining;
+    size_t search_remaining;
+    flb_sds_t working_buffer = NULL;
+    size_t buffer_len;
 
-    token_start = c->resp.payload;
-    token_end = strpbrk(token_start, JSON_ARRAY_DELIM);
-    while ( token_end != NULL && ret == 0 ) {
+    /* 
+     * Prepend any buffered incomplete data from previous chunks.
+     * HTTP chunked encoding can split JSON objects across chunk boundaries,
+     * so we need to buffer incomplete data until we find a complete JSON line.
+     */
+    if (ctx->chunk_buffer != NULL) {
+        buffer_len = flb_sds_len(ctx->chunk_buffer);
+        flb_plg_debug(ctx->ins, "prepending %zu bytes from chunk_buffer to %zu new bytes", 
+                      buffer_len, c->resp.payload_size);
+        working_buffer = flb_sds_cat(ctx->chunk_buffer, c->resp.payload, c->resp.payload_size);
+        if (!working_buffer) {
+            flb_plg_error(ctx->ins, "failed to concatenate chunk buffer");
+            flb_sds_destroy(ctx->chunk_buffer);
+            ctx->chunk_buffer = NULL;
+            return -1;
+        }
+        /* 
+         * flb_sds_cat modifies and returns the first argument, so working_buffer
+         * IS ctx->chunk_buffer (reallocated). Clear our reference to it.
+         */
+        ctx->chunk_buffer = NULL;
+        data_start = working_buffer;
+        data_len = flb_sds_len(working_buffer);
+    }
+    else {
+        flb_plg_debug(ctx->ins, "processing %zu bytes from new chunk", c->resp.payload_size);
+        data_start = c->resp.payload;
+        data_len = c->resp.payload_size;
+    }
+
+    data_end = data_start + data_len;
+    token_start = data_start;
+    
+    /* Parse newline-delimited JSON. Events are separated by '\n', with optional '\r' before it (CRLF). */
+    while (token_start < data_end && ret == 0) {
+        search_remaining = data_end - token_start;
+        token_end = memchr(token_start, '\n', search_remaining);
+        
+        if (token_end == NULL) {
+            /* No newline found - buffer remaining data for next chunk */
+            break;
+        }
+        
+        /* Found a newline - calculate token size, stripping optional \r */
         token_size = token_end - token_start;
+        if (token_size > 0 && token_start[token_size - 1] == '\r') {
+            token_size--; /* Strip trailing \r */
+        }
+
+        /* Skip empty lines */
+        if (token_size == 0) {
+            token_start = token_end + 1;
+            continue;
+        }
+
         ret = flb_pack_json(token_start, token_size, &buf_data, &buf_size, &root_type, &consumed);
-        if (ret == -1) {
-            flb_plg_debug(ctx->ins, "could not process payload, incomplete or bad formed JSON: %s",
-                          c->resp.payload);
+        if (ret == 0) {
+            /* Successfully parsed JSON */
+            flb_plg_debug(ctx->ins, "successfully parsed JSON event (%zu bytes)", token_size);
+            ret = process_watched_event(ctx, buf_data, buf_size);
+            flb_free(buf_data);
+            buf_data = NULL;
+            
+            /* Advance past the newline */
+            token_start = token_end + 1;
         }
         else {
-            *bytes_consumed += token_size + 1;
-            ret = process_watched_event(ctx, buf_data, buf_size);
+            /* JSON parse failed - this line is incomplete, don't advance */
+            flb_plg_debug(ctx->ins, "JSON parse failed for %zu bytes at offset %ld - will buffer", 
+                         token_size, token_start - data_start);
+            if (buf_data) {
+                flb_free(buf_data);
+                buf_data = NULL;
+            }
+            break;
         }
-
-        flb_free(buf_data);
-        if (buf_data) {
-            buf_data = NULL;
+    }
+    
+    /* Buffer any remaining unparsed data */
+    remaining = data_end - token_start;
+    if (remaining > 0) {
+        flb_plg_debug(ctx->ins, "buffering %zu bytes of incomplete JSON data for next chunk", remaining);
+        ctx->chunk_buffer = flb_sds_create_len(token_start, remaining);
+        if (!ctx->chunk_buffer) {
+            flb_plg_error(ctx->ins, "failed to create chunk buffer");
+            if (working_buffer) {
+                flb_sds_destroy(working_buffer);
+            }
+            return -1;
         }
-        token_start = token_end+1;
-        token_end = strpbrk(token_start, JSON_ARRAY_DELIM);
+    }
+    else {
+        flb_plg_debug(ctx->ins, "all data processed, no buffering needed");
     }
 
-    if (buf_data) {
-        flb_free(buf_data);
+    if (working_buffer) {
+        flb_sds_destroy(working_buffer);
     }
-    return ret;
+    
+    /* 
+     * Always report that we consumed the full NEW payload from HTTP client.
+     * Even if we buffered data without parsing, we ACCEPTED the bytes.
+     * Return success since we consumed all bytes (even if just buffering).
+     */
+    *bytes_consumed = c->resp.payload_size;
+    
+    return 0;
 }
 
 static void initialize_http_client(struct flb_http_client* c, struct k8s_events* ctx)
@@ -890,6 +977,13 @@ failure:
         flb_upstream_conn_release(ctx->current_connection);
         ctx->current_connection = NULL;
     }
+    
+    /* Clear any buffered incomplete data on failure */
+    if (ctx->chunk_buffer) {
+        flb_sds_destroy(ctx->chunk_buffer);
+        ctx->chunk_buffer = NULL;
+    }
+    
     return FLB_FALSE;
 }
 
@@ -900,6 +994,11 @@ static int k8s_events_collect(struct flb_input_instance *ins,
     struct k8s_events *ctx = in_context;
     size_t bytes_consumed;
     int chunk_proc_ret;
+    int buf_ret;
+    int root_type;
+    size_t consumed;
+    char *buf_data;
+    size_t buf_size;
 
     if (pthread_mutex_trylock(&ctx->lock) != 0) {
         FLB_INPUT_RETURN(0);
@@ -922,12 +1021,37 @@ static int k8s_events_collect(struct flb_input_instance *ins,
     }
     /* NOTE: skipping any processing after streaming socket closes */
 
+    /* Safety check: streaming_client might be NULL after error/processing */
+    if (!ctx->streaming_client) {
+        pthread_mutex_unlock(&ctx->lock);
+        FLB_INPUT_RETURN(0);
+    }
+
     if (ctx->streaming_client->resp.status != 200 || ret == FLB_HTTP_ERROR || ret == FLB_HTTP_OK) {
         if (ret == FLB_HTTP_ERROR) {
             flb_plg_warn(ins, "kubernetes chunked stream error.");
         }
         else if (ret == FLB_HTTP_OK) {
             flb_plg_info(ins, "kubernetes stream closed by api server. Reconnect will happen on next interval.");
+            
+            /* 
+             * If there's buffered data when stream closes, try to process it.
+             * This handles the case where the last chunk doesn't end with a newline.
+             */
+            if (ctx->chunk_buffer && flb_sds_len(ctx->chunk_buffer) > 0) {
+                consumed = 0;
+                buf_data = NULL;
+                
+                buf_ret = flb_pack_json(ctx->chunk_buffer, flb_sds_len(ctx->chunk_buffer), 
+                                       &buf_data, &buf_size, &root_type, &consumed);
+                if (buf_ret == 0) {
+                    process_watched_event(ctx, buf_data, buf_size);
+                }
+                
+                if (buf_data) {
+                    flb_free(buf_data);
+                }
+            }
         }
         else {
             flb_plg_warn(ins, "events watch failure, http_status=%d payload=%s",
@@ -939,6 +1063,12 @@ static int k8s_events_collect(struct flb_input_instance *ins,
         flb_upstream_conn_release(ctx->current_connection);
         ctx->streaming_client = NULL;
         ctx->current_connection = NULL;
+        
+        /* Clear any buffered incomplete data when stream closes */
+        if (ctx->chunk_buffer) {
+            flb_sds_destroy(ctx->chunk_buffer);
+            ctx->chunk_buffer = NULL;
+        }
     }
 
     pthread_mutex_unlock(&ctx->lock);
