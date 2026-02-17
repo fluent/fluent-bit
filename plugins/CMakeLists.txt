@@ -440,6 +440,7 @@ endif()
 if(FLB_RECORD_ACCESSOR)
   REGISTER_FILTER_PLUGIN("filter_expect")
   REGISTER_FILTER_PLUGIN("filter_grep")
+  REGISTER_FILTER_PLUGIN("filter_lookup")
   REGISTER_FILTER_PLUGIN("filter_rewrite_tag")
 endif()
 
