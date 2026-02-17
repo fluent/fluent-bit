@@ -123,6 +123,12 @@ static flb_sds_t read_token_from_file(const char *token_file)
     }
 
     bytes_read = fread(buf, 1, sizeof(buf) - 1, fp);
+    if (bytes_read == sizeof(buf) - 1 && !feof(fp)) {
+        fclose(fp);
+        flb_error("[azure blob workload identity] token file too large: %s",
+                  token_file);
+        return NULL;
+    }
     fclose(fp);
 
     if (bytes_read <= 0) {
