@@ -31,6 +31,7 @@
 
 #include "azure_logs_ingestion.h"
 #include "azure_logs_ingestion_conf.h"
+#include "azure_logs_ingestion_msiauth.h"
 
 static int cb_azure_logs_ingestion_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
@@ -172,48 +173,63 @@ flb_sds_t get_az_li_token(struct flb_az_li *ctx)
         flb_plg_error(ctx->ins, "error locking mutex");
         return NULL;
     }
+    
     /* Retrieve access token only if expired */
     if (flb_oauth2_token_expired(ctx->u_auth) == FLB_TRUE) {
         flb_plg_debug(ctx->ins, "token expired. getting new token");
-        /* Clear any previous oauth2 payload content */
-        flb_oauth2_payload_clear(ctx->u_auth);
-
-        ret = flb_oauth2_payload_append(ctx->u_auth, "grant_type", 10,
-                                        "client_credentials", 18);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "error appending oauth2 params");
-            goto token_cleanup;
+        
+        if (ctx->auth_type == FLB_AZ_LI_AUTH_MANAGED_IDENTITY_SYSTEM ||
+            ctx->auth_type == FLB_AZ_LI_AUTH_MANAGED_IDENTITY_USER) {
+            /* Use MSI authentication */
+            token = flb_azure_li_msiauth_token_get(ctx->u_auth);
+            if (!token) {
+                flb_plg_error(ctx->ins, "error retrieving MSI access token");
+                goto token_cleanup;
+            }
+            flb_plg_debug(ctx->ins, "got azure MSI token");
         }
+        else {
+            /* Use service principal authentication */
+            /* Clear any previous oauth2 payload content */
+            flb_oauth2_payload_clear(ctx->u_auth);
 
-        ret = flb_oauth2_payload_append(ctx->u_auth, "scope", 5, FLB_AZ_LI_AUTH_SCOPE,
-                                        sizeof(FLB_AZ_LI_AUTH_SCOPE) - 1);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "error appending oauth2 params");
-            goto token_cleanup;
+            ret = flb_oauth2_payload_append(ctx->u_auth, "grant_type", 10,
+                                            "client_credentials", 18);
+            if (ret == -1) {
+                flb_plg_error(ctx->ins, "error appending oauth2 params");
+                goto token_cleanup;
+            }
+
+            ret = flb_oauth2_payload_append(ctx->u_auth, "scope", 5, FLB_AZ_LI_AUTH_SCOPE,
+                                            sizeof(FLB_AZ_LI_AUTH_SCOPE) - 1);
+            if (ret == -1) {
+                flb_plg_error(ctx->ins, "error appending oauth2 params");
+                goto token_cleanup;
+            }
+
+            ret = flb_oauth2_payload_append(ctx->u_auth, "client_id", 9,
+                                            ctx->client_id, -1);
+            if (ret == -1) {
+                flb_plg_error(ctx->ins, "error appending oauth2 params");
+                goto token_cleanup;
+            }
+
+            ret = flb_oauth2_payload_append(ctx->u_auth, "client_secret", 13,
+                                            ctx->client_secret, -1);
+            if (ret == -1) {
+                flb_plg_error(ctx->ins, "error appending oauth2 params");
+                goto token_cleanup;
+            }
+
+            token = flb_oauth2_token_get(ctx->u_auth);
+
+            /* Copy string to prevent race conditions */
+            if (!token) {
+                flb_plg_error(ctx->ins, "error retrieving oauth2 access token");
+                goto token_cleanup;
+            }
+            flb_plg_debug(ctx->ins, "got azure token");
         }
-
-        ret = flb_oauth2_payload_append(ctx->u_auth, "client_id", 9,
-                                        ctx->client_id, -1);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "error appending oauth2 params");
-            goto token_cleanup;
-        }
-
-        ret = flb_oauth2_payload_append(ctx->u_auth, "client_secret", 13,
-                                        ctx->client_secret, -1);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "error appending oauth2 params");
-            goto token_cleanup;
-        }
-
-        token = flb_oauth2_token_get(ctx->u_auth);
-
-        /* Copy string to prevent race conditions */
-        if (!token) {
-            flb_plg_error(ctx->ins, "error retrieving oauth2 access token");
-            goto token_cleanup;
-        }
-        flb_plg_debug(ctx->ins, "got azure token");
     }
 
     /* Reached this code-block means, got new token or token not expired */
@@ -395,6 +411,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "client_secret", (char *)NULL,
      0, FLB_TRUE, offsetof(struct flb_az_li, client_secret),
      "Set the client secret of the AAD application"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "auth_type", "service_principal",
+     0, FLB_TRUE, offsetof(struct flb_az_li, auth_type_str),
+     "Set the authentication type: 'service_principal' or 'managed_identity'. "
+     "For managed_identity, use 'system' as client_id for system-assigned identity, or specify the managed identity's client ID"
     },
     {
      FLB_CONFIG_MAP_STR, "dce_url", (char *)NULL,
