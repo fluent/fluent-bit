@@ -671,9 +671,10 @@ static FLB_INLINE void output_pre_cb_flush(void)
 
     co_switch(coro->caller);
 
-    /* Skip flush if type is FLB_EVENT_TYPE_LOGS and event chunk has zero records  */
+    /* Skip flush if type is FLB_EVENT_TYPE_LOGS or FLB_EVENT_TYPE_METRICS and event chunk has zero records  */
     if (persisted_params.event_chunk &&
-        persisted_params.event_chunk->type == FLB_EVENT_TYPE_LOGS &&
+            (persisted_params.event_chunk->type == FLB_EVENT_TYPE_LOGS ||
+             persisted_params.event_chunk->type == FLB_EVENT_TYPE_METRICS) &&
         persisted_params.event_chunk->total_events == 0) {
         flb_debug("[output] skipping flush for event chunk with zero records.");
         FLB_OUTPUT_RETURN(FLB_OK);
