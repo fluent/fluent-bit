@@ -563,29 +563,25 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     /* Load config map */
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
-        flb_free(ctx);
-
-        return NULL;
+        goto error;
     }
 
     if (ctx->account_name == NULL) {
         flb_plg_error(ctx->ins, "'account_name' has not been set");
-        return NULL;
+        goto error;
     }
 
     if (ctx->configuration_endpoint_url != NULL) {
         ret = flb_azure_blob_apply_remote_configuration(ctx);
 
         if (ret != 0) {
-            flb_free(ctx);
-
-            return NULL;
+            goto error;
         }
     }
 
     if (!ctx->container_name) {
         flb_plg_error(ctx->ins, "'container_name' has not been set");
-        return NULL;
+        goto error;
     }
 
     /* Set Auth type */
@@ -605,7 +601,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
                 flb_plg_error(ctx->ins,
                               "managed_identity auth requires 'client_id' "
                               "(set to 'system' for system-assigned)");
-                return NULL;
+                goto error;
             }
             if (strcasecmp(ctx->client_id, "system") == 0) {
                 ctx->atype = AZURE_BLOB_AUTH_MI_SYSTEM;
@@ -620,24 +616,24 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
                 flb_plg_error(ctx->ins,
                               "workload_identity auth requires "
                               "'tenant_id' and 'client_id'");
-                return NULL;
+                goto error;
             }
         }
         else {
             flb_plg_error(ctx->ins, "invalid auth_type value '%s'", tmp);
-            return NULL;
+            goto error;
         }
     }
     if (ctx->atype == AZURE_BLOB_AUTH_KEY &&
         ctx->shared_key == NULL) {
         flb_plg_error(ctx->ins, "'shared_key' has not been set");
-        return NULL;
+        goto error;
     }
 
     if (ctx->atype == AZURE_BLOB_AUTH_SAS) {
         if (ctx->sas_token == NULL) {
             flb_plg_error(ctx->ins, "'sas_token' has not been set");
-            return NULL;
+            goto error;
         }
         if (ctx->sas_token[0] == '?') {
             ctx->sas_token++;
@@ -649,7 +645,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         ctx->shared_key != NULL) {
         ret = set_shared_key(ctx);
         if (ret == -1) {
-            return NULL;
+            goto error;
         }
     }
 
@@ -667,7 +663,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         }
         else {
             flb_plg_error(ctx->ins, "invalid blob_type value '%s'", tmp);
-            return NULL;
+            goto error;
         }
     }
 
@@ -676,7 +672,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         flb_plg_error(ctx->ins,
                       "buffering is not supported with 'appendblob' blob_type. "
                       "Please use 'blockblob' blob_type or disable buffering.");
-        return NULL;
+        goto error;
     }
 
     /* Compress (gzip) */
@@ -693,7 +689,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         flb_plg_error(ctx->ins,
                       "the option 'compress_blob' is not compatible with 'appendblob' "
                       "blob_type");
-        return NULL;
+        goto error;
     }
 
     /*
@@ -714,7 +710,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
                                          io_flags, ins->tls);
         if (!ctx->u) {
             flb_plg_error(ctx->ins, "invalid endpoint '%s'", ctx->endpoint);
-            return NULL;
+            goto error;
         }
         ctx->real_endpoint = flb_sds_create(ctx->endpoint);
     }
@@ -722,7 +718,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         ctx->real_endpoint = flb_sds_create_size(256);
         if (!ctx->real_endpoint) {
             flb_plg_error(ctx->ins, "cannot create endpoint");
-            return NULL;
+            goto error;
         }
         flb_sds_printf(&ctx->real_endpoint, "%s%s",
                        ctx->account_name,
@@ -749,7 +745,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         if (!ctx->u) {
             flb_plg_error(ctx->ins, "cannot create upstream for endpoint '%s'",
                           ctx->real_endpoint);
-            return NULL;
+            goto error;
         }
     }
     flb_output_upstream_set(ctx->u, ins);
@@ -759,7 +755,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     if (!ctx->base_uri) {
         flb_plg_error(ctx->ins, "cannot create base_uri for endpoint '%s'",
                       ctx->real_endpoint);
-        return NULL;
+        goto error;
     }
 
     if (ctx->emulator_mode == FLB_TRUE) {
@@ -774,7 +770,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         ctx->shared_key_prefix = flb_sds_create_size(256);
         if (!ctx->shared_key_prefix) {
             flb_plg_error(ctx->ins, "cannot create shared key prefix");
-            return NULL;
+            goto error;
         }
         flb_sds_printf(&ctx->shared_key_prefix, "SharedKey %s:", ctx->account_name);
     }
@@ -787,7 +783,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
             ctx->oauth_url = flb_sds_create_size(
                 sizeof(FLB_AZURE_BLOB_MSIAUTH_URL_TEMPLATE) + 1);
             if (!ctx->oauth_url) {
-                return NULL;
+                goto error;
             }
             flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
                              FLB_AZURE_BLOB_MSIAUTH_URL_TEMPLATE, "", "");
@@ -797,7 +793,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
                 sizeof(FLB_AZURE_BLOB_MSIAUTH_URL_TEMPLATE) +
                 sizeof("&client_id=") + flb_sds_len(ctx->client_id));
             if (!ctx->oauth_url) {
-                return NULL;
+                goto error;
             }
             flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
                              FLB_AZURE_BLOB_MSIAUTH_URL_TEMPLATE,
@@ -807,7 +803,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         ctx->o = flb_oauth2_create(config, ctx->oauth_url, 3000);
         if (!ctx->o) {
             flb_plg_error(ctx->ins, "cannot create OAuth2 context for IMDS");
-            return NULL;
+            goto error;
         }
         flb_stream_disable_async_mode(&ctx->o->u->base);
         pthread_mutex_init(&ctx->token_mutex, NULL);
@@ -818,7 +814,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
             sizeof(FLB_AZURE_BLOB_MSAL_AUTH_URL_TEMPLATE) +
             flb_sds_len(ctx->tenant_id));
         if (!ctx->oauth_url) {
-            return NULL;
+            goto error;
         }
         flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
                          FLB_AZURE_BLOB_MSAL_AUTH_URL_TEMPLATE, ctx->tenant_id);
@@ -826,7 +822,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         ctx->o = flb_oauth2_create(config, ctx->oauth_url, 3000);
         if (!ctx->o) {
             flb_plg_error(ctx->ins, "cannot create OAuth2 context for workload identity");
-            return NULL;
+            goto error;
         }
         flb_stream_disable_async_mode(&ctx->o->u->base);
         pthread_mutex_init(&ctx->token_mutex, NULL);
@@ -843,7 +839,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     if (ctx->database_file) {
         ctx->db = azb_db_open(ctx, ctx->database_file);
         if (!ctx->db) {
-            return NULL;
+            goto error;
         }
     }
 
@@ -861,6 +857,10 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
                  ctx->atype == AZURE_BLOB_AUTH_MI_USER ? "managed_identity (user)" :
                  "workload_identity");
     return ctx;
+
+ error:
+    flb_azure_blob_conf_destroy(ctx);
+    return NULL;
 }
 
 void flb_azure_blob_conf_destroy(struct flb_azure_blob *ctx)
