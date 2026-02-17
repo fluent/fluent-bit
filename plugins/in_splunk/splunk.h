@@ -73,10 +73,6 @@ struct flb_splunk {
     struct flb_downstream *downstream; /* Client manager */
     struct mk_list connections;        /* linked list of connections */
     struct mk_server *server;
-
-    /* Remote address */
-    flb_sds_t current_remote_addr;
-    size_t current_remote_addr_len;
 };
 
 
