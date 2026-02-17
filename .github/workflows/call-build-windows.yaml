@@ -106,6 +106,25 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      - name: Disk space before initial cleanup
+        run: Get-PSDrive C
+        shell: pwsh
+
+      - name: Free up disk space
+        run: |
+          Remove-Item -Recurse -Force "C:\Windows\Temp\*" `
+            -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "$env:TEMP\*" `
+            -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force `
+            "C:\Users\runneradmin\AppData\Local\Temp\*" `
+            -ErrorAction SilentlyContinue
+        shell: pwsh
+
+      - name: Disk space after initial cleanup
+        run: Get-PSDrive C
+        shell: pwsh
+
       - name: Get dependencies
         run: |
           Invoke-WebRequest -OutFile winflexbison.zip $env:WINFLEXBISON
@@ -122,6 +141,25 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.config.arch }}
+
+      - name: Disk space before Chocolatey cleanup
+        run: Get-PSDrive C
+        shell: pwsh
+
+      - name: Free up disk space before Chocolatey install
+        run: |
+          Remove-Item -Recurse -Force "C:\Windows\Temp\*" `
+            -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "$env:TEMP\*" `
+            -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force `
+            "C:\Users\runneradmin\AppData\Local\Temp\*" `
+            -ErrorAction SilentlyContinue
+        shell: pwsh
+
+      - name: Disk space after Chocolatey cleanup
+        run: Get-PSDrive C
+        shell: pwsh
 
       - name: Get gzip command and nsis w/ chocolatey
         uses: crazy-max/ghaction-chocolatey@v3
