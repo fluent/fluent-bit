@@ -65,12 +65,6 @@ static uint64_t time_ms_now()
     return ms;
 }
 
-/* forward declarations (metadata snapshots) */
-static int flb_ml_stream_group_add_metadata(struct flb_ml_stream_group *group,
-                                           msgpack_object *metadata);
-static void flb_ml_stream_group_purge_metadata(struct flb_ml_stream_group *group);
-
-
 int flb_ml_flush_stdout(struct flb_ml_parser *parser,
                         struct flb_ml_stream *mst,
                         void *data, char *buf_data, size_t buf_size)
@@ -1456,7 +1450,7 @@ static void flb_ml_stream_group_metadata_list_init(struct flb_ml_stream_group *g
     }
 }
 
-static void flb_ml_stream_group_purge_metadata(struct flb_ml_stream_group *group)
+void flb_ml_stream_group_purge_metadata(struct flb_ml_stream_group *group)
 {
     struct mk_list *head;
     struct mk_list *tmp;
@@ -1475,8 +1469,8 @@ static void flb_ml_stream_group_purge_metadata(struct flb_ml_stream_group *group
     }
 }
 
-static int flb_ml_stream_group_add_metadata(struct flb_ml_stream_group *group,
-                                           msgpack_object *metadata)
+int flb_ml_stream_group_add_metadata(struct flb_ml_stream_group *group,
+                                     msgpack_object *metadata)
 {
     struct flb_ml_metadata_object_entry *entry;
 

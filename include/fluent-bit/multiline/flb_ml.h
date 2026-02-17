@@ -374,6 +374,10 @@ int flb_ml_flush_stdout(struct flb_ml_parser *parser,
                         struct flb_ml_stream *mst,
                         void *data, char *buf_data, size_t buf_size);
 
+int flb_ml_stream_group_add_metadata(struct flb_ml_stream_group *group,
+                                     msgpack_object *metadata);
+void flb_ml_stream_group_purge_metadata(struct flb_ml_stream_group *group);
+
 #include "flb_ml_mode.h"
 
 #endif
