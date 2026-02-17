@@ -1301,6 +1301,10 @@ static int process_histogram_map(struct flb_cumulative_to_delta_ctx *context,
             return -1;
         }
         if (result == FLB_C2D_DROP) {
+            if (map->metric.hist_buckets != NULL) {
+                flb_free(map->metric.hist_buckets);
+                map->metric.hist_buckets = NULL;
+            }
             map->metric_static_set = FLB_FALSE;
         }
     }
@@ -1350,6 +1354,14 @@ static int process_exp_histogram_map(struct flb_cumulative_to_delta_ctx *context
             return -1;
         }
         if (result == FLB_C2D_DROP) {
+            if (map->metric.exp_hist_positive_buckets != NULL) {
+                flb_free(map->metric.exp_hist_positive_buckets);
+                map->metric.exp_hist_positive_buckets = NULL;
+            }
+            if (map->metric.exp_hist_negative_buckets != NULL) {
+                flb_free(map->metric.exp_hist_negative_buckets);
+                map->metric.exp_hist_negative_buckets = NULL;
+            }
             map->metric_static_set = FLB_FALSE;
         }
     }
