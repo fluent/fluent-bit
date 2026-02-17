@@ -165,6 +165,9 @@ struct opentelemetry_context {
     /* boolean that defines if remaining keys of logs_body_key are set as attributes */
     int logs_body_key_attributes;
 
+    /* Option to preserve fields in record when they're used in the log body */
+    int logs_body_preserve;
+
     /* internal labels ready to append */
     struct mk_list kv_labels;
 
