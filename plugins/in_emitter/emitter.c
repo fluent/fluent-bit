@@ -229,12 +229,16 @@ static int in_emitter_ingest_ring_buffer(struct flb_input_instance *in,
     (void) in;
 
 
-    while ((ret = flb_ring_buffer_read(ctx->msgs, (void *)&ec,
+    while ((ret = flb_ring_buffer_peek(ctx->msgs, 0, (void *)&ec,
                                        sizeof(struct em_chunk))) == 0) {
         ret = flb_input_log_append(in,
                                    ec.tag, flb_sds_len(ec.tag),
                                    ec.mp_sbuf.data,
                                    ec.mp_sbuf.size);
+        if (ret < 0) {
+            return ret;
+        }
+        flb_ring_buffer_skip(ctx->msgs, sizeof(struct em_chunk));
         flb_sds_destroy(ec.tag);
         msgpack_sbuffer_destroy(&ec.mp_sbuf);
     }
