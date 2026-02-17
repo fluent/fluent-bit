@@ -177,6 +177,12 @@ static void cb_td_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
+    /* User-Agent */
+    flb_http_add_header(c, FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
+
     /* Issue HTTP request */
     ret = flb_http_do(c, &b_sent);
 

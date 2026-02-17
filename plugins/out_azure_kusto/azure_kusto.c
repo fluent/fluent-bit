@@ -212,7 +212,11 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
 
                 if (c) {
                     /* Add headers */
-                    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+                    flb_http_add_header(c,
+                                        FLB_HTTP_HEADER_USER_AGENT,
+                                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
                     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
                     flb_http_add_header(c, "Accept", 6, "application/json", 16);
                     flb_http_add_header(c, "Authorization", 13, token,

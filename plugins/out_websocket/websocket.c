@@ -77,6 +77,12 @@ static int flb_ws_handshake(struct flb_connection *u_conn,
                             val->str, flb_sds_len(val->str));
     }
 
+    /* User-Agent */
+    flb_http_add_header(c, FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
+
     /* Perform request*/
     ret = flb_http_do(c, &bytes_sent);
 

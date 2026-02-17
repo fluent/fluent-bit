@@ -1790,7 +1790,11 @@ int flb_http_client_proxy_connect(struct flb_connection *u_conn)
 
     flb_http_buffer_size(c, 4192);
 
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);

@@ -267,7 +267,11 @@ static int http_request(struct flb_out_http *ctx,
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
 
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
 
     flb_config_map_foreach(head, mv, ctx->headers) {
         key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);

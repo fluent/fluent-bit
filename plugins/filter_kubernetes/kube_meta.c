@@ -408,7 +408,11 @@ static int get_meta_info_from_request(struct flb_kube *ctx,
                         NULL, 0, NULL, 0, NULL, 0);
     flb_http_buffer_size(c, ctx->buffer_size);
 
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
     flb_http_add_header(c, "Connection", 10, "close", 5);
     if (ctx->auth_len > 0) {
         flb_http_add_header(c, "Authorization", 13, ctx->auth, ctx->auth_len);

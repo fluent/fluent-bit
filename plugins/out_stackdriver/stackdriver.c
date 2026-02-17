@@ -3024,12 +3024,18 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     flb_http_buffer_size(c, 4192);
 
     if (ctx->stackdriver_agent) {
-        flb_http_add_header(c, "User-Agent", 10,
+        flb_http_add_header(c,
+                            FLB_HTTP_HEADER_USER_AGENT,
+                            sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
                             ctx->stackdriver_agent,
                             flb_sds_len(ctx->stackdriver_agent));
     }
     else {
-        flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+        flb_http_add_header(c,
+                            FLB_HTTP_HEADER_USER_AGENT,
+                            sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                            FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                            sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
     }
 
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);

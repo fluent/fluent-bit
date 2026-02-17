@@ -63,7 +63,10 @@ static flb_sds_t add_aws_auth(struct flb_http_client *c,
     }
 
     /* AWS Fluent Bit user agent */
-    flb_http_add_header(c, "User-Agent", 10, "aws-fluent-bit-plugin", 21);
+    flb_http_add_header(c,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        "aws-fluent-bit-plugin", 21);
 
     signature = flb_signv4_do(c, FLB_TRUE, FLB_TRUE, time(NULL),
                               ctx->aws_region, ctx->aws_service_name,
@@ -878,7 +881,11 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     flb_http_buffer_size(c, ctx->buffer_size);
 
 #ifndef FLB_HAVE_AWS
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
 #endif
 
     flb_http_add_header(c, "Content-Type", 12, "application/x-ndjson", 20);
@@ -917,7 +924,11 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         }
     }
     else {
-        flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+        flb_http_add_header(c,
+                            FLB_HTTP_HEADER_USER_AGENT,
+                            sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                            FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                            sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
     }
 #endif
 

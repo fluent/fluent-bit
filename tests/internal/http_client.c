@@ -162,7 +162,10 @@ void test_http_add_get_header()
     }
 
     /* Check User-Agent */
-    ret = flb_http_add_header(c, "User-Agent", 10, ua, strlen(ua));
+    ret = flb_http_add_header(c,
+                              FLB_HTTP_HEADER_USER_AGENT,
+                              sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                              ua, strlen(ua));
     TEST_CHECK(ret == 0);
 
     ret_str = flb_http_get_header(c, "User-Agent", 10);
