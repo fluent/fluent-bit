@@ -1674,6 +1674,38 @@ static struct multipart_upload *get_upload(struct flb_s3 *ctx,
     return m_upload;
 }
 
+/*
+ * Check if there is a locked chunk for the provided tag. A locked chunk
+ * indicates that an UploadPart request is currently in progress and the
+ * multipart upload should not be completed yet.
+ */
+static int has_locked_chunk(struct flb_s3 *ctx, const char *tag, int tag_len)
+{
+    struct mk_list       *head;
+    struct mk_list       *tmp;
+    struct flb_fstore_file *fsf;
+    struct s3_file       *chunk;
+
+    mk_list_foreach_safe(head, tmp, &ctx->stream_active->files) {
+        fsf = mk_list_entry(head, struct flb_fstore_file, _head);
+        chunk = fsf->data;
+
+        if (fsf->meta_size != tag_len) {
+            continue;
+        }
+
+        if (strncmp((char *) fsf->meta_buf, tag, tag_len) != 0) {
+            continue;
+        }
+
+        if (chunk->locked == FLB_TRUE) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *tag,
                                               int tag_len, time_t file_first_log_time)
 {
@@ -3337,6 +3369,10 @@ static void cb_s3_upload(struct flb_config *config, void *data)
             complete = FLB_TRUE;
         }
         if (time(NULL) > (m_upload->init_time + ctx->upload_timeout + ctx->retry_time)) {
+            /* Avoid completing the upload while a part is still being uploaded */
+            if (has_locked_chunk(ctx, m_upload->tag, flb_sds_len(m_upload->tag))) {
+                continue;
+            }
             flb_plg_info(ctx->ins, "Completing upload for %s because upload_timeout"
                          " has passed", m_upload->s3_key);
             complete = FLB_TRUE;
