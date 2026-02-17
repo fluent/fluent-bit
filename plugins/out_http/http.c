@@ -338,16 +338,18 @@ static int http_request(struct flb_out_http *ctx,
             }
         }
         else {
-            if (ctx->log_response_payload &&
-                c->resp.payload && c->resp.payload_size > 0) {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
-                             ctx->host, ctx->port,
-                             c->resp.status, c->resp.payload);
-            }
-            else {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
-                             ctx->host, ctx->port,
-                             c->resp.status);
+            if (ctx->log_2xx_successes) {
+                if (ctx->log_response_payload &&
+                    c->resp.payload && c->resp.payload_size > 0) {
+                    flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                                ctx->host, ctx->port,
+                                c->resp.status, c->resp.payload);
+                }
+                else {
+                    flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
+                                ctx->host, ctx->port,
+                                c->resp.status);
+                }
             }
         }
     }
@@ -645,6 +647,8 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
     (void) i_ins;
 
     if (ctx->body_key) {
+        /* If the HTTP body is pulled out of the record via a key, one request
+           must be done per record */
         ret = send_all_requests(ctx, event_chunk->data, event_chunk->size,
                                 ctx->body_key, ctx->headers_key, event_chunk);
         if (ret < 0) {
@@ -653,6 +657,7 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
         }
     }
     else {
+        /* Otherwise, the whole chunk can be sent */
         ret = compose_payload(ctx, event_chunk->data, event_chunk->size,
                               &out_body, &out_size, config);
         if (ret != FLB_OK) {
@@ -702,6 +707,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
      0, FLB_TRUE, offsetof(struct flb_out_http, log_response_payload),
      "Specify if the response paylod should be logged or not"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "log_2xx_successes", "true",
+     0, FLB_TRUE, offsetof(struct flb_out_http, log_2xx_successes),
+     "Specify if HTTP 2xx responses should be logged or not"
     },
     {
      FLB_CONFIG_MAP_TIME, "http.response_timeout", "60s",
