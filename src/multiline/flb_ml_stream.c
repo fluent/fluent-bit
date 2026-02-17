@@ -147,6 +147,7 @@ static void stream_group_destroy(struct flb_ml_stream_group *group)
     msgpack_sbuffer_destroy(&group->mp_sbuf);
 
     mk_list_del(&group->_head);
+    flb_ml_stream_group_purge_metadata(group);
     flb_free(group);
 }
 
