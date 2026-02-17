@@ -36,6 +36,9 @@
 struct flb_splunk_tokens {
     flb_sds_t header;
     size_t    length;
+    /* Fluentbit routing tag that records sent in with
+       this particular token should be given */
+    flb_sds_t map_to_tag;
     struct mk_list _head;
 };
 
@@ -54,6 +57,7 @@ struct flb_splunk {
     size_t ingested_auth_header_len;
     int store_token_in_metadata;
     flb_sds_t store_token_key;
+    struct mk_list *token_to_tag_mappings;
 
     struct flb_log_event_encoder log_encoder;
 

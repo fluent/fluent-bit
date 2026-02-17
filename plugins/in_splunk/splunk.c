@@ -262,6 +262,12 @@ static struct flb_config_map config_map[] = {
      "Set a record key to specify the tag of the record"
     },
 
+    {
+     FLB_CONFIG_MAP_SLIST_2, "map_token_to_tag", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_splunk, token_to_tag_mappings),
+     "Map input records from given Splunk HEC token to given tag. Multiple of these can be set to map different tokens to different tags."
+    },
+
 
     /* EOF */
     {0}
