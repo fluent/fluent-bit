@@ -571,20 +571,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         goto error;
     }
 
-    if (ctx->configuration_endpoint_url != NULL) {
-        ret = flb_azure_blob_apply_remote_configuration(ctx);
-
-        if (ret != 0) {
-            goto error;
-        }
-    }
-
-    if (!ctx->container_name) {
-        flb_plg_error(ctx->ins, "'container_name' has not been set");
-        goto error;
-    }
-
-    /* Set Auth type */
+    /* Set Auth type (must happen before remote config, which branches on atype) */
     tmp = (char *) flb_output_get_property("auth_type", ins);
     if (!tmp) {
         ctx->atype = AZURE_BLOB_AUTH_KEY;
@@ -624,6 +611,20 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
             goto error;
         }
     }
+
+    if (ctx->configuration_endpoint_url != NULL) {
+        ret = flb_azure_blob_apply_remote_configuration(ctx);
+
+        if (ret != 0) {
+            goto error;
+        }
+    }
+
+    if (!ctx->container_name) {
+        flb_plg_error(ctx->ins, "'container_name' has not been set");
+        goto error;
+    }
+
     if (ctx->atype == AZURE_BLOB_AUTH_KEY &&
         ctx->shared_key == NULL) {
         flb_plg_error(ctx->ins, "'shared_key' has not been set");
