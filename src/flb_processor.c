@@ -819,7 +819,12 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
 
     /* Handle the "condition" property for processor units */
     if (strcasecmp(k, "condition") == 0) {
-        return flb_processor_unit_set_condition(pu, v);
+        /* Only process if it's a structured map object */
+        if (v->type == CFL_VARIANT_KVLIST) {
+            return flb_processor_unit_set_condition(pu, v);
+        }
+        /* If string, ignore here - it will be handled by filter_modify */
+        return 0;
     }
 
     /* Handle normal properties */
