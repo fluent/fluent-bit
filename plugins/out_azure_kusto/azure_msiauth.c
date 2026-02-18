@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_http_client.h>
 
 #include "azure_msiauth.h"
+#include "azure_kusto.h"
 
 char *flb_azure_msiauth_token_get(struct flb_oauth2 *ctx)
  {
@@ -138,11 +139,13 @@ static flb_sds_t read_token_from_file(const char *token_file)
 int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *token_file, const char *client_id, const char *tenant_id)
 {
     int ret;
+    int cloud_env;
     size_t b_sent;
     struct flb_connection *u_conn;
     struct flb_http_client *c;
     flb_sds_t federated_token;
     flb_sds_t body = NULL;
+    const char *scope;
 
     flb_info("[azure workload identity] inside flb_azure_workload_identity_token_get");
 
@@ -176,7 +179,14 @@ int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *to
     body = flb_sds_cat(body, "&client_assertion=", 18);
     body = flb_sds_cat(body, federated_token, flb_sds_len(federated_token));
     /* Use the correct scope and length for Kusto */
-    body = flb_sds_cat(body, "&scope=https://help.kusto.windows.net/.default", 46);
+    cloud_env = FLB_AZURE_CLOUD_GLOBAL;
+    if ((ctx->host && strstr(ctx->host, "chinacloudapi.cn") != NULL) ||
+        (ctx->uri && strstr(ctx->uri, "chinacloudapi.cn") != NULL)) {
+        cloud_env = FLB_AZURE_CLOUD_CHINA;
+    }
+    scope = flb_azure_kusto_get_scope(cloud_env);
+    body = flb_sds_cat(body, "&scope=", 7);
+    body = flb_sds_cat(body, scope, strlen(scope));
 
     if (!body) {
         /* This check might be redundant if flb_sds_cat handles errors, but safe */
