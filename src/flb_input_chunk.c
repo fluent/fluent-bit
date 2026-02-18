@@ -2945,7 +2945,6 @@ static int append_to_ring_buffer(struct flb_input_instance *ins,
 {
     int ret;
     int retries = 0;
-    int retry_limit = 10;
     struct input_chunk_raw *cr;
 
     if (buf_size == 0) {
@@ -2995,9 +2994,9 @@ retry:
     /*
      * There is a little chance that the ring buffer is full or due to saturation
      * from the main thread the data is not being consumed. On this scenario we
-     * retry up to 'retry_limit' times with a little wait time.
+     * retry up to 'ring_buffer_retry_limit' times with a little wait time.
      */
-    if (retries >= retry_limit) {
+    if (retries >= ins->ring_buffer_retry_limit) {
         flb_plg_error(ins, "could not enqueue records into the ring buffer");
         destroy_chunk_raw(cr);
 
