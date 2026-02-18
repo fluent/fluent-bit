@@ -408,6 +408,13 @@ static int in_winevtlog_collect(struct flb_input_instance *ins,
     struct mk_list *head;
     struct winevtlog_channel *ch;
 
+    /* If there are no active channels (e.g., all missing and ignored),
+     * there is nothing to collect. Guard against NULL to avoid dereferencing.
+     */
+    if (ctx == NULL || ctx->active_channel == NULL) {
+        return 0;
+    }
+
     mk_list_foreach(head, ctx->active_channel) {
         ch = mk_list_entry(head, struct winevtlog_channel, _head);
         in_winevtlog_read_channel(ins, ctx, ch);
@@ -435,7 +442,9 @@ static int in_winevtlog_exit(void *data, struct flb_config *config)
         return 0;
     }
 
-    winevtlog_close_all(ctx->active_channel);
+    if (ctx->active_channel) {
+        winevtlog_close_all(ctx->active_channel);
+    }
 
     if (ctx->db) {
         flb_sqldb_close(ctx->db);
