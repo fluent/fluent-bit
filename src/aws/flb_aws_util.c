@@ -28,10 +28,12 @@
 #include <fluent-bit/flb_jsmn.h>
 #include <fluent-bit/flb_env.h>
 
+#include <stddef.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <ctype.h>
 
 #define AWS_SERVICE_ENDPOINT_FORMAT            "%s.%s%s"
 #define AWS_SERVICE_ENDPOINT_SUFFIX_COM        ".amazonaws.com"
@@ -1025,7 +1027,7 @@ flb_sds_t flb_get_s3_blob_key(const char *format,
 
 /* Constructs S3 object key as per the format. */
 flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
-                         char *tag_delimiter, uint64_t seq_index)
+                         char *tag_delimiter, uint64_t seq_index, const char *time_offset)
 {
     int i = 0;
     int ret = 0;
@@ -1043,6 +1045,13 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
     flb_sds_t tmp_key = NULL;
     flb_sds_t tmp_tag = NULL;
     struct tm gmt = {0};
+    size_t tz_offset = 0;
+
+    tz_offset = flb_aws_parse_tz_offset(time_offset);
+
+    if (tz_offset != 0) {
+        time += tz_offset;
+    }
 
     if (strlen(format) > S3_KEY_SIZE){
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
@@ -1339,4 +1348,39 @@ size_t flb_aws_strftime_precision(char **out_buf, const char *time_format,
     flb_free(tmp_parsed_time_str);
 
     return out_size;
+}
+
+
+size_t flb_aws_parse_tz_offset(const char *time_offset) {
+    int sign, hh, mm;
+
+    if (!time_offset) {
+        return 0;
+    }
+
+    if (strlen(time_offset) < 5) {
+        return 0;
+    }
+
+    if (time_offset[0] != '+' && time_offset[0] != '-') {
+        return 0;
+    }
+
+    sign = (time_offset[0] == '+') ? 1 : -1;
+
+    if (!isdigit(time_offset[1]) || 
+        !isdigit(time_offset[2]) || 
+        !isdigit(time_offset[3]) || 
+        !isdigit(time_offset[4])) {
+        return 0;
+    }
+
+    hh = ((time_offset[1] - '0') * 10) + (time_offset[2] - '0');
+    mm = ((time_offset[3] - '0') * 10) + (time_offset[4] - '0');
+
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+        return 0;
+    }
+
+    return sign * (hh * 3600 + mm * 60);
 }
