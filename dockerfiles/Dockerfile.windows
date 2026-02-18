@@ -41,13 +41,18 @@ RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
     Invoke-WebRequest -OutFile \"${msvs_build_tools_dist}\" \"${msvs_build_tools_dist_url}\"; `
     Invoke-WebRequest -OutFile \"${msvs_build_tools_channel}\" \"${msvs_build_tools_channel_url}\"; `
     Write-Host \"Installing Visual Studio Build Tools into ${env:MSVS_HOME}...\"; `
-    Start-Process \"${msvs_build_tools_dist}\" `
+    $p = Start-Process \"${msvs_build_tools_dist}\" `
       -ArgumentList '--quiet ', '--wait ', '--norestart ', '--nocache', `
       \"--installPath ${env:MSVS_HOME}\", `
       \"--channelUri ${msvs_build_tools_channel}\", `
       \"--installChannelUri ${msvs_build_tools_channel}\", `
       '--add Microsoft.VisualStudio.Workload.VCTools', `
-      '--includeRecommended'  -NoNewWindow -Wait; `
+      '--add Microsoft.VisualStudio.Workload.MSBuildTools', `
+      '--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64', `
+      '--add Microsoft.VisualStudio.Component.VC.CoreBuildTools', `
+      '--add Microsoft.VisualStudio.Component.VC.MSVC.143', `
+      '--add Microsoft.VisualStudio.Component.Windows10SDK.19041' `
+      -NoNewWindow -Wait; `
     Remove-Item -Force \"${msvs_build_tools_dist}\"; `
     Remove-Item -Path \"${msvs_build_tools_channel}\" -Force;
 
@@ -142,7 +147,8 @@ RUN $vcpkg_dist_base_name=\"vcpkg-${env:VCPKG_VERSION}\"; `
 
 # Ensure we only attempt to build release and static linking
 ENV VCPKG_BUILD_TYPE=release `
-    VCPKG_LIBRARY_LINKAGE=static
+    VCPKG_LIBRARY_LINKAGE=static `
+    VCPKG_VISUAL_STUDIO_PATH="C:\BuildTools"
 
 # Install dependencies and clean temporary files to save space
 RUN vcpkg install --recurse openssl --triplet x64-windows-static; `
