@@ -922,15 +922,23 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
         return -1;
     }
 
-    if (((header->val.len == 16 && strncasecmp(header->val.data, "application/json", 16) == 0)) ||
-        ((header->val.len > 16 && (strncasecmp(header->val.data, "application/json ", 17) == 0)) ||
-        strncasecmp(header->val.data, "application/json;", 17) == 0)) {
-        type = HTTP_CONTENT_JSON;
+    if (header->val.len >= 16 && strncasecmp(header->val.data, "application/json", 16) == 0) {
+        /* Validate that the character after the matched prefix is acceptable */
+        if (header->val.len == 16 || 
+            header->val.data[16] == ';' || 
+            isspace((unsigned char)header->val.data[16])) {
+            type = HTTP_CONTENT_JSON;
+        }
     }
 
-    if (header->val.len == 33 &&
+    if (header->val.len >= 33 &&
         strncasecmp(header->val.data, "application/x-www-form-urlencoded", 33) == 0) {
-        type = HTTP_CONTENT_URLENCODED;
+        /* Validate that the character after the matched prefix is acceptable */
+        if (header->val.len == 33 || 
+            header->val.data[33] == ';' || 
+            isspace((unsigned char)header->val.data[33])) {
+            type = HTTP_CONTENT_URLENCODED;
+        }
     }
 
     if (type == -1) {
@@ -1443,12 +1451,22 @@ static int process_payload_ng(flb_sds_t tag,
         return -1;
     }
 
-    if (strcasecmp(request->content_type, "application/json") == 0) {
-        type = HTTP_CONTENT_JSON;
+    if (strncasecmp(request->content_type, "application/json", 16) == 0) {
+        /* Validate that the character after the matched prefix is acceptable */
+        if (strlen(request->content_type) == 16 || 
+            request->content_type[16] == ';' || 
+            isspace((unsigned char)request->content_type[16])) {
+            type = HTTP_CONTENT_JSON;
+        }
     }
 
-    if (strcasecmp(request->content_type, "application/x-www-form-urlencoded") == 0) {
-        type = HTTP_CONTENT_URLENCODED;
+    if (strncasecmp(request->content_type, "application/x-www-form-urlencoded", 33) == 0) {
+        /* Validate that the character after the matched prefix is acceptable */
+        if (strlen(request->content_type) == 33 || 
+            request->content_type[33] == ';' || 
+            isspace((unsigned char)request->content_type[33])) {
+            type = HTTP_CONTENT_URLENCODED;
+        }
     }
 
     if (type == -1) {

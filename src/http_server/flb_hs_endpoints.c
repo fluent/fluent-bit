@@ -40,57 +40,12 @@ static int endpoint_root(struct flb_hs *hs)
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
+    /* Return minimal information without sensitive details */
     msgpack_pack_map(&mp_pck, 1);
-    msgpack_pack_str(&mp_pck, 10);
-    msgpack_pack_str_body(&mp_pck, "fluent-bit", 10);
-
-    /* entries under fluent-bit parent:
-     *
-     * - version
-     * - edition
-     * - built flags
-     */
-    msgpack_pack_map(&mp_pck, 3);
-
-    /* fluent-bit['version'] */
-    msgpack_pack_str(&mp_pck, 7);
-    msgpack_pack_str_body(&mp_pck, "version", 7);
-    msgpack_pack_str(&mp_pck, sizeof(FLB_VERSION_STR) - 1);
-    msgpack_pack_str_body(&mp_pck, FLB_VERSION_STR, sizeof(FLB_VERSION_STR) - 1);
-
-    /* fluent-bit['edition'] */
-    msgpack_pack_str(&mp_pck, 7);
-    msgpack_pack_str_body(&mp_pck, "edition", 7);
-#ifdef FLB_ENTERPRISE
-    msgpack_pack_str(&mp_pck, 10);
-    msgpack_pack_str_body(&mp_pck, "Enterprise", 10);
-#else
-    msgpack_pack_str(&mp_pck, 9);
-    msgpack_pack_str_body(&mp_pck, "Community", 9);
-#endif
-
-    /* fluent-bit['flags'] */
-    msgpack_pack_str(&mp_pck, 5);
-    msgpack_pack_str_body(&mp_pck, "flags", 5);
-
-    c = 0;
-    list = flb_utils_split(FLB_INFO_FLAGS, ' ', -1);
-    mk_list_foreach(head, list) {
-        entry = mk_list_entry(head, struct flb_split_entry, _head);
-        if (strncmp(entry->value, "FLB_", 4) == 0) {
-            c++;
-        }
-    }
-
-    msgpack_pack_array(&mp_pck, c);
-    mk_list_foreach(head, list) {
-        entry = mk_list_entry(head, struct flb_split_entry, _head);
-        if (strncmp(entry->value, "FLB_", 4) == 0) {
-            msgpack_pack_str(&mp_pck, entry->len);
-            msgpack_pack_str_body(&mp_pck, entry->value, entry->len);
-        }
-    }
-    flb_utils_split_free(list);
+    msgpack_pack_str(&mp_pck, 6);
+    msgpack_pack_str_body(&mp_pck, "status", 6);
+    msgpack_pack_str(&mp_pck, 2);
+    msgpack_pack_str_body(&mp_pck, "ok", 2);
 
     /* export as JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
