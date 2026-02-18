@@ -136,6 +136,7 @@ DEFINE_OPTION(FLB_OUT_NULL                    "Enable dev null output plugin"   
 DEFINE_OPTION(FLB_OUT_OPENSEARCH              "Enable OpenSearch output plugin"              ON)
 DEFINE_OPTION(FLB_OUT_OPENTELEMETRY           "Enable OpenTelemetry plugin"                  ON)
 DEFINE_OPTION(FLB_OUT_ORACLE_LOG_ANALYTICS    "Enable Oracle Cloud Infrastructure Logging analytics plugin" ON)
+DEFINE_OPTION(FLB_OUT_PARSEABLE               "Enable Parseable output plugin"               ON)
 DEFINE_OPTION(FLB_OUT_PGSQL                   "Enable PostgreSQL output plugin"              OFF)
 DEFINE_OPTION(FLB_OUT_PLOT                    "Enable Plot output plugin"                    ON)
 DEFINE_OPTION(FLB_OUT_PROMETHEUS_EXPORTER     "Enable Prometheus exporter plugin"            ON)
