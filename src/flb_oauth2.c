@@ -925,6 +925,13 @@ static flb_sds_t oauth2_build_body(struct flb_oauth2 *ctx)
         return flb_sds_create_len(ctx->payload, flb_sds_len(ctx->payload));
     }
 
+    if ((ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_BASIC ||
+         ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_POST) &&
+        (!ctx->cfg.client_id || !ctx->cfg.client_secret)) {
+        flb_error("[oauth2] auth method requires client_id and client_secret");
+        return NULL;
+    }
+
     body = flb_sds_create_size(128);
     if (!body) {
         return NULL;
@@ -1193,15 +1200,6 @@ struct flb_oauth2 *flb_oauth2_create_from_config(struct flb_config *config,
             return NULL;
         }
     }
-    else if (ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_BASIC ||
-             ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_POST) {
-        if (!ctx->cfg.client_id || !ctx->cfg.client_secret) {
-            flb_error("[oauth2] auth method requires client_id and client_secret");
-            flb_oauth2_destroy(ctx);
-            return NULL;
-        }
-    }
-
     ctx->auth_url = flb_sds_create(ctx->cfg.token_url);
     if (!ctx->auth_url) {
         flb_errno();
