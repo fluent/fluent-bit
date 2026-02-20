@@ -64,6 +64,15 @@ struct flb_net_setup {
     /* network interface to bind and use to send data */
     flb_sds_t source_address;
 
+    /* proxy to use for http(s) connections, using for non-http connections
+     * can lead to unexpected results.
+     */
+    flb_sds_t http_proxy;
+
+    /* domains which must not be proxied
+     */
+    flb_sds_t no_proxy;
+
     /* maximum of times a keepalive connection can be used */
     int keepalive_max_recycle;
 
