@@ -42,7 +42,7 @@ struct cmt_metric {
     uint64_t hist_sum;
 
     /* exponential histogram */
-    int exp_hist_sum_set;
+    uint64_t exp_hist_sum_set;
     int32_t exp_hist_scale;
     uint64_t exp_hist_zero_count;
     double exp_hist_zero_threshold;
@@ -56,7 +56,7 @@ struct cmt_metric {
     uint64_t exp_hist_sum;
 
     /* summary */
-    int sum_quantiles_set;     /* specify if quantive values has been set */
+    uint64_t sum_quantiles_set; /* specify if quantive values has been set */
     uint64_t *sum_quantiles;   /* 0, 0.25, 0.5, 0.75 and 1 */
     size_t sum_quantiles_count;
     uint64_t sum_count;
@@ -65,8 +65,26 @@ struct cmt_metric {
     /* internal */
     uint64_t hash;
     uint64_t timestamp;
+    uint64_t start_timestamp;
+    uint64_t start_timestamp_set;
+    uint64_t exp_hist_lock;
     struct cfl_list labels;
     struct cfl_list _head;
+};
+
+struct cmt_exp_histogram_snapshot {
+    int32_t   scale;
+    uint64_t  zero_count;
+    double    zero_threshold;
+    int32_t   positive_offset;
+    uint64_t *positive_buckets;
+    size_t    positive_count;
+    int32_t   negative_offset;
+    uint64_t *negative_buckets;
+    size_t    negative_count;
+    uint64_t  count;
+    uint64_t  sum_set;
+    uint64_t  sum;
 };
 
 void cmt_metric_set(struct cmt_metric *metric, uint64_t timestamp, double val);
@@ -86,6 +104,18 @@ void cmt_metric_get_value_snapshot(struct cmt_metric *metric,
                                    int64_t *out_int64,
                                    uint64_t *out_uint64);
 uint64_t cmt_metric_get_timestamp(struct cmt_metric *metric);
+void cmt_metric_set_timestamp(struct cmt_metric *metric, uint64_t timestamp);
+void cmt_metric_set_start_timestamp(struct cmt_metric *metric, uint64_t start_timestamp);
+void cmt_metric_unset_start_timestamp(struct cmt_metric *metric);
+int cmt_metric_has_start_timestamp(struct cmt_metric *metric);
+uint64_t cmt_metric_get_start_timestamp(struct cmt_metric *metric);
+void cmt_metric_set_exp_hist_count(struct cmt_metric *metric, uint64_t count);
+void cmt_metric_set_exp_hist_sum(struct cmt_metric *metric, int sum_set, double sum);
+void cmt_metric_exp_hist_lock(struct cmt_metric *metric);
+void cmt_metric_exp_hist_unlock(struct cmt_metric *metric);
+int cmt_metric_exp_hist_get_snapshot(struct cmt_metric *metric,
+                                     struct cmt_exp_histogram_snapshot *snapshot);
+void cmt_metric_exp_hist_snapshot_destroy(struct cmt_exp_histogram_snapshot *snapshot);
 
 void cmt_metric_hist_inc(struct cmt_metric *metric, uint64_t timestamp,
                          int bucket_id);
