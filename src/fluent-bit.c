@@ -562,7 +562,7 @@ static void flb_signal_exit(int signal)
 
     now = time(NULL);
     cur = localtime(&now);
-    len = snprintf(ts, sizeof(ts) - 1, "[%i/%02i/%02i %02i:%02i:%02i] ",
+    len = snprintf(ts, sizeof(ts) - 1, "[%i-%02i-%02i %02i:%02i:%02i] ",
                    cur->tm_year + 1900,
                    cur->tm_mon + 1,
                    cur->tm_mday,
@@ -595,7 +595,7 @@ static void flb_signal_handler_status_line(struct flb_cf *cf_opts)
 
     now = time(NULL);
     cur = localtime(&now);
-    len = snprintf(ts, sizeof(ts) - 1, "[%i/%02i/%02i %02i:%02i:%02i] ",
+    len = snprintf(ts, sizeof(ts) - 1, "[%i-%02i-%02i %02i:%02i:%02i] ",
                    cur->tm_year + 1900,
                    cur->tm_mon + 1,
                    cur->tm_mday,
