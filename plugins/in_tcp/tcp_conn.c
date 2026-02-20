@@ -189,6 +189,7 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
     char *buf;
     char *s;
     char *separator;
+    char *source_address;
     struct flb_in_tcp_config *ctx;
 
     ctx = conn->ctx;
@@ -214,10 +215,25 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
             }
 
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_append_body_values(
+                source_address = NULL;
+                if (ctx->source_address_key != NULL) {
+                    source_address = flb_connection_get_remote_address(conn->connection);
+                }
+
+                if (ctx->source_address_key != NULL && source_address != NULL) {
+                    ret = flb_log_event_encoder_append_body_values(
+                        ctx->log_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE("log"),
+                        FLB_LOG_EVENT_STRING_VALUE(buf, len),
+                        FLB_LOG_EVENT_CSTRING_VALUE(ctx->source_address_key),
+                        FLB_LOG_EVENT_CSTRING_VALUE(source_address));
+                } 
+                else {
+                    ret = flb_log_event_encoder_append_body_values(
                         ctx->log_encoder,
                         FLB_LOG_EVENT_CSTRING_VALUE("log"),
                         FLB_LOG_EVENT_STRING_VALUE(buf, len));
+                }
             }
 
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
