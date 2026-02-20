@@ -677,7 +677,7 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", FLB_TAIL_CHUNK,
      0, FLB_TRUE, offsetof(struct flb_tail_config, buf_chunk_size),
      "set the initial buffer size to read data from files. This value is "
-     "used too to increase buffer size."
+     "used to increase buffer size."
     },
     {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", FLB_TAIL_CHUNK,
