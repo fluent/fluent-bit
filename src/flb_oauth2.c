@@ -26,10 +26,22 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_crypto.h>
 
 #include <time.h>
 #include <string.h>
 #include <stddef.h>
+#include <stdio.h>
+
+#include <openssl/bio.h>
+#include <openssl/x509.h>
+#include <openssl/pem.h>
+
+#define FLB_OAUTH2_DEFAULT_ASSERTION_TTL 300
+#define FLB_OAUTH2_DEFAULT_ASSERTION_HEADER "kid"
+#define FLB_OAUTH2_ASSERTION_UUID_LEN 37
 
 /* Config map for OAuth2 configuration */
 struct flb_config_map oauth2_config_map[] = {
@@ -62,6 +74,38 @@ struct flb_config_map oauth2_config_map[] = {
      FLB_CONFIG_MAP_STR, "oauth2.audience", NULL,
      0, FLB_TRUE, offsetof(struct flb_oauth2_config, audience),
      "Optional OAuth2 audience parameter"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.resource", NULL,
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config, resource),
+     "Optional OAuth2 resource parameter"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_key_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config,
+                           jwt_key_file),
+     "Path to PEM private key for private_key_jwt authentication"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_cert_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config,
+                           jwt_cert_file),
+     "Path to certificate file for private_key_jwt kid/x5t derivation"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_aud", NULL,
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config, jwt_aud),
+     "Audience used in private_key_jwt assertion (defaults to token_url)"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_header", "kid",
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config, jwt_header),
+     "JWT header claim name for thumbprint in private_key_jwt (e.g., kid, x5t)"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "oauth2.jwt_ttl_seconds", "300",
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config, jwt_ttl),
+     "Lifetime in seconds for private_key_jwt client assertions"
     },
     {
      FLB_CONFIG_MAP_INT, "oauth2.refresh_skew_seconds", "60",
@@ -126,6 +170,7 @@ static void oauth2_apply_defaults(struct flb_oauth2_config *cfg)
 {
     cfg->enabled = FLB_FALSE;
     cfg->auth_method = FLB_OAUTH2_AUTH_METHOD_BASIC;
+    cfg->jwt_ttl = FLB_OAUTH2_DEFAULT_ASSERTION_TTL;
     cfg->refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
     cfg->timeout = 0;
     cfg->connect_timeout = 0;
@@ -135,6 +180,11 @@ static void oauth2_apply_defaults(struct flb_oauth2_config *cfg)
     cfg->client_secret = NULL;
     cfg->scope = NULL;
     cfg->audience = NULL;
+    cfg->resource = NULL;
+    cfg->jwt_key_file = NULL;
+    cfg->jwt_cert_file = NULL;
+    cfg->jwt_aud = NULL;
+    cfg->jwt_header = NULL;
 }
 
 static int oauth2_clone_config(struct flb_oauth2_config *dst,
@@ -155,6 +205,9 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
 
     dst->timeout = src->timeout;
     dst->connect_timeout = src->connect_timeout;
+    if (src->jwt_ttl > 0) {
+        dst->jwt_ttl = src->jwt_ttl;
+    }
 
     if (src->token_url) {
         dst->token_url = flb_sds_create(src->token_url);
@@ -201,6 +254,54 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
         }
     }
 
+    if (src->resource) {
+        dst->resource = flb_sds_create(src->resource);
+        if (!dst->resource) {
+            flb_errno();
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+
+    if (src->jwt_key_file) {
+        dst->jwt_key_file =
+            flb_sds_create(src->jwt_key_file);
+        if (!dst->jwt_key_file) {
+            flb_errno();
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+
+    if (src->jwt_cert_file) {
+        dst->jwt_cert_file =
+            flb_sds_create(src->jwt_cert_file);
+        if (!dst->jwt_cert_file) {
+            flb_errno();
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+
+    if (src->jwt_aud) {
+        dst->jwt_aud =
+            flb_sds_create(src->jwt_aud);
+        if (!dst->jwt_aud) {
+            flb_errno();
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+
+    if (src->jwt_header) {
+        dst->jwt_header = flb_sds_create(src->jwt_header);
+        if (!dst->jwt_header) {
+            flb_errno();
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+
     return 0;
 }
 
@@ -220,6 +321,16 @@ void flb_oauth2_config_destroy(struct flb_oauth2_config *cfg)
     cfg->scope = NULL;
     flb_sds_destroy(cfg->audience);
     cfg->audience = NULL;
+    flb_sds_destroy(cfg->resource);
+    cfg->resource = NULL;
+    flb_sds_destroy(cfg->jwt_key_file);
+    cfg->jwt_key_file = NULL;
+    flb_sds_destroy(cfg->jwt_cert_file);
+    cfg->jwt_cert_file = NULL;
+    flb_sds_destroy(cfg->jwt_aud);
+    cfg->jwt_aud = NULL;
+    flb_sds_destroy(cfg->jwt_header);
+    cfg->jwt_header = NULL;
 }
 
 static int oauth2_setup_upstream(struct flb_oauth2 *ctx,
@@ -473,10 +584,336 @@ static flb_sds_t oauth2_append_kv(flb_sds_t buffer, const char *key,
     return result;
 }
 
+static int oauth2_base64_url_encode(const unsigned char *input, size_t input_size,
+                                    flb_sds_t *output)
+{
+    int i;
+    int ret;
+    size_t olen;
+    size_t encoded_size;
+    unsigned char *encoded;
+
+    if (!input || !output) {
+        return -1;
+    }
+
+    encoded_size = ((input_size + 2) / 3) * 4 + 4;
+
+    encoded = flb_malloc(encoded_size);
+    if (!encoded) {
+        flb_errno();
+        return -1;
+    }
+
+    ret = flb_base64_encode(encoded, encoded_size - 1, &olen,
+                            (unsigned char *) input, input_size);
+    if (ret != 0) {
+        flb_free(encoded);
+        return -1;
+    }
+
+    for (i = 0; i < (int) olen && encoded[i] != '='; i++) {
+        if (encoded[i] == '+') {
+            encoded[i] = '-';
+        }
+        else if (encoded[i] == '/') {
+            encoded[i] = '_';
+        }
+    }
+
+    *output = flb_sds_create_len((char *) encoded, i);
+    flb_free(encoded);
+
+    if (!*output) {
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
+static int oauth2_private_key_jwt_thumbprint(const char *certificate_file,
+                                             const char *header_name,
+                                             flb_sds_t *thumbprint)
+{
+    int i;
+    int ret;
+    const EVP_MD *digest_type;
+    char hex[EVP_MAX_MD_SIZE * 2 + 1];
+    BIO *bio = NULL;
+    X509 *cert = NULL;
+    char *file_buf = NULL;
+    size_t file_size;
+    unsigned int digest_len = 0;
+    unsigned char digest[EVP_MAX_MD_SIZE];
+
+    ret = flb_utils_read_file((char *) certificate_file, &file_buf, &file_size);
+    if (ret != 0 || !file_buf || file_size == 0) {
+        flb_error("[oauth2] failed to read certificate file '%s'", certificate_file);
+        return -1;
+    }
+
+    bio = BIO_new_mem_buf(file_buf, file_size);
+    if (!bio) {
+        flb_error("[oauth2] failed to initialize certificate buffer");
+        flb_free(file_buf);
+        return -1;
+    }
+
+    cert = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+    if (!cert) {
+        BIO_free(bio);
+        bio = BIO_new_mem_buf(file_buf, file_size);
+        if (!bio) {
+            flb_error("[oauth2] failed to reload certificate buffer");
+            flb_free(file_buf);
+            return -1;
+        }
+        cert = d2i_X509_bio(bio, NULL);
+    }
+
+    if (!cert) {
+        flb_error("[oauth2] certificate '%s' is not valid PEM/DER X509",
+                  certificate_file);
+        BIO_free(bio);
+        flb_free(file_buf);
+        return -1;
+    }
+
+    digest_type = EVP_sha1();
+    if (strcasecmp(header_name, "x5t#S256") == 0) {
+        digest_type = EVP_sha256();
+    }
+
+    ret = X509_digest(cert, digest_type, digest, &digest_len);
+    if (ret != 1 || digest_len == 0) {
+        flb_error("[oauth2] failed to compute certificate thumbprint");
+        X509_free(cert);
+        BIO_free(bio);
+        flb_free(file_buf);
+        return -1;
+    }
+
+    if (strcasecmp(header_name, "x5t") == 0 ||
+        strcasecmp(header_name, "x5t#S256") == 0) {
+        ret = oauth2_base64_url_encode(digest, digest_len, thumbprint);
+        if (ret != 0) {
+            X509_free(cert);
+            BIO_free(bio);
+            flb_free(file_buf);
+            return -1;
+        }
+    }
+    else {
+        for (i = 0; i < (int) digest_len; i++) {
+            snprintf(&hex[i * 2], 3, "%02X", digest[i]);
+        }
+        hex[digest_len * 2] = '\0';
+
+        *thumbprint = flb_sds_create(hex);
+        if (!*thumbprint) {
+            flb_errno();
+            X509_free(cert);
+            BIO_free(bio);
+            flb_free(file_buf);
+            return -1;
+        }
+    }
+
+    X509_free(cert);
+    BIO_free(bio);
+    flb_free(file_buf);
+
+    return 0;
+}
+
+static int oauth2_private_key_jwt_sign(const char *private_key_file,
+                                       const char *data, size_t data_len,
+                                       flb_sds_t *signature)
+{
+    int ret;
+    char *key_buf = NULL;
+    size_t key_size;
+    size_t sig_len;
+    unsigned char digest[32];
+    unsigned char sig[4096];
+
+    ret = flb_utils_read_file((char *) private_key_file, &key_buf, &key_size);
+    if (ret != 0 || !key_buf || key_size == 0) {
+        flb_error("[oauth2] failed to read private key file '%s'", private_key_file);
+        return -1;
+    }
+
+    ret = flb_hash_simple(FLB_HASH_SHA256,
+                          (unsigned char *) data, data_len,
+                          digest, sizeof(digest));
+    if (ret != FLB_CRYPTO_SUCCESS) {
+        flb_error("[oauth2] failed to hash JWT assertion payload");
+        flb_free(key_buf);
+        return -1;
+    }
+
+    sig_len = sizeof(sig);
+    ret = flb_crypto_sign_simple(FLB_CRYPTO_PRIVATE_KEY,
+                                 FLB_CRYPTO_PADDING_PKCS1,
+                                 FLB_HASH_SHA256,
+                                 (unsigned char *) key_buf, key_size,
+                                 digest, sizeof(digest),
+                                 sig, &sig_len);
+    flb_free(key_buf);
+    if (ret != FLB_CRYPTO_SUCCESS) {
+        flb_error("[oauth2] failed to sign JWT assertion");
+        return -1;
+    }
+
+    return oauth2_base64_url_encode(sig, sig_len, signature);
+}
+
+static flb_sds_t oauth2_private_key_jwt_create_assertion(struct flb_oauth2 *ctx)
+{
+    int ret;
+    int ttl;
+    time_t now;
+    char jti[FLB_OAUTH2_ASSERTION_UUID_LEN] = {0};
+    const char *header_name;
+    const char *audience;
+    flb_sds_t thumbprint = NULL;
+    flb_sds_t header_json = NULL;
+    flb_sds_t payload_json = NULL;
+    flb_sds_t header_b64 = NULL;
+    flb_sds_t payload_b64 = NULL;
+    flb_sds_t signing_input = NULL;
+    flb_sds_t signature_b64 = NULL;
+    flb_sds_t assertion = NULL;
+
+    if (!ctx->cfg.client_id || !ctx->cfg.jwt_key_file ||
+        !ctx->cfg.jwt_cert_file) {
+        flb_error("[oauth2] private_key_jwt requires client_id, "
+                  "jwt_key_file and "
+                  "jwt_cert_file");
+        return NULL;
+    }
+
+    header_name = ctx->cfg.jwt_header ?
+                  ctx->cfg.jwt_header :
+                  FLB_OAUTH2_DEFAULT_ASSERTION_HEADER;
+    audience = ctx->cfg.jwt_aud ?
+               ctx->cfg.jwt_aud :
+               ctx->cfg.token_url;
+    ttl = ctx->cfg.jwt_ttl > 0 ?
+          ctx->cfg.jwt_ttl :
+          FLB_OAUTH2_DEFAULT_ASSERTION_TTL;
+
+    if (flb_utils_uuid_v4_gen(jti) != 0) {
+        flb_error("[oauth2] failed to generate JWT jti");
+        return NULL;
+    }
+
+    ret = oauth2_private_key_jwt_thumbprint(
+            ctx->cfg.jwt_cert_file,
+            header_name, &thumbprint);
+    if (ret != 0) {
+        return NULL;
+    }
+
+    header_json = flb_sds_create_size(256);
+    if (!header_json) {
+        flb_errno();
+        goto error;
+    }
+    flb_sds_printf(&header_json,
+                   "{\"alg\":\"RS256\",\"typ\":\"JWT\",\"%s\":\"%s\"}",
+                   header_name, thumbprint);
+    if (!header_json) {
+        goto error;
+    }
+
+    now = time(NULL);
+    payload_json = flb_sds_create_size(512);
+    if (!payload_json) {
+        flb_errno();
+        goto error;
+    }
+    flb_sds_printf(&payload_json,
+                   "{\"iss\":\"%s\",\"sub\":\"%s\",\"aud\":\"%s\","
+                   "\"iat\":%lu,\"exp\":%lu,\"jti\":\"%s\"}",
+                   ctx->cfg.client_id, ctx->cfg.client_id, audience,
+                   (unsigned long) now, (unsigned long) (now + ttl), jti);
+    if (!payload_json) {
+        goto error;
+    }
+
+    ret = oauth2_base64_url_encode((unsigned char *) header_json,
+                                   flb_sds_len(header_json), &header_b64);
+    if (ret != 0) {
+        goto error;
+    }
+
+    ret = oauth2_base64_url_encode((unsigned char *) payload_json,
+                                   flb_sds_len(payload_json), &payload_b64);
+    if (ret != 0) {
+        goto error;
+    }
+
+    signing_input = flb_sds_create_size(flb_sds_len(header_b64) +
+                                        flb_sds_len(payload_b64) + 2);
+    if (!signing_input) {
+        flb_errno();
+        goto error;
+    }
+
+    flb_sds_printf(&signing_input, "%s.%s", header_b64, payload_b64);
+    if (!signing_input) {
+        goto error;
+    }
+
+    ret = oauth2_private_key_jwt_sign(ctx->cfg.jwt_key_file,
+                                      signing_input, flb_sds_len(signing_input),
+                                      &signature_b64);
+    if (ret != 0) {
+        goto error;
+    }
+
+    assertion = flb_sds_create_size(flb_sds_len(signing_input) +
+                                    flb_sds_len(signature_b64) + 2);
+    if (!assertion) {
+        flb_errno();
+        goto error;
+    }
+
+    flb_sds_printf(&assertion, "%s.%s", signing_input, signature_b64);
+    if (!assertion) {
+        goto error;
+    }
+
+    flb_sds_destroy(thumbprint);
+    flb_sds_destroy(header_json);
+    flb_sds_destroy(payload_json);
+    flb_sds_destroy(header_b64);
+    flb_sds_destroy(payload_b64);
+    flb_sds_destroy(signing_input);
+    flb_sds_destroy(signature_b64);
+
+    return assertion;
+
+error:
+    flb_sds_destroy(assertion);
+    flb_sds_destroy(signature_b64);
+    flb_sds_destroy(signing_input);
+    flb_sds_destroy(payload_b64);
+    flb_sds_destroy(header_b64);
+    flb_sds_destroy(payload_json);
+    flb_sds_destroy(header_json);
+    flb_sds_destroy(thumbprint);
+
+    return NULL;
+}
+
 static flb_sds_t oauth2_build_body(struct flb_oauth2 *ctx)
 {
     flb_sds_t body;
     flb_sds_t tmp;
+    flb_sds_t assertion = NULL;
 
     if (ctx->payload_manual == FLB_TRUE && ctx->payload) {
         return flb_sds_create_len(ctx->payload, flb_sds_len(ctx->payload));
@@ -512,6 +949,15 @@ static flb_sds_t oauth2_build_body(struct flb_oauth2 *ctx)
         body = tmp;
     }
 
+    if (ctx->cfg.resource) {
+        tmp = oauth2_append_kv(body, "resource", ctx->cfg.resource);
+        if (!tmp) {
+            flb_sds_destroy(body);
+            return NULL;
+        }
+        body = tmp;
+    }
+
     if (ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_POST) {
         if (ctx->cfg.client_id) {
             tmp = oauth2_append_kv(body, "client_id", ctx->cfg.client_id);
@@ -530,6 +976,38 @@ static flb_sds_t oauth2_build_body(struct flb_oauth2 *ctx)
             }
             body = tmp;
         }
+    }
+    else if (ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT) {
+        if (ctx->cfg.client_id) {
+            tmp = oauth2_append_kv(body, "client_id", ctx->cfg.client_id);
+            if (!tmp) {
+                flb_sds_destroy(body);
+                return NULL;
+            }
+            body = tmp;
+        }
+
+        tmp = oauth2_append_kv(body, "client_assertion_type",
+                               "urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
+        if (!tmp) {
+            flb_sds_destroy(body);
+            return NULL;
+        }
+        body = tmp;
+
+        assertion = oauth2_private_key_jwt_create_assertion(ctx);
+        if (!assertion) {
+            flb_sds_destroy(body);
+            return NULL;
+        }
+
+        tmp = oauth2_append_kv(body, "client_assertion", assertion);
+        flb_sds_destroy(assertion);
+        if (!tmp) {
+            flb_sds_destroy(body);
+            return NULL;
+        }
+        body = tmp;
     }
 
     return body;
@@ -696,6 +1174,26 @@ struct flb_oauth2 *flb_oauth2_create_from_config(struct flb_config *config,
         flb_error("[oauth2] token_url is not set");
         flb_oauth2_destroy(ctx);
         return NULL;
+    }
+
+    if (ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT) {
+        if (!ctx->cfg.client_id ||
+            !ctx->cfg.jwt_key_file ||
+            !ctx->cfg.jwt_cert_file) {
+            flb_error("[oauth2] private_key_jwt requires client_id, "
+                      "jwt_key_file and "
+                      "jwt_cert_file");
+            flb_oauth2_destroy(ctx);
+            return NULL;
+        }
+    }
+    else if (ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_BASIC ||
+             ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_POST) {
+        if (!ctx->cfg.client_id || !ctx->cfg.client_secret) {
+            flb_error("[oauth2] auth method requires client_id and client_secret");
+            flb_oauth2_destroy(ctx);
+            return NULL;
+        }
     }
 
     ctx->auth_url = flb_sds_create(ctx->cfg.token_url);
@@ -943,4 +1441,3 @@ struct mk_list *flb_oauth2_get_config_map(struct flb_config *config)
 
     return config_map;
 }
-
