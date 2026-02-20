@@ -195,26 +195,27 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         }
     }
 
-    /* Event source */
-    if (ctx->event_source) {
-        ctx->ra_event_source = flb_ra_create(ctx->event_source, FLB_TRUE);
-        if (!ctx->ra_event_source) {
+    /* Event source (key lookup) */
+    if (ctx->event_source_key) {
+        ctx->ra_event_source_key = flb_ra_create(ctx->event_source_key, FLB_TRUE);
+        if (!ctx->ra_event_source_key) {
             flb_plg_error(ctx->ins,
-                          "cannot create record accessor for event_source pattern: '%s'",
-                          ctx->event_host);
+                          "cannot create record accessor for "
+                          "event_source_key pattern: '%s'",
+                          ctx->event_source_key);
             flb_splunk_conf_destroy(ctx);
             return NULL;
         }
     }
 
-    /* Event source (key lookup) */
+    /* Event sourcetype (key lookup) */
     if (ctx->event_sourcetype_key) {
         ctx->ra_event_sourcetype_key = flb_ra_create(ctx->event_sourcetype_key, FLB_TRUE);
         if (!ctx->ra_event_sourcetype_key) {
             flb_plg_error(ctx->ins,
                           "cannot create record accessor for "
                           "event_sourcetype_key pattern: '%s'",
-                          ctx->event_host);
+                          ctx->event_sourcetype_key);
             flb_splunk_conf_destroy(ctx);
             return NULL;
         }
@@ -227,7 +228,7 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins,
                           "cannot create record accessor for "
                           "event_index_key pattern: '%s'",
-                          ctx->event_host);
+                          ctx->event_index_key);
             flb_splunk_conf_destroy(ctx);
             return NULL;
         }
@@ -273,7 +274,7 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins,
                           "cannot create record accessor for "
                           "metadata_auth_key pattern: '%s'",
-                          ctx->event_host);
+                          ctx->metadata_auth_key);
             flb_splunk_conf_destroy(ctx);
             return NULL;
         }
@@ -312,8 +313,8 @@ int flb_splunk_conf_destroy(struct flb_splunk *ctx)
         flb_ra_destroy(ctx->ra_event_host);
     }
 
-    if (ctx->ra_event_source) {
-        flb_ra_destroy(ctx->ra_event_source);
+    if (ctx->ra_event_source_key) {
+        flb_ra_destroy(ctx->ra_event_source_key);
     }
 
     if (ctx->ra_event_sourcetype_key) {

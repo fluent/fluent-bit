@@ -62,7 +62,11 @@ struct flb_splunk {
 
     /* Event source */
     flb_sds_t event_source;
-    struct flb_record_accessor *ra_event_source;
+
+       /* Event source record key */
+    flb_sds_t event_source_key;
+    struct flb_record_accessor *ra_event_source_key;
+
 
     /*
      * NOTE: EVENT SOURCE
