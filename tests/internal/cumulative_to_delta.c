@@ -140,6 +140,8 @@ static void test_counter_drop_first_and_delta()
 
     value = cmt_metric_get_value(&counter->map->metric);
     TEST_CHECK(fabs(value - 6.0) < 0.0001);
+    TEST_CHECK(cmt_metric_has_start_timestamp(&counter->map->metric) == CMT_TRUE);
+    TEST_CHECK(cmt_metric_get_start_timestamp(&counter->map->metric) == 100);
 
     cmt_destroy(context);
     flb_cumulative_to_delta_ctx_destroy(converter);
@@ -187,6 +189,8 @@ static void test_counter_reset_drop_and_keep()
     counter = get_first_counter(context);
     value = cmt_metric_get_value(&counter->map->metric);
     TEST_CHECK(fabs(value - 2.0) < 0.0001);
+    TEST_CHECK(cmt_metric_has_start_timestamp(&counter->map->metric) == CMT_TRUE);
+    TEST_CHECK(cmt_metric_get_start_timestamp(&counter->map->metric) == 200);
     cmt_destroy(context);
     flb_cumulative_to_delta_ctx_destroy(converter);
 }
@@ -227,6 +231,8 @@ static void test_histogram_drop_first_and_delta()
     histogram = get_first_histogram(context);
     TEST_CHECK(histogram->aggregation_type == CMT_AGGREGATION_TYPE_DELTA);
     TEST_CHECK(map_sample_count(histogram->map) == 1);
+    TEST_CHECK(cmt_metric_has_start_timestamp(&histogram->map->metric) == CMT_TRUE);
+    TEST_CHECK(cmt_metric_get_start_timestamp(&histogram->map->metric) == 100);
     TEST_CHECK(cmt_metric_hist_get_value(&histogram->map->metric, 0) == 2);
     TEST_CHECK(cmt_metric_hist_get_value(&histogram->map->metric, 1) == 3);
     TEST_CHECK(cmt_metric_hist_get_value(&histogram->map->metric, 2) == 5);
@@ -306,6 +312,38 @@ static void test_counter_initial_value_auto()
     TEST_CHECK(map_sample_count(counter->map) == 1);
     value = cmt_metric_get_value(&counter->map->metric);
     TEST_CHECK(fabs(value - 7.0) < 0.0001);
+    cmt_destroy(context);
+
+    flb_cumulative_to_delta_ctx_destroy(converter);
+}
+
+static void test_counter_initial_value_auto_uses_start_timestamp()
+{
+    double value;
+    struct cmt *context;
+    struct cmt_counter *counter;
+    struct flb_cumulative_to_delta_ctx *converter;
+
+    converter = flb_cumulative_to_delta_ctx_create(FLB_C2D_INITIAL_VALUE_AUTO,
+                                                   FLB_TRUE, 150);
+    TEST_CHECK(converter != NULL);
+
+    context = create_counter_context("auto_start_time_total", 200, 10.0, FLB_FALSE);
+    TEST_CHECK(context != NULL);
+    counter = get_first_counter(context);
+    cmt_metric_set_start_timestamp(&counter->map->metric, 100);
+    TEST_CHECK(flb_cumulative_to_delta_ctx_process(converter, context) == 0);
+    TEST_CHECK(map_sample_count(counter->map) == 0);
+    cmt_destroy(context);
+
+    context = create_counter_context("auto_start_time_total", 300, 18.0, FLB_FALSE);
+    TEST_CHECK(context != NULL);
+    counter = get_first_counter(context);
+    cmt_metric_set_start_timestamp(&counter->map->metric, 100);
+    TEST_CHECK(flb_cumulative_to_delta_ctx_process(converter, context) == 0);
+    TEST_CHECK(map_sample_count(counter->map) == 1);
+    value = cmt_metric_get_value(&counter->map->metric);
+    TEST_CHECK(fabs(value - 8.0) < 0.0001);
     cmt_destroy(context);
 
     flb_cumulative_to_delta_ctx_destroy(converter);
@@ -401,6 +439,8 @@ TEST_LIST = {
     {"histogram_drop_first_and_delta", test_histogram_drop_first_and_delta},
     {"counter_out_of_order_is_dropped", test_counter_out_of_order_is_dropped},
     {"counter_initial_value_auto", test_counter_initial_value_auto},
+    {"counter_initial_value_auto_uses_start_timestamp",
+     test_counter_initial_value_auto_uses_start_timestamp},
     {"histogram_sum_decrease_without_reset", test_histogram_sum_decrease_without_reset},
     {"non_monotonic_sum_is_not_converted", test_non_monotonic_sum_is_not_converted},
     {0}
