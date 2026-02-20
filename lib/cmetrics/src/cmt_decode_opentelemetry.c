@@ -26,6 +26,7 @@
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_exp_histogram.h>
 #include <cmetrics/cmt_untyped.h>
+#include <cmetrics/cmt_atomic.h>
 #include <cmetrics/cmt_compat.h>
 #include <cmetrics/cmt_decode_opentelemetry.h>
 
@@ -741,6 +742,13 @@ static int decode_numerical_data_point(struct cmt *cmt,
             }
             clone_exemplars_to_kvlist(point_metadata, data_point->exemplars, data_point->n_exemplars);
         }
+
+        if (data_point->start_time_unix_nano > 0) {
+            cmt_metric_set_start_timestamp(sample, data_point->start_time_unix_nano);
+        }
+        else {
+            cmt_metric_unset_start_timestamp(sample);
+        }
     }
 
     return result;
@@ -839,7 +847,7 @@ static int decode_summary_data_point(struct cmt *cmt,
     if (result == CMT_DECODE_OPENTELEMETRY_SUCCESS) {
         struct cfl_kvlist *point_metadata;
 
-        if (sample->sum_quantiles_set == CMT_FALSE) {
+        if (cmt_atomic_load(&sample->sum_quantiles_set) == CMT_FALSE) {
             sample->sum_quantiles = calloc(data_point->n_quantile_values,
                                            sizeof(uint64_t));
 
@@ -847,7 +855,7 @@ static int decode_summary_data_point(struct cmt *cmt,
                 return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
             }
 
-            sample->sum_quantiles_set = CMT_TRUE;
+            cmt_atomic_store(&sample->sum_quantiles_set, CMT_TRUE);
             sample->sum_quantiles_count = data_point->n_quantile_values;
         }
 
@@ -858,13 +866,21 @@ static int decode_summary_data_point(struct cmt *cmt,
                                      index, data_point->quantile_values[index]->value);
         }
 
-        sample->sum_sum = cmt_math_d64_to_uint64(data_point->sum);
-        sample->sum_count = data_point->count;
+        cmt_summary_sum_set(sample, data_point->time_unix_nano, data_point->sum);
+        cmt_summary_count_set(sample, data_point->time_unix_nano,
+                              data_point->count);
 
         point_metadata = get_or_create_data_point_metadata_context(cmt, map, sample, data_point->time_unix_nano);
         if (point_metadata != NULL) {
             cfl_kvlist_insert_uint64(point_metadata, "start_time_unix_nano", data_point->start_time_unix_nano);
             cfl_kvlist_insert_uint64(point_metadata, "flags", data_point->flags);
+        }
+
+        if (data_point->start_time_unix_nano > 0) {
+            cmt_metric_set_start_timestamp(sample, data_point->start_time_unix_nano);
+        }
+        else {
+            cmt_metric_unset_start_timestamp(sample);
         }
     }
 
@@ -976,8 +992,10 @@ static int decode_histogram_data_point(struct cmt *cmt,
                                 index, data_point->bucket_counts[index]);
         }
 
-        sample->hist_sum = cmt_math_d64_to_uint64(data_point->sum);
-        sample->hist_count = data_point->count;
+        cmt_metric_hist_sum_set(sample, data_point->time_unix_nano,
+                                data_point->sum);
+        cmt_metric_hist_count_set(sample, data_point->time_unix_nano,
+                                  data_point->count);
 
         point_metadata = get_or_create_data_point_metadata_context(cmt, map, sample, data_point->time_unix_nano);
         if (point_metadata != NULL) {
@@ -993,6 +1011,13 @@ static int decode_histogram_data_point(struct cmt *cmt,
                 cfl_kvlist_insert_double(point_metadata, "max", data_point->max);
             }
             clone_exemplars_to_kvlist(point_metadata, data_point->exemplars, data_point->n_exemplars);
+        }
+
+        if (data_point->start_time_unix_nano > 0) {
+            cmt_metric_set_start_timestamp(sample, data_point->start_time_unix_nano);
+        }
+        else {
+            cmt_metric_unset_start_timestamp(sample);
         }
     }
 
@@ -1135,6 +1160,10 @@ static int decode_exponential_histogram_data_point(struct cmt *cmt,
 {
     Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint__Buckets *positive;
     Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint__Buckets *negative;
+    uint64_t            *old_positive_buckets;
+    uint64_t            *old_negative_buckets;
+    uint64_t            *new_positive_buckets;
+    uint64_t            *new_negative_buckets;
     struct cmt_metric *sample;
     int                static_metric_detected;
     int                result;
@@ -1143,6 +1172,8 @@ static int decode_exponential_histogram_data_point(struct cmt *cmt,
     result = CMT_DECODE_OPENTELEMETRY_SUCCESS;
     positive = data_point->positive;
     negative = data_point->negative;
+    new_positive_buckets = NULL;
+    new_negative_buckets = NULL;
 
     static_metric_detected = CMT_FALSE;
 
@@ -1181,60 +1212,60 @@ static int decode_exponential_histogram_data_point(struct cmt *cmt,
         map->metric_static_set = CMT_TRUE;
     }
 
-    if (sample->exp_hist_positive_buckets != NULL) {
-        free(sample->exp_hist_positive_buckets);
-        sample->exp_hist_positive_buckets = NULL;
-        sample->exp_hist_positive_count = 0;
-    }
-
-    if (sample->exp_hist_negative_buckets != NULL) {
-        free(sample->exp_hist_negative_buckets);
-        sample->exp_hist_negative_buckets = NULL;
-        sample->exp_hist_negative_count = 0;
-    }
-
     if (positive != NULL && positive->n_bucket_counts > 0) {
-        sample->exp_hist_positive_buckets = calloc(positive->n_bucket_counts, sizeof(uint64_t));
-        if (sample->exp_hist_positive_buckets == NULL) {
+        new_positive_buckets = calloc(positive->n_bucket_counts, sizeof(uint64_t));
+        if (new_positive_buckets == NULL) {
             return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
         }
         for (index = 0 ; index < positive->n_bucket_counts ; index++) {
-            sample->exp_hist_positive_buckets[index] = positive->bucket_counts[index];
+            new_positive_buckets[index] = positive->bucket_counts[index];
         }
-        sample->exp_hist_positive_count = positive->n_bucket_counts;
-        sample->exp_hist_positive_offset = positive->offset;
-    }
-    else {
-        sample->exp_hist_positive_offset = 0;
     }
 
     if (negative != NULL && negative->n_bucket_counts > 0) {
-        sample->exp_hist_negative_buckets = calloc(negative->n_bucket_counts, sizeof(uint64_t));
-        if (sample->exp_hist_negative_buckets == NULL) {
+        new_negative_buckets = calloc(negative->n_bucket_counts, sizeof(uint64_t));
+        if (new_negative_buckets == NULL) {
+            free(new_positive_buckets);
             return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
         }
         for (index = 0 ; index < negative->n_bucket_counts ; index++) {
-            sample->exp_hist_negative_buckets[index] = negative->bucket_counts[index];
+            new_negative_buckets[index] = negative->bucket_counts[index];
         }
-        sample->exp_hist_negative_count = negative->n_bucket_counts;
-        sample->exp_hist_negative_offset = negative->offset;
     }
-    else {
-        sample->exp_hist_negative_offset = 0;
-    }
+
+    cmt_metric_exp_hist_lock(sample);
+
+    old_positive_buckets = sample->exp_hist_positive_buckets;
+    old_negative_buckets = sample->exp_hist_negative_buckets;
+
+    sample->exp_hist_positive_buckets = new_positive_buckets;
+    sample->exp_hist_positive_count =
+        positive != NULL ? positive->n_bucket_counts : 0;
+    sample->exp_hist_positive_offset =
+        positive != NULL ? positive->offset : 0;
+
+    sample->exp_hist_negative_buckets = new_negative_buckets;
+    sample->exp_hist_negative_count =
+        negative != NULL ? negative->n_bucket_counts : 0;
+    sample->exp_hist_negative_offset =
+        negative != NULL ? negative->offset : 0;
 
     sample->exp_hist_scale = data_point->scale;
     sample->exp_hist_zero_count = data_point->zero_count;
     sample->exp_hist_zero_threshold = data_point->zero_threshold;
-    sample->exp_hist_count = data_point->count;
-    sample->exp_hist_sum_set = data_point->has_sum ? CMT_TRUE : CMT_FALSE;
-    if (sample->exp_hist_sum_set == CMT_TRUE) {
-        sample->exp_hist_sum = cmt_math_d64_to_uint64(data_point->sum);
+    cmt_metric_set_exp_hist_count(sample, data_point->count);
+    cmt_metric_set_exp_hist_sum(sample, data_point->has_sum ? CMT_TRUE : CMT_FALSE,
+                                data_point->sum);
+    cmt_metric_set_timestamp(sample, data_point->time_unix_nano);
+
+    cmt_metric_exp_hist_unlock(sample);
+
+    if (old_positive_buckets != NULL) {
+        free(old_positive_buckets);
     }
-    else {
-        sample->exp_hist_sum = 0;
+    if (old_negative_buckets != NULL) {
+        free(old_negative_buckets);
     }
-    sample->timestamp = data_point->time_unix_nano;
 
     {
         struct cfl_kvlist *point_metadata;
@@ -1253,6 +1284,13 @@ static int decode_exponential_histogram_data_point(struct cmt *cmt,
                 cfl_kvlist_insert_double(point_metadata, "max", data_point->max);
             }
             clone_exemplars_to_kvlist(point_metadata, data_point->exemplars, data_point->n_exemplars);
+        }
+
+        if (data_point->start_time_unix_nano > 0) {
+            cmt_metric_set_start_timestamp(sample, data_point->start_time_unix_nano);
+        }
+        else {
+            cmt_metric_unset_start_timestamp(sample);
         }
     }
 

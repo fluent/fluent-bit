@@ -118,6 +118,8 @@ int cmt_exp_histogram_set_default(struct cmt_exp_histogram *exp_histogram,
     struct cmt_metric *metric;
     uint64_t *new_positive_buckets;
     uint64_t *new_negative_buckets;
+    uint64_t *old_positive_buckets;
+    uint64_t *old_negative_buckets;
 
     metric = exp_histogram_get_metric(exp_histogram, labels_count, label_vals);
     if (!metric) {
@@ -166,12 +168,10 @@ int cmt_exp_histogram_set_default(struct cmt_exp_histogram *exp_histogram,
         return -1;
     }
 
-    if (metric->exp_hist_positive_buckets != NULL) {
-        free(metric->exp_hist_positive_buckets);
-    }
-    if (metric->exp_hist_negative_buckets != NULL) {
-        free(metric->exp_hist_negative_buckets);
-    }
+    cmt_metric_exp_hist_lock(metric);
+
+    old_positive_buckets = metric->exp_hist_positive_buckets;
+    old_negative_buckets = metric->exp_hist_negative_buckets;
 
     metric->exp_hist_positive_buckets = new_positive_buckets;
     metric->exp_hist_negative_buckets = new_negative_buckets;
@@ -183,10 +183,18 @@ int cmt_exp_histogram_set_default(struct cmt_exp_histogram *exp_histogram,
     metric->exp_hist_zero_threshold = zero_threshold;
     metric->exp_hist_positive_offset = positive_offset;
     metric->exp_hist_negative_offset = negative_offset;
-    metric->exp_hist_count = count;
-    metric->exp_hist_sum_set = sum_set ? CMT_TRUE : CMT_FALSE;
-    metric->exp_hist_sum = cmt_math_d64_to_uint64(sum);
-    metric->timestamp = timestamp;
+    cmt_metric_set_exp_hist_count(metric, count);
+    cmt_metric_set_exp_hist_sum(metric, sum_set, sum);
+    cmt_metric_set_timestamp(metric, timestamp);
+
+    cmt_metric_exp_hist_unlock(metric);
+
+    if (old_positive_buckets != NULL) {
+        free(old_positive_buckets);
+    }
+    if (old_negative_buckets != NULL) {
+        free(old_negative_buckets);
+    }
 
     return 0;
 }
@@ -211,6 +219,7 @@ int cmt_exp_histogram_to_explicit(struct cmt_metric *metric,
                                   uint64_t **bucket_counts,
                                   size_t *bucket_count)
 {
+    struct cmt_exp_histogram_snapshot snapshot;
     double    base;
     double   *local_upper_bounds;
     uint64_t *local_bucket_counts;
@@ -230,98 +239,108 @@ int cmt_exp_histogram_to_explicit(struct cmt_metric *metric,
         return -1;
     }
 
-    base = pow(2.0, pow(2.0, (double) -metric->exp_hist_scale));
-    if (!isfinite(base) || base <= 1.0) {
+    if (cmt_metric_exp_hist_get_snapshot(metric, &snapshot) != 0) {
         return -1;
     }
 
-    include_zero_threshold = (metric->exp_hist_zero_count > 0 ||
-                              metric->exp_hist_zero_threshold > 0.0 ||
-                              (metric->exp_hist_negative_count > 0 && metric->exp_hist_positive_count > 0) ||
-                              (metric->exp_hist_negative_count == 0 && metric->exp_hist_positive_count == 0));
+    base = pow(2.0, pow(2.0, (double) -snapshot.scale));
+    if (!isfinite(base) || base <= 1.0) {
+        cmt_metric_exp_hist_snapshot_destroy(&snapshot);
+        return -1;
+    }
 
-    local_upper_bounds_count = metric->exp_hist_negative_count + metric->exp_hist_positive_count;
+    include_zero_threshold = (snapshot.zero_count > 0 ||
+                              snapshot.zero_threshold > 0.0 ||
+                              (snapshot.negative_count > 0 && snapshot.positive_count > 0) ||
+                              (snapshot.negative_count == 0 && snapshot.positive_count == 0));
+
+    local_upper_bounds_count = snapshot.negative_count + snapshot.positive_count;
 
     if (include_zero_threshold) {
-        local_upper_bounds_count += (metric->exp_hist_zero_threshold > 0.0) ? 3 : 1;
+        local_upper_bounds_count += (snapshot.zero_threshold > 0.0) ? 3 : 1;
     }
 
     local_bucket_count = local_upper_bounds_count + 1;
 
     local_upper_bounds = calloc(local_upper_bounds_count, sizeof(double));
     if (local_upper_bounds == NULL) {
+        cmt_metric_exp_hist_snapshot_destroy(&snapshot);
         return -1;
     }
 
     local_bucket_counts = calloc(local_bucket_count, sizeof(uint64_t));
     if (local_bucket_counts == NULL) {
         free(local_upper_bounds);
+        cmt_metric_exp_hist_snapshot_destroy(&snapshot);
         return -1;
     }
 
     target_index = 0;
     cumulative_count = 0;
 
-    for (index = metric->exp_hist_negative_count ; index > 0 ; index--) {
-        bucket_index = (int64_t) metric->exp_hist_negative_offset + (int64_t) index - 1;
+    for (index = snapshot.negative_count ; index > 0 ; index--) {
+        bucket_index = (int64_t) snapshot.negative_offset + (int64_t) index - 1;
 
         local_upper_bounds[target_index] = -pow(base, (double) bucket_index);
         if (!isfinite(local_upper_bounds[target_index])) {
             free(local_bucket_counts);
             free(local_upper_bounds);
+            cmt_metric_exp_hist_snapshot_destroy(&snapshot);
             return -1;
         }
 
-        cumulative_count += metric->exp_hist_negative_buckets[index - 1];
+        cumulative_count += snapshot.negative_buckets[index - 1];
         local_bucket_counts[target_index] = cumulative_count;
         target_index++;
     }
 
     if (include_zero_threshold) {
-        if (metric->exp_hist_zero_threshold > 0.0) {
-            local_upper_bounds[target_index] = -metric->exp_hist_zero_threshold;
+        if (snapshot.zero_threshold > 0.0) {
+            local_upper_bounds[target_index] = -snapshot.zero_threshold;
             local_bucket_counts[target_index] = cumulative_count;
             target_index++;
 
-            cumulative_count += metric->exp_hist_zero_count;
+            cumulative_count += snapshot.zero_count;
 
             local_upper_bounds[target_index] = 0.0;
             local_bucket_counts[target_index] = cumulative_count;
             target_index++;
 
-            local_upper_bounds[target_index] = metric->exp_hist_zero_threshold;
+            local_upper_bounds[target_index] = snapshot.zero_threshold;
             local_bucket_counts[target_index] = cumulative_count;
             target_index++;
         }
         else {
-            cumulative_count += metric->exp_hist_zero_count;
+            cumulative_count += snapshot.zero_count;
             local_upper_bounds[target_index] = 0.0;
             local_bucket_counts[target_index] = cumulative_count;
             target_index++;
         }
     }
 
-    for (index = 0 ; index < metric->exp_hist_positive_count ; index++) {
-        bucket_index = (int64_t) metric->exp_hist_positive_offset + (int64_t) index + 1;
+    for (index = 0 ; index < snapshot.positive_count ; index++) {
+        bucket_index = (int64_t) snapshot.positive_offset + (int64_t) index + 1;
 
         local_upper_bounds[target_index] = pow(base, (double) bucket_index);
         if (!isfinite(local_upper_bounds[target_index])) {
             free(local_bucket_counts);
             free(local_upper_bounds);
+            cmt_metric_exp_hist_snapshot_destroy(&snapshot);
             return -1;
         }
 
-        cumulative_count += metric->exp_hist_positive_buckets[index];
+        cumulative_count += snapshot.positive_buckets[index];
         local_bucket_counts[target_index] = cumulative_count;
         target_index++;
     }
 
-    local_bucket_counts[local_bucket_count - 1] = metric->exp_hist_count;
+    local_bucket_counts[local_bucket_count - 1] = snapshot.count;
 
     *upper_bounds = local_upper_bounds;
     *upper_bounds_count = local_upper_bounds_count;
     *bucket_counts = local_bucket_counts;
     *bucket_count = local_bucket_count;
+    cmt_metric_exp_hist_snapshot_destroy(&snapshot);
 
     return 0;
 }

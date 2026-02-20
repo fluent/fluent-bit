@@ -23,6 +23,7 @@
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_exp_histogram.h>
+#include <cmetrics/cmt_atomic.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_encode_prometheus_remote_write.h>
@@ -773,7 +774,7 @@ int pack_complex_metric_sample(struct cmt_prometheus_remote_write_context *conte
     memset(&dummy_metric, 0, sizeof(struct cmt_metric));
     memcpy(&dummy_metric.labels, &metric->labels, sizeof(struct cfl_list));
 
-    dummy_metric.timestamp = metric->timestamp;
+    dummy_metric.timestamp = cmt_metric_get_timestamp(metric);
 
     if (map->type == CMT_SUMMARY) {
         summary = (struct cmt_summary *) map->parent;
@@ -922,7 +923,7 @@ int pack_complex_metric_sample(struct cmt_prometheus_remote_write_context *conte
                 count_value = cmt_metric_hist_get_count_value(metric);
             }
             else {
-                count_value = metric->exp_hist_count;
+                count_value = exp_bucket_counts[exp_bucket_count - 1];
             }
 
             cmt_metric_set(&dummy_metric, dummy_metric.timestamp, count_value);
@@ -943,7 +944,8 @@ int pack_complex_metric_sample(struct cmt_prometheus_remote_write_context *conte
 
         if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS &&
             (map->type == CMT_HISTOGRAM ||
-             (map->type == CMT_EXP_HISTOGRAM && metric->exp_hist_sum_set == CMT_TRUE))) {
+             (map->type == CMT_EXP_HISTOGRAM &&
+              cmt_atomic_load(&metric->exp_hist_sum_set) == CMT_TRUE))) {
             context->sequence_number += SYNTHETIC_METRIC_HISTOGRAM_SUM_SEQUENCE_DELTA;
 
             cfl_sds_len_set(synthetized_metric_name,
@@ -956,7 +958,8 @@ int pack_complex_metric_sample(struct cmt_prometheus_remote_write_context *conte
                 sum_value = cmt_metric_hist_get_sum_value(metric);
             }
             else {
-                sum_value = cmt_math_uint64_to_d64(metric->exp_hist_sum);
+                sum_value = cmt_math_uint64_to_d64(
+                                cmt_atomic_load(&metric->exp_hist_sum));
             }
 
             cmt_metric_set(&dummy_metric, dummy_metric.timestamp, sum_value);
