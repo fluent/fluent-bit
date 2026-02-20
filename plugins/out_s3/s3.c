@@ -34,6 +34,9 @@
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_input_blob.h>
+#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_uri.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 
@@ -92,14 +95,14 @@ static struct flb_aws_header *get_content_encoding_header(int compression_type)
         .val = "gzip",
         .val_len = 4,
     };
-    
+
     static struct flb_aws_header zstd_header = {
         .key = "Content-Encoding",
         .key_len = 16,
         .val = "zstd",
         .val_len = 4,
     };
-    
+
     switch (compression_type) {
         case FLB_AWS_COMPRESS_GZIP:
             return &gzip_header;
@@ -134,6 +137,13 @@ static struct flb_aws_header content_md5_header = {
 static struct flb_aws_header storage_class_header = {
     .key = "x-amz-storage-class",
     .key_len = 19,
+    .val = "",
+    .val_len = 0,
+};
+
+static struct flb_aws_header object_tagging = {
+    .key = "x-amz-tagging",
+    .key_len = 13,
     .val = "",
     .val_len = 0,
 };
@@ -194,6 +204,9 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->storage_class != NULL) {
         headers_len++;
     }
+    if (ctx->object_tags_encoded != NULL) {
+        headers_len++;
+    }
     if (headers_len == 0) {
         *num_headers = headers_len;
         *headers = s3_headers;
@@ -235,6 +248,13 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n].val_len = strlen(body_md5);
         n++;
     }
+    if (ctx->object_tags_encoded != NULL) {
+        s3_headers[n] = object_tagging;
+        s3_headers[n].val = ctx->object_tags_encoded;
+        s3_headers[n].val_len = flb_sds_len(ctx->object_tags_encoded);
+        n++;
+    }
+
     if (ctx->storage_class != NULL) {
         s3_headers[n] = storage_class_header;
         s3_headers[n].val = ctx->storage_class;
@@ -583,7 +603,72 @@ static void s3_context_destroy(struct flb_s3 *ctx)
         remove_from_queue(upload_contents);
     }
 
+    if (ctx->object_tags_encoded) {
+        flb_sds_destroy(ctx->object_tags_encoded);
+        ctx->object_tags_encoded = NULL;
+    }
+
     flb_free(ctx);
+}
+
+static flb_sds_t construct_object_tagging(struct flb_output_instance *ctx, struct mk_list *object_tags) {
+    flb_sds_t url_sds = NULL;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+
+    flb_sds_t key_sds = NULL;
+    flb_sds_t val_sds = NULL;
+
+    flb_config_map_foreach(head, mv, object_tags) {
+        struct flb_slist_entry *key;
+        key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        key_sds = flb_uri_encode(key->str, flb_sds_len(key->str));
+        if (key_sds == NULL) {
+            goto error;
+        }
+
+        struct flb_slist_entry *val;
+        val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+        if (key == val) {
+            flb_plg_warn(ctx, "`s3_object_tag %s` without value is treated as %s=%s",
+                         key->str, key->str, key->str);
+        }
+
+        val_sds = flb_uri_encode(val->str, flb_sds_len(val->str));
+        if (val_sds == NULL) {
+            goto error;
+        }
+
+        if (url_sds == NULL) {
+            url_sds = flb_sds_create_size(256);
+            if (url_sds == NULL) {
+                goto error;
+            }
+        }
+        else {
+            if (NULL == flb_sds_printf(&url_sds, "&")) {
+                goto error;
+            }
+        }
+        if (NULL == flb_sds_printf(&url_sds, "%s=%s", key_sds, val_sds)) {
+            goto error;
+        }
+        flb_sds_destroy(key_sds); key_sds = NULL;
+        flb_sds_destroy(val_sds); val_sds = NULL;
+    }
+    return url_sds;
+
+error:
+    if (key_sds != NULL) {
+        flb_sds_destroy(key_sds);
+    }
+    if (val_sds != NULL) {
+        flb_sds_destroy(val_sds);
+    }
+    if (url_sds != NULL) {
+        flb_sds_destroy(url_sds);
+    }
+    return NULL;
 }
 
 static int cb_s3_init(struct flb_output_instance *ins,
@@ -860,6 +945,16 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->storage_class = (char *) tmp;
     }
 
+    ctx->object_tags_encoded = NULL;
+    if ((ctx->object_tags != NULL) && (0 < mk_list_size(ctx->object_tags))) {
+        flb_sds_t tags_sds = construct_object_tagging(ctx->ins, ctx->object_tags);
+        if (tags_sds == NULL) {
+            flb_plg_error(ctx->ins, "cannot construct_object_tagging");
+            return -1;
+        }
+        ctx->object_tags_encoded = tags_sds;
+    }
+
     if (ctx->insecure == FLB_FALSE) {
         ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
                                          ins->tls_verify,
@@ -1079,6 +1174,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     return 0;
 }
+
 
 /* worker initialization, used for our internal timers */
 static int cb_s3_worker_init(void *data, struct flb_config *config)
@@ -4219,6 +4315,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "authorization_endpoint_bearer_token", NULL,
      0, FLB_TRUE, offsetof(struct flb_s3, authorization_endpoint_bearer_token),
      "Authorization endpoint bearer token"
+    },
+
+    {
+     FLB_CONFIG_MAP_SLIST_1, "s3_object_tag", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_s3, object_tags),
+     "key-value pairs to tag the S3 object: `s3_object_tag key1 value1; s3_object_tag key2 value2; ...`"
     },
 
     /* EOF */
