@@ -95,9 +95,13 @@ static int should_drop_initial_sample(struct flb_cumulative_to_delta_ctx *contex
         return FLB_FALSE;
     }
 
-    /* cmetrics no longer exposes datapoint start timestamp, so auto mode
-     * falls back to sample timestamp vs processor start time. */
-    sample_timestamp = cmt_metric_get_timestamp(sample);
+    if (cmt_metric_has_start_timestamp(sample)) {
+        sample_timestamp = cmt_metric_get_start_timestamp(sample);
+    }
+    else {
+        sample_timestamp = cmt_metric_get_timestamp(sample);
+    }
+
     if (sample_timestamp >= context->processor_start_timestamp) {
         return FLB_FALSE;
     }
@@ -649,6 +653,15 @@ static int process_counter_sample(struct flb_cumulative_to_delta_ctx *context,
         delta = current_value - state->last_counter_value;
     }
 
+    if (reset_detected == FLB_TRUE) {
+        if (cmt_metric_has_start_timestamp(sample) == FLB_FALSE) {
+            cmt_metric_set_start_timestamp(sample, timestamp);
+        }
+    }
+    else {
+        cmt_metric_set_start_timestamp(sample, state->last_timestamp);
+    }
+
     cmt_metric_set(sample, timestamp, delta);
 
     if (series_state_update_counter(state, timestamp, current_value) != 0) {
@@ -834,6 +847,15 @@ static int process_histogram_sample(struct flb_cumulative_to_delta_ctx *context,
     else {
         count_delta = current_count - state->last_hist_count;
         sum_delta = current_sum - state->last_hist_sum;
+    }
+
+    if (reset_detected == FLB_TRUE) {
+        if (cmt_metric_has_start_timestamp(sample) == FLB_FALSE) {
+            cmt_metric_set_start_timestamp(sample, timestamp);
+        }
+    }
+    else {
+        cmt_metric_set_start_timestamp(sample, state->last_timestamp);
     }
 
     cmt_metric_hist_count_set(sample, timestamp, count_delta);
@@ -1170,6 +1192,15 @@ static int process_exp_histogram_sample(struct flb_cumulative_to_delta_ctx *cont
         if (current_sum_set == CMT_TRUE) {
             sum_delta = current_sum - state->last_exp_hist_sum;
         }
+    }
+
+    if (reset_detected == FLB_TRUE) {
+        if (cmt_metric_has_start_timestamp(sample) == FLB_FALSE) {
+            cmt_metric_set_start_timestamp(sample, timestamp);
+        }
+    }
+    else {
+        cmt_metric_set_start_timestamp(sample, state->last_timestamp);
     }
 
     sample->exp_hist_count = count_delta;
