@@ -754,9 +754,44 @@ static struct flb_config_map config_map[] = {
      "Optional OAuth2 audience parameter"
     },
     {
+     FLB_CONFIG_MAP_STR, "oauth2.resource", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.resource),
+     "Optional OAuth2 resource parameter"
+    },
+    {
      FLB_CONFIG_MAP_STR, "oauth2.auth_method", "basic",
      0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_auth_method),
-     "OAuth2 client authentication method: basic or post"
+     "OAuth2 client authentication method: basic, post or private_key_jwt"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_key_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http,
+                           oauth2_config.jwt_key_file),
+     "Path to PEM private key used by private_key_jwt"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_cert_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http,
+                           oauth2_config.jwt_cert_file),
+     "Path to certificate file used by private_key_jwt"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_aud", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http,
+                           oauth2_config.jwt_aud),
+     "Audience for private_key_jwt assertion (defaults to oauth2.token_url)"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_header", "kid",
+     0, FLB_TRUE, offsetof(struct flb_out_http,
+                           oauth2_config.jwt_header),
+     "JWT header claim name for private_key_jwt thumbprint (kid or x5t)"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "oauth2.jwt_ttl_seconds", "300",
+     0, FLB_TRUE, offsetof(struct flb_out_http,
+                           oauth2_config.jwt_ttl),
+     "Lifetime in seconds for private_key_jwt client assertions"
     },
     {
      FLB_CONFIG_MAP_INT, "oauth2.refresh_skew_seconds", "60",
