@@ -54,4 +54,4 @@ EXTRA_OECMAKE += "-DFLB_IN_SYSTEMD=On "
 inherit cmake systemd
 
 SYSTEMD_SERVICE_${PN} = "fluent-bit.service"
-TARGET_CC_ARCH_append = " ${SELECTED_OPTIMIZATION}"
+TARGET_CC_ARCH:append = " ${SELECTED_OPTIMIZATION}"
