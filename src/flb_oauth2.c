@@ -785,6 +785,7 @@ static flb_sds_t oauth2_private_key_jwt_create_assertion(struct flb_oauth2 *ctx)
     flb_sds_t signing_input = NULL;
     flb_sds_t signature_b64 = NULL;
     flb_sds_t assertion = NULL;
+    flb_sds_t tmp = NULL;
 
     if (!ctx->cfg.client_id || !ctx->cfg.jwt_key_file ||
         !ctx->cfg.jwt_cert_file) {
@@ -821,12 +822,13 @@ static flb_sds_t oauth2_private_key_jwt_create_assertion(struct flb_oauth2 *ctx)
         flb_errno();
         goto error;
     }
-    flb_sds_printf(&header_json,
-                   "{\"alg\":\"RS256\",\"typ\":\"JWT\",\"%s\":\"%s\"}",
-                   header_name, thumbprint);
-    if (!header_json) {
+    tmp = flb_sds_printf(&header_json,
+                         "{\"alg\":\"RS256\",\"typ\":\"JWT\",\"%s\":\"%s\"}",
+                         header_name, thumbprint);
+    if (!tmp) {
         goto error;
     }
+    header_json = tmp;
 
     now = time(NULL);
     payload_json = flb_sds_create_size(512);
@@ -834,14 +836,16 @@ static flb_sds_t oauth2_private_key_jwt_create_assertion(struct flb_oauth2 *ctx)
         flb_errno();
         goto error;
     }
-    flb_sds_printf(&payload_json,
-                   "{\"iss\":\"%s\",\"sub\":\"%s\",\"aud\":\"%s\","
-                   "\"iat\":%lu,\"exp\":%lu,\"jti\":\"%s\"}",
-                   ctx->cfg.client_id, ctx->cfg.client_id, audience,
-                   (unsigned long) now, (unsigned long) (now + ttl), jti);
-    if (!payload_json) {
+    tmp = flb_sds_printf(&payload_json,
+                         "{\"iss\":\"%s\",\"sub\":\"%s\",\"aud\":\"%s\","
+                         "\"iat\":%lu,\"exp\":%lu,\"jti\":\"%s\"}",
+                         ctx->cfg.client_id, ctx->cfg.client_id, audience,
+                         (unsigned long) now, (unsigned long) (now + ttl),
+                         jti);
+    if (!tmp) {
         goto error;
     }
+    payload_json = tmp;
 
     ret = oauth2_base64_url_encode((unsigned char *) header_json,
                                    flb_sds_len(header_json), &header_b64);
@@ -862,10 +866,11 @@ static flb_sds_t oauth2_private_key_jwt_create_assertion(struct flb_oauth2 *ctx)
         goto error;
     }
 
-    flb_sds_printf(&signing_input, "%s.%s", header_b64, payload_b64);
-    if (!signing_input) {
+    tmp = flb_sds_printf(&signing_input, "%s.%s", header_b64, payload_b64);
+    if (!tmp) {
         goto error;
     }
+    signing_input = tmp;
 
     ret = oauth2_private_key_jwt_sign(ctx->cfg.jwt_key_file,
                                       signing_input, flb_sds_len(signing_input),
@@ -881,10 +886,11 @@ static flb_sds_t oauth2_private_key_jwt_create_assertion(struct flb_oauth2 *ctx)
         goto error;
     }
 
-    flb_sds_printf(&assertion, "%s.%s", signing_input, signature_b64);
-    if (!assertion) {
+    tmp = flb_sds_printf(&assertion, "%s.%s", signing_input, signature_b64);
+    if (!tmp) {
         goto error;
     }
+    assertion = tmp;
 
     flb_sds_destroy(thumbprint);
     flb_sds_destroy(header_json);
