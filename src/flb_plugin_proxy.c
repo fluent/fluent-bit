@@ -358,6 +358,7 @@ static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
 
     /* Plugin registration */
     out->type  = FLB_OUTPUT_PLUGIN_PROXY;
+    out->event_type = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS;
     out->proxy = proxy;
     out->flags = def->flags;
     out->name  = flb_strdup(def->name);
