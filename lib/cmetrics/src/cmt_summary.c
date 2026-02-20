@@ -291,7 +291,7 @@ int cmt_summary_set_default(struct cmt_summary *summary,
     /* set quantile values */
     if (quantile_values) {
         /* yes, quantile values are set */
-        metric->sum_quantiles_set = CMT_TRUE;
+        cmt_atomic_store(&metric->sum_quantiles_set, CMT_TRUE);
 
         /* populate each quantile */
         for (i = 0; i < summary->quantiles_count; i++) {

@@ -25,6 +25,7 @@
 #include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_exp_histogram.h>
+#include <cmetrics/cmt_atomic.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_time.h>
 #include <cmetrics/cmt_compat.h>
@@ -194,7 +195,7 @@ static void pack_histogram_metric(mpack_writer_t *writer, struct cmt *cmt,
         val = cmt_metric_hist_get_sum_value(metric);
     }
     else {
-        val = cmt_math_uint64_to_d64(metric->exp_hist_sum);
+        val = cmt_math_uint64_to_d64(cmt_atomic_load(&metric->exp_hist_sum));
     }
     mpack_write_double(writer, val);
     mpack_write_cstr(writer, "Count");
@@ -202,7 +203,7 @@ static void pack_histogram_metric(mpack_writer_t *writer, struct cmt *cmt,
         val = cmt_metric_hist_get_count_value(metric);
     }
     else {
-        val = metric->exp_hist_count;
+        val = exp_bucket_counts[exp_bucket_count - 1];
     }
     mpack_write_double(writer, val);
     mpack_finish_map(writer);
