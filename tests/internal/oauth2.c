@@ -841,6 +841,11 @@ void test_private_key_jwt_body(void)
     ctx = create_private_key_jwt_ctx(config, &server, key_path, cert_path, "kid");
     TEST_CHECK(ctx != NULL);
 
+#ifdef FLB_SYSTEM_MACOS
+    ret = oauth2_mock_server_wait_ready(&server);
+    TEST_CHECK(ret == 0);
+#endif
+
     ret = flb_oauth2_get_access_token(ctx, &token, FLB_FALSE);
     TEST_CHECK(ret == 0);
     TEST_CHECK(token != NULL);
@@ -890,6 +895,11 @@ void test_private_key_jwt_x5t_header(void)
 
     ctx = create_private_key_jwt_ctx(config, &server, key_path, cert_path, "x5t");
     TEST_CHECK(ctx != NULL);
+
+#ifdef FLB_SYSTEM_MACOS
+    ret = oauth2_mock_server_wait_ready(&server);
+    TEST_CHECK(ret == 0);
+#endif
 
     ret = flb_oauth2_get_access_token(ctx, &token, FLB_FALSE);
     TEST_CHECK(ret == 0);
