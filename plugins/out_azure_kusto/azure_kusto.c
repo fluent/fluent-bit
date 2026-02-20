@@ -913,7 +913,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
 
         ctx->timer_created = FLB_FALSE;
         ctx->timer_ms = (int) (ctx->upload_timeout / 6) * 1000;
-        flb_plg_info(ctx->ins, "Using upload size %lu bytes", ctx->file_size);
+        flb_plg_debug(ctx->ins, "Using upload size %lu bytes", ctx->file_size);
     }
 
     flb_output_set_context(ins, ctx);
@@ -942,6 +942,63 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "upstream creation failed");
         return -1;
+    }
+
+    /*
+     * Create upstream context for Kusto Cluster endpoint (for streaming ingestion)
+     * Convert ingestion endpoint to cluster endpoint by removing "ingest-" prefix
+     */
+    if (ctx->streaming_ingestion_enabled == FLB_TRUE) {
+        flb_sds_t cluster_endpoint = NULL;
+        const char *prefix = "ingest-";
+        const char *schema_end = strstr(ctx->ingestion_endpoint, "://");
+        const char *hostname_start = schema_end ? schema_end + 3 : ctx->ingestion_endpoint;
+        
+        /* Check if hostname starts with "ingest-" prefix */
+        if (strncmp(hostname_start, prefix, strlen(prefix)) == 0) {
+            /* Create cluster endpoint by removing "ingest-" prefix from hostname */
+            cluster_endpoint = flb_sds_create(ctx->ingestion_endpoint);
+            if (!cluster_endpoint) {
+                flb_plg_error(ctx->ins, "failed to create cluster endpoint string");
+                flb_upstream_destroy(ctx->u);
+                ctx->u = NULL;
+                return -1;
+            }
+
+            /* Find the position in our copy and remove the prefix */
+            char *copy_hostname = strstr(cluster_endpoint, "://");
+            if (copy_hostname) {
+                copy_hostname += 3;
+                /* Verify the prefix is still at the expected position */
+                if (strncmp(copy_hostname, prefix, strlen(prefix)) == 0) {
+                    memmove(copy_hostname, copy_hostname + strlen(prefix), 
+                            strlen(copy_hostname + strlen(prefix)) + 1);
+                    flb_sds_len_set(cluster_endpoint, flb_sds_len(cluster_endpoint) - strlen(prefix));
+                }
+            }
+
+            /* Create upstream connection to cluster endpoint */
+            ctx->u_cluster = flb_upstream_create_url(config, cluster_endpoint, io_flags, ins->tls);
+            if (!ctx->u_cluster) {
+                flb_plg_error(ctx->ins, "cluster upstream creation failed for endpoint: %s", cluster_endpoint);
+                flb_sds_destroy(cluster_endpoint);
+                flb_upstream_destroy(ctx->u);
+                ctx->u = NULL;
+                return -1;
+            }
+
+            flb_sds_destroy(cluster_endpoint);
+        } else {
+            flb_plg_warn(ctx->ins, "ingestion endpoint hostname does not start with 'ingest-' prefix, using as cluster endpoint");
+            /* Use ingestion endpoint directly as cluster endpoint */
+            ctx->u_cluster = flb_upstream_create_url(config, ctx->ingestion_endpoint, io_flags, ins->tls);
+            if (!ctx->u_cluster) {
+                flb_plg_error(ctx->ins, "cluster upstream creation failed");
+                flb_upstream_destroy(ctx->u);
+                ctx->u = NULL;
+                return -1;
+            }
+        }
     }
 
     flb_plg_debug(ctx->ins, "async flag is %d", flb_stream_is_async(&ctx->u->base));
@@ -1401,7 +1458,11 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
         }
         flb_plg_trace(ctx->ins, "payload size after compression %zu", final_payload_size);
 
-        /* Load or refresh ingestion resources */
+        /* 
+         * Load ingestion resources regardless of streaming mode.
+         * This is required because streaming ingestion may fall back to queued ingestion
+         * when payload size exceeds limits, and queued ingestion requires these resources.
+         */
         ret = azure_kusto_load_ingestion_resources(ctx, config);
         flb_plg_trace(ctx->ins, "load_ingestion_resources: ret=%d", ret);
         if (ret != 0) {
@@ -1410,13 +1471,34 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
             goto error;
         }
 
-        /* Perform queued ingestion to Kusto */
-        ret = azure_kusto_queued_ingestion(ctx, event_chunk->tag, tag_len, final_payload, final_payload_size, NULL);
-        flb_plg_trace(ctx->ins, "after kusto queued ingestion %d", ret);
-        if (ret != 0) {
-            flb_plg_error(ctx->ins, "cannot perform queued ingestion");
-            ret = FLB_RETRY;
-            goto error;
+        /* Check if streaming ingestion is enabled */
+        if (ctx->streaming_ingestion_enabled == FLB_TRUE) {
+            /* 
+             * Perform streaming ingestion to Kusto.
+             * Note: kusto streaming ingestion may automatically fall back to queued ingestion
+             * if the payload size exceeds limits ie uncompressed payload size > 4MB.
+             */
+            flb_plg_debug(ctx->ins, "[FLUSH_STREAMING] Initiating streaming ingestion to Kusto");
+            ret = azure_kusto_streaming_ingestion(ctx, event_chunk->tag, tag_len, final_payload, final_payload_size, json_size);
+
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "[FLUSH_STREAMING] ERROR: Streaming ingestion failed, will retry");
+                ret = FLB_RETRY;
+                goto error;
+            } else {
+                flb_plg_info(ctx->ins, "[FLUSH_STREAMING] SUCCESS: Streaming ingestion completed successfully");
+            }
+        } else {
+            flb_plg_debug(ctx->ins, "[FLUSH_QUEUED] Using queued ingestion mode (streaming ingestion disabled)");
+
+            /* Perform queued ingestion to Kusto */
+            ret = azure_kusto_queued_ingestion(ctx, event_chunk->tag, tag_len, final_payload, final_payload_size, NULL);
+            flb_plg_trace(ctx->ins, "after kusto queued ingestion %d", ret);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "cannot perform queued ingestion");
+                ret = FLB_RETRY;
+                goto error;
+            }
         }
 
         ret = FLB_OK;
@@ -1506,6 +1588,11 @@ static int cb_azure_kusto_exit(void *data, struct flb_config *config)
         ctx->u = NULL;
     }
 
+    if (ctx->u_cluster) {
+        flb_upstream_destroy(ctx->u_cluster);
+        ctx->u_cluster = NULL;
+    }
+
     pthread_mutex_destroy(&ctx->resources_mutex);
     pthread_mutex_destroy(&ctx->token_mutex);
     pthread_mutex_destroy(&ctx->blob_mutex);
@@ -1570,6 +1657,11 @@ static struct flb_config_map config_map[] = {
      offsetof(struct flb_azure_kusto, compression_enabled),
     "Enable HTTP payload compression (gzip)."
     "The default is true."},
+    {FLB_CONFIG_MAP_BOOL, "streaming_ingestion_enabled", "false", 0, FLB_TRUE,
+     offsetof(struct flb_azure_kusto, streaming_ingestion_enabled),
+    "Enable streaming ingestion. When enabled, data is sent directly to Kusto engine without using blob storage and queues. "
+    "Note: Streaming ingestion has a 4MB limit per request and doesn't support buffering."
+    "The default is false (uses queued ingestion)."},
     {FLB_CONFIG_MAP_TIME, "ingestion_resources_refresh_interval", FLB_AZURE_KUSTO_RESOURCES_LOAD_INTERVAL_SEC,0, FLB_TRUE,
      offsetof(struct flb_azure_kusto, ingestion_resources_refresh_interval),
     "Set the azure kusto ingestion resources refresh interval"

@@ -108,6 +108,9 @@ struct flb_azure_kusto {
     /* compress payload */
     int compression_enabled;
 
+    /* streaming ingestion mode */
+    int streaming_ingestion_enabled;
+
     int ingestion_resources_refresh_interval;
 
     /* records configuration */
@@ -166,6 +169,9 @@ struct flb_azure_kusto {
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
+
+    /* Upstream connection to the main Kusto cluster for streaming ingestion */
+    struct flb_upstream *u_cluster;
 
     struct flb_upstream *imds_upstream;
 
