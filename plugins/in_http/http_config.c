@@ -156,6 +156,10 @@ int http_config_destroy(struct flb_http *ctx)
         flb_ra_destroy(ctx->ra_tag_key);
     }
 
+    if (ctx->tag) {
+        flb_sds_destroy(ctx->tag);
+    }
+
     /* release all connections */
     http_conn_release_all(ctx);
 

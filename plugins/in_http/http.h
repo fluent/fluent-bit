@@ -39,6 +39,7 @@ struct flb_http {
     int successful_response_code;
     flb_sds_t listen;
     flb_sds_t tcp_port;
+    flb_sds_t tag;                     /* User configured fixed_tag */
     flb_sds_t tag_key;
     struct flb_record_accessor *ra_tag_key;
 
