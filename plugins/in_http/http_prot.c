@@ -1443,7 +1443,8 @@ static int process_payload_ng(flb_sds_t tag,
         return -1;
     }
 
-    if (strcasecmp(request->content_type, "application/json") == 0) {
+    if ((strcasecmp(request->content_type, "application/json") == 0) ||
+        (strncasecmp(request->content_type, "application/json;", 17) == 0)) {
         type = HTTP_CONTENT_JSON;
     }
 
