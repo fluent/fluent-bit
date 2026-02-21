@@ -328,6 +328,7 @@ if(FLB_ALL)
   set(FLB_OUT_LIB         1)
   set(FLB_OUT_FLOWCOUNTER 1)
   set(FLB_OUT_WEBSOCKET   1)
+  set(FLB_OUT_ARVANCLOUD_CLOUDLOGS 1)
 endif()
 
 if(FLB_DEV)
