@@ -1496,6 +1496,117 @@ void flb_test_path_key()
     test_tail_ctx_destroy(ctx);
 }
 
+#if !defined(FLB_SYSTEM_WINDOWS)
+void flb_test_in_tail_skip_permission_errors()
+{
+    struct flb_lib_out_cb cb_data;
+    flb_ctx_t *ctx = NULL;
+    char tmpdir_template[] = "flb-tail-glob-XXXXXX";
+    char *tmpdir;
+    char ok_dir[PATH_MAX];
+    char bad_dir[PATH_MAX];
+    char ok_file[PATH_MAX];
+    char pattern[PATH_MAX];
+    int in_ffd;
+    int out_ffd;
+    int ret;
+    int num = 0;
+    int unused;
+    int fd = -1;
+    int started = FLB_FALSE;
+
+    clear_output_num();
+
+    tmpdir = mkdtemp(tmpdir_template);
+    if (!TEST_CHECK(tmpdir != NULL)) {
+        TEST_MSG("mkdtemp failed");
+        return;
+    }
+
+    snprintf(ok_dir, sizeof(ok_dir), "%s/ok", tmpdir);
+    snprintf(bad_dir, sizeof(bad_dir), "%s/noaccess", tmpdir);
+
+    ret = mkdir(ok_dir, 0700);
+    TEST_CHECK(ret == 0);
+
+    ret = mkdir(bad_dir, 0700);
+    TEST_CHECK(ret == 0);
+
+    snprintf(ok_file, sizeof(ok_file), "%s/test.log", ok_dir);
+    fd = open(ok_file, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    TEST_CHECK(fd >= 0);
+    if (fd >= 0) {
+        ret = write(fd, "hello\n", 6);
+        TEST_CHECK(ret == 6);
+        fsync(fd);
+        close(fd);
+        fd = -1;
+    }
+
+    ret = chmod(bad_dir, 0000);
+    TEST_CHECK(ret == 0);
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+    if (ctx == NULL) {
+        goto cleanup;
+    }
+
+    ret = flb_service_set(ctx,
+                          "Flush", "0.5",
+                          "Grace", "1",
+                          "Log_Level", "info",
+                          NULL);
+    TEST_CHECK(ret == 0);
+
+    in_ffd = flb_input(ctx, (char *) "tail", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    snprintf(pattern, sizeof(pattern), "%s/*/*.log", tmpdir);
+    ret = flb_input_set(ctx, in_ffd,
+                        "path", pattern,
+                        "read_from_head", "true",
+                        "skip_permission_errors", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    out_ffd = flb_output(ctx, (char *) "lib", &cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    TEST_CHECK(flb_output_set(ctx, out_ffd, NULL) == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        started = FLB_TRUE;
+    }
+
+    wait_num_with_timeout(5000, &num);
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("expected output with skip_permission_errors; got=%d", num);
+    }
+
+cleanup:
+    if (ctx != NULL) {
+        if (started == FLB_TRUE) {
+            flb_stop(ctx);
+        }
+        flb_destroy(ctx);
+    }
+    if (fd >= 0) {
+        close(fd);
+    }
+    chmod(bad_dir, 0700);
+    unlink(ok_file);
+    rmdir(ok_dir);
+    rmdir(bad_dir);
+    rmdir(tmpdir);
+}
+#endif
+
 void flb_test_exclude_path()
 {
     struct flb_lib_out_cb cb_data;
@@ -2660,6 +2771,9 @@ TEST_LIST = {
     {"truncate_long_lines_utf8",     flb_test_in_tail_truncate_long_lines_utf8},
     {"path_comma", flb_test_path_comma},
     {"path_key", flb_test_path_key},
+#if !defined(FLB_SYSTEM_WINDOWS)
+    {"skip_permission_errors", flb_test_in_tail_skip_permission_errors},
+#endif
     {"exclude_path", flb_test_exclude_path},
     {"offset_key", flb_test_offset_key},
     {"multiline_offset_key", flb_test_multiline_offset_key},
