@@ -992,8 +992,10 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
                     fflush(stderr);
                 }
             }
-            /* Only retry on actual errors (not 409 version conflicts) */
-            if (ret & FLB_ES_STATUS_ERROR) {
+            /* Retry on actual errors or unparseable responses */
+            if ((ret & FLB_ES_STATUS_ERROR) ||
+                (!(ret & FLB_ES_STATUS_SUCCESS) &&
+                 !(ret & FLB_ES_STATUS_DUPLICATES))) {
                 goto retry;
             }
         }
