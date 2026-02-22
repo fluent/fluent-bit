@@ -287,6 +287,21 @@ static int process_event(struct flb_kinesis *ctx, struct flush *buf,
         written -= 2;
         tmp_buf_ptr++; /* pass over the opening quote */
         buf->tmp_buf_offset++;
+
+        if (ctx->unescape_log_key) {
+            size_t i = 0;
+            for (size_t n = 0; n < written; n++)
+            {
+                if (tmp_buf_ptr[n] == '\\' && tmp_buf_ptr[n + 1] == '"') {
+                    tmp_buf_ptr[i++] = '"';
+                    n++;
+                } else {
+                    tmp_buf_ptr[i++] = tmp_buf_ptr[n];
+                }
+            }
+            tmp_buf_ptr[i] = '\0';
+            written = i;
+        }
     }
 
     /* is (written + 1) because we still have to append newline */
