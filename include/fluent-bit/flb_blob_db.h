@@ -31,6 +31,7 @@
     "  source                TEXT NOT NULL,"                              \
     "  destination           TEXT NOT NULL,"                              \
     "  path                  TEXT NOT NULL,"                              \
+    "  s3_key                TEXT NOT NULL DEFAULT '',"                   \
     "  remote_id             TEXT NOT NULL DEFAULT '',"                   \
     "  size                  INTEGER,"                                    \
     "  created               INTEGER,"                                    \
@@ -67,6 +68,9 @@
 #define SQL_UPDATE_FILE_REMOTE_ID                                         \
     "UPDATE blob_files SET remote_id=@remote_id WHERE id=@id;"
 
+#define SQL_UPDATE_FILE_S3_KEY                                            \
+    "UPDATE blob_files SET s3_key=@s3_key WHERE id=@id;"
+
 #define SQL_UPDATE_FILE_DESTINATION                                       \
     "UPDATE blob_files SET destination=@destination WHERE id=@id;"
 
@@ -86,7 +90,7 @@
 
 #define SQL_GET_NEXT_ABORTED_FILE                                    \
     "SELECT id, bf.delivery_attempts, source, path, remote_id, "     \
-    "       tag "                                                    \
+    "       tag, s3_key "                                            \
     "  FROM blob_files bf "                                          \
     " WHERE aborted = 1 "                                            \
     "   AND (SELECT COUNT(*) "                                       \
@@ -115,13 +119,17 @@
 #define SQL_GET_FILE_PART_REMOTE_ID                                       \
     "SELECT remote_id "                                                   \
     "  FROM blob_parts "                                                  \
-    " WHERE file_id=@id;"
+    " WHERE file_id=@id "                                                 \
+    "ORDER BY part_id ASC;"
 
 #define SQL_UPDATE_FILE_PART_UPLOADED                                     \
     "UPDATE blob_parts SET uploaded=1, in_progress=0 WHERE id=@id;"
 
 #define SQL_UPDATE_FILE_PART_IN_PROGRESS                                  \
     "UPDATE blob_parts SET in_progress=@status WHERE id=@id;"
+
+#define SQL_UPDATE_FILE_PARTS_IN_PROGRESS                                 \
+    "UPDATE blob_parts SET in_progress=@status WHERE file_id=@file_id;"
 
 #define SQL_UPDATE_FILE_PART_DELIVERY_ATTEMPT_COUNT                        \
     "UPDATE blob_parts "                                                   \
@@ -183,7 +191,7 @@
  */
 #define SQL_GET_OLDEST_FILE_WITH_PARTS_CONCAT                                                     \
     "SELECT f.id, f.path, GROUP_CONCAT(p.part_id ORDER BY p.part_id ASC) AS part_ids, f.source, " \
-    "       f.remote_id, f.tag "                                                                  \
+    "       f.remote_id, f.tag, f.created, f.s3_key "                                             \
     "FROM blob_files f "                                                                          \
     "JOIN blob_parts p ON f.id = p.file_id "                                                      \
     "WHERE p.uploaded = 1 "                                                                       \
@@ -191,6 +199,28 @@
     "HAVING COUNT(p.id) = (SELECT COUNT(p2.id) FROM blob_parts p2 WHERE p2.file_id = f.id) "      \
     "ORDER BY f.created ASC "                                                                     \
     "LIMIT 1;"
+
+#define SQL_GET_ALL_PARTS_FOR_FILE                         \
+    "SELECT id, part_id, offset_start, offset_end "        \
+    "  FROM blob_parts "                                   \
+    " WHERE file_id = @file_id "                           \
+    "ORDER BY part_id ASC;"
+
+#define SQL_GET_NEXT_PENDING_FILE                                                                 \
+    "SELECT f.id, f.path, f.destination, f.remote_id, f.tag, f.s3_key, "                          \
+    "       (SELECT COUNT(*) FROM blob_parts p2 WHERE p2.file_id = f.id) as part_count "          \
+    "FROM blob_files f "                                                                           \
+    "JOIN blob_parts p ON f.id = p.file_id "                                                      \
+    "WHERE f.aborted = 0 "                                                                         \
+    "  AND p.uploaded = 0 "                                                                        \
+    "  AND p.in_progress = 0 "                                                                     \
+    "GROUP BY f.id "                                                                               \
+    "ORDER BY f.created ASC "                                                                      \
+    "LIMIT 1;"
+
+#define SQL_GET_PART_UPLOAD_STATUS                             \
+    "SELECT uploaded FROM blob_parts WHERE id = @id;"
+
 
 
 #define FLB_BLOB_DB_SUCCESS                         0
@@ -235,9 +265,11 @@
     FLB_BLOB_DB_ERROR_EXECUTING_STATEMENT_BASE -13
 #define FLB_BLOB_DB_ERROR_PART_REMOTE_ID_FETCH                 \
     FLB_BLOB_DB_ERROR_EXECUTING_STATEMENT_BASE -14
+#define FLB_BLOB_DB_ERROR_FILE_S3_KEY_UPDATE                   \
+    FLB_BLOB_DB_ERROR_EXECUTING_STATEMENT_BASE -15
 
 #define FLB_BLOB_DB_ERROR_EXECUTING_STATEMENT_TOP              \
-    FLB_BLOB_DB_ERROR_PART_REMOTE_ID_UPDATE
+    FLB_BLOB_DB_ERROR_FILE_S3_KEY_UPDATE
 
 /* These errors are highly speciifc and thus client code should be able to
  * range check them.
@@ -257,39 +289,49 @@
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 4
 #define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_REMOTE_ID                   \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 5
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_DELIVERY_ATTEMPT_COUNT      \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_S3_KEY                      \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 6
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_SET_FILE_ABORTED_STATE                  \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_DELIVERY_ATTEMPT_COUNT      \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 7
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_NEXT_ABORTED_FILE                   \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_SET_FILE_ABORTED_STATE                  \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 8
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_NEXT_STALE_FILE                     \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_NEXT_ABORTED_FILE                   \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 9
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_RESET_FILE_UPLOAD_STATES                \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_NEXT_STALE_FILE                     \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 10
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_RESET_FILE_PART_UPLOAD_STATES           \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_RESET_FILE_UPLOAD_STATES                \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 11
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_INSERT_FILE_PART                        \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_RESET_FILE_PART_UPLOAD_STATES           \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 12
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_PART_UPLOADED               \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_INSERT_FILE_PART                        \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 13
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_PART_REMOTE_ID              \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_PART_UPLOADED               \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 14
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_FETCH_FILE_PART_REMOTE_ID               \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_PART_REMOTE_ID              \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 15
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_PART_DELIVERY_ATTEMPT_COUNT \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_FETCH_FILE_PART_REMOTE_ID               \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 16
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_NEXT_FILE_PART                      \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_PART_DELIVERY_ATTEMPT_COUNT \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 17
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_PART_IN_PROGRESS            \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_NEXT_FILE_PART                      \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 18
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_OLDEST_FILE_WITH_PARTS              \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_PART_IN_PROGRESS            \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 19
-#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_FILE_PART_COUNT                     \
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_OLDEST_FILE_WITH_PARTS              \
     FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 20
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_FILE_PART_COUNT                     \
+    FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 21
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_ALL_PARTS_FOR_FILE                  \
+    FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 22
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_NEXT_PENDING_FILE                   \
+    FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 23
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_PART_UPLOAD_STATUS                  \
+    FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 24
+#define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_PARTS_IN_PROGRESS           \
+    FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_BASE - 25
 
 #define FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_TOP                                     \
-    FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_OLDEST_FILE_WITH_PARTS
+    FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_PARTS_IN_PROGRESS
 
 #ifdef FLB_HAVE_SQLDB
 #include <fluent-bit/flb_sqldb.h>
@@ -314,6 +356,7 @@ struct flb_blob_db {
     __internal_sqlite3_stmt *stmt_get_file;
     __internal_sqlite3_stmt *stmt_get_file_part_count;
     __internal_sqlite3_stmt *stmt_update_file_remote_id;
+    __internal_sqlite3_stmt *stmt_update_file_s3_key;
     __internal_sqlite3_stmt *stmt_update_file_destination;
     __internal_sqlite3_stmt *stmt_update_file_delivery_attempt_count;
     __internal_sqlite3_stmt *stmt_set_file_aborted_state;
@@ -332,6 +375,10 @@ struct flb_blob_db {
     __internal_sqlite3_stmt *stmt_update_file_part_in_progress;
 
     __internal_sqlite3_stmt *stmt_get_oldest_file_with_parts;
+    __internal_sqlite3_stmt *stmt_get_all_parts_for_file;
+    __internal_sqlite3_stmt *stmt_get_next_pending_file;
+    __internal_sqlite3_stmt *stmt_get_part_upload_status;
+    __internal_sqlite3_stmt *stmt_update_file_parts_in_progress;
 };
 
 int flb_blob_db_open(struct flb_blob_db *context,
@@ -374,6 +421,10 @@ int flb_blob_file_update_remote_id(struct flb_blob_db *context,
                                    uint64_t id,
                                    cfl_sds_t remote_id);
 
+int flb_blob_file_update_s3_key(struct flb_blob_db *context,
+                                uint64_t id,
+                                cfl_sds_t s3_key);
+
 int flb_blob_db_file_get_next_aborted(struct flb_blob_db *context,
                                       uint64_t *id,
                                       uint64_t *delivery_attempts,
@@ -381,6 +432,7 @@ int flb_blob_db_file_get_next_aborted(struct flb_blob_db *context,
                                       cfl_sds_t *source,
                                       cfl_sds_t *remote_id,
                                       cfl_sds_t *file_tag,
+                                      cfl_sds_t *s3_key,
                                       int *part_count);
 
 int flb_blob_db_file_get_next_stale(struct flb_blob_db *context,
@@ -438,14 +490,45 @@ int flb_blob_db_file_fetch_oldest_ready(struct flb_blob_db *context,
                                         cfl_sds_t *source,
                                         cfl_sds_t *file_remote_id,
                                         cfl_sds_t *file_tag,
-                                        int *part_count);
+                                        cfl_sds_t *file_s3_key,
+                                        int *part_count,
+                                        time_t *file_created);
 
 int flb_blob_db_file_fetch_part_ids(struct flb_blob_db *context,
                                     uint64_t file_id,
-                                    cfl_sds_t *remote_id_list,
+                                    flb_sds_t *remote_id_list,
                                     size_t remote_id_list_size,
                                     int *remote_id_count);
 
 int flb_blob_db_file_fetch_part_count(struct flb_blob_db *context,
                                       uint64_t file_id);
+
+int flb_blob_db_file_fetch_all_parts(struct flb_blob_db *context,
+                                      uint64_t file_id,
+                                      uint64_t **part_db_ids,
+                                      uint64_t **part_nums,
+                                      off_t **offset_starts,
+                                      off_t **offset_ends,
+                                      int *count);
+
+int flb_blob_db_file_get_next_pending(struct flb_blob_db *context,
+                                       uint64_t *file_id,
+                                       cfl_sds_t *path,
+                                       cfl_sds_t *destination,
+                                       cfl_sds_t *remote_id,
+                                       cfl_sds_t *tag,
+                                       cfl_sds_t *s3_key,
+                                       int *part_count);
+
+int flb_blob_db_file_part_check_uploaded(struct flb_blob_db *context,
+                                          uint64_t part_id,
+                                          int *uploaded);
+
+int flb_blob_db_file_parts_in_progress(struct flb_blob_db *context,
+                                        uint64_t file_id,
+                                        int status);
+
+/* Recovery helpers */
+int flb_blob_db_reset_zombie_parts(struct flb_blob_db *context);
+
 #endif

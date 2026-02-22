@@ -211,7 +211,7 @@ option(FLB_SIMD                "Enable SIMD support"                         No)
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
 option(FLB_AVRO_ENCODER        "Build with Avro encoding support"            No)
 option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support"      No)
-option(FLB_ARROW               "Build with Apache Arrow support"             No)
+option(FLB_PARQUET_ENCODER     "Build with Parquet encoding support"         No)
 option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"     Yes)
 option(FLB_WASM                "Build with WASM runtime support"            Yes)
 option(FLB_WAMRC               "Build with WASM AOT compiler executable"    No)
@@ -293,6 +293,11 @@ if(FLB_ALL)
   # Global
   set(FLB_DEBUG           1)
   set(FLB_TLS             1)
+
+  # Encoders
+  set(FLB_AVRO_ENCODER    1)
+  # Note: FLB_PARQUET_ENCODER is not enabled by FLB_ALL due to external dependencies
+  # Use -DFLB_PARQUET_ENCODER=On explicitly to enable it
 
   # Input plugins
   set(FLB_IN_CPU          1)
@@ -1092,11 +1097,12 @@ if(FLB_CONFIG_YAML)
     # For non-standard libyaml installation paths such as homebrew bottled libyaml.
     include_directories(${LIBYAML_INCLUDEDIR})
     link_directories(${LIBYAML_LIBRARY_DIRS})
+    message(STATUS "libyaml found via pkg-config: ${LIBYAML_VERSION}")
   else()
     if (FLB_LIBYAML_DIR)
       set(LIBYAML_LIBRARY_DIRS "${FLB_LIBYAML_DIR}/lib")
       set(LIBYAML_INCLUDEDIR "${FLB_LIBYAML_DIR}/include")
-      message(STATUS "specified libyaml dir: ${FLB_LIBYAML_DIR}")
+      message(STATUS "Using specified libyaml dir: ${FLB_LIBYAML_DIR}")
       if (MSVC)
         FLB_DEFINITION(YAML_DECLARE_STATIC)
       endif ()
@@ -1105,21 +1111,45 @@ if(FLB_CONFIG_YAML)
       include_directories(${LIBYAML_INCLUDEDIR})
       link_directories(${LIBYAML_LIBRARY_DIRS})
     else ()
-      # Requires libyaml support
-      check_c_source_compiles("
-      #include <yaml.h>
-      int main() {
-        yaml_parser_t parser;
-        return 0;
-      }" FLB_HAVE_LIBYAML)
+      # Try to auto-detect libyaml on macOS via Homebrew
+      if (FLB_SYSTEM_MACOS)
+        find_program(BREW_EXECUTABLE brew)
+        if (BREW_EXECUTABLE)
+          execute_process(
+            COMMAND ${BREW_EXECUTABLE} --prefix libyaml
+            OUTPUT_VARIABLE BREW_LIBYAML_PREFIX
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+          )
+          if (BREW_LIBYAML_PREFIX AND EXISTS "${BREW_LIBYAML_PREFIX}")
+            set(LIBYAML_LIBRARY_DIRS "${BREW_LIBYAML_PREFIX}/lib")
+            set(LIBYAML_INCLUDEDIR "${BREW_LIBYAML_PREFIX}/include")
+            set(FLB_HAVE_LIBYAML 1)
+            FLB_DEFINITION(FLB_HAVE_LIBYAML)
+            include_directories(${LIBYAML_INCLUDEDIR})
+            link_directories(${LIBYAML_LIBRARY_DIRS})
+            message(STATUS "libyaml found via Homebrew: ${BREW_LIBYAML_PREFIX}")
+          endif()
+        endif()
+      endif()
 
-      if(NOT FLB_HAVE_LIBYAML)
-        message(FATAL_ERROR
-          "YAML development dependencies required for YAML configuration format handling.\n"
-          "This is a build time dependency, you can either install the "
-          "dependencies or disable the feature setting the CMake option "
-          "-DFLB_CONFIG_YAML=Off ."
-        )
+      # If still not found, try compile test
+      if (NOT FLB_HAVE_LIBYAML)
+        check_c_source_compiles("
+        #include <yaml.h>
+        int main() {
+          yaml_parser_t parser;
+          return 0;
+        }" FLB_HAVE_LIBYAML)
+
+        if(NOT FLB_HAVE_LIBYAML)
+          message(FATAL_ERROR
+            "YAML development dependencies required for YAML configuration format handling.\n"
+            "This is a build time dependency, you can either install the "
+            "dependencies or disable the feature setting the CMake option "
+            "-DFLB_CONFIG_YAML=Off ."
+          )
+        endif()
       endif()
     endif ()
 
@@ -1296,22 +1326,32 @@ if(FLB_OUT_PGSQL AND (NOT PostgreSQL_FOUND))
    FLB_OPTION(FLB_OUT_PGSQL OFF)
 endif()
 
-# Arrow GLib
-# ==========
-find_package(PkgConfig)
-pkg_check_modules(ARROW_GLIB QUIET arrow-glib)
-if(FLB_ARROW AND ARROW_GLIB_FOUND)
-  FLB_DEFINITION(FLB_HAVE_ARROW)
-else()
-  set(FLB_ARROW OFF)
-endif()
+# Parquet
+if(FLB_PARQUET_ENCODER)
+  # Check for C++ compiler availability before enabling C++
+  include(CheckLanguage)
+  check_language(CXX)
+  if(NOT CMAKE_CXX_COMPILER)
+    message(FATAL_ERROR "FLB_PARQUET_ENCODER=On requires a C++ compiler, but none was found. "
+            "Please install a C++ compiler (e.g., g++, clang++) or disable Parquet support with -DFLB_PARQUET_ENCODER=Off")
+  endif()
 
-# Additional prerequisites for Apache Parquet
-pkg_check_modules(ARROW_GLIB_PARQUET QUIET parquet-glib)
-if(FLB_ARROW AND ARROW_GLIB_PARQUET_FOUND)
-  FLB_DEFINITION(FLB_HAVE_ARROW_PARQUET)
-else()
-  message(STATUS "Arrow GLib Parquet not found. Disabling parquet compression")
+  # Enable C++ for Parquet support
+  enable_language(CXX)
+  set(CMAKE_CXX_STANDARD 17)
+
+  # Detect Arrow and Parquet libraries
+  include(cmake/parquet.cmake)
+
+  if(ARROW_FOUND AND PARQUET_FOUND)
+    FLB_DEFINITION(FLB_HAVE_PARQUET_ENCODER)
+    include_directories(${ARROW_INCLUDE_DIRS})
+    include_directories(${PARQUET_INCLUDE_DIRS})
+  else()
+    message(WARNING "FLB_PARQUET_ENCODER is enabled but Arrow/Parquet libraries not found.")
+    message(WARNING "Disabling Parquet encoder support.")
+    set(FLB_PARQUET_ENCODER OFF)
+  endif()
 endif()
 
 # EBPF Support

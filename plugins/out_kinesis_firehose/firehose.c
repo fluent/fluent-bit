@@ -496,8 +496,7 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "compression", NULL,
      0, FLB_FALSE, 0,
     "Compression type for Firehose records. Each log record is individually compressed "
-    "and sent to Firehose. 'gzip' and 'arrow' are the supported values. "
-    "'arrow' is only an available if Apache Arrow was enabled at compile time. "
+    "and sent to Firehose. Supported values: 'gzip', 'snappy', 'zstd'. "
     "Defaults to no compression."
     },
 
