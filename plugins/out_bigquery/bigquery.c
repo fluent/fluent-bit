@@ -1035,6 +1035,10 @@ static void cb_bigquery_flush(struct flb_event_chunk *event_chunk,
         /* The request was issued successfully, validate the 'error' field */
         flb_plg_debug(ctx->ins, "HTTP Status=%i", c->resp.status);
         if (c->resp.status == 200) {
+            /* Even with HTTP 200, the resp payload could contain errors, e.g. insetErrors */
+            if (c->resp.payload && c->resp.payload_size > 0) {
+                flb_plg_debug(ctx->ins, "response\n%s", c->resp.payload);
+            }
             ret_code = FLB_OK;
         }
         else {
