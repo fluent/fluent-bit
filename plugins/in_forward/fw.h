@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +24,12 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+
+#define FW_INSTANCE_STATE_RUNNING           0
+#define FW_INSTANCE_STATE_ACCEPTING_CLIENT  1
+#define FW_INSTANCE_STATE_PROCESSING_PACKET 2
+#define FW_INSTANCE_STATE_PAUSED            3
+
 
 enum {
     FW_HANDSHAKE_HELO        = 1,
@@ -76,6 +82,8 @@ struct flb_in_fw_config {
 
     pthread_mutex_t conn_mutex;
 
+    int state;
+    
     /* Plugin is paused */
     int is_paused;
 };

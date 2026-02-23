@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -232,6 +232,53 @@ static inline double calculate_chunk_capacity_percent(struct flb_output_instance
                   ((double)ins->total_limit_size));
 }
 
+static void handle_dlq_if_available(struct flb_config *config,
+                                    struct flb_task *task,
+                                    struct flb_output_instance *ins,
+                                    int status_code /* pass 0 if unknown */)
+{
+    const char *tag_buf = NULL;
+    int         tag_len = 0;
+    flb_sds_t   tag_sds = NULL;
+    const char *tag     = NULL;
+    const char *out     = NULL;
+    struct flb_input_chunk *ic;
+    struct cio_chunk *cio_ch;
+
+    if (!config ||
+        !config->storage_keep_rejected ||
+        !config->storage_path ||
+        !task || !task->ic || !ins) {
+        return;
+    }
+
+    ic = (struct flb_input_chunk *) task->ic;
+
+    if (!ic || !ic->chunk) {
+        return;
+    }
+
+    /* Obtain tag from the input chunk API (no direct field available) */
+    if (flb_input_chunk_get_tag(ic, &tag_buf, &tag_len) == 0 && tag_buf && tag_len > 0) {
+        tag_sds = flb_sds_create_len(tag_buf, tag_len);  /* make it NUL-terminated */
+        tag     = tag_sds;
+    }
+    else {
+        /* Fallback: use input instance name */
+        tag = flb_input_name(task->i_ins);
+    }
+
+    out    = flb_output_name(ins);
+    cio_ch = (struct cio_chunk *) ic->chunk;  /* ic->chunk is a cio_chunk* under the hood */
+
+    /* Copy bytes into DLQ stream (filesystem) */
+    (void) flb_storage_quarantine_chunk(config, cio_ch, tag, status_code, out);
+
+    if (tag_sds) {
+        flb_sds_destroy(tag_sds);
+    }
+}
+
 static inline int handle_output_event(uint64_t ts,
                                       struct flb_config *config,
                                       uint64_t val)
@@ -366,6 +413,8 @@ static inline int handle_output_event(uint64_t ts,
     }
     else if (ret == FLB_RETRY) {
         if (ins->retry_limit == FLB_OUT_RETRY_NONE) {
+            handle_dlq_if_available(config, task, ins, 0);
+
             /* cmetrics: output_dropped_records_total */
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
                             1, (char *[]) {out_name});
@@ -411,6 +460,8 @@ static inline int handle_output_event(uint64_t ts,
              * - No enough memory (unlikely)
              * - It reached the maximum number of re-tries
              */
+
+            handle_dlq_if_available(config, task, ins, 0);
 
             /* cmetrics */
             cmt_counter_inc(ins->cmt_retries_failed, ts, 1, (char *[]) {out_name});
@@ -464,6 +515,8 @@ static inline int handle_output_event(uint64_t ts,
          * memory available or we ran out of file descriptors.
          */
         if (retry_seconds == -1) {
+            handle_dlq_if_available(config, task, ins, 0);
+
             flb_warn("[engine] retry for chunk '%s' could not be scheduled: "
                      "input=%s > output=%s",
                      flb_input_chunk_get_name(task->ic),
@@ -500,6 +553,7 @@ static inline int handle_output_event(uint64_t ts,
         }
     }
     else if (ret == FLB_ERROR) {
+        handle_dlq_if_available(config, task, ins, 0);
         /* cmetrics */
         cmt_counter_inc(ins->cmt_errors, ts, 1, (char *[]) {out_name});
         cmt_counter_add(ins->cmt_dropped_records, ts, task->records,

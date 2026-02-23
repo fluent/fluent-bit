@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2025 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -74,6 +74,7 @@ flb_ctx_t *ctx;
 struct flb_config *config;
 volatile sig_atomic_t exit_signal = 0;
 volatile sig_atomic_t flb_bin_restarting = FLB_RELOAD_IDLE;
+volatile sig_atomic_t dump_requested = 0;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
 struct flb_stacktrace flb_st;
@@ -636,7 +637,7 @@ static void flb_signal_handler(int signal)
         abort();
 #ifndef FLB_SYSTEM_WINDOWS
     case SIGCONT:
-        flb_dump(ctx->config);
+        dump_requested = 1;
         break;
 #ifndef FLB_HAVE_STATIC_CONF
     case SIGHUP:
@@ -912,8 +913,8 @@ static int parse_trace_pipeline(flb_ctx_t *ctx, const char *pipeline, char **tra
     struct flb_split_entry *part;
     char *key;
     char *value;
-    const char *propname;
-    const char *propval;
+    char *propname;
+    char *propval;
 
 
     parts = flb_utils_split(pipeline, (int)' ', 0);
@@ -1008,7 +1009,7 @@ static int flb_main_run(int argc, char **argv)
     struct flb_cf_section *s;
     struct flb_cf_section *section;
     struct flb_cf *cf_opts;
-    struct flb_cf_group *group;
+    struct flb_cf_group *group = NULL;
     int supervisor_reload_notified = FLB_FALSE;
 
     prog_name = argv[0];
@@ -1491,6 +1492,12 @@ static int flb_main_run(int argc, char **argv)
 #ifdef FLB_SYSTEM_WINDOWS
         flb_console_handler_set_ctx(ctx, cf_opts);
 #endif
+        if (dump_requested &&
+            ctx != NULL && ctx->config != NULL) {
+            dump_requested = 0;
+            flb_dump(ctx->config);
+        }
+
         if (flb_bin_restarting == FLB_RELOAD_IN_PROGRESS) {
             if (supervisor_reload_notified == FLB_FALSE &&
                 ctx != NULL && ctx->config != NULL) {

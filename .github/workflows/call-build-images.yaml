@@ -60,7 +60,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
 
@@ -98,7 +98,7 @@ jobs:
     runs-on: ${{ (contains(matrix.platform, 'arm') && 'ubuntu-22.04-arm') || 'ubuntu-latest' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
           token: ${{ secrets.token }}
@@ -141,7 +141,7 @@ jobs:
         shell: bash
 
       - name: Upload ${{ matrix.target }} digest
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.target }}-digests-${{ (contains(matrix.platform, 'arm/v7') && 'arm-v7') || matrix.platform }}
           path: /tmp/digests/*
@@ -173,7 +173,7 @@ jobs:
             raw,latest
 
       - name: Download production digests
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: production-digests-*
           path: /tmp/production-digests
@@ -225,7 +225,7 @@ jobs:
             raw,latest-debug
 
       - name: Download debug digests
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: debug-digests-*
           path: /tmp/debug-digests
@@ -278,7 +278,7 @@ jobs:
         shell: bash
 
       - name: Upload the schema
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           path: ./fluent-bit-schema*.json
           name: fluent-bit-schema-${{ inputs.version }}
@@ -399,7 +399,7 @@ jobs:
       IMAGE: ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
 

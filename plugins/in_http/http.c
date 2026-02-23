@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -86,6 +86,25 @@ static int in_http_init(struct flb_input_instance *ins,
         flb_plg_error(ctx->ins, "configuration error");
         http_config_destroy(ctx);
         return -1;
+    }
+
+    if (ctx->oauth2_cfg.validate) {
+        if (!ctx->oauth2_cfg.issuer || !ctx->oauth2_cfg.jwks_url) {
+            flb_plg_error(ctx->ins, "oauth2.issuer and oauth2.jwks_url are required when oauth2.validate is enabled");
+            http_config_destroy(ctx);
+            return -1;
+        }
+
+        if (ctx->oauth2_cfg.jwks_refresh_interval <= 0) {
+            ctx->oauth2_cfg.jwks_refresh_interval = 300;
+        }
+
+        ctx->oauth2_ctx = flb_oauth2_jwt_context_create(config, &ctx->oauth2_cfg);
+        if (!ctx->oauth2_ctx) {
+            flb_plg_error(ctx->ins, "unable to create oauth2 jwt context");
+            http_config_destroy(ctx);
+            return -1;
+        }
     }
 
     /* Set the context */
@@ -204,38 +223,50 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "http2", "true",
      0, FLB_TRUE, offsetof(struct flb_http, enable_http2),
-     NULL
+     "Enable HTTP/2 support."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "add_remote_addr", "false",
+     0, FLB_TRUE, offsetof(struct flb_http, add_remote_addr),
+     "Adds REMOTE_ADDR field to the record. The value of REMOTE_ADDR is the client's address."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "remote_addr_key", REMOTE_ADDR_KEY,
+     0, FLB_TRUE, offsetof(struct flb_http, remote_addr_key),
+     "Key name for the remote address field added to the record."
     },
 
     {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,
      0, FLB_TRUE, offsetof(struct flb_http, buffer_max_size),
-     ""
+     "Set the maximum buffer size to store incoming data."
     },
 
     {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", HTTP_BUFFER_CHUNK_SIZE,
      0, FLB_TRUE, offsetof(struct flb_http, buffer_chunk_size),
-     ""
+     "Set the initial buffer size to store incoming data."
     },
 
     {
      FLB_CONFIG_MAP_SLIST_1, "success_header", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_http, success_headers),
-     "Add an HTTP header key/value pair on success. Multiple headers can be set"
+     "Add an HTTP header key/value pair on success. Multiple headers can be set."
     },
 
     {
      FLB_CONFIG_MAP_STR, "tag_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_http, tag_key),
-     ""
+     "Specify a key name for extracting the tag from incoming request data."
     },
+
     {
      FLB_CONFIG_MAP_INT, "successful_response_code", "201",
      0, FLB_TRUE, offsetof(struct flb_http, successful_response_code),
      "Set successful response code. 200, 201 and 204 are supported."
     },
-
 
     /* EOF */
     {0}

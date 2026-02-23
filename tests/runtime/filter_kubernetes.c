@@ -86,7 +86,7 @@ static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
         return -1;
     }
 
-    buf = flb_malloc(st.st_size);
+    buf = flb_malloc(st.st_size + 1);
     if (!buf) {
         flb_errno();
         fclose(fp);
@@ -100,6 +100,7 @@ static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
         fclose(fp);
         return -1;
     }
+    buf[st.st_size] = '\0';
 
     fclose(fp);
     *out_buf = buf;
@@ -411,6 +412,17 @@ static void flb_test_core_base_with_namespace_labels_and_annotations()
     flb_test_namespace_labels_and_annotations("core_base-with-namespace-labels-and-annotations_fluent-bit", NULL, 1);
 }
 
+static void flb_test_kube_short_prefix_uat_podname()
+{
+    kube_test("core/core_uat-myapp-12345_fluent-bit",
+              KUBE_TAIL,
+              NULL,
+              1,
+              "Use_Tag_For_Meta", "On",
+              NULL);
+}
+
+
 #define flb_test_owner_references(target, suffix, nExpected) \
     kube_test("core/" target, KUBE_TAIL, suffix, nExpected, \
               "Labels", "Off", \
@@ -629,6 +641,12 @@ static void flb_test_annotations_parser_stderr_text_stderr()
 static void flb_test_annotations_parser_multiple_1_container_1_stdout()
 {
     flb_test_annotations_parser("annotations-parser_multiple-1_container-1", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_order_multiple_1_container_1_stdout()
+{
+    flb_test_annotations_parser("annotations-parser-order_multiple-1_container-1",
+                                "stdout", 1);
 }
 
 static void flb_test_annotations_parser_multiple_1_container_1_stderr()
@@ -1045,6 +1063,7 @@ TEST_LIST = {
     {"kube_annotations_parser_stderr_text_stdout", flb_test_annotations_parser_stderr_text_stdout},
     {"kube_annotations_parser_stderr_text_stderr", flb_test_annotations_parser_stderr_text_stderr},
     {"kube_annotations_parser_multiple_1_container_1_stdout", flb_test_annotations_parser_multiple_1_container_1_stdout},
+    {"kube_annotations_parser_order_multiple_1_container_1_stdout", flb_test_annotations_parser_order_multiple_1_container_1_stdout},
     {"kube_annotations_parser_multiple_1_container_1_stderr", flb_test_annotations_parser_multiple_1_container_1_stderr},
     {"kube_annotations_parser_multiple_1_container_2_stdout", flb_test_annotations_parser_multiple_1_container_2_stdout},
     {"kube_annotations_parser_multiple_1_container_2_stderr", flb_test_annotations_parser_multiple_1_container_2_stderr},
@@ -1106,5 +1125,6 @@ TEST_LIST = {
 #ifdef FLB_HAVE_SYSTEMD
     {"kube_systemd_logs", flb_test_systemd_logs},
 #endif
+    {"kube_short_prefix_uat_podname", flb_test_kube_short_prefix_uat_podname},
     {NULL, NULL}
 };

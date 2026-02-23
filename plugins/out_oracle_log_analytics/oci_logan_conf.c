@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -268,7 +268,7 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     struct flb_upstream *upstream;
     flb_sds_t host = NULL;
     int io_flags = 0, default_port;
-    const char *tmp;
+    const char *tmp = NULL;
     int ret = 0;
     char *protocol = NULL;
     char *p_host = NULL;
@@ -391,6 +391,7 @@ struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
     flb_sds_destroy(host);
 
     if (ctx->proxy) {
+        tmp = ctx->proxy;
         ret = flb_utils_url_split(tmp, &protocol, &p_host, &p_port, &p_uri);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "could not parse proxy parameter: '%s'", tmp);

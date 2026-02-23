@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -282,17 +282,9 @@ flb_sds_t flb_sds_copy(flb_sds_t s, const char *str, int len)
 
 flb_sds_t flb_sds_cat_utf8(flb_sds_t *sds, const char *str, int str_len)
 {
-    static const char int2hex[] = "0123456789abcdef";
-    int i;
-    int b;
     int ret;
-    int hex_bytes;
     int offset;
     size_t size;
-    uint32_t cp;
-    uint32_t state = 0;
-    unsigned char c;
-    const uint8_t *p;
     struct flb_sds *head;
     flb_sds_t tmp;
     flb_sds_t s;

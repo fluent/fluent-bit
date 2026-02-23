@@ -391,8 +391,232 @@ void test_duplicate_metrics()
 
 }
 
+void test_histogram_empty_concatenation()
+{
+    int ret;
+    struct cmt *cmt1;
+    struct cmt *cmt2;
+    struct cmt_histogram *h;
+    struct cmt_histogram_buckets *buckets;
+
+    /* Test concatenating an empty histogram (no observations, NULL hist_buckets) */
+    cmt1 = cmt_create();
+    TEST_CHECK(cmt1 != NULL);
+
+    buckets = cmt_histogram_buckets_create(11,
+                                           0.005, 0.01, 0.025, 0.05,
+                                           0.1, 0.25, 0.5, 1.0, 2.5,
+                                           5.0, 10.0);
+    TEST_CHECK(buckets != NULL);
+
+    /* Create histogram but never observe - hist_buckets will be NULL */
+    h = cmt_histogram_create(cmt1,
+                             "test", "histogram", "empty", "Empty histogram test",
+                             buckets,
+                             0, NULL);
+    TEST_CHECK(h != NULL);
+
+    /* Create destination context */
+    cmt2 = cmt_create();
+    TEST_CHECK(cmt2 != NULL);
+
+    /* Concatenate empty histogram - should handle NULL hist_buckets gracefully */
+    ret = cmt_cat(cmt2, cmt1);
+    TEST_CHECK(ret == 0);
+
+    cmt_destroy(cmt1);
+    cmt_destroy(cmt2);
+}
+
+void test_histogram_mismatched_buckets()
+{
+    int ret;
+    int i;
+    double val;
+    uint64_t ts;
+    struct cmt *cmt1;
+    struct cmt *cmt2;
+    struct cmt_histogram *h1;
+    struct cmt_histogram *h2;
+    struct cmt_histogram_buckets *buckets1;
+    struct cmt_histogram_buckets *buckets2;
+
+    /* Test concatenating histograms with different bucket structures */
+    cmt1 = cmt_create();
+    TEST_CHECK(cmt1 != NULL);
+
+    /* Create histogram with 11 buckets */
+    buckets1 = cmt_histogram_buckets_create(11,
+                                            0.005, 0.01, 0.025, 0.05,
+                                            0.1, 0.25, 0.5, 1.0, 2.5,
+                                            5.0, 10.0);
+    TEST_CHECK(buckets1 != NULL);
+
+    h1 = cmt_histogram_create(cmt1,
+                               "test", "histogram", "mismatch", "Mismatched buckets test",
+                               buckets1,
+                              0, NULL);
+    TEST_CHECK(h1 != NULL);
+
+    ts = cfl_time_now();
+    for (i = 0; i < sizeof(hist_observe_values)/(sizeof(double)); i++) {
+        val = hist_observe_values[i];
+        cmt_histogram_observe(h1, ts, val, 0, NULL);
+    }
+
+    /* Create second context with different bucket structure */
+    cmt2 = cmt_create();
+    TEST_CHECK(cmt2 != NULL);
+
+    /* Create histogram with 5 buckets (different structure) */
+    buckets2 = cmt_histogram_buckets_create(5,
+                                             0.1, 0.5, 1.0, 5.0, 10.0);
+    TEST_CHECK(buckets2 != NULL);
+
+    h2 = cmt_histogram_create(cmt2,
+                               "test", "histogram", "mismatch", "Mismatched buckets test",
+                               buckets2,
+                               0, NULL);
+    TEST_CHECK(h2 != NULL);
+
+    ts = cfl_time_now();
+    for (i = 0; i < sizeof(hist_observe_values)/(sizeof(double)); i++) {
+        val = hist_observe_values[i];
+        cmt_histogram_observe(h2, ts, val, 0, NULL);
+    }
+
+    /* Try to concatenate - should fail due to bucket mismatch */
+    ret = cmt_cat(cmt1, cmt2);
+    TEST_CHECK(ret == -1);
+
+    cmt_destroy(cmt1);
+    cmt_destroy(cmt2);
+}
+
+void test_histogram_empty_to_populated()
+{
+    int ret;
+    int i;
+    double val;
+    uint64_t ts;
+    struct cmt *cmt1;
+    struct cmt *cmt2;
+    struct cmt_histogram *h;
+    struct cmt_histogram_buckets *buckets1;
+    struct cmt_histogram_buckets *buckets2;
+
+    /* Test concatenating empty histogram to one with data */
+    cmt1 = cmt_create();
+    TEST_CHECK(cmt1 != NULL);
+
+    buckets1 = cmt_histogram_buckets_create(11,
+                                             0.005, 0.01, 0.025, 0.05,
+                                             0.1, 0.25, 0.5, 1.0, 2.5,
+                                             5.0, 10.0);
+    TEST_CHECK(buckets1 != NULL);
+
+    /* Create empty histogram (no observations) */
+    h = cmt_histogram_create(cmt1,
+                              "test", "histogram", "empty_to_full", "Empty to populated test",
+                              buckets1,
+                              0, NULL);
+    TEST_CHECK(h != NULL);
+
+    /* Create second context with populated histogram */
+    cmt2 = cmt_create();
+    TEST_CHECK(cmt2 != NULL);
+
+    buckets2 = cmt_histogram_buckets_create(11,
+                                            0.005, 0.01, 0.025, 0.05,
+                                            0.1, 0.25, 0.5, 1.0, 2.5,
+                                            5.0, 10.0);
+    TEST_CHECK(buckets2 != NULL);
+
+    h = cmt_histogram_create(cmt2,
+                              "test", "histogram", "empty_to_full", "Empty to populated test",
+                              buckets2,
+                              0, NULL);
+    TEST_CHECK(h != NULL);
+
+    ts = cfl_time_now();
+    for (i = 0; i < sizeof(hist_observe_values)/(sizeof(double)); i++) {
+        val = hist_observe_values[i];
+        cmt_histogram_observe(h, ts, val, 0, NULL);
+    }
+
+    /* Concatenate empty to populated - should succeed */
+    ret = cmt_cat(cmt1, cmt2);
+    TEST_CHECK(ret == 0);
+
+    cmt_destroy(cmt1);
+    cmt_destroy(cmt2);
+}
+
+void test_histogram_populated_to_empty()
+{
+    int ret;
+    int i;
+    double val;
+    uint64_t ts;
+    struct cmt *cmt1;
+    struct cmt *cmt2;
+    struct cmt_histogram *h;
+    struct cmt_histogram_buckets *buckets1;
+    struct cmt_histogram_buckets *buckets2;
+
+    /* Test concatenating populated histogram to empty one */
+    cmt1 = cmt_create();
+    TEST_CHECK(cmt1 != NULL);
+
+    buckets1 = cmt_histogram_buckets_create(11,
+                                             0.005, 0.01, 0.025, 0.05,
+                                             0.1, 0.25, 0.5, 1.0, 2.5,
+                                             5.0, 10.0);
+    TEST_CHECK(buckets1 != NULL);
+
+    h = cmt_histogram_create(cmt1,
+                              "test", "histogram", "full_to_empty", "Populated to empty test",
+                              buckets1,
+                              0, NULL);
+    TEST_CHECK(h != NULL);
+
+    ts = cfl_time_now();
+    for (i = 0; i < sizeof(hist_observe_values)/(sizeof(double)); i++) {
+        val = hist_observe_values[i];
+        cmt_histogram_observe(h, ts, val, 0, NULL);
+    }
+
+    /* Create second context with empty histogram */
+    cmt2 = cmt_create();
+    TEST_CHECK(cmt2 != NULL);
+
+    buckets2 = cmt_histogram_buckets_create(11,
+                                            0.005, 0.01, 0.025, 0.05,
+                                            0.1, 0.25, 0.5, 1.0, 2.5,
+                                            5.0, 10.0);
+    TEST_CHECK(buckets2 != NULL);
+
+    /* Create empty histogram (no observations) */
+    h = cmt_histogram_create(cmt2,
+                              "test", "histogram", "full_to_empty", "Populated to empty test",
+                              buckets2,
+                              0, NULL);
+    TEST_CHECK(h != NULL);
+
+    /* Concatenate populated to empty - should succeed */
+    ret = cmt_cat(cmt1, cmt2);
+    TEST_CHECK(ret == 0);
+
+    cmt_destroy(cmt1);
+    cmt_destroy(cmt2);
+}
+
 TEST_LIST = {
     {"cat", test_cat},
     {"duplicate_metrics", test_duplicate_metrics},
+    {"histogram_empty_concatenation", test_histogram_empty_concatenation},
+    {"histogram_mismatched_buckets", test_histogram_mismatched_buckets},
+    {"histogram_empty_to_populated", test_histogram_empty_to_populated},
+    {"histogram_populated_to_empty", test_histogram_populated_to_empty},
     { 0 }
 };

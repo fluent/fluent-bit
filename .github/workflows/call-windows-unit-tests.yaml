@@ -59,9 +59,86 @@ jobs:
       PATH: C:\ProgramData\Chocolatey\bin;c:/Program Files/Git/cmd;c:/Windows/system32;C:/Windows/System32/WindowsPowerShell/v1.0;$ENV:WIX/bin;C:/Program Files/CMake/bin;C:\vcpkg;
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
+
+      - name: Set up CMake
+        run: |
+          $cmakeVersion = "${{ matrix.config.cmake_version }}"
+          $cmakeArch = "x86_64"
+          $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v${cmakeVersion}/cmake-${cmakeVersion}-windows-${cmakeArch}.zip"
+          $cmakeZip = "$env:RUNNER_TEMP\cmake-${cmakeVersion}.zip"
+          $cmakeDir = "C:\Program Files\CMake"
+
+          Write-Host "Downloading CMake ${cmakeVersion} from official GitHub releases: ${cmakeUrl}"
+
+          # Download with retry logic
+          $maxRetries = 3
+          $retryCount = 0
+          $downloaded = $false
+
+          while ($retryCount -lt $maxRetries -and -not $downloaded) {
+            try {
+              $retryCount++
+              Write-Host "Attempt $retryCount of $maxRetries"
+              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeZip -UseBasicParsing -ErrorAction Stop
+
+              # Verify file was downloaded and has content
+              if (Test-Path $cmakeZip) {
+                $fileInfo = Get-Item $cmakeZip
+                if ($fileInfo.Length -gt 0) {
+                  Write-Host "Download successful. File size: $($fileInfo.Length) bytes"
+                  $downloaded = $true
+                } else {
+                  Write-Host "Downloaded file is empty, retrying..."
+                  Remove-Item $cmakeZip -Force -ErrorAction SilentlyContinue
+                }
+              }
+            } catch {
+              Write-Host "Download attempt $retryCount failed: $_"
+              if ($retryCount -lt $maxRetries) {
+                Start-Sleep -Seconds 2
+                Remove-Item $cmakeZip -Force -ErrorAction SilentlyContinue
+              } else {
+                throw "Failed to download CMake after $maxRetries attempts: $_"
+              }
+            }
+          }
+
+          # Verify it's a valid ZIP file by checking the header (ZIP files start with PK)
+          $header = [System.IO.File]::ReadAllBytes($cmakeZip)[0..1]
+          if (-not ($header[0] -eq 0x50 -and $header[1] -eq 0x4B)) {
+            Write-Host "Warning: File may not be a valid ZIP. First bytes: $($header[0]), $($header[1])"
+            Write-Host "Expected: 80, 75 (PK in hex)"
+            throw "Downloaded file is not a valid ZIP archive"
+          }
+          Write-Host "ZIP file validation passed (PK header found)"
+
+          Write-Host "Extracting CMake to C:\Program Files"
+          # Remove existing CMake directory if it exists
+          if (Test-Path $cmakeDir) {
+            Remove-Item $cmakeDir -Recurse -Force
+          }
+
+          # Extract ZIP file
+          Expand-Archive -Path $cmakeZip -DestinationPath "C:\Program Files" -Force
+
+          # Rename extracted folder to standard CMake directory name
+          $extractedDir = "C:\Program Files\cmake-${cmakeVersion}-windows-${cmakeArch}"
+          if (Test-Path $extractedDir) {
+            Rename-Item -Path $extractedDir -NewName "CMake" -Force
+          }
+
+          # Verify installation
+          $cmakeExe = "$cmakeDir\bin\cmake.exe"
+          if (Test-Path $cmakeExe) {
+            Write-Host "CMake installed successfully"
+            & $cmakeExe --version
+          } else {
+            throw "CMake installation verification failed: $cmakeExe not found"
+          }
+        shell: pwsh
 
       - name: Get dependencies
         run: |
@@ -70,7 +147,6 @@ jobs:
           Copy-Item -Path C:\WinFlexBison/win_bison.exe C:\WinFlexBison/bison.exe
           Copy-Item -Path C:\WinFlexBison/win_flex.exe C:\WinFlexBison/flex.exe
           echo "C:\WinFlexBison" | Out-File -FilePath $env:GITHUB_PATH -Append
-          choco install cmake.portable --version "${{ matrix.config.cmake_version }}" --force
         env:
           WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
         shell: pwsh
@@ -94,7 +170,7 @@ jobs:
 
       - name: Restore cached packages of vcpkg
         id: cache-unit-test-vcpkg-sources
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             C:\vcpkg\installed
@@ -120,7 +196,7 @@ jobs:
 
       - name: Save packages of vcpkg
         id: save-vcpkg-sources
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             C:\vcpkg\installed
@@ -158,7 +234,7 @@ jobs:
         working-directory: build
 
       - name: Upload unit test binaries
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: windows-unit-tests-${{ matrix.config.arch }}
           path: |

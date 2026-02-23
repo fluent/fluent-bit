@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -54,6 +54,8 @@ struct flb_splunk {
     size_t ingested_auth_header_len;
     int store_token_in_metadata;
     flb_sds_t store_token_key;
+    int add_remote_addr;
+    flb_sds_t remote_addr_key;
 
     struct flb_log_event_encoder log_encoder;
 

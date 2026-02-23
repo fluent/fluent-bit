@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2025 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -150,6 +150,9 @@ struct flb_route {
 
 struct flb_input_routes {
     flb_sds_t input_name;
+    flb_sds_t plugin_name;
+    int has_alias;
+    struct flb_input_instance *instance;
     struct cfl_list processors;
     struct cfl_list routes;
     struct cfl_list _head;

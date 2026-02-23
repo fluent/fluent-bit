@@ -6,9 +6,9 @@ Fluent Bit maintains active security support for a limited set of release lines.
 
 | Version   | Status     | Security Updates Until |
 |-----------|------------|------------------------|
-| **4.2.x** | ✅ Active  | **June 30, 2026**      |
-| **4.1.x** | ✅ Active  | **March 31, 2026**     |
-| **4.0.x** | ✅ Active  | **December 31, 2025**  |
+| **4.2.x** | ✅ Active  | **July 30, 2026**      |
+| **4.1.x** | ✅ Active  | **February 28, 2026**  |
+| **4.0.x** | ❌ EOL     | **December 23, 2025**  |
 | **3.2.x** | ❌ EOL     | —                      |
 | **< 3.2** | ❌ EOL     | —                      |
 
@@ -58,4 +58,4 @@ For third-party CVEs that may impact Fluent Bit, we will post an assessment and 
 
 ---
 
-_Last updated: October 17, 2025_
+_Last updated: December 18, 2025_

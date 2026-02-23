@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -308,6 +308,15 @@ static int in_systemd_collect(struct flb_input_instance *ins,
     }
 
     while ((ret_j = sd_journal_next(ctx->j)) > 0) {
+        /*
+         * Reset the journal data cursor as soon as we advance to the next
+         * entry.  Newer libsystemd releases keep Zstandard decompression
+         * state across data lookups, so carrying over the state from a
+         * previous entry can trigger use-after-free bugs while we fetch the
+         * first fields (for example when retrieving _SYSTEMD_UNIT for
+         * dynamic tags).
+         */
+        sd_journal_restart_data(ctx->j);
         /* If the tag is composed dynamically, gather the Systemd Unit name */
         if (ctx->dynamic_tag) {
             ret = sd_journal_get_data(ctx->j, "_SYSTEMD_UNIT", &data, &length);
@@ -384,6 +393,15 @@ static int in_systemd_collect(struct flb_input_instance *ins,
         /* Pack every field in the entry */
         entries = 0;
         skip_entries = 0;
+
+        /*
+         * Restart the journal data cursor before enumerating the fields for
+         * this entry.  sd_journal_get_data() above may advance the cursor, so
+         * reset it again to ensure enumeration starts from the first field and
+         * that libsystemd does not reuse a stale decompression context.
+         */
+        sd_journal_restart_data(ctx->j);
+
         while (sd_journal_enumerate_data(ctx->j, &data, &length) > 0 &&
                entries < ctx->max_fields) {
             key = (const char *) data;

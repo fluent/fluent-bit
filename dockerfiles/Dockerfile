@@ -13,13 +13,13 @@
 # docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7,linux/s390x" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
 # Set this to the current release version: it gets done so as part of the release.
-ARG RELEASE_VERSION=4.1.2
+ARG RELEASE_VERSION=4.2.3
 
 # For multi-arch builds - assumption is running on an AMD64 host
 FROM multiarch/qemu-user-static:x86_64-arm AS qemu-arm32
 FROM multiarch/qemu-user-static:x86_64-aarch64 AS qemu-arm64
 
-FROM debian:bookworm-slim AS builder-base
+FROM debian:trixie-slim AS builder-base
 
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
@@ -35,8 +35,7 @@ RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 ENV DEBIAN_FRONTEND=noninteractive
 
 # hadolint ignore=DL3008
-RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/sources.list && \
-    apt-get update && \
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -48,7 +47,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     libcurl4-openssl-dev \
     libsasl2-dev \
     pkg-config \
-    libsystemd-dev/bookworm-backports \
+    libsystemd-dev \
     zlib1g-dev \
     libpq-dev \
     postgresql-server-dev-all \
@@ -72,6 +71,10 @@ ARG WAMR_BUILD_TARGET
 ARG EXTRA_CMAKE_FLAGS
 ENV EXTRA_CMAKE_FLAGS=${EXTRA_CMAKE_FLAGS}
 
+# Optional: jemalloc configure flags (e.g., page size). Leave unset to keep defaults.
+ARG FLB_JEMALLOC_OPTIONS
+ENV FLB_JEMALLOC_OPTIONS=${FLB_JEMALLOC_OPTIONS}
+
 # We do not want word splitting for EXTRA_CMAKE_FLAGS in case multiple are defined
 # hadolint ignore=SC2086
 RUN [ -n "${WAMR_BUILD_TARGET:-}" ] && EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DWAMR_BUILD_TARGET=$WAMR_BUILD_TARGET"; \
@@ -89,6 +92,7 @@ RUN [ -n "${WAMR_BUILD_TARGET:-}" ] && EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DW
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_LOG_NO_CONTROL_CHARS=On \
     -DFLB_CHUNK_TRACE="$FLB_CHUNK_TRACE" \
+    -DFLB_JEMALLOC_OPTIONS="$FLB_JEMALLOC_OPTIONS" \
     $EXTRA_CMAKE_FLAGS \
     ..
 
@@ -114,7 +118,7 @@ RUN /fluent-bit/bin/fluent-bit -J > /fluent-bit/etc/schema.json
 
 # Simple example of how to properly extract packages for reuse in distroless
 # Taken from: https://github.com/GoogleContainerTools/distroless/issues/863
-FROM debian:bookworm-slim AS deb-extractor
+FROM debian:trixie-slim AS deb-extractor
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 
@@ -122,20 +126,20 @@ COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 # We also include some extra handling for the status files that some tooling uses for scanning, etc.
 WORKDIR /tmp
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/sources.list && \
-    apt-get update && \
+RUN apt-get update && \
     apt-get download \
-    libssl3 \
-    libcurl4 \
+    libssl3t64 \
+    libcurl4t64 \
     libnghttp2-14 \
+    libnghttp3-9 \
     librtmp1 \
-    libssh2-1 \
-    libpsl5 \
+    libssh2-1t64 \
+    libpsl5t64 \
     libbrotli1 \
     libsasl2-2 \
     pkg-config \
     libpq5 \
-    libsystemd0/bookworm-backports \
+    libsystemd0 \
     zlib1g \
     ca-certificates \
     libatomic1 \
@@ -149,19 +153,20 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     libk5crypto3 \
     libcom-err2 \
     libkrb5support0 \
-    libgnutls30 \
+    libgnutls30t64 \
     libkeyutils1 \
     libp11-kit0 \
     libidn2-0 \
-    libunistring2 \
+    libunistring5 \
     libtasn1-6 \
-    libnettle8 \
-    libhogweed6 \
+    libnettle8t64 \
+    libhogweed6t64 \
     libgmp10 \
     libffi8 \
     liblzma5 \
     libyaml-0-2 \
     libcap2 \
+    libldap2 \
     && \
     mkdir -p /dpkg/var/lib/dpkg/status.d/ && \
     for deb in *.deb; do \
@@ -177,7 +182,7 @@ RUN find /dpkg/ -type d -empty -delete && \
 
 # We want latest at time of build
 # hadolint ignore=DL3006
-FROM gcr.io/distroless/cc-debian12 AS production
+FROM gcr.io/distroless/cc-debian13 AS production
 ARG RELEASE_VERSION
 ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
 LABEL description="Fluent Bit multi-architecture container image" \
@@ -208,7 +213,7 @@ EXPOSE 2020
 ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
 CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
 
-FROM debian:bookworm-slim AS debug
+FROM debian:trixie-slim AS debug
 ARG RELEASE_VERSION
 ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
 LABEL description="Fluent Bit multi-architecture debug container image" \
@@ -229,25 +234,26 @@ COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 ENV DEBIAN_FRONTEND=noninteractive
 
 # hadolint ignore=DL3008
-RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/sources.list && \
-    apt-get update && \
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    libssl3 \
-    libcurl4 \
+    libssl3t64 \
+    libcurl4t64 \
     libnghttp2-14 \
+    libnghttp3-9 \
     librtmp1 \
-    libssh2-1 \
-    libpsl5 \
+    libssh2-1t64 \
+    libpsl5t64 \
     libbrotli1 \
     libsasl2-2 \
     pkg-config \
     libpq5 \
-    libsystemd0/bookworm-backports \
+    libsystemd0 \
     zlib1g \
     ca-certificates \
     libatomic1 \
     libgcrypt20 \
     libyaml-0-2 \
+    libldap2 \
     bash gdb valgrind build-essential  \
     git bash-completion vim tmux jq \
     dnsutils iputils-ping iputils-arping iputils-tracepath iputils-clockdiff \
@@ -256,7 +262,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/
     openssl \
     htop atop strace iotop sysstat ncdu logrotate hdparm pciutils psmisc tree pv \
     make tar flex bison \
-    libssl-dev libsasl2-dev libsystemd-dev/bookworm-backports zlib1g-dev libpq-dev libyaml-dev postgresql-server-dev-all \
+    libssl-dev libsasl2-dev libsystemd-dev zlib1g-dev libpq-dev libyaml-dev postgresql-server-dev-all \
     && apt-get satisfy -y cmake "cmake (<< 4.0)" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

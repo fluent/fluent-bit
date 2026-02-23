@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_sds.h>
 #include <monkey/mk_core.h>
 #include <cfl/cfl.h>
+
+struct flb_config;
 
 /* Configuration types */
 #define FLB_CONFIG_MAP_STR         0    /* string */

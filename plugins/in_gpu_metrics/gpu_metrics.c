@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2025 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -168,34 +168,36 @@ static int in_gpu_exit(void *data, struct flb_config *config)
 
 static struct flb_config_map config_map[] = {
     {
-     FLB_CONFIG_MAP_TIME, "scrape_interval", "5",
-     0, FLB_TRUE, offsetof(struct in_gpu_metrics, scrape_interval),
-     "Scrape interval for GPU metrics"
-    },
-    {
-     FLB_CONFIG_MAP_STR, "path_sysfs", "/sys",
-     0, FLB_TRUE, offsetof(struct in_gpu_metrics, path_sysfs),
-     "Path to sysfs"
+     FLB_CONFIG_MAP_STR, "cards_exclude", "",
+     0, FLB_TRUE, offsetof(struct in_gpu_metrics, cards_exclude),
+     "Exclude GPU cards by ID. Accepts '*' for all, comma-separated IDs "
+     "(e.g., '0,1,2'), or ranges (e.g., '0-2')."
     },
     {
      FLB_CONFIG_MAP_STR, "cards_include", "*",
      0, FLB_TRUE, offsetof(struct in_gpu_metrics, cards_include),
-     "Cards to include"
-    },
-    {
-     FLB_CONFIG_MAP_STR, "cards_exclude", "",
-     0, FLB_TRUE, offsetof(struct in_gpu_metrics, cards_exclude),
-     "Cards to exclude"
+     "Include GPU cards by ID. Accepts '*' for all, comma-separated IDs "
+     "(e.g., '0,1,2'), or ranges (e.g., '0-2')."
     },
     {
      FLB_CONFIG_MAP_BOOL, "enable_power", "true",
      0, FLB_TRUE, offsetof(struct in_gpu_metrics, enable_power),
-     "Enable power metrics"
+     "Enable collection of GPU power consumption metrics (gpu_power_watts)."
     },
     {
      FLB_CONFIG_MAP_BOOL, "enable_temperature", "true",
      0, FLB_TRUE, offsetof(struct in_gpu_metrics, enable_temperature),
-     "Enable temperature metrics"
+     "Enable collection of GPU temperature metrics (gpu_temperature_celsius)."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "path_sysfs", "/sys",
+     0, FLB_TRUE, offsetof(struct in_gpu_metrics, path_sysfs),
+     "sysfs mount point."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "scrape_interval", "5",
+     0, FLB_TRUE, offsetof(struct in_gpu_metrics, scrape_interval),
+     "Scrape interval to collect GPU metrics."
     },
     {0}
 };

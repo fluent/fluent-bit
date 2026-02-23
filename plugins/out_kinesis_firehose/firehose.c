@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_utils.h>
 
 #include <fluent-bit/aws/flb_aws_compress.h>
@@ -288,6 +289,12 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     ctx->firehose_client->proxy = NULL;
     ctx->firehose_client->static_headers = &content_type_header;
     ctx->firehose_client->static_headers_len = 1;
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    if (flb_http_client_debug_setup(ctx->firehose_client->http_cb_ctx, &ins->properties) < 0) {
+        flb_plg_error(ctx->ins, "AWS HTTP client debug initialization error");
+        goto error;
+    }
+#endif
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
                                                         ctx->port, FLB_IO_TLS,
@@ -314,10 +321,10 @@ error:
     return -1;
 }
 
-struct flush *new_flush_buffer()
+struct flush *new_flush_buffer(struct flb_firehose *ctx)
 {
     struct flush *buf;
-
+    int ret;
 
     buf = flb_calloc(1, sizeof(struct flush));
     if (!buf) {
@@ -341,6 +348,18 @@ struct flush *new_flush_buffer()
     }
     buf->events_capacity = MAX_EVENTS_PER_PUT;
 
+    /* Initialize aggregation buffer if simple_aggregation is enabled */
+    buf->agg_buf_initialized = FLB_FALSE;
+    if (ctx->simple_aggregation) {
+        ret = flb_aws_aggregation_init(&buf->agg_buf, MAX_EVENT_SIZE);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to initialize aggregation buffer");
+            flush_destroy(buf);
+            return NULL;
+        }
+        buf->agg_buf_initialized = FLB_TRUE;
+    }
+
     return buf;
 }
 
@@ -356,7 +375,7 @@ static void cb_firehose_flush(struct flb_event_chunk *event_chunk,
     (void) i_ins;
     (void) config;
 
-    buf = new_flush_buffer();
+    buf = new_flush_buffer(ctx);
     if (!buf) {
         flb_plg_error(ctx->ins, "Failed to construct flush buffer");
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -507,6 +526,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_firehose, profile),
      "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
      "$HOME/.aws/ directory."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "simple_aggregation", "false",
+     0, FLB_TRUE, offsetof(struct flb_firehose, simple_aggregation),
+     "Enable simple aggregation to combine multiple records into single API calls. "
+     "This reduces the number of requests and can improve throughput."
     },
     /* EOF */
     {0}

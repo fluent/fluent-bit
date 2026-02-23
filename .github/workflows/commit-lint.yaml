@@ -1,0 +1,35 @@
+name: Commit Prefix Lint
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches:
+      - master
+
+jobs:
+  commit-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 50   # needed to see ancestor commits
+
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}:origin/${{ github.event.pull_request.base.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install gitpython
+
+      - name: Run commit prefix checker
+        run: |
+          python .github/scripts/commit_prefix_check.py

@@ -116,6 +116,7 @@ endif()
 set(src
   ${src}
   opentelemetry/flb_opentelemetry_logs.c
+  opentelemetry/flb_opentelemetry_metrics.c
   opentelemetry/flb_opentelemetry_traces.c
   opentelemetry/flb_opentelemetry_utils.c
 )
@@ -161,6 +162,7 @@ if(FLB_TLS)
     ${src}
     "tls/flb_tls.c"
     "flb_oauth2.c"
+    "flb_oauth2_jwt.c"
     )
 
   # Make sure our output targets links to the TLS library
@@ -363,6 +365,11 @@ if(FLB_UNICODE_ENCODER)
   add_subdirectory(simdutf)
 endif()
 
+# ripser
+if(FLB_RIPSER)
+  add_subdirectory(ripser)
+endif()
+
 # WAMRC compiler
 if(FLB_WAMRC)
   add_subdirectory(wamrc)
@@ -447,6 +454,16 @@ set(FLB_DEPS
   ${FLB_DEPS}
   simdutf-static
   flb-simdutf-connector-static
+  )
+endif()
+
+
+# Ripser
+if(FLB_RIPSER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  ripser-static
+  flb-ripser-wrapper-static
   )
 endif()
 

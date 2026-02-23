@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -153,7 +153,7 @@ int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list
     int len;
     int ret;
     FILE *f;
-    char line[512];
+    char line[2048];
     char real_path[2048];
 
     mk_list_init(list);

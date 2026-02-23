@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,12 +26,14 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_oauth2_jwt.h>
 
 #include <monkey/monkey.h>
 #include <fluent-bit/http_server/flb_http_server.h>
 
 #define HTTP_BUFFER_MAX_SIZE    "4M"
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
+#define REMOTE_ADDR_KEY         "REMOTE_ADDR"
 
 struct flb_http {
     int successful_response_code;
@@ -47,9 +49,15 @@ struct flb_http {
 
     struct flb_input_instance *ins;
 
+    int add_remote_addr;
+    const char *remote_addr_key;
+
     /* New gen HTTP server */
     int enable_http2;
     struct flb_http_server http_server;
+
+    struct flb_oauth2_jwt_cfg oauth2_cfg;
+    struct flb_oauth2_jwt_ctx *oauth2_ctx;
 
     /* Legacy HTTP server */
     struct flb_downstream *downstream; /* Client manager */

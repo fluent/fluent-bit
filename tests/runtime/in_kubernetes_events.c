@@ -303,6 +303,77 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
     return ctx;
 }
 
+#ifdef FLB_HAVE_SQLDB
+/* Create test context with additional config options for config parameter testing */
+static struct test_ctx *test_ctx_create_with_config(struct flb_lib_out_cb *data,
+                                                    const char *db_sync,
+                                                    const char *db_locking,
+                                                    const char *db_journal_mode)
+{
+    int i_ffd;
+    int o_ffd;
+    int ret;
+    struct test_ctx *ctx = NULL;
+    char kube_url[512] = {0};
+
+    ctx = flb_calloc(1, sizeof(struct test_ctx));
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("flb_calloc failed");
+        flb_errno();
+        return NULL;
+    }
+
+    /* Service config */
+    ctx->flb = flb_create();
+    flb_service_set(ctx->flb,
+                    "Flush", "0.200000000",
+                    "Grace", "3",
+                    "Log_Level", "debug",
+                    NULL);
+
+    /* Input */
+    i_ffd = flb_input(ctx->flb, (char *) "kubernetes_events", NULL);
+    TEST_CHECK(i_ffd >= 0);
+    ctx->i_ffd = i_ffd;
+
+    sprintf(kube_url, "http://%s:%d", KUBE_API_HOST, KUBE_API_PORT);
+    ret = flb_input_set(ctx->flb, i_ffd,
+                        "kube_url", kube_url,
+                        "kube_token_file", KUBE_TOKEN_FILE,
+                        "kube_retention_time", "365000d",
+                        "tls", "off",
+                        "interval_sec", "1",
+                        "interval_nsec", "0",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Set optional config parameters if provided */
+    if (db_sync) {
+        ret = flb_input_set(ctx->flb, i_ffd, "db.sync", db_sync, NULL);
+        TEST_CHECK(ret == 0);
+    }
+    if (db_locking) {
+        ret = flb_input_set(ctx->flb, i_ffd, "db.locking", db_locking, NULL);
+        TEST_CHECK(ret == 0);
+    }
+    if (db_journal_mode) {
+        ret = flb_input_set(ctx->flb, i_ffd, "db.journal_mode", db_journal_mode, NULL);
+        TEST_CHECK(ret == 0);
+    }
+
+    /* Output */
+    o_ffd = flb_output(ctx->flb, (char *) "lib", (void *) data);
+    ctx->o_ffd = o_ffd;
+
+    flb_output_set(ctx->flb, ctx->o_ffd,
+                   "match", "*",
+                   "format", "json",
+                   NULL);
+
+    return ctx;
+}
+#endif
+
 static void test_ctx_destroy(struct test_ctx *ctx)
 {
     TEST_CHECK(ctx != NULL);
@@ -444,10 +515,119 @@ void flb_test_events_with_chunkedrecv()
     test_ctx_destroy(ctx);
 }
 
+#ifdef FLB_HAVE_SQLDB
+/* Test valid db.sync values */
+void flb_test_config_db_sync_values()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    int ret;
+    const char *sync_values[] = {"extra", "full", "normal", "off", NULL};
+    int i;
+
+    cb_data.cb = NULL;
+    cb_data.data = NULL;
+
+    for (i = 0; sync_values[i] != NULL; i++) {
+        ctx = test_ctx_create_with_config(&cb_data,
+                                          sync_values[i],  /* db.sync */
+                                          NULL,            /* db.locking */
+                                          NULL);           /* db.journal_mode */
+        if (!TEST_CHECK(ctx != NULL)) {
+            TEST_MSG("test_ctx_create_with_config failed for db.sync=%s", sync_values[i]);
+            continue;
+        }
+
+        ret = flb_start(ctx->flb);
+        TEST_CHECK(ret == 0);
+        if (ret != 0) {
+            TEST_MSG("flb_start failed for db.sync=%s", sync_values[i]);
+        }
+
+        flb_stop(ctx->flb);
+        flb_destroy(ctx->flb);
+        flb_free(ctx);
+    }
+}
+
+/* Test valid db.journal_mode values */
+void flb_test_config_db_journal_mode_values()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    int ret;
+    const char *journal_modes[] = {"DELETE", "TRUNCATE", "PERSIST", "MEMORY", "WAL", "OFF", NULL};
+    int i;
+
+    cb_data.cb = NULL;
+    cb_data.data = NULL;
+
+    for (i = 0; journal_modes[i] != NULL; i++) {
+        ctx = test_ctx_create_with_config(&cb_data,
+                                          NULL,              /* db.sync */
+                                          NULL,              /* db.locking */
+                                          journal_modes[i]); /* db.journal_mode */
+        if (!TEST_CHECK(ctx != NULL)) {
+            TEST_MSG("test_ctx_create_with_config failed for db.journal_mode=%s", journal_modes[i]);
+            continue;
+        }
+
+        ret = flb_start(ctx->flb);
+        TEST_CHECK(ret == 0);
+        if (ret != 0) {
+            TEST_MSG("flb_start failed for db.journal_mode=%s", journal_modes[i]);
+        }
+
+        flb_stop(ctx->flb);
+        flb_destroy(ctx->flb);
+        flb_free(ctx);
+    }
+}
+
+/* Test valid db.locking values */
+void flb_test_config_db_locking_values()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    int ret;
+    const char *locking_values[] = {"true", "false", NULL};
+    int i;
+
+    cb_data.cb = NULL;
+    cb_data.data = NULL;
+
+    for (i = 0; locking_values[i] != NULL; i++) {
+        ctx = test_ctx_create_with_config(&cb_data,
+                                          NULL,              /* db.sync */
+                                          locking_values[i], /* db.locking */
+                                          NULL);             /* db.journal_mode */
+        if (!TEST_CHECK(ctx != NULL)) {
+            TEST_MSG("test_ctx_create_with_config failed for db.locking=%s", locking_values[i]);
+            continue;
+        }
+
+        ret = flb_start(ctx->flb);
+        TEST_CHECK(ret == 0);
+        if (ret != 0) {
+            TEST_MSG("flb_start failed for db.locking=%s", locking_values[i]);
+        }
+
+        flb_stop(ctx->flb);
+        flb_destroy(ctx->flb);
+        flb_free(ctx);
+    }
+}
+#endif
+
 TEST_LIST = {
     {"events_v1_with_lastTimestamp", flb_test_events_v1_with_lastTimestamp},
     {"events_v1_with_creationTimestamp", flb_test_events_v1_with_creationTimestamp},
     //{"events_v1_with_chunkedrecv", flb_test_events_with_chunkedrecv},
+#ifdef FLB_HAVE_SQLDB
+    {"config_db_sync_values", flb_test_config_db_sync_values},
+    {"config_db_journal_mode_values", flb_test_config_db_journal_mode_values},
+    {"config_db_locking_values", flb_test_config_db_locking_values},
+#endif
     {NULL, NULL}
 };
 

@@ -22,6 +22,7 @@ concurrency: unstable-build-release
 jobs:
   # This job provides this metadata for the other jobs to use.
   unstable-build-get-meta:
+    if: github.repository_owner == 'fluent'
     name: Get metadata to add to build
     runs-on: ubuntu-latest
     environment: unstable
@@ -107,7 +108,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository, always latest for action
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       # Set up the list of target to build so we can pass the JSON to the reusable job
       - uses: ./.github/actions/generate-package-build-matrix
@@ -169,11 +170,11 @@ jobs:
     steps:
       # Required to make a release later
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Download all artefacts
         continue-on-error: true
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           path: artifacts/
 

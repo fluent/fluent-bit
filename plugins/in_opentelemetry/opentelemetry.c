@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -200,7 +200,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "http2", "true",
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, enable_http2),
-     NULL
+     "Enable HTTP/2 protocol support for the OpenTelemetry receiver"
     },
 
     {
@@ -211,7 +211,7 @@ static struct flb_config_map config_map[] = {
      "environments"
     },
     {
-     FLB_CONFIG_MAP_BOOL, "encode_profiles_as_log", "true",
+     FLB_CONFIG_MAP_BOOL, "encode_profiles_as_log", "false",
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, encode_profiles_as_log),
      "Encode profiles received as text and ingest them in the logging pipeline"
     },
@@ -219,19 +219,19 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, buffer_max_size),
-     ""
+     "Maximum size of the HTTP request buffer"
     },
 
     {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", HTTP_BUFFER_CHUNK_SIZE,
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, buffer_chunk_size),
-     ""
+     "Size of each buffer chunk allocated for HTTP requests"
     },
 
     {
      FLB_CONFIG_MAP_STR, "tag_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, tag_key),
-     ""
+     "Record accessor key to use for generating tags from incoming records"
     },
     {
      FLB_CONFIG_MAP_BOOL, "tag_from_uri", "true",
@@ -252,6 +252,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "logs_metadata_key", "otlp",
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, logs_metadata_key),
+     "Key name to store OpenTelemetry logs metadata in the record"
     },
     {
      FLB_CONFIG_MAP_STR, "logs_body_key", NULL,

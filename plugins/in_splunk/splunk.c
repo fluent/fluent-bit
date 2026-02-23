@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -217,19 +217,19 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "http2", "true",
      0, FLB_TRUE, offsetof(struct flb_splunk, enable_http2),
-     NULL
+     "Enable HTTP/2 support"
     },
 
     {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,
      0, FLB_TRUE, offsetof(struct flb_splunk, buffer_max_size),
-     ""
+     "Set the maximum size of buffer"
     },
 
     {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", HTTP_BUFFER_CHUNK_SIZE,
      0, FLB_TRUE, offsetof(struct flb_splunk, buffer_chunk_size),
-     ""
+     "Set the initial buffer size to store incoming data"
     },
 
     {
@@ -247,7 +247,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "store_token_in_metadata", "true",
      0, FLB_TRUE, offsetof(struct flb_splunk, store_token_in_metadata),
-     "Store Splunk HEC tokens in matadata. If set as false, they will be stored into records."
+     "Store Splunk HEC tokens in metadata. If set as false, they will be stored into records."
     },
 
     {
@@ -259,7 +259,17 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "tag_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_splunk, tag_key),
-     ""
+     "Set a record key to specify the tag of the record"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "add_remote_addr", "false",
+     0, FLB_TRUE, offsetof(struct flb_splunk, add_remote_addr),
+     "Inject a remote address using the X-Forwarded-For header or connection address"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "remote_addr_key", "remote_addr",
+     0, FLB_TRUE, offsetof(struct flb_splunk, remote_addr_key),
+     "Set a record key for storing the remote address"
     },
 
 

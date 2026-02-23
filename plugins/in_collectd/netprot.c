@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -260,8 +260,8 @@ int netprot_to_msgpack(char *buf, int len, struct mk_list *tdb,
              part_type == PART_INTERVAL ||
              part_type == PART_INTERVAL_HR) &&
             size < sizeof(uint64_t)) {
-            flb_error("[in_collectd] data truncated (%i < %i)",
-                        size, sizeof(uint64_t));
+            flb_error("[in_collectd] data truncated (%i < %zu)",
+                      size, sizeof(uint64_t));
 
             return -1;
         }

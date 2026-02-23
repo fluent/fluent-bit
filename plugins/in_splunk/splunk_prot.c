@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,10 +20,14 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_http_common.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/flb_connection.h>
+#include <fluent-bit/http_server/flb_http_server.h>
+#include <string.h>
 
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
@@ -155,6 +159,152 @@ static int send_json_message_response(struct splunk_conn *conn, int http_status,
     return 0;
 }
 
+/*
+ * We use two backends for HTTP parsing and it depends on the version of the
+ * protocol:
+ *
+ * http/1.x: we use Monkey HTTP parser: struct mk_http_session.parser
+ */
+static int http_header_lookup(int version, void *ptr, char *key,
+                              char **val, size_t *val_len)
+{
+    int key_len;
+
+    /* HTTP/1.1 */
+    struct mk_list *head;
+    struct mk_http_session *session;
+    struct mk_http_request *request_11;
+    struct mk_http_header *header;
+
+    /* HTTP/2.0 */
+    char *value;
+    struct flb_http_request *request_20;
+
+    if (!key) {
+        return -1;
+    }
+
+    key_len = strlen(key);
+    if (key_len <= 0) {
+        return -1;
+    }
+
+    if (version <= HTTP_PROTOCOL_VERSION_11) {
+        if (!ptr) {
+            return -1;
+        }
+
+        request_11 = (struct mk_http_request *) ptr;
+        session = request_11->session;
+        mk_list_foreach(head, &session->parser.header_list) {
+            header = mk_list_entry(head, struct mk_http_header, _head);
+            if (header->key.len == key_len &&
+                strncasecmp(header->key.data, key, key_len) == 0) {
+                *val = header->val.data;
+                *val_len = header->val.len;
+                return 0;
+            }
+        }
+        return -1;
+    }
+    else if (version == HTTP_PROTOCOL_VERSION_20) {
+        request_20 = ptr;
+        if (!request_20) {
+            return -1;
+        }
+
+        value = flb_http_request_get_header(request_20, key);
+        if (!value) {
+            return -1;
+        }
+
+        *val = value;
+        *val_len = strlen(value);
+        return 0;
+    }
+
+    return -1;
+}
+
+static void extract_xff_value(const char *value, size_t value_len,
+                              const char **out_value, size_t *out_len)
+{
+    const char *start;
+    const char *end;
+    const char *comma;
+
+    *out_value = NULL;
+    *out_len = 0;
+
+    if (value == NULL || value_len == 0) {
+        return;
+    }
+
+    start = value;
+    end = value + value_len;
+
+    while (start < end && (*start == ' ' || *start == '\t')) {
+        start++;
+    }
+
+    comma = memchr(start, ',', end - start);
+    if (comma != NULL) {
+        end = comma;
+    }
+
+    while (end > start && (end[-1] == ' ' || end[-1] == '\t')) {
+        end--;
+    }
+
+    if (end > start) {
+        *out_value = start;
+        *out_len = end - start;
+    }
+}
+
+static int extract_remote_address(const char *xff_value,
+                                  size_t xff_value_len,
+                                  struct flb_connection *connection,
+                                  char **out,
+                                  size_t *out_len)
+{
+    const char *value = NULL;
+    size_t len = 0;
+
+    extract_xff_value(xff_value, xff_value_len, &value, &len);
+
+    if (value == NULL && connection != NULL) {
+        value = flb_connection_get_remote_address(connection);
+        if (value != NULL) {
+            len = strlen(value);
+        }
+    }
+
+    if (value == NULL || len == 0) {
+        return -1;
+    }
+
+    *out = value;
+    *out_len = len;
+    return 0;
+}
+
+static int append_remote_addr(struct flb_splunk *ctx,
+                              const char *addr,
+                              size_t addr_len)
+{
+    if (ctx->add_remote_addr != FLB_TRUE ||
+        ctx->remote_addr_key == NULL ||
+        addr == NULL || addr_len == 0) {
+        return FLB_EVENT_ENCODER_SUCCESS;
+    }
+
+    return flb_log_event_encoder_append_body_values(
+        &ctx->log_encoder,
+        FLB_LOG_EVENT_CSTRING_VALUE(ctx->remote_addr_key),
+        FLB_LOG_EVENT_STRING_VALUE(addr, addr_len));
+}
+
 /* implements functionality to get tag from key in record */
 static flb_sds_t tag_key(struct flb_splunk *ctx, msgpack_object *map)
 {
@@ -191,7 +341,10 @@ static flb_sds_t tag_key(struct flb_splunk *ctx, msgpack_object *map)
  * Process a raw text payload for Splunk HEC requests, uses the delimited character to split records,
  * return the number of processed bytes
  */
-static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char *buf, size_t size)
+static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag,
+                                    char *buf, size_t size,
+                                    const char *remote_addr,
+                                    size_t remote_addr_len)
 {
     int ret = FLB_EVENT_ENCODER_SUCCESS;
 
@@ -237,6 +390,12 @@ static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char 
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = append_remote_addr(ctx,
+                                 remote_addr,
+                                 remote_addr_len);
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
     }
 
@@ -267,7 +426,10 @@ static int process_raw_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char 
 
 static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *record,
                                    flb_sds_t tag, flb_sds_t tag_from_record,
-                                   struct flb_time tm) {
+                                   struct flb_time tm,
+                                   const char *remote_addr,
+                                   size_t remote_addr_len)
+{
     int ret;
     int i;
     msgpack_object_kv *kv;
@@ -280,13 +442,25 @@ static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *recor
                 &tm);
     }
 
-    if (ctx->store_token_in_metadata == FLB_TRUE) {
-        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-            ret = flb_log_event_encoder_set_body_from_msgpack_object(
-                    &ctx->log_encoder,
-                    record);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        /* Always build body by appending map entries so we can extend it */
+        if (record->type == MSGPACK_OBJECT_MAP) {
+            kv = record->via.map.ptr;
+            for (i = 0; i < record->via.map.size &&
+                         ret == FLB_EVENT_ENCODER_SUCCESS; i++) {
+                ret = flb_log_event_encoder_append_body_values(
+                        &ctx->log_encoder,
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
+            }
         }
+        else {
+            ret = flb_log_event_encoder_set_body_from_msgpack_object(&ctx->log_encoder,
+                                                                     record);
+        }
+    }
 
+    if (ctx->store_token_in_metadata == FLB_TRUE) {
         if (ctx->ingested_auth_header != NULL) {
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_append_metadata_values(
@@ -299,15 +473,6 @@ static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *recor
     }
     else {
         if (ctx->ingested_auth_header != NULL) {
-            /* iterate through the old record map to create the appendable new buffer */
-            kv = record->via.map.ptr;
-            for(i = 0; i < record->via.map.size && ret == FLB_EVENT_ENCODER_SUCCESS; i++) {
-                ret = flb_log_event_encoder_append_body_values(
-                        &ctx->log_encoder,
-                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].key),
-                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&kv[i].val));
-            }
-
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_append_body_values(
                     &ctx->log_encoder,
@@ -316,13 +481,10 @@ static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *recor
                                                ctx->ingested_auth_header_len));
             }
         }
-        else {
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                ret = flb_log_event_encoder_set_body_from_msgpack_object(
-                        &ctx->log_encoder,
-                        record);
-            }
-        }
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = append_remote_addr(ctx, remote_addr, remote_addr_len);
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -358,7 +520,10 @@ static void process_flb_log_append(struct flb_splunk *ctx, msgpack_object *recor
     }
 }
 
-static int process_json_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char *buf, size_t size)
+static int process_json_payload_pack(struct flb_splunk *ctx, flb_sds_t tag,
+                                     char *buf, size_t size,
+                                     const char *remote_addr,
+                                     size_t remote_addr_len)
 {
     size_t off = 0;
     msgpack_unpacked result;
@@ -378,7 +543,9 @@ static int process_json_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char
                 tag_from_record = tag_key(ctx, &result.data);
             }
 
-            process_flb_log_append(ctx, &result.data, tag, tag_from_record, tm);
+            process_flb_log_append(ctx, &result.data, tag, tag_from_record, tm,
+                                   remote_addr,
+                                   remote_addr_len);
 
             flb_log_event_encoder_reset(&ctx->log_encoder);
         }
@@ -393,7 +560,9 @@ static int process_json_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char
                     tag_from_record = tag_key(ctx, &record);
                 }
 
-                process_flb_log_append(ctx, &record, tag, tag_from_record, tm);
+                process_flb_log_append(ctx, &record, tag, tag_from_record, tm,
+                                       remote_addr,
+                                       remote_addr_len);
 
                 /* TODO : Optimize this
                  *
@@ -423,7 +592,9 @@ static int process_json_payload_pack(struct flb_splunk *ctx, flb_sds_t tag, char
 }
 
 static ssize_t parse_hec_payload_json(struct flb_splunk *ctx, flb_sds_t tag,
-                                      char *payload, size_t size)
+                                      char *payload, size_t size,
+                                      const char *remote_addr,
+                                      size_t remote_addr_len)
 {
     int ret;
     int out_size;
@@ -452,7 +623,8 @@ static ssize_t parse_hec_payload_json(struct flb_splunk *ctx, flb_sds_t tag,
     }
 
     /* Process the packaged JSON and return the last byte used */
-    process_json_payload_pack(ctx, tag, pack, out_size);
+    process_json_payload_pack(ctx, tag, pack, out_size,
+                              remote_addr, remote_addr_len);
     flb_free(pack);
 
     return 0;
@@ -510,22 +682,28 @@ static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *
 }
 
 static int handle_hec_payload(struct flb_splunk *ctx, int content_type,
-                              flb_sds_t tag, char *buf, size_t size)
+                              flb_sds_t tag, char *buf, size_t size,
+                              const char *remote_addr,
+                              size_t remote_addr_len)
 {
     int ret = -1;
 
     if (content_type == HTTP_CONTENT_JSON) {
-        ret = parse_hec_payload_json(ctx, tag, buf, size);
+        ret = parse_hec_payload_json(ctx, tag, buf, size,
+                                       remote_addr, remote_addr_len);
     }
     else if (content_type == HTTP_CONTENT_TEXT) {
-        ret = process_raw_payload_pack(ctx, tag, buf, size);
+        ret = process_raw_payload_pack(ctx, tag, buf, size,
+                                       remote_addr, remote_addr_len);
     }
     else if (content_type == HTTP_CONTENT_UNKNOWN) {
         if (buf[0] == '{') {
-            ret = parse_hec_payload_json(ctx, tag, buf, size);
+            ret = parse_hec_payload_json(ctx, tag, buf, size,
+                                         remote_addr, remote_addr_len);
         }
         else {
-            ret = process_raw_payload_pack(ctx, tag, buf, size);
+            ret = process_raw_payload_pack(ctx, tag, buf, size,
+                                           remote_addr, remote_addr_len);
         }
     }
 
@@ -535,7 +713,9 @@ static int handle_hec_payload(struct flb_splunk *ctx, int content_type,
 static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
                                flb_sds_t tag,
                                struct mk_http_session *session,
-                               struct mk_http_request *request)
+                               struct mk_http_request *request,
+                               const char *remote_addr,
+                               size_t remote_addr_len)
 {
     int i = 0;
     int ret = 0;
@@ -603,11 +783,13 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
             return -1;
         }
 
-        ret = handle_hec_payload(ctx, type, tag, gz_data, gz_size);
+        ret = handle_hec_payload(ctx, type, tag, gz_data, gz_size,
+                                 remote_addr, remote_addr_len);
         flb_free(gz_data);
     }
     else {
-        ret = handle_hec_payload(ctx, type, tag, request->data.data, request->data.len);
+        ret = handle_hec_payload(ctx, type, tag, request->data.data, request->data.len,
+                                 remote_addr, remote_addr_len);
     }
 
     return ret;
@@ -616,7 +798,9 @@ static int process_hec_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
 static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *conn,
                                    flb_sds_t tag,
                                    struct mk_http_session *session,
-                                   struct mk_http_request *request)
+                                   struct mk_http_request *request,
+                                   const char *remote_addr,
+                                   size_t remote_addr_len)
 {
     int ret = -1;
     struct mk_http_header *header;
@@ -647,7 +831,8 @@ static int process_hec_raw_payload(struct flb_splunk *ctx, struct splunk_conn *c
     }
 
     /* Always handle as raw type of payloads here */
-    ret = process_raw_payload_pack(ctx, tag, request->data.data, request->data.len);
+    ret = process_raw_payload_pack(ctx, tag, request->data.data, request->data.len,
+                                   remote_addr, remote_addr_len);
 
     return ret;
 }
@@ -691,6 +876,11 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
     off_t diff;
     flb_sds_t tag;
     struct mk_http_header *header;
+    char *hval = NULL;
+    size_t hlen = 0;
+    const char *peer;
+    const char *remote_addr = NULL;
+    size_t remote_addr_len = 0;
 
     if (request->uri.data[0] != '/') {
         send_response(conn, 400, "error: invalid request\n");
@@ -835,13 +1025,28 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
         request->data.len = out_chunked_size;
     }
 
+    if (http_header_lookup(HTTP_PROTOCOL_VERSION_11, request,
+                           SPLUNK_XFF_HEADER, &hval, &hlen) == 0) {
+        extract_remote_address(hval, hlen, conn->connection,
+                               (char **) &remote_addr,
+                               &remote_addr_len);
+    }
+    if (remote_addr == NULL || remote_addr_len == 0) {
+        peer = flb_connection_get_remote_address(conn->connection);
+        if (peer != NULL) {
+            remote_addr = peer;
+            remote_addr_len = strlen(peer);
+        }
+    }
+
     /* Handle every ingested payload cleanly */
     flb_log_event_encoder_reset(&ctx->log_encoder);
 
     if (request->method == MK_METHOD_POST) {
         if (strcasecmp(uri, "/services/collector/raw/1.0") == 0 ||
             strcasecmp(uri, "/services/collector/raw") == 0) {
-            ret = process_hec_raw_payload(ctx, conn, tag, session, request);
+            ret = process_hec_raw_payload(ctx, conn, tag, session, request,
+                                          remote_addr, remote_addr_len);
 
             if (ret == -2) {
                 /* Response already sent, skip further response */
@@ -866,7 +1071,8 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
                  strcasecmp(uri, "/services/collector/event") == 0 ||
                  strcasecmp(uri, "/services/collector") == 0) {
 
-            ret = process_hec_payload(ctx, conn, tag, session, request);
+            ret = process_hec_payload(ctx, conn, tag, session, request,
+                                      remote_addr, remote_addr_len);
             if (ret == -2) {
                 flb_sds_destroy(tag);
                 mk_mem_free(uri);
@@ -1056,7 +1262,9 @@ static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_reque
 static int process_hec_payload_ng(struct flb_http_request *request,
                                   struct flb_http_response *response,
                                   flb_sds_t tag,
-                                  struct flb_splunk *ctx)
+                                  struct flb_splunk *ctx,
+                                  const char *remote_addr,
+                                  size_t remote_addr_len)
 {
     int type = -1;
     int ret = 0;
@@ -1092,13 +1300,16 @@ static int process_hec_payload_ng(struct flb_http_request *request,
         return -2;
     }
 
-    return handle_hec_payload(ctx, type, tag, request->body, cfl_sds_len(request->body));
+    return handle_hec_payload(ctx, type, tag, request->body, cfl_sds_len(request->body),
+                              remote_addr, remote_addr_len);
 }
 
 static int process_hec_raw_payload_ng(struct flb_http_request *request,
                                       struct flb_http_response *response,
                                       flb_sds_t tag,
-                                      struct flb_splunk *ctx)
+                                      struct flb_splunk *ctx,
+                                      const char *remote_addr,
+                                      size_t remote_addr_len)
 {
     int ret = 0;
     size_t size = 0;
@@ -1129,7 +1340,8 @@ static int process_hec_raw_payload_ng(struct flb_http_request *request,
     }
 
     /* Always handle as raw type of payloads here */
-    return process_raw_payload_pack(ctx, tag, request->body, cfl_sds_len(request->body));
+    return process_raw_payload_pack(ctx, tag, request->body, cfl_sds_len(request->body),
+                                    remote_addr, remote_addr_len);
 }
 
 int splunk_prot_handle_ng(struct flb_http_request *request,
@@ -1138,6 +1350,12 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     struct flb_splunk *context;
     int                ret = -1;
     flb_sds_t          tag;
+    struct flb_http_server_session *parent_session;
+    char *hval = NULL;
+    size_t hlen = 0;
+    const char *peer;
+    const char *remote_addr = NULL;
+    size_t remote_addr_len = 0;
 
     context = (struct flb_splunk *) response->stream->user_data;
 
@@ -1185,6 +1403,23 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     /* Handle every ingested payload cleanly */
     flb_log_event_encoder_reset(&context->log_encoder);
 
+    parent_session = (struct flb_http_server_session *) request->stream->parent;
+    if (parent_session != NULL) {
+        if (http_header_lookup(HTTP_PROTOCOL_VERSION_20, request,
+                               SPLUNK_XFF_HEADER, &hval, &hlen) == 0) {
+            extract_remote_address(hval, hlen, parent_session->connection,
+                                   (char **) &remote_addr,
+                                   &remote_addr_len);
+        }
+        if (remote_addr == NULL || remote_addr_len == 0) {
+            peer = flb_connection_get_remote_address(parent_session->connection);
+            if (peer != NULL) {
+                remote_addr = peer;
+                remote_addr_len = strlen(peer);
+            }
+        }
+    }
+
     if (request->method != HTTP_METHOD_POST) {
         /* HEAD, PUT, PATCH, and DELETE methods are prohibited to use.*/
         send_response_ng(response, 400, "error: invalid HTTP method\n");
@@ -1200,7 +1435,8 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
 
     if (strcasecmp(request->path, "/services/collector/raw/1.0") == 0 ||
         strcasecmp(request->path, "/services/collector/raw") == 0) {
-        ret = process_hec_raw_payload_ng(request, response, tag, context);
+        ret = process_hec_raw_payload_ng(request, response, tag, context,
+                                         remote_addr, remote_addr_len);
         if (ret == -2) {
             /* Response already sent, skip further response */
             flb_sds_destroy(tag);
@@ -1218,7 +1454,8 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     else if (strcasecmp(request->path, "/services/collector/event/1.0") == 0 ||
              strcasecmp(request->path, "/services/collector/event") == 0 ||
              strcasecmp(request->path, "/services/collector") == 0) {
-        ret = process_hec_payload_ng(request, response, tag, context);
+        ret = process_hec_payload_ng(request, response, tag, context,
+                                     remote_addr, remote_addr_len);
         if (ret == -2) {
             /* Response already sent, skip further response */
             flb_sds_destroy(tag);
@@ -1239,5 +1476,6 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     }
 
     flb_sds_destroy(tag);
+
     return ret;
 }

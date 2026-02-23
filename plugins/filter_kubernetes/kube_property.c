@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -84,12 +84,18 @@ static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
          stream == FLB_KUBE_PROP_STREAM_STDOUT) &&
         (is_container_specific == FLB_TRUE ||
          props->stdout_parser == FLB_KUBE_PROP_UNDEF)) {
+        if (props->stdout_parser) {
+            flb_sds_destroy(props->stdout_parser);
+        }
         props->stdout_parser = flb_sds_create(tmp);
     }
     if ((stream == FLB_KUBE_PROP_NO_STREAM ||
          stream == FLB_KUBE_PROP_STREAM_STDERR) &&
         (is_container_specific == FLB_TRUE ||
          props->stderr_parser == FLB_KUBE_PROP_UNDEF)) {
+        if (props->stderr_parser) {
+            flb_sds_destroy(props->stderr_parser);
+        }
         props->stderr_parser = flb_sds_create(tmp);
     }
 

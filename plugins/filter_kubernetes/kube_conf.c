@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -243,17 +243,16 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     if (ctx->kube_api_upstream) {
         flb_upstream_destroy(ctx->kube_api_upstream);
     }
-
-    if (ctx->aws_pod_association_tls) {
-        flb_tls_destroy(ctx->aws_pod_association_tls);
-    }
-
     if (ctx->aws_pod_association_upstream) {
         flb_upstream_destroy(ctx->aws_pod_association_upstream);
     }
 
     if (ctx->platform) {
         flb_free(ctx->platform);
+    }
+
+    if (ctx->aws_pod_association_tls) {
+        flb_tls_destroy(ctx->aws_pod_association_tls);
     }
 
 #ifdef FLB_HAVE_TLS

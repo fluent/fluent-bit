@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/aws/flb_aws_aggregation.h>
 
 #define DEFAULT_TIME_KEY_FORMAT "%Y-%m-%dT%H:%M:%S"
 
@@ -55,6 +56,10 @@ struct flush {
     /* buffer used to temporarily hold an event during processing */
     char *event_buf;
     size_t event_buf_size;
+
+    /* aggregation buffer for simple_aggregation mode */
+    struct flb_aws_agg_buffer agg_buf;
+    int agg_buf_initialized;
 
     int records_sent;
     int records_processed;
@@ -94,6 +99,7 @@ struct flb_firehose {
     int custom_endpoint;
     int retry_requests;
     int compression;
+    int simple_aggregation;
 
     /* must be freed on shutdown if custom_endpoint is not set */
     char *endpoint;

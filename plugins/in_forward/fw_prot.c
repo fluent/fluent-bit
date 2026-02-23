@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -1146,8 +1146,8 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
     else if (event_type == FLB_EVENT_TYPE_TRACES) {
         off = 0;
         ret = ctr_decode_msgpack_create(&ctr, (char *) data, len, &off);
-        if (ret == -1) {
-            flb_error("could not decode trace message. ret=%d", ret);
+        if (ret != CTR_DECODE_MSGPACK_SUCCESS) {
+            flb_plg_error(ins, "could not decode trace message. ret=%d", ret);
             return -1;
         }
 
@@ -1159,7 +1159,7 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
             ctr_decode_msgpack_destroy(ctr);
             return -1;
         }
-        ctr_decode_msgpack_destroy(ctr);
+        /* Note: flb_input_trace_append takes ownership of ctr and destroys it on success */
     }
 
     return 0;

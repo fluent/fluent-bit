@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.in_in (the "License");
  *  you may not use this file except in compliance with the License.
@@ -200,19 +200,19 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "http2", "true",
      0, FLB_TRUE, offsetof(struct flb_prom_remote_write, enable_http2),
-     NULL
+     "Enable HTTP/2 support"
     },
 
     {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", HTTP_BUFFER_MAX_SIZE,
      0, FLB_TRUE, offsetof(struct flb_prom_remote_write, buffer_max_size),
-     ""
+     "Maximum size of the HTTP request buffer"
     },
 
     {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", HTTP_BUFFER_CHUNK_SIZE,
      0, FLB_TRUE, offsetof(struct flb_prom_remote_write, buffer_chunk_size),
-     ""
+     "Size of each buffer chunk allocated for HTTP requests"
     },
 
     {

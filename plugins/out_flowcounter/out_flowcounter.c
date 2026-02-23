@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -216,6 +216,9 @@ static void out_fcount_flush(struct flb_event_chunk *event_chunk,
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        /* bytes consumed in the event stream so far */
+        off = log_decoder.offset;
+
         if (ctx->event_based) {
             flb_time_copy(&tm, &log_event.timestamp);
         }
@@ -225,6 +228,7 @@ static void out_fcount_flush(struct flb_event_chunk *event_chunk,
         t = tm.tm.tv_sec;
         if (time_is_valid(t, ctx) == FLB_FALSE) {
             flb_plg_warn(ctx->ins, "out of range. Skip the record");
+            last_off = off;
             continue;
         }
 

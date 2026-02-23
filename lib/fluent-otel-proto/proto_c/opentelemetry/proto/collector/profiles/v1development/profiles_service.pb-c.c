@@ -142,7 +142,7 @@ void   opentelemetry__proto__collector__profiles__v1development__export_profiles
   assert(message->base.descriptor == &opentelemetry__proto__collector__profiles__v1development__export_profiles_partial_success__descriptor);
   protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
 }
-static const ProtobufCFieldDescriptor opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__field_descriptors[1] =
+static const ProtobufCFieldDescriptor opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__field_descriptors[2] =
 {
   {
     "resource_profiles",
@@ -156,14 +156,27 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__collector__profiles_
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "dictionary",
+    2,
+    PROTOBUF_C_LABEL_OPTIONAL,
+    PROTOBUF_C_TYPE_MESSAGE,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest, dictionary),
+    &opentelemetry__proto__profiles__v1development__profiles_dictionary__descriptor,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__field_indices_by_name[] = {
+  1,   /* field[1] = dictionary */
   0,   /* field[0] = resource_profiles */
 };
 static const ProtobufCIntRange opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 1 }
+  { 0, 2 }
 };
 const ProtobufCMessageDescriptor opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__descriptor =
 {
@@ -173,7 +186,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__collector__profiles__v1de
   "Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest",
   "opentelemetry.proto.collector.profiles.v1development",
   sizeof(Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest),
-  1,
+  2,
   opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__field_descriptors,
   opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__field_indices_by_name,
   1,  opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__number_ranges,
@@ -185,7 +198,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__collector__profiles_
   {
     "partial_success",
     1,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceResponse, partial_success),
