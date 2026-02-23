@@ -40,6 +40,8 @@
 #define ECS_CREDENTIALS_HOST_LEN       13
 #define EKS_CREDENTIALS_HOST           "169.254.170.23"
 #define EKS_CREDENTIALS_HOST_LEN       14
+#define GREENGRASS_CREDENTIALS_HOST    "localhost"
+#define GREENGRASS_CREDENTIALS_PATH    "/2016-11-01/credentialprovider/"
 #define AWS_CREDENTIALS_RELATIVE_URI   "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"
 #define AWS_CREDENTIALS_FULL_URI       "AWS_CONTAINER_CREDENTIALS_FULL_URI"
 
@@ -60,8 +62,9 @@ does not satisfy any of the following conditions:
 
 is within the loopback CIDR (IPv4 127.0.0.0/8, IPv6 ::1/128)
 is the ECS container host 169.254.170.2
-is the EKS container host (IPv4 169.254.170.23, IPv6 fd00:ec2::23)*/
-static int validate_http_credential_uri(flb_sds_t protocol, flb_sds_t host)
+is the EKS container host (IPv4 169.254.170.23, IPv6 fd00:ec2::23)
+is localhost with Greengrass credential provider path (/2016-11-01/credentialprovider/)*/
+static int validate_http_credential_uri(flb_sds_t protocol, flb_sds_t host, flb_sds_t path)
 {
     if (strncmp(protocol, "https", 5) == 0) {
         return 0;
@@ -70,7 +73,9 @@ static int validate_http_credential_uri(flb_sds_t protocol, flb_sds_t host)
                strncmp(host, EKS_CREDENTIALS_HOST, EKS_CREDENTIALS_HOST_LEN) == 0 ||
                strstr(host, "::1") != NULL ||
                strstr(host, "fd00:ec2::23") != NULL ||
-               strstr(host, "fe80:") != NULL) {
+               strstr(host, "fe80:") != NULL ||
+               (strcmp(host, GREENGRASS_CREDENTIALS_HOST) == 0 && path != NULL &&
+                strcmp(path, GREENGRASS_CREDENTIALS_PATH) == 0)) {
         return 0;
     }
 
@@ -356,10 +361,11 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
         }
 
         insecure = strncmp(protocol, "http", 4) == 0 ? FLB_TRUE : FLB_FALSE;
-        ret = validate_http_credential_uri(protocol, host);
+        ret = validate_http_credential_uri(protocol, host, path);
         if (ret < 0) {
-            flb_error("[aws credentials] %s must be set to an https:// address or a link local IP address."
-                      " Found protocol=%s, host=%s, port=%s, path=%s",
+            flb_error("[aws credentials] %s must be set to an https:// address, a link local IP address, "
+                      "or localhost with Greengrass credential provider path. "
+                      "Found protocol=%s, host=%s, port=%s, path=%s",
                       AWS_CREDENTIALS_FULL_URI, protocol, host, port_sds, path);
             flb_sds_destroy(protocol);
             flb_sds_destroy(host);
