@@ -137,6 +137,7 @@ RUN apt-get update && \
     libpsl5t64 \
     libbrotli1 \
     libsasl2-2 \
+    libsasl2-modules-gssapi-mit \
     pkg-config \
     libpq5 \
     libsystemd0 \
@@ -245,6 +246,8 @@ RUN apt-get update && \
     libpsl5t64 \
     libbrotli1 \
     libsasl2-2 \
+    libsasl2-modules-gssapi-mit \
+    krb5-user \
     pkg-config \
     libpq5 \
     libsystemd0 \
