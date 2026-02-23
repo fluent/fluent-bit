@@ -332,18 +332,18 @@ static int attach_hot_reload_info(struct flb_config *ctx, struct cmt *cmt, uint6
                                   char *hostname)
 {
     double val;
-    struct cmt_gauge *g;
+    struct cmt_counter *c;
 
-    g = cmt_gauge_create(cmt, "fluentbit", "", "hot_reloaded_times",
-                         "Collect the count of hot reloaded times.",
-                         1, (char *[]) {"hostname"});
-    if (!g) {
+    c = cmt_counter_create(cmt, "fluentbit", "", "hot_reloaded_times",
+                           "Collect the count of hot reloaded times.",
+                           1, (char *[]) {"hostname"});
+    if (!c) {
         return -1;
     }
 
     val = (double) ctx->hot_reloaded_count;
 
-    cmt_gauge_set(g, ts, val, 1, (char *[]) {hostname});
+    cmt_counter_set(c, ts, val, 1, (char *[]) {hostname});
     return 0;
 }
 
