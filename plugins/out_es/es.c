@@ -294,7 +294,6 @@ static int elasticsearch_format(struct flb_config *config,
     int map_size;
     int index_len = 0;
     size_t s = 0;
-    size_t off = 0;
     size_t off_prev = 0;
     char *es_index;
     char logstash_index[256];
@@ -588,7 +587,7 @@ static int elasticsearch_format(struct flb_config *config,
                              bytes, off_prev);
         flb_sds_destroy(out_buf);
 
-        off_prev = off;
+        off_prev = log_decoder.offset;
         if (ret == -1) {
             /* We likely ran out of memory, abort here */
             flb_log_event_decoder_destroy(&log_decoder);
