@@ -437,9 +437,9 @@ static void generate_chunk_name(struct flb_input_instance *in,
 
     flb_time_get(&tm);
     snprintf(out_buf, buf_size - 1,
-             "%i-%lu.%4lu.flb",
+             "%i-%llu.%4lu.flb",
              getpid(),
-             tm.tm.tv_sec, tm.tm.tv_nsec);
+             (unsigned long long)tm.tm.tv_sec, tm.tm.tv_nsec);
 }
 
 ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic)
