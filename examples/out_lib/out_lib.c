@@ -17,7 +17,9 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <fluent-bit-minimal.h>
 #include <msgpack.h>
 
 int my_stdout_json(void *record, size_t size, void *data)
