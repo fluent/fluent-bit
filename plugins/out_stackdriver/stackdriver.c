@@ -1480,6 +1480,20 @@ static int get_msgpack_obj(msgpack_object * subobj, const msgpack_object * o,
     return -1;
 }
 
+static int get_msgpack_obj_by_name(msgpack_object *subobj,
+                                   const msgpack_object *o,
+                                   const char *key, int key_size,
+                                   msgpack_object_type type)
+{
+    if (o == NULL || subobj == NULL || o->type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
+
+    return extract_msgpack_obj_from_msgpack_map((msgpack_object_map *) &o->via.map,
+                                                (char *) key, key_size,
+                                                type, subobj);
+}
+
 static int get_string(flb_sds_t * s, const msgpack_object * o, const flb_sds_t key)
 {
     msgpack_object tmp;
@@ -1768,46 +1782,118 @@ static int pack_payload(int insert_id_extracted,
         return ret;
 }
 
-static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
-                                    int total_records,
-                                    const char *tag, int tag_len,
-                                    const void *data, size_t bytes,
-                                    struct flb_config *config)
+static int stackdriver_pack_fallback_text_payload(struct flb_stackdriver *ctx,
+                                                  msgpack_packer *mp_pck,
+                                                  msgpack_object *obj,
+                                                  struct flb_config *config)
+{
+    int ret;
+    flb_sds_t text_payload = NULL;
+    msgpack_object text_obj;
+    char *serialized = NULL;
+    const char *payload_ptr = NULL;
+    size_t payload_len = 0;
+
+    if (ctx->text_payload_key &&
+        get_string(&text_payload, obj, ctx->text_payload_key) == 0) {
+        payload_ptr = text_payload;
+        payload_len = flb_sds_len(text_payload);
+    }
+    else if (get_msgpack_obj_by_name(&text_obj, obj, "message", 7,
+                                     MSGPACK_OBJECT_STR) == 0) {
+        payload_ptr = text_obj.via.str.ptr;
+        payload_len = text_obj.via.str.size;
+    }
+    else if (get_msgpack_obj_by_name(&text_obj, obj, "log", 3,
+                                     MSGPACK_OBJECT_STR) == 0) {
+        payload_ptr = text_obj.via.str.ptr;
+        payload_len = text_obj.via.str.size;
+    }
+    else {
+        serialized = flb_msgpack_to_json_str(1024, obj,
+                                             config->json_escape_unicode);
+        if (serialized == NULL) {
+            flb_plg_error(ctx->ins, "failed to serialize record for textPayload fallback");
+            flb_sds_destroy(text_payload);
+            return -1;
+        }
+
+        payload_ptr = serialized;
+        payload_len = strlen(serialized);
+    }
+
+    ret = msgpack_pack_str(mp_pck, 11);
+    if (ret < 0) {
+        goto done;
+    }
+    ret = msgpack_pack_str_body(mp_pck, "textPayload", 11);
+    if (ret < 0) {
+        goto done;
+    }
+    ret = msgpack_pack_str(mp_pck, payload_len);
+    if (ret < 0) {
+        goto done;
+    }
+    ret = msgpack_pack_str_body(mp_pck, payload_ptr, payload_len);
+    if (ret < 0) {
+        goto done;
+    }
+
+done:
+    if (serialized != NULL) {
+        flb_free(serialized);
+    }
+    flb_sds_destroy(text_payload);
+
+    if (ret < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int stackdriver_pack_record_entry(struct flb_stackdriver *ctx,
+                                         const char *tag,
+                                         struct flb_log_event *log_event,
+                                         timestamp_status tms_status,
+                                         msgpack_sbuffer *entry_sbuf,
+                                         struct flb_config *config,
+                                         int *fallback_mode)
 {
     int len;
     int ret;
-    int array_size = 0;
-    /* The default value is 3: timestamp, jsonPayload, logName. */
-    int entry_size = 3;
+    int entry_size;
+    int labels_size;
     size_t s;
-    // size_t off = 0;
+    int use_fallback = FLB_FALSE;
+    int payload_labels_invalid = FLB_FALSE;
     char path[PATH_MAX];
     char time_formatted[255];
+    char stackdriver_trace[PATH_MAX];
+    const char *new_trace;
     const char *newtag;
     const char *new_log_name;
+    struct tm tm;
+    msgpack_packer entry_pck;
     msgpack_object *obj;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
-    flb_sds_t out_buf;
-    struct flb_mp_map_header mh;
+    msgpack_object *payload_labels_ptr;
+    msgpack_object stream_obj;
 
     /* Parameters for project_id_key */
     int project_id_extracted = FLB_FALSE;
-    flb_sds_t project_id_key;
+    flb_sds_t project_id_key = NULL;
 
     /* Parameters for severity */
     int severity_extracted = FLB_FALSE;
-    severity_t severity;
+    severity_t severity = FLB_STD_DEFAULT;
 
     /* Parameters for trace */
     int trace_extracted = FLB_FALSE;
     flb_sds_t trace = NULL;
-    char stackdriver_trace[PATH_MAX];
-    const char *new_trace;
 
     /* Parameters for span id */
     int span_id_extracted = FLB_FALSE;
-    flb_sds_t span_id;
+    flb_sds_t span_id = NULL;
 
     /* Parameters for trace sampled */
     int trace_sampled_extracted = FLB_FALSE;
@@ -1816,8 +1902,6 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     /* Parameters for log name */
     int log_name_extracted = FLB_FALSE;
     flb_sds_t log_name = NULL;
-    flb_sds_t stream = NULL;
-    flb_sds_t stream_key;
 
     /* Parameters for insertId */
     msgpack_object insert_id_obj;
@@ -1825,17 +1909,17 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     int insert_id_extracted;
 
     /* Parameters in Operation */
-    flb_sds_t operation_id;
-    flb_sds_t operation_producer;
+    flb_sds_t operation_id = NULL;
+    flb_sds_t operation_producer = NULL;
     int operation_first = FLB_FALSE;
     int operation_last = FLB_FALSE;
     int operation_extracted = FLB_FALSE;
     int operation_extra_size = 0;
 
     /* Parameters for sourceLocation */
-    flb_sds_t source_location_file;
+    flb_sds_t source_location_file = NULL;
     int64_t source_location_line = 0;
-    flb_sds_t source_location_function;
+    flb_sds_t source_location_function = NULL;
     int source_location_extracted = FLB_FALSE;
     int source_location_extra_size = 0;
 
@@ -1844,54 +1928,389 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     int http_request_extracted = FLB_FALSE;
     int http_request_extra_size = 0;
 
-    /* Parameters for Timestamp */
-    struct tm tm;
-    // struct flb_time tms;
-    timestamp_status tms_status;
-    /* Count number of records */
-    array_size = total_records;
+    obj = log_event->body;
+    if (obj == NULL || obj->type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
 
-    /* Parameters for labels */
-    msgpack_object *payload_labels_ptr;
-    int labels_size = 0;
+    init_http_request(&http_request);
+
+    /* Extract severity */
+    if (ctx->severity_key &&
+        get_severity_level(&severity, obj, ctx->severity_key) == 0) {
+        severity_extracted = FLB_TRUE;
+    }
+
+    /* Extract trace */
+    if (ctx->trace_key &&
+        get_string(&trace, obj, ctx->trace_key) == 0) {
+        trace_extracted = FLB_TRUE;
+    }
+
+    /* Extract span id */
+    if (ctx->span_id_key &&
+        get_string(&span_id, obj, ctx->span_id_key) == 0) {
+        span_id_extracted = FLB_TRUE;
+    }
+
+    /* Extract trace sampled */
+    if (ctx->trace_sampled_key &&
+        get_trace_sampled(&trace_sampled, obj, ctx->trace_sampled_key) == 0) {
+        trace_sampled_extracted = FLB_TRUE;
+    }
+
+    /* Extract project id */
+    if (ctx->project_id_key &&
+        get_string(&project_id_key, obj, ctx->project_id_key) == 0) {
+        project_id_extracted = FLB_TRUE;
+    }
+
+    /* Extract log name */
+    if (ctx->log_name_key &&
+        get_string(&log_name, obj, ctx->log_name_key) == 0) {
+        log_name_extracted = FLB_TRUE;
+    }
+
+    /* Extract insertId */
+    in_status = validate_insert_id(&insert_id_obj, obj);
+    if (in_status == INSERTID_VALID) {
+        insert_id_extracted = FLB_TRUE;
+    }
+    else if (in_status == INSERTID_NOT_PRESENT) {
+        insert_id_extracted = FLB_FALSE;
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "Incorrect insertId received. InsertId should be non-empty string.");
+        ret = 1;
+        goto cleanup;
+    }
+
+    /* Extract operation */
+    operation_id = flb_sds_create("");
+    operation_producer = flb_sds_create("");
+    if (!operation_id || !operation_producer) {
+        use_fallback = FLB_TRUE;
+    }
+    else {
+        operation_extracted = extract_operation(&operation_id, &operation_producer,
+                                                &operation_first, &operation_last,
+                                                obj, &operation_extra_size);
+    }
+
+    /* Extract sourceLocation */
+    source_location_file = flb_sds_create("");
+    source_location_function = flb_sds_create("");
+    if (!source_location_file || !source_location_function) {
+        use_fallback = FLB_TRUE;
+    }
+    else {
+        source_location_extracted = extract_source_location(&source_location_file,
+                                                            &source_location_line,
+                                                            &source_location_function,
+                                                            obj,
+                                                            &source_location_extra_size);
+    }
+
+    /* Extract httpRequest */
+    http_request_extracted = extract_http_request(&http_request,
+                                                  ctx->http_request_key,
+                                                  ctx->http_request_key_size,
+                                                  obj, &http_request_extra_size);
+
+    /* Extract payload labels */
+    payload_labels_ptr = get_payload_labels(ctx, obj);
+    if (payload_labels_ptr != NULL &&
+        payload_labels_ptr->type != MSGPACK_OBJECT_MAP) {
+        payload_labels_invalid = FLB_TRUE;
+        use_fallback = FLB_TRUE;
+        flb_plg_warn(ctx->ins,
+                     "invalid payload labels type detected, falling back to textPayload");
+    }
+
+    labels_size = mk_list_size(&ctx->config_labels);
+    if (payload_labels_ptr != NULL &&
+        payload_labels_ptr->type == MSGPACK_OBJECT_MAP) {
+        labels_size += payload_labels_ptr->via.map.size;
+    }
+
+build_entry:
+    entry_size = 3;
+
+    if (severity_extracted == FLB_TRUE) {
+        entry_size += 1;
+    }
+    if (trace_extracted == FLB_TRUE) {
+        entry_size += 1;
+    }
+    if (span_id_extracted == FLB_TRUE) {
+        entry_size += 1;
+    }
+    if (trace_sampled_extracted == FLB_TRUE) {
+        entry_size += 1;
+    }
+    if (insert_id_extracted == FLB_TRUE) {
+        entry_size += 1;
+    }
+
+    if (use_fallback == FLB_FALSE) {
+        if (operation_extracted == FLB_TRUE) {
+            entry_size += 1;
+        }
+        if (source_location_extracted == FLB_TRUE) {
+            entry_size += 1;
+        }
+        if (http_request_extracted == FLB_TRUE) {
+            entry_size += 1;
+        }
+        if (labels_size > 0 && payload_labels_invalid == FLB_FALSE) {
+            entry_size += 1;
+        }
+    }
+
+    msgpack_sbuffer_init(entry_sbuf);
+    msgpack_packer_init(&entry_pck, entry_sbuf, msgpack_sbuffer_write);
+
+    ret = msgpack_pack_map(&entry_pck, entry_size);
+    if (ret < 0) {
+        goto pack_error;
+    }
+
+    /* Add severity into the log entry */
+    if (severity_extracted == FLB_TRUE) {
+        msgpack_pack_str(&entry_pck, 8);
+        msgpack_pack_str_body(&entry_pck, "severity", 8);
+        msgpack_pack_int(&entry_pck, severity);
+    }
+
+    /* Add trace into the log entry */
+    if (trace_extracted == FLB_TRUE) {
+        msgpack_pack_str(&entry_pck, 5);
+        msgpack_pack_str_body(&entry_pck, "trace", 5);
+
+        if (ctx->autoformat_stackdriver_trace) {
+            len = snprintf(stackdriver_trace, sizeof(stackdriver_trace) - 1,
+                           "projects/%s/traces/%s", ctx->project_id, trace);
+            new_trace = stackdriver_trace;
+        }
+        else {
+            len = flb_sds_len(trace);
+            new_trace = trace;
+        }
+
+        msgpack_pack_str(&entry_pck, len);
+        msgpack_pack_str_body(&entry_pck, new_trace, len);
+    }
+
+    /* Add spanId field into the log entry */
+    if (span_id_extracted == FLB_TRUE) {
+        len = flb_sds_len(span_id);
+        msgpack_pack_str_with_body(&entry_pck, "spanId", 6);
+        msgpack_pack_str_with_body(&entry_pck, span_id, len);
+    }
+
+    /* Add traceSampled field into the log entry */
+    if (trace_sampled_extracted == FLB_TRUE) {
+        msgpack_pack_str_with_body(&entry_pck, "traceSampled", 12);
+        if (trace_sampled == FLB_TRUE) {
+            msgpack_pack_true(&entry_pck);
+        }
+        else {
+            msgpack_pack_false(&entry_pck);
+        }
+    }
+
+    /* Add insertId field into the log entry */
+    if (insert_id_extracted == FLB_TRUE) {
+        msgpack_pack_str(&entry_pck, 8);
+        msgpack_pack_str_body(&entry_pck, "insertId", 8);
+        msgpack_pack_object(&entry_pck, insert_id_obj);
+    }
+
+    if (use_fallback == FLB_FALSE) {
+        /* Add operation field into the log entry */
+        if (operation_extracted == FLB_TRUE) {
+            add_operation_field(&operation_id, &operation_producer,
+                                &operation_first, &operation_last,
+                                &entry_pck);
+        }
+
+        /* Add sourceLocation field into the log entry */
+        if (source_location_extracted == FLB_TRUE) {
+            add_source_location_field(&source_location_file,
+                                      source_location_line,
+                                      &source_location_function,
+                                      &entry_pck);
+        }
+
+        /* Add httpRequest field into the log entry */
+        if (http_request_extracted == FLB_TRUE) {
+            add_http_request_field(&http_request, &entry_pck);
+        }
+
+        /* labels */
+        if (labels_size > 0 && payload_labels_invalid == FLB_FALSE) {
+            msgpack_pack_str(&entry_pck, 6);
+            msgpack_pack_str_body(&entry_pck, "labels", 6);
+            pack_labels(ctx, &entry_pck, payload_labels_ptr);
+        }
+
+        ret = pack_payload(insert_id_extracted,
+                           operation_extracted,
+                           operation_extra_size,
+                           source_location_extracted,
+                           source_location_extra_size,
+                           http_request_extracted,
+                           http_request_extra_size,
+                           tms_status,
+                           &entry_pck, obj, ctx);
+        if (ret != 0) {
+            flb_plg_warn(ctx->ins,
+                         "record formatting failed, falling back to textPayload");
+            msgpack_sbuffer_destroy(entry_sbuf);
+            use_fallback = FLB_TRUE;
+            goto build_entry;
+        }
+    }
+    else {
+        ret = stackdriver_pack_fallback_text_payload(ctx, &entry_pck, obj,
+                                                     config);
+        if (ret != 0) {
+            goto pack_error;
+        }
+    }
+
+    /* avoid modifying the original tag */
+    newtag = tag;
+    if (ctx->resource_type == RESOURCE_TYPE_K8S &&
+        get_msgpack_obj_by_name(&stream_obj, obj, "stream", 6,
+                                MSGPACK_OBJECT_STR) == 0) {
+        if (stream_obj.via.str.size == strlen(STDOUT) &&
+            strncmp(stream_obj.via.str.ptr, STDOUT, stream_obj.via.str.size) == 0) {
+            newtag = STDOUT;
+        }
+        else if (stream_obj.via.str.size == strlen(STDERR) &&
+                 strncmp(stream_obj.via.str.ptr, STDERR, stream_obj.via.str.size) == 0) {
+            newtag = STDERR;
+        }
+    }
+
+    if (log_name_extracted == FLB_FALSE) {
+        new_log_name = newtag;
+    }
+    else {
+        new_log_name = log_name;
+    }
+
+    if (project_id_extracted == FLB_TRUE) {
+        len = snprintf(path, sizeof(path) - 1,
+                       "projects/%s/logs/%s", project_id_key, new_log_name);
+    }
+    else {
+        len = snprintf(path, sizeof(path) - 1,
+                       "projects/%s/logs/%s",
+                       ctx->export_to_project_id, new_log_name);
+    }
+
+    ret = msgpack_pack_str(&entry_pck, 7);
+    if (ret < 0) {
+        goto pack_error;
+    }
+    ret = msgpack_pack_str_body(&entry_pck, "logName", 7);
+    if (ret < 0) {
+        goto pack_error;
+    }
+    ret = msgpack_pack_str(&entry_pck, len);
+    if (ret < 0) {
+        goto pack_error;
+    }
+    ret = msgpack_pack_str_body(&entry_pck, path, len);
+    if (ret < 0) {
+        goto pack_error;
+    }
+
+    /* timestamp */
+    ret = msgpack_pack_str(&entry_pck, 9);
+    if (ret < 0) {
+        goto pack_error;
+    }
+    ret = msgpack_pack_str_body(&entry_pck, "timestamp", 9);
+    if (ret < 0) {
+        goto pack_error;
+    }
+
+    gmtime_r(&log_event->timestamp.tm.tv_sec, &tm);
+    s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                 FLB_STD_TIME_FMT, &tm);
+    len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
+                   ".%09" PRIu64 "Z",
+                   (uint64_t) log_event->timestamp.tm.tv_nsec);
+    s += len;
+
+    ret = msgpack_pack_str(&entry_pck, s);
+    if (ret < 0) {
+        goto pack_error;
+    }
+    ret = msgpack_pack_str_body(&entry_pck, time_formatted, s);
+    if (ret < 0) {
+        goto pack_error;
+    }
+
+    ret = 0;
+    goto cleanup;
+
+pack_error:
+    msgpack_sbuffer_destroy(entry_sbuf);
+
+    if (use_fallback == FLB_FALSE) {
+        flb_plg_warn(ctx->ins,
+                     "record formatting failed, falling back to textPayload");
+        use_fallback = FLB_TRUE;
+        goto build_entry;
+    }
+
+    ret = -1;
+
+cleanup:
+    flb_sds_destroy(operation_id);
+    flb_sds_destroy(operation_producer);
+    flb_sds_destroy(source_location_file);
+    flb_sds_destroy(source_location_function);
+    flb_sds_destroy(trace);
+    flb_sds_destroy(span_id);
+    flb_sds_destroy(project_id_key);
+    flb_sds_destroy(log_name);
+    destroy_http_request(&http_request);
+
+    if (fallback_mode != NULL) {
+        *fallback_mode = use_fallback;
+    }
+
+    return ret;
+}
+
+static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
+                                    int total_records,
+                                    const char *tag, int tag_len,
+                                    const void *data, size_t bytes,
+                                    struct flb_config *config)
+{
+    int ret;
+    int appended_entries = 0;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_sbuffer entry_sbuf;
+    msgpack_packer mp_pck;
+    msgpack_unpacked entry_unpacked;
+    size_t entry_off;
+    flb_sds_t out_buf;
+    struct flb_mp_map_header mh;
+    struct flb_mp_map_header entries_mh;
+    timestamp_status tms_status;
 
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
 
-    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
-
-    if (ret != FLB_EVENT_DECODER_SUCCESS) {
-        flb_plg_error(ctx->ins,
-                      "Log event decoder initialization error : %d", ret);
-
-        return NULL;
-    }
-
-    /*
-     * Search each entry and validate insertId.
-     * Reject the entry if insertId is invalid.
-     * If all the entries are rejected, stop formatting.
-     *
-     */
-    while ((ret = flb_log_event_decoder_next(
-                    &log_decoder,
-                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        /* Extract insertId */
-        in_status = validate_insert_id(&insert_id_obj, log_event.body);
-
-        if (in_status == INSERTID_INVALID) {
-            flb_plg_error(ctx->ins,
-                          "Incorrect insertId received. InsertId should be non-empty string.");
-            array_size -= 1;
-        }
-    }
-
-    flb_log_event_decoder_destroy(&log_decoder);
-
-    /* Sounds like this should compare to -1 instead of zero */
-    if (array_size == 0) {
-        return NULL;
-    }
+    (void) total_records;
 
     /* Create temporal msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -2292,7 +2711,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     msgpack_pack_str_body(&mp_pck, "entries", 7);
 
     /* Append entries */
-    msgpack_pack_array(&mp_pck, array_size);
+    flb_mp_array_header_init(&entries_mh, &mp_pck);
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
@@ -2307,348 +2726,50 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        obj = log_event.body;
-        tms_status = extract_timestamp(obj, &log_event.timestamp);
+        tms_status = extract_timestamp(log_event.body, &log_event.timestamp);
 
-        /*
-         * Pack entry
-         *
-         * {
-         *  "severity": "...",
-         *  "labels": "...",
-         *  "logName": "...",
-         *  "jsonPayload": {...},
-         *  "timestamp": "...",
-         *  "spanId": "...",
-         *  "traceSampled": <true or false>,
-         *  "trace": "..."
-         * }
-         */
-        entry_size = 3;
-
-        /* Extract severity */
-        severity_extracted = FLB_FALSE;
-        if (ctx->severity_key
-            && get_severity_level(&severity, obj, ctx->severity_key) == 0) {
-            severity_extracted = FLB_TRUE;
-            entry_size += 1;
+        ret = stackdriver_pack_record_entry(ctx, tag, &log_event, tms_status,
+                                            &entry_sbuf, config, NULL);
+        if (ret == 1) {
+            continue;
         }
-
-        /* Extract trace */
-        trace_extracted = FLB_FALSE;
-        if (ctx->trace_key
-            && get_string(&trace, obj, ctx->trace_key) == 0) {
-            trace_extracted = FLB_TRUE;
-            entry_size += 1;
-        }
-
-        /* Extract span id */
-        span_id_extracted = FLB_FALSE;
-        if (ctx->span_id_key
-            && get_string(&span_id, obj, ctx->span_id_key) == 0) {
-            span_id_extracted = FLB_TRUE;
-            entry_size += 1;
-        }
-
-        /* Extract trace sampled */
-        trace_sampled_extracted = FLB_FALSE;
-        if (ctx->trace_sampled_key
-            && get_trace_sampled(&trace_sampled, obj, ctx->trace_sampled_key) == 0) {
-            trace_sampled_extracted = FLB_TRUE;
-            entry_size += 1;
-        }
-
-        /* Extract project id */
-        project_id_extracted = FLB_FALSE;
-        if (ctx->project_id_key
-            && get_string(&project_id_key, obj, ctx->project_id_key) == 0) {
-            project_id_extracted = FLB_TRUE;
-        }
-
-        /* Extract log name */
-        log_name_extracted = FLB_FALSE;
-        if (ctx->log_name_key
-            && get_string(&log_name, obj, ctx->log_name_key) == 0) {
-            log_name_extracted = FLB_TRUE;
-        }
-
-        /* Extract insertId */
-        in_status = validate_insert_id(&insert_id_obj, obj);
-        if (in_status == INSERTID_VALID) {
-            insert_id_extracted = FLB_TRUE;
-            entry_size += 1;
-        }
-        else if (in_status == INSERTID_NOT_PRESENT) {
-            insert_id_extracted = FLB_FALSE;
-        }
-        else {
-            if (trace_extracted == FLB_TRUE) {
-                flb_sds_destroy(trace);
-            }
-
-            if (span_id_extracted == FLB_TRUE) {
-                flb_sds_destroy(span_id);
-            }
-
-            if (project_id_extracted == FLB_TRUE) {
-                flb_sds_destroy(project_id_key);
-            }
-
-            if (log_name_extracted == FLB_TRUE) {
-                flb_sds_destroy(log_name);
-            }
-
+        else if (ret != 0) {
+            flb_plg_error(ctx->ins, "record formatting failed, skipping record");
             continue;
         }
 
-        /* Extract operation */
-        operation_id = flb_sds_create("");
-        operation_producer = flb_sds_create("");
-        operation_first = FLB_FALSE;
-        operation_last = FLB_FALSE;
-        operation_extra_size = 0;
-        operation_extracted = extract_operation(&operation_id, &operation_producer,
-                                                &operation_first, &operation_last, obj,
-                                                &operation_extra_size);
-
-        if (operation_extracted == FLB_TRUE) {
-            entry_size += 1;
+        msgpack_unpacked_init(&entry_unpacked);
+        entry_off = 0;
+        ret = msgpack_unpack_next(&entry_unpacked,
+                                  entry_sbuf.data, entry_sbuf.size,
+                                  &entry_off);
+        if (ret != MSGPACK_UNPACK_SUCCESS) {
+            flb_plg_error(ctx->ins, "failed to decode packed entry");
+            msgpack_unpacked_destroy(&entry_unpacked);
+            msgpack_sbuffer_destroy(&entry_sbuf);
+            continue;
         }
 
-        /* Extract sourceLocation */
-        source_location_file = flb_sds_create("");
-        source_location_line = 0;
-        source_location_function = flb_sds_create("");
-        source_location_extra_size = 0;
-        source_location_extracted = extract_source_location(&source_location_file,
-                                                            &source_location_line,
-                                                            &source_location_function,
-                                                            obj,
-                                                            &source_location_extra_size);
-
-        if (source_location_extracted == FLB_TRUE) {
-            entry_size += 1;
-        }
-
-        /* Extract httpRequest */
-        init_http_request(&http_request);
-        http_request_extra_size = 0;
-        http_request_extracted = extract_http_request(&http_request,
-                                                      ctx->http_request_key,
-                                                      ctx->http_request_key_size,
-                                                      obj, &http_request_extra_size);
-        if (http_request_extracted == FLB_TRUE) {
-            entry_size += 1;
-        }
-
-        /* Extract payload labels */
-        payload_labels_ptr = get_payload_labels(ctx, obj);
-        if (payload_labels_ptr != NULL &&
-            payload_labels_ptr->type != MSGPACK_OBJECT_MAP) {
-            flb_plg_error(ctx->ins, "the type of payload labels should be map");
-            flb_sds_destroy(operation_id);
-            flb_sds_destroy(operation_producer);
-            flb_sds_destroy(source_location_file);
-            flb_sds_destroy(source_location_function);
-
-            if (trace_extracted == FLB_TRUE) {
-                flb_sds_destroy(trace);
-            }
-
-            if (span_id_extracted == FLB_TRUE) {
-                flb_sds_destroy(span_id);
-            }
-
-            if (project_id_extracted == FLB_TRUE) {
-                flb_sds_destroy(project_id_key);
-            }
-
-            if (log_name_extracted == FLB_TRUE) {
-                flb_sds_destroy(log_name);
-            }
-
+        ret = msgpack_pack_object(&mp_pck, entry_unpacked.data);
+        msgpack_unpacked_destroy(&entry_unpacked);
+        msgpack_sbuffer_destroy(&entry_sbuf);
+        if (ret < 0) {
             flb_log_event_decoder_destroy(&log_decoder);
             msgpack_sbuffer_destroy(&mp_sbuf);
-
             return NULL;
         }
 
-        /* Number of parsed labels */
-        labels_size = mk_list_size(&ctx->config_labels);
-        if (payload_labels_ptr != NULL &&
-            payload_labels_ptr->type == MSGPACK_OBJECT_MAP) {
-            labels_size += payload_labels_ptr->via.map.size;
-        }
-
-        if (labels_size > 0) {
-            entry_size += 1;
-        }
-
-        msgpack_pack_map(&mp_pck, entry_size);
-
-        /* Add severity into the log entry */
-        if (severity_extracted == FLB_TRUE) {
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "severity", 8);
-            msgpack_pack_int(&mp_pck, severity);
-        }
-
-        /* Add trace into the log entry */
-        if (trace_extracted == FLB_TRUE) {
-            msgpack_pack_str(&mp_pck, 5);
-            msgpack_pack_str_body(&mp_pck, "trace", 5);
-
-            if (ctx->autoformat_stackdriver_trace) {
-                len = snprintf(stackdriver_trace, sizeof(stackdriver_trace) - 1,
-                    "projects/%s/traces/%s", ctx->project_id, trace);
-                new_trace = stackdriver_trace;
-            }
-            else {
-                len = flb_sds_len(trace);
-                new_trace = trace;
-            }
-
-            msgpack_pack_str(&mp_pck, len);
-            msgpack_pack_str_body(&mp_pck, new_trace, len);
-            flb_sds_destroy(trace);
-        }
-
-        /* Add spanId field into the log entry */
-        if (span_id_extracted == FLB_TRUE) {
-            msgpack_pack_str_with_body(&mp_pck, "spanId", 6);
-            len = flb_sds_len(span_id);
-            msgpack_pack_str_with_body(&mp_pck, span_id, len);
-            flb_sds_destroy(span_id);
-        }
-
-        /* Add traceSampled field into the log entry */
-        if (trace_sampled_extracted == FLB_TRUE) {
-            msgpack_pack_str_with_body(&mp_pck, "traceSampled", 12);
-
-            if (trace_sampled == FLB_TRUE) {
-                msgpack_pack_true(&mp_pck);
-            } else {
-                msgpack_pack_false(&mp_pck);
-            }
-
-        }
-
-        /* Add insertId field into the log entry */
-        if (insert_id_extracted == FLB_TRUE) {
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "insertId", 8);
-            msgpack_pack_object(&mp_pck, insert_id_obj);
-        }
-
-        /* Add operation field into the log entry */
-        if (operation_extracted == FLB_TRUE) {
-            add_operation_field(&operation_id, &operation_producer,
-                                &operation_first, &operation_last, &mp_pck);
-        }
-
-        /* Add sourceLocation field into the log entry */
-        if (source_location_extracted == FLB_TRUE) {
-            add_source_location_field(&source_location_file, source_location_line,
-                                      &source_location_function, &mp_pck);
-        }
-
-        /* Add httpRequest field into the log entry */
-        if (http_request_extracted == FLB_TRUE) {
-            add_http_request_field(&http_request, &mp_pck);
-        }
-
-        /* labels */
-        if (labels_size > 0) {
-            msgpack_pack_str(&mp_pck, 6);
-            msgpack_pack_str_body(&mp_pck, "labels", 6);
-            pack_labels(ctx, &mp_pck, payload_labels_ptr);
-        }
-
-        /* Clean up id and producer if operation extracted */
-        flb_sds_destroy(operation_id);
-        flb_sds_destroy(operation_producer);
-        flb_sds_destroy(source_location_file);
-        flb_sds_destroy(source_location_function);
-        destroy_http_request(&http_request);
-
-        /* both textPayload and jsonPayload are supported */
-        pack_payload(insert_id_extracted,
-                     operation_extracted,
-                     operation_extra_size,
-                     source_location_extracted,
-                     source_location_extra_size,
-                     http_request_extracted,
-                     http_request_extra_size,
-                     tms_status,
-                     &mp_pck, obj, ctx);
-
-        /* avoid modifying the original tag */
-        newtag = tag;
-        stream_key = flb_sds_create("stream");
-        if (ctx->resource_type == RESOURCE_TYPE_K8S
-            && get_string(&stream, obj, stream_key) == 0) {
-            if (flb_sds_cmp(stream, STDOUT, flb_sds_len(stream)) == 0) {
-                newtag = "stdout";
-            }
-            else if (flb_sds_cmp(stream, STDERR, flb_sds_len(stream)) == 0) {
-                newtag = "stderr";
-            }
-        }
-
-        if (log_name_extracted == FLB_FALSE) {
-            new_log_name = newtag;
-        }
-        else {
-            new_log_name = log_name;
-        }
-
-        if (project_id_extracted == FLB_TRUE) {
-            len = snprintf(path, sizeof(path) - 1,
-                       "projects/%s/logs/%s", project_id_key, new_log_name);
-            flb_sds_destroy(project_id_key);
-        } else {
-            len = snprintf(path, sizeof(path) - 1,
-                       "projects/%s/logs/%s", ctx->export_to_project_id, new_log_name);
-        }
-
-        /* logName */
-        if (log_name_extracted == FLB_TRUE) {
-            flb_sds_destroy(log_name);
-        }
-
-        msgpack_pack_str(&mp_pck, 7);
-        msgpack_pack_str_body(&mp_pck, "logName", 7);
-        msgpack_pack_str(&mp_pck, len);
-        msgpack_pack_str_body(&mp_pck, path, len);
-        flb_sds_destroy(stream_key);
-        flb_sds_destroy(stream);
-
-        /* timestamp */
-        msgpack_pack_str(&mp_pck, 9);
-        msgpack_pack_str_body(&mp_pck, "timestamp", 9);
-
-        /* Format the time */
-        /*
-         * If format is timestamp_object or timestamp_duo_fields,
-         * tms has been updated.
-         *
-         * If timestamp is not presen,
-         * use the default tms(current time).
-         */
-
-        gmtime_r(&log_event.timestamp.tm.tv_sec, &tm);
-        s = strftime(time_formatted, sizeof(time_formatted) - 1,
-                        FLB_STD_TIME_FMT, &tm);
-        len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
-                       ".%09" PRIu64 "Z",
-                       (uint64_t) log_event.timestamp.tm.tv_nsec);
-        s += len;
-
-        msgpack_pack_str(&mp_pck, s);
-        msgpack_pack_str_body(&mp_pck, time_formatted, s);
+        flb_mp_array_header_append(&entries_mh);
+        appended_entries++;
     }
 
     flb_log_event_decoder_destroy(&log_decoder);
+    flb_mp_array_header_end(&entries_mh);
+
+    if (appended_entries == 0) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return NULL;
+    }
 
     /* Convert from msgpack to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,

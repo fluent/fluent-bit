@@ -118,6 +118,61 @@ static int mp_kv_cmp(char *json_data, size_t json_len, char *key_accessor, char 
     return ret;
 }
 
+static int mp_kv_contains(char *json_data, size_t json_len,
+                          char *key_accessor, char *substring)
+{
+    int ret;
+    int type;
+    char *mp_buf = NULL;
+    size_t mp_size;
+    size_t off = 0;
+    msgpack_object map;
+    msgpack_unpacked result;
+    struct flb_ra_value *rval = NULL;
+    struct flb_record_accessor *ra = NULL;
+
+    ret = flb_pack_json((const char *) json_data, json_len, &mp_buf, &mp_size,
+                        &type, NULL);
+    TEST_CHECK(ret != -1);
+
+    ret = FLB_FALSE;
+
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, mp_buf, mp_size, &off);
+    TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+    map = result.data;
+
+    ra = flb_ra_create(key_accessor, FLB_TRUE);
+    if (!ra) {
+        flb_error("invalid record accessor key, aborting test");
+        goto out;
+    }
+
+    rval = flb_ra_get_value_object(ra, map);
+    TEST_CHECK(rval != NULL);
+    msgpack_unpacked_destroy(&result);
+    if (!rval) {
+        goto out;
+    }
+
+    TEST_CHECK(rval->type == FLB_RA_STRING);
+    if (strstr(rval->val.string, substring) != NULL) {
+        ret = FLB_TRUE;
+    }
+
+out:
+    if (rval) {
+        flb_ra_key_value_destroy(rval);
+    }
+    if (ra) {
+        flb_ra_destroy(ra);
+    }
+    if (mp_buf) {
+        flb_free(mp_buf);
+    }
+    return ret;
+}
+
 static int mp_kv_cmp_integer(char *json_data, size_t json_len, char *key_accessor, int64_t val)
 {
     int ret;
@@ -2366,6 +2421,84 @@ static void cb_check_non_scalar_payload_with_residual_fields(void *ctx, int ffd,
     ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['application_name']", "my_application");
     ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['message']", "The application errored out");
     ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['errorCode']", "400");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_fallback_payload_uses_message(void *ctx, int ffd,
+                                                   int res_ret, void *res_data, size_t res_size,
+                                                   void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['textPayload']", "raw_message_payload");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_fallback_payload_uses_log(void *ctx, int ffd,
+                                               int res_ret, void *res_data, size_t res_size,
+                                               void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['textPayload']", "raw_log_payload");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_fallback_payload_uses_custom_text_key(void *ctx, int ffd,
+                                                           int res_ret, void *res_data, size_t res_size,
+                                                           void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['textPayload']", "custom_text_payload");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_fallback_payload_uses_serialized_record(void *ctx, int ffd,
+                                                             int res_ret, void *res_data, size_t res_size,
+                                                             void *data)
+{
+    int ret;
+
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['textPayload']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_contains(res_data, res_size, "$entries[0]['textPayload']", "\"errorCode\":\"500\"");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_mixed_entries_with_fallback(void *ctx, int ffd,
+                                                 int res_ret, void *res_data, size_t res_size,
+                                                 void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['message']", "record one");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[1]['textPayload']", "raw_bad_record");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size, "$entries[1]['jsonPayload']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[2]['jsonPayload']['message']", "record three");
     TEST_CHECK(ret == FLB_TRUE);
 
     flb_sds_destroy(res_data);
@@ -6537,6 +6670,195 @@ void flb_test_non_scalar_payload_with_residual_fields()
     flb_destroy(ctx);
 }
 
+void flb_test_fallback_payload_uses_message()
+{
+    int ret;
+    int size = sizeof(DUPLICATE_LABELS_WITH_MESSAGE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_fallback_payload_uses_message,
+                              NULL, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) DUPLICATE_LABELS_WITH_MESSAGE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_fallback_payload_uses_log()
+{
+    int ret;
+    int size = sizeof(DUPLICATE_LABELS_WITH_LOG) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_fallback_payload_uses_log,
+                              NULL, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) DUPLICATE_LABELS_WITH_LOG, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_fallback_payload_uses_custom_text_key()
+{
+    int ret;
+    int size = sizeof(DUPLICATE_LABELS_WITH_CUSTOM_TEXT_KEY) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   "text_payload_key", "raw_message",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_fallback_payload_uses_custom_text_key,
+                              NULL, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) DUPLICATE_LABELS_WITH_CUSTOM_TEXT_KEY, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_fallback_payload_uses_serialized_record()
+{
+    int ret;
+    int size = sizeof(DUPLICATE_LABELS_WITH_NON_SCALAR_TEXT_SOURCES) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_fallback_payload_uses_serialized_record,
+                              NULL, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd,
+                 (char *) DUPLICATE_LABELS_WITH_NON_SCALAR_TEXT_SOURCES, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_mixed_entries_with_fallback()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    time_t now;
+    char record_valid_1[256];
+    char record_invalid[256];
+    char record_valid_2[256];
+
+    now = time(NULL);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_mixed_entries_with_fallback,
+                              NULL, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    snprintf(record_valid_1, sizeof(record_valid_1) - 1,
+             "[%ld, {\"message\": \"record one\", \"logging.googleapis.com/severity\": \"INFO\"}]",
+             (long) now);
+    snprintf(record_invalid, sizeof(record_invalid) - 1,
+             "[%ld, {\"message\": \"raw_bad_record\", \"logging.googleapis.com/severity\": \"ERROR\", \"logging.googleapis.com/labels\": \"invalid_labels\", \"logging.googleapis.com/labels\": 2}]",
+             (long) now + 1);
+    snprintf(record_valid_2, sizeof(record_valid_2) - 1,
+             "[%ld, {\"message\": \"record three\", \"logging.googleapis.com/severity\": \"DEBUG\"}]",
+             (long) now + 2);
+
+    flb_lib_push(ctx, in_ffd, record_valid_1, strlen(record_valid_1));
+    flb_lib_push(ctx, in_ffd, record_invalid, strlen(record_invalid));
+    flb_lib_push(ctx, in_ffd, record_valid_2, strlen(record_valid_2));
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"severity_multi_entries", flb_test_multi_entries_severity },
@@ -6671,5 +6993,10 @@ TEST_LIST = {
     {"string_text_payload_with_mismatched_text_payload_key", flb_test_string_text_payload_with_mismatched_text_payload_key},
     {"string_text_payload_with_residual_fields", flb_test_string_text_payload_with_residual_fields},
     {"non_scalar_payload_with_residual_fields", flb_test_non_scalar_payload_with_residual_fields},
+    {"fallback_payload_uses_message", flb_test_fallback_payload_uses_message},
+    {"fallback_payload_uses_log", flb_test_fallback_payload_uses_log},
+    {"fallback_payload_uses_custom_text_key", flb_test_fallback_payload_uses_custom_text_key},
+    {"fallback_payload_uses_serialized_record", flb_test_fallback_payload_uses_serialized_record},
+    {"mixed_entries_with_fallback", flb_test_mixed_entries_with_fallback},
     {NULL, NULL}
 };
