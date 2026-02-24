@@ -679,7 +679,7 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
     if (ret == -1) {
         /* Is this an incomplete HTTP Request ? */
         if (c->resp.payload_size <= 0) {
-            check |= FLB_ES_STATUS_IMCOMPLETE;
+            check |= FLB_ES_STATUS_INCOMPLETE;
             return check;
         }
 
@@ -702,7 +702,7 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
         flb_plg_error(ctx->ins, "Cannot unpack response to find error\n%s",
                       c->resp.payload);
         check |= FLB_ES_STATUS_ERROR_UNPACK;
-        return check;
+        goto done;
     }
 
     root = result.data;
@@ -718,7 +718,7 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
         if (key.type != MSGPACK_OBJECT_STR) {
             flb_plg_error(ctx->ins, "unexpected key type=%i",
                           key.type);
-            check |= FLB_ES_STATUS_INVAILD_ARGUMENT;
+            check |= FLB_ES_STATUS_INVALID_ARGUMENT;
             goto done;
         }
 
@@ -759,7 +759,7 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
                 if (item.via.map.size != 1) {
                     flb_plg_error(ctx->ins, "unexpected 'item' size=%i",
                                   item.via.map.size);
-                    check |= FLB_ES_STATUS_INVAILD_ARGUMENT;
+                    check |= FLB_ES_STATUS_INVALID_ARGUMENT;
                     goto done;
                 }
 
@@ -790,11 +790,11 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
                             goto done;
                         }
                         /* Check for success responses */
-                        if (item_val.via.i64 == 200 || item_val.via.i64 == 201) {
+                        if ((item_val.via.i64 >= 200 && item_val.via.i64 < 300) || item_val.via.i64 == 409) {
                             check |= FLB_ES_STATUS_SUCCESS;
                         }
                         /* Check for errors other than version conflict (document already exists) */
-                        if (item_val.via.i64 != 409) {
+                        if (item_val.via.i64 >= 400 && item_val.via.i64 != 409) {
                             check |= FLB_ES_STATUS_ERROR;
                         }
                     }
@@ -955,12 +955,14 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
              * and lookup the 'error' field.
              */
             ret = elasticsearch_error_check(ctx, c);
-            if (ret & FLB_ES_STATUS_SUCCESS) {
+            if (ret == FLB_ES_STATUS_SUCCESS) {
+                /* Only the SUCCESS flag was set => the batch was completely accepted by ElasticSearch. */
                 flb_plg_debug(ctx->ins, "Elasticsearch response\n%s",
                               c->resp.payload);
             }
             else {
-                /* we got an error */
+                /* Some errors were discovered while parsing the response.
+                 * Any error that may coexist with the SUCCESS flag should cause a retry. */
                 if (ctx->trace_error) {
                     /*
                      * If trace_error is set, trace the actual
