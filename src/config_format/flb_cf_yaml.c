@@ -2905,7 +2905,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     }
 
     flb_debug("============ %s ============", cfg_file);
-    fh = fopen(include_file, "r");
+    fh = fopen(include_file, "rb");
 
     if (!fh) {
         flb_errno();
@@ -2926,11 +2926,68 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     }
     ctx->level++;
 
-    yaml_parser_initialize(&parser);
-    yaml_parser_set_input_file(&parser, fh);
+    /*
+     * On Windows, passing FILE* across DLL boundaries can cause crashes due to
+     * different C runtime libraries. Read the file into a buffer and use
+     * yaml_parser_set_input_string() instead of yaml_parser_set_input_file().
+     */
+    {
+        long file_size;
+        unsigned char *file_buffer = NULL;
+        size_t bytes_read;
+        int parser_initialized = 0;
+        int event_needs_delete = 0;
+
+        /* Get file size */
+        fseek(fh, 0, SEEK_END);
+        file_size = ftell(fh);
+        fseek(fh, 0, SEEK_SET);
+
+        if (file_size < 0) {
+            flb_error("[config] could not determine file size for %s", cfg_file);
+            fclose(fh);
+            fh = NULL;
+            code = -1;
+            goto done;
+        }
+
+        /* Allocate buffer */
+        file_buffer = flb_malloc(file_size + 1);
+        if (!file_buffer) {
+            flb_error("[config] could not allocate memory for config file %s", cfg_file);
+            fclose(fh);
+            fh = NULL;
+            code = -1;
+            goto done;
+        }
+
+        /* Read file content */
+        bytes_read = fread(file_buffer, 1, file_size, fh);
+        if (bytes_read != (size_t)file_size && ferror(fh)) {
+            flb_error("[config] error reading file %s", cfg_file);
+            fclose(fh);
+            fh = NULL;
+            flb_free(file_buffer);
+            file_buffer = NULL;
+            code = -1;
+            goto done;
+        }
+        fclose(fh);
+        fh = NULL;  /* Mark as closed */
+        file_buffer[bytes_read] = '\0';
+        
+        if (!yaml_parser_initialize(&parser)) {
+            flb_error("[config] failed to initialize YAML parser");
+            code = -1;
+            goto done;
+        }
+        
+    parser_initialized = 1;    
+    yaml_parser_set_input_string(&parser, file_buffer, bytes_read);
 
     do {
         status = yaml_parser_parse(&parser, &event);
+        event_needs_delete = 1;  /* Mark that event needs cleanup on error */
 
         if (status == YAML_FAILURE) {
             if (parser.problem) {
@@ -2969,6 +3026,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         }
 
         yaml_event_delete(&event);
+        event_needs_delete = 0;  /* Event has been deleted, reset flag */
         state = cfl_list_entry_last(&ctx->states, struct parser_state, _head);
 
     } while (state->state != STATE_STOP);
@@ -2976,11 +3034,13 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     flb_debug("==============================");
 done:
 
-    if (code == -1) {
+    if (code == -1 && event_needs_delete) {
         yaml_event_delete(&event);
     }
 
-    yaml_parser_delete(&parser);
+    if (parser_initialized) {
+        yaml_parser_delete(&parser);
+    }
 
     /* free all remaining states */
     if (code == -1) {
@@ -2990,7 +3050,13 @@ done:
         state = state_pop(ctx);
     }
 
-    fclose(fh);
+    /* Free the file buffer that was allocated for yaml_parser_set_input_string */
+    if (file_buffer) {
+        flb_free(file_buffer);
+    }
+        
+    }  /* End of block that declared file_buffer */
+
     ctx->level--;
 
     flb_sds_destroy(include_file);
