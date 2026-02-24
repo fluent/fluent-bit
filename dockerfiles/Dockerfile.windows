@@ -199,6 +199,12 @@ RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
     Copy-Item -Path /src/conf/parsers_extra.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_openstack.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_cinder.conf /fluent-bit/etc/; `
+    Copy-Item -Path /src/conf/parsers.yaml /fluent-bit/etc/; `
+    Copy-Item -Path /src/conf/parsers_ambassador.yaml /fluent-bit/etc/; `
+    Copy-Item -Path /src/conf/parsers_java.yaml /fluent-bit/etc/; `
+    Copy-Item -Path /src/conf/parsers_extra.yaml /fluent-bit/etc/; `
+    Copy-Item -Path /src/conf/parsers_openstack.yaml /fluent-bit/etc/; `
+    Copy-Item -Path /src/conf/parsers_cinder.yaml /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/plugins.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/build/bin/fluent-bit.exe /fluent-bit/bin/;
 
