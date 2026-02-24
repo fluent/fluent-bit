@@ -73,7 +73,8 @@ static int azure_kusto_get_workload_identity_token(struct flb_azure_kusto *ctx)
 static int azure_kusto_get_service_principal_token(struct flb_azure_kusto *ctx)
 {
     int ret;
-    
+    const char *scope;
+
     /* Clear any previous oauth2 payload content */
     flb_oauth2_payload_clear(ctx->o);
 
@@ -83,7 +84,10 @@ static int azure_kusto_get_service_principal_token(struct flb_azure_kusto *ctx)
         return -1;
     }
 
-    ret = flb_oauth2_payload_append(ctx->o, "scope", 5, FLB_AZURE_KUSTO_SCOPE, 39);
+    /* scope depends on cloud environment */
+    scope = flb_azure_kusto_get_scope(ctx->cloud_environment);
+    ret = flb_oauth2_payload_append(ctx->o, "scope", 5, scope, strlen(scope));
+
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error appending oauth2 params");
         return -1;
