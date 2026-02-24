@@ -81,6 +81,11 @@ struct flb_config_map oauth2_config_map[] = {
      "Optional OAuth2 resource parameter"
     },
     {
+     FLB_CONFIG_MAP_STR, "oauth2.auth_method", "basic",
+     0, FLB_FALSE, 0,
+     "OAuth2 client authentication method: basic, post or private_key_jwt"
+    },
+    {
      FLB_CONFIG_MAP_STR, "oauth2.jwt_key_file", NULL,
      0, FLB_TRUE, offsetof(struct flb_oauth2_config,
                            jwt_key_file),
