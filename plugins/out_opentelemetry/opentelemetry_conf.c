@@ -148,7 +148,46 @@ static int metadata_mp_accessor_create(struct opentelemetry_context *ctx)
     return 0;
 }
 
-static int config_add_labels(struct flb_output_instance *ins,
+//TODO i dont know if this method is correct, i think it should probably be similiar to log_body_key_list_create
+static int config_ra_resource_attributes_message(struct flb_output_instance *ins,
+                                                struct opentelemetry_context *ctx)
+{
+    int ret;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+    struct mk_list slist;
+
+    ret = flb_slist_create(&slist);
+    if (ret != 0) {
+        return -1;
+    }
+
+    /* iterate all 'ra_resource_attributes_message' definitions */
+    flb_config_map_foreach(head, mv, ctx->ra_resource_attributes_message) {
+        if (mk_list_size(mv->val.list) != 1) {
+            flb_plg_error(ins, "'logs_resource_attributes_message_key' expects a value, "
+                          "e.g: 'logs_resource_attributes_message_key host'");
+            flb_slist_destroy(&slist);
+            return -1;
+        }
+
+        struct flb_slist_entry *k = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+
+        ret = flb_slist_add(&slist, k->str);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not add resource attribute key '%s'", k->str);
+            flb_slist_destroy(&slist);
+            return -1;
+        }
+    }
+
+    /* Set slist to ra_resource_attributes_message_list */
+    mk_list_move(&slist, &ctx->ra_resource_attributes_message_list);
+
+    return 0;
+}
+
+static int config_log_body(struct flb_output_instance *ins,
                              struct opentelemetry_context *ctx)
 {
     struct mk_list *head;
@@ -274,6 +313,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     ctx->ins = ins;
     mk_list_init(&ctx->kv_labels);
     mk_list_init(&ctx->log_body_key_list);
+    mk_list_init(&ctx->ra_resource_attributes_message_list);
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -295,6 +335,12 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
 
     /* Parse 'add_label' */
     ret = config_add_labels(ins, ctx);
+    if (ret == -1) {
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
+
+    ret = config_ra_resource_attributes_message(ins, ctx);
     if (ret == -1) {
         flb_opentelemetry_context_destroy(ctx);
         return NULL;
@@ -693,6 +739,8 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
     flb_http_client_ng_destroy(&ctx->http_client);
 
     flb_kv_release(&ctx->kv_labels);
+
+    //TODO we need to destroy the resource_attribuites_list 
 
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);

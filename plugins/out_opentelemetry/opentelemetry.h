@@ -140,6 +140,8 @@ struct opentelemetry_context {
 
     struct mk_list *ra_resource_attributes_message;
 
+    struct mk_list ra_resource_attributes_message_list;
+
     /* Number of logs to flush at a time */
     int batch_size;
 

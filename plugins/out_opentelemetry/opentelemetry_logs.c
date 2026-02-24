@@ -1327,6 +1327,8 @@ start_resource:
 
         append_v1_logs_metadata_and_fields(ctx, &event, log_record);
 
+        //TODO we need to add the resource attributes to to log_record here. 
+
         ret = FLB_OK;
         log_record_count++;
         scope_log->n_log_records = log_record_count;
