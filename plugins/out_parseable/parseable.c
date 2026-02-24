@@ -175,7 +175,9 @@ static flb_sds_t extract_dynamic_stream(struct flb_out_parseable *ctx,
             if (val && val->type == MSGPACK_OBJECT_STR) {
                 if (val->via.str.size == 4 && 
                     strncmp(val->via.str.ptr, "true", 4) == 0) {
-                    flb_plg_debug(ctx->ins, "Record excluded via parseable/exclude annotation");
+                    flb_plg_debug(ctx->ins,
+                        "Record excluded via "
+                        "parseable/exclude");
                     *exclude = 1;
                     msgpack_unpacked_destroy(&result);
                     return NULL;
@@ -187,7 +189,9 @@ static flb_sds_t extract_dynamic_stream(struct flb_out_parseable *ctx,
             if (val) {
                 stream = get_str_value(val);
                 if (stream) {
-                    flb_plg_debug(ctx->ins, "Using annotation parseable/dataset: %s", stream);
+                    flb_plg_debug(ctx->ins,
+                        "annotation dataset: %s",
+                        stream);
                     msgpack_unpacked_destroy(&result);
                     return stream;
                 }
@@ -230,7 +234,10 @@ static flb_sds_t extract_dynamic_stream(struct flb_out_parseable *ctx,
                     }
                     flb_sds_cat_safe(&stream, app, flb_sds_len(app));
                     flb_sds_cat_safe(&stream, "-logs", 5);
-                    flb_plg_debug(ctx->ins, "Derived stream from app.kubernetes.io/name label: %s", stream);
+                    flb_plg_debug(ctx->ins,
+                        "stream from "
+                        "app.k8s.io/name: %s",
+                        stream);
                     flb_sds_destroy(app);
                     msgpack_unpacked_destroy(&result);
                     return stream;
@@ -462,7 +469,9 @@ static int enrich_record_with_k8s(struct flb_out_parseable *ctx,
         msgpack_pack_str(pk, 13);
         msgpack_pack_str_body(pk, "k8s_namespace", 13);
         msgpack_pack_str(pk, flb_sds_len(meta->namespace_name));
-        msgpack_pack_str_body(pk, meta->namespace_name, flb_sds_len(meta->namespace_name));
+        msgpack_pack_str_body(pk,
+            meta->namespace_name,
+            flb_sds_len(meta->namespace_name));
     }
     if (meta->pod_name) {
         msgpack_pack_str(pk, 7);
@@ -474,7 +483,9 @@ static int enrich_record_with_k8s(struct flb_out_parseable *ctx,
         msgpack_pack_str(pk, 13);
         msgpack_pack_str_body(pk, "k8s_container", 13);
         msgpack_pack_str(pk, flb_sds_len(meta->container_name));
-        msgpack_pack_str_body(pk, meta->container_name, flb_sds_len(meta->container_name));
+        msgpack_pack_str_body(pk,
+            meta->container_name,
+            flb_sds_len(meta->container_name));
     }
     if (meta->host) {
         msgpack_pack_str(pk, 8);
@@ -584,12 +595,12 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "uri", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_parseable, uri),
-     "URI path for Parseable ingestion endpoint (auto-set based on data_type if not specified)"
+     "URI path for Parseable ingestion endpoint"
     },
     {
      FLB_CONFIG_MAP_STR, "data_type", "logs",
      0, FLB_TRUE, offsetof(struct flb_out_parseable, data_type),
-     "Data type: logs, metrics, or traces (determines endpoint: /v1/logs, /v1/metrics, /v1/traces)"
+     "Data type: logs, metrics, or traces"
     },
     {
      FLB_CONFIG_MAP_STR, "auth_header", NULL,
@@ -634,7 +645,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "enrich_kubernetes", "false",
      0, FLB_TRUE, offsetof(struct flb_out_parseable, enrich_kubernetes),
-     "Enable Kubernetes metadata enrichment (adds k8s_namespace, k8s_pod, k8s_container, k8s_node, environment, service, version)"
+     "Enable Kubernetes metadata enrichment"
     },
     
     /* EOF */
@@ -768,9 +779,10 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     flb_output_upstream_set(ctx->u, ins);
 
     /* Initialize metrics - failures are non-fatal, metrics will be skipped if NULL */
-    ctx->cmt_requests_total = cmt_counter_create(ins->cmt, "parseable", "requests",
-                                                  "total", "Total number of HTTP requests",
-                                                  1, (char *[]) {"status"});
+    ctx->cmt_requests_total = cmt_counter_create(
+        ins->cmt, "parseable", "requests",
+        "total", "Total HTTP requests",
+        1, (char *[]) {"status"});
     if (!ctx->cmt_requests_total) {
         flb_plg_warn(ins, "could not create requests_total metric");
     }
@@ -789,9 +801,10 @@ static int cb_parseable_init(struct flb_output_instance *ins,
         flb_plg_warn(ins, "could not create records_total metric");
     }
     
-    ctx->cmt_bytes_total = cmt_counter_create(ins->cmt, "parseable", "bytes",
-                                               "total", "Total bytes sent (after compression)",
-                                               0, NULL);
+    ctx->cmt_bytes_total = cmt_counter_create(
+        ins->cmt, "parseable", "bytes",
+        "total", "Total bytes sent",
+        0, NULL);
     if (!ctx->cmt_bytes_total) {
         flb_plg_warn(ins, "could not create bytes_total metric");
     }
@@ -809,9 +822,14 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     /* Register HTTP debug callbacks */
     flb_output_set_http_debug_callbacks(ins);
 
-    flb_plg_info(ins, "initialized: host=%s port=%d stream=%s uri=%s batch_size=%zu compress=%s",
-                 ins->host.name, ins->host.port, ctx->stream, ctx->uri,
-                 ctx->batch_size, ctx->compress_gzip ? "gzip" : "none");
+    flb_plg_info(ins,
+        "initialized: host=%s port=%d "
+        "stream=%s uri=%s "
+        "batch_size=%zu compress=%s",
+        ins->host.name, ins->host.port,
+        ctx->stream, ctx->uri,
+        ctx->batch_size,
+        ctx->compress_gzip ? "gzip" : "none");
 
     return 0;
 }
@@ -874,7 +892,10 @@ static flb_sds_t add_flattened_attributes(flb_sds_t dest, const char *prefix,
                 }
                 SDS_CAT_OR_GOTO(key_name, prefix, strlen(prefix), flatten_key_error);
                 SDS_CAT_OR_GOTO(key_name, ".", 1, flatten_key_error);
-                SDS_CAT_OR_GOTO(key_name, kv->key.via.str.ptr, kv->key.via.str.size, flatten_key_error);
+                SDS_CAT_OR_GOTO(key_name,
+                    kv->key.via.str.ptr,
+                    kv->key.via.str.size,
+                    flatten_key_error);
             } else {
                 key_name = flb_sds_create_len(kv->key.via.str.ptr, kv->key.via.str.size);
                 if (!key_name) {
@@ -900,7 +921,10 @@ static flb_sds_t add_flattened_attributes(flb_sds_t dest, const char *prefix,
                 SDS_CAT_OR_GOTO(dest, "{\"key\":\"", 8, flatten_error);
                 dest = escape_json_string(dest, key_name, flb_sds_len(key_name));
                 if (!dest) { goto flatten_error; }
-                SDS_CAT_OR_GOTO(dest, "\",\"value\":{\"stringValue\":\"[", 28, flatten_error);
+                SDS_CAT_OR_GOTO(dest,
+                    "\",\"value\":"
+                    "{\"stringValue\":\"[",
+                    27, flatten_error);
                 
                 /* Simple array representation */
                 for (size_t j = 0; j < kv->val.via.array.size; j++) {
@@ -909,12 +933,24 @@ static flb_sds_t add_flattened_attributes(flb_sds_t dest, const char *prefix,
                     }
                     msgpack_object *item = &kv->val.via.array.ptr[j];
                     if (item->type == MSGPACK_OBJECT_STR) {
-                        dest = escape_json_string(dest, item->via.str.ptr, item->via.str.size);
-                        if (!dest) { goto flatten_error; }
-                    } else if (item->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                        dest = escape_json_string(
+                            dest,
+                            item->via.str.ptr,
+                            item->via.str.size);
+                        if (!dest) {
+                            goto flatten_error;
+                        }
+                    }
+                    else if (item->type ==
+                        MSGPACK_OBJECT_POSITIVE_INTEGER) {
                         flb_sds_printf(&dest, "%llu", (unsigned long long)item->via.u64);
                         if (!dest) { goto flatten_error; }
-                    } else if (item->type == MSGPACK_OBJECT_FLOAT || item->type == MSGPACK_OBJECT_FLOAT32) {
+                    }
+                    else if (
+                        item->type ==
+                        MSGPACK_OBJECT_FLOAT ||
+                        item->type ==
+                        MSGPACK_OBJECT_FLOAT32) {
                         flb_sds_printf(&dest, "%f", item->via.f64);
                         if (!dest) { goto flatten_error; }
                     }
@@ -938,7 +974,10 @@ static flb_sds_t add_flattened_attributes(flb_sds_t dest, const char *prefix,
                 
                 if (kv->val.type == MSGPACK_OBJECT_STR) {
                     SDS_CAT_OR_GOTO(dest, "\"stringValue\":\"", 15, flatten_error);
-                    dest = escape_json_string(dest, kv->val.via.str.ptr, kv->val.via.str.size);
+                    dest = escape_json_string(
+                        dest,
+                        kv->val.via.str.ptr,
+                        kv->val.via.str.size);
                     if (!dest) { goto flatten_error; }
                     SDS_CAT_OR_GOTO(dest, "\"", 1, flatten_error);
                 }
@@ -952,7 +991,11 @@ static flb_sds_t add_flattened_attributes(flb_sds_t dest, const char *prefix,
                                         (long long)kv->val.via.i64);
                     if (!dest) { goto flatten_error; }
                 }
-                else if (kv->val.type == MSGPACK_OBJECT_FLOAT || kv->val.type == MSGPACK_OBJECT_FLOAT32) {
+                else if (
+                    kv->val.type ==
+                    MSGPACK_OBJECT_FLOAT ||
+                    kv->val.type ==
+                    MSGPACK_OBJECT_FLOAT32) {
                     flb_sds_printf(&dest, "\"doubleValue\":%f", kv->val.via.f64);
                     if (!dest) { goto flatten_error; }
                 }
@@ -966,7 +1009,7 @@ static flb_sds_t add_flattened_attributes(flb_sds_t dest, const char *prefix,
                     SDS_CAT_OR_GOTO(dest, "\"", 1, flatten_error);
                 }
                 else {
-                    SDS_CAT_OR_GOTO(dest, "\"stringValue\":\"\"", 17, flatten_error);
+                    SDS_CAT_OR_GOTO(dest, "\"stringValue\":\"\"", 16, flatten_error);
                 }
                 
                 SDS_CAT_OR_GOTO(dest, "}}", 2, flatten_error);
@@ -999,14 +1042,23 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
                                           struct flb_config *config)
 {
     int ret;
-    flb_sds_t otel_json;
+    flb_sds_t otel_json = NULL;
+    flb_sds_t resource_attrs = NULL;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
     msgpack_object *map;
+    msgpack_object *resource_map = NULL;
     msgpack_object_kv *kv;
-    int i;
+    uint32_t i;
+    size_t j;
+    size_t rk;
     int is_metrics = 0;
     int is_traces = 0;
+    int record_count = 0;
+    int attr_count = 0;
+    int resource_attr_count = 0;
+    uint64_t time_nano;
+    char prefix[256];
 
     /* Check data type */
     if (ctx->data_type && (strcasecmp(ctx->data_type, "metrics") == 0 ||
@@ -1020,43 +1072,77 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
         is_traces = 1;
     }
 
-    /* Check if data is already in OTLP format (contains resourceSpans, resourceMetrics, etc.) */
-    /* This happens when data comes from HTTP input with OTLP JSON */
-    /* For OTEL-trace/OTEL-metric types, skip the OTEL formatting if data already has the structure */
+    /*
+     * Check if data is already in OTLP format.
+     * Skip OTEL formatting if already structured.
+     */
     if (is_traces || is_metrics) {
-        ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+        ret = flb_log_event_decoder_init(
+            &log_decoder,
+            (char *) data, bytes);
         if (ret == FLB_EVENT_DECODER_SUCCESS) {
-            /* Try to decode first event to check if it has OTLP structure */
-            if (flb_log_event_decoder_next(&log_decoder, &log_event) == FLB_EVENT_DECODER_SUCCESS) {
+            ret = flb_log_event_decoder_next(
+                &log_decoder, &log_event);
+            if (ret ==
+                FLB_EVENT_DECODER_SUCCESS) {
                 map = log_event.body;
-                if (map && map->type == MSGPACK_OBJECT_MAP) {
-                    /* Check for OTLP structure markers */
-                    for (i = 0; i < map->via.map.size; i++) {
-                        kv = &map->via.map.ptr[i];
-                        if (kv->key.type == MSGPACK_OBJECT_STR) {
-                            /* Check each key with proper length guard to avoid reading past buffer */
-                            if ((kv->key.via.str.size == 13 && 
-                                 strncmp(kv->key.via.str.ptr, "resourceSpans", 13) == 0) ||
-                                (kv->key.via.str.size == 15 && 
-                                 strncmp(kv->key.via.str.ptr, "resourceMetrics", 15) == 0) ||
-                                (kv->key.via.str.size == 12 && 
-                                 strncmp(kv->key.via.str.ptr, "resourceLogs", 12) == 0)) {
-                                /* Data is already in OTLP format, pass it through as-is */
-                                flb_plg_debug(ctx->ins, "Data already in OTLP format, passing through");
-                                flb_log_event_decoder_destroy(&log_decoder);
-                                
-                                /* Convert msgpack to JSON directly - bypass OTEL formatting to avoid recursion */
-                                flb_sds_t json_buf = flb_pack_msgpack_to_json_format(data, (uint64_t)bytes,
-                                                                                      FLB_PACK_JSON_FORMAT_JSON,
-                                                                                      FLB_PACK_JSON_DATE_DOUBLE,
-                                                                                      NULL, FLB_FALSE);
-                                if (!json_buf) {
-                                    return -1;
-                                }
-                                *out_buf = json_buf;
-                                *out_size = flb_sds_len(json_buf);
-                                return 0;
+                if (map && map->type ==
+                    MSGPACK_OBJECT_MAP) {
+                    for (i = 0;
+                         i < map->via.map.size;
+                         i++) {
+                        kv =
+                            &map->via.map.ptr[i];
+                        if (kv->key.type !=
+                            MSGPACK_OBJECT_STR) {
+                            continue;
+                        }
+                        /* Check OTLP markers */
+                        if ((kv->key.via.str.size
+                             == 13 &&
+                             strncmp(
+                                kv->key.via
+                                .str.ptr,
+                                "resourceSpans",
+                                13) == 0) ||
+                            (kv->key.via.str.size
+                             == 15 &&
+                             strncmp(
+                                kv->key.via
+                                .str.ptr,
+                                "resourceMetrics",
+                                15) == 0) ||
+                            (kv->key.via.str.size
+                             == 12 &&
+                             strncmp(
+                                kv->key.via
+                                .str.ptr,
+                                "resourceLogs",
+                                12) == 0)) {
+                            flb_sds_t json_buf;
+                            flb_plg_debug(
+                                ctx->ins,
+                                "Already OTLP "
+                                "format");
+                            flb_log_event_decoder_destroy(
+                                &log_decoder);
+                            json_buf =
+                                flb_pack_msgpack_to_json_format(
+                                    data,
+                                    (uint64_t)
+                                    bytes,
+                                    FLB_PACK_JSON_FORMAT_JSON,
+                                    FLB_PACK_JSON_DATE_DOUBLE,
+                                    NULL,
+                                    FLB_FALSE);
+                            if (!json_buf) {
+                                return -1;
                             }
+                            *out_buf = json_buf;
+                            *out_size =
+                                flb_sds_len(
+                                    json_buf);
+                            return 0;
                         }
                     }
                 }
@@ -1073,19 +1159,22 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
     }
 
     /* Extract resource attributes from first record */
-    flb_sds_t resource_attrs = flb_sds_create("{\"attributes\":[");
+    resource_attrs = flb_sds_create(
+        "{\"attributes\":[");
     if (!resource_attrs) {
-        flb_plg_error(ctx->ins, "failed to allocate resource_attrs buffer");
+        flb_plg_error(ctx->ins,
+                      "failed to allocate "
+                      "resource_attrs buffer");
         flb_log_event_decoder_destroy(&log_decoder);
         return -1;
     }
-    int resource_attr_count = 0;
-    msgpack_object *resource_map = NULL;
     
-    if (flb_log_event_decoder_next(&log_decoder, &log_event) == FLB_EVENT_DECODER_SUCCESS) {
+    ret = flb_log_event_decoder_next(
+        &log_decoder, &log_event);
+    if (ret == FLB_EVENT_DECODER_SUCCESS) {
         map = log_event.body;
         if (map->type == MSGPACK_OBJECT_MAP) {
-            /* First check if there's a 'resource' field with 'attributes' */
+            /* Check for 'resource' field */
             for (i = 0; i < map->via.map.size; i++) {
                 kv = &map->via.map.ptr[i];
                 if (kv->key.type == MSGPACK_OBJECT_STR &&
@@ -1093,135 +1182,297 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
                     kv->key.via.str.size == 8 &&
                     kv->val.type == MSGPACK_OBJECT_MAP) {
                     
-                    /* Look for 'attributes' inside resource */
-                    for (size_t j = 0; j < kv->val.via.map.size; j++) {
-                        msgpack_object_kv *res_kv = &kv->val.via.map.ptr[j];
-                        if (res_kv->key.type == MSGPACK_OBJECT_STR &&
-                            strncmp(res_kv->key.via.str.ptr, "attributes", 10) == 0 &&
-                            res_kv->key.via.str.size == 10 &&
-                            res_kv->val.type == MSGPACK_OBJECT_MAP) {
-                            resource_map = &res_kv->val;
+                    /* Find 'attributes' in resource */
+                    for (j = 0;
+                         j < kv->val.via.map.size;
+                         j++) {
+                        msgpack_object_kv *res_kv;
+                        res_kv =
+                            &kv->val.via.map.ptr[j];
+                        if (res_kv->key.type ==
+                            MSGPACK_OBJECT_STR &&
+                            strncmp(
+                                res_kv->key.via
+                                .str.ptr,
+                                "attributes",
+                                10) == 0 &&
+                            res_kv->key.via
+                            .str.size == 10 &&
+                            res_kv->val.type ==
+                            MSGPACK_OBJECT_MAP) {
+                            resource_map =
+                                &res_kv->val;
                             break;
                         }
                     }
                     break;
                 }
             }
-            
-            /* If resource.attributes found, use it; otherwise extract common fields */
+
+            /* Use resource.attributes or fallback */
             if (resource_map) {
-                /* Use the resource.attributes map directly */
-                for (i = 0; i < resource_map->via.map.size; i++) {
-                    kv = &resource_map->via.map.ptr[i];
-                    if (kv->key.type != MSGPACK_OBJECT_STR) continue;
-                    
+                for (i = 0;
+                     i < resource_map->via.map.size;
+                     i++) {
+                    kv = &resource_map
+                        ->via.map.ptr[i];
+                    if (kv->key.type !=
+                        MSGPACK_OBJECT_STR) {
+                        continue;
+                    }
+
                     if (resource_attr_count > 0) {
-                        resource_attrs = flb_sds_cat(resource_attrs, ",", 1);
+                        SDS_CAT_OR_GOTO(
+                            resource_attrs,
+                            ",", 1,
+                            otel_alloc_error);
                     }
-                    
-                    resource_attrs = flb_sds_cat(resource_attrs, "{\"key\":\"", 8);
-                    resource_attrs = escape_json_string(resource_attrs, kv->key.via.str.ptr, kv->key.via.str.size);
-                    resource_attrs = flb_sds_cat(resource_attrs, "\",\"value\":{", 11);
-                    
-                    if (kv->val.type == MSGPACK_OBJECT_STR) {
-                        resource_attrs = flb_sds_cat(resource_attrs, "\"stringValue\":\"", 15);
-                        resource_attrs = escape_json_string(resource_attrs, kv->val.via.str.ptr, kv->val.via.str.size);
-                        resource_attrs = flb_sds_cat(resource_attrs, "\"", 1);
+
+                    SDS_CAT_OR_GOTO(
+                        resource_attrs,
+                        "{\"key\":\"", 8,
+                        otel_alloc_error);
+                    resource_attrs =
+                        escape_json_string(
+                            resource_attrs,
+                            kv->key.via.str.ptr,
+                            kv->key.via.str.size);
+                    if (!resource_attrs) {
+                        goto otel_alloc_error;
                     }
-                    else if (kv->val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                        flb_sds_printf(&resource_attrs, "\"intValue\":%llu", 
-                                       (unsigned long long)kv->val.via.u64);
+                    SDS_CAT_OR_GOTO(
+                        resource_attrs,
+                        "\",\"value\":{", 11,
+                        otel_alloc_error);
+
+                    if (kv->val.type ==
+                        MSGPACK_OBJECT_STR) {
+                        SDS_CAT_OR_GOTO(
+                            resource_attrs,
+                            "\"stringValue\":\""
+                            , 15,
+                            otel_alloc_error);
+                        resource_attrs =
+                            escape_json_string(
+                                resource_attrs,
+                                kv->val.via
+                                .str.ptr,
+                                kv->val.via
+                                .str.size);
+                        if (!resource_attrs) {
+                            goto otel_alloc_error;
+                        }
+                        SDS_CAT_OR_GOTO(
+                            resource_attrs,
+                            "\"", 1,
+                            otel_alloc_error);
+                    }
+                    else if (kv->val.type ==
+                        MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                        flb_sds_printf(
+                            &resource_attrs,
+                            "\"intValue\":%llu",
+                            (unsigned long long)
+                            kv->val.via.u64);
+                        if (!resource_attrs) {
+                            goto otel_alloc_error;
+                        }
                     }
                     else {
-                        resource_attrs = flb_sds_cat(resource_attrs, "\"stringValue\":\"\"", 17);
+                        SDS_CAT_OR_GOTO(
+                            resource_attrs,
+                            "\"stringValue\":"
+                            "\"\"", 16,
+                            otel_alloc_error);
                     }
-                    
-                    resource_attrs = flb_sds_cat(resource_attrs, "}}", 2);
+
+                    SDS_CAT_OR_GOTO(
+                        resource_attrs,
+                        "}}", 2,
+                        otel_alloc_error);
                     resource_attr_count++;
                 }
             }
             else {
-                /* Fallback: extract common service-level fields */
-                const char *resource_keys[] = {"service", "environment", "cluster", "hostname"};
-                for (size_t rk = 0; rk < sizeof(resource_keys)/sizeof(resource_keys[0]); rk++) {
-                    for (i = 0; i < map->via.map.size; i++) {
+                /* Fallback: extract common fields */
+                const char *resource_keys[] = {
+                    "service",
+                    "environment",
+                    "cluster",
+                    "hostname"
+                };
+                for (rk = 0;
+                     rk < sizeof(resource_keys)
+                     / sizeof(resource_keys[0]);
+                     rk++) {
+                    for (i = 0;
+                         i < map->via.map.size;
+                         i++) {
                         kv = &map->via.map.ptr[i];
-                        if (kv->key.type == MSGPACK_OBJECT_STR &&
-                            strncmp(kv->key.via.str.ptr, resource_keys[rk], strlen(resource_keys[rk])) == 0 &&
-                            kv->key.via.str.size == strlen(resource_keys[rk])) {
-                            
-                            if (resource_attr_count > 0) {
-                                resource_attrs = flb_sds_cat(resource_attrs, ",", 1);
-                            }
-                            
-                            resource_attrs = flb_sds_cat(resource_attrs, "{\"key\":\"", 8);
-                            if (strcmp(resource_keys[rk], "service") == 0) {
-                                resource_attrs = flb_sds_cat(resource_attrs, "service.name", 12);
-                            } else {
-                                resource_attrs = flb_sds_cat(resource_attrs, resource_keys[rk], strlen(resource_keys[rk]));
-                            }
-                            resource_attrs = flb_sds_cat(resource_attrs, "\",\"value\":{\"stringValue\":\"", 28);
-                            
-                            if (kv->val.type == MSGPACK_OBJECT_STR) {
-                                resource_attrs = escape_json_string(resource_attrs, kv->val.via.str.ptr, kv->val.via.str.size);
-                            }
-                            resource_attrs = flb_sds_cat(resource_attrs, "\"}}", 3);
-                            resource_attr_count++;
-                            break;
+                        if (kv->key.type !=
+                            MSGPACK_OBJECT_STR) {
+                            continue;
                         }
+                        if (strncmp(
+                            kv->key.via.str.ptr,
+                            resource_keys[rk],
+                            strlen(
+                                resource_keys[rk])
+                            ) != 0) {
+                            continue;
+                        }
+                        if (kv->key.via.str.size !=
+                            strlen(
+                                resource_keys[rk])
+                            ) {
+                            continue;
+                        }
+
+                        if (resource_attr_count
+                            > 0) {
+                            SDS_CAT_OR_GOTO(
+                                resource_attrs,
+                                ",", 1,
+                                otel_alloc_error);
+                        }
+
+                        SDS_CAT_OR_GOTO(
+                            resource_attrs,
+                            "{\"key\":\"", 8,
+                            otel_alloc_error);
+                        if (strcmp(
+                            resource_keys[rk],
+                            "service") == 0) {
+                            SDS_CAT_OR_GOTO(
+                                resource_attrs,
+                                "service.name",
+                                12,
+                                otel_alloc_error);
+                        }
+                        else {
+                            SDS_CAT_OR_GOTO(
+                                resource_attrs,
+                                resource_keys[rk],
+                                strlen(
+                                    resource_keys
+                                    [rk]),
+                                otel_alloc_error);
+                        }
+                        SDS_CAT_OR_GOTO(
+                            resource_attrs,
+                            "\",\"value\":"
+                            "{\"stringValue\":"
+                            "\"",
+                            26,
+                            otel_alloc_error);
+
+                        if (kv->val.type ==
+                            MSGPACK_OBJECT_STR) {
+                            resource_attrs =
+                                escape_json_string(
+                                    resource_attrs,
+                                    kv->val.via
+                                    .str.ptr,
+                                    kv->val.via
+                                    .str.size);
+                            if (!resource_attrs) {
+                                goto
+                                otel_alloc_error;
+                            }
+                        }
+                        SDS_CAT_OR_GOTO(
+                            resource_attrs,
+                            "\"}}", 3,
+                            otel_alloc_error);
+                        resource_attr_count++;
+                        break;
                     }
                 }
             }
         }
     }
-    resource_attrs = flb_sds_cat(resource_attrs, "]}", 2);
+    SDS_CAT_OR_GOTO(resource_attrs,
+                     "]}", 2,
+                     otel_alloc_error);
     
     /* Reset decoder to process all records */
     flb_log_event_decoder_destroy(&log_decoder);
-    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+    ret = flb_log_event_decoder_init(
+        &log_decoder, (char *) data, bytes);
     if (ret != FLB_EVENT_DECODER_SUCCESS) {
-        flb_plg_error(ctx->ins, "failed to re-initialize log event decoder");
+        flb_plg_error(ctx->ins,
+            "failed to re-init log decoder");
         flb_sds_destroy(resource_attrs);
         return -1;
     }
 
-    /* Start OTEL format with resource attributes */
+    /* Start OTEL format with resource attrs */
+    otel_json = flb_sds_create_size(256);
+    if (!otel_json) {
+        goto otel_alloc_error;
+    }
+
     if (is_metrics) {
-        otel_json = flb_sds_create_size(256);
-        if (!otel_json) {
-            goto otel_alloc_error;
-        }
-        SDS_CAT_OR_GOTO(otel_json, "{\"resourceMetrics\":[{\"resource\":", 35, otel_alloc_error);
-        SDS_CAT_OR_GOTO(otel_json, resource_attrs, flb_sds_len(resource_attrs), otel_alloc_error);
-        SDS_CAT_OR_GOTO(otel_json, ",\"scopeMetrics\":[{\"scope\":{\"name\":\"fluent-bit\"},\"metrics\":[", 62, otel_alloc_error);
+        SDS_CAT_OR_GOTO(otel_json,
+            "{\"resourceMetrics\":"
+            "[{\"resource\":",
+            32, otel_alloc_error);
+        SDS_CAT_OR_GOTO(otel_json,
+            resource_attrs,
+            flb_sds_len(resource_attrs),
+            otel_alloc_error);
+        SDS_CAT_OR_GOTO(otel_json,
+            ",\"scopeMetrics\":"
+            "[{\"scope\":{\"name\":"
+            "\"fluent-bit\"},"
+            "\"metrics\":[",
+            59, otel_alloc_error);
     }
     else if (is_traces) {
-        otel_json = flb_sds_create_size(256);
-        if (!otel_json) {
-            goto otel_alloc_error;
-        }
-        SDS_CAT_OR_GOTO(otel_json, "{\"resourceSpans\":[{\"resource\":", 32, otel_alloc_error);
-        SDS_CAT_OR_GOTO(otel_json, resource_attrs, flb_sds_len(resource_attrs), otel_alloc_error);
-        SDS_CAT_OR_GOTO(otel_json, ",\"scopeSpans\":[{\"scope\":{\"name\":\"fluent-bit\"},\"spans\":[", 59, otel_alloc_error);
+        SDS_CAT_OR_GOTO(otel_json,
+            "{\"resourceSpans\":"
+            "[{\"resource\":",
+            30, otel_alloc_error);
+        SDS_CAT_OR_GOTO(otel_json,
+            resource_attrs,
+            flb_sds_len(resource_attrs),
+            otel_alloc_error);
+        SDS_CAT_OR_GOTO(otel_json,
+            ",\"scopeSpans\":"
+            "[{\"scope\":{\"name\":"
+            "\"fluent-bit\"},"
+            "\"spans\":[",
+            55, otel_alloc_error);
     }
     else {
-        otel_json = flb_sds_create_size(256);
-        if (!otel_json) {
-            goto otel_alloc_error;
-        }
-        SDS_CAT_OR_GOTO(otel_json, "{\"resourceLogs\":[{\"resource\":", 30, otel_alloc_error);
-        SDS_CAT_OR_GOTO(otel_json, resource_attrs, flb_sds_len(resource_attrs), otel_alloc_error);
-        SDS_CAT_OR_GOTO(otel_json, ",\"scopeLogs\":[{\"scope\":{\"name\":\"fluent-bit\"},\"logRecords\":[", 62, otel_alloc_error);
+        SDS_CAT_OR_GOTO(otel_json,
+            "{\"resourceLogs\":"
+            "[{\"resource\":",
+            29, otel_alloc_error);
+        SDS_CAT_OR_GOTO(otel_json,
+            resource_attrs,
+            flb_sds_len(resource_attrs),
+            otel_alloc_error);
+        SDS_CAT_OR_GOTO(otel_json,
+            ",\"scopeLogs\":"
+            "[{\"scope\":{\"name\":"
+            "\"fluent-bit\"},"
+            "\"logRecords\":[",
+            59, otel_alloc_error);
     }
     
     flb_sds_destroy(resource_attrs);
     resource_attrs = NULL;
 
-    int record_count = 0;
     /* Process each record */
-    while (flb_log_event_decoder_next(&log_decoder, &log_event) == FLB_EVENT_DECODER_SUCCESS) {
+    while (flb_log_event_decoder_next(
+        &log_decoder,
+        &log_event) ==
+        FLB_EVENT_DECODER_SUCCESS) {
         if (record_count > 0) {
-            otel_json = flb_sds_cat(otel_json, ",", 1);
+            SDS_CAT_OR_GOTO(otel_json,
+                            ",", 1,
+                            otel_alloc_error);
         }
 
         map = log_event.body;
@@ -1230,37 +1481,67 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
         }
 
         /* Convert timestamp to nanoseconds */
-        uint64_t time_nano = (uint64_t)(log_event.timestamp.tm.tv_sec) * 1000000000ULL + 
-                             (uint64_t)(log_event.timestamp.tm.tv_nsec);
+        time_nano =
+            (uint64_t) log_event.timestamp.tm.tv_sec
+            * 1000000000ULL
+            + (uint64_t)
+            log_event.timestamp.tm.tv_nsec;
 
         if (is_metrics) {
             /* OTEL Metrics format */
-            flb_sds_printf(&otel_json, "{\"name\":\"");
-            
-            /* Extract metric_name if present */
-            for (i = 0; i < map->via.map.size; i++) {
+            SDS_CAT_OR_GOTO(otel_json,
+                "{\"name\":\"", 9,
+                otel_alloc_error);
+
+            /* Extract metric_name */
+            for (i = 0;
+                 i < map->via.map.size; i++) {
                 kv = &map->via.map.ptr[i];
-                if (kv->key.type == MSGPACK_OBJECT_STR &&
-                    strncmp(kv->key.via.str.ptr, "metric_name", 11) == 0 &&
-                    kv->val.type == MSGPACK_OBJECT_STR) {
-                    otel_json = escape_json_string(otel_json, kv->val.via.str.ptr, kv->val.via.str.size);
+                if (kv->key.type ==
+                    MSGPACK_OBJECT_STR &&
+                    strncmp(
+                        kv->key.via.str.ptr,
+                        "metric_name",
+                        11) == 0 &&
+                    kv->val.type ==
+                    MSGPACK_OBJECT_STR) {
+                    otel_json =
+                        escape_json_string(
+                            otel_json,
+                            kv->val.via.str.ptr,
+                            kv->val.via.str.size);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
+                    }
                     break;
                 }
             }
             if (i >= map->via.map.size) {
-                otel_json = flb_sds_cat(otel_json, "unknown", 7);
+                SDS_CAT_OR_GOTO(otel_json,
+                    "unknown", 7,
+                    otel_alloc_error);
             }
 
-            flb_sds_printf(&otel_json, "\",\"gauge\":{\"dataPoints\":[{\"timeUnixNano\":\"%llu\",\"attributes\":[", 
-                                (unsigned long long)time_nano);
+            flb_sds_printf(&otel_json,
+                "\",\"gauge\":"
+                "{\"dataPoints\":"
+                "[{\"timeUnixNano\":\"%llu\","
+                "\"attributes\":[",
+                (unsigned long long)
+                time_nano);
+            if (!otel_json) {
+                goto otel_alloc_error;
+            }
 
             /* Add all fields as attributes */
-            int attr_count = 0;
+            attr_count = 0;
             for (i = 0; i < map->via.map.size; i++) {
                 kv = &map->via.map.ptr[i];
-                if (kv->key.type != MSGPACK_OBJECT_STR) continue;
+                if (kv->key.type != MSGPACK_OBJECT_STR) {
+                    continue;
+                }
 
-                /* Skip internal metric fields and resource-level attributes */
+                /* Skip internal metric fields */
                 if (strncmp(kv->key.via.str.ptr, "metric_", 7) == 0 ||
                     strncmp(kv->key.via.str.ptr, "date", 4) == 0 ||
                     strncmp(kv->key.via.str.ptr, "service", 7) == 0 ||
@@ -1272,292 +1553,709 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
 
                 /* Handle nested maps separately - flatten them */
                 if (kv->val.type == MSGPACK_OBJECT_MAP) {
-                    char prefix[256];
-                    snprintf(prefix, sizeof(prefix), "%.*s", (int)kv->key.via.str.size, kv->key.via.str.ptr);
-                    otel_json = add_flattened_attributes(otel_json, prefix, &kv->val, &attr_count);
+                    snprintf(prefix,
+                             sizeof(prefix),
+                             "%.*s",
+                             (int) kv->key.via.str.size,
+                             kv->key.via.str.ptr);
+                    otel_json =
+                        add_flattened_attributes(
+                            otel_json, prefix,
+                            &kv->val, &attr_count);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
+                    }
                     continue;
                 }
 
                 if (attr_count > 0) {
-                    otel_json = flb_sds_cat(otel_json, ",", 1);
+                    SDS_CAT_OR_GOTO(otel_json,
+                                    ",", 1,
+                                    otel_alloc_error);
                 }
 
-                otel_json = flb_sds_cat(otel_json, "{\"key\":\"", 8);
-                otel_json = escape_json_string(otel_json, kv->key.via.str.ptr, kv->key.via.str.size);
-                otel_json = flb_sds_cat(otel_json, "\",\"value\":{", 11);
+                SDS_CAT_OR_GOTO(otel_json,
+                                "{\"key\":\"", 8,
+                                otel_alloc_error);
+                otel_json = escape_json_string(
+                    otel_json,
+                    kv->key.via.str.ptr,
+                    kv->key.via.str.size);
+                if (!otel_json) {
+                    goto otel_alloc_error;
+                }
+                SDS_CAT_OR_GOTO(otel_json,
+                                "\",\"value\":{", 11,
+                                otel_alloc_error);
 
                 /* Add value based on type */
-                if (kv->val.type == MSGPACK_OBJECT_STR) {
-                    otel_json = flb_sds_cat(otel_json, "\"stringValue\":\"", 15);
-                    otel_json = escape_json_string(otel_json, kv->val.via.str.ptr, kv->val.via.str.size);
-                    otel_json = flb_sds_cat(otel_json, "\"", 1);
-                }
-                else if (kv->val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                    flb_sds_printf(&otel_json, "\"intValue\":%llu", 
-                                        (unsigned long long)kv->val.via.u64);
-                }
-                else if (kv->val.type == MSGPACK_OBJECT_FLOAT || kv->val.type == MSGPACK_OBJECT_FLOAT32) {
-                    flb_sds_printf(&otel_json, "\"doubleValue\":%f", kv->val.via.f64);
-                }
-                else if (kv->val.type == MSGPACK_OBJECT_BOOLEAN) {
-                    otel_json = flb_sds_cat(otel_json, "\"stringValue\":\"", 15);
-                    if (kv->val.via.boolean) {
-                        otel_json = flb_sds_cat(otel_json, "true", 4);
-                    } else {
-                        otel_json = flb_sds_cat(otel_json, "false", 5);
+                if (kv->val.type ==
+                    MSGPACK_OBJECT_STR) {
+                    SDS_CAT_OR_GOTO(
+                        otel_json,
+                        "\"stringValue\":\"", 15,
+                        otel_alloc_error);
+                    otel_json = escape_json_string(
+                        otel_json,
+                        kv->val.via.str.ptr,
+                        kv->val.via.str.size);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
                     }
-                    otel_json = flb_sds_cat(otel_json, "\"", 1);
+                    SDS_CAT_OR_GOTO(otel_json,
+                                    "\"", 1,
+                                    otel_alloc_error);
                 }
-                else if (kv->val.type == MSGPACK_OBJECT_ARRAY) {
-                    /* Convert array to simple string representation */
-                    otel_json = flb_sds_cat(otel_json, "\"stringValue\":\"[", 16);
-                    for (size_t j = 0; j < kv->val.via.array.size; j++) {
-                        if (j > 0) otel_json = flb_sds_cat(otel_json, ",", 1);
-                        msgpack_object *item = &kv->val.via.array.ptr[j];
-                        if (item->type == MSGPACK_OBJECT_STR) {
-                            otel_json = escape_json_string(otel_json, item->via.str.ptr, item->via.str.size);
-                        } else if (item->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                            flb_sds_printf(&otel_json, "%llu", (unsigned long long)item->via.u64);
-                        } else if (item->type == MSGPACK_OBJECT_FLOAT || item->type == MSGPACK_OBJECT_FLOAT32) {
-                            flb_sds_printf(&otel_json, "%f", item->via.f64);
+                else if (kv->val.type ==
+                    MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                    flb_sds_printf(
+                        &otel_json,
+                        "\"intValue\":%llu",
+                        (unsigned long long)
+                        kv->val.via.u64);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
+                    }
+                }
+                else if (kv->val.type ==
+                    MSGPACK_OBJECT_FLOAT ||
+                    kv->val.type ==
+                    MSGPACK_OBJECT_FLOAT32) {
+                    flb_sds_printf(
+                        &otel_json,
+                        "\"doubleValue\":%f",
+                        kv->val.via.f64);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
+                    }
+                }
+                else if (kv->val.type ==
+                    MSGPACK_OBJECT_BOOLEAN) {
+                    SDS_CAT_OR_GOTO(
+                        otel_json,
+                        "\"stringValue\":\"", 15,
+                        otel_alloc_error);
+                    if (kv->val.via.boolean) {
+                        SDS_CAT_OR_GOTO(
+                            otel_json,
+                            "true", 4,
+                            otel_alloc_error);
+                    }
+                    else {
+                        SDS_CAT_OR_GOTO(
+                            otel_json,
+                            "false", 5,
+                            otel_alloc_error);
+                    }
+                    SDS_CAT_OR_GOTO(otel_json,
+                                    "\"", 1,
+                                    otel_alloc_error);
+                }
+                else if (kv->val.type ==
+                    MSGPACK_OBJECT_ARRAY) {
+                    msgpack_object *item;
+                    SDS_CAT_OR_GOTO(
+                        otel_json,
+                        "\"stringValue\":\"[", 16,
+                        otel_alloc_error);
+                    for (j = 0;
+                         j < kv->val.via.array.size;
+                         j++) {
+                        item =
+                            &kv->val.via.array.ptr[j];
+                        if (j > 0) {
+                            SDS_CAT_OR_GOTO(
+                                otel_json,
+                                ",", 1,
+                                otel_alloc_error);
+                        }
+                        if (item->type ==
+                            MSGPACK_OBJECT_STR) {
+                            otel_json =
+                                escape_json_string(
+                                    otel_json,
+                                    item->via.str.ptr,
+                                    item->via.str.size);
+                            if (!otel_json) {
+                                goto otel_alloc_error;
+                            }
+                        }
+                        else if (item->type ==
+                            MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                            flb_sds_printf(
+                                &otel_json,
+                                "%llu",
+                                (unsigned long long)
+                                item->via.u64);
+                            if (!otel_json) {
+                                goto otel_alloc_error;
+                            }
+                        }
+                        else if (item->type ==
+                            MSGPACK_OBJECT_FLOAT ||
+                            item->type ==
+                            MSGPACK_OBJECT_FLOAT32) {
+                            flb_sds_printf(
+                                &otel_json, "%f",
+                                item->via.f64);
+                            if (!otel_json) {
+                                goto otel_alloc_error;
+                            }
                         }
                     }
-                    otel_json = flb_sds_cat(otel_json, "]\"", 2);
+                    SDS_CAT_OR_GOTO(otel_json,
+                                    "]\"", 2,
+                                    otel_alloc_error);
                 }
                 else {
-                    otel_json = flb_sds_cat(otel_json, "\"stringValue\":\"\"", 17);
+                    SDS_CAT_OR_GOTO(
+                        otel_json,
+                        "\"stringValue\":\"\"", 16,
+                        otel_alloc_error);
                 }
 
-                otel_json = flb_sds_cat(otel_json, "}}", 2);
+                SDS_CAT_OR_GOTO(otel_json,
+                                "}}", 2,
+                                otel_alloc_error);
                 attr_count++;
             }
 
-            /* Close attributes array, add gauge value, close dataPoint, dataPoints, gauge, and metric */
-            otel_json = flb_sds_cat(otel_json, "],\"data_point_value\":0.0}]}}", 28);
+            /* Close metric record */
+            SDS_CAT_OR_GOTO(
+                otel_json,
+                "],\"data_point_value\":"
+                "0.0}]}}",
+                28, otel_alloc_error);
         }
         else if (is_traces) {
-            /* OTEL Traces format with Parseable field names */
-            flb_plg_debug(ctx->ins, "Starting trace span object");
-            otel_json = flb_sds_cat(otel_json, "{\"span_trace_id\":\"", 18);
-            if (!otel_json) {
-                flb_plg_error(ctx->ins, "Failed to add span_trace_id field");
-                flb_log_event_decoder_destroy(&log_decoder);
-                return -1;
-            }
-            flb_plg_debug(ctx->ins, "Added span_trace_id field, buffer len=%zu", flb_sds_len(otel_json));
-            
-            /* Extract trace_id if present */
-            for (i = 0; i < map->via.map.size; i++) {
+            /* OTEL Traces format */
+            SDS_CAT_OR_GOTO(otel_json,
+                "{\"span_trace_id\":\"",
+                18, otel_alloc_error);
+
+            /* Extract trace_id */
+            for (i = 0;
+                 i < map->via.map.size; i++) {
                 kv = &map->via.map.ptr[i];
-                if (kv->key.type == MSGPACK_OBJECT_STR &&
-                    strncmp(kv->key.via.str.ptr, "trace_id", 8) == 0 &&
-                    kv->val.type == MSGPACK_OBJECT_STR) {
-                    otel_json = escape_json_string(otel_json, kv->val.via.str.ptr, kv->val.via.str.size);
-                    break;
-                }
-            }
-            if (i >= map->via.map.size) {
-                otel_json = flb_sds_cat(otel_json, "00000000000000000000000000000000", 32);
-            }
-            
-            otel_json = flb_sds_cat(otel_json, "\",\"span_id\":\"", strlen("\",\"span_id\":\""));
-            
-            /* Extract span_id if present */
-            for (i = 0; i < map->via.map.size; i++) {
-                kv = &map->via.map.ptr[i];
-                if (kv->key.type == MSGPACK_OBJECT_STR &&
-                    strncmp(kv->key.via.str.ptr, "span_id", 7) == 0 &&
-                    kv->val.type == MSGPACK_OBJECT_STR) {
-                    otel_json = escape_json_string(otel_json, kv->val.via.str.ptr, kv->val.via.str.size);
-                    break;
-                }
-            }
-            if (i >= map->via.map.size) {
-                otel_json = flb_sds_cat(otel_json, "0000000000000000", 16);
-            }
-            
-            otel_json = flb_sds_printf(&otel_json, "\",\"span_start_time\":\"%llu\",\"span_end_time\":\"%llu\",\"span_name\":\"", 
-                                (unsigned long long)time_nano, (unsigned long long)time_nano);
-            
-            /* Extract operation name */
-            for (i = 0; i < map->via.map.size; i++) {
-                kv = &map->via.map.ptr[i];
-                if (kv->key.type == MSGPACK_OBJECT_STR &&
-                    strncmp(kv->key.via.str.ptr, "operation", 9) == 0 &&
-                    kv->val.type == MSGPACK_OBJECT_STR) {
-                    otel_json = escape_json_string(otel_json, kv->val.via.str.ptr, kv->val.via.str.size);
-                    break;
-                }
-            }
-            if (i >= map->via.map.size) {
-                otel_json = flb_sds_cat(otel_json, "unknown", 7);
-            }
-            
-            otel_json = flb_sds_cat(otel_json, "\",\"span_kind\":1,\"attributes\":[", strlen("\",\"span_kind\":1,\"attributes\":["));
-            
-            /* Add all fields as attributes */
-            int attr_count = 0;
-            for (i = 0; i < map->via.map.size; i++) {
-                kv = &map->via.map.ptr[i];
-                if (kv->key.type != MSGPACK_OBJECT_STR) continue;
-                
-                /* Skip trace-specific fields and resource-level attributes */
-                if (strncmp(kv->key.via.str.ptr, "trace_id", 8) == 0 ||
-                    strncmp(kv->key.via.str.ptr, "span_id", 7) == 0 ||
-                    strncmp(kv->key.via.str.ptr, "operation", 9) == 0 ||
-                    strncmp(kv->key.via.str.ptr, "date", 4) == 0 ||
-                    strncmp(kv->key.via.str.ptr, "service", 7) == 0 ||
-                    strncmp(kv->key.via.str.ptr, "environment", 11) == 0 ||
-                    strncmp(kv->key.via.str.ptr, "cluster", 7) == 0 ||
-                    strncmp(kv->key.via.str.ptr, "hostname", 8) == 0) {
-                    continue;
-                }
-                
-                /* Handle nested maps */
-                if (kv->val.type == MSGPACK_OBJECT_MAP) {
-                    char prefix[256];
-                    snprintf(prefix, sizeof(prefix), "%.*s", (int)kv->key.via.str.size, kv->key.via.str.ptr);
-                    otel_json = add_flattened_attributes(otel_json, prefix, &kv->val, &attr_count);
-                    continue;
-                }
-                
-                if (attr_count > 0) {
-                    otel_json = flb_sds_cat(otel_json, ",", 1);
-                }
-                
-                otel_json = flb_sds_cat(otel_json, "{\"key\":\"", 8);
-                otel_json = escape_json_string(otel_json, kv->key.via.str.ptr, kv->key.via.str.size);
-                otel_json = flb_sds_cat(otel_json, "\",\"value\":{", 11);
-                
-                /* Add value based on type */
-                if (kv->val.type == MSGPACK_OBJECT_STR) {
-                    otel_json = flb_sds_cat(otel_json, "\"stringValue\":\"", 15);
-                    otel_json = escape_json_string(otel_json, kv->val.via.str.ptr, kv->val.via.str.size);
-                    otel_json = flb_sds_cat(otel_json, "\"", 1);
-                }
-                else if (kv->val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                    flb_sds_printf(&otel_json, "\"intValue\":%llu", 
-                                        (unsigned long long)kv->val.via.u64);
-                }
-                else if (kv->val.type == MSGPACK_OBJECT_FLOAT || kv->val.type == MSGPACK_OBJECT_FLOAT32) {
-                    flb_sds_printf(&otel_json, "\"doubleValue\":%f", kv->val.via.f64);
-                }
-                else if (kv->val.type == MSGPACK_OBJECT_BOOLEAN) {
-                    otel_json = flb_sds_cat(otel_json, "\"stringValue\":\"", 15);
-                    if (kv->val.via.boolean) {
-                        otel_json = flb_sds_cat(otel_json, "true", 4);
-                    } else {
-                        otel_json = flb_sds_cat(otel_json, "false", 5);
+                if (kv->key.type ==
+                    MSGPACK_OBJECT_STR &&
+                    strncmp(
+                        kv->key.via.str.ptr,
+                        "trace_id", 8) == 0 &&
+                    kv->val.type ==
+                    MSGPACK_OBJECT_STR) {
+                    otel_json =
+                        escape_json_string(
+                            otel_json,
+                            kv->val.via.str.ptr,
+                            kv->val.via.str.size);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
                     }
-                    otel_json = flb_sds_cat(otel_json, "\"", 1);
+                    break;
+                }
+            }
+            if (i >= map->via.map.size) {
+                SDS_CAT_OR_GOTO(otel_json,
+                    "00000000000000000000"
+                    "000000000000",
+                    32, otel_alloc_error);
+            }
+
+            SDS_CAT_OR_GOTO(otel_json,
+                "\",\"span_id\":\"",
+                13, otel_alloc_error);
+
+            /* Extract span_id */
+            for (i = 0;
+                 i < map->via.map.size; i++) {
+                kv = &map->via.map.ptr[i];
+                if (kv->key.type ==
+                    MSGPACK_OBJECT_STR &&
+                    strncmp(
+                        kv->key.via.str.ptr,
+                        "span_id", 7) == 0 &&
+                    kv->val.type ==
+                    MSGPACK_OBJECT_STR) {
+                    otel_json =
+                        escape_json_string(
+                            otel_json,
+                            kv->val.via.str.ptr,
+                            kv->val.via.str.size);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
+                    }
+                    break;
+                }
+            }
+            if (i >= map->via.map.size) {
+                SDS_CAT_OR_GOTO(otel_json,
+                    "0000000000000000",
+                    16, otel_alloc_error);
+            }
+
+            flb_sds_printf(&otel_json,
+                "\",\"span_start_time\":"
+                "\"%llu\","
+                "\"span_end_time\":\"%llu\","
+                "\"span_name\":\"",
+                (unsigned long long) time_nano,
+                (unsigned long long) time_nano);
+            if (!otel_json) {
+                goto otel_alloc_error;
+            }
+
+            /* Extract operation name */
+            for (i = 0;
+                 i < map->via.map.size; i++) {
+                kv = &map->via.map.ptr[i];
+                if (kv->key.type ==
+                    MSGPACK_OBJECT_STR &&
+                    strncmp(
+                        kv->key.via.str.ptr,
+                        "operation", 9) == 0 &&
+                    kv->val.type ==
+                    MSGPACK_OBJECT_STR) {
+                    otel_json =
+                        escape_json_string(
+                            otel_json,
+                            kv->val.via.str.ptr,
+                            kv->val.via.str.size);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
+                    }
+                    break;
+                }
+            }
+            if (i >= map->via.map.size) {
+                SDS_CAT_OR_GOTO(otel_json,
+                    "unknown", 7,
+                    otel_alloc_error);
+            }
+
+            SDS_CAT_OR_GOTO(otel_json,
+                "\",\"span_kind\":1,"
+                "\"attributes\":[",
+                30, otel_alloc_error);
+
+            /* Add all fields as attributes */
+            attr_count = 0;
+            for (i = 0;
+                 i < map->via.map.size; i++) {
+                kv = &map->via.map.ptr[i];
+                if (kv->key.type !=
+                    MSGPACK_OBJECT_STR) {
+                    continue;
+                }
+
+                /* Skip trace/resource fields */
+                if (strncmp(
+                        kv->key.via.str.ptr,
+                        "trace_id", 8) == 0 ||
+                    strncmp(
+                        kv->key.via.str.ptr,
+                        "span_id", 7) == 0 ||
+                    strncmp(
+                        kv->key.via.str.ptr,
+                        "operation", 9) == 0 ||
+                    strncmp(
+                        kv->key.via.str.ptr,
+                        "date", 4) == 0 ||
+                    strncmp(
+                        kv->key.via.str.ptr,
+                        "service", 7) == 0 ||
+                    strncmp(
+                        kv->key.via.str.ptr,
+                        "environment",
+                        11) == 0 ||
+                    strncmp(
+                        kv->key.via.str.ptr,
+                        "cluster", 7) == 0 ||
+                    strncmp(
+                        kv->key.via.str.ptr,
+                        "hostname", 8) == 0) {
+                    continue;
+                }
+
+                /* Handle nested maps */
+                if (kv->val.type ==
+                    MSGPACK_OBJECT_MAP) {
+                    snprintf(prefix,
+                             sizeof(prefix),
+                             "%.*s",
+                             (int)
+                             kv->key.via.str.size,
+                             kv->key.via.str.ptr);
+                    otel_json =
+                        add_flattened_attributes(
+                            otel_json, prefix,
+                            &kv->val,
+                            &attr_count);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
+                    }
+                    continue;
+                }
+
+                if (attr_count > 0) {
+                    SDS_CAT_OR_GOTO(
+                        otel_json, ",", 1,
+                        otel_alloc_error);
+                }
+
+                SDS_CAT_OR_GOTO(otel_json,
+                    "{\"key\":\"", 8,
+                    otel_alloc_error);
+                otel_json = escape_json_string(
+                    otel_json,
+                    kv->key.via.str.ptr,
+                    kv->key.via.str.size);
+                if (!otel_json) {
+                    goto otel_alloc_error;
+                }
+                SDS_CAT_OR_GOTO(otel_json,
+                    "\",\"value\":{", 11,
+                    otel_alloc_error);
+
+                if (kv->val.type ==
+                    MSGPACK_OBJECT_STR) {
+                    SDS_CAT_OR_GOTO(
+                        otel_json,
+                        "\"stringValue\":\"",
+                        15, otel_alloc_error);
+                    otel_json =
+                        escape_json_string(
+                            otel_json,
+                            kv->val.via.str.ptr,
+                            kv->val.via.str.size);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
+                    }
+                    SDS_CAT_OR_GOTO(
+                        otel_json, "\"", 1,
+                        otel_alloc_error);
+                }
+                else if (kv->val.type ==
+                    MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                    flb_sds_printf(
+                        &otel_json,
+                        "\"intValue\":%llu",
+                        (unsigned long long)
+                        kv->val.via.u64);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
+                    }
+                }
+                else if (kv->val.type ==
+                    MSGPACK_OBJECT_FLOAT ||
+                    kv->val.type ==
+                    MSGPACK_OBJECT_FLOAT32) {
+                    flb_sds_printf(
+                        &otel_json,
+                        "\"doubleValue\":%f",
+                        kv->val.via.f64);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
+                    }
+                }
+                else if (kv->val.type ==
+                    MSGPACK_OBJECT_BOOLEAN) {
+                    SDS_CAT_OR_GOTO(
+                        otel_json,
+                        "\"stringValue\":\"",
+                        15, otel_alloc_error);
+                    if (kv->val.via.boolean) {
+                        SDS_CAT_OR_GOTO(
+                            otel_json,
+                            "true", 4,
+                            otel_alloc_error);
+                    }
+                    else {
+                        SDS_CAT_OR_GOTO(
+                            otel_json,
+                            "false", 5,
+                            otel_alloc_error);
+                    }
+                    SDS_CAT_OR_GOTO(
+                        otel_json, "\"", 1,
+                        otel_alloc_error);
                 }
                 else {
-                    otel_json = flb_sds_cat(otel_json, "\"stringValue\":\"\"", 17);
+                    SDS_CAT_OR_GOTO(
+                        otel_json,
+                        "\"stringValue\":\"\"",
+                        16, otel_alloc_error);
                 }
-                
-                otel_json = flb_sds_cat(otel_json, "}}", 2);
+
+                SDS_CAT_OR_GOTO(otel_json,
+                    "}}", 2,
+                    otel_alloc_error);
                 attr_count++;
             }
-            
+
             /* Close span */
-            otel_json = flb_sds_cat(otel_json, "],\"span_status\":\"OK\"}", strlen("],\"span_status\":\"OK\"}"));
+            SDS_CAT_OR_GOTO(otel_json,
+                "],\"span_status\":"
+                "\"OK\"}",
+                21, otel_alloc_error);
         }
         else {
             /* OTEL Logs format */
-            flb_sds_printf(&otel_json, "{\"timeUnixNano\":\"%llu\",\"observedTimeUnixNano\":\"%llu\",\"severityNumber\":9,\"severityText\":\"INFO\",\"body\":{\"stringValue\":\"", 
-                                (unsigned long long)time_nano, (unsigned long long)time_nano);
+            flb_sds_printf(&otel_json,
+                "{\"timeUnixNano\":\"%llu\","
+                "\"observedTimeUnixNano\":"
+                "\"%llu\","
+                "\"severityNumber\":9,"
+                "\"severityText\":\"INFO\","
+                "\"body\":{\"stringValue\":\"",
+                (unsigned long long) time_nano,
+                (unsigned long long) time_nano);
+            if (!otel_json) {
+                goto otel_alloc_error;
+            }
 
             /* Extract body/message */
-            for (i = 0; i < map->via.map.size; i++) {
+            for (i = 0;
+                 i < map->via.map.size; i++) {
                 kv = &map->via.map.ptr[i];
-                if (kv->key.type == MSGPACK_OBJECT_STR &&
-                    (strncmp(kv->key.via.str.ptr, "log", 3) == 0 ||
-                     strncmp(kv->key.via.str.ptr, "message", 7) == 0) &&
-                    kv->val.type == MSGPACK_OBJECT_STR) {
-                    otel_json = escape_json_string(otel_json, kv->val.via.str.ptr, kv->val.via.str.size);
+                if (kv->key.type ==
+                    MSGPACK_OBJECT_STR &&
+                    (strncmp(
+                        kv->key.via.str.ptr,
+                        "log", 3) == 0 ||
+                     strncmp(
+                        kv->key.via.str.ptr,
+                        "message", 7) == 0) &&
+                    kv->val.type ==
+                    MSGPACK_OBJECT_STR) {
+                    otel_json =
+                        escape_json_string(
+                            otel_json,
+                            kv->val.via.str.ptr,
+                            kv->val.via.str.size);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
+                    }
                     break;
                 }
             }
 
-            otel_json = flb_sds_cat(otel_json, "\"},\"attributes\":[", 17);
+            SDS_CAT_OR_GOTO(otel_json,
+                "\"},\"attributes\":[",
+                17, otel_alloc_error);
 
             /* Add all fields as attributes */
-            int attr_count = 0;
-            for (i = 0; i < map->via.map.size; i++) {
+            attr_count = 0;
+            for (i = 0;
+                 i < map->via.map.size; i++) {
                 kv = &map->via.map.ptr[i];
-                if (kv->key.type != MSGPACK_OBJECT_STR) continue;
-
-                /* Skip resource-level attributes */
-                if (strncmp(kv->key.via.str.ptr, "service", 7) == 0 ||
-                    strncmp(kv->key.via.str.ptr, "environment", 11) == 0 ||
-                    strncmp(kv->key.via.str.ptr, "cluster", 7) == 0 ||
-                    strncmp(kv->key.via.str.ptr, "hostname", 8) == 0) {
+                if (kv->key.type !=
+                    MSGPACK_OBJECT_STR) {
                     continue;
                 }
 
-                /* Handle nested maps separately - flatten them */
-                if (kv->val.type == MSGPACK_OBJECT_MAP) {
-                    char prefix[256];
-                    snprintf(prefix, sizeof(prefix), "%.*s", (int)kv->key.via.str.size, kv->key.via.str.ptr);
-                    otel_json = add_flattened_attributes(otel_json, prefix, &kv->val, &attr_count);
+                /* Skip resource-level attrs */
+                if (strncmp(
+                        kv->key.via.str.ptr,
+                        "service", 7) == 0 ||
+                    strncmp(
+                        kv->key.via.str.ptr,
+                        "environment",
+                        11) == 0 ||
+                    strncmp(
+                        kv->key.via.str.ptr,
+                        "cluster", 7) == 0 ||
+                    strncmp(
+                        kv->key.via.str.ptr,
+                        "hostname", 8) == 0) {
+                    continue;
+                }
+
+                /* Flatten nested maps */
+                if (kv->val.type ==
+                    MSGPACK_OBJECT_MAP) {
+                    snprintf(prefix,
+                             sizeof(prefix),
+                             "%.*s",
+                             (int)
+                             kv->key.via.str.size,
+                             kv->key.via.str.ptr);
+                    otel_json =
+                        add_flattened_attributes(
+                            otel_json, prefix,
+                            &kv->val,
+                            &attr_count);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
+                    }
                     continue;
                 }
 
                 if (attr_count > 0) {
-                    otel_json = flb_sds_cat(otel_json, ",", 1);
+                    SDS_CAT_OR_GOTO(
+                        otel_json, ",", 1,
+                        otel_alloc_error);
                 }
 
-                otel_json = flb_sds_cat(otel_json, "{\"key\":\"", 8);
-                otel_json = escape_json_string(otel_json, kv->key.via.str.ptr, kv->key.via.str.size);
-                otel_json = flb_sds_cat(otel_json, "\",\"value\":{", 11);
+                SDS_CAT_OR_GOTO(otel_json,
+                    "{\"key\":\"", 8,
+                    otel_alloc_error);
+                otel_json = escape_json_string(
+                    otel_json,
+                    kv->key.via.str.ptr,
+                    kv->key.via.str.size);
+                if (!otel_json) {
+                    goto otel_alloc_error;
+                }
+                SDS_CAT_OR_GOTO(otel_json,
+                    "\",\"value\":{", 11,
+                    otel_alloc_error);
 
-                /* Add value based on type */
-                if (kv->val.type == MSGPACK_OBJECT_STR) {
-                    otel_json = flb_sds_cat(otel_json, "\"stringValue\":\"", 15);
-                    otel_json = escape_json_string(otel_json, kv->val.via.str.ptr, kv->val.via.str.size);
-                    otel_json = flb_sds_cat(otel_json, "\"", 1);
-                }
-                else if (kv->val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                    flb_sds_printf(&otel_json, "\"intValue\":%llu", 
-                                        (unsigned long long)kv->val.via.u64);
-                }
-                else if (kv->val.type == MSGPACK_OBJECT_FLOAT || kv->val.type == MSGPACK_OBJECT_FLOAT32) {
-                    flb_sds_printf(&otel_json, "\"doubleValue\":%f", kv->val.via.f64);
-                }
-                else if (kv->val.type == MSGPACK_OBJECT_BOOLEAN) {
-                    otel_json = flb_sds_cat(otel_json, "\"stringValue\":\"", 15);
-                    if (kv->val.via.boolean) {
-                        otel_json = flb_sds_cat(otel_json, "true", 4);
-                    } else {
-                        otel_json = flb_sds_cat(otel_json, "false", 5);
+                if (kv->val.type ==
+                    MSGPACK_OBJECT_STR) {
+                    SDS_CAT_OR_GOTO(
+                        otel_json,
+                        "\"stringValue\":\"",
+                        15, otel_alloc_error);
+                    otel_json =
+                        escape_json_string(
+                            otel_json,
+                            kv->val.via.str.ptr,
+                            kv->val.via.str.size);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
                     }
-                    otel_json = flb_sds_cat(otel_json, "\"", 1);
+                    SDS_CAT_OR_GOTO(
+                        otel_json, "\"", 1,
+                        otel_alloc_error);
                 }
-                else if (kv->val.type == MSGPACK_OBJECT_ARRAY) {
-                    /* Convert array to simple string representation */
-                    otel_json = flb_sds_cat(otel_json, "\"stringValue\":\"[", 16);
-                    for (size_t j = 0; j < kv->val.via.array.size; j++) {
-                        if (j > 0) otel_json = flb_sds_cat(otel_json, ",", 1);
-                        msgpack_object *item = &kv->val.via.array.ptr[j];
-                        if (item->type == MSGPACK_OBJECT_STR) {
-                            otel_json = escape_json_string(otel_json, item->via.str.ptr, item->via.str.size);
-                        } else if (item->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                            flb_sds_printf(&otel_json, "%llu", (unsigned long long)item->via.u64);
-                        } else if (item->type == MSGPACK_OBJECT_FLOAT || item->type == MSGPACK_OBJECT_FLOAT32) {
-                            flb_sds_printf(&otel_json, "%f", item->via.f64);
+                else if (kv->val.type ==
+                    MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                    flb_sds_printf(
+                        &otel_json,
+                        "\"intValue\":%llu",
+                        (unsigned long long)
+                        kv->val.via.u64);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
+                    }
+                }
+                else if (kv->val.type ==
+                    MSGPACK_OBJECT_FLOAT ||
+                    kv->val.type ==
+                    MSGPACK_OBJECT_FLOAT32) {
+                    flb_sds_printf(
+                        &otel_json,
+                        "\"doubleValue\":%f",
+                        kv->val.via.f64);
+                    if (!otel_json) {
+                        goto otel_alloc_error;
+                    }
+                }
+                else if (kv->val.type ==
+                    MSGPACK_OBJECT_BOOLEAN) {
+                    SDS_CAT_OR_GOTO(
+                        otel_json,
+                        "\"stringValue\":\"",
+                        15, otel_alloc_error);
+                    if (kv->val.via.boolean) {
+                        SDS_CAT_OR_GOTO(
+                            otel_json,
+                            "true", 4,
+                            otel_alloc_error);
+                    }
+                    else {
+                        SDS_CAT_OR_GOTO(
+                            otel_json,
+                            "false", 5,
+                            otel_alloc_error);
+                    }
+                    SDS_CAT_OR_GOTO(
+                        otel_json, "\"", 1,
+                        otel_alloc_error);
+                }
+                else if (kv->val.type ==
+                    MSGPACK_OBJECT_ARRAY) {
+                    msgpack_object *item;
+                    SDS_CAT_OR_GOTO(
+                        otel_json,
+                        "\"stringValue\":\"[",
+                        16, otel_alloc_error);
+                    for (j = 0;
+                         j <
+                         kv->val.via.array.size;
+                         j++) {
+                        item =
+                            &kv->val.via.array
+                            .ptr[j];
+                        if (j > 0) {
+                            SDS_CAT_OR_GOTO(
+                                otel_json,
+                                ",", 1,
+                                otel_alloc_error);
+                        }
+                        if (item->type ==
+                            MSGPACK_OBJECT_STR) {
+                            otel_json =
+                                escape_json_string(
+                                    otel_json,
+                                    item->via
+                                    .str.ptr,
+                                    item->via
+                                    .str.size);
+                            if (!otel_json) {
+                                goto
+                                otel_alloc_error;
+                            }
+                        }
+                        else if (item->type ==
+                            MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                            flb_sds_printf(
+                                &otel_json,
+                                "%llu",
+                                (unsigned
+                                 long long)
+                                item->via.u64);
+                            if (!otel_json) {
+                                goto
+                                otel_alloc_error;
+                            }
+                        }
+                        else if (item->type ==
+                            MSGPACK_OBJECT_FLOAT
+                            || item->type ==
+                            MSGPACK_OBJECT_FLOAT32) {
+                            flb_sds_printf(
+                                &otel_json,
+                                "%f",
+                                item->via.f64);
+                            if (!otel_json) {
+                                goto
+                                otel_alloc_error;
+                            }
                         }
                     }
-                    otel_json = flb_sds_cat(otel_json, "]\"", 2);
+                    SDS_CAT_OR_GOTO(
+                        otel_json, "]\"", 2,
+                        otel_alloc_error);
                 }
                 else {
-                    otel_json = flb_sds_cat(otel_json, "\"stringValue\":\"\"", 17);
+                    SDS_CAT_OR_GOTO(
+                        otel_json,
+                        "\"stringValue\":\"\"",
+                        16, otel_alloc_error);
                 }
 
-                otel_json = flb_sds_cat(otel_json, "}}", 2);
+                SDS_CAT_OR_GOTO(otel_json,
+                    "}}", 2,
+                    otel_alloc_error);
                 attr_count++;
             }
 
-            otel_json = flb_sds_cat(otel_json, "],\"traceId\":\"\",\"spanId\":\"\"}", 31);
+            SDS_CAT_OR_GOTO(otel_json,
+                "],\"traceId\":\"\","
+                "\"spanId\":\"\"}",
+                27, otel_alloc_error);
         }
 
         record_count++;
@@ -1566,30 +2264,39 @@ static int parseable_format_json_to_otel(struct flb_out_parseable *ctx,
     flb_log_event_decoder_destroy(&log_decoder);
 
     /* Close OTEL format */
-    otel_json = flb_sds_cat(otel_json, "]}]}]}", 6);
-    if (!otel_json) {
-        flb_plg_error(ctx->ins, "Failed to close OTEL JSON structure");
-        return -1;
-    }
-    
-    /* Remove any null bytes that may have been inserted */
-    size_t len = flb_sds_len(otel_json);
-    size_t write_pos = 0;
-    for (size_t read_pos = 0; read_pos < len; read_pos++) {
-        if (otel_json[read_pos] != '\0') {
-            if (write_pos != read_pos) {
-                otel_json[write_pos] = otel_json[read_pos];
+    SDS_CAT_OR_GOTO(otel_json,
+                     "]}]}]}", 6,
+                     otel_alloc_error);
+
+    /* Remove null bytes that may have been added */
+    {
+        size_t len = flb_sds_len(otel_json);
+        size_t write_pos = 0;
+        size_t read_pos;
+        for (read_pos = 0;
+             read_pos < len; read_pos++) {
+            if (otel_json[read_pos] != '\0') {
+                if (write_pos != read_pos) {
+                    otel_json[write_pos] =
+                        otel_json[read_pos];
+                }
+                write_pos++;
             }
-            write_pos++;
+        }
+        if (write_pos < len) {
+            flb_plg_warn(ctx->ins,
+                "Removed %zu null bytes "
+                "from OTEL JSON",
+                len - write_pos);
+            flb_sds_len_set(otel_json,
+                            write_pos);
         }
     }
-    if (write_pos < len) {
-        flb_plg_warn(ctx->ins, "Removed %zu null bytes from OTEL JSON", len - write_pos);
-        flb_sds_len_set(otel_json, write_pos);
-    }
-    
-    flb_plg_debug(ctx->ins, "OTEL JSON complete: %zu bytes, %d records", 
-                  flb_sds_len(otel_json), record_count);
+
+    flb_plg_debug(ctx->ins,
+        "OTEL JSON: %zu bytes, %d records",
+        flb_sds_len(otel_json),
+        record_count);
 
     *out_buf = otel_json;
     *out_size = flb_sds_len(otel_json);
@@ -1750,8 +2457,9 @@ static int parseable_format_json(struct flb_out_parseable *ctx,
     int need_free_enriched = 0;
     
     /* Check if we should use OTEL JSON format */
-    if (ctx->log_source && 
-        (strstr(ctx->log_source, "otel") != NULL || strstr(ctx->log_source, "OTEL") != NULL)) {
+    if (ctx->log_source &&
+        (strstr(ctx->log_source, "otel") ||
+         strstr(ctx->log_source, "OTEL"))) {
         /* Use OTEL JSON format */
         flb_plg_debug(ctx->ins, "Using OTEL JSON format");
         return parseable_format_json_to_otel(ctx, data, bytes, out_buf, out_size, config);
@@ -1770,10 +2478,12 @@ static int parseable_format_json(struct flb_out_parseable *ctx,
     }
     
     /* Use standard JSON format */
-    flb_sds_t json_buf = flb_pack_msgpack_to_json_format(data_to_use, (uint64_t)bytes_to_use,
-                                                          FLB_PACK_JSON_FORMAT_JSON,
-                                                          FLB_PACK_JSON_DATE_DOUBLE,
-                                                          NULL, FLB_FALSE);
+    flb_sds_t json_buf;
+    json_buf = flb_pack_msgpack_to_json_format(
+        data_to_use, (uint64_t) bytes_to_use,
+        FLB_PACK_JSON_FORMAT_JSON,
+        FLB_PACK_JSON_DATE_DOUBLE,
+        NULL, FLB_FALSE);
     
     /* Free enriched buffer if allocated */
     if (need_free_enriched && enriched_data) {
@@ -1967,7 +2677,7 @@ static int parseable_http_post(struct flb_out_parseable *ctx,
             /* Decide whether to retry based on status code */
             if (c->resp.status >= 400 && c->resp.status < 500 &&
                 c->resp.status != 429 && c->resp.status != 408) {
-                /* Client errors (except 429 Too Many Requests and 408 Timeout) should not be retried */
+                /* Client errors (not 429/408) */
                 out_ret = FLB_ERROR;
             }
             else {
@@ -2046,7 +2756,9 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             
             /* Check if record should be excluded (parseable/exclude annotation) */
             if (exclude_record) {
-                flb_plg_debug(ctx->ins, "Dropping record due to parseable/exclude annotation");
+                flb_plg_debug(ctx->ins,
+                    "Dropping record: "
+                    "parseable/exclude");
                 FLB_OUTPUT_RETURN(FLB_OK);
             }
         }
@@ -2107,8 +2819,11 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
         /* Check batch size limit */
         if (ctx->batch_size > 0 && event_chunk->size > ctx->batch_size) {
-            flb_plg_warn(ctx->ins, "chunk size (%zu bytes) exceeds batch_size limit (%zu bytes), "
-                         "sending anyway", event_chunk->size, ctx->batch_size);
+            flb_plg_warn(ctx->ins,
+                "chunk (%zu bytes) exceeds "
+                "batch_size (%zu), sending",
+                event_chunk->size,
+                ctx->batch_size);
         }
 
         /* Check if we need OTEL formatting based on data_type */
@@ -2166,27 +2881,19 @@ static void parseable_config_destroy(struct flb_out_parseable *ctx)
         flb_upstream_destroy(ctx->u);
     }
 
-    /* Free SDS string fields */
+    /*
+     * Free only manually-allocated SDS fields.
+     * Fields managed by config_map (stream,
+     * log_source, auth_header, date_key,
+     * data_type, headers) are freed by the
+     * framework automatically.
+     *
+     * uri is auto-set by init when not provided
+     * by the user, so we must free it here.
+     */
     if (ctx->uri) {
         flb_sds_destroy(ctx->uri);
     }
-    if (ctx->stream) {
-        flb_sds_destroy(ctx->stream);
-    }
-    if (ctx->log_source) {
-        flb_sds_destroy(ctx->log_source);
-    }
-    if (ctx->auth_header) {
-        flb_sds_destroy(ctx->auth_header);
-    }
-    if (ctx->date_key) {
-        flb_sds_destroy(ctx->date_key);
-    }
-    if (ctx->data_type) {
-        flb_sds_destroy(ctx->data_type);
-    }
-
-    /* Note: ctx->headers is managed by config_map and freed automatically */
 
     /* Free context */
     flb_free(ctx);
