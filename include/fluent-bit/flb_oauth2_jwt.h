@@ -54,6 +54,7 @@ struct flb_oauth2_jwt_claims {
     flb_sds_t client_id;
     uint64_t expiration;
     int has_azp;
+    int has_client_id_claim;
 };
 
 struct flb_oauth2_jwt {
@@ -70,7 +71,7 @@ struct flb_oauth2_jwt_cfg {
     flb_sds_t   issuer;                   /* expected issuer */
     flb_sds_t   jwks_url;                 /* JWKS endpoint */
     flb_sds_t   allowed_audience;         /* audience claim to enforce */
-    struct mk_list *allowed_clients;      /* list of authorized azp/client_id */
+    struct mk_list *allowed_clients;      /* list of authorized azp/client_id/appid */
     int         jwks_refresh_interval;    /* refresh cadence in seconds */
 };
 
