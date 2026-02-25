@@ -246,6 +246,7 @@ struct flb_config {
     int   storage_metrics;          /* enable/disable storage metrics */
     int   storage_checksum;         /* checksum enabled */
     int   storage_max_chunks_up;    /* max number of chunks 'up' in memory */
+    char *storage_max_chunk_size;   /* maximum chunk size in buffer */
     int   storage_del_bad_chunks;   /* delete irrecoverable chunks */
     char *storage_bl_mem_limit;     /* storage backlog memory limit */
     int   storage_bl_flush_on_shutdown; /* enable/disable backlog chunks flush on shutdown */
@@ -412,6 +413,8 @@ enum conf_type {
 #define FLB_CONF_STORAGE_METRICS       "storage.metrics"
 #define FLB_CONF_STORAGE_CHECKSUM      "storage.checksum"
 #define FLB_CONF_STORAGE_BL_MEM_LIMIT  "storage.backlog.mem_limit"
+#define FLB_CONF_STORAGE_MAX_CHUNK_SIZE \
+                                       "storage.max_chunk_size"
 #define FLB_CONF_STORAGE_BL_FLUSH_ON_SHUTDOWN \
                                        "storage.backlog.flush_on_shutdown" 
 #define FLB_CONF_STORAGE_MAX_CHUNKS_UP "storage.max_chunks_up"

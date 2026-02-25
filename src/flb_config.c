@@ -152,6 +152,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_MAX_CHUNKS_UP,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, storage_max_chunks_up)},
+    {FLB_CONF_STORAGE_MAX_CHUNK_SIZE,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, storage_max_chunk_size)},
     {FLB_CONF_STORAGE_DELETE_IRRECOVERABLE_CHUNKS,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, storage_del_bad_chunks)},
@@ -620,6 +623,9 @@ void flb_config_exit(struct flb_config *config)
     }
     if (config->storage_bl_mem_limit) {
         flb_free(config->storage_bl_mem_limit);
+    }
+    if (config->storage_max_chunk_size) {
+        flb_free(config->storage_max_chunk_size);
     }
     if (config->storage_rejected_path) {
         flb_free(config->storage_rejected_path);
