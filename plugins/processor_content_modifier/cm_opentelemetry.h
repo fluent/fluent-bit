@@ -22,6 +22,7 @@
 
 #include <cfl/cfl.h>
 
+struct cfl_variant *cm_otel_get_or_create_attributes(struct cfl_kvlist *kvlist);
 struct cfl_variant *cm_otel_get_attributes(int telemetry_type, int context, struct cfl_kvlist *kvlist);
 struct cfl_variant *cm_otel_get_scope_metadata(int telemetry_type, struct cfl_kvlist *kvlist);
 
