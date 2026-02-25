@@ -51,6 +51,9 @@ struct flb_elasticsearch {
     char *type;
     int suppress_type_name;
 
+    /* Arbitrary HTTP headers */
+    struct mk_list *headers;
+
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;
