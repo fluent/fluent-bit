@@ -34,6 +34,13 @@
 /* refresh token every 60 minutes */
 #define FLB_AZ_LI_TOKEN_TIMEOUT 3600
 
+/* Authentication types */
+typedef enum {
+    FLB_AZ_LI_AUTH_SERVICE_PRINCIPAL = 0,    /* Client ID + Client Secret */
+    FLB_AZ_LI_AUTH_MANAGED_IDENTITY_SYSTEM,  /* System-assigned managed identity */
+    FLB_AZ_LI_AUTH_MANAGED_IDENTITY_USER     /* User-assigned managed identity */
+} flb_az_li_auth_type;
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
@@ -47,6 +54,10 @@ struct flb_az_li {
     flb_sds_t dce_url;
     flb_sds_t dcr_id;
     flb_sds_t table_name;
+
+    /* Authentication */
+    int auth_type;
+    char *auth_type_str;
 
     /* time_generated: on/off */
     int time_generated;
