@@ -112,6 +112,25 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, health_check_period)},
 
+    {FLB_CONF_STR_HC_THROUGHPUT,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, hc_throughput)},
+
+    {FLB_CONF_STR_HC_THROUGHPUT_IN_PLUGINS,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, hc_throughput_input_plugins)},
+
+    {FLB_CONF_STR_HC_THROUGHPUT_OUT_PLUGINS,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, hc_throughput_output_plugins)},
+
+    {FLB_CONF_STR_HC_THROUGHPUT_RATIO_THRESHOLD,
+     FLB_CONF_TYPE_DOUBLE,
+     offsetof(struct flb_config, hc_throughput_ratio_threshold)},
+
+    {FLB_CONF_STR_HC_THROUGHPUT_MIN_FAILURES,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, hc_throughput_min_failures)},
 #endif
     /* DNS*/
     {FLB_CONF_DNS_MODE,
