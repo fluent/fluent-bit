@@ -279,8 +279,10 @@ static int flb_engine_flush_timer_reset(struct flb_config *config, double interv
 {
     struct mk_event *event;
     struct flb_time t_flush;
+    double fallback_interval;
 
     event = &config->event_flush;
+    fallback_interval = config->flush_adaptive_current_interval;
 
     if (event->status != MK_EVENT_NONE) {
         mk_event_timeout_destroy(config->evl, event);
@@ -296,7 +298,20 @@ static int flb_engine_flush_timer_reset(struct flb_config *config, double interv
 
     if (config->flush_fd == -1) {
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
-        return -1;
+
+        if (fallback_interval > 0.0 &&
+            fabs(fallback_interval - interval) > DBL_EPSILON) {
+            flb_time_from_double(&t_flush, fallback_interval);
+            config->flush_fd = mk_event_timeout_create(config->evl,
+                                                       t_flush.tm.tv_sec,
+                                                       t_flush.tm.tv_nsec,
+                                                       event);
+            event->priority = FLB_ENGINE_PRIORITY_FLUSH;
+        }
+
+        if (config->flush_fd == -1) {
+            return -1;
+        }
     }
 
     return 0;
