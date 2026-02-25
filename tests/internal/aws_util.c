@@ -51,6 +51,7 @@
 #define TAG_DELIMITERS ".-"
 #define INVALID_TAG_DELIMITERS ",/"
 #define VALID_SEQ_INDEX 0
+#define TIME_OFFSET "+0000"
 
 static void initialization_crutch()
 {
@@ -58,6 +59,8 @@ static void initialization_crutch()
 
     config = flb_config_init();
 
+
+    /* */
     if (config == NULL) {
         return;
     }
@@ -181,7 +184,7 @@ static void test_flb_get_s3_key_multi_tag_exists()
     initialization_crutch();
 
     mktime_utc(&day, &t);
-    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_TAG_PART, t, TAG, TAG_DELIMITER, 0);
+    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_TAG_PART, t, TAG, TAG_DELIMITER, 0, TIME_OFFSET);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECT_KEY_TAG_PART) == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -196,7 +199,7 @@ static void test_flb_get_s3_key_full_tag()
     initialization_crutch();
 
     mktime_utc(&day, &t);
-    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_FULL_TAG, t, TAG, TAG_DELIMITER, 0);
+    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_FULL_TAG, t, TAG, TAG_DELIMITER, 0, TIME_OFFSET);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECT_KEY_FULL_TAG) == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -212,7 +215,7 @@ static void test_flb_get_s3_key_tag_special_characters()
 
     mktime_utc(&day, &t);
     s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_SPECIAL_CHARCATERS_TAG, t, TAG,
-                                   TAG_DELIMITER, 0);
+                                   TAG_DELIMITER, 0, TIME_OFFSET);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECT_KEY_SPECIAL_CHARCATERS_TAG) == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -228,7 +231,7 @@ static void test_flb_get_s3_key_multi_tag_delimiter()
 
     mktime_utc(&day, &t);
     s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_TAG_PART, t, MULTI_DELIMITER_TAG,
-                                   TAG_DELIMITERS, 0);
+                                   TAG_DELIMITERS, 0, TIME_OFFSET);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECT_KEY_TAG_PART) == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -244,7 +247,7 @@ static void test_flb_get_s3_key_invalid_tag_delimiter()
 
     mktime_utc(&day, &t);
     s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_TAG_PART, t, MULTI_DELIMITER_TAG,
-                                   INVALID_TAG_DELIMITERS, 0);
+                                   INVALID_TAG_DELIMITERS, 0, TIME_OFFSET);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECT_KEY_INVALID_DELIMITER)  == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -259,7 +262,7 @@ static void test_flb_get_s3_key_invalid_tag_index()
     initialization_crutch();
 
     mktime_utc(&day, &t);
-    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_INVALID_TAG, t, TAG, TAG_DELIMITER, 0);
+    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_INVALID_TAG, t, TAG, TAG_DELIMITER, 0, TIME_OFFSET);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECY_KEY_INVALID_TAG) == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -282,7 +285,7 @@ static void test_flb_get_s3_key_invalid_key_length()
     time_t t;
 
     mktime_utc(&day, &t);
-    s3_key_format = flb_get_s3_key(buf, t, TAG, TAG_DELIMITER, 0);
+    s3_key_format = flb_get_s3_key(buf, t, TAG, TAG_DELIMITER, 0, TIME_OFFSET);
     TEST_CHECK(strlen(s3_key_format) <= 1024);
 
     flb_sds_destroy(s3_key_format);
@@ -298,7 +301,7 @@ static void test_flb_get_s3_key_static_string()
 
     mktime_utc(&day, &t);
     s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_STATIC_STRING, t, NO_TAG,
-                                   TAG_DELIMITER, 0);
+                                   TAG_DELIMITER, 0, TIME_OFFSET);
     TEST_CHECK(strcmp(s3_key_format, S3_KEY_FORMAT_STATIC_STRING) == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -314,7 +317,7 @@ static void test_flb_get_s3_key_valid_index()
 
     mktime_utc(&day, &t);
     s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_VALID_INDEX, t, NO_TAG,
-                                   TAG_DELIMITER, 12);
+                                   TAG_DELIMITER, 12, TIME_OFFSET);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECT_KEY_VALID_INDEX) == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -330,14 +333,14 @@ static void test_flb_get_s3_key_increment_index()
 
     mktime_utc(&day, &t);
     s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_VALID_INDEX, t, NO_TAG,
-                                    TAG_DELIMITER, 5);
+                                    TAG_DELIMITER, 5, TIME_OFFSET);
 
     TEST_CHECK(strcmp(s3_key_format, "logs/a-5-b-c") == 0);
 
     flb_sds_destroy(s3_key_format);
 
     s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_VALID_INDEX, t, NO_TAG,
-                                    TAG_DELIMITER, 10);
+                                    TAG_DELIMITER, 10, TIME_OFFSET);
 
     TEST_CHECK(strcmp(s3_key_format, "logs/a-10-b-c") == 0);
 
@@ -355,13 +358,13 @@ static void test_flb_get_s3_key_index_overflow()
 
     mktime_utc(&day, &t);
     s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_VALID_INDEX, t, NO_TAG,
-                                   TAG_DELIMITER, index);
+                                   TAG_DELIMITER, index, TIME_OFFSET);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECT_KEY_PRE_OVERFLOW_INDEX) == 0);
     flb_sds_destroy(s3_key_format);
 
     index++;
     s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_VALID_INDEX, t, NO_TAG,
-                                   TAG_DELIMITER, index);
+                                   TAG_DELIMITER, index, TIME_OFFSET);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECT_KEY_POST_OVERFLOW_INDEX) == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -377,10 +380,132 @@ static void test_flb_get_s3_key_mixed_timestamp()
 
     mktime_utc(&day, &t);
     s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_MIXED_TIMESTAMP, t, NO_TAG,
-                                   TAG_DELIMITER, 12);
+                                   TAG_DELIMITER, 12, TIME_OFFSET);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECT_KEY_MIXED_TIMESTAMP) == 0);
 
     flb_sds_destroy(s3_key_format);
+}
+
+
+static void test_flb_get_s3_key_time_offset()
+{
+    /*Simple Test +0100 and -0100*/
+    {
+        flb_sds_t s3_key_format = NULL;
+        struct tm day = { 0, 0, 0, 15, 7, 120};
+        time_t t;
+
+        char *fmt = "logs/%Y/%m/%d/%H/%M";
+
+        initialization_crutch();
+
+        mktime_utc(&day, &t);
+        s3_key_format = flb_get_s3_key(fmt, t, NO_TAG,
+                                   TAG_DELIMITER, 12, "+0100");
+        TEST_CHECK(strcmp(s3_key_format, "logs/2020/08/15/01/00") == 0);
+
+        flb_sds_destroy(s3_key_format);
+
+
+        s3_key_format = flb_get_s3_key(fmt, t, NO_TAG,
+                                       TAG_DELIMITER, 12, "-0100");
+    
+        TEST_CHECK(strcmp(s3_key_format, "logs/2020/08/14/23/00") == 0);
+    
+        flb_sds_destroy(s3_key_format);    
+    }
+
+    
+    /*  Test +0000 and -0000 expect the same result */
+    {
+        flb_sds_t k1 = NULL;
+        flb_sds_t k2 = NULL;
+        flb_sds_t k3 = NULL;
+
+        struct tm day = { 0, 30, 23, 31, 7, 120 }; /* 2020-08-31 23:30:00 */
+        time_t t; 
+
+        const char *fmt = "logs/%Y/%m/%d/%H/%M/%S";
+        
+        mktime_utc(&day, &t);
+        
+    
+        k1 = flb_get_s3_key(fmt, t, NO_TAG, TAG_DELIMITER, 64, "+0000");
+        k2 = flb_get_s3_key(fmt, t, NO_TAG, TAG_DELIMITER, 64, "-0000");
+        k3 = flb_get_s3_key(fmt, t, NO_TAG, TAG_DELIMITER, 64, NULL);
+    
+        TEST_CHECK(strcmp(k1, "logs/2020/08/31/23/30/00") == 0);
+        TEST_CHECK(strcmp(k2, "logs/2020/08/31/23/30/00") == 0);
+        TEST_CHECK(strcmp(k3, "logs/2020/08/31/23/30/00") == 0);
+    
+        flb_sds_destroy(k1); flb_sds_destroy(k2); flb_sds_destroy(k3);
+    }
+
+    /*  Test minutes offset +0530 and -0030*/
+    {
+        flb_sds_t k1 = NULL;
+        flb_sds_t k2 = NULL;
+
+        struct tm day = { 0, 45, 22, 15, 7, 120 }; /* 2020-08-15 22:45:00 */
+        time_t t;
+        const char *fmt = "logs/%Y/%m/%d/%H/%M";
+
+        mktime_utc(&day, &t);
+    
+        k1 = flb_get_s3_key(fmt, t, NO_TAG, TAG_DELIMITER, 64, "+0530");
+        k2 = flb_get_s3_key(fmt, t, NO_TAG, TAG_DELIMITER, 64, "-0030");
+    
+        TEST_CHECK(strcmp(k1, "logs/2020/08/16/04/15") == 0); /* 22:45 + 5:30 */
+        TEST_CHECK(strcmp(k2, "logs/2020/08/15/22/15") == 0); /* 22:45 - 0:30 */
+    
+        flb_sds_destroy(k1); flb_sds_destroy(k2);
+    }
+
+    /* Test cross year offset */
+    {
+        struct tm day = { 0, 0, 23, 31, 11, 120 }; /* 2020-12-31 23:00:00 */
+        time_t t;
+        const char *fmt = "logs/%Y/%m/%d/%H/%M";
+
+        mktime_utc(&day, &t);
+
+        flb_sds_t k = flb_get_s3_key(fmt, t, NO_TAG, TAG_DELIMITER, 64, "+0200");
+        TEST_CHECK(strcmp(k, "logs/2021/01/01/01/00") == 0);
+        flb_sds_destroy(k);
+    }
+
+    /* Test leap year offset */
+    {
+        struct tm day = { 0, 30, 23, 29, 1, 120 }; /* 2020-02-29 23:30:00 */
+        time_t t;
+        const char *fmt = "logs/%Y/%m/%d/%H/%M";
+
+        mktime_utc(&day, &t);
+
+        flb_sds_t k = flb_get_s3_key(fmt, t, NO_TAG, TAG_DELIMITER, 64, "+0100");
+        TEST_CHECK(strcmp(k, "logs/2020/03/01/00/30") == 0);
+        flb_sds_destroy(k);
+
+        k = flb_get_s3_key(fmt, t, NO_TAG, TAG_DELIMITER, 64, "-0100");
+        TEST_CHECK(strcmp(k, "logs/2020/02/29/22/30") == 0);
+        flb_sds_destroy(k);
+    }
+
+    /* Test invalid time offset */
+    {
+        struct tm day = { 0, 0, 0, 15, 7, 120 };
+        time_t t;
+        const char *fmt = "logs/%Y/%m/%d/%H/%M";
+
+        mktime_utc(&day, &t);
+
+        const char *bad[] = { "+24:00", "+2400", "+08:00", "0800", "+2360", "+", "", NULL };
+        for (int i = 0; bad[i]; i++) {
+            flb_sds_t k = flb_get_s3_key(fmt, t, NO_TAG, TAG_DELIMITER, 64, bad[i]);
+            TEST_CHECK(strcmp(k, "logs/2020/08/15/00/00") == 0);
+            if (k) flb_sds_destroy(k);
+        }
+    }
 }
 
 TEST_LIST = {
@@ -398,5 +523,6 @@ TEST_LIST = {
     {"flb_get_s3_key_increment_index", test_flb_get_s3_key_increment_index},
     {"flb_get_s3_key_index_overflow", test_flb_get_s3_key_index_overflow},
     {"flb_get_s3_key_mixed_timestamp", test_flb_get_s3_key_mixed_timestamp},
+    {"flb_get_s3_key_time_offset", test_flb_get_s3_key_time_offset},
     { 0 }
 };
