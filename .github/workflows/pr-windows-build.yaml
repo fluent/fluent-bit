@@ -22,8 +22,8 @@ on:
       - '**.h'
       - '**.c'
       - '**.windows'
-      - './conf/**'
-      - './cmake/**'
+      - 'conf/**'
+      - 'cmake/**'
     types:
       - opened
       - reopened
