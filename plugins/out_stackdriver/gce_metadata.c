@@ -71,7 +71,11 @@ static int fetch_metadata(struct flb_stackdriver *ctx,
 
     flb_http_buffer_size(c, FLB_STD_METADATA_TOKEN_SIZE_MAX);
 
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
     flb_http_add_header(c, "Content-Type", 12, "application/text", 16);
     flb_http_add_header(c, "Metadata-Flavor", 15, "Google", 6);
 

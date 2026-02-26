@@ -952,7 +952,11 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
     metadata_auth_header = get_metadata_auth_header(ctx);
 
     /* HTTP Client */
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
 
     /*
      * Authentication mechanism & order:

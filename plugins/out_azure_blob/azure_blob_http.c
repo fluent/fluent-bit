@@ -302,7 +302,11 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
     flb_sds_t auth;
 
     /* Header: User Agent */
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
 
     /* Header: Content-Type */
     if (content_type == AZURE_BLOB_CT_JSON) {

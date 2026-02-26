@@ -355,8 +355,11 @@ static void cb_sw_flush(struct flb_event_chunk *event_chunk,
 
     flb_http_add_header(client, "Content-Type", 12,
                     "application/json", 16);
-    flb_http_add_header(client, "User-Agent", 10,
-                        "Fluent-Bit", 10);
+    flb_http_add_header(client,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
 
     if (check_sw_under_test() == FLB_TRUE) {
         tmp_ret = mock_oap_request(client, 200);

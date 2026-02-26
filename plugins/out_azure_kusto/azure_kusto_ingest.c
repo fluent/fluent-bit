@@ -195,7 +195,11 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
                                 NULL, 0);
 
             if (c) {
-                flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+                flb_http_add_header(c,
+                                    FLB_HTTP_HEADER_USER_AGENT,
+                                    sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                                    FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                                    sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
                 flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
                 flb_http_add_header(c, "x-ms-blob-type", 14, "BlockBlob", 9);
                 flb_http_add_header(c, "x-ms-date", 9, tmp, len);
@@ -451,7 +455,11 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
                                     flb_sds_len(payload), NULL, 0, NULL, 0);
 
                 if (c) {
-                    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+                    flb_http_add_header(c,
+                                        FLB_HTTP_HEADER_USER_AGENT,
+                                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
                     flb_http_add_header(c, "Content-Type", 12, "application/atom+xml",
                                         20);
                     flb_http_add_header(c, "x-ms-date", 9, tmp, len);

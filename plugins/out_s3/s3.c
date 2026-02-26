@@ -2132,8 +2132,10 @@ static int blob_request_pre_signed_url(struct flb_s3 *context,
 
     /* User Agent */
     flb_http_add_header(http_client,
-                        "User-Agent", 10,
-                        "Fluent-Bit", 10);
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
 
     if (context->authorization_endpoint_username != NULL &&
         context->authorization_endpoint_password != NULL) {
