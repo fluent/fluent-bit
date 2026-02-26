@@ -2205,6 +2205,84 @@ static int blob_request_pre_signed_url(struct flb_s3 *context,
     return ret;
 }
 
+int s3_parse_presigned_url(struct flb_s3 *ctx, const char *url,
+                           flb_sds_t *out_host, flb_sds_t *out_uri,
+                           int *out_port)
+{
+    int ret;
+    char *scheme = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *uri = NULL;
+    int resolved_port = 0;
+    flb_sds_t host_sds = NULL;
+    flb_sds_t uri_sds = NULL;
+
+    if (out_host == NULL || out_uri == NULL || url == NULL) {
+        return -1;
+    }
+
+    ret = flb_utils_url_split(url, &scheme, &host, &port, &uri);
+    if (ret == -1 || host == NULL || uri == NULL) {
+        flb_plg_error(ctx->ins, "Invalid pre signed URL: %s", url ? url : "(null)");
+        goto error;
+    }
+
+    if (port != NULL) {
+        resolved_port = (int) strtoul(port, NULL, 10);
+    }
+    else if (scheme != NULL) {
+        if (strcasecmp(scheme, "https") == 0) {
+            resolved_port = 443;
+        }
+        else {
+            resolved_port = 80;
+        }
+    }
+
+    host_sds = flb_sds_create(host);
+    if (host_sds == NULL) {
+        goto error;
+    }
+
+    uri_sds = flb_sds_create(uri);
+    if (uri_sds == NULL) {
+        flb_sds_destroy(host_sds);
+        host_sds = NULL;
+        goto error;
+    }
+
+    if (out_port != NULL) {
+        *out_port = resolved_port;
+    }
+
+    *out_host = host_sds;
+    *out_uri = uri_sds;
+
+    flb_free(scheme);
+    flb_free(host);
+    flb_free(port);
+    flb_free(uri);
+
+    return 0;
+
+error:
+    if (scheme) {
+        flb_free(scheme);
+    }
+    if (host) {
+        flb_free(host);
+    }
+    if (port) {
+        flb_free(port);
+    }
+    if (uri) {
+        flb_free(uri);
+    }
+
+    return -1;
+}
+
 static int blob_fetch_pre_signed_url(struct flb_s3 *context,
                                      flb_sds_t *result_url,
                                      char *format,
@@ -2467,8 +2545,14 @@ static int put_blob_object(struct flb_s3 *ctx,
     int ret;
     int num_headers = 0;
     char *final_key;
-    flb_sds_t uri;
+    flb_sds_t uri = NULL;
     flb_sds_t tmp;
+    flb_sds_t presigned_full = NULL;
+    flb_sds_t presigned_host = NULL;
+    const char *original_host = NULL;
+    char *original_upstream_host = NULL;
+    int original_upstream_port = 0;
+    int presigned_port = 0;
     char final_body_md5[25];
 
     if (ctx->authorization_endpoint_url == NULL) {
@@ -2499,13 +2583,33 @@ static int put_blob_object(struct flb_s3 *ctx,
         uri = tmp;
     }
     else {
-        uri = NULL;
-
-        ret = blob_fetch_put_object_pre_signed_url(ctx, &uri, (char *) tag, ctx->bucket, (char *) path);
+        ret = blob_fetch_put_object_pre_signed_url(ctx, &presigned_full, (char *) tag, ctx->bucket, (char *) path);
 
         if (ret != 0) {
             return -1;
         }
+
+        ret = s3_parse_presigned_url(ctx, presigned_full, &presigned_host, &uri, &presigned_port);
+        flb_sds_destroy(presigned_full);
+        presigned_full = NULL;
+
+        if (ret != 0) {
+            return -1;
+        }
+
+        if (presigned_port != 0 && presigned_port != ctx->port) {
+            flb_plg_error(ctx->ins, "Pre signed URL uses unexpected port %d", presigned_port);
+            flb_sds_destroy(presigned_host);
+            flb_sds_destroy(uri);
+            return -1;
+        }
+
+        original_host = ctx->s3_client->host;
+        original_upstream_host = ctx->s3_client->upstream->tcp_host;
+        original_upstream_port = ctx->s3_client->upstream->tcp_port;
+        ctx->s3_client->host = presigned_host;
+        ctx->s3_client->upstream->tcp_host = presigned_host;
+        ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
     }
 
     memset(final_body_md5, 0, sizeof(final_body_md5));
@@ -2514,8 +2618,8 @@ static int put_blob_object(struct flb_s3 *ctx,
                              final_body_md5, sizeof(final_body_md5));
         if (ret != 0) {
             flb_plg_error(ctx->ins, "Failed to create Content-MD5 header");
-            flb_sds_destroy(uri);
-            return -1;
+            ret = -1;
+            goto cleanup;
         }
     }
 
@@ -2527,8 +2631,7 @@ static int put_blob_object(struct flb_s3 *ctx,
         ret = create_headers(ctx, final_body_md5, &headers, &num_headers, FLB_FALSE);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create headers");
-            flb_sds_destroy(uri);
-            return -1;
+            goto cleanup;
         }
 
         c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
@@ -2545,10 +2648,9 @@ static int put_blob_object(struct flb_s3 *ctx,
              */
             final_key = uri + strlen(ctx->bucket) + 1;
             flb_plg_info(ctx->ins, "Successfully uploaded object %s", final_key);
-            flb_sds_destroy(uri);
             flb_http_client_destroy(c);
-
-            return 0;
+            ret = 0;
+            goto cleanup;
         }
         flb_aws_print_xml_error(c->resp.payload, c->resp.payload_size,
                                 "PutObject", ctx->ins);
@@ -2559,9 +2661,21 @@ static int put_blob_object(struct flb_s3 *ctx,
     }
 
     flb_plg_error(ctx->ins, "PutObject request failed");
-    flb_sds_destroy(uri);
+    ret = -1;
 
-    return -1;
+cleanup:
+    if (original_host != NULL) {
+        ctx->s3_client->host = original_host;
+        ctx->s3_client->upstream->tcp_host = original_upstream_host;
+        ctx->s3_client->upstream->tcp_port = original_upstream_port;
+        flb_sds_destroy(presigned_host);
+    }
+
+    if (uri != NULL) {
+        flb_sds_destroy(uri);
+    }
+
+    return ret;
 }
 
 static int abort_blob_upload(struct flb_s3 *ctx,
