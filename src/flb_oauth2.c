@@ -34,6 +34,7 @@
 #include <string.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <limits.h>
 
 #include <openssl/bio.h>
 #include <openssl/x509.h>
@@ -658,7 +659,14 @@ static int oauth2_private_key_jwt_thumbprint(const char *certificate_file,
         return -1;
     }
 
-    bio = BIO_new_mem_buf(file_buf, file_size);
+    if (file_size > INT_MAX) {
+        flb_error("[oauth2] certificate file '%s' is too large",
+                  certificate_file);
+        flb_free(file_buf);
+        return -1;
+    }
+
+    bio = BIO_new_mem_buf(file_buf, (int) file_size);
     if (!bio) {
         flb_error("[oauth2] failed to initialize certificate buffer");
         flb_free(file_buf);
@@ -668,7 +676,7 @@ static int oauth2_private_key_jwt_thumbprint(const char *certificate_file,
     cert = PEM_read_bio_X509(bio, NULL, NULL, NULL);
     if (!cert) {
         BIO_free(bio);
-        bio = BIO_new_mem_buf(file_buf, file_size);
+        bio = BIO_new_mem_buf(file_buf, (int) file_size);
         if (!bio) {
             flb_error("[oauth2] failed to reload certificate buffer");
             flb_free(file_buf);
