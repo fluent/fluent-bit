@@ -1059,6 +1059,7 @@ check_c_source_compiles("
   #include <sys/un.h>
   #include <sys/types.h>
   #include <sys/socket.h>
+  #include <unistd.h>
   int main() {
       int sock;
       sock = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -1380,8 +1381,7 @@ if(NOT FLB_POSIX_TLS)
   check_c_source_compiles("
    __thread int a;
    int main() {
-       __tls_get_addr(0);
-       return 0;
+       return a;
    }" FLB_HAVE_C_TLS)
   if(FLB_HAVE_C_TLS)
     FLB_DEFINITION(FLB_HAVE_C_TLS)
