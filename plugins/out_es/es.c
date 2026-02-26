@@ -358,7 +358,7 @@ static int elasticsearch_format(struct flb_config *config,
      * The header stored in 'j_index' will be used for the all records on
      * this payload.
      */
-    if (ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
+    if (ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE && ctx->ra_id_key == NULL) {
         flb_time_get(&tms);
         gmtime_r(&tms.tm.tv_sec, &tm);
         strftime(index_formatted, sizeof(index_formatted) - 1,
