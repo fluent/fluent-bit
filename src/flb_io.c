@@ -44,7 +44,11 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <limits.h>
+#include <string.h>
+#include <errno.h>
+#ifndef FLB_SYSTEM_WINDOWS
+#include <sys/uio.h>
+#endif
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
@@ -61,6 +65,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_http_client.h>
+
 
 int flb_io_net_accept(struct flb_connection *connection,
                        struct flb_coro *coro)
@@ -274,8 +279,110 @@ static void net_io_propagate_critical_error(
     }
 }
 
-static int fd_io_write(int fd, struct sockaddr_storage *address,
-                       const void *data, size_t len, size_t *out_len);
+/* POSIX guarantees at least 16 vectors. Bound both stack use and write size. */
+#define FLB_IO_NATIVE_IOV_MAX 16
+#define FLB_IO_NATIVE_WRITE_MAX 524288
+
+struct net_io_vector {
+    const struct flb_iovec *iov;
+    int count;
+    int index;
+    size_t offset;
+};
+
+static ssize_t net_io_vector_send(flb_sockfd_t fd, struct net_io_vector *vector)
+{
+    int index;
+    int count;
+    size_t offset;
+    size_t length;
+    size_t remaining;
+    ssize_t bytes;
+#ifdef FLB_SYSTEM_WINDOWS
+    WSABUF buffers[FLB_IO_NATIVE_IOV_MAX];
+    DWORD written;
+    int error;
+#else
+    struct iovec buffers[FLB_IO_NATIVE_IOV_MAX];
+#endif
+
+    index = vector->index;
+    offset = vector->offset;
+    count = 0;
+    remaining = FLB_IO_NATIVE_WRITE_MAX;
+
+    while (index < vector->count && count < FLB_IO_NATIVE_IOV_MAX && remaining > 0) {
+        length = vector->iov[index].iov_len - offset;
+        if (length > remaining) {
+            length = remaining;
+        }
+        if (length > 0) {
+#ifdef FLB_SYSTEM_WINDOWS
+            buffers[count].buf = (char *) vector->iov[index].iov_base + offset;
+            buffers[count].len = (ULONG) length;
+#else
+            buffers[count].iov_base = (char *) vector->iov[index].iov_base + offset;
+            buffers[count].iov_len = length;
+#endif
+            count++;
+            remaining -= length;
+        }
+        index++;
+        offset = 0;
+    }
+
+#ifdef FLB_SYSTEM_WINDOWS
+    if (WSASend(fd, buffers, count, &written, 0, NULL, NULL) == SOCKET_ERROR) {
+        error = WSAGetLastError();
+        switch (error) {
+        case WSAEINTR:
+            errno = EINTR;
+            break;
+        case WSAEWOULDBLOCK:
+            errno = EAGAIN;
+            break;
+        case WSAECONNRESET:
+        case WSAECONNABORTED:
+        case WSAESHUTDOWN:
+            errno = ECONNRESET;
+            break;
+        case WSAENOTCONN:
+            errno = ENOTCONN;
+            break;
+        case WSAENOTSOCK:
+            errno = EBADF;
+            break;
+        default:
+            errno = EIO;
+        }
+        WSASetLastError(error);
+        return -1;
+    }
+    bytes = written;
+#else
+    bytes = writev(fd, buffers, count);
+#endif
+
+    if (bytes > 0) {
+        remaining = bytes;
+        while (vector->index < vector->count) {
+            length = vector->iov[vector->index].iov_len - vector->offset;
+            if (remaining < length) {
+                vector->offset += remaining;
+                break;
+            }
+            remaining -= length;
+            vector->index++;
+            vector->offset = 0;
+        }
+    }
+
+    return bytes;
+}
+
+static int fd_io_write(flb_sockfd_t fd, struct sockaddr_storage *address,
+                       const void *data, size_t len, size_t *out_len,
+                       struct net_io_vector *vector);
 static int net_io_write(struct flb_connection *connection,
                         const void *data, size_t len, size_t *out_len)
 {
@@ -304,7 +411,7 @@ static int net_io_write(struct flb_connection *connection,
         }
     }
 
-    ret = fd_io_write(connection->fd, address, data, len, out_len);
+    ret = fd_io_write(connection->fd, address, data, len, out_len, NULL);
 
     if (ret == -1) {
         net_io_propagate_critical_error(connection);
@@ -313,15 +420,19 @@ static int net_io_write(struct flb_connection *connection,
     return ret;
 }
 
-static int fd_io_write(int fd, struct sockaddr_storage *address,
-                       const void *data, size_t len, size_t *out_len)
+static int fd_io_write(flb_sockfd_t fd, struct sockaddr_storage *address,
+                       const void *data, size_t len, size_t *out_len,
+                       struct net_io_vector *vector)
 {
-    int ret;
+    int ret = 0;
     int tries = 0;
     size_t total = 0;
 
     while (total < len) {
-        if (address != NULL) {
+        if (vector != NULL) {
+            ret = net_io_vector_send(fd, vector);
+        }
+        else if (address != NULL) {
             ret = sendto(fd, (char *) data + total, len - total, 0,
                          (struct sockaddr *) address,
                          flb_network_address_size(address));
@@ -331,6 +442,9 @@ static int fd_io_write(int fd, struct sockaddr_storage *address,
         }
 
         if (ret == -1) {
+            if (vector != NULL && errno == EINTR) {
+                continue;
+            }
             if (FLB_WOULDBLOCK()) {
                 /*
                  * FIXME: for now we are handling this in a very lazy way,
@@ -352,6 +466,14 @@ static int fd_io_write(int fd, struct sockaddr_storage *address,
                 continue;
             }
 
+            *out_len = total;
+
+            return -1;
+        }
+
+        if (vector != NULL && ret == 0) {
+            errno = EIO;
+            *out_len = total;
             return -1;
         }
 
@@ -361,7 +483,7 @@ static int fd_io_write(int fd, struct sockaddr_storage *address,
 
     *out_len = total;
 
-    return total;
+    return vector != NULL ? ret : (int) total;
 }
 
 static FLB_INLINE void net_io_backup_event(struct flb_connection *connection,
@@ -415,10 +537,12 @@ static FLB_INLINE int net_io_restore_event(struct flb_connection *connection,
  */
 static FLB_INLINE int net_io_write_async(struct flb_coro *co,
                                          struct flb_connection *connection,
-                                         const void *data, size_t len, size_t *out_len)
+                                         const void *data, size_t len, size_t *out_len,
+                                         struct net_io_vector *vector)
 {
     int ret = 0;
     int error;
+    int saved_errno;
     uint32_t mask;
     ssize_t bytes;
     size_t total = 0;
@@ -441,7 +565,21 @@ retry:
         to_send = (len - total);
     }
 
-    bytes = send(connection->fd, (char *) data + total, to_send, 0);
+    if (vector != NULL) {
+        bytes = net_io_vector_send(connection->fd, vector);
+        if (bytes == -1 && errno == EINTR) {
+            goto retry;
+        }
+        if (bytes == 0) {
+            *out_len = total;
+            net_io_restore_event(connection, &event_backup);
+            errno = EIO;
+            return -1;
+        }
+    }
+    else {
+        bytes = send(connection->fd, (char *) data + total, to_send, 0);
+    }
 
 #ifdef FLB_HAVE_TRACE
     if (bytes > 0) {
@@ -548,8 +686,10 @@ retry:
         else {
             *out_len = total;
 
-            net_io_restore_event(connection, &event_backup);
+            saved_errno = errno;
             net_io_propagate_critical_error(connection);
+            net_io_restore_event(connection, &event_backup);
+            errno = saved_errno;
 
             return -1;
         }
@@ -769,11 +909,210 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
     return ret;
 }
 
+
+int flb_io_net_writev(struct flb_connection *connection,
+                      const struct flb_iovec *iov,
+                      int iovcnt,
+                      size_t *out_len)
+{
+    int result;
+    int index;
+    int saved_errno;
+    int flags;
+    int stream_transport;
+    size_t partial_length;
+    size_t total;
+    size_t total_length;
+    size_t buffer_size;
+    size_t buffer_length;
+    size_t offset;
+    size_t length;
+    char *temporary_buffer;
+    struct net_io_vector vector;
+
+    if (out_len == NULL) {
+        errno = EINVAL;
+
+        return -1;
+    }
+
+    *out_len = 0;
+
+    if (connection == NULL || iov == NULL || iovcnt <= 0) {
+        errno = EINVAL;
+
+        return -1;
+    }
+
+    total_length = 0;
+
+    for (index = 0 ; index < iovcnt ; index++) {
+        /* Overflow guard */
+        if (iov[index].iov_len > SIZE_MAX - total_length) {
+            errno = EOVERFLOW;
+
+            return -1;
+        }
+
+        if (iov[index].iov_len > 0 && iov[index].iov_base == NULL) {
+            errno = EINVAL;
+
+            return -1;
+        }
+
+        total_length += iov[index].iov_len;
+    }
+
+    if (total_length == 0) {
+        return 0;
+    }
+
+    flags = flb_connection_get_flags(connection);
+    stream_transport = connection->stream->transport == FLB_TRANSPORT_TCP ||
+                       connection->stream->transport == FLB_TRANSPORT_UNIX_STREAM;
+
+    /* Connecting can establish a TLS session: dispatch only after it completes. */
+    if (stream_transport && !(flags & FLB_IO_ASYNC) && connection->fd <= 0) {
+        if (connection->type != FLB_UPSTREAM_CONNECTION) {
+            errno = ENOTCONN;
+            return -1;
+        }
+        if (flb_io_net_connect(connection, flb_coro_get()) == -1) {
+            return -1;
+        }
+        flags = flb_connection_get_flags(connection);
+    }
+
+    if (stream_transport && connection->tls_session == NULL) {
+        vector.iov = iov;
+        vector.count = iovcnt;
+        vector.index = 0;
+        vector.offset = 0;
+
+        if (flags & FLB_IO_ASYNC) {
+            result = net_io_write_async(flb_coro_get(), connection, NULL,
+                                        total_length, out_len, &vector);
+        }
+        else {
+            result = fd_io_write(connection->fd, NULL, NULL, total_length, out_len, &vector);
+            if (result == -1) {
+                net_io_propagate_critical_error(connection);
+            }
+        }
+        if (result > 0) {
+            flb_connection_reset_io_timeout(connection);
+        }
+        return result;
+    }
+
+    /* Preserve existing datagram boundaries; bounded batching is for streams. */
+    if (!stream_transport && total_length > FLB_IO_WRITEV_COALESCE_MAX) {
+        total = 0;
+
+        for (index = 0; index < iovcnt; index++) {
+            if (iov[index].iov_len == 0) {
+                continue;
+            }
+
+            partial_length = 0;
+            errno = 0;
+            result = flb_io_net_write(connection,
+                                      iov[index].iov_base,
+                                      iov[index].iov_len,
+                                      &partial_length);
+            saved_errno = errno;
+            total += partial_length;
+            *out_len = total;
+
+            if (result == -1) {
+                if (saved_errno == 0) {
+                    saved_errno = EIO;
+                }
+
+                errno = saved_errno;
+
+                return -1;
+            }
+
+            if (partial_length != iov[index].iov_len) {
+                errno = EIO;
+
+                return -1;
+            }
+        }
+
+        return result;
+    }
+
+    buffer_size = total_length;
+    if (buffer_size > FLB_IO_WRITEV_COALESCE_MAX) {
+        buffer_size = FLB_IO_WRITEV_COALESCE_MAX;
+    }
+    temporary_buffer = flb_malloc(buffer_size);
+
+    if (temporary_buffer == NULL) {
+        errno = ENOMEM;
+
+        return -1;
+    }
+
+    total = 0;
+    index = 0;
+    offset = 0;
+
+    while (total < total_length) {
+        buffer_length = 0;
+        while (index < iovcnt && buffer_length < buffer_size) {
+            length = iov[index].iov_len - offset;
+            if (length > buffer_size - buffer_length) {
+                length = buffer_size - buffer_length;
+            }
+            if (length > 0) {
+                memcpy(temporary_buffer + buffer_length,
+                       (const char *) iov[index].iov_base + offset, length);
+            }
+            buffer_length += length;
+            offset += length;
+            if (offset == iov[index].iov_len) {
+                index++;
+                offset = 0;
+            }
+        }
+
+        /* Keep this buffer unchanged until the TLS writer completes all retries. */
+        partial_length = 0;
+        errno = 0;
+        result = flb_io_net_write(connection, temporary_buffer, buffer_length, &partial_length);
+        saved_errno = errno;
+        total += partial_length;
+        *out_len = total;
+
+        if (result >= 0 && partial_length != buffer_length) {
+            result = -1;
+            saved_errno = EIO;
+        }
+        else if (result == -1 && saved_errno == 0) {
+            saved_errno = EIO;
+        }
+        if (result == -1) {
+            break;
+        }
+    }
+
+    flb_free(temporary_buffer);
+
+    if (result == -1) {
+        errno = saved_errno;
+    }
+
+    return result;
+}
+
 /* Write data to fd. For unix socket. */
 int flb_io_fd_write(int fd, const void *data, size_t len, size_t *out_len)
 {
     /* TODO: support async mode */
-    return fd_io_write(fd, NULL, data, len, out_len);
+    return fd_io_write(fd, NULL, data, len, out_len, NULL);
 }
 
 /* Write data to an upstream connection/server */
@@ -781,6 +1120,7 @@ int flb_io_net_write(struct flb_connection *connection, const void *data,
                      size_t len, size_t *out_len)
 {
     int              flags;
+    int              saved_errno;
     struct flb_coro *coro;
     int              ret;
 
@@ -792,7 +1132,7 @@ int flb_io_net_write(struct flb_connection *connection, const void *data,
 
     if (connection->tls_session == NULL) {
         if (flags & FLB_IO_ASYNC) {
-            ret = net_io_write_async(coro, connection, data, len, out_len);
+            ret = net_io_write_async(coro, connection, data, len, out_len, NULL);
         }
         else {
             ret = net_io_write(connection, data, len, out_len);
@@ -813,12 +1153,18 @@ int flb_io_net_write(struct flb_connection *connection, const void *data,
     }
 #endif
 
+    saved_errno = errno;
+
     if (ret > 0) {
         flb_connection_reset_io_timeout(connection);
     }
 
     flb_trace("[io coro=%p] [net_write] ret=%i total=%lu/%lu",
               coro, ret, *out_len, len);
+
+    if (ret == -1) {
+        errno = saved_errno;
+    }
 
     return ret;
 }
