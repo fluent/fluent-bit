@@ -144,7 +144,7 @@ void test_http_add_get_header()
     struct flb_http_client *c;
     flb_sds_t ret_str;
     char *ua = "Fluent-Bit";
-    char *host = "127.0.0.1:80";
+    char *host = "127.0.0.1:8080";
     int ret;
 
     ctx = test_ctx_create();
@@ -154,7 +154,7 @@ void test_http_add_get_header()
 
     /* Create HTTP client instance */
     c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
-                        "127.0.0.1", 80, NULL, 0);
+                        "127.0.0.1", 8080, NULL, 0);
     if(!TEST_CHECK(c != NULL)) {
         TEST_MSG("flb_http_client failed");
         test_ctx_destroy(ctx);
@@ -245,7 +245,7 @@ void test_http_strip_port_from_host()
     struct test_ctx *ctx;
     struct flb_http_client *c;
     flb_sds_t ret_str;
-    char *host_port = "127.0.0.1:80";
+    char *host_port = "127.0.0.1:8080";
     char *host = "127.0.0.1";
     int ret;
 
@@ -256,7 +256,7 @@ void test_http_strip_port_from_host()
 
     /* Create HTTP client instance */
     c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
-                        "127.0.0.1", 80, NULL, 0);
+                        "127.0.0.1", 8080, NULL, 0);
     if(!TEST_CHECK(c != NULL)) {
         TEST_MSG("flb_http_client failed");
         test_ctx_destroy(ctx);
@@ -593,7 +593,12 @@ void test_ipv6_formats_host_header()
 
 void test_http_port_80_host_header()
 {
-    test_host_header_format("example.com", 80, "example.com:80");
+    test_host_header_format("example.com", 80, "example.com");
+}
+
+void test_http_non_standard_port_host_header()
+{
+    test_host_header_format("example.com", 8080, "example.com:8080");
 }
 
 void test_port_443_without_tls_host_header()
@@ -653,6 +658,7 @@ TEST_LIST = {
     { "https_default_port_host_header", test_https_default_port_host_header},
     { "ipv6_formats_host_header", test_ipv6_formats_host_header},
     { "http_port_80_host_header", test_http_port_80_host_header},
+    { "http_non_standard_port_host_header", test_http_non_standard_port_host_header},
     { "port_443_without_tls_host_header", test_port_443_without_tls_host_header},
     { "ipv6_zone_id_host_header", test_ipv6_zone_id_host_header},
     { "https_non_standard_port_host_header", test_https_non_standard_port_host_header},

@@ -629,6 +629,7 @@ static int add_host_and_content_length(struct flb_http_client *c)
     char *zone_id;
     char addr_buf[INET6_ADDRSTRLEN];
     int is_ipv6 = 0;
+    int is_http_default_port;
     int is_https_default_port;
     const char *host_for_header;
 
@@ -654,13 +655,16 @@ static int add_host_and_content_length(struct flb_http_client *c)
     /* Check if connection uses TLS and port is 443 (HTTPS default) */
     is_https_default_port = flb_stream_get_flag_status(&u->base, FLB_IO_TLS) && out_port == 443;
 
-    if (is_https_default_port) {
+    /* Check if connection does not use TLS and port is 80 (HTTP default) */
+    is_http_default_port = !flb_stream_get_flag_status(&u->base, FLB_IO_TLS) && out_port == 80;
+
+    if (is_https_default_port || is_http_default_port) {
         if (is_ipv6) {
             /* IPv6 address needs brackets for RFC compliance */
             tmp = flb_sds_printf(&host, "[%s]", host_for_header);
         }
         else {
-            /* HTTPS on default port 443 - omit port from Host header */
+            /* HTTP/HTTPS on default ports (80/443) - omit port from Host header */
             tmp = flb_sds_copy(host, out_host, strlen(out_host));
         }
     }
