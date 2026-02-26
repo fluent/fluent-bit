@@ -222,6 +222,14 @@ static int setup_users(struct flb_in_fw_config *ctx,
 
         /* As a value we expect a pair of a username and a passowrd */
         split = flb_utils_split(kv->val, ' ', 1);
+        if (split == NULL) {
+            flb_plg_error(ctx->ins,
+                          "invalid value, expected username and password");
+            delete_users(ctx);
+            flb_free(user);
+            return -1;
+        }
+
         if (mk_list_size(split) != 2) {
             flb_plg_error(ctx->ins,
                           "invalid value, expected username and password");
@@ -348,7 +356,7 @@ static int in_fw_init(struct flb_input_instance *ins,
     /* Load users */
     ret = setup_users(ctx, ins);
     if (ret == -1) {
-        flb_free(ctx);
+        fw_config_destroy(ctx);
         return -1;
     }
 
