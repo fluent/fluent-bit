@@ -1533,6 +1533,7 @@ static int tls_net_handshake(struct flb_tls *tls,
     long ssl_code = 0;
     unsigned long err_code = 0;
     char err_buf[256];
+    char * target_host;
     struct tls_session *session = ptr_session;
     struct tls_context *ctx;
     const char *x509_err;
@@ -1565,11 +1566,25 @@ static int tls_net_handshake(struct flb_tls *tls,
             return -1;
         }
 
+        target_host = vhost;
         if (vhost != NULL) {
             SSL_set_tlsext_host_name(session->ssl, vhost);
         }
         else if (tls->vhost) {
             SSL_set_tlsext_host_name(session->ssl, tls->vhost);
+            target_host = tls->vhost;
+        }
+
+        if (tls->mode == FLB_TLS_CLIENT_MODE && target_host != NULL) {
+            ERR_clear_error();
+            flb_debug("[tls] checking peer's hostname: %s", target_host);
+            // This is required to get validation of the target host name
+            if (!SSL_set1_host(session->ssl, target_host)) {
+                ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] error: %s", err_buf);
+                pthread_mutex_unlock(&ctx->mutex);
+                return -1;
+            }
         }
     }
 
