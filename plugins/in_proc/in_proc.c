@@ -182,8 +182,8 @@ static int configure(struct flb_in_proc_config *ctx,
 
 static int get_pid_status(pid_t pid)
 {
-    int ret =  kill(pid, 0);
-    return ((ret != ESRCH)  && (ret != EPERM) && (ret != ESRCH));
+    int ret = kill(pid, 0);
+    return ((ret != ESRCH) && (ret != EPERM));
 }
 
 static int generate_record_linux(struct flb_input_instance *i_ins,
