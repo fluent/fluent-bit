@@ -726,6 +726,17 @@ int flb_io_net_writev(struct flb_connection *connection,
     total_length = 0;
 
     for (index = 0 ; index < iovcnt ; index++) {
+        /* Overflow guard */
+        if (iov[index].iov_len > SIZE_MAX - total_length) {
+            errno = EOVERFLOW;
+            return -1;
+        }
+
+        if (iov[index].iov_len > 0 && iov[index].iov_base == NULL) {
+            errno = EINVAL;
+            return -1;
+        }
+
         total_length += iov[index].iov_len;
     }
 
@@ -746,7 +757,9 @@ int flb_io_net_writev(struct flb_connection *connection,
     total = 0;
 
     for (index = 0 ; index < iovcnt ; index++) {
-        memcpy(&temporary_buffer[total], iov[index].iov_base, iov[index].iov_len);
+        if (iov[index].iov_len > 0) {
+            memcpy(&temporary_buffer[total], iov[index].iov_base, iov[index].iov_len);
+        }
         total += iov[index].iov_len;
     }
 
