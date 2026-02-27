@@ -1504,12 +1504,44 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
                                 2,
                                 &bytes_header);
         if (ret == -1) {
-            flb_errno();
-            return FLB_HTTP_ERROR;
-        }
+            if (errno == ENOMEM && bytes_header == 0) {
+                ret = flb_io_net_write(c->u_conn,
+                                       c->header_buf, c->header_len,
+                                       &bytes_header);
+                if (ret == -1) {
+                    if (errno != 0) {
+                        flb_errno();
+                    }
+                    return FLB_HTTP_ERROR;
+                }
 
-        bytes_body = bytes_header - c->header_len;
-        bytes_header = c->header_len;
+                ret = flb_io_net_write(c->u_conn,
+                                       c->body_buf, c->body_len,
+                                       &bytes_body);
+                if (ret == -1) {
+                    if (errno != 0) {
+                        flb_errno();
+                    }
+                    return FLB_HTTP_ERROR;
+                }
+            }
+            else {
+                if (errno != 0) {
+                    flb_errno();
+                }
+                return FLB_HTTP_ERROR;
+            }
+        }
+        else {
+            if (bytes_header < c->header_len) {
+                flb_error("[http_client] invalid write accounting: total=%zu header=%zu",
+                          bytes_header, c->header_len);
+                return FLB_HTTP_ERROR;
+            }
+
+            bytes_body = bytes_header - c->header_len;
+            bytes_header = c->header_len;
+        }
     }
     else {
         /* Write the header */
