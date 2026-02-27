@@ -14,6 +14,7 @@ INSTALL_PACKAGE_NAME=${FLUENT_BIT_INSTALL_PACKAGE_NAME:-fluent-bit}
 # Optional Apt/Yum additional parameters (e.g. releasever for AL2022/AL2023)
 APT_PARAMETERS=${FLUENT_BIT_INSTALL_APT_PARAMETERS:-}
 YUM_PARAMETERS=${FLUENT_BIT_INSTALL_YUM_PARAMETERS:-}
+ZYPPER_PARAMETERS=${FLUENT_BIT_INSTALL_ZYPPER_PARAMETERS:-}
 
 echo "================================"
 echo " Fluent Bit Installation Script "
@@ -48,9 +49,11 @@ fi
 # Set up version pinning
 APT_VERSION=''
 YUM_VERSION=''
+ZYPPER_VERSION=''
 if [ -n "${RELEASE_VERSION}" ]; then
     APT_VERSION="=$RELEASE_VERSION"
     YUM_VERSION="-$RELEASE_VERSION"
+    ZYPPER_VERSION="=$RELEASE_VERSION"
 fi
 
 # Now set up repos and install dependent on OS, version, etc.
@@ -143,6 +146,44 @@ EOF
 cat /etc/apt/sources.list.d/fluent-bit.list
 apt-get -y update
 $INSTALL_CMD_PREFIX apt-get -y $APT_PARAMETERS install $INSTALL_PACKAGE_NAME$APT_VERSION
+SCRIPT
+    ;;
+    opensuse-leap)
+        $SUDO sh <<SCRIPT
+rpm --import $RELEASE_KEY
+cat << EOF > /etc/zypp/repos.d/fluent-bit.repo
+[fluent-bit]
+name = Fluent Bit
+baseurl = $RELEASE_URL/opensuse/leap/\$releaserver
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=$RELEASE_KEY
+enabled=1
+type=rpm-md
+autorefresh=1
+EOF
+cat /etc/zypp/repos.d/fluent-bit.repo
+zypper --non-interactive --gpg-auto-import-keys refresh
+$INSTALL_CMD_PREFIX zypper --non-interactive --gpg-auto-import-keys $ZYPPER_PARAMETERS install $INSTALL_PACKAGE_NAME$ZYPPER_VERSION
+SCRIPT
+    ;;
+    sles)
+        $SUDO sh <<SCRIPT
+rpm --import $RELEASE_KEY
+cat << EOF > /etc/zypp/repos.d/fluent-bit.repo
+[fluent-bit]
+name = Fluent Bit
+baseurl = $RELEASE_URL/sles/\$releasever
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=$RELEASE_KEY
+enabled=1
+type=rpm-md
+autorefresh=1
+EOF
+cat /etc/zypp/repos.d/fluent-bit.repo
+zypper --non-interactive --gpg-auto-import-keys refresh
+$INSTALL_CMD_PREFIX zypper --non-interactive --gpg-auto-import-keys $ZYPPER_PARAMETERS install $INSTALL_PACKAGE_NAME$ZYPPER_VERSION
 SCRIPT
     ;;
     *)
