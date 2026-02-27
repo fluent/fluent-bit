@@ -108,6 +108,10 @@ struct flb_tail_config {
     int progress_check_interval;      /* watcher interval             */
     int progress_check_interval_nsec; /* watcher interval             */
 
+    uint64_t fstat_interval_nsec;     /* fstat mode event polling interval (nanoseconds) */
+
+    int keep_file_handle;      /* keep file handle open during tail (default: true) */
+
 #ifdef FLB_HAVE_INOTIFY
     int   inotify_watcher;     /* enable/disable inotify monitor */
 #endif

@@ -78,7 +78,7 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
         if (file->watch_fd == -1 ||
             (file->offset >= file->size)) {
             /* Gather current file size */
-            ret = fstat(file->fd, &st);
+            ret = flb_tail_file_stat(file, &st);
             if (ret == -1) {
                 flb_errno();
                 flb_tail_file_remove(file);
@@ -343,7 +343,7 @@ int in_tail_collect_event(void *file, struct flb_config *config)
     struct stat st;
     struct flb_tail_file *f = file;
 
-    ret = fstat(f->fd, &st);
+    ret = flb_tail_file_stat(f, &st);
     if (ret == -1) {
         flb_tail_file_remove(f);
         return 0;
@@ -624,6 +624,13 @@ static struct flb_config_map config_map[] = {
      "nanosecond component of the progress check interval."
     },
     {
+     FLB_CONFIG_MAP_STR, "fstat_interval", "250ms",
+     0, FLB_FALSE, 0,
+     "interval for fstat mode event polling. Controls how often files are checked "
+     "for changes when using stat-based file watching (instead of inotify). "
+     "Default is 250ms. Supports time suffixes: s, ms, us, ns."
+    },
+    {
      FLB_CONFIG_MAP_TIME, "rotate_wait", FLB_TAIL_ROTATE_WAIT,
      0, FLB_TRUE, offsetof(struct flb_tail_config, rotate_wait),
      "specify the number of extra time in seconds to monitor a file once is "
@@ -723,7 +730,14 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_tail_config, skip_empty_lines),
      "Allows to skip empty lines."
     },
-
+    {
+     FLB_CONFIG_MAP_BOOL, "keep_file_handle", "true",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, keep_file_handle),
+     "When set to false, the file handle will be reopened every time we read "
+     "from the source tailed file and closed when done, to avoid keeping it open. "
+     "Useful for SMB shares and network filesystems where keeping handles open "
+     "can cause issues."
+    },
     {
       FLB_CONFIG_MAP_BOOL, "truncate_long_lines", "false",
       0, FLB_TRUE, offsetof(struct flb_tail_config, truncate_long_lines),
