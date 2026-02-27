@@ -92,6 +92,7 @@ void flb_test_ipm_regular() {
             "scrape_on_start", "true",
             "path.sysfs", DPATH_PODMAN_REGULAR,
             "path.procfs", DPATH_PODMAN_REGULAR,
+            "remove_stale_counters", "true",
             NULL);
     TEST_CHECK(flb_start(ctx) == 0);
     sleep(1);
