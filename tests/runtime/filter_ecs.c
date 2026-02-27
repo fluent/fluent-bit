@@ -15,6 +15,7 @@ struct filter_test {
 
 struct filter_test_result {
     char *expected_pattern;     /* string that must occur in output */
+    char *fail_pattern;         /* if this pattern is found in the result, fail test */
     int expected_pattern_index; /* which record to check for the pattern */
     int expected_records;       /* expected number of outputted records */
     int actual_records;         /* actual number of outputted records */
@@ -46,6 +47,15 @@ static int cb_check_result(void *record, size_t size, void *data)
     }
 
     expected->actual_records++;
+
+    if (expected->fail_pattern != NULL) {
+        p = strstr(result, expected->fail_pattern);
+        TEST_CHECK(p == NULL);
+        if (p) {
+            flb_error("Should not find: '%s' in result '%s'",
+                    expected->fail_pattern, result);
+        }
+    }
 
     flb_free(record);
     return 0;
@@ -158,6 +168,9 @@ static void flb_test_ecs_filter()
     sleep(2);
     TEST_CHECK(expected.actual_records == expected.expected_records);
     filter_test_destroy(ctx);
+
+    /* unset env */
+    setenv("FLB_ECS_PLUGIN_UNDER_TEST", "", 1);
 }
 
 /* 
@@ -230,6 +243,10 @@ static void flb_test_ecs_filter_mark_tag_failed()
     /* check number of outputted records */
     TEST_CHECK(expected.actual_records == expected.expected_records);
     filter_test_destroy(ctx);
+
+    /* unset env */
+    setenv("FLB_ECS_PLUGIN_UNDER_TEST", "", 1);
+    setenv("TEST_TASK_ERROR", "", 1);
 }
 
 static void flb_test_ecs_filter_no_prefix()
@@ -279,6 +296,9 @@ static void flb_test_ecs_filter_no_prefix()
     sleep(2);
     TEST_CHECK(expected.actual_records == expected.expected_records);
     filter_test_destroy(ctx);
+
+    /* unset env */
+    setenv("FLB_ECS_PLUGIN_UNDER_TEST", "", 1);
 }
 
 static void flb_test_ecs_filter_cluster_metadata_only()
@@ -330,6 +350,9 @@ static void flb_test_ecs_filter_cluster_metadata_only()
     sleep(2);
     TEST_CHECK(expected.actual_records == expected.expected_records);
     filter_test_destroy(ctx);
+
+    /* unset env */
+    setenv("FLB_ECS_PLUGIN_UNDER_TEST", "", 1);
 }
 
 static void flb_test_ecs_filter_cluster_error()
@@ -380,6 +403,10 @@ static void flb_test_ecs_filter_cluster_error()
     sleep(2);
     TEST_CHECK(expected.actual_records == expected.expected_records);
     filter_test_destroy(ctx);
+
+    /* unset env */
+    setenv("FLB_ECS_PLUGIN_UNDER_TEST", "", 1);
+    setenv("TEST_CLUSTER_ERROR", "", 1);
 }
 
 static void flb_test_ecs_filter_task_error()
@@ -430,10 +457,76 @@ static void flb_test_ecs_filter_task_error()
     sleep(2);
     TEST_CHECK(expected.actual_records == expected.expected_records);
     filter_test_destroy(ctx);
+
+    /* unset env */
+    setenv("FLB_ECS_PLUGIN_UNDER_TEST", "", 1);
+    setenv("TEST_TASK_ERROR", "", 1);
+}
+
+/*
+ * First release of ECS filter would attach empty values for metadata which could not be fetched
+ * This checks the case where task metadata fails to fetch and that the filter thus
+ * does not attach the configured `task` key.
+ */
+static void flb_test_ecs_filter_cluster_meta_nonempty()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    struct filter_test_result expected = { 0 };
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_ECS_PLUGIN_UNDER_TEST", "true", 1);
+    setenv("TEST_TASK_ERROR", ERROR_RESPONSE, 1);
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data, "79c796ed2a7f");
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "ecs_tag_prefix", "",
+                         "ADD", "cluster $ClusterName",
+                         "ADD", "task $TaskID",
+                         "ADD", "container $ECSContainerName",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* this test is mainly for leak checking on error, not for checking result record */
+    expected.expected_records = 1; /* 1 record  */
+    expected.expected_pattern = "cluster"; /* cluster key should be added */
+    expected.expected_pattern_index = 0;
+    expected.fail_pattern = "task"; /* task key should not be attached */
+    cb_data.cb = cb_check_result;
+    cb_data.data = (void *) &expected;
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"log\":\"error: my error\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    /* check number of outputted records */
+    sleep(2);
+    TEST_CHECK(expected.actual_records == expected.expected_records);
+    filter_test_destroy(ctx);
+
+    /* unset env */
+    setenv("FLB_ECS_PLUGIN_UNDER_TEST", "", 1);
+    setenv("TEST_TASK_ERROR", "", 1);
 }
 
 TEST_LIST = {
-
+    {"flb_test_ecs_filter_cluster_meta_nonempty"  , flb_test_ecs_filter_cluster_meta_nonempty },
     {"flb_test_ecs_filter_mark_tag_failed"  , flb_test_ecs_filter_mark_tag_failed },
     {"flb_test_ecs_filter"  , flb_test_ecs_filter },
     {"flb_test_ecs_filter_no_prefix"  , flb_test_ecs_filter_no_prefix },
