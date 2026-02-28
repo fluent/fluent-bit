@@ -27,7 +27,9 @@
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_blob_db.h>
 #include <fluent-bit/flb_hash_table.h>
+#ifndef _WIN32
 #include <pthread.h>
+#endif
 #include <sys/types.h>  /* for off_t */
 #include <fcntl.h>
 
@@ -35,6 +37,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
+#include <sys/stat.h>
 #define flb_s3_unlink(path)     _unlink(path)
 #define flb_s3_access(path, mode) _access((path), (mode))
 #define flb_s3_open(path, flags, ...) _open((path), ((flags) | O_BINARY), ##__VA_ARGS__)
