@@ -706,9 +706,10 @@ arrow::Result<std::shared_ptr<arrow::Schema>> parse_schema_from_json(const char*
         } else {
             auto it = TYPE_FACTORY_MAP.find(type_name);
             if (it == TYPE_FACTORY_MAP.end()) {
-                flb_warn("[parquet] Unknown type '%s' for field '%s', falling back to string",
+                flb_error("[parquet] Unknown type '%s' for field '%s', schema is invalid",
                          type_name.c_str(), field_name.c_str());
-                data_type = arrow::utf8();
+                yyjson_doc_free(doc);
+                return arrow::Status::Invalid("Unknown type '" + type_name + "' for field '" + field_name + "'");
             } else {
                 data_type = it->second();
             }

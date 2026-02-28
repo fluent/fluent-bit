@@ -1488,7 +1488,7 @@ size_t flb_aws_strftime_precision(char **out_buf, const char *time_format,
  */
 flb_sds_t flb_aws_uri_encode_path(const char *uri, size_t len)
 {
-    int i;
+    size_t i;
     flb_sds_t buf = NULL;
     flb_sds_t tmp = NULL;
     char c;
