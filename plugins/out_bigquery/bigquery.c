@@ -841,6 +841,9 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         flb_sds_destroy(token);
     }
 
+    /* Setup HTTP debug callbacks */
+    flb_output_set_http_debug_callbacks(ins);
+
     return 0;
 }
 
@@ -1016,12 +1019,15 @@ static void cb_bigquery_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    flb_http_buffer_size(c, 4192);
+    flb_http_buffer_size(c, ctx->buffer_size);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
 
     /* Compose and append Authorization header */
     flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
+
+    /* Enable HTTP client debug callbacks */
+    flb_http_client_debug(c, ctx->ins->callback);
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -1144,6 +1150,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_BOOL, "ignore_unknown_values", "false",
       0, FLB_TRUE, offsetof(struct flb_bigquery, ignore_unknown_values),
       "Enable ignoring unknown value",
+    },
+    {
+      FLB_CONFIG_MAP_INT, "buffer_size", "4192",
+      0, FLB_TRUE, offsetof(struct flb_bigquery, buffer_size),
+      "Set the HTTP buffer size",
     },
     /* EOF */
     {0}
