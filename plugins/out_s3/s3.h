@@ -63,8 +63,8 @@
 /* Forward declaration for Parquet schema (defined in flb_parquet.h) */
 struct flb_parquet_schema;
 
-#define MAX_FILE_SIZE         54975581388800ULL  /* 50TB (AWS S3 max object size) */
-#define MAX_FILE_SIZE_STR     "50TB"
+#define MAX_FILE_SIZE         53656167435469ULL  /* 48.8TiB (AWS S3 max multipart upload size) */
+#define MAX_FILE_SIZE_STR     "48.8TiB"
 
 #define MAX_UPLOAD_ERRORS 5
 

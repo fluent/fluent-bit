@@ -1056,11 +1056,10 @@ static int resume_file_upload(struct flb_s3 *ctx,
                                              remote_id, key_to_use,
                                              tag, tag_len);
 
-    if (s3_key) {
-        flb_sds_destroy(s3_key);
-    }
-
     if (enqueued > 0) {
+        if (s3_key) {
+            flb_sds_destroy(s3_key);
+        }
         return enqueued;
     }
 
@@ -1069,6 +1068,11 @@ static int resume_file_upload(struct flb_s3 *ctx,
      * Check if the upload is ready for completion.
      */
     ret = check_and_complete_multipart(ctx, file_id, key_to_use);
+    
+    /* Now safe to destroy s3_key after check_and_complete_multipart returns */
+    if (s3_key) {
+        flb_sds_destroy(s3_key);
+    }
     if (ret == 0) {
         /* Successfully completed - return success but 0 enqueued since completion happened directly */
         return 0;

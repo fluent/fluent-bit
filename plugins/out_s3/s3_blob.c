@@ -169,6 +169,8 @@ int s3_blob_notify_delivery(struct flb_s3 *ctx,
 int s3_blob_recover_state(struct flb_s3 *ctx, struct flb_config *config)
 {
     int ret;
+    int stale_ret;
+    int aborted_ret;
 
     if (!ctx->blob_db.db) {
         return 0;
@@ -183,14 +185,21 @@ int s3_blob_recover_state(struct flb_s3 *ctx, struct flb_config *config)
     }
 
     /* Handle STALE → PENDING transitions */
-    recover_stale_files(ctx);
+    stale_ret = recover_stale_files(ctx);
 
     /* Handle ABORTED → PENDING or DELETE transitions */
-    handle_aborted_files(ctx, config);
+    aborted_ret = handle_aborted_files(ctx, config);
 
     ret = flb_blob_db_unlock(&ctx->blob_db);
     if (ret != 0) {
         flb_plg_warn(ctx->ins, "Failed to release blob DB lock (ret=%d)", ret);
+    }
+
+    /* Report failure if any helper failed */
+    if (stale_ret < 0 || aborted_ret < 0) {
+        flb_plg_error(ctx->ins, "Recovery state processing failed (stale=%d, aborted=%d)",
+                     stale_ret, aborted_ret);
+        return -1;
     }
 
     return 0;
@@ -211,8 +220,17 @@ static int recover_stale_files(struct flb_s3 *ctx)
                                               ctx->upload_parts_freshness_threshold,
                                               &file_remote_id, &file_tag, &part_count);
 
-        if (ret != 1) {
+        if (ret == 1) {
+            /* Success - process stale file */
+        }
+        else if (ret == 0) {
+            /* No more stale files */
             break;
+        }
+        else {
+            /* Database error */
+            flb_plg_error(ctx->ins, "Database error while fetching stale files (ret=%d)", ret);
+            return -1;
         }
 
         flb_plg_info(ctx->ins, "Stale file detected, resetting upload state "
@@ -275,8 +293,17 @@ static int handle_aborted_files(struct flb_s3 *ctx, struct flb_config *config)
                                                 &file_remote_id, &file_tag,
                                                 &s3_key, &part_count);
 
-        if (ret != 1) {
+        if (ret == 1) {
+            /* Success - process aborted file */
+        }
+        else if (ret == 0) {
+            /* No more aborted files */
             break;
+        }
+        else {
+            /* Database error */
+            flb_plg_error(ctx->ins, "Database error while fetching aborted files (ret=%d)", ret);
+            return -1;
         }
 
         aborted_count++;

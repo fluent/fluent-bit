@@ -25,6 +25,7 @@
 #include <sys/stat.h>
 #include <chunkio/cio_file_st.h>
 #include <stdint.h>
+#include <limits.h>
 
 #include "s3.h"
 #include "s3_store.h"
@@ -133,6 +134,13 @@ static int check_buffer_space(struct flb_s3 *ctx, size_t new_bytes)
 
     if (ctx->store_dir_limit_size == 0) {
         return 0;
+    }
+
+    /* Check for overflow before computing new_total */
+    if (new_bytes > SIZE_MAX - ctx->current_buffer_size) {
+        flb_plg_error(ctx->ins, "Buffer size overflow: current=%zu, new=%zu bytes (would exceed SIZE_MAX)",
+                     ctx->current_buffer_size, new_bytes);
+        return -1;
     }
 
     new_total = ctx->current_buffer_size + new_bytes;
@@ -464,6 +472,7 @@ static flb_sds_t create_stream_name(void)
 
 int s3_store_init(struct flb_s3 *ctx)
 {
+    int ret;
     int store_type;
     flb_sds_t stream_name;
     struct flb_fstore *fs;
@@ -487,7 +496,15 @@ int s3_store_init(struct flb_s3 *ctx)
         return -1;
     }
 
-    pthread_mutex_init(&ctx->file_hash_lock, NULL);
+    ret = pthread_mutex_init(&ctx->file_hash_lock, NULL);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "Failed to initialize file hash mutex (ret=%d)", ret);
+        flb_hash_table_destroy(ctx->file_hash);
+        flb_fstore_destroy(fs);
+        ctx->fs = NULL;
+        ctx->file_hash = NULL;
+        return -1;
+    }
 
     stream_name = create_stream_name();
     if (!stream_name) {
@@ -585,6 +602,7 @@ int s3_store_file_inactive(struct flb_s3 *ctx, struct s3_file *s3_file)
     struct flb_fstore_file *fsf;
     char *tag;
     size_t tag_len;
+    char *tmp_tag;
 
     if (!s3_file) {
         return 0;
@@ -601,12 +619,17 @@ int s3_store_file_inactive(struct flb_s3 *ctx, struct s3_file *s3_file)
      * We assume one active file per tag, so removing by key is safe.
      * Construct null-terminated string for del API.
      */
-    char *tmp_tag = flb_calloc(1, tag_len + 1);
-    if (tmp_tag) {
-        memcpy(tmp_tag, tag, tag_len);
-        flb_hash_table_del(ctx->file_hash, tmp_tag);
-        flb_free(tmp_tag);
+    tmp_tag = flb_calloc(1, tag_len + 1);
+    if (!tmp_tag) {
+        /* Cannot allocate memory to remove from hash - keep entry intact to avoid stale pointer */
+        pthread_mutex_unlock(&ctx->file_hash_lock);
+        flb_plg_error(ctx->ins, "Failed to allocate tmp_tag for hash removal, keeping entry intact");
+        return -1;
     }
+    
+    memcpy(tmp_tag, tag, tag_len);
+    flb_hash_table_del(ctx->file_hash, tmp_tag);
+    flb_free(tmp_tag);
     pthread_mutex_unlock(&ctx->file_hash_lock);
 
     /* Free allocated members before freeing the struct */
@@ -625,6 +648,7 @@ int s3_store_file_delete(struct flb_s3 *ctx, struct s3_file *s3_file)
     struct flb_fstore_file *fsf;
     char *tag;
     size_t tag_len;
+    char *tmp_tag;
 
     if (!s3_file || !s3_file->fsf) {
         return 0;
@@ -645,12 +669,17 @@ int s3_store_file_delete(struct flb_s3 *ctx, struct s3_file *s3_file)
      * We assume one active file per tag, so removing by key is safe.
      * Construct null-terminated string for del API.
      */
-    char *tmp_tag = flb_calloc(1, tag_len + 1);
-    if (tmp_tag) {
-        memcpy(tmp_tag, tag, tag_len);
-        flb_hash_table_del(ctx->file_hash, tmp_tag);
-        flb_free(tmp_tag);
+    tmp_tag = flb_calloc(1, tag_len + 1);
+    if (!tmp_tag) {
+        /* Cannot allocate memory to remove from hash - keep entry intact to avoid stale pointer */
+        pthread_mutex_unlock(&ctx->file_hash_lock);
+        flb_plg_error(ctx->ins, "Failed to allocate tmp_tag for hash removal, keeping entry intact");
+        return -1;
     }
+    
+    memcpy(tmp_tag, tag, tag_len);
+    flb_hash_table_del(ctx->file_hash, tmp_tag);
+    flb_free(tmp_tag);
     pthread_mutex_unlock(&ctx->file_hash_lock);
 
     fsf->data = NULL;
