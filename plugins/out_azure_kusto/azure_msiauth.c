@@ -135,7 +135,9 @@ static flb_sds_t read_token_from_file(const char *token_file)
     return token;
 }
 
-int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *token_file, const char *client_id, const char *tenant_id)
+int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *token_file,
+                                          const char *client_id, const char *tenant_id,
+                                          const char *scope)
 {
     int ret;
     size_t b_sent;
@@ -158,7 +160,7 @@ int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *to
         return -1;
     }
 
-    flb_info("[azure workload identity] after read token from file %s", federated_token);
+    flb_debug("[azure workload identity] federated token read successfully from file");
 
     /* Build the form data for token exchange *before* creating the client */
     body = flb_sds_create_size(4096);
@@ -169,23 +171,48 @@ int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *to
     }
 
     body = flb_sds_cat(body, "client_id=", 10);
-    body = flb_sds_cat(body, client_id, strlen(client_id));
-    /* Use the correct grant_type and length for workload identity */
-    body = flb_sds_cat(body, "&grant_type=client_credentials", 30);
-    body = flb_sds_cat(body, "&client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer", 77);
-    body = flb_sds_cat(body, "&client_assertion=", 18);
-    body = flb_sds_cat(body, federated_token, flb_sds_len(federated_token));
-    /* Use the correct scope and length for Kusto */
-    body = flb_sds_cat(body, "&scope=https://help.kusto.windows.net/.default", 46);
-
     if (!body) {
-        /* This check might be redundant if flb_sds_cat handles errors, but safe */
-        flb_error("[azure workload identity] failed to build request body");
-        flb_sds_destroy(federated_token);
-        return -1;
+        goto body_error;
+    }
+    body = flb_sds_cat(body, client_id, strlen(client_id));
+    if (!body) {
+        goto body_error;
+    }
+    body = flb_sds_cat(body, "&grant_type=client_credentials", 30);
+    if (!body) {
+        goto body_error;
+    }
+    body = flb_sds_cat(body, "&client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer", 77);
+    if (!body) {
+        goto body_error;
+    }
+    body = flb_sds_cat(body, "&client_assertion=", 18);
+    if (!body) {
+        goto body_error;
+    }
+    body = flb_sds_cat(body, federated_token, flb_sds_len(federated_token));
+    if (!body) {
+        goto body_error;
+    }
+    /* Use the cloud-specific scope for Kusto */
+    body = flb_sds_cat(body, "&scope=", 7);
+    if (!body) {
+        goto body_error;
+    }
+    body = flb_sds_cat(body, scope, strlen(scope));
+    if (!body) {
+        goto body_error;
     }
 
     /* Get upstream connection to Azure AD token endpoint */
+    goto body_ok;
+
+body_error:
+    flb_error("[azure workload identity] failed to build request body (OOM)");
+    flb_sds_destroy(federated_token);
+    return -1;
+
+body_ok:
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
         flb_error("[azure workload identity] could not get an upstream connection");
@@ -213,8 +240,8 @@ int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *to
     /* c->body_buf = body; */
     /* c->body_len = flb_sds_len(body); */
 
-    /* Add a debug log to verify the body content just before sending */
-    flb_debug("[azure workload identity] Sending request body (len=%zu): %s", flb_sds_len(body), body);
+    /* Log only the body length, not the content (body contains sensitive credentials) */
+    flb_debug("[azure workload identity] sending token exchange request (body_len=%zu)", flb_sds_len(body));
 
     /* Issue request */
     ret = flb_http_do(c, &b_sent);
