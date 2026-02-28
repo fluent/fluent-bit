@@ -61,7 +61,7 @@ void flb_test_buffer_space_exhaustion(void)
     TEST_CHECK(ret == 0);
 
     /* Push data multiple times to potentially exceed store limit */
-    for (i = 0; i < 20; i++) {
+    for (i = 0; i < 40; i++) {
         ret = flb_lib_push(ctx, in_ffd, (char *)JSON_TD, sizeof(JSON_TD) - 1);
         if (ret < 0) {
             buffer_exhausted = FLB_TRUE;
