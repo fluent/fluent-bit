@@ -175,7 +175,12 @@ static inline int log_record_set_body(struct opentelemetry_context *ctx,
 
         ret = flb_ra_get_kv_pair(bk->ra, *event->body, &s_key, &o_key, &o_val);
         if (ret == 0) {
-            log_object = msgpack_object_to_otlp_any_value(o_val);
+            /* If we're preserving fields, use the whole record for OTLP body */
+            if (ctx->logs_body_preserve == FLB_TRUE) {
+                log_object = msgpack_object_to_otlp_any_value(event->body);
+            } else {
+                log_object = msgpack_object_to_otlp_any_value(o_val);
+            }
 
             /* Link the record accessor pattern that matched */
             *out_ra_match = bk->ra;
@@ -231,7 +236,7 @@ static int log_record_set_attributes(struct opentelemetry_context *ctx,
      * buffer. If there are matches, meaning that a new output buffer was created, ret will
      * be FLB_TRUE, if no matches exists it returns FLB_FALSE.
      */
-    if (ctx->logs_body_key_attributes == FLB_TRUE && ctx->mp_accessor && ra_match) {
+    if (ctx->logs_body_key_attributes == FLB_TRUE && ctx->mp_accessor && ra_match && ctx->logs_body_preserve == FLB_FALSE) {
         /*
          * if ra_match is not NULL, it means that the log body was populated with a key from the record
          * and the variable holds a reference to the record accessor that matched the key.
@@ -290,16 +295,27 @@ static int log_record_set_attributes(struct opentelemetry_context *ctx,
         attr_count++;
     }
 
-    /* remaining fields that were not added to log body */
-    if (ctx->logs_body_key_attributes == FLB_TRUE && unpacked) {
-        /* iterate the map and reference each elemento as an OTLP value */
-        for (i = 0; i < result.data.via.map.size; i++) {
-            kv = &result.data.via.map.ptr[i];
-            buf[attr_count] = msgpack_kv_to_otlp_any_value(kv);
-            attr_count++;
+    /* Handle remaining fields based on configuration */
+    if (ctx->logs_body_key_attributes == FLB_TRUE) {
+        if (unpacked) {
+            /* iterate the map and reference each element as an OTLP value */
+            for (i = 0; i < result.data.via.map.size; i++) {
+                kv = &result.data.via.map.ptr[i];
+                buf[attr_count] = msgpack_kv_to_otlp_any_value(kv);
+                attr_count++;
+            }
+            msgpack_unpacked_destroy(&result);
+            flb_free(out_buf);
         }
-        msgpack_unpacked_destroy(&result);
-        flb_free(out_buf);
+        else if (!unpacked && ctx->logs_body_preserve == FLB_TRUE) {
+            /* When logs_body_preserve is true, still add fields to attributes
+             * if logs_body_key_attributes is enabled */
+            for (i = 0; i < event->body->via.map.size; i++) {
+                kv = &event->body->via.map.ptr[i];
+                buf[attr_count] = msgpack_kv_to_otlp_any_value(kv);
+                attr_count++;
+            }
+        }
     }
 
     log_record->attributes = buf;
