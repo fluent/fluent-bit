@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #else
 #include <windows.h>
+#include <direct.h>
+#include <io.h>
 #endif
 
 /* Test macros */
