@@ -54,33 +54,52 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
   endif()
 endif()
 
+set(FLB_EXTRA_CMAKE_CXX_FLAGS)
+set(FLB_EXTRA_CMAKE_CXX_LINK_FLAGS)
+
+# For consistency with MSVC debug C/C++ runtime (/MTd and /MDd options),
+# which is used for the Debug build and which automatically adds _DEBUG.
+add_compile_definitions($<$<CONFIG:Debug>:_DEBUG>)
+
 # Update CFLAGS
 if (MSVC)
+  # Use static C runtime
+  if (NOT (CMAKE_VERSION VERSION_LESS "3.15"))
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  endif()
+  add_compile_options(/MT$<$<CONFIG:Debug>:d>)
+  # Replace (/|-)MD(d?) with (/|-)MT(d?) to avoid D9025 warning
+  foreach(config_type ${CMAKE_CONFIGURATION_TYPES} ${CMAKE_BUILD_TYPE} Debug Release RelWithDebInfo MinSizeRel)
+    string(TOUPPER ${config_type} upper_config_type)
+    set(flag_var "CMAKE_C_FLAGS_${upper_config_type}")
+    string(REGEX REPLACE "(^| |\\t|\\r|\\n)(-|/)(MD)(d?)($| |\\t|\\r|\\n)" "\\1\\2MT\\4\\5" ${flag_var} "${${flag_var}}")
+  endforeach()
+  set(flag_var)
+  set(upper_config_type)
+  set(config_type)
+
+  # Make compiler aware of source code using UTF-8 encoding
+  add_compile_options(/utf-8)
+
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
   add_definitions(-D_CRT_NONSTDC_NO_WARNINGS)
 
   # Use custom CFLAGS for MSVC
   #
   #   /Zi ...... Generate pdb files.
-  #   /MT ...... Static link C runtimes.
   #   /wd4711 .. C4711 (function selected for inline expansion)
   #   /wd4100 .. C4100 (unreferenced formal parameter)
   #   /wd5045 .. C5045 (Spectre mitigation)
   #
   # Restore /OPT:REF after setting /Debug, enable /OPT:ICF for 64-bit
   # builds per Microsoft recommended best practices.
-  set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS /DNDEBUG /O2 /Zi /wd4100 /wd4711 /wd5045")
+  set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS /Zi /wd4100 /wd4711 /wd5045")
   set(CMAKE_EXE_LINKER_FLAGS "/DEBUG /OPT:REF /INCREMENTAL:NO")
   set(CMAKE_SHARED_LINKER_FLAGS "/DEBUG /OPT:REF /INCREMENTAL:NO")
-  set(CMAKE_BUILD_TYPE None)
   if (CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /OPT:ICF")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /OPT:ICF")
   endif()
-
-  # Use add_compile_options() to set /MT since Visual Studio
-  # Generator does not notice /MT in CMAKE_C_FLAGS.
-  add_compile_options(/MT)
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
   if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -102,17 +121,23 @@ else()
   endif()
 endif()
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FLB_FILENAME__=__FILE__")
+add_compile_definitions(__FLB_FILENAME__=__FILE__)
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv7l")
   set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -latomic")
-  set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -latomic")
+  # CMAKE_CXX_LINK_FLAGS will be extended with FLB_EXTRA_CMAKE_CXX_LINK_FLAGS,
+  # when / if C++ language support will be enabled.
+  # Until C++ language support is enabled, CMAKE_CXX_LINK_FLAGS is empty / undefined.
+  set(FLB_EXTRA_CMAKE_CXX_LINK_FLAGS "${FLB_EXTRA_CMAKE_CXX_LINK_FLAGS} -latomic")
 endif()
 if(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
   set(FLB_SYSTEM_FREEBSD On)
   add_definitions(-DFLB_SYSTEM_FREEBSD)
   set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -lutil")
-  set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -lutil")
+  # CMAKE_CXX_LINK_FLAGS will be extended with FLB_EXTRA_CMAKE_CXX_LINK_FLAGS,
+  # when / if C++ language support will be enabled.
+  # Until C++ language support is enabled, CMAKE_CXX_LINK_FLAGS is empty / undefined.
+  set(FLB_EXTRA_CMAKE_CXX_LINK_FLAGS "${FLB_EXTRA_CMAKE_CXX_LINK_FLAGS} -lutil")
 endif()
 
 # *BSD is not supported platform for wasm-micro-runtime except for FreeBSD.
@@ -465,9 +490,12 @@ if(FLB_UNICODE_ENCODER)
 endif()
 
 if(FLB_COVERAGE)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic")
   if (FLB_UNICODE_ENCODER)
-    set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+    # CMAKE_CXX_FLAGS will be extended with FLB_EXTRA_CMAKE_CXX_FLAGS,
+    # when / if C++ language support will be enabled.
+    # Until C++ language support is enabled, CMAKE_CXX_FLAGS is empty / undefined.
+    set(FLB_EXTRA_CMAKE_CXX_FLAGS "${FLB_EXTRA_CMAKE_CXX_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic")
   endif()
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
@@ -484,9 +512,7 @@ if(FLB_COMPILER_STRICT_POINTER_TYPES)
 endif()
 
 # Enable Debug symbols if specified
-if(MSVC)
-  set(CMAKE_BUILD_TYPE None)  # Avoid flag conflicts (See CMakeList.txt:L18)
-elseif(FLB_RELEASE)
+if(FLB_RELEASE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
 elseif(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
@@ -605,6 +631,12 @@ endif()
 
 # MPack
 add_definitions(-DMPACK_EXTENSIONS=1)
+# MPack read / write tracking seems to have issues with nested types,
+# so it needs to be disabled explicitly, because otherwise MPack
+# read / write tracking is automatically enabled for the Debug build
+# (when _DEBUG macro is defined) with some compilers, like MSVC
+# (refer to https://learn.microsoft.com/en-us/cpp/c-runtime-library/debug).
+add_definitions(-DMPACK_READ_TRACKING=0 -DMPACK_WRITE_TRACKING=0)
 add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 
 # Miniz (zip)
@@ -684,13 +716,30 @@ if(FLB_UTF8_ENCODER)
   add_subdirectory(${FLB_PATH_LIB_TUTF8E} EXCLUDE_FROM_ALL)
 endif()
 
+# All cases when C++ language support is needed should be checked here
+if((FLB_UNICODE_ENCODER AND FLB_USE_SIMDUTF) OR FLB_RIPSER)
+  enable_language(CXX)
+
+  # Perform delayed modification / extension of CMAKE_CXX_* variables.
+  if(MSVC)
+    # Replace (/|-)MD(d?) with (/|-)MT(d?) to avoid D9025 warning
+    foreach(config_type ${CMAKE_CONFIGURATION_TYPES} ${CMAKE_BUILD_TYPE} Debug Release RelWithDebInfo MinSizeRel)
+      string(TOUPPER ${config_type} upper_config_type)
+      set(flag_var "CMAKE_CXX_FLAGS_${upper_config_type}")
+      string(REGEX REPLACE "(^| |\\t|\\r|\\n)(-|/)(MD)(d?)($| |\\t|\\r|\\n)" "\\1\\2MT\\4\\5" ${flag_var} "${${flag_var}}")
+    endforeach()
+    set(flag_var)
+    set(upper_config_type)
+    set(config_type)
+  endif()
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}${FLB_EXTRA_CMAKE_CXX_FLAGS}")
+  set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS}${FLB_EXTRA_CMAKE_CXX_LINK_FLAGS}")
+
+  set(CMAKE_CXX_STANDARD 11)
+endif()
+
 # simdutf
 if(FLB_UNICODE_ENCODER AND FLB_USE_SIMDUTF)
-  if (NOT FLB_USE_SIMDUTF)
-    message(FATAL_ERROR "FLB_UNICODE_ENCODER requires FLB_USE_SIMDUTF")
-  endif()
-  enable_language(CXX)
-  set (CMAKE_CXX_STANDARD 11)
   add_subdirectory(${FLB_PATH_LIB_SIMDUTF} EXCLUDE_FROM_ALL)
   FLB_DEFINITION(FLB_HAVE_UNICODE_ENCODER)
 endif()
@@ -750,7 +799,9 @@ macro(MK_SET_OPTION option value)
   set(${option} ${value} CACHE INTERNAL "" FORCE)
 endmacro()
 MK_SET_OPTION(MK_SYSTEM_MALLOC    ON)
-MK_SET_OPTION(MK_DEBUG            ON)
+if(NOT MSVC)
+  MK_SET_OPTION(MK_DEBUG          ON)
+endif()
 
 # Monkey backend event loop
 if (FLB_EVENT_LOOP_EPOLL)
@@ -847,8 +898,6 @@ endif()
 
 # ripser
 if(FLB_RIPSER)
-  enable_language(CXX)
-  set (CMAKE_CXX_STANDARD 11)
   add_subdirectory(${FLB_PATH_LIB_RIPSER} EXCLUDE_FROM_ALL)
   FLB_DEFINITION(FLB_HAVE_RIPSER)
 endif()
