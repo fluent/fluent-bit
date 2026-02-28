@@ -202,4 +202,26 @@ int flb_ring_buffer_read(struct flb_ring_buffer *rb, void *ptr, size_t size)
     return 0;
 }
 
+int flb_ring_buffer_peek(struct flb_ring_buffer *rb, int skip_count, void *ptr, size_t size)
+{
+    size_t ret;
 
+    ret = lwrb_peek(rb->ctx, skip_count, ptr, size);
+    if (ret == 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_ring_buffer_skip(struct flb_ring_buffer *rb, size_t size)
+{
+    size_t ret;
+
+    ret = lwrb_skip(rb->ctx, size);
+    if (ret == 0) {
+        return -1;
+    }
+
+    return 0;
+}

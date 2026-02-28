@@ -39,6 +39,7 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
 {
     int ret;
     struct flb_input_instance *ins;
+    char ring_buffer_size[42];
 
     ret = flb_input_name_exists(ctx->emitter_name, ctx->config);
     if (ret == FLB_TRUE) {
@@ -71,6 +72,16 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
                                  ctx->emitter_storage_type);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot set storage.type");
+    }
+
+    /* Set ring_buffer_size */
+    if (ctx->emitter_ring_buffer_size > 0) {
+        snprintf(ring_buffer_size, sizeof(ring_buffer_size)-1, "%zd",
+                 ctx->emitter_ring_buffer_size);
+        ret = flb_input_set_property(ins, "ring_buffer_size", ring_buffer_size);
+        if (ret == -1) {
+            flb_plg_error(ins, "cannot set ring buffer size");
+        }
     }
 
     /* Initialize emitter plugin */
@@ -601,6 +612,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "emitter_storage.type", "memory",
      FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_storage_type),
      NULL
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "emitter_ring_buffer_size", "0",
+     FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_ring_buffer_size),
+     "set the emitter ring buffer size, must be set to > 0 to enable it"
     },
     {
      FLB_CONFIG_MAP_SIZE, "emitter_mem_buf_limit", FLB_RTAG_MEM_BUF_LIMIT_DEFAULT,
