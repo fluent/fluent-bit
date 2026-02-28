@@ -90,11 +90,104 @@ static int cb_kafka_init(struct flb_output_instance *ins,
     return 0;
 }
 
+/*
+ * Look up a string field 'key' (length 'key_len') in a msgpack map.
+ * Returns 0 on success with *val pointing to the matched value object;
+ * -1 if the key is not found.
+ */
+static int kafka_msgpack_get_field(msgpack_object *map,
+                                   const char *key, size_t key_len,
+                                   msgpack_object **val)
+{
+    size_t i;
+
+    for (i = 0; i < map->via.map.size; i++) {
+        if (map->via.map.ptr[i].key.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+        if (map->via.map.ptr[i].key.via.str.size == key_len &&
+            strncmp(map->via.map.ptr[i].key.via.str.ptr, key, key_len) == 0) {
+            *val = &map->via.map.ptr[i].val;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+/*
+ * Build a librdkafka headers object from the 'header' configuration entries.
+ *
+ * Header values prefixed with '$' are treated as dynamic references to log
+ * record fields; all other values are used verbatim as static headers.
+ *
+ * On success, returns a newly allocated rd_kafka_headers_t whose ownership
+ * is transferred to the caller.  Pass it to rd_kafka_producev(), which takes
+ * ownership on success, or call rd_kafka_headers_destroy() on failure.
+ */
+static rd_kafka_headers_t *kafka_build_message_headers(struct flb_out_kafka *ctx,
+                                                        msgpack_object *map)
+{
+    int count = 0;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *hkey;
+    struct flb_slist_entry *hval;
+    rd_kafka_headers_t *headers;
+    msgpack_object *field;
+    const char *field_name;
+    size_t field_name_len;
+
+    /* Count configured headers to pre-allocate the headers object */
+    mk_list_foreach_safe(head, tmp, ctx->headers) {
+        count++;
+    }
+
+    headers = rd_kafka_headers_new(count);
+    if (!headers) {
+        flb_plg_error(ctx->ins, "failed to allocate Kafka headers object");
+        return NULL;
+    }
+
+    flb_config_map_foreach(head, mv, ctx->headers) {
+        hkey = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        hval = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+
+        if (flb_sds_len(hval->str) > 0 && hval->str[0] == '$') {
+            /* Dynamic header: resolve the value from a log record field */
+            field_name     = hval->str + 1;
+            field_name_len = flb_sds_len(hval->str) - 1;
+            field          = NULL;
+
+            if (kafka_msgpack_get_field(map, field_name, field_name_len,
+                                        &field) == 0 &&
+                field->type == MSGPACK_OBJECT_STR) {
+                rd_kafka_header_add(headers,
+                                    hkey->str, flb_sds_len(hkey->str),
+                                    field->via.str.ptr, field->via.str.size);
+            }
+            else {
+                flb_plg_warn(ctx->ins,
+                             "header '%s': field '$%.*s' not found in record "
+                             "or not a string, skipping",
+                             hkey->str, (int) field_name_len, field_name);
+            }
+        }
+        else {
+            /* Static header: use the configured value verbatim */
+            rd_kafka_header_add(headers,
+                                hkey->str, flb_sds_len(hkey->str),
+                                hval->str, flb_sds_len(hval->str));
+        }
+    }
+
+    return headers;
+}
+
 int produce_message(struct flb_time *tm, msgpack_object *map,
                     struct flb_out_kafka *ctx, struct flb_config *config)
 {
     int i;
-    int ret;
     int size;
     int queue_full_retries = 0;
     char *out_buf;
@@ -112,6 +205,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_object key;
     msgpack_object val;
     flb_sds_t s = NULL;
+    rd_kafka_headers_t *kafka_headers = NULL;
+    rd_kafka_resp_err_t produce_err;
 
 #ifdef FLB_HAVE_AVRO_ENCODER
     // used to flag when a buffer needs to be freed for avro
@@ -391,6 +486,24 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         return FLB_ERROR;
     }
 
+    /* Build Kafka message headers if configured */
+    if (ctx->headers) {
+        kafka_headers = kafka_build_message_headers(ctx, map);
+        if (!kafka_headers) {
+            if (ctx->format != FLB_KAFKA_FMT_MSGP) {
+                flb_sds_destroy(s);
+            }
+            msgpack_sbuffer_destroy(&mp_sbuf);
+#ifdef FLB_HAVE_AVRO_ENCODER
+            if (ctx->format == FLB_KAFKA_FMT_AVRO) {
+                AVRO_FREE(avro_fast_buffer, out_buf)
+            }
+#endif
+            flb_sds_destroy(raw_key);
+            return FLB_ERROR;
+        }
+    }
+
  retry:
     /*
      * If the local rdkafka queue is full, we retry up to 'queue_full_retries'
@@ -410,6 +523,9 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         }
 #endif
         flb_sds_destroy(raw_key);
+        if (kafka_headers) {
+            rd_kafka_headers_destroy(kafka_headers);
+        }
         /*
          * Unblock the flush requests so that the
          * engine could try sending data again.
@@ -418,24 +534,25 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         return FLB_RETRY;
     }
 
-    ret = rd_kafka_produce(topic->tp,
-                           RD_KAFKA_PARTITION_UA,
-                           RD_KAFKA_MSG_F_COPY,
-                           out_buf, out_size,
-                           message_key, message_key_len,
-                           ctx);
+    produce_err = rd_kafka_producev(ctx->kafka.rk,
+                                    RD_KAFKA_V_TOPIC(rd_kafka_topic_name(topic->tp)),
+                                    RD_KAFKA_V_HEADERS(kafka_headers),
+                                    RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY),
+                                    RD_KAFKA_V_VALUE(out_buf, out_size),
+                                    RD_KAFKA_V_KEY(message_key, message_key_len),
+                                    RD_KAFKA_V_END);
 
-    if (ret == -1) {
-        flb_error(
-                "%% Failed to produce to topic %s: %s\n",
-                rd_kafka_topic_name(topic->tp),
-                rd_kafka_err2str(rd_kafka_last_error()));
+    if (produce_err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+        flb_plg_error(ctx->ins,
+                      "failed to produce to topic %s: %s",
+                      rd_kafka_topic_name(topic->tp),
+                      rd_kafka_err2str(produce_err));
 
         /*
          * rdkafka queue is full, keep trying 'locally' for a few seconds,
          * otherwise let the caller to issue a main retry againt the engine.
          */
-        if (rd_kafka_last_error() == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
+        if (produce_err == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
             flb_plg_warn(ctx->ins,
                          "internal queue is full, retrying in one second");
 
@@ -458,14 +575,23 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
             flb_time_sleep(1000);
             rd_kafka_poll(ctx->kafka.rk, 0);
 
-            /* Issue a re-try */
+            /* Issue a re-try; kafka_headers are still owned by us */
             queue_full_retries++;
             goto retry;
+        }
+
+        /*
+         * Non-queue-full produce error: rdkafka did not take ownership of
+         * kafka_headers on failure, so we must free them here.
+         */
+        if (kafka_headers) {
+            rd_kafka_headers_destroy(kafka_headers);
         }
     }
     else {
         flb_plg_debug(ctx->ins, "enqueued message (%zd bytes) for topic '%s'",
                       out_size, rd_kafka_topic_name(topic->tp));
+        /* On success, rdkafka owns kafka_headers; do not free it */
     }
     ctx->blocked = FLB_FALSE;
 
@@ -648,6 +774,13 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_STR, "topics", (char *)NULL,
     0, FLB_FALSE, 0,
     "Set the kafka topics, delimited by commas."
+   },
+   {
+    FLB_CONFIG_MAP_SLIST_1, "header", NULL,
+    FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_out_kafka, headers),
+    "Add a Kafka message header as a key/value pair. Multiple headers can be "
+    "set. Use 'header key value' for a static value, or "
+    "'header key $field_name' to set the value from a log record field."
    },
    {
     FLB_CONFIG_MAP_STR, "brokers", (char *)NULL,
