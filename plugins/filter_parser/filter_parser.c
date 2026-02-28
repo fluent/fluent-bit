@@ -93,6 +93,53 @@ static int delete_parsers(struct filter_parser_ctx *ctx)
     return c;
 }
 
+static int nest_raw_map(struct filter_parser_ctx *ctx,
+                        char **buf,
+                        size_t *size,
+                        const flb_sds_t key)
+{
+    msgpack_sbuffer sbuf;
+    msgpack_packer pk;
+    msgpack_unpacked outbuf_result;
+    msgpack_object obj;
+    msgpack_object_kv *kv;
+    const size_t key_len = flb_sds_len(key);
+    int ret = 0;
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
+
+    msgpack_unpacked_init(&outbuf_result);
+    ret = msgpack_unpack_next(&outbuf_result, *buf, *size, NULL);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Nest: failed to unpack msgpack data with error code %d",
+                      ret);
+        msgpack_unpacked_destroy(&outbuf_result);
+        return -1;
+    }
+
+    /* Create a new map, unpacking map `buf` under the new `key` root key */
+    obj = outbuf_result.data;
+    if (obj.type == MSGPACK_OBJECT_MAP) {
+        msgpack_pack_map(&pk, 1);
+        msgpack_pack_str(&pk, key_len);
+        msgpack_pack_str_body(&pk, key, key_len);
+        msgpack_pack_map(&pk, obj.via.map.size);
+        for (unsigned x = 0; x < obj.via.map.size; ++x) {
+            kv = &obj.via.map.ptr[x];
+            msgpack_pack_object(&pk, kv->key);
+            msgpack_pack_object(&pk, kv->val);
+        }
+        flb_free(*buf);
+        *buf = sbuf.data;
+        *size = sbuf.size;
+    }
+
+    msgpack_unpacked_destroy(&outbuf_result);
+    return 0;
+}
+
 static int configure(struct filter_parser_ctx *ctx,
                      struct flb_filter_instance *f_ins,
                      struct flb_config *config)
@@ -338,6 +385,9 @@ static int cb_parser_filter(const void *data, size_t bytes,
             }
 
             if (out_buf != NULL && parse_ret >= 0) {
+                if (ctx->nest_under) {
+                    nest_raw_map(ctx, &out_buf, &out_size, ctx->nest_under);
+                }
                 if (append_arr != NULL && append_arr_len > 0) {
                     char *new_buf = NULL;
                     int new_size;
@@ -479,6 +529,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct filter_parser_ctx, reserve_data),
      "Keep all other original fields in the parsed result. "
      "If false, all other original fields will be removed."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Nest_Under", NULL,
+     0, FLB_TRUE, offsetof(struct filter_parser_ctx, nest_under),
+     "Specify field name to nest parsed records under."
     },
     {
      FLB_CONFIG_MAP_DEPRECATED, "Unescape_key", NULL,
