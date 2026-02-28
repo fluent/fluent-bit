@@ -6,6 +6,16 @@ set -e
 GO_PLUGIN_DIR="${FLB_ROOT}/tests/runtime_shell/go_plugins"
 BUILD_DIR="${FLB_ROOT}/build"
 
+# Support of environment without sudo, but running as root user.
+# Like container used in run_code_analysis.sh script.
+sudo_if_not_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
 install_go_if_needed() {
     if ! command -v go &> /dev/null; then 
     echo "Go not found, installing Go..."
@@ -46,9 +56,9 @@ install_go_if_needed() {
 
     if [ -w "/usr/local" ]; then
         if [ -d /usr/local/go ]; then
-            sudo rm -rf /usr/local/go
+            sudo_if_not_root rm -rf /usr/local/go
         fi
-        sudo mv go /usr/local/go
+        sudo_if_not_root mv go /usr/local/go
         export PATH="/usr/local/go/bin:$PATH"
     else
         echo "No write permission to /usr/local. Installing Go to $HOME/.local/go"
