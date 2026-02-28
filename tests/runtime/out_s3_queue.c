@@ -23,7 +23,8 @@ void flb_test_queue_multiple_workers(void)
     S3_TEST_DECLARE_VARS();
 
     S3_TEST_RUN_AND_CLEANUP("test", "queue_multiple_workers");
-    flb_output_set(ctx, out_ffd, "workers", "5", NULL);
+    ret = flb_output_set(ctx, out_ffd, "workers", "5", NULL);
+    TEST_CHECK(ret == 0);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
@@ -69,7 +70,8 @@ void flb_test_queue_retry_mechanism(void)
     S3_TEST_INIT_CONTEXT();
     S3_TEST_SETUP_INPUT("test");
     S3_TEST_SETUP_OUTPUT_BASIC();
-    flb_output_set(ctx, out_ffd, "retry_limit", "3", NULL);
+    ret = flb_output_set(ctx, out_ffd, "retry_limit", "3", NULL);
+    TEST_CHECK(ret == 0);
 
     S3_TEST_START_AND_PUSH((char *)JSON_TD, sizeof(JSON_TD) - 1);
     S3_TEST_WAIT_MOCK_EXHAUSTED(10, "queue_retry_mechanism");
@@ -90,8 +92,9 @@ void flb_test_queue_concurrent_uploads(void)
     int i;
 
     S3_TEST_RUN_AND_CLEANUP("test", "queue_concurrent_uploads");
-    flb_output_set(ctx, out_ffd, 
+    ret = flb_output_set(ctx, out_ffd, 
                    "workers", "10", NULL);
+    TEST_CHECK(ret == 0);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
@@ -136,8 +139,9 @@ void flb_test_queue_high_concurrency(void)
     int i;
 
     S3_TEST_RUN_AND_CLEANUP("test", "queue_high_concurrency");
-    flb_output_set(ctx, out_ffd, 
+    ret = flb_output_set(ctx, out_ffd, 
                    "workers", "16", NULL);
+    TEST_CHECK(ret == 0);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
