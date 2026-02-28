@@ -312,29 +312,29 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
 #ifdef FLB_HAVE_AVRO_ENCODER
     else if (ctx->format == FLB_KAFKA_FMT_AVRO) {
 
-        flb_plg_debug(ctx->ins, "avro schema ID:%s:\n", ctx->avro_fields.schema_id);
+        flb_plg_debug(ctx->ins, "avro schema ID:%d:\n", ctx->avro_fields.schema_id);
         flb_plg_debug(ctx->ins, "avro schema string:%s:\n", ctx->avro_fields.schema_str);
 
 	// if there's no data then log it and return
         if (mp_sbuf.size == 0) {
-            flb_plg_error(ctx->ins, "got zero bytes decoding to avro AVRO:schemaID:%s:\n", ctx->avro_fields.schema_id);
+            flb_plg_error(ctx->ins, "got zero bytes decoding to avro AVRO:schemaID:%d:\n", ctx->avro_fields.schema_id);
             msgpack_sbuffer_destroy(&mp_sbuf);
             return FLB_OK;
         }
 
 	// is the line is too long log it and return
         if (mp_sbuf.size > AVRO_LINE_MAX_LEN) {
-            flb_plg_warn(ctx->ins, "skipping long line AVRO:len:%zu:limit:%zu:schemaID:%s:\n", (size_t)mp_sbuf.size, (size_t)AVRO_LINE_MAX_LEN, ctx->avro_fields.schema_id);
+            flb_plg_warn(ctx->ins, "skipping long line AVRO:len:%zu:limit:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, (size_t)AVRO_LINE_MAX_LEN, ctx->avro_fields.schema_id);
             msgpack_sbuffer_destroy(&mp_sbuf);
             return FLB_OK;
         }
 
-        flb_plg_debug(ctx->ins, "using default buffer AVRO:len:%zu:limit:%zu:schemaID:%s:\n", (size_t)mp_sbuf.size, (size_t)AVRO_DEFAULT_BUFFER_SIZE, ctx->avro_fields.schema_id);
+        flb_plg_debug(ctx->ins, "using default buffer AVRO:len:%zu:limit:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, (size_t)AVRO_DEFAULT_BUFFER_SIZE, ctx->avro_fields.schema_id);
         out_buf = avro_buff;
         out_size = AVRO_DEFAULT_BUFFER_SIZE;
 
 	if (mp_sbuf.size + AVRO_SCHEMA_OVERHEAD >= AVRO_DEFAULT_BUFFER_SIZE) {
-            flb_plg_info(ctx->ins, "upsizing to dynamic buffer AVRO:len:%zu:schemaID:%s:\n", (size_t)mp_sbuf.size, ctx->avro_fields.schema_id);
+            flb_plg_info(ctx->ins, "upsizing to dynamic buffer AVRO:len:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, ctx->avro_fields.schema_id);
             avro_fast_buffer = false;
             // avro will always be  smaller than msgpack
             // it contains no meta-info aside from the schemaid
@@ -344,14 +344,14 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
             out_size = mp_sbuf.size + AVRO_SCHEMA_OVERHEAD;
             out_buf = flb_malloc(out_size);
             if (!out_buf) {
-                flb_plg_error(ctx->ins, "error allocating memory for decoding to AVRO:schema:%s:schemaID:%s:\n", ctx->avro_fields.schema_str, ctx->avro_fields.schema_id);
+                flb_plg_error(ctx->ins, "error allocating memory for decoding to AVRO:schema:%s:schemaID:%d:\n", ctx->avro_fields.schema_str, ctx->avro_fields.schema_id);
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 return FLB_ERROR;
             }
 	}
 
         if(!flb_msgpack_raw_to_avro_sds(mp_sbuf.data, mp_sbuf.size, &ctx->avro_fields, out_buf, &out_size)) {
-            flb_plg_error(ctx->ins, "error encoding to AVRO:schema:%s:schemaID:%s:\n", ctx->avro_fields.schema_str, ctx->avro_fields.schema_id);
+            flb_plg_error(ctx->ins, "error encoding to AVRO:schema:%s:schemaID:%d:\n", ctx->avro_fields.schema_str, ctx->avro_fields.schema_id);
             msgpack_sbuffer_destroy(&mp_sbuf);
             if (!avro_fast_buffer) {
                 flb_free(out_buf);
@@ -639,8 +639,8 @@ static struct flb_config_map config_map[] = {
     "Set AVRO schema."
    },
    {
-    FLB_CONFIG_MAP_STR, "schema_id", (char *)NULL,
-    0, FLB_FALSE, 0,
+    FLB_CONFIG_MAP_INT, "schema_id", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, avro_fields) + offsetof(struct flb_avro_fields, schema_id),
     "Set AVRO schema ID."
    },
 #endif
