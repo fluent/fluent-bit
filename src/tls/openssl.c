@@ -1237,7 +1237,7 @@ static void *tls_session_create(struct flb_tls *tls,
     ssl = SSL_new(ctx->ctx);
 
     if (!ssl) {
-        flb_error("[openssl] could create new SSL context");
+        flb_error("[openssl] could not create new SSL context");
         flb_free(session);
         pthread_mutex_unlock(&ctx->mutex);
         return NULL;
