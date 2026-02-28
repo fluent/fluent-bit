@@ -87,6 +87,7 @@ DEFINE_OPTION(FLB_FILTER_GEOIP2               "Enable geoip2 filter"            
 DEFINE_OPTION(FLB_FILTER_GREP                 "Enable grep filter"                           ON)
 DEFINE_OPTION(FLB_FILTER_KUBERNETES           "Enable kubernetes filter"                     ON)
 DEFINE_OPTION(FLB_FILTER_LOG_TO_METRICS       "Enable log-derived metrics filter"            ON)
+DEFINE_OPTION(FLB_FILTER_LOOKUP              "Enable lookup filter"                         ON)
 DEFINE_OPTION(FLB_FILTER_LUA                  "Enable Lua scripting filter"                  ON)
 DEFINE_OPTION(FLB_FILTER_MODIFY               "Enable modify filter"                         ON)
 DEFINE_OPTION(FLB_FILTER_MULTILINE            "Enable multiline filter"                      ON)
