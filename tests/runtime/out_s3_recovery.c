@@ -188,7 +188,8 @@ void flb_test_recovery_phase1_create_multipart(void)
     S3_TEST_INIT_CONTEXT();
     S3_TEST_SETUP_INPUT("test");
     S3_TEST_SETUP_OUTPUT_BASIC();
-    flb_output_set(ctx, out_ffd, "upload_chunk_size", "5M", NULL);
+    ret = flb_output_set(ctx, out_ffd, "upload_chunk_size", "5M", NULL);
+    TEST_CHECK(ret == 0);
 
     S3_TEST_START_AND_PUSH((char *)JSON_TD, sizeof(JSON_TD) - 1);
     S3_TEST_WAIT_MOCK_EXHAUSTED(5, "recovery_phase1_create_multipart");
@@ -231,7 +232,8 @@ void flb_test_recovery_phase2_upload_parts(void)
     S3_TEST_INIT_CONTEXT();
     S3_TEST_SETUP_INPUT("test");
     S3_TEST_SETUP_OUTPUT_BASIC();
-    flb_output_set(ctx, out_ffd, "upload_chunk_size", "5M", NULL);
+    ret = flb_output_set(ctx, out_ffd, "upload_chunk_size", "5M", NULL);
+    TEST_CHECK(ret == 0);
 
     /* We don't need to push new data, the plugin should recover the existing file */
     ret = flb_start(ctx);
@@ -273,8 +275,9 @@ void flb_test_recovery_phase3_complete(void)
     S3_TEST_INIT_CONTEXT();
     S3_TEST_SETUP_INPUT("test");
     S3_TEST_SETUP_OUTPUT_BASIC();
-    flb_output_set(ctx, out_ffd, 
+    ret = flb_output_set(ctx, out_ffd, 
                    "upload_chunk_size", "5M", NULL);
+    TEST_CHECK(ret == 0);
 
     /* Plugin should recover and complete the upload */
     ret = flb_start(ctx);
@@ -357,8 +360,9 @@ void flb_test_recovery_multiple_pending_blobs(void)
     S3_TEST_INIT_CONTEXT();
     S3_TEST_SETUP_INPUT("test");
     S3_TEST_SETUP_OUTPUT_BASIC();
-    flb_output_set(ctx, out_ffd,
+    ret = flb_output_set(ctx, out_ffd,
                    "upload_chunk_size", "5M", NULL);
+    TEST_CHECK(ret == 0);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
