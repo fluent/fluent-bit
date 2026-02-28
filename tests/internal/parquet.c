@@ -99,6 +99,13 @@ static int write_msgpack_to_chunk_file(const char *file_path, const char *data, 
     /* Bytes 10-13: Content length (big-endian)
      * Content = metadata + msgpack data
      * Using helper logic from cio_file_st_set_content_len() */
+    
+    /* Check for 32-bit overflow before casting */
+    if ((uint64_t)metadata_len + (uint64_t)size > UINT32_MAX) {
+        fclose(fp);
+        return -1;
+    }
+    
     content_len = (uint32_t)(metadata_len + size);
     header[10] = (uint8_t)((content_len >> 24) & 0xFF);
     header[11] = (uint8_t)((content_len >> 16) & 0xFF);

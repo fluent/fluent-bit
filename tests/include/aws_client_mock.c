@@ -298,10 +298,11 @@ static struct flb_http_client *flb_aws_client_mock_vtable_request(
         else if (response_config->config_parameter == FLB_AWS_CLIENT_MOCK_EXPECT_HEADER_EXISTS) {
             int header_found = FLB_FALSE;
             /* Search for header key in request */
+            size_t expected_key_len = strlen((char *)val1);
             for (h = 0; h < dynamic_headers_len; ++h) {
-                ret = strncmp(dynamic_headers[h].key, (char *)val1,
-                              dynamic_headers[h].key_len);
-                if (ret == 0) {
+                /* Exact match: both length and content must match */
+                if (dynamic_headers[h].key_len == expected_key_len &&
+                    strncmp(dynamic_headers[h].key, (char *)val1, expected_key_len) == 0) {
                     header_found = FLB_TRUE;
                     break;
                 }

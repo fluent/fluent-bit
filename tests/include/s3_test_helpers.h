@@ -356,13 +356,13 @@ static inline void s3_test_cleanup_temp_db(const char *db_path)
 static inline void s3_test_remove_dir_recursive(const char *path)
 {
 #ifdef _WIN32
-    WIN32_FIND_DATA find_data;
+    WIN32_FIND_DATAA find_data;
     HANDLE h_find;
     char search_path[MAX_PATH];
     char sub_path[MAX_PATH];
 
     snprintf(search_path, sizeof(search_path), "%s\\*", path);
-    h_find = FindFirstFile(search_path, &find_data);
+    h_find = FindFirstFileA(search_path, &find_data);
 
     if (h_find == INVALID_HANDLE_VALUE) {
         return;
@@ -378,12 +378,12 @@ static inline void s3_test_remove_dir_recursive(const char *path)
         if (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             s3_test_remove_dir_recursive(sub_path);
         } else {
-            DeleteFile(sub_path);
+            DeleteFileA(sub_path);
         }
-    } while (FindNextFile(h_find, &find_data));
+    } while (FindNextFileA(h_find, &find_data));
 
     FindClose(h_find);
-    RemoveDirectory(path);
+    RemoveDirectoryA(path);
 #else
     DIR *d;
     struct dirent *p;
