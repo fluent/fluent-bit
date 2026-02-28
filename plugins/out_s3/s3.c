@@ -586,6 +586,96 @@ static void s3_context_destroy(struct flb_s3 *ctx)
     flb_free(ctx);
 }
 
+static int init_endpoint(struct flb_s3 *ctx) {
+    const char *tmp;
+    char *ep;
+    struct flb_split_entry *tok;
+    struct mk_list *split;
+    int list_size;
+    flb_sds_t url;
+    flb_sds_t tmp_sds;
+    size_t len;
+
+    tmp = flb_output_get_property("endpoint", ctx->ins);
+    if (tmp) {
+        ctx->insecure = strncmp(tmp, "http://", 7) == 0 ? FLB_TRUE : FLB_FALSE;
+        if (ctx->insecure == FLB_TRUE) {
+          ep = removeProtocol((char *) tmp, "http://");
+        }
+        else {
+          ep = removeProtocol((char *) tmp, "https://");
+        }
+
+        split = flb_utils_split((const char *)ep, ':', 1);
+        if (!split) {
+          flb_errno();
+          return -1;
+        }
+        list_size = mk_list_size(split);
+        if (list_size > 2) {
+          flb_plg_error(ctx->ins, "Failed to split endpoint");
+          flb_utils_split_free(split);
+          return -1;
+        }
+
+        tok = mk_list_entry_first(split, struct flb_split_entry, _head);
+        ctx->endpoint = flb_strndup(tok->value, tok->len);
+        if (!ctx->endpoint) {
+            flb_errno();
+            flb_utils_split_free(split);
+            return -1;
+        }
+        ctx->free_endpoint = FLB_TRUE;
+        if (list_size == 2) {
+          tok = mk_list_entry_next(&tok->_head, struct flb_split_entry, _head, split);
+          ctx->port = atoi(tok->value);
+        }
+        else {
+          ctx->port = ctx->insecure == FLB_TRUE ? DEFAULT_S3_INSECURE_PORT : DEFAULT_S3_PORT;
+        }
+        flb_utils_split_free(split);
+    }
+    else {
+        /* default endpoint for the given region */
+        ctx->endpoint = flb_aws_endpoint("s3", ctx->region);
+        ctx->insecure = FLB_FALSE;
+        ctx->port = DEFAULT_S3_PORT;
+        ctx->free_endpoint = FLB_TRUE;
+        if (!ctx->endpoint) {
+            flb_plg_error(ctx->ins,  "Could not construct S3 endpoint");
+            return -1;
+        }
+    }
+
+    if (ctx->vhost_style_urls == FLB_TRUE) {
+        // Add 1 because we need an extra dot
+        len = strlen(ctx->endpoint) + strlen(ctx->bucket) + 1;
+        url = flb_sds_create_size(len);
+        tmp_sds = flb_sds_printf(&url, "%s.%s", ctx->bucket, ctx->endpoint);
+        if (!tmp_sds) {
+            flb_sds_destroy(url);
+            flb_plg_error(ctx->ins, "Could not construct vhost-style S3 endpoint");
+            return -1;
+        }
+        url = tmp_sds;
+
+        // Free the old one since we no longer need it
+        if (ctx->free_endpoint == FLB_TRUE) {
+            flb_free(ctx->endpoint);
+        }
+
+        ctx->endpoint = flb_strndup(url, flb_sds_len(url));
+        flb_sds_destroy(url);
+        if (ctx->endpoint == NULL) {
+            flb_plg_error(ctx->ins, "error duplicating endpoint string");
+            return -1;
+        }
+        flb_plg_info(ctx->ins, "New endpoint: %s", ctx->endpoint);
+    }
+
+    return 0;
+}
+
 static int cb_s3_init(struct flb_output_instance *ins,
                       struct flb_config *config, void *data)
 {
@@ -598,10 +688,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
     struct flb_aws_client_generator *generator;
     (void) config;
     (void) data;
-    char *ep;
-    struct flb_split_entry *tok;
-    struct mk_list *split;
-    int list_size;
 
     FLB_TLS_INIT(s3_worker_info);
 
@@ -794,55 +880,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
         }
     }
 
-    tmp = flb_output_get_property("endpoint", ins);
-    if (tmp) {
-        ctx->insecure = strncmp(tmp, "http://", 7) == 0 ? FLB_TRUE : FLB_FALSE;
-        if (ctx->insecure == FLB_TRUE) {
-          ep = removeProtocol((char *) tmp, "http://");
-        }
-        else {
-          ep = removeProtocol((char *) tmp, "https://");
-        }
-
-        split = flb_utils_split((const char *)ep, ':', 1);
-        if (!split) {
-          flb_errno();
-          return -1;
-        }
-        list_size = mk_list_size(split);
-        if (list_size > 2) {
-          flb_plg_error(ctx->ins, "Failed to split endpoint");
-          flb_utils_split_free(split);
-          return -1;
-        }
-
-        tok = mk_list_entry_first(split, struct flb_split_entry, _head);
-        ctx->endpoint = flb_strndup(tok->value, tok->len);
-        if (!ctx->endpoint) {
-            flb_errno();
-            flb_utils_split_free(split);
-            return -1;
-        }
-        ctx->free_endpoint = FLB_TRUE;
-        if (list_size == 2) {
-          tok = mk_list_entry_next(&tok->_head, struct flb_split_entry, _head, split);
-          ctx->port = atoi(tok->value);
-        }
-        else {
-          ctx->port = ctx->insecure == FLB_TRUE ? DEFAULT_S3_INSECURE_PORT : DEFAULT_S3_PORT;
-        }
-        flb_utils_split_free(split);
-    }
-    else {
-        /* default endpoint for the given region */
-        ctx->endpoint = flb_aws_endpoint("s3", ctx->region);
-        ctx->insecure = FLB_FALSE;
-        ctx->port = DEFAULT_S3_PORT;
-        ctx->free_endpoint = FLB_TRUE;
-        if (!ctx->endpoint) {
-            flb_plg_error(ctx->ins,  "Could not construct S3 endpoint");
-            return -1;
-        }
+    // VHOST endpoint construction
+    ret = init_endpoint(ctx);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "Error initialising endpoint");
+        return -1;
     }
 
     tmp = flb_output_get_property("sts_endpoint", ins);
@@ -1513,7 +1555,10 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
         append_random = FLB_TRUE;
         len += 16;
     }
-    len += strlen(ctx->bucket + 1);
+
+    if (ctx->vhost_style_urls == FLB_FALSE) {
+        len += strlen(ctx->bucket + 1);
+    }
 
     uri = flb_sds_create_size(len);
 
@@ -1528,12 +1573,21 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
         /* only use 8 chars of the random string */
         random_alphanumeric[8] = '\0';
 
-        tmp = flb_sds_printf(&uri, "/%s%s-object%s", ctx->bucket, s3_key,
-                             random_alphanumeric);
+        if (ctx->vhost_style_urls == FLB_TRUE) {
+            tmp = flb_sds_printf(&uri, "%s-object%s", s3_key,
+                                 random_alphanumeric);
+        } else {
+            tmp = flb_sds_printf(&uri, "/%s%s-object%s", ctx->bucket, s3_key,
+                                 random_alphanumeric);
+        }
         flb_free(random_alphanumeric);
     }
     else {
-        tmp = flb_sds_printf(&uri, "/%s%s", ctx->bucket, s3_key);
+        if (ctx->vhost_style_urls == FLB_TRUE) {
+            tmp = flb_sds_printf(&uri, "%s", s3_key);
+        } else {
+            tmp = flb_sds_printf(&uri, "/%s%s", ctx->bucket, s3_key);
+        }
     }
 
     if (!tmp) {
@@ -1587,10 +1641,14 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
         flb_plg_debug(ctx->ins, "PutObject http status=%d", c->resp.status);
         if (c->resp.status == 200) {
             /*
-             * URI contains bucket name, so we must advance over it
+             * URI may contain bucket name, so we must advance over it
              * to print the object key
              */
-            final_key = uri + strlen(ctx->bucket) + 1;
+            if (ctx->vhost_style_urls == FLB_TRUE) {
+                final_key = uri;
+            } else {
+                final_key = uri + strlen(ctx->bucket) + 1;
+            }
             flb_plg_info(ctx->ins, "Successfully uploaded object %s", final_key);
             flb_sds_destroy(uri);
             flb_http_client_destroy(c);
@@ -4053,6 +4111,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
     "A standard MIME type for the S3 object; this will be set "
     "as the Content-Type HTTP header."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "vhost_style_urls", "false",
+     0, FLB_TRUE, offsetof(struct flb_s3, vhost_style_urls),
+     "Force the use of vhost-style S3 urls. "
+     "https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html"
     },
 
     {
