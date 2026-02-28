@@ -147,6 +147,10 @@ int s3_queue_add_part(struct flb_s3 *ctx,
 {
     struct upload_queue *entry;
 
+    if (!file_path || !s3_key || !upload_id || !tag || tag_len <= 0) {
+        return -1;
+    }
+
     entry = flb_calloc(1, sizeof(struct upload_queue));
     if (!entry) {
         flb_errno();
