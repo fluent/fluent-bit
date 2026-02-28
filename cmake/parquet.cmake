@@ -338,7 +338,7 @@ else()
       message(WARNING "    sudo apt-get install -y -V libarrow-dev libparquet-dev")
       message(WARNING "")
       message(WARNING "  RHEL/CentOS:")
-      message(WARNING "    sudo yum install -y https://apache.jfrog.io/artifactory/arrow/centos/$(cut -d: -f5 /etc/system-release-cpe | cut -d. -f1)/apache-arrow-release-latest.rpm")
+      message(WARNING "    sudo yum install -y https://packages.apache.org/artifactory/arrow/centos/$(cut -d: -f5 /etc/system-release-cpe | cut -d. -f1)/apache-arrow-release-latest.rpm")
       message(WARNING "    sudo yum install -y arrow-devel parquet-devel")
     endif()
 
