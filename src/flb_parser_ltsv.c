@@ -84,7 +84,7 @@ static int ltsv_parser(struct flb_parser *parser,
                        msgpack_packer *tmp_pck,
                        char *time_key, size_t time_key_len,
                        time_t *time_lookup, double *tmfrac,
-                       size_t *map_size)
+                       size_t *map_size, char separator)
 {
     int ret;
     struct flb_tm tm = {0};
@@ -112,7 +112,7 @@ static int ltsv_parser(struct flb_parser *parser,
             break;
         }
 
-        if (*c != ':') {
+        if (*c != separator) {
             break;
         }
         c++;
@@ -196,10 +196,10 @@ static int ltsv_parser(struct flb_parser *parser,
     return last_byte;
 }
 
-int flb_parser_ltsv_do(struct flb_parser *parser,
+static int flb_parser_ltsv_do_internal(struct flb_parser *parser,
                        const char *in_buf, size_t in_size,
                        void **out_buf, size_t *out_size,
-                       struct flb_time *out_time)
+                       struct flb_time *out_time, char separator)
 {
     int ret;
     time_t time_lookup;
@@ -227,7 +227,7 @@ int flb_parser_ltsv_do(struct flb_parser *parser,
     map_size = 0;
     ltsv_parser(parser, in_buf, in_size, NULL,
                 time_key, time_key_len,
-                &time_lookup, &tmfrac, &map_size);
+                &time_lookup, &tmfrac, &map_size, separator);
     if (map_size == 0) {
         return -1;
     }
@@ -239,7 +239,7 @@ int flb_parser_ltsv_do(struct flb_parser *parser,
 
     last_byte = ltsv_parser(parser, in_buf, in_size, &tmp_pck,
                             time_key, time_key_len,
-                            &time_lookup, &tmfrac, &map_size);
+                            &time_lookup, &tmfrac, &map_size, separator);
     if (last_byte < 0) {
         msgpack_sbuffer_destroy(&tmp_sbuf);
         return last_byte;
@@ -266,4 +266,41 @@ int flb_parser_ltsv_do(struct flb_parser *parser,
     }
 
     return last_byte;
+}
+
+int flb_parser_ltsv_do(struct flb_parser *parser,
+                       const char *in_buf, size_t in_size,
+                       void **out_buf, size_t *out_size,
+                       struct flb_time *out_time)
+{
+    return flb_parser_ltsv_do_internal(parser, in_buf, in_size, out_buf, out_size, out_time, ':');
+}
+
+/* TSKV is, basically, the same thing as ltsv but with '='
+ * used as the separator between keys and values instead of ':'.
+ * It can also contain an optional prefix that will be skipped during parsing.
+ *
+ * Note, that it's closer to ltsv than to logfmt, because key-value pairs
+ * are separated by the tab character instead of arbitrary whitespace,
+ * which means that we don't need to quote values containing spaces.
+ *
+ * logfmt: key="value with spaces"<space>key2=value2
+ * tskv: key=value with spaces<tab>key2=value2
+ *
+ * See also:
+ * https://github.com/daskol/tskv/blob/master/README.md
+ * https://clickhouse.tech/docs/en/interfaces/formats/#tskv
+ */
+int flb_parser_tskv_do(struct flb_parser *parser,
+                       const char *in_buf, size_t in_size,
+                       void **out_buf, size_t *out_size,
+                       struct flb_time *out_time)
+{
+    static const char tskv_prefix[] = "tskv\t";
+    static const size_t tskv_prefix_len = sizeof(tskv_prefix) - 1;
+    if ((in_size >= tskv_prefix_len) && !strncmp(in_buf, tskv_prefix, tskv_prefix_len)) {
+        in_buf += tskv_prefix_len;
+        in_size -= tskv_prefix_len;
+    }
+    return flb_parser_ltsv_do_internal(parser, in_buf, in_size, out_buf, out_size, out_time, '=');
 }
