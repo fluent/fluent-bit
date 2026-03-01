@@ -138,6 +138,10 @@ struct opentelemetry_context {
     flb_sds_t logs_severity_number_message_key;
     struct flb_record_accessor *ra_severity_number_message;
 
+    struct mk_list *ra_resource_attributes_message;
+
+    struct mk_list ra_resource_attributes_message_list;
+
     /* Number of logs to flush at a time */
     int batch_size;
 

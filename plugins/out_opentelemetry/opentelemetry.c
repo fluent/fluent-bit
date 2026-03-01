@@ -1031,6 +1031,12 @@ static struct flb_config_map config_map[] = {
      "Adds a custom label to the metrics use format: 'add_label name value'"
     },
     {
+     FLB_CONFIG_MAP_SLIST_1, "logs_resource_attributes_message_key", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct opentelemetry_context,
+                                             ra_resource_attributes_message),
+     "Specify a resource attribute key"
+    },
+    {
      FLB_CONFIG_MAP_STR, "http2", "off",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, enable_http2),
      "Enable, disable or force HTTP/2 usage. Accepted values : on, off, force"
