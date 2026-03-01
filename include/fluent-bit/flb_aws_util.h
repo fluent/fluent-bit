@@ -197,13 +197,14 @@ int flb_aws_is_auth_error(char *payload, size_t payload_size);
 
 int flb_read_file(const char *path, char **out_buf, size_t *out_size);
 
-/* Constructs S3 object key as per the format. */
+/*
+ * Constructs S3 object key as per the format.
+ * Supports variables: $TAG, $TAG[0-9], $UUID, $INDEX, time formatters, $FILE_PATH, $FILE_NAME
+ * file_path: optional file path (can be NULL) - used only when format contains $FILE_PATH or $FILE_NAME
+ */
 flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
-                         char *tag_delimiter, uint64_t seq_index);
-
-/* Constructs S3 object key as per the blob format. */
-flb_sds_t flb_get_s3_blob_key(const char *format, const char *tag,
-                              char *tag_delimiter, const char *blob_path);
+                         char *tag_delimiter, uint64_t seq_index,
+                         const char *file_path);
 
 /*
  * This function is an extension to strftime which can support milliseconds with %3N,
@@ -212,6 +213,14 @@ flb_sds_t flb_get_s3_blob_key(const char *format, const char *tag,
  */
 size_t flb_aws_strftime_precision(char **out_buf, const char *time_format,
                                   struct flb_time *tms);
+
+/*
+ * AWS SigV4 compliant URI path encoding (RFC 3986).
+ * Only unreserved characters are NOT encoded: A-Z a-z 0-9 - _ . ~ /
+ * Characters like ?, &, = WILL be encoded as required by AWS SigV4.
+ * This should be used for S3 object keys and other AWS service paths.
+ */
+flb_sds_t flb_aws_uri_encode_path(const char *uri, size_t len);
 
 #endif
 #endif /* FLB_HAVE_AWS */

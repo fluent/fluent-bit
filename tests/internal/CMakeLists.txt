@@ -135,6 +135,13 @@ if(FLB_AVRO_ENCODER)
     )
 endif()
 
+if(FLB_PARQUET_ENCODER)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    parquet.c
+    )
+endif()
+
 if(FLB_AWS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
@@ -236,6 +243,10 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
 
       if(FLB_AVRO_ENCODER)
         target_link_libraries(${source_file_we} avro-static jansson)
+      endif()
+
+      if(FLB_PARQUET_ENCODER)
+        target_link_libraries(${source_file_we} ${ARROW_LIBRARIES} ${PARQUET_LIBRARIES})
       endif()
 
       add_test(NAME ${source_file_we}

@@ -63,6 +63,15 @@ static int prepare_stmts(struct flb_blob_db *context)
         return FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_REMOTE_ID;
     }
 
+    /* file s3_key update  */
+    result = sqlite3_prepare_v2(context->db->handler,
+                                SQL_UPDATE_FILE_S3_KEY, -1,
+                                &context->stmt_update_file_s3_key,
+                                NULL);
+    if (result != SQLITE_OK) {
+        return FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_S3_KEY;
+    }
+
     /* file destination update  */
     result = sqlite3_prepare_v2(context->db->handler,
                                 SQL_UPDATE_FILE_DESTINATION, -1,
@@ -212,6 +221,46 @@ static int prepare_stmts(struct flb_blob_db *context)
         return FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_OLDEST_FILE_WITH_PARTS;
     }
 
+    /* get all parts for a specific file */
+    result = sqlite3_prepare_v2(context->db->handler,
+                                SQL_GET_ALL_PARTS_FOR_FILE, -1,
+                                &context->stmt_get_all_parts_for_file,
+                                NULL);
+
+    if (result != SQLITE_OK) {
+        return FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_ALL_PARTS_FOR_FILE;
+    }
+
+    /* get next pending file for recovery */
+    result = sqlite3_prepare_v2(context->db->handler,
+                                SQL_GET_NEXT_PENDING_FILE, -1,
+                                &context->stmt_get_next_pending_file,
+                                NULL);
+
+    if (result != SQLITE_OK) {
+        return FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_NEXT_PENDING_FILE;
+    }
+
+    /* get part upload status */
+    result = sqlite3_prepare_v2(context->db->handler,
+                                SQL_GET_PART_UPLOAD_STATUS, -1,
+                                &context->stmt_get_part_upload_status,
+                                NULL);
+
+    if (result != SQLITE_OK) {
+        return FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_GET_PART_UPLOAD_STATUS;
+    }
+
+    /* update file parts in progress (batch update by file_id) */
+    result = sqlite3_prepare_v2(context->db->handler,
+                                SQL_UPDATE_FILE_PARTS_IN_PROGRESS, -1,
+                                &context->stmt_update_file_parts_in_progress,
+                                NULL);
+
+    if (result != SQLITE_OK) {
+        return FLB_BLOB_DB_ERROR_PREPARING_STATEMENT_UPDATE_FILE_PARTS_IN_PROGRESS;
+    }
+
     return FLB_BLOB_DB_SUCCESS;
 }
 
@@ -254,6 +303,41 @@ int flb_blob_db_open(struct flb_blob_db *context,
         flb_sqldb_close(db);
 
         return FLB_BLOB_DB_ERROR_PART_TABLE_CREATION;
+    }
+
+    /*
+     * Schema upgrade for existing databases: add s3_key column if not exists.
+     * This ensures backward compatibility with databases created before the s3_key
+     * column was added. We only ignore the "duplicate column name" error;
+     * other errors (permissions, disk space, etc.) are propagated.
+     */
+    {
+        char *errmsg = NULL;
+        result = sqlite3_exec(db->handler,
+                              "ALTER TABLE blob_files ADD COLUMN s3_key TEXT DEFAULT '';",
+                              NULL, NULL, &errmsg);
+        if (result != SQLITE_OK) {
+            /*
+             * SQLITE_ERROR with "duplicate column name" is expected when
+             * the column already exists - this is the success case for upgrades.
+             * Any other error indicates a real problem.
+             */
+            if (result == SQLITE_ERROR && errmsg != NULL &&
+                strstr(errmsg, "duplicate column name") != NULL) {
+                /* Column already exists - this is expected, ignore */
+            }
+            else {
+                /* Real error - clean up and return */
+                if (errmsg != NULL) {
+                    sqlite3_free(errmsg);
+                }
+                flb_sqldb_close(db);
+                return FLB_BLOB_DB_ERROR_FILE_TABLE_CREATION;
+            }
+        }
+        if (errmsg != NULL) {
+            sqlite3_free(errmsg);
+        }
     }
 
     result = flb_sqldb_query(db, SQL_PRAGMA_FOREIGN_KEYS, NULL, NULL);
@@ -305,6 +389,7 @@ int flb_blob_db_close(struct flb_blob_db *context)
     sqlite3_finalize(context->stmt_get_file);
     sqlite3_finalize(context->stmt_get_file_part_count);
     sqlite3_finalize(context->stmt_update_file_remote_id);
+    sqlite3_finalize(context->stmt_update_file_s3_key);
     sqlite3_finalize(context->stmt_update_file_destination);
     sqlite3_finalize(context->stmt_update_file_delivery_attempt_count);
     sqlite3_finalize(context->stmt_get_next_aborted_file);
@@ -321,6 +406,10 @@ int flb_blob_db_close(struct flb_blob_db *context)
 
     sqlite3_finalize(context->stmt_get_next_file_part);
     sqlite3_finalize(context->stmt_get_oldest_file_with_parts);
+    sqlite3_finalize(context->stmt_get_all_parts_for_file);
+    sqlite3_finalize(context->stmt_get_next_pending_file);
+    sqlite3_finalize(context->stmt_get_part_upload_status);
+    sqlite3_finalize(context->stmt_update_file_parts_in_progress);
 
     flb_lock_destroy(&context->global_lock);
 
@@ -527,6 +616,39 @@ int flb_blob_file_update_remote_id(struct flb_blob_db *context,
     return result;
 }
 
+int flb_blob_file_update_s3_key(struct flb_blob_db *context,
+                                uint64_t id,
+                                cfl_sds_t s3_key)
+{
+    sqlite3_stmt *statement;
+    int           result;
+
+    statement = context->stmt_update_file_s3_key;
+
+    flb_sqldb_lock(context->db);
+
+    sqlite3_bind_text(statement, 1, s3_key, -1, 0);
+    sqlite3_bind_int64(statement, 2, id);
+
+    result = sqlite3_step(statement);
+
+    if (result != SQLITE_DONE) {
+        context->last_error = result;
+
+        result = FLB_BLOB_DB_ERROR_FILE_S3_KEY_UPDATE;
+    }
+    else {
+        result = FLB_BLOB_DB_SUCCESS;
+    }
+
+    sqlite3_clear_bindings(statement);
+    sqlite3_reset(statement);
+
+    flb_sqldb_unlock(context->db);
+
+    return result;
+}
+
 int flb_blob_file_change_destination(struct flb_blob_db *context,
                                      uint64_t id,
                                      cfl_sds_t destination)
@@ -704,10 +826,12 @@ int flb_blob_db_file_get_next_aborted(struct flb_blob_db *context,
                                       cfl_sds_t *source,
                                       cfl_sds_t *remote_id,
                                       cfl_sds_t *file_tag,
+                                      cfl_sds_t *s3_key,
                                       int *part_count)
 {
     char         *tmp_remote_id;
     char         *tmp_source;
+    char         *tmp_s3_key;
     sqlite3_stmt *statement;
     char         *tmp_path;
     char         *tmp_tag;
@@ -718,6 +842,7 @@ int flb_blob_db_file_get_next_aborted(struct flb_blob_db *context,
     *source = NULL;
     *remote_id = NULL;
     *file_tag = NULL;
+    *s3_key = NULL;
 
     statement = context->stmt_get_next_aborted_file;
 
@@ -734,6 +859,7 @@ int flb_blob_db_file_get_next_aborted(struct flb_blob_db *context,
         tmp_path = (char *) sqlite3_column_text(statement, 3);
         tmp_remote_id = (char *) sqlite3_column_text(statement, 4);
         tmp_tag = (char *) sqlite3_column_text(statement, 5);
+        tmp_s3_key = (char *) sqlite3_column_text(statement, 6);
 
         *path = cfl_sds_create(tmp_path);
 
@@ -759,13 +885,20 @@ int flb_blob_db_file_get_next_aborted(struct flb_blob_db *context,
                         exists = -1;
                     }
                     else {
-                        *part_count = flb_blob_db_file_fetch_part_count(context, *id);
+                        *s3_key = cfl_sds_create(tmp_s3_key);
 
-                        if (*part_count <= 0) {
+                        if (*s3_key == NULL) {
                             exists = -1;
                         }
                         else {
-                            exists = 1;
+                            *part_count = flb_blob_db_file_fetch_part_count(context, *id);
+
+                            if (*part_count <= 0) {
+                                exists = -1;
+                            }
+                            else {
+                                exists = 1;
+                            }
                         }
                     }
                 }
@@ -808,6 +941,11 @@ int flb_blob_db_file_get_next_aborted(struct flb_blob_db *context,
         if (*file_tag != NULL) {
             cfl_sds_destroy(*file_tag);
             *file_tag = NULL;
+        }
+
+        if (*s3_key != NULL) {
+            cfl_sds_destroy(*s3_key);
+            *s3_key = NULL;
         }
     }
 
@@ -933,6 +1071,47 @@ int flb_blob_db_file_part_in_progress(struct flb_blob_db *context,
 
     sqlite3_bind_int(statement, 1, in_progress);
     sqlite3_bind_int64(statement, 2, id);
+
+    result = sqlite3_step(statement);
+
+    if (result != SQLITE_DONE) {
+        context->last_error = result;
+
+        result = FLB_BLOB_DB_ERROR_FILE_PART_IN_PROGRESS_UPDATE;
+    }
+    else {
+        result = FLB_BLOB_DB_SUCCESS;
+    }
+
+    sqlite3_clear_bindings(statement);
+    sqlite3_reset(statement);
+
+    flb_sqldb_unlock(context->db);
+
+    return result;
+}
+
+/*
+ * Update in_progress status for all parts of a file
+ * Used during recovery to mark entire file as being processed
+ */
+int flb_blob_db_file_parts_in_progress(struct flb_blob_db *context,
+                                        uint64_t file_id,
+                                        int status)
+{
+    sqlite3_stmt *statement;
+    int           result;
+
+    if (context == NULL || context->db == NULL) {
+        return FLB_BLOB_DB_ERROR_INVALID_BLOB_DB_CONTEXT;
+    }
+
+    statement = context->stmt_update_file_parts_in_progress;
+
+    flb_sqldb_lock(context->db);
+
+    sqlite3_bind_int(statement, 1, status);
+    sqlite3_bind_int64(statement, 2, file_id);
 
     result = sqlite3_step(statement);
 
@@ -1182,7 +1361,9 @@ int flb_blob_db_file_fetch_oldest_ready(struct flb_blob_db *context,
                                         cfl_sds_t *source,
                                         cfl_sds_t *file_remote_id,
                                         cfl_sds_t *file_tag,
-                                        int *part_count)
+                                        cfl_sds_t *file_s3_key,
+                                        int *part_count,
+                                        time_t *file_created)
 {
     sqlite3_stmt *statement;
     int           result;
@@ -1195,6 +1376,8 @@ int flb_blob_db_file_fetch_oldest_ready(struct flb_blob_db *context,
     *source = NULL;
     *file_remote_id = NULL;
     *file_tag = NULL;
+    *file_s3_key = NULL;
+    *file_created = 0;
 
     statement = context->stmt_get_oldest_file_with_parts;
 
@@ -1224,11 +1407,19 @@ int flb_blob_db_file_fetch_oldest_ready(struct flb_blob_db *context,
         tmp = (char *) sqlite3_column_text(statement, 5);
         *file_tag = cfl_sds_create(tmp);
 
+        /* created */
+        *file_created = (time_t) sqlite3_column_int64(statement, 6);
+
+        /* s3_key */
+        tmp = (char *) sqlite3_column_text(statement, 7);
+        *file_s3_key = cfl_sds_create(tmp);
+
         if (*path == NULL ||
             *part_ids == NULL ||
             *source == NULL ||
             *file_remote_id == NULL ||
-            *file_tag == NULL) {
+            *file_tag == NULL ||
+            *file_s3_key == NULL) {
             result = -1;
         }
         else{
@@ -1283,6 +1474,14 @@ int flb_blob_db_file_fetch_oldest_ready(struct flb_blob_db *context,
 
             *file_tag = NULL;
         }
+
+        if (*file_s3_key != NULL) {
+            cfl_sds_destroy(*file_s3_key);
+
+            *file_s3_key = NULL;
+        }
+
+        *file_created = 0;
     }
 
     flb_sqldb_unlock(context->db);
@@ -1292,7 +1491,7 @@ int flb_blob_db_file_fetch_oldest_ready(struct flb_blob_db *context,
 
 int flb_blob_db_file_fetch_part_ids(struct flb_blob_db *context,
                                     uint64_t file_id,
-                                    cfl_sds_t *remote_id_list,
+                                    flb_sds_t *remote_id_list,
                                     size_t remote_id_list_size,
                                     int *remote_id_count)
 {
@@ -1305,7 +1504,7 @@ int flb_blob_db_file_fetch_part_ids(struct flb_blob_db *context,
 
     flb_sqldb_lock(context->db);
 
-    memset(remote_id_list, 0, sizeof(cfl_sds_t) * remote_id_list_size);
+    memset(remote_id_list, 0, sizeof(flb_sds_t) * remote_id_list_size);
 
     sqlite3_bind_int64(statement, 1, file_id);
 
@@ -1352,7 +1551,7 @@ int flb_blob_db_file_fetch_part_ids(struct flb_blob_db *context,
             flb_sds_destroy(remote_id_list[remote_id_index]);
         }
 
-        memset(remote_id_list, 0, sizeof(cfl_sds_t) * remote_id_list_size);
+        memset(remote_id_list, 0, sizeof(flb_sds_t) * remote_id_list_size);
     }
     else {
         *remote_id_count = (int) remote_id_index;
@@ -1395,6 +1594,296 @@ int flb_blob_db_file_fetch_part_count(struct flb_blob_db *context,
     flb_sqldb_unlock(context->db);
 
     return result;
+}
+
+int flb_blob_db_file_fetch_all_parts(struct flb_blob_db *context,
+                                      uint64_t file_id,
+                                      uint64_t **part_db_ids,
+                                      uint64_t **part_nums,
+                                      off_t **offset_starts,
+                                      off_t **offset_ends,
+                                      int *count)
+{
+    sqlite3_stmt *statement;
+    int           total_count;
+    int           idx = 0;
+    int           result;
+
+    *part_db_ids = NULL;
+    *part_nums = NULL;
+    *offset_starts = NULL;
+    *offset_ends = NULL;
+    *count = 0;
+
+    /* Query total count first to pre-allocate exact size needed */
+    total_count = flb_blob_db_file_fetch_part_count(context, file_id);
+    if (total_count <= 0) {
+        return total_count;  /* 0 if no parts, or negative error code */
+    }
+
+    /* Allocate arrays with exact size needed */
+    *part_db_ids = flb_calloc(total_count, sizeof(uint64_t));
+    *part_nums = flb_calloc(total_count, sizeof(uint64_t));
+    *offset_starts = flb_calloc(total_count, sizeof(off_t));
+    *offset_ends = flb_calloc(total_count, sizeof(off_t));
+
+    if (!*part_db_ids || !*part_nums || !*offset_starts || !*offset_ends) {
+        /* Clean up any successful allocations */
+        if (*part_db_ids) flb_free(*part_db_ids);
+        if (*part_nums) flb_free(*part_nums);
+        if (*offset_starts) flb_free(*offset_starts);
+        if (*offset_ends) flb_free(*offset_ends);
+        *part_db_ids = NULL;
+        *part_nums = NULL;
+        *offset_starts = NULL;
+        *offset_ends = NULL;
+        return FLB_BLOB_DB_ERROR_ALLOCATOR_FAILURE;
+    }
+
+    statement = context->stmt_get_all_parts_for_file;
+
+    flb_sqldb_lock(context->db);
+
+    sqlite3_bind_int64(statement, 1, file_id);
+
+    /* Fetch all rows and populate arrays */
+    while ((result = sqlite3_step(statement)) == SQLITE_ROW) {
+        /* Bounds check: prevent array overflow if parts were added after count query */
+        if (idx >= total_count) {
+            context->last_error = SQLITE_MISUSE;
+            result = SQLITE_ERROR;
+            break;
+        }
+
+        (*part_db_ids)[idx] = sqlite3_column_int64(statement, 0);
+        (*part_nums)[idx] = sqlite3_column_int64(statement, 1);
+        (*offset_starts)[idx] = sqlite3_column_int64(statement, 2);
+        (*offset_ends)[idx] = sqlite3_column_int64(statement, 3);
+        idx++;
+    }
+
+    sqlite3_clear_bindings(statement);
+    sqlite3_reset(statement);
+    flb_sqldb_unlock(context->db);
+
+    /* Check for query errors or bounds violation */
+    if (result != SQLITE_DONE) {
+        context->last_error = result;
+        flb_free(*part_db_ids);
+        flb_free(*part_nums);
+        flb_free(*offset_starts);
+        flb_free(*offset_ends);
+        *part_db_ids = NULL;
+        *part_nums = NULL;
+        *offset_starts = NULL;
+        *offset_ends = NULL;
+        return -1;
+    }
+
+    *count = idx;
+    return idx;
+}
+
+/*
+ * Get next pending file for recovery
+ * Returns: 1 if found, 0 if no more files, -1 on error
+ */
+int flb_blob_db_file_get_next_pending(struct flb_blob_db *context,
+                                       uint64_t *file_id,
+                                       cfl_sds_t *path,
+                                       cfl_sds_t *destination,
+                                       cfl_sds_t *remote_id,
+                                       cfl_sds_t *tag,
+                                       cfl_sds_t *s3_key,
+                                       int *part_count)
+{
+    sqlite3_stmt *statement;
+    char *tmp_path;
+    char *tmp_destination;
+    char *tmp_remote_id;
+    char *tmp_tag;
+    char *tmp_s3_key;
+    int result;
+    int exists;
+
+    *path = NULL;
+    *destination = NULL;
+    *remote_id = NULL;
+    *tag = NULL;
+    *s3_key = NULL;
+    *part_count = 0;
+
+    statement = context->stmt_get_next_pending_file;
+
+    flb_sqldb_lock(context->db);
+
+    result = sqlite3_step(statement);
+
+    if (result == SQLITE_ROW) {
+        exists = 1;
+
+        *file_id = sqlite3_column_int64(statement, 0);
+        tmp_path = (char *) sqlite3_column_text(statement, 1);
+        tmp_destination = (char *) sqlite3_column_text(statement, 2);
+        tmp_remote_id = (char *) sqlite3_column_text(statement, 3);
+        tmp_tag = (char *) sqlite3_column_text(statement, 4);
+        tmp_s3_key = (char *) sqlite3_column_text(statement, 5);
+        *part_count = sqlite3_column_int(statement, 6);
+
+        *path = cfl_sds_create(tmp_path);
+        if (*path == NULL) {
+            exists = -1;
+        }
+        else {
+            *destination = cfl_sds_create(tmp_destination);
+            if (*destination == NULL) {
+                exists = -1;
+            }
+            else {
+                *remote_id = cfl_sds_create(tmp_remote_id);
+                if (*remote_id == NULL) {
+                    exists = -1;
+                }
+                else {
+                    *tag = cfl_sds_create(tmp_tag);
+                    if (*tag == NULL) {
+                        exists = -1;
+                    }
+                    else {
+                        *s3_key = cfl_sds_create(tmp_s3_key);
+                        if (*s3_key == NULL) {
+                            exists = -1;
+                        }
+                    }
+                }
+            }
+        }
+
+        /* Always reset/clear after processing row - even on success */
+        sqlite3_clear_bindings(statement);
+        sqlite3_reset(statement);
+
+        /*
+         * Note: When exists == -1 due to cfl_sds_create failure, we don't set
+         * context->last_error because 'result' is still SQLITE_ROW (successful query).
+         * Allocation failures are not database errors and would be misleading to log.
+         */
+    }
+    else if (result == SQLITE_DONE) {
+        /* No more rows - reset statement for potential reuse */
+        exists = 0;
+        sqlite3_clear_bindings(statement);
+        sqlite3_reset(statement);
+    }
+    else {
+        /* Error occurred - reset statement */
+        context->last_error = result;
+        exists = -1;
+        sqlite3_clear_bindings(statement);
+        sqlite3_reset(statement);
+    }
+
+    flb_sqldb_unlock(context->db);
+
+    if (exists == -1) {
+        *file_id = 0;
+        *part_count = 0;
+
+        if (*path != NULL) {
+            cfl_sds_destroy(*path);
+            *path = NULL;
+        }
+
+        if (*destination != NULL) {
+            cfl_sds_destroy(*destination);
+            *destination = NULL;
+        }
+
+        if (*remote_id != NULL) {
+            cfl_sds_destroy(*remote_id);
+            *remote_id = NULL;
+        }
+
+        if (*tag != NULL) {
+            cfl_sds_destroy(*tag);
+            *tag = NULL;
+        }
+
+        if (*s3_key != NULL) {
+            cfl_sds_destroy(*s3_key);
+            *s3_key = NULL;
+        }
+    }
+
+    return exists;
+}
+
+/*
+ * Check if a part is uploaded
+ * Returns: 0 on success, -1 on error
+ */
+int flb_blob_db_file_part_check_uploaded(struct flb_blob_db *context,
+                                          uint64_t part_id,
+                                          int *uploaded)
+{
+    sqlite3_stmt *statement;
+    int result;
+
+    *uploaded = 0;
+
+    statement = context->stmt_get_part_upload_status;
+
+    flb_sqldb_lock(context->db);
+
+    sqlite3_bind_int64(statement, 1, part_id);
+
+    result = sqlite3_step(statement);
+
+    if (result == SQLITE_ROW) {
+        *uploaded = sqlite3_column_int(statement, 0);
+        result = 0;
+    }
+    else if (result == SQLITE_DONE) {
+        result = -1;
+    }
+    else {
+        context->last_error = result;
+        result = -1;
+    }
+
+    sqlite3_clear_bindings(statement);
+    sqlite3_reset(statement);
+
+    flb_sqldb_unlock(context->db);
+
+    return result;
+}
+
+/* Reset zombie parts (in_progress=1 from crashed process) */
+int flb_blob_db_reset_zombie_parts(struct flb_blob_db *context)
+{
+    const char *sql;
+    int result;
+
+    if (!context || !context->db) {
+        return FLB_BLOB_DB_ERROR_INVALID_BLOB_DB_CONTEXT;
+    }
+
+    sql = "UPDATE blob_parts SET in_progress = 0 "
+          "WHERE uploaded = 0 AND in_progress = 1";
+
+    flb_sqldb_lock(context->db);
+
+    result = sqlite3_exec(context->db->handler, sql, NULL, NULL, NULL);
+
+    flb_sqldb_unlock(context->db);
+
+    if (result != SQLITE_OK) {
+        context->last_error = result;
+        return -1;
+    }
+
+    return FLB_BLOB_DB_SUCCESS;
 }
 
 #else
@@ -1462,6 +1951,7 @@ int flb_blob_db_file_get_next_aborted(struct flb_blob_db *context,
                                       cfl_sds_t *source,
                                       cfl_sds_t *remote_id,
                                       cfl_sds_t *file_tag,
+                                      cfl_sds_t *s3_key,
                                       int *part_count)
 {
     return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
@@ -1512,7 +2002,8 @@ int flb_blob_db_file_part_get_next(struct flb_blob_db *context,
                                    cfl_sds_t *file_path,
                                    cfl_sds_t *destination,
                                    cfl_sds_t *remote_file_id,
-                                   cfl_sds_t *tag)
+                                   cfl_sds_t *tag,
+                                   int *part_count)
 {
     return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
 }
@@ -1539,14 +2030,16 @@ int flb_blob_db_file_fetch_oldest_ready(struct flb_blob_db *context,
                                         cfl_sds_t *source,
                                         cfl_sds_t *file_remote_id,
                                         cfl_sds_t *file_tag,
-                                        int *part_count)
+                                        cfl_sds_t *file_s3_key,
+                                        int *part_count,
+                                        time_t *file_created)
 {
     return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
 }
 
 int flb_blob_db_file_fetch_part_ids(struct flb_blob_db *context,
                                     uint64_t file_id,
-                                    cfl_sds_t *remote_id_list,
+                                    flb_sds_t *remote_id_list,
                                     size_t remote_id_list_size,
                                     int *remote_id_count)
 {
@@ -1555,6 +2048,55 @@ int flb_blob_db_file_fetch_part_ids(struct flb_blob_db *context,
 
 int flb_blob_db_file_fetch_part_count(struct flb_blob_db *context,
                                       uint64_t file_id)
+{
+    return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
+}
+
+int flb_blob_db_file_get_next_pending(struct flb_blob_db *context,
+                                       uint64_t *file_id,
+                                       cfl_sds_t *path,
+                                       cfl_sds_t *destination,
+                                       cfl_sds_t *remote_id,
+                                       cfl_sds_t *tag,
+                                       cfl_sds_t *s3_key,
+                                       int *part_count)
+{
+    return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
+}
+
+int flb_blob_file_update_s3_key(struct flb_blob_db *context,
+                                uint64_t id,
+                                cfl_sds_t s3_key)
+{
+    return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
+}
+
+int flb_blob_db_file_fetch_all_parts(struct flb_blob_db *context,
+                                      uint64_t file_id,
+                                      uint64_t **part_db_ids,
+                                      uint64_t **part_nums,
+                                      off_t **offset_starts,
+                                      off_t **offset_ends,
+                                      int *count)
+{
+    return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
+}
+
+int flb_blob_db_file_part_check_uploaded(struct flb_blob_db *context,
+                                          uint64_t part_id,
+                                          int *uploaded)
+{
+    return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
+}
+
+int flb_blob_db_file_parts_in_progress(struct flb_blob_db *context,
+                                        uint64_t file_id,
+                                        int status)
+{
+    return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
+}
+
+int flb_blob_db_reset_zombie_parts(struct flb_blob_db *context)
 {
     return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
 }

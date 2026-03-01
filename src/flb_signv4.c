@@ -644,9 +644,9 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
     }
 
     /*
-     * URI normalization is required by certain AWS service, for hence the caller
-     * plugin is responsible to enable/disable this flag. If set the URI in the
-     * canonical request will be normalized.
+     * URI encoding is handled differently based on the service:
+     * - normalize_uri=TRUE: Normalize path then encode (most AWS services)
+     * - normalize_uri=FALSE: Use pre-encoded URI as-is (S3)
      */
     if (normalize_uri == FLB_TRUE) {
         tmp = flb_signv4_uri_normalize_path((char *) c->uri, len);
@@ -656,20 +656,24 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
             return NULL;
         }
         len = flb_sds_len(tmp);
+
+        uri = uri_encode(tmp, len);
+        flb_sds_destroy(tmp);
+
+        if (!uri) {
+            flb_error("[signv4] error encoding URI");
+            flb_sds_destroy(cr);
+            return NULL;
+        }
     }
     else {
-        tmp = (char *) c->uri;
-    }
-
-    /* Do URI encoding (rfc3986) */
-    uri = uri_encode(tmp, len);
-    if (tmp != c->uri) {
-        flb_sds_destroy(tmp);
-    }
-    if (!uri) {
-        /* error composing outgoing buffer */
-        flb_sds_destroy(cr);
-        return NULL;
+        /* URI is pre-encoded by caller, use as-is */
+        uri = flb_sds_create_len(c->uri, len);
+        if (!uri) {
+            flb_error("[signv4] error creating URI buffer");
+            flb_sds_destroy(cr);
+            return NULL;
+        }
     }
 
     tmp = flb_sds_cat(cr, uri, flb_sds_len(uri));

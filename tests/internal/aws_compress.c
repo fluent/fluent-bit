@@ -5,6 +5,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_zstd.h>
+#include <fluent-bit/flb_snappy.h>
 
 #include <fluent-bit/aws/flb_aws_compress.h>
 #include "flb_tests_internal.h"
@@ -71,6 +72,176 @@ void test_compression_zstd()
     };
 
     flb_aws_compress_test_cases(cases);
+}
+
+/*
+ * Test snappy framed compression round-trip
+ *
+ * Uses Google's Snappy framing format specification (same as src/flb_snappy.c).
+ *
+ * This test validates that:
+ * 1. flb_snappy_compress_framed_data() produces valid snappy framed output
+ * 2. flb_snappy_uncompress_framed_data() correctly decompresses the data
+ * 3. Multiple concatenated snappy chunks decompress correctly end-to-end
+ * 4. The decompressed output equals the original input
+ */
+void test_compression_snappy()
+{
+    int ret;
+    char *compressed_data = NULL;
+    size_t compressed_len = 0;
+    char *decompressed_data = NULL;
+    size_t decompressed_len = 0;
+
+    /* Test case 1: Simple string */
+    const char *test_simple = "hello hello hello hello hello hello";
+    size_t test_simple_len = strlen(test_simple);
+
+    ret = flb_snappy_compress_framed_data((char *)test_simple, test_simple_len,
+                                          &compressed_data, &compressed_len);
+    TEST_CHECK(ret == 0);
+    TEST_MSG("flb_snappy_compress_framed_data failed for simple string, ret=%d", ret);
+
+    if (ret == 0) {
+        ret = flb_snappy_uncompress_framed_data(compressed_data, compressed_len,
+                                                &decompressed_data, &decompressed_len);
+        TEST_CHECK(ret == 0);
+        TEST_MSG("flb_snappy_uncompress_framed_data failed for simple string, ret=%d", ret);
+
+        if (ret == 0) {
+            TEST_CHECK(decompressed_len == test_simple_len);
+            TEST_MSG("Length mismatch: expected %zu, got %zu", test_simple_len, decompressed_len);
+
+            ret = memcmp(test_simple, decompressed_data, test_simple_len);
+            TEST_CHECK(ret == 0);
+            TEST_MSG("Content mismatch for simple string");
+
+            flb_free(decompressed_data);
+            decompressed_data = NULL;
+        }
+        flb_free(compressed_data);
+        compressed_data = NULL;
+    }
+
+    /* Test case 2: Larger data that spans multiple blocks (>64KB to test chunking) */
+    size_t large_len = 100000;  /* 100KB to ensure multiple 64KB blocks */
+    char *large_data = flb_malloc(large_len);
+    TEST_CHECK(large_data != NULL);
+
+    if (large_data != NULL) {
+        /* Fill with repeating pattern */
+        size_t i;
+        for (i = 0; i < large_len; i++) {
+            large_data[i] = 'A' + (i % 26);
+        }
+
+        ret = flb_snappy_compress_framed_data(large_data, large_len,
+                                              &compressed_data, &compressed_len);
+        TEST_CHECK(ret == 0);
+        TEST_MSG("flb_snappy_compress_framed_data failed for large data, ret=%d", ret);
+
+        if (ret == 0) {
+            ret = flb_snappy_uncompress_framed_data(compressed_data, compressed_len,
+                                                    &decompressed_data, &decompressed_len);
+            TEST_CHECK(ret == 0);
+            TEST_MSG("flb_snappy_uncompress_framed_data failed for large data, ret=%d", ret);
+
+            if (ret == 0) {
+                TEST_CHECK(decompressed_len == large_len);
+                TEST_MSG("Length mismatch for large data: expected %zu, got %zu",
+                         large_len, decompressed_len);
+
+                ret = memcmp(large_data, decompressed_data, large_len);
+                TEST_CHECK(ret == 0);
+                TEST_MSG("Content mismatch for large data");
+
+                flb_free(decompressed_data);
+                decompressed_data = NULL;
+            }
+            flb_free(compressed_data);
+            compressed_data = NULL;
+        }
+        flb_free(large_data);
+    }
+
+    /* Test case 3: Concatenated snappy frames (simulating streaming compression) */
+    const char *chunk1 = "First chunk of data for snappy compression test. ";
+    const char *chunk2 = "Second chunk with different content patterns. ";
+    const char *chunk3 = "Third and final chunk to complete the test sequence.";
+    size_t chunk1_len = strlen(chunk1);
+    size_t chunk2_len = strlen(chunk2);
+    size_t chunk3_len = strlen(chunk3);
+    size_t total_input_len = chunk1_len + chunk2_len + chunk3_len;
+
+    char *compressed1 = NULL, *compressed2 = NULL, *compressed3 = NULL;
+    size_t compressed1_len = 0, compressed2_len = 0, compressed3_len = 0;
+
+    /* Compress each chunk separately */
+    ret = flb_snappy_compress_framed_data((char *)chunk1, chunk1_len,
+                                          &compressed1, &compressed1_len);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_snappy_compress_framed_data((char *)chunk2, chunk2_len,
+                                          &compressed2, &compressed2_len);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_snappy_compress_framed_data((char *)chunk3, chunk3_len,
+                                          &compressed3, &compressed3_len);
+    TEST_CHECK(ret == 0);
+
+    if (compressed1 && compressed2 && compressed3) {
+        /* Concatenate all compressed chunks */
+        size_t concat_len = compressed1_len + compressed2_len + compressed3_len;
+        char *concatenated = flb_malloc(concat_len);
+        TEST_CHECK(concatenated != NULL);
+
+        if (concatenated) {
+            memcpy(concatenated, compressed1, compressed1_len);
+            memcpy(concatenated + compressed1_len, compressed2, compressed2_len);
+            memcpy(concatenated + compressed1_len + compressed2_len,
+                   compressed3, compressed3_len);
+
+            /* Build expected decompressed output */
+            char *expected = flb_malloc(total_input_len + 1);
+            TEST_CHECK(expected != NULL);
+
+            if (expected) {
+                memcpy(expected, chunk1, chunk1_len);
+                memcpy(expected + chunk1_len, chunk2, chunk2_len);
+                memcpy(expected + chunk1_len + chunk2_len, chunk3, chunk3_len);
+                expected[total_input_len] = '\0';
+
+                /* Decompress concatenated data */
+                ret = flb_snappy_uncompress_framed_data(concatenated, concat_len,
+                                                        &decompressed_data, &decompressed_len);
+                TEST_CHECK(ret == 0);
+                TEST_MSG("flb_snappy_uncompress_framed_data failed for concatenated chunks, ret=%d", ret);
+
+                if (ret == 0) {
+                    TEST_CHECK(decompressed_len == total_input_len);
+                    TEST_MSG("Length mismatch for concatenated: expected %zu, got %zu",
+                             total_input_len, decompressed_len);
+
+                    ret = memcmp(expected, decompressed_data, total_input_len);
+                    TEST_CHECK(ret == 0);
+                    TEST_MSG("Content mismatch for concatenated chunks");
+
+                    flb_free(decompressed_data);
+                }
+                flb_free(expected);
+            }
+            flb_free(concatenated);
+        }
+    }
+
+    if (compressed1) flb_free(compressed1);
+    if (compressed2) flb_free(compressed2);
+    if (compressed3) flb_free(compressed3);
+
+    /* Test case 4: Empty input should fail gracefully */
+    ret = flb_snappy_compress_framed_data(NULL, 0, &compressed_data, &compressed_len);
+    TEST_CHECK(ret == -1);
+    TEST_MSG("Expected failure for NULL/empty input, got ret=%d", ret);
 }
 
 void test_b64_truncated_gzip()
@@ -239,6 +410,7 @@ struct flb_aws_test_case cases[] =
 TEST_LIST = {
     { "test_compression_gzip", test_compression_gzip },
     { "test_compression_zstd", test_compression_zstd },
+    { "test_compression_snappy", test_compression_snappy },
     { "test_b64_truncated_gzip", test_b64_truncated_gzip },
     { "test_b64_truncated_zstd", test_b64_truncated_zstd },
     { "test_b64_truncated_gzip_truncation", test_b64_truncated_gzip_truncation },
@@ -307,8 +479,8 @@ static void flb_aws_compress_general_test_cases(int test_type,
     while (tcase->compression_keyword != 0) {
 
         size_t in_data_len = strlen(tcase->in_data);
-        compression_type = flb_aws_compression_get_type(tcase->compression_keyword);   
-        
+        compression_type = flb_aws_compression_get_type(tcase->compression_keyword);
+
         TEST_CHECK(compression_type != -1);
         TEST_MSG("| flb_aws_get_compression_type: failed to get compression type for "
                  "keyword "

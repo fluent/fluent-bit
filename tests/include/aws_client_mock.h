@@ -3,9 +3,9 @@
 /*
  * AWS Client Mock
  *
- * Note: AWS Client Mock is not intended to be used with asynchronously
- * running tests. A mock instance is stored and retrieved by
- * the mock generator
+ * Usage: #include both .h and .c files in test files
+ * Limitation: Do not compile multiple tests into one executable (duplicate symbols)
+ * Thread safety: Not safe for concurrent tests (uses static variables)
  */
 
 /*
@@ -126,12 +126,14 @@
 #include <fluent-bit/flb_aws_util.h>
 
 #include "../lib/acutest/acutest.h"
+#include <pthread.h>
 
 /* Enum */
 enum flb_aws_client_mock_response_config_parameter {
     FLB_AWS_CLIENT_MOCK_EXPECT_METHOD,  // int: FLB_HTTP_<method> where method = { "GET",
                                         // "POST", "PUT", "HEAD", "CONNECT", "PATCH" }
     FLB_AWS_CLIENT_MOCK_EXPECT_HEADER,  // (string, string): (header key, header value)
+    FLB_AWS_CLIENT_MOCK_EXPECT_HEADER_EXISTS,  // string: header key (checks if header exists)
     FLB_AWS_CLIENT_MOCK_EXPECT_HEADER_COUNT,  // int: header count
     FLB_AWS_CLIENT_MOCK_EXPECT_URI,           // string: uri
     FLB_AWS_CLIENT_MOCK_CONFIG_REPLACE,  // flb_http_client ptr. Client can be null if
@@ -159,6 +161,12 @@ struct flb_aws_client_mock_request_chain {
     struct flb_aws_client_mock_response *responses;
 };
 
+struct flb_aws_client_mock_shared_state {
+    struct flb_aws_client_mock_request_chain *request_chain;
+    size_t next_request_index;
+    pthread_mutex_t lock;
+};
+
 struct flb_aws_client_mock {
     /* This member must come first in the struct's memory layout
      * so that this struct can mock flb_aws_client context */
@@ -166,8 +174,8 @@ struct flb_aws_client_mock {
     struct flb_aws_client *surrogate;
 
     /* Additional data members added to mock */
-    struct flb_aws_client_mock_request_chain *request_chain;
-    size_t next_request_index;
+    struct flb_aws_client_mock_shared_state *shared;
+    int owns_shared; /* Flag to indicate if this instance owns the shared state memory */
 };
 
 /* Declarations */
@@ -188,6 +196,13 @@ void flb_aws_client_mock_configure_generator(
  * Note: Cleanup should be called at the end of each test
  */
 void flb_aws_client_mock_destroy_generator();
+
+/*
+ * Clear generator instance without freeing
+ * Use this after flb_destroy() when the S3 plugin has already freed the mock client
+ * This prevents use-after-free when configure_generator is called again
+ */
+void flb_aws_client_mock_clear_generator_instance();
 
 /* Create Mock of flb_aws_client */
 struct flb_aws_client_mock *flb_aws_client_mock_create(
