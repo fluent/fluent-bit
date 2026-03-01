@@ -28,20 +28,21 @@
 
 struct flb_aws_msk_iam;
 
-struct flb_msk_iam_cb {
-    void *plugin_ctx;
-    struct flb_aws_msk_iam *iam;
-    char *broker_host;  /* Store the actual broker hostname */
-};
-
 /*
  * Register the oauthbearer refresh callback for MSK IAM authentication.
+ * Parameters:
+ *   - config: Fluent Bit configuration
+ *   - kconf: rdkafka configuration
+ *   - opaque: Kafka opaque context (will be set with MSK IAM context)
+ *   - brokers: Comma-separated list of broker addresses (used to extract AWS region if region is NULL)
+ *   - region: Optional AWS region (if NULL, will be auto-detected from brokers)
  * Returns context pointer on success or NULL on failure.
  */
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
-                                                          const char *cluster_arn,
-                                                          struct flb_kafka_opaque *opaque);
+                                                          struct flb_kafka_opaque *opaque,
+                                                          const char *brokers,
+                                                          const char *region);
 void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx);
 
 #endif
