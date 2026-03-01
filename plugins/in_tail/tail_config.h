@@ -161,6 +161,9 @@ struct flb_tail_config {
     /* List of shell patterns used to exclude certain file names */
     struct mk_list *exclude_list;
 
+    /* Permission handling configuration */
+    int skip_permission_errors; /* skip directories with permission errors (1), or fail (0) */
+
     /* Plugin input instance */
     struct flb_input_instance *ins;
 
