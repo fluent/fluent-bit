@@ -149,6 +149,10 @@ static rd_kafka_headers_t *kafka_build_message_headers(struct flb_out_kafka *ctx
         return NULL;
     }
 
+    char                num_buf[64];
+    int                 num_len;
+    rd_kafka_resp_err_t err;
+
     flb_config_map_foreach(head, mv, ctx->headers) {
         hkey = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
         hval = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
@@ -160,24 +164,80 @@ static rd_kafka_headers_t *kafka_build_message_headers(struct flb_out_kafka *ctx
             field          = NULL;
 
             if (kafka_msgpack_get_field(map, field_name, field_name_len,
-                                        &field) == 0 &&
-                field->type == MSGPACK_OBJECT_STR) {
-                rd_kafka_header_add(headers,
-                                    hkey->str, flb_sds_len(hkey->str),
-                                    field->via.str.ptr, field->via.str.size);
+                                        &field) != 0) {
+                /* key absent from the record */
+                flb_plg_warn(ctx->ins,
+                             "header '%s': field '$%.*s' not found in record, "
+                             "skipping",
+                             hkey->str, (int) field_name_len, field_name);
+            }
+            else if (field->type == MSGPACK_OBJECT_STR) {
+                err = rd_kafka_header_add(headers,
+                                          hkey->str, flb_sds_len(hkey->str),
+                                          field->via.str.ptr,
+                                          field->via.str.size);
+                if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+                    flb_plg_error(ctx->ins,
+                                  "header '%s': rd_kafka_header_add failed: %s",
+                                  hkey->str, rd_kafka_err2str(err));
+                }
+            }
+            else if (field->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                num_len = snprintf(num_buf, sizeof(num_buf),
+                                   "%" PRIu64, field->via.u64);
+                err = rd_kafka_header_add(headers,
+                                          hkey->str, flb_sds_len(hkey->str),
+                                          num_buf, num_len);
+                if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+                    flb_plg_error(ctx->ins,
+                                  "header '%s': rd_kafka_header_add failed: %s",
+                                  hkey->str, rd_kafka_err2str(err));
+                }
+            }
+            else if (field->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+                num_len = snprintf(num_buf, sizeof(num_buf),
+                                   "%" PRId64, field->via.i64);
+                err = rd_kafka_header_add(headers,
+                                          hkey->str, flb_sds_len(hkey->str),
+                                          num_buf, num_len);
+                if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+                    flb_plg_error(ctx->ins,
+                                  "header '%s': rd_kafka_header_add failed: %s",
+                                  hkey->str, rd_kafka_err2str(err));
+                }
+            }
+            else if (field->type == MSGPACK_OBJECT_FLOAT32 ||
+                     field->type == MSGPACK_OBJECT_FLOAT64) {
+                num_len = snprintf(num_buf, sizeof(num_buf),
+                                   "%g", field->via.f64);
+                err = rd_kafka_header_add(headers,
+                                          hkey->str, flb_sds_len(hkey->str),
+                                          num_buf, num_len);
+                if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+                    flb_plg_error(ctx->ins,
+                                  "header '%s': rd_kafka_header_add failed: %s",
+                                  hkey->str, rd_kafka_err2str(err));
+                }
             }
             else {
+                /* boolean, array, map, nil — not useful as a header string */
                 flb_plg_warn(ctx->ins,
-                             "header '%s': field '$%.*s' not found in record "
-                             "or not a string, skipping",
-                             hkey->str, (int) field_name_len, field_name);
+                             "header '%s': field '$%.*s' has unsupported type "
+                             "(%d), skipping",
+                             hkey->str, (int) field_name_len, field_name,
+                             field->type);
             }
         }
         else {
             /* Static header: use the configured value verbatim */
-            rd_kafka_header_add(headers,
-                                hkey->str, flb_sds_len(hkey->str),
-                                hval->str, flb_sds_len(hval->str));
+            err = rd_kafka_header_add(headers,
+                                      hkey->str, flb_sds_len(hkey->str),
+                                      hval->str, flb_sds_len(hval->str));
+            if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+                flb_plg_error(ctx->ins,
+                              "header '%s': rd_kafka_header_add failed: %s",
+                              hkey->str, rd_kafka_err2str(err));
+            }
         }
     }
 
@@ -582,11 +642,24 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
 
         /*
          * Non-queue-full produce error: rdkafka did not take ownership of
-         * kafka_headers on failure, so we must free them here.
+         * kafka_headers on failure, so we must free them here.  Clean up
+         * all remaining resources and propagate FLB_RETRY so the engine
+         * requeues the chunk rather than silently dropping it.
          */
         if (kafka_headers) {
             rd_kafka_headers_destroy(kafka_headers);
         }
+        if (ctx->format != FLB_KAFKA_FMT_MSGP) {
+            flb_sds_destroy(s);
+        }
+        msgpack_sbuffer_destroy(&mp_sbuf);
+#ifdef FLB_HAVE_AVRO_ENCODER
+        if (ctx->format == FLB_KAFKA_FMT_AVRO) {
+            AVRO_FREE(avro_fast_buffer, out_buf)
+        }
+#endif
+        flb_sds_destroy(raw_key);
+        return FLB_RETRY;
     }
     else {
         flb_plg_debug(ctx->ins, "enqueued message (%zd bytes) for topic '%s'",
