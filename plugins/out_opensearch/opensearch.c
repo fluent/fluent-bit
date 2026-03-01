@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_file.h>
 #include <msgpack.h>
 
 #include <cfl/cfl.h>
@@ -264,6 +265,47 @@ static int compose_index_header(struct flb_opensearch *ctx,
     return 0;
 }
 
+static void create_ra_index(struct flb_opensearch *ctx,
+                      struct flb_record_accessor *rec,
+                      flb_sds_t *ra_index,
+                      const char* tag,
+                      int tag_len,
+                      struct msgpack_object map,
+                      int *index_len,
+                      flb_sds_t *j_index,
+                      char** index)
+{
+    if (*ra_index != NULL) {
+        flb_sds_destroy(*ra_index);
+    }
+    /* a record accessor pattern exists for the index */
+    *ra_index = flb_ra_translate(rec,
+                                (char *) tag, tag_len,
+                                map, NULL);
+    if (*ra_index ==  NULL) {
+        flb_plg_warn(ctx->ins,
+                     "invalid data stream from record accessor pattern, default to static index");
+    }
+    else {
+        *index = *ra_index;
+    }
+
+    if (ctx->suppress_type_name) {
+        *index_len = flb_sds_snprintf(j_index,
+                                     flb_sds_alloc(*j_index),
+                                     OS_BULK_INDEX_FMT_NO_TYPE,
+                                     ctx->action,
+                                     *index);
+    }
+    else {
+        *index_len = flb_sds_snprintf(j_index,
+                                     flb_sds_alloc(*j_index),
+                                     OS_BULK_INDEX_FMT,
+                                     ctx->action,
+                                     *index, ctx->type);
+    }
+
+}
 /*
  * Convert the internal Fluent Bit data representation to the required
  * one by OpenSearch.
@@ -286,6 +328,7 @@ static int opensearch_format(struct flb_config *config,
     flb_sds_t ra_index = NULL;
     size_t s = 0;
     char *index = NULL;
+    char *unformatted_index = NULL;
     char logstash_index[256];
     char time_formatted[256];
     char index_formatted[256];
@@ -305,6 +348,8 @@ static int opensearch_format(struct flb_config *config,
     flb_sds_t j_index;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
+    int enabled_data_stream_no_ra;
+    int disabled_logstash_fmt_no_ra;
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
@@ -337,38 +382,65 @@ static int opensearch_format(struct flb_config *config,
     }
 
     /*
-     * If logstash format and id generation are disabled, pre-generate
+     * If data stream mode is enabled without record accessor syntax
+     * or logstash format and id generation are disabled, pre-generate
      * the index line for all records.
      *
      * The header stored in 'j_index' will be used for the all records on
      * this payload.
      */
-    if (ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE && ctx->ra_index == NULL) {
-        flb_time_get(&tms);
-        gmtime_r(&tms.tm.tv_sec, &tm);
-        strftime(index_formatted, sizeof(index_formatted) - 1,
-                 ctx->index, &tm);
-        index = index_formatted;
-        if (ctx->suppress_type_name) {
-            index_len = flb_sds_snprintf(&j_index,
-                                         flb_sds_alloc(j_index),
-                                         OS_BULK_INDEX_FMT_NO_TYPE,
-                                         ctx->action,
-                                         index);
-        }
-        else {
-            index_len = flb_sds_snprintf(&j_index,
-                                         flb_sds_alloc(j_index),
-                                         OS_BULK_INDEX_FMT,
-                                         ctx->action,
-                                         index, ctx->type);
-        }
 
-        if (index_len == -1) {
-            flb_log_event_decoder_destroy(&log_decoder);
-            flb_sds_destroy(bulk);
-            flb_sds_destroy(j_index);
-            return -1;
+    if (ctx->data_stream_mode == FLB_TRUE &&
+        ctx->ra_data_stream == NULL) {
+        enabled_data_stream_no_ra = FLB_TRUE;
+    }
+    else {
+        enabled_data_stream_no_ra = FLB_FALSE;
+    }
+
+    if (ctx->logstash_format == FLB_FALSE &&
+        ctx->ra_index == NULL) {
+        disabled_logstash_fmt_no_ra = FLB_TRUE;
+    }
+    else {
+        disabled_logstash_fmt_no_ra =  FLB_FALSE;
+    }
+
+    if ((enabled_data_stream_no_ra ==  FLB_TRUE ||
+        disabled_logstash_fmt_no_ra == FLB_TRUE) &&
+        ctx->generate_id == FLB_FALSE) {
+        if(ctx->data_stream_mode == FLB_TRUE) {
+            unformatted_index = ctx->data_stream_name;
+        }
+        else if (ctx->logstash_format == FLB_FALSE) {
+            unformatted_index = ctx->index;
+        }
+        if (unformatted_index != NULL) {
+            flb_time_get(&tms);
+            gmtime_r(&tms.tm.tv_sec, &tm);
+            strftime(index_formatted, sizeof(index_formatted) - 1,
+                     unformatted_index, &tm);
+            index = index_formatted;
+            if (ctx->suppress_type_name) {
+                index_len = flb_sds_snprintf(&j_index,
+                                             flb_sds_alloc(j_index),
+                                             OS_BULK_INDEX_FMT_NO_TYPE,
+                                             ctx->action,
+                                             index);
+            } else {
+                index_len = flb_sds_snprintf(&j_index,
+                                             flb_sds_alloc(j_index),
+                                             OS_BULK_INDEX_FMT,
+                                             ctx->action,
+                                             index, ctx->type);
+            }
+
+            if (index_len == -1) {
+                flb_log_event_decoder_destroy(&log_decoder);
+                flb_sds_destroy(bulk);
+                flb_sds_destroy(j_index);
+                return -1;
+            }
         }
     }
 
@@ -446,7 +518,20 @@ static int opensearch_format(struct flb_config *config,
         msgpack_pack_str_body(&tmp_pck, time_formatted, s);
 
         index = ctx->index;
-        if (ctx->logstash_format == FLB_TRUE) {
+        if (ctx->data_stream_mode == FLB_TRUE) {
+            index = ctx->data_stream_name;
+            if (ctx->ra_data_stream) {
+                create_ra_index(ctx,
+                                ctx->ra_data_stream,
+                                &ra_index,
+                                tag, tag_len,
+                                map,
+                                &index_len,
+                                &j_index, &index);
+
+            }
+        }
+        else if (ctx->logstash_format == FLB_TRUE) {
             ret = compose_index_header(ctx, index_custom_len,
                                        &logstash_index[0], sizeof(logstash_index),
                                        ctx->logstash_prefix_separator, &tm);
@@ -481,35 +566,13 @@ static int opensearch_format(struct flb_config *config,
             index = index_formatted;
         }
         else if (ctx->ra_index) {
-            // free any previous ra_index to avoid memory leaks.
-            if (ra_index != NULL) {
-                flb_sds_destroy(ra_index);
-            }
-            /* a record accessor pattern exists for the index */
-            ra_index = flb_ra_translate(ctx->ra_index,
-                                           (char *) tag, tag_len,
-                                           map, NULL);
-            if (!ra_index) {
-                flb_plg_warn(ctx->ins, "invalid index translation from record accessor pattern, default to static index");
-            }
-            else {
-                index = ra_index;
-            }
-
-            if (ctx->suppress_type_name) {
-                index_len = flb_sds_snprintf(&j_index,
-                                             flb_sds_alloc(j_index),
-                                             OS_BULK_INDEX_FMT_NO_TYPE,
-                                             ctx->action,
-                                             index);
-            }
-            else {
-                index_len = flb_sds_snprintf(&j_index,
-                                             flb_sds_alloc(j_index),
-                                             OS_BULK_INDEX_FMT,
-                                             ctx->action,
-                                             index, ctx->type);
-            }
+            create_ra_index(ctx,
+                            ctx->ra_index,
+                            &ra_index,
+                            tag, tag_len,
+                            map,
+                            &index_len,
+                            &j_index, &index);
         }
 
         /* Tag Key */
@@ -860,12 +923,169 @@ static int opensearch_error_check(struct flb_opensearch *ctx,
     return check;
 }
 
+static int put_index_template(struct flb_opensearch *ctx)
+{
+    int res;
+    size_t b;
+    struct flb_http_client *c = NULL;
+    flb_sds_t template;
+    struct flb_connection *u_conn;
+
+    u_conn = flb_upstream_conn_get(ctx->u);
+
+    if (!u_conn) {
+        return FLB_OS_RETRY;
+    }
+
+    template = flb_file_read(ctx->template_file);
+
+    /*
+     * template does not exist so retry
+     */
+    if(template == NULL || flb_sds_len(template) == 0) {
+        flb_errno();
+        flb_plg_debug(ctx->ins, "failed to read template file");
+        flb_upstream_conn_release(u_conn);
+        return FLB_OS_RETRY;
+    }
+
+    c = flb_http_client(u_conn, FLB_HTTP_PUT, ctx->template_uri,
+                        template, flb_sds_len(template), NULL,
+                        0, NULL, 0);
+
+    if (!c) {
+        flb_plg_debug(ctx->ins,
+                      "failed to create http client");
+        flb_upstream_conn_release(u_conn);
+        return FLB_OS_RETRY;
+    }
+
+    if (ctx->http_user && ctx->http_passwd) {
+        flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    }
+    flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
+
+    res = flb_http_do(c, &b);
+    if(res != 0) {
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(template);
+        return FLB_OS_RETRY;
+    }
+    if(c->resp.status != 200 && c->resp.status != 201) {
+        flb_plg_debug(ctx->ins, "HTTP Status=%i URI=%s", c->resp.status, ctx->template_uri);
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(template);
+        return FLB_OS_RETRY;
+    }
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
+    flb_sds_destroy(template);
+
+    return FLB_OS_SUCCESS;
+}
+
+static int template_exists(struct flb_opensearch *ctx) {
+    struct flb_connection *u_conn;
+    int res;
+    size_t b;
+    struct flb_http_client *c = NULL;
+    u_conn = flb_upstream_conn_get(ctx->u);
+
+    if (!u_conn) {
+        return FLB_OS_RETRY;
+    }
+
+    c = flb_http_client(u_conn, FLB_HTTP_GET, ctx->template_uri,
+                        NULL, 0, NULL,
+                        0, NULL, 0);
+
+    if (!c) {
+        flb_plg_debug(ctx->ins,
+                      "failed to create http client");
+        flb_upstream_conn_release(u_conn);
+        return FLB_OS_RETRY;
+    }
+    if (ctx->http_user && ctx->http_passwd) {
+        flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    }
+
+    res = flb_http_do(c, &b);
+
+    if(res != 0) {
+        flb_plg_debug(ctx->ins, "result of http do function for GET template client %i", res);
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        return FLB_OS_RETRY;
+    }
+
+    if (c->resp.status == 404) {
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        return FLB_OS_NOT_FOUND;
+    }
+
+    if(c->resp.status != 200 && c->resp.status != 201) {
+        flb_plg_debug(ctx->ins, "HTTP Status=%i URI=%s", c->resp.status, ctx->template_uri);
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        return FLB_OS_RETRY;
+    }
+
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
+
+    return FLB_OS_SUCCESS;
+
+}
+
+static int create_index_template(struct flb_opensearch *ctx)
+{
+    int res;
+    /*
+     * create index template from the given file path
+     * retry if the file path is not set or if the template is missing
+     */
+    if (ctx->template_file) {
+        if (ctx->template_overwrite == FLB_TRUE) {
+            return put_index_template(ctx);
+        }
+        else {
+            res = template_exists(ctx);
+            if (res == FLB_OS_SUCCESS) {
+                flb_plg_debug(ctx->ins,
+                              "template with given name %s exists",
+                              ctx->data_stream_template_name);
+                return FLB_OS_SUCCESS;
+            }
+            else if (res == FLB_OS_NOT_FOUND) {
+                flb_plg_debug(ctx->ins,
+                              "template with given name %s does not exist, creating it now",
+                              ctx->data_stream_template_name);
+                return put_index_template(ctx);
+            }
+            else {
+                flb_plg_error(ctx->ins,
+                              "error checking if the template exists, retrying");
+                return FLB_OS_RETRY;
+            }
+        }
+    }
+
+    flb_plg_error(ctx->ins,
+                  "template_file needs to be set to the absolute path of the index template file");
+    return FLB_OS_RETRY;
+
+}
+
 static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
                                 struct flb_output_flush *out_flush,
                                 struct flb_input_instance *ins, void *out_context,
                                 struct flb_config *config)
 {
     int ret = -1;
+    int res;
     size_t pack_size;
     flb_sds_t pack;
     void *out_buf;
@@ -883,6 +1103,18 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    /*
+     * create index template if data stream mode is enabled
+    */
+
+    if (ctx->data_stream_mode == FLB_TRUE) {
+        res = create_index_template(ctx);
+        flb_plg_debug(ctx->ins, "create index template=%i", res);
+        if (res != 0) {
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
     }
 
     /* Convert format */
@@ -1153,6 +1385,33 @@ static struct flb_config_map config_map[] = {
      "AWS Service Name"
     },
 #endif
+    /* Data stream compatibility */
+    {
+     FLB_CONFIG_MAP_BOOL, "data_stream_mode", "false",
+     0, FLB_TRUE, offsetof(struct flb_opensearch, data_stream_mode),
+     "Enable data stream mode"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "data_stream_name", FLB_OS_DEFAULT_INDEX,
+     0, FLB_TRUE, offsetof(struct flb_opensearch, data_stream_name),
+     "Set the name of the target data stream"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "data_stream_template_name", FLB_OS_DEFAULT_TEMPLATE,
+     0, FLB_TRUE, offsetof(struct flb_opensearch, data_stream_template_name),
+     "Set name of the index template corresponding to the data stream"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "template_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_opensearch, template_file),
+     "Location of the index template file"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "template_overwrite", "false",
+     0, FLB_TRUE, offsetof(struct flb_opensearch, template_overwrite),
+     "Overwrite the index template even if it exists"
+    },
+
 
     /* Logstash compatibility */
     {
