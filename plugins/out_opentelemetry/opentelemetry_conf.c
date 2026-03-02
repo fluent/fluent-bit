@@ -148,7 +148,42 @@ static int metadata_mp_accessor_create(struct opentelemetry_context *ctx)
     return 0;
 }
 
-static int config_add_labels(struct flb_output_instance *ins,
+/*
+ * config_ra_resource_attributes_message: validate the configured keys at init
+ * time. The actual key lookup at flush time reads ctx->ra_resource_attributes_message
+ * directly (config-map-managed pointer) to avoid per-worker context list issues.
+ */
+static int config_ra_resource_attributes_message(struct flb_output_instance *ins,
+                                                struct opentelemetry_context *ctx)
+{
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *k;
+
+    if (!ctx->ra_resource_attributes_message ||
+        mk_list_size(ctx->ra_resource_attributes_message) == 0) {
+        return 0;
+    }
+
+    flb_plg_debug(ins, "resource attributes: %d key(s) configured",
+                  mk_list_size(ctx->ra_resource_attributes_message));
+
+    /* validate each entry has exactly one value */
+    flb_config_map_foreach(head, mv, ctx->ra_resource_attributes_message) {
+        if (mk_list_size(mv->val.list) != 1) {
+            flb_plg_error(ins, "'logs_resource_attributes_message_key' expects a single key name, "
+                          "e.g: 'logs_resource_attributes_message_key service.name'");
+            return -1;
+        }
+
+        k = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        flb_plg_debug(ins, "resource attributes: registered key '%s'", k->str);
+    }
+
+    return 0;
+}
+
+static int config_log_body(struct flb_output_instance *ins,
                              struct opentelemetry_context *ctx)
 {
     struct mk_list *head;
@@ -294,7 +329,13 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     }
 
     /* Parse 'add_label' */
-    ret = config_add_labels(ins, ctx);
+    ret = config_log_body(ins, ctx);
+    if (ret == -1) {
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
+
+    ret = config_ra_resource_attributes_message(ins, ctx);
     if (ret == -1) {
         flb_opentelemetry_context_destroy(ctx);
         return NULL;
