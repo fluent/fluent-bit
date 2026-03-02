@@ -37,6 +37,7 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <fluent-bit/flb_ring_buffer.h>
+#include <fluent-bit/flb_utils.h>
 #include <chunkio/chunkio.h>
 #include <monkey/mk_core.h>
 #include <string.h>
@@ -2632,6 +2633,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     size_t filtered_data_size;
     void  *final_data_buffer;
     size_t final_data_size;
+    size_t flb_input_chunk_max_size;
 
     /* memory ring-buffer checker */
     if (in->storage_type == FLB_STORAGE_MEMRB) {
@@ -2828,8 +2830,9 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         real_diff = 0;
     }
 
-    /* Lock buffers where size > 2MB */
-    if (content_size > FLB_INPUT_CHUNK_FS_MAX_SIZE) {
+    flb_input_chunk_max_size = flb_input_chunk_get_max_size(in->config);
+    
+    if (content_size > flb_input_chunk_max_size) {
         cio_chunk_lock(ic->chunk);
     }
 
@@ -2896,8 +2899,8 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
             content_size = cio_chunk_get_content_size(ic->chunk);
 
             /* Do we have less than 1% available ? */
-            min = (FLB_INPUT_CHUNK_FS_MAX_SIZE * 0.01);
-            if (FLB_INPUT_CHUNK_FS_MAX_SIZE - content_size < min) {
+            min = (flb_input_chunk_max_size / 100);
+            if (flb_input_chunk_max_size - content_size < min) {
                 cio_chunk_down(ic->chunk);
             }
         }
@@ -3286,3 +3289,24 @@ void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic,
         }
     }
 }
+
+/* 
+ * Get value of 'storage.max_chunk_size' from configuration or set default value.
+ */
+size_t flb_input_chunk_get_max_size(struct flb_config *config) {
+    int64_t config_input_chunk_max_size;
+
+    if (config != NULL) {
+        config_input_chunk_max_size = flb_utils_size_to_bytes(config->storage_max_chunk_size);
+        if (config_input_chunk_max_size > 0) {
+            flb_debug("[input chunk] using maximum chunk size: %" PRId64, config_input_chunk_max_size);
+            return (size_t) config_input_chunk_max_size;
+        } else if (config_input_chunk_max_size == 0) {
+            flb_debug("[input chunk] maximum chunk size was not set, using the default value: %zu", FLB_INPUT_CHUNK_FS_MAX_SIZE);
+        } else {
+            flb_debug("[input chunk] could not parse maximum chunk size, using the default value: %zu", FLB_INPUT_CHUNK_FS_MAX_SIZE);
+        }
+    }
+
+    return FLB_INPUT_CHUNK_FS_MAX_SIZE;
+ }
