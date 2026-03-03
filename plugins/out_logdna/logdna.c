@@ -156,7 +156,7 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
     }
 
     /* Count number of records */
-    total_lines = flb_mp_count(data, bytes);
+    total_lines = flb_mp_count_log_records(data, bytes);
 
     /* Initialize msgpack buffers */
     msgpack_sbuffer_init(&mp_sbuf);
