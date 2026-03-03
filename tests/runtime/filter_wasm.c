@@ -42,6 +42,42 @@ int  num_output = 0;
 static char  *mp_output = NULL;
 static size_t mp_output_size = 0;
 
+static int get_free_port(void)
+{
+    int sock;
+    int ret;
+    int port;
+    struct sockaddr_in addr;
+    socklen_t len = sizeof(addr);
+
+    memset(&addr, 0, sizeof(addr));
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        return -1;
+    }
+
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(0);
+
+    ret = bind(sock, (struct sockaddr *) &addr, sizeof(addr));
+    if (ret != 0) {
+        flb_socket_close(sock);
+        return -1;
+    }
+
+    ret = getsockname(sock, (struct sockaddr *) &addr, &len);
+    if (ret != 0) {
+        flb_socket_close(sock);
+        return -1;
+    }
+
+    port = ntohs(addr.sin_port);
+    flb_socket_close(sock);
+
+    return port;
+}
+
 void set_output(char *val)
 {
     pthread_mutex_lock(&result_mutex);
@@ -232,10 +268,9 @@ struct http_client_ctx {
     struct mk_event_loop     *evl;
 };
 
-#define PORT_OTEL 4318
 #define JSON_CONTENT_TYPE "application/json"
 
-struct http_client_ctx* http_client_ctx_create()
+struct http_client_ctx* http_client_ctx_create(int port)
 {
     struct http_client_ctx *ret_ctx = NULL;
     struct mk_event_loop *evl = NULL;
@@ -265,7 +300,7 @@ struct http_client_ctx* http_client_ctx_create()
         return NULL;
     }
 
-    ret_ctx->u = flb_upstream_create(ret_ctx->config, "127.0.0.1", PORT_OTEL, 0, NULL);
+    ret_ctx->u = flb_upstream_create(ret_ctx->config, "127.0.0.1", port, 0, NULL);
     if (!TEST_CHECK(ret_ctx->u != NULL)) {
         TEST_MSG("flb_upstream_create failed");
         flb_config_exit(ret_ctx->config);
@@ -726,6 +761,8 @@ void flb_test_wasm_preserve_otlp_group_metadata(void)
     msgpack_object *ts_obj;
     unsigned char *p;
     int32_t tmp;
+    int free_port;
+    char port[16] = {0};
 
     const char *payload =
         "{"
@@ -747,6 +784,11 @@ void flb_test_wasm_preserve_otlp_group_metadata(void)
         "}";
 
     clear_msgpack_output();
+    free_port = get_free_port();
+    if (free_port <= 0) {
+        TEST_MSG("failed to get free port");
+        return;
+    }
 
     ctx = flb_create();
     flb_service_set(ctx,
@@ -760,6 +802,12 @@ void flb_test_wasm_preserve_otlp_group_metadata(void)
     /* OpenTelemetry input */
     in_ffd = flb_input(ctx, (char *)"opentelemetry", NULL);
     TEST_CHECK(in_ffd >= 0);
+
+    snprintf(port, sizeof(port), "%d", free_port);
+    ret = flb_input_set(ctx, in_ffd,
+                        "port", port,
+                        NULL);
+    TEST_CHECK(ret == 0);
 
     /* WASM filter */
     filter_ffd = flb_filter(ctx, (char *)"wasm", NULL);
@@ -786,7 +834,7 @@ void flb_test_wasm_preserve_otlp_group_metadata(void)
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    httpc = http_client_ctx_create();
+    httpc = http_client_ctx_create(free_port);
     TEST_CHECK(httpc != NULL);
 
     c = flb_http_client(httpc->u_conn,
@@ -795,7 +843,7 @@ void flb_test_wasm_preserve_otlp_group_metadata(void)
                         payload,
                         strlen(payload),
                         "127.0.0.1",
-                        4318,
+                        free_port,
                         NULL,
                         0);
     TEST_CHECK(c != NULL);
