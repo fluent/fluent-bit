@@ -1351,7 +1351,7 @@ static int input_log_append(struct flb_input_instance *ins,
 
         if (buf != out_buf) {
             /* a new buffer was created, re-count the number of records */
-            records = flb_mp_count(out_buf, out_size);
+            records = flb_mp_count_log_records(out_buf, out_size);
         }
     }
 
@@ -1417,7 +1417,7 @@ int flb_input_log_append(struct flb_input_instance *ins,
     int ret;
     size_t records;
 
-    records = flb_mp_count(buf, buf_size);
+    records = flb_mp_count_log_records(buf, buf_size);
     ret = input_log_append(ins, 0, records, tag, tag_len, buf, buf_size);
     return ret;
 }
@@ -1432,7 +1432,7 @@ int flb_input_log_append_skip_processor_stages(struct flb_input_instance *ins,
 {
     return input_log_append(ins,
                             processor_starting_stage,
-                            flb_mp_count(buf, buf_size),
+                            flb_mp_count_log_records(buf, buf_size),
                             tag,
                             tag_len,
                             buf,
@@ -1450,5 +1450,4 @@ int flb_input_log_append_records(struct flb_input_instance *ins,
     ret = input_log_append(ins, 0, records, tag, tag_len, buf, buf_size);
     return ret;
 }
-
 
