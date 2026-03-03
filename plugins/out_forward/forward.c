@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_log_event.h>
+#include <fluent-bit/flb_mp.h>
 #include <msgpack.h>
 
 #include "forward.h"
@@ -1256,6 +1257,20 @@ static int pack_metricses_payload(msgpack_packer *mp_pck, const void *data, size
     return 0;
 }
 
+static inline int forward_event_type_is_non_log(int event_type)
+{
+    return event_type == FLB_EVENT_TYPE_METRICS ||
+           event_type == FLB_EVENT_TYPE_TRACES  ||
+           event_type == FLB_EVENT_TYPE_PROFILES ||
+           event_type == FLB_EVENT_TYPE_BLOBS;
+}
+
+static inline int forward_event_type_supports_fluentd_compat(int event_type)
+{
+    return event_type == FLB_EVENT_TYPE_METRICS ||
+           event_type == FLB_EVENT_TYPE_TRACES;
+}
+
 #include <fluent-bit/flb_pack.h>
 /*
  * Forward Mode: this is the generic mechanism used in Fluent Bit, it takes
@@ -1296,7 +1311,7 @@ static int flush_forward_mode(struct flb_forward *ctx,
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     send_options = fc->send_options;
-    if (event_type == FLB_EVENT_TYPE_METRICS || event_type == FLB_EVENT_TYPE_TRACES) {
+    if (forward_event_type_is_non_log(event_type)) {
         send_options = FLB_TRUE;
     }
     msgpack_pack_array(&mp_pck, send_options ? 3 : 2);
@@ -1357,12 +1372,12 @@ static int flush_forward_mode(struct flb_forward *ctx,
 
         if (event_type == FLB_EVENT_TYPE_LOGS) {
             /* for log events we create an array for the serialized messages */
-            entries = flb_mp_count(data, bytes);
+            entries = flb_mp_count(final_data, final_bytes);
             msgpack_pack_array(&mp_pck, entries);
         }
         else {
-            /* FLB_EVENT_TYPE_METRICS and FLB_EVENT_TYPE_TRACES */
-            if (fc->fluentd_compat) {
+            if (fc->fluentd_compat &&
+                forward_event_type_supports_fluentd_compat(event_type)) {
                 pack_metricses_payload(&mp_pck, data, bytes);
             }
             else {
