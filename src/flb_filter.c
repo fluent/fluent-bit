@@ -267,7 +267,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     break;
                 }
                 else {
-                    out_records = flb_mp_count(out_buf, out_size);
+                    out_records = flb_mp_count_log_records(out_buf, out_size);
 
 #ifdef FLB_HAVE_METRICS
                     if (out_records > in_records) {
