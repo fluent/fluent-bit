@@ -254,6 +254,11 @@ if (FLB_PROCESSOR_CONTENT_MODIFIER)
   FLB_RT_TEST(FLB_PROCESSOR_CONTENT_MODIFIER "processor_content_modifier.c")
 endif()
 
+if (FLB_IN_DUMMY AND FLB_IN_FLUENTBIT_METRICS AND FLB_OUT_LIB AND
+    FLB_OUT_STDOUT AND FLB_FILTER_LUA)
+  FLB_RT_CORE_TEST(ON "processor_output_counters.c")
+endif()
+
 # HTTP Client Debug (requires -DFLB_HTTP_CLIENT_DEBUG=On)
 if(FLB_HTTP_CLIENT_DEBUG)
   FLB_RT_TEST(FLB_OUT_TD           "http_callbacks.c")
