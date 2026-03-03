@@ -126,6 +126,26 @@ struct task_check select_keys_checks[] = {
         "SELECT id FROM TAG:'samples' WHERE @record.contains(x);",
         cb_record_not_contains,
     },
+
+    /* Operator precedence */
+    {
+        18, 0, 0, 0,
+        "and_or_precedence",
+        "SELECT id FROM STREAM:FLB WHERE false AND true OR true;",
+        cb_select_and_or_precedence,
+    },
+    {
+        19, 0, 0, 0,
+        "not_or_precedence",
+        "SELECT id FROM STREAM:FLB WHERE NOT true OR true;",
+        cb_select_not_or_precedence,
+    },
+    {
+        20, 0, 0, 0,
+        "not_and_precedence",
+        "SELECT id FROM STREAM:FLB WHERE NOT true AND false;",
+        cb_select_not_and_precedence,
+    },
 };
 
 #endif

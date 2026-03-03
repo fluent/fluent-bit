@@ -206,6 +206,36 @@ static void cb_record_not_contains(int id, struct task_check *check,
     TEST_CHECK(ret == 0);
 }
 
+static void cb_select_and_or_precedence(int id, struct task_check *check,
+                                        char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect all 11 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK_(ret == 11, "expected 11 rows but got %d", ret);
+}
+
+static void cb_select_not_or_precedence(int id, struct task_check *check,
+                                        char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect all 11 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK_(ret == 11, "expected 11 rows but got %d", ret);
+}
+
+static void cb_select_not_and_precedence(int id, struct task_check *check,
+                                         char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 0 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK_(ret == 0, "expected 0 rows but got %d", ret);
+}
+
 /* Callback functions to perform checks over results */
 static void cb_select_sub_blue(int id, struct task_check *check,
                                char *buf, size_t size)
