@@ -57,6 +57,8 @@
 
 struct flb_task_route {
     int status;
+    int records;
+    size_t bytes;
     struct flb_output_instance *out;
     struct mk_list _head;
 };
@@ -255,6 +257,54 @@ static FLB_INLINE void flb_task_set_route_status(
             break;
         }
     }
+}
+
+static FLB_INLINE void flb_task_set_route_metrics(
+                        struct flb_task *task,
+                        struct flb_output_instance *o_ins,
+                        int records,
+                        size_t bytes)
+{
+    struct mk_list        *iterator;
+    struct flb_task_route *route;
+
+    mk_list_foreach(iterator, &task->routes) {
+        route = mk_list_entry(iterator, struct flb_task_route, _head);
+
+        if (route->out == o_ins) {
+            route->records = records;
+            route->bytes = bytes;
+            break;
+        }
+    }
+}
+
+static FLB_INLINE int flb_task_get_route_metrics(
+                        struct flb_task *task,
+                        struct flb_output_instance *o_ins,
+                        int *records,
+                        size_t *bytes)
+{
+    struct mk_list        *iterator;
+    struct flb_task_route *route;
+
+    mk_list_foreach(iterator, &task->routes) {
+        route = mk_list_entry(iterator, struct flb_task_route, _head);
+
+        if (route->out == o_ins) {
+            if (records != NULL) {
+                *records = route->records;
+            }
+
+            if (bytes != NULL) {
+                *bytes = route->bytes;
+            }
+
+            return 0;
+        }
+    }
+
+    return -1;
 }
 
 
