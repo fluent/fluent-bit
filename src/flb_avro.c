@@ -340,14 +340,24 @@ bool flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct flb_
         return false;
     }
 
-    // write the schemaid
-    unsigned int id = ctx->schema_id;
+    // write the schemaID
+    if (ctx->schema_id <= 0) {
+        flb_error("Invalid schema_id=%d (must be > 0)\n", ctx->schema_id);
+        avro_writer_free(awriter);
+        avro_value_decref(&aobject);
+        avro_value_iface_decref(aclass);
+        avro_schema_decref(aschema);
+        msgpack_unpacked_destroy(&result);
+        return false;
+    }
+
+    int32_t id = ctx->schema_id;
     unsigned char val[4];
     val[0] = (id >> 24) & 0xFF;
     val[1] = (id >> 16) & 0xFF;
     val[2] = (id >> 8) & 0xFF;
     val[3] = id & 0xFF;
-    
+
     // write it into a buffer which can be passed to librdkafka
     rval = avro_write(awriter, val, 4);
     if (rval != 0) {
@@ -369,9 +379,6 @@ bool flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct flb_
         msgpack_unpacked_destroy(&result);
         return false;
     }
-
-    // null terminate it
-    avro_write(awriter, "\0", 1);
 
     flb_debug("before avro_writer_flush\n");
 
