@@ -25,10 +25,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-struct flb_counter_ctx {
-    uint64_t total;
-};
-
 static int cb_counter_init(struct flb_output_instance *ins,
                            struct flb_config *config,
                            void *data)
@@ -36,20 +32,6 @@ static int cb_counter_init(struct flb_output_instance *ins,
     (void) ins;
     (void) config;
     (void) data;
-    struct flb_counter_ctx *ctx;
-
-    ctx = flb_malloc(sizeof(struct flb_counter_ctx));
-    if (!ctx) {
-        flb_errno();
-        return -1;
-    }
-    ctx->total = 0;
-    flb_output_set_context(ins, ctx);
-    if (flb_output_config_map_set(ins, (void *)ctx) == -1) {
-        flb_plg_error(ins, "unable to load configuration");
-        flb_free(ctx);
-        return -1;
-    }
 
     return 0;
 }
@@ -61,32 +43,40 @@ static void cb_counter_flush(struct flb_event_chunk *event_chunk,
                              struct flb_config *config)
 {
     (void) i_ins;
+    (void) out_flush;
     (void) out_context;
     (void) config;
-    size_t cnt;
-    struct flb_counter_ctx *ctx = out_context;
+    size_t serialized_events;
+    size_t log_records;
+    size_t total;
     struct flb_time tm;
 
-    /* Count number of parent items */
-    cnt = flb_mp_count(event_chunk->data, event_chunk->size);
-    ctx->total += cnt;
+    /* Count number of serialized msgpack root objects */
+    serialized_events = flb_mp_count(event_chunk->data, event_chunk->size);
+
+    /* Count number of logical log records (groups excluded) */
+    log_records = 0;
+    if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+        log_records = flb_mp_count_log_records(event_chunk->data,
+                                               event_chunk->size);
+    }
+    total = serialized_events + log_records;
 
     flb_time_get(&tm);
-    printf("%f,%lu (total = %"PRIu64")\n", flb_time_to_double(&tm), cnt,
-           ctx->total);
+    printf("{\"ts\":%.6f,\"serialized_events\":%zu,\"log_records\":%zu,"
+           "\"total\":%zu}\n",
+           flb_time_to_double(&tm),
+           serialized_events,
+           log_records,
+           total);
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 static int cb_counter_exit(void *data, struct flb_config *config)
 {
-    struct flb_counter_ctx *ctx = data;
-
-    if (!ctx) {
-        return 0;
-    }
-
-    flb_free(ctx);
+    (void) config;
+    (void) data;
     return 0;
 }
 
