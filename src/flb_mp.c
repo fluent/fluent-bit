@@ -45,6 +45,31 @@ int flb_mp_count(const void *data, size_t bytes)
     return flb_mp_count_remaining(data, bytes, NULL);
 }
 
+/* Return the number of log events excluding group markers */
+int flb_mp_count_log_records(const void *data, size_t bytes)
+{
+    int count;
+    int ret;
+    struct flb_log_event log_event;
+    struct flb_log_event_decoder decoder;
+
+    count = 0;
+
+    ret = flb_log_event_decoder_init(&decoder, (char *) data, bytes);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        return 0;
+    }
+
+    while ((ret = flb_log_event_decoder_next(&decoder,
+                                             &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        count++;
+    }
+
+    flb_log_event_decoder_destroy(&decoder);
+
+    return count;
+}
+
 int flb_mp_count_remaining(const void *data, size_t bytes, size_t *remaining_bytes)
 {
     size_t remaining;
@@ -191,7 +216,14 @@ int flb_mp_validate_log_chunk(const void *data, size_t bytes,
 
         if (ts.type != MSGPACK_OBJECT_POSITIVE_INTEGER &&
             ts.type != MSGPACK_OBJECT_FLOAT &&
-            ts.type != MSGPACK_OBJECT_EXT) {
+            ts.type != MSGPACK_OBJECT_EXT &&
+            ts.type != MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+            goto error;
+        }
+
+        if (ts.type == MSGPACK_OBJECT_NEGATIVE_INTEGER &&
+            ts.via.i64 != FLB_LOG_EVENT_GROUP_START &&
+            ts.via.i64 != FLB_LOG_EVENT_GROUP_END) {
             goto error;
         }
 
