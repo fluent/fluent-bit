@@ -48,6 +48,7 @@
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_mp.h>
 
 #include <cfl/cfl.h>
 #include <cmetrics/cmetrics.h>
@@ -798,7 +799,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                 return NULL;
             }
 
-            records = flb_mp_count(p_buf, p_size);
+            records = flb_mp_count_log_records(p_buf, p_size);
             tmp = flb_event_chunk_create(evc->type, records, evc->tag, flb_sds_len(evc->tag), p_buf, p_size);
             if (!tmp) {
                 flb_coro_destroy(coro);
@@ -1198,10 +1199,13 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
  */
 static inline void flb_output_return(int ret, struct flb_coro *co) {
     int n;
+    int records;
     int pipe_fd;
     uint32_t set;
     uint64_t val;
+    size_t bytes;
     struct flb_task *task;
+    struct flb_event_chunk *counted_event_chunk;
     struct flb_output_flush *out_flush;
     struct flb_output_instance *o_ins;
     struct flb_out_thread_instance *th_ins = NULL;
@@ -1210,10 +1214,19 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     o_ins = out_flush->o_ins;
     task = out_flush->task;
 
+    if (out_flush->processed_event_chunk) {
+        counted_event_chunk = out_flush->processed_event_chunk;
+    }
+    else {
+        counted_event_chunk = task->event_chunk;
+    }
+
+    records = counted_event_chunk->total_events;
+    bytes = counted_event_chunk->size;
+
     flb_task_acquire_lock(task);
-
+    flb_task_set_route_data(task, o_ins, records, bytes);
     flb_task_deactivate_route(task, o_ins);
-
     flb_task_release_lock(task);
 
 #ifdef FLB_HAVE_CHUNK_TRACE
