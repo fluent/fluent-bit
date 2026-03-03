@@ -3385,7 +3385,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     struct flb_log_event log_event;
 
     /* Iterate the original buffer and perform adjustments */
-    records = flb_mp_count(data, bytes);
+    records = flb_mp_count_log_records(data, bytes);
     if (records <= 0) {
         return NULL;
     }
