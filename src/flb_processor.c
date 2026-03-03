@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_conditionals.h>
+#include <fluent-bit/flb_mp.h>
 #include <cfl/cfl.h>
 
 struct flb_config_map processor_global_properties[] = {
@@ -1136,7 +1137,7 @@ int flb_processor_run(struct flb_processor *proc,
             }
 #ifdef FLB_HAVE_METRICS
             name = (char *) (flb_filter_name(f_ins));
-            in_records = flb_mp_count(cur_buf, cur_size);
+            in_records = flb_mp_count_log_records(cur_buf, cur_size);
             cmt_counter_add(f_ins->cmt_records, ts, in_records,
                     1, (char *[]) {name});
             cmt_counter_add(f_ins->cmt_bytes, ts, tmp_size,
@@ -1190,7 +1191,7 @@ int flb_processor_run(struct flb_processor *proc,
                 /* set new buffer */
                 cur_buf = tmp_buf;
                 cur_size = tmp_size;
-                out_records = flb_mp_count(tmp_buf, tmp_size);
+                out_records = flb_mp_count_log_records(tmp_buf, tmp_size);
 #ifdef FLB_HAVE_METRICS
                     if (out_records > in_records) {
                         diff = (out_records - in_records);
