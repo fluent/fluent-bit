@@ -141,7 +141,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     // an embedded schemaid which is used
     // the embedding is a null byte
     // followed by a 16 byte schemaid
-#define AVRO_SCHEMA_OVERHEAD 16 + 1
+#define AVRO_SCHEMA_OVERHEAD 4 + 1
 #endif
 
     flb_debug("in produce_message\n");
