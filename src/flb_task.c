@@ -708,6 +708,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                         }
 
                         route->status = FLB_TASK_ROUTE_INACTIVE;
+                        route->records = task->event_chunk->total_events;
+                        route->bytes = task->event_chunk->size;
                         route->out = stored_matches[stored_match_index];
                         mk_list_add(&route->_head, &task->routes);
                         direct_count++;
@@ -810,6 +812,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
             }
 
             route->status = FLB_TASK_ROUTE_INACTIVE;
+            route->records = task->event_chunk->total_events;
+            route->bytes = task->event_chunk->size;
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);
             direct_count++;
@@ -856,6 +860,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
             }
 
             route->status = FLB_TASK_ROUTE_INACTIVE;
+            route->records = task->event_chunk->total_events;
+            route->bytes = task->event_chunk->size;
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);
             count++;
