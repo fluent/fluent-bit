@@ -997,7 +997,7 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
     flb_sds_t out_buf;
 
     /* Create array for all records */
-    records = flb_mp_count(data, bytes);
+    records = flb_mp_count_log_records(data, bytes);
     if (records <= 0) {
         flb_plg_error(ctx->ins, "error counting msgpack entries");
         return -1;
