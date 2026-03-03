@@ -76,7 +76,7 @@ static int azure_format(const void *in_buf, size_t in_bytes,
     int ret;
 
     /* Count number of items */
-    array_size = flb_mp_count(in_buf, in_bytes);
+    array_size = flb_mp_count_log_records(in_buf, in_bytes);
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) in_buf, in_bytes);
 
