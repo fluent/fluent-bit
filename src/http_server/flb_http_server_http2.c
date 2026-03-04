@@ -74,6 +74,43 @@ static inline size_t http2_lower_value(size_t left_value, size_t right_value)
     return right_value;
 }
 
+static int http2_request_body_limit_exceeded(struct flb_http_stream *stream,
+                                             size_t append_length)
+{
+    size_t                           current_length;
+    struct flb_http_server_session  *parent_session;
+    struct flb_http_server          *server;
+    size_t                           maximum_size;
+
+    parent_session = (struct flb_http_server_session *) stream->parent;
+
+    if (parent_session == NULL) {
+        return FLB_TRUE;
+    }
+
+    server = parent_session->parent;
+
+    if (server == NULL) {
+        return FLB_FALSE;
+    }
+
+    maximum_size = flb_http_server_get_buffer_max_size(server);
+
+    if (stream->request.body == NULL) {
+        current_length = 0;
+    }
+    else {
+        current_length = cfl_sds_len(stream->request.body);
+    }
+
+    if (append_length > maximum_size ||
+        current_length > maximum_size - append_length) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 /* RESPONSE */
 
 struct flb_http_response *flb_http2_response_begin(
@@ -545,6 +582,13 @@ static int http2_header_callback(nghttp2_session *inner_session,
         temporary_buffer[sizeof(temporary_buffer) - 1] = '\0';
 
         stream->request.content_length = strtoull(temporary_buffer, NULL, 10);
+
+        if (http2_request_body_limit_exceeded(stream,
+                                              stream->request.content_length)) {
+            stream->status = HTTP_STREAM_STATUS_ERROR;
+
+            return -1;
+        }
     }
 
     result = flb_http_request_set_header(&stream->request, 
@@ -687,6 +731,12 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
     }
 
     if (stream->status != HTTP_STREAM_STATUS_RECEIVING_DATA) {
+        stream->status = HTTP_STREAM_STATUS_ERROR;
+
+        return -1;
+    }
+
+    if (http2_request_body_limit_exceeded(stream, len)) {
         stream->status = HTTP_STREAM_STATUS_ERROR;
 
         return -1;
