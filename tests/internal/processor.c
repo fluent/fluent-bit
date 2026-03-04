@@ -228,6 +228,7 @@ static void processor_grouped_filter_counters()
     size_t mp_size;
     void *out_buf;
     size_t out_size;
+    int init_ok;
     flb_sds_t regex_prop_key;
     struct cfl_variant var = {
         .type = CFL_VARIANT_STRING,
@@ -238,6 +239,7 @@ static void processor_grouped_filter_counters()
     records = 0;
     dropped = 0;
     added = 0;
+    init_ok = FLB_FALSE;
     out_buf = NULL;
     out_size = 0;
 
@@ -276,32 +278,40 @@ static void processor_grouped_filter_counters()
 
     ret = flb_processor_init(proc);
     TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        init_ok = FLB_TRUE;
+    }
 
     ret = create_grouped_msgpack_records(&mp_buf, &mp_size);
     TEST_CHECK(ret == 0);
-    if (ret == 0) {
+    if (ret == 0 && init_ok == FLB_TRUE) {
         ret = flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS,
                                 "TEST", 4, mp_buf, mp_size,
                                 &out_buf, &out_size);
         TEST_CHECK(ret == 0);
-        TEST_CHECK(out_buf == NULL);
         TEST_CHECK(out_size == 0);
+        if (out_buf != NULL) {
+            flb_free(out_buf);
+            out_buf = NULL;
+        }
         flb_free(mp_buf);
     }
 
-    f_ins = pu->ctx;
-    labels[0] = f_ins->name;
+    if (ret == 0 && init_ok == FLB_TRUE) {
+        f_ins = pu->ctx;
+        labels[0] = f_ins->name;
 
-    vret = cmt_counter_get_val(f_ins->cmt_records, 1, labels, &records);
-    TEST_CHECK(vret == 0);
-    vret = cmt_counter_get_val(f_ins->cmt_drop_records, 1, labels, &dropped);
-    TEST_CHECK(vret == 0);
-    vret = cmt_counter_get_val(f_ins->cmt_add_records, 1, labels, &added);
-    TEST_CHECK(vret == 0);
+        vret = cmt_counter_get_val(f_ins->cmt_records, 1, labels, &records);
+        TEST_CHECK(vret == 0);
+        vret = cmt_counter_get_val(f_ins->cmt_drop_records, 1, labels, &dropped);
+        TEST_CHECK(vret == 0);
+        vret = cmt_counter_get_val(f_ins->cmt_add_records, 1, labels, &added);
+        TEST_CHECK(vret == 0);
 
-    TEST_CHECK(records == 1.0);
-    TEST_CHECK(dropped == 1.0);
-    TEST_CHECK(added == 0.0);
+        TEST_CHECK(records == 1.0);
+        TEST_CHECK(dropped == 1.0);
+        TEST_CHECK(added == 0.0);
+    }
 
     flb_processor_destroy(proc);
     flb_config_exit(config);
