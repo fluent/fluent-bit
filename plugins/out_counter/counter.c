@@ -60,7 +60,7 @@ static void cb_counter_flush(struct flb_event_chunk *event_chunk,
         log_records = flb_mp_count_log_records(event_chunk->data,
                                                event_chunk->size);
     }
-    total = serialized_events + log_records;
+    total = serialized_events;
 
     flb_time_get(&tm);
     printf("{\"ts\":%.6f,\"serialized_events\":%zu,\"log_records\":%zu,"
