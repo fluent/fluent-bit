@@ -29,6 +29,9 @@
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_log_event_encoder.h>
+#include <cmetrics/cmt_counter.h>
 
 #include "flb_tests_internal.h"
 
@@ -60,6 +63,91 @@ static int create_msgpack_records(char **out_buf, size_t *out_size)
     *out_buf = mp_sbuf.data;
     *out_size = mp_sbuf.size;
 
+    return 0;
+}
+
+static int create_grouped_msgpack_records(char **out_buf, size_t *out_size)
+{
+    int ret;
+    struct flb_time ts;
+    char *copied_buffer;
+    struct flb_log_event_encoder *encoder;
+
+    *out_buf = NULL;
+    *out_size = 0;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (encoder == NULL) {
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_group_init(encoder);
+    if (ret != 0) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_append_metadata_values(
+            encoder,
+            FLB_LOG_EVENT_STRING_VALUE("group", 5),
+            FLB_LOG_EVENT_CSTRING_VALUE("g1"));
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_group_header_end(encoder);
+    if (ret != 0) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_begin_record(encoder);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    flb_time_set(&ts, 1700000000, 0);
+    ret = flb_log_event_encoder_set_timestamp(encoder, &ts);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_append_body_values(
+            encoder,
+            FLB_LOG_EVENT_STRING_VALUE("message", 7),
+            FLB_LOG_EVENT_CSTRING_VALUE("hello"));
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_commit_record(encoder);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_group_end(encoder);
+    if (ret != 0) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    copied_buffer = flb_malloc(encoder->output_length);
+    if (copied_buffer == NULL) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    memcpy(copied_buffer, encoder->output_buffer, encoder->output_length);
+
+    *out_buf = copied_buffer;
+    *out_size = encoder->output_length;
+
+    flb_log_event_encoder_destroy(encoder);
     return 0;
 }
 
@@ -123,6 +211,111 @@ static void processor()
     flb_config_exit(config);
 
     flb_sds_destroy(hostname_prop_key);
+}
+
+static void processor_grouped_filter_counters()
+{
+    int ret;
+    int vret;
+    double records;
+    double dropped;
+    double added;
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    struct flb_config *config;
+    struct flb_filter_instance *f_ins;
+    char *mp_buf;
+    size_t mp_size;
+    void *out_buf;
+    size_t out_size;
+    int init_ok;
+    flb_sds_t regex_prop_key;
+    struct cfl_variant var = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = NULL,
+    };
+    char *labels[1];
+
+    records = 0;
+    dropped = 0;
+    added = 0;
+    init_ok = FLB_FALSE;
+    out_buf = NULL;
+    out_size = 0;
+
+    flb_init_env();
+
+    regex_prop_key = flb_sds_create("message ^doesnotmatch$");
+    TEST_CHECK(regex_prop_key != NULL);
+    var.data.as_string = regex_prop_key;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    if (config == NULL) {
+        flb_sds_destroy(regex_prop_key);
+        return;
+    }
+
+    proc = flb_processor_create(config, "unit_test", NULL, 0);
+    TEST_CHECK(proc != NULL);
+    if (proc == NULL) {
+        flb_config_exit(config);
+        flb_sds_destroy(regex_prop_key);
+        return;
+    }
+
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "grep");
+    TEST_CHECK(pu != NULL);
+    if (pu == NULL) {
+        flb_processor_destroy(proc);
+        flb_config_exit(config);
+        flb_sds_destroy(regex_prop_key);
+        return;
+    }
+
+    ret = flb_processor_unit_set_property(pu, "regex", &var);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_processor_init(proc);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        init_ok = FLB_TRUE;
+    }
+
+    ret = create_grouped_msgpack_records(&mp_buf, &mp_size);
+    TEST_CHECK(ret == 0);
+    if (ret == 0 && init_ok == FLB_TRUE) {
+        ret = flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS,
+                                "TEST", 4, mp_buf, mp_size,
+                                &out_buf, &out_size);
+        TEST_CHECK(ret == 0);
+        TEST_CHECK(out_size == 0);
+        if (out_buf != NULL) {
+            flb_free(out_buf);
+            out_buf = NULL;
+        }
+        flb_free(mp_buf);
+    }
+
+    if (ret == 0 && init_ok == FLB_TRUE) {
+        f_ins = pu->ctx;
+        labels[0] = f_ins->name;
+
+        vret = cmt_counter_get_val(f_ins->cmt_records, 1, labels, &records);
+        TEST_CHECK(vret == 0);
+        vret = cmt_counter_get_val(f_ins->cmt_drop_records, 1, labels, &dropped);
+        TEST_CHECK(vret == 0);
+        vret = cmt_counter_get_val(f_ins->cmt_add_records, 1, labels, &added);
+        TEST_CHECK(vret == 0);
+
+        TEST_CHECK(records == 1.0);
+        TEST_CHECK(dropped == 1.0);
+        TEST_CHECK(added == 0.0);
+    }
+
+    flb_processor_destroy(proc);
+    flb_config_exit(config);
+    flb_sds_destroy(regex_prop_key);
 }
 
 static void processor_private_inputs_use_main_loop()
@@ -199,5 +392,6 @@ static void processor_private_inputs_use_main_loop()
 TEST_LIST = {
     { "processor_private_inputs_use_main_loop", processor_private_inputs_use_main_loop },
     { "processor", processor },
+    { "processor_grouped_filter_counters", processor_grouped_filter_counters },
     { 0 }
 };

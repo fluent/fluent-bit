@@ -128,7 +128,7 @@ static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /* Count number of entries */
-    arr_size = flb_mp_count(data, bytes);
+    arr_size = flb_mp_count_log_records(data, bytes);
 
     /* Root map */
     msgpack_pack_map(&mp_pck, 1);

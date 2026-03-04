@@ -245,7 +245,8 @@ static int flb_input_chunk_is_task_safe_delete(struct flb_task *task);
 static int flb_input_chunk_drop_task_route(
                 struct flb_task *task,
                 struct flb_output_instance *o_ins,
-                ssize_t *dropped_record_count);
+                ssize_t *dropped_record_count,
+                ssize_t *dropped_byte_count);
 
 
 static ssize_t get_input_chunk_record_count(struct flb_input_chunk *input_chunk)
@@ -274,7 +275,12 @@ static ssize_t get_input_chunk_record_count(struct flb_input_chunk *input_chunk)
                                 &chunk_size);
 
     if (ret == CIO_OK) {
-        record_count = flb_mp_count(chunk_buffer, chunk_size);
+        if (input_chunk->event_type == FLB_INPUT_LOGS) {
+            record_count = flb_mp_count_log_records(chunk_buffer, chunk_size);
+        }
+        else {
+            record_count = flb_mp_count(chunk_buffer, chunk_size);
+        }
     }
     else {
         record_count = -1;
@@ -298,6 +304,7 @@ static int flb_input_chunk_release_space(
     struct mk_list         *input_chunk_iterator;
     struct flb_router      *router;
     ssize_t                 dropped_record_count;
+    ssize_t                 dropped_byte_count;
     int                     chunk_destroy_flag;
     struct flb_input_chunk *old_input_chunk;
     ssize_t                 released_space;
@@ -325,7 +332,8 @@ static int flb_input_chunk_release_space(
 
         if (flb_input_chunk_drop_task_route(old_input_chunk->task,
                                             output_plugin,
-                                            &dropped_record_count) == FLB_FALSE) {
+                                            &dropped_record_count,
+                                            &dropped_byte_count) == FLB_FALSE) {
             continue;
         }
 
@@ -352,42 +360,46 @@ static int flb_input_chunk_release_space(
         }
 
 #ifdef FLB_HAVE_METRICS
-        if (dropped_record_count == 0) {
+        if (dropped_record_count < 0) {
             dropped_record_count = get_input_chunk_record_count(old_input_chunk);
+        }
 
-            if (dropped_record_count == -1) {
-                flb_debug("[task] error getting chunk record count : %s",
-                          old_input_chunk->in->name);
-            }
-            else {
-                cmt_counter_add(output_plugin->cmt_dropped_records,
+        if (dropped_byte_count < 0) {
+            dropped_byte_count = chunk_size;
+        }
+
+        if (dropped_record_count == -1) {
+            flb_debug("[task] error getting chunk record count : %s",
+                      old_input_chunk->in->name);
+        }
+        else if (dropped_record_count > 0) {
+            cmt_counter_add(output_plugin->cmt_dropped_records,
+                            cfl_time_now(),
+                            dropped_record_count,
+                            1, (char *[]) {(char *) flb_output_name(output_plugin)});
+
+            if (input_plugin->config && input_plugin->config->router &&
+                old_input_chunk->event_type == FLB_INPUT_LOGS) {
+                router = input_plugin->config->router;
+
+                cmt_counter_add(router->logs_drop_records_total,
                                 cfl_time_now(),
-                                dropped_record_count,
-                                1, (char *[]) {(char *) flb_output_name(output_plugin)});
+                                (double) dropped_record_count,
+                                2,
+                                (char *[]){(char *) flb_input_name(old_input_chunk->in),
+                                           (char *) flb_output_name(output_plugin)});
 
-                if (input_plugin->config && input_plugin->config->router &&
-                    old_input_chunk->event_type == FLB_INPUT_LOGS) {
-                    router = input_plugin->config->router;
-
-                    cmt_counter_add(router->logs_drop_records_total,
-                                    cfl_time_now(),
-                                    (double) dropped_record_count,
-                                    2,
-                                    (char *[]){(char *) flb_input_name(old_input_chunk->in),
-                                               (char *) flb_output_name(output_plugin)});
-
-                    cmt_counter_add(router->logs_drop_bytes_total,
-                                    cfl_time_now(),
-                                    (double) chunk_size,
-                                    2,
-                                    (char *[]){(char *) flb_input_name(old_input_chunk->in),
-                                               (char *) flb_output_name(output_plugin)});
-                }
-
-                flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS,
-                                dropped_record_count,
-                                output_plugin->metrics);
+                cmt_counter_add(router->logs_drop_bytes_total,
+                                cfl_time_now(),
+                                (double) dropped_byte_count,
+                                2,
+                                (char *[]){(char *) flb_input_name(old_input_chunk->in),
+                                           (char *) flb_output_name(output_plugin)});
             }
+
+            flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS,
+                            dropped_record_count,
+                            output_plugin->metrics);
         }
 #endif
 
@@ -509,12 +521,18 @@ int flb_input_chunk_write_at(void *data, off_t offset,
 static int flb_input_chunk_drop_task_route(
             struct flb_task *task,
             struct flb_output_instance *output_plugin,
-            ssize_t *dropped_record_count)
+            ssize_t *dropped_record_count,
+            ssize_t *dropped_byte_count)
 {
     int route_status;
+    int route_records;
     int result;
+    size_t route_bytes;
 
-    *dropped_record_count = 0;
+    *dropped_record_count = -1;
+    *dropped_byte_count = -1;
+    route_records = 0;
+    route_bytes = 0;
 
     if (task == NULL) {
         return FLB_TRUE;
@@ -535,7 +553,12 @@ static int flb_input_chunk_drop_task_route(
                                           output_plugin,
                                           FLB_TASK_ROUTE_DROPPED);
 
-                *dropped_record_count = (ssize_t) task->records;
+                if (flb_task_get_route_data(task, output_plugin,
+                                            &route_records,
+                                            &route_bytes) == 0) {
+                    *dropped_record_count = (ssize_t) route_records;
+                    *dropped_byte_count = (ssize_t) route_bytes;
+                }
 
                 result = FLB_TRUE;
             }
@@ -1070,9 +1093,15 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         cio_chunk_write_at(chunk, offset, NULL, 0);
     }
 
+    if (ic->event_type == FLB_INPUT_LOGS) {
+        ic->total_records = flb_mp_count_log_records(buf_data, offset);
+    }
+    else {
+        ic->total_records = records;
+    }
+
     /* Update metrics */
 #ifdef FLB_HAVE_METRICS
-    ic->total_records = records;
     if (ic->total_records > 0) {
         /* timestamp */
         ts = cfl_time_now();
@@ -2734,10 +2763,14 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     }
 
     /*
-     * Set the total_records based on the records that n_records
-     * says we should be writing. These values may be overwritten
-     * flb_filter_do, where a filter may add/remove records.
+     * Set total_records based on the caller-provided count. For log chunks,
+     * recover from callers that pass 0 by deriving the logical record count
+     * from the payload (group markers excluded).
      */
+    if (event_type == FLB_INPUT_LOGS && n_records == 0) {
+        n_records = flb_mp_count_log_records(buf, buf_size);
+    }
+
     total_records_start = ic->total_records;
     ic->added_records =  n_records;
     ic->total_records += n_records;
