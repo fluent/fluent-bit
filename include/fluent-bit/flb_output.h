@@ -1221,7 +1221,10 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
         counted_event_chunk = task->event_chunk;
     }
 
-    records = counted_event_chunk->total_events;
+    records = task->event_chunk->total_events;
+    if (counted_event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+        records = counted_event_chunk->total_events;
+    }
     bytes = counted_event_chunk->size;
 
     flb_task_acquire_lock(task);
