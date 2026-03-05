@@ -518,8 +518,8 @@ static int send_blob(struct flb_config *config,
     flb_plg_debug(ctx->ins, "http_send_blob()=%i", ret);
 
     if (ret == FLB_OK) {
-        /* For Logs type, we need to commit the block right away */
-        if (event_type == FLB_EVENT_TYPE_LOGS) {
+        /* For block blob Logs type, we need to commit the block right away */
+        if (blob_type == AZURE_BLOB_BLOCKBLOB && event_type == FLB_EVENT_TYPE_LOGS) {
             ret = azb_block_blob_commit_block(ctx, block_id, tag, ms, generated_random_string);
         }
     }
