@@ -114,6 +114,8 @@ struct flb_s3 {
     char *canned_acl;
     char *content_type;
     char *storage_class;
+    char *sse;
+    char *sse_kms_key_id;
     char *log_key;
     char *external_id;
     char *profile;

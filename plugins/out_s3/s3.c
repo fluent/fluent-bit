@@ -138,6 +138,20 @@ static struct flb_aws_header storage_class_header = {
     .val_len = 0,
 };
 
+static struct flb_aws_header sse_header = {
+    .key = "x-amz-server-side-encryption",
+    .key_len = 28,
+    .val = "",
+    .val_len = 0,
+};
+
+static struct flb_aws_header sse_kms_key_id_header = {
+    .key = "x-amz-server-side-encryption-aws-kms-key-id",
+    .key_len = 43,
+    .val = "",
+    .val_len = 0,
+};
+
 static char *mock_error_response(char *error_env_var)
 {
     char *err_val = NULL;
@@ -194,6 +208,12 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->storage_class != NULL) {
         headers_len++;
     }
+    if (ctx->sse != NULL) {
+        headers_len++;
+    }
+    if (ctx->sse_kms_key_id != NULL) {
+        headers_len++;
+    }
     if (headers_len == 0) {
         *num_headers = headers_len;
         *headers = s3_headers;
@@ -239,6 +259,19 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n] = storage_class_header;
         s3_headers[n].val = ctx->storage_class;
         s3_headers[n].val_len = strlen(ctx->storage_class);
+        n++;
+    }
+    if (ctx->sse != NULL) {
+        s3_headers[n] = sse_header;
+        s3_headers[n].val = ctx->sse;
+        s3_headers[n].val_len = strlen(ctx->sse);
+        n++;
+    }
+    if (ctx->sse_kms_key_id != NULL && ctx->sse != NULL && (strncmp(ctx->sse, "aws:kms", sizeof("aws:kms")) == 0 || strncmp(ctx->sse, "aws:kms:dsse", sizeof("aws:kms:dsse")) == 0)) {
+        s3_headers[n] = sse_kms_key_id_header;
+        s3_headers[n].val = ctx->sse_kms_key_id;
+        s3_headers[n].val_len = strlen(ctx->sse_kms_key_id);
+        n++;
     }
 
     *num_headers = headers_len;
@@ -858,6 +891,26 @@ static int cb_s3_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("storage_class", ins);
     if (tmp) {
         ctx->storage_class = (char *) tmp;
+    }
+
+    tmp = flb_output_get_property("sse", ins);
+    if (tmp) {
+        if (strncmp(tmp, "AES256", sizeof("AES256")) != 0 &&
+            strncmp(tmp, "aws:kms", sizeof("aws:kms")) != 0 &&
+            strncmp(tmp, "aws:kms:dsse", sizeof("aws:kms:dsse")) != 0) {
+            flb_plg_error(ctx->ins, "Invalid 'sse' value '%s'. Must be 'AES256', 'aws:kms', or 'aws:kms:dsse'", tmp);
+            return -1;
+        }
+        ctx->sse = (char *) tmp;
+    }
+
+    tmp = flb_output_get_property("sse_kms_key_id", ins);
+    if (tmp) {
+        if (ctx->sse == NULL || (strncmp(ctx->sse, "aws:kms", sizeof("aws:kms")) != 0 && strncmp(ctx->sse, "aws:kms:dsse", sizeof("aws:kms:dsse")) != 0)) {
+            flb_plg_error(ctx->ins, "Invalid 'sse_kms_key_id' value '%s'. 'sse_kms_key_id' is only applicable when 'sse' is set to 'aws:kms' or 'aws:kms:dsse'", tmp);
+            return -1;
+        }
+        ctx->sse_kms_key_id = (char *) tmp;
     }
 
     if (ctx->insecure == FLB_FALSE) {
@@ -4152,6 +4205,23 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Specify the storage class for S3 objects. If this option is not specified, objects "
      "will be stored with the default 'STANDARD' storage class."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "sse", NULL,
+     0, FLB_FALSE, 0,
+     "Server-side encryption for S3 objects. Set to 'AES256' for S3-managed keys "
+     "(SSE-S3), 'aws:kms' for AWS KMS-managed keys (SSE-KMS), or 'aws:kms:dsse' for "
+     "dual-layer server-side encryption with KMS (DSSE-KMS). When using 'aws:kms' or "
+     "'aws:kms:dsse'"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "sse_kms_key_id", NULL,
+     0, FLB_FALSE, 0,
+     "AWS key ARN for server-side encryption. Only applicable when "
+     "'sse' is set to 'aws:kms' or 'aws:kms:dsse'. If not specified, the default AWS-managed KMS key "
+     "for S3 will be used."
     },
 
     {
