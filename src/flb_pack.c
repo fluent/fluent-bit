@@ -385,37 +385,50 @@ static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer
                                        size_t *consumed)
 {
     int count_records = 0;
+    uint32_t parse_flags;
+    const char *origin;
     size_t read_bytes;
+    size_t parsed_offset;
     yyjson_read_err err;
     yyjson_doc *doc = NULL;
     yyjson_val *root;
     msgpack_sbuffer sbuf;
     msgpack_packer pck;
-    char *start, *end, *insitu_buf;
+    const char *start;
+    const char *end;
+    char *insitu_buf = NULL;
 
     if (!js || !buffer || !size) {
         return -1;
     }
 
     /*
-     * This is the tricky part, if we want to take advantage of SIMD we need to add
-     * padding to the buffer (INSITU), otherwise trusting the caller it's a bit risky.
-     *
-     * An extra optimization would be to provide a specific API for callers who are aware about
-     * padding and buffer states, or use a pool allocator. While this is a good optimization,
-     * it's not a priority for now, we are already gaining around 50% perf improvement with this
-     * implementation compared to the previous one.
+     * Keep the INSITU fast path always enabled and gate it with a fixed
+     * byte minimum payload length. This keeps behavior deterministic while
+     * avoiding tiny payload overhead.
      */
-    insitu_buf = flb_malloc(len + YYJSON_PADDING_SIZE);
-    if (!insitu_buf) {
-        flb_errno();
-        return -1;
-    }
-    memcpy(insitu_buf, js, len);
-    memset(insitu_buf + len, 0, YYJSON_PADDING_SIZE);
+    if (len >= FLB_SIMD_VEC8_INST_LEN) {
+        insitu_buf = flb_malloc(len + YYJSON_PADDING_SIZE);
+        if (!insitu_buf) {
+            flb_errno();
+            return -1;
+        }
 
-    start = insitu_buf;
-    end   = insitu_buf + len;
+        memcpy(insitu_buf, js, len);
+        memset(insitu_buf + len, 0, YYJSON_PADDING_SIZE);
+
+        start = insitu_buf;
+        parse_flags = YYJSON_READ_STOP_WHEN_DONE | YYJSON_READ_INSITU |
+                      YYJSON_READ_ALLOW_INVALID_UNICODE | YYJSON_READ_REPLACE_INVALID_UNICODE;
+    }
+    else {
+        start = js;
+        parse_flags = YYJSON_READ_STOP_WHEN_DONE |
+                      YYJSON_READ_ALLOW_INVALID_UNICODE | YYJSON_READ_REPLACE_INVALID_UNICODE;
+    }
+
+    origin = start;
+    end = start + len;
 
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
@@ -432,8 +445,7 @@ static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer
         }
 
         doc = yyjson_read_opts(start, (size_t)(end - start),
-                               YYJSON_READ_STOP_WHEN_DONE | YYJSON_READ_INSITU |
-                               YYJSON_READ_ALLOW_INVALID_UNICODE | YYJSON_READ_REPLACE_INVALID_UNICODE,
+                               parse_flags,
                                NULL, &err);
         if (!doc) {
             /* If we already parsed something, treat trailing junk/whitespace as done */
@@ -444,7 +456,9 @@ static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer
                       err.code, err.msg, err.pos);
             msgpack_sbuffer_clear(&sbuf);
             msgpack_sbuffer_destroy(&sbuf);
-            flb_free(insitu_buf);
+            if (insitu_buf != NULL) {
+                flb_free(insitu_buf);
+            }
             return -1;
         }
 
@@ -456,7 +470,9 @@ static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer
             if (count_records == 0) {
                 msgpack_sbuffer_clear(&sbuf);
                 msgpack_sbuffer_destroy(&sbuf);
-                flb_free(insitu_buf);
+                if (insitu_buf != NULL) {
+                    flb_free(insitu_buf);
+                }
                 return -1;
             }
             break;
@@ -468,7 +484,9 @@ static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer
             doc = NULL;
             msgpack_sbuffer_clear(&sbuf);
             msgpack_sbuffer_destroy(&sbuf);
-            flb_free(insitu_buf);
+            if (insitu_buf != NULL) {
+                flb_free(insitu_buf);
+            }
             return -1;
         }
 
@@ -489,15 +507,18 @@ static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer
     if (records) {
         *records = count_records;
     }
+    parsed_offset = (size_t) (start - origin);
     if (consumed) {
-        *consumed = (size_t) (start - insitu_buf);
+        *consumed = parsed_offset;
     }
 
     /* caller owns and must free with the same allocator */
     *buffer = sbuf.data;
     *size   = sbuf.size;
 
-    flb_free(insitu_buf);
+    if (insitu_buf != NULL) {
+        flb_free(insitu_buf);
+    }
     return 0;
 }
 
