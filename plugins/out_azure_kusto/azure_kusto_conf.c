@@ -700,6 +700,115 @@ static int flb_azure_kusto_resources_destroy(struct flb_azure_kusto_resources *r
     return 0;
 }
 
+/**
+ * Resolves cloud-specific endpoints based on the cloud_name configuration.
+ * Sets kusto_scope, kusto_resource, and login_host in the context.
+ *
+ * @param ctx   Pointer to the plugin's context
+ * @return int  0 on success, -1 on failure
+ */
+static int azure_kusto_resolve_cloud_endpoints(struct flb_azure_kusto *ctx)
+{
+    const char *scope = NULL;
+    const char *resource = NULL;
+    const char *login_host = NULL;
+    int has_custom_login_host;
+    int has_custom_scope;
+    int has_custom_resource;
+
+    /* Check if custom overrides are provided */
+    has_custom_login_host = (ctx->custom_login_host && flb_sds_len(ctx->custom_login_host) > 0);
+    has_custom_scope = (ctx->custom_kusto_scope && flb_sds_len(ctx->custom_kusto_scope) > 0);
+    has_custom_resource = (ctx->custom_kusto_resource && flb_sds_len(ctx->custom_kusto_resource) > 0);
+
+    /* If all three custom properties are provided, use them directly */
+    if (has_custom_login_host && has_custom_scope && has_custom_resource) {
+        ctx->login_host = flb_sds_create(ctx->custom_login_host);
+        if (!ctx->login_host) {
+            flb_errno();
+            return -1;
+        }
+
+        ctx->kusto_scope = flb_sds_create(ctx->custom_kusto_scope);
+        if (!ctx->kusto_scope) {
+            flb_errno();
+            return -1;
+        }
+
+        ctx->kusto_resource = flb_sds_create(ctx->custom_kusto_resource);
+        if (!ctx->kusto_resource) {
+            flb_errno();
+            return -1;
+        }
+
+        flb_plg_info(ctx->ins,
+                     "using custom cloud endpoints: login_host='%s', scope='%s', resource='%s'",
+                     ctx->login_host, ctx->kusto_scope, ctx->kusto_resource);
+        return 0;
+    }
+
+    /* If some but not all custom properties are set, error out */
+    if (has_custom_login_host || has_custom_scope || has_custom_resource) {
+        flb_plg_error(ctx->ins,
+                      "When using custom cloud endpoints, all three properties must be set: "
+                      "cloud_login_host, cloud_kusto_scope, cloud_kusto_resource");
+        return -1;
+    }
+
+    /* Resolve from well-known cloud names */
+    if (!ctx->cloud_name || strcasecmp(ctx->cloud_name, "AzureCloud") == 0) {
+        ctx->cloud_type = FLB_AZURE_CLOUD_PUBLIC;
+        scope = FLB_AZURE_KUSTO_SCOPE_PUBLIC;
+        resource = FLB_AZURE_KUSTO_RESOURCE_PUBLIC;
+        login_host = FLB_AZURE_LOGIN_HOST_PUBLIC;
+    }
+    else if (strcasecmp(ctx->cloud_name, "AzureChinaCloud") == 0) {
+        ctx->cloud_type = FLB_AZURE_CLOUD_CHINA;
+        scope = FLB_AZURE_KUSTO_SCOPE_CHINA;
+        resource = FLB_AZURE_KUSTO_RESOURCE_CHINA;
+        login_host = FLB_AZURE_LOGIN_HOST_CHINA;
+    }
+    else if (strcasecmp(ctx->cloud_name, "AzureUSGovernmentCloud") == 0) {
+        ctx->cloud_type = FLB_AZURE_CLOUD_US_GOVERNMENT;
+        scope = FLB_AZURE_KUSTO_SCOPE_US_GOVERNMENT;
+        resource = FLB_AZURE_KUSTO_RESOURCE_US_GOVERNMENT;
+        login_host = FLB_AZURE_LOGIN_HOST_US_GOVERNMENT;
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "Unknown cloud_name '%s'. Use a well-known cloud name "
+                      "('AzureCloud', 'AzureChinaCloud', 'AzureUSGovernmentCloud') "
+                      "or specify custom endpoints via "
+                      "cloud_login_host, cloud_kusto_scope, and cloud_kusto_resource",
+                      ctx->cloud_name);
+        return -1;
+    }
+
+    ctx->kusto_scope = flb_sds_create(scope);
+    if (!ctx->kusto_scope) {
+        flb_errno();
+        return -1;
+    }
+
+    ctx->kusto_resource = flb_sds_create(resource);
+    if (!ctx->kusto_resource) {
+        flb_errno();
+        return -1;
+    }
+
+    ctx->login_host = flb_sds_create(login_host);
+    if (!ctx->login_host) {
+        flb_errno();
+        return -1;
+    }
+
+    flb_plg_info(ctx->ins, "cloud environment='%s', login_host='%s', scope='%s'",
+                 ctx->cloud_name ? ctx->cloud_name : "AzureCloud",
+                 ctx->login_host, ctx->kusto_scope);
+
+    return 0;
+}
+
 struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *ins,
                                                     struct flb_config *config)
 {
@@ -719,6 +828,14 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
     if (ret == -1) {
         flb_plg_error(ins, "unable to load configuration");
         flb_free(ctx);
+        return NULL;
+    }
+
+    /* Resolve cloud-specific endpoints */
+    ret = azure_kusto_resolve_cloud_endpoints(ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "failed to resolve cloud endpoints");
+        flb_azure_kusto_conf_destroy(ctx);
         return NULL;
     }
 
@@ -802,30 +919,35 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
         /* MSI auth */
         /* Construct the URL template with or without client_id for managed identity */
         if (ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM) {
-            ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1);
+            ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1 +
+                                                flb_sds_len(ctx->kusto_resource));
             if (!ctx->oauth_url) {
                 flb_errno();
                 flb_azure_kusto_conf_destroy(ctx);
                 return NULL;
             }
             flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "", "");
+                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "", "",
+                            ctx->kusto_resource);
         } else {
             /* User-assigned managed identity */
             ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1 +
                                                 sizeof("&client_id=") - 1 +
-                                                flb_sds_len(ctx->client_id));
+                                                flb_sds_len(ctx->client_id) +
+                                                flb_sds_len(ctx->kusto_resource));
             if (!ctx->oauth_url) {
                 flb_errno();
                 flb_azure_kusto_conf_destroy(ctx);
                 return NULL;
             }
             flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "&client_id=", ctx->client_id);
+                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "&client_id=",
+                            ctx->client_id, ctx->kusto_resource);
         }
     } else {
         /* Standard OAuth2 for service principal or workload identity */
         ctx->oauth_url = flb_sds_create_size(sizeof(FLB_MSAL_AUTH_URL_TEMPLATE) - 1 +
+                                            flb_sds_len(ctx->login_host) +
                                             flb_sds_len(ctx->tenant_id));
         if (!ctx->oauth_url) {
             flb_errno();
@@ -833,7 +955,8 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
             return NULL;
         }
         flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                        FLB_MSAL_AUTH_URL_TEMPLATE, ctx->tenant_id);
+                        FLB_MSAL_AUTH_URL_TEMPLATE, ctx->login_host,
+                        ctx->tenant_id);
     }
 
     ctx->resources = flb_calloc(1, sizeof(struct flb_azure_kusto_resources));
@@ -856,6 +979,21 @@ int flb_azure_kusto_conf_destroy(struct flb_azure_kusto *ctx)
     }
 
     flb_plg_info(ctx->ins, "before exiting the plugin kusto conf destroy called");
+
+    if (ctx->kusto_scope) {
+        flb_sds_destroy(ctx->kusto_scope);
+        ctx->kusto_scope = NULL;
+    }
+
+    if (ctx->kusto_resource) {
+        flb_sds_destroy(ctx->kusto_resource);
+        ctx->kusto_resource = NULL;
+    }
+
+    if (ctx->login_host) {
+        flb_sds_destroy(ctx->login_host);
+        ctx->login_host = NULL;
+    }
 
     if (ctx->oauth_url) {
         flb_sds_destroy(ctx->oauth_url);
