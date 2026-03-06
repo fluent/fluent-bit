@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_sqldb.h>
 
@@ -48,8 +49,15 @@
 #define AZURE_BLOB_APPENDBLOB 0
 #define AZURE_BLOB_BLOCKBLOB  1
 
-#define AZURE_BLOB_AUTH_KEY 0
-#define AZURE_BLOB_AUTH_SAS 1
+#define AZURE_BLOB_AUTH_KEY        0
+#define AZURE_BLOB_AUTH_SAS        1
+#define AZURE_BLOB_AUTH_MI_SYSTEM  2
+#define AZURE_BLOB_AUTH_MI_USER    3
+#define AZURE_BLOB_AUTH_WI         4
+
+/* MSAL authorization URL template */
+#define FLB_AZURE_BLOB_MSAL_AUTH_URL_TEMPLATE \
+    "https://login.microsoftonline.com/%s/oauth2/v2.0/token"
 
 struct flb_azure_blob {
     int auto_create_container;
@@ -65,6 +73,10 @@ struct flb_azure_blob {
     flb_sds_t date_key;
     flb_sds_t auth_type;
     flb_sds_t sas_token;
+    flb_sds_t client_id;
+    flb_sds_t tenant_id;
+    flb_sds_t client_secret;
+    flb_sds_t workload_identity_token_file;
     flb_sds_t database_file;
     size_t part_size;
     time_t upload_parts_timeout;
@@ -120,6 +132,11 @@ struct flb_azure_blob {
     /* Shared key */
     unsigned char *decoded_sk;        /* decoded shared key */
     size_t decoded_sk_size;           /* size of decoded shared key */
+
+    /* OAuth2 (managed identity / workload identity) */
+    flb_sds_t oauth_url;
+    struct flb_oauth2 *o;
+    pthread_mutex_t token_mutex;
 
 #ifdef FLB_HAVE_SQLDB
     /*
