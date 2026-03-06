@@ -49,6 +49,7 @@ static inline int primary_key_check(msgpack_object k, char *name, int len)
  * - level or severity
  * - file
  * - app
+ * - hostname
  * - meta
  */
 static int record_append_primary_keys(struct flb_logdna *ctx,
@@ -60,6 +61,7 @@ static int record_append_primary_keys(struct flb_logdna *ctx,
     msgpack_object *level = NULL;
     msgpack_object *file = NULL;
     msgpack_object *app = NULL;
+    msgpack_object *hostname = NULL;
     msgpack_object *meta = NULL;
     msgpack_object k;
     msgpack_object v;
@@ -105,6 +107,15 @@ static int record_append_primary_keys(struct flb_logdna *ctx,
             msgpack_pack_object(mp_sbuf, v);
             c++;
         }
+
+        /* Hostname */
+        if (!hostname && primary_key_check(k, "hostname", 8) == FLB_TRUE) {
+            hostname = &k;
+            msgpack_pack_str(mp_sbuf, 8);
+            msgpack_pack_str_body(mp_sbuf, "hostname", 8);
+            msgpack_pack_object(mp_sbuf, v);
+            c++;
+        }
     }
 
     /* Set the global file name if the record did not provided one */
@@ -123,6 +134,15 @@ static int record_append_primary_keys(struct flb_logdna *ctx,
         msgpack_pack_str_body(mp_sbuf, "app", 3);
         msgpack_pack_str(mp_sbuf, flb_sds_len(ctx->app));
         msgpack_pack_str_body(mp_sbuf, ctx->app, flb_sds_len(ctx->app));
+        c++;
+    }
+
+    /* If no hostname is set in the record, set the default */
+    if (!hostname && ctx->_hostname) {
+        msgpack_pack_str(mp_sbuf, 8);
+        msgpack_pack_str_body(mp_sbuf, "hostname", 8);
+        msgpack_pack_str(mp_sbuf, flb_sds_len(ctx->_hostname));
+        msgpack_pack_str_body(mp_sbuf, ctx->_hostname, flb_sds_len(ctx->_hostname));
         c++;
     }
 
