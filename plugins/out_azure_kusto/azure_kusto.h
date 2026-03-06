@@ -127,6 +127,7 @@ struct flb_azure_kusto {
 
     int timer_created;
     int timer_ms;
+    struct flb_sched_timer *upload_timer;  /* timer handle for cancellation on exit */
 
     /* mutex for acquiring oauth tokens */
     pthread_mutex_t token_mutex;
@@ -140,6 +141,9 @@ struct flb_azure_kusto {
     pthread_mutex_t blob_mutex;
 
     pthread_mutex_t buffer_mutex;
+
+    /* mutex protecting stream_active->files list from concurrent timer/delete races */
+    pthread_mutex_t files_mutex;
 
     int buffering_enabled;
 
