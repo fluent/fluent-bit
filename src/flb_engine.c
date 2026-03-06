@@ -18,6 +18,7 @@
  */
 
 #include <math.h>
+#include <float.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -230,6 +231,247 @@ static inline double calculate_chunk_capacity_percent(struct flb_output_instance
 
     return 100 * (1.0 - (ins->fs_backlog_chunks_size + ins->fs_chunks_size)/
                   ((double)ins->total_limit_size));
+}
+
+static inline double adaptive_flush_clamp(double value, double min, double max)
+{
+    if (value < min) {
+        return min;
+    }
+
+    if (value > max) {
+        return max;
+    }
+
+    return value;
+}
+
+static double flb_engine_get_chunk_backpressure_percent(struct flb_config *config)
+{
+    double pressure;
+    double max_pressure;
+    struct mk_list *head;
+    struct flb_output_instance *ins;
+
+    max_pressure = 0.0;
+
+    mk_list_foreach(head, &config->outputs) {
+        ins = mk_list_entry(head, struct flb_output_instance, _head);
+
+        if (ins->total_limit_size <= 0) {
+            continue;
+        }
+
+        pressure = ((double) (ins->fs_backlog_chunks_size + ins->fs_chunks_size) * 100.0)
+                   / ((double) ins->total_limit_size);
+
+        pressure = adaptive_flush_clamp(pressure, 0.0, 100.0);
+
+        if (pressure > max_pressure) {
+            max_pressure = pressure;
+        }
+    }
+
+    return max_pressure;
+}
+
+static int flb_engine_flush_timer_reset(struct flb_config *config, double interval)
+{
+    struct mk_event *event;
+    struct flb_time t_flush;
+    double fallback_interval;
+
+    event = &config->event_flush;
+    fallback_interval = config->flush_adaptive_current_interval;
+
+    if (event->status != MK_EVENT_NONE) {
+        mk_event_timeout_destroy(config->evl, event);
+    }
+
+    flb_time_from_double(&t_flush, interval);
+
+    config->flush_fd = mk_event_timeout_create(config->evl,
+                                               t_flush.tm.tv_sec,
+                                               t_flush.tm.tv_nsec,
+                                               event);
+    event->priority = FLB_ENGINE_PRIORITY_FLUSH;
+
+    if (config->flush_fd == -1) {
+        flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
+
+        if (fallback_interval > 0.0 &&
+            fabs(fallback_interval - interval) > DBL_EPSILON) {
+            flb_time_from_double(&t_flush, fallback_interval);
+            config->flush_fd = mk_event_timeout_create(config->evl,
+                                                       t_flush.tm.tv_sec,
+                                                       t_flush.tm.tv_nsec,
+                                                       event);
+            event->priority = FLB_ENGINE_PRIORITY_FLUSH;
+        }
+
+        if (config->flush_fd == -1) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+int flb_engine_adaptive_flush_target_level(struct flb_config *config,
+                                           double pressure)
+{
+    if (pressure >= config->flush_adaptive_high_pressure) {
+        return 3;
+    }
+    else if (pressure >= config->flush_adaptive_medium_pressure) {
+        return 2;
+    }
+    else if (pressure <= config->flush_adaptive_low_pressure) {
+        return 0;
+    }
+
+    return 1;
+}
+
+double flb_engine_adaptive_flush_interval(struct flb_config *config,
+                                          int level)
+{
+    double interval;
+    static const double multipliers[] = {2.0, 1.0, 0.75, 0.5};
+
+    if (level < 0) {
+        level = 0;
+    }
+    else if (level > 3) {
+        level = 3;
+    }
+
+    interval = config->flush * multipliers[level];
+
+    return adaptive_flush_clamp(interval,
+                                config->flush_adaptive_min_interval,
+                                config->flush_adaptive_max_interval);
+}
+
+static void flb_engine_adaptive_flush_update(struct flb_config *config)
+{
+    int target_level;
+    double pressure;
+    double interval;
+
+    if (config->flush_adaptive == FLB_FALSE) {
+        return;
+    }
+
+    pressure = flb_engine_get_chunk_backpressure_percent(config);
+
+    target_level = flb_engine_adaptive_flush_target_level(config, pressure);
+
+    if (target_level > config->flush_adaptive_level) {
+        if (config->flush_adaptive_direction != 1) {
+            config->flush_adaptive_direction = 1;
+            config->flush_adaptive_hits = 0;
+        }
+
+        config->flush_adaptive_hits++;
+
+        if (config->flush_adaptive_hits >= config->flush_adaptive_up_steps) {
+            config->flush_adaptive_level++;
+            config->flush_adaptive_hits = 0;
+        }
+    }
+    else if (target_level < config->flush_adaptive_level) {
+        if (config->flush_adaptive_direction != -1) {
+            config->flush_adaptive_direction = -1;
+            config->flush_adaptive_hits = 0;
+        }
+
+        config->flush_adaptive_hits++;
+
+        if (config->flush_adaptive_hits >= config->flush_adaptive_down_steps) {
+            config->flush_adaptive_level--;
+            config->flush_adaptive_hits = 0;
+        }
+    }
+    else {
+        config->flush_adaptive_direction = 0;
+        config->flush_adaptive_hits = 0;
+    }
+
+    if (config->flush_adaptive_level < 0) {
+        config->flush_adaptive_level = 0;
+    }
+    else if (config->flush_adaptive_level > 3) {
+        config->flush_adaptive_level = 3;
+    }
+
+    interval = flb_engine_adaptive_flush_interval(config,
+                                                  config->flush_adaptive_level);
+
+    if (fabs(interval - config->flush_adaptive_current_interval)
+        <= (DBL_EPSILON * fmax(fabs(interval),
+                               fabs(config->flush_adaptive_current_interval)))) {
+        return;
+    }
+
+    if (flb_engine_flush_timer_reset(config, interval) == 0) {
+        config->flush_adaptive_current_interval = interval;
+        flb_debug("[engine] adaptive flush interval %.3f sec (pressure=%.2f%%, level=%i)",
+                  interval,
+                  pressure,
+                  config->flush_adaptive_level);
+    }
+}
+
+static void flb_engine_adaptive_flush_init(struct flb_config *config)
+{
+    if (config->flush_adaptive == FLB_FALSE) {
+        config->flush_adaptive_current_interval = config->flush;
+        return;
+    }
+
+    if (config->flush_adaptive_min_interval <= 0.0) {
+        config->flush_adaptive_min_interval = 0.1;
+    }
+
+    if (config->flush_adaptive_max_interval <
+        config->flush_adaptive_min_interval) {
+        config->flush_adaptive_max_interval =
+            config->flush_adaptive_min_interval;
+    }
+
+    if (config->flush_adaptive_up_steps < 1) {
+        config->flush_adaptive_up_steps = 1;
+    }
+
+    if (config->flush_adaptive_down_steps < 1) {
+        config->flush_adaptive_down_steps = 1;
+    }
+
+    if (config->flush_adaptive_low_pressure < 0.0) {
+        config->flush_adaptive_low_pressure = 0.0;
+    }
+
+    if (config->flush_adaptive_high_pressure > 100.0) {
+        config->flush_adaptive_high_pressure = 100.0;
+    }
+
+    if (config->flush_adaptive_low_pressure >
+        config->flush_adaptive_medium_pressure) {
+        config->flush_adaptive_medium_pressure =
+            config->flush_adaptive_low_pressure;
+    }
+
+    if (config->flush_adaptive_medium_pressure >
+        config->flush_adaptive_high_pressure) {
+        config->flush_adaptive_medium_pressure =
+            config->flush_adaptive_high_pressure;
+    }
+
+    config->flush_adaptive_current_interval =
+        flb_engine_adaptive_flush_interval(config,
+                                           config->flush_adaptive_level);
+
 }
 
 static void handle_dlq_if_available(struct flb_config *config,
@@ -678,6 +920,7 @@ static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
         if (config->flush_fd == fd) {
             flb_utils_timer_consume(fd);
             flb_engine_flush(config, NULL);
+            flb_engine_adaptive_flush_update(config);
             return 0;
         }
         else if (config->shutdown_fd == fd) {
@@ -809,7 +1052,6 @@ int flb_engine_start(struct flb_config *config)
     uint64_t ts;
     char tmp[16];
     int rb_flush_flag;
-    struct flb_time t_flush;
     struct mk_event *event;
     struct mk_event_loop *evl;
     struct flb_bucket_queue *evl_bktq;
@@ -983,14 +1225,13 @@ int flb_engine_start(struct flb_config *config)
     event->mask = MK_EVENT_EMPTY;
     event->status = MK_EVENT_NONE;
 
-    flb_time_from_double(&t_flush, config->flush);
-    config->flush_fd = mk_event_timeout_create(evl,
-                                               t_flush.tm.tv_sec,
-                                               t_flush.tm.tv_nsec,
-                                               event);
-    event->priority = FLB_ENGINE_PRIORITY_FLUSH;
-    if (config->flush_fd == -1) {
-        flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
+    flb_engine_adaptive_flush_init(config);
+
+    if (flb_engine_flush_timer_reset(config,
+                                     config->flush_adaptive_current_interval) == -1) {
+        flb_error("[engine] could not initialize flush timer (interval=%.3f sec)",
+                  config->flush_adaptive_current_interval);
+        return -1;
     }
 
 

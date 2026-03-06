@@ -39,6 +39,12 @@ int flb_engine_destroy_tasks(struct mk_list *tasks);
 void flb_engine_reschedule_retries(struct flb_config *config);
 void flb_engine_stop_ingestion(struct flb_config *config);
 
+/* Adaptive flush helpers (also used by internal tests) */
+int flb_engine_adaptive_flush_target_level(struct flb_config *config,
+                                           double pressure);
+double flb_engine_adaptive_flush_interval(struct flb_config *config,
+                                          int level);
+
 /* Engine event loop */
 void flb_engine_evl_init();
 struct mk_event_loop *flb_engine_evl_get();
