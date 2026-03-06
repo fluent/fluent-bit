@@ -287,7 +287,7 @@ jobs:
           ref: master
 
       - name: Download all artefacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: windows-packages-*
           merge-multiple: true
