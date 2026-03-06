@@ -20,8 +20,12 @@
 #ifndef FLB_OUT_ES_H
 #define FLB_OUT_ES_H
 
+#include <monkey/mk_core/mk_list.h>
+
+#include "es_type.h"
+
 #define FLB_ES_DEFAULT_HOST       "127.0.0.1"
-#define FLB_ES_DEFAULT_PORT       92000
+#define FLB_ES_DEFAULT_PORT       9200
 #define FLB_ES_DEFAULT_INDEX      "fluent-bit"
 #define FLB_ES_DEFAULT_TYPE       "_doc"
 #define FLB_ES_DEFAULT_PREFIX     "logstash"
@@ -31,10 +35,6 @@
 #define FLB_ES_DEFAULT_TAG_KEY    "flb-key"
 #define FLB_ES_DEFAULT_HTTP_MAX   "512k"
 #define FLB_ES_DEFAULT_HTTPS_PORT 443
-#define FLB_ES_WRITE_OP_INDEX     "index"
-#define FLB_ES_WRITE_OP_CREATE    "create"
-#define FLB_ES_WRITE_OP_UPDATE    "update"
-#define FLB_ES_WRITE_OP_UPSERT    "upsert"
 
 #define FLB_ES_STATUS_SUCCESS          (1 << 0)
 #define FLB_ES_STATUS_IMCOMPLETE       (1 << 1)
@@ -45,10 +45,15 @@
 #define FLB_ES_STATUS_DUPLICATES       (1 << 6)
 #define FLB_ES_STATUS_ERROR            (1 << 7)
 
-struct flb_elasticsearch {
+struct flb_upstream;
+struct flb_upstream_ha;
+struct flb_upstream_node;
+struct flb_output_instance;
+
+struct flb_elasticsearch_config {
     /* Elasticsearch index (database) and type (table) */
-    char *index;
-    char *type;
+    struct flb_es_str index;
+    struct flb_es_str type;
     int suppress_type_name;
 
     /* HTTP Auth */
@@ -57,8 +62,8 @@ struct flb_elasticsearch {
     char *http_api_key;
 
     /* Elastic Cloud Auth */
-    char *cloud_user;
-    char *cloud_passwd;
+    struct flb_es_str cloud_user;
+    struct flb_es_str cloud_passwd;
 
     /* AWS Auth */
 #ifdef FLB_HAVE_AWS
@@ -66,15 +71,13 @@ struct flb_elasticsearch {
     char *aws_region;
     char *aws_sts_endpoint;
     char *aws_profile;
-    struct flb_aws_provider *aws_provider;
-    struct flb_aws_provider *base_aws_provider;
+    struct flb_es_aws_provider aws_provider;
+    struct flb_es_aws_provider base_aws_provider;
     /* tls instances can't be re-used; aws provider requires a separate one */
-    struct flb_tls *aws_tls;
-    /* one for the standard chain provider, one for sts assume role */
-    struct flb_tls *aws_sts_tls;
-    char *aws_session_name;
+    struct flb_es_tls aws_tls;
+    struct flb_es_tls aws_sts_tls;
     char *aws_service_name;
-    struct mk_list *aws_unsigned_headers;
+    struct flb_es_slist aws_unsigned_headers;
 #endif
 
     /* HTTP Client Setup */
@@ -100,51 +103,76 @@ struct flb_elasticsearch {
     int current_time_index;
 
     /* prefix */
-    flb_sds_t logstash_prefix;
-    flb_sds_t logstash_prefix_separator;
+    struct flb_es_sds_t logstash_prefix;
+    struct flb_es_sds_t logstash_prefix_separator;
 
     /* prefix key */
-    flb_sds_t logstash_prefix_key;
+    struct flb_es_sds_t logstash_prefix_key;
 
     /* date format */
-    flb_sds_t logstash_dateformat;
+    struct flb_es_sds_t logstash_dateformat;
 
     /* time key */
-    flb_sds_t time_key;
+    struct flb_es_sds_t time_key;
 
     /* time key format */
-    flb_sds_t time_key_format;
+    struct flb_es_sds_t time_key_format;
 
     /* time key nanoseconds */
     int time_key_nanos;
 
-
     /* write operation */
-    flb_sds_t write_operation;
+    struct flb_es_sds_t write_operation;
     /* write operation elasticsearch operation */
-    flb_sds_t es_action;
+    const char *es_action;
 
     /* id_key */
-    flb_sds_t id_key;
-    struct flb_record_accessor *ra_id_key;
+    struct flb_es_sds_t id_key;
+    struct flb_es_record_accessor ra_id_key;
 
     /* include_tag_key */
     int include_tag_key;
-    flb_sds_t tag_key;
+    struct flb_es_sds_t tag_key;
 
     /* Elasticsearch HTTP API */
     char uri[256];
 
-    struct flb_record_accessor *ra_prefix_key;
+    struct flb_es_record_accessor ra_prefix_key;
 
     /* Compression mode (gzip) */
     int compress_gzip;
 
-    /* Upstream connection to the backend server */
+    /* List entry data for flb_elasticsearch->configs list */
+    struct mk_list _head;
+};
+
+struct flb_elasticsearch {
+    /* if HA mode is enabled */
+    int ha_mode;
+    struct flb_upstream_ha *ha;
+
+    /* Upstream handler and config context for single mode (no HA) */
     struct flb_upstream *u;
+    struct mk_list configs;
 
     /* Plugin output instance reference */
     struct flb_output_instance *ins;
 };
+
+/**
+ *  Get plugin configuration.
+ *  In HA mode, the selected upstream node is also output.
+ *  In HA mode, the returned plugin configuration matches the output upstream node.
+ *
+ *  @param ctx  Non-NULL plugin context.
+ *  @param node Non-NULL output parameter for selected upstream node.
+ *              `*node` is set to NULL if not in HA mode or
+ *              there is no upstream node.
+ *
+ *  @return Configuration of plugin or NULL if error happened or
+ *          there is no upstream node (in HA mode).
+ */
+struct flb_elasticsearch_config *flb_elasticsearch_target(
+        struct flb_elasticsearch *ctx, struct flb_upstream_node **node);
 
 #endif
