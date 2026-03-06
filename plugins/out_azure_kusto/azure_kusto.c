@@ -46,7 +46,7 @@ static int azure_kusto_get_msi_token(struct flb_azure_kusto *ctx)
     /* Retrieve access token */
     token = flb_azure_msiauth_token_get(ctx->o);
     if (!token) {
-        flb_plg_error(ctx->ins, "error retrieving oauth2 access token");
+        flb_plg_error(ctx->ins, "error retrieving oauth2 access token (MSI access token is NULL)");
         return -1;
     }
 
@@ -100,11 +100,16 @@ static int azure_kusto_get_service_principal_token(struct flb_azure_kusto *ctx)
         flb_plg_error(ctx->ins, "error appending oauth2 params");
         return -1;
     }
+    /* Enable OAuth2 for token retrieval */
+    ctx->o->cfg.enabled = FLB_TRUE;  
 
     /* Retrieve access token */
     char *token = flb_oauth2_token_get(ctx->o);
     if (!token) {
-        flb_plg_error(ctx->ins, "error retrieving oauth2 access token");
+        flb_plg_error(ctx->ins, "error retrieving oauth2 access token - "
+                      "check Fluent Bit logs for '[oauth2]' errors "
+                      "(common causes: connection failure to '%s', invalid credentials, "
+                      "or malformed response)", ctx->oauth_url ? ctx->oauth_url : "unknown");
         return -1;
     }
 
@@ -118,7 +123,6 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
     flb_sds_t output = NULL;
 
     if (pthread_mutex_lock(&ctx->token_mutex)) {
-        flb_plg_error(ctx->ins, "error locking mutex");
         return NULL;
     }
 
@@ -144,6 +148,9 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
                                      flb_sds_len(ctx->o->access_token) + 2);
         if (!output) {
             flb_plg_error(ctx->ins, "error creating token buffer");
+            if (pthread_mutex_unlock(&ctx->token_mutex)) {
+                flb_plg_error(ctx->ins, "error unlocking mutex");
+            }
             return NULL;
         }
         flb_sds_snprintf(&output, flb_sds_alloc(output), "%s %s", ctx->o->token_type,
@@ -893,6 +900,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to initialize kusto storage: %s",
                           ctx->store_dir);
+            flb_azure_kusto_conf_destroy(ctx);
             return -1;
         }
         ctx->has_old_buffers = azure_kusto_store_has_data(ctx);
@@ -900,14 +908,20 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         /* validate 'total_file_size' */
         if (ctx->file_size <= 0) {
             flb_plg_error(ctx->ins, "Failed to parse upload_file_size");
+            azure_kusto_store_exit(ctx);
+            flb_azure_kusto_conf_destroy(ctx);
             return -1;
         }
         if (ctx->file_size < 1000000) {
             flb_plg_error(ctx->ins, "upload_file_size must be at least 1MB");
+            azure_kusto_store_exit(ctx);
+            flb_azure_kusto_conf_destroy(ctx);
             return -1;
         }
         if (ctx->file_size > MAX_FILE_SIZE) {
             flb_plg_error(ctx->ins, "Max total_file_size must be lower than %ld bytes", MAX_FILE_SIZE);
+            azure_kusto_store_exit(ctx);
+            flb_azure_kusto_conf_destroy(ctx);
             return -1;
         }
 
@@ -934,14 +948,21 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
      * Create upstream context for Kusto Ingestion endpoint
      */
     ctx->u = flb_upstream_create_url(config, ctx->ingestion_endpoint, io_flags, ins->tls);
+    if (!ctx->u) {
+        flb_plg_error(ctx->ins, "upstream creation failed");
+        if (ctx->buffering_enabled == FLB_TRUE) {
+            azure_kusto_store_exit(ctx);
+        }
+        pthread_mutex_destroy(&ctx->resources_mutex);
+        pthread_mutex_destroy(&ctx->token_mutex);
+        pthread_mutex_destroy(&ctx->blob_mutex);
+        flb_azure_kusto_conf_destroy(ctx);
+        return -1;
+    }    
     if (ctx->buffering_enabled ==  FLB_TRUE){
         flb_stream_disable_flags(&ctx->u->base, FLB_IO_ASYNC);
         ctx->u->base.net.io_timeout = ctx->io_timeout;
         ctx->has_old_buffers = azure_kusto_store_has_data(ctx);
-    }
-    if (!ctx->u) {
-        flb_plg_error(ctx->ins, "upstream creation failed");
-        return -1;
     }
 
     flb_plg_debug(ctx->ins, "async flag is %d", flb_stream_is_async(&ctx->u->base));
@@ -951,6 +972,14 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         flb_oauth2_create(ctx->config, ctx->oauth_url, FLB_AZURE_KUSTO_TOKEN_REFRESH);
     if (!ctx->o) {
         flb_plg_error(ctx->ins, "cannot create oauth2 context");
+        if (ctx->buffering_enabled == FLB_TRUE) {
+            azure_kusto_store_exit(ctx);
+        }
+        flb_upstream_destroy(ctx->u);
+        pthread_mutex_destroy(&ctx->resources_mutex);
+        pthread_mutex_destroy(&ctx->token_mutex);
+        pthread_mutex_destroy(&ctx->blob_mutex);
+        flb_azure_kusto_conf_destroy(ctx);
         return -1;
     }
     flb_output_upstream_set(ctx->u, ins);
