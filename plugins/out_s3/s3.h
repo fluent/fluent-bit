@@ -26,48 +26,102 @@
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_blob_db.h>
+#include <fluent-bit/flb_hash_table.h>
+#ifndef _WIN32
+#include <pthread.h>
+#endif
+#include <sys/types.h>  /* for off_t */
+#include <fcntl.h>
 
-/* Upload data to S3 in 5MB chunks */
-#define MIN_CHUNKED_UPLOAD_SIZE 5242880
-#define MAX_CHUNKED_UPLOAD_SIZE 50000000
-#define MAX_CHUNKED_UPLOAD_COMPRESS_SIZE 5000000000
+/* Cross-platform file I/O compatibility macros */
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+#include <sys/stat.h>
+#define flb_s3_unlink(path)     _unlink(path)
+#define flb_s3_access(path, mode) _access((path), (mode))
+#define flb_s3_open(path, flags, ...) _open((path), ((flags) | O_BINARY), ##__VA_ARGS__)
+#define flb_s3_close(fd)        _close(fd)
+#define flb_s3_read(fd, buf, count) _read((fd), (buf), (count))
+#define flb_s3_lseek(fd, offset, origin) _lseeki64((fd), (offset), (origin))
+#define flb_s3_stat(path, buf) _stat64((path), (buf))
+#define flb_s3_fstat(fd, buf) _fstat64((fd), (buf))
+#define flb_s3_stat_struct struct _stat64
+#else
+#include <unistd.h>
+#define flb_s3_unlink(path)     unlink(path)
+#define flb_s3_access(path, mode) access((path), (mode))
+#define flb_s3_open(path, flags, ...) open((path), (flags), ##__VA_ARGS__)
+#define flb_s3_close(fd)        close(fd)
+#define flb_s3_read(fd, buf, count) read((fd), (buf), (count))
+#define flb_s3_lseek(fd, offset, origin) lseek((fd), (offset), (origin))
+#define flb_s3_stat(path, buf) stat((path), (buf))
+#define flb_s3_fstat(fd, buf) fstat((fd), (buf))
+#define flb_s3_stat_struct struct stat
+#endif
 
-#define UPLOAD_TIMER_MAX_WAIT 60000
-#define UPLOAD_TIMER_MIN_WAIT 6000
+/* Forward declaration for Parquet schema (defined in flb_parquet.h) */
+struct flb_parquet_schema;
 
-#define MULTIPART_UPLOAD_STATE_NOT_CREATED              0
-#define MULTIPART_UPLOAD_STATE_CREATED                  1
-#define MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS     2
-
-#define DEFAULT_FILE_SIZE     100000000
-#define MAX_FILE_SIZE         50000000000
-#define MAX_FILE_SIZE_STR     "50,000,000,000"
-
-/* Allowed max file size 1 GB for publishing to S3 */
-#define MAX_FILE_SIZE_PUT_OBJECT        1000000000
-
-#define DEFAULT_UPLOAD_TIMEOUT 3600
+#define MAX_FILE_SIZE         53656167435469ULL  /* 48.8TiB (AWS S3 max multipart upload size) */
+#define MAX_FILE_SIZE_STR     "48.8TiB"
 
 #define MAX_UPLOAD_ERRORS 5
 
-/*
- * If we see repeated errors on an upload/chunk, we will discard it
- * This saves us from scenarios where something goes wrong and an upload can
- * not proceed (may be some other process completed it or deleted the upload)
- * instead of erroring out forever, we eventually discard the upload.
- *
- * The same is done for chunks, just to be safe, even though realistically
- * I can't think of a reason why a chunk could become unsendable.
- *
- * The retry limit is now configurable via the retry_limit parameter.
- */
+/* AWS S3 multipart upload constraints */
+#define S3_MiB                      1048576ULL
+#define S3_GiB                      (1024 * S3_MiB)
+#define S3_AWS_MIN_PART_SIZE        (5 * S3_MiB)
+#define S3_AWS_MAX_PART_SIZE        (5 * S3_GiB)
+#define S3_AWS_MAX_PARTS            10000
+#define S3_DEFAULT_PART_SIZE        (100 * S3_MiB)
+
+/* Multipart upload error codes */
+#define S3_MULTIPART_ERROR_GENERAL      -1
+#define S3_MULTIPART_ERROR_NO_SUCH_UPLOAD -2
+
+#define S3_SOURCE_FILE   0
+#define S3_SOURCE_MEMORY 1
+
+struct s3_data_source {
+    int type;
+    union {
+        struct {
+            const char *path;
+            off_t offset_start;
+            off_t offset_end;
+        } file;
+        struct {
+            char *buf;
+            size_t len;
+        } memory;
+    };
+};
+
+/* Queue Entry States */
+enum s3_upload_state {
+    S3_STATE_INITIATE_MULTIPART = 0, /* Create new multipart upload */
+    S3_STATE_UPLOAD_PART,            /* Upload a single part (database-tracked) */
+    S3_STATE_UPLOAD_FILE,            /* Upload a single file (non-database-tracked) */
+};
 
 struct upload_queue {
+    int state;
+    uint64_t file_id;
+    uint64_t part_db_id;
+    uint64_t part_id;
+
     struct s3_file *upload_file;
-    struct multipart_upload *m_upload_file;
+
+    flb_sds_t stream_path;
+    off_t offset_start;
+    off_t offset_end;
+
+    flb_sds_t s3_key;
+    flb_sds_t upload_id;
+
     flb_sds_t tag;
     int tag_len;
-
     int retry_counter;
     time_t upload_time;
 
@@ -78,28 +132,16 @@ struct multipart_upload {
     flb_sds_t s3_key;
     flb_sds_t tag;
     flb_sds_t upload_id;
-    int upload_state;
     time_t init_time;
 
-    /*
-     * maximum of 10,000 parts in an upload, for each we need to store mapping
-     * of Part Number to ETag
-     */
     flb_sds_t etags[10000];
     int part_number;
 
-    /*
-     * we use async http, so we need to check that all part requests have
-     * completed before we complete the upload
-     */
     int parts_uploaded;
-
-    /* ongoing tracker of how much data has been sent for this upload */
     size_t bytes;
 
     struct mk_list _head;
 
-    /* see note for retry_limit configuration */
     int upload_errors;
     int complete_errors;
 };
@@ -119,10 +161,9 @@ struct flb_s3 {
     char *profile;
     int free_endpoint;
     int retry_requests;
-    int use_put_object;
     int send_content_md5;
     int static_file_path;
-    int compression;
+    int compression;                        /* Compression type (for Parquet internal or outer layer) */
     int port;
     int insecure;
     size_t store_dir_limit_size;
@@ -130,7 +171,6 @@ struct flb_s3 {
     struct flb_blob_db blob_db;
     flb_sds_t blob_database_file;
     size_t part_size;
-    time_t upload_parts_timeout;
     time_t upload_parts_freshness_threshold;
     int file_delivery_attempt_limit;
     int part_delivery_attempt_limit;
@@ -141,14 +181,11 @@ struct flb_s3 {
     struct flb_upstream *authorization_endpoint_upstream;
     struct flb_tls *authorization_endpoint_tls_context;
 
-    /* track the total amount of buffered data */
     size_t current_buffer_size;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;
-    /* tls instances can't be re-used; aws provider requires a separate one */
     struct flb_tls *provider_tls;
-    /* one for the standard chain provider, one for sts assume role */
     struct flb_tls *sts_provider_tls;
     struct flb_tls *client_tls;
 
@@ -162,22 +199,19 @@ struct flb_s3 {
     char *store_dir;
     struct flb_fstore *fs;
     struct flb_fstore_stream *stream_active;  /* default active stream */
-    struct flb_fstore_stream *stream_upload;  /* multipart upload stream */
     struct flb_fstore_stream *stream_metadata; /* s3 metadata stream */
+    struct flb_hash_table *file_hash;
+    pthread_mutex_t file_hash_lock; /* Protects file_hash access */
 
-    /*
-     * used to track that unset buffers were found on startup that have not
-     * been sent
-     */
     int has_old_buffers;
-    /* old multipart uploads read on start up */
-    int has_old_uploads;
-
-    struct mk_list uploads;
+    int initial_upload_done;
+    int is_exiting;
+    int needs_recovery;
 
     int preserve_data_ordering;
     int upload_queue_success;
     struct mk_list upload_queue;
+    pthread_mutex_t upload_queue_lock;  /* Protects upload_queue access */
 
     size_t file_size;
     size_t upload_chunk_size;
@@ -194,34 +228,51 @@ struct flb_s3 {
     flb_sds_t seq_index_file;
 
     struct flb_output_instance *ins;
+
+    int format;
+    char *schema_str;
+    struct flb_parquet_schema *cached_arrow_schema;
+
+    struct flb_aws_client_generator *client_generator;
 };
 
-int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
-                char *body, size_t body_size, char *pre_signed_url);
+#define FLB_S3_FORMAT_JSON     0
+#define FLB_S3_FORMAT_PARQUET  1
 
-int create_multipart_upload(struct flb_s3 *ctx,
-                            struct multipart_upload *m_upload,
-                            char *pre_signed_url);
+void cb_s3_upload(struct flb_config *config, void *data);
+int s3_format_chunk(struct flb_s3 *ctx,
+                    struct s3_file *chunk,
+                    flb_sds_t *out_buf, size_t *out_size);
+int s3_upload_file(struct flb_s3 *ctx,
+                   const char *file_path,
+                   const char *tag, int tag_len,
+                   time_t file_first_log_time);
 
-int complete_multipart_upload(struct flb_s3 *ctx,
-                              struct multipart_upload *m_upload,
-                              char *pre_signed_url);
+/* Unified S3 Key Generation */
+flb_sds_t s3_generate_key(struct flb_s3 *ctx,
+                          const char *tag,
+                          time_t timestamp,
+                          const char *filename);
 
-int abort_multipart_upload(struct flb_s3 *ctx,
-                           struct multipart_upload *m_upload,
-                           char *pre_signed_url);
+/* Index persistence */
+int write_seq_index(char *seq_index_file, uint64_t seq_index);
 
-void multipart_read_uploads_from_fs(struct flb_s3 *ctx);
+/* Orchestration: initiate multipart upload and enqueue parts */
+int s3_initiate_multipart_upload(struct flb_s3 *ctx,
+                                           uint64_t file_id,
+                                           const char *file_path,
+                                           const char *tag,
+                                           int tag_len);
 
-void multipart_upload_destroy(struct multipart_upload *m_upload);
-
-struct flb_http_client *mock_s3_call(char *error_env_var, char *api);
+/* Test utility functions */
 int s3_plugin_under_test();
 
-int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_size);
+/* Get S3 client */
+struct flb_aws_client *s3_get_client(struct flb_s3 *ctx);
 
-int create_headers(struct flb_s3 *ctx, char *body_md5,
-                   struct flb_aws_header **headers, int *num_headers,
-                   int multipart_upload);
+/* Init options for dependency injection (used by tests) */
+struct flb_out_s3_init_options {
+    struct flb_aws_client_generator *client_generator;
+};
 
 #endif

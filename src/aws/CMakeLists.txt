@@ -1,5 +1,3 @@
-add_subdirectory(compression)
-
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
@@ -44,7 +42,6 @@ endif()
 message(STATUS "===========================")
 
 add_library(flb-aws STATIC ${src})
-target_link_libraries(flb-aws flb-aws-compress)
 
 # Link rdkafka when MSK IAM is enabled
 if(DEFINED FLB_HAVE_AWS_MSK_IAM AND KAFKA_LIBRARIES)

@@ -155,6 +155,17 @@ if(FLB_AVRO_ENCODER)
     )
 endif()
 
+if(FLB_PARQUET_ENCODER)
+  # Parquet requires C++ implementation
+  set(src
+    ${src}
+    flb_parquet_impl.cpp
+    )
+
+  # Enable C++ for this target
+  set_source_files_properties(flb_parquet_impl.cpp PROPERTIES LANGUAGE CXX)
+endif()
+
 # Fluent Bit have TLS support
 if(FLB_TLS)
   # Register the TLS interface and functions
@@ -220,6 +231,11 @@ if(FLB_KAFKA)
   set(src
     ${src}
     "flb_kafka.c"
+    )
+  # Add Kafka libraries (includes SASL if enabled)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    ${KAFKA_LIBRARIES}
     )
 endif()
 
@@ -389,6 +405,15 @@ set(FLB_DEPS
   avro-static
   jansson
   )
+endif()
+
+# Parquet Encoding
+if(FLB_PARQUET_ENCODER)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    ${ARROW_LIBRARIES}
+    ${PARQUET_LIBRARIES}
+    )
 endif()
 
 # WASM runtime
@@ -590,11 +615,6 @@ if(FLB_BINARY)
   endif()
 
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT})
-
-  # KAFKA SPECIFIC
-  if(FLB_SASL_ENABLED)
-    target_link_libraries(fluent-bit-bin sasl2)
-  endif()
 
   set_target_properties(fluent-bit-bin
     PROPERTIES
