@@ -193,6 +193,9 @@ static int set_context(struct content_modifier_ctx *ctx)
         else if (strcasecmp(ctx->context_str, "otel_scope_attributes") == 0) {
             context = CM_CONTEXT_OTEL_SCOPE_ATTR;
         }
+        else if (strcasecmp(ctx->context_str, "otel_log_attributes") == 0) {
+            context = CM_CONTEXT_OTEL_LOG_ATTR;
+        }
         else if (strcasecmp(ctx->context_str, "otel_scope_name") == 0) {
         }
         else if (strcasecmp(ctx->context_str, "otel_scope_version") == 0) {
