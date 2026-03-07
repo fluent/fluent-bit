@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_pipe.h>
+#include <monkey/mk_core.h>
 
 
 #define FLB_SYSLOG_UDP 0
@@ -32,22 +33,55 @@
 #define FLB_SYSLOG_RFC3164 0
 #define FLB_SYSLOG_RFC5424 1
 
+struct flb_syslog_sd_key {
+    struct flb_record_accessor *ra_sd_key;
+    flb_sds_t key_normalized;           /* normalized key name when using ra */
+
+    struct mk_list _head;
+};
+
 struct flb_syslog {
     flb_sockfd_t fd;
     struct flb_upstream *u;
     flb_sds_t mode;
     flb_sds_t format;
     size_t maxsize;
+
+    /* severity_key */
     flb_sds_t severity_key;
+    struct flb_record_accessor *ra_severity_key;
+
+    /* facility_key */
     flb_sds_t facility_key;
+    struct flb_record_accessor *ra_facility_key;
+
+    /* timestamp_key */
     flb_sds_t timestamp_key;
+
+    /* hostname_key */
     flb_sds_t hostname_key;
+    struct flb_record_accessor *ra_hostname_key;
+
+    /* appname_key */
     flb_sds_t appname_key;
+    struct flb_record_accessor *ra_appname_key;
+
+    /* procid_key */
     flb_sds_t procid_key;
+    struct flb_record_accessor *ra_procid_key;
+
+    /* msgid_key */
     flb_sds_t msgid_key;
+    struct flb_record_accessor *ra_msgid_key;
+
+    /* sd_keys */
     struct mk_list *sd_keys;
     int allow_longer_sd_id;
+    struct mk_list *ra_sd_keys;
+
+    /* message_key */
     flb_sds_t message_key;
+    struct flb_record_accessor *ra_message_key;
 
     /* Preset */
     int severity_preset;
