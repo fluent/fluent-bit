@@ -118,6 +118,7 @@ if(FLB_METRICS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     metrics.c
+    cumulative_to_delta.c
     )
 endif()
 
@@ -247,6 +248,18 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
 endfunction(prepare_unit_tests)
 
 prepare_unit_tests(flb-it- "${UNIT_TESTS_FILES}")
+
+if(FLB_METRICS AND FLB_PROCESSOR_CUMULATIVE_TO_DELTA)
+  set(CUMULATIVE_TO_DELTA_PLUGIN_DIR
+    ${PROJECT_SOURCE_DIR}/plugins/processor_cumulative_to_delta)
+  set(CUMULATIVE_TO_DELTA_CORE_SOURCE
+    ${CUMULATIVE_TO_DELTA_PLUGIN_DIR}/cumulative_to_delta_core.c)
+
+  target_sources(flb-it-cumulative_to_delta PRIVATE
+    ${CUMULATIVE_TO_DELTA_CORE_SOURCE})
+  target_include_directories(flb-it-cumulative_to_delta PRIVATE
+    ${CUMULATIVE_TO_DELTA_PLUGIN_DIR})
+endif()
 
 if(FLB_TESTS_INTERNAL_FUZZ)
   add_subdirectory(fuzzers)

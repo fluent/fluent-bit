@@ -17,13 +17,13 @@
  *  limitations under the License.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <pthread.h>
 #include <cmetrics/cmt_atomic.h>
 
 pthread_mutex_t atomic_operation_lock;
-static int      atomic_operation_system_initialized = 0;
+static pthread_once_t atomic_operation_system_once = PTHREAD_ONCE_INIT;
+static int            atomic_operation_system_initialized = 0;
+static int            atomic_operation_system_status = 0;
 
 /* TODO: Determne if we want to keep this backend as well as how / if we want to handle
  *       pthread_mutex_unlock errors (investigate and understand what could cause them),
@@ -32,18 +32,22 @@ static int      atomic_operation_system_initialized = 0;
  *
  */
 
+static void cmt_atomic_bootstrap()
+{
+    atomic_operation_system_status =
+        pthread_mutex_init(&atomic_operation_lock, NULL);
+
+    if (atomic_operation_system_status == 0) {
+        atomic_operation_system_initialized = 1;
+    }
+}
+
 inline int cmt_atomic_initialize()
 {
-    int result;
+    pthread_once(&atomic_operation_system_once, cmt_atomic_bootstrap);
 
-    if (0 == atomic_operation_system_initialized) {
-        result = pthread_mutex_init(&atomic_operation_lock, NULL);
-
-        if (0 != result) {
-            return 1;
-        }
-
-        atomic_operation_system_initialized = 1;
+    if (atomic_operation_system_status != 0) {
+        return 1;
     }
 
     return 0;
@@ -54,9 +58,9 @@ inline int cmt_atomic_compare_exchange(uint64_t *storage,
 {
     int result;
 
-    if (0 == atomic_operation_system_initialized) {
-        printf("CMT ATOMIC : Atomic operation backend not initalized\n");
-        exit(1);
+    if (cmt_atomic_initialize() != 0 ||
+        atomic_operation_system_initialized == 0) {
+        return 0;
     }
 
     result = pthread_mutex_lock(&atomic_operation_lock);
@@ -83,9 +87,9 @@ inline void cmt_atomic_store(uint64_t *storage, uint64_t new_value)
 {
     int result;
 
-    if (0 == atomic_operation_system_initialized) {
-        printf("CMT ATOMIC : Atomic operation backend not initalized\n");
-        exit(1);
+    if (cmt_atomic_initialize() != 0 ||
+        atomic_operation_system_initialized == 0) {
+        return;
     }
 
     result = pthread_mutex_lock(&atomic_operation_lock);
@@ -104,9 +108,9 @@ inline uint64_t cmt_atomic_load(uint64_t *storage)
     int result;
     uint64_t retval;
 
-    if (0 == atomic_operation_system_initialized) {
-        printf("CMT ATOMIC : Atomic operation backend not initalized\n");
-        exit(1);
+    if (cmt_atomic_initialize() != 0 ||
+        atomic_operation_system_initialized == 0) {
+        return 0;
     }
 
     result = pthread_mutex_lock(&atomic_operation_lock);

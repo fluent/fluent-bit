@@ -208,6 +208,22 @@ static int kvlist_fetch_double(struct cfl_kvlist *kvlist, const char *key, doubl
     return -1;
 }
 
+static int resolve_data_point_start_timestamp(struct cmt_metric *sample,
+                                              struct cfl_kvlist *point_metadata,
+                                              uint64_t *start_timestamp)
+{
+    if (sample != NULL && cmt_metric_has_start_timestamp(sample)) {
+        *start_timestamp = cmt_metric_get_start_timestamp(sample);
+        return 0;
+    }
+
+    if (point_metadata == NULL) {
+        return -1;
+    }
+
+    return kvlist_fetch_uint64(point_metadata, "start_time_unix_nano", start_timestamp);
+}
+
 static int kvlist_fetch_bool(struct cfl_kvlist *kvlist, const char *key, int *out)
 {
     struct cfl_variant *value;
@@ -567,7 +583,9 @@ static void apply_data_point_metadata_from_otlp_context(struct cmt *cmt,
         number_data_point = (Opentelemetry__Proto__Metrics__V1__NumberDataPoint *) data_point;
         number_value_case = NULL;
 
-        result = kvlist_fetch_uint64(point_metadata, "start_time_unix_nano", &uint64_value);
+        result = resolve_data_point_start_timestamp(sample,
+                                                    point_metadata,
+                                                    &uint64_value);
         if (result == 0) {
             number_data_point->start_time_unix_nano = uint64_value;
         }
@@ -614,7 +632,9 @@ static void apply_data_point_metadata_from_otlp_context(struct cmt *cmt,
 
         summary_data_point = (Opentelemetry__Proto__Metrics__V1__SummaryDataPoint *) data_point;
 
-        result = kvlist_fetch_uint64(point_metadata, "start_time_unix_nano", &uint64_value);
+        result = resolve_data_point_start_timestamp(sample,
+                                                    point_metadata,
+                                                    &uint64_value);
         if (result == 0) {
             summary_data_point->start_time_unix_nano = uint64_value;
         }
@@ -629,7 +649,9 @@ static void apply_data_point_metadata_from_otlp_context(struct cmt *cmt,
 
         histogram_data_point = (Opentelemetry__Proto__Metrics__V1__HistogramDataPoint *) data_point;
 
-        result = kvlist_fetch_uint64(point_metadata, "start_time_unix_nano", &uint64_value);
+        result = resolve_data_point_start_timestamp(sample,
+                                                    point_metadata,
+                                                    &uint64_value);
         if (result == 0) {
             histogram_data_point->start_time_unix_nano = uint64_value;
         }
@@ -673,7 +695,9 @@ static void apply_data_point_metadata_from_otlp_context(struct cmt *cmt,
 
         exp_data_point = (Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint *) data_point;
 
-        result = kvlist_fetch_uint64(point_metadata, "start_time_unix_nano", &uint64_value);
+        result = resolve_data_point_start_timestamp(sample,
+                                                    point_metadata,
+                                                    &uint64_value);
         if (result == 0) {
             exp_data_point->start_time_unix_nano = uint64_value;
         }
@@ -3155,6 +3179,7 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
                             struct cmt_metric *sample,
                             size_t sample_index)
 {
+    uint64_t                                            start_timestamp;
     size_t                                              attribute_index;
     size_t                                              attribute_count;
     Opentelemetry__Proto__Common__V1__KeyValue        **attribute_list;
@@ -3173,6 +3198,11 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
 
     attribute_count = cfl_list_size(&context->cmt->static_labels->list) +
                       cfl_list_size(&sample->labels);
+    start_timestamp = 0;
+
+    if (cmt_metric_has_start_timestamp(sample)) {
+        start_timestamp = cmt_metric_get_start_timestamp(sample);
+    }
 
     attribute_list = initialize_attribute_list(attribute_count);
 
@@ -3183,7 +3213,7 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
     if (map->type == CMT_COUNTER   ||
         map->type == CMT_GAUGE     ||
         map->type == CMT_UNTYPED   ) {
-        data_point = initialize_numerical_data_point(0,
+        data_point = initialize_numerical_data_point(start_timestamp,
                                                      cmt_metric_get_timestamp(sample),
                                                      sample,
                                                      attribute_list,
@@ -3192,7 +3222,7 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
     else if (map->type == CMT_SUMMARY) {
         summary = (struct cmt_summary *) map->parent;
 
-        data_point = initialize_summary_data_point(0,
+        data_point = initialize_summary_data_point(start_timestamp,
                                                    cmt_metric_get_timestamp(sample),
                                                    cmt_summary_get_count_value(sample),
                                                    cmt_summary_get_sum_value(sample),
@@ -3206,7 +3236,7 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
     else if (map->type == CMT_HISTOGRAM) {
         histogram = (struct cmt_histogram *) map->parent;
 
-        data_point = initialize_histogram_data_point(0,
+        data_point = initialize_histogram_data_point(start_timestamp,
                                                      cmt_metric_get_timestamp(sample),
                                                      cmt_metric_hist_get_count_value(sample),
                                                      cmt_metric_hist_get_sum_value(sample),
@@ -3218,70 +3248,83 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
                                                      attribute_count);
     }
     else if (map->type == CMT_EXP_HISTOGRAM) {
+        struct cmt_exp_histogram_snapshot snapshot;
+
+        if (cmt_metric_exp_hist_get_snapshot(sample, &snapshot) != 0) {
+            destroy_attribute_list(attribute_list);
+            return CMT_ENCODE_OPENTELEMETRY_DATA_POINT_INIT_ERROR;
+        }
+
         exponential_data_point = calloc(1, sizeof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint));
         if (exponential_data_point == NULL) {
+            cmt_metric_exp_hist_snapshot_destroy(&snapshot);
             destroy_attribute_list(attribute_list);
             return CMT_ENCODE_OPENTELEMETRY_DATA_POINT_INIT_ERROR;
         }
 
         opentelemetry__proto__metrics__v1__exponential_histogram_data_point__init(exponential_data_point);
 
-        exponential_data_point->start_time_unix_nano = 0;
+        exponential_data_point->start_time_unix_nano = start_timestamp;
         exponential_data_point->time_unix_nano = cmt_metric_get_timestamp(sample);
-        exponential_data_point->count = sample->exp_hist_count;
-        exponential_data_point->scale = sample->exp_hist_scale;
-        exponential_data_point->zero_count = sample->exp_hist_zero_count;
-        exponential_data_point->zero_threshold = sample->exp_hist_zero_threshold;
+        exponential_data_point->count = snapshot.count;
+        exponential_data_point->scale = snapshot.scale;
+        exponential_data_point->zero_count = snapshot.zero_count;
+        exponential_data_point->zero_threshold = snapshot.zero_threshold;
         exponential_data_point->attributes = attribute_list;
         exponential_data_point->n_attributes = attribute_count;
 
-        if (sample->exp_hist_sum_set) {
+        if (snapshot.sum_set) {
             exponential_data_point->has_sum = CMT_TRUE;
-            exponential_data_point->sum = cmt_math_uint64_to_d64(sample->exp_hist_sum);
+            exponential_data_point->sum = cmt_math_uint64_to_d64(snapshot.sum);
         }
 
-        if (sample->exp_hist_positive_count > 0) {
+        if (snapshot.positive_count > 0) {
             positive = calloc(1, sizeof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint__Buckets));
             if (positive == NULL) {
+                cmt_metric_exp_hist_snapshot_destroy(&snapshot);
                 destroy_data_point(exponential_data_point, map->type);
                 return CMT_ENCODE_OPENTELEMETRY_DATA_POINT_INIT_ERROR;
             }
 
             opentelemetry__proto__metrics__v1__exponential_histogram_data_point__buckets__init(positive);
-            positive->offset = sample->exp_hist_positive_offset;
-            positive->n_bucket_counts = sample->exp_hist_positive_count;
-            positive->bucket_counts = calloc(sample->exp_hist_positive_count, sizeof(uint64_t));
+            positive->offset = snapshot.positive_offset;
+            positive->n_bucket_counts = snapshot.positive_count;
+            positive->bucket_counts = calloc(snapshot.positive_count, sizeof(uint64_t));
             if (positive->bucket_counts == NULL) {
+                cmt_metric_exp_hist_snapshot_destroy(&snapshot);
                 free(positive);
                 destroy_data_point(exponential_data_point, map->type);
                 return CMT_ENCODE_OPENTELEMETRY_DATA_POINT_INIT_ERROR;
             }
-            memcpy(positive->bucket_counts, sample->exp_hist_positive_buckets,
-                   sizeof(uint64_t) * sample->exp_hist_positive_count);
+            memcpy(positive->bucket_counts, snapshot.positive_buckets,
+                   sizeof(uint64_t) * snapshot.positive_count);
             exponential_data_point->positive = positive;
         }
 
-        if (sample->exp_hist_negative_count > 0) {
+        if (snapshot.negative_count > 0) {
             negative = calloc(1, sizeof(Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint__Buckets));
             if (negative == NULL) {
+                cmt_metric_exp_hist_snapshot_destroy(&snapshot);
                 destroy_data_point(exponential_data_point, map->type);
                 return CMT_ENCODE_OPENTELEMETRY_DATA_POINT_INIT_ERROR;
             }
 
             opentelemetry__proto__metrics__v1__exponential_histogram_data_point__buckets__init(negative);
-            negative->offset = sample->exp_hist_negative_offset;
-            negative->n_bucket_counts = sample->exp_hist_negative_count;
-            negative->bucket_counts = calloc(sample->exp_hist_negative_count, sizeof(uint64_t));
+            negative->offset = snapshot.negative_offset;
+            negative->n_bucket_counts = snapshot.negative_count;
+            negative->bucket_counts = calloc(snapshot.negative_count, sizeof(uint64_t));
             if (negative->bucket_counts == NULL) {
+                cmt_metric_exp_hist_snapshot_destroy(&snapshot);
                 free(negative);
                 destroy_data_point(exponential_data_point, map->type);
                 return CMT_ENCODE_OPENTELEMETRY_DATA_POINT_INIT_ERROR;
             }
-            memcpy(negative->bucket_counts, sample->exp_hist_negative_buckets,
-                   sizeof(uint64_t) * sample->exp_hist_negative_count);
+            memcpy(negative->bucket_counts, snapshot.negative_buckets,
+                   sizeof(uint64_t) * snapshot.negative_count);
             exponential_data_point->negative = negative;
         }
 
+        cmt_metric_exp_hist_snapshot_destroy(&snapshot);
         data_point = exponential_data_point;
     }
 
