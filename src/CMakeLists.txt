@@ -132,6 +132,7 @@ if(FLB_SYSTEM_WINDOWS)
   set(src
     ${src}
     flb_dlfcn_win32.c
+    win32/flb_glob.c
     )
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W2")
 endif()
