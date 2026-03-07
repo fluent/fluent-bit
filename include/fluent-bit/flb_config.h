@@ -209,6 +209,11 @@ struct flb_config {
     int hc_errors_count;               /* health check error counts as unhealthy*/
     int hc_retry_failure_count;        /* health check retry failures count as unhealthy*/
     int health_check_period;           /* period by second for health status check */
+    int hc_throughput;                 /* if throughput check is enabled */
+    char *hc_throughput_input_plugins; /* which input plugins should be considered for checking throughput */
+    char *hc_throughput_output_plugins;/* which output plugins should be considered for checking throughput */
+    double hc_throughput_ratio_threshold; /* output/input ratio threshold to consider a failure */
+    int hc_throughput_min_failures; /* minimum amount of failures to cause error condition */
 #endif
 
     /*
@@ -387,6 +392,11 @@ enum conf_type {
 #define FLB_CONF_STR_HC_ERRORS_COUNT                        "HC_Errors_Count"
 #define FLB_CONF_STR_HC_RETRIES_FAILURE_COUNT               "HC_Retry_Failure_Count"
 #define FLB_CONF_STR_HC_PERIOD                              "HC_Period"
+#define FLB_CONF_STR_HC_THROUGHPUT                          "HC_Throughput"
+#define FLB_CONF_STR_HC_THROUGHPUT_IN_PLUGINS               "HC_Throughput_Input_Plugins"
+#define FLB_CONF_STR_HC_THROUGHPUT_OUT_PLUGINS              "HC_Throughput_Output_Plugins"
+#define FLB_CONF_STR_HC_THROUGHPUT_RATIO_THRESHOLD          "HC_Throughput_Ratio_Threshold"
+#define FLB_CONF_STR_HC_THROUGHPUT_MIN_FAILURES             "HC_Throughput_Min_Failures"
 #endif /* !FLB_HAVE_HTTP_SERVER */
 
 #ifdef FLB_HAVE_CHUNK_TRACE
