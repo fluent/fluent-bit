@@ -728,7 +728,7 @@ int flb_log_construct(struct log_message *msg, int *ret_len,
 
     header_title = flb_log_message_type_str(type);
     len = snprintf(msg->msg, sizeof(msg->msg) - 1,
-                   "%s[%s%i/%02i/%02i %02i:%02i:%02i.%03ld%s]%s [%s%5s%s] ",
+                   "%s[%s%i-%02i-%02i %02i:%02i:%02i.%03ld%s]%s [%s%5s%s] ",
                    /*      time     */                    /* type */
 
                    /* time variables */

@@ -225,7 +225,7 @@ void flb_dump(struct flb_config *ctx)
     current = localtime(&now);
 
     fprintf(stderr,
-            "[%i/%02i/%02i %02i:%02i:%02i] Fluent Bit Dump\n",
+            "[%i-%02i-%02i %02i:%02i:%02i] Fluent Bit Dump\n",
             current->tm_year + 1900,
             current->tm_mon + 1,
             current->tm_mday,
