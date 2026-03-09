@@ -462,6 +462,8 @@ struct flb_output_instance {
     struct cmt_gauge   *cmt_chunk_available_capacity_percent;
     /* m: output_latency_seconds */
     struct cmt_histogram *cmt_latency;
+    /* m: output_backpressure_wait_seconds */
+    struct cmt_histogram *cmt_backpressure_wait;
 
     /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS

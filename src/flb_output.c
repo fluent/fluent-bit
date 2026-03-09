@@ -48,6 +48,10 @@ static const double output_latency_buckets[] = {
     0.5, 1.0, 1.5, 2.5, 5.0, 10.0, 20.0, 30.0
 };
 
+static const double output_backpressure_wait_buckets[] = {
+    0.010, 0.050, 0.100, 0.250, 0.500, 1.0, 2.0, 5.0, 15.0, 30.0, 60.0
+};
+
 struct flb_config_map output_global_properties[] = {
     {
         FLB_CONFIG_MAP_STR, "match", NULL,
@@ -1401,6 +1405,22 @@ int flb_output_init_all(struct flb_config *config)
                                                 "End-to-end latency in seconds",
                                                 buckets,
                                                 2, (char *[]) {"input", "output"});
+
+        buckets = cmt_histogram_buckets_create_size((double *) output_request_duration_buckets,
+                                                    sizeof(output_request_duration_buckets) / sizeof(double));
+        if (!buckets) {
+            flb_error("could not create request duration histogram buckets for %s", name);
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+
+        ins->cmt_backpressure_wait = cmt_histogram_create(ins->cmt,
+                                                "fluentbit",
+                                                "output",
+                                                "backpressure_wait_seconds",
+                                                "Output backpressure wait in seconds",
+                                                buckets,
+                                                1, (char *[]) {"output"});
 
         /* old API */
         ins->metrics = flb_metrics_create(name);
