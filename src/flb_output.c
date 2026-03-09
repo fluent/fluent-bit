@@ -1494,10 +1494,10 @@ int flb_output_init_all(struct flb_config *config)
                                                 buckets,
                                                 2, (char *[]) {"input", "output"});
 
-        buckets = cmt_histogram_buckets_create_size((double *) output_request_duration_buckets,
-                                                    sizeof(output_request_duration_buckets) / sizeof(double));
+        buckets = cmt_histogram_buckets_create_size((double *) output_backpressure_wait_buckets,
+                                                    sizeof(output_backpressure_wait_buckets) / sizeof(double));
         if (!buckets) {
-            flb_error("could not create request duration histogram buckets for %s", name);
+            flb_error("could not create backpressure wait histogram buckets for %s", name);
             flb_output_instance_destroy(ins);
             return -1;
         }
