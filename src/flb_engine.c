@@ -540,6 +540,11 @@ static inline int handle_output_event(uint64_t ts,
             cmt_counter_inc(ins->cmt_retries, ts, 1, (char *[]) {out_name});
             cmt_counter_add(ins->cmt_retried_records, ts, task->records,
                             1, (char *[]) {out_name});
+            if (ins->cmt_backpressure_wait) {
+                cmt_histogram_observe(ins->cmt_backpressure_wait, ts,
+                                      (double) retry_seconds, 1,
+                                      (char *[]) {out_name});
+            }
 
             cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
                           calculate_chunk_capacity_percent(ins),
