@@ -407,6 +407,10 @@ static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer
      * byte minimum payload length. This keeps behavior deterministic while
      * avoiding tiny payload overhead.
      */
+    parse_flags = YYJSON_READ_STOP_WHEN_DONE |
+                  YYJSON_READ_ALLOW_INVALID_UNICODE |
+                  YYJSON_READ_REPLACE_INVALID_UNICODE;
+
     if (len >= FLB_SIMD_VEC8_INST_LEN) {
         insitu_buf = flb_malloc(len + YYJSON_PADDING_SIZE);
         if (!insitu_buf) {
@@ -418,13 +422,12 @@ static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer
         memset(insitu_buf + len, 0, YYJSON_PADDING_SIZE);
 
         start = insitu_buf;
-        parse_flags = YYJSON_READ_STOP_WHEN_DONE | YYJSON_READ_INSITU |
-                      YYJSON_READ_ALLOW_INVALID_UNICODE | YYJSON_READ_REPLACE_INVALID_UNICODE;
+
+        /* enable insitu fast path */
+        parse_flags |= YYJSON_READ_INSITU;
     }
     else {
         start = js;
-        parse_flags = YYJSON_READ_STOP_WHEN_DONE |
-                      YYJSON_READ_ALLOW_INVALID_UNICODE | YYJSON_READ_REPLACE_INVALID_UNICODE;
     }
 
     origin = start;
