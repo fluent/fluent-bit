@@ -1265,6 +1265,56 @@ void test_json_pack_token_count_overflow()
     flb_pack_state_reset(&state);
 }
 
+void test_pack_json_yyjson_small()
+{
+    const char *json = "{\"key\":\"value\"}";
+    char *buf;
+    size_t size;
+    int root_type;
+    size_t consumed;
+    int ret;
+
+    ret = flb_pack_json_yyjson(json, strlen(json),
+                               &buf, &size,
+                               &root_type, &consumed);
+
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(size > 0);
+    TEST_CHECK(root_type == JSMN_OBJECT);
+
+    flb_free(buf);
+}
+
+void test_pack_json_yyjson_large()
+{
+    char json[1024];
+    char *buf;
+    size_t size;
+    int root_type;
+    size_t consumed;
+    int ret;
+
+    memset(json, 'a', sizeof(json));
+    json[0] = '{';
+    json[1] = '"';
+    json[2] = 'k';
+    json[3] = '"';
+    json[4] = ':';
+    json[5] = '"';
+    json[100] = '"';
+    json[101] = '}';
+    json[102] = '\0';
+
+    ret = flb_pack_json_yyjson(json, strlen(json),
+                               &buf, &size,
+                               &root_type, &consumed);
+
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(size > 0);
+
+    flb_free(buf);
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
@@ -1295,5 +1345,8 @@ TEST_LIST = {
     { "json_pack_surrogate_pairs", test_json_pack_surrogate_pairs},
     { "json_pack_surrogate_pairs_with_replacement", test_json_pack_surrogate_pairs_with_replacement},
     { "json_pack_token_count_overflow", test_json_pack_token_count_overflow},
+
+    { "pack_json_yyjson_small", test_pack_json_yyjson_small},
+    { "pack_json_yyjson_large", test_pack_json_yyjson_large},
     { 0 }
 };
