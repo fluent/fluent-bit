@@ -19,6 +19,7 @@
 
 #include <inttypes.h>
 #include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cfl/cfl.h>
@@ -113,6 +114,24 @@ static void hash_variant(cfl_hash_state_t *state,
                          struct cfl_variant *variant,
                          size_t depth);
 
+static int compare_uint64_values(const void *left, const void *right)
+{
+    uint64_t left_value;
+    uint64_t right_value;
+
+    left_value = *(const uint64_t *) left;
+    right_value = *(const uint64_t *) right;
+
+    if (left_value < right_value) {
+        return -1;
+    }
+    else if (left_value > right_value) {
+        return 1;
+    }
+
+    return 0;
+}
+
 static void hash_array(cfl_hash_state_t *state,
                        struct cfl_array *array,
                        size_t depth)
@@ -142,9 +161,13 @@ static void hash_kvlist(cfl_hash_state_t *state,
 {
     int entry_count;
     size_t count;
+    size_t index;
     size_t key_length;
+    uint64_t *entry_hashes;
+    uint64_t value_hash;
     struct cfl_list *head;
     struct cfl_kvpair *pair;
+    cfl_hash_state_t entry_state;
 
     if (kvlist == NULL || depth >= FLB_C2D_CONTEXT_HASH_MAX_DEPTH) {
         count = 0;
@@ -162,20 +185,54 @@ static void hash_kvlist(cfl_hash_state_t *state,
 
     cfl_hash_64bits_update(state, &count, sizeof(count));
 
+    if (count == 0) {
+        return;
+    }
+
+    entry_hashes = flb_calloc(count, sizeof(uint64_t));
+    if (entry_hashes == NULL) {
+        entry_hashes = NULL;
+    }
+
+    index = 0;
     cfl_list_foreach(head, &kvlist->list) {
         pair = cfl_list_entry(head, struct cfl_kvpair, _head);
 
-        if (pair->key != NULL) {
-            key_length = cfl_sds_len(pair->key);
-            cfl_hash_64bits_update(state, &key_length, sizeof(key_length));
-            cfl_hash_64bits_update(state, pair->key, key_length);
+        cfl_hash_64bits_reset(&entry_state);
+
+        if (pair->key == NULL) {
+            key_length = 0;
+            cfl_hash_64bits_update(&entry_state, &key_length, sizeof(key_length));
         }
         else {
-            key_length = 0;
-            cfl_hash_64bits_update(state, &key_length, sizeof(key_length));
+            key_length = cfl_sds_len(pair->key);
+            cfl_hash_64bits_update(&entry_state, &key_length, sizeof(key_length));
+            cfl_hash_64bits_update(&entry_state, pair->key, key_length);
         }
 
-        hash_variant(state, pair->val, depth + 1);
+        hash_variant(&entry_state, pair->val, depth + 1);
+        value_hash = cfl_hash_64bits_digest(&entry_state);
+
+        if (entry_hashes != NULL) {
+            entry_hashes[index] = value_hash;
+        }
+        else {
+            cfl_hash_64bits_update(state, &value_hash, sizeof(value_hash));
+        }
+
+        index++;
+    }
+
+    if (entry_hashes != NULL) {
+        qsort(entry_hashes, count, sizeof(uint64_t), compare_uint64_values);
+
+        for (index = 0; index < count; index++) {
+            cfl_hash_64bits_update(state,
+                                   &entry_hashes[index],
+                                   sizeof(entry_hashes[index]));
+        }
+
+        flb_free(entry_hashes);
     }
 }
 
@@ -281,6 +338,25 @@ static int series_state_update_counter(
     state->last_counter_value = value;
 
     return 0;
+}
+
+static void series_state_mark_recent(struct flb_cumulative_to_delta_ctx *context,
+                                     struct flb_cumulative_to_delta_series *state)
+{
+    if (context == NULL || state == NULL) {
+        return;
+    }
+
+    if (state->_head.next == NULL || state->_head.prev == NULL) {
+        return;
+    }
+
+    if (context->series_list.prev == &state->_head) {
+        return;
+    }
+
+    cfl_list_del(&state->_head);
+    cfl_list_add(&state->_head, &context->series_list);
 }
 
 static int series_state_update_histogram(
@@ -517,6 +593,11 @@ static struct flb_cumulative_to_delta_series *series_state_get(
     state = flb_hash_table_get_ptr(context->series_table, key, cfl_sds_len(key));
     if (state != NULL || create_if_missing == FLB_FALSE) {
         flb_sds_destroy(key);
+
+        if (state != NULL) {
+            series_state_mark_recent(context, state);
+        }
+
         return state;
     }
 
@@ -615,6 +696,8 @@ static int process_counter_sample(struct flb_cumulative_to_delta_ctx *context,
         }
 
         if (series_state_update_counter(state, timestamp, current_value) != 0) {
+            series_state_table_del(context, state);
+            series_state_destroy(state);
             return -1;
         }
 
@@ -717,6 +800,350 @@ static int exp_hist_bucket_index_from_offset(int32_t offset,
     return 0;
 }
 
+struct flb_c2d_exp_hist_bucket_layout {
+    int32_t offset;
+    size_t count;
+    uint64_t *buckets;
+    int owns_buckets;
+};
+
+struct flb_c2d_exp_hist_layout {
+    int32_t scale;
+    struct flb_c2d_exp_hist_bucket_layout positive;
+    struct flb_c2d_exp_hist_bucket_layout negative;
+};
+
+static void exp_hist_bucket_layout_destroy(
+    struct flb_c2d_exp_hist_bucket_layout *layout)
+{
+    if (layout == NULL) {
+        return;
+    }
+
+    if (layout->owns_buckets == FLB_TRUE &&
+        layout->buckets != NULL) {
+        flb_free(layout->buckets);
+    }
+
+    memset(layout, 0, sizeof(struct flb_c2d_exp_hist_bucket_layout));
+}
+
+static void exp_hist_layout_destroy(struct flb_c2d_exp_hist_layout *layout)
+{
+    if (layout == NULL) {
+        return;
+    }
+
+    exp_hist_bucket_layout_destroy(&layout->positive);
+    exp_hist_bucket_layout_destroy(&layout->negative);
+    memset(layout, 0, sizeof(struct flb_c2d_exp_hist_layout));
+}
+
+static int exp_hist_floor_div(int64_t value,
+                              int64_t divisor,
+                              int64_t *result)
+{
+    int64_t quotient;
+    int64_t remainder;
+
+    if (result == NULL || divisor <= 0) {
+        return -1;
+    }
+
+    quotient = value / divisor;
+    remainder = value % divisor;
+
+    if (remainder != 0 && value < 0) {
+        quotient--;
+    }
+
+    *result = quotient;
+
+    return 0;
+}
+
+static int exp_hist_bucket_layout_downscale(
+    struct flb_c2d_exp_hist_bucket_layout *source,
+    int32_t scale_delta,
+    struct flb_c2d_exp_hist_bucket_layout *destination)
+{
+    int64_t first_index;
+    int64_t group_index;
+    int64_t last_index;
+    int64_t new_first_index;
+    int64_t new_last_index;
+    int64_t signed_position;
+    int64_t width;
+    size_t index;
+
+    if (source == NULL || destination == NULL) {
+        return -1;
+    }
+
+    memset(destination, 0, sizeof(struct flb_c2d_exp_hist_bucket_layout));
+
+    if (source->count == 0) {
+        return 0;
+    }
+
+    if (source->buckets == NULL || scale_delta < 0 || scale_delta > 62) {
+        return -1;
+    }
+
+    if (scale_delta == 0) {
+        destination->offset = source->offset;
+        destination->count = source->count;
+        destination->buckets = source->buckets;
+        destination->owns_buckets = FLB_FALSE;
+
+        return 0;
+    }
+
+    width = ((int64_t) 1) << scale_delta;
+    signed_position = (int64_t) source->count - 1;
+    first_index = (int64_t) source->offset;
+    last_index = first_index + signed_position;
+
+    if (last_index < first_index) {
+        return -1;
+    }
+
+    if (exp_hist_floor_div(first_index, width, &new_first_index) != 0 ||
+        exp_hist_floor_div(last_index, width, &new_last_index) != 0) {
+        return -1;
+    }
+
+    if (new_first_index < INT32_MIN || new_first_index > INT32_MAX ||
+        new_last_index < INT32_MIN || new_last_index > INT32_MAX ||
+        new_last_index < new_first_index) {
+        return -1;
+    }
+
+    destination->count = (size_t) (new_last_index - new_first_index + 1);
+    destination->offset = (int32_t) new_first_index;
+    destination->owns_buckets = FLB_TRUE;
+    destination->buckets = flb_calloc(destination->count, sizeof(uint64_t));
+    if (destination->buckets == NULL) {
+        return -1;
+    }
+
+    for (index = 0; index < source->count; index++) {
+        signed_position = (int64_t) index;
+        group_index = first_index + signed_position;
+
+        if (exp_hist_floor_div(group_index, width, &group_index) != 0) {
+            exp_hist_bucket_layout_destroy(destination);
+            return -1;
+        }
+
+        destination->buckets[(size_t) (group_index - new_first_index)] +=
+            source->buckets[index];
+    }
+
+    return 0;
+}
+
+static int exp_hist_layout_downscale(struct flb_c2d_exp_hist_layout *source,
+                                     int32_t target_scale,
+                                     struct flb_c2d_exp_hist_layout *destination)
+{
+    int32_t scale_delta;
+
+    if (source == NULL || destination == NULL || target_scale > source->scale) {
+        return -1;
+    }
+
+    memset(destination, 0, sizeof(struct flb_c2d_exp_hist_layout));
+    destination->scale = target_scale;
+    scale_delta = source->scale - target_scale;
+
+    if (exp_hist_bucket_layout_downscale(&source->positive,
+                                         scale_delta,
+                                         &destination->positive) != 0) {
+        return -1;
+    }
+
+    if (exp_hist_bucket_layout_downscale(&source->negative,
+                                         scale_delta,
+                                         &destination->negative) != 0) {
+        exp_hist_layout_destroy(destination);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int exp_hist_layout_init_from_sample(struct flb_c2d_exp_hist_layout *layout,
+                                            struct cmt_metric *sample)
+{
+    if (layout == NULL || sample == NULL) {
+        return -1;
+    }
+
+    memset(layout, 0, sizeof(struct flb_c2d_exp_hist_layout));
+    layout->scale = sample->exp_hist_scale;
+
+    layout->positive.offset = sample->exp_hist_positive_offset;
+    layout->positive.count = sample->exp_hist_positive_count;
+    layout->positive.buckets = sample->exp_hist_positive_buckets;
+    layout->positive.owns_buckets = FLB_FALSE;
+
+    layout->negative.offset = sample->exp_hist_negative_offset;
+    layout->negative.count = sample->exp_hist_negative_count;
+    layout->negative.buckets = sample->exp_hist_negative_buckets;
+    layout->negative.owns_buckets = FLB_FALSE;
+
+    return 0;
+}
+
+static int exp_hist_layout_init_from_state(struct flb_c2d_exp_hist_layout *layout,
+                                           struct flb_cumulative_to_delta_series *state)
+{
+    if (layout == NULL || state == NULL) {
+        return -1;
+    }
+
+    memset(layout, 0, sizeof(struct flb_c2d_exp_hist_layout));
+    layout->scale = state->last_exp_hist_scale;
+
+    layout->positive.offset = state->last_exp_hist_positive_offset;
+    layout->positive.count = state->last_exp_hist_positive_count;
+    layout->positive.buckets = state->last_exp_hist_positive_buckets;
+    layout->positive.owns_buckets = FLB_FALSE;
+
+    layout->negative.offset = state->last_exp_hist_negative_offset;
+    layout->negative.count = state->last_exp_hist_negative_count;
+    layout->negative.buckets = state->last_exp_hist_negative_buckets;
+    layout->negative.owns_buckets = FLB_FALSE;
+
+    return 0;
+}
+
+static int exp_hist_bucket_layout_is_monotonic(
+    struct flb_c2d_exp_hist_bucket_layout *current,
+    struct flb_c2d_exp_hist_bucket_layout *previous)
+{
+    int64_t bucket_index;
+    int64_t current_end;
+    int64_t current_start;
+    int64_t previous_end;
+    int64_t previous_start;
+    uint64_t current_value;
+    uint64_t previous_value;
+
+    if (current == NULL || previous == NULL) {
+        return FLB_FALSE;
+    }
+
+    current_start = (int64_t) current->offset;
+    previous_start = (int64_t) previous->offset;
+    current_end = current_start + (int64_t) current->count - 1;
+    previous_end = previous_start + (int64_t) previous->count - 1;
+
+    if (current->count == 0) {
+        current_end = current_start - 1;
+    }
+    if (previous->count == 0) {
+        previous_end = previous_start - 1;
+    }
+
+    for (bucket_index = current_start; bucket_index <= current_end; bucket_index++) {
+        current_value = exp_hist_bucket_get_value(current->offset,
+                                                  current->count,
+                                                  current->buckets,
+                                                  bucket_index);
+        previous_value = exp_hist_bucket_get_value(previous->offset,
+                                                   previous->count,
+                                                   previous->buckets,
+                                                   bucket_index);
+
+        if (current_value < previous_value) {
+            return FLB_FALSE;
+        }
+    }
+
+    for (bucket_index = previous_start; bucket_index <= previous_end; bucket_index++) {
+        current_value = exp_hist_bucket_get_value(current->offset,
+                                                  current->count,
+                                                  current->buckets,
+                                                  bucket_index);
+        previous_value = exp_hist_bucket_get_value(previous->offset,
+                                                   previous->count,
+                                                   previous->buckets,
+                                                   bucket_index);
+
+        if (current_value < previous_value) {
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
+static void exp_hist_bucket_layout_subtract(
+    struct flb_c2d_exp_hist_bucket_layout *current,
+    struct flb_c2d_exp_hist_bucket_layout *previous)
+{
+    int64_t bucket_index;
+    size_t index;
+    uint64_t previous_value;
+
+    if (current == NULL || previous == NULL) {
+        return;
+    }
+
+    for (index = 0; index < current->count; index++) {
+        if (exp_hist_bucket_index_from_offset(current->offset,
+                                              index,
+                                              &bucket_index) != 0) {
+            continue;
+        }
+
+        previous_value = exp_hist_bucket_get_value(previous->offset,
+                                                   previous->count,
+                                                   previous->buckets,
+                                                   bucket_index);
+        current->buckets[index] -= previous_value;
+    }
+}
+
+static void exp_hist_sample_apply_layout(struct cmt_metric *sample,
+                                         struct flb_c2d_exp_hist_layout *layout)
+{
+    uint64_t *old_negative;
+    uint64_t *old_positive;
+
+    if (sample == NULL || layout == NULL) {
+        return;
+    }
+
+    old_positive = sample->exp_hist_positive_buckets;
+    old_negative = sample->exp_hist_negative_buckets;
+
+    sample->exp_hist_scale = layout->scale;
+    sample->exp_hist_positive_offset = layout->positive.offset;
+    sample->exp_hist_positive_count = layout->positive.count;
+    sample->exp_hist_positive_buckets = layout->positive.buckets;
+    sample->exp_hist_negative_offset = layout->negative.offset;
+    sample->exp_hist_negative_count = layout->negative.count;
+    sample->exp_hist_negative_buckets = layout->negative.buckets;
+
+    if (layout->positive.owns_buckets == FLB_TRUE &&
+        old_positive != NULL &&
+        old_positive != sample->exp_hist_positive_buckets) {
+        flb_free(old_positive);
+    }
+
+    if (layout->negative.owns_buckets == FLB_TRUE &&
+        old_negative != NULL &&
+        old_negative != sample->exp_hist_negative_buckets) {
+        flb_free(old_negative);
+    }
+
+    layout->positive.owns_buckets = FLB_FALSE;
+    layout->negative.owns_buckets = FLB_FALSE;
+}
+
 static int process_histogram_sample(struct flb_cumulative_to_delta_ctx *context,
                                     struct cmt_histogram *histogram,
                                     struct cmt_metric *sample,
@@ -768,6 +1195,8 @@ static int process_histogram_sample(struct flb_cumulative_to_delta_ctx *context,
                                           current_sum,
                                           bucket_count,
                                           sample->hist_buckets) != 0) {
+            series_state_table_del(context, state);
+            series_state_destroy(state);
             return -1;
         }
 
@@ -885,6 +1314,10 @@ static int process_exp_histogram_sample(struct flb_cumulative_to_delta_ctx *cont
                                         struct cmt_metric *sample,
                                         uint64_t context_identity)
 {
+    int32_t original_negative_offset;
+    int32_t original_positive_offset;
+    int32_t original_scale;
+    int32_t output_scale;
     int reset_detected;
     int current_sum_set;
     uint64_t current_count;
@@ -892,15 +1325,17 @@ static int process_exp_histogram_sample(struct flb_cumulative_to_delta_ctx *cont
     uint64_t count_delta;
     uint64_t zero_count_delta;
     uint64_t timestamp;
-    uint64_t current_bucket_value;
-    uint64_t previous_bucket_value;
-    int64_t bucket_index;
-    size_t index;
     double current_sum;
     double sum_delta;
+    double original_zero_threshold;
     uint64_t *cumulative_positive_snapshot;
     uint64_t *cumulative_negative_snapshot;
+    struct flb_c2d_exp_hist_layout current_layout;
+    struct flb_c2d_exp_hist_layout normalized_current_layout;
+    struct flb_c2d_exp_hist_layout normalized_previous_layout;
     struct flb_cumulative_to_delta_series *state;
+    size_t original_negative_count;
+    size_t original_positive_count;
 
     if (sample->exp_hist_positive_count > 0 &&
         sample->exp_hist_positive_buckets == NULL) {
@@ -918,6 +1353,16 @@ static int process_exp_histogram_sample(struct flb_cumulative_to_delta_ctx *cont
     current_sum_set = sample->exp_hist_sum_set;
     current_sum = 0.0;
     sum_delta = 0.0;
+    original_scale = sample->exp_hist_scale;
+    original_zero_threshold = sample->exp_hist_zero_threshold;
+    original_positive_offset = sample->exp_hist_positive_offset;
+    original_positive_count = sample->exp_hist_positive_count;
+    original_negative_offset = sample->exp_hist_negative_offset;
+    original_negative_count = sample->exp_hist_negative_count;
+
+    memset(&current_layout, 0, sizeof(struct flb_c2d_exp_hist_layout));
+    memset(&normalized_current_layout, 0, sizeof(struct flb_c2d_exp_hist_layout));
+    memset(&normalized_previous_layout, 0, sizeof(struct flb_c2d_exp_hist_layout));
 
     if (current_sum_set == CMT_TRUE) {
         current_sum = cmt_math_uint64_to_d64(sample->exp_hist_sum);
@@ -952,6 +1397,8 @@ static int process_exp_histogram_sample(struct flb_cumulative_to_delta_ctx *cont
                                               current_count,
                                               current_sum_set,
                                               current_sum) != 0) {
+            series_state_table_del(context, state);
+            series_state_destroy(state);
             return -1;
         }
 
@@ -968,8 +1415,7 @@ static int process_exp_histogram_sample(struct flb_cumulative_to_delta_ctx *cont
 
     reset_detected = FLB_FALSE;
 
-    if (sample->exp_hist_scale != state->last_exp_hist_scale ||
-        sample->exp_hist_zero_threshold != state->last_exp_hist_zero_threshold ||
+    if (sample->exp_hist_zero_threshold != state->last_exp_hist_zero_threshold ||
         current_sum_set != state->last_exp_hist_sum_set) {
         reset_detected = FLB_TRUE;
     }
@@ -979,115 +1425,51 @@ static int process_exp_histogram_sample(struct flb_cumulative_to_delta_ctx *cont
         reset_detected = FLB_TRUE;
     }
 
-    if (reset_detected == FLB_FALSE) {
-        for (index = 0; index < sample->exp_hist_positive_count; index++) {
-            if (exp_hist_bucket_index_from_offset(sample->exp_hist_positive_offset,
-                                                  index,
-                                                  &bucket_index) != 0) {
-                return FLB_C2D_DROP;
-            }
-
-            previous_bucket_value = exp_hist_bucket_get_value(
-                state->last_exp_hist_positive_offset,
-                state->last_exp_hist_positive_count,
-                state->last_exp_hist_positive_buckets,
-                bucket_index);
-
-            current_bucket_value = sample->exp_hist_positive_buckets[index];
-
-            if (current_bucket_value < previous_bucket_value) {
-                reset_detected = FLB_TRUE;
-                break;
-            }
-        }
+    output_scale = sample->exp_hist_scale;
+    if (state->last_exp_hist_scale < output_scale) {
+        output_scale = state->last_exp_hist_scale;
     }
 
     if (reset_detected == FLB_FALSE) {
-        for (index = 0; index < sample->exp_hist_negative_count; index++) {
-            if (exp_hist_bucket_index_from_offset(sample->exp_hist_negative_offset,
-                                                  index,
-                                                  &bucket_index) != 0) {
-                return FLB_C2D_DROP;
-            }
-
-            previous_bucket_value = exp_hist_bucket_get_value(
-                state->last_exp_hist_negative_offset,
-                state->last_exp_hist_negative_count,
-                state->last_exp_hist_negative_buckets,
-                bucket_index);
-
-            current_bucket_value = sample->exp_hist_negative_buckets[index];
-
-            if (current_bucket_value < previous_bucket_value) {
-                reset_detected = FLB_TRUE;
-                break;
-            }
+        if (exp_hist_layout_init_from_sample(&current_layout, sample) != 0 ||
+            exp_hist_layout_downscale(&current_layout,
+                                      output_scale,
+                                      &normalized_current_layout) != 0) {
+            return -1;
         }
-    }
 
-    if (reset_detected == FLB_FALSE) {
-        for (index = 0; index < state->last_exp_hist_positive_count; index++) {
-            if (exp_hist_bucket_index_from_offset(state->last_exp_hist_positive_offset,
-                                                  index,
-                                                  &bucket_index) != 0) {
-                return FLB_C2D_DROP;
-            }
-
-            previous_bucket_value = exp_hist_bucket_get_value(
-                state->last_exp_hist_positive_offset,
-                state->last_exp_hist_positive_count,
-                state->last_exp_hist_positive_buckets,
-                bucket_index);
-            current_bucket_value = exp_hist_bucket_get_value(
-                sample->exp_hist_positive_offset,
-                sample->exp_hist_positive_count,
-                sample->exp_hist_positive_buckets,
-                bucket_index);
-
-            if (current_bucket_value < previous_bucket_value) {
-                reset_detected = FLB_TRUE;
-                break;
-            }
+        if (exp_hist_layout_init_from_state(&current_layout, state) != 0 ||
+            exp_hist_layout_downscale(&current_layout,
+                                      output_scale,
+                                      &normalized_previous_layout) != 0) {
+            exp_hist_layout_destroy(&normalized_current_layout);
+            return -1;
         }
-    }
 
-    if (reset_detected == FLB_FALSE) {
-        for (index = 0; index < state->last_exp_hist_negative_count; index++) {
-            if (exp_hist_bucket_index_from_offset(state->last_exp_hist_negative_offset,
-                                                  index,
-                                                  &bucket_index) != 0) {
-                return FLB_C2D_DROP;
-            }
-
-            previous_bucket_value = exp_hist_bucket_get_value(
-                state->last_exp_hist_negative_offset,
-                state->last_exp_hist_negative_count,
-                state->last_exp_hist_negative_buckets,
-                bucket_index);
-            current_bucket_value = exp_hist_bucket_get_value(
-                sample->exp_hist_negative_offset,
-                sample->exp_hist_negative_count,
-                sample->exp_hist_negative_buckets,
-                bucket_index);
-
-            if (current_bucket_value < previous_bucket_value) {
-                reset_detected = FLB_TRUE;
-                break;
-            }
+        if (exp_hist_bucket_layout_is_monotonic(&normalized_current_layout.positive,
+                                                &normalized_previous_layout.positive) ==
+                FLB_FALSE ||
+            exp_hist_bucket_layout_is_monotonic(&normalized_current_layout.negative,
+                                                &normalized_previous_layout.negative) ==
+                FLB_FALSE) {
+            reset_detected = FLB_TRUE;
         }
     }
 
     if (reset_detected == FLB_TRUE && context->drop_on_reset == FLB_TRUE) {
+        exp_hist_layout_destroy(&normalized_current_layout);
+        exp_hist_layout_destroy(&normalized_previous_layout);
+
         if (series_state_update_exp_histogram(state,
                                               timestamp,
-                                              sample->exp_hist_scale,
+                                              original_scale,
                                               current_zero_count,
-                                              sample->exp_hist_zero_threshold,
-                                              sample->exp_hist_positive_offset,
-                                              sample->exp_hist_positive_count,
+                                              original_zero_threshold,
+                                              original_positive_offset,
+                                              original_positive_count,
                                               sample->exp_hist_positive_buckets,
-                                              sample->exp_hist_negative_offset,
-                                              sample->exp_hist_negative_count,
+                                              original_negative_offset,
+                                              original_negative_count,
                                               sample->exp_hist_negative_buckets,
                                               current_count,
                                               current_sum_set,
@@ -1120,6 +1502,8 @@ static int process_exp_histogram_sample(struct flb_cumulative_to_delta_ctx *cont
             if (cumulative_positive_snapshot != NULL) {
                 flb_free(cumulative_positive_snapshot);
             }
+            exp_hist_layout_destroy(&normalized_current_layout);
+            exp_hist_layout_destroy(&normalized_previous_layout);
             return -1;
         }
 
@@ -1128,56 +1512,13 @@ static int process_exp_histogram_sample(struct flb_cumulative_to_delta_ctx *cont
                sizeof(uint64_t) * sample->exp_hist_negative_count);
     }
 
-    for (index = 0; index < sample->exp_hist_positive_count; index++) {
-        if (reset_detected == FLB_TRUE) {
-            continue;
-        }
+    if (reset_detected == FLB_FALSE) {
+        exp_hist_sample_apply_layout(sample, &normalized_current_layout);
 
-        if (exp_hist_bucket_index_from_offset(sample->exp_hist_positive_offset,
-                                              index,
-                                              &bucket_index) != 0) {
-            if (cumulative_positive_snapshot != NULL) {
-                flb_free(cumulative_positive_snapshot);
-            }
-            if (cumulative_negative_snapshot != NULL) {
-                flb_free(cumulative_negative_snapshot);
-            }
-            return FLB_C2D_DROP;
-        }
-
-        previous_bucket_value = exp_hist_bucket_get_value(
-            state->last_exp_hist_positive_offset,
-            state->last_exp_hist_positive_count,
-            state->last_exp_hist_positive_buckets,
-            bucket_index);
-
-        sample->exp_hist_positive_buckets[index] -= previous_bucket_value;
-    }
-
-    for (index = 0; index < sample->exp_hist_negative_count; index++) {
-        if (reset_detected == FLB_TRUE) {
-            continue;
-        }
-
-        if (exp_hist_bucket_index_from_offset(sample->exp_hist_negative_offset,
-                                              index,
-                                              &bucket_index) != 0) {
-            if (cumulative_positive_snapshot != NULL) {
-                flb_free(cumulative_positive_snapshot);
-            }
-            if (cumulative_negative_snapshot != NULL) {
-                flb_free(cumulative_negative_snapshot);
-            }
-            return FLB_C2D_DROP;
-        }
-
-        previous_bucket_value = exp_hist_bucket_get_value(
-            state->last_exp_hist_negative_offset,
-            state->last_exp_hist_negative_count,
-            state->last_exp_hist_negative_buckets,
-            bucket_index);
-
-        sample->exp_hist_negative_buckets[index] -= previous_bucket_value;
+        exp_hist_bucket_layout_subtract(&normalized_current_layout.positive,
+                                        &normalized_previous_layout.positive);
+        exp_hist_bucket_layout_subtract(&normalized_current_layout.negative,
+                                        &normalized_previous_layout.negative);
     }
 
     if (reset_detected == FLB_TRUE) {
@@ -1215,16 +1556,19 @@ static int process_exp_histogram_sample(struct flb_cumulative_to_delta_ctx *cont
         sample->exp_hist_sum = 0;
     }
 
+    exp_hist_layout_destroy(&normalized_current_layout);
+    exp_hist_layout_destroy(&normalized_previous_layout);
+
     if (series_state_update_exp_histogram(state,
                                           timestamp,
-                                          sample->exp_hist_scale,
+                                          original_scale,
                                           current_zero_count,
-                                          sample->exp_hist_zero_threshold,
-                                          sample->exp_hist_positive_offset,
-                                          sample->exp_hist_positive_count,
+                                          original_zero_threshold,
+                                          original_positive_offset,
+                                          original_positive_count,
                                           cumulative_positive_snapshot,
-                                          sample->exp_hist_negative_offset,
-                                          sample->exp_hist_negative_count,
+                                          original_negative_offset,
+                                          original_negative_count,
                                           cumulative_negative_snapshot,
                                           current_count,
                                           current_sum_set,
@@ -1529,6 +1873,8 @@ int flb_cumulative_to_delta_ctx_configure(
     int max_staleness_seconds,
     int max_series)
 {
+    uint64_t default_gc_interval;
+
     if (context == NULL) {
         return -1;
     }
@@ -1539,9 +1885,20 @@ int flb_cumulative_to_delta_ctx_configure(
 
     if (max_staleness_seconds == 0) {
         context->series_ttl = UINT64_MAX;
+        context->gc_interval =
+            (uint64_t) FLB_C2D_GC_INTERVAL_SECONDS * 1000000000ULL;
     }
     else {
         context->series_ttl = (uint64_t) max_staleness_seconds * 1000000000ULL;
+        default_gc_interval =
+            (uint64_t) FLB_C2D_GC_INTERVAL_SECONDS * 1000000000ULL;
+
+        if (context->series_ttl < default_gc_interval) {
+            context->gc_interval = context->series_ttl;
+        }
+        else {
+            context->gc_interval = default_gc_interval;
+        }
     }
 
     if (max_series == 0) {
@@ -1550,6 +1907,8 @@ int flb_cumulative_to_delta_ctx_configure(
     else {
         context->max_series = (size_t) max_series;
     }
+
+    context->next_gc_timestamp = cfl_time_now() + context->gc_interval;
 
     return 0;
 }
