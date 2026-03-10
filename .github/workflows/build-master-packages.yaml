@@ -14,12 +14,18 @@ on:
         default: ""
 
 name: Build packages for master
+
+permissions:
+  contents: read
+
 jobs:
   master-build-generate-matrix:
     name: Staging build matrix
     runs-on: ubuntu-latest
     outputs:
       build-matrix: ${{ steps.set-matrix.outputs.matrix }}
+    permissions:
+      contents: read
     steps:
       # Set up the list of target to build so we can pass the JSON to the reusable job
       - id: set-matrix
@@ -42,6 +48,8 @@ jobs:
 
   master-build-packages:
     needs: master-build-generate-matrix
+    permissions:
+      contents: read
     uses: ./.github/workflows/call-build-linux-packages.yaml
     with:
       version: master

@@ -6,6 +6,10 @@ on:
       - edited
       - reopened
       - synchronize
+
+permissions:
+  contents: read
+
 jobs:
   check-commit-message:
     name: Check Commit Message
