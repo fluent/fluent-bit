@@ -54,7 +54,7 @@ static void cb_counter_flush(struct flb_event_chunk *event_chunk,
     /* Count number of serialized msgpack root objects */
     serialized_events = flb_mp_count(event_chunk->data, event_chunk->size);
 
-    /* Count number of logical log records (groups excluded) */
+    /* Count number of logical log records (group markers excluded) */
     log_records = 0;
     if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
         log_records = flb_mp_count_log_records(event_chunk->data,
