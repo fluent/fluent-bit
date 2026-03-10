@@ -38,6 +38,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   call-test-images-cosign-verify:

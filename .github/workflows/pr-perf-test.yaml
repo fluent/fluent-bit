@@ -97,7 +97,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions-ecosystem/action-add-labels@v1
+      - uses: actions-ecosystem/action-add-labels@bd52874380e3909a1ac983768df6976535ece7f8
         name: Label the PR
         with:
           labels: ci/performance-test-ok

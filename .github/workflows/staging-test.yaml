@@ -13,6 +13,7 @@ concurrency: integration-test
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   staging-test-images:
@@ -22,6 +23,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: read
+      packages: read
     uses: ./.github/workflows/call-test-images.yaml
     with:
       registry: ghcr.io
