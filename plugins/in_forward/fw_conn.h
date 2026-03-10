@@ -46,8 +46,8 @@ struct fw_conn {
 
     /* Buffer */
     char *buf;                       /* Buffer data                       */
-    int  buf_len;                    /* Data length                       */
-    int  buf_size;                   /* Buffer size                       */
+    size_t buf_len;                  /* Data length                       */
+    size_t buf_size;                 /* Buffer size                       */
     size_t rest;                     /* Unpacking offset                  */
 
     /* Decompression context */
