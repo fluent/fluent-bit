@@ -71,6 +71,8 @@ struct flb_mp_chunk_cobj *flb_mp_chunk_cobj_create(struct flb_log_event_encoder 
 int flb_mp_chunk_cobj_destroy(struct flb_mp_chunk_cobj *chunk_cobj);
 
 int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size);
+int flb_mp_chunk_cobj_count_log_records(struct flb_mp_chunk_cobj *chunk_cobj);
+int flb_mp_chunk_cobj_normalize_groups(struct flb_mp_chunk_cobj *chunk_cobj);
 
 
 
