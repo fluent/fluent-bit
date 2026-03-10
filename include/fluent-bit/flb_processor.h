@@ -130,6 +130,19 @@ struct flb_processor {
 
     flb_pipefd_t notification_channel;
 
+    /*
+     * Processor chain accounting metrics
+     * ----------------------------------
+     * These counters are registered in the owner context metrics (input/output)
+     * and updated per processor unit execution.
+     */
+    struct cmt_counter *cmt_invocations;
+    struct cmt_counter *cmt_errors;
+    struct cmt_counter *cmt_items_in;
+    struct cmt_counter *cmt_items_out;
+    struct cmt_counter *cmt_items_drop;
+    struct cmt_counter *cmt_items_add;
+
     /* Fluent Bit context */
     struct flb_config *config;
 };
