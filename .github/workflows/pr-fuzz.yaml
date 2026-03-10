@@ -9,6 +9,9 @@ jobs:
   fuzzing:
     name: PR - fuzzing test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
     - name: Build Fuzzers
       id: build
