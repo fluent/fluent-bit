@@ -31,9 +31,10 @@
 static int fw_conn_event_internal(struct flb_connection *connection)
 {
     int ret;
-    int bytes;
-    int available;
-    int size;
+    ssize_t bytes;
+    size_t read_bytes;
+    size_t available;
+    size_t size;
     char *tmp;
     struct fw_conn *conn;
     struct mk_event *event;
@@ -66,7 +67,7 @@ static int fw_conn_event_internal(struct flb_connection *connection)
         available = (conn->buf_size - conn->buf_len);
         if (available < 1) {
             if (conn->buf_size >= ctx->buffer_max_size) {
-                flb_plg_warn(ctx->ins, "fd=%i incoming data exceed limit (%lu bytes)",
+                flb_plg_warn(ctx->ins, "fd=%i incoming data exceed limit (%zu bytes)",
                              event->fd, (ctx->buffer_max_size));
                 fw_conn_del(conn);
                 return -1;
@@ -84,7 +85,7 @@ static int fw_conn_event_internal(struct flb_connection *connection)
                 flb_errno();
                 return -1;
             }
-            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %i",
+            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %zu -> %zu",
                           event->fd, conn->buf_size, size);
 
             conn->buf = tmp;
@@ -97,9 +98,10 @@ static int fw_conn_event_internal(struct flb_connection *connection)
                                 available);
 
         if (bytes > 0) {
-            flb_plg_trace(ctx->ins, "read()=%i pre_len=%i now_len=%i",
-                          bytes, conn->buf_len, conn->buf_len + bytes);
-            conn->buf_len += bytes;
+            read_bytes = (size_t) bytes;
+            flb_plg_trace(ctx->ins, "read()=%zd pre_len=%zu now_len=%zu",
+                          bytes, conn->buf_len, conn->buf_len + read_bytes);
+            conn->buf_len += read_bytes;
 
             ret = fw_prot_process(ctx->ins, conn);
             if (ret == -1) {
