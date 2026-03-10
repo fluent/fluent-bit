@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_plugin.h>
 #include <cmetrics/cmt_counter.h>
 
 #include "flb_tests_internal.h"
@@ -151,6 +152,50 @@ static int create_grouped_msgpack_records(char **out_buf, size_t *out_size)
     return 0;
 }
 
+static int get_counter_value_5(struct cmt_counter *counter,
+                               char *label_value_0,
+                               char *label_value_1,
+                               char *label_value_2,
+                               char *label_value_3,
+                               char *label_value_4,
+                               double *value)
+{
+    char *labels[5];
+
+    labels[0] = label_value_0;
+    labels[1] = label_value_1;
+    labels[2] = label_value_2;
+    labels[3] = label_value_3;
+    labels[4] = label_value_4;
+
+    return cmt_counter_get_val(counter, 5, labels, value);
+}
+
+static int get_counter_value_5_or_zero(struct cmt_counter *counter,
+                                       char *label_value_0,
+                                       char *label_value_1,
+                                       char *label_value_2,
+                                       char *label_value_3,
+                                       char *label_value_4,
+                                       double *value)
+{
+    int ret;
+
+    ret = get_counter_value_5(counter,
+                              label_value_0,
+                              label_value_1,
+                              label_value_2,
+                              label_value_3,
+                              label_value_4,
+                              value);
+    if (ret != 0) {
+        *value = 0.0;
+        return 0;
+    }
+
+    return ret;
+}
+
 static void processor()
 {
     int ret;
@@ -240,6 +285,7 @@ static void processor_grouped_filter_counters()
     dropped = 0;
     added = 0;
     init_ok = FLB_FALSE;
+    mp_buf = NULL;
     out_buf = NULL;
     out_size = 0;
 
@@ -290,11 +336,16 @@ static void processor_grouped_filter_counters()
                                 &out_buf, &out_size);
         TEST_CHECK(ret == 0);
         TEST_CHECK(out_size == 0);
-        if (out_buf != NULL) {
-            flb_free(out_buf);
-            out_buf = NULL;
-        }
+    }
+
+    if (out_buf != NULL && out_buf != mp_buf) {
+        flb_free(out_buf);
+        out_buf = NULL;
+    }
+
+    if (mp_buf != NULL) {
         flb_free(mp_buf);
+        mp_buf = NULL;
     }
 
     if (ret == 0 && init_ok == FLB_TRUE) {
@@ -389,9 +440,198 @@ static void processor_private_inputs_use_main_loop()
 #endif
 }
 
+static void processor_metrics_counters()
+{
+    int ret;
+    int vret;
+    double invocations;
+    double errors;
+    double items_in;
+    double items_out;
+    double items_drop;
+    double items_add;
+    char stage_label[32];
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    struct flb_config *config;
+    struct flb_input_instance owner_input;
+    char *mp_buf;
+    size_t mp_size;
+    void *out_buf;
+    size_t out_size;
+    flb_sds_t regex_prop_key;
+    struct cfl_variant var = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = NULL,
+    };
+
+    invocations = 0.0;
+    errors = 0.0;
+    items_in = 0.0;
+    items_out = 0.0;
+    items_drop = 0.0;
+    items_add = 0.0;
+    out_buf = NULL;
+    out_size = 0;
+
+    flb_init_env();
+
+    regex_prop_key = flb_sds_create("message ^doesnotmatch$");
+    TEST_CHECK(regex_prop_key != NULL);
+    var.data.as_string = regex_prop_key;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    if (config == NULL) {
+        flb_sds_destroy(regex_prop_key);
+        return;
+    }
+
+    proc = flb_processor_create(config, "unit_test", NULL, 0);
+    TEST_CHECK(proc != NULL);
+    if (proc == NULL) {
+        flb_config_exit(config);
+        flb_sds_destroy(regex_prop_key);
+        return;
+    }
+
+    memset(&owner_input, 0, sizeof(owner_input));
+    snprintf(owner_input.name, sizeof(owner_input.name) - 1, "%s",
+             "unit_input.0");
+    owner_input.name[sizeof(owner_input.name) - 1] = '\0';
+    owner_input.cmt = cmt_create();
+    TEST_CHECK(owner_input.cmt != NULL);
+    if (owner_input.cmt == NULL) {
+        if (owner_input.cmt != NULL) {
+            cmt_destroy(owner_input.cmt);
+        }
+        flb_processor_destroy(proc);
+        flb_config_exit(config);
+        flb_sds_destroy(regex_prop_key);
+        return;
+    }
+
+    proc->data = &owner_input;
+    proc->source_plugin_type = FLB_PLUGIN_INPUT;
+
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "grep");
+    TEST_CHECK(pu != NULL);
+    if (pu == NULL) {
+        cmt_destroy(owner_input.cmt);
+        flb_processor_destroy(proc);
+        flb_config_exit(config);
+        flb_sds_destroy(regex_prop_key);
+        return;
+    }
+
+    ret = flb_processor_unit_set_property(pu, "regex", &var);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_processor_init(proc);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        cmt_destroy(owner_input.cmt);
+        flb_processor_destroy(proc);
+        flb_config_exit(config);
+        flb_sds_destroy(regex_prop_key);
+        return;
+    }
+
+    ret = create_grouped_msgpack_records(&mp_buf, &mp_size);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        cmt_destroy(owner_input.cmt);
+        flb_processor_destroy(proc);
+        flb_config_exit(config);
+        flb_sds_destroy(regex_prop_key);
+        return;
+    }
+
+    ret = flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS,
+                            "TEST", 4, mp_buf, mp_size,
+                            &out_buf, &out_size);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(out_size == 0);
+    if (out_buf != NULL) {
+        flb_free(out_buf);
+        out_buf = NULL;
+    }
+    flb_free(mp_buf);
+
+    snprintf(stage_label, sizeof(stage_label) - 1, "%zu", pu->stage);
+    stage_label[sizeof(stage_label) - 1] = '\0';
+
+    vret = get_counter_value_5(proc->cmt_invocations,
+                               "input",
+                               (char *) flb_input_name(&owner_input),
+                               (char *) pu->name,
+                               stage_label,
+                               "logs",
+                               &invocations);
+    TEST_CHECK(vret == 0);
+
+    vret = get_counter_value_5_or_zero(proc->cmt_errors,
+                                       "input",
+                                       (char *) flb_input_name(&owner_input),
+                                       (char *) pu->name,
+                                       stage_label,
+                                       "logs",
+                                       &errors);
+    TEST_CHECK(vret == 0);
+
+    vret = get_counter_value_5(proc->cmt_items_in,
+                               "input",
+                               (char *) flb_input_name(&owner_input),
+                               (char *) pu->name,
+                               stage_label,
+                               "logs",
+                               &items_in);
+    TEST_CHECK(vret == 0);
+
+    vret = get_counter_value_5(proc->cmt_items_out,
+                               "input",
+                               (char *) flb_input_name(&owner_input),
+                               (char *) pu->name,
+                               stage_label,
+                               "logs",
+                               &items_out);
+    TEST_CHECK(vret == 0);
+
+    vret = get_counter_value_5(proc->cmt_items_drop,
+                               "input",
+                               (char *) flb_input_name(&owner_input),
+                               (char *) pu->name,
+                               stage_label,
+                               "logs",
+                               &items_drop);
+    TEST_CHECK(vret == 0);
+
+    vret = get_counter_value_5_or_zero(proc->cmt_items_add,
+                                       "input",
+                                       (char *) flb_input_name(&owner_input),
+                                       (char *) pu->name,
+                                       stage_label,
+                                       "logs",
+                                       &items_add);
+    TEST_CHECK(vret == 0);
+
+    TEST_CHECK(invocations == 1.0);
+    TEST_CHECK(errors == 0.0);
+    TEST_CHECK(items_in == 1.0);
+    TEST_CHECK(items_out == 0.0);
+    TEST_CHECK(items_drop == 1.0);
+    TEST_CHECK(items_add == 0.0);
+
+    cmt_destroy(owner_input.cmt);
+    flb_processor_destroy(proc);
+    flb_config_exit(config);
+    flb_sds_destroy(regex_prop_key);
+}
+
 TEST_LIST = {
     { "processor_private_inputs_use_main_loop", processor_private_inputs_use_main_loop },
     { "processor", processor },
     { "processor_grouped_filter_counters", processor_grouped_filter_counters },
+    { "processor_metrics_counters", processor_metrics_counters },
     { 0 }
 };
