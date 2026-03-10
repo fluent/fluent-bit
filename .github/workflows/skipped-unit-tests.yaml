@@ -12,6 +12,9 @@ on:
       - 'appveyor.yml'
       - 'examples/**'
 
+permissions:
+  contents: read
+
 jobs:
   run-all-unit-tests:
     runs-on: ubuntu-latest
