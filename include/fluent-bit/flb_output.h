@@ -778,6 +778,9 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
 
     if (flb_processor_is_active(o_ins->processor)) {
         if (evc->type == FLB_EVENT_TYPE_LOGS) {
+            char *normalized_buf;
+            size_t normalized_size;
+
             /* run the processor */
             ret = flb_processor_run(o_ins->processor,
                                     0,
@@ -789,6 +792,21 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                 flb_coro_destroy(coro);
                 flb_free(out_flush);
                 return NULL;
+            }
+
+            normalized_buf = NULL;
+            normalized_size = 0;
+
+            ret = flb_mp_normalize_log_buffer_groups_msgpack(p_buf, p_size,
+                                                             &normalized_buf,
+                                                             &normalized_size);
+            if (ret == 0) {
+                if (p_buf != evc->data) {
+                    flb_free(p_buf);
+                }
+
+                p_buf = normalized_buf;
+                p_size = normalized_size;
             }
 
             records = flb_mp_count_log_records(p_buf, p_size);
