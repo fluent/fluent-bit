@@ -133,6 +133,92 @@ static int get_counter_value_2_or_zero(struct cmt_counter *counter,
     return ret;
 }
 
+static int get_counter_value_5(struct cmt_counter *counter,
+                               char *label_value_0,
+                               char *label_value_1,
+                               char *label_value_2,
+                               char *label_value_3,
+                               char *label_value_4,
+                               double *value)
+{
+    char *labels[5];
+
+    labels[0] = label_value_0;
+    labels[1] = label_value_1;
+    labels[2] = label_value_2;
+    labels[3] = label_value_3;
+    labels[4] = label_value_4;
+
+    return cmt_counter_get_val(counter, 5, labels, value);
+}
+
+static int get_counter_value_5_or_zero(struct cmt_counter *counter,
+                                       char *label_value_0,
+                                       char *label_value_1,
+                                       char *label_value_2,
+                                       char *label_value_3,
+                                       char *label_value_4,
+                                       double *value)
+{
+    int ret;
+
+    ret = get_counter_value_5(counter,
+                              label_value_0,
+                              label_value_1,
+                              label_value_2,
+                              label_value_3,
+                              label_value_4,
+                              value);
+    if (ret != 0) {
+        *value = 0.0;
+        return 0;
+    }
+
+    return ret;
+}
+
+static int get_processor_counter_value(struct cmt_counter *counter,
+                                       const char *scope,
+                                       const char *owner,
+                                       struct flb_processor_unit *pu,
+                                       const char *signal,
+                                       double *value)
+{
+    char stage_label[32];
+
+    snprintf(stage_label, sizeof(stage_label) - 1, "%zu", pu->stage);
+    stage_label[sizeof(stage_label) - 1] = '\0';
+
+    return get_counter_value_5(counter,
+                               (char *) scope,
+                               (char *) owner,
+                               (char *) pu->name,
+                               stage_label,
+                               (char *) signal,
+                               value);
+}
+
+static int get_processor_counter_value_or_zero(struct cmt_counter *counter,
+                                               const char *scope,
+                                               const char *owner,
+                                               struct flb_processor_unit *pu,
+                                               const char *signal,
+                                               double *value)
+{
+    char stage_label[32];
+
+    snprintf(stage_label, sizeof(stage_label) - 1, "%zu", pu->stage);
+    stage_label[sizeof(stage_label) - 1] = '\0';
+
+    return get_counter_value_5_or_zero(counter,
+                                       (char *) scope,
+                                       (char *) owner,
+                                       (char *) pu->name,
+                                       stage_label,
+                                       (char *) signal,
+                                       value);
+}
+
 static int build_grouped_log_payload(char **out_buf, size_t *out_size)
 {
     int ret;
@@ -383,6 +469,11 @@ static void flb_test_output_processor_drop_parity(void)
     double output_proc_records;
     double router_records;
     double router_drop_records;
+    double processor_invocations;
+    double processor_errors;
+    double processor_items_in;
+    double processor_items_out;
+    double processor_items_drop;
     flb_ctx_t *ctx;
     struct flb_processor *proc;
     struct flb_processor_unit *pu;
@@ -392,6 +483,11 @@ static void flb_test_output_processor_drop_parity(void)
     output_proc_records = 0.0;
     router_records = 0.0;
     router_drop_records = 0.0;
+    processor_invocations = 0.0;
+    processor_errors = 0.0;
+    processor_items_in = 0.0;
+    processor_items_out = 0.0;
+    processor_items_drop = 0.0;
 
     ctx = flb_create();
     TEST_CHECK(ctx != NULL);
@@ -466,9 +562,54 @@ static void flb_test_output_processor_drop_parity(void)
                                           &router_drop_records);
         TEST_CHECK(ret == 0);
 
+        ret = get_processor_counter_value(o_ins->processor->cmt_invocations,
+                                          "output",
+                                          flb_output_name(o_ins),
+                                          pu,
+                                          "logs",
+                                          &processor_invocations);
+        TEST_CHECK(ret == 0);
+
+        ret = get_processor_counter_value_or_zero(o_ins->processor->cmt_errors,
+                                                  "output",
+                                                  flb_output_name(o_ins),
+                                                  pu,
+                                                  "logs",
+                                                  &processor_errors);
+        TEST_CHECK(ret == 0);
+
+        ret = get_processor_counter_value(o_ins->processor->cmt_items_in,
+                                          "output",
+                                          flb_output_name(o_ins),
+                                          pu,
+                                          "logs",
+                                          &processor_items_in);
+        TEST_CHECK(ret == 0);
+
+        ret = get_processor_counter_value(o_ins->processor->cmt_items_out,
+                                          "output",
+                                          flb_output_name(o_ins),
+                                          pu,
+                                          "logs",
+                                          &processor_items_out);
+        TEST_CHECK(ret == 0);
+
+        ret = get_processor_counter_value(o_ins->processor->cmt_items_drop,
+                                          "output",
+                                          flb_output_name(o_ins),
+                                          pu,
+                                          "logs",
+                                          &processor_items_drop);
+        TEST_CHECK(ret == 0);
+
         TEST_CHECK(output_proc_records == 0.0);
         TEST_CHECK(router_records == 0.0);
         TEST_CHECK(router_drop_records == 0.0);
+        TEST_CHECK(processor_invocations >= 1.0);
+        TEST_CHECK(processor_errors == 0.0);
+        TEST_CHECK(processor_items_in >= 1.0);
+        TEST_CHECK(processor_items_out == 0.0);
+        TEST_CHECK(processor_items_drop >= 1.0);
     }
 
     flb_stop(ctx);
