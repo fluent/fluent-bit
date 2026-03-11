@@ -39,6 +39,12 @@
 #include "azure_msiauth.h"
 #include "azure_kusto_store.h"
 
+/**
+ * Retrieve an OAuth2 access token using Managed Service Identity (MSI).
+ *
+ * @param ctx  Plugin's context containing the OAuth2 configuration.
+ * @return int 0 on success, -1 on failure.
+ */
 static int azure_kusto_get_msi_token(struct flb_azure_kusto *ctx)
 {
     char *token;
@@ -53,6 +59,12 @@ static int azure_kusto_get_msi_token(struct flb_azure_kusto *ctx)
     return 0;
 }
 
+/**
+ * Retrieve an OAuth2 access token using workload identity federation.
+ *
+ * @param ctx  Plugin's context containing workload identity configuration.
+ * @return int 0 on success, -1 on failure.
+ */
 static int azure_kusto_get_workload_identity_token(struct flb_azure_kusto *ctx)
 {
     int ret;
@@ -70,6 +82,15 @@ static int azure_kusto_get_workload_identity_token(struct flb_azure_kusto *ctx)
     return 0;
 }
 
+/**
+ * Retrieve an OAuth2 access token using service principal credentials.
+ *
+ * Constructs the OAuth2 payload with client credentials and requests
+ * an access token from the configured OAuth2 endpoint.
+ *
+ * @param ctx  Plugin's context containing client credentials and OAuth2 config.
+ * @return int 0 on success, -1 on failure.
+ */
 static int azure_kusto_get_service_principal_token(struct flb_azure_kusto *ctx)
 {
     int ret;
@@ -117,6 +138,16 @@ static int azure_kusto_get_service_principal_token(struct flb_azure_kusto *ctx)
     return 0;
 }
 
+/**
+ * Obtain the current Azure Kusto bearer token as a formatted string.
+ *
+ * Acquires the token mutex, refreshes the token if expired based on the
+ * configured authentication type, and returns a copy of the token string
+ * in the format "<token_type> <access_token>".
+ *
+ * @param ctx  Plugin's context.
+ * @return flb_sds_t  The bearer token string, or NULL on error.
+ */
 flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
 {
     int ret = 0;
@@ -1143,6 +1174,19 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
     return 0;
 }
 
+/**
+ * Buffer a data chunk into the file storage for later ingestion.
+ *
+ * Writes the formatted chunk data to the upload file via the store layer.
+ *
+ * @param out_context  Plugin's context (cast to struct flb_azure_kusto).
+ * @param upload_file  Target file handle for buffered storage.
+ * @param chunk        Data chunk to buffer.
+ * @param chunk_size   Size of the data chunk.
+ * @param tag          Fluent Bit tag associated with the chunk.
+ * @param tag_len      Length of the tag string.
+ * @return int         0 on success, -1 on failure.
+ */
 static int buffer_chunk(void *out_context, struct azure_kusto_file *upload_file,
                         flb_sds_t chunk, int chunk_size,
                         flb_sds_t tag, size_t tag_len)
