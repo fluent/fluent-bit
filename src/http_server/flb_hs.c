@@ -362,6 +362,7 @@ struct flb_hs *flb_hs_create(const char *listen, const char *tcp_port,
     if (errno == ERANGE || end == tcp_port || *end != '\0' ||
         port <= 0 || port > 65535) {
         flb_error("[http_server] invalid monitoring tcp_port '%s'", tcp_port);
+        flb_hs_endpoints_free(hs);
         flb_free(hs);
         return NULL;
     }
@@ -375,6 +376,7 @@ struct flb_hs *flb_hs_create(const char *listen, const char *tcp_port,
 
     ret = flb_http_server_init_with_options(&hs->server, &options);
     if (ret != 0) {
+        flb_hs_endpoints_free(hs);
         flb_free(hs);
         return NULL;
     }
