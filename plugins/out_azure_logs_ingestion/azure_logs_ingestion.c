@@ -118,8 +118,8 @@ static int az_li_format(const void *in_buf, size_t in_bytes,
 
             len = snprintf(time_formatted + s,
                             sizeof(time_formatted) - 1 - s,
-                            ".%03" PRIu64 "Z",
-                            (uint64_t) tm.tm.tv_nsec / 1000000);
+                            ".%07" PRIu64 "Z",
+                            (uint64_t) tm.tm.tv_nsec / 100);
             s += len;
             msgpack_pack_str(&mp_pck, s);
             msgpack_pack_str_body(&mp_pck, time_formatted, s);
@@ -421,8 +421,10 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "time_generated", "false",
      0, FLB_TRUE, offsetof(struct flb_az_li, time_generated),
-     "If enabled, will generate a timestamp and append it to JSON. "
-     "The key name is set by the 'time_key' parameter"
+     "Optional. If enabled, the timestamp appended under "
+     "'time_key' is formatted as an ISO 8601 string. If disabled, "
+     "it is a floating-point number representing seconds since "
+     "Unix epoch."
     },
     {
      FLB_CONFIG_MAP_BOOL, "compress", "false",
