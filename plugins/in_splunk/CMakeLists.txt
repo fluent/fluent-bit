@@ -4,7 +4,6 @@ endif()
 
 set(src
   splunk.c
-  splunk_conn.c
   splunk_prot.c
   splunk_config.c
   )
