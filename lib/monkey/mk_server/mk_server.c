@@ -578,6 +578,10 @@ void mk_server_worker_loop(struct mk_server *server)
                         if (timeout_fd > 0) {
                             mk_event_timeout_destroy(evl, server_timeout);
                         }
+
+                        mk_sched_threads_destroy_all(sched);
+                        mk_sched_event_free_all(sched);
+
                         mk_mem_free(MK_TLS_GET(mk_tls_server_timeout));
                         mk_server_listen_exit(sched->listeners);
                         mk_event_loop_destroy(evl);
