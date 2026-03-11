@@ -42,6 +42,9 @@ static int send_response_ng(struct flb_http_response *response,
     else if (http_status == 400) {
         flb_http_response_set_message(response, "Bad Request");
     }
+    else if (http_status == 500) {
+        flb_http_response_set_message(response, "Internal Server Error");
+    }
 
     if (message != NULL) {
         flb_http_response_set_body(response,
@@ -65,15 +68,15 @@ static int process_payload_metrics_ng(struct flb_prom_remote_write *ctx,
                                                        cfl_sds_len(request->body));
 
     if (result != CMT_DECODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
-        return -1;
+        return 400;
     }
 
     result = flb_input_metrics_append(ctx->ins, NULL, 0, context);
     cmt_decode_prometheus_remote_write_destroy(context);
 
     if (result != 0) {
-        flb_plg_debug(ctx->ins, "could not ingest metrics : %d", result);
-        return -1;
+        flb_plg_error(ctx->ins, "could not ingest metrics : %d", result);
+        return 500;
     }
 
     return 0;
@@ -115,7 +118,12 @@ int prom_rw_prot_handle_ng(struct flb_http_request *request,
 
     result = process_payload_metrics_ng(ctx, request);
     if (result != 0) {
-        send_response_ng(response, 400, "error: invalid request\n");
+        if (result >= 500) {
+            send_response_ng(response, result, "error: could not ingest metrics\n");
+        }
+        else {
+            send_response_ng(response, result, "error: invalid request\n");
+        }
         return -1;
     }
 
