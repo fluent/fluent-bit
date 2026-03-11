@@ -333,6 +333,10 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             ctx = flb_calloc(1, sizeof(struct flb_plugin_input_proxy_context));
             if (!ctx) {
                 flb_errno();
+                flb_hash_table_destroy(instance->ht_log_chunks);
+                flb_hash_table_destroy(instance->ht_metric_chunks);
+                flb_hash_table_destroy(instance->ht_trace_chunks);
+                flb_hash_table_destroy(instance->ht_profile_chunks);
                 flb_free(instance->http_server_config);
                 flb_free(instance);
                 return NULL;
@@ -446,9 +450,18 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         if (!instance->rb) {
             flb_error("instance %s could not initialize ring buffer",
                       flb_input_name(instance));
-            if (instance->http_server_config != NULL) {
-                flb_free(instance->http_server_config);
+            flb_hash_table_destroy(instance->ht_log_chunks);
+            flb_hash_table_destroy(instance->ht_metric_chunks);
+            flb_hash_table_destroy(instance->ht_trace_chunks);
+            flb_hash_table_destroy(instance->ht_profile_chunks);
+            if (plugin->type != FLB_INPUT_PLUGIN_CORE) {
+                flb_free(instance->context);
             }
+            flb_sds_destroy(instance->host.name);
+            flb_sds_destroy(instance->host.address);
+            flb_uri_destroy(instance->host.uri);
+            flb_sds_destroy(instance->host.listen);
+            flb_free(instance->http_server_config);
             flb_free(instance);
             return NULL;
         }
@@ -673,9 +686,7 @@ int flb_input_set_property(struct flb_input_instance *ins,
              tmp != NULL) {
         kv = flb_kv_item_create(&ins->http_server_properties, (char *) k, NULL);
         if (!kv) {
-            if (tmp) {
-                flb_sds_destroy(tmp);
-            }
+            flb_sds_destroy(tmp);
             return -1;
         }
         kv->val = tmp;
