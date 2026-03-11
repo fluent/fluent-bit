@@ -27,6 +27,7 @@ static int prom_http_request_handler(struct flb_http_request *request,
                                      struct flb_http_response *response)
 {
     cfl_sds_t payload;
+    cfl_sds_t source_payload;
     struct prom_exporter *ctx;
     struct prom_http *ph;
 
@@ -51,14 +52,25 @@ static int prom_http_request_handler(struct flb_http_request *request,
     }
 
     pthread_mutex_lock(&ph->metrics_mutex);
-    payload = ph->metrics_payload;
-    if (payload != NULL) {
-        payload = cfl_sds_create_len(payload, cfl_sds_len(payload));
+    source_payload = ph->metrics_payload;
+    if (source_payload != NULL) {
+        payload = cfl_sds_create_len(source_payload, cfl_sds_len(source_payload));
+    }
+    else {
+        payload = NULL;
     }
     pthread_mutex_unlock(&ph->metrics_mutex);
 
     if (payload == NULL) {
-        flb_http_response_set_status(response, 404);
+        if (source_payload == NULL) {
+            return flb_hs_response_set_payload(response,
+                                               200,
+                                               FLB_HS_CONTENT_TYPE_PROMETHEUS,
+                                               NULL,
+                                               0);
+        }
+
+        flb_http_response_set_status(response, 500);
         return flb_http_response_commit(response);
     }
     flb_hs_response_set_payload(response,
