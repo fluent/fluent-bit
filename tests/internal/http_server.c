@@ -178,6 +178,7 @@ void test_http_server_managed_worker_contract()
     TEST_CHECK(context.init_calls == 0);
     TEST_CHECK(context.exit_calls == 0);
 
+    flb_http_server_destroy(&server);
     test_http_server_context_destroy(&context);
     flb_config_exit(config);
 }
