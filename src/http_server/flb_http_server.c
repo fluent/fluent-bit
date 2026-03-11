@@ -78,6 +78,27 @@ static int flb_http_server_running_on_caller_context(
            session->event_loop != NULL;
 }
 
+static const char *flb_http_server_get_alpn_string(struct flb_http_server *session)
+{
+    if (session == NULL) {
+        return NULL;
+    }
+
+    if (session->protocol_version == HTTP_PROTOCOL_VERSION_AUTODETECT) {
+        return "h2,http/1.1,http/1.0";
+    }
+
+    if (session->protocol_version >= HTTP_PROTOCOL_VERSION_20) {
+        return "h2";
+    }
+
+    if (session->protocol_version == HTTP_PROTOCOL_VERSION_11) {
+        return "http/1.1,http/1.0";
+    }
+
+    return "http/1.0";
+}
+
 static size_t flb_http_server_client_count(struct flb_http_server *server)
 {
     return cfl_list_size(&server->clients);
@@ -805,6 +826,7 @@ int flb_http_server_init_with_options(
 
 int flb_http_server_start(struct flb_http_server *session)
 {
+    const char *alpn;
     int result;
 
     if (!flb_http_server_running_on_caller_context(session)) {
@@ -813,7 +835,8 @@ int flb_http_server_start(struct flb_http_server *session)
     }
 
     if (session->tls_provider != NULL) {
-        result = flb_tls_set_alpn(session->tls_provider, "h2,http/1.0,http/1.1");
+        alpn = flb_http_server_get_alpn_string(session);
+        result = flb_tls_set_alpn(session->tls_provider, alpn);
 
         if (result != 0) {
             return -1;
