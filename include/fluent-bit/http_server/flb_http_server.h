@@ -54,8 +54,60 @@
 #define HTTP_SERVER_STOPPED                    3
 
 typedef int (*flb_http_server_request_processor_callback)(
-                struct flb_http_request *request,
-                struct flb_http_response *response);
+                 struct flb_http_request *request,
+                 struct flb_http_response *response);
+
+struct flb_http_server;
+struct flb_http_server_runtime;
+
+typedef int (*flb_http_server_worker_callback)(struct flb_http_server *server,
+                                               void *data);
+
+struct flb_input_instance;
+
+struct flb_http_server_config {
+    int    http2;
+    size_t buffer_max_size;
+    size_t buffer_chunk_size;
+    size_t max_connections;
+};
+
+struct flb_http_server_options {
+    int                                  protocol_version;
+    uint64_t                             flags;
+    flb_http_server_request_processor_callback request_callback;
+    void                                *user_data;
+
+    char                                *address;
+    unsigned short int                   port;
+    struct flb_tls                      *tls_provider;
+    int                                  networking_flags;
+    struct flb_net_setup                *networking_setup;
+    struct mk_event_loop                *event_loop;
+    struct flb_config                   *system_context;
+
+    size_t                               buffer_max_size;
+    size_t                               max_connections;
+
+    /* Total number of worker listeners to spawn. */
+    int                                  workers;
+
+    /*
+     * If true and workers == 1, run the server on the caller supplied
+     * event loop. Otherwise the server owns the worker thread(s) and the
+     * corresponding event loop(s).
+     */
+    int                                  use_caller_event_loop;
+
+    /*
+     * If true, use a shared listener port across internally managed
+     * workers. This is forced on automatically when workers > 1.
+     */
+    int                                  reuse_port;
+
+    flb_http_server_worker_callback      cb_worker_init;
+    flb_http_server_worker_callback      cb_worker_exit;
+};
 
 struct flb_http_server {
     /* Internal */
@@ -69,15 +121,22 @@ struct flb_http_server {
     struct flb_config     *system_context;
     /* Internal */
 
-    uint64_t               flags;
-    int                    status;
-    int                    protocol_version;
-    struct flb_downstream *downstream;
-    struct cfl_list        clients;
-    flb_http_server_request_processor_callback
-                           request_callback;
-    void                  *user_data;
-    size_t                 buffer_max_size;
+    uint64_t                            flags;
+    int                                 status;
+    int                                 protocol_version;
+    struct flb_downstream              *downstream;
+    struct cfl_list                     clients;
+    flb_http_server_request_processor_callback request_callback;
+    void                               *user_data;
+    size_t                              buffer_max_size;
+    size_t                              max_connections;
+    int                                 workers;
+    int                                 worker_id;
+    int                                 use_caller_event_loop;
+    int                                 reuse_port;
+    flb_http_server_worker_callback     cb_worker_init;
+    flb_http_server_worker_callback     cb_worker_exit;
+    struct flb_http_server_runtime     *runtime;
 };
 
 struct flb_http_server_session {
@@ -106,8 +165,7 @@ struct flb_http_server_session {
 int flb_http_server_init(struct flb_http_server *session,
                          int protocol_version,
                          uint64_t flags,
-                         flb_http_server_request_processor_callback
-                             request_callback,
+                         flb_http_server_request_processor_callback request_callback,
                          char *address,
                          unsigned short int port,
                          struct flb_tls *tls_provider,
@@ -117,11 +175,41 @@ int flb_http_server_init(struct flb_http_server *session,
                          struct flb_config *system_context,
                          void *user_data);
 
+void flb_http_server_options_init(struct flb_http_server_options *options);
+
+void flb_http_server_config_init(struct flb_http_server_config *config);
+
+int flb_http_server_options_init_from_input(struct flb_http_server_options *options,
+                                            struct flb_input_instance *input_instance,
+                                            int protocol_version,
+                                            uint64_t flags,
+                                            size_t buffer_max_size,
+                                            flb_http_server_request_processor_callback
+                                                request_callback,
+                                            void *user_data);
+
+int flb_input_http_server_options_init(struct flb_http_server_options *options,
+                                       struct flb_input_instance *input_instance,
+                                       uint64_t flags,
+                                       flb_http_server_request_processor_callback request_callback,
+                                       void *user_data);
+
+int flb_http_server_init_with_options(struct flb_http_server *session,
+                                      struct flb_http_server_options *options);
+
 int flb_http_server_start(struct flb_http_server *session);
 
 int flb_http_server_stop(struct flb_http_server *session);
 
 int flb_http_server_destroy(struct flb_http_server *session);
+
+int flb_http_server_init_on_input(struct flb_http_server *session,
+                                  struct flb_input_instance *input_instance,
+                                  int protocol_version,
+                                  uint64_t flags,
+                                  size_t buffer_max_size,
+                                  flb_http_server_request_processor_callback request_callback,
+                                  void *user_data);
 
 void flb_http_server_set_buffer_max_size(struct flb_http_server *server, size_t size);
 
@@ -136,7 +224,7 @@ struct flb_http_server_session *flb_http_server_session_create(int version);
 void flb_http_server_session_destroy(struct flb_http_server_session *session);
 
 int flb_http_server_session_ingest(struct flb_http_server_session *session,
-                            unsigned char *buffer,
-                            size_t length);
+                                   unsigned char *buffer,
+                                   size_t length);
 
 #endif
