@@ -621,8 +621,12 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     ret = flb_start(new_ctx);
 
     if (ret != 0) {
+        /*
+         * 'ctx' and its config were already destroyed above, so do not
+         * dereference old_config here.
+         */
+        new_config->hot_reloading = FLB_FALSE;
         flb_destroy(new_ctx);
-        old_config->hot_reloading = FLB_FALSE;
 
         flb_error("[reload] loaded configuration contains error(s). Reloading is aborted");
         flb_reload_watchdog_cleanup(watchdog_ctx);
