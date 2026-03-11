@@ -24,7 +24,6 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 
-#include <monkey/monkey.h>
 #include <fluent-bit/http_server/flb_http_server.h>
 
 #define HTTP_BUFFER_MAX_SIZE    "4M"
@@ -41,19 +40,7 @@ struct flb_prom_remote_write {
     /* HTTP URI */
     char *uri;
 
-    /* New gen HTTP server */
-    int enable_http2;
     struct flb_http_server http_server;
-
-    /* Legacy HTTP server */
-    size_t buffer_max_size;            /* Maximum buffer size */
-    size_t buffer_chunk_size;          /* Chunk allocation size */
-
-    int collector_id;                  /* Listener collector id       */
-    struct flb_downstream *downstream; /* Client manager */
-    struct mk_list connections;        /* linked list of connections */
-
-    struct mk_server *server;
 };
 
 
