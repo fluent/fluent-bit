@@ -41,26 +41,30 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag,
 
 static int content_type_is_json(const char *content_type)
 {
-    size_t length;
+    const char *separator;
+    size_t media_type_length;
 
     if (content_type == NULL) {
         return FLB_FALSE;
     }
 
-    length = strlen(content_type);
-
-    if (length == 16 &&
-        strncasecmp(content_type, "application/json", 16) == 0) {
-        return FLB_TRUE;
+    separator = strchr(content_type, ';');
+    if (separator == NULL) {
+        return strcasecmp(content_type, "application/json") == 0;
     }
 
-    if (length > 16 &&
-        (strncasecmp(content_type, "application/json;", 17) == 0 ||
-         strncasecmp(content_type, "application/json ", 17) == 0)) {
-        return FLB_TRUE;
+    media_type_length = separator - content_type;
+
+    while (media_type_length > 0 &&
+           isspace((unsigned char) content_type[media_type_length - 1])) {
+        media_type_length--;
     }
 
-    return FLB_FALSE;
+    if (media_type_length != strlen("application/json")) {
+        return FLB_FALSE;
+    }
+
+    return strncasecmp(content_type, "application/json", media_type_length) == 0;
 }
 
 static int content_type_is_urlencoded(const char *content_type)
