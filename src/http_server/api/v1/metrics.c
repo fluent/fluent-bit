@@ -428,8 +428,14 @@ static int cb_metrics(struct flb_hs *hs,
 /* Perform registration */
 int api_v1_metrics(struct flb_hs *hs)
 {
-    flb_hs_register_endpoint(hs, "/api/v1/metrics/prometheus",
-                             FLB_HS_ROUTE_EXACT, cb_metrics_prometheus);
+    int ret;
+
+    ret = flb_hs_register_endpoint(hs, "/api/v1/metrics/prometheus",
+                                   FLB_HS_ROUTE_EXACT, cb_metrics_prometheus);
+    if (ret != 0) {
+        return ret;
+    }
+
     return flb_hs_register_endpoint(hs, "/api/v1/metrics",
                                     FLB_HS_ROUTE_EXACT, cb_metrics);
 }

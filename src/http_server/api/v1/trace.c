@@ -598,6 +598,7 @@ static int cb_traces(struct flb_hs *hs,
         }
         else if (request->method == HTTP_METHOD_DELETE) {
             disable_trace_input(hs, input_name, input_nlen);
+            msgpack_pack_map(&mp_pck, 1);
             msgpack_pack_str_with_body(&mp_pck, HTTP_FIELD_STATUS, HTTP_FIELD_STATUS_LEN);
             msgpack_pack_str_with_body(&mp_pck, HTTP_RESULT_OK, HTTP_RESULT_OK_LEN);
         }
