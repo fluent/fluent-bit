@@ -57,6 +57,10 @@ struct flb_prom_remote_write *prom_rw_config_create(struct flb_input_instance *i
 
 int prom_rw_config_destroy(struct flb_prom_remote_write *ctx)
 {
+    if (ctx == NULL) {
+        return 0;
+    }
+
     flb_http_server_destroy(&ctx->http_server);
 
     flb_free(ctx->listen);
