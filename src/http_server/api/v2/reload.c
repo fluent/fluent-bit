@@ -71,6 +71,7 @@ static int handle_reload_request(struct flb_http_response *response,
     else {
         ret = GenerateConsoleCtrlEvent(1 /* CTRL_BREAK_EVENT_1 */, 0);
         if (ret == 0) {
+            msgpack_sbuffer_destroy(&mp_sbuf);
             flb_http_response_set_status(response, 500);
             return flb_http_response_commit(response);
         }
@@ -100,6 +101,7 @@ static int handle_reload_request(struct flb_http_response *response,
     else {
         ret = kill(getpid(), SIGHUP);
         if (ret != 0) {
+            msgpack_sbuffer_destroy(&mp_sbuf);
             flb_http_response_set_status(response, 500);
             return flb_http_response_commit(response);
         }
