@@ -107,6 +107,7 @@ void test_http_server_options_multi_worker_magic()
     struct flb_net_setup net_setup;
     struct flb_http_server server;
     struct flb_http_server_options options;
+    int ret;
 
     config = flb_config_init();
     if (!TEST_CHECK(config != NULL)) {
@@ -126,7 +127,12 @@ void test_http_server_options_multi_worker_magic()
     options.workers = 2;
     options.max_connections = 7;
 
-    TEST_CHECK(flb_http_server_init_with_options(&server, &options) == 0);
+    ret = flb_http_server_init_with_options(&server, &options);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_config_exit(config);
+        return;
+    }
     TEST_CHECK(server.workers == 2);
     TEST_CHECK(server.reuse_port == FLB_TRUE);
     TEST_CHECK(server.use_caller_event_loop == FLB_FALSE);
@@ -144,6 +150,7 @@ void test_http_server_managed_worker_contract()
     struct flb_http_server server;
     struct flb_http_server_options options;
     struct test_http_server_context context;
+    int ret;
     config = flb_config_init();
     if (!TEST_CHECK(config != NULL)) {
         return;
@@ -167,7 +174,13 @@ void test_http_server_managed_worker_contract()
     options.cb_worker_init = test_http_server_worker_init;
     options.cb_worker_exit = test_http_server_worker_exit;
 
-    TEST_CHECK(flb_http_server_init_with_options(&server, &options) == 0);
+    ret = flb_http_server_init_with_options(&server, &options);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        test_http_server_context_destroy(&context);
+        flb_config_exit(config);
+        return;
+    }
     TEST_CHECK(server.workers == 2);
     TEST_CHECK(server.use_caller_event_loop == FLB_FALSE);
     TEST_CHECK(server.reuse_port == FLB_TRUE);
