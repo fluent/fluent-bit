@@ -19,6 +19,8 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include <limits.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
@@ -1628,17 +1630,17 @@ int flb_pack_time_now(msgpack_packer *pck)
 }
 
 int flb_msgpack_expand_map(char *map_data, size_t map_size,
-                           msgpack_object_kv **kv_arr, int kv_arr_len,
-                           char** out_buf, int* out_size)
+                           msgpack_object_kv **kv_arr, size_t kv_arr_len,
+                           char** out_buf, size_t *out_size)
 {
     msgpack_sbuffer sbuf;
     msgpack_packer  pck;
     msgpack_unpacked result;
     size_t off = 0;
     char *ret_buf;
-    int map_num;
-    int i;
-    int len;
+    size_t map_num;
+    size_t i;
+    size_t len;
 
     if (map_data == NULL){
         return -1;
@@ -1656,11 +1658,28 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
     }
 
     len = result.data.via.map.size;
+
+    /*
+     * Guard len + kv_arr_len from overflowing size_t.
+     *
+     * Using `kv_arr_len > SIZE_MAX - len` makes the boundary explicit:
+     * equality is allowed (sum == SIZE_MAX), only strictly larger values fail.
+     */
+    if (kv_arr_len > SIZE_MAX - len) {
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
     map_num = kv_arr_len + len;
+
+    if (map_num > UINT32_MAX) {
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
 
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
-    msgpack_pack_map(&pck, map_num);
+    msgpack_pack_map(&pck, (uint32_t) map_num);
 
     for (i=0; i<len; i++) {
         msgpack_pack_object(&pck, result.data.via.map.ptr[i].key);
