@@ -58,16 +58,16 @@ static int cb_metrics_prometheus(struct flb_hs *hs,
         return flb_http_response_commit(response);
     }
 
+    buf->users++;
     cmt = (struct cmt *) buf->raw_data;
 
     /* convert CMetrics to text */
     payload = cmt_encode_prometheus_create(cmt, CMT_FALSE);
     if (!payload) {
+        buf->users--;
         flb_http_response_set_status(response, 500);
         return flb_http_response_commit(response);
     }
-
-    buf->users++;
 
     flb_hs_response_set_payload(response, 200,
                                 FLB_HS_CONTENT_TYPE_PROMETHEUS,
@@ -96,16 +96,16 @@ static int cb_metrics(struct flb_hs *hs,
         return flb_http_response_commit(response);
     }
 
+    buf->users++;
     cmt = (struct cmt *) buf->raw_data;
 
     /* convert CMetrics to text */
     payload = cmt_encode_text_create(cmt);
     if (!payload) {
+        buf->users--;
         flb_http_response_set_status(response, 500);
         return flb_http_response_commit(response);
     }
-
-    buf->users++;
 
     flb_hs_response_set_payload(response, 200,
                                 FLB_HS_CONTENT_TYPE_OTHER,
@@ -120,8 +120,14 @@ static int cb_metrics(struct flb_hs *hs,
 /* Perform registration */
 int api_v2_metrics(struct flb_hs *hs)
 {
-    flb_hs_register_endpoint(hs, "/api/v2/metrics/prometheus",
-                             FLB_HS_ROUTE_EXACT, cb_metrics_prometheus);
+    int ret;
+
+    ret = flb_hs_register_endpoint(hs, "/api/v2/metrics/prometheus",
+                                   FLB_HS_ROUTE_EXACT, cb_metrics_prometheus);
+    if (ret != 0) {
+        return ret;
+    }
+
     return flb_hs_register_endpoint(hs, "/api/v2/metrics",
                                     FLB_HS_ROUTE_EXACT, cb_metrics);
 }

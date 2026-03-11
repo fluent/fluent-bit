@@ -117,7 +117,7 @@ static int handle_reload_request(struct flb_http_response *response,
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     msgpack_sbuffer_destroy(&mp_sbuf);
     if (!out_buf) {
-        flb_http_response_set_status(response, 400);
+        flb_http_response_set_status(response, 500);
         return flb_http_response_commit(response);
     }
     out_size = flb_sds_len(out_buf);
@@ -151,7 +151,7 @@ static int handle_get_reload_status(struct flb_http_response *response,
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     msgpack_sbuffer_destroy(&mp_sbuf);
     if (!out_buf) {
-        flb_http_response_set_status(response, 400);
+        flb_http_response_set_status(response, 500);
         return flb_http_response_commit(response);
     }
     out_size = flb_sds_len(out_buf);

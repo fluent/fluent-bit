@@ -146,7 +146,6 @@ static int cb_health(struct flb_hs *hs,
     int ret;
     int status = is_healthy(hs);
 
-    (void) hs;
     (void) request;
 
     if (status == FLB_TRUE) {
@@ -170,5 +169,6 @@ int api_v1_health(struct flb_hs *hs)
 
 void flb_hs_health_destroy()
 {
+    /* cleanup handled by flb_hs lifecycle */
     return;
 }
