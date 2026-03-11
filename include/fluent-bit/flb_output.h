@@ -83,6 +83,7 @@ int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_inst
 #define FLB_OUTPUT_NO_MULTIPLEX  512  /* run one task at a time, one task per flush */
 #define FLB_OUTPUT_PRIVATE      1024
 #define FLB_OUTPUT_SYNCHRONOUS  2048  /* run one task at a time, no flush cycle limit */
+#define FLB_OUTPUT_HTTP_SERVER  4096  /* output uses the generic HTTP server  */
 
 
 /*
@@ -106,6 +107,7 @@ int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_inst
     const char *tag    = event_chunk->tag;
 
 struct flb_output_flush;
+struct flb_http_server_config;
 
 /*
  * Tests callbacks
@@ -433,6 +435,10 @@ struct flb_output_instance {
     struct flb_net_setup net_setup;
     struct mk_list *net_config_map;
     struct mk_list net_properties;
+
+    struct mk_list *http_server_config_map;
+    struct flb_http_server_config *http_server_config;
+    struct mk_list http_server_properties;
 
     struct mk_list *oauth2_config_map;
     struct mk_list oauth2_properties;
@@ -1320,6 +1326,16 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
     if (ins->net_config_map) {
         ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
                                  &ins->net_setup);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    /* HTTP server properties */
+    if (ins->http_server_config_map && ins->http_server_config) {
+        ret = flb_config_map_set(&ins->http_server_properties,
+                                 ins->http_server_config_map,
+                                 ins->http_server_config);
         if (ret == -1) {
             return -1;
         }
