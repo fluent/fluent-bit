@@ -214,6 +214,18 @@ struct flb_cloudwatch {
     int kubernete_metadata_enabled;
 
     int add_entity;
+
+    /* Cached record accessors for entity parsing (to avoid per-log allocation) */
+    struct flb_record_accessor *ra_entity_service_name;
+    struct flb_record_accessor *ra_entity_environment;
+    struct flb_record_accessor *ra_entity_namespace;
+    struct flb_record_accessor *ra_entity_node;
+    struct flb_record_accessor *ra_entity_cluster;
+    struct flb_record_accessor *ra_entity_workload;
+    struct flb_record_accessor *ra_entity_name_source;
+    struct flb_record_accessor *ra_entity_platform;
+    struct flb_record_accessor *ra_entity_instance_id;
+    struct flb_record_accessor *ra_entity_account_id;
 };
 
 void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx);

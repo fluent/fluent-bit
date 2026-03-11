@@ -387,6 +387,30 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         }
     }
 
+    /* Pre-create entity record accessors to avoid per-log allocation */
+    if (ctx->add_entity && ctx->kubernete_metadata_enabled) {
+        ctx->ra_entity_service_name = flb_ra_create(
+            "$kubernetes['aws_entity_service_name']", FLB_FALSE);
+        ctx->ra_entity_environment = flb_ra_create(
+            "$kubernetes['aws_entity_environment']", FLB_FALSE);
+        ctx->ra_entity_namespace = flb_ra_create(
+            "$kubernetes['namespace_name']", FLB_FALSE);
+        ctx->ra_entity_node = flb_ra_create(
+            "$kubernetes['host']", FLB_FALSE);
+        ctx->ra_entity_cluster = flb_ra_create(
+            "$kubernetes['aws_entity_cluster']", FLB_FALSE);
+        ctx->ra_entity_workload = flb_ra_create(
+            "$kubernetes['aws_entity_workload']", FLB_FALSE);
+        ctx->ra_entity_name_source = flb_ra_create(
+            "$kubernetes['aws_entity_name_source']", FLB_FALSE);
+        ctx->ra_entity_platform = flb_ra_create(
+            "$kubernetes['aws_entity_platform']", FLB_FALSE);
+        ctx->ra_entity_instance_id = flb_ra_create(
+            "$aws_entity_ec2_instance_id", FLB_FALSE);
+        ctx->ra_entity_account_id = flb_ra_create(
+            "$aws_entity_account_id", FLB_FALSE);
+    }
+
     /* Export context */
     flb_output_set_context(ins, ctx);
 
@@ -527,6 +551,39 @@ void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx)
             mk_list_del(&stream->_head);
             log_stream_destroy(stream);
         }
+
+        /* Destroy cached entity record accessors */
+        if (ctx->ra_entity_service_name) {
+            flb_ra_destroy(ctx->ra_entity_service_name);
+        }
+        if (ctx->ra_entity_environment) {
+            flb_ra_destroy(ctx->ra_entity_environment);
+        }
+        if (ctx->ra_entity_namespace) {
+            flb_ra_destroy(ctx->ra_entity_namespace);
+        }
+        if (ctx->ra_entity_node) {
+            flb_ra_destroy(ctx->ra_entity_node);
+        }
+        if (ctx->ra_entity_cluster) {
+            flb_ra_destroy(ctx->ra_entity_cluster);
+        }
+        if (ctx->ra_entity_workload) {
+            flb_ra_destroy(ctx->ra_entity_workload);
+        }
+        if (ctx->ra_entity_name_source) {
+            flb_ra_destroy(ctx->ra_entity_name_source);
+        }
+        if (ctx->ra_entity_platform) {
+            flb_ra_destroy(ctx->ra_entity_platform);
+        }
+        if (ctx->ra_entity_instance_id) {
+            flb_ra_destroy(ctx->ra_entity_instance_id);
+        }
+        if (ctx->ra_entity_account_id) {
+            flb_ra_destroy(ctx->ra_entity_account_id);
+        }
+
         flb_free(ctx);
     }
 }
