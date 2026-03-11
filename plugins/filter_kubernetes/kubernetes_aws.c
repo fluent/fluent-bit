@@ -30,6 +30,7 @@
 #include "fluent-bit/flb_http_client.h"
 #include "fluent-bit/flb_filter_plugin.h"
 #include "fluent-bit/flb_pack.h"
+#include "fluent-bit/flb_upstream.h"
 #include "fluent-bit/flb_upstream_conn.h"
 /*
  * If a file exists called service.map, load it and use it.
@@ -245,6 +246,7 @@ int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url,
 
         if (!c) {
             flb_error("[kubernetes] could not create HTTP client");
+            flb_upstream_conn_recycle(u_conn, FLB_FALSE);
             flb_upstream_conn_release(u_conn);
             flb_upstream_destroy(ctx->aws_pod_association_upstream);
             flb_tls_destroy(ctx->aws_pod_association_tls);
@@ -265,6 +267,7 @@ int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url,
                               c->resp.payload);
             }
             flb_http_client_destroy(c);
+            flb_upstream_conn_recycle(u_conn, FLB_FALSE);
             flb_upstream_conn_release(u_conn);
             return -1;
         }
@@ -276,8 +279,9 @@ int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url,
             parse_pod_service_map(ctx, c->resp.payload, c->resp.payload_size, mutex);
         }
 
-        /* Cleanup */
+        /* Cleanup - mark connection as non-recyclable to prevent memory leak */
         flb_http_client_destroy(c);
+        flb_upstream_conn_recycle(u_conn, FLB_FALSE);
         flb_upstream_conn_release(u_conn);
     }
     return 0;
