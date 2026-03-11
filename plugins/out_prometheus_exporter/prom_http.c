@@ -26,6 +26,7 @@
 static int prom_http_request_handler(struct flb_http_request *request,
                                      struct flb_http_response *response)
 {
+    int ret;
     cfl_sds_t payload;
     cfl_sds_t source_payload;
     struct prom_exporter *ctx;
@@ -73,15 +74,15 @@ static int prom_http_request_handler(struct flb_http_request *request,
         flb_http_response_set_status(response, 500);
         return flb_http_response_commit(response);
     }
-    flb_hs_response_set_payload(response,
-                                200,
-                                FLB_HS_CONTENT_TYPE_PROMETHEUS,
-                                payload,
-                                cfl_sds_len(payload));
+    ret = flb_hs_response_set_payload(response,
+                                      200,
+                                      FLB_HS_CONTENT_TYPE_PROMETHEUS,
+                                      payload,
+                                      cfl_sds_len(payload));
 
     cfl_sds_destroy(payload);
 
-    return 0;
+    return ret;
 }
 
 struct prom_http *prom_http_server_create(struct prom_exporter *ctx,
