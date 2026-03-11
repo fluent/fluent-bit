@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/http_server/flb_http_server_config_map.h>
 
 
 
@@ -269,6 +270,11 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
         if ((ins->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) != 0) {
             options_size += 3;
         }
+        if ((ins->flags & FLB_INPUT_HTTP_SERVER) != 0) {
+            config_map = flb_http_server_get_config_map(ins->config);
+            options_size += mk_list_size(config_map);
+            flb_config_map_destroy(config_map);
+        }
 
         msgpack_pack_array(&mp_pck, options_size);
 
@@ -276,6 +282,14 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
             pack_config_map_entry(&mp_pck, &m_input_net_listen);
             pack_config_map_entry(&mp_pck, &m_input_net_host);
             pack_config_map_entry(&mp_pck, &m_input_net_port);
+        }
+        if ((ins->flags & FLB_INPUT_HTTP_SERVER) != 0) {
+            config_map = flb_http_server_get_config_map(ins->config);
+            mk_list_foreach(head, config_map) {
+                m = mk_list_entry(head, struct flb_config_map, _head);
+                pack_config_map_entry(&mp_pck, m);
+            }
+            flb_config_map_destroy(config_map);
         }
 
         mk_list_foreach(head, config_map) {
@@ -537,6 +551,11 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
         if (ins->flags & FLB_OUTPUT_NET) {
             options_size += 2;
         }
+        if (ins->flags & FLB_OUTPUT_HTTP_SERVER) {
+            config_map = flb_http_server_get_config_map(ins->config);
+            options_size += mk_list_size(config_map);
+            flb_config_map_destroy(config_map);
+        }
         if (ins->flags & FLB_IO_OPT_TLS) {
             tls_config = flb_tls_get_config_map(ins->config);
             options_size += mk_list_size(tls_config);
@@ -547,6 +566,14 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
         if (ins->flags & FLB_OUTPUT_NET) {
             pack_config_map_entry(&mp_pck, &m_output_net_host);
             pack_config_map_entry(&mp_pck, &m_output_net_port);
+        }
+        if (ins->flags & FLB_OUTPUT_HTTP_SERVER) {
+            config_map = flb_http_server_get_config_map(ins->config);
+            mk_list_foreach(head, config_map) {
+                m = mk_list_entry(head, struct flb_config_map, _head);
+                pack_config_map_entry(&mp_pck, m);
+            }
+            flb_config_map_destroy(config_map);
         }
         if (ins->flags & FLB_IO_OPT_TLS) {
             mk_list_foreach(head, tls_config) {
