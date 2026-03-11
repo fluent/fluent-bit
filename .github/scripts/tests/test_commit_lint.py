@@ -311,6 +311,31 @@ def test_error_multiple_prefixes_inferred_from_files():
     assert "does not match files changed" in msg
 
 
+def test_valid_http_server_umbrella_prefix():
+    """
+    Commits touching only the HTTP server interface boundary may use http_server:.
+    """
+    commit = make_commit(
+        "http_server: unify listener startup\n\nSigned-off-by: User",
+        ["src/http_server/flb_hs.c", "src/flb_http_common.c"]
+    )
+    ok, _ = validate_commit(commit)
+    assert ok is True
+
+
+def test_error_http_server_umbrella_with_unrelated_component():
+    """
+    http_server: must not cover unrelated core files outside the HTTP interface.
+    """
+    commit = make_commit(
+        "http_server: adjust startup\n\nSigned-off-by: User",
+        ["src/http_server/flb_hs.c", "src/flb_input.c"]
+    )
+    ok, msg = validate_commit(commit)
+    assert ok is False
+    assert "does not match files changed" in msg
+
+
 
 # -----------------------------------------------------------
 # Edge Cases
