@@ -65,12 +65,33 @@ static int content_type_is_json(const char *content_type)
 
 static int content_type_is_urlencoded(const char *content_type)
 {
+    const char *separator;
+    size_t media_type_length;
+
     if (content_type == NULL) {
         return FLB_FALSE;
     }
 
-    return strcasecmp(content_type,
-                      "application/x-www-form-urlencoded") == 0;
+    separator = strchr(content_type, ';');
+    if (separator == NULL) {
+        return strcasecmp(content_type,
+                          "application/x-www-form-urlencoded") == 0;
+    }
+
+    media_type_length = separator - content_type;
+
+    while (media_type_length > 0 &&
+           isspace((unsigned char) content_type[media_type_length - 1])) {
+        media_type_length--;
+    }
+
+    if (media_type_length != strlen("application/x-www-form-urlencoded")) {
+        return FLB_FALSE;
+    }
+
+    return strncasecmp(content_type,
+                       "application/x-www-form-urlencoded",
+                       media_type_length) == 0;
 }
 
 static inline char hex2nibble(char c)
