@@ -86,7 +86,9 @@ int flb_hs_response_set_payload(struct flb_http_response *response,
     }
 
     flb_http_response_set_status(response, status);
-    flb_hs_response_set_content_type(response, type);
+    if (flb_hs_response_set_content_type(response, type) != 0) {
+        return -1;
+    }
 
     if (payload != NULL && payload_size > 0) {
         flb_http_response_set_body(response, (unsigned char *) payload, payload_size);

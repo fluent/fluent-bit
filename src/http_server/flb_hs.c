@@ -26,6 +26,8 @@
 #include <fluent-bit/http_server/flb_hs.h>
 #include <fluent-bit/http_server/flb_hs_utils.h>
 
+#include <errno.h>
+
 /* v1 */
 #include "api/v1/register.h"
 #include "api/v1/health.h"
@@ -142,6 +144,7 @@ int flb_hs_register_endpoint(struct flb_hs *hs,
         return -1;
     }
 
+    /* Registered endpoints are static literals owned by the caller/module. */
     route->path = path;
     route->match_type = match_type;
     route->callback = callback;
@@ -285,6 +288,8 @@ struct flb_hs *flb_hs_create(const char *listen, const char *tcp_port,
                              struct flb_config *config)
 {
     int ret;
+    char *end;
+    long port;
     struct flb_hs *hs;
     struct flb_http_server_options options;
 
@@ -311,7 +316,15 @@ struct flb_hs *flb_hs_create(const char *listen, const char *tcp_port,
     options.request_callback = flb_hs_request_handler;
     options.user_data = hs;
     options.address = (char *) listen;
-    options.port = atoi(tcp_port);
+    errno = 0;
+    port = strtol(tcp_port, &end, 10);
+    if (errno == ERANGE || end == tcp_port || *end != '\0' ||
+        port <= 0 || port > 65535) {
+        flb_error("[http_server] invalid monitoring tcp_port '%s'", tcp_port);
+        flb_free(hs);
+        return NULL;
+    }
+    options.port = (int) port;
     options.networking_flags = 0;
     flb_net_setup_init(&hs->net_setup);
     options.networking_setup = &hs->net_setup;
