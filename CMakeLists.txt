@@ -671,8 +671,8 @@ if(FLB_AVRO_ENCODER)
   # jansson
   option(JANSSON_BUILD_DOCS         OFF)
   option(JANSSON_EXAMPLES           OFF)
-  option(JANSSON_WITHOUT_TESTS       ON)
   option(JANSSON_BUILD_SHARED_LIBS  OFF)
+  set(JANSSON_WITHOUT_TESTS ON CACHE BOOL "" FORCE)
   add_subdirectory(${FLB_PATH_LIB_JANSSON})
 
   #avro

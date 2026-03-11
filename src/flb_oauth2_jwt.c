@@ -573,6 +573,23 @@ static int oauth2_jwt_parse_payload(const char *json, size_t json_len,
                     }
                     claims->client_id = flb_sds_create_len((const char *)v->via.str.ptr,
                                                            v->via.str.size);
+                    claims->has_client_id_claim = FLB_TRUE;
+                }
+            }
+        }
+        else if (key_len == 5 && strncmp(key_str, "appid", 5) == 0) {
+            if (v->type == MSGPACK_OBJECT_STR) {
+                /*
+                 * ADFS commonly emits appid for application identity.
+                 * Use it as a fallback when neither azp nor client_id are present.
+                 */
+                if (claims->has_azp == FLB_FALSE &&
+                    claims->has_client_id_claim == FLB_FALSE) {
+                    if (claims->client_id) {
+                        flb_sds_destroy(claims->client_id);
+                    }
+                    claims->client_id = flb_sds_create_len((const char *)v->via.str.ptr,
+                                                           v->via.str.size);
                 }
             }
         }
