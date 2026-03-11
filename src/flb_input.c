@@ -446,6 +446,9 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         if (!instance->rb) {
             flb_error("instance %s could not initialize ring buffer",
                       flb_input_name(instance));
+            if (instance->http_server_config != NULL) {
+                flb_free(instance->http_server_config);
+            }
             flb_free(instance);
             return NULL;
         }
