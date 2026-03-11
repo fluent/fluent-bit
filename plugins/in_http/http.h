@@ -20,7 +20,6 @@
 #ifndef FLB_IN_HTTP_H
 #define FLB_IN_HTTP_H
 
-#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
@@ -28,7 +27,6 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_oauth2_jwt.h>
 
-#include <monkey/monkey.h>
 #include <fluent-bit/http_server/flb_http_server.h>
 
 #define HTTP_BUFFER_MAX_SIZE    "4M"
@@ -52,25 +50,11 @@ struct flb_http {
     int add_remote_addr;
     const char *remote_addr_key;
 
-    /* New gen HTTP server */
-    int enable_http2;
     struct flb_http_server http_server;
 
     struct flb_oauth2_jwt_cfg oauth2_cfg;
     struct flb_oauth2_jwt_ctx *oauth2_ctx;
 
-    /* Legacy HTTP server */
-    struct flb_downstream *downstream; /* Client manager */
-    struct mk_list connections;        /* linked list of connections */
-
-    flb_sds_t success_headers_str;
-
-    size_t buffer_max_size;            /* Maximum buffer size */
-    size_t buffer_chunk_size;          /* Chunk allocation size */
-
-    struct mk_server *server;
-
-    int collector_id;
 };
 
 
