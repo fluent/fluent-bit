@@ -1,5 +1,6 @@
 # api/v2
 set(src
+  health.c
   metrics.c
   reload.c
   register.c

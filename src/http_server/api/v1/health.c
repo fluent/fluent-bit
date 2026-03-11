@@ -39,14 +39,22 @@
 * the error number of the newest metrics message  minus
 * the error number in oldest metrics of period
 */
-static int is_healthy(struct flb_hs *hs)
+int flb_hs_health_state_get(struct flb_hs *hs, struct flb_hs_health_state *state)
 {
     struct flb_hs_hc_buf *buf;
-    int period_errors;
-    int period_retry_failure;
+
+    if (hs == NULL || state == NULL) {
+        return -1;
+    }
+
+    memset(state, 0, sizeof(struct flb_hs_health_state));
+    state->error_limit = hs->health_counter.error_limit;
+    state->retry_failure_limit = hs->health_counter.retry_failure_limit;
+    state->period_limit = hs->health_counter.period_limit;
 
     if (mk_list_is_empty(&hs->health_metrics) == 0) {
-        return FLB_TRUE;
+        state->healthy = FLB_TRUE;
+        return 0;
     }
 
     /* Get the error metrics entry from the start time of current period */
@@ -63,18 +71,20 @@ static int is_healthy(struct flb_hs *hs)
     * the error count in current period = (current error count in total) -
     * (begin error count in the period)
     */
-    period_errors = hs->health_counter.error_counter -  buf->error_count;
-    period_retry_failure = hs->health_counter.retry_failure_counter -
-                                                buf->retry_failure_count;
+    state->errors = hs->health_counter.error_counter -  buf->error_count;
+    state->retries_failed = hs->health_counter.retry_failure_counter -
+                            buf->retry_failure_count;
     buf->users--;
 
-    if (period_errors > hs->health_counter.error_limit ||
-        period_retry_failure >  hs->health_counter.retry_failure_limit) {
-
-        return FLB_FALSE;
+    if (state->errors > hs->health_counter.error_limit ||
+        state->retries_failed > hs->health_counter.retry_failure_limit) {
+        state->healthy = FLB_FALSE;
+        return 0;
     }
 
-    return FLB_TRUE;
+    state->healthy = FLB_TRUE;
+
+    return 0;
 }
 
 /* read the metrics from message queue and update the counter*/
@@ -144,11 +154,16 @@ static int cb_health(struct flb_hs *hs,
                      struct flb_http_response *response)
 {
     int ret;
-    int status = is_healthy(hs);
+    struct flb_hs_health_state state;
 
     (void) request;
 
-    if (status == FLB_TRUE) {
+    if (flb_hs_health_state_get(hs, &state) != 0) {
+        flb_http_response_set_status(response, 500);
+        return flb_http_response_commit(response);
+    }
+
+    if (state.healthy == FLB_TRUE) {
        ret = flb_hs_response_send_string(response, 200,
                                          FLB_HS_CONTENT_TYPE_OTHER, "ok\n");
     }
