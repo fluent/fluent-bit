@@ -22,15 +22,9 @@
 
 #include "http.h"
 #include "http_config.h"
-#include "http_conn.h"
-#include "http_config.h"
 
 struct flb_http *http_config_create(struct flb_input_instance *ins)
 {
-    struct mk_list            *header_iterator;
-    struct flb_slist_entry    *header_value;
-    struct flb_slist_entry    *header_name;
-    struct flb_config_map_val *header_pair;
     char                       port[8];
     int                        ret;
     struct flb_http           *ctx;
@@ -41,7 +35,6 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
         return NULL;
     }
     ctx->ins = ins;
-    mk_list_init(&ctx->connections);
 
     ctx->oauth2_cfg.jwks_refresh_interval = 300;
 
@@ -69,32 +62,11 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
     snprintf(port, sizeof(port) - 1, "%d", ins->host.port);
     ctx->tcp_port = flb_strdup(port);
 
-    /* HTTP Server specifics */
-    ctx->server = flb_calloc(1, sizeof(struct mk_server));
-    if (!ctx->server) {
-        flb_errno();
-        http_config_destroy(ctx);
-        return NULL;
-    }
-
-    ctx->server->keep_alive = MK_TRUE;
-
-    /* monkey detects server->workers == 0 as the server not being initialized at the
-     * moment so we want to make sure that it stays that way!
-     */
-
     ret = flb_log_event_encoder_init(&ctx->log_encoder,
                                      FLB_LOG_EVENT_FORMAT_DEFAULT);
 
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_plg_error(ctx->ins, "error initializing event encoder : %d", ret);
-        http_config_destroy(ctx);
-        return NULL;
-    }
-
-    ctx->success_headers_str = flb_sds_create_size(1);
-
-    if (ctx->success_headers_str == NULL) {
         http_config_destroy(ctx);
         return NULL;
     }
@@ -109,44 +81,6 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
         }
     }
 
-    flb_config_map_foreach(header_iterator, header_pair, ctx->success_headers) {
-        header_name = mk_list_entry_first(header_pair->val.list,
-                                          struct flb_slist_entry,
-                                          _head);
-
-        header_value = mk_list_entry_last(header_pair->val.list,
-                                          struct flb_slist_entry,
-                                          _head);
-
-        ret = flb_sds_cat_safe(&ctx->success_headers_str,
-                               header_name->str,
-                               flb_sds_len(header_name->str));
-
-        if (ret == 0) {
-            ret = flb_sds_cat_safe(&ctx->success_headers_str,
-                                   ": ",
-                                   2);
-        }
-
-        if (ret == 0) {
-            ret = flb_sds_cat_safe(&ctx->success_headers_str,
-                                   header_value->str,
-                                   flb_sds_len(header_value->str));
-        }
-
-        if (ret == 0) {
-            ret = flb_sds_cat_safe(&ctx->success_headers_str,
-                                   "\r\n",
-                                   2);
-        }
-
-        if (ret != 0) {
-            http_config_destroy(ctx);
-
-            return NULL;
-        }
-    }
-
     return ctx;
 }
 
@@ -156,32 +90,8 @@ int http_config_destroy(struct flb_http *ctx)
         flb_ra_destroy(ctx->ra_tag_key);
     }
 
-    /* release all connections */
-    http_conn_release_all(ctx);
-
     flb_log_event_encoder_destroy(&ctx->log_encoder);
-
-    if (ctx->collector_id != -1) {
-        flb_input_collector_delete(ctx->collector_id, ctx->ins);
-
-        ctx->collector_id = -1;
-    }
-
-    if (ctx->downstream != NULL) {
-        flb_downstream_destroy(ctx->downstream);
-    }
-
-    if (ctx->server) {
-        flb_free(ctx->server);
-    }
-
-    if (ctx->enable_http2) {
-        flb_http_server_destroy(&ctx->http_server);
-    }
-
-    if (ctx->success_headers_str != NULL) {
-        flb_sds_destroy(ctx->success_headers_str);
-    }
+    flb_http_server_destroy(&ctx->http_server);
 
     if (ctx->oauth2_ctx) {
         flb_oauth2_jwt_context_destroy(ctx->oauth2_ctx);
