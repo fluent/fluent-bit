@@ -340,7 +340,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
             if (out_buf != NULL && parse_ret >= 0) {
                 if (append_arr != NULL && append_arr_len > 0) {
                     char *new_buf = NULL;
-                    int new_size;
+                    size_t new_size;
                     size_t valid_kv_count = 0;
                     msgpack_object_kv **valid_kv = NULL;
 
