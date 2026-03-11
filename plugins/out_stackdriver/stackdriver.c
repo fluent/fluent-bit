@@ -1768,6 +1768,48 @@ static int pack_payload(int insert_id_extracted,
         return ret;
 }
 
+/*
+ * should_skip_record
+ * Check if a record should be skipped due to invalid fields.
+ * Returns FLB_TRUE if the record should be dropped.
+ *
+ * log_errors: if FLB_TRUE, log why the record is being dropped.
+ *             Set to FLB_FALSE during prescan to avoid duplicate logging.
+ */
+static int should_skip_record(struct flb_stackdriver *ctx,
+                              msgpack_object *obj,
+                              int log_errors)
+{
+    insert_id_status in_status;
+    msgpack_object insert_id_obj;
+    msgpack_object *payload_labels_ptr;
+
+    /* Check insertId */
+    in_status = validate_insert_id(&insert_id_obj, obj);
+    if (in_status == INSERTID_INVALID) {
+        if (log_errors == FLB_TRUE) {
+            flb_plg_error(ctx->ins,
+                          "Incorrect insertId received. "
+                          "InsertId should be non-empty string.");
+        }
+        return FLB_TRUE;
+    }
+
+    /* Check labels type */
+    payload_labels_ptr = get_payload_labels(ctx, obj);
+    if (payload_labels_ptr != NULL &&
+        payload_labels_ptr->type != MSGPACK_OBJECT_MAP) {
+        if (log_errors == FLB_TRUE) {
+            flb_plg_error(ctx->ins,
+                          "the type of payload labels should be map, "
+                          "dropping record");
+        }
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                                     int total_records,
                                     const char *tag, int tag_len,
@@ -1868,20 +1910,14 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     }
 
     /*
-     * Search each entry and validate insertId.
-     * Reject the entry if insertId is invalid.
+     * Search each entry and validate record fields.
+     * Reject entries with invalid insertId or non-map labels.
      * If all the entries are rejected, stop formatting.
-     *
      */
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        /* Extract insertId */
-        in_status = validate_insert_id(&insert_id_obj, log_event.body);
-
-        if (in_status == INSERTID_INVALID) {
-            flb_plg_error(ctx->ins,
-                          "Incorrect insertId received. InsertId should be non-empty string.");
+        if (should_skip_record(ctx, log_event.body, FLB_FALSE) == FLB_TRUE) {
             array_size -= 1;
         }
     }
@@ -1890,6 +1926,9 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
 
     /* Sounds like this should compare to -1 instead of zero */
     if (array_size == 0) {
+        flb_plg_warn(ctx->ins,
+                     "all %d entries skipped due to invalid insertId "
+                     "or labels, dropping batch", total_records);
         return NULL;
     }
 
@@ -2308,6 +2347,12 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         obj = log_event.body;
+
+        /* Skip records with invalid fields */
+        if (should_skip_record(ctx, obj, FLB_TRUE) == FLB_TRUE) {
+            continue;
+        }
+
         tms_status = extract_timestamp(obj, &log_event.timestamp);
 
         /*
@@ -2372,33 +2417,14 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             log_name_extracted = FLB_TRUE;
         }
 
-        /* Extract insertId */
+        /* Extract insertId (INVALID case already handled by should_skip_record) */
         in_status = validate_insert_id(&insert_id_obj, obj);
         if (in_status == INSERTID_VALID) {
             insert_id_extracted = FLB_TRUE;
             entry_size += 1;
         }
-        else if (in_status == INSERTID_NOT_PRESENT) {
-            insert_id_extracted = FLB_FALSE;
-        }
         else {
-            if (trace_extracted == FLB_TRUE) {
-                flb_sds_destroy(trace);
-            }
-
-            if (span_id_extracted == FLB_TRUE) {
-                flb_sds_destroy(span_id);
-            }
-
-            if (project_id_extracted == FLB_TRUE) {
-                flb_sds_destroy(project_id_key);
-            }
-
-            if (log_name_extracted == FLB_TRUE) {
-                flb_sds_destroy(log_name);
-            }
-
-            continue;
+            insert_id_extracted = FLB_FALSE;
         }
 
         /* Extract operation */
@@ -2441,37 +2467,8 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             entry_size += 1;
         }
 
-        /* Extract payload labels */
+        /* Extract payload labels (non-map case already handled by should_skip_record) */
         payload_labels_ptr = get_payload_labels(ctx, obj);
-        if (payload_labels_ptr != NULL &&
-            payload_labels_ptr->type != MSGPACK_OBJECT_MAP) {
-            flb_plg_error(ctx->ins, "the type of payload labels should be map");
-            flb_sds_destroy(operation_id);
-            flb_sds_destroy(operation_producer);
-            flb_sds_destroy(source_location_file);
-            flb_sds_destroy(source_location_function);
-
-            if (trace_extracted == FLB_TRUE) {
-                flb_sds_destroy(trace);
-            }
-
-            if (span_id_extracted == FLB_TRUE) {
-                flb_sds_destroy(span_id);
-            }
-
-            if (project_id_extracted == FLB_TRUE) {
-                flb_sds_destroy(project_id_key);
-            }
-
-            if (log_name_extracted == FLB_TRUE) {
-                flb_sds_destroy(log_name);
-            }
-
-            flb_log_event_decoder_destroy(&log_decoder);
-            msgpack_sbuffer_destroy(&mp_sbuf);
-
-            return NULL;
-        }
 
         /* Number of parsed labels */
         labels_size = mk_list_size(&ctx->config_labels);
