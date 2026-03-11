@@ -33,6 +33,7 @@
  */
 struct flb_hs_buf {
     int users;
+    int pending_free;
     flb_sds_t data;
     void *raw_data;
     size_t raw_size;
@@ -100,6 +101,8 @@ int flb_hs_push_storage_metrics(struct flb_hs *hs, void *data, size_t size);
 
 int flb_hs_destroy(struct flb_hs *ctx);
 int flb_hs_start(struct flb_hs *hs);
+void flb_hs_cmt_buffer_destroy(void *data);
+void flb_hs_buf_release(struct flb_hs_buf *buffer, void (*raw_free)(void *));
 int flb_hs_register_endpoint(struct flb_hs *hs,
                              const char *path,
                              int match_type,

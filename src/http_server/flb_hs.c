@@ -67,6 +67,11 @@ static void flb_hs_destroy_cmt_buffer(void *data)
     cmt_destroy((struct cmt *) data);
 }
 
+void flb_hs_cmt_buffer_destroy(void *data)
+{
+    flb_hs_destroy_cmt_buffer(data);
+}
+
 static int cb_root(struct flb_hs *hs,
                    struct flb_http_request *request,
                    struct flb_http_response *response)
@@ -112,6 +117,11 @@ static void flb_hs_buf_cleanup(struct flb_hs_buf *buffer,
         return;
     }
 
+    if (buffer->users > 0) {
+        buffer->pending_free = FLB_TRUE;
+        return;
+    }
+
     if (buffer->data != NULL) {
         flb_sds_destroy(buffer->data);
         buffer->data = NULL;
@@ -128,7 +138,21 @@ static void flb_hs_buf_cleanup(struct flb_hs_buf *buffer,
     }
 
     buffer->raw_size = 0;
+    buffer->pending_free = FLB_FALSE;
     buffer->users = 0;
+}
+
+void flb_hs_buf_release(struct flb_hs_buf *buffer, void (*raw_free)(void *))
+{
+    if (buffer == NULL || buffer->users <= 0) {
+        return;
+    }
+
+    buffer->users--;
+
+    if (buffer->users == 0 && buffer->pending_free == FLB_TRUE) {
+        flb_hs_buf_cleanup(buffer, raw_free);
+    }
 }
 
 int flb_hs_register_endpoint(struct flb_hs *hs,
@@ -172,6 +196,9 @@ int flb_hs_push_health_metrics(struct flb_hs *hs, void *data, size_t size)
     while (hs->health_counter.period_counter > hs->health_counter.period_limit &&
            mk_list_size(&hs->health_metrics) > 0) {
         buf = mk_list_entry_first(&hs->health_metrics, struct flb_hs_hc_buf, _head);
+        if (buf->users > 0) {
+            break;
+        }
         mk_list_del(&buf->_head);
         flb_free(buf);
         hs->health_counter.period_counter--;
@@ -219,6 +246,11 @@ int flb_hs_push_pipeline_metrics(struct flb_hs *hs, void *data, size_t size)
     memcpy(raw_buffer, data, size);
 
     flb_hs_buf_cleanup(&hs->metrics, NULL);
+    if (hs->metrics.pending_free == FLB_TRUE) {
+        flb_sds_destroy(json_buffer);
+        flb_free(raw_buffer);
+        return -1;
+    }
 
     hs->metrics.data = json_buffer;
     hs->metrics.raw_data = raw_buffer;
@@ -244,6 +276,10 @@ int flb_hs_push_metrics(struct flb_hs *hs, void *data, size_t size)
     }
 
     flb_hs_buf_cleanup(&hs->metrics_v2, flb_hs_destroy_cmt_buffer);
+    if (hs->metrics_v2.pending_free == FLB_TRUE) {
+        flb_hs_destroy_cmt_buffer(cmt);
+        return -1;
+    }
 
     hs->metrics_v2.raw_data = cmt;
 
@@ -275,6 +311,11 @@ int flb_hs_push_storage_metrics(struct flb_hs *hs, void *data, size_t size)
     memcpy(raw_buffer, data, size);
 
     flb_hs_buf_cleanup(&hs->storage_metrics, NULL);
+    if (hs->storage_metrics.pending_free == FLB_TRUE) {
+        flb_sds_destroy(json_buffer);
+        flb_free(raw_buffer);
+        return -1;
+    }
 
     hs->storage_metrics.data = json_buffer;
     hs->storage_metrics.raw_data = raw_buffer;
@@ -339,13 +380,25 @@ struct flb_hs *flb_hs_create(const char *listen, const char *tcp_port,
     }
 
     /* Register endpoints for /api/v1 */
-    api_v1_registration(hs);
+    ret = api_v1_registration(hs);
+    if (ret != 0) {
+        flb_hs_destroy(hs);
+        return NULL;
+    }
 
     /* Register endpoints for /api/v2 */
-    api_v2_registration(hs);
+    ret = api_v2_registration(hs);
+    if (ret != 0) {
+        flb_hs_destroy(hs);
+        return NULL;
+    }
 
     /* Root */
-    flb_hs_register_endpoint(hs, "/", FLB_HS_ROUTE_EXACT, cb_root);
+    ret = flb_hs_register_endpoint(hs, "/", FLB_HS_ROUTE_EXACT, cb_root);
+    if (ret != 0) {
+        flb_hs_destroy(hs);
+        return NULL;
+    }
 
     return hs;
 }

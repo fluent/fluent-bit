@@ -23,6 +23,7 @@
 #include "storage.h"
 
 #include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/http_server/flb_hs.h>
 #include <fluent-bit/http_server/flb_hs_utils.h>
 #include <msgpack.h>
 
@@ -56,7 +57,7 @@ static int cb_storage(struct flb_hs *hs,
                                 FLB_HS_CONTENT_TYPE_JSON,
                                 buf->data, flb_sds_len(buf->data));
 
-    buf->users--;
+    flb_hs_buf_release(buf, NULL);
     return 0;
 }
 
