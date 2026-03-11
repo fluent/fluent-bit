@@ -20,7 +20,6 @@
 #ifndef FLB_IN_ELASTICSEARCH_H
 #define FLB_IN_ELASTICSEARCH_H
 
-#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
@@ -48,20 +47,7 @@ struct flb_in_elasticsearch {
 
     struct flb_input_instance *ins;
 
-    /* New gen HTTP server */
-    int enable_http2;
     struct flb_http_server http_server;
-
-    /* Legacy HTTP server */
-    int collector_id;
-
-    size_t buffer_max_size;            /* Maximum buffer size */
-    size_t buffer_chunk_size;          /* Chunk allocation size */
-
-    struct flb_downstream *downstream; /* Client manager */
-    struct mk_list connections;        /* linked list of connections */
-
-    struct mk_server *server;
 };
 
 
