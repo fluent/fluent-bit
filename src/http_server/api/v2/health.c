@@ -67,8 +67,8 @@ static int cb_health(struct flb_hs *hs,
     msgpack_pack_str_body(&mp_pck, "errors", 6);
     msgpack_pack_int64(&mp_pck, state.errors);
 
-    msgpack_pack_str(&mp_pck, 15);
-    msgpack_pack_str_body(&mp_pck, "retries_failed", 15);
+    msgpack_pack_str(&mp_pck, 14);
+    msgpack_pack_str_body(&mp_pck, "retries_failed", 14);
     msgpack_pack_int64(&mp_pck, state.retries_failed);
 
     msgpack_pack_str(&mp_pck, 11);
