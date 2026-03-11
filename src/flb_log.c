@@ -203,7 +203,7 @@ static int log_prepare_header(char *buf, size_t size, int type,
     bold_color = "";
     reset_color = "";
 #else
-    if (!isatty(STDOUT_FILENO)) {
+    if (!isatty(STDERR_FILENO)) {
         header_color = "";
         bold_color = "";
         reset_color = "";
@@ -226,7 +226,7 @@ static int log_prepare_header(char *buf, size_t size, int type,
                     current->tm_hour,
                     current->tm_min,
                     current->tm_sec,
-                    timestamp->tm.tv_nsec,
+                    (long) (timestamp->tm.tv_nsec / 1000000),
                     bold_color, reset_color,
                     header_color, header_title, reset_color);
 }
