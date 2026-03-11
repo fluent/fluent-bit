@@ -576,8 +576,6 @@ static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_reque
     else {
         return SPLUNK_AUTH_MISSING_CRED;
     }
-
-    return SPLUNK_AUTH_SUCCESS;
 }
 
 static int process_hec_payload_ng(struct flb_http_request *request,
@@ -688,7 +686,7 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     /* HTTP/1.1 needs Host header */
     if (request->protocol_version == HTTP_PROTOCOL_VERSION_11 &&
         request->host == NULL) {
-
+        send_response_ng(response, 400, "error: missing host header\n");
         return -1;
     }
 
