@@ -24,9 +24,6 @@ jobs:
     name: ${{ matrix.arch }} container scan
     runs-on: [ ubuntu-latest ]
     continue-on-error: true
-    permissions:
-      contents: read
-      security-events: write
     strategy:
       fail-fast: false
       # Matrix of architectures to test along with their local tags for special character substitution
