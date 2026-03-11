@@ -73,12 +73,14 @@
                                      * In addition, if TLS is enabled then a
                                      * private key and certificate are required.
                                      */
+#define FLB_INPUT_HTTP_SERVER 4096  /* input uses the generic HTTP server     */
 
 /* Input status */
 #define FLB_INPUT_RUNNING     1
 #define FLB_INPUT_PAUSED      0
 
 struct flb_input_instance;
+struct flb_http_server_config;
 
 /*
  * Tests callbacks
@@ -162,7 +164,6 @@ struct flb_input_plugin {
     char *description;
 
     struct flb_config_map *config_map;
-
     /* Initialization */
     int (*cb_init)    (struct flb_input_instance *, struct flb_config *, void *);
 
@@ -471,6 +472,10 @@ struct flb_input_instance {
     struct mk_list *net_config_map;
     struct mk_list net_properties;
 
+    struct mk_list *http_server_config_map;
+    struct flb_http_server_config *http_server_config;
+    struct mk_list http_server_properties;
+
     struct mk_list *oauth2_jwt_config_map;
     struct mk_list oauth2_jwt_properties;
 
@@ -737,6 +742,16 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
     if (ins->net_config_map) {
         ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
                                  &ins->net_setup);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    /* HTTP server properties */
+    if (ins->http_server_config_map && ins->http_server_config) {
+        ret = flb_config_map_set(&ins->http_server_properties,
+                                 ins->http_server_config_map,
+                                 ins->http_server_config);
         if (ret == -1) {
             return -1;
         }
