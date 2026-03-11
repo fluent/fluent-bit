@@ -201,6 +201,7 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
 {
     struct mk_list *head;
     struct mk_list *config_map;
+    struct mk_list *http_config_map;
     struct flb_mp_map_header mh;
     struct flb_config_map *m;
     msgpack_sbuffer mp_sbuf;
@@ -271,9 +272,9 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
             options_size += 3;
         }
         if ((ins->flags & FLB_INPUT_HTTP_SERVER) != 0) {
-            config_map = flb_http_server_get_config_map(ins->config);
-            options_size += mk_list_size(config_map);
-            flb_config_map_destroy(config_map);
+            http_config_map = flb_http_server_get_config_map(ins->config);
+            options_size += mk_list_size(http_config_map);
+            flb_config_map_destroy(http_config_map);
         }
 
         msgpack_pack_array(&mp_pck, options_size);
@@ -284,12 +285,12 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
             pack_config_map_entry(&mp_pck, &m_input_net_port);
         }
         if ((ins->flags & FLB_INPUT_HTTP_SERVER) != 0) {
-            config_map = flb_http_server_get_config_map(ins->config);
-            mk_list_foreach(head, config_map) {
+            http_config_map = flb_http_server_get_config_map(ins->config);
+            mk_list_foreach(head, http_config_map) {
                 m = mk_list_entry(head, struct flb_config_map, _head);
                 pack_config_map_entry(&mp_pck, m);
             }
-            flb_config_map_destroy(config_map);
+            flb_config_map_destroy(http_config_map);
         }
 
         mk_list_foreach(head, config_map) {
@@ -485,12 +486,13 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
 {
     struct mk_list *head;
     struct mk_list *config_map;
+    struct mk_list *http_config_map;
     struct flb_mp_map_header mh;
     struct flb_config_map *m;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     int options_size = 0;
-    struct mk_list *tls_config;
+    struct mk_list *tls_config_map;
     struct flb_config_map m_output_net_host = {
         .type =      FLB_CONFIG_MAP_STR,
         .name =      "host",
@@ -546,19 +548,17 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
 
         config_map = flb_config_map_create(ins->config, ins->p->config_map);
         options_size = mk_list_size(config_map);
-
-        options_size = mk_list_size(config_map);
         if (ins->flags & FLB_OUTPUT_NET) {
             options_size += 2;
         }
         if (ins->flags & FLB_OUTPUT_HTTP_SERVER) {
-            config_map = flb_http_server_get_config_map(ins->config);
-            options_size += mk_list_size(config_map);
-            flb_config_map_destroy(config_map);
+            http_config_map = flb_http_server_get_config_map(ins->config);
+            options_size += mk_list_size(http_config_map);
+            flb_config_map_destroy(http_config_map);
         }
         if (ins->flags & FLB_IO_OPT_TLS) {
-            tls_config = flb_tls_get_config_map(ins->config);
-            options_size += mk_list_size(tls_config);
+            tls_config_map = flb_tls_get_config_map(ins->config);
+            options_size += mk_list_size(tls_config_map);
         }
 
         msgpack_pack_array(&mp_pck, options_size);
@@ -568,19 +568,19 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
             pack_config_map_entry(&mp_pck, &m_output_net_port);
         }
         if (ins->flags & FLB_OUTPUT_HTTP_SERVER) {
-            config_map = flb_http_server_get_config_map(ins->config);
-            mk_list_foreach(head, config_map) {
+            http_config_map = flb_http_server_get_config_map(ins->config);
+            mk_list_foreach(head, http_config_map) {
                 m = mk_list_entry(head, struct flb_config_map, _head);
                 pack_config_map_entry(&mp_pck, m);
             }
-            flb_config_map_destroy(config_map);
+            flb_config_map_destroy(http_config_map);
         }
         if (ins->flags & FLB_IO_OPT_TLS) {
-            mk_list_foreach(head, tls_config) {
+            mk_list_foreach(head, tls_config_map) {
                 m = mk_list_entry(head, struct flb_config_map, _head);
                 pack_config_map_entry(&mp_pck, m);
             }
-            flb_config_map_destroy(tls_config);
+            flb_config_map_destroy(tls_config_map);
         }
 
         mk_list_foreach(head, config_map) {
