@@ -48,9 +48,6 @@ static int prom_rw_init(struct flb_input_instance *ins,
         return -1;
     }
 
-    /* Set the context */
-    flb_input_set_context(ins, ctx);
-
     ret = flb_input_http_server_options_init(&http_server_options,
                                              ins,
                                              (FLB_HTTP_SERVER_FLAG_KEEPALIVE |
@@ -78,6 +75,8 @@ static int prom_rw_init(struct flb_input_instance *ins,
         prom_rw_config_destroy(ctx);
         return -1;
     }
+
+    flb_input_set_context(ins, ctx);
 
     flb_plg_info(ctx->ins,
                  "listening on %s:%u with %i worker%s",
