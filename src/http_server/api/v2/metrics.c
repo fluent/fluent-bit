@@ -28,6 +28,7 @@
 #include "metrics.h"
 
 #include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/http_server/flb_hs.h>
 #include <fluent-bit/http_server/flb_hs_utils.h>
 
 #define null_check(x) do { if (!x) { goto error; } else {sds = x;} } while (0)
@@ -64,7 +65,7 @@ static int cb_metrics_prometheus(struct flb_hs *hs,
     /* convert CMetrics to text */
     payload = cmt_encode_prometheus_create(cmt, CMT_FALSE);
     if (!payload) {
-        buf->users--;
+        flb_hs_buf_release(buf, flb_hs_cmt_buffer_destroy);
         flb_http_response_set_status(response, 500);
         return flb_http_response_commit(response);
     }
@@ -75,7 +76,7 @@ static int cb_metrics_prometheus(struct flb_hs *hs,
 
     cmt_encode_prometheus_destroy(payload);
 
-    buf->users--;
+    flb_hs_buf_release(buf, flb_hs_cmt_buffer_destroy);
     return 0;
 }
 
@@ -102,7 +103,7 @@ static int cb_metrics(struct flb_hs *hs,
     /* convert CMetrics to text */
     payload = cmt_encode_text_create(cmt);
     if (!payload) {
-        buf->users--;
+        flb_hs_buf_release(buf, flb_hs_cmt_buffer_destroy);
         flb_http_response_set_status(response, 500);
         return flb_http_response_commit(response);
     }
@@ -113,7 +114,7 @@ static int cb_metrics(struct flb_hs *hs,
 
     cmt_encode_text_destroy(payload);
 
-    buf->users--;
+    flb_hs_buf_release(buf, flb_hs_cmt_buffer_destroy);
     return 0;
 }
 

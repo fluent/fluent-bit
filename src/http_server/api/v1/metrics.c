@@ -28,6 +28,7 @@
 #include "metrics.h"
 
 #include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/http_server/flb_hs.h>
 #include <fluent-bit/http_server/flb_hs_utils.h>
 #include <msgpack.h>
 
@@ -166,7 +167,7 @@ static int cb_metrics_prometheus(struct flb_hs *hs,
     if (!sds) {
         flb_http_response_set_status(response, 500);
         flb_http_response_commit(response);
-        buf->users--;
+        flb_hs_buf_release(buf, NULL);
         return 0;
     }
 
@@ -176,7 +177,7 @@ static int cb_metrics_prometheus(struct flb_hs *hs,
         flb_sds_destroy(sds);
         flb_http_response_set_status(response, 500);
         flb_http_response_commit(response);
-        buf->users--;
+        flb_hs_buf_release(buf, NULL);
         return 0;
     }
     metric_helptxt_head = FLB_SDS_HEADER(metric_helptxt);
@@ -205,7 +206,7 @@ static int cb_metrics_prometheus(struct flb_hs *hs,
     if (!metrics_arr) {
         flb_errno();
 
-        buf->users--;
+        flb_hs_buf_release(buf, NULL);
         flb_http_response_set_status(response, 500);
         flb_http_response_commit(response);
 
@@ -371,7 +372,7 @@ static int cb_metrics_prometheus(struct flb_hs *hs,
 #endif
 
     msgpack_unpacked_destroy(&result);
-    buf->users--;
+    flb_hs_buf_release(buf, NULL);
 
     flb_hs_response_set_payload(response, 200,
                                 FLB_HS_CONTENT_TYPE_PROMETHEUS,
@@ -388,7 +389,7 @@ static int cb_metrics_prometheus(struct flb_hs *hs,
 error:
     flb_http_response_set_status(response, 500);
     flb_http_response_commit(response);
-    buf->users--;
+    flb_hs_buf_release(buf, NULL);
 
     for (i = 0; i < index; i++) {
       flb_sds_destroy(metrics_arr[i]);
@@ -421,7 +422,7 @@ static int cb_metrics(struct flb_hs *hs,
                                 FLB_HS_CONTENT_TYPE_JSON,
                                 buf->data, flb_sds_len(buf->data));
 
-    buf->users--;
+    flb_hs_buf_release(buf, NULL);
     return 0;
 }
 
