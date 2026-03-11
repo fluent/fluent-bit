@@ -792,6 +792,8 @@ static void set_resource_attributes_from_message_body(
 {
     int i;
     size_t key_len;
+    size_t map_key_len;
+    char *map_key_ptr;
     struct mk_list *head;
     struct flb_config_map_val *mv;
     struct flb_slist_entry *entry;
@@ -820,25 +822,96 @@ static void set_resource_attributes_from_message_body(
         }
 
         entry = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        normalized_key = entry->str;
         key_len = flb_sds_len(entry->str);
+
+        if (key_len == 0) {
+            continue;
+        }
+
+        /*
+         * Allow optional record accessor prefix so both "service.name" and
+         * "$service.name" are treated as the same map key.
+         */
+        if (key_len > 0 && normalized_key[0] == '$') {
+            normalized_key++;
+            key_len--;
+        }
+
+        /*
+         * Also tolerate bracket forms like $['service.name'] and
+         * $["service.name"] for literal keys.
+         */
+        if (key_len >= 4 && normalized_key[0] == '[') {
+            if ((normalized_key[1] == '\'' && normalized_key[key_len - 2] == '\'' &&
+                 normalized_key[key_len - 1] == ']') ||
+                (normalized_key[1] == '"' && normalized_key[key_len - 2] == '"' &&
+                 normalized_key[key_len - 1] == ']')) {
+                normalized_key += 2;
+                key_len -= 4;
+            }
+        }
+
+        if (key_len == 0) {
+            continue;
+        }
+
+        /* tolerate quoted key names like "service.name" or 'service.name' */
+        if (key_len >= 2) {
+            if ((normalized_key[0] == '"' && normalized_key[key_len - 1] == '"') ||
+                (normalized_key[0] == '\'' && normalized_key[key_len - 1] == '\'')) {
+                normalized_key++;
+                key_len -= 2;
+            }
+        }
+
+        if (key_len == 0) {
+            continue;
+        }
 
         for (i = 0; i < body->via.map.size; i++) {
             kv = &body->via.map.ptr[i];
 
-            if (kv->key.type != MSGPACK_OBJECT_STR) {
+            if (kv->key.type == MSGPACK_OBJECT_STR) {
+                map_key_ptr = kv->key.via.str.ptr;
+                map_key_len = kv->key.via.str.size;
+            }
+            else if (kv->key.type == MSGPACK_OBJECT_BIN) {
+                map_key_ptr = (char *) kv->key.via.bin.ptr;
+                map_key_len = kv->key.via.bin.size;
+            }
+            else {
                 continue;
             }
 
-            if (kv->key.via.str.size != key_len) {
+            if (map_key_len != key_len) {
                 continue;
             }
 
-            if (strncmp(kv->key.via.str.ptr, entry->str, key_len) != 0) {
+            if (strncmp(map_key_ptr, normalized_key, key_len) != 0) {
                 continue;
             }
 
             /* Found the key — convert to OTLP KeyValue */
-            attr = msgpack_kv_to_otlp_any_value(kv);
+            if (kv->key.type == MSGPACK_OBJECT_STR) {
+                attr = msgpack_kv_to_otlp_any_value(kv);
+            }
+            else {
+                attr = otlp_kvpair_value_initialize();
+                if (attr != NULL) {
+                    attr->key = flb_strndup(map_key_ptr, map_key_len);
+
+                    if (attr->key != NULL) {
+                        attr->value = msgpack_object_to_otlp_any_value(&kv->val);
+                    }
+
+                    if (attr->key == NULL || attr->value == NULL) {
+                        otlp_kvpair_destroy(attr);
+                        attr = NULL;
+                    }
+                }
+            }
+
             if (!attr) {
                 flb_plg_warn(ctx->ins, "resource attributes: failed to convert key '%s' to OTLP KeyValue",
                              entry->str);
@@ -1105,6 +1178,18 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
 
     ret = FLB_OK;
     while (flb_log_event_decoder_next(decoder, &event) == FLB_EVENT_DECODER_SUCCESS) {
+        /*
+         * For standalone records (non-native OTLP groups), resource attributes
+         * promoted from message keys are record-specific. Force a fresh
+         * resource/scope context per record when this feature is enabled to
+         * avoid carrying stale values across subsequent log lines.
+         */
+        if (native_otel == FLB_FALSE &&
+            ctx->ra_resource_attributes_message &&
+            mk_list_size(ctx->ra_resource_attributes_message) > 0) {
+            resource_id = -1;
+            scope_id = -1;
+        }
         /* Check if the record is special (group) or a normal one */
         ret = flb_log_event_decoder_get_record_type(&event, &record_type);
         if (ret != 0) {

@@ -172,7 +172,8 @@ static int config_ra_resource_attributes_message(struct flb_output_instance *ins
     flb_config_map_foreach(head, mv, ctx->ra_resource_attributes_message) {
         if (mk_list_size(mv->val.list) != 1) {
             flb_plg_error(ins, "'logs_resource_attributes_message_key' expects a single key name, "
-                          "e.g: 'logs_resource_attributes_message_key service.name'");
+                          "e.g: 'logs_resource_attributes_message_key service.name' "
+                          "(or '$service.name')");
             return -1;
         }
 
