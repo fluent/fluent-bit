@@ -392,6 +392,21 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         if (plugin->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) {
             ret = flb_net_host_set(plugin->name, &instance->host, input);
             if (ret != 0) {
+                if (instance->ht_log_chunks) {
+                    flb_hash_table_destroy(instance->ht_log_chunks);
+                }
+                if (instance->ht_metric_chunks) {
+                    flb_hash_table_destroy(instance->ht_metric_chunks);
+                }
+                if (instance->ht_trace_chunks) {
+                    flb_hash_table_destroy(instance->ht_trace_chunks);
+                }
+                if (instance->ht_profile_chunks) {
+                    flb_hash_table_destroy(instance->ht_profile_chunks);
+                }
+                if (plugin->type != FLB_INPUT_PLUGIN_CORE && instance->context) {
+                    flb_free(instance->context);
+                }
                 flb_free(instance->http_server_config);
                 flb_free(instance);
                 return NULL;
