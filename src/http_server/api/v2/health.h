@@ -17,29 +17,12 @@
  *  limitations under the License.
  */
 
-
-
-#ifndef FLB_HS_API_V1_HEALTH_H
-#define FLB_HS_API_V1_HEALTH_H
+#ifndef FLB_HS_API_V2_HEALTH_H
+#define FLB_HS_API_V2_HEALTH_H
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_http_server.h>
 
-struct flb_hs_health_state {
-    int healthy;
-    int errors;
-    int retries_failed;
-    int error_limit;
-    int retry_failure_limit;
-    int period_limit;
-};
+int api_v2_health(struct flb_hs *hs);
 
-/* health endpoint*/
-int api_v1_health(struct flb_hs *hs);
-int flb_hs_health_state_get(struct flb_hs *hs, struct flb_hs_health_state *state);
-void read_metrics(void *data, size_t size, int *error_count,
-                  int *retry_failure_count);
-
-/* clean up health resource when shutdown*/
-void flb_hs_health_destroy();
 #endif
