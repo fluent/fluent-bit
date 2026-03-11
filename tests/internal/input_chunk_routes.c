@@ -115,6 +115,7 @@ static int init_test_config(struct flb_config *config,
     /* Initialize properties list (required by flb_input_instance_init) */
     mk_list_init(&in->properties);
     mk_list_init(&in->net_properties);
+    mk_list_init(&in->http_server_properties);
     mk_list_init(&in->oauth2_jwt_properties);
 
     /* Initialize hash tables for chunks (required by flb_input_chunk_destroy) */
@@ -241,6 +242,7 @@ static void cleanup_test_routing_scenario(struct flb_input_chunk *ic,
         /* Release properties */
         flb_kv_release(&in->properties);
         flb_kv_release(&in->net_properties);
+        flb_kv_release(&in->http_server_properties);
         flb_kv_release(&in->oauth2_jwt_properties);
 
         /* Destroy metrics (created by flb_input_instance_init) */
