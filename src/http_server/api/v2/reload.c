@@ -180,7 +180,8 @@ static int cb_reload(struct flb_hs *hs,
         return handle_get_reload_status(response, config);
     }
 
-    flb_http_response_set_status(response, 400);
+    flb_http_response_set_status(response, 405);
+    flb_http_response_set_header(response, "Allow", 5, "GET, POST, PUT", 14);
     return flb_http_response_commit(response);
 }
 
