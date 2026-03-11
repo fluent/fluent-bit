@@ -626,7 +626,7 @@ unpack_error:
     else if (http_status == 503) {
         msgpack_pack_map(&mp_pck, 2);
         msgpack_pack_str_with_body(&mp_pck, HTTP_FIELD_STATUS, HTTP_FIELD_STATUS_LEN);
-        msgpack_pack_str_with_body(&mp_pck, HTTP_RESULT_OK, HTTP_RESULT_OK_LEN);
+        msgpack_pack_str_with_body(&mp_pck, HTTP_RESULT_ERROR, HTTP_RESULT_ERROR_LEN);
         msgpack_pack_str_with_body(&mp_pck, HTTP_FIELD_MESSAGE, HTTP_FIELD_MESSAGE_LEN);
         if (error_msg) {
             msgpack_pack_str_with_body(&mp_pck, error_msg, flb_sds_len(error_msg));
@@ -661,11 +661,20 @@ unpack_error:
 /* Perform registration */
 int api_v1_trace(struct flb_hs *hs)
 {
+    int ret;
+
     if (hs->config->enable_chunk_trace == FLB_TRUE) {
-        flb_hs_register_endpoint(hs, "/api/v1/traces/",
-                                 FLB_HS_ROUTE_EXACT, cb_traces);
-        flb_hs_register_endpoint(hs, "/api/v1/trace/",
-                                 FLB_HS_ROUTE_PREFIX, cb_trace);
+        ret = flb_hs_register_endpoint(hs, "/api/v1/traces/",
+                                       FLB_HS_ROUTE_EXACT, cb_traces);
+        if (ret != 0) {
+            return ret;
+        }
+
+        ret = flb_hs_register_endpoint(hs, "/api/v1/trace/",
+                                       FLB_HS_ROUTE_PREFIX, cb_trace);
+        if (ret != 0) {
+            return ret;
+        }
     }
     return 0;
 }
