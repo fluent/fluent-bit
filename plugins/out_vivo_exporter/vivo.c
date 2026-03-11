@@ -373,12 +373,6 @@ static int cb_vivo_init(struct flb_output_instance *ins,
     ctx->ins = ins;
     ctx->config = config;
 
-    ret = flb_output_config_map_set(ins, (void *) ctx);
-    if (ret == -1) {
-        flb_free(ctx);
-        return -1;
-    }
-
     flb_output_set_context(ins, ctx);
 
     /* Load config map */
@@ -404,8 +398,7 @@ static int cb_vivo_init(struct flb_output_instance *ins,
     }
 
     /* HTTP Server context */
-    ctx->http = vivo_http_server_create(ctx,
-                                        ins->host.name, ins->host.port, config);
+    ctx->http = vivo_http_server_create(ctx, config);
     if (!ctx->http) {
         flb_plg_error(ctx->ins, "could not initialize HTTP server, aborting");
         return -1;
@@ -505,7 +498,7 @@ struct flb_output_plugin out_vivo_exporter_plugin = {
     .cb_init     = cb_vivo_init,
     .cb_flush    = cb_vivo_flush,
     .cb_exit     = cb_vivo_exit,
-    .flags       = FLB_OUTPUT_NET,
+    .flags       = FLB_OUTPUT_NET | FLB_OUTPUT_HTTP_SERVER,
     .event_type  = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES,
     .config_map  = config_map,
     .workers     = 1,
