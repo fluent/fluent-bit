@@ -38,6 +38,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/http_server/flb_http_server_config_map.h>
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_ring_buffer.h>
@@ -263,6 +264,15 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             flb_errno();
             return NULL;
         }
+
+        instance->http_server_config = flb_calloc(1, sizeof(struct flb_http_server_config));
+        if (!instance->http_server_config) {
+            flb_errno();
+            flb_free(instance);
+            return NULL;
+        }
+
+        flb_http_server_config_init(instance->http_server_config);
         instance->config = config;
 
         /* Get an ID */
@@ -272,6 +282,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->ht_log_chunks = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE,
                                                         512, 0);
         if (!instance->ht_log_chunks) {
+            flb_free(instance->http_server_config);
             flb_free(instance);
             return NULL;
         }
@@ -281,6 +292,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
                                                            512, 0);
         if (!instance->ht_metric_chunks) {
             flb_hash_table_destroy(instance->ht_log_chunks);
+            flb_free(instance->http_server_config);
             flb_free(instance);
             return NULL;
         }
@@ -291,6 +303,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         if (!instance->ht_trace_chunks) {
             flb_hash_table_destroy(instance->ht_log_chunks);
             flb_hash_table_destroy(instance->ht_metric_chunks);
+            flb_free(instance->http_server_config);
             flb_free(instance);
             return NULL;
         }
@@ -302,6 +315,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             flb_hash_table_destroy(instance->ht_log_chunks);
             flb_hash_table_destroy(instance->ht_metric_chunks);
             flb_hash_table_destroy(instance->ht_trace_chunks);
+            flb_free(instance->http_server_config);
             flb_free(instance);
             return NULL;
         }
@@ -319,6 +333,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             ctx = flb_calloc(1, sizeof(struct flb_plugin_input_proxy_context));
             if (!ctx) {
                 flb_errno();
+                flb_free(instance->http_server_config);
                 flb_free(instance);
                 return NULL;
             }
@@ -366,12 +381,14 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         /* Initialize properties list */
         flb_kv_init(&instance->properties);
         flb_kv_init(&instance->net_properties);
+        flb_kv_init(&instance->http_server_properties);
         flb_kv_init(&instance->oauth2_jwt_properties);
 
         /* Plugin use networking */
         if (plugin->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) {
             ret = flb_net_host_set(plugin->name, &instance->host, input);
             if (ret != 0) {
+                flb_free(instance->http_server_config);
                 flb_free(instance);
                 return NULL;
             }
@@ -648,6 +665,18 @@ int flb_input_set_property(struct flb_input_instance *ins,
         }
         kv->val = tmp;
     }
+    else if ((ins->p->flags & FLB_INPUT_HTTP_SERVER) != 0 &&
+             flb_http_server_property_is_allowed(k) == FLB_TRUE &&
+             tmp != NULL) {
+        kv = flb_kv_item_create(&ins->http_server_properties, (char *) k, NULL);
+        if (!kv) {
+            if (tmp) {
+                flb_sds_destroy(tmp);
+            }
+            return -1;
+        }
+        kv->val = tmp;
+    }
 
 #ifdef FLB_HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0 && tmp) {
@@ -890,6 +919,7 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     /* release properties */
     flb_kv_release(&ins->properties);
     flb_kv_release(&ins->net_properties);
+    flb_kv_release(&ins->http_server_properties);
     flb_kv_release(&ins->oauth2_jwt_properties);
 
 
@@ -919,6 +949,14 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     if (ins->net_config_map) {
         flb_config_map_destroy(ins->net_config_map);
+    }
+
+    if (ins->http_server_config_map) {
+        flb_config_map_destroy(ins->http_server_config_map);
+    }
+
+    if (ins->http_server_config) {
+        flb_free(ins->http_server_config);
     }
 
     if (ins->oauth2_jwt_config_map) {
@@ -1073,8 +1111,32 @@ int flb_input_plugin_property_check(struct flb_input_instance *ins,
                                     struct flb_config *config)
 {
     int ret = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
     struct mk_list *config_map;
+    struct flb_kv *kv;
+    struct flb_kv *moved;
     struct flb_input_plugin *p = ins->p;
+
+    if ((p->flags & FLB_INPUT_HTTP_SERVER) != 0) {
+        mk_list_foreach_safe(head, tmp, &ins->properties) {
+            kv = mk_list_entry(head, struct flb_kv, _head);
+
+            if (flb_http_server_property_is_allowed(kv->key) == FLB_FALSE) {
+                continue;
+            }
+
+            moved = flb_kv_item_create(&ins->http_server_properties, kv->key, NULL);
+            if (moved == NULL) {
+                return -1;
+            }
+
+            moved->val = kv->val;
+            kv->val = NULL;
+            mk_list_del(&kv->_head);
+            flb_kv_item_destroy(kv);
+        }
+    }
 
     if (p->config_map) {
         /*
@@ -1106,7 +1168,7 @@ int flb_input_plugin_property_check(struct flb_input_instance *ins,
 }
 
 int flb_input_oauth2_jwt_property_check(struct flb_input_instance *ins,
-                                         struct flb_config *config)
+                                        struct flb_config *config)
 {
     int ret = 0;
 
@@ -1125,6 +1187,35 @@ int flb_input_oauth2_jwt_property_check(struct flb_input_instance *ins,
         ret = flb_config_map_properties_check(ins->p->name,
                                               &ins->oauth2_jwt_properties,
                                               ins->oauth2_jwt_config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -i %s -h\n",
+                           config->program_name, ins->p->name);
+            }
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int flb_input_http_server_property_check(struct flb_input_instance *ins,
+                                                struct flb_config *config)
+{
+    int ret = 0;
+
+    if (ins->http_server_config_map == NULL) {
+        ins->http_server_config_map = flb_http_server_get_config_map(config);
+        if (!ins->http_server_config_map) {
+            flb_input_instance_destroy(ins);
+            return -1;
+        }
+    }
+
+    if (mk_list_size(&ins->http_server_properties) > 0) {
+        ret = flb_config_map_properties_check(ins->p->name,
+                                              &ins->http_server_properties,
+                                              ins->http_server_config_map);
         if (ret == -1) {
             if (config->program_name) {
                 flb_helper("try the command: %s -i %s -h\n",
@@ -1336,6 +1427,13 @@ int flb_input_instance_init(struct flb_input_instance *ins,
      */
     if (mk_list_size(&ins->oauth2_jwt_properties) > 0) {
         if (flb_input_oauth2_jwt_property_check(ins, config) == -1) {
+            return -1;
+        }
+    }
+
+    if ((p->flags & FLB_INPUT_HTTP_SERVER) != 0 ||
+        mk_list_size(&ins->http_server_properties) > 0) {
+        if (flb_input_http_server_property_check(ins, config) == -1) {
             return -1;
         }
     }
