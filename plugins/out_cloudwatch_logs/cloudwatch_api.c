@@ -1113,6 +1113,11 @@ static char* find_fallback_environment(struct flb_cloudwatch *ctx, entity *entit
     return NULL;
 }
 
+/* Memory debug counters */
+static unsigned long long g_entity_field_allocs = 0;
+static unsigned long long g_entity_field_frees = 0;
+static unsigned long long g_parse_entity_calls = 0;
+
 /*
  * Entity fields can change during stream lifecycle due to service name
  * changes. The found_flag ensures filter_count accurately reflects
@@ -1138,6 +1143,7 @@ static void set_entity_field(char **field, struct flb_ra_value *val,
 
     if (*field) {
         flb_free(*field);
+        g_entity_field_frees++;
     }
 
     if (val->storage == FLB_RA_REF) {
@@ -1146,6 +1152,7 @@ static void set_entity_field(char **field, struct flb_ra_value *val,
     else {
         *field = flb_strndup(val->val.string, flb_sds_len(val->val.string));
     }
+    g_entity_field_allocs++;
 }
 
 void parse_entity(struct flb_cloudwatch *ctx, entity *entity,
@@ -1153,6 +1160,13 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity,
 {
     struct flb_ra_value *val;
     int i;
+
+    g_parse_entity_calls++;
+    if (g_parse_entity_calls % 100000 == 0) {
+        flb_plg_error(ctx->ins, "[MEMDEBUG] parse_entity calls=%llu allocs=%llu frees=%llu diff=%lld",
+                      g_parse_entity_calls, g_entity_field_allocs, g_entity_field_frees,
+                      (long long)(g_entity_field_allocs - g_entity_field_frees));
+    }
 
     /*
      * Use cached record accessors from ctx to avoid per-log allocation.
