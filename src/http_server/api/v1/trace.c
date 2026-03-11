@@ -279,6 +279,11 @@ static int http_enable_trace(struct flb_http_request *request, void *data,
     }
 
     msgpack_unpacked_init(&result);
+    if (request->body == NULL) {
+        ret = 400;
+        flb_error("missing json parameters");
+        goto unpack_error;
+    }
     rc = flb_pack_json(request->body, cfl_sds_len(request->body), &buf, &buf_size,
                        &root_type, NULL);
     if (rc == -1) {
@@ -514,6 +519,11 @@ static int cb_traces(struct flb_hs *hs,
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     msgpack_unpacked_init(&result);
+    if (request->body == NULL) {
+        http_status = 400;
+        error_msg = flb_sds_create("missing request body");
+        goto unpack_error;
+    }
     ret = flb_pack_json(request->body, cfl_sds_len(request->body), &buf, &buf_size,
                         &root_type, NULL);
     if (ret == -1) {
