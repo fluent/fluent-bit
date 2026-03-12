@@ -377,6 +377,7 @@ bool flb_metrics_is_empty(struct cmt *cmt)
     return cfl_list_is_empty(&cmt->counters) &&
            cfl_list_is_empty(&cmt->gauges) &&
            cfl_list_is_empty(&cmt->histograms) &&
+           cfl_list_is_empty(&cmt->exp_histograms) &&
            cfl_list_is_empty(&cmt->summaries) &&
            cfl_list_is_empty(&cmt->untypeds);
 }
