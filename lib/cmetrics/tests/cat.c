@@ -22,6 +22,7 @@
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_exp_histogram.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_encode_text.h>
 #include <cmetrics/cmt_encode_prometheus.h>
@@ -611,6 +612,99 @@ void test_histogram_populated_to_empty()
     cmt_destroy(cmt2);
 }
 
+void test_cat_preserves_aggregation_metadata()
+{
+    int ret;
+    uint64_t ts;
+    uint64_t positive_counts[2] = {3, 4};
+    struct cmt *src;
+    struct cmt *dst;
+    struct cmt_counter *src_counter;
+    struct cmt_counter *dst_counter;
+    struct cmt_histogram *src_histogram;
+    struct cmt_histogram *dst_histogram;
+    struct cmt_exp_histogram *src_exp_histogram;
+    struct cmt_exp_histogram *dst_exp_histogram;
+    struct cmt_histogram_buckets *buckets;
+
+    src = cmt_create();
+    TEST_CHECK(src != NULL);
+
+    dst = cmt_create();
+    TEST_CHECK(dst != NULL);
+
+    buckets = cmt_histogram_buckets_create(3, 1.0, 5.0, 10.0);
+    TEST_CHECK(buckets != NULL);
+
+    src_counter = cmt_counter_create(src, "otlp", "cat", "counter", "counter",
+                                     0, NULL);
+    TEST_CHECK(src_counter != NULL);
+
+    src_histogram = cmt_histogram_create(src, "otlp", "cat", "histogram", "histogram",
+                                         buckets, 0, NULL);
+    TEST_CHECK(src_histogram != NULL);
+
+    src_exp_histogram = cmt_exp_histogram_create(src, "otlp", "cat", "exp_histogram",
+                                                 "exp histogram", 0, NULL);
+    TEST_CHECK(src_exp_histogram != NULL);
+
+    ts = cfl_time_now();
+    cmt_counter_allow_reset(src_counter);
+    src_counter->aggregation_type = CMT_AGGREGATION_TYPE_DELTA;
+    cmt_counter_add(src_counter, ts, 4.0, 0, NULL);
+
+    src_histogram->aggregation_type = CMT_AGGREGATION_TYPE_DELTA;
+    cmt_histogram_observe(src_histogram, ts, 2.5, 0, NULL);
+
+    src_exp_histogram->aggregation_type = CMT_AGGREGATION_TYPE_DELTA;
+    ret = cmt_exp_histogram_set_default(src_exp_histogram,
+                                        ts,
+                                        2,
+                                        1,
+                                        0.0,
+                                        0,
+                                        2,
+                                        positive_counts,
+                                        0,
+                                        0,
+                                        NULL,
+                                        CMT_TRUE,
+                                        7.5,
+                                        7,
+                                        0,
+                                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = cmt_cat(dst, src);
+    TEST_CHECK(ret == 0);
+
+    TEST_CHECK(cfl_list_size(&dst->counters) == 1);
+    dst_counter = cfl_list_entry_first(&dst->counters, struct cmt_counter, _head);
+    TEST_CHECK(dst_counter != NULL);
+    if (dst_counter != NULL) {
+        TEST_CHECK(dst_counter->allow_reset == CMT_TRUE);
+        TEST_CHECK(dst_counter->aggregation_type == CMT_AGGREGATION_TYPE_DELTA);
+    }
+
+    TEST_CHECK(cfl_list_size(&dst->histograms) == 1);
+    dst_histogram = cfl_list_entry_first(&dst->histograms, struct cmt_histogram, _head);
+    TEST_CHECK(dst_histogram != NULL);
+    if (dst_histogram != NULL) {
+        TEST_CHECK(dst_histogram->aggregation_type == CMT_AGGREGATION_TYPE_DELTA);
+    }
+
+    TEST_CHECK(cfl_list_size(&dst->exp_histograms) == 1);
+    dst_exp_histogram = cfl_list_entry_first(&dst->exp_histograms,
+                                             struct cmt_exp_histogram, _head);
+    TEST_CHECK(dst_exp_histogram != NULL);
+    if (dst_exp_histogram != NULL) {
+        TEST_CHECK(dst_exp_histogram->aggregation_type == CMT_AGGREGATION_TYPE_DELTA);
+    }
+
+    cmt_destroy(src);
+    cmt_destroy(dst);
+}
+
 TEST_LIST = {
     {"cat", test_cat},
     {"duplicate_metrics", test_duplicate_metrics},
@@ -618,5 +712,6 @@ TEST_LIST = {
     {"histogram_mismatched_buckets", test_histogram_mismatched_buckets},
     {"histogram_empty_to_populated", test_histogram_empty_to_populated},
     {"histogram_populated_to_empty", test_histogram_populated_to_empty},
+    {"cat_preserves_aggregation_metadata", test_cat_preserves_aggregation_metadata},
     { 0 }
 };
