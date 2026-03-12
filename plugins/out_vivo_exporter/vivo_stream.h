@@ -21,6 +21,7 @@
 #define FLB_VIVO_STREAM_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_pthread.h>
 
 #include "vivo.h"
 
