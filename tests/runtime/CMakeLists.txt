@@ -254,6 +254,11 @@ if (FLB_PROCESSOR_CONTENT_MODIFIER)
   FLB_RT_TEST(FLB_PROCESSOR_CONTENT_MODIFIER "processor_content_modifier.c")
 endif()
 
+if (FLB_PROCESSOR_CUMULATIVE_TO_DELTA)
+  FLB_RT_TEST(FLB_PROCESSOR_CUMULATIVE_TO_DELTA
+              "processor_cumulative_to_delta.c")
+endif()
+
 # HTTP Client Debug (requires -DFLB_HTTP_CLIENT_DEBUG=On)
 if(FLB_HTTP_CLIENT_DEBUG)
   FLB_RT_TEST(FLB_OUT_TD           "http_callbacks.c")

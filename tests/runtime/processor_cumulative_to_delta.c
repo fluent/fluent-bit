@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_exp_histogram.h>
 #include <cmetrics/cmt_decode_msgpack.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
 #include <cmetrics/cmt_encode_text.h>
@@ -22,6 +23,9 @@
 
 #define MAX_CAPTURED_VALUES 32
 #define MAX_CAPTURE_METRICS 8
+
+#define CAPTURE_TYPE_VALUE 0
+#define CAPTURE_TYPE_EXP_HIST_FIELD 1
 
 struct http_client_ctx {
     struct flb_upstream *upstream;
@@ -40,6 +44,8 @@ struct rt_ctx {
 
 struct metric_capture {
     const char *line_prefix;
+    const char *field_name;
+    int capture_type;
     double values[MAX_CAPTURED_VALUES];
     int value_count;
 };
@@ -107,6 +113,60 @@ static int find_metric_value(const char *text,
     return -1;
 }
 
+static int find_exp_hist_field_value(const char *text,
+                                     const char *line_prefix,
+                                     const char *field_name,
+                                     double *value)
+{
+    const char *field_match;
+    const char *line_start;
+    const char *line_end;
+    char needle[64];
+
+    line_start = text;
+
+    snprintf(needle, sizeof(needle) - 1, "%s=", field_name);
+
+    while (line_start != NULL && *line_start != '\0') {
+        line_end = strchr(line_start, '\n');
+        if (line_end == NULL) {
+            line_end = line_start + strlen(line_start);
+        }
+
+        if (strstr(line_start, line_prefix) != NULL) {
+            field_match = line_start;
+
+            while (field_match != NULL && field_match < line_end) {
+                field_match = strstr(field_match, needle);
+
+                if (field_match == NULL || field_match >= line_end) {
+                    break;
+                }
+
+                if (field_match == line_start ||
+                    (*(field_match - 1) != '_' &&
+                     (*(field_match - 1) < '0' || *(field_match - 1) > '9') &&
+                     (*(field_match - 1) < 'A' || *(field_match - 1) > 'Z') &&
+                     (*(field_match - 1) < 'a' || *(field_match - 1) > 'z'))) {
+                    field_match += strlen(needle);
+                    *value = strtod(field_match, NULL);
+                    return 0;
+                }
+
+                field_match++;
+            }
+        }
+
+        if (*line_end == '\0') {
+            break;
+        }
+
+        line_start = line_end + 1;
+    }
+
+    return -1;
+}
+
 static void observation_reset(void)
 {
     pthread_mutex_lock(&state_mutex);
@@ -128,6 +188,33 @@ static int observation_add_capture(const char *line_prefix)
     }
 
     observed.captures[index].line_prefix = line_prefix;
+    observed.captures[index].field_name = NULL;
+    observed.captures[index].capture_type = CAPTURE_TYPE_VALUE;
+    observed.captures[index].value_count = 0;
+    observed.capture_count++;
+
+    pthread_mutex_unlock(&state_mutex);
+
+    return index;
+}
+
+static int observation_add_exp_hist_capture(const char *line_prefix,
+                                            const char *field_name)
+{
+    int index;
+
+    pthread_mutex_lock(&state_mutex);
+
+    index = observed.capture_count;
+
+    if (index >= MAX_CAPTURE_METRICS) {
+        pthread_mutex_unlock(&state_mutex);
+        return -1;
+    }
+
+    observed.captures[index].line_prefix = line_prefix;
+    observed.captures[index].field_name = field_name;
+    observed.captures[index].capture_type = CAPTURE_TYPE_EXP_HIST_FIELD;
     observed.captures[index].value_count = 0;
     observed.capture_count++;
 
@@ -309,49 +396,62 @@ static int cb_capture_metrics(void *record, size_t size, void *data)
 
     (void) data;
 
-    offset = 0;
-    text = NULL;
-    context = NULL;
-
-    ret = cmt_decode_msgpack_create(&context, (char *) record, size, &offset);
-    if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
-        if (record != NULL) {
-            flb_free(record);
-        }
-
-        return -1;
-    }
-
-    text = cmt_encode_text_create(context);
-
     pthread_mutex_lock(&state_mutex);
-
     observed.callback_count++;
-
-    if (text != NULL) {
-        for (index = 0; index < observed.capture_count; index++) {
-            if (find_metric_value(text,
-                                  observed.captures[index].line_prefix,
-                                  &value) == 0) {
-                if (observed.captures[index].value_count < MAX_CAPTURED_VALUES) {
-                    observed.captures[index].values[
-                        observed.captures[index].value_count] = value;
-                    observed.captures[index].value_count++;
-                }
-            }
-        }
-    }
-
     pthread_mutex_unlock(&state_mutex);
 
-    if (text != NULL) {
-        cmt_encode_text_destroy(text);
-    }
+    offset = 0;
 
-    cmt_destroy(context);
+    while (offset < size) {
+        text = NULL;
+        context = NULL;
 
-    if (record != NULL) {
-        flb_free(record);
+        ret = cmt_decode_msgpack_create(&context, (char *) record, size, &offset);
+        if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
+            if (context != NULL) {
+                cmt_destroy(context);
+            }
+
+            return -1;
+        }
+
+        text = cmt_encode_text_create(context);
+
+        if (text != NULL) {
+            pthread_mutex_lock(&state_mutex);
+
+            for (index = 0; index < observed.capture_count; index++) {
+                ret = -1;
+
+                if (observed.captures[index].capture_type ==
+                    CAPTURE_TYPE_EXP_HIST_FIELD) {
+                    ret = find_exp_hist_field_value(
+                            text,
+                            observed.captures[index].line_prefix,
+                            observed.captures[index].field_name,
+                            &value);
+                }
+                else {
+                    ret = find_metric_value(text,
+                                            observed.captures[index].line_prefix,
+                                            &value);
+                }
+
+                if (ret == 0) {
+                    if (observed.captures[index].value_count <
+                        MAX_CAPTURED_VALUES) {
+                        observed.captures[index].values[
+                            observed.captures[index].value_count] = value;
+                        observed.captures[index].value_count++;
+                    }
+                }
+            }
+
+            pthread_mutex_unlock(&state_mutex);
+            cmt_encode_text_destroy(text);
+        }
+
+        cmt_destroy(context);
     }
 
     return 0;
@@ -464,6 +564,7 @@ static struct rt_ctx *rt_ctx_create(const char *drop_first,
     ret = flb_output_set(context->flb,
                          context->output_ffd,
                          "match", "*",
+                         "data_mode", "chunk",
                          NULL);
     if (ret != 0) {
         flb_destroy(context->flb);
@@ -547,6 +648,66 @@ static struct cmt *create_counter_context(const char *name,
                         value,
                         label_count,
                         label_values) != 0) {
+        cmt_destroy(context);
+        return NULL;
+    }
+
+    return context;
+}
+
+static struct cmt *create_exp_histogram_context(const char *name,
+                                                uint64_t timestamp,
+                                                int32_t scale,
+                                                uint64_t zero_count,
+                                                double zero_threshold,
+                                                int32_t positive_offset,
+                                                size_t positive_count,
+                                                uint64_t *positive_buckets,
+                                                int32_t negative_offset,
+                                                size_t negative_count,
+                                                uint64_t *negative_buckets,
+                                                int sum_set,
+                                                double sum,
+                                                uint64_t count)
+{
+    struct cmt *context;
+    struct cmt_exp_histogram *exp_histogram;
+
+    context = cmt_create();
+    if (context == NULL) {
+        return NULL;
+    }
+
+    exp_histogram = cmt_exp_histogram_create(context,
+                                             "",
+                                             "",
+                                             (char *) name,
+                                             "help",
+                                             0,
+                                             NULL);
+    if (exp_histogram == NULL) {
+        cmt_destroy(context);
+        return NULL;
+    }
+
+    exp_histogram->aggregation_type = CMT_AGGREGATION_TYPE_CUMULATIVE;
+
+    if (cmt_exp_histogram_set_default(exp_histogram,
+                                      timestamp,
+                                      scale,
+                                      zero_count,
+                                      zero_threshold,
+                                      positive_offset,
+                                      positive_count,
+                                      positive_buckets,
+                                      negative_offset,
+                                      negative_count,
+                                      negative_buckets,
+                                      sum_set,
+                                      sum,
+                                      count,
+                                      0,
+                                      NULL) != 0) {
         cmt_destroy(context);
         return NULL;
     }
@@ -802,10 +963,83 @@ static void flb_test_runtime_non_monotonic_sum_passthrough(void)
     rt_ctx_destroy(rt);
 }
 
+static void flb_test_runtime_exp_histogram_scale_change(void)
+{
+    int count_index;
+    int sum_index;
+    uint64_t positive_a[2];
+    uint64_t positive_b[4];
+    struct cmt *context;
+    struct rt_ctx *rt;
+
+    positive_a[0] = 4;
+    positive_a[1] = 8;
+
+    positive_b[0] = 5;
+    positive_b[1] = 8;
+    positive_b[2] = 11;
+    positive_b[3] = 15;
+
+    observation_reset();
+    count_index = observation_add_exp_hist_capture("rt_exp_hist", "count");
+    sum_index = observation_add_exp_hist_capture("rt_exp_hist", "sum");
+    TEST_CHECK(count_index >= 0);
+    TEST_CHECK(sum_index >= 0);
+
+    rt = rt_ctx_create("true", "true");
+    TEST_CHECK(rt != NULL);
+
+    context = create_exp_histogram_context("rt_exp_hist",
+                                           100,
+                                           1,
+                                           2,
+                                           0.0,
+                                           0,
+                                           2,
+                                           positive_a,
+                                           0,
+                                           0,
+                                           NULL,
+                                           CMT_TRUE,
+                                           40.0,
+                                           10);
+    TEST_CHECK(context != NULL);
+    TEST_CHECK(send_metrics_context(rt, context) == 0);
+    cmt_destroy(context);
+    flb_time_msleep(500);
+    TEST_CHECK(observation_get_value_count(count_index) == 0);
+
+    context = create_exp_histogram_context("rt_exp_hist",
+                                           200,
+                                           2,
+                                           3,
+                                           0.0,
+                                           0,
+                                           4,
+                                           positive_b,
+                                           0,
+                                           0,
+                                           NULL,
+                                           CMT_TRUE,
+                                           58.0,
+                                           18);
+    TEST_CHECK(context != NULL);
+    TEST_CHECK(send_metrics_context(rt, context) == 0);
+    cmt_destroy(context);
+
+    TEST_CHECK(wait_for_value_count(count_index, 1, 2000) == 0);
+    TEST_CHECK(wait_for_value_count(sum_index, 1, 2000) == 0);
+    TEST_CHECK(fabs(observation_get_value(count_index, 0) - 8.0) < 0.0001);
+    TEST_CHECK(fabs(observation_get_value(sum_index, 0) - 18.0) < 0.0001);
+
+    rt_ctx_destroy(rt);
+}
+
 TEST_LIST = {
     {"counter_default_behaviors", flb_test_runtime_counter_default_behaviors},
     {"counter_reset_keep_and_first_sample", flb_test_runtime_counter_reset_keep_and_first_sample},
     {"multi_series", flb_test_runtime_multi_series},
     {"non_monotonic_sum_passthrough", flb_test_runtime_non_monotonic_sum_passthrough},
+    {"exp_histogram_scale_change", flb_test_runtime_exp_histogram_scale_change},
     {NULL, NULL}
 };
