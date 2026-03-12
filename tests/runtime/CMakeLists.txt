@@ -314,3 +314,25 @@ foreach(source_file ${CHECK_PROGRAMS})
     set_property(TARGET ${source_file_we} APPEND_STRING PROPERTY COMPILE_FLAGS "-D${o_source_file_we}")
   endif()
 endforeach()
+
+function(flb_runtime_lock_tests resource_name)
+  foreach(test_name ${ARGN})
+    if (TEST ${test_name})
+      set_property(TEST ${test_name} APPEND PROPERTY RESOURCE_LOCK "${resource_name}")
+    endif()
+  endforeach()
+endfunction()
+
+# Most runtime tests can run concurrently under `ctest -j`.
+# Only serialize executables that bind the same well-known port.
+flb_runtime_lock_tests("runtime-port-2020"
+  flb-rt-core_internal_logger
+  flb-rt-filter_wasm)
+
+flb_runtime_lock_tests("runtime-port-4318"
+  flb-rt-in_opentelemetry
+  flb-rt-in_opentelemetry_routing)
+
+flb_runtime_lock_tests("runtime-port-5170"
+  flb-rt-in_tcp
+  flb-rt-out_tcp)
