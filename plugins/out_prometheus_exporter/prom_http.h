@@ -21,8 +21,8 @@
 #define FLB_PROMETHEUS_EXPORTER_HTTP_H
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/http_server/flb_http_server.h>
-#include <pthread.h>
 
 #include "prom.h"
 
