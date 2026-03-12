@@ -512,19 +512,30 @@ static int write_text_file(const char *path, const char *content)
 static int test_setup_private_key_jwt_files(char *key_path, size_t key_path_size,
                                             char *cert_path, size_t cert_path_size)
 {
+    char *tmpdir;
     int ret;
 
-    ret = snprintf(key_path, key_path_size, "/tmp/%s.%d",
-                   TEST_KEY_FILENAME, (int) getpid());
-    if (ret < 0 || (size_t) ret >= key_path_size) {
+    tmpdir = flb_test_env_tmpdir();
+    TEST_CHECK(tmpdir != NULL);
+    if (!tmpdir) {
         return -1;
     }
 
-    ret = snprintf(cert_path, cert_path_size, "/tmp/%s.%d",
-                   TEST_CERT_FILENAME, (int) getpid());
-    if (ret < 0 || (size_t) ret >= cert_path_size) {
+    ret = snprintf(key_path, key_path_size, "%s/%s.%d",
+                   tmpdir, TEST_KEY_FILENAME, (int) getpid());
+    if (ret < 0 || (size_t) ret >= key_path_size) {
+        flb_free(tmpdir);
         return -1;
     }
+
+    ret = snprintf(cert_path, cert_path_size, "%s/%s.%d",
+                   tmpdir, TEST_CERT_FILENAME, (int) getpid());
+    if (ret < 0 || (size_t) ret >= cert_path_size) {
+        flb_free(tmpdir);
+        return -1;
+    }
+
+    flb_free(tmpdir);
 
     ret = write_text_file(key_path, TEST_PRIVATE_KEY_PEM);
     if (ret != 0) {
