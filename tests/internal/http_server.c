@@ -4,10 +4,10 @@
 #include <fluent-bit/flb_http_common.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/http_server/flb_http_server.h>
 
-#include <pthread.h>
 #include <string.h>
 
 #include "flb_tests_internal.h"
