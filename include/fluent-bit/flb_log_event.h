@@ -44,9 +44,9 @@
  * Any other negative timestamp is considered invalid and will be skipped during decoding.
  * Encoders must respect this contract and only use -1/-2 for group markers.
  */
-#define FLB_LOG_EVENT_NORMAL              (int32_t)  0
-#define FLB_LOG_EVENT_GROUP_START         (int32_t) -1
-#define FLB_LOG_EVENT_GROUP_END           (int32_t) -2
+#define FLB_LOG_EVENT_NORMAL              (time_t)  0
+#define FLB_LOG_EVENT_GROUP_START         (time_t) -1
+#define FLB_LOG_EVENT_GROUP_END           (time_t) -2
 
 struct flb_log_event {
     msgpack_object  *group_attributes;

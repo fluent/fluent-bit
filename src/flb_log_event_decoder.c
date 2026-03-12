@@ -180,6 +180,8 @@ void flb_log_event_decoder_destroy(struct flb_log_event_decoder *context)
 int flb_log_event_decoder_decode_timestamp(msgpack_object *input,
                                            struct flb_time *output)
 {
+    uint32_t packed_sec;
+
     flb_time_zero(output);
 
     if (input->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
@@ -194,13 +196,23 @@ int flb_log_event_decoder_decode_timestamp(msgpack_object *input,
             return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
         }
 
-        output->tm.tv_sec  =
-            (int32_t) FLB_UINT32_TO_HOST_BYTE_ORDER(
+        /* convert uint_32t style seconds to time_t style seconds */
+        packed_sec = FLB_UINT32_TO_HOST_BYTE_ORDER(
                         FLB_ALIGNED_DWORD_READ(
                             (unsigned char *) &input->via.ext.ptr[0]));
 
+        if (packed_sec == (uint32_t) FLB_LOG_EVENT_GROUP_START) {
+            output->tm.tv_sec = FLB_LOG_EVENT_GROUP_START;
+        }
+        else if (packed_sec == (uint32_t) FLB_LOG_EVENT_GROUP_END) {
+            output->tm.tv_sec = FLB_LOG_EVENT_GROUP_END;
+        }
+        else {
+            output->tm.tv_sec = (time_t) packed_sec;
+        }
+
         output->tm.tv_nsec  =
-            (int32_t) FLB_UINT32_TO_HOST_BYTE_ORDER(
+            (time_t) FLB_UINT32_TO_HOST_BYTE_ORDER(
                         FLB_ALIGNED_DWORD_READ(
                             (unsigned char *) &input->via.ext.ptr[4]));
     }
@@ -313,7 +325,7 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
     int result;
     int record_type;
     size_t previous_offset;
-    int32_t invalid_timestamp;
+    int64_t invalid_timestamp;
 
     if (context == NULL) {
         return FLB_EVENT_DECODER_ERROR_INVALID_CONTEXT;
@@ -368,8 +380,8 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
              * to avoid losing valid group metadata if corruption occurs mid-group.
              * Skip the record and continue processing.
              */
-            invalid_timestamp = (int32_t) event->timestamp.tm.tv_sec;
-            flb_debug("[decoder] Invalid group marker timestamp (%d), skipping record. "
+            invalid_timestamp = (int64_t) event->timestamp.tm.tv_sec;
+            flb_debug("[decoder] Invalid group marker timestamp (%ld), skipping record. "
                      "Group state preserved.", invalid_timestamp);
 
             /* Increment recursion depth before recursive call */
@@ -457,20 +469,20 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
 
 int flb_log_event_decoder_get_record_type(struct flb_log_event *event, int32_t *type)
 {
-    int32_t s;
+    time_t s;
 
-    s = (int32_t) event->timestamp.tm.tv_sec;
+    s = event->timestamp.tm.tv_sec;
 
-    if (s >= 0) {
-        *type = FLB_LOG_EVENT_NORMAL;
-        return 0;
-    }
-    else if (s == FLB_LOG_EVENT_GROUP_START) {
+    if (s == FLB_LOG_EVENT_GROUP_START) {
         *type = FLB_LOG_EVENT_GROUP_START;
         return 0;
     }
     else if (s == FLB_LOG_EVENT_GROUP_END) {
         *type = FLB_LOG_EVENT_GROUP_END;
+        return 0;
+    }
+    else if (s >= 0) {
+        *type = FLB_LOG_EVENT_NORMAL;
         return 0;
     }
 
