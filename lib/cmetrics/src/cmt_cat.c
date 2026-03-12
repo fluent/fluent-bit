@@ -689,6 +689,9 @@ int cmt_cat_counter(struct cmt *cmt, struct cmt_counter *counter,
         return -1;
     }
 
+    c->aggregation_type = counter->aggregation_type;
+    c->allow_reset = counter->allow_reset;
+
     if (filtered_map != NULL) {
         ret = cmt_cat_copy_map(&c->opts, c->map, filtered_map);
         if (ret == -1) {
@@ -837,6 +840,8 @@ int cmt_cat_histogram(struct cmt *cmt, struct cmt_histogram *histogram,
         return -1;
     }
 
+    hist->aggregation_type = histogram->aggregation_type;
+
     if (filtered_map != NULL) {
         ret = cmt_cat_copy_map(&hist->opts, hist->map, filtered_map);
         if (ret == -1) {
@@ -944,6 +949,8 @@ int cmt_cat_exp_histogram(struct cmt *cmt, struct cmt_exp_histogram *exp_histogr
     if (!eh) {
         return -1;
     }
+
+    eh->aggregation_type = exp_histogram->aggregation_type;
 
     if (filtered_map != NULL) {
         ret = cmt_cat_copy_map(&eh->opts, eh->map, filtered_map);
