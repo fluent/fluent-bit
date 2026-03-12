@@ -37,6 +37,23 @@
 #include <msgpack.h>
 #include <sys/stat.h>
 
+/* RSS memory tracking helper */
+static long get_rss_kb(void) {
+    FILE *f = fopen("/proc/self/statm", "r");
+    if (!f) return -1;
+    long size, resident;
+    if (fscanf(f, "%ld %ld", &size, &resident) != 2) {
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+    return resident * 4; /* pages to KB (4KB pages) */
+}
+
+static unsigned long long g_kube_filter_calls = 0;
+static long g_kube_filter_initial_rss = 0;
+static long g_kube_filter_cumulative_delta = 0;
+
 /* Merge status used by merge_log_handler() */
 #define MERGE_NONE        0 /* merge unescaped string in temporary buffer */
 #define MERGE_PARSED      1 /* merge parsed string (log_buf)             */
@@ -619,6 +636,13 @@ static int cb_kube_filter(const void *data, size_t bytes,
     (void) i_ins;
     (void) config;
 
+    /* RSS tracking */
+    long rss_before = get_rss_kb();
+    g_kube_filter_calls++;
+    if (g_kube_filter_initial_rss == 0) {
+        g_kube_filter_initial_rss = rss_before;
+    }
+
     if (ctx->use_journal == FLB_FALSE || ctx->dummy_meta == FLB_TRUE) {
         if (ctx->dummy_meta == FLB_TRUE) {
             ret = flb_kube_dummy_meta_get(&dummy_cache_buf, &cache_size);
@@ -805,6 +829,22 @@ static int cb_kube_filter(const void *data, size_t bytes,
     flb_log_event_decoder_destroy(&log_decoder);
     flb_log_event_encoder_destroy(&log_encoder);
 
+    /* RSS tracking - end of filter */
+    {
+        long rss_after = get_rss_kb();
+        if (rss_before > 0 && rss_after > 0) {
+            g_kube_filter_cumulative_delta += (rss_after - rss_before);
+        }
+        if (g_kube_filter_calls % 500 == 0) {
+            flb_plg_error(ctx->ins,
+                "[MEMRSS] filter_kube calls=%llu rss_now=%ld KB "
+                "rss_growth=%ld KB batch_delta=%ld KB",
+                g_kube_filter_calls, rss_after,
+                rss_after - g_kube_filter_initial_rss,
+                rss_after - rss_before);
+        }
+    }
+
     return FLB_FILTER_MODIFIED;
 }
 
@@ -813,7 +853,7 @@ static int cb_kube_exit(void *data, struct flb_config *config)
     struct flb_kube *ctx;
 
     ctx = data;
-    
+
     flb_kube_conf_destroy(ctx);
     if (background_thread) {
         pthread_cancel(background_thread);
@@ -1109,16 +1149,16 @@ static struct flb_config_map config_map[] = {
      "kubernetes token ttl, until it is reread from the token file. Default: 10m"
     },
     /*
-     * Set TTL for K8s cached metadata 
+     * Set TTL for K8s cached metadata
      */
     {
      FLB_CONFIG_MAP_TIME, "kube_meta_cache_ttl", "0",
      0, FLB_TRUE, offsetof(struct flb_kube, kube_meta_cache_ttl),
-     "configurable TTL for K8s cached metadata. " 
-     "By default, it is set to 0 which means TTL for cache entries is disabled and " 
-     "cache entries are evicted at random when capacity is reached. " 
-     "In order to enable this option, you should set the number to a time interval. " 
-     "For example, set this value to 60 or 60s and cache entries " 
+     "configurable TTL for K8s cached metadata. "
+     "By default, it is set to 0 which means TTL for cache entries is disabled and "
+     "cache entries are evicted at random when capacity is reached. "
+     "In order to enable this option, you should set the number to a time interval. "
+     "For example, set this value to 60 or 60s and cache entries "
      "which have been created more than 60s will be evicted"
     },
     {

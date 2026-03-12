@@ -43,6 +43,22 @@
 
 #include "aws.h"
 
+/* RSS memory tracking helper */
+static long get_aws_rss_kb(void) {
+    FILE *f = fopen("/proc/self/statm", "r");
+    if (!f) return -1;
+    long size, resident;
+    if (fscanf(f, "%ld %ld", &size, &resident) != 2) {
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+    return resident * 4; /* pages to KB (4KB pages) */
+}
+
+static unsigned long long g_aws_filter_calls = 0;
+static long g_aws_filter_initial_rss = 0;
+
 static int get_ec2_metadata(struct flb_filter_aws *ctx);
 
 static void expose_aws_meta(struct flb_filter_aws *ctx)
@@ -804,7 +820,7 @@ static int ec2_metadata_group_should_fetch(struct flb_filter_aws *ctx,
 
     interval = now - group->last_fetch_attempt;
 
-    if (group->last_fetch_attempt > 0 && 
+    if (group->last_fetch_attempt > 0 &&
         interval < required_interval) {
         return FLB_FALSE;
     }
@@ -973,6 +989,13 @@ static int cb_aws_filter(const void *data, size_t bytes,
     (void) f_ins;
     (void) i_ins;
     (void) config;
+
+    /* RSS tracking */
+    long rss_before = get_aws_rss_kb();
+    g_aws_filter_calls++;
+    if (g_aws_filter_initial_rss == 0) {
+        g_aws_filter_initial_rss = rss_before;
+    }
 
     /* First check that the metadata has been retrieved */
     if (!ctx->metadata_retrieved) {
@@ -1172,6 +1195,19 @@ static int cb_aws_filter(const void *data, size_t bytes,
 
     flb_log_event_decoder_destroy(&log_decoder);
     flb_log_event_encoder_destroy(&log_encoder);
+
+    /* RSS tracking - end of filter */
+    {
+        long rss_after = get_aws_rss_kb();
+        if (g_aws_filter_calls % 500 == 0) {
+            flb_plg_error(ctx->ins,
+                "[MEMRSS] filter_aws calls=%llu rss_now=%ld KB "
+                "rss_growth=%ld KB batch_delta=%ld KB",
+                g_aws_filter_calls, rss_after,
+                rss_after - g_aws_filter_initial_rss,
+                rss_after - rss_before);
+        }
+    }
 
     return ret;
 }

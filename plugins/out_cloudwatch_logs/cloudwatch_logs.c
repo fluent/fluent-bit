@@ -460,6 +460,22 @@ struct cw_flush *new_buffer()
     return buf;
 }
 
+/* RSS memory tracking helper for cloudwatch output */
+static long get_cw_rss_kb(void) {
+    FILE *f = fopen("/proc/self/statm", "r");
+    if (!f) return -1;
+    long size, resident;
+    if (fscanf(f, "%ld %ld", &size, &resident) != 2) {
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+    return resident * 4; /* pages to KB (4KB pages) */
+}
+
+static unsigned long long g_cw_flush_calls = 0;
+static long g_cw_flush_initial_rss = 0;
+
 static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
                                 struct flb_output_flush *out_flush,
                                 struct flb_input_instance *i_ins,
@@ -470,6 +486,13 @@ static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
     int event_count;
     (void) i_ins;
     (void) config;
+
+    /* RSS tracking */
+    long rss_before = get_cw_rss_kb();
+    g_cw_flush_calls++;
+    if (g_cw_flush_initial_rss == 0) {
+        g_cw_flush_initial_rss = rss_before;
+    }
 
     struct cw_flush *buf;
 
@@ -487,6 +510,19 @@ static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
     }
 
     cw_flush_destroy(buf);
+
+    /* RSS tracking - end of flush */
+    {
+        long rss_after = get_cw_rss_kb();
+        if (g_cw_flush_calls % 5 == 0) {
+            flb_plg_error(ctx->ins,
+                "[MEMRSS] out_cloudwatch calls=%llu rss_now=%ld KB "
+                "rss_growth=%ld KB batch_delta=%ld KB",
+                g_cw_flush_calls, rss_after,
+                rss_after - g_cw_flush_initial_rss,
+                rss_after - rss_before);
+        }
+    }
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }
