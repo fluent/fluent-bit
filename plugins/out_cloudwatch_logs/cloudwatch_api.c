@@ -1158,6 +1158,7 @@ static void set_entity_field(char **field, struct flb_ra_value *val,
 void parse_entity(struct flb_cloudwatch *ctx, entity *entity,
                   msgpack_object map, int map_size)
 {
+    struct flb_record_accessor *ra;
     struct flb_ra_value *val;
     int i;
 
@@ -1167,46 +1168,48 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity,
                       g_parse_entity_calls, g_entity_field_allocs, g_entity_field_frees,
                       (long long)(g_entity_field_allocs - g_entity_field_frees));
     }
-
-    /*
-     * Use cached record accessors from ctx to avoid per-log allocation.
-     * This significantly reduces memory churn when processing many logs.
-     */
     struct {
-        struct flb_record_accessor *ra;
+        const char *path;
         char **field;
         int *filter_count;
         int *found_flag;
     } field_map[] = {
-        {ctx->ra_entity_service_name, &entity->key_attributes->name,
+        {"$kubernetes['aws_entity_service_name']", &entity->key_attributes->name,
          &entity->filter_count, &entity->service_name_found},
-        {ctx->ra_entity_environment, &entity->key_attributes->environment,
+        {"$kubernetes['aws_entity_environment']", &entity->key_attributes->environment,
          &entity->filter_count, &entity->environment_found},
-        {ctx->ra_entity_namespace, &entity->attributes->namespace,
+        {"$kubernetes['namespace_name']", &entity->attributes->namespace,
          NULL, NULL},
-        {ctx->ra_entity_node, &entity->attributes->node, NULL, NULL},
-        {ctx->ra_entity_cluster, &entity->attributes->cluster_name,
+        {"$kubernetes['host']", &entity->attributes->node, NULL, NULL},
+        {"$kubernetes['aws_entity_cluster']", &entity->attributes->cluster_name,
          &entity->filter_count, NULL},
-        {ctx->ra_entity_workload, &entity->attributes->workload,
+        {"$kubernetes['aws_entity_workload']", &entity->attributes->workload,
          &entity->filter_count, NULL},
-        {ctx->ra_entity_name_source, &entity->attributes->name_source,
+        {"$kubernetes['aws_entity_name_source']", &entity->attributes->name_source,
          &entity->filter_count, &entity->name_source_found},
-        {ctx->ra_entity_platform, &entity->attributes->platform_type,
+        {"$kubernetes['aws_entity_platform']", &entity->attributes->platform_type,
          &entity->filter_count, NULL},
-        {ctx->ra_entity_instance_id, &entity->attributes->instance_id,
+        {"$aws_entity_ec2_instance_id", &entity->attributes->instance_id,
          &entity->root_filter_count, NULL},
-        {ctx->ra_entity_account_id, &entity->key_attributes->account_id,
+        {"$aws_entity_account_id", &entity->key_attributes->account_id,
          &entity->root_filter_count, NULL},
         {NULL, NULL, NULL, NULL}
     };
 
-    for (i = 0; field_map[i].ra; i++) {
-        val = flb_ra_get_value_object(field_map[i].ra, map);
+    for (i = 0; field_map[i].path; i++) {
+        ra = flb_ra_create((char *) field_map[i].path, FLB_FALSE);
+        if (!ra) {
+            continue;
+        }
+
+        val = flb_ra_get_value_object(ra, map);
         if (val) {
             set_entity_field(field_map[i].field, val, field_map[i].filter_count,
                            field_map[i].found_flag);
             flb_ra_key_value_destroy(val);
         }
+
+        flb_ra_destroy(ra);
     }
 
     if (entity->key_attributes->name == NULL &&
