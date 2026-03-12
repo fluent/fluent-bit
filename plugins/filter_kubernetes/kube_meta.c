@@ -2287,6 +2287,11 @@ int flb_kube_dummy_meta_get(char **out_buf, size_t *out_size)
     return 0;
 }
 
+/* Memory debug counters for kubernetes filter */
+static unsigned long long g_kube_meta_calls = 0;
+static unsigned long long g_kube_cache_hits = 0;
+static unsigned long long g_kube_cache_misses = 0;
+
 static inline int flb_kube_pod_meta_get(struct flb_kube *ctx,
                       const char *tag, int tag_len,
                       const char *data, size_t data_size,
@@ -2312,7 +2317,35 @@ static inline int flb_kube_pod_meta_get(struct flb_kube *ctx,
     ret = flb_hash_table_get(ctx->hash_table,
                              meta->cache_key, meta->cache_key_len,
                              (void *) &hash_meta_buf, &hash_meta_size);
+
+    /* Track cache stats */
+    g_kube_meta_calls++;
+    if (ret != -1) {
+        g_kube_cache_hits++;
+    }
+
+    /* Periodic debug logging every 5000 calls */
+    if (g_kube_meta_calls % 5000 == 0) {
+        int hash_count = 0;
+        int ns_hash_count = 0;
+        int pod_svc_hash_count = 0;
+        if (ctx->hash_table) {
+            hash_count = ctx->hash_table->total_count;
+        }
+        if (ctx->namespace_hash_table) {
+            ns_hash_count = ctx->namespace_hash_table->total_count;
+        }
+        if (ctx->aws_pod_service_hash_table) {
+            pod_svc_hash_count = ctx->aws_pod_service_hash_table->total_count;
+        }
+        flb_plg_error(ctx->ins, "[MEMDEBUG] kube_meta calls=%llu hits=%llu misses=%llu "
+                      "hash_table=%d ns_hash=%d pod_svc_hash=%d",
+                      g_kube_meta_calls, g_kube_cache_hits, g_kube_cache_misses,
+                      hash_count, ns_hash_count, pod_svc_hash_count);
+    }
+
     if (ret == -1) {
+        g_kube_cache_misses++;
         /* Retrieve API server meta and merge with local meta */
         ret = get_and_merge_pod_meta(ctx, meta,
                                  &tmp_hash_meta_buf, &hash_meta_size);
