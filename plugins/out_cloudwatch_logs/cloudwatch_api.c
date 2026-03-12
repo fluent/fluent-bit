@@ -1162,11 +1162,9 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity,
     int i;
 
     g_parse_entity_calls++;
-    if (g_parse_entity_calls % 100000 == 0) {
-        flb_plg_error(ctx->ins, "[MEMDEBUG] parse_entity calls=%llu allocs=%llu frees=%llu diff=%lld",
-                      g_parse_entity_calls, g_entity_field_allocs, g_entity_field_frees,
-                      (long long)(g_entity_field_allocs - g_entity_field_frees));
-    }
+    flb_plg_error(ctx->ins, "[MEMDEBUG] parse_entity calls=%llu allocs=%llu frees=%llu diff=%lld",
+                  g_parse_entity_calls, g_entity_field_allocs, g_entity_field_frees,
+                  (long long)(g_entity_field_allocs - g_entity_field_frees));
 
     /*
      * Use cached record accessors from ctx to avoid per-log allocation.
