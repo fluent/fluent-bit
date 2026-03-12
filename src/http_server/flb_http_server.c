@@ -551,8 +551,7 @@ cleanup:
     return NULL;
 }
 
-static int __attribute__((unused))
-flb_http_server_runtime_start(struct flb_http_server *session)
+static int flb_http_server_runtime_start(struct flb_http_server *session)
 {
     int index;
     int result;
