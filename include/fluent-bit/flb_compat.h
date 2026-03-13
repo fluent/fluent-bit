@@ -109,7 +109,7 @@ static inline char* basename(const char *path)
     char dir[_MAX_DIR];
     char fname[_MAX_FNAME];
     char ext[_MAX_EXT];
-    static char buf[_MAX_PATH];
+    static __declspec(thread) char buf[_MAX_PATH];
 
     _splitpath_s(path, drive, _MAX_DRIVE, dir, _MAX_DIR,
                        fname, _MAX_FNAME, ext, _MAX_EXT);
