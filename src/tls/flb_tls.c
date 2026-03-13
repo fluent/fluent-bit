@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_socket.h>
+#include <fluent-bit/tls/flb_tls.h>
 
 #include "openssl.c"
 
@@ -329,30 +330,32 @@ int flb_tls_net_read(struct flb_tls_session *session, void *buf, size_t len)
     time_t          current_timestamp;
     struct flb_tls *tls;
     int             ret;
+    int             timeout_value;
 
     tls = session->tls;
 
     if (session->connection->net->io_timeout > 0) {
-        timeout_timestamp = time(NULL) + session->connection->net->io_timeout;
+        timeout_value = session->connection->net->io_timeout;
     }
     else {
-        timeout_timestamp = 0;
+        timeout_value = FLB_TLS_DEFAULT_IO_TIMEOUT_S;
     }
+    timeout_timestamp = time(NULL) + timeout_value;
 
  retry_read:
     ret = tls->api->net_read(session, buf, len);
 
     current_timestamp = time(NULL);
 
-    if (ret == FLB_TLS_WANT_READ) {
-        if (timeout_timestamp > 0 &&
-            timeout_timestamp <= current_timestamp) {
-            return ret;
+    if (ret == FLB_TLS_WANT_READ || ret == FLB_TLS_WANT_WRITE) {
+        if (timeout_timestamp <= current_timestamp) {
+            flb_warn("[tls] Read timed out after %d seconds", timeout_value);
+            return -1;
         }
 
-        goto retry_read;
-    }
-    else if (ret == FLB_TLS_WANT_WRITE) {
+        // add short delay to prevent CPU hogging
+        flb_time_msleep(5);
+
         goto retry_read;
     }
     else if (ret < 0) {
@@ -435,22 +438,41 @@ int flb_tls_net_read_async(struct flb_coro *co,
 int flb_tls_net_write(struct flb_tls_session *session,
                       const void *data, size_t len, size_t *out_len)
 {
+    time_t          timeout_timestamp;
+    time_t          current_timestamp;
     size_t          total;
     int             ret;
     struct flb_tls *tls;
+    int             timeout_value;
 
     total = 0;
     tls = session->tls;
+
+    if (session->connection->net->io_timeout > 0) {
+        timeout_value = session->connection->net->io_timeout;
+    }
+    else {
+        timeout_value = FLB_TLS_DEFAULT_IO_TIMEOUT_S;
+    }
+    timeout_timestamp = time(NULL) + timeout_value;
 
 retry_write:
     ret = tls->api->net_write(session,
                               (unsigned char *) data + total,
                               len - total);
 
-    if (ret == FLB_TLS_WANT_WRITE) {
-        goto retry_write;
-    }
-    else if (ret == FLB_TLS_WANT_READ) {
+    current_timestamp = time(NULL);
+
+    if (ret == FLB_TLS_WANT_WRITE || ret == FLB_TLS_WANT_READ) {
+        if (timeout_timestamp <= current_timestamp) {
+            flb_warn("[tls] Write timed out after %d seconds", timeout_value);
+            *out_len = total;
+            return -1;
+        }
+
+        // add short delay to prevent CPU hogging
+        flb_time_msleep(5);
+
         goto retry_write;
     }
     else if (ret < 0) {
