@@ -511,16 +511,22 @@ static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
 
     cw_flush_destroy(buf);
 
-    /* RSS tracking - end of flush */
+    /* RSS tracking - end of flush, with stream count for leak detection */
     {
         long rss_after = get_cw_rss_kb();
         if (g_cw_flush_calls % 5 == 0) {
+            int stream_count = 0;
+            struct mk_list *s_head;
+            mk_list_foreach(s_head, &ctx->streams) {
+                stream_count++;
+            }
             flb_plg_error(ctx->ins,
                 "[MEMRSS] out_cloudwatch calls=%llu rss_now=%ld KB "
-                "rss_growth=%ld KB batch_delta=%ld KB",
+                "rss_growth=%ld KB batch_delta=%ld KB streams=%d",
                 g_cw_flush_calls, rss_after,
                 rss_after - g_cw_flush_initial_rss,
-                rss_after - rss_before);
+                rss_after - rss_before,
+                stream_count);
         }
     }
 
