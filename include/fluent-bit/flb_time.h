@@ -92,7 +92,7 @@ static inline void flb_time_from_uint64(struct flb_time *dst, uint64_t value)
 
 static inline void flb_time_from_double(struct flb_time *dst, double d)
 {
-    dst->tm.tv_sec = (int) d;
+    dst->tm.tv_sec = (time_t) d;
     dst->tm.tv_nsec = (long) ((d - dst->tm.tv_sec) * 1000000000L);
 }
 
