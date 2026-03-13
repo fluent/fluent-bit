@@ -1116,7 +1116,40 @@ void decoder_corrupted_group_timestamps()
     flb_log_event_decoder_destroy(&dec);
     msgpack_sbuffer_destroy(&sbuf2);
 
-    /* Test Case 3: Very negative timestamp - should skip */
+    /* Test Case 3: Post-2038 timestamp should remain a normal record */
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+    /* 2040-01-03 03:15:10 UTC */
+    flb_time_set(&tm1, 2209072510LL, 808241446);
+
+    msgpack_pack_array(&pck, 2);
+    msgpack_pack_array(&pck, 2);
+    pack_event_time(&pck, &tm1);
+    msgpack_pack_map(&pck, 0);
+    msgpack_pack_map(&pck, 1);
+    msgpack_pack_str(&pck, 3);
+    msgpack_pack_str_body(&pck, "log", 3);
+    msgpack_pack_str(&pck, 4);
+    msgpack_pack_str_body(&pck, "2040", 4);
+
+    ret = flb_log_event_decoder_init(&dec, (char *)sbuf.data, sbuf.size);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+
+    ret = flb_log_event_decoder_read_groups(&dec, FLB_TRUE);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_log_event_decoder_next(&dec, &event);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+    ret = flb_log_event_decoder_get_record_type(&event, &decoded_record_type);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(decoded_record_type == FLB_LOG_EVENT_NORMAL);
+    TEST_CHECK(flb_time_equal(&tm1, &event.timestamp));
+
+    flb_log_event_decoder_destroy(&dec);
+    msgpack_sbuffer_destroy(&sbuf);
+
+    /* Test Case 4: Very negative timestamp - should skip */
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
 
