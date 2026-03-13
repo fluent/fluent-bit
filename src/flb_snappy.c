@@ -29,6 +29,8 @@
 
 #include <snappy.h>
 
+#include <string.h>
+
 int flb_snappy_compress(char *in_data, size_t in_len,
                         char **out_data, size_t *out_len)
 {
@@ -139,7 +141,25 @@ int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
     struct cfl_list               chunks;
     struct flb_snappy_data_chunk *chunk;
 
-    if (*((uint8_t *) in_data) != FLB_SNAPPY_FRAME_TYPE_STREAM_IDENTIFIER) {
+    /*
+     * Distinguish raw/block snappy from the framed/streaming format.
+     *
+     * The framed format always starts with a stream identifier frame:
+     *   byte 0:   0xFF (stream identifier chunk type)
+     *   bytes 1-3: 0x06 0x00 0x00 (length = 6, little-endian 24-bit)
+     *   bytes 4-9: "sNaPpY"
+     *
+     * A single first-byte check is insufficient because raw snappy data
+     * encodes the uncompressed length as a varint whose first byte can
+     * be 0xFF (e.g. when the uncompressed size mod 128 == 127 and >= 128).
+     * Checking the full 10-byte header avoids this false positive.
+     */
+    if (in_len < 10 ||
+        *((uint8_t *) &in_data[0]) != 0xFF ||
+        *((uint8_t *) &in_data[1]) != 0x06 ||
+        *((uint8_t *) &in_data[2]) != 0x00 ||
+        *((uint8_t *) &in_data[3]) != 0x00 ||
+        memcmp(&in_data[4], FLB_SNAPPY_STREAM_IDENTIFIER_STRING, 6) != 0) {
         return flb_snappy_uncompress(in_data, in_len, out_data, out_len);
     }
 
