@@ -1319,6 +1319,14 @@ static int process_log_events(struct flb_cloudwatch *ctx, const char *input_plug
         intermediate_metric_unit = BYTES;
     }
 
+    /* Init msgpack buffers once outside the loop to avoid per-log alloc/free
+     * cycles that cause jemalloc memory fragmentation. The sbuffer grows to
+     * steady-state size and is reused via msgpack_sbuffer_clear(). */
+    if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+        msgpack_sbuffer_init(&filtered_sbuf);
+        msgpack_unpacked_init(&modified_unpacked);
+    }
+
     /* unpack msgpack */
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
@@ -1328,10 +1336,6 @@ static int process_log_events(struct flb_cloudwatch *ctx, const char *input_plug
         map = *log_event.body;
         map_size = map.via.map.size;
 
-        if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
-            msgpack_sbuffer_init(&filtered_sbuf);
-            msgpack_unpacked_init(&modified_unpacked);
-        }
         stream = get_log_stream(ctx, tag, map);
         if (!stream) {
             flb_plg_debug(ctx->ins, "Couldn't determine log group & stream for record with tag %s", tag);
@@ -1477,11 +1481,21 @@ static int process_log_events(struct flb_cloudwatch *ctx, const char *input_plug
             i++;
         }
         if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
-            msgpack_sbuffer_destroy(&filtered_sbuf);
+            /* Reset buffers for next iteration instead of destroy/reinit.
+             * msgpack_sbuffer_clear() just sets size=0, keeping the allocated
+             * memory for reuse. This eliminates per-log alloc/free cycles. */
+            msgpack_sbuffer_clear(&filtered_sbuf);
             msgpack_unpacked_destroy(&modified_unpacked);
+            msgpack_unpacked_init(&modified_unpacked);
         }
     }
     flb_log_event_decoder_destroy(&log_decoder);
+
+    /* Destroy msgpack buffers once after the loop */
+    if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+        msgpack_sbuffer_destroy(&filtered_sbuf);
+        msgpack_unpacked_destroy(&modified_unpacked);
+    }
 
     return i;
 
