@@ -302,7 +302,6 @@ int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
     }
 
     aggregated_data_buffer = NULL;
-    aggregated_data_length = 0;
 
     if (compressed_chunk_count == 1 &&
         uncompressed_chunk_count == 0 &&
@@ -322,7 +321,7 @@ int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
         flb_free(chunk);
     }
     else {
-        if (aggregated_data_length > 0) {
+        if (aggregated_data_length > 0 && result == 0) {
             aggregated_data_buffer = flb_calloc(aggregated_data_length,
                                                 sizeof(char));
 
@@ -355,6 +354,12 @@ int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
 
             flb_free(chunk);
         }
+    }
+
+    if (result != 0) {
+        flb_free(aggregated_data_buffer);
+        aggregated_data_buffer = NULL;
+        aggregated_data_offset = 0;
     }
 
     *out_data = (char *) aggregated_data_buffer;
