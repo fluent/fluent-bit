@@ -258,6 +258,6 @@
     "dependencies": {
         "@vscode/webview-ui-toolkit": "^0.8.4",
         "request": "^2.88.2",
-        "yauzl": "^2.10.0"
+        "yauzl": "^3.2.1"
     }
 }
