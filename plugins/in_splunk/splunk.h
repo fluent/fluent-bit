@@ -64,5 +64,23 @@ struct flb_splunk {
     flb_sds_t success_headers_str;
 };
 
+static inline int splunk_uses_worker_ingress_queue(struct flb_splunk *ctx)
+{
+    return ctx->http_server.workers > 1;
+}
+
+static inline int splunk_ingest_logs(struct flb_splunk *ctx,
+                                     const char *tag,
+                                     size_t tag_len,
+                                     const void *buf,
+                                     size_t buf_size)
+{
+    if (splunk_uses_worker_ingress_queue(ctx)) {
+        return flb_input_ingress_queue_log(ctx->ins, tag, tag_len, buf, buf_size);
+    }
+
+    return flb_input_log_append(ctx->ins, tag, tag_len, buf, buf_size);
+}
+
 
 #endif
