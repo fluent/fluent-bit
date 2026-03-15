@@ -146,6 +146,28 @@ void test_json_pack_recs_ext_jsmn_backend()
     flb_free(out_buf);
 }
 
+void test_json_pack_recs_default_api()
+{
+    int ret;
+    int records;
+    int root_type;
+    char *out_buf = NULL;
+    size_t consumed = 0;
+    size_t out_size = 0;
+    const char *json = "{\"k\":\"v\"} {\"k2\":\"v2\"}";
+
+    ret = flb_pack_json_recs(json, strlen(json), &out_buf, &out_size,
+                             &root_type, &records, &consumed);
+
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(records == 2);
+    TEST_CHECK(consumed == strlen(json));
+    TEST_CHECK(out_buf != NULL);
+    TEST_CHECK(out_size > 0);
+
+    flb_free(out_buf);
+}
+
 /* Pack a simple JSON map using a state */
 void test_json_pack_iter()
 {
@@ -1272,6 +1294,7 @@ TEST_LIST = {
     { "json_pack_ext_jsmn_backend", test_json_pack_ext_jsmn_backend },
     { "json_pack_recs_ext_default_backend", test_json_pack_recs_ext_default_backend },
     { "json_pack_recs_ext_jsmn_backend", test_json_pack_recs_ext_jsmn_backend },
+    { "json_pack_recs_default_api", test_json_pack_recs_default_api },
     { "json_pack_iter"     , test_json_pack_iter},
     { "json_pack_mult"     , test_json_pack_mult},
     { "json_pack_mult_iter", test_json_pack_mult_iter},
