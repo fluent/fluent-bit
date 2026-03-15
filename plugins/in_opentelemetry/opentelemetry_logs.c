@@ -685,11 +685,41 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
     }
 
     if (ret >= 0) {
-        ret = flb_input_log_append(ctx->ins,
-                                   tag,
-                                   flb_sds_len(tag),
-                                   encoder->output_buffer,
-                                   encoder->output_length);
+        if (opentelemetry_uses_worker_ingress_queue(ctx)) {
+            size_t allocation_size;
+            void *resized_buffer;
+
+            allocation_size = encoder->buffer.alloc;
+
+            if (allocation_size > encoder->output_length) {
+                resized_buffer = flb_realloc(encoder->output_buffer,
+                                             encoder->output_length);
+                if (resized_buffer != NULL) {
+                    encoder->buffer.data = resized_buffer;
+                    encoder->output_buffer = resized_buffer;
+                    encoder->buffer.alloc = encoder->output_length;
+                    allocation_size = encoder->output_length;
+                }
+            }
+
+            ret = opentelemetry_ingest_logs_take(ctx,
+                                                 tag,
+                                                 flb_sds_len(tag),
+                                                 encoder->output_buffer,
+                                                 encoder->output_length,
+                                                 allocation_size);
+            if (ret == 0 || ret == FLB_INPUT_INGRESS_BUSY) {
+                flb_log_event_encoder_claim_internal_buffer_ownership(encoder);
+            }
+        }
+        else {
+            ret = opentelemetry_ingest_logs(ctx,
+                                            tag,
+                                            flb_sds_len(tag),
+                                            encoder->output_buffer,
+                                            encoder->output_length);
+        }
+
         if (ret != 0) {
             flb_plg_error(ctx->ins, "failed to append logs to the input buffer");
         }
