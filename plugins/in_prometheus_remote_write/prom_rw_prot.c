@@ -45,6 +45,9 @@ static int send_response_ng(struct flb_http_response *response,
     else if (http_status == 500) {
         flb_http_response_set_message(response, "Internal Server Error");
     }
+    else if (http_status == 503) {
+        flb_http_response_set_message(response, "Service Unavailable");
+    }
 
     if (message != NULL) {
         flb_http_response_set_body(response,
@@ -71,11 +74,23 @@ static int process_payload_metrics_ng(struct flb_prom_remote_write *ctx,
         return 400;
     }
 
-    result = flb_input_metrics_append(ctx->ins, NULL, 0, context);
-    cmt_decode_prometheus_remote_write_destroy(context);
+    result = prom_rw_ingest_metrics(ctx, NULL, 0, context);
+
+    if (prom_rw_uses_worker_ingress_queue(ctx)) {
+        if (result != 0) {
+            cmt_decode_prometheus_remote_write_destroy(context);
+        }
+    }
+    else {
+        cmt_decode_prometheus_remote_write_destroy(context);
+    }
 
     if (result != 0) {
         flb_plg_error(ctx->ins, "could not ingest metrics : %d", result);
+        if (result == FLB_INPUT_INGRESS_BUSY) {
+            return 503;
+        }
+
         return 500;
     }
 

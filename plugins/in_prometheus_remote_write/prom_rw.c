@@ -48,12 +48,22 @@ static int prom_rw_init(struct flb_input_instance *ins,
         return -1;
     }
 
+    /* Set the context before starting worker listeners so worker threads
+     * always see the final plugin context through the HTTP server user_data.
+     */
+    flb_input_set_context(ins, ctx);
+
     ret = flb_input_http_server_options_init(&http_server_options,
                                              ins,
                                              (FLB_HTTP_SERVER_FLAG_KEEPALIVE |
                                               FLB_HTTP_SERVER_FLAG_AUTO_INFLATE),
                                              prom_rw_prot_handle_ng,
                                              ctx);
+    if (ret == 0) {
+        if (http_server_options.workers > 1) {
+            ret = flb_input_ingress_enable(ins);
+        }
+    }
     if (ret == 0) {
         ret = flb_http_server_init_with_options(&ctx->http_server,
                                                 &http_server_options);
@@ -62,7 +72,7 @@ static int prom_rw_init(struct flb_input_instance *ins,
             ret = flb_http_server_start(&ctx->http_server);
         }
 
-        if (ret == 0) {
+        if (ret == 0 && ctx->http_server.downstream != NULL) {
             ret = flb_input_downstream_set(ctx->http_server.downstream, ins);
         }
     }
@@ -75,8 +85,6 @@ static int prom_rw_init(struct flb_input_instance *ins,
         prom_rw_config_destroy(ctx);
         return -1;
     }
-
-    flb_input_set_context(ins, ctx);
 
     flb_plg_info(ctx->ins,
                  "listening on %s:%u with %i worker%s",
