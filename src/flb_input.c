@@ -67,6 +67,42 @@ static void flb_input_ingress_primitives_destroy(struct flb_input_instance *ins)
     pthread_cond_destroy(&ins->ingress_queue_space_available);
 }
 
+static int flb_input_ingress_primitives_init(struct flb_input_instance *ins)
+{
+    int result;
+    pthread_condattr_t attr;
+
+    result = pthread_mutex_init(&ins->ingress_queue_lock, NULL);
+    if (result != 0) {
+        return -1;
+    }
+
+    result = pthread_condattr_init(&attr);
+    if (result != 0) {
+        pthread_mutex_destroy(&ins->ingress_queue_lock);
+        return -1;
+    }
+
+#if defined(CLOCK_MONOTONIC) && !defined(FLB_SYSTEM_WINDOWS)
+    result = pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+    if (result != 0) {
+        pthread_condattr_destroy(&attr);
+        pthread_mutex_destroy(&ins->ingress_queue_lock);
+        return -1;
+    }
+#endif
+
+    result = pthread_cond_init(&ins->ingress_queue_space_available, &attr);
+    pthread_condattr_destroy(&attr);
+
+    if (result != 0) {
+        pthread_mutex_destroy(&ins->ingress_queue_lock);
+        return -1;
+    }
+
+    return 0;
+}
+
 /*
  * Ring buffer capacity: by default we make space for 1024 entries that each
  * input instance can use to enqueue data. The capacity can be customized per
@@ -395,11 +431,30 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         /* Initialize properties list */
         flb_kv_init(&instance->properties);
         flb_kv_init(&instance->net_properties);
-        flb_kv_init(&instance->http_server_properties);
+       flb_kv_init(&instance->http_server_properties);
         flb_kv_init(&instance->oauth2_jwt_properties);
         mk_list_init(&instance->ingress_queue);
-        pthread_mutex_init(&instance->ingress_queue_lock, NULL);
-        pthread_cond_init(&instance->ingress_queue_space_available, NULL);
+        ret = flb_input_ingress_primitives_init(instance);
+        if (ret != 0) {
+            if (instance->ht_log_chunks) {
+                flb_hash_table_destroy(instance->ht_log_chunks);
+            }
+            if (instance->ht_metric_chunks) {
+                flb_hash_table_destroy(instance->ht_metric_chunks);
+            }
+            if (instance->ht_trace_chunks) {
+                flb_hash_table_destroy(instance->ht_trace_chunks);
+            }
+            if (instance->ht_profile_chunks) {
+                flb_hash_table_destroy(instance->ht_profile_chunks);
+            }
+            if (plugin->type != FLB_INPUT_PLUGIN_CORE && instance->context) {
+                flb_free(instance->context);
+            }
+            flb_free(instance->http_server_config);
+            flb_free(instance);
+            return NULL;
+        }
         instance->ingress_queue_channels[0] = -1;
         instance->ingress_queue_channels[1] = -1;
         instance->ingress_queue_enabled = FLB_FALSE;
