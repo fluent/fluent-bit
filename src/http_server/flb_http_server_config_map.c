@@ -43,6 +43,11 @@ struct flb_config_map flb_http_server_config_map[] = {
      "Set the maximum number of concurrent active HTTP connections. 0 means unlimited."
     },
     {
+     FLB_CONFIG_MAP_INT, "http_server.workers", "1",
+     0, FLB_TRUE, offsetof(struct flb_http_server_config, workers),
+     "Set the number of HTTP listener workers"
+    },
+    {
      FLB_CONFIG_MAP_BOOL, "http2", "true",
      0, FLB_TRUE, offsetof(struct flb_http_server_config, http2),
      "Compatibility alias for http_server.http2"
@@ -61,6 +66,11 @@ struct flb_config_map flb_http_server_config_map[] = {
      FLB_CONFIG_MAP_SIZE, "max_connections", "0",
      0, FLB_TRUE, offsetof(struct flb_http_server_config, max_connections),
      "Compatibility alias for http_server.max_connections"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "workers", "1",
+     0, FLB_TRUE, offsetof(struct flb_http_server_config, workers),
+     "Compatibility alias for http_server.workers"
     },
     {0}
 };
@@ -90,7 +100,8 @@ int flb_http_server_property_is_allowed(const char *property_name)
     if (strcasecmp("http2", property_name) == 0 ||
         strcasecmp("buffer_max_size", property_name) == 0 ||
         strcasecmp("buffer_chunk_size", property_name) == 0 ||
-        strcasecmp("max_connections", property_name) == 0) {
+        strcasecmp("max_connections", property_name) == 0 ||
+        strcasecmp("workers", property_name) == 0) {
         return FLB_TRUE;
     }
 
