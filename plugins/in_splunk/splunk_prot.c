@@ -544,9 +544,6 @@ static int send_response_ng(struct flb_http_response *response,
     else if (http_status == 503) {
         flb_http_response_set_message(response, "Service Unavailable");
     }
-    else if (http_status == 503) {
-        flb_http_response_set_message(response, "Service Unavailable");
-    }
 
     if (message != NULL) {
         flb_http_response_set_body(response,
