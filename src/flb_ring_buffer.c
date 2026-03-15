@@ -239,11 +239,17 @@ int flb_ring_buffer_read(struct flb_ring_buffer *rb, void *ptr, size_t size)
 
 void flb_ring_buffer_mark_flushed(struct flb_ring_buffer *rb)
 {
+    size_t pending_bytes;
+
     if (rb == NULL) {
         return;
     }
 
     pthread_mutex_lock(&rb->lock);
-    rb->flush_pending = FLB_FALSE;
+    pending_bytes = lwrb_get_full(rb->ctx);
+
+    if (pending_bytes == 0 || pending_bytes < rb->data_window) {
+        rb->flush_pending = FLB_FALSE;
+    }
     pthread_mutex_unlock(&rb->lock);
 }
