@@ -37,7 +37,8 @@
 static int http_header_lookup(struct flb_http_request *request, char *key,
                               char **val, size_t *val_len);
 static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag,
-                           char *buf, size_t size, void *request);
+                           char *buf, size_t size, void *request,
+                           struct flb_log_event_encoder *encoder);
 
 static int content_type_is_json(const char *content_type)
 {
@@ -286,47 +287,49 @@ static int append_remote_addr(
     return 0;
 }
 
-static int process_pack_record(struct flb_http *ctx, struct flb_time *tm,
+static int process_pack_record(struct flb_http *ctx,
+                               struct flb_log_event_encoder *encoder,
+                               struct flb_time *tm,
                                flb_sds_t tag,
                                msgpack_object *record)
 {
     int ret;
 
-    ret = flb_log_event_encoder_begin_record(&ctx->log_encoder);
+    ret = flb_log_event_encoder_begin_record(encoder);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         return -1;
     }
 
-    ret = flb_log_event_encoder_set_timestamp(&ctx->log_encoder, tm);
+    ret = flb_log_event_encoder_set_timestamp(encoder, tm);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         return -1;
     }
 
     ret = flb_log_event_encoder_set_body_from_msgpack_object(
-            &ctx->log_encoder,
+            encoder,
             record);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         return -1;
     }
 
-    ret = flb_log_event_encoder_commit_record(&ctx->log_encoder);
+    ret = flb_log_event_encoder_commit_record(encoder);
 
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         return -1;
     }
 
     if (tag) {
-        ret = flb_input_log_append(ctx->ins,
-                                   tag,
-                                   flb_sds_len(tag),
-                                   ctx->log_encoder.output_buffer,
-                                   ctx->log_encoder.output_length);
+        ret = http_ingest_logs(ctx,
+                               tag,
+                               flb_sds_len(tag),
+                               encoder->output_buffer,
+                               encoder->output_length);
     }
     else {
         /* use default plugin Tag (it internal name, e.g: http.0 */
-        ret = flb_input_log_append(ctx->ins, NULL, 0,
-                                   ctx->log_encoder.output_buffer,
-                                   ctx->log_encoder.output_length);
+        ret = http_ingest_logs(ctx, NULL, 0,
+                               encoder->output_buffer,
+                               encoder->output_length);
     }
 
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
@@ -336,7 +339,9 @@ static int process_pack_record(struct flb_http *ctx, struct flb_time *tm,
     return 0;
 }
 
-static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
+static ssize_t parse_payload_urlencoded(struct flb_http *ctx,
+                                        struct flb_log_event_encoder *encoder,
+                                        flb_sds_t tag,
                                         char *payload, size_t size, void *request)
 {
     int i;
@@ -432,7 +437,7 @@ static ssize_t parse_payload_urlencoded(struct flb_http *ctx, flb_sds_t tag,
         msgpack_pack_str_body(&pck, vals[i], flb_sds_len(vals[i]));
     }
 
-    ret = process_pack_ng(ctx, tag, sbuf.data, sbuf.size, request);
+    ret = process_pack_ng(ctx, tag, sbuf.data, sbuf.size, request, encoder);
 
 decode_error:
     for (idx = 0; idx < mk_list_size(kvs); idx++) {
@@ -503,6 +508,9 @@ static int send_response_ng(struct flb_http_response *response,
     else if (http_status == 401) {
         flb_http_response_set_message(response, "Unauthorized");
     }
+    else if (http_status == 503) {
+        flb_http_response_set_message(response, "Service Unavailable");
+    }
     else if (http_status == 413) {
         flb_http_response_set_message(response, "Payload Too Large");
     }
@@ -539,7 +547,9 @@ static int send_response_ng(struct flb_http_response *response,
     return 0;
 }
 
-static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size, void *request)
+static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf,
+                           size_t size, void *request,
+                           struct flb_log_event_encoder *encoder)
 {
     int ret;
     size_t off = 0;
@@ -589,21 +599,21 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_
             }
 
             if (tag_from_record) {
-                ret = process_pack_record(ctx, &tm, tag_from_record, obj);
+                ret = process_pack_record(ctx, encoder, &tm, tag_from_record, obj);
                 flb_sds_destroy(tag_from_record);
             }
             else if (tag) {
-                ret = process_pack_record(ctx, &tm, tag, obj);
+                ret = process_pack_record(ctx, encoder, &tm, tag, obj);
             }
             else {
-                ret = process_pack_record(ctx, &tm, NULL, obj);
+                ret = process_pack_record(ctx, encoder, &tm, NULL, obj);
             }
 
             if (ret != 0) {
                 goto log_event_error;
             }
 
-            flb_log_event_encoder_reset(&ctx->log_encoder);
+            flb_log_event_encoder_reset(encoder);
         }
         else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             obj = &result.data;
@@ -634,14 +644,14 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_
                 }
 
                 if (tag_from_record) {
-                    ret = process_pack_record(ctx, &tm, tag_from_record, &record);
+                    ret = process_pack_record(ctx, encoder, &tm, tag_from_record, &record);
                     flb_sds_destroy(tag_from_record);
                 }
                 else if (tag) {
-                    ret = process_pack_record(ctx, &tm, tag, &record);
+                    ret = process_pack_record(ctx, encoder, &tm, tag, &record);
                 }
                 else {
-                    ret = process_pack_record(ctx, &tm, NULL, &record);
+                    ret = process_pack_record(ctx, encoder, &tm, NULL, &record);
                 }
 
                 if (ret != 0) {
@@ -655,7 +665,7 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf, size_
                  * emit them all at once after the loop.
                  */
 
-                flb_log_event_encoder_reset(&ctx->log_encoder);
+                flb_log_event_encoder_reset(encoder);
             }
 
             break;
@@ -699,7 +709,8 @@ log_event_error:
 }
 
 static ssize_t parse_payload_json_ng(flb_sds_t tag,
-                                     struct flb_http_request *request)
+                                     struct flb_http_request *request,
+                                     struct flb_log_event_encoder *encoder)
 {
     int ret;
     int out_size;
@@ -735,7 +746,7 @@ static ssize_t parse_payload_json_ng(flb_sds_t tag,
     }
 
     /* Process the packaged JSON and return the last byte used */
-    ret = process_pack_ng(ctx, tag, pack, out_size, request);
+    ret = process_pack_ng(ctx, tag, pack, out_size, request, encoder);
     flb_free(pack);
 
     return ret;
@@ -746,8 +757,12 @@ static int process_payload_ng(flb_sds_t tag,
                               struct flb_http_response *response)
 {
     int type = -1;
+    int ret;
     cfl_sds_t payload;
+    struct flb_log_event_encoder encoder;
     struct flb_http *ctx;
+
+    ctx = (struct flb_http *) request->stream->user_data;
 
     if (request->content_type == NULL) {
         send_response_ng(response, 400, "error: header 'Content-Type' is not set\n");
@@ -773,19 +788,32 @@ static int process_payload_ng(flb_sds_t tag,
         return -1;
     }
 
-    if (type == HTTP_CONTENT_JSON) {
-        return parse_payload_json_ng(tag, request);
-    }
-    else if (type == HTTP_CONTENT_URLENCODED) {
-        ctx = (struct flb_http *) request->stream->user_data;
-        payload = (char *) request->body;
-        if (payload) {
-            return parse_payload_urlencoded(ctx, tag, payload,
-                                           cfl_sds_len(payload), request);
-        }
+    ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "error initializing event encoder : %d", ret);
+        return -1;
     }
 
-    return 0;
+    if (type == HTTP_CONTENT_JSON) {
+        ret = parse_payload_json_ng(tag, request, &encoder);
+    }
+    else if (type == HTTP_CONTENT_URLENCODED) {
+        payload = (char *) request->body;
+        if (payload) {
+            ret = parse_payload_urlencoded(ctx, &encoder, tag, payload,
+                                           cfl_sds_len(payload), request);
+        }
+        else {
+            ret = 0;
+        }
+    }
+    else {
+        ret = 0;
+    }
+
+    flb_log_event_encoder_destroy(&encoder);
+
+    return ret;
 }
 
 int http_prot_handle_ng(struct flb_http_request *request,
@@ -865,6 +893,9 @@ int http_prot_handle_ng(struct flb_http_request *request,
 
     if (ret == 0) {
         send_response_ng(response, ctx->successful_response_code, NULL);
+    }
+    else if (ret == FLB_INPUT_INGRESS_BUSY) {
+        send_response_ng(response, 503, "error: deferred ingress queue is full\n");
     }
     else {
         send_response_ng(response, 400, "error: unable to process records\n");
