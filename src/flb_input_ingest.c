@@ -193,7 +193,13 @@ static int flb_input_ingress_enqueue(struct flb_input_instance *ins,
             break;
         }
 
+#if defined(FLB_SYSTEM_WINDOWS)
+        timespec_get(&deadline, TIME_UTC);
+#elif defined(CLOCK_MONOTONIC)
+        clock_gettime(CLOCK_MONOTONIC, &deadline);
+#else
         clock_gettime(CLOCK_REALTIME, &deadline);
+#endif
         deadline.tv_nsec += 100 * 1000 * 1000;
         if (deadline.tv_nsec >= 1000000000) {
             deadline.tv_sec++;
