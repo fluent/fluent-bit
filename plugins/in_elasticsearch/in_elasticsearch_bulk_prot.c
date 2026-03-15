@@ -338,6 +338,9 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
             flb_plg_error(ctx->ins, "skip record from invalid type: %i",
                          result.data.type);
             msgpack_unpacked_destroy(&result);
+            if (destroy_local_encoder == FLB_TRUE) {
+                flb_log_event_encoder_destroy(encoder);
+            }
             return -1;
         }
     }
@@ -406,10 +409,10 @@ static ssize_t parse_payload_ndjson(struct flb_in_elasticsearch *ctx, flb_sds_t 
     }
 
     /* Process the packaged JSON and return the last byte used */
-    process_ndpack(ctx, tag, pack, out_size, bulk_statuses);
+    ret = process_ndpack(ctx, tag, pack, out_size, bulk_statuses);
     flb_free(pack);
 
-    return 0;
+    return ret;
 }
 
 /* New gen HTTP server */
