@@ -697,7 +697,8 @@ static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
                                                 profiles_context);
         }
 
-        if (ret != 0 || !opentelemetry_uses_worker_ingress_queue(ctx)) {
+        if (ret != FLB_INPUT_INGRESS_BUSY &&
+            (ret != 0 || !opentelemetry_uses_worker_ingress_queue(ctx))) {
             cprof_decode_opentelemetry_destroy(profiles_context);
         }
 
