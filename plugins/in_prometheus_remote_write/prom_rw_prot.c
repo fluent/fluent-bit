@@ -77,7 +77,7 @@ static int process_payload_metrics_ng(struct flb_prom_remote_write *ctx,
     result = prom_rw_ingest_metrics(ctx, NULL, 0, context);
 
     if (prom_rw_uses_worker_ingress_queue(ctx)) {
-        if (result != 0) {
+        if (result != 0 && result != FLB_INPUT_INGRESS_BUSY) {
             cmt_decode_prometheus_remote_write_destroy(context);
         }
     }
