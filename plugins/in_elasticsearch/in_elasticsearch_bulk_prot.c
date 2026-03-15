@@ -107,6 +107,8 @@ static int status_buffer_avail(struct flb_in_elasticsearch *ctx, flb_sds_t bulk_
 
 static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char *buf, size_t size, flb_sds_t bulk_statuses)
 {
+    struct flb_log_event_encoder *encoder;
+    struct flb_log_event_encoder local_encoder;
     int ret;
     size_t off = 0;
     size_t map_copy_index;
@@ -120,6 +122,23 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
     size_t op_str_size = 0;
     int op_ret = FLB_FALSE;
     int error_op = FLB_FALSE;
+    int ingest_result = 0;
+    int destroy_local_encoder = FLB_FALSE;
+
+    if (in_elasticsearch_uses_worker_ingress_queue(ctx)) {
+        ret = flb_log_event_encoder_init(&local_encoder,
+                                         FLB_LOG_EVENT_FORMAT_DEFAULT);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_plg_error(ctx->ins, "event encoder initialization error : %d", ret);
+            return -1;
+        }
+
+        encoder = &local_encoder;
+        destroy_local_encoder = FLB_TRUE;
+    }
+    else {
+        encoder = ctx->log_encoder;
+    }
 
     flb_time_get(&tm);
 
@@ -175,9 +194,9 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                 }
 
                 if (error_op == FLB_FALSE) {
-                    flb_log_event_encoder_reset(ctx->log_encoder);
+                    flb_log_event_encoder_reset(encoder);
 
-                    ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
+                    ret = flb_log_event_encoder_begin_record(encoder);
 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                         flb_sds_destroy(write_op);
@@ -188,7 +207,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                     }
 
                     ret = flb_log_event_encoder_set_timestamp(
-                            ctx->log_encoder,
+                            encoder,
                             &tm);
 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
@@ -201,7 +220,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
 
                     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                         ret = flb_log_event_encoder_append_body_values(
-                                ctx->log_encoder,
+                                encoder,
                                 FLB_LOG_EVENT_CSTRING_VALUE((char *) ctx->meta_key),
                                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&result.data));
                     }
@@ -226,7 +245,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         map_copy_entry = &result.data.via.map.ptr[map_copy_index];
 
                         ret = flb_log_event_encoder_append_body_values(
-                                ctx->log_encoder,
+                                encoder,
                                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&map_copy_entry->key),
                                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&map_copy_entry->val));
                     }
@@ -238,7 +257,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         break;
                     }
 
-                    ret = flb_log_event_encoder_commit_record(ctx->log_encoder);
+                    ret = flb_log_event_encoder_commit_record(encoder);
 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                         flb_plg_error(ctx->ins, "event encoder error : %d", ret);
@@ -255,29 +274,43 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                     }
 
                     if (tag_from_record) {
-                        flb_input_log_append(ctx->ins,
-                                             tag_from_record,
-                                             flb_sds_len(tag_from_record),
-                                             ctx->log_encoder->output_buffer,
-                                             ctx->log_encoder->output_length);
+                        ret = in_elasticsearch_ingest_logs(ctx,
+                                                           tag_from_record,
+                                                           flb_sds_len(tag_from_record),
+                                                           encoder->output_buffer,
+                                                           encoder->output_length);
 
                         flb_sds_destroy(tag_from_record);
                     }
                     else if (tag) {
-                        flb_input_log_append(ctx->ins,
-                                             tag,
-                                             flb_sds_len(tag),
-                                             ctx->log_encoder->output_buffer,
-                                             ctx->log_encoder->output_length);
+                        ret = in_elasticsearch_ingest_logs(ctx,
+                                                           tag,
+                                                           flb_sds_len(tag),
+                                                           encoder->output_buffer,
+                                                           encoder->output_length);
                     }
                     else {
                         /* use default plugin Tag (it internal name, e.g: http.0 */
-                        flb_input_log_append(ctx->ins, NULL, 0,
-                                             ctx->log_encoder->output_buffer,
-                                             ctx->log_encoder->output_length);
+                        ret = in_elasticsearch_ingest_logs(ctx,
+                                                           NULL, 0,
+                                                           encoder->output_buffer,
+                                                           encoder->output_length);
                     }
 
-                    flb_log_event_encoder_reset(ctx->log_encoder);
+                    if (ret != 0) {
+                        ingest_result = ret;
+                        if (ret == FLB_INPUT_INGRESS_BUSY) {
+                            flb_plg_warn(ctx->ins, "deferred worker payload queue is full");
+                        }
+                        else {
+                            flb_plg_error(ctx->ins, "could not ingest record : %d", ret);
+                        }
+
+                        error_op = FLB_TRUE;
+                        break;
+                    }
+
+                    flb_log_event_encoder_reset(encoder);
                 }
                 if (op_ret) {
                     if (flb_sds_cmp(write_op, "index", op_str_size) == 0) {
@@ -319,10 +352,26 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
             flb_sds_destroy(write_op);
         }
 
+        if (destroy_local_encoder == FLB_TRUE) {
+            flb_log_event_encoder_destroy(encoder);
+        }
+
         return -1;
     }
 
     msgpack_unpacked_destroy(&result);
+
+    if (ingest_result != 0) {
+        if (destroy_local_encoder == FLB_TRUE) {
+            flb_log_event_encoder_destroy(encoder);
+        }
+
+        return ingest_result;
+    }
+
+    if (destroy_local_encoder == FLB_TRUE) {
+        flb_log_event_encoder_destroy(encoder);
+    }
 
     return 0;
 }
@@ -494,9 +543,8 @@ static int process_payload_ng(struct flb_http_request *request,
         return -1;
     }
 
-    parse_payload_ndjson(context, tag, request->body, cfl_sds_len(request->body), bulk_statuses);
-
-    return 0;
+    return parse_payload_ndjson(context, tag, request->body,
+                                cfl_sds_len(request->body), bulk_statuses);
 }
 
 int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
@@ -506,6 +554,7 @@ int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
     flb_sds_t                    bulk_response;
     const char                  *error_str;
     struct flb_in_elasticsearch *context;
+    int                          result;
     flb_sds_t                    tag;
     size_t                       len;
 
@@ -572,9 +621,24 @@ int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
                 return -1;
             }
 
-            process_payload_ng(request, response, context, tag, bulk_statuses);
+            result = process_payload_ng(request, response, context, tag, bulk_statuses);
 
             flb_sds_destroy(tag);
+
+            if (result == FLB_INPUT_INGRESS_BUSY) {
+                send_response_ng(response, 503, NULL,
+                                 "error: deferred ingress queue is full\n");
+                flb_sds_destroy(bulk_statuses);
+                flb_sds_destroy(bulk_response);
+                return -1;
+            }
+            else if (result != 0) {
+                send_response_ng(response, 400, NULL,
+                                 "error: unable to process records\n");
+                flb_sds_destroy(bulk_statuses);
+                flb_sds_destroy(bulk_response);
+                return -1;
+            }
 
             len = flb_sds_len(bulk_statuses);
 
