@@ -3090,7 +3090,7 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
             cr = NULL;
         }
 
-        ins->rb->flush_pending = FLB_FALSE;
+        flb_ring_buffer_mark_flushed(ins->rb);
     }
 }
 
@@ -3117,6 +3117,17 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     }
 
     return ret;
+}
+
+int flb_input_chunk_ring_buffer_enqueue(struct flb_input_instance *in,
+                                        int event_type,
+                                        size_t records,
+                                        const char *tag, size_t tag_len,
+                                        const void *buf, size_t buf_size)
+{
+    return append_to_ring_buffer(in, event_type, records,
+                                 tag, tag_len,
+                                 buf, buf_size);
 }
 
 /* Retrieve a raw buffer from a dyntag node */
