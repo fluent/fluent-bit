@@ -43,5 +43,23 @@ struct flb_prom_remote_write {
     struct flb_http_server http_server;
 };
 
+static inline int prom_rw_uses_worker_ingress_queue(
+    struct flb_prom_remote_write *ctx)
+{
+    return ctx->http_server.workers > 1;
+}
+
+static inline int prom_rw_ingest_metrics(struct flb_prom_remote_write *ctx,
+                                         const char *tag,
+                                         size_t tag_len,
+                                         struct cmt *cmt)
+{
+    if (prom_rw_uses_worker_ingress_queue(ctx)) {
+        return flb_input_ingress_queue_metrics(ctx->ins, tag, tag_len, cmt);
+    }
+
+    return flb_input_metrics_append(ctx->ins, tag, tag_len, cmt);
+}
+
 
 #endif
