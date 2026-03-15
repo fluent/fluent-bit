@@ -2145,6 +2145,7 @@ static int net_address_ip_str(flb_sockfd_t fd,
                               size_t *output_data_size)
 {
     void *address_data;
+    int   family;
     int   result;
 
     errno = 0;
@@ -2184,7 +2185,22 @@ static int net_address_ip_str(flb_sockfd_t fd,
         return -1;
     }
 
-    if ((inet_ntop(address->ss_family,
+    family = address->ss_family;
+
+    /*
+     * For IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1),
+     * emit a plain IPv4 literal instead.
+     */
+    if (address->ss_family == AF_INET6) {
+        struct in6_addr *addr6 = (struct in6_addr *) address_data;
+
+        if (IN6_IS_ADDR_V4MAPPED(addr6)) {
+            family = AF_INET;
+            address_data = &addr6->s6_addr[12];
+        }
+    }
+
+    if ((inet_ntop(family,
                    address_data,
                    output_buffer,
                    output_buffer_size)) == NULL) {
