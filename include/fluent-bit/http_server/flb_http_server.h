@@ -70,6 +70,7 @@ struct flb_http_server_config {
     size_t buffer_max_size;
     size_t buffer_chunk_size;
     size_t max_connections;
+    int    workers;
 };
 
 struct flb_http_server_options {
@@ -87,6 +88,7 @@ struct flb_http_server_options {
     struct flb_config                   *system_context;
 
     size_t                               buffer_max_size;
+    size_t                               buffer_chunk_size;
     size_t                               max_connections;
 
     /* Total number of worker listeners to spawn. */
@@ -129,11 +131,13 @@ struct flb_http_server {
     flb_http_server_request_processor_callback request_callback;
     void                               *user_data;
     size_t                              buffer_max_size;
+    size_t                              buffer_chunk_size;
     size_t                              max_connections;
     int                                 workers;
     int                                 worker_id;
     int                                 use_caller_event_loop;
     int                                 reuse_port;
+    int                                 tls_alpn_configured;
     flb_http_server_worker_callback     cb_worker_init;
     flb_http_server_worker_callback     cb_worker_exit;
     struct flb_http_server_runtime     *runtime;
@@ -148,6 +152,8 @@ struct flb_http_server_session {
 
     cfl_sds_t                       incoming_data;
     cfl_sds_t                       outgoing_data;
+    unsigned char                  *read_buffer;
+    size_t                          read_buffer_size;
 
     int                             releasable;
 

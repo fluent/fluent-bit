@@ -40,10 +40,10 @@ struct flb_http_server_worker_context {
     pthread_t thread;
     pthread_mutex_t mutex;
     pthread_cond_t condition;
-    struct mk_list downstreams;
     int worker_id;
     int should_exit;
     int initialized;
+    int thread_created;
     int startup_result;
 };
 
@@ -58,7 +58,6 @@ static void flb_http_server_worker_context_reset(
     struct flb_http_server_worker_context *worker)
 {
     memset(worker, 0, sizeof(struct flb_http_server_worker_context));
-    mk_list_init(&worker->downstreams);
     pthread_mutex_init(&worker->mutex, NULL);
     pthread_cond_init(&worker->condition, NULL);
 }
@@ -127,11 +126,13 @@ static int flb_http_server_apply_options(struct flb_http_server *session,
 
     session->downstream = NULL;
     session->buffer_max_size = options->buffer_max_size;
+    session->buffer_chunk_size = options->buffer_chunk_size;
     session->max_connections = options->max_connections;
     session->workers = options->workers;
     session->worker_id = 0;
     session->use_caller_event_loop = options->use_caller_event_loop;
     session->reuse_port = options->reuse_port;
+    session->tls_alpn_configured = FLB_FALSE;
     session->cb_worker_init = options->cb_worker_init;
     session->cb_worker_exit = options->cb_worker_exit;
     session->runtime = NULL;
@@ -148,22 +149,40 @@ static int flb_http_server_apply_options(struct flb_http_server *session,
 static int flb_http_server_session_read(struct flb_http_server_session *session)
 {
     size_t sent;
+    size_t read_buffer_size;
     ssize_t result;
-    unsigned char input_buffer[1024];
     char *request_too_large = "HTTP/1.1 413 Request Entity Too Large\r\n"
                               "Content-Length: 0\r\n"
                               "Connection: close\r\n\r\n";
 
+    if (session->read_buffer == NULL) {
+        if (session->parent != NULL &&
+            session->parent->buffer_chunk_size > 0) {
+            read_buffer_size = session->parent->buffer_chunk_size;
+        }
+        else {
+            read_buffer_size = HTTP_SERVER_INITIAL_BUFFER_SIZE;
+        }
+
+        session->read_buffer = flb_malloc(read_buffer_size);
+        if (session->read_buffer == NULL) {
+            flb_errno();
+            return -1;
+        }
+
+        session->read_buffer_size = read_buffer_size;
+    }
+
     result = flb_io_net_read(session->connection,
-                             (void *) &input_buffer,
-                             sizeof(input_buffer));
+                             (void *) session->read_buffer,
+                             session->read_buffer_size);
 
     if (result <= 0) {
         return -1;
     }
 
     result = (ssize_t) flb_http_server_session_ingest(session,
-                                                      input_buffer,
+                                                      session->read_buffer,
                                                       result);
 
     if (result == HTTP_SERVER_BUFFER_LIMIT_EXCEEDED) {
@@ -447,7 +466,7 @@ static void flb_http_server_worker_maintenance(struct flb_config *config,
 
     worker = data;
 
-    flb_downstream_conn_timeouts(&worker->downstreams);
+    flb_downstream_conn_timeouts_stream(worker->server.downstream);
 }
 
 static int flb_http_server_worker_initialize(
@@ -486,10 +505,10 @@ static int flb_http_server_worker_initialize(
         return result;
     }
 
+    flb_downstream_thread_safe(worker->server.downstream);
+
     worker->server.worker_id = worker->worker_id;
     worker->server.workers = worker->parent.workers;
-
-    mk_list_add(&worker->server.downstream->base._head, &worker->downstreams);
 
     return 0;
 }
@@ -537,7 +556,7 @@ signal_and_exit:
 
         flb_http_server_worker_maintenance(worker->parent.system_context,
                                            worker);
-        flb_downstream_conn_pending_destroy_list(&worker->downstreams);
+        flb_downstream_conn_pending_destroy(worker->server.downstream);
     }
 
 cleanup:
@@ -553,6 +572,7 @@ cleanup:
 
 static int flb_http_server_runtime_start(struct flb_http_server *session)
 {
+    const char *alpn;
     int index;
     int result;
     struct flb_http_server_runtime *runtime;
@@ -573,6 +593,22 @@ static int flb_http_server_runtime_start(struct flb_http_server *session)
 
     runtime->worker_count = session->workers;
     session->runtime = runtime;
+
+    if (session->tls_provider != NULL &&
+        session->tls_alpn_configured == FLB_FALSE) {
+        alpn = flb_http_server_get_alpn_string(session);
+        result = flb_tls_set_alpn(session->tls_provider, alpn);
+
+        if (result != 0) {
+            flb_free(runtime->workers);
+            flb_free(runtime);
+            session->runtime = NULL;
+
+            return -1;
+        }
+
+        session->tls_alpn_configured = FLB_TRUE;
+    }
 
     for (index = 0; index < runtime->worker_count; index++) {
         flb_http_server_worker_context_reset(&runtime->workers[index]);
@@ -595,9 +631,9 @@ static int flb_http_server_runtime_start(struct flb_http_server *session)
                                 &runtime->workers[index]);
         if (result != 0) {
             runtime->workers[index].startup_result = -1;
-            runtime->workers[index].initialized = FLB_TRUE;
             break;
         }
+        runtime->workers[index].thread_created = FLB_TRUE;
 
         pthread_mutex_lock(&runtime->workers[index].mutex);
         while (runtime->workers[index].initialized == FLB_FALSE) {
@@ -635,7 +671,7 @@ static void flb_http_server_runtime_stop(struct flb_http_server *session)
     for (index = 0; index < runtime->worker_count; index++) {
         runtime->workers[index].should_exit = FLB_TRUE;
 
-        if (runtime->workers[index].initialized == FLB_TRUE) {
+        if (runtime->workers[index].thread_created == FLB_TRUE) {
             pthread_join(runtime->workers[index].thread, NULL);
         }
 
@@ -691,6 +727,7 @@ void flb_http_server_options_init(struct flb_http_server_options *options)
     memset(options, 0, sizeof(struct flb_http_server_options));
 
     options->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
+    options->buffer_chunk_size = HTTP_SERVER_INITIAL_BUFFER_SIZE;
     options->max_connections = 0;
     options->workers = 1;
     options->use_caller_event_loop = FLB_TRUE;
@@ -709,6 +746,7 @@ void flb_http_server_config_init(struct flb_http_server_config *config)
     config->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
     config->buffer_chunk_size = HTTP_SERVER_INITIAL_BUFFER_SIZE;
     config->max_connections = 0;
+    config->workers = 1;
 }
 
 int flb_http_server_options_init_from_input(struct flb_http_server_options *options,
@@ -738,6 +776,7 @@ int flb_http_server_options_init_from_input(struct flb_http_server_options *opti
     options->event_loop = flb_input_event_loop_get(input_instance);
     options->system_context = input_instance->config;
     options->buffer_max_size = buffer_max_size;
+    options->buffer_chunk_size = HTTP_SERVER_INITIAL_BUFFER_SIZE;
     options->max_connections = 0;
     options->reuse_port = input_instance->net_setup.share_port;
 
@@ -788,7 +827,11 @@ int flb_input_http_server_options_init(struct flb_http_server_options *options,
     }
 
     if (server_config != NULL) {
+        if (server_config->buffer_chunk_size > 0) {
+            options->buffer_chunk_size = server_config->buffer_chunk_size;
+        }
         options->max_connections = server_config->max_connections;
+        options->workers = server_config->workers;
     }
 
     return 0;
@@ -829,17 +872,19 @@ int flb_http_server_start(struct flb_http_server *session)
     int result;
 
     if (!flb_http_server_running_on_caller_context(session)) {
-        flb_error("[http_server] internally managed worker runtime is not enabled yet");
-        return -1;
+        return flb_http_server_runtime_start(session);
     }
 
-    if (session->tls_provider != NULL) {
+    if (session->tls_provider != NULL &&
+        session->tls_alpn_configured == FLB_FALSE) {
         alpn = flb_http_server_get_alpn_string(session);
         result = flb_tls_set_alpn(session->tls_provider, alpn);
 
         if (result != 0) {
             return -1;
         }
+
+        session->tls_alpn_configured = FLB_TRUE;
     }
 
     session->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
@@ -1080,6 +1125,10 @@ void flb_http_server_session_destroy(struct flb_http_server_session *session)
 
         if (session->outgoing_data != NULL) {
             cfl_sds_destroy(session->outgoing_data);
+        }
+
+        if (session->read_buffer != NULL) {
+            flb_free(session->read_buffer);
         }
 
         flb_http1_server_session_destroy(&session->http1);
