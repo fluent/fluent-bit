@@ -59,6 +59,11 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
             opentelemetry_prot_handle_ng,
             ctx);
     if (ret == 0) {
+        if (http_server_options.workers > 1) {
+            ret = flb_input_ingress_enable(ins);
+        }
+    }
+    if (ret == 0) {
         ret = flb_http_server_init_with_options(&ctx->http_server,
                                                 &http_server_options);
 
@@ -66,7 +71,7 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
             ret = flb_http_server_start(&ctx->http_server);
         }
 
-        if (ret == 0) {
+        if (ret == 0 && ctx->http_server.downstream != NULL) {
             ret = flb_input_downstream_set(ctx->http_server.downstream, ins);
         }
     }
