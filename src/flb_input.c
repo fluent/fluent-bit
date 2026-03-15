@@ -57,6 +57,16 @@ pthread_key_t libco_in_param_key;
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
+static void flb_input_ingress_primitives_destroy(struct flb_input_instance *ins)
+{
+    if (ins == NULL) {
+        return;
+    }
+
+    pthread_mutex_destroy(&ins->ingress_queue_lock);
+    pthread_cond_destroy(&ins->ingress_queue_space_available);
+}
+
 /*
  * Ring buffer capacity: by default we make space for 1024 entries that each
  * input instance can use to enqueue data. The capacity can be customized per
@@ -387,6 +397,18 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         flb_kv_init(&instance->net_properties);
         flb_kv_init(&instance->http_server_properties);
         flb_kv_init(&instance->oauth2_jwt_properties);
+        mk_list_init(&instance->ingress_queue);
+        pthread_mutex_init(&instance->ingress_queue_lock, NULL);
+        pthread_cond_init(&instance->ingress_queue_space_available, NULL);
+        instance->ingress_queue_channels[0] = -1;
+        instance->ingress_queue_channels[1] = -1;
+        instance->ingress_queue_enabled = FLB_FALSE;
+        instance->ingress_queue_collector_id = -1;
+        instance->ingress_queue_signal_pending = FLB_FALSE;
+        instance->ingress_queue_pending_events = 0;
+        instance->ingress_queue_pending_bytes = 0;
+        instance->ingress_queue_event_limit = 8192;
+        instance->ingress_queue_byte_limit = 256 * 1024 * 1024;
 
         /* Plugin use networking */
         if (plugin->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) {
@@ -407,6 +429,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
                 if (plugin->type != FLB_INPUT_PLUGIN_CORE && instance->context) {
                     flb_free(instance->context);
                 }
+                flb_input_ingress_primitives_destroy(instance);
                 flb_free(instance->http_server_config);
                 flb_free(instance);
                 return NULL;
@@ -476,6 +499,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             flb_sds_destroy(instance->host.address);
             flb_uri_destroy(instance->host.uri);
             flb_sds_destroy(instance->host.listen);
+            flb_input_ingress_primitives_destroy(instance);
             flb_free(instance->http_server_config);
             flb_free(instance);
             return NULL;
@@ -1021,12 +1045,25 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
         mk_event_closesocket(ins->ch_events[1]);
     }
 
+    if (ins->ingress_queue_channels[0] > 0) {
+        mk_event_closesocket(ins->ingress_queue_channels[0]);
+    }
+
+    if (ins->ingress_queue_channels[1] > 0) {
+        mk_event_closesocket(ins->ingress_queue_channels[1]);
+    }
+
+    flb_input_ingress_destroy(ins);
+
     /* Collectors */
     mk_list_foreach_safe(head, tmp, &ins->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
         mk_list_del(&collector->_head);
         flb_input_collector_destroy(collector);
     }
+
+    pthread_mutex_destroy(&ins->ingress_queue_lock);
+    pthread_cond_destroy(&ins->ingress_queue_space_available);
 
     /* delete storage context */
     flb_storage_input_destroy(ins);
@@ -1721,7 +1758,6 @@ void flb_input_instance_exit(struct flb_input_instance *ins,
     }
 }
 
-/* Invoke all exit input callbacks */
 void flb_input_exit_all(struct flb_config *config)
 {
     struct mk_list *tmp;
@@ -1729,7 +1765,6 @@ void flb_input_exit_all(struct flb_config *config)
     struct flb_input_instance *ins;
     struct flb_input_plugin *p;
 
-    /* Iterate instances */
     mk_list_foreach_safe_r(head, tmp, &config->inputs) {
         ins = mk_list_entry(head, struct flb_input_instance, _head);
         p = ins->p;
@@ -1737,10 +1772,7 @@ void flb_input_exit_all(struct flb_config *config)
             continue;
         }
 
-        /* invoke plugin instance exit callback */
         flb_input_instance_exit(ins, config);
-
-        /* destroy the instance */
         flb_input_instance_destroy(ins);
     }
 }
@@ -1835,25 +1867,11 @@ static struct flb_input_collector *collector_create(int type,
         coll->evl = thi->evl;
     }
     else {
-        struct mk_event_loop *tls_evl;
-
-        /*
-         * Collectors for non-threaded plugins normally run on the main
-         * engine event loop. When a private helper input such as the
-         * emitter is instantiated from within a threaded input (e.g. via
-         * an input processor), the input thread stores its own event loop
-         * in TLS.  Those helper inputs must continue to use the main
-         * engine event loop to avoid spinning the input thread.
+        /* Non-threaded inputs must always attach collectors to the owner
+         * engine loop. Using a transient TLS event loop here can orphan
+         * FD-driven collectors created during plugin initialization.
          */
-        tls_evl = flb_engine_evl_get();
-
-        if (tls_evl != NULL && tls_evl != config->evl &&
-            !(ins->p && (ins->p->flags & FLB_INPUT_PRIVATE))) {
-            coll->evl = tls_evl;
-        }
-        else {
-            coll->evl = config->evl;
-        }
+        coll->evl = config->evl;
     }
 
     /*
