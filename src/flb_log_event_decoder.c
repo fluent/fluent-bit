@@ -220,14 +220,11 @@ int flb_log_event_decoder_decode_timestamp(msgpack_object *input,
         else if (sec == (uint32_t) -2) {
             output->tm.tv_sec = FLB_LOG_EVENT_GROUP_END;
         }
-        else if (sec >= 0xFFFFFC00U) {
-            output->tm.tv_sec = (time_t) ((int32_t) sec);
-        }
         else {
             output->tm.tv_sec = (time_t) sec;
         }
 
-        output->tm.tv_nsec = (long) nsec;
+        output->tm.tv_nsec = (uint32_t) nsec;
     }
     else {
         return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
