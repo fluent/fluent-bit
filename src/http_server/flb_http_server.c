@@ -466,7 +466,9 @@ static void flb_http_server_worker_maintenance(struct flb_config *config,
 
     worker = data;
 
-    flb_downstream_conn_timeouts_stream(worker->server.downstream);
+    if (worker->server.downstream != NULL) {
+        flb_downstream_conn_timeouts_stream(worker->server.downstream);
+    }
 }
 
 static int flb_http_server_worker_initialize(
