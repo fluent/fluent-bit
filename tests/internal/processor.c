@@ -502,9 +502,6 @@ static void processor_metrics_counters()
     owner_input.cmt = cmt_create();
     TEST_CHECK(owner_input.cmt != NULL);
     if (owner_input.cmt == NULL) {
-        if (owner_input.cmt != NULL) {
-            cmt_destroy(owner_input.cmt);
-        }
         flb_processor_destroy(proc);
         flb_config_exit(config);
         flb_sds_destroy(regex_prop_key);
