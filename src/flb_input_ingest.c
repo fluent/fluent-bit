@@ -195,7 +195,7 @@ static int flb_input_ingress_enqueue(struct flb_input_instance *ins,
 
 #if defined(FLB_SYSTEM_WINDOWS)
         timespec_get(&deadline, TIME_UTC);
-#elif defined(CLOCK_MONOTONIC)
+#elif defined(CLOCK_MONOTONIC) && !defined(FLB_SYSTEM_MACOS)
         clock_gettime(CLOCK_MONOTONIC, &deadline);
 #else
         clock_gettime(CLOCK_REALTIME, &deadline);
