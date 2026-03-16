@@ -234,7 +234,7 @@ jobs:
         working-directory: build
 
       - name: Upload unit test binaries
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: windows-unit-tests-${{ matrix.config.arch }}
           path: |
