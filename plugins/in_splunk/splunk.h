@@ -20,14 +20,12 @@
 #ifndef FLB_IN_SPLUNK_H
 #define FLB_IN_SPLUNK_H
 
-#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_record_accessor.h>
 
-#include <monkey/monkey.h>
 #include <fluent-bit/http_server/flb_http_server.h>
 
 #define HTTP_BUFFER_MAX_SIZE    "4M"
@@ -61,19 +59,28 @@ struct flb_splunk {
 
     struct flb_input_instance *ins;
 
-    /* New gen HTTP server */
-    int enable_http2;
     struct flb_http_server http_server;
 
-    /* Legacy HTTP server */
     flb_sds_t success_headers_str;
-    int collector_id;
-    size_t buffer_max_size;            /* Maximum buffer size */
-    size_t buffer_chunk_size;          /* Chunk allocation size */
-    struct flb_downstream *downstream; /* Client manager */
-    struct mk_list connections;        /* linked list of connections */
-    struct mk_server *server;
 };
+
+static inline int splunk_uses_worker_ingress_queue(struct flb_splunk *ctx)
+{
+    return ctx->http_server.workers > 1;
+}
+
+static inline int splunk_ingest_logs(struct flb_splunk *ctx,
+                                     const char *tag,
+                                     size_t tag_len,
+                                     const void *buf,
+                                     size_t buf_size)
+{
+    if (splunk_uses_worker_ingress_queue(ctx)) {
+        return flb_input_ingress_queue_log(ctx->ins, tag, tag_len, buf, buf_size);
+    }
+
+    return flb_input_log_append(ctx->ins, tag, tag_len, buf, buf_size);
+}
 
 
 #endif

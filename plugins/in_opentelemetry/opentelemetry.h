@@ -24,7 +24,6 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 
-#include <monkey/monkey.h>
 #include <fluent-bit/http_server/flb_http_server.h>
 
 #define HTTP_BUFFER_MAX_SIZE    "4M"
@@ -44,20 +43,81 @@ struct flb_opentelemetry {
 
     struct flb_input_instance *ins;
 
-    /* New gen HTTP server */
-    int enable_http2;
     struct flb_http_server http_server;
-
-    /* Legacy HTTP server */
-    size_t buffer_max_size;            /* Maximum buffer size */
-    size_t buffer_chunk_size;          /* Chunk allocation size */
-
-    int collector_id;                  /* Listener collector id       */
-    struct flb_downstream *downstream; /* Client manager */
-    struct mk_list connections;        /* linked list of connections */
-
-    struct mk_server *server;
 };
 
+static inline int opentelemetry_uses_worker_ingress_queue(
+    struct flb_opentelemetry *ctx)
+{
+    return ctx->http_server.workers > 1;
+}
+
+static inline int opentelemetry_ingest_logs(struct flb_opentelemetry *ctx,
+                                            const char *tag,
+                                            size_t tag_len,
+                                            const void *buf,
+                                            size_t buf_size)
+{
+    if (opentelemetry_uses_worker_ingress_queue(ctx)) {
+        return flb_input_ingress_queue_log(ctx->ins, tag, tag_len, buf, buf_size);
+    }
+
+    return flb_input_log_append(ctx->ins, tag, tag_len, buf, buf_size);
+}
+
+static inline int opentelemetry_ingest_logs_take(struct flb_opentelemetry *ctx,
+                                                 const char *tag,
+                                                 size_t tag_len,
+                                                 void *buf,
+                                                 size_t buf_size,
+                                                 size_t allocation_size)
+{
+    if (opentelemetry_uses_worker_ingress_queue(ctx)) {
+        return flb_input_ingress_queue_log_take(ctx->ins,
+                                                tag,
+                                                tag_len,
+                                                buf,
+                                                buf_size,
+                                                allocation_size);
+    }
+
+    return flb_input_log_append(ctx->ins, tag, tag_len, buf, buf_size);
+}
+
+static inline int opentelemetry_ingest_metrics(struct flb_opentelemetry *ctx,
+                                               const char *tag,
+                                               size_t tag_len,
+                                               struct cmt *cmt)
+{
+    if (opentelemetry_uses_worker_ingress_queue(ctx)) {
+        return flb_input_ingress_queue_metrics(ctx->ins, tag, tag_len, cmt);
+    }
+
+    return flb_input_metrics_append(ctx->ins, tag, tag_len, cmt);
+}
+
+static inline int opentelemetry_ingest_traces(struct flb_opentelemetry *ctx,
+                                              const char *tag,
+                                              size_t tag_len,
+                                              struct ctrace *ctr)
+{
+    if (opentelemetry_uses_worker_ingress_queue(ctx)) {
+        return flb_input_ingress_queue_traces(ctx->ins, tag, tag_len, ctr);
+    }
+
+    return flb_input_trace_append(ctx->ins, tag, tag_len, ctr);
+}
+
+static inline int opentelemetry_ingest_profiles(struct flb_opentelemetry *ctx,
+                                                const char *tag,
+                                                size_t tag_len,
+                                                struct cprof *profile)
+{
+    if (opentelemetry_uses_worker_ingress_queue(ctx)) {
+        return flb_input_ingress_queue_profiles(ctx->ins, tag, tag_len, profile);
+    }
+
+    return flb_input_profiles_append(ctx->ins, tag, tag_len, profile);
+}
 
 #endif

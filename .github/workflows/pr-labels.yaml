@@ -3,12 +3,17 @@ on:
   pull_request_target:
     types:
       - opened
+
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   apply-default-labels:
     name: PR - apply default labels
     runs-on: ubuntu-latest
     steps:
-      - uses: actions-ecosystem/action-add-labels@v1
+      - uses: actions-ecosystem/action-add-labels@18f1af5e3544586314bbe15c0273249c770b2daf
         name: Label the PR with 'docs-required' by default.
         with:
           labels: docs-required

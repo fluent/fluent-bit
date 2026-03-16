@@ -21,29 +21,20 @@
 #define FLB_PROMETHEUS_EXPORTER_HTTP_H
 
 #include <fluent-bit/flb_output_plugin.h>
-#include <monkey/mk_lib.h>
+#include <fluent-bit/flb_pthread.h>
+#include <fluent-bit/http_server/flb_http_server.h>
 
 #include "prom.h"
 
-/* HTTP response payload received through a Message Queue */
-struct prom_http_buf {
-    int users;
-    char *buf_data;
-    size_t buf_size;
-    struct mk_list _head;
-};
-
 /* Prom HTTP Server context */
 struct prom_http {
-    mk_ctx_t *ctx;                /* Monkey HTTP Context */
-    int vid;                      /* Virtual host ID */
-    int qid_metrics;              /* Queue ID for Metrics buffer */
-    struct flb_config *config;    /* Fluent Bit context */
+    struct flb_http_server server;
+    pthread_mutex_t metrics_mutex;
+    cfl_sds_t metrics_payload;
+    struct flb_config *config;
 };
 
 struct prom_http *prom_http_server_create(struct prom_exporter *ctx,
-                                          const char *listen,
-                                          int tcp_port,
                                           struct flb_config *config);
 void prom_http_server_destroy(struct prom_http *ph);
 

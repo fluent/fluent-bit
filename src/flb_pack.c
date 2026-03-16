@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_pack_json.h>
 #include <fluent-bit/flb_unescape.h>
 #include <fluent-bit/flb_simd.h>
 
@@ -643,12 +644,40 @@ static int pack_json_to_msgpack(const char *js, size_t len, char **buffer,
     return ret;
 }
 
+int flb_pack_json_legacy(const char *js, size_t len, char **buffer, size_t *size,
+                         int *root_type, size_t *consumed)
+{
+    int records;
+
+    return pack_json_to_msgpack(js, len, buffer, size, root_type,
+                                &records, consumed);
+}
+
+int flb_pack_json_recs_legacy(const char *js, size_t len, char **buffer, size_t *size,
+                              int *root_type, int *out_records, size_t *consumed)
+{
+    return pack_json_to_msgpack(js, len, buffer, size, root_type,
+                                out_records, consumed);
+}
+
 /* Pack unlimited serialized JSON messages into msgpack */
 int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
                   int *root_type, size_t *consumed)
 {
     int records;
-    return pack_json_to_msgpack(js, len, buffer, size, root_type, &records, consumed);
+
+#ifdef FLB_HAVE_SIMD
+    /*
+     * When SIMD support is compiled in, route the default JSON pack API through
+     * the extensible frontend so callers inherit the YYJSON backend selection.
+     * Explicit backend-specific entry points remain available for forced JSMN
+     * or YYJSON behavior.
+     */
+    return flb_pack_json_recs_ext(js, len, buffer, size, root_type,
+                                  &records, consumed, NULL);
+#endif
+
+    return flb_pack_json_legacy(js, len, buffer, size, root_type, consumed);
 }
 
 /*
@@ -658,7 +687,13 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
 int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
                        int *root_type, int *out_records, size_t *consumed)
 {
-    return pack_json_to_msgpack(js, len, buffer, size, root_type, out_records, consumed);
+#ifdef FLB_HAVE_SIMD
+    return flb_pack_json_recs_ext(js, len, buffer, size, root_type,
+                                  out_records, consumed, NULL);
+#endif
+
+    return flb_pack_json_recs_legacy(js, len, buffer, size, root_type,
+                                     out_records, consumed);
 }
 
 /* Pack a JSON message using yyjson */

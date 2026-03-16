@@ -33,6 +33,7 @@
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_crypto.h>
+#include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 #include <monkey/mk_core/mk_list.h>
@@ -60,6 +61,7 @@ struct flb_oauth2_jwt_ctx {
     struct flb_config *config;
     struct flb_oauth2_jwt_cfg cfg;
     struct flb_oauth2_jwks_cache jwks_cache;
+    pthread_mutex_t lock;
 };
 
 const char *flb_oauth2_jwt_status_message(int status)
@@ -568,6 +570,23 @@ static int oauth2_jwt_parse_payload(const char *json, size_t json_len,
             if (v->type == MSGPACK_OBJECT_STR) {
                 /* Only assign client_id if azp was not already set */
                 if (claims->has_azp == FLB_FALSE) {
+                    if (claims->client_id) {
+                        flb_sds_destroy(claims->client_id);
+                    }
+                    claims->client_id = flb_sds_create_len((const char *)v->via.str.ptr,
+                                                           v->via.str.size);
+                    claims->has_client_id_claim = FLB_TRUE;
+                }
+            }
+        }
+        else if (key_len == 5 && strncmp(key_str, "appid", 5) == 0) {
+            if (v->type == MSGPACK_OBJECT_STR) {
+                /*
+                 * ADFS commonly emits appid for application identity.
+                 * Use it as a fallback when neither azp nor client_id are present.
+                 */
+                if (claims->has_azp == FLB_FALSE &&
+                    claims->has_client_id_claim == FLB_FALSE) {
                     if (claims->client_id) {
                         flb_sds_destroy(claims->client_id);
                     }
@@ -1257,6 +1276,8 @@ struct flb_oauth2_jwt_ctx *flb_oauth2_jwt_context_create(struct flb_config *conf
         return NULL;
     }
 
+    pthread_mutex_init(&ctx->lock, NULL);
+
     return ctx;
 }
 
@@ -1267,6 +1288,7 @@ void flb_oauth2_jwt_context_destroy(struct flb_oauth2_jwt_ctx *ctx)
     }
 
     oauth2_jwks_cache_destroy(&ctx->jwks_cache);
+    pthread_mutex_destroy(&ctx->lock);
     oauth2_jwt_free_cfg(&ctx->cfg);
     flb_free(ctx);
 }
@@ -1309,8 +1331,11 @@ int flb_oauth2_jwt_validate(struct flb_oauth2_jwt_ctx *ctx,
         return FLB_OAUTH2_JWT_OK;
     }
 
+    pthread_mutex_lock(&ctx->lock);
+
     if (!authorization_header || authorization_header_len == 0) {
-        return FLB_OAUTH2_JWT_ERR_MISSING_AUTH_HEADER;
+        status = FLB_OAUTH2_JWT_ERR_MISSING_AUTH_HEADER;
+        goto unlock_and_return;
     }
 
     while (token_start < authorization_header_len &&
@@ -1320,7 +1345,8 @@ int flb_oauth2_jwt_validate(struct flb_oauth2_jwt_ctx *ctx,
 
     if (authorization_header_len - token_start < sizeof("Bearer ") - 1 ||
         strncasecmp(&authorization_header[token_start], "Bearer ", sizeof("Bearer ") - 1) != 0) {
-        return FLB_OAUTH2_JWT_ERR_MISSING_BEARER_TOKEN;
+        status = FLB_OAUTH2_JWT_ERR_MISSING_BEARER_TOKEN;
+        goto unlock_and_return;
     }
 
     token_start += sizeof("Bearer ") - 1;
@@ -1342,7 +1368,8 @@ int flb_oauth2_jwt_validate(struct flb_oauth2_jwt_ctx *ctx,
         if (dot_count != 2) {
             flb_debug("[oauth2_jwt] Token does not appear to be a JWT (expected 2 dots, found %d). "
                      "Keycloak may be returning opaque tokens instead of JWT access tokens.", dot_count);
-            return FLB_OAUTH2_JWT_ERR_SEGMENT_COUNT;
+            status = FLB_OAUTH2_JWT_ERR_SEGMENT_COUNT;
+            goto unlock_and_return;
         }
     }
 
@@ -1352,7 +1379,7 @@ int flb_oauth2_jwt_validate(struct flb_oauth2_jwt_ctx *ctx,
     if (status != FLB_OAUTH2_JWT_OK) {
         flb_debug("[oauth2_jwt] failed to parse token: %s",
                   flb_oauth2_jwt_status_message(status));
-        return status;
+        goto unlock_and_return;
     }
 
     /* Verify signature using JWKS */
@@ -1466,6 +1493,8 @@ int flb_oauth2_jwt_validate(struct flb_oauth2_jwt_ctx *ctx,
 jwt_end:
     flb_oauth2_jwt_destroy(&jwt);
 
+unlock_and_return:
+    pthread_mutex_unlock(&ctx->lock);
     return status;
 }
 

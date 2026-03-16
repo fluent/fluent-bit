@@ -29,14 +29,6 @@
 
 #include <fluent-bit/flb_http_common.h>
 
-int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
-                       struct mk_http_session *session,
-                       struct mk_http_request *request);
-
-int splunk_prot_handle_error(struct flb_splunk *ctx, struct splunk_conn *conn,
-                             struct mk_http_session *session,
-                             struct mk_http_request *request);
-
 int splunk_prot_handle_ng(struct flb_http_request *request,
                           struct flb_http_response *response);
 
