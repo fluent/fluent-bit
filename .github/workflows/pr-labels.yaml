@@ -13,7 +13,7 @@ jobs:
     name: PR - apply default labels
     runs-on: ubuntu-latest
     steps:
-      - uses: actions-ecosystem/action-add-labels@bd52874380e3909a1ac983768df6976535ece7f8
+      - uses: actions-ecosystem/action-add-labels@18f1af5e3544586314bbe15c0273249c770b2daf
         name: Label the PR with 'docs-required' by default.
         with:
           labels: docs-required
