@@ -797,6 +797,7 @@ static void set_resource_attributes_from_message_body(
     struct mk_list *head;
     struct flb_config_map_val *mv;
     struct flb_slist_entry *entry;
+    const char *normalized_key;
     msgpack_object_kv *kv;
     Opentelemetry__Proto__Common__V1__KeyValue *attr;
     Opentelemetry__Proto__Common__V1__KeyValue **tmp_attrs;
