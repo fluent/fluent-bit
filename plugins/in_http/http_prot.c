@@ -332,8 +332,11 @@ static int process_pack_record(struct flb_http *ctx,
                                encoder->output_length);
     }
 
-    if (ret != FLB_EVENT_ENCODER_SUCCESS &&
-        ret != FLB_INPUT_INGRESS_BUSY) {
+    if (ret == FLB_INPUT_INGRESS_BUSY) {
+        return FLB_INPUT_INGRESS_BUSY;
+    }
+
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         return -1;
     }
 
