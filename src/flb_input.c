@@ -83,7 +83,7 @@ static int flb_input_ingress_primitives_init(struct flb_input_instance *ins)
         return -1;
     }
 
-#if defined(CLOCK_MONOTONIC) && !defined(FLB_SYSTEM_WINDOWS)
+#if defined(CLOCK_MONOTONIC) && !defined(FLB_SYSTEM_WINDOWS) && !defined(FLB_SYSTEM_MACOS)
     result = pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
     if (result != 0) {
         pthread_condattr_destroy(&attr);
