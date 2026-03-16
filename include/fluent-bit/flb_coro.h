@@ -77,6 +77,11 @@ struct flb_coro {
 #define FLB_CORO_STACK_SIZE_BYTE      ((3 * STACK_FACTOR * PTHREAD_STACK_MIN) / 2)
 #endif
 
+#if FLB_HAVE_SANITIZE_ADDRESS
+#undef FLB_CORO_STACK_SIZE_BYTE
+#define FLB_CORO_STACK_SIZE_BYTE (128 * 1024) /* Extend coro stack size for ASan */
+#endif
+
 #define FLB_CORO_DATA(coro)      (((char *) coro) + sizeof(struct flb_coro))
 
 static FLB_INLINE void flb_coro_yield(struct flb_coro *coro, int ended)
