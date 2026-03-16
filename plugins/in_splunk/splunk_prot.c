@@ -666,7 +666,7 @@ static int process_hec_payload_ng(struct flb_http_request *request,
     }
 
     ret = flb_hash_table_get(request->headers, "authorization", 13, (void **)&auth_header, &size);
-    if (ret != 0 && size > 0 && strncasecmp(auth_header, "Splunk ", 7) == 0) {
+    if (ret >= 0 && size > 0 && strncasecmp(auth_header, "Splunk ", 7) == 0) {
         return handle_hec_payload(ctx, type, encoder,
                                   auth_header, strlen(auth_header),
                                   tag, request->body, cfl_sds_len(request->body),
@@ -707,7 +707,7 @@ static int process_hec_raw_payload_ng(struct flb_http_request *request,
     }
 
     ret = flb_hash_table_get(request->headers, "authorization", 13, (void **)&auth_header, &size);
-    if (ret != 0 && size > 0 && strncasecmp(auth_header, "Splunk ", 7) == 0) {
+    if (ret >= 0 && size > 0 && strncasecmp(auth_header, "Splunk ", 7) == 0) {
         return process_raw_payload_pack(ctx, encoder,
                                         auth_header, strlen(auth_header),
                                         tag, request->body, cfl_sds_len(request->body),
