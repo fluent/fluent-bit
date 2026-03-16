@@ -7,6 +7,9 @@
 #include <string.h>
 
 static const char *VALID_JWT = "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5In0.eyJleHAiOjE3MTAwMDAwMDAsImlzcyI6Imlzc3VlciIsImF1ZCI6ImF1ZGllbmNlIiwiYXpwIjoiY2xpZW50LTEifQ.c2ln";
+static const char *VALID_JWT_APPID = "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5In0.eyJleHAiOjE3MTAwMDAwMDAsImlzcyI6Imlzc3VlciIsImF1ZCI6ImF1ZGllbmNlIiwiYXBwaWQiOiJjbGllbnQtYXBwaWQifQ.c2ln";
+static const char *VALID_JWT_APPID_CLIENT_ID = "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5In0.eyJleHAiOjE3MTAwMDAwMDAsImlzcyI6Imlzc3VlciIsImF1ZCI6ImF1ZGllbmNlIiwiYXBwaWQiOiJjbGllbnQtYXBwaWQiLCJjbGllbnRfaWQiOiJjbGllbnQtZGlyZWN0In0.c2ln";
+static const char *VALID_JWT_APPID_AZP = "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5In0.eyJleHAiOjE3MTAwMDAwMDAsImlzcyI6Imlzc3VlciIsImF1ZCI6ImF1ZGllbmNlIiwiYXBwaWQiOiJjbGllbnQtYXBwaWQiLCJhenAiOiJjbGllbnQtYXpwIn0.c2ln";
 static const char *INVALID_SEGMENTS = "abc.def";
 static const char *BAD_BASE64 = "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5In0#.eyJleHAiOjE3MTAwMDAwMDAsImlzcyI6Imlzc3VlciIsImF1ZCI6ImF1ZGllbmNlIiwiYXpwIjoiY2xpZW50LTEifQ.c2ln";
 static const char *MISSING_KID = "eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjE3MTAwMDAwMDAsImlzcyI6Imlzc3VlciIsImF1ZCI6ImF1ZGllbmNlIiwiYXpwIjoiY2xpZW50LTEifQ.c2ln";
@@ -38,6 +41,49 @@ static void test_invalid_segments()
 
     ret = flb_oauth2_jwt_parse(INVALID_SEGMENTS, strlen(INVALID_SEGMENTS), &jwt);
     TEST_CHECK(ret == FLB_OAUTH2_JWT_ERR_SEGMENT_COUNT);
+}
+
+static void test_client_id_falls_back_to_appid()
+{
+    int ret;
+    struct flb_oauth2_jwt jwt;
+
+    ret = flb_oauth2_jwt_parse(VALID_JWT_APPID, strlen(VALID_JWT_APPID), &jwt);
+    TEST_CHECK(ret == FLB_OAUTH2_JWT_OK);
+    TEST_CHECK(strcmp(jwt.claims.client_id, "client-appid") == 0);
+    TEST_CHECK(jwt.claims.has_azp == FLB_FALSE);
+    TEST_CHECK(jwt.claims.has_client_id_claim == FLB_FALSE);
+
+    flb_oauth2_jwt_destroy(&jwt);
+}
+
+static void test_client_id_claim_overrides_appid()
+{
+    int ret;
+    struct flb_oauth2_jwt jwt;
+
+    ret = flb_oauth2_jwt_parse(VALID_JWT_APPID_CLIENT_ID,
+                               strlen(VALID_JWT_APPID_CLIENT_ID), &jwt);
+    TEST_CHECK(ret == FLB_OAUTH2_JWT_OK);
+    TEST_CHECK(strcmp(jwt.claims.client_id, "client-direct") == 0);
+    TEST_CHECK(jwt.claims.has_azp == FLB_FALSE);
+    TEST_CHECK(jwt.claims.has_client_id_claim == FLB_TRUE);
+
+    flb_oauth2_jwt_destroy(&jwt);
+}
+
+static void test_azp_overrides_appid()
+{
+    int ret;
+    struct flb_oauth2_jwt jwt;
+
+    ret = flb_oauth2_jwt_parse(VALID_JWT_APPID_AZP,
+                               strlen(VALID_JWT_APPID_AZP), &jwt);
+    TEST_CHECK(ret == FLB_OAUTH2_JWT_OK);
+    TEST_CHECK(strcmp(jwt.claims.client_id, "client-azp") == 0);
+    TEST_CHECK(jwt.claims.has_azp == FLB_TRUE);
+
+    flb_oauth2_jwt_destroy(&jwt);
 }
 
 static void test_bad_base64()
@@ -215,6 +261,9 @@ static void test_static_key_validation()
 TEST_LIST = {
     {"valid_jwt_parses", test_valid_jwt_parses},
     {"invalid_segments", test_invalid_segments},
+    {"client_id_falls_back_to_appid", test_client_id_falls_back_to_appid},
+    {"client_id_claim_overrides_appid", test_client_id_claim_overrides_appid},
+    {"azp_overrides_appid", test_azp_overrides_appid},
     {"bad_base64", test_bad_base64},
     {"missing_kid", test_missing_kid},
     {"bad_alg", test_bad_alg},

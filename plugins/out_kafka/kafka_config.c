@@ -254,10 +254,6 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     if (tmp) {
         ctx->avro_fields.schema_str = flb_sds_create(tmp);
     }
-    tmp = flb_output_get_property("schema_id", ins);
-    if (tmp) {
-        ctx->avro_fields.schema_id = flb_sds_create(tmp);
-    }
 #endif
 
     /* Config: Topic */
@@ -286,7 +282,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
 
     flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->kafka.brokers, tmp);
 #ifdef FLB_HAVE_AVRO_ENCODER
-    flb_plg_info(ctx->ins, "schemaID='%s' schema='%s'", ctx->avro_fields.schema_id, ctx->avro_fields.schema_str);
+    flb_plg_info(ctx->ins, "schemaID='%d' schema='%s'", ctx->avro_fields.schema_id, ctx->avro_fields.schema_str);
 #endif
 
     return ctx;
@@ -332,7 +328,6 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
 
 #ifdef FLB_HAVE_AVRO_ENCODER
     // avro
-    flb_sds_destroy(ctx->avro_fields.schema_id);
     flb_sds_destroy(ctx->avro_fields.schema_str);
 #endif
 

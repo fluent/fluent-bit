@@ -35,6 +35,11 @@ on:
       cosign_key:
         description: The optional Cosign key to use for verifying the images.
         required: false
+
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   call-test-images-cosign-verify:
     name: Cosign verification of container image
@@ -202,4 +207,3 @@ jobs:
           REGISTRY: ${{ inputs.registry }}
           IMAGE_NAME: ${{ inputs.image }}
           IMAGE_TAG: ${{ inputs.image-tag }}
-

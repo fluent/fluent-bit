@@ -20,6 +20,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_bucket_queue.h>
@@ -76,6 +77,24 @@ extern struct flb_aws_error_reporter *error_reporter;
 
 static pthread_once_t local_thread_engine_evl_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct mk_event_loop, flb_engine_evl);
+
+static int engine_has_fluentbit_logs_input(struct flb_config *config)
+{
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+
+    mk_list_foreach(head, &config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+
+        if (ins->p != NULL &&
+            ins->p->name != NULL &&
+            strcmp(ins->p->name, "fluentbit_logs") == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
 
 static void flb_engine_evl_init_private()
 {
@@ -870,6 +889,10 @@ int flb_engine_start(struct flb_config *config)
     if (ret == -1) {
         fprintf(stderr, "[engine] log start failed\n");
         return -1;
+    }
+
+    if (engine_has_fluentbit_logs_input(config)) {
+        flb_log_pipeline_enable(config);
     }
 
     flb_info("[fluent bit] version=%s, commit=%.10s, pid=%i",

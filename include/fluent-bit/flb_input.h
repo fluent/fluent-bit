@@ -73,12 +73,17 @@
                                      * In addition, if TLS is enabled then a
                                      * private key and certificate are required.
                                      */
+#define FLB_INPUT_HTTP_SERVER 4096  /* input uses the generic HTTP server     */
 
 /* Input status */
 #define FLB_INPUT_RUNNING     1
 #define FLB_INPUT_PAUSED      0
 
+/* Owner-side ingress queue status */
+#define FLB_INPUT_INGRESS_BUSY -2
+
 struct flb_input_instance;
+struct flb_http_server_config;
 
 /*
  * Tests callbacks
@@ -162,7 +167,6 @@ struct flb_input_plugin {
     char *description;
 
     struct flb_config_map *config_map;
-
     /* Initialization */
     int (*cb_init)    (struct flb_input_instance *, struct flb_config *, void *);
 
@@ -471,6 +475,23 @@ struct flb_input_instance {
     struct mk_list *net_config_map;
     struct mk_list net_properties;
 
+    struct mk_list *http_server_config_map;
+    struct flb_http_server_config *http_server_config;
+    struct mk_list http_server_properties;
+
+    /* Owner-side ingress queue for foreign worker threads */
+    struct mk_list ingress_queue;
+    pthread_mutex_t ingress_queue_lock;
+    pthread_cond_t ingress_queue_space_available;
+    flb_pipefd_t ingress_queue_channels[2];
+    int ingress_queue_enabled;
+    int ingress_queue_collector_id;
+    int ingress_queue_signal_pending;
+    size_t ingress_queue_pending_events;
+    size_t ingress_queue_pending_bytes;
+    size_t ingress_queue_event_limit;
+    size_t ingress_queue_byte_limit;
+
     struct mk_list *oauth2_jwt_config_map;
     struct mk_list oauth2_jwt_properties;
 
@@ -742,6 +763,16 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
         }
     }
 
+    /* HTTP server properties */
+    if (ins->http_server_config_map && ins->http_server_config) {
+        ret = flb_config_map_set(&ins->http_server_properties,
+                                 ins->http_server_config_map,
+                                 ins->http_server_config);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
     return ret;
 }
 
@@ -831,6 +862,24 @@ struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins);
 int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *ins);
 int flb_input_downstream_set(struct flb_downstream *stream,
                              struct flb_input_instance *ins);
+void flb_input_ingress_destroy(struct flb_input_instance *ins);
+int flb_input_ingress_enable(struct flb_input_instance *ins);
+int flb_input_ingress_queue_log(struct flb_input_instance *ins,
+                                const char *tag, size_t tag_len,
+                                const void *buf, size_t buf_size);
+int flb_input_ingress_queue_log_take(struct flb_input_instance *ins,
+                                     const char *tag, size_t tag_len,
+                                     void *buf, size_t buf_size,
+                                     size_t allocation_size);
+int flb_input_ingress_queue_metrics(struct flb_input_instance *ins,
+                                    const char *tag, size_t tag_len,
+                                    struct cmt *cmt);
+int flb_input_ingress_queue_traces(struct flb_input_instance *ins,
+                                   const char *tag, size_t tag_len,
+                                   struct ctrace *ctr);
+int flb_input_ingress_queue_profiles(struct flb_input_instance *ins,
+                                     const char *tag, size_t tag_len,
+                                     struct cprof *profile);
 
 
 /* processors */

@@ -12,6 +12,10 @@ on:
     - cron: 44 13 * * 4
   workflow_dispatch:
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   # Run Trivy on the latest container and update the security code scanning results tab.
   trivy-latest:
@@ -52,7 +56,7 @@ jobs:
 
       # Deliberately chosen master here to keep up-to-date.
       - name: Run Trivy vulnerability scanner for any major issues
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8
         with:
             image-ref: local/fluent-bit:${{ matrix.local_tag }}
             # Filter out any that have no current fix.
@@ -66,7 +70,7 @@ jobs:
       # Show all detected issues.
       # Note this will show a lot more, including major un-fixed ones.
       - name: Run Trivy vulnerability scanner for local output
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8
         with:
             image-ref: local/fluent-bit:${{ matrix.local_tag }}
             format: table
@@ -80,7 +84,7 @@ jobs:
 
       # In case we need to analyse the uploaded files for some reason.
       - name: Detain results for debug if needed
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: trivy-results-${{ matrix.local_tag }}.sarif
           path: trivy-results-${{ matrix.local_tag }}.sarif

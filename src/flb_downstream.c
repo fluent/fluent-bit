@@ -437,14 +437,12 @@ int flb_downstream_conn_release(struct flb_connection *connection)
     return prepare_destroy_conn_safe(connection);
 }
 
-int flb_downstream_conn_timeouts(struct mk_list *list)
+int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream)
 {
     int                    elapsed_time;
     struct flb_connection *connection;
     const char            *reason;
-    struct flb_downstream *stream;
     struct mk_list        *s_head;
-    struct mk_list        *head;
     int                    drop;
     int                  inject;
     struct mk_list        *tmp;
@@ -452,74 +450,85 @@ int flb_downstream_conn_timeouts(struct mk_list *list)
 
     now = time(NULL);
 
+    if (stream->base.transport == FLB_TRANSPORT_UDP ||
+        stream->base.transport == FLB_TRANSPORT_UNIX_DGRAM) {
+        return 0;
+    }
+
+    flb_stream_acquire_lock(&stream->base, FLB_TRUE);
+
+    /* Iterate every busy connection */
+    mk_list_foreach_safe(s_head, tmp, &stream->busy_queue) {
+        connection = mk_list_entry(s_head, struct flb_connection, _head);
+
+        drop = FLB_FALSE;
+
+        /* Connect timeouts */
+        if (connection->net->accept_timeout > 0 &&
+            connection->ts_connect_timeout > 0 &&
+            connection->ts_connect_timeout <= now) {
+            drop = FLB_TRUE;
+            reason = "connection timeout";
+            elapsed_time = connection->net->accept_timeout;
+        }
+        else if (connection->net->io_timeout > 0 &&
+                 connection->ts_io_timeout > 0 &&
+                 connection->ts_io_timeout <= now) {
+            drop = FLB_TRUE;
+            reason = "IO timeout";
+            elapsed_time = connection->net->io_timeout;
+        }
+
+        if (drop) {
+            if (!flb_downstream_is_shutting_down(stream)) {
+                if (connection->net->accept_timeout_log_error) {
+                    flb_error("[downstream] connection #%i from %s timed "
+                              "out after %i seconds (%s)",
+                              connection->fd,
+                              connection->user_friendly_remote_host,
+                              elapsed_time,
+                              reason);
+                }
+                else {
+                    flb_debug("[downstream] connection #%i from %s timed "
+                              "out after %i seconds (%s)",
+                              connection->fd,
+                              connection->user_friendly_remote_host,
+                              elapsed_time,
+                              reason);
+                }
+            }
+
+            inject = FLB_FALSE;
+            if (connection->event.status != MK_EVENT_NONE) {
+                inject = FLB_TRUE;
+            }
+            connection->net_error = ETIMEDOUT;
+            prepare_destroy_conn(connection);
+            if (inject == FLB_TRUE) {
+                mk_event_inject(connection->evl,
+                                &connection->event,
+                                connection->event.mask,
+                                FLB_TRUE);
+            }
+        }
+    }
+
+    flb_stream_release_lock(&stream->base);
+
+    return 0;
+}
+
+int flb_downstream_conn_timeouts(struct mk_list *list)
+{
+    struct flb_downstream *stream;
+    struct mk_list        *head;
+
     /* Iterate all downstream contexts */
     mk_list_foreach(head, list) {
         stream = mk_list_entry(head, struct flb_downstream, base._head);
 
-        if (stream->base.transport == FLB_TRANSPORT_UDP) {
-            continue;
-        }
-
-        flb_stream_acquire_lock(&stream->base, FLB_TRUE);
-
-        /* Iterate every busy connection */
-        mk_list_foreach_safe(s_head, tmp, &stream->busy_queue) {
-            connection = mk_list_entry(s_head, struct flb_connection, _head);
-
-            drop = FLB_FALSE;
-
-            /* Connect timeouts */
-            if (connection->net->accept_timeout > 0 &&
-                connection->ts_connect_timeout > 0 &&
-                connection->ts_connect_timeout <= now) {
-                drop = FLB_TRUE;
-                reason = "connection timeout";
-                elapsed_time = connection->net->accept_timeout;
-            }
-            else if (connection->net->io_timeout > 0 &&
-                     connection->ts_io_timeout > 0 &&
-                     connection->ts_io_timeout <= now) {
-                drop = FLB_TRUE;
-                reason = "IO timeout";
-                elapsed_time = connection->net->io_timeout;
-            }
-
-            if (drop) {
-                if (!flb_downstream_is_shutting_down(stream)) {
-                    if (connection->net->accept_timeout_log_error) {
-                        flb_error("[downstream] connection #%i from %s timed "
-                                  "out after %i seconds (%s)",
-                                  connection->fd,
-                                  connection->user_friendly_remote_host,
-                                  elapsed_time,
-                                  reason);
-                    }
-                    else {
-                        flb_debug("[downstream] connection #%i from %s timed "
-                                  "out after %i seconds (%s)",
-                                  connection->fd,
-                                  connection->user_friendly_remote_host,
-                                  elapsed_time,
-                                  reason);
-                    }
-                }
-
-                inject = FLB_FALSE;
-                if (connection->event.status != MK_EVENT_NONE) {
-                    inject = FLB_TRUE;
-                }
-                connection->net_error = ETIMEDOUT;
-                prepare_destroy_conn(connection);
-                if (inject == FLB_TRUE) {
-                    mk_event_inject(connection->evl,
-                                    &connection->event,
-                                    connection->event.mask,
-                                    FLB_TRUE);
-                }
-            }
-        }
-
-        flb_stream_release_lock(&stream->base);
+        flb_downstream_conn_timeouts_stream(stream);
     }
 
     return 0;
