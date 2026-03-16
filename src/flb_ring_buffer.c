@@ -204,7 +204,7 @@ int flb_ring_buffer_write(struct flb_ring_buffer *rb, void *ptr, size_t size)
 
     should_signal = FLB_FALSE;
 
-    if (!rb->flush_pending) {
+    if (!rb->flush_pending && rb->event_loop != NULL) {
         used_size = rb->data_size - (av - size);
 
         if (used_size >= rb->data_window) {
@@ -215,7 +215,7 @@ int flb_ring_buffer_write(struct flb_ring_buffer *rb, void *ptr, size_t size)
 
     pthread_mutex_unlock(&rb->lock);
 
-    if (should_signal == FLB_TRUE) {
+    if (should_signal == FLB_TRUE && rb->event_loop != NULL) {
         flb_pipe_write_all(rb->signal_channels[1], ".", 1);
     }
 
