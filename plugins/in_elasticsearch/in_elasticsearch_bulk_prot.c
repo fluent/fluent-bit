@@ -307,6 +307,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         }
 
                         error_op = FLB_TRUE;
+                        flb_sds_destroy(write_op);
                         break;
                     }
 
