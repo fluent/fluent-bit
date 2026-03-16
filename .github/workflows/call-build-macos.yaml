@@ -106,7 +106,7 @@ jobs:
         working-directory: build
 
       - name: Upload build packages
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: macos-packages on ${{ matrix.config.runner }}
           path: |
