@@ -96,7 +96,7 @@ static int get_counter_value_1_or_zero(struct cmt_counter *counter,
     int ret;
 
     ret = get_counter_value_1(counter, label_value_0, value);
-    if (ret != 0) {
+    if (ret == -1) {
         *value = 0.0;
         return 0;
     }
@@ -125,7 +125,7 @@ static int get_counter_value_2_or_zero(struct cmt_counter *counter,
     int ret;
 
     ret = get_counter_value_2(counter, label_value_0, label_value_1, value);
-    if (ret != 0) {
+    if (ret == -1) {
         *value = 0.0;
         return 0;
     }
@@ -169,7 +169,7 @@ static int get_counter_value_5_or_zero(struct cmt_counter *counter,
                               label_value_3,
                               label_value_4,
                               value);
-    if (ret != 0) {
+    if (ret == -1) {
         *value = 0.0;
         return 0;
     }
@@ -388,21 +388,24 @@ static void flb_test_mixed_input_processor_filter_parity(void)
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    ret = flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(ret == 0);
 
     ret = flb_input_set_processor(ctx, in_ffd, proc);
     TEST_CHECK(ret == 0);
 
     f_ffd = flb_filter(ctx, (char *) "grep", NULL);
     TEST_CHECK(f_ffd >= 0);
-    flb_filter_set(ctx, f_ffd,
-                   "match", "test",
-                   "regex", "message ^hello$",
-                   NULL);
+    ret = flb_filter_set(ctx, f_ffd,
+                         "match", "test",
+                         "regex", "message ^hello$",
+                         NULL);
+    TEST_CHECK(ret == 0);
 
     out_ffd = flb_output(ctx, (char *) "null", NULL);
     TEST_CHECK(out_ffd >= 0);
-    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    ret = flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    TEST_CHECK(ret == 0);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
@@ -517,11 +520,13 @@ static void flb_test_output_processor_drop_parity(void)
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    ret = flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(ret == 0);
 
     out_ffd = flb_output(ctx, (char *) "null", NULL);
     TEST_CHECK(out_ffd >= 0);
-    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    ret = flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    TEST_CHECK(ret == 0);
 
     ret = flb_output_set_processor(ctx, out_ffd, proc);
     TEST_CHECK(ret == 0);
@@ -651,17 +656,19 @@ static void flb_test_retry_drop_route_parity_grouped(void)
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    ret = flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(ret == 0);
 
     out_ffd = flb_output(ctx, (char *) "http", NULL);
     TEST_CHECK(out_ffd >= 0);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "host", "127.0.0.1",
-                   "port", "1",
-                   "uri", "/",
-                   "retry_limit", "no_retries",
-                   NULL);
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "test",
+                         "host", "127.0.0.1",
+                         "port", "1",
+                         "uri", "/",
+                         "retry_limit", "no_retries",
+                         NULL);
+    TEST_CHECK(ret == 0);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
@@ -761,17 +768,19 @@ static void flb_test_retry_scheduled_route_parity_grouped(void)
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    ret = flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(ret == 0);
 
     out_ffd = flb_output(ctx, (char *) "http", NULL);
     TEST_CHECK(out_ffd >= 0);
-    flb_output_set(ctx, out_ffd,
-                   "match", "test",
-                   "host", "127.0.0.1",
-                   "port", "1",
-                   "uri", "/",
-                   "retry_limit", "2",
-                   NULL);
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "test",
+                         "host", "127.0.0.1",
+                         "port", "1",
+                         "uri", "/",
+                         "retry_limit", "2",
+                         NULL);
+    TEST_CHECK(ret == 0);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
