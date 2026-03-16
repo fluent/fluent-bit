@@ -613,6 +613,11 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf,
                 ret = process_pack_record(ctx, encoder, &tm, NULL, obj);
             }
 
+            if (ret == FLB_INPUT_INGRESS_BUSY) {
+                flb_log_event_encoder_reset(encoder);
+                goto ingress_busy;
+            }
+
             if (ret != 0) {
                 goto log_event_error;
             }
@@ -658,6 +663,11 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf,
                     ret = process_pack_record(ctx, encoder, &tm, NULL, &record);
                 }
 
+                if (ret == FLB_INPUT_INGRESS_BUSY) {
+                    flb_log_event_encoder_reset(encoder);
+                    goto ingress_busy;
+                }
+
                 if (ret != 0) {
                     goto log_event_error;
                 }
@@ -697,6 +707,18 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf,
     }
 
     return 0;
+
+ingress_busy:
+    msgpack_unpacked_destroy(&result);
+    if (appended_initialized) {
+        msgpack_unpacked_destroy(&appended_result);
+        msgpack_sbuffer_destroy(&appended_sbuf);
+    }
+    if (remote_addr != NULL) {
+        flb_sds_destroy(remote_addr);
+    }
+
+    return FLB_INPUT_INGRESS_BUSY;
 
 log_event_error:
     flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
