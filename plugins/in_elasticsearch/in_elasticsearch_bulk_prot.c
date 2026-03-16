@@ -636,8 +636,6 @@ int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
                 return -1;
             }
             else if (result != 0) {
-                send_response_ng(response, 400, NULL,
-                                 "error: unable to process records\n");
                 flb_sds_destroy(bulk_statuses);
                 flb_sds_destroy(bulk_response);
                 return -1;
