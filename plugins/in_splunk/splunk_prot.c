@@ -189,8 +189,8 @@ static int process_raw_payload_pack(struct flb_splunk *ctx,
         }
     }
     else {
-        if (ingested_auth_header != NULL) {
-            if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            if (ingested_auth_header != NULL) {
                 ret = flb_log_event_encoder_append_body_values(
                     encoder,
                     FLB_LOG_EVENT_CSTRING_VALUE(ctx->store_token_key),
@@ -198,7 +198,12 @@ static int process_raw_payload_pack(struct flb_splunk *ctx,
                                                ingested_auth_header_len),
                     FLB_LOG_EVENT_CSTRING_VALUE("log"),
                     FLB_LOG_EVENT_STRING_VALUE(buf, size));
-
+            }
+            else {
+                ret = flb_log_event_encoder_append_body_values(
+                    encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("log"),
+                    FLB_LOG_EVENT_STRING_VALUE(buf, size));
             }
         }
     }
