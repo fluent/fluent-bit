@@ -1532,7 +1532,6 @@ static int cobj_remove_list_add(struct flb_mp_chunk_record **remove_list,
 
 int flb_mp_chunk_cobj_normalize_groups(struct flb_mp_chunk_cobj *chunk_cobj)
 {
-    int i;
     int ret;
     int record_type;
     size_t index;
@@ -1626,8 +1625,8 @@ int flb_mp_chunk_cobj_normalize_groups(struct flb_mp_chunk_cobj *chunk_cobj)
                              group_start_stack[stack_count]);
     }
 
-    for (i = 0; i < remove_count; i++) {
-        flb_mp_chunk_cobj_record_destroy(chunk_cobj, remove_list[i]);
+    for (index = 0; index < remove_count; index++) {
+        flb_mp_chunk_cobj_record_destroy(chunk_cobj, remove_list[index]);
     }
 
     flb_free(group_has_content);
