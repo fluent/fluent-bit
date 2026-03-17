@@ -52,8 +52,11 @@
 #include <fluent-bit/flb_chunk_trace.h>
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
-struct flb_libco_in_params libco_in_param;
 pthread_key_t libco_in_param_key;
+pthread_once_t libco_in_param_key_once = PTHREAD_ONCE_INIT;
+void libco_in_param_key_init_func(void) {
+    pthread_key_create(&libco_in_param_key, libco_in_param_key_destroy);
+}
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
