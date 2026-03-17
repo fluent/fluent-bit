@@ -72,22 +72,6 @@ int opentelemetry_config_destroy(struct flb_opentelemetry *ctx)
     if (ctx->oauth2_ctx) {
         flb_oauth2_jwt_context_destroy(ctx->oauth2_ctx);
         ctx->oauth2_ctx = NULL;
-        ctx->oauth2_cfg.issuer = NULL;
-        ctx->oauth2_cfg.jwks_url = NULL;
-        ctx->oauth2_cfg.allowed_audience = NULL;
-    }
-    else {
-        if (ctx->oauth2_cfg.issuer) {
-            flb_sds_destroy(ctx->oauth2_cfg.issuer);
-        }
-
-        if (ctx->oauth2_cfg.jwks_url) {
-            flb_sds_destroy(ctx->oauth2_cfg.jwks_url);
-        }
-
-        if (ctx->oauth2_cfg.allowed_audience) {
-            flb_sds_destroy(ctx->oauth2_cfg.allowed_audience);
-        }
     }
 
     flb_free(ctx->listen);
