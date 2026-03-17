@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_upstream_ha.h>
+#include <fluent-bit/flb_azure_auth.h>
 
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_utils.h>
@@ -34,17 +35,6 @@
 
 /* refresh token every 50 minutes */
 #define FLB_AZURE_KUSTO_TOKEN_REFRESH 3000
-
-/* Authentication types */
-typedef enum {
-    FLB_AZURE_KUSTO_AUTH_SERVICE_PRINCIPAL = 0,   /* Client ID + Client Secret */
-    FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM, /* System-assigned managed identity */
-    FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_USER,   /* User-assigned managed identity */
-    FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY        /* Workload Identity */
-} flb_azure_kusto_auth_type;
-
-/* Kusto streaming inserts oauth scope */
-#define FLB_AZURE_KUSTO_SCOPE "https://help.kusto.windows.net/.default"
 
 /* MSAL authorization URL  */
 #define FLB_MSAL_AUTH_URL_TEMPLATE \
@@ -71,10 +61,6 @@ typedef enum {
 #define UPLOAD_TIMER_MAX_WAIT 180000
 #define UPLOAD_TIMER_MIN_WAIT 18000
 #define MAX_FILE_SIZE         4000000000 /* 4GB */
-
-#define FLB_AZURE_IMDS_ENDPOINT "/metadata/identity/oauth2/token"
-#define FLB_AZURE_IMDS_API_VERSION "2018-02-01"
-#define FLB_AZURE_IMDS_RESOURCE "https://api.kusto.windows.net/"
 
 
 struct flb_azure_kusto_resources {
