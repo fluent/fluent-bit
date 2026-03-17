@@ -336,7 +336,7 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
     /* Map debug callbacks */
     flb_http_client_debug(c, ctx->ins->callback);
 
-    ret = flb_http_do(c, &b_sent);
+    ret = flb_http_do_with_oauth2(c, &b_sent, ctx->oauth2_ctx);
 
     if (ret == 0) {
         /*
@@ -417,6 +417,7 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                        const char *http_uri,
                        const char *grpc_uri)
 {
+    flb_sds_t                 oauth2_token;
     const char               *compression_algorithm;
     uint32_t                  wire_message_length;
     size_t                    grpc_body_length;
@@ -426,6 +427,8 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
     struct flb_http_request  *request;
     int                       out_ret;
     int                       result;
+
+    oauth2_token = NULL;
 
     if (!ctx->enable_http2_flag) {
         return opentelemetry_legacy_post(ctx,
@@ -548,8 +551,29 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         }
     }
 
-    if (ctx->http_user != NULL &&
-        ctx->http_passwd != NULL) {
+    if (ctx->oauth2_ctx != NULL && ctx->oauth2_config.enabled == FLB_TRUE) {
+        result = flb_oauth2_get_access_token(ctx->oauth2_ctx,
+                                             &oauth2_token,
+                                             FLB_FALSE);
+        if (result != 0 || oauth2_token == NULL) {
+            flb_plg_error(ctx->ins, "failed to obtain oauth2 access token");
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
+            return FLB_RETRY;
+        }
+
+        result = flb_http_request_set_parameters(request,
+                    FLB_HTTP_CLIENT_ARGUMENT_BEARER_TOKEN(oauth2_token));
+
+        if (result != 0) {
+            flb_plg_error(ctx->ins, "error setting oauth2 authorization data");
+            flb_http_client_request_destroy(request, FLB_TRUE);
+
+            return FLB_RETRY;
+        }
+    }
+    else if (ctx->http_user != NULL &&
+             ctx->http_passwd != NULL) {
         result = flb_http_request_set_parameters(request,
                     FLB_HTTP_CLIENT_ARGUMENT_BASIC_AUTHORIZATION(
                                                     ctx->http_user,
@@ -590,6 +614,10 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         flb_http_client_request_destroy(request, FLB_TRUE);
 
         return FLB_RETRY;
+    }
+
+    if (ctx->oauth2_ctx != NULL && response->status == 401) {
+        flb_oauth2_invalidate_token(ctx->oauth2_ctx);
     }
 
     /*

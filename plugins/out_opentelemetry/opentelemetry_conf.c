@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_record_accessor.h>
 #ifdef FLB_HAVE_SIGNV4
 #ifdef FLB_HAVE_AWS
@@ -272,6 +273,11 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         return NULL;
     }
     ctx->ins = ins;
+    ctx->oauth2_config.enabled = FLB_FALSE;
+    ctx->oauth2_config.auth_method = FLB_OAUTH2_AUTH_METHOD_BASIC;
+    ctx->oauth2_config.refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
+    ctx->oauth2_ctx = NULL;
+    ctx->oauth2_auth_method = NULL;
     mk_list_init(&ctx->kv_labels);
     mk_list_init(&ctx->log_body_key_list);
 
@@ -279,6 +285,21 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     if (ret == -1) {
         flb_free(ctx);
         return NULL;
+    }
+
+    if (ins->oauth2_config_map && mk_list_size(&ins->oauth2_properties) > 0) {
+        ret = flb_config_map_set(&ins->oauth2_properties,
+                                 ins->oauth2_config_map,
+                                 &ctx->oauth2_config);
+        if (ret == -1) {
+            flb_free(ctx);
+            return NULL;
+        }
+
+        tmp = flb_kv_get_key_value("oauth2.auth_method", &ins->oauth2_properties);
+        if (tmp) {
+            ctx->oauth2_auth_method = (flb_sds_t) tmp;
+        }
     }
 
     if (ctx->max_resources < 0) {
@@ -385,6 +406,61 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     ctx->u = upstream;
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
+
+    if (ctx->oauth2_config.connect_timeout <= 0 &&
+        ins->net_setup.connect_timeout > 0) {
+        ctx->oauth2_config.connect_timeout = ins->net_setup.connect_timeout;
+    }
+
+    if (ctx->oauth2_config.enabled == FLB_TRUE) {
+        tmp = ctx->oauth2_auth_method ? ctx->oauth2_auth_method :
+              flb_output_get_property("oauth2.auth_method", ins);
+
+        if (tmp) {
+            if (strcasecmp(tmp, "basic") == 0) {
+                ctx->oauth2_config.auth_method = FLB_OAUTH2_AUTH_METHOD_BASIC;
+            }
+            else if (strcasecmp(tmp, "post") == 0) {
+                ctx->oauth2_config.auth_method = FLB_OAUTH2_AUTH_METHOD_POST;
+            }
+            else if (strcasecmp(tmp, "private_key_jwt") == 0) {
+                ctx->oauth2_config.auth_method =
+                    FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT;
+            }
+            else {
+                flb_plg_error(ctx->ins, "invalid oauth2.auth_method '%s'", tmp);
+                flb_opentelemetry_context_destroy(ctx);
+                return NULL;
+            }
+        }
+
+        if (!ctx->oauth2_config.token_url || !ctx->oauth2_config.client_id) {
+            flb_plg_error(ctx->ins, "oauth2 requires token_url and client_id");
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+
+        if (ctx->oauth2_config.auth_method == FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT) {
+            if (!ctx->oauth2_config.jwt_key_file ||
+                !ctx->oauth2_config.jwt_cert_file) {
+                flb_plg_error(ctx->ins, "oauth2 private_key_jwt requires jwt_key_file and jwt_cert_file");
+                flb_opentelemetry_context_destroy(ctx);
+                return NULL;
+            }
+        }
+        else if (!ctx->oauth2_config.client_secret) {
+            flb_plg_error(ctx->ins, "oauth2 basic/post require client_secret");
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+
+        ctx->oauth2_ctx = flb_oauth2_create_from_config(config, &ctx->oauth2_config);
+        if (!ctx->oauth2_ctx) {
+            flb_plg_error(ctx->ins, "failed to initialize oauth2 context");
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+    }
 
     ctx->logs_uri_sanitized = sanitize_uri(ctx->logs_uri);
     ctx->traces_uri_sanitized = sanitize_uri(ctx->traces_uri);
@@ -824,6 +900,10 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
     }
 #endif
 #endif
+
+    if (ctx->oauth2_ctx) {
+        flb_oauth2_destroy(ctx->oauth2_ctx);
+    }
 
     flb_free(ctx->proxy_host);
     flb_free(ctx);
