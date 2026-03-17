@@ -125,7 +125,7 @@ jobs:
       # Raspbian requires ARMv6 emulation
       - name: Set up QEMU
         if: contains(matrix.distro, 'raspbian')
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           image: tonistiigi/binfmt:qemu-v7.0.0-28 # See: https://github.com/docker/setup-qemu-action/issues/198#issuecomment-2653791775
 
