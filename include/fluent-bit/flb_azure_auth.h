@@ -26,8 +26,8 @@
 
 /* Authentication types for Azure services */
 typedef enum {
-    FLB_AZURE_AUTH_KEY = 0,                       /* Shared Access Key */
-    FLB_AZURE_AUTH_SAS,                           /* Shared Access Signature */
+    FLB_AZURE_AUTH_KEY = 0,                       /* Shared Access Key (blob-specific) */
+    FLB_AZURE_AUTH_SAS,                           /* Shared Access Signature (blob-specific) */
     FLB_AZURE_AUTH_SERVICE_PRINCIPAL,             /* Service Principal (Client ID + Secret) */
     FLB_AZURE_AUTH_MANAGED_IDENTITY_SYSTEM,       /* System-assigned Managed Identity */
     FLB_AZURE_AUTH_MANAGED_IDENTITY_USER,         /* User-assigned Managed Identity */

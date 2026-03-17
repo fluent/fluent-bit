@@ -1016,6 +1016,7 @@ static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
     /* Validate HTTP status */
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error sending append_blob for %s", ref_name);
+        flb_http_client_destroy(c);
         return FLB_RETRY;
     }
 
@@ -2510,13 +2511,38 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "auth_type", "key",
      0, FLB_TRUE, offsetof(struct flb_azure_blob, auth_type),
-     "Set the auth type: key or sas"
+     "Set the auth type: key, sas, service_principal, managed_identity, or workload_identity"
     },
 
     {
      FLB_CONFIG_MAP_STR, "sas_token", NULL,
      0, FLB_TRUE, offsetof(struct flb_azure_blob, sas_token),
      "Azure Blob SAS token"
+    },
+
+    /* OAuth authentication parameters */
+    {
+     FLB_CONFIG_MAP_STR, "tenant_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, tenant_id),
+     "Azure AD tenant ID (required for service_principal and workload_identity auth)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "client_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, client_id),
+     "Azure AD client ID / Application ID (required for OAuth-based authentication)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "client_secret", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, client_secret),
+     "Azure AD client secret (required for service_principal auth)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "workload_identity_token_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, workload_identity_token_file),
+     "Path to workload identity token file (for workload_identity auth)"
     },
 
     {
