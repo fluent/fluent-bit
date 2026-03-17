@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_oauth2_jwt.h>
 #include <fluent-bit/flb_utils.h>
 
 #include <fluent-bit/http_server/flb_http_server.h>
@@ -40,6 +41,8 @@ struct flb_opentelemetry {
     flb_sds_t logs_body_key;
     int profile_support_enabled;
     int encode_profiles_as_log;
+    struct flb_oauth2_jwt_cfg oauth2_cfg;
+    struct flb_oauth2_jwt_ctx *oauth2_ctx;
 
     struct flb_input_instance *ins;
 
