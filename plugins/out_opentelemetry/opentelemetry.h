@@ -62,7 +62,7 @@ struct opentelemetry_context {
     char *http_passwd;
     struct flb_oauth2_config oauth2_config;
     struct flb_oauth2 *oauth2_ctx;
-    flb_sds_t oauth2_auth_method;
+    const char *oauth2_auth_method;
 
     /* AWS Auth */
 #ifdef FLB_HAVE_SIGNV4
