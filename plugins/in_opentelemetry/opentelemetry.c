@@ -49,6 +49,25 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
         return -1;
     }
 
+    if (ctx->oauth2_cfg.validate) {
+        if (!ctx->oauth2_cfg.issuer || !ctx->oauth2_cfg.jwks_url) {
+            flb_plg_error(ctx->ins, "oauth2.issuer and oauth2.jwks_url are required when oauth2.validate is enabled");
+            opentelemetry_config_destroy(ctx);
+            return -1;
+        }
+
+        if (ctx->oauth2_cfg.jwks_refresh_interval <= 0) {
+            ctx->oauth2_cfg.jwks_refresh_interval = 300;
+        }
+
+        ctx->oauth2_ctx = flb_oauth2_jwt_context_create(config, &ctx->oauth2_cfg);
+        if (!ctx->oauth2_ctx) {
+            flb_plg_error(ctx->ins, "unable to create oauth2 jwt context");
+            opentelemetry_config_destroy(ctx);
+            return -1;
+        }
+    }
+
     /* Set the context */
     flb_input_set_context(ins, ctx);
 
