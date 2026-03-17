@@ -5,12 +5,18 @@
 #include <linux/types.h>  // For __u32, __u64, etc.
 
 #define TASK_COMM_LEN 16
+#define VFS_PATH_MAX 256
 
 enum event_type {
     EVENT_TYPE_EXECVE,
     EVENT_TYPE_SIGNAL,
     EVENT_TYPE_MEM,   // For memory operations
     EVENT_TYPE_BIND,  // Added event type for bind operations
+    EVENT_TYPE_VFS,
+};
+
+enum vfs_op {
+    VFS_OP_OPENAT,
 };
 
 /* Define memory operation types */
@@ -78,6 +84,15 @@ struct bind_event {
     int error_raw;                 // Error code for the bind operation
 };
 
+struct vfs_event {
+    enum vfs_op operation;
+    char path[VFS_PATH_MAX];
+    __u32 flags;
+    __u32 mode;
+    int fd;
+    int error_raw;
+};
+
 /* The main event structure */
 struct event {
     enum event_type type;           // Type of event (execve, signal, mem, bind)
@@ -87,6 +102,7 @@ struct event {
         struct signal_event signal;
         struct mem_event mem;       // Memory event details
         struct bind_event bind;     // Bind event details
+        struct vfs_event vfs;       // VFS event details
     } details;                      // Event-specific details
 };
 

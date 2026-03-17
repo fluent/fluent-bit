@@ -6,10 +6,12 @@
 #include "generated/trace_signal.skel.h"
 #include "generated/trace_malloc.skel.h"
 #include "generated/trace_bind.skel.h"
+#include "generated/trace_vfs.skel.h"
 
 #include "bind/handler.h"
 #include "signal/handler.h"  // Include signal handler
 #include "malloc/handler.h" // Include malloc handler
+#include "vfs/handler.h"
 
 /* Skeleton function pointer types */
 typedef void *(*trace_skel_open_func_t)(void);
@@ -58,11 +60,13 @@ struct trace_registration {
 DEFINE_GET_BPF_OBJECT(trace_signal)
 DEFINE_GET_BPF_OBJECT(trace_malloc)
 DEFINE_GET_BPF_OBJECT(trace_bind)
+DEFINE_GET_BPF_OBJECT(trace_vfs)
 
 static struct trace_registration trace_table[] = {
     REGISTER_TRACE(trace_signal, trace_signal_handler),
     REGISTER_TRACE(trace_malloc, trace_malloc_handler),
     REGISTER_TRACE(trace_bind, trace_bind_handler),
+    REGISTER_TRACE(trace_vfs, trace_vfs_handler),
 };
 
 #endif // TRACE_TRACES_H
