@@ -167,6 +167,10 @@ static int opentelemetry_check_grpc_status(struct opentelemetry_context *ctx,
             flb_plg_error(ctx->ins, "grpc-status=%d", grpc_status);
         }
 
+        if (grpc_status == 16 && ctx->oauth2_ctx != NULL) {
+            flb_oauth2_invalidate_token(ctx->oauth2_ctx);
+        }
+
         if (opentelemetry_is_grpc_status_retryable(grpc_status)) {
             result = FLB_RETRY;
         }

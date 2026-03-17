@@ -298,7 +298,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
 
         tmp = flb_kv_get_key_value("oauth2.auth_method", &ins->oauth2_properties);
         if (tmp) {
-            ctx->oauth2_auth_method = (flb_sds_t) tmp;
+            ctx->oauth2_auth_method = tmp;
         }
     }
 
