@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -49,6 +49,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     }
     ctx->ins = ins;
     ctx->blocked = FLB_FALSE;
+    mk_list_init(&ctx->topics);
 
     ret = flb_output_config_map_set(ins, (void*) ctx);
     if (ret == -1) {
@@ -239,9 +240,13 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     if (!ctx->kafka.rk) {
         flb_plg_error(ctx->ins, "failed to create producer: %s",
                       errstr);
+        rd_kafka_conf_destroy(ctx->conf);
+        ctx->conf = NULL;
         flb_out_kafka_destroy(ctx);
         return NULL;
     }
+    /* rd_kafka_new() succeeded, conf ownership transferred to rk */
+    ctx->conf = NULL;
 
 #ifdef FLB_HAVE_AVRO_ENCODER
     /* Config AVRO */
@@ -249,14 +254,9 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     if (tmp) {
         ctx->avro_fields.schema_str = flb_sds_create(tmp);
     }
-    tmp = flb_output_get_property("schema_id", ins);
-    if (tmp) {
-        ctx->avro_fields.schema_id = flb_sds_create(tmp);
-    }
 #endif
 
     /* Config: Topic */
-    mk_list_init(&ctx->topics);
     tmp = flb_output_get_property("topics", ins);
     if (!tmp) {
         flb_kafka_topic_create(FLB_KAFKA_TOPIC, ctx);
@@ -282,7 +282,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
 
     flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->kafka.brokers, tmp);
 #ifdef FLB_HAVE_AVRO_ENCODER
-    flb_plg_info(ctx->ins, "schemaID='%s' schema='%s'", ctx->avro_fields.schema_id, ctx->avro_fields.schema_str);
+    flb_plg_info(ctx->ins, "schemaID='%d' schema='%s'", ctx->avro_fields.schema_id, ctx->avro_fields.schema_str);
 #endif
 
     return ctx;
@@ -302,6 +302,10 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
 
     if (ctx->kafka.rk) {
         rd_kafka_destroy(ctx->kafka.rk);
+    }
+
+    if (ctx->conf) {
+        rd_kafka_conf_destroy(ctx->conf);
     }
 
     if (ctx->opaque) {
@@ -324,7 +328,6 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
 
 #ifdef FLB_HAVE_AVRO_ENCODER
     // avro
-    flb_sds_destroy(ctx->avro_fields.schema_id);
     flb_sds_destroy(ctx->avro_fields.schema_str);
 #endif
 

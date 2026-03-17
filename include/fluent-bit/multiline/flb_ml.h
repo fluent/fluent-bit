@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -111,6 +111,10 @@ struct flb_ml_stream_group {
     /* packaging buffers */
     msgpack_sbuffer mp_md_sbuf; /* temporary msgpack buffer              */
     msgpack_packer mp_md_pck;   /* temporary msgpack packer              */
+
+    /* Metadata snapshots (deep-copied) to avoid msgpack pack/unpack churn */
+    struct mk_list metadata_objects;          /* list of deep-copied msgpack_object maps */
+    int            metadata_objects_initialized;
 
     msgpack_sbuffer mp_sbuf;    /* temporary msgpack buffer              */
     msgpack_packer mp_pck;      /* temporary msgpack packer              */
@@ -369,6 +373,10 @@ int flb_ml_type_lookup(char *str);
 int flb_ml_flush_stdout(struct flb_ml_parser *parser,
                         struct flb_ml_stream *mst,
                         void *data, char *buf_data, size_t buf_size);
+
+int flb_ml_stream_group_add_metadata(struct flb_ml_stream_group *group,
+                                     msgpack_object *metadata);
+void flb_ml_stream_group_purge_metadata(struct flb_ml_stream_group *group);
 
 #include "flb_ml_mode.h"
 

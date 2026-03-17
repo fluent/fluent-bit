@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_chunk_trace.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/http_server/flb_hs_utils.h>
 #include <msgpack.h>
 
 #define STR_INPUTS "inputs"
@@ -108,23 +109,23 @@ static int disable_trace_input(struct flb_hs *hs, const char *name, size_t nlen)
     return 201;
 }
 
-static flb_sds_t get_input_name(mk_request_t *request)
+static flb_sds_t get_input_name(struct flb_http_request *request)
 {
     const char base[] = "/api/v1/trace/";
 
 
-    if (request->real_path.data == NULL) {
+    if (request->path == NULL) {
         return NULL;
     }
-    if (request->real_path.len < sizeof(base)-1) {
+    if (cfl_sds_len(request->path) < sizeof(base)-1) {
         return NULL;
     }
 
-    return flb_sds_create_len(&request->real_path.data[sizeof(base)-1],
-                              request->real_path.len - (sizeof(base)-1));
+    return flb_sds_create_len(&request->path[sizeof(base)-1],
+                              cfl_sds_len(request->path) - (sizeof(base)-1));
 }
 
-static int http_disable_trace(mk_request_t *request, void *data,
+static int http_disable_trace(struct flb_http_request *request, void *data,
                               const char *input_name, size_t input_nlen,
                               msgpack_packer *mp_pck)
 {
@@ -240,7 +241,7 @@ parse_error:
     return ret;
 }
 
-static int http_enable_trace(mk_request_t *request, void *data,
+static int http_enable_trace(struct flb_http_request *request, void *data,
                              const char *input_name, ssize_t input_nlen,
                              msgpack_packer *mp_pck)
 {
@@ -263,7 +264,7 @@ static int http_enable_trace(mk_request_t *request, void *data,
     struct flb_input_instance *input_instance;
 
 
-    if (request->method == MK_METHOD_GET) {
+    if (request->method == HTTP_METHOD_GET) {
         ret = enable_trace_input(hs, input_name, input_nlen, "trace.", "stdout", NULL);
         if (ret == 0) {
                 msgpack_pack_map(mp_pck, 1);
@@ -278,7 +279,12 @@ static int http_enable_trace(mk_request_t *request, void *data,
     }
 
     msgpack_unpacked_init(&result);
-    rc = flb_pack_json(request->data.data, request->data.len, &buf, &buf_size,
+    if (request->body == NULL) {
+        ret = 400;
+        flb_error("missing json parameters");
+        goto unpack_error;
+    }
+    rc = flb_pack_json(request->body, cfl_sds_len(request->body), &buf, &buf_size,
                        &root_type, NULL);
     if (rc == -1) {
         ret = 503;
@@ -429,12 +435,14 @@ input_error:
     return ret;
 }
 
-static void cb_trace(mk_request_t *request, void *data)
+static int cb_trace(struct flb_hs *hs,
+                    struct flb_http_request *request,
+                    struct flb_http_response *http_response)
 {
     flb_sds_t out_buf;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
-    int response = 404;
+    int http_status = 404;
     flb_sds_t input_name = NULL;
 
 
@@ -444,23 +452,23 @@ static void cb_trace(mk_request_t *request, void *data)
 
     input_name = get_input_name(request);
     if (input_name == NULL) {
-        response = 404;
+        http_status = 404;
         goto error;
     }
 
-    if (request->method == MK_METHOD_POST || request->method == MK_METHOD_GET) {
-        response = http_enable_trace(request, data, input_name, flb_sds_len(input_name), &mp_pck);
+    if (request->method == HTTP_METHOD_POST || request->method == HTTP_METHOD_GET) {
+        http_status = http_enable_trace(request, hs, input_name, flb_sds_len(input_name), &mp_pck);
     }
-    else if (request->method == MK_METHOD_DELETE) {
-        response = http_disable_trace(request, data, input_name, flb_sds_len(input_name), &mp_pck);
+    else if (request->method == HTTP_METHOD_DELETE) {
+        http_status = http_disable_trace(request, hs, input_name, flb_sds_len(input_name), &mp_pck);
     }
 error:
-    if (response == 404) {
+    if (http_status == 404) {
         msgpack_pack_map(&mp_pck, 1);
         msgpack_pack_str_with_body(&mp_pck, HTTP_FIELD_STATUS, HTTP_FIELD_STATUS_LEN);
         msgpack_pack_str_with_body(&mp_pck, HTTP_RESULT_NOTFOUND, HTTP_RESULT_NOTFOUND_LEN);
     }
-    else if (response == 503) {
+    else if (http_status == 503) {
         msgpack_pack_map(&mp_pck, 1);
         msgpack_pack_str_with_body(&mp_pck, HTTP_FIELD_STATUS, HTTP_FIELD_STATUS_LEN);
         msgpack_pack_str_with_body(&mp_pck, HTTP_RESULT_ERROR, HTTP_RESULT_ERROR_LEN);
@@ -473,20 +481,22 @@ error:
     /* Export to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     if (out_buf == NULL) {
-        mk_http_status(request, 503);
-        mk_http_done(request);
-        return;
+        flb_http_response_set_status(http_response, 503);
+        return flb_http_response_commit(http_response);
     }
 
-    mk_http_status(request, response);
-    mk_http_send(request, out_buf, flb_sds_len(out_buf), NULL);
-    mk_http_done(request);
+    flb_hs_response_set_payload(http_response, http_status,
+                                FLB_HS_CONTENT_TYPE_JSON,
+                                out_buf, flb_sds_len(out_buf));
 
     msgpack_sbuffer_destroy(&mp_sbuf);
     flb_sds_destroy(out_buf);
+    return 0;
 }
 
-static void cb_traces(mk_request_t *request, void *data)
+static int cb_traces(struct flb_hs *hs,
+                     struct flb_http_request *request,
+                     struct flb_http_response *http_response)
 {
     flb_sds_t out_buf;
     msgpack_sbuffer mp_sbuf;
@@ -497,7 +507,7 @@ static void cb_traces(mk_request_t *request, void *data)
     int root_type = MSGPACK_OBJECT_ARRAY;
     msgpack_unpacked result;
     flb_sds_t error_msg = NULL;
-    int response = 200;
+    int http_status = 200;
     const char *input_name;
     ssize_t input_nlen;
     msgpack_object_array *inputs = NULL;
@@ -509,7 +519,12 @@ static void cb_traces(mk_request_t *request, void *data)
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     msgpack_unpacked_init(&result);
-    ret = flb_pack_json(request->data.data, request->data.len, &buf, &buf_size,
+    if (request->body == NULL) {
+        http_status = 400;
+        error_msg = flb_sds_create("missing request body");
+        goto unpack_error;
+    }
+    ret = flb_pack_json(request->body, cfl_sds_len(request->body), &buf, &buf_size,
                         &root_type, NULL);
     if (ret == -1) {
         goto unpack_error;
@@ -523,7 +538,7 @@ static void cb_traces(mk_request_t *request, void *data)
     }
 
     if (result.data.type != MSGPACK_OBJECT_MAP) {
-        response = 503;
+        http_status = 503;
         error_msg = flb_sds_create("input is not an object");
         goto unpack_error;
     }
@@ -545,7 +560,7 @@ static void cb_traces(mk_request_t *request, void *data)
     }
 
     if (inputs == NULL) {
-        response = 503;
+        http_status = 503;
         error_msg = flb_sds_create("inputs not found");
         goto unpack_error;
     }
@@ -558,7 +573,7 @@ static void cb_traces(mk_request_t *request, void *data)
     for (i = 0; i < inputs->size; i++) {
 
         if (inputs->ptr[i].type != MSGPACK_OBJECT_STR || inputs->ptr[i].via.str.ptr == NULL) {
-            response = 503;
+            http_status = 503;
             error_msg = flb_sds_create("invalid input");
             msgpack_sbuffer_clear(&mp_sbuf);
             goto unpack_error;
@@ -572,9 +587,9 @@ static void cb_traces(mk_request_t *request, void *data)
 
         msgpack_pack_str_with_body(&mp_pck, input_name, input_nlen);
 
-        if (request->method == MK_METHOD_POST) {
+        if (request->method == HTTP_METHOD_POST) {
 
-            ret = msgpack_params_enable_trace((struct flb_hs *)data, &result,
+            ret = msgpack_params_enable_trace(hs, &result,
                                               input_name, input_nlen);
 
             if (ret != 0) {
@@ -591,8 +606,9 @@ static void cb_traces(mk_request_t *request, void *data)
                 msgpack_pack_str_with_body(&mp_pck, HTTP_RESULT_OK, HTTP_RESULT_OK_LEN);
             }
         }
-        else if (request->method == MK_METHOD_DELETE) {
-            disable_trace_input((struct flb_hs *)data, input_name, input_nlen);
+        else if (request->method == HTTP_METHOD_DELETE) {
+            disable_trace_input(hs, input_name, input_nlen);
+            msgpack_pack_map(&mp_pck, 1);
             msgpack_pack_str_with_body(&mp_pck, HTTP_FIELD_STATUS, HTTP_FIELD_STATUS_LEN);
             msgpack_pack_str_with_body(&mp_pck, HTTP_RESULT_OK, HTTP_RESULT_OK_LEN);
         }
@@ -612,15 +628,15 @@ unpack_error:
         flb_free(buf);
     }
     msgpack_unpacked_destroy(&result);
-    if (response == 404) {
+    if (http_status == 404) {
         msgpack_pack_map(&mp_pck, 1);
         msgpack_pack_str_with_body(&mp_pck, HTTP_FIELD_STATUS, HTTP_FIELD_STATUS_LEN);
         msgpack_pack_str_with_body(&mp_pck, HTTP_RESULT_NOTFOUND, HTTP_RESULT_NOTFOUND_LEN);
     }
-    else if (response == 503) {
+    else if (http_status == 503) {
         msgpack_pack_map(&mp_pck, 2);
         msgpack_pack_str_with_body(&mp_pck, HTTP_FIELD_STATUS, HTTP_FIELD_STATUS_LEN);
-        msgpack_pack_str_with_body(&mp_pck, HTTP_RESULT_OK, HTTP_RESULT_OK_LEN);
+        msgpack_pack_str_with_body(&mp_pck, HTTP_RESULT_ERROR, HTTP_RESULT_ERROR_LEN);
         msgpack_pack_str_with_body(&mp_pck, HTTP_FIELD_MESSAGE, HTTP_FIELD_MESSAGE_LEN);
         if (error_msg) {
             msgpack_pack_str_with_body(&mp_pck, error_msg, flb_sds_len(error_msg));
@@ -644,20 +660,31 @@ unpack_error:
     }
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    mk_http_status(request, response);
-    mk_http_send(request,
-                 out_buf, flb_sds_len(out_buf), NULL);
-    mk_http_done(request);
+    flb_hs_response_set_payload(http_response, http_status,
+                                FLB_HS_CONTENT_TYPE_JSON,
+                                out_buf, flb_sds_len(out_buf));
 
     flb_sds_destroy(out_buf);
+    return 0;
 }
 
 /* Perform registration */
 int api_v1_trace(struct flb_hs *hs)
 {
+    int ret;
+
     if (hs->config->enable_chunk_trace == FLB_TRUE) {
-        mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/traces/", cb_traces, hs);
-        mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/trace/*", cb_trace, hs);
+        ret = flb_hs_register_endpoint(hs, "/api/v1/traces/",
+                                       FLB_HS_ROUTE_EXACT, cb_traces);
+        if (ret != 0) {
+            return ret;
+        }
+
+        ret = flb_hs_register_endpoint(hs, "/api/v1/trace/",
+                                       FLB_HS_ROUTE_PREFIX, cb_trace);
+        if (ret != 0) {
+            return ret;
+        }
     }
     return 0;
 }

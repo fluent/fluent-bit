@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -1072,7 +1072,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_STR, "http_passwd", "",
+     FLB_CONFIG_MAP_STR, "http_passwd", NULL,
      0, FLB_TRUE, offsetof(struct flb_splunk, http_passwd),
      "Set HTTP auth password"
     },

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_fstore.h>
 #include <msgpack.h>
 #include <fluent-bit/flb_version.h>
+#include <inttypes.h>
 
 #include "azure_kusto.h"
 #include "azure_kusto_conf.h"
@@ -182,7 +183,7 @@ flb_sds_t execute_ingest_csl_command(struct flb_azure_kusto *ctx, const char *cs
     flb_plg_debug(ctx->ins, "Logging attributes of flb_azure_kusto_resources:");
     flb_plg_debug(ctx->ins, "blob_ha: %p", ctx->resources->blob_ha);
     flb_plg_debug(ctx->ins, "queue_ha: %p", ctx->resources->queue_ha);
-    flb_plg_debug(ctx->ins, "load_time: %llu", ctx->resources->load_time);
+    flb_plg_debug(ctx->ins, "load_time: %" PRIu64, ctx->resources->load_time);
 
     ctx->u->base.net.connect_timeout = ctx->ingestion_endpoint_connect_timeout;
     if (ctx->buffering_enabled == FLB_TRUE){

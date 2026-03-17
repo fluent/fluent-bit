@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -19,6 +19,11 @@
 
 #include <fluent-bit.h>
 #include <fluent-bit/flb_pack_json.h>
+
+int flb_pack_json_legacy(const char *js, size_t len, char **buffer, size_t *size,
+                         int *root_type, size_t *consumed);
+int flb_pack_json_recs_legacy(const char *js, size_t len, char **buffer, size_t *size,
+                              int *root_type, int *out_records, size_t *consumed);
 
 static int flb_pack_json_ext_internal(const char *json, size_t len,
                                       char **out_buf, size_t *out_size,
@@ -64,12 +69,12 @@ static int flb_pack_json_ext_internal(const char *json, size_t len,
         }
 
         if (require_records) {
-            return flb_pack_json_recs(json, len, out_buf, out_size,
-                                      out_root_type, out_records, consumed);
+            return flb_pack_json_recs_legacy(json, len, out_buf, out_size,
+                                             out_root_type, out_records, consumed);
         }
 
-        return flb_pack_json(json, len, out_buf, out_size,
-                             out_root_type, NULL);
+        return flb_pack_json_legacy(json, len, out_buf, out_size,
+                                    out_root_type, NULL);
     }
     else if (backend == FLB_PACK_JSON_BACKEND_YYJSON) {
         if (require_records) {

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -38,10 +38,12 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/http_server/flb_http_server_config_map.h>
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_ring_buffer.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_oauth2_jwt.h>
 
 /* input plugin macro helpers */
 #include <fluent-bit/flb_input_plugin.h>
@@ -54,6 +56,52 @@ struct flb_libco_in_params libco_in_param;
 pthread_key_t libco_in_param_key;
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
+
+static void flb_input_ingress_primitives_destroy(struct flb_input_instance *ins)
+{
+    if (ins == NULL) {
+        return;
+    }
+
+    pthread_mutex_destroy(&ins->ingress_queue_lock);
+    pthread_cond_destroy(&ins->ingress_queue_space_available);
+}
+
+static int flb_input_ingress_primitives_init(struct flb_input_instance *ins)
+{
+    int result;
+    pthread_condattr_t attr;
+
+    result = pthread_mutex_init(&ins->ingress_queue_lock, NULL);
+    if (result != 0) {
+        return -1;
+    }
+
+    result = pthread_condattr_init(&attr);
+    if (result != 0) {
+        pthread_mutex_destroy(&ins->ingress_queue_lock);
+        return -1;
+    }
+
+#if defined(CLOCK_MONOTONIC) && !defined(FLB_SYSTEM_WINDOWS) && !defined(FLB_SYSTEM_MACOS)
+    result = pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+    if (result != 0) {
+        pthread_condattr_destroy(&attr);
+        pthread_mutex_destroy(&ins->ingress_queue_lock);
+        return -1;
+    }
+#endif
+
+    result = pthread_cond_init(&ins->ingress_queue_space_available, &attr);
+    pthread_condattr_destroy(&attr);
+
+    if (result != 0) {
+        pthread_mutex_destroy(&ins->ingress_queue_lock);
+        return -1;
+    }
+
+    return 0;
+}
 
 /*
  * Ring buffer capacity: by default we make space for 1024 entries that each
@@ -262,6 +310,15 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             flb_errno();
             return NULL;
         }
+
+        instance->http_server_config = flb_calloc(1, sizeof(struct flb_http_server_config));
+        if (!instance->http_server_config) {
+            flb_errno();
+            flb_free(instance);
+            return NULL;
+        }
+
+        flb_http_server_config_init(instance->http_server_config);
         instance->config = config;
 
         /* Get an ID */
@@ -271,6 +328,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->ht_log_chunks = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE,
                                                         512, 0);
         if (!instance->ht_log_chunks) {
+            flb_free(instance->http_server_config);
             flb_free(instance);
             return NULL;
         }
@@ -280,6 +338,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
                                                            512, 0);
         if (!instance->ht_metric_chunks) {
             flb_hash_table_destroy(instance->ht_log_chunks);
+            flb_free(instance->http_server_config);
             flb_free(instance);
             return NULL;
         }
@@ -290,6 +349,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         if (!instance->ht_trace_chunks) {
             flb_hash_table_destroy(instance->ht_log_chunks);
             flb_hash_table_destroy(instance->ht_metric_chunks);
+            flb_free(instance->http_server_config);
             flb_free(instance);
             return NULL;
         }
@@ -301,6 +361,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             flb_hash_table_destroy(instance->ht_log_chunks);
             flb_hash_table_destroy(instance->ht_metric_chunks);
             flb_hash_table_destroy(instance->ht_trace_chunks);
+            flb_free(instance->http_server_config);
             flb_free(instance);
             return NULL;
         }
@@ -318,6 +379,11 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             ctx = flb_calloc(1, sizeof(struct flb_plugin_input_proxy_context));
             if (!ctx) {
                 flb_errno();
+                flb_hash_table_destroy(instance->ht_log_chunks);
+                flb_hash_table_destroy(instance->ht_metric_chunks);
+                flb_hash_table_destroy(instance->ht_trace_chunks);
+                flb_hash_table_destroy(instance->ht_profile_chunks);
+                flb_free(instance->http_server_config);
                 flb_free(instance);
                 return NULL;
             }
@@ -365,11 +431,61 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         /* Initialize properties list */
         flb_kv_init(&instance->properties);
         flb_kv_init(&instance->net_properties);
+       flb_kv_init(&instance->http_server_properties);
+        flb_kv_init(&instance->oauth2_jwt_properties);
+        mk_list_init(&instance->ingress_queue);
+        ret = flb_input_ingress_primitives_init(instance);
+        if (ret != 0) {
+            if (instance->ht_log_chunks) {
+                flb_hash_table_destroy(instance->ht_log_chunks);
+            }
+            if (instance->ht_metric_chunks) {
+                flb_hash_table_destroy(instance->ht_metric_chunks);
+            }
+            if (instance->ht_trace_chunks) {
+                flb_hash_table_destroy(instance->ht_trace_chunks);
+            }
+            if (instance->ht_profile_chunks) {
+                flb_hash_table_destroy(instance->ht_profile_chunks);
+            }
+            if (plugin->type != FLB_INPUT_PLUGIN_CORE && instance->context) {
+                flb_free(instance->context);
+            }
+            flb_free(instance->http_server_config);
+            flb_free(instance);
+            return NULL;
+        }
+        instance->ingress_queue_channels[0] = -1;
+        instance->ingress_queue_channels[1] = -1;
+        instance->ingress_queue_enabled = FLB_FALSE;
+        instance->ingress_queue_collector_id = -1;
+        instance->ingress_queue_signal_pending = FLB_FALSE;
+        instance->ingress_queue_pending_events = 0;
+        instance->ingress_queue_pending_bytes = 0;
+        instance->ingress_queue_event_limit = 8192;
+        instance->ingress_queue_byte_limit = 256 * 1024 * 1024;
 
         /* Plugin use networking */
         if (plugin->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) {
             ret = flb_net_host_set(plugin->name, &instance->host, input);
             if (ret != 0) {
+                if (instance->ht_log_chunks) {
+                    flb_hash_table_destroy(instance->ht_log_chunks);
+                }
+                if (instance->ht_metric_chunks) {
+                    flb_hash_table_destroy(instance->ht_metric_chunks);
+                }
+                if (instance->ht_trace_chunks) {
+                    flb_hash_table_destroy(instance->ht_trace_chunks);
+                }
+                if (instance->ht_profile_chunks) {
+                    flb_hash_table_destroy(instance->ht_profile_chunks);
+                }
+                if (plugin->type != FLB_INPUT_PLUGIN_CORE && instance->context) {
+                    flb_free(instance->context);
+                }
+                flb_input_ingress_primitives_destroy(instance);
+                flb_free(instance->http_server_config);
                 flb_free(instance);
                 return NULL;
             }
@@ -427,6 +543,19 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         if (!instance->rb) {
             flb_error("instance %s could not initialize ring buffer",
                       flb_input_name(instance));
+            flb_hash_table_destroy(instance->ht_log_chunks);
+            flb_hash_table_destroy(instance->ht_metric_chunks);
+            flb_hash_table_destroy(instance->ht_trace_chunks);
+            flb_hash_table_destroy(instance->ht_profile_chunks);
+            if (plugin->type != FLB_INPUT_PLUGIN_CORE) {
+                flb_free(instance->context);
+            }
+            flb_sds_destroy(instance->host.name);
+            flb_sds_destroy(instance->host.address);
+            flb_uri_destroy(instance->host.uri);
+            flb_sds_destroy(instance->host.listen);
+            flb_input_ingress_primitives_destroy(instance);
+            flb_free(instance->http_server_config);
             flb_free(instance);
             return NULL;
         }
@@ -632,6 +761,26 @@ int flb_input_set_property(struct flb_input_instance *ins,
             if (tmp) {
                 flb_sds_destroy(tmp);
             }
+            return -1;
+        }
+        kv->val = tmp;
+    }
+    else if (strncasecmp("oauth2", k, 6) == 0 && tmp) {
+        kv = flb_kv_item_create(&ins->oauth2_jwt_properties, (char *) k, NULL);
+        if (!kv) {
+            if (tmp) {
+                flb_sds_destroy(tmp);
+            }
+            return -1;
+        }
+        kv->val = tmp;
+    }
+    else if ((ins->p->flags & FLB_INPUT_HTTP_SERVER) != 0 &&
+             flb_http_server_property_is_allowed(k) == FLB_TRUE &&
+             tmp != NULL) {
+        kv = flb_kv_item_create(&ins->http_server_properties, (char *) k, NULL);
+        if (!kv) {
+            flb_sds_destroy(tmp);
             return -1;
         }
         kv->val = tmp;
@@ -878,6 +1027,8 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     /* release properties */
     flb_kv_release(&ins->properties);
     flb_kv_release(&ins->net_properties);
+    flb_kv_release(&ins->http_server_properties);
+    flb_kv_release(&ins->oauth2_jwt_properties);
 
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -906,6 +1057,18 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     if (ins->net_config_map) {
         flb_config_map_destroy(ins->net_config_map);
+    }
+
+    if (ins->http_server_config_map) {
+        flb_config_map_destroy(ins->http_server_config_map);
+    }
+
+    if (ins->http_server_config) {
+        flb_free(ins->http_server_config);
+    }
+
+    if (ins->oauth2_jwt_config_map) {
+        flb_config_map_destroy(ins->oauth2_jwt_config_map);
     }
 
     /* hash table for chunks */
@@ -937,12 +1100,25 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
         mk_event_closesocket(ins->ch_events[1]);
     }
 
+    if (ins->ingress_queue_channels[0] > 0) {
+        mk_event_closesocket(ins->ingress_queue_channels[0]);
+    }
+
+    if (ins->ingress_queue_channels[1] > 0) {
+        mk_event_closesocket(ins->ingress_queue_channels[1]);
+    }
+
+    flb_input_ingress_destroy(ins);
+
     /* Collectors */
     mk_list_foreach_safe(head, tmp, &ins->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
         mk_list_del(&collector->_head);
         flb_input_collector_destroy(collector);
     }
+
+    pthread_mutex_destroy(&ins->ingress_queue_lock);
+    pthread_cond_destroy(&ins->ingress_queue_space_available);
 
     /* delete storage context */
     flb_storage_input_destroy(ins);
@@ -1056,8 +1232,32 @@ int flb_input_plugin_property_check(struct flb_input_instance *ins,
                                     struct flb_config *config)
 {
     int ret = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
     struct mk_list *config_map;
+    struct flb_kv *kv;
+    struct flb_kv *moved;
     struct flb_input_plugin *p = ins->p;
+
+    if ((p->flags & FLB_INPUT_HTTP_SERVER) != 0) {
+        mk_list_foreach_safe(head, tmp, &ins->properties) {
+            kv = mk_list_entry(head, struct flb_kv, _head);
+
+            if (flb_http_server_property_is_allowed(kv->key) == FLB_FALSE) {
+                continue;
+            }
+
+            moved = flb_kv_item_create(&ins->http_server_properties, kv->key, NULL);
+            if (moved == NULL) {
+                return -1;
+            }
+
+            moved->val = kv->val;
+            kv->val = NULL;
+            mk_list_del(&kv->_head);
+            flb_kv_item_destroy(kv);
+        }
+    }
 
     if (p->config_map) {
         /*
@@ -1076,6 +1276,67 @@ int flb_input_plugin_property_check(struct flb_input_instance *ins,
         /* Validate incoming properties against config map */
         ret = flb_config_map_properties_check(ins->p->name,
                                               &ins->properties, ins->config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -i %s -h\n",
+                           config->program_name, ins->p->name);
+            }
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+int flb_input_oauth2_jwt_property_check(struct flb_input_instance *ins,
+                                        struct flb_config *config)
+{
+    int ret = 0;
+
+    /* Get OAuth2 JWT configmap */
+    ins->oauth2_jwt_config_map = flb_oauth2_jwt_get_config_map(config);
+    if (!ins->oauth2_jwt_config_map) {
+        flb_input_instance_destroy(ins);
+        return -1;
+    }
+
+    /*
+     * Validate 'oauth2*' properties: if the plugin uses OAuth2 JWT,
+     * it might receive OAuth2 JWT settings.
+     */
+    if (mk_list_size(&ins->oauth2_jwt_properties) > 0) {
+        ret = flb_config_map_properties_check(ins->p->name,
+                                              &ins->oauth2_jwt_properties,
+                                              ins->oauth2_jwt_config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -i %s -h\n",
+                           config->program_name, ins->p->name);
+            }
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int flb_input_http_server_property_check(struct flb_input_instance *ins,
+                                                struct flb_config *config)
+{
+    int ret = 0;
+
+    if (ins->http_server_config_map == NULL) {
+        ins->http_server_config_map = flb_http_server_get_config_map(config);
+        if (!ins->http_server_config_map) {
+            flb_input_instance_destroy(ins);
+            return -1;
+        }
+    }
+
+    if (mk_list_size(&ins->http_server_properties) > 0) {
+        ret = flb_config_map_properties_check(ins->p->name,
+                                              &ins->http_server_properties,
+                                              ins->http_server_config_map);
         if (ret == -1) {
             if (config->program_name) {
                 flb_helper("try the command: %s -i %s -h\n",
@@ -1279,6 +1540,23 @@ int flb_input_instance_init(struct flb_input_instance *ins,
      */
     if (flb_input_plugin_property_check(ins, config) == -1) {
         return -1;
+    }
+
+    /*
+     * Validate 'oauth2*' properties: if the plugin uses OAuth2 JWT,
+     * it might receive OAuth2 JWT settings.
+     */
+    if (mk_list_size(&ins->oauth2_jwt_properties) > 0) {
+        if (flb_input_oauth2_jwt_property_check(ins, config) == -1) {
+            return -1;
+        }
+    }
+
+    if ((p->flags & FLB_INPUT_HTTP_SERVER) != 0 ||
+        mk_list_size(&ins->http_server_properties) > 0) {
+        if (flb_input_http_server_property_check(ins, config) == -1) {
+            return -1;
+        }
     }
 
 #ifdef FLB_HAVE_TLS
@@ -1535,7 +1813,6 @@ void flb_input_instance_exit(struct flb_input_instance *ins,
     }
 }
 
-/* Invoke all exit input callbacks */
 void flb_input_exit_all(struct flb_config *config)
 {
     struct mk_list *tmp;
@@ -1543,7 +1820,6 @@ void flb_input_exit_all(struct flb_config *config)
     struct flb_input_instance *ins;
     struct flb_input_plugin *p;
 
-    /* Iterate instances */
     mk_list_foreach_safe_r(head, tmp, &config->inputs) {
         ins = mk_list_entry(head, struct flb_input_instance, _head);
         p = ins->p;
@@ -1551,10 +1827,7 @@ void flb_input_exit_all(struct flb_config *config)
             continue;
         }
 
-        /* invoke plugin instance exit callback */
         flb_input_instance_exit(ins, config);
-
-        /* destroy the instance */
         flb_input_instance_destroy(ins);
     }
 }
@@ -1572,7 +1845,7 @@ int flb_input_check(struct flb_config *config)
 /*
  * API for Input plugins
  * =====================
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  * The Input interface provides a certain number of functions that can be
  * used by Input plugins to configure it own behavior and request specific
  *
@@ -1649,25 +1922,11 @@ static struct flb_input_collector *collector_create(int type,
         coll->evl = thi->evl;
     }
     else {
-        struct mk_event_loop *tls_evl;
-
-        /*
-         * Collectors for non-threaded plugins normally run on the main
-         * engine event loop. When a private helper input such as the
-         * emitter is instantiated from within a threaded input (e.g. via
-         * an input processor), the input thread stores its own event loop
-         * in TLS.  Those helper inputs must continue to use the main
-         * engine event loop to avoid spinning the input thread.
+        /* Non-threaded inputs must always attach collectors to the owner
+         * engine loop. Using a transient TLS event loop here can orphan
+         * FD-driven collectors created during plugin initialization.
          */
-        tls_evl = flb_engine_evl_get();
-
-        if (tls_evl != NULL && tls_evl != config->evl &&
-            !(ins->p && (ins->p->flags & FLB_INPUT_PRIVATE))) {
-            coll->evl = tls_evl;
-        }
-        else {
-            coll->evl = config->evl;
-        }
+        coll->evl = config->evl;
     }
 
     /*

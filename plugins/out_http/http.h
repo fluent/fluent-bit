@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -19,6 +19,9 @@
 
 #ifndef FLB_OUT_HTTP_H
 #define FLB_OUT_HTTP_H
+
+#include <fluent-bit/flb_oauth2.h>
+#include <fluent-bit/flb_sds.h>
 
 #define FLB_HTTP_OUT_MSGPACK        FLB_PACK_JSON_FORMAT_NONE
 #define FLB_HTTP_OUT_GELF           20
@@ -67,6 +70,9 @@ struct flb_out_http {
     char *host;
     int port;
 
+    /* HTTP method */
+    int http_method;
+
     /* GELF fields */
     struct flb_gelf_fields gelf_fields;
 
@@ -108,6 +114,11 @@ struct flb_out_http {
 
     /* Plugin instance */
     struct flb_output_instance *ins;
+
+    /* OAuth2 */
+    struct flb_oauth2_config oauth2_config;
+    struct flb_oauth2 *oauth2_ctx;
+    flb_sds_t oauth2_auth_method;
 };
 
 #endif

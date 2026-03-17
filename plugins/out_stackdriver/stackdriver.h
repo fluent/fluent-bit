@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -202,8 +202,12 @@ struct flb_stackdriver {
     /* environment variable settings */
     struct flb_stackdriver_env *env;
 
+    /* oauth2 cache reference */
+    int oauth2_cache_acquired;
+
     /* mutex for acquiring oauth tokens */
     pthread_mutex_t token_mutex;
+    int token_mutex_initialized;
 
     /* upstream context for stackdriver write end-point */
     struct flb_upstream *u;

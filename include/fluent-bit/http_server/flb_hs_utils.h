@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,8 +21,19 @@
 #define FLB_HS_UTIL_H
 
 #include <monkey/mk_lib.h>
+#include <fluent-bit/http_server/flb_hs.h>
 
 int flb_hs_add_content_type_to_req(mk_request_t *request, int type);
+int flb_hs_response_set_content_type(struct flb_http_response *response, int type);
+int flb_hs_response_set_payload(struct flb_http_response *response,
+                                int status,
+                                int type,
+                                const void *payload,
+                                size_t payload_size);
+int flb_hs_response_send_string(struct flb_http_response *response,
+                                int status,
+                                int type,
+                                const char *payload);
 
 /* Content-type */
 enum content_type {

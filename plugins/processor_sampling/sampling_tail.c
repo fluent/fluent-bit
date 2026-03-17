@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2025 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ struct sampling_ctrace_entry {
 struct sampling_settings {
     int decision_wait;
     uint64_t max_traces;
+    int legacy_reconcile;
 
     /* internal */
     void *parent;                   /* struct sampling *ctx */
@@ -42,6 +43,18 @@ struct sampling_settings {
     struct sampling_span_registry *span_reg;
 };
 
+struct reconcile_resource_entry {
+    struct ctrace_resource_span *original;
+    struct ctrace_resource_span *target;
+    struct cfl_list _head;
+};
+
+struct reconcile_scope_entry {
+    struct ctrace_scope_span *original;
+    struct ctrace_scope_span *target;
+    struct cfl_list _head;
+};
+
 static struct flb_config_map settings_config_map[] = {
     {
         FLB_CONFIG_MAP_TIME, "decision_wait", "30s",
@@ -52,6 +65,10 @@ static struct flb_config_map settings_config_map[] = {
         FLB_CONFIG_MAP_INT, "max_traces", "50000",
         0, FLB_TRUE, offsetof(struct sampling_settings, max_traces),
     },
+    {
+        FLB_CONFIG_MAP_BOOL, "legacy_reconcile", "false",
+        0, FLB_TRUE, offsetof(struct sampling_settings, legacy_reconcile),
+    },
 
     /* EOF */
     {0}
@@ -60,6 +77,21 @@ static struct flb_config_map settings_config_map[] = {
 static struct cfl_array *copy_array(struct cfl_array *array);
 static struct cfl_variant *copy_variant(struct cfl_variant *val);
 static struct cfl_kvlist *copy_kvlist(struct cfl_kvlist *kv);
+static void destroy_reconcile_cache(struct cfl_list *resource_cache,
+                                    struct cfl_list *scope_cache);
+static struct reconcile_resource_entry *find_resource_cache_entry(
+    struct cfl_list *resource_cache, struct ctrace_resource_span *original);
+static struct reconcile_scope_entry *find_scope_cache_entry(
+    struct cfl_list *scope_cache, struct ctrace_scope_span *original);
+static int get_or_create_resource_span(struct sampling *ctx, struct ctrace *ctr,
+                                       struct cfl_list *resource_cache,
+                                       struct ctrace_resource_span *original,
+                                       struct ctrace_resource_span **target);
+static int get_or_create_scope_span(struct sampling *ctx,
+                                    struct cfl_list *scope_cache,
+                                    struct ctrace_scope_span *original,
+                                    struct ctrace_resource_span *target_resource_span,
+                                    struct ctrace_scope_span **target_scope_span);
 
 /* delete a list ctrace entry */
 static void list_ctrace_delete_entry(struct sampling *ctx, struct sampling_ctrace_entry *ctrace_entry)
@@ -266,18 +298,193 @@ struct ctrace_attributes *copy_attributes(struct sampling *ctx, struct ctrace_at
     return attr_copy;
 };
 
-static struct ctrace *reconcile_and_create_ctrace(struct sampling *ctx, struct sampling_settings *settings, struct trace_entry *t_entry)
+static void destroy_reconcile_cache(struct cfl_list *resource_cache,
+                                    struct cfl_list *scope_cache)
 {
+    struct cfl_list *head;
+    struct cfl_list *tmp;
+    struct reconcile_resource_entry *resource_entry;
+    struct reconcile_scope_entry *scope_entry;
+
+    cfl_list_foreach_safe(head, tmp, scope_cache) {
+        scope_entry = cfl_list_entry(head, struct reconcile_scope_entry, _head);
+        cfl_list_del(&scope_entry->_head);
+        flb_free(scope_entry);
+    }
+
+    cfl_list_foreach_safe(head, tmp, resource_cache) {
+        resource_entry = cfl_list_entry(head, struct reconcile_resource_entry, _head);
+        cfl_list_del(&resource_entry->_head);
+        flb_free(resource_entry);
+    }
+}
+
+static struct reconcile_resource_entry *find_resource_cache_entry(
+    struct cfl_list *resource_cache, struct ctrace_resource_span *original)
+{
+    struct cfl_list *head;
+    struct reconcile_resource_entry *entry;
+
+    cfl_list_foreach(head, resource_cache) {
+        entry = cfl_list_entry(head, struct reconcile_resource_entry, _head);
+        if (entry->original == original) {
+            return entry;
+        }
+    }
+
+    return NULL;
+}
+
+static struct reconcile_scope_entry *find_scope_cache_entry(
+    struct cfl_list *scope_cache, struct ctrace_scope_span *original)
+{
+    struct cfl_list *head;
+    struct reconcile_scope_entry *entry;
+
+    cfl_list_foreach(head, scope_cache) {
+        entry = cfl_list_entry(head, struct reconcile_scope_entry, _head);
+        if (entry->original == original) {
+            return entry;
+        }
+    }
+
+    return NULL;
+}
+
+static int get_or_create_resource_span(struct sampling *ctx, struct ctrace *ctr,
+                                       struct cfl_list *resource_cache,
+                                       struct ctrace_resource_span *original,
+                                       struct ctrace_resource_span **target)
+{
+    struct reconcile_resource_entry *entry;
+    struct ctrace_resource_span *new_resource_span;
+    struct ctrace_resource *new_resource;
+    struct ctrace_attributes *attr;
+
+    entry = find_resource_cache_entry(resource_cache, original);
+    if (entry != NULL) {
+        *target = entry->target;
+        return 0;
+    }
+
+    new_resource_span = ctr_resource_span_create(ctr);
+    if (!new_resource_span) {
+        flb_plg_error(ctx->ins, "could not create resource span");
+        return -1;
+    }
+
+    new_resource = ctr_resource_span_get_resource(new_resource_span);
+    if (!new_resource) {
+        flb_plg_error(ctx->ins, "could not get resource");
+        return -1;
+    }
+
+    if (original->resource != NULL && original->resource->attr != NULL) {
+        attr = copy_attributes(ctx, original->resource->attr);
+        if (attr != NULL) {
+            ctr_resource_set_attributes(new_resource, attr);
+        }
+    }
+
+    if (original->resource != NULL &&
+        original->resource->dropped_attr_count > 0) {
+        ctr_resource_set_dropped_attr_count(new_resource,
+                                            original->resource->dropped_attr_count);
+    }
+
+    if (original->schema_url != NULL) {
+        ctr_resource_span_set_schema_url(new_resource_span, original->schema_url);
+    }
+
+    entry = flb_calloc(1, sizeof(struct reconcile_resource_entry));
+    if (!entry) {
+        flb_errno();
+        return -1;
+    }
+    entry->original = original;
+    entry->target = new_resource_span;
+    cfl_list_add(&entry->_head, resource_cache);
+
+    *target = new_resource_span;
+
+    return 0;
+}
+
+static int get_or_create_scope_span(struct sampling *ctx,
+                                    struct cfl_list *scope_cache,
+                                    struct ctrace_scope_span *original,
+                                    struct ctrace_resource_span *target_resource_span,
+                                    struct ctrace_scope_span **target_scope_span)
+{
+    struct reconcile_scope_entry *entry;
+    struct ctrace_scope_span *new_scope_span;
+    struct ctrace_instrumentation_scope *new_instrumentation_scope;
+    struct ctrace_attributes *attr;
+
+    entry = find_scope_cache_entry(scope_cache, original);
+    if (entry != NULL) {
+        *target_scope_span = entry->target;
+        return 0;
+    }
+
+    new_scope_span = ctr_scope_span_create(target_resource_span);
+    if (!new_scope_span) {
+        flb_plg_error(ctx->ins, "could not create scope span");
+        return -1;
+    }
+
+    if (original->instrumentation_scope != NULL) {
+        attr = NULL;
+
+        if (original->instrumentation_scope->attr != NULL) {
+            attr = copy_attributes(ctx, original->instrumentation_scope->attr);
+        }
+
+        new_instrumentation_scope = ctr_instrumentation_scope_create(
+            original->instrumentation_scope->name,
+            original->instrumentation_scope->version,
+            original->instrumentation_scope->dropped_attr_count,
+            attr);
+
+        if (new_instrumentation_scope != NULL) {
+            ctr_scope_span_set_instrumentation_scope(new_scope_span,
+                                                     new_instrumentation_scope);
+        }
+    }
+
+    entry = flb_calloc(1, sizeof(struct reconcile_scope_entry));
+    if (!entry) {
+        flb_errno();
+        return -1;
+    }
+    entry->original = original;
+    entry->target = new_scope_span;
+    cfl_list_add(&entry->_head, scope_cache);
+
+    *target_scope_span = new_scope_span;
+
+    return 0;
+}
+
+static struct ctrace *reconcile_and_create_ctrace_optimized(struct sampling *ctx,
+                                                             struct sampling_settings *settings,
+                                                             struct trace_entry *t_entry)
+{
+    int ret;
     struct cfl_list *tmp;
     struct cfl_list *head;
     struct trace_span *t_span;
     struct ctrace *ctr = NULL;
-    struct ctrace_resource_span *resource_span = NULL;
-    struct ctrace_resource *resource = NULL;
-    struct ctrace_scope_span *scope_span = NULL;
-    struct ctrace_instrumentation_scope *instrumentation_scope = NULL;
+    struct ctrace_scope_span *target_scope_span;
+    struct ctrace_resource_span *target_resource_span;
+    struct ctrace_scope_span *original_scope_span;
+    struct ctrace_resource_span *original_resource_span;
     struct ctrace_span *span;
-    struct ctrace_attributes *attr;
+    struct cfl_list resource_cache;
+    struct cfl_list scope_cache;
+
+    cfl_list_init(&resource_cache);
+    cfl_list_init(&scope_cache);
 
     /* for each complete trace, reconcile, convert to ctrace context and enqueue it */
     cfl_list_foreach_safe(head, tmp, &t_entry->span_list) {
@@ -293,7 +500,93 @@ static struct ctrace *reconcile_and_create_ctrace(struct sampling *ctx, struct s
             }
         }
 
-        /* create a resource span */
+        original_scope_span = span->scope_span;
+        original_resource_span = original_scope_span->resource_span;
+
+        ret = get_or_create_resource_span(ctx, ctr, &resource_cache,
+                                          original_resource_span,
+                                          &target_resource_span);
+        if (ret != 0) {
+            destroy_reconcile_cache(&resource_cache, &scope_cache);
+            ctr_destroy(ctr);
+            return NULL;
+        }
+
+        ret = get_or_create_scope_span(ctx, &scope_cache, original_scope_span,
+                                       target_resource_span, &target_scope_span);
+        if (ret != 0) {
+            destroy_reconcile_cache(&resource_cache, &scope_cache);
+            ctr_destroy(ctr);
+            return NULL;
+        }
+
+        /*
+         * Detach the span from its previous context completely and
+         * re-attach it to the new one. If we only move the local list
+         * reference (span->_head) the span would still belong to the
+         * original ctrace context which later on might lead to use after
+         * free issues when the new context is destroyed. Make sure to
+         * update all references.
+         */
+
+        /* detach from the original scope span and global list */
+        /*
+         * Detach the span from its previous context completely and
+         * re-attach it to the new one. If we only move the local list
+         * reference (span->_head) the span would still belong to the
+         * original ctrace context which later on might lead to use after
+         * free issues when the new context is destroyed. Make sure to
+         * update all references.
+         */
+        cfl_list_del(&span->_head);
+        cfl_list_del(&span->_head_global);
+
+        /* update parent references */
+        span->scope_span = target_scope_span;
+        span->ctx = ctr;
+
+        /* link to the new scope span and ctrace context */
+        cfl_list_add(&span->_head, &target_scope_span->spans);
+        cfl_list_add(&span->_head_global, &ctr->span_list);
+
+        /* remote t_span entry */
+        cfl_list_del(&t_span->_head);
+        flb_free(t_span);
+    }
+
+    destroy_reconcile_cache(&resource_cache, &scope_cache);
+    sampling_span_registry_delete_entry(ctx, settings->span_reg, t_entry, FLB_FALSE);
+
+    return ctr;
+}
+
+static struct ctrace *reconcile_and_create_ctrace_legacy(struct sampling *ctx,
+                                                          struct sampling_settings *settings,
+                                                          struct trace_entry *t_entry)
+{
+    struct cfl_list *tmp;
+    struct cfl_list *head;
+    struct trace_span *t_span;
+    struct ctrace *ctr = NULL;
+    struct ctrace_resource_span *resource_span = NULL;
+    struct ctrace_resource *resource = NULL;
+    struct ctrace_scope_span *scope_span = NULL;
+    struct ctrace_instrumentation_scope *instrumentation_scope = NULL;
+    struct ctrace_span *span;
+    struct ctrace_attributes *attr;
+
+    cfl_list_foreach_safe(head, tmp, &t_entry->span_list) {
+        t_span = cfl_list_entry(head, struct trace_span, _head);
+        span = t_span->span;
+
+        if (!ctr) {
+            ctr = ctr_create(NULL);
+            if (!ctr) {
+                flb_plg_error(ctx->ins, "could not create ctrace context");
+                return NULL;
+            }
+        }
+
         if (!resource_span) {
             resource_span = ctr_resource_span_create(ctr);
             if (!resource_span) {
@@ -311,7 +604,6 @@ static struct ctrace *reconcile_and_create_ctrace(struct sampling *ctx, struct s
                 return NULL;
             }
 
-            /* resource attributes */
             if (span->scope_span->resource_span->resource->attr) {
                 attr = copy_attributes(ctx, span->scope_span->resource_span->resource->attr);
                 if (attr) {
@@ -319,14 +611,14 @@ static struct ctrace *reconcile_and_create_ctrace(struct sampling *ctx, struct s
                 }
             }
 
-            /* resource dropped attributes count */
             if (span->scope_span->resource_span->resource->dropped_attr_count) {
-                ctr_resource_set_dropped_attr_count(resource, span->scope_span->resource_span->resource->dropped_attr_count);
+                ctr_resource_set_dropped_attr_count(
+                    resource, span->scope_span->resource_span->resource->dropped_attr_count);
             }
 
-            /* resource schema url */
             if (span->scope_span->resource_span->schema_url) {
-                ctr_resource_span_set_schema_url(resource_span, span->scope_span->resource_span->schema_url);
+                ctr_resource_span_set_schema_url(resource_span,
+                                                 span->scope_span->resource_span->schema_url);
             }
         }
 
@@ -340,51 +632,39 @@ static struct ctrace *reconcile_and_create_ctrace(struct sampling *ctx, struct s
         }
 
         if (!instrumentation_scope) {
-            /* this is optional, check in the original span context if we have some instrumentation associated */
             if (span->scope_span->instrumentation_scope) {
                 attr = NULL;
+
                 if (span->scope_span->instrumentation_scope->attr) {
                     attr = copy_attributes(ctx, span->scope_span->instrumentation_scope->attr);
                 }
 
-                instrumentation_scope = ctr_instrumentation_scope_create(span->scope_span->instrumentation_scope->name,
-                                                                         span->scope_span->instrumentation_scope->version,
-                                                                         span->scope_span->instrumentation_scope->dropped_attr_count,
-                                                                         attr);
+                instrumentation_scope = ctr_instrumentation_scope_create(
+                    span->scope_span->instrumentation_scope->name,
+                    span->scope_span->instrumentation_scope->version,
+                    span->scope_span->instrumentation_scope->dropped_attr_count,
+                    attr);
+
                 if (instrumentation_scope) {
                     ctr_scope_span_set_instrumentation_scope(scope_span, instrumentation_scope);
                 }
             }
         }
 
-        /*
-         * Detach the span from its previous context completely and
-         * re-attach it to the new one. If we only move the local list
-         * reference (span->_head) the span would still belong to the
-         * original ctrace context which later on might lead to use after
-         * free issues when the new context is destroyed. Make sure to
-         * update all references.
-         */
-
-        /* detach from the original scope span and global list */
         cfl_list_del(&span->_head);
         cfl_list_del(&span->_head_global);
 
-        /* update parent references */
         span->scope_span = scope_span;
         span->ctx = ctr;
 
-        /* link to the new scope span and ctrace context */
         cfl_list_add(&span->_head, &scope_span->spans);
         cfl_list_add(&span->_head_global, &ctr->span_list);
 
-        /* reset all the contexts */
         resource_span = NULL;
         resource = NULL;
         scope_span = NULL;
         instrumentation_scope = NULL;
 
-        /* remote t_span entry */
         cfl_list_del(&t_span->_head);
         flb_free(t_span);
     }
@@ -443,7 +723,12 @@ static int reconcile_and_dispatch_traces(struct sampling *ctx, struct sampling_s
         }
 
         /* Compose a new ctrace context using the spans associated to the same trace_id */
-        ctr = reconcile_and_create_ctrace(ctx, settings, t_entry);
+        if (settings->legacy_reconcile) {
+            ctr = reconcile_and_create_ctrace_legacy(ctx, settings, t_entry);
+        }
+        else {
+            ctr = reconcile_and_create_ctrace_optimized(ctx, settings, t_entry);
+        }
         if (!ctr) {
             flb_plg_error(ctx->ins, "could not reconcile and create ctrace context");
             return -1;
@@ -460,6 +745,66 @@ static int reconcile_and_dispatch_traces(struct sampling *ctx, struct sampling_s
 
     return 0;
 }
+
+#ifdef FLB_SAMPLING_BENCH
+int sampling_tail_bench_reconcile(struct sampling *ctx,
+                                  struct sampling_span_registry *span_reg,
+                                  int legacy_reconcile,
+                                  int decision_wait,
+                                  uint64_t *out_traces,
+                                  uint64_t *out_spans)
+{
+    time_t now;
+    struct cfl_list *tmp;
+    struct cfl_list *head;
+    struct trace_entry *t_entry;
+    struct ctrace *ctr;
+    struct sampling_settings settings;
+
+    settings.span_reg = span_reg;
+    settings.legacy_reconcile = legacy_reconcile;
+    settings.decision_wait = decision_wait;
+
+    if (out_traces) {
+        *out_traces = 0;
+    }
+    if (out_spans) {
+        *out_spans = 0;
+    }
+
+    now = time(NULL);
+
+    cfl_list_foreach_safe(head, tmp, &settings.span_reg->trace_list) {
+        t_entry = cfl_list_entry(head, struct trace_entry, _head);
+
+        if (t_entry->ts_created + settings.decision_wait > now) {
+            continue;
+        }
+
+        if (settings.legacy_reconcile) {
+            ctr = reconcile_and_create_ctrace_legacy(ctx, &settings, t_entry);
+        }
+        else {
+            ctr = reconcile_and_create_ctrace_optimized(ctx, &settings, t_entry);
+        }
+
+        if (!ctr) {
+            return -1;
+        }
+
+        if (out_traces) {
+            (*out_traces)++;
+        }
+        if (out_spans) {
+            (*out_spans) += cfl_list_size(&ctr->span_list);
+        }
+
+        ctr_destroy(ctr);
+    }
+
+    return 0;
+}
+#endif
 
 static void cb_timer_flush(struct flb_config *config, void *data)
 {

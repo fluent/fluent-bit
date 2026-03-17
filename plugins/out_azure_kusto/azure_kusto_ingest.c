@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_version.h>
 
 #include <math.h>
+#include <inttypes.h>
 #include <msgpack.h>
 
 #include "azure_kusto_ingest.h"
@@ -139,7 +140,6 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
     int ret = -1;
     flb_sds_t uri = NULL;
     struct flb_upstream_node *u_node;
-    struct flb_forward_config *fc = NULL;
     struct flb_connection *u_conn = NULL;
     struct flb_http_client *c = NULL;
     size_t resp_size;
@@ -147,8 +147,6 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
     struct tm tm;
     char tmp[64];
     int len;
-
-    struct timespec ts;
 
     now = time(NULL);
     gmtime_r(&now, &tm);
@@ -159,9 +157,6 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
         flb_plg_error(ctx->ins, "error getting blob upstream");
         return NULL;
     }
-
-    /* Get forward_config stored in node opaque data */
-    fc = flb_upstream_node_get_data(u_node);
 
     flb_plg_debug(ctx->ins,"inside blob after upstream ha node get");
     u_node->u->base.net.connect_timeout = ctx->ingestion_endpoint_connect_timeout;
@@ -194,7 +189,7 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
         }
 
         if (uri) {
-            flb_plg_info(ctx->ins, "azure_kusto: before calling azure storage api :: value of set io_timeout is %d", u_conn->net->io_timeout);
+            flb_plg_debug(ctx->ins, "azure_kusto: before calling azure storage api :: value of set io_timeout is %d", u_conn->net->io_timeout);
             flb_plg_debug(ctx->ins, "uploading payload to blob uri: %s", uri);
             c = flb_http_client(u_conn, FLB_HTTP_PUT, uri, payload, payload_size, NULL, 0,
                                 NULL, 0);
@@ -590,7 +585,7 @@ static flb_sds_t azure_kusto_create_blob_id(struct flb_azure_kusto *ctx, flb_sds
 
     blob_id = flb_sds_create_size(1024); /* Ensure the size is restricted to 1024 characters */
     if (blob_id) {
-        flb_sds_snprintf(&blob_id, 1024, "flb__%s__%s__%s__%llu__%s__%s",
+        flb_sds_snprintf(&blob_id, 1024, "flb__%s__%s__%s__%" PRIu64 "__%s__%s",
                          ctx->database_name, ctx->table_name, b64tag, ms, timestamp, uuid);
     }
     else {

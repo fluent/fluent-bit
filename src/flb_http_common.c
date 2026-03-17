@@ -256,6 +256,28 @@ char *flb_http_request_get_header(struct flb_http_request *request,
     return (char *) value;
 }
 
+const char *flb_http_request_get_remote_address(struct flb_http_request *request)
+{
+    struct flb_http_server_session *server_session;
+
+    if (request == NULL || request->stream == NULL) {
+        return NULL;
+    }
+
+    if (request->stream->role != HTTP_STREAM_ROLE_SERVER ||
+        request->stream->parent == NULL) {
+        return NULL;
+    }
+
+    server_session = (struct flb_http_server_session *) request->stream->parent;
+
+    if (server_session->connection == NULL) {
+        return NULL;
+    }
+
+    return flb_connection_get_remote_address(server_session->connection);
+}
+
 int flb_http_request_set_header(struct flb_http_request *request,
                                 char *name, size_t name_length,
                                 char *value, size_t value_length)
@@ -781,6 +803,51 @@ int flb_http_request_set_body(struct flb_http_request *request,
     return 0;
 }
 
+int flb_http_request_normalize(struct flb_http_request *request)
+{
+    char     *query_separator;
+    cfl_sds_t normalized_path;
+    cfl_sds_t normalized_query_string;
+    cfl_sds_t original_path;
+    size_t    path_length;
+
+    if (request == NULL || request->path == NULL) {
+        return 0;
+    }
+
+    original_path = request->path;
+
+    query_separator = strchr(original_path, '?');
+
+    if (query_separator == NULL) {
+        return 0;
+    }
+
+    path_length = (size_t) (query_separator - original_path);
+
+    normalized_path = cfl_sds_create_len(original_path, path_length);
+    if (normalized_path == NULL) {
+        return -1;
+    }
+
+    normalized_query_string = cfl_sds_create(&query_separator[1]);
+    if (normalized_query_string == NULL) {
+        cfl_sds_destroy(normalized_path);
+        return -1;
+    }
+
+    if (request->query_string != NULL) {
+        cfl_sds_destroy(request->query_string);
+    }
+
+    request->path = normalized_path;
+    request->query_string = normalized_query_string;
+
+    cfl_sds_destroy(original_path);
+
+    return 0;
+}
+
 int flb_http_request_perform_signv4_signature(
         struct flb_http_request *request,
         const char *aws_region,
@@ -928,8 +995,26 @@ int flb_http_response_commit(struct flb_http_response *response)
     int len;
     char tmp[64];
     int version;
+    char *server_header;
 
     version = flb_http_response_get_version(response);
+
+    server_header = flb_http_response_get_header(response, "server");
+    if (server_header == NULL) {
+        flb_http_response_set_header(response,
+                                     "server",
+                                     strlen("server"),
+                                     "Fluent Bit",
+                                     strlen("Fluent Bit"));
+    }
+
+    if (flb_http_response_get_header(response, "x-http-engine") == NULL) {
+        flb_http_response_set_header(response,
+                                     "x-http-engine",
+                                     strlen("x-http-engine"),
+                                     "Monkey heritage",
+                                     strlen("Monkey heritage"));
+    }
 
     if (response->body == NULL) {
         flb_http_response_set_header(response,
@@ -1645,4 +1730,3 @@ int compress_gzip(char **output_buffer,
 
     return 1;
 }
-

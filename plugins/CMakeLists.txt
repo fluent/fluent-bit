@@ -276,6 +276,7 @@ if(FLB_KAFKA)
 endif()
 
 REGISTER_IN_PLUGIN("in_fluentbit_metrics")
+REGISTER_IN_PLUGIN("in_fluentbit_logs")
 REGISTER_IN_PLUGIN("in_prometheus_scrape")
 REGISTER_IN_PLUGIN("in_prometheus_textfile")
 REGISTER_IN_PLUGIN("in_emitter")
@@ -349,6 +350,9 @@ REGISTER_PROCESSOR_PLUGIN("processor_metrics_selector")
 REGISTER_PROCESSOR_PLUGIN("processor_opentelemetry_envelope")
 REGISTER_PROCESSOR_PLUGIN("processor_sampling")
 REGISTER_PROCESSOR_PLUGIN("processor_sql")
+if (FLB_RIPSER)
+  REGISTER_PROCESSOR_PLUGIN("processor_tda")
+endif()
 
 # OUTPUTS
 # =======

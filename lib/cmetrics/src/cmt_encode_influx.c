@@ -25,6 +25,7 @@
 #include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_exp_histogram.h>
 #include <cmetrics/cmt_compat.h>
 
 #include <ctype.h>
@@ -159,9 +160,49 @@ static void append_metric_value(struct cmt_map *map,
     double val;
     char tmp[256];
     struct cmt_opts *opts;
+    struct cmt_map fake_map;
+    struct cmt_metric fake_metric;
+    struct cmt_histogram fake_histogram;
+    struct cmt_histogram_buckets fake_buckets;
+    size_t bucket_count;
+    size_t upper_bounds_count;
+    uint64_t *bucket_values;
+    double *upper_bounds;
 
     if (map->type == CMT_HISTOGRAM) {
         return append_histogram_metric_value(map, buf, metric);
+    }
+    else if (map->type == CMT_EXP_HISTOGRAM) {
+        if (cmt_exp_histogram_to_explicit(metric,
+                                          &upper_bounds,
+                                          &upper_bounds_count,
+                                          &bucket_values,
+                                          &bucket_count) == 0) {
+            memset(&fake_map, 0, sizeof(struct cmt_map));
+            memset(&fake_metric, 0, sizeof(struct cmt_metric));
+            memset(&fake_histogram, 0, sizeof(struct cmt_histogram));
+            memset(&fake_buckets, 0, sizeof(struct cmt_histogram_buckets));
+
+            fake_buckets.count = upper_bounds_count;
+            fake_buckets.upper_bounds = upper_bounds;
+            fake_histogram.buckets = &fake_buckets;
+
+            fake_map = *map;
+            fake_map.type = CMT_HISTOGRAM;
+            fake_map.parent = &fake_histogram;
+
+            fake_metric = *metric;
+            fake_metric.hist_buckets = bucket_values;
+            fake_metric.hist_count = metric->exp_hist_count;
+            fake_metric.hist_sum = metric->exp_hist_sum;
+
+            append_histogram_metric_value(&fake_map, buf, &fake_metric);
+
+            free(bucket_values);
+            free(upper_bounds);
+        }
+
+        return;
     }
     else if (map->type == CMT_SUMMARY) {
         return append_summary_metric_value(map, buf, metric);
@@ -340,6 +381,7 @@ cfl_sds_t cmt_encode_influx_create(struct cmt *cmt)
     struct cmt_untyped *untyped;
     struct cmt_summary *summary;
     struct cmt_histogram *histogram;
+    struct cmt_exp_histogram *exp_histogram;
 
     /* Allocate a 1KB of buffer */
     buf = cfl_sds_create_size(1024);
@@ -369,6 +411,12 @@ cfl_sds_t cmt_encode_influx_create(struct cmt *cmt)
     cfl_list_foreach(head, &cmt->histograms) {
         histogram = cfl_list_entry(head, struct cmt_histogram, _head);
         format_metrics(cmt, &buf, histogram->map);
+    }
+
+    /* Exponential Histograms */
+    cfl_list_foreach(head, &cmt->exp_histograms) {
+        exp_histogram = cfl_list_entry(head, struct cmt_exp_histogram, _head);
+        format_metrics(cmt, &buf, exp_histogram->map);
     }
 
     /* Untyped */

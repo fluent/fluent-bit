@@ -24,6 +24,7 @@
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_exp_histogram.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_filter.h>
 
@@ -87,6 +88,7 @@ static int filter_context_label_key(struct cmt *dst, struct cmt *src,
     struct cmt_gauge *gauge;
     struct cmt_untyped *untyped;
     struct cmt_histogram *histogram;
+    struct cmt_exp_histogram *exp_histogram;
     struct cmt_summary *summary;
 
      /* Counters */
@@ -140,6 +142,20 @@ static int filter_context_label_key(struct cmt *dst, struct cmt *src,
         }
 
         ret = cmt_cat_histogram(dst, histogram, NULL);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    /* Exponential Histogram */
+    cfl_list_foreach(head, &src->exp_histograms) {
+        exp_histogram = cfl_list_entry(head, struct cmt_exp_histogram, _head);
+
+        if (compare_label_keys(exp_histogram->map, label_key, compare_ctx, compare, flags) == CMT_FALSE) {
+            continue;
+        }
+
+        ret = cmt_cat_exp_histogram(dst, exp_histogram, NULL);
         if (ret == -1) {
             return -1;
         }
@@ -260,6 +276,7 @@ static int filter_context_label_key_value(struct cmt *dst, struct cmt *src,
     struct cmt_gauge *gauge;
     struct cmt_untyped *untyped;
     struct cmt_histogram *histogram;
+    struct cmt_exp_histogram *exp_histogram;
     struct cmt_summary *summary;
     size_t index = 0;
 
@@ -415,6 +432,44 @@ static int filter_context_label_key_value(struct cmt *dst, struct cmt *src,
         cmt_map_destroy(map);
     }
 
+    /* Exponential Histogram */
+    cfl_list_foreach(head, &src->exp_histograms) {
+        exp_histogram = cfl_list_entry(head, struct cmt_exp_histogram, _head);
+
+        ret = cmt_cat_copy_label_keys(exp_histogram->map, (char **) &labels);
+        if (ret == -1) {
+            return -1;
+        }
+
+        map = cmt_map_create(CMT_EXP_HISTOGRAM, &exp_histogram->opts,
+                             exp_histogram->map->label_count,
+                             labels, (void *) exp_histogram);
+        free(labels);
+        if (!map) {
+            cmt_log_error(src, "unable to allocate map for exponential histogram");
+            return -1;
+        }
+
+        ret = cmt_cat_copy_map(&exp_histogram->opts, map, exp_histogram->map);
+        if (ret == -1) {
+            cmt_map_destroy(map);
+            return -1;
+        }
+
+        index = filter_get_label_index(map, label_key);
+        if (index != -1) {
+            metrics_map_drop_label_value_pairs(map, index, label_value);
+        }
+
+        ret = cmt_cat_exp_histogram(dst, exp_histogram, map);
+        if (ret == -1) {
+            cmt_map_destroy(map);
+            return -1;
+        }
+
+        cmt_map_destroy(map);
+    }
+
     /* Summary */
     cfl_list_foreach(head, &src->summaries) {
         summary = cfl_list_entry(head, struct cmt_summary, _head);
@@ -510,6 +565,7 @@ static int filter_context_fqname(struct cmt *dst, struct cmt *src,
     struct cmt_gauge *gauge;
     struct cmt_untyped *untyped;
     struct cmt_histogram *histogram;
+    struct cmt_exp_histogram *exp_histogram;
     struct cmt_summary *summary;
 
      /* Counters */
@@ -560,6 +616,19 @@ static int filter_context_fqname(struct cmt *dst, struct cmt *src,
         }
 
         ret = cmt_cat_histogram(dst, histogram, NULL);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    /* Exponential Histogram */
+    cfl_list_foreach(head, &src->exp_histograms) {
+        exp_histogram = cfl_list_entry(head, struct cmt_exp_histogram, _head);
+        if (compare_fqname(exp_histogram->map->opts, fqname, compare_ctx, compare, flags) == CMT_FALSE) {
+            continue;
+        }
+
+        ret = cmt_cat_exp_histogram(dst, exp_histogram, NULL);
         if (ret == -1) {
             return -1;
         }

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -254,6 +254,11 @@ struct flb_config {
     char *storage_type;             /* global storage type */
     int   storage_inherit;          /* apply storage type to inputs */
 
+    /* DLQ for non-retriable output failures */
+    int   storage_keep_rejected;     /* 0/1 */
+    char *storage_rejected_path;     /* relative to storage_path, default "rejected" */
+    void *storage_rejected_stream;  /* NULL until first use */
+
     /* Embedded SQL Database support (SQLite3) */
 #ifdef FLB_HAVE_SQLDB
     struct mk_list sqldb_list;
@@ -415,6 +420,9 @@ enum conf_type {
 #define FLB_CONF_STORAGE_TRIM_FILES    "storage.trim_files"
 #define FLB_CONF_STORAGE_TYPE          "storage.type"
 #define FLB_CONF_STORAGE_INHERIT       "storage.inherit"
+/* Storage DLQ */
+#define FLB_CONF_STORAGE_KEEP_REJECTED "storage.keep.rejected"
+#define FLB_CONF_STORAGE_REJECTED_PATH "storage.rejected.path"
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"

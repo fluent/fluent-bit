@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -74,6 +74,8 @@ static inline char *flb_storage_get_type(int type)
     return NULL;
 }
 
+struct flb_input_instance;
+
 int flb_storage_create(struct flb_config *ctx);
 int flb_storage_input_create(struct cio_ctx *cio,
                              struct flb_input_instance *in);
@@ -86,5 +88,12 @@ struct flb_storage_metrics *flb_storage_metrics_create(struct flb_config *ctx);
 int flb_storage_metrics_update(struct flb_config *config, struct flb_storage_metrics *sm);
 
 void flb_storage_chunk_count(struct flb_config *ctx, int *mem_chunks, int *fs_chunks);
+
+/* DLQ */
+int flb_storage_quarantine_chunk(struct flb_config *ctx,
+                                 struct cio_chunk *ch,
+                                 const char *tag,
+                                 int status_code,
+                                 const char *out_name);
 
 #endif

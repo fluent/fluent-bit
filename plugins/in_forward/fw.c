@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -124,28 +124,37 @@ static int fw_unix_create(struct flb_in_fw_config *ctx)
 static int in_fw_collect(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
+    int                      state_backup;
     struct flb_connection   *connection;
     struct fw_conn          *conn;
     struct flb_in_fw_config *ctx;
 
     ctx = in_context;
 
+    state_backup = ctx->state;
+    ctx->state = FW_INSTANCE_STATE_ACCEPTING_CLIENT;
+
     connection = flb_downstream_conn_get(ctx->downstream);
 
     if (connection == NULL) {
         flb_plg_error(ctx->ins, "could not accept new connection");
+        ctx->state = state_backup;
 
         return -1;
     }
 
     if (!config->is_ingestion_active) {
         flb_downstream_conn_release(connection);
+        ctx->state = state_backup;
+
         return -1;
     }
 
     if(ctx->is_paused) {
         flb_downstream_conn_release(connection);
         flb_plg_trace(ins, "TCP connection will be closed FD=%i", connection->fd);
+        ctx->state = state_backup;
+
         return -1;
     }
 
@@ -154,7 +163,15 @@ static int in_fw_collect(struct flb_input_instance *ins,
     conn = fw_conn_add(connection, ctx);
     if (!conn) {
         flb_downstream_conn_release(connection);
+        ctx->state = state_backup;
+
         return -1;
+    }
+
+    ctx->state = state_backup;
+
+    if (ctx->state == FW_INSTANCE_STATE_PAUSED) {
+        fw_conn_del_all(ctx);
     }
 
     return 0;
@@ -205,6 +222,14 @@ static int setup_users(struct flb_in_fw_config *ctx,
 
         /* As a value we expect a pair of a username and a passowrd */
         split = flb_utils_split(kv->val, ' ', 1);
+        if (split == NULL) {
+            flb_plg_error(ctx->ins,
+                          "invalid value, expected username and password");
+            delete_users(ctx);
+            flb_free(user);
+            return -1;
+        }
+
         if (mk_list_size(split) != 2) {
             flb_plg_error(ctx->ins,
                           "invalid value, expected username and password");
@@ -263,6 +288,7 @@ static int in_fw_init(struct flb_input_instance *ins,
         return -1;
     }
 
+    ctx->state = FW_INSTANCE_STATE_RUNNING;
     ctx->coll_fd = -1;
     ctx->ins = ins;
     mk_list_init(&ctx->connections);
@@ -330,7 +356,7 @@ static int in_fw_init(struct flb_input_instance *ins,
     /* Load users */
     ret = setup_users(ctx, ins);
     if (ret == -1) {
-        flb_free(ctx);
+        fw_config_destroy(ctx);
         return -1;
     }
 
@@ -386,7 +412,10 @@ static void in_fw_pause(void *data, struct flb_config *config)
             return;
         }
 
-        fw_conn_del_all(ctx);
+        if (ctx->state == FW_INSTANCE_STATE_RUNNING) {
+            fw_conn_del_all(ctx);
+        }
+
         ctx->is_paused = FLB_TRUE;
         ret = pthread_mutex_unlock(&ctx->conn_mutex);
         if (ret != 0) {
@@ -406,6 +435,8 @@ static void in_fw_pause(void *data, struct flb_config *config)
     if (config->is_ingestion_active == FLB_FALSE) {
         fw_conn_del_all(ctx);
     }
+
+    ctx->state = FW_INSTANCE_STATE_PAUSED;
 }
 
 static void in_fw_resume(void *data, struct flb_config *config) {
@@ -427,6 +458,8 @@ static void in_fw_resume(void *data, struct flb_config *config) {
             flb_plg_error(ctx->ins, "cannot unlock collector mutex");
             return;
         }
+
+        ctx->state = FW_INSTANCE_STATE_RUNNING;
     }
 }
 
@@ -456,12 +489,12 @@ static struct flb_config_map config_map[] = {
    {
     FLB_CONFIG_MAP_STR, "shared_key", NULL,
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, shared_key),
-    "Shared key for authentication"
+    "Shared key for secure forward authentication."
    },
    {
     FLB_CONFIG_MAP_STR, "self_hostname", NULL,
     0, FLB_FALSE, 0,
-    "Hostname"
+    "Hostname used in the handshake process for secure forward authentication."
    },
    {
     FLB_CONFIG_MAP_STR, "security.users", NULL,
@@ -476,7 +509,7 @@ static struct flb_config_map config_map[] = {
    {
     FLB_CONFIG_MAP_STR, "unix_perm", (char *)NULL,
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, unix_perm_str),
-    "Set the permissions for the UNIX socket"
+    "Set the permissions for the UNIX socket."
    },
    {
     FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", FLB_IN_FW_CHUNK_SIZE,
@@ -491,7 +524,7 @@ static struct flb_config_map config_map[] = {
    {
     FLB_CONFIG_MAP_BOOL, "empty_shared_key", "false",
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, empty_shared_key),
-    "Set an empty shared key for authentication"
+    "Enable an empty string as the shared key for authentication."
    },
    {0}
 };

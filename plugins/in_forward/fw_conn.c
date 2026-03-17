@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,8 +28,7 @@
 #include "fw_prot.h"
 #include "fw_conn.h"
 
-/* Callback invoked every time an event is triggered for a connection */
-int fw_conn_event(void *data)
+static int fw_conn_event_internal(struct flb_connection *connection)
 {
     int ret;
     int bytes;
@@ -39,9 +38,6 @@ int fw_conn_event(void *data)
     struct fw_conn *conn;
     struct mk_event *event;
     struct flb_in_fw_config *ctx;
-    struct flb_connection *connection;
-
-    connection = (struct flb_connection *) data;
 
     conn = connection->user_data;
 
@@ -125,6 +121,37 @@ int fw_conn_event(void *data)
         return -1;
     }
     return 0;
+}
+
+/* Callback invoked every time an event is triggered for a connection */
+int fw_conn_event(void *data)
+{
+    struct flb_in_fw_config *ctx;
+    struct fw_conn          *conn;
+    int                      result;
+    struct flb_connection   *connection;
+    int                      state_backup;
+
+    connection = (struct flb_connection *) data;
+
+    conn = connection->user_data;
+
+    ctx = conn->ctx;
+
+    state_backup = ctx->state;
+
+    ctx->state = FW_INSTANCE_STATE_PROCESSING_PACKET;
+
+    result = fw_conn_event_internal(connection);
+
+    if (ctx->state == FW_INSTANCE_STATE_PROCESSING_PACKET) {
+        ctx->state = state_backup;
+    }
+    else if (ctx->state == FW_INSTANCE_STATE_PAUSED) {
+        fw_conn_del_all(ctx);
+    }
+
+    return result;
 }
 
 /* Create a new Forward request instance */

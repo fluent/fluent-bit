@@ -41,6 +41,10 @@ ARG FLB_UNICODE_ENCODER=Off
 ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 ARG FLB_KAFKA=Off
 ENV FLB_KAFKA=$FLB_KAFKA
+ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
+ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
+ARG FLB_RIPSER=Off
+ENV FLB_RIPSER=$FLB_RIPSER
 
 # centos/7.arm64v8 base image
 FROM arm64v8/centos:7 AS centos-7.arm64v8-base
@@ -77,6 +81,10 @@ ARG FLB_UNICODE_ENCODER=Off
 ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 ARG FLB_KAFKA=Off
 ENV FLB_KAFKA=$FLB_KAFKA
+ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
+ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
+ARG FLB_RIPSER=Off
+ENV FLB_RIPSER=$FLB_RIPSER
 
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
@@ -118,6 +126,10 @@ ARG FLB_UNICODE_ENCODER=On
 ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 ARG FLB_KAFKA=On
 ENV FLB_KAFKA=$FLB_KAFKA
+ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
+ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
+ARG FLB_RIPSER=On
+ENV FLB_RIPSER=$FLB_RIPSER
 
 # centos/8.arm64v8 base image
 FROM arm64v8/centos:8 AS centos-8.arm64v8-base
@@ -157,6 +169,10 @@ ARG FLB_UNICODE_ENCODER=On
 ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 ARG FLB_KAFKA=On
 ENV FLB_KAFKA=$FLB_KAFKA
+ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
+ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
+ARG FLB_RIPSER=On
+ENV FLB_RIPSER=$FLB_RIPSER
 
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
@@ -187,6 +203,8 @@ ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
+ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 
 # hadolint ignore=DL3029
 FROM --platform=arm64 quay.io/centos/centos:stream9 AS centos-9.arm64v8-base
@@ -220,6 +238,10 @@ ARG FLB_UNICODE_ENCODER=On
 ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 ARG FLB_KAFKA=On
 ENV FLB_KAFKA=$FLB_KAFKA
+ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
+ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
+ARG FLB_RIPSER=On
+ENV FLB_RIPSER=$FLB_RIPSER
 
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
@@ -238,7 +260,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
-    libyaml-devel zlib-devel \
+    libyaml-devel zlib-devel libzstd-devel \
     tar gzip && \
     dnf clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -250,6 +272,9 @@ ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+# Use system installed libzstd library.
+ARG FLB_PREFER_SYSTEM_LIB_ZSTD=On
+ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 
 # hadolint ignore=DL3029
 FROM --platform=arm64 quay.io/centos/centos:stream10 AS centos-10.arm64v8-base
@@ -267,7 +292,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
-    libyaml-devel zlib-devel \
+    libyaml-devel zlib-devel libzstd-devel \
     tar gzip && \
     dnf clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -283,6 +308,11 @@ ARG FLB_UNICODE_ENCODER=On
 ENV FLB_UNICODE_ENCODER=$FLB_UNICODE_ENCODER
 ARG FLB_KAFKA=On
 ENV FLB_KAFKA=$FLB_KAFKA
+# Use system installed libzstd library.
+ARG FLB_PREFER_SYSTEM_LIB_ZSTD=On
+ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
+ARG FLB_RIPSER=On
+ENV FLB_RIPSER=$FLB_RIPSER
 
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
@@ -328,6 +358,8 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
     -DFLB_UNICODE_ENCODER="${FLB_UNICODE_ENCODER}" \
+    -DFLB_PREFER_SYSTEM_LIB_ZSTD="${FLB_PREFER_SYSTEM_LIB_ZSTD}" \
+    -DFLB_RIPSER="${FLB_RIPSER}" \
     ../
 
 VOLUME [ "/output" ]

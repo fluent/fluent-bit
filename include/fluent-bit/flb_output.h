@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -83,6 +83,7 @@ int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_inst
 #define FLB_OUTPUT_NO_MULTIPLEX  512  /* run one task at a time, one task per flush */
 #define FLB_OUTPUT_PRIVATE      1024
 #define FLB_OUTPUT_SYNCHRONOUS  2048  /* run one task at a time, no flush cycle limit */
+#define FLB_OUTPUT_HTTP_SERVER  4096  /* output uses the generic HTTP server  */
 
 
 /*
@@ -106,6 +107,7 @@ int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_inst
     const char *tag    = event_chunk->tag;
 
 struct flb_output_flush;
+struct flb_http_server_config;
 
 /*
  * Tests callbacks
@@ -433,6 +435,13 @@ struct flb_output_instance {
     struct flb_net_setup net_setup;
     struct mk_list *net_config_map;
     struct mk_list net_properties;
+
+    struct mk_list *http_server_config_map;
+    struct flb_http_server_config *http_server_config;
+    struct mk_list http_server_properties;
+
+    struct mk_list *oauth2_config_map;
+    struct mk_list oauth2_properties;
 
     struct mk_list *tls_config_map;
 
@@ -1322,6 +1331,20 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
         }
     }
 
+    /* HTTP server properties */
+    if (ins->http_server_config_map && ins->http_server_config) {
+        ret = flb_config_map_set(&ins->http_server_properties,
+                                 ins->http_server_config_map,
+                                 ins->http_server_config);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    /* OAuth2 properties are validated but not automatically applied here.
+     * Plugins should call flb_config_map_set() with &ctx->oauth2_config
+     * in their init callback after calling flb_output_config_map_set(). */
+
     return 0;
 }
 
@@ -1358,6 +1381,8 @@ void flb_output_set_context(struct flb_output_instance *ins, void *context);
 int flb_output_instance_destroy(struct flb_output_instance *ins);
 int flb_output_net_property_check(struct flb_output_instance *ins,
                                   struct flb_config *config);
+int flb_output_oauth2_property_check(struct flb_output_instance *ins,
+                                      struct flb_config *config);
 int flb_output_plugin_property_check(struct flb_output_instance *ins,
                                      struct flb_config *config);
 int flb_output_init_all(struct flb_config *config);

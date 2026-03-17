@@ -35,6 +35,11 @@ on:
       cosign_key:
         description: The optional Cosign key to use for verifying the images.
         required: false
+
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   call-test-images-cosign-verify:
     name: Cosign verification of container image
@@ -131,7 +136,7 @@ jobs:
         arch: [ linux/amd64, linux/arm64, linux/arm/v7 ]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
 
@@ -177,7 +182,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
 
@@ -202,4 +207,3 @@ jobs:
           REGISTRY: ${{ inputs.registry }}
           IMAGE_NAME: ${{ inputs.image }}
           IMAGE_TAG: ${{ inputs.image-tag }}
-

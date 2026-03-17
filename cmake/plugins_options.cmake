@@ -26,6 +26,7 @@ DEFINE_OPTION(FLB_IN_EVENT_TYPE               "Enable event type plugin"        
 DEFINE_OPTION(FLB_IN_EXEC                     "Enable Exec input plugin"                     ON)
 DEFINE_OPTION(FLB_IN_EXEC_WASI                "Enable Exec WASI input plugin"                ON)
 DEFINE_OPTION(FLB_IN_FLUENTBIT_METRICS        "Enable Fluent Bit metrics plugin"             ON)
+DEFINE_OPTION(FLB_IN_FLUENTBIT_LOGS           "Enable Fluent Bit internal logs plugin"       ON)
 DEFINE_OPTION(FLB_IN_FORWARD                  "Enable Forward input plugin"                  ON)
 DEFINE_OPTION(FLB_IN_GPU_METRICS              "Enable GPU metrics input plugin"              ON)
 DEFINE_OPTION(FLB_IN_HEAD                     "Enable Head input plugin"                     ON)
@@ -74,6 +75,7 @@ DEFINE_OPTION(FLB_PROCESSOR_METRICS_SELECTOR  "Enable metrics selector processor
 DEFINE_OPTION(FLB_PROCESSOR_OPENTELEMETRY_ENVELOPE "Enable OpenTelemetry envelope processor" ON)
 DEFINE_OPTION(FLB_PROCESSOR_SQL               "Enable SQL processor"                         ON)
 DEFINE_OPTION(FLB_PROCESSOR_SAMPLING          "Enable sampling processor"                    ON)
+DEFINE_OPTION(FLB_PROCESSOR_TDA               "Enable TDA processor"                         ON)
 
 # Filters
 # =======

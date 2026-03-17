@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -254,7 +254,6 @@ int flb_secure_forward_set_helo(struct flb_input_instance *in,
 static int send_helo(struct flb_input_instance *in, struct flb_connection *connection,
                      struct flb_in_fw_helo *helo)
 {
-    int result;
     size_t sent;
     ssize_t bytes;
     msgpack_packer mp_pck;
@@ -302,16 +301,10 @@ static int send_helo(struct flb_input_instance *in, struct flb_connection *conne
 
     if (bytes == -1) {
         flb_plg_error(in, "cannot send HELO");
-
-        result = -1;
-    }
-    else {
-        result = 0;
+        return -1;
     }
 
-    result = flb_secure_forward_set_helo(in, helo, nonce, user_auth_salt);
-
-    return result;
+    return flb_secure_forward_set_helo(in, helo, nonce, user_auth_salt);
 }
 
 static void flb_secure_forward_format_bin_to_hex(uint8_t *buf, size_t len, char *out)
@@ -827,7 +820,7 @@ static int send_ack(struct flb_input_instance *in, struct fw_conn *conn,
 
 }
 
-static size_t get_options_metadata(msgpack_object *arr, int expected, size_t *idx)
+static int get_options_metadata(msgpack_object *arr, int expected, int *idx)
 {
     size_t i;
     msgpack_object *options;
@@ -880,7 +873,7 @@ static size_t get_options_metadata(msgpack_object *arr, int expected, size_t *id
             return -1;
         }
 
-        *idx = i;
+        *idx = (int) i;
 
         return 0;
     }
@@ -888,7 +881,7 @@ static size_t get_options_metadata(msgpack_object *arr, int expected, size_t *id
     return 0;
 }
 
-static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
+static int get_options_chunk(msgpack_object *arr, int expected, int *idx)
 {
     size_t i;
     msgpack_object *options;
@@ -941,7 +934,7 @@ static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
             return -1;
         }
 
-        *idx = i;
+        *idx = (int) i;
         return 0;
     }
 
@@ -1146,8 +1139,8 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
     else if (event_type == FLB_EVENT_TYPE_TRACES) {
         off = 0;
         ret = ctr_decode_msgpack_create(&ctr, (char *) data, len, &off);
-        if (ret == -1) {
-            flb_error("could not decode trace message. ret=%d", ret);
+        if (ret != CTR_DECODE_MSGPACK_SUCCESS) {
+            flb_plg_error(ins, "could not decode trace message. ret=%d", ret);
             return -1;
         }
 
@@ -1159,7 +1152,7 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
             ctr_decode_msgpack_destroy(ctr);
             return -1;
         }
-        ctr_decode_msgpack_destroy(ctr);
+        /* Note: flb_input_trace_append takes ownership of ctr and destroys it on success */
     }
 
     return 0;
@@ -1256,9 +1249,9 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     int stag_len;
     int event_type;
     int contain_options = FLB_FALSE;
+    int chunk_id = -1;
+    int metadata_id = -1;
     size_t index = 0;
-    size_t chunk_id = -1;
-    size_t metadata_id = -1;
     const char *stag;
     flb_sds_t out_tag = NULL;
     size_t bytes;
@@ -1353,6 +1346,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
 
             /* Map the array */
             root = result.data;
+            contain_options = FLB_FALSE;
 
             if (root.type != MSGPACK_OBJECT_ARRAY) {
                 flb_plg_debug(ctx->ins,

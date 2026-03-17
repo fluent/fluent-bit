@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -331,6 +331,25 @@ static int sb_append_chunk_to_segregated_backlogs(struct cio_chunk  *target_chun
     return 0;
 }
 
+static inline int sb_is_rejected_stream(struct flb_config *config,
+                                        struct cio_stream *stream)
+{
+    const char *rp;
+
+    if (!config || !stream || !stream->name) {
+        return FLB_FALSE;
+    }
+
+    if (config->storage_keep_rejected != FLB_TRUE) {
+        return FLB_FALSE;
+    }
+
+    rp = config->storage_rejected_path ?
+         config->storage_rejected_path : "rejected";
+
+    return strcmp(stream->name, rp) == 0;
+}
+
 int sb_segregate_chunks(struct flb_config *config)
 {
     int                ret;
@@ -356,6 +375,12 @@ int sb_segregate_chunks(struct flb_config *config)
 
     mk_list_foreach(stream_iterator, &context->cio->streams) {
         stream = mk_list_entry(stream_iterator, struct cio_stream, _head);
+
+        /* DLQ stream is not part of backlog. Just skip. */
+        if (sb_is_rejected_stream(config, stream)) {
+            flb_debug("[storage backlog] skipping DLQ stream '%s'", stream->name);
+            continue;
+        }
 
         mk_list_foreach_safe(chunk_iterator, tmp, &stream->chunks) {
             chunk = mk_list_entry(chunk_iterator, struct cio_chunk, _head);

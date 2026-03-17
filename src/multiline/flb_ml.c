@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -64,7 +64,6 @@ static uint64_t time_ms_now()
     ms = (tm.tm.tv_sec * 1000) + lround(tm.tm.tv_nsec/1.0e6);
     return ms;
 }
-
 
 int flb_ml_flush_stdout(struct flb_ml_parser *parser,
                         struct flb_ml_stream *mst,
@@ -342,7 +341,7 @@ static int package_content(struct flb_ml_stream *mst,
     }
 
     if (processed && metadata != NULL) {
-        msgpack_pack_object(&stream_group->mp_md_pck, *metadata);
+        flb_ml_stream_group_add_metadata(stream_group, metadata);
     }
 
     if (truncated) {
@@ -850,6 +849,9 @@ done:
         }
 
         st_group = flb_ml_stream_group_get(mst->parser, mst, NULL);
+
+        /* Standalone record must preserve metadata too */
+        flb_ml_stream_group_add_metadata(st_group, metadata);
         flb_ml_register_context(st_group, tm, obj);
         flb_ml_flush_stream_group(parser_i->ml_parser, mst, st_group, FLB_FALSE);
     }
@@ -1199,6 +1201,303 @@ void flb_deduplication_list_purge(struct cfl_list *deduplication_list)
     }
 }
 
+/*
+ * Metadata handling
+ * -----------------
+ *
+ * Multiline needs to retain metadata until flush time. The previous
+ * implementation packed metadata into a msgpack_sbuffer and later unpacked
+ * it again on flush. For OTLP metadata this is both hot and unnecessary.
+ *
+ * We keep deep-copied msgpack_object snapshots per line, converting any
+ * MSGPACK_OBJECT_BIN (e.g. trace_id/span_id) into lowercase hex strings.
+ */
+
+static void bin_to_hex(const unsigned char *bin, size_t len, char *out)
+{
+    static const char hex_table[] = "0123456789abcdef";
+    size_t i;
+
+    for (i = 0; i < len; i++) {
+        out[i * 2]     = hex_table[(bin[i] >> 4) & 0x0F];
+        out[i * 2 + 1] = hex_table[bin[i] & 0x0F];
+    }
+}
+
+struct flb_ml_metadata_object_entry {
+    msgpack_object obj;
+    struct mk_list _head;
+};
+
+static void flb_ml_msgpack_object_destroy(msgpack_object *obj)
+{
+    size_t i;
+
+    if (obj == NULL) {
+        return;
+    }
+
+    switch (obj->type) {
+    case MSGPACK_OBJECT_STR:
+        if (obj->via.str.ptr != NULL) {
+            flb_free((void *) obj->via.str.ptr);
+        }
+        break;
+
+    case MSGPACK_OBJECT_BIN:
+        if (obj->via.bin.ptr != NULL) {
+            flb_free((void *) obj->via.bin.ptr);
+        }
+        break;
+
+    case MSGPACK_OBJECT_EXT:
+        if (obj->via.ext.ptr != NULL) {
+            flb_free((void *) obj->via.ext.ptr);
+        }
+        break;
+
+    case MSGPACK_OBJECT_ARRAY:
+        if (obj->via.array.ptr != NULL) {
+            for (i = 0; i < obj->via.array.size; i++) {
+                flb_ml_msgpack_object_destroy(&obj->via.array.ptr[i]);
+            }
+            flb_free(obj->via.array.ptr);
+        }
+        break;
+
+    case MSGPACK_OBJECT_MAP:
+        if (obj->via.map.ptr != NULL) {
+            for (i = 0; i < obj->via.map.size; i++) {
+                flb_ml_msgpack_object_destroy(&obj->via.map.ptr[i].key);
+                flb_ml_msgpack_object_destroy(&obj->via.map.ptr[i].val);
+            }
+            flb_free(obj->via.map.ptr);
+        }
+        break;
+
+    default:
+        break;
+    }
+
+    memset(obj, 0, sizeof(*obj));
+    obj->type = MSGPACK_OBJECT_NIL;
+}
+
+static int flb_ml_msgpack_object_deep_copy_convert(msgpack_object *dst,
+                                                  const msgpack_object *src)
+{
+    size_t i;
+    void  *buf;
+    size_t len;
+    const unsigned char *bin_ptr;
+    size_t bin_size;
+
+    if (dst == NULL || src == NULL) {
+        return -1;
+    }
+
+    memset(dst, 0, sizeof(*dst));
+
+    switch (src->type) {
+    case MSGPACK_OBJECT_NIL:
+        dst->type = MSGPACK_OBJECT_NIL;
+        break;
+
+    case MSGPACK_OBJECT_BOOLEAN:
+        dst->type = MSGPACK_OBJECT_BOOLEAN;
+        dst->via.boolean = src->via.boolean;
+        break;
+
+    case MSGPACK_OBJECT_POSITIVE_INTEGER:
+    case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+        dst->type = src->type;
+        dst->via.u64 = src->via.u64;
+        break;
+
+    case MSGPACK_OBJECT_FLOAT32:
+    case MSGPACK_OBJECT_FLOAT64:
+        dst->type = src->type;
+        dst->via.f64 = src->via.f64;
+        break;
+
+    case MSGPACK_OBJECT_STR:
+        dst->type = MSGPACK_OBJECT_STR;
+        len = src->via.str.size;
+        if (len == 0) {
+            dst->via.str.ptr = NULL;
+            dst->via.str.size = 0;
+        }
+        else {
+            buf = flb_malloc(len);
+            if (buf == NULL) {
+                return -1;
+            }
+            memcpy(buf, src->via.str.ptr, len);
+            dst->via.str.ptr = (const char *) buf;
+            dst->via.str.size = len;
+        }
+        break;
+
+    case MSGPACK_OBJECT_BIN: {
+        bin_ptr = (const unsigned char *) src->via.bin.ptr;
+        bin_size = src->via.bin.size;
+
+        dst->type = MSGPACK_OBJECT_STR;
+
+        /* 2 chars per byte (no NUL terminator in msgpack str) */
+        len = bin_size * 2;
+        if (len == 0) {
+            dst->via.str.ptr = NULL;
+            dst->via.str.size = 0;
+        }
+        else {
+            buf = flb_malloc(len);
+            if (buf == NULL) {
+                return -1;
+            }
+
+            bin_to_hex(bin_ptr, bin_size, (char *) buf);
+
+            dst->via.str.ptr = (const char *) buf;
+            dst->via.str.size = len;
+        }
+        break;
+    }
+
+    case MSGPACK_OBJECT_EXT:
+        dst->type = MSGPACK_OBJECT_EXT;
+        dst->via.ext.type = src->via.ext.type;
+        len = src->via.ext.size;
+        if (len == 0) {
+            dst->via.ext.ptr = NULL;
+            dst->via.ext.size = 0;
+        }
+        else {
+            buf = flb_malloc(len);
+            if (buf == NULL) {
+                return -1;
+            }
+            memcpy(buf, src->via.ext.ptr, len);
+            dst->via.ext.ptr = (const char *) buf;
+            dst->via.ext.size = len;
+        }
+        break;
+
+    case MSGPACK_OBJECT_ARRAY:
+        dst->type = MSGPACK_OBJECT_ARRAY;
+        dst->via.array.size = src->via.array.size;
+        if (dst->via.array.size == 0) {
+            dst->via.array.ptr = NULL;
+            break;
+        }
+
+        dst->via.array.ptr = flb_calloc(dst->via.array.size, sizeof(msgpack_object));
+        if (dst->via.array.ptr == NULL) {
+            return -1;
+        }
+
+        for (i = 0; i < dst->via.array.size; i++) {
+            if (flb_ml_msgpack_object_deep_copy_convert(&dst->via.array.ptr[i],
+                                                       &src->via.array.ptr[i]) != 0) {
+                flb_ml_msgpack_object_destroy(dst);
+                return -1;
+            }
+        }
+        break;
+
+    case MSGPACK_OBJECT_MAP:
+        dst->type = MSGPACK_OBJECT_MAP;
+        dst->via.map.size = src->via.map.size;
+        if (dst->via.map.size == 0) {
+            dst->via.map.ptr = NULL;
+            break;
+        }
+
+        dst->via.map.ptr = flb_calloc(dst->via.map.size, sizeof(msgpack_object_kv));
+        if (dst->via.map.ptr == NULL) {
+            return -1;
+        }
+
+        for (i = 0; i < dst->via.map.size; i++) {
+            if (flb_ml_msgpack_object_deep_copy_convert(&dst->via.map.ptr[i].key,
+                                                       &src->via.map.ptr[i].key) != 0) {
+                flb_ml_msgpack_object_destroy(dst);
+                return -1;
+            }
+
+            if (flb_ml_msgpack_object_deep_copy_convert(&dst->via.map.ptr[i].val,
+                                                       &src->via.map.ptr[i].val) != 0) {
+                flb_ml_msgpack_object_destroy(dst);
+                return -1;
+            }
+        }
+        break;
+
+    default:
+        /* Scalars or types we don't explicitly manage */
+        *dst = *src;
+        break;
+    }
+
+    return 0;
+}
+
+static void flb_ml_stream_group_metadata_list_init(struct flb_ml_stream_group *group)
+{
+    if (group->metadata_objects_initialized == FLB_FALSE) {
+        mk_list_init(&group->metadata_objects);
+        group->metadata_objects_initialized = FLB_TRUE;
+    }
+}
+
+void flb_ml_stream_group_purge_metadata(struct flb_ml_stream_group *group)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_ml_metadata_object_entry *entry;
+
+    if (group == NULL || group->metadata_objects_initialized == FLB_FALSE) {
+        return;
+    }
+
+    mk_list_foreach_safe(head, tmp, &group->metadata_objects) {
+        entry = mk_list_entry(head, struct flb_ml_metadata_object_entry, _head);
+
+        mk_list_del(&entry->_head);
+        flb_ml_msgpack_object_destroy(&entry->obj);
+        flb_free(entry);
+    }
+}
+
+int flb_ml_stream_group_add_metadata(struct flb_ml_stream_group *group,
+                                     msgpack_object *metadata)
+{
+    struct flb_ml_metadata_object_entry *entry;
+
+    if (group == NULL || metadata == NULL) {
+        return -1;
+    }
+
+    flb_ml_stream_group_metadata_list_init(group);
+
+    entry = flb_calloc(1, sizeof(*entry));
+    if (entry == NULL) {
+        return -1;
+    }
+
+    mk_list_entry_init(&entry->_head);
+
+    if (flb_ml_msgpack_object_deep_copy_convert(&entry->obj, metadata) != 0) {
+        flb_ml_msgpack_object_destroy(&entry->obj);
+        flb_free(entry);
+        return -1;
+    }
+
+    mk_list_add(&entry->_head, &group->metadata_objects);
+
+    return 0;
+}
+
 int flb_ml_flush_metadata_buffer(struct flb_ml_stream *mst,
                                  struct flb_ml_stream_group *group,
                                  int deduplicate_metadata)
@@ -1206,8 +1505,8 @@ int flb_ml_flush_metadata_buffer(struct flb_ml_stream *mst,
     int               append_metadata_entry;
     cfl_hash_64bits_t metadata_entry_hash;
     struct cfl_list   deduplication_list;
-    msgpack_unpacked  metadata_map;
-    size_t            offset;
+    struct mk_list   *head;
+    struct flb_ml_metadata_object_entry *entry;
     size_t            index;
     msgpack_object    value;
     msgpack_object    key;
@@ -1215,77 +1514,70 @@ int flb_ml_flush_metadata_buffer(struct flb_ml_stream *mst,
 
     ret = FLB_EVENT_ENCODER_SUCCESS;
 
+    if (group == NULL ||
+        group->metadata_objects_initialized == FLB_FALSE ||
+        (group->metadata_objects.next == &group->metadata_objects)) {
+        return ret;
+    }
+
     if (deduplicate_metadata) {
         flb_deduplication_list_init(&deduplication_list);
     }
 
-    msgpack_unpacked_init(&metadata_map);
+    mk_list_foreach(head, &group->metadata_objects) {
+        entry = mk_list_entry(head, struct flb_ml_metadata_object_entry, _head);
 
-    offset = 0;
-    while (ret == FLB_EVENT_ENCODER_SUCCESS &&
-           msgpack_unpack_next(&metadata_map,
-                               group->mp_md_sbuf.data,
-                               group->mp_md_sbuf.size,
-                               &offset) == MSGPACK_UNPACK_SUCCESS) {
+        if (entry->obj.type != MSGPACK_OBJECT_MAP) {
+            continue;
+        }
 
         for (index = 0;
-             index < metadata_map.data.via.map.size &&
+             index < entry->obj.via.map.size &&
              ret == FLB_EVENT_ENCODER_SUCCESS;
              index++) {
-            key   = metadata_map.data.via.map.ptr[index].key;
-            value = metadata_map.data.via.map.ptr[index].val;
+
+            key   = entry->obj.via.map.ptr[index].key;
+            value = entry->obj.via.map.ptr[index].val;
 
             append_metadata_entry = FLB_TRUE;
 
             if (deduplicate_metadata) {
-                ret = flb_hash_msgpack_object_list(&metadata_entry_hash,
-                                                   2,
-                                                   &key,
-                                                   &value);
-                if (ret != 0) {
+                if (flb_hash_msgpack_object_list(&metadata_entry_hash,
+                                                 2,
+                                                 &key,
+                                                 &value) != 0) {
                     ret = FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+                    break;
+                }
+
+                if (flb_deduplication_list_validate(&deduplication_list,
+                                                    metadata_entry_hash)) {
+                    append_metadata_entry = FLB_FALSE;
                 }
                 else {
-                    ret = flb_deduplication_list_validate(
-                            &deduplication_list,
-                            metadata_entry_hash);
-
-                    if (ret) {
-                        append_metadata_entry = FLB_FALSE;
-
-                        ret = FLB_EVENT_ENCODER_SUCCESS;
-                    }
-                    else {
-                        ret = flb_deduplication_list_add(
-                                &deduplication_list,
-                                metadata_entry_hash);
-
-                        if (ret == 0) {
-                            ret = FLB_EVENT_ENCODER_SUCCESS;
-                        }
-                        else {
-                            ret = FLB_EVENT_ENCODER_ERROR_ALLOCATION_ERROR;
-                        }
+                    if (flb_deduplication_list_add(&deduplication_list,
+                                                   metadata_entry_hash) != 0) {
+                        ret = FLB_EVENT_ENCODER_ERROR_ALLOCATION_ERROR;
+                        break;
                     }
                 }
             }
 
             if (append_metadata_entry) {
-                if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-                    ret = flb_log_event_encoder_append_metadata_values(
-                            &mst->ml->log_event_encoder,
-                            FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&key),
-                            FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&value));
-                }
+                ret = flb_log_event_encoder_append_metadata_values(
+                        &mst->ml->log_event_encoder,
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&key),
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&value));
             }
         }
     }
 
-    msgpack_unpacked_destroy(&metadata_map);
-
     if (deduplicate_metadata) {
         flb_deduplication_list_purge(&deduplication_list);
     }
+
+    /* Always purge stored metadata snapshots after flush */
+    flb_ml_stream_group_purge_metadata(group);
 
     return ret;
 }
@@ -1334,6 +1626,8 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
         if (ret != MSGPACK_UNPACK_SUCCESS) {
             flb_error("[multiline] could not unpack first line state buffer");
             msgpack_unpacked_destroy(&result);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            flb_ml_stream_group_purge_metadata(group);
             group->mp_sbuf.size = 0;
             return -1;
         }
@@ -1342,6 +1636,8 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
         if (map.type != MSGPACK_OBJECT_MAP) {
             flb_error("[multiline] expected MAP type in first line state buffer");
             msgpack_unpacked_destroy(&result);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            flb_ml_stream_group_purge_metadata(group);
             group->mp_sbuf.size = 0;
             return -1;
         }
@@ -1461,6 +1757,10 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
             flb_error("[multiline] error packing event");
 
+            flb_ml_stream_group_purge_metadata(group);
+            group->mp_md_sbuf.size = 0;
+            msgpack_sbuffer_destroy(&mp_sbuf);
+
             return -1;
         }
 
@@ -1485,6 +1785,7 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
     msgpack_sbuffer_destroy(&mp_sbuf);
     flb_sds_len_set(group->buf, 0);
     group->truncated = FLB_FALSE;
+    flb_ml_stream_group_purge_metadata(group);
     group->mp_md_sbuf.size = 0;
 
     /* Update last flush time */

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -186,7 +186,9 @@ static void print_profiles_text(struct flb_output_instance *ins,
                                               bytes, &off)) ==
                                                 CPROF_DECODE_MSGPACK_SUCCESS) {
         /* convert to text representation */
-        ret = cprof_encode_text_create(&text, profiles_context);
+        ret = cprof_encode_text_create(&text,
+                                       profiles_context,
+                                       CPROF_ENCODE_TEXT_RENDER_RESOLVED);
 
         if (ret != CPROF_ENCODE_TEXT_SUCCESS) {
             flb_plg_debug(ins, "cprofiles text encoder returned : %d", ret);

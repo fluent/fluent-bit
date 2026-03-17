@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -124,6 +124,11 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
                                size_t records,
                                const char *tag, size_t tag_len,
                                const void *buf, size_t buf_size);
+int flb_input_chunk_ring_buffer_enqueue(struct flb_input_instance *in,
+                                        int event_type,
+                                        size_t records,
+                                        const char *tag, size_t tag_len,
+                                        const void *buf, size_t buf_size);
 
 const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size);
 int flb_input_chunk_release_lock(struct flb_input_chunk *ic);
