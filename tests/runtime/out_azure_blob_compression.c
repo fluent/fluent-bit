@@ -104,7 +104,7 @@ static int azure_blob_ctx_init(struct flb_azure_blob *ctx)
         return -1;
     }
     ctx->btype = AZURE_BLOB_BLOCKBLOB;
-    ctx->atype = AZURE_BLOB_AUTH_KEY;
+    ctx->atype = FLB_AZURE_AUTH_KEY;
 
     return 0;
 }
@@ -217,7 +217,7 @@ static void test_http_headers_zstd_encoding()
         return;
     }
     ctx.ins = &ins;
-    ctx.atype = AZURE_BLOB_AUTH_SAS;
+    ctx.atype = FLB_AZURE_AUTH_SAS;
 
     ret = azb_http_client_setup(&ctx, client, 1, FLB_FALSE,
                                 AZURE_BLOB_CT_JSON,
@@ -273,7 +273,7 @@ static void test_http_headers_zstd_content_type()
         return;
     }
     ctx.ins = &ins;
-    ctx.atype = AZURE_BLOB_AUTH_SAS;
+    ctx.atype = FLB_AZURE_AUTH_SAS;
 
     ret = azb_http_client_setup(&ctx, client, 1, FLB_FALSE,
                                 AZURE_BLOB_CT_ZSTD,
