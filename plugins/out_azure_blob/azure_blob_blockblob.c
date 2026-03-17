@@ -48,7 +48,7 @@ flb_sds_t azb_block_blob_blocklist_uri(struct flb_azure_blob *ctx, char *name)
         flb_sds_printf(&uri, "/%s?comp=blocklist", name);
     }
 
-    if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
+    if (ctx->atype == FLB_AZURE_AUTH_SAS && ctx->sas_token) {
         flb_sds_printf(&uri, "&%s", ctx->sas_token);
     }
 
@@ -103,7 +103,7 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *name,
         }
     }
 
-    if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
+    if (ctx->atype == FLB_AZURE_AUTH_SAS && ctx->sas_token) {
         flb_sds_printf(&uri, "&%s", ctx->sas_token);
     }
 
@@ -137,7 +137,7 @@ flb_sds_t azb_block_blob_uri_commit(struct flb_azure_blob *ctx,
         flb_sds_printf(&uri, "/%s.%s.%" PRIu64 "%s?comp=blocklist", tag, str, ms, ext);
     }
 
-    if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
+    if (ctx->atype == FLB_AZURE_AUTH_SAS && ctx->sas_token) {
         flb_sds_printf(&uri, "&%s", ctx->sas_token);
     }
 

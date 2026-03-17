@@ -40,7 +40,7 @@ flb_sds_t azb_append_blob_uri(struct flb_azure_blob *ctx, char *tag)
         flb_sds_printf(&uri, "/%s?comp=appendblock", tag);
     }
 
-    if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
+    if (ctx->atype == FLB_AZURE_AUTH_SAS && ctx->sas_token) {
         flb_sds_printf(&uri, "&%s", ctx->sas_token);
     }
 
