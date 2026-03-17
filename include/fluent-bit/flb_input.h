@@ -578,8 +578,8 @@ struct flb_libco_in_params {
     struct flb_coro *coro;
 };
 
-extern pthread_key_t libco_in_param_key;
-extern struct flb_libco_in_params libco_in_param;
+extern pthread_key_t __thread libco_in_param_key;
+extern struct flb_libco_in_params __thread libco_in_param;
 void flb_input_coro_prepare_destroy(struct flb_input_coro *input_coro);
 
 static FLB_INLINE void input_params_set(struct flb_coro *coro,
@@ -614,14 +614,8 @@ static FLB_INLINE void input_pre_cb_collect(void)
     struct flb_libco_in_params *params;
 
     params = pthread_getspecific(libco_in_param_key);
-    if (params == NULL) {
-        params = flb_calloc(1, sizeof(struct flb_libco_in_params));
-        if (params == NULL) {
-            flb_errno();
-            return;
-        }
-        pthread_setspecific(libco_in_param_key, params);
-    }
+    flb_bug(params == NULL);
+
     coll = params->coll;
     config = params->config;
     coro = params->coro;
