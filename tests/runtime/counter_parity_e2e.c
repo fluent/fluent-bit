@@ -187,7 +187,6 @@ static int get_processor_counter_value(struct cmt_counter *counter,
     char stage_label[32];
 
     snprintf(stage_label, sizeof(stage_label) - 1, "%zu", pu->stage);
-    stage_label[sizeof(stage_label) - 1] = '\0';
 
     return get_counter_value_5(counter,
                                (char *) scope,
@@ -208,7 +207,6 @@ static int get_processor_counter_value_or_zero(struct cmt_counter *counter,
     char stage_label[32];
 
     snprintf(stage_label, sizeof(stage_label) - 1, "%zu", pu->stage);
-    stage_label[sizeof(stage_label) - 1] = '\0';
 
     return get_counter_value_5_or_zero(counter,
                                        (char *) scope,
@@ -739,6 +737,61 @@ static void flb_test_retry_drop_route_parity_grouped(void)
     flb_destroy(ctx);
 }
 
+static int poll_retry_scheduled_route_parity_grouped(
+             struct flb_input_instance *i_ins,
+             struct flb_output_instance *o_ins,
+             flb_ctx_t *ctx,
+             double *output_proc_records,
+             double *output_retries,
+             double *output_retried_records,
+             double *router_records)
+{
+    int ret;
+    int attempts;
+
+    for (attempts = 0; attempts < 50; attempts++) {
+        ret = get_counter_value_1(o_ins->cmt_proc_records,
+                                  (char *) flb_output_name(o_ins),
+                                  output_proc_records);
+        if (ret != 0) {
+            return ret;
+        }
+
+        ret = get_counter_value_1_or_zero(o_ins->cmt_retries,
+                                          (char *) flb_output_name(o_ins),
+                                          output_retries);
+        if (ret != 0) {
+            return ret;
+        }
+
+        ret = get_counter_value_1_or_zero(o_ins->cmt_retried_records,
+                                          (char *) flb_output_name(o_ins),
+                                          output_retried_records);
+        if (ret != 0) {
+            return ret;
+        }
+
+        ret = get_counter_value_2_or_zero(ctx->config->router->logs_records_total,
+                                          (char *) flb_input_name(i_ins),
+                                          (char *) flb_output_name(o_ins),
+                                          router_records);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if (*output_proc_records == 0.0 &&
+            *output_retries >= 1.0 &&
+            *output_retried_records >= 1.0 &&
+            *router_records == 0.0) {
+            return 0;
+        }
+
+        flb_time_msleep(100);
+    }
+
+    return -1;
+}
+
 static void flb_test_retry_scheduled_route_parity_grouped(void)
 {
     int ret;
@@ -792,8 +845,6 @@ static void flb_test_retry_scheduled_route_parity_grouped(void)
     ret = inject_grouped_log_chunk(ctx, "test");
     TEST_CHECK(ret == 0);
 
-    flb_time_msleep(1200);
-
     i_ins = get_input_instance_by_name(ctx, "lib");
     o_ins = get_output_instance_by_name(ctx, "http");
 
@@ -801,25 +852,11 @@ static void flb_test_retry_scheduled_route_parity_grouped(void)
     TEST_CHECK(o_ins != NULL);
 
     if (i_ins && o_ins) {
-        ret = get_counter_value_1(o_ins->cmt_proc_records,
-                                  (char *) flb_output_name(o_ins),
-                                  &output_proc_records);
-        TEST_CHECK(ret == 0);
-
-        ret = get_counter_value_1_or_zero(o_ins->cmt_retries,
-                                          (char *) flb_output_name(o_ins),
-                                          &output_retries);
-        TEST_CHECK(ret == 0);
-
-        ret = get_counter_value_1_or_zero(o_ins->cmt_retried_records,
-                                          (char *) flb_output_name(o_ins),
-                                          &output_retried_records);
-        TEST_CHECK(ret == 0);
-
-        ret = get_counter_value_2_or_zero(ctx->config->router->logs_records_total,
-                                          (char *) flb_input_name(i_ins),
-                                          (char *) flb_output_name(o_ins),
-                                          &router_records);
+        ret = poll_retry_scheduled_route_parity_grouped(i_ins, o_ins, ctx,
+                                                        &output_proc_records,
+                                                        &output_retries,
+                                                        &output_retried_records,
+                                                        &router_records);
         TEST_CHECK(ret == 0);
 
         TEST_CHECK(output_proc_records == 0.0);
