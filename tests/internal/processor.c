@@ -549,7 +549,7 @@ static void processor_metrics_counters()
                             &out_buf, &out_size);
     TEST_CHECK(ret == 0);
     TEST_CHECK(out_size == 0);
-    if (out_buf != NULL) {
+    if (out_buf != NULL && out_buf != mp_buf) {
         flb_free(out_buf);
         out_buf = NULL;
     }
