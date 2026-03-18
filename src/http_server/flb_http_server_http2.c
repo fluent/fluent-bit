@@ -91,7 +91,7 @@ static int http2_request_body_limit_exceeded(struct flb_http_stream *stream,
     server = parent_session->parent;
 
     if (server == NULL) {
-        return FLB_FALSE;
+        return FLB_TRUE;
     }
 
     maximum_size = flb_http_server_get_buffer_max_size(server);
