@@ -278,7 +278,13 @@ int flb_mp_normalize_log_buffer_groups(const void *in_buf, size_t in_size,
         return -1;
     }
 
-    flb_mp_chunk_cobj_normalize_groups(chunk_cobj);
+    ret = flb_mp_chunk_cobj_normalize_groups(chunk_cobj);
+    if (ret != 0) {
+        flb_mp_chunk_cobj_destroy(chunk_cobj);
+        flb_log_event_encoder_destroy(log_encoder);
+        flb_log_event_decoder_destroy(log_decoder);
+        return -1;
+    }
 
     if (cfl_list_size(&chunk_cobj->records) == 0) {
         flb_mp_chunk_cobj_destroy(chunk_cobj);
