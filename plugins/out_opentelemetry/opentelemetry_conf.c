@@ -904,6 +904,7 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
     if (ctx->oauth2_ctx) {
         flb_oauth2_destroy(ctx->oauth2_ctx);
     }
+    flb_oauth2_config_destroy(&ctx->oauth2_config);
 
     flb_free(ctx->proxy_host);
     flb_free(ctx);
