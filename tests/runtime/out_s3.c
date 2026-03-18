@@ -228,6 +228,99 @@ void flb_test_s3_complete_upload_error(void)
     unsetenv("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR");
 }
 
+void flb_test_s3_sse_invalid_value(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "sse", "invalid_encryption", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);  /* Expect failure due to invalid sse value */
+
+    flb_destroy(ctx);
+}
+
+void flb_test_s3_sse_kms_valid(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "sse", "aws:kms", NULL);
+    flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);  /* Expect success with valid sse value */
+
+    sleep(1);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_s3_sse_aes256_valid(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "sse", "AES256", NULL);
+    flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);  /* Expect success with valid sse value */
+
+    sleep(1);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 
 /* Test list */
 TEST_LIST = {
@@ -237,5 +330,9 @@ TEST_LIST = {
     {"create_upload_error", flb_test_s3_create_upload_error },
     {"upload_part_error", flb_test_s3_upload_part_error },
     {"complete_upload_error", flb_test_s3_complete_upload_error },
+    {"sse_invalid_value", flb_test_s3_sse_invalid_value },
+    {"sse_kms_valid", flb_test_s3_sse_kms_valid },
+    {"sse_aes256_valid", flb_test_s3_sse_aes256_valid },
     {NULL, NULL}
 };
+
