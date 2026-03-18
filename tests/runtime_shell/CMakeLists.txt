@@ -18,7 +18,11 @@ set(UNIT_TESTS_SH
   )
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  list(APPEND UNIT_TESTS_SH proxy_logs_expect.sh)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv64)")
+    message(STATUS "We don't test Golang plugins on RISC-V 64bit platform for now")
+  else()
+    list(APPEND UNIT_TESTS_SH proxy_logs_expect.sh)
+  endif()
 endif()
 
 # Prepare list of unit tests
