@@ -169,9 +169,9 @@ static int opentelemetry_check_grpc_status(struct opentelemetry_context *ctx,
 
         if (grpc_status == 16 && ctx->oauth2_ctx != NULL) {
             flb_oauth2_invalidate_token(ctx->oauth2_ctx);
+            result = FLB_RETRY;
         }
-
-        if (opentelemetry_is_grpc_status_retryable(grpc_status)) {
+        else if (opentelemetry_is_grpc_status_retryable(grpc_status)) {
             result = FLB_RETRY;
         }
         else {
@@ -622,6 +622,7 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
 
     if (ctx->oauth2_ctx != NULL && response->status == 401) {
         flb_oauth2_invalidate_token(ctx->oauth2_ctx);
+        out_ret = FLB_RETRY;
     }
 
     /*
@@ -654,7 +655,10 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                           response->status);
         }
 
-        if (is_http_status_code_retrayable(response->status) == FLB_TRUE) {
+        if (out_ret == FLB_RETRY) {
+            /* OAuth2-authenticated 401s should be retried with a fresh token. */
+        }
+        else if (is_http_status_code_retrayable(response->status) == FLB_TRUE) {
             out_ret = FLB_RETRY;
         }
         else {
