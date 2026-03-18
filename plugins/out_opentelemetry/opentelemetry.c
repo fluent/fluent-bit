@@ -429,7 +429,7 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
     cfl_sds_t                 grpc_body;
     struct flb_http_response *response;
     struct flb_http_request  *request;
-    int                       out_ret;
+    int                       out_ret = FLB_RETRY;
     int                       result;
 
     oauth2_token = NULL;
