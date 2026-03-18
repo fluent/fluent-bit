@@ -399,7 +399,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     }
 
     if (!upstream) {
-        flb_free(ctx);
+        flb_opentelemetry_context_destroy(ctx);
         return NULL;
     }
 
@@ -542,6 +542,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         }
         else {
             flb_plg_error(ctx->ins, "Unknown compression method %s", tmp);
+            flb_opentelemetry_context_destroy(ctx);
             return NULL;
         }
     }
