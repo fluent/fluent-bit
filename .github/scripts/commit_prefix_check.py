@@ -16,6 +16,7 @@ import os
 import re
 import sys
 from git import Repo
+from git.exc import GitCommandError
 
 repo = Repo(".")
 
@@ -203,7 +204,15 @@ def validate_commit(commit):
         return False, "Missing Signed-off-by line"
 
     # Determine expected prefixes + build option flag
-    files = commit.stats.files.keys()
+    try:
+        files = commit.stats.files.keys()
+    except GitCommandError as e:
+        return False, (
+            f"Could not inspect files changed by commit {commit.hexsha[:10]}: {e}\n"
+            "The repository checkout is likely missing commit parent history. "
+            "Use a full-depth checkout for commit-prefix validation."
+        )
+
     expected, build_optional = infer_prefix_from_paths(files)
 
     # When no prefix can be inferred (docs/tools), allow anything
