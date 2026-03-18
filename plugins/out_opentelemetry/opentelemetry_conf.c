@@ -292,7 +292,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
                                  ins->oauth2_config_map,
                                  &ctx->oauth2_config);
         if (ret == -1) {
-            flb_free(ctx);
+            flb_opentelemetry_context_destroy(ctx);
             return NULL;
         }
 
