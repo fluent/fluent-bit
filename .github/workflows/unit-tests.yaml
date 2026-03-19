@@ -54,7 +54,7 @@ jobs:
           - "-DFLB_SANITIZE_THREAD=On"
           - "-DFLB_SIMD=On"
           - "-DFLB_SIMD=Off"
-          - "-DFLB_ARROW=On"
+          - "-DFLB_PARQUET_ENCODER=On"
           - "-DFLB_COMPILER_STRICT_POINTER_TYPES=On"
         cmake_version:
           - "3.31.6"
@@ -70,7 +70,7 @@ jobs:
             compiler:
               cc: clang
               cxx: clang++
-          - flb_option: "-DFLB_ARROW=On"
+          - flb_option: "-DFLB_PARQUET_ENCODER=On"
             compiler:
               cc: clang
               cxx: clang++
@@ -115,15 +115,15 @@ jobs:
         with:
           repository: calyptia/fluent-bit-ci
           path: ci
-      - name: Setup Apache Arrow libraries for parquet (-DFLB_ARROW=On Only)
-        if: matrix.flb_option == '-DFLB_ARROW=On'
+      - name: Setup Apache Arrow libraries for Parquet encoder (-DFLB_PARQUET_ENCODER=On Only)
+        if: matrix.flb_option == '-DFLB_PARQUET_ENCODER=On'
         run: |
           sudo apt-get update
           sudo apt-get install -y -V ca-certificates lsb-release wget
           wget https://packages.apache.org/artifactory/arrow/$(lsb_release --id --short | tr 'A-Z' 'a-z')/apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb
           sudo apt-get install -y -V ./apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb
           sudo apt-get update
-          sudo apt-get install -y -V libarrow-glib-dev libparquet-glib-dev
+          sudo apt-get install -y -V libarrow-dev libparquet-dev
 
       - name: ${{ matrix.compiler.cc }} & ${{ matrix.compiler.cxx }} - ${{ matrix.flb_option }}
         run: |

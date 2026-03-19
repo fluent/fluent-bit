@@ -1,4 +1,15 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
+/*
+ * AWS Client Mock Implementation
+ *
+ * NOTE: This .c file is directly included in test files (not compiled separately).
+ *       Each test is built as a standalone executable, avoiding symbol conflicts.
+ *       DO NOT compile multiple tests using this mock into a single executable
+ *       without refactoring to a test library or using static functions.
+ */
+
+#define TEST_NO_MAIN
 #include "aws_client_mock.h"
 
 #include <fluent-bit/flb_aws_util.h>
@@ -39,12 +50,28 @@ void flb_aws_client_mock_configure_generator(
 /*
  * Clean up generator's memory
  * Cleanup should be called on exiting generator
+ * Note: This is safe to call even if the mock was already freed by S3 plugin cleanup
  */
 void flb_aws_client_mock_destroy_generator()
 {
-    if (flb_aws_client_mock_instance != NULL) {
-        flb_aws_client_mock_destroy(flb_aws_client_mock_instance);
+    struct flb_aws_client_mock *mock = flb_aws_client_mock_instance;
+
+    /* Clear instance first to prevent double-free scenarios */
+    flb_aws_client_mock_instance = NULL;
+
+    if (mock != NULL) {
+        flb_aws_client_mock_destroy(mock);
     }
+}
+
+/*
+ * Clear generator instance without freeing
+ * Use this after flb_destroy() when the S3 plugin has already freed the mock client
+ * This prevents use-after-free when configure_generator is called again
+ */
+void flb_aws_client_mock_clear_generator_instance()
+{
+    flb_aws_client_mock_instance = NULL;
 }
 
 /* Create Mock of flb_aws_client */
@@ -52,17 +79,40 @@ struct flb_aws_client_mock *flb_aws_client_mock_create(
     struct flb_aws_client_mock_request_chain *request_chain)
 {
     struct flb_aws_client_mock *mock = flb_calloc(1, sizeof(struct flb_aws_client_mock));
+    if (!mock) {
+        return NULL;
+    }
 
     /* Create a surrogate aws_client and copy to mock client */
     struct flb_aws_client *surrogate_aws_client = flb_aws_client_generator()->create();
+    if (!surrogate_aws_client) {
+        flb_free(mock);
+        return NULL;
+    }
     mock->super = *surrogate_aws_client;
     mock->surrogate = surrogate_aws_client;
     memset(mock->surrogate, 0, sizeof(struct flb_aws_client));
 
     /* Switch vtable to mock vtable */
     mock->super.client_vtable = &mock_client_vtable;
-    mock->request_chain = request_chain;
-    mock->next_request_index = 0;
+
+    /* Initialize shared state */
+    mock->shared = flb_calloc(1, sizeof(struct flb_aws_client_mock_shared_state));
+    if (!mock->shared) {
+        flb_aws_client_destroy(mock->surrogate);
+        flb_free(mock);
+        return NULL;
+    }
+    mock->shared->request_chain = request_chain;
+    mock->shared->next_request_index = 0;
+    if (pthread_mutex_init(&mock->shared->lock, NULL) != 0) {
+        flb_free(mock->shared);
+        flb_aws_client_destroy(mock->surrogate);
+        flb_free(mock);
+        return NULL;
+    }
+    mock->owns_shared = 1;
+
     return mock;
 }
 
@@ -75,8 +125,16 @@ void flb_aws_client_mock_destroy(struct flb_aws_client_mock *mock)
     }
 
     /* Resurrect surrogate, and destroy flb_aws_client */
-    *mock->surrogate = mock->super;
-    flb_aws_client_destroy(mock->surrogate);
+    if (mock->surrogate) {
+        *mock->surrogate = mock->super;
+        flb_aws_client_destroy(mock->surrogate);
+    }
+
+    /* Destroy shared state if owned */
+    if (mock->owns_shared && mock->shared) {
+        pthread_mutex_destroy(&mock->shared->lock);
+        flb_free(mock->shared);
+    }
 
     /* Destroy mock flb_aws_client */
     flb_free(mock);
@@ -91,7 +149,11 @@ struct flb_aws_client *flb_aws_client_mock_context(struct flb_aws_client_mock *m
 /* Get the number of unused requests */
 int flb_aws_client_mock_count_unused_requests(struct flb_aws_client_mock *mock)
 {
-    return mock->request_chain->length - mock->next_request_index;
+    int count;
+    pthread_mutex_lock(&mock->shared->lock);
+    count = mock->shared->request_chain->length - mock->shared->next_request_index;
+    pthread_mutex_unlock(&mock->shared->lock);
+    return count;
 }
 
 /* Set flb_aws_client_mock_instance used in mock generator */
@@ -131,7 +193,30 @@ struct flb_aws_client *flb_aws_client_create_mock()
         "[aws_mock_client] This ouccurs when the generator is called, before tests are "
         "initialized.");
 
-    return flb_aws_client_mock_context(flb_aws_client_mock_instance);
+    /* Create a new mock instance that shares state with the primary instance */
+    struct flb_aws_client_mock *new_mock = flb_calloc(1, sizeof(struct flb_aws_client_mock));
+    if (!new_mock) {
+        return NULL;
+    }
+
+    /* Create a fresh surrogate for this instance */
+    struct flb_aws_client *surrogate = flb_aws_client_generator()->create();
+    if (surrogate == NULL) {
+        flb_free(new_mock);
+        return NULL;
+    }
+    new_mock->super = *surrogate;
+    new_mock->surrogate = surrogate;
+    memset(new_mock->surrogate, 0, sizeof(struct flb_aws_client));
+
+    /* Setup mock vtable */
+    new_mock->super.client_vtable = &mock_client_vtable;
+
+    /* Share state with primary instance */
+    new_mock->shared = flb_aws_client_mock_instance->shared;
+    new_mock->owns_shared = 0;
+
+    return flb_aws_client_mock_context(new_mock);
 }
 
 /* Mock request used by flb_aws_client mock */
@@ -145,18 +230,29 @@ static struct flb_http_client *flb_aws_client_mock_vtable_request(
 
     /* Get access to mock */
     struct flb_aws_client_mock *mock = (struct flb_aws_client_mock *)aws_client;
+    struct flb_aws_client_mock_response *response;
+
+    /* Lock shared state */
+    pthread_mutex_lock(&mock->shared->lock);
 
     /* Check that a response is left in the chain */
-    ret = TEST_CHECK(mock->next_request_index < mock->request_chain->length);
+    ret = TEST_CHECK(mock->shared->next_request_index < mock->shared->request_chain->length);
     if (!ret) {
         TEST_MSG(
             "[flb_aws_client_mock] %d mock responses provided. Attempting to call %d "
             "times. Aborting.",
-            (int)mock->request_chain->length, (int)mock->next_request_index + 1);
+            (int)mock->shared->request_chain->length, (int)mock->shared->next_request_index + 1);
+        pthread_mutex_unlock(&mock->shared->lock);
         return NULL;
     }
-    struct flb_aws_client_mock_response *response =
-        &(mock->request_chain->responses[mock->next_request_index]);
+    response = &(mock->shared->request_chain->responses[mock->shared->next_request_index]);
+    
+    /* Increment request index atomically */
+    mock->shared->next_request_index++;
+    
+    /* We can release the lock now as we have the response pointer (read-only) */
+    pthread_mutex_unlock(&mock->shared->lock);
+
     struct flb_http_client *c = NULL;
 
     /* create an http client so that we can set the response */
@@ -199,10 +295,29 @@ static struct flb_http_client *flb_aws_client_mock_vtable_request(
                      (char *)val2);
             TEST_MSG("[aws_mock_client] Header not received");
         }
+        else if (response_config->config_parameter == FLB_AWS_CLIENT_MOCK_EXPECT_HEADER_EXISTS) {
+            int header_found = FLB_FALSE;
+            /* Search for header key in request */
+            size_t expected_key_len = strlen((char *)val1);
+            for (h = 0; h < dynamic_headers_len; ++h) {
+                /* Exact match: both length and content must match */
+                if (dynamic_headers[h].key_len == expected_key_len &&
+                    strncmp(dynamic_headers[h].key, (char *)val1, expected_key_len) == 0) {
+                    header_found = FLB_TRUE;
+                    break;
+                }
+            }
+            TEST_CHECK(header_found);
+            TEST_MSG("[aws_mock_client] Expected Header Key to exist: %s", (char *)val1);
+            if (!header_found) {
+                TEST_MSG("[aws_mock_client] Header key not found in request");
+            }
+        }
         else if (response_config->config_parameter == FLB_AWS_CLIENT_MOCK_EXPECT_METHOD) {
             char *flb_http_methods[] = {
                 "FLB_HTTP_GET",  "FLB_HTTP_POST",    "FLB_HTTP_PUT",
                 "FLB_HTTP_HEAD", "FLB_HTTP_CONNECT", "FLB_HTTP_PATCH",
+                "FLB_HTTP_DELETE",
             };
 
             /*
@@ -237,20 +352,59 @@ static struct flb_http_client *flb_aws_client_mock_vtable_request(
         }
 
         /*
+         * Special handling for DATA field - must be dynamically allocated
+         * because flb_http_client_destroy() will call flb_free(c->resp.data)
+         */
+        else if (response_config->config_parameter == FLB_AWS_CLIENT_MOCK_SET_DATA) {
+            if (val1 != NULL) {
+                /* Get data size from response config or use strlen */
+                size_t data_len = 0;
+                int j;
+                for (j = 0; j < response->length; ++j) {
+                    if (response->config_parameters[j].config_parameter ==
+                        FLB_AWS_CLIENT_MOCK_SET_DATA_SIZE) {
+                        data_len = (size_t)(uintptr_t)response->config_parameters[j].config_value;
+                        break;
+                    }
+                    if (response->config_parameters[j].config_parameter ==
+                        FLB_AWS_CLIENT_MOCK_SET_DATA_LEN) {
+                        data_len = (size_t)(uintptr_t)response->config_parameters[j].config_value;
+                        break;
+                    }
+                }
+                if (data_len == 0) {
+                    data_len = strlen((char *)val1);
+                }
+                /* Allocate and copy data so flb_http_client_destroy can free it */
+                c->resp.data = flb_malloc(data_len + 1);
+                if (c->resp.data) {
+                    memcpy(c->resp.data, val1, data_len);
+                    c->resp.data[data_len] = '\0';
+                    c->resp.data_len = data_len;
+                    c->resp.data_size = data_len + 1;
+                }
+                else {
+                    TEST_MSG("[aws_mock_client] Failed to allocate memory for response data");
+                    flb_http_client_destroy(c);
+                    return NULL;
+                }
+            }
+        }
+
+        /*
         * Response setters
         * Set client fields using XMacro definitions
+        * Note: DATA field is handled specially above
         */
 #define EXPAND_CLIENT_RESPONSE_PARAMETER(lower, UPPER, type)                           \
-        else if (response_config->config_parameter == FLB_AWS_CLIENT_MOCK_SET_##UPPER) \
+        else if (response_config->config_parameter == FLB_AWS_CLIENT_MOCK_SET_##UPPER  \
+                 && response_config->config_parameter != FLB_AWS_CLIENT_MOCK_SET_DATA) \
         {                                                                              \
             c->resp.lower = CONVERT_##type((char *)val1);                              \
         }
 #include "aws_client_mock_client_resp.def"
 #undef EXPAND_CLIENT_RESPONSE_PARAMETER
     }
-
-    /* Increment request */
-    ++mock->next_request_index;
 
     return c;
 };
