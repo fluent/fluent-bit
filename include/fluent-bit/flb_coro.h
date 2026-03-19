@@ -71,10 +71,16 @@ struct flb_coro {
 #define STACK_FACTOR 1
 #endif
 
+#ifdef FLB_HAVE_SIMD
+#define SIMD_STACK_FACTOR 2   /* Use bigger size for coro stacks with SIMD */
+#else
+#define SIMD_STACK_FACTOR 1   /* no-op */
+#endif
+
 #ifdef FLB_CORO_STACK_SIZE
 #define FLB_CORO_STACK_SIZE_BYTE      FLB_CORO_STACK_SIZE
 #else
-#define FLB_CORO_STACK_SIZE_BYTE      ((3 * STACK_FACTOR * PTHREAD_STACK_MIN) / 2)
+#define FLB_CORO_STACK_SIZE_BYTE      ((3 * STACK_FACTOR * SIMD_STACK_FACTOR * PTHREAD_STACK_MIN) / 2)
 #endif
 
 #define FLB_CORO_DATA(coro)      (((char *) coro) + sizeof(struct flb_coro))
