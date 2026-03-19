@@ -118,8 +118,14 @@ if(FLB_METRICS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     metrics.c
-    cumulative_to_delta.c
     )
+
+  if (NOT WIN32)
+    set(UNIT_TESTS_FILES
+      ${UNIT_TESTS_FILES}
+      cumulative_to_delta.c
+    )
+  endif()
 endif()
 
 if(FLB_HTTP_SERVER)
@@ -256,7 +262,7 @@ endfunction(prepare_unit_tests)
 
 prepare_unit_tests(flb-it- "${UNIT_TESTS_FILES}")
 
-if(FLB_METRICS AND FLB_PROCESSOR_CUMULATIVE_TO_DELTA)
+if(FLB_METRICS AND FLB_PROCESSOR_CUMULATIVE_TO_DELTA AND NOT WIN32)
   set(CUMULATIVE_TO_DELTA_PLUGIN_DIR
     ${PROJECT_SOURCE_DIR}/plugins/processor_cumulative_to_delta)
   set(CUMULATIVE_TO_DELTA_CORE_SOURCE
