@@ -115,7 +115,7 @@ jobs:
 
       - name: Build and push by digest the standard ${{ matrix.target }} image
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           # Use path context rather than Git context as we want local files
           file: ./dockerfiles/Dockerfile
@@ -440,7 +440,7 @@ jobs:
         shell: bash
 
         # We cannot use this action as it requires privileged mode
-        # uses: docker/build-push-action@v6
+        # uses: docker/build-push-action@v7
         # with:
         #   file: ./dockerfiles/Dockerfile.windows
         #   context: .
