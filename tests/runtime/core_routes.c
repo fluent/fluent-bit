@@ -2,6 +2,12 @@
 
 #include <fluent-bit.h>
 #include <fluent-bit/flb_time.h>
+#ifdef FLB_SYSTEM_MACOS
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include <sys/resource.h>
+#endif
 #include "flb_tests_runtime.h"
 
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -44,7 +50,11 @@ void flb_test_basic_functionality_test(void)
     int                   result;
     size_t                index;
     flb_ctx_t            *ctx;
-
+    size_t                olimit = 257;
+#ifdef FLB_SYSTEM_MACOS
+    struct rlimit rlim;
+    int           rlimit_rc;
+#endif
     cb_context = 0;
 
     /* Prepare output callback with expected result */
@@ -56,9 +66,20 @@ void flb_test_basic_functionality_test(void)
     input_instance = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(input_instance >= 0);
 
+#ifdef FLB_SYSTEM_MACOS
+    rlimit_rc = getrlimit(RLIMIT_NOFILE, &rlim);
+    TEST_CHECK(rlimit_rc == 0);
+    if (rlimit_rc == 0 && rlim.rlim_cur > 10) {
+        olimit = (size_t)(rlim.rlim_cur / 2.5);
+        if (olimit < 2) {
+            olimit = 2;
+        }
+    }
+#endif
+
     flb_input_set(ctx, input_instance, "tag", "test", NULL);
 
-    for (index = 0 ; index < 257 ; index++) {
+    for (index = 0 ; index < olimit ; index++) {
         output_instances[index] = flb_output(ctx, (char *) "lib", &cb_data);
         TEST_CHECK(output_instances[index] >= 0);
 
@@ -82,14 +103,14 @@ void flb_test_basic_functionality_test(void)
     delivery_counter = get_output_num();
 
     for (index = 0 ;
-         index < 100 && delivery_counter < 257 ;
+         index < 100 && delivery_counter < olimit ;
          index++) {
         flb_time_msleep(100);
 
         delivery_counter = get_output_num();
     }
 
-    TEST_CHECK(delivery_counter == 257);
+    TEST_CHECK(delivery_counter == olimit);
 
     flb_stop(ctx);
     flb_destroy(ctx);
