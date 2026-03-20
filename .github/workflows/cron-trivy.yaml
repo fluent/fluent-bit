@@ -14,16 +14,13 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
-  # Run Trivy on the latest container and update the security code scanning results tab.
-  trivy-latest:
-    # Matrix job that pulls the latest image for each supported architecture via the multi-arch latest manifest.
-    # We then re-tag it locally to ensure that when Trivy runs it does not pull the latest for the wrong architecture.
-    name: ${{ matrix.arch }} container scan
+  # Pull and export the image in a separate job so Trivy never runs with
+  # registry credentials present.
+  prepare-images:
+    name: ${{ matrix.arch }} container fetch
     runs-on: [ ubuntu-latest ]
-    continue-on-error: true
     strategy:
       fail-fast: false
       # Matrix of architectures to test along with their local tags for special character substitution
@@ -54,7 +51,50 @@ jobs:
         run: |
           docker tag fluent/fluent-bit:latest local/fluent-bit:${{ matrix.local_tag }}
 
-      # Deliberately chosen master here to keep up-to-date.
+      - name: Export image for isolated scanning
+        run: |
+          docker save local/fluent-bit:${{ matrix.local_tag }} \
+            -o fluent-bit-${{ matrix.local_tag }}.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: fluent-bit-image-${{ matrix.local_tag }}
+          path: fluent-bit-${{ matrix.local_tag }}.tar
+          if-no-files-found: error
+
+  # Run Trivy with no registry credentials and no GitHub write permissions.
+  trivy-latest:
+    needs: prepare-images
+    name: ${{ matrix.arch }} container scan
+    runs-on: [ ubuntu-latest ]
+    continue-on-error: true
+    permissions: {}
+    strategy:
+      fail-fast: false
+      # Matrix of architectures to test along with their local tags for special character substitution
+      matrix:
+        # The architecture for the container runtime to pull.
+        arch: [ linux/amd64, linux/arm64, linux/arm/v7 ]
+        # In a few cases we need the arch without slashes so provide a descriptive extra field for that.
+        # We could also extract or modify this via a regex but this seemed simpler and easier to follow.
+        include:
+          - arch: linux/amd64
+            local_tag: x86_64
+          - arch: linux/arm64
+            local_tag: arm64
+          - arch: linux/arm/v7
+            local_tag: arm32
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: fluent-bit-image-${{ matrix.local_tag }}
+
+      - name: Load image from artifact
+        run: |
+          docker load -i fluent-bit-${{ matrix.local_tag }}.tar
+
       - name: Run Trivy vulnerability scanner for any major issues
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
@@ -67,13 +107,44 @@ jobs:
             template: '@/contrib/sarif.tpl'
             output: trivy-results-${{ matrix.local_tag }}.sarif
 
-      # Show all detected issues.
-      # Note this will show a lot more, including major un-fixed ones.
-      - name: Run Trivy vulnerability scanner for local output
-        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8
+      - name: Upload Trivy results artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
         with:
-            image-ref: local/fluent-bit:${{ matrix.local_tag }}
-            format: table
+          name: trivy-results-${{ matrix.local_tag }}.sarif
+          path: trivy-results-${{ matrix.local_tag }}.sarif
+          if-no-files-found: warn
+
+  # Upload SARIF in a dedicated job with the minimal write permission needed.
+  upload-trivy-results:
+    needs: trivy-latest
+    name: ${{ matrix.arch }} SARIF upload
+    runs-on: [ ubuntu-latest ]
+    if: ${{ always() }}
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      # Matrix of architectures to test along with their local tags for special character substitution
+      matrix:
+        # The architecture for the container runtime to pull.
+        arch: [ linux/amd64, linux/arm64, linux/arm/v7 ]
+        # In a few cases we need the arch without slashes so provide a descriptive extra field for that.
+        # We could also extract or modify this via a regex but this seemed simpler and easier to follow.
+        include:
+          - arch: linux/amd64
+            local_tag: x86_64
+          - arch: linux/arm64
+            local_tag: arm64
+          - arch: linux/arm/v7
+            local_tag: arm32
+    steps:
+      - name: Download Trivy results artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: trivy-results-${{ matrix.local_tag }}.sarif
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
@@ -81,11 +152,3 @@ jobs:
             sarif_file: trivy-results-${{ matrix.local_tag }}.sarif
             category: ${{ matrix.arch }} container
             wait-for-processing: true
-
-      # In case we need to analyse the uploaded files for some reason.
-      - name: Detain results for debug if needed
-        uses: actions/upload-artifact@v7
-        with:
-          name: trivy-results-${{ matrix.local_tag }}.sarif
-          path: trivy-results-${{ matrix.local_tag }}.sarif
-          if-no-files-found: error
