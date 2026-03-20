@@ -1217,20 +1217,8 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
-    "values",
-    2,
-    PROTOBUF_C_LABEL_REPEATED,
-    PROTOBUF_C_TYPE_INT64,
-    offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, n_values),
-    offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, values),
-    NULL,
-    NULL,
-    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
-    0,NULL,NULL    /* reserved1,reserved2, etc */
-  },
-  {
     "attribute_indices",
-    3,
+    2,
     PROTOBUF_C_LABEL_REPEATED,
     PROTOBUF_C_TYPE_INT32,
     offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, n_attribute_indices),
@@ -1242,7 +1230,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
   },
   {
     "link_index",
-    4,
+    3,
     PROTOBUF_C_LABEL_NONE,
     PROTOBUF_C_TYPE_INT32,
     0,   /* quantifier_offset */
@@ -1250,6 +1238,18 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
     NULL,
     NULL,
     0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "values",
+    4,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_INT64,
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, n_values),
+    offsetof(Opentelemetry__Proto__Profiles__V1development__Sample, values),
+    NULL,
+    NULL,
+    PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
@@ -1266,11 +1266,11 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__profiles__v1developm
   },
 };
 static const unsigned opentelemetry__proto__profiles__v1development__sample__field_indices_by_name[] = {
-  2,   /* field[2] = attribute_indices */
-  3,   /* field[3] = link_index */
+  1,   /* field[1] = attribute_indices */
+  2,   /* field[2] = link_index */
   0,   /* field[0] = stack_index */
   4,   /* field[4] = timestamps_unix_nano */
-  1,   /* field[1] = values */
+  3,   /* field[3] = values */
 };
 static const ProtobufCIntRange opentelemetry__proto__profiles__v1development__sample__number_ranges[1 + 1] =
 {

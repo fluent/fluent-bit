@@ -29,9 +29,6 @@ typedef struct Opentelemetry__Proto__Logs__V1__LogRecord Opentelemetry__Proto__L
  * Possible values for LogRecord.SeverityNumber.
  */
 typedef enum _Opentelemetry__Proto__Logs__V1__SeverityNumber {
-  /*
-   * UNSPECIFIED is the default SeverityNumber, it MUST NOT be used.
-   */
   OPENTELEMETRY__PROTO__LOGS__V1__SEVERITY_NUMBER__SEVERITY_NUMBER_UNSPECIFIED = 0,
   OPENTELEMETRY__PROTO__LOGS__V1__SEVERITY_NUMBER__SEVERITY_NUMBER_TRACE = 1,
   OPENTELEMETRY__PROTO__LOGS__V1__SEVERITY_NUMBER__SEVERITY_NUMBER_TRACE2 = 2,
