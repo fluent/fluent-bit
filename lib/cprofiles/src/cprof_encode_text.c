@@ -1473,24 +1473,28 @@ static int encode_cprof_sample(
         return result;
     }
 
-    result = encode_int64_t(context,
-                            CFL_TRUE,
-                            "Locations start index : ",
-                            "\n",
-                            instance->locations_start_index);
+    if (instance->location_index_count == 0 &&
+        (instance->locations_start_index != 0 ||
+         instance->locations_length != 0)) {
+        result = encode_int64_t(context,
+                                CFL_TRUE,
+                                "Locations start index : ",
+                                "\n",
+                                instance->locations_start_index);
 
-    if (result != CPROF_ENCODE_TEXT_SUCCESS) {
-        return result;
-    }
+        if (result != CPROF_ENCODE_TEXT_SUCCESS) {
+            return result;
+        }
 
-    result = encode_uint64_t(context,
-                             CFL_TRUE,
-                             "Locations length : ",
-                             "\n",
-                             instance->locations_length);
+        result = encode_uint64_t(context,
+                                 CFL_TRUE,
+                                 "Locations length : ",
+                                 "\n",
+                                 instance->locations_length);
 
-    if (result != CPROF_ENCODE_TEXT_SUCCESS) {
-        return result;
+        if (result != CPROF_ENCODE_TEXT_SUCCESS) {
+            return result;
+        }
     }
 
     result = encode_int64_t_array(context,
