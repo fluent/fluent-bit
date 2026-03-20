@@ -36,7 +36,8 @@ typedef enum {
   OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_DOUBLE_VALUE = 4,
   OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_ARRAY_VALUE = 5,
   OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_KVLIST_VALUE = 6,
-  OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BYTES_VALUE = 7
+  OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BYTES_VALUE = 7,
+  OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX = 8
     PROTOBUF_C__FORCE_ENUM_TO_BE_INT_SIZE(OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE__CASE)
 } Opentelemetry__Proto__Common__V1__AnyValue__ValueCase;
 
@@ -56,6 +57,17 @@ struct  Opentelemetry__Proto__Common__V1__AnyValue
     char *string_value;
     Opentelemetry__Proto__Common__V1__ArrayValue *array_value;
     Opentelemetry__Proto__Common__V1__KeyValueList *kvlist_value;
+    /*
+     * Reference to the string value in ProfilesDictionary.string_table.
+     * Note: This is currently used exclusively in the Profiling signal.
+     * Implementers of OTLP receivers for signals other than Profiling should
+     * treat the presence of this value as a non-fatal issue.
+     * Log an error or warning indicating an unexpected field intended for the
+     * Profiling signal and process the data as if this value were absent or
+     * empty, ignoring its semantic content for the non-Profiling signal.
+     * Status: [Development]
+     */
+    int32_t string_value_strindex;
     protobuf_c_boolean bool_value;
   };
 };
@@ -116,16 +128,29 @@ struct  Opentelemetry__Proto__Common__V1__KeyValue
   ProtobufCMessage base;
   /*
    * The key name of the pair.
+   * key_ref MUST NOT be set if key is used.
    */
   char *key;
   /*
    * The value of the pair.
    */
   Opentelemetry__Proto__Common__V1__AnyValue *value;
+  /*
+   * Reference to the string key in ProfilesDictionary.string_table.
+   * key MUST NOT be set if key_strindex is used.
+   * Note: This is currently used exclusively in the Profiling signal.
+   * Implementers of OTLP receivers for signals other than Profiling should
+   * treat the presence of this key as a non-fatal issue.
+   * Log an error or warning indicating an unexpected field intended for the
+   * Profiling signal and process the data as if this value were absent or
+   * empty, ignoring its semantic content for the non-Profiling signal.
+   * Status: [Development]
+   */
+  int32_t key_strindex;
 };
 #define OPENTELEMETRY__PROTO__COMMON__V1__KEY_VALUE__INIT \
  { PROTOBUF_C_MESSAGE_INIT (&opentelemetry__proto__common__v1__key_value__descriptor) \
-, (char *)protobuf_c_empty_string, NULL }
+, (char *)protobuf_c_empty_string, NULL, 0 }
 
 
 /*
