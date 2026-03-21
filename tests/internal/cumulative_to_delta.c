@@ -1,7 +1,6 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <math.h>
-#include <unistd.h>
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_counter.h>
@@ -12,6 +11,7 @@
 #include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_metric.h>
 #include <cfl/cfl_kvlist.h>
+#include <fluent-bit/flb_compat.h>
 
 #include "../../plugins/processor_cumulative_to_delta/cumulative_to_delta.h"
 
