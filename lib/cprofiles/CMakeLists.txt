@@ -24,6 +24,17 @@ set(src
   ${src}
   )
 
+# Configure generated public headers used by cprofiles.h
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/include/cprofiles/cprof_info.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/include/cprofiles/cprof_info.h"
+  )
+
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/include/cprofiles/cprof_version.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/include/cprofiles/cprof_version.h"
+  )
+
 # Static Library
 add_library(cprofiles-static STATIC ${src})
 target_link_libraries(cprofiles-static mpack-static cfl-static fluent-otel-proto)
