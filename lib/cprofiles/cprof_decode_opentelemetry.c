@@ -23,15 +23,6 @@
 
 #include "cprof_opentelemetry_variant_helpers.c"
 
-static inline size_t minimum_size(size_t first_size, size_t second_size)
-{
-    if (first_size < second_size) {
-        return first_size;
-    }
-
-    return second_size;
-}
-
 static int decode_resource(struct cprof_resource **output_resource,
                            Opentelemetry__Proto__Resource__V1__Resource *input_resource,
                            Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary *dictionary)
@@ -212,8 +203,9 @@ static int decode_profile_sample_entry(struct cprof_sample *sample,
 static int decode_mapping_entry(struct cprof_mapping *mapping,
     Opentelemetry__Proto__Profiles__V1development__Mapping *input_mapping)
 {
-    int    result;
-    size_t index;
+    int     result;
+    int32_t raw_attribute_index;
+    size_t  index;
 
     mapping->id = 0;
     mapping->memory_start = input_mapping->memory_start;
@@ -226,8 +218,14 @@ static int decode_mapping_entry(struct cprof_mapping *mapping,
     mapping->has_inline_frames = 0;
 
     for (index = 0; index < input_mapping->n_attribute_indices; index++) {
+        raw_attribute_index = input_mapping->attribute_indices[index];
+
+        if (raw_attribute_index < 0) {
+            return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+        }
+
         result = cprof_mapping_add_attribute(mapping,
-            (uint64_t)input_mapping->attribute_indices[index]);
+            (uint64_t) raw_attribute_index);
         if (result != 0) {
             return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
         }
@@ -259,6 +257,7 @@ static int decode_location_entry(struct cprof_location *location,
     Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary *dictionary)
 {
     int                result;
+    int32_t            raw_attribute_index;
     size_t             index;
     struct cprof_line *line;
 
@@ -286,8 +285,14 @@ static int decode_location_entry(struct cprof_location *location,
     }
 
     for (index = 0; index < input_location->n_attribute_indices; index++) {
+        raw_attribute_index = input_location->attribute_indices[index];
+
+        if (raw_attribute_index < 0) {
+            return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+        }
+
         result = cprof_location_add_attribute(location,
-            (uint64_t)input_location->attribute_indices[index]);
+            (uint64_t) raw_attribute_index);
         if (result != 0) {
             return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
         }
@@ -320,26 +325,28 @@ static int decode_keyvalueandunit_entry(struct cprof_attribute_unit *attribute_u
 static int decode_link_table_entry(struct cprof_link *link,
     Opentelemetry__Proto__Profiles__V1development__Link *input_link)
 {
-    size_t viable_length;
-
-    if (input_link->trace_id.data != NULL &&
+    if (input_link->trace_id.data != NULL ||
         input_link->trace_id.len > 0) {
-        viable_length = minimum_size(sizeof(link->trace_id),
-                                        input_link->trace_id.len);
+        if (input_link->trace_id.data == NULL ||
+            input_link->trace_id.len != sizeof(link->trace_id)) {
+            return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+        }
 
         memcpy(link->trace_id,
-                input_link->trace_id.data,
-                viable_length);
+               input_link->trace_id.data,
+               sizeof(link->trace_id));
     }
 
-    if (input_link->span_id.data != NULL &&
+    if (input_link->span_id.data != NULL ||
         input_link->span_id.len > 0) {
-        viable_length = minimum_size(sizeof(link->span_id),
-                                        input_link->span_id.len);
+        if (input_link->span_id.data == NULL ||
+            input_link->span_id.len != sizeof(link->span_id)) {
+            return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+        }
 
         memcpy(link->span_id,
-                input_link->span_id.data,
-                viable_length);
+               input_link->span_id.data,
+               sizeof(link->span_id));
     }
 
     return CPROF_DECODE_OPENTELEMETRY_SUCCESS;
@@ -678,6 +685,7 @@ static int decode_scope_profiles_entry(struct cprof_resource_profiles *resource_
     }
 
     if (result != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
+        cfl_list_del(&profiles->_head);
         cprof_scope_profiles_destroy(profiles);
         return result;
     }
@@ -776,18 +784,26 @@ int cprof_decode_opentelemetry_create(struct cprof **result_context,
 {
     Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *service_request;
     struct cprof                                                                           *context;
+    size_t                                                                                  remaining;
     int                                                                                     result;
 
     result = CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
     context = NULL;
 
-    if (result_context != NULL) {
-        *result_context = NULL;
+    if (offset == NULL ||
+        result_context == NULL ||
+        in_buf == NULL ||
+        *offset > in_size) {
+        return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
     }
+
+    *result_context = NULL;
+
+    remaining = in_size - *offset;
 
     service_request = opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__unpack(
                         NULL,
-                        in_size - *offset,
+                        remaining,
                         &in_buf[*offset]);
 
     if (service_request != NULL) {

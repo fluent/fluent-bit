@@ -25,21 +25,29 @@ struct cprof_scope_profiles *cprof_scope_profiles_create(
                                 struct cprof_resource_profiles *resource_profiles,
                                 char *schema_url) {
     struct cprof_scope_profiles *instance;
+    cfl_sds_t                    schema_url_copy;
 
     instance = calloc(1, sizeof(struct cprof_scope_profiles));
 
     if (instance != NULL) {
-        if (schema_url != NULL) {
-            instance->schema_url = cfl_sds_create(schema_url);
-
-            cfl_list_init(&instance->profiles);
-
-            cfl_list_add(&instance->_head, &resource_profiles->scope_profiles);
-        }
-        else {
+        if (schema_url == NULL) {
             free(instance);
 
             instance = NULL;
+        }
+        else {
+            schema_url_copy = cfl_sds_create(schema_url);
+
+            if (schema_url_copy == NULL) {
+                free(instance);
+
+                instance = NULL;
+            }
+            else {
+                instance->schema_url = schema_url_copy;
+                cfl_list_init(&instance->profiles);
+                cfl_list_add(&instance->_head, &resource_profiles->scope_profiles);
+            }
         }
     }
 

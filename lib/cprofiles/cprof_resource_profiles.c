@@ -22,19 +22,28 @@
 
 struct cprof_resource_profiles *cprof_resource_profiles_create(char *schema_url) {
     struct cprof_resource_profiles *instance;
+    cfl_sds_t                       schema_url_copy;
 
     instance = calloc(1, sizeof(struct cprof_resource_profiles));
 
     if (instance != NULL) {
-        if (schema_url != NULL) {
-            instance->schema_url = cfl_sds_create(schema_url);
-
-            cfl_list_init(&instance->scope_profiles);
-        }
-        else {
+        if (schema_url == NULL) {
             free(instance);
 
             instance = NULL;
+        }
+        else {
+            schema_url_copy = cfl_sds_create(schema_url);
+
+            if (schema_url_copy == NULL) {
+                free(instance);
+
+                instance = NULL;
+            }
+            else {
+                instance->schema_url = schema_url_copy;
+                cfl_list_init(&instance->scope_profiles);
+            }
         }
     }
 
@@ -70,4 +79,3 @@ void cprof_resource_profiles_destroy(struct cprof_resource_profiles *instance) {
         free(instance);
     }
 }
-
