@@ -21,6 +21,9 @@ struct test_ctx {
 struct test_ctx* test_ctx_create()
 {
     struct test_ctx *ret_ctx = NULL;
+#ifdef _WIN32
+    WSADATA wsa_data;
+#endif
 
     ret_ctx = flb_calloc(1, sizeof(struct test_ctx));
     if (!TEST_CHECK(ret_ctx != NULL)) {
@@ -36,6 +39,9 @@ struct test_ctx* test_ctx_create()
         return NULL;
     }
 
+#ifdef _WIN32
+    WSAStartup(0x0201, &wsa_data);
+#endif
     ret_ctx->evl = mk_event_loop_create(8);
     if(!TEST_CHECK(ret_ctx->evl != NULL)) {
         flb_config_exit(ret_ctx->config);
