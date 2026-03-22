@@ -153,6 +153,11 @@ static int otlp_pack_any_value(msgpack_packer *mp_pck,
             result = otel_pack_string(mp_pck, body->string_value);
             break;
 
+        case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX:
+            /* Profiling-only string dictionary reference: ignore in logs. */
+            result = msgpack_pack_nil(mp_pck);
+            break;
+
         case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BOOL_VALUE:
             result =  otel_pack_bool(mp_pck, body->bool_value);
             break;
@@ -261,6 +266,13 @@ static int otel_pack_v1_metadata(struct flb_opentelemetry *ctx,
         }
     }
 
+    if (log_record->dropped_attributes_count > 0) {
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(mp_pck, 24);
+        msgpack_pack_str_body(mp_pck, "dropped_attributes_count", 24);
+        msgpack_pack_uint64(mp_pck, log_record->dropped_attributes_count);
+    }
+
     if (log_record->trace_id.len > 0) {
         flb_mp_map_header_append(&mh);
         msgpack_pack_str(mp_pck, 8);
@@ -285,6 +297,14 @@ static int otel_pack_v1_metadata(struct flb_opentelemetry *ctx,
     msgpack_pack_str(mp_pck, 11);
     msgpack_pack_str_body(mp_pck, "trace_flags", 11);
     msgpack_pack_uint8(mp_pck, (uint8_t) log_record->flags & 0xff);
+
+    if (log_record->event_name != NULL && strlen(log_record->event_name) > 0) {
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(mp_pck, 10);
+        msgpack_pack_str_body(mp_pck, "event_name", 10);
+        msgpack_pack_str(mp_pck, strlen(log_record->event_name));
+        msgpack_pack_str_body(mp_pck, log_record->event_name, strlen(log_record->event_name));
+    }
 
     flb_mp_map_header_end(&mh);
 
