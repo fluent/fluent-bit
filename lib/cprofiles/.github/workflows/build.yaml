@@ -42,9 +42,11 @@ jobs:
           sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\/mirrorlist.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
           sed -i -e "s/^#baseurl=http:\/\/mirror.centos.org/baseurl=http:\/\/vault.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
           yum -y update && \
-          yum install -y ca-certificates cmake curl-devel gcc gcc-c++ git make wget && \
-          yum install -y epel-release
-          yum install -y cmake3
+          yum install -y ca-certificates curl-devel gcc gcc-c++ git make wget && \
+          yum install -y epel-release && \
+          yum install -y python3 python3-pip
+          python3 -m pip install --user --upgrade "cmake>=3.20,<4"
+          echo "$(python3 -m site --user-base)/bin" >> "$GITHUB_PATH"
         shell: bash
 
       - name: Clone repo without submodules (1.8.3 version of Git)
@@ -69,7 +71,7 @@ jobs:
 
       - name: Run compilation
         run: |
-          cmake3 -DCPROF_DEV=on ../
+          cmake -DCPROF_DEV=on ../
           make
         shell: bash
         working-directory: cprofiles/build
@@ -82,7 +84,9 @@ jobs:
       - name: Set up base image dependencies
         run: |
           apt-get update
-          apt-get install -y build-essential cmake make git
+          apt-get install -y build-essential git make python3 python3-pip
+          python3 -m pip install --user --upgrade "cmake>=3.20,<4"
+          echo "$(python3 -m site --user-base)/bin" >> "$GITHUB_PATH"
         shell: bash
 
       - uses: actions/checkout@v6
@@ -121,9 +125,12 @@ jobs:
             apt-get update && \
             apt-get install -y --no-install-recommends \
             build-essential \
-            cmake \
             file \
-            make
+            make \
+            python3 \
+            python3-pip
+            python3 -m pip install --user --upgrade "cmake>=3.20,<4"
+            export PATH="$(python3 -m site --user-base)/bin:$PATH"
             export CC=${{ env.compiler }}
             cd build
             cmake -DCPROF_TESTS=On ../

@@ -805,6 +805,10 @@ int cprof_decode_opentelemetry_create(struct cprof **result_context,
 
     if (result == CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
         *result_context = context;
+
+        if (offset != NULL) {
+            *offset = in_size;
+        }
     }
     else if (context != NULL) {
         cprof_destroy(context);
