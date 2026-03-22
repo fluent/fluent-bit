@@ -947,6 +947,8 @@ static void destroy_export_profiles_service_request(
 struct profile_encoding_state {
     int32_t *string_map;           /* profile string_table index -> dict string index */
     size_t   string_map_count;
+    int32_t *attribute_map;        /* profile attribute_units index -> dict attribute index */
+    size_t   attribute_map_count;
     int32_t *mapping_map;          /* profile mapping index -> dict mapping index */
     size_t   mapping_map_count;
     int32_t *function_map;
@@ -965,6 +967,7 @@ static void free_profile_encoding_state(struct profile_encoding_state *s)
         return;
     }
     free(s->string_map);
+    free(s->attribute_map);
     free(s->mapping_map);
     free(s->function_map);
     free(s->location_map);
@@ -1060,13 +1063,112 @@ static int32_t dict_add_stack(
     return (int32_t) dict->n_stack_table++;
 }
 
+static struct cfl_variant *fetch_profile_attribute_value(
+    struct cprof_profile *profile,
+    struct cprof_attribute_unit *attribute_unit)
+{
+    char *attribute_key;
+
+    if (profile == NULL ||
+        attribute_unit == NULL ||
+        profile->attributes == NULL ||
+        profile->string_table == NULL ||
+        attribute_unit->attribute_key < 0 ||
+        (size_t) attribute_unit->attribute_key >= profile->string_table_count) {
+        return NULL;
+    }
+
+    attribute_key = profile->string_table[attribute_unit->attribute_key];
+
+    if (attribute_key == NULL) {
+        return NULL;
+    }
+
+    return cfl_kvlist_fetch(profile->attributes, attribute_key);
+}
+
+static size_t count_profile_attribute_references(
+    struct cprof_profile *profile)
+{
+    struct cfl_list           *iterator;
+    struct cprof_attribute_unit *attribute_unit;
+    size_t                     count;
+
+    count = 0;
+
+    cfl_list_foreach(iterator, &profile->attribute_units) {
+        attribute_unit = cfl_list_entry(iterator, struct cprof_attribute_unit, _head);
+
+        if (fetch_profile_attribute_value(profile, attribute_unit) != NULL) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static int append_profile_attribute_entry(
+    Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary *dict,
+    struct cprof_profile *profile,
+    struct cprof_attribute_unit *attribute_unit,
+    const int32_t *string_map,
+    size_t string_map_count)
+{
+    Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit  *entry;
+    Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit **table;
+    struct cfl_variant                                             *attribute_value;
+
+    entry = calloc(1, sizeof(Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit));
+    if (entry == NULL) {
+        return -1;
+    }
+
+    opentelemetry__proto__profiles__v1development__key_value_and_unit__init(entry);
+
+    if (attribute_unit->attribute_key >= 0 &&
+        (size_t) attribute_unit->attribute_key < string_map_count) {
+        entry->key_strindex = string_map[attribute_unit->attribute_key];
+    }
+
+    if (attribute_unit->unit >= 0 &&
+        (size_t) attribute_unit->unit < string_map_count) {
+        entry->unit_strindex = string_map[attribute_unit->unit];
+    }
+
+    attribute_value = fetch_profile_attribute_value(profile, attribute_unit);
+
+    if (attribute_value != NULL) {
+        entry->value = cfl_variant_to_otlp_any_value(attribute_value);
+        if (entry->value == NULL) {
+            destroy_keyvalueandunit(entry);
+            return -1;
+        }
+    }
+
+    table = realloc(dict->attribute_table,
+                    (dict->n_attribute_table + 1) *
+                    sizeof(Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit *));
+    if (table == NULL) {
+        destroy_keyvalueandunit(entry);
+        return -1;
+    }
+
+    dict->attribute_table = table;
+    dict->attribute_table[dict->n_attribute_table] = entry;
+
+    return (int32_t) dict->n_attribute_table++;
+}
+
 /* Build OTLP Mapping from cprof_mapping; caller must destroy. Uses string_map for filename_strindex. */
 static Opentelemetry__Proto__Profiles__V1development__Mapping *
 dict_build_mapping(struct cprof_mapping *m,
                   const int32_t *string_map,
-                  size_t string_map_count)
+                  size_t string_map_count,
+                  const int32_t *attribute_map,
+                  size_t attribute_map_count)
 {
     Opentelemetry__Proto__Profiles__V1development__Mapping *otlp;
+    size_t                                                  index;
 
     otlp = calloc(1, sizeof(Opentelemetry__Proto__Profiles__V1development__Mapping));
     if (otlp == NULL) {
@@ -1082,7 +1184,26 @@ dict_build_mapping(struct cprof_mapping *m,
     else {
         otlp->filename_strindex = 0;
     }
-    /* attribute_indices reference dict attribute_table; leave 0 for now */
+
+    if (m->attributes_count > 0) {
+        otlp->attribute_indices = calloc(m->attributes_count, sizeof(int32_t));
+        if (otlp->attribute_indices == NULL) {
+            destroy_mapping(otlp);
+            return NULL;
+        }
+
+        otlp->n_attribute_indices = m->attributes_count;
+
+        for (index = 0; index < m->attributes_count; index++) {
+            if (m->attributes[index] >= attribute_map_count) {
+                destroy_mapping(otlp);
+                return NULL;
+            }
+
+            otlp->attribute_indices[index] = attribute_map[m->attributes[index]];
+        }
+    }
+
     return otlp;
 }
 
@@ -1101,13 +1222,16 @@ static int32_t dict_add_mapping(
     Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary *dict,
     struct cprof_mapping *m,
     const int32_t *string_map,
-    size_t string_map_count)
+    size_t string_map_count,
+    const int32_t *attribute_map,
+    size_t attribute_map_count)
 {
     Opentelemetry__Proto__Profiles__V1development__Mapping *otlp;
     Opentelemetry__Proto__Profiles__V1development__Mapping **tab;
     size_t i;
 
-    otlp = dict_build_mapping(m, string_map, string_map_count);
+    otlp = dict_build_mapping(m, string_map, string_map_count,
+                              attribute_map, attribute_map_count);
     if (otlp == NULL) {
         return -1;
     }
@@ -1212,7 +1336,9 @@ dict_build_location(struct cprof_location *loc,
                     const int32_t *mapping_map,
                     size_t mapping_map_count,
                     const int32_t *function_map,
-                    size_t function_map_count)
+                    size_t function_map_count,
+                    const int32_t *attribute_map,
+                    size_t attribute_map_count)
 {
     Opentelemetry__Proto__Profiles__V1development__Location *otlp;
     struct cfl_list *line_iter;
@@ -1221,7 +1347,7 @@ dict_build_location(struct cprof_location *loc,
     size_t idx;
 
     n_lines = cfl_list_size(&loc->lines);
-    otlp = initialize_location(n_lines, 0);
+    otlp = initialize_location(n_lines, loc->attributes_count);
     if (otlp == NULL) {
         return NULL;
     }
@@ -1253,6 +1379,15 @@ dict_build_location(struct cprof_location *loc,
         idx++;
     }
 
+    for (idx = 0; idx < loc->attributes_count; idx++) {
+        if (loc->attributes[idx] >= attribute_map_count) {
+            destroy_location(otlp);
+            return NULL;
+        }
+
+        otlp->attribute_indices[idx] = attribute_map[loc->attributes[idx]];
+    }
+
     return otlp;
 }
 
@@ -1280,13 +1415,17 @@ static int32_t dict_add_location(
     const int32_t *mapping_map,
     size_t mapping_map_count,
     const int32_t *function_map,
-    size_t function_map_count)
+    size_t function_map_count,
+    const int32_t *attribute_map,
+    size_t attribute_map_count)
 {
     Opentelemetry__Proto__Profiles__V1development__Location *otlp;
     Opentelemetry__Proto__Profiles__V1development__Location **tab;
     size_t i;
 
-    otlp = dict_build_location(loc, mapping_map, mapping_map_count, function_map, function_map_count);
+    otlp = dict_build_location(loc, mapping_map, mapping_map_count,
+                               function_map, function_map_count,
+                               attribute_map, attribute_map_count);
     if (otlp == NULL) {
         return -1;
     }
@@ -1386,6 +1525,7 @@ static int build_profiles_dictionary(
     struct cfl_list                                                   *sp_iter;
     struct cfl_list                                                   *prof_iter;
     struct cfl_list                                                   *map_iter;
+    struct cfl_list                                                   *attribute_iter;
     struct cfl_list                                                   *func_iter;
     struct cfl_list                                                   *loc_iter;
     struct cfl_list                                                   *link_iter;
@@ -1396,8 +1536,8 @@ static int build_profiles_dictionary(
     struct cprof_mapping                                              *cprof_mapping;
     struct cprof_function                                             *cprof_func;
     struct cprof_location                                             *cprof_loc;
-    struct cprof_link                                                *cprof_link;
-    struct cprof_sample                                              *sample;
+    struct cprof_link                                                 *cprof_link;
+    struct cprof_sample                                               *sample;
     struct profile_encoding_state                                     *states;
     size_t                                                             state_count;
     size_t                                                             state_idx;
@@ -1551,6 +1691,33 @@ static int build_profiles_dictionary(
                     }
                 }
 
+                st->attribute_map_count = cfl_list_size(&profile->attribute_units);
+                if (st->attribute_map_count > 0) {
+                    struct cprof_attribute_unit *attribute_unit;
+
+                    st->attribute_map = malloc(st->attribute_map_count * sizeof(int32_t));
+                    if (st->attribute_map == NULL) {
+                        goto fail;
+                    }
+
+                    i = 0;
+                    cfl_list_foreach(attribute_iter, &profile->attribute_units) {
+                        attribute_unit = cfl_list_entry(attribute_iter,
+                                                        struct cprof_attribute_unit,
+                                                        _head);
+                        si = append_profile_attribute_entry(dict,
+                                                            profile,
+                                                            attribute_unit,
+                                                            st->string_map,
+                                                            st->string_map_count);
+                        if (si < 0) {
+                            goto fail;
+                        }
+
+                        st->attribute_map[i++] = si;
+                    }
+                }
+
                 /* stack_index_by_sample: for each sample, resolve location_index[] to dict stack */
                 st->sample_count = cfl_list_size(&profile->samples);
                 if (st->sample_count > 0) {
@@ -1575,7 +1742,9 @@ static int build_profiles_dictionary(
                     i = 0;
                     cfl_list_foreach(map_iter, &profile->mappings) {
                         cprof_mapping = cfl_list_entry(map_iter, struct cprof_mapping, _head);
-                        si = dict_add_mapping(dict, cprof_mapping, st->string_map, st->string_map_count);
+                        si = dict_add_mapping(dict, cprof_mapping,
+                                              st->string_map, st->string_map_count,
+                                              st->attribute_map, st->attribute_map_count);
                         if (si < 0) {
                             goto fail;
                         }
@@ -1607,7 +1776,8 @@ static int build_profiles_dictionary(
                         cprof_loc = cfl_list_entry(loc_iter, struct cprof_location, _head);
                         si = dict_add_location(dict, cprof_loc,
                                               st->mapping_map, st->mapping_map_count,
-                                              st->function_map, st->function_map_count);
+                                              st->function_map, st->function_map_count,
+                                              st->attribute_map, st->attribute_map_count);
                         if (si < 0) {
                             goto fail;
                         }
@@ -2149,7 +2319,16 @@ static int pack_cprof_sample(
     for (index = 0 ;
          index < input_instance->attributes_count ;
          index++) {
-        otlp_sample->attribute_indices[index] = (int32_t) input_instance->attributes[index];
+        if (encoding_state != NULL &&
+            encoding_state->attribute_map != NULL &&
+            input_instance->attributes[index] < encoding_state->attribute_map_count) {
+            otlp_sample->attribute_indices[index] =
+                encoding_state->attribute_map[input_instance->attributes[index]];
+        }
+        else {
+            destroy_sample(otlp_sample);
+            return CPROF_ENCODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+        }
     }
 
     if (encoding_state != NULL && encoding_state->link_map != NULL &&
@@ -2190,12 +2369,17 @@ static int pack_cprof_profile(
 {
     Opentelemetry__Proto__Profiles__V1development__Profile *otlp_profile;
     struct cfl_list                                        *iterator;
+    struct cprof_attribute_unit                            *attribute_unit;
     struct cprof_sample                                    *sample;
     struct cprof_value_type                                *sample_type;
     int                                                     result;
+    size_t                                                  attribute_count;
     size_t                                                  index;
 
-    otlp_profile = initialize_profile(cfl_list_size(&input_instance->samples), 0);
+    attribute_count = count_profile_attribute_references(input_instance);
+
+    otlp_profile = initialize_profile(cfl_list_size(&input_instance->samples),
+                                      attribute_count);
 
     if (otlp_profile == NULL) {
         return CPROF_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
@@ -2210,6 +2394,64 @@ static int pack_cprof_profile(
             destroy_profile(otlp_profile);
             return result;
         }
+    }
+
+    otlp_profile->profile_id.data =
+        (uint8_t *) cfl_sds_create_len((char *) input_instance->profile_id,
+                                       sizeof(input_instance->profile_id));
+    if (otlp_profile->profile_id.data == NULL) {
+        destroy_profile(otlp_profile);
+        return CPROF_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+    otlp_profile->profile_id.len = sizeof(input_instance->profile_id);
+    otlp_profile->dropped_attributes_count = input_instance->dropped_attributes_count;
+
+    if (input_instance->original_payload_format != NULL) {
+        otlp_profile->original_payload_format =
+            cfl_sds_create(input_instance->original_payload_format);
+
+        if (otlp_profile->original_payload_format == NULL) {
+            destroy_profile(otlp_profile);
+            return CPROF_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
+    }
+
+    if (input_instance->original_payload != NULL) {
+        otlp_profile->original_payload.data =
+            (uint8_t *) cfl_sds_create_len(input_instance->original_payload,
+                                           cfl_sds_len(input_instance->original_payload));
+
+        if (otlp_profile->original_payload.data == NULL) {
+            destroy_profile(otlp_profile);
+            return CPROF_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
+
+        otlp_profile->original_payload.len =
+            cfl_sds_len(input_instance->original_payload);
+    }
+
+    index = 0;
+    attribute_count = 0;
+    cfl_list_foreach(iterator, &input_instance->attribute_units) {
+        attribute_unit = cfl_list_entry(iterator, struct cprof_attribute_unit, _head);
+
+        if (fetch_profile_attribute_value(input_instance, attribute_unit) == NULL) {
+            attribute_count++;
+            continue;
+        }
+
+        if (encoding_state == NULL ||
+            encoding_state->attribute_map == NULL ||
+            attribute_count >= encoding_state->attribute_map_count ||
+            index >= otlp_profile->n_attribute_indices) {
+            destroy_profile(otlp_profile);
+            return CPROF_ENCODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+        }
+
+        otlp_profile->attribute_indices[index] =
+            encoding_state->attribute_map[attribute_count];
+        index++;
+        attribute_count++;
     }
 
     index = 0;

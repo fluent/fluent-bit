@@ -763,11 +763,18 @@ static int encode_cprof_instrumentation_scope(
                                      instance->attributes);
 
     if (result != 0) {
+        mpack_finish_map(&context->writer);
         return -1;
     }
 
     mpack_write_cstr(&context->writer, "dropped_attribute_count");
     mpack_write_u32(&context->writer, instance->dropped_attributes_count);
+
+    mpack_finish_map(&context->writer);
+
+    if (mpack_writer_error(&context->writer) != mpack_ok) {
+        return -1;
+    }
 
     return CPROF_ENCODE_MSGPACK_SUCCESS;
 }
@@ -787,11 +794,18 @@ static int encode_cprof_resource(
                                      instance->attributes);
 
     if (result != 0) {
+        mpack_finish_map(&context->writer);
         return -1;
     }
 
     mpack_write_cstr(&context->writer, "dropped_attribute_count");
     mpack_write_u32(&context->writer, instance->dropped_attributes_count);
+
+    mpack_finish_map(&context->writer);
+
+    if (mpack_writer_error(&context->writer) != mpack_ok) {
+        return -1;
+    }
 
     return CPROF_ENCODE_MSGPACK_SUCCESS;
 }
@@ -919,6 +933,7 @@ int cprof_encode_msgpack_create(cfl_sds_t *result_buffer,
                                 struct cprof *profile)
 {
     int                                   result;
+    mpack_error_t                         writer_result;
     struct cprof_msgpack_encoding_context context;
 
     *result_buffer = NULL;
@@ -932,12 +947,23 @@ int cprof_encode_msgpack_create(cfl_sds_t *result_buffer,
 
     result = pack_context(&context, profile);
 
-    if (mpack_writer_destroy(&context.writer) != mpack_ok) {
+    writer_result = mpack_writer_destroy(&context.writer);
+
+    if (writer_result != mpack_ok) {
         fprintf(stderr, "An error occurred encoding the data!\n");
+
+        if (result == CPROF_ENCODE_MSGPACK_SUCCESS) {
+            result = CPROF_ENCODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+        }
     }
 
-    if (result == CPROF_ENCODE_MSGPACK_SUCCESS) {
+    if (result == CPROF_ENCODE_MSGPACK_SUCCESS &&
+        writer_result == mpack_ok) {
         *result_buffer = cfl_sds_create_len(context.output_buffer, context.output_size);
+
+        if (*result_buffer == NULL) {
+            result = CPROF_ENCODE_MSGPACK_ALLOCATION_ERROR;
+        }
     }
 
     if (context.output_buffer != NULL) {

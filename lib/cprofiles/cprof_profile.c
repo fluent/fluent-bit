@@ -233,7 +233,7 @@ size_t cprof_profile_string_add(struct cprof_profile *profile, char *str, int st
     cfl_sds_t *new_table;
 
     if (!str) {
-        return -1;
+        return SIZE_MAX;
     }
 
     if (str_len <= 0) {
@@ -243,7 +243,7 @@ size_t cprof_profile_string_add(struct cprof_profile *profile, char *str, int st
     if (!profile->string_table && str_len > 0) {
         profile->string_table = malloc(alloc_size * sizeof(cfl_sds_t));
         if (!profile->string_table) {
-            return -1;
+            return SIZE_MAX;
         }
         profile->string_table_size = alloc_size;
 
@@ -260,7 +260,7 @@ size_t cprof_profile_string_add(struct cprof_profile *profile, char *str, int st
         new_size = profile->string_table_size + alloc_size;
         new_table = realloc(profile->string_table, new_size * sizeof(cfl_sds_t));
         if (!new_table) {
-            return -1;
+            return SIZE_MAX;
         }
         profile->string_table = new_table;
         profile->string_table_size = new_size;
@@ -269,7 +269,7 @@ size_t cprof_profile_string_add(struct cprof_profile *profile, char *str, int st
     id = profile->string_table_count;
     profile->string_table[id] = cfl_sds_create_len(str, str_len);
     if (!profile->string_table[id]) {
-        return -1;
+        return SIZE_MAX;
     }
     profile->string_table_count++;
 

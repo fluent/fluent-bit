@@ -24,9 +24,7 @@ struct cprof_instrumentation_scope *cprof_instrumentation_scope_create(
                                         char *name,
                                         char *version,
                                         struct cfl_kvlist *attributes,
-                                        uint32_t dropped_attributes_count)
-
-    {
+                                        uint32_t dropped_attributes_count) {
     struct cprof_instrumentation_scope *instance;
 
     instance = calloc(1, sizeof(struct cprof_instrumentation_scope));

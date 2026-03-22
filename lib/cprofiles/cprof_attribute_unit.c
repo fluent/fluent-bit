@@ -38,10 +38,6 @@ struct cprof_attribute_unit *cprof_attribute_unit_create(struct cprof_profile *p
 void cprof_attribute_unit_destroy(struct cprof_attribute_unit *instance)
 {
     if (instance != NULL) {
-        if (cfl_list_entry_is_orphan(&instance->_head) == CFL_FALSE) {
-            cfl_list_del(&instance->_head);
-        }
-
         free(instance);
     }
 }

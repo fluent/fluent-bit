@@ -25,13 +25,19 @@ int cprof_mpack_consume_string_or_nil_tag(mpack_reader_t *reader, cfl_sds_t *out
 {
     int result;
 
+    if (output_buffer == NULL) {
+        return CPROF_MPACK_INVALID_ARGUMENT_ERROR;
+    }
+
     if (cprof_mpack_peek_type(reader) == mpack_type_str) {
         result = cprof_mpack_consume_string_tag(reader, output_buffer);
     }
     else if (cprof_mpack_peek_type(reader) == mpack_type_nil) {
         result = cprof_mpack_consume_nil_tag(reader);
 
-        *output_buffer = NULL;
+        if (result == CPROF_MPACK_SUCCESS) {
+            *output_buffer = NULL;
+        }
     }
     else {
         result = CPROF_MPACK_UNEXPECTED_DATA_TYPE_ERROR;
@@ -44,13 +50,19 @@ int cprof_mpack_consume_binary_or_nil_tag(mpack_reader_t *reader, cfl_sds_t *out
 {
     int result;
 
+    if (output_buffer == NULL) {
+        return CPROF_MPACK_INVALID_ARGUMENT_ERROR;
+    }
+
     if (cprof_mpack_peek_type(reader) == mpack_type_bin) {
         result = cprof_mpack_consume_binary_tag(reader, output_buffer);
     }
     else if (cprof_mpack_peek_type(reader) == mpack_type_nil) {
         result = cprof_mpack_consume_nil_tag(reader);
 
-        *output_buffer = NULL;
+        if (result == CPROF_MPACK_SUCCESS) {
+            *output_buffer = NULL;
+        }
     }
     else {
         result = CPROF_MPACK_UNEXPECTED_DATA_TYPE_ERROR;
@@ -296,6 +308,10 @@ int cprof_mpack_consume_binary_tag(mpack_reader_t *reader, cfl_sds_t *output_buf
     }
 
     string_length = mpack_tag_bin_length(&tag);
+
+    if (CPROF_MPACK_MAX_STRING_LENGTH < string_length) {
+        return CPROF_MPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
 
     *output_buffer = cfl_sds_create_size(string_length);
 
