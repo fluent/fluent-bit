@@ -945,6 +945,8 @@ int cmt_cat_exp_histogram(struct cmt *cmt, struct cmt_exp_histogram *exp_histogr
         return -1;
     }
 
+    eh->aggregation_type = exp_histogram->aggregation_type;
+
     if (filtered_map != NULL) {
         ret = cmt_cat_copy_map(&eh->opts, eh->map, filtered_map);
     }
