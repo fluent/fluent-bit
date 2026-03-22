@@ -208,6 +208,7 @@ void cprof_sample_destroy_all(struct cprof_profile *profile)
 
     cfl_list_foreach_safe(head, tmp, &profile->samples) {
         sample = cfl_list_entry(head, struct cprof_sample, _head);
+        cfl_list_del(&sample->_head);
         cprof_sample_destroy(sample);
     }
 }
@@ -242,12 +243,12 @@ struct cprof_value_type *cprof_sample_type_str_create(struct cprof_profile *prof
     }
 
     type = cprof_profile_string_add(profile, type_str, -1);
-    if (type <= 0) {
+    if (type == SIZE_MAX) {
         return NULL;
     }
 
     unit = cprof_profile_string_add(profile, unit_str, -1);
-    if (unit <= 0) {
+    if (unit == SIZE_MAX) {
         return NULL;
     }
 
@@ -274,6 +275,7 @@ void cprof_sample_type_destroy_all(struct cprof_profile *profile)
 
     cfl_list_foreach_safe(head, tmp, &profile->sample_type) {
         sample_type = cfl_list_entry(head, struct cprof_value_type, _head);
+        cfl_list_del(&sample_type->_head);
         cprof_sample_type_destroy(sample_type);
     }
 }
