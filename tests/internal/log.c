@@ -2,6 +2,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_time.h>
+#include <inttypes.h>
 
 #include "flb_tests_internal.h"
 
@@ -25,8 +26,8 @@ static int check_clock(uint64_t timeout, struct flb_time *tm_start)
     diff = now - start;
 
     if (!(TEST_CHECK(diff < timeout))) {
-        TEST_MSG("clock error, unsuppresed log: now=%llu, start=%llu timeout=%llu(%llu), diff=%llu",
-	         now, start, start+timeout, timeout, diff);
+        TEST_MSG("clock error, unsuppresed log: now=%" PRIu64 ", start=%" PRIu64 " timeout=%" PRIu64 "(%" PRIu64 "), diff=%" PRIu64,
+                 now, start, start + timeout, timeout, diff);
         return -1;
     }
 
