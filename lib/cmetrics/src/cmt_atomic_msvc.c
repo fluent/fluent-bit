@@ -18,7 +18,13 @@
  */
 
 #include <cmetrics/cmt_atomic.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#undef WIN32_LEAN_AND_MEAN
+#else
+#include <windows.h>
+#endif
 
 /* This allows cmt_atomic_initialize to be automatically called 
  * as soon as the program starts if enabled.
