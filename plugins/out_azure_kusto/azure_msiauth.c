@@ -62,6 +62,9 @@ char *flb_azure_msiauth_token_get(struct flb_oauth2 *ctx)
          return NULL;
      }
 
+     /* Allow response buffer to grow as needed */
+     flb_http_buffer_size(c, 0);
+
      /* Append HTTP Header */
      flb_http_add_header(c, "Metadata", 8, "true", 4);
 
@@ -232,6 +235,9 @@ body_ok:
         flb_sds_destroy(body); /* Clean up allocated body */
         return -1;
     }
+
+    /* Allow response buffer to grow as needed */
+    flb_http_buffer_size(c, 0);
 
     /* Prepare token exchange request headers */
     flb_http_add_header(c, "Content-Type", 12, "application/x-www-form-urlencoded", 33);
