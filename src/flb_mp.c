@@ -313,27 +313,29 @@ int flb_mp_normalize_log_buffer_groups(const void *in_buf, size_t in_size,
 
 int flb_mp_count_remaining(const void *data, size_t bytes, size_t *remaining_bytes)
 {
-    size_t remaining;
+    size_t remaining = 0;
     int count = 0;
     mpack_reader_t reader;
 
-    mpack_reader_init_data(&reader, (const char *) data, bytes);
-    for (;;) {
-        remaining = mpack_reader_remaining(&reader, NULL);
-        if (!remaining) {
-            break;
+    if (data) {
+        mpack_reader_init_data(&reader, (const char *) data, bytes);
+        for (;;) {
+            remaining = mpack_reader_remaining(&reader, NULL);
+            if (!remaining) {
+                break;
+            }
+            mpack_discard(&reader);
+            if (mpack_reader_error(&reader)) {
+                break;
+            }
+            count++;
         }
-        mpack_discard(&reader);
-        if (mpack_reader_error(&reader)) {
-            break;
-        }
-        count++;
+        mpack_reader_destroy(&reader);
     }
 
     if (remaining_bytes) {
         *remaining_bytes = remaining;
     }
-    mpack_reader_destroy(&reader);
     return count;
 }
 
