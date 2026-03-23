@@ -917,8 +917,7 @@ static void *tls_context_create(int verify,
     if (key_file) {
         if (strncmp(key_file, "pkcs11:", 7) == 0) {
 #ifdef OPENSSL_NO_ENGINE
-            flb_error("[tls] pkcs11_key_file '%s': requires OpenSSL ENGINE support",
-                        key_file);
+            flb_error("[tls] key_file 'pkcs11:<REDACTED>': requires OpenSSL ENGINE support");
             goto error;
 #else
             /* PKCS#11 URI detected */
