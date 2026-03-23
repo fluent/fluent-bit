@@ -907,8 +907,8 @@ static void *tls_context_create(int verify,
         ret = SSL_CTX_use_certificate_chain_file(ssl_ctx, crt_file);
         if (ret != 1) {
             ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
-            flb_error("[tls] crt_file '%s' %lu: %s",
-                      crt_file, ERR_get_error(), err_buf);
+            flb_error("[tls] crt_file '%s' error: %s",
+                      crt_file, err_buf);
             goto error;
         }
     }
