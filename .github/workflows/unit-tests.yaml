@@ -127,6 +127,10 @@ jobs:
 
       - name: ${{ matrix.compiler.cc }} & ${{ matrix.compiler.cxx }} - ${{ matrix.flb_option }}
         run: |
+          if [[ "$FLB_OPT" =~ COVERAGE ]]; then
+              # Coverage build requires larger coroutine stack.
+              export FLB_OPT="${FLB_OPT} -DFLB_CORO_STACK_SIZE=4194304"
+          fi
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
