@@ -671,12 +671,22 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
 #ifdef FLB_HAVE_SIMD
     /*
      * When SIMD support is compiled in, route the default JSON pack API through
-     * the extensible frontend so callers inherit the YYJSON backend selection.
+     * the extensible frontend so callers inherit the YYJSON backend
+     * selection.
+     * However, all of the defaulting to use YYSJON is dangerous on
+     * coroutine.
+     * So, we only enabled it for normal thread.
+     * Still, we use legacy backend on using coroutine.
      * Explicit backend-specific entry points remain available for forced JSMN
      * or YYJSON behavior.
      */
-    return flb_pack_json_recs_ext(js, len, buffer, size, root_type,
-                                  &records, consumed, NULL);
+    if (flb_coro_get() != NULL) {
+        return flb_pack_json_legacy(js, len, buffer, size, root_type, consumed);
+    }
+    else {
+        return flb_pack_json_recs_ext(js, len, buffer, size, root_type,
+                                      &records, consumed, NULL);
+    }
 #endif
 
     return flb_pack_json_legacy(js, len, buffer, size, root_type, consumed);
