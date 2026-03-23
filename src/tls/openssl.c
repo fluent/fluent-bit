@@ -918,8 +918,7 @@ static void *tls_context_create(int verify,
         if (strncmp(key_file, "pkcs11:", 7) == 0) {
             /* PKCS#11 URI detected */
             if (!key_passwd || strlen(key_passwd) == 0) {
-                flb_error("[tls] PKCS#11 URI requires a PIN/password (tls_key_passwd)");
-                goto error;
+                flb_warn("[tls] PKCS#11 URI may fail without a PIN/password (tls_key_passwd)");
             }
             ENGINE *e = ENGINE_by_id("pkcs11");
             if (!e) {
