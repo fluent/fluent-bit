@@ -965,6 +965,7 @@ static void *tls_context_create(int verify,
                 ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
                 flb_error("[tls] key_file '%s' %lu: %s",
                         key_file, ERR_get_error(), err_buf);
+                goto error;
             }
         }
 
