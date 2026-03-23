@@ -304,7 +304,7 @@ jobs:
           password: ${{ secrets.token }}
 
       - name: Trivy - multi-arch
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0 (pinned for CVE GHSA-69fq-xp46-6x23)
         with:
           image-ref: "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}"
           format: "table"

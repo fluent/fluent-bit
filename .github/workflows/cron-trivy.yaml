@@ -52,7 +52,7 @@ jobs:
 
       # Deliberately chosen master here to keep up-to-date.
       - name: Run Trivy vulnerability scanner for any major issues
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0 (pinned for CVE GHSA-69fq-xp46-6x23)
         with:
             image-ref: local/fluent-bit:${{ matrix.local_tag }}
             # Filter out any that have no current fix.
@@ -66,7 +66,7 @@ jobs:
       # Show all detected issues.
       # Note this will show a lot more, including major un-fixed ones.
       - name: Run Trivy vulnerability scanner for local output
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0 (pinned for CVE GHSA-69fq-xp46-6x23)
         with:
             image-ref: local/fluent-bit:${{ matrix.local_tag }}
             format: table
