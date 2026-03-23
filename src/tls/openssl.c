@@ -916,6 +916,11 @@ static void *tls_context_create(int verify,
     /* key_file */
     if (key_file) {
         if (strncmp(key_file, "pkcs11:", 7) == 0) {
+#ifdef OPENSSL_NO_ENGINE
+            flb_error("[tls] pkcs11_key_file '%s': requires OpenSSL ENGINE support",
+                        key_file);
+            goto error;
+#endif
             /* PKCS#11 URI detected */
             if (!key_passwd || strlen(key_passwd) == 0) {
                 flb_warn("[tls] PKCS#11 URI may fail without a PIN/password (tls_key_passwd)");
