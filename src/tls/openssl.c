@@ -927,23 +927,27 @@ static void *tls_context_create(int verify,
             }
             ENGINE *e = ENGINE_by_id("pkcs11");
             if (!e) {
-                flb_error("[tls] failed to load pkcs11 engine");
+                ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] failed to load pkcs11 engine: %s", err_buf);
                 goto error;
             }
             if (!ENGINE_init(e)) {
-                flb_error("[tls] failed to initialize pkcs11 engine");
+                ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] failed to initialize pkcs11 engine: %s", err_buf);
                 ENGINE_free(e);
                 goto error;
             }
             EVP_PKEY *pkey = ENGINE_load_private_key(e, key_file, NULL, (void *)key_passwd);
             if (!pkey) {
-                flb_error("[tls] failed to load private key from pkcs11 uri: %s", key_file);
+                ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] failed to load private key from pkcs11 uri '%s': %s", key_file, err_buf);
                 ENGINE_finish(e);
                 ENGINE_free(e);
                 goto error;
             }
             if (SSL_CTX_use_PrivateKey(ssl_ctx, pkey) != 1) {
-                flb_error("[tls] failed to use pkcs11 private key: %s", key_file);
+                ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] failed to use pkcs11 private key '%s': %s", key_file, err_buf);
                 EVP_PKEY_free(pkey);
                 ENGINE_finish(e);
                 ENGINE_free(e);
