@@ -20,11 +20,14 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
+    librabbitmq-devel && \
     yum clean all
 
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # almalinux/8.arm64v8 base image
 # hadolint ignore=DL3029
@@ -40,7 +43,8 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
+    librabbitmq-devel && \
     yum clean all
 
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
@@ -48,6 +52,8 @@ ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
 ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 FROM almalinux:9 AS almalinux-9-base
 
@@ -59,11 +65,14 @@ RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
+    librabbitmq-devel && \
     yum clean all
 
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
+ARG FLB_IN_AMQP=Off
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # almalinux/8.arm64v8 base image
 # hadolint ignore=DL3029
@@ -79,7 +88,8 @@ RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
+    librabbitmq-devel && \
     yum clean all
 
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
@@ -87,6 +97,8 @@ ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
 ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
+ARG FLB_IN_AMQP=Off
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 FROM almalinux:10 AS almalinux-10-base
 
@@ -99,12 +111,15 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
-    libzstd-devel && \
+    libzstd-devel \
+    librabbitmq-devel && \
     yum clean all
 
 # Use system installed libzstd library.
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=On
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # almalinux/8.arm64v8 base image
 # hadolint ignore=DL3029
@@ -121,7 +136,8 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
-    libzstd-devel && \
+    libzstd-devel \
+    librabbitmq-devel && \
     yum clean all
 
 # Use system installed libzstd library.
@@ -130,6 +146,8 @@ ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
 ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
@@ -175,6 +193,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
     -DFLB_UNICODE_ENCODER="${FLB_UNICODE_ENCODER}" \
     -DFLB_PREFER_SYSTEM_LIB_ZSTD="${FLB_PREFER_SYSTEM_LIB_ZSTD}" \
+    -DFLB_IN_AMQP="${FLB_IN_AMQP}" \
     ../
 
 VOLUME [ "/output" ]
