@@ -24,6 +24,7 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel \
+    librabbitmq-devel \
     tar gzip && \
     yum install -y epel-release && \
     yum install -y cmake3 && \
@@ -63,6 +64,7 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel \
+    librabbitmq-devel \
     tar gzip && \
     yum install -y epel-release && \
     yum install -y cmake3 && \
@@ -111,6 +113,7 @@ RUN yum -y update && \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     libyaml-devel zlib-devel \
+    librabbitmq-devel \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -154,6 +157,7 @@ RUN yum -y update && \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     libyaml-devel zlib-devel \
+    librabbitmq-devel \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -192,6 +196,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     libyaml-devel zlib-devel \
+    librabbitmq-devel \
     tar gzip && \
     dnf clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -223,6 +228,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     libyaml-devel zlib-devel \
+    librabbitmq-devel \
     tar gzip && \
     dnf clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -261,6 +267,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     libyaml-devel zlib-devel libzstd-devel \
+    librabbitmq-devel \
     tar gzip && \
     dnf clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -293,6 +300,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     libyaml-devel zlib-devel libzstd-devel \
+    librabbitmq-devel \
     tar gzip && \
     dnf clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -343,6 +351,7 @@ ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
 ARG FLB_JEMALLOC=On
 ARG FLB_CHUNK_TRACE=On
+ARG FLB_IN_AMQP=On
 
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
@@ -360,6 +369,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_UNICODE_ENCODER="${FLB_UNICODE_ENCODER}" \
     -DFLB_PREFER_SYSTEM_LIB_ZSTD="${FLB_PREFER_SYSTEM_LIB_ZSTD}" \
     -DFLB_RIPSER="${FLB_RIPSER}" \
+    -DFLB_IN_AMQP="${FLB_IN_AMQP}" \
     ../
 
 VOLUME [ "/output" ]

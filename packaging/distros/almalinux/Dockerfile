@@ -20,7 +20,8 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
+    librabbitmq-devel && \
     yum clean all
 
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
@@ -40,7 +41,8 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
+    librabbitmq-devel && \
     yum clean all
 
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
@@ -59,7 +61,8 @@ RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
+    librabbitmq-devel && \
     yum clean all
 
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
@@ -79,7 +82,8 @@ RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
-    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
+    cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
+    librabbitmq-devel && \
     yum clean all
 
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
@@ -99,7 +103,8 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
-    libzstd-devel && \
+    libzstd-devel \
+    librabbitmq-devel && \
     yum clean all
 
 # Use system installed libzstd library.
@@ -121,7 +126,8 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
-    libzstd-devel && \
+    libzstd-devel \
+    librabbitmq-devel && \
     yum clean all
 
 # Use system installed libzstd library.
@@ -159,6 +165,7 @@ ARG FLB_CHUNK_TRACE=On
 ARG FLB_UNICODE_ENCODER=On
 ARG FLB_KAFKA=On
 ARG FLB_OUT_PGSQL=On
+ARG FLB_IN_AMQP=On
 
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
@@ -175,6 +182,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
     -DFLB_UNICODE_ENCODER="${FLB_UNICODE_ENCODER}" \
     -DFLB_PREFER_SYSTEM_LIB_ZSTD="${FLB_PREFER_SYSTEM_LIB_ZSTD}" \
+    -DFLB_IN_AMQP="${FLB_IN_AMQP}" \
     ../
 
 VOLUME [ "/output" ]
