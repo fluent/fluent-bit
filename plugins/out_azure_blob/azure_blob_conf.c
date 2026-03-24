@@ -214,7 +214,7 @@ static int flb_azure_blob_process_remote_configuration_payload(
 
         context->endpoint_overriden_flag = FLB_TRUE;
 
-        if (context->atype == AZURE_BLOB_AUTH_KEY) {
+        if (context->atype == FLB_AZURE_AUTH_KEY) {
             value_backup = context->shared_key;
             context->shared_key = NULL;
 
@@ -234,7 +234,7 @@ static int flb_azure_blob_process_remote_configuration_payload(
 
             context->shared_key_overriden_flag = FLB_TRUE;
         }
-        else if (context->atype == AZURE_BLOB_AUTH_SAS) {
+        else if (context->atype == FLB_AZURE_AUTH_SAS) {
             value_backup = context->sas_token;
             context->sas_token = NULL;
 
@@ -591,27 +591,80 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     /* Set Auth type */
     tmp = (char *) flb_output_get_property("auth_type", ins);
     if (!tmp) {
-        ctx->atype = AZURE_BLOB_AUTH_KEY;
+        ctx->atype = FLB_AZURE_AUTH_KEY; /* Default to legacy key auth */
     }
     else {
         if (strcasecmp(tmp, "key") == 0) {
-            ctx->atype = AZURE_BLOB_AUTH_KEY;
+            ctx->atype = FLB_AZURE_AUTH_KEY;
         }
         else if (strcasecmp(tmp, "sas") == 0) {
-            ctx->atype = AZURE_BLOB_AUTH_SAS;
+            ctx->atype = FLB_AZURE_AUTH_SAS;
         }
+#ifdef FLB_HAVE_TLS
+        else if (strcasecmp(tmp, "service_principal") == 0) {
+            ctx->atype = FLB_AZURE_AUTH_SERVICE_PRINCIPAL;
+            
+            /* Verify required parameters for Service Principal auth */
+            if (!ctx->tenant_id || !ctx->client_id || !ctx->client_secret) {
+                flb_plg_error(ins, "When using service_principal auth, tenant_id, client_id, and client_secret are required");
+                return NULL;
+            }
+        }
+        else if (strcasecmp(tmp, "managed_identity") == 0) {
+            /* Check if client_id indicates system-assigned or user-assigned managed identity */
+            if (!ctx->client_id) {
+                flb_plg_error(ins, "When using managed_identity auth, client_id must be set to 'system' for system-assigned or the managed identity client ID");
+                return NULL;
+            }
+            
+            if (strcasecmp(ctx->client_id, "system") == 0) {
+                ctx->atype = FLB_AZURE_AUTH_MANAGED_IDENTITY_SYSTEM;
+            } else {
+                ctx->atype = FLB_AZURE_AUTH_MANAGED_IDENTITY_USER;
+            }
+        }
+        else if (strcasecmp(tmp, "workload_identity") == 0) {
+            ctx->atype = FLB_AZURE_AUTH_WORKLOAD_IDENTITY;
+            
+            /* Verify required parameters for Workload Identity auth */
+            if (!ctx->tenant_id || !ctx->client_id) {
+                flb_plg_error(ins, "When using workload_identity auth, tenant_id and client_id are required");
+                return NULL;
+            }
+            
+            /* Set default token file path if not specified */
+            if (!ctx->workload_identity_token_file) {
+                ctx->workload_identity_token_file = flb_sds_create(FLB_AZURE_WORKLOAD_IDENTITY_TOKEN_FILE);
+                if (!ctx->workload_identity_token_file) {
+                    flb_errno();
+                    flb_plg_error(ins, "Could not allocate default workload identity token path");
+                    return NULL;
+                }
+            }
+        }
+#else
+        else if (strcasecmp(tmp, "service_principal") == 0 ||
+                 strcasecmp(tmp, "managed_identity") == 0 ||
+                 strcasecmp(tmp, "workload_identity") == 0) {
+            flb_plg_error(ctx->ins, "OAuth authentication requires TLS support. "\
+                          "Rebuild with -DFLB_TLS=ON");
+            return NULL;
+        }
+#endif
         else {
-            flb_plg_error(ctx->ins, "invalid auth_type value '%s'", tmp);
+            flb_plg_error(ctx->ins, "invalid auth_type value '%s'. Valid options are: 'key', 'sas', 'service_principal', 'managed_identity', or 'workload_identity'", tmp);
             return NULL;
         }
     }
-    if (ctx->atype == AZURE_BLOB_AUTH_KEY &&
+    
+    /* Validate auth-specific requirements */
+    if (ctx->atype == FLB_AZURE_AUTH_KEY &&
         ctx->shared_key == NULL) {
         flb_plg_error(ctx->ins, "'shared_key' has not been set");
         return NULL;
     }
 
-    if (ctx->atype == AZURE_BLOB_AUTH_SAS) {
+    if (ctx->atype == FLB_AZURE_AUTH_SAS) {
         if (ctx->sas_token == NULL) {
             flb_plg_error(ctx->ins, "'sas_token' has not been set");
             return NULL;
@@ -622,7 +675,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     }
 
     /* If the shared key is set decode it */
-    if (ctx->atype == AZURE_BLOB_AUTH_KEY &&
+    if (ctx->atype == FLB_AZURE_AUTH_KEY &&
         ctx->shared_key != NULL) {
         ret = set_shared_key(ctx);
         if (ret == -1) {
@@ -738,6 +791,37 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     }
     flb_output_upstream_set(ctx->u, ins);
 
+#ifdef FLB_HAVE_TLS
+    /* Initialize OAuth2 context for OAuth-based authentication methods */
+    if (ctx->atype == FLB_AZURE_AUTH_SERVICE_PRINCIPAL ||
+        ctx->atype == FLB_AZURE_AUTH_MANAGED_IDENTITY_SYSTEM ||
+        ctx->atype == FLB_AZURE_AUTH_MANAGED_IDENTITY_USER ||
+        ctx->atype == FLB_AZURE_AUTH_WORKLOAD_IDENTITY) {
+        
+        /* Build OAuth URL based on auth type */
+        ctx->oauth_url = flb_azure_auth_build_oauth_url(ctx->atype,
+                                                         ctx->tenant_id,
+                                                         ctx->client_id,
+                                                         FLB_AZURE_BLOB_RESOURCE);
+        if (!ctx->oauth_url) {
+            flb_plg_error(ctx->ins, "failed to create OAuth URL");
+            return NULL;
+        }
+
+        /* Create OAuth2 context */
+        ctx->o = flb_oauth2_create(ctx->config, ctx->oauth_url, 3000);
+        if (!ctx->o) {
+            flb_plg_error(ctx->ins, "cannot create oauth2 context");
+            return NULL;
+        }
+
+        /* Initialize token mutex */
+        pthread_mutex_init(&ctx->token_mutex, NULL);
+
+        flb_plg_info(ctx->ins, "oauth2 context initialized for auth type");
+    }
+#endif
+
     /* Compose base uri */
     ctx->base_uri = flb_sds_create_size(256);
     if (!ctx->base_uri) {
@@ -754,7 +838,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     }
 
     /* Prepare shared key buffer */
-    if (ctx->atype == AZURE_BLOB_AUTH_KEY) {
+    if (ctx->atype == FLB_AZURE_AUTH_KEY) {
         ctx->shared_key_prefix = flb_sds_create_size(256);
         if (!ctx->shared_key_prefix) {
             flb_plg_error(ctx->ins, "cannot create shared key prefix");
@@ -780,13 +864,40 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
 
     pthread_mutex_init(&ctx->file_upload_commit_file_parts, NULL);
 
-    flb_plg_info(ctx->ins,
-                 "account_name=%s, container_name=%s, blob_type=%s, emulator_mode=%s, endpoint=%s, auth_type=%s",
-                 ctx->account_name, ctx->container_name,
-                 ctx->btype == AZURE_BLOB_APPENDBLOB ? "appendblob" : "blockblob",
-                 ctx->emulator_mode ? "yes" : "no",
-                 ctx->real_endpoint ? ctx->real_endpoint : "no",
-                 ctx->atype == AZURE_BLOB_AUTH_KEY ? "key" : "sas");
+    /* Log configuration summary */
+    {
+        const char *auth_type_str;
+        switch (ctx->atype) {
+            case FLB_AZURE_AUTH_KEY:
+                auth_type_str = "key";
+                break;
+            case FLB_AZURE_AUTH_SAS:
+                auth_type_str = "sas";
+                break;
+            case FLB_AZURE_AUTH_SERVICE_PRINCIPAL:
+                auth_type_str = "service_principal";
+                break;
+            case FLB_AZURE_AUTH_MANAGED_IDENTITY_SYSTEM:
+                auth_type_str = "managed_identity (system)";
+                break;
+            case FLB_AZURE_AUTH_MANAGED_IDENTITY_USER:
+                auth_type_str = "managed_identity (user)";
+                break;
+            case FLB_AZURE_AUTH_WORKLOAD_IDENTITY:
+                auth_type_str = "workload_identity";
+                break;
+            default:
+                auth_type_str = "unknown";
+        }
+        
+        flb_plg_info(ctx->ins,
+                     "account_name=%s, container_name=%s, blob_type=%s, emulator_mode=%s, endpoint=%s, auth_type=%s",
+                     ctx->account_name, ctx->container_name,
+                     ctx->btype == AZURE_BLOB_APPENDBLOB ? "appendblob" : "blockblob",
+                     ctx->emulator_mode ? "yes" : "no",
+                     ctx->real_endpoint ? ctx->real_endpoint : "no",
+                     auth_type_str);
+    }
     return ctx;
 }
 
@@ -834,6 +945,23 @@ void flb_azure_blob_conf_destroy(struct flb_azure_blob *ctx)
         flb_upstream_destroy(ctx->u);
     }
 
+#ifdef FLB_HAVE_TLS
+    /* Cleanup OAuth2 resources */
+    if (ctx->oauth_url) {
+        flb_sds_destroy(ctx->oauth_url);
+    }
+
+    if (ctx->o) {
+        flb_oauth2_destroy(ctx->o);
+    }
+
+    if (ctx->atype == FLB_AZURE_AUTH_SERVICE_PRINCIPAL ||
+        ctx->atype == FLB_AZURE_AUTH_MANAGED_IDENTITY_SYSTEM ||
+        ctx->atype == FLB_AZURE_AUTH_MANAGED_IDENTITY_USER ||
+        ctx->atype == FLB_AZURE_AUTH_WORKLOAD_IDENTITY) {
+        pthread_mutex_destroy(&ctx->token_mutex);
+    }
+#endif
 
     azb_db_close(ctx);
     flb_free(ctx);

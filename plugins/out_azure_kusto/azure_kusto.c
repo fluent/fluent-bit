@@ -36,15 +36,14 @@
 #include "azure_kusto.h"
 #include "azure_kusto_conf.h"
 #include "azure_kusto_ingest.h"
-#include "azure_msiauth.h"
 #include "azure_kusto_store.h"
 
 static int azure_kusto_get_msi_token(struct flb_azure_kusto *ctx)
 {
     char *token;
 
-    /* Retrieve access token */
-    token = flb_azure_msiauth_token_get(ctx->o);
+    /* Retrieve access token using common auth function */
+    token = flb_azure_msi_token_get(ctx->o);
     if (!token) {
         flb_plg_error(ctx->ins, "error retrieving oauth2 access token");
         return -1;
@@ -57,10 +56,12 @@ static int azure_kusto_get_workload_identity_token(struct flb_azure_kusto *ctx)
 {
     int ret;
     
+    /* Use common auth function for workload identity */
     ret = flb_azure_workload_identity_token_get(ctx->o, 
                                                ctx->workload_identity_token_file,
                                                ctx->client_id, 
-                                               ctx->tenant_id);
+                                               ctx->tenant_id,
+                                               FLB_AZURE_KUSTO_RESOURCE "/.default");
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error retrieving workload identity token");
         return -1;
@@ -83,7 +84,8 @@ static int azure_kusto_get_service_principal_token(struct flb_azure_kusto *ctx)
         return -1;
     }
 
-    ret = flb_oauth2_payload_append(ctx->o, "scope", 5, FLB_AZURE_KUSTO_SCOPE, 39);
+    ret = flb_oauth2_payload_append(ctx->o, "scope", 5, FLB_AZURE_KUSTO_RESOURCE "/.default", 
+                                    sizeof(FLB_AZURE_KUSTO_RESOURCE "/.default") - 1);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error appending oauth2 params");
         return -1;
@@ -124,14 +126,14 @@ flb_sds_t get_azure_kusto_token(struct flb_azure_kusto *ctx)
 
     if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
         switch (ctx->auth_type) {
-            case FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY:
+            case FLB_AZURE_AUTH_WORKLOAD_IDENTITY:
                 ret = azure_kusto_get_workload_identity_token(ctx);
                 break;
-            case FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM:
-            case FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_USER:
+            case FLB_AZURE_AUTH_MANAGED_IDENTITY_SYSTEM:
+            case FLB_AZURE_AUTH_MANAGED_IDENTITY_USER:
                 ret = azure_kusto_get_msi_token(ctx);
                 break;
-            case FLB_AZURE_KUSTO_AUTH_SERVICE_PRINCIPAL:
+            case FLB_AZURE_AUTH_SERVICE_PRINCIPAL:
             default:
                 ret = azure_kusto_get_service_principal_token(ctx);
                 break;
