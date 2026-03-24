@@ -84,6 +84,10 @@ jobs:
 
   unstable-build-images:
     needs: unstable-build-get-meta
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     uses: ./.github/workflows/call-build-images.yaml
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}

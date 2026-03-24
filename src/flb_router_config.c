@@ -1413,8 +1413,8 @@ static int output_supports_signals(struct flb_output_instance *out, uint32_t sig
         return FLB_FALSE;
     }
 
-    /* Handle ANY signal - if ANY is present in the bitmask, allow all signals */
-    if (signals == 0 || (signals & FLB_ROUTER_SIGNAL_ANY)) {
+    /* "any" is encoded as the exact union of supported signal bits. */
+    if (signals == 0 || signals == FLB_ROUTER_SIGNAL_ANY) {
         return FLB_TRUE;
     }
 
@@ -1524,4 +1524,3 @@ int flb_router_apply_config(struct flb_config *config)
 
     return 0;
 }
-
