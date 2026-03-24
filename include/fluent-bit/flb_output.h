@@ -1188,8 +1188,10 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
 static inline void flb_output_return(int ret, struct flb_coro *co) {
     int n;
     int pipe_fd;
+    int effective_records;
     uint32_t set;
     uint64_t val;
+    size_t effective_bytes;
     struct flb_task *task;
     struct flb_output_flush *out_flush;
     struct flb_output_instance *o_ins;
@@ -1199,8 +1201,21 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     o_ins = out_flush->o_ins;
     task = out_flush->task;
 
+    effective_records = 0;
+    effective_bytes = 0;
+    if (task->event_chunk != NULL) {
+        effective_records = task->event_chunk->total_events;
+        effective_bytes = task->event_chunk->size;
+    }
+
+    if (out_flush->processed_event_chunk != NULL) {
+        effective_records = out_flush->processed_event_chunk->total_events;
+        effective_bytes = out_flush->processed_event_chunk->size;
+    }
+
     flb_task_acquire_lock(task);
 
+    flb_task_set_route_metrics(task, o_ins, effective_records, effective_bytes);
     flb_task_deactivate_route(task, o_ins);
 
     flb_task_release_lock(task);
