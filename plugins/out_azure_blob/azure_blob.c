@@ -27,7 +27,6 @@
 #include <fluent-bit/flb_compression.h>
 #include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_base64.h>
-#include <fluent-bit/flb_sqldb.h>
 #include <fluent-bit/flb_input_blob.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_plugin.h>
@@ -37,13 +36,16 @@
 #include <msgpack.h>
 
 #include "azure_blob.h"
-#include "azure_blob_db.h"
 #include "azure_blob_uri.h"
 #include "azure_blob_conf.h"
 #include "azure_blob_appendblob.h"
 #include "azure_blob_blockblob.h"
 #include "azure_blob_http.h"
 #include "azure_blob_store.h"
+
+#ifdef FLB_HAVE_SQLDB
+#include "azure_blob_db.h"
+#endif
 
 #define CREATE_BLOB  1337
 
@@ -282,6 +284,7 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
     return FLB_OK;
 }
 
+#ifdef FLB_HAVE_SQLDB
 static int delete_blob(struct flb_azure_blob *ctx, char *name)
 {
     int ret;
@@ -356,6 +359,7 @@ static int delete_blob(struct flb_azure_blob *ctx, char *name)
     flb_upstream_conn_release(u_conn);
     return FLB_OK;
 }
+#endif
 
 int azb_select_compression_strategy(struct flb_azure_blob *ctx,
                                     int *compression_algorithm,
@@ -590,16 +594,23 @@ static int send_blob(struct flb_config *config,
             if (!block_id) {
                 flb_plg_error(ctx->ins, "could not generate block id");
                 flb_free(generated_random_string);
-                cfl_sds_destroy(ref_name);
+                flb_sds_destroy(ref_name);
                 return FLB_RETRY;
             }
             uri = azb_block_blob_uri(ctx, tag, block_id, ms, generated_random_string);
             ref_name = flb_sds_printf(&ref_name, "file=%s.%" PRIu64, name, ms);
         }
         else if (event_type == FLB_EVENT_TYPE_BLOBS) {
+#ifdef FLB_HAVE_SQLDB
             block_id = azb_block_blob_id_blob(ctx, name, part_id);
             uri = azb_block_blob_uri(ctx, name, block_id, 0, generated_random_string);
             ref_name = flb_sds_printf(&ref_name, "file=%s:%" PRIu64, name, part_id);
+#else
+            flb_plg_error(ctx->ins, "FLB_EVENT_TYPE_BLOBS requires FLB_HAVE_SQLDB enabled at build time");
+            flb_free(generated_random_string);
+            flb_sds_destroy(ref_name);
+            return FLB_ERROR;
+#endif
         }
     }
 
@@ -874,6 +885,7 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
     return 0;
 }
 
+#ifdef FLB_HAVE_SQLDB
 static int blob_chunk_register_parts(struct flb_azure_blob *ctx, uint64_t file_id, size_t total_size)
 {
     int ret;
@@ -1273,6 +1285,7 @@ static int azb_timer_create(struct flb_azure_blob *ctx)
 
     return 0;
 }
+#endif
 
 /**
  * Azure Blob Storage ingestion callback function
@@ -1762,6 +1775,7 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
         }
     }
     else if (event_chunk->type == FLB_EVENT_TYPE_BLOBS) {
+#ifdef FLB_HAVE_SQLDB
         /*
          * For Blob types, we use the flush callback to enqueue the file, then cb_azb_blob_file_upload()
          * takes care of the rest like reading the file and uploading it to Azure.
@@ -1770,6 +1784,9 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
         if (ret == -1) {
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
+#else
+        ret = FLB_ERROR;
+#endif
     }
 
     if (json){
@@ -1830,6 +1847,7 @@ static int cb_worker_init(void *data, struct flb_config *config)
         FLB_TLS_SET(worker_info, info);
     }
 
+#ifdef FLB_HAVE_SQLDB
     ret = azb_timer_create(ctx);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "failed to create upload timer");
@@ -1837,6 +1855,11 @@ static int cb_worker_init(void *data, struct flb_config *config)
     }
 
     return 0;
+#else
+    flb_plg_error(ctx->ins, "creating upload timer skipped because "
+                            "FLB_HAVE_SQLDB is not enabled at build time");
+    return -1;
+#endif
 }
 
 /* worker teardown */
