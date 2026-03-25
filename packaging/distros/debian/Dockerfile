@@ -29,6 +29,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -60,6 +61,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -84,6 +86,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -110,6 +113,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -134,6 +138,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -160,6 +165,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -184,6 +190,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -210,6 +217,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -244,6 +252,7 @@ ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
 ARG FLB_JEMALLOC=On
 ARG FLB_CHUNK_TRACE=On
+ARG FLB_IN_AMQP=On
 
 ENV CFLAGS=$CFLAGS
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
@@ -258,6 +267,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
+    -DFLB_IN_AMQP="${FLB_IN_AMQP}" \
     ../
 
 VOLUME [ "/output" ]

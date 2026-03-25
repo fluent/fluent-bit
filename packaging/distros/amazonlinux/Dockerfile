@@ -24,6 +24,7 @@ RUN yum -y update && \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs glibc-devel \
     libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
+    librabbitmq-devel \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -49,6 +50,7 @@ RUN yum -y update && \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
     libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
+    librabbitmq-devel \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -74,6 +76,7 @@ RUN yum -y update && \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
     libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
+    librabbitmq-devel \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -101,6 +104,7 @@ RUN yum -y update && \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
     libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
+    librabbitmq-devel \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -139,6 +143,7 @@ ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
 ARG FLB_JEMALLOC=On
 ARG FLB_CHUNK_TRACE=On
+ARG FLB_IN_AMQP=On
 
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
@@ -152,6 +157,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
+    -DFLB_IN_AMQP="${FLB_IN_AMQP}" \
     ../
 
 VOLUME [ "/output" ]
