@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_crypto.h>
 
 #include <time.h>
+#include <errno.h>
 #include <string.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -436,17 +437,21 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
 {
     int i;
     int ret;
+    int copy_len;
     int key_len;
     int val_len;
+    char *end;
     int tokens_size = 32;
     const char *key;
     const char *val;
+    unsigned long long parsed_expires_in;
     jsmn_parser parser;
+    flb_sds_t new_access_token = NULL;
+    flb_sds_t new_token_type = NULL;
     jsmntok_t *t;
     jsmntok_t *tokens;
-    uint64_t expires_in = 0;
-    flb_sds_t access_token = NULL;
-    flb_sds_t token_type = NULL;
+    char tmp_num[32];
+    uint64_t new_expires_in = 0;
 
     jsmn_init(&parser);
     tokens = flb_calloc(1, sizeof(jsmntok_t) * tokens_size);
@@ -457,14 +462,14 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
 
     ret = jsmn_parse(&parser, json_data, json_size, tokens, tokens_size);
     if (ret <= 0) {
-        flb_error("[oauth2] cannot parse payload");
+        flb_error("[oauth2] cannot parse payload (size=%zu)", json_size);
         flb_free(tokens);
         return -1;
     }
 
     t = &tokens[0];
     if (t->type != JSMN_OBJECT) {
-        flb_error("[oauth2] invalid JSON response");
+        flb_error("[oauth2] invalid JSON response (size=%zu)", json_size);
         flb_free(tokens);
         return -1;
     }
@@ -483,46 +488,76 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
         key = json_data + t->start;
         key_len = (t->end - t->start);
 
+        if (i + 1 >= ret) {
+            break;
+        }
+
         i++;
         t = &tokens[i];
         val = json_data + t->start;
         val_len = (t->end - t->start);
 
         if (key_cmp(key, key_len, "access_token") == 0) {
-            access_token = flb_sds_create_len(val, val_len);
+            if (new_access_token) {
+                flb_sds_destroy(new_access_token);
+            }
+
+            new_access_token = flb_sds_create_len(val, val_len);
+            if (!new_access_token) {
+                flb_errno();
+                break;
+            }
         }
         else if (key_cmp(key, key_len, "token_type") == 0) {
-            token_type = flb_sds_create_len(val, val_len);
+            if (new_token_type) {
+                flb_sds_destroy(new_token_type);
+            }
+
+            new_token_type = flb_sds_create_len(val, val_len);
+            if (!new_token_type) {
+                flb_errno();
+                break;
+            }
         }
         else if (key_cmp(key, key_len, "expires_in") == 0) {
-            expires_in = strtoull(val, NULL, 10);
+            if (val_len <= 0 || val_len >= sizeof(tmp_num)) {
+                break;
+            }
+
+            copy_len = val_len < (sizeof(tmp_num) - 1) ? val_len : (sizeof(tmp_num) - 1);
+            strncpy(tmp_num, val, copy_len);
+            tmp_num[copy_len] = '\0';
+
+            if (tmp_num[0] == '-') {
+                break;
+            }
+
+            errno = 0;
+            parsed_expires_in = strtoull(tmp_num, &end, 10);
+
+            if (errno != 0 || end == tmp_num || *end != '\0') {
+                break;
+            }
+
+            new_expires_in = parsed_expires_in;
+            new_expires_in -= (new_expires_in / 10);
         }
     }
 
     flb_free(tokens);
 
-    if (!access_token) {
-        oauth2_reset_state(ctx);
+    if (!new_access_token || !new_token_type || new_expires_in <= ctx->refresh_skew) {
+        flb_sds_destroy(new_access_token);
+        flb_sds_destroy(new_token_type);
         return -1;
-    }
-
-    if (!token_type) {
-        token_type = flb_sds_create("Bearer");
-        flb_debug("[oauth2] token_type missing; defaulting to Bearer");
-    }
-
-    if (expires_in == 0) {
-        expires_in = FLB_OAUTH2_DEFAULT_EXPIRES;
-        flb_warn("[oauth2] expires_in missing; defaulting to %d seconds",
-                 FLB_OAUTH2_DEFAULT_EXPIRES);
     }
 
     oauth2_reset_state(ctx);
 
-    ctx->access_token = access_token;
-    ctx->token_type = token_type;
-    ctx->expires_in = expires_in;
-    ctx->expires_at = time(NULL) + expires_in;
+    ctx->access_token = new_access_token;
+    ctx->token_type = new_token_type;
+    ctx->expires_in = new_expires_in;
+    ctx->expires_at = time(NULL) + new_expires_in;
 
     return 0;
 }
