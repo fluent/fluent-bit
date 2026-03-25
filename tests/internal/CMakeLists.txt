@@ -57,6 +57,7 @@ set(UNIT_TESTS_FILES
   unicode.c
   opentelemetry.c
   storage_dlq.c
+  engine_adaptive_flush.c
 )
 
 # TLS helpers
