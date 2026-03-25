@@ -146,6 +146,22 @@ static int flb_azure_kusto_resources_clear(struct flb_azure_kusto_resources *res
         resources->identity_token = NULL;
     }
 
+    /* Also clean up any old resources pending destruction */
+    if (resources->old_blob_ha) {
+        flb_upstream_ha_destroy(resources->old_blob_ha);
+        resources->old_blob_ha = NULL;
+    }
+
+    if (resources->old_queue_ha) {
+        flb_upstream_ha_destroy(resources->old_queue_ha);
+        resources->old_queue_ha = NULL;
+    }
+
+    if (resources->old_identity_token) {
+        flb_sds_destroy(resources->old_identity_token);
+        resources->old_identity_token = NULL;
+    }
+
     resources->load_time = 0;
 
     return 0;
@@ -548,14 +564,48 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
     flb_plg_debug(ctx->ins, "difference is  %" PRIu64, now - ctx->resources->load_time);
     flb_plg_debug(ctx->ins, "effective ingestion resource interval is %d", ctx->ingestion_resources_refresh_interval * 1000 + generated_random_integer);
 
+    /* Acquire the mutex for the staleness check to prevent concurrent coroutines
+     * from both deciding to reload and rotate resources simultaneously.
+     * Without this, two flushes can race: the second rotation destroys old_blob_ha
+     * which is still being used by the first flush's in-flight blob upload,
+     * causing a use-after-free SIGSEGV in cmt_gauge_inc.
+     */
+    if (pthread_mutex_lock(&ctx->resources_mutex)) {
+        flb_plg_error(ctx->ins, "error locking resources mutex for staleness check");
+        return -1;
+    }
+
     /* check if we have all resources and they are not stale */
     if (ctx->resources->blob_ha && ctx->resources->queue_ha &&
         ctx->resources->identity_token &&
         now - ctx->resources->load_time < ctx->ingestion_resources_refresh_interval * 1000 + generated_random_integer) {
         flb_plg_debug(ctx->ins, "resources are already loaded and are not stale");
+        pthread_mutex_unlock(&ctx->resources_mutex);
         ret = 0;
     }
+    else if (ctx->resources->loading_in_progress) {
+        /*
+         * Another coroutine is already loading resources. Return error to
+         * trigger FLB_RETRY so this flush will be retried once the resources
+         * are available. This prevents concurrent rotations that caused
+         * use-after-free SIGSEGV.
+         */
+        flb_plg_info(ctx->ins, "ingestion resources loading already in progress by another coroutine, will retry");
+        pthread_mutex_unlock(&ctx->resources_mutex);
+        /* Return -1 directly without going through cleanup, since cleanup
+         * would reset load_time and loading_in_progress which belong to
+         * the coroutine that is actually doing the loading.
+         */
+        return -1;
+    }
     else {
+        /*
+         * Mark loading in progress (while holding mutex) to prevent other
+         * concurrent coroutines from also starting a reload.
+         */
+        ctx->resources->loading_in_progress = FLB_TRUE;
+        /* Release the mutex before making network calls (which may yield the coroutine) */
+        pthread_mutex_unlock(&ctx->resources_mutex);
         flb_plg_info(ctx->ins, "loading kusto ingestion resources and refresh interval is %d", ctx->ingestion_resources_refresh_interval * 1000 + generated_random_integer);
         response = execute_ingest_csl_command(ctx, ".get ingestion resources");
 
@@ -598,16 +648,57 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
                                     parse_ingestion_identity_token(ctx, response);
 
                             if (identity_token) {
+                                /* 
+                                    Deferred cleanup: destroy resources from two refresh cycles ago,
+                                    then move current resources to 'old' before assigning new ones.
+                                    This avoids use-after-free when other threads may still be using
+                                    the current resources during high-volume operations.
+                                    
+                                    With a 1-hour refresh interval, the race condition requires an 
+                                    ingest operation to take >1 hour (the deferred cleanup grace period). 
+                                    This is extremely unlikely under normal conditions (and hence a lock based 
+                                    mechanism is avoided for performance).
+                                */
+                                if (ctx->resources->old_blob_ha) {
+                                    flb_upstream_ha_destroy(ctx->resources->old_blob_ha);
+                                    flb_plg_debug(ctx->ins, "clearing up old blob HA");
+                                }
+                                if (ctx->resources->old_queue_ha) {
+                                    flb_upstream_ha_destroy(ctx->resources->old_queue_ha);
+                                    flb_plg_debug(ctx->ins, "clearing up old queue HA");
+                                }
+                                if (ctx->resources->old_identity_token) {
+                                    flb_sds_destroy(ctx->resources->old_identity_token);
+                                    flb_plg_debug(ctx->ins, "clearing up old identity token");
+                                }
+
+                                /* Move current to old */
+                                ctx->resources->old_blob_ha = ctx->resources->blob_ha;
+                                ctx->resources->old_queue_ha = ctx->resources->queue_ha;
+                                ctx->resources->old_identity_token = ctx->resources->identity_token;
+
+                                /* Assign new resources */
                                 ctx->resources->blob_ha = blob_ha;
                                 ctx->resources->queue_ha = queue_ha;
                                 ctx->resources->identity_token = identity_token;
                                 ctx->resources->load_time = now;
 
+                                flb_plg_info(ctx->ins, "ingestion resources rotated successfully, "
+                                             "previous resources moved to deferred cleanup");
+
+                                /* Clear the loading flag on success */
+                                ctx->resources->loading_in_progress = FLB_FALSE;
                                 ret = 0;
                             }
                             else {
                                 flb_plg_error(ctx->ins,
                                               "error parsing ingestion identity token");
+                                /*
+                                 * Must unlock the mutex before goto cleanup to avoid
+                                 * deadlock (cleanup also acquires the mutex to reset
+                                 * load_time). This was a pre-existing bug.
+                                 */
+                                pthread_mutex_unlock(&ctx->resources_mutex);
                                 ret = -1;
                                 goto cleanup;
                             }
@@ -665,6 +756,16 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
 
     cleanup:
     if (ret == -1) {
+        /*
+         * Reset load_time to 0 so the next call will retry the reload.
+         * We set load_time = now at the start to prevent concurrent reloads,
+         * but if the reload failed, we need to allow future retries.
+         */
+        if (pthread_mutex_lock(&ctx->resources_mutex) == 0) {
+            ctx->resources->load_time = 0;
+            ctx->resources->loading_in_progress = FLB_FALSE;
+            pthread_mutex_unlock(&ctx->resources_mutex);
+        }
         if (queue_ha) {
             flb_upstream_ha_destroy(queue_ha);
         }
@@ -700,6 +801,115 @@ static int flb_azure_kusto_resources_destroy(struct flb_azure_kusto_resources *r
     return 0;
 }
 
+/**
+ * Resolves cloud-specific endpoints based on the cloud_name configuration.
+ * Sets kusto_scope, kusto_resource, and login_host in the context.
+ *
+ * @param ctx   Pointer to the plugin's context
+ * @return int  0 on success, -1 on failure
+ */
+static int azure_kusto_resolve_cloud_endpoints(struct flb_azure_kusto *ctx)
+{
+    const char *scope = NULL;
+    const char *resource = NULL;
+    const char *login_host = NULL;
+    int has_custom_login_host;
+    int has_custom_scope;
+    int has_custom_resource;
+
+    /* Check if custom overrides are provided */
+    has_custom_login_host = (ctx->custom_login_host && flb_sds_len(ctx->custom_login_host) > 0);
+    has_custom_scope = (ctx->custom_kusto_scope && flb_sds_len(ctx->custom_kusto_scope) > 0);
+    has_custom_resource = (ctx->custom_kusto_resource && flb_sds_len(ctx->custom_kusto_resource) > 0);
+
+    /* If all three custom properties are provided, use them directly */
+    if (has_custom_login_host && has_custom_scope && has_custom_resource) {
+        ctx->login_host = flb_sds_create(ctx->custom_login_host);
+        if (!ctx->login_host) {
+            flb_errno();
+            return -1;
+        }
+
+        ctx->kusto_scope = flb_sds_create(ctx->custom_kusto_scope);
+        if (!ctx->kusto_scope) {
+            flb_errno();
+            return -1;
+        }
+
+        ctx->kusto_resource = flb_sds_create(ctx->custom_kusto_resource);
+        if (!ctx->kusto_resource) {
+            flb_errno();
+            return -1;
+        }
+
+        flb_plg_info(ctx->ins,
+                     "using custom cloud endpoints: login_host='%s', scope='%s', resource='%s'",
+                     ctx->login_host, ctx->kusto_scope, ctx->kusto_resource);
+        return 0;
+    }
+
+    /* If some but not all custom properties are set, error out */
+    if (has_custom_login_host || has_custom_scope || has_custom_resource) {
+        flb_plg_error(ctx->ins,
+                      "When using custom cloud endpoints, all three properties must be set: "
+                      "cloud_login_host, cloud_kusto_scope, cloud_kusto_resource");
+        return -1;
+    }
+
+    /* Resolve from well-known cloud names */
+    if (!ctx->cloud_name || strcasecmp(ctx->cloud_name, "AzureCloud") == 0) {
+        ctx->cloud_type = FLB_AZURE_CLOUD_PUBLIC;
+        scope = FLB_AZURE_KUSTO_SCOPE_PUBLIC;
+        resource = FLB_AZURE_KUSTO_RESOURCE_PUBLIC;
+        login_host = FLB_AZURE_LOGIN_HOST_PUBLIC;
+    }
+    else if (strcasecmp(ctx->cloud_name, "AzureChinaCloud") == 0) {
+        ctx->cloud_type = FLB_AZURE_CLOUD_CHINA;
+        scope = FLB_AZURE_KUSTO_SCOPE_CHINA;
+        resource = FLB_AZURE_KUSTO_RESOURCE_CHINA;
+        login_host = FLB_AZURE_LOGIN_HOST_CHINA;
+    }
+    else if (strcasecmp(ctx->cloud_name, "AzureUSGovernmentCloud") == 0) {
+        ctx->cloud_type = FLB_AZURE_CLOUD_US_GOVERNMENT;
+        scope = FLB_AZURE_KUSTO_SCOPE_US_GOVERNMENT;
+        resource = FLB_AZURE_KUSTO_RESOURCE_US_GOVERNMENT;
+        login_host = FLB_AZURE_LOGIN_HOST_US_GOVERNMENT;
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "Unknown cloud_name '%s'. Use a well-known cloud name "
+                      "('AzureCloud', 'AzureChinaCloud', 'AzureUSGovernmentCloud') "
+                      "or specify custom endpoints via "
+                      "cloud_login_host, cloud_kusto_scope, and cloud_kusto_resource",
+                      ctx->cloud_name);
+        return -1;
+    }
+
+    ctx->kusto_scope = flb_sds_create(scope);
+    if (!ctx->kusto_scope) {
+        flb_errno();
+        return -1;
+    }
+
+    ctx->kusto_resource = flb_sds_create(resource);
+    if (!ctx->kusto_resource) {
+        flb_errno();
+        return -1;
+    }
+
+    ctx->login_host = flb_sds_create(login_host);
+    if (!ctx->login_host) {
+        flb_errno();
+        return -1;
+    }
+
+    flb_plg_info(ctx->ins, "cloud environment='%s', login_host='%s', scope='%s'",
+                 ctx->cloud_name ? ctx->cloud_name : "AzureCloud",
+                 ctx->login_host, ctx->kusto_scope);
+
+    return 0;
+}
+
 struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *ins,
                                                     struct flb_config *config)
 {
@@ -719,6 +929,14 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
     if (ret == -1) {
         flb_plg_error(ins, "unable to load configuration");
         flb_free(ctx);
+        return NULL;
+    }
+
+    /* Resolve cloud-specific endpoints */
+    ret = azure_kusto_resolve_cloud_endpoints(ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "failed to resolve cloud endpoints");
+        flb_azure_kusto_conf_destroy(ctx);
         return NULL;
     }
 
@@ -802,30 +1020,35 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
         /* MSI auth */
         /* Construct the URL template with or without client_id for managed identity */
         if (ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM) {
-            ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1);
+            ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1 +
+                                                flb_sds_len(ctx->kusto_resource));
             if (!ctx->oauth_url) {
                 flb_errno();
                 flb_azure_kusto_conf_destroy(ctx);
                 return NULL;
             }
             flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "", "");
+                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "", "",
+                            ctx->kusto_resource);
         } else {
             /* User-assigned managed identity */
             ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1 +
                                                 sizeof("&client_id=") - 1 +
-                                                flb_sds_len(ctx->client_id));
+                                                flb_sds_len(ctx->client_id) +
+                                                flb_sds_len(ctx->kusto_resource));
             if (!ctx->oauth_url) {
                 flb_errno();
                 flb_azure_kusto_conf_destroy(ctx);
                 return NULL;
             }
             flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "&client_id=", ctx->client_id);
+                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "&client_id=",
+                            ctx->client_id, ctx->kusto_resource);
         }
     } else {
         /* Standard OAuth2 for service principal or workload identity */
         ctx->oauth_url = flb_sds_create_size(sizeof(FLB_MSAL_AUTH_URL_TEMPLATE) - 1 +
+                                            flb_sds_len(ctx->login_host) +
                                             flb_sds_len(ctx->tenant_id));
         if (!ctx->oauth_url) {
             flb_errno();
@@ -833,7 +1056,8 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
             return NULL;
         }
         flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                        FLB_MSAL_AUTH_URL_TEMPLATE, ctx->tenant_id);
+                        FLB_MSAL_AUTH_URL_TEMPLATE, ctx->login_host,
+                        ctx->tenant_id);
     }
 
     ctx->resources = flb_calloc(1, sizeof(struct flb_azure_kusto_resources));
@@ -856,6 +1080,21 @@ int flb_azure_kusto_conf_destroy(struct flb_azure_kusto *ctx)
     }
 
     flb_plg_info(ctx->ins, "before exiting the plugin kusto conf destroy called");
+
+    if (ctx->kusto_scope) {
+        flb_sds_destroy(ctx->kusto_scope);
+        ctx->kusto_scope = NULL;
+    }
+
+    if (ctx->kusto_resource) {
+        flb_sds_destroy(ctx->kusto_resource);
+        ctx->kusto_resource = NULL;
+    }
+
+    if (ctx->login_host) {
+        flb_sds_destroy(ctx->login_host);
+        ctx->login_host = NULL;
+    }
 
     if (ctx->oauth_url) {
         flb_sds_destroy(ctx->oauth_url);
