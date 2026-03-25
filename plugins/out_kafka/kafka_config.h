@@ -75,6 +75,7 @@ struct flb_out_kafka {
     char *timestamp_key;
     int timestamp_format;
     flb_sds_t timestamp_format_str;
+    int add_timestamp;
 
     int message_key_len;
     char *message_key;
