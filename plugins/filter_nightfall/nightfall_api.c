@@ -501,7 +501,11 @@ int scan_log(struct flb_filter_nightfall *ctx, msgpack_object *data,
     flb_http_buffer_size(client, 0);
 
     flb_http_add_header(client, "Authorization", 13, ctx->auth_header, 42);
-    flb_http_add_header(client, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(client,
+                        FLB_HTTP_HEADER_USER_AGENT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                        FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                        sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
     flb_http_add_header(client, "Content-Type", 12, "application/json", 16);
 
     /* Perform request */

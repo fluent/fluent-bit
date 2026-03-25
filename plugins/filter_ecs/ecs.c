@@ -409,7 +409,11 @@ static int get_ecs_cluster_metadata(struct flb_filter_ecs *ctx)
                             NULL, 0);
         flb_http_buffer_size(c, 0); /* 0 means unlimited */
 
-        flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+        flb_http_add_header(c,
+                            FLB_HTTP_HEADER_USER_AGENT,
+                            sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                            FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                            sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
 
         ret = flb_http_do(c, &b_sent);
         flb_plg_debug(ctx->ins, "http_do=%i, "
@@ -1009,7 +1013,11 @@ static int get_task_metadata(struct flb_filter_ecs *ctx, char* short_id)
                             NULL, 0);
         flb_http_buffer_size(c, 0); /* 0 means unlimited */
 
-        flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+        flb_http_add_header(c,
+                            FLB_HTTP_HEADER_USER_AGENT,
+                            sizeof(FLB_HTTP_HEADER_USER_AGENT) - 1,
+                            FLB_HTTP_HEADER_USER_AGENT_DEFAULT,
+                            sizeof(FLB_HTTP_HEADER_USER_AGENT_DEFAULT) - 1);
 
         ret = flb_http_do(c, &b_sent);
         flb_plg_debug(ctx->ins, "http_do=%i, "
