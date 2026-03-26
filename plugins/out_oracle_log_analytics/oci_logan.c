@@ -1756,7 +1756,20 @@ static int send_batch_with_count(struct flb_oci_logan *ctx,
         return FLB_ERROR;
     }
 
-    num_records = flb_mp_count_log_records(event_chunk->data, event_chunk->size);
+    if (ctx->oci_config_in_record == FLB_FALSE) {
+        pack_oci_fields(&mp_pck, ctx, tag, tag_len);
+        log_group_id = ctx->oci_la_log_group_id;
+        log_set_id = ctx->oci_la_log_set_id;
+    }
+    else {
+        for (skip = 0; skip < start_record; skip++) {
+            if (flb_log_event_decoder_next(&log_decoder, &log_event) !=
+                FLB_EVENT_DECODER_SUCCESS) {
+                flb_log_event_decoder_destroy(&log_decoder);
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                return FLB_ERROR;
+            }
+        }
 
         if (flb_log_event_decoder_next(&log_decoder, &log_event) ==
             FLB_EVENT_DECODER_SUCCESS) {
