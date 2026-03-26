@@ -26,6 +26,7 @@ struct cmt_counter;
 struct cmt_gauge;
 struct cmt_untyped;
 struct cmt_histogram;
+struct cmt_exp_histogram;
 struct cmt_summary;
 
 int cmt_cat_copy_label_keys(struct cmt_map *map, char **out);
@@ -34,6 +35,7 @@ int cmt_cat_counter(struct cmt *cmt, struct cmt_counter *counter, struct cmt_map
 int cmt_cat_gauge(struct cmt *cmt, struct cmt_gauge *gauge, struct cmt_map *filtered_map);
 int cmt_cat_untyped(struct cmt *cmt, struct cmt_untyped *untyped, struct cmt_map *filtered_map);
 int cmt_cat_histogram(struct cmt *cmt, struct cmt_histogram *histogram, struct cmt_map *filtered_map);
+int cmt_cat_exp_histogram(struct cmt *cmt, struct cmt_exp_histogram *exp_histogram, struct cmt_map *filtered_map);
 int cmt_cat_summary(struct cmt *cmt, struct cmt_summary *summary, struct cmt_map *filtered_map);
 int cmt_cat(struct cmt *dst, struct cmt *src);
 

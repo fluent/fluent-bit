@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_log_event.h>
@@ -1420,6 +1421,49 @@ void decoder_group_end_start_sequence()
     msgpack_sbuffer_destroy(&sbuf);
 }
 
+void mp_count_log_records_excludes_groups()
+{
+    int all_records;
+    int log_records;
+    struct flb_time tm1;
+    struct flb_time tm2;
+    msgpack_sbuffer sbuf;
+    msgpack_packer pck;
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+    pack_group_marker(&pck, FLB_LOG_EVENT_GROUP_START);
+
+    flb_time_set(&tm1, 100, 1);
+    msgpack_pack_array(&pck, 2);
+    pack_event_time(&pck, &tm1);
+    msgpack_pack_map(&pck, 1);
+    msgpack_pack_str(&pck, 3);
+    msgpack_pack_str_body(&pck, "log", 3);
+    msgpack_pack_str(&pck, 2);
+    msgpack_pack_str_body(&pck, "a1", 2);
+
+    pack_group_marker(&pck, FLB_LOG_EVENT_GROUP_END);
+
+    flb_time_set(&tm2, 101, 2);
+    msgpack_pack_array(&pck, 2);
+    pack_event_time(&pck, &tm2);
+    msgpack_pack_map(&pck, 1);
+    msgpack_pack_str(&pck, 3);
+    msgpack_pack_str_body(&pck, "log", 3);
+    msgpack_pack_str(&pck, 2);
+    msgpack_pack_str_body(&pck, "b2", 2);
+
+    all_records = flb_mp_count(sbuf.data, sbuf.size);
+    log_records = flb_mp_count_log_records(sbuf.data, sbuf.size);
+
+    TEST_CHECK(all_records == 4);
+    TEST_CHECK(log_records == 2);
+
+    msgpack_sbuffer_destroy(&sbuf);
+}
+
 
 
 TEST_LIST = {
@@ -1435,5 +1479,6 @@ TEST_LIST = {
     { "decoder_corrupted_group_timestamps", decoder_corrupted_group_timestamps },
     { "decoder_invalid_marker_preserves_group_state", decoder_invalid_marker_preserves_group_state },
     { "decoder_group_end_start_sequence", decoder_group_end_start_sequence },
+    { "mp_count_log_records_excludes_groups", mp_count_log_records_excludes_groups },
     { 0 }
 };

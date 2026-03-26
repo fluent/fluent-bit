@@ -13,7 +13,7 @@
 		// docker-in-docker allows you to run Docker commands inside the dev container. Thus, it supports to build docker build in the environment.
 		"ghcr.io/devcontainers/features/docker-in-docker:2": {
 			"version": "latest",
-			"moby": true,
+			"moby": false,
 			"dockerDashComposeVersion": "v1"
 		}
 	},

@@ -19,6 +19,8 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include <limits.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
@@ -28,7 +30,9 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_pack_json.h>
 #include <fluent-bit/flb_unescape.h>
+#include <fluent-bit/flb_simd.h>
 
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_log_event_decoder.h>
@@ -52,6 +56,59 @@ static int flb_pack_set_null_as_nan(int b) {
         convert_nan_to_null = b;
     }
     return convert_nan_to_null;
+}
+
+/* -----------------------------------------------------------------------------
+ * SIMD helpers
+ * -----------------------------------------------------------------------------
+ *
+ * json_find_escapable_simd:
+ *   Returns a pointer to the first byte in s[0..n) that requires JSON string
+ *   escaping (any of '"' or '\' or control chars < 0x20). If none, returns NULL.
+ *
+ *   Fast-path skips whole vector-width blocks when there is no match. On hit,
+ *   it falls back to a short scalar check within the block to find the exact
+ *   offending index. Works with SSE2 / NEON / RVV through flb_simd.h.
+ */
+static inline const char *json_find_escapable_simd(const char *s, size_t n)
+{
+    const char *p = s;
+    uint8_t c;
+#ifdef FLB_HAVE_SIMD
+    const size_t vlen = FLB_SIMD_VEC8_INST_LEN;
+    flb_vector8 dq = flb_vector8_broadcast((uint8_t)'"');
+    flb_vector8 bs = flb_vector8_broadcast((uint8_t)'\\');
+    size_t i;
+
+    while (n >= vlen) {
+        flb_vector8 v; 
+        flb_vector8_load(&v, (const uint8_t*)p);
+        /* If neither '"' nor '\' appears in this block, it is very likely
+         * safe; control chars are rare, handle them in the fallback check. */
+        bool has_dq = flb_vector8_is_highbit_set(flb_vector8_eq(v, dq));
+        bool has_bs = flb_vector8_is_highbit_set(flb_vector8_eq(v, bs));
+        if (has_dq || has_bs) {
+            /* Narrow down to the exact position in this block */
+            for (i = 0; i < vlen; i++) {
+                c = (uint8_t)p[i];
+                if (c == '"' || c == '\\' || c < 0x20) {
+                    return p + i;
+                }
+            }
+        }
+        p += vlen;
+        n -= vlen;
+    }
+#endif
+    /* Scalar tail / generic fallback, also checks control chars */
+    while (n--) {
+        c = (uint8_t)*p;
+        if (c == '"' || c == '\\' || c < 0x20) {
+            return p;
+        }
+        p++;
+    }
+    return NULL;
 }
 
 int flb_json_tokenise(const char *js, size_t len,
@@ -106,12 +163,67 @@ static inline int is_float(const char *buf, int len)
     const char *end = buf + len;
     const char *p = buf;
 
-    while (p <= end) {
-        if ((*p == 'e' || *p == 'E') && p < end && (*(p + 1) == '-' || *(p + 1) == '+')) {
+#ifdef FLB_HAVE_SIMD
+    {
+        const size_t vlen = FLB_SIMD_VEC8_INST_LEN;
+        flb_vector8 vdot = flb_vector8_broadcast((uint8_t)'.');
+        flb_vector8 ve   = flb_vector8_broadcast((uint8_t)'e');
+        flb_vector8 vE   = flb_vector8_broadcast((uint8_t)'E');
+        flb_vector8 v;
+        char c;
+        const char *q;
+        size_t i;
+
+        while ((size_t)(end - p) >= vlen) {
+            flb_vector8_load(&v, (const uint8_t *)p);
+
+            /* If the block contains '.', it's definitely a float */
+            if (flb_vector8_is_highbit_set(flb_vector8_eq(v, vdot))) {
+                return 1;
+            }
+
+            /* If the block contains 'e' or 'E', check the immediate next char. */
+            if (flb_vector8_is_highbit_set(flb_vector8_eq(v, ve)) ||
+                flb_vector8_is_highbit_set(flb_vector8_eq(v, vE))) {
+                /* Narrow inside this vector to the first e/E and verify next char */
+                for (i = 0; i < vlen; i++) {
+                    c = p[i];
+                    if (c == 'e' || c == 'E') {
+                        q = p + i + 1;
+                        if (q < end) {
+                            char next = *q;
+                            if (next == '+' || next == '-' ||
+                                (unsigned)(next - '0') <= 9) {
+                                return 1;
+                            }
+                        }
+                        /* Not signed exponent here; fall through to precise check below.
+                           Set p at the e/E position so the scalar loop sees it. */
+                        p += i;
+                        goto scalar_check;
+                    }
+                }
+                /* Should not reach (we had a mask), but continue safely */
+            }
+
+            /* No candidates in this block; skip it entirely */
+            p += vlen;
+        }
+    }
+#endif
+
+scalar_check:
+    /* Precise scalar check for the remaining tail (and for cases we broke early). */
+    while (p < end) {
+        if (*p == '.') {
             return 1;
         }
-        else if (*p == '.') {
-            return 1;
+        if ((*p == 'e' || *p == 'E') && (p + 1) < end) {
+            char next = p[1];
+            if (next == '-' || next == '+' ||
+                (unsigned)(next - '0') <= 9) {
+                return 1;
+            }
         }
         p++;
     }
@@ -166,6 +278,16 @@ static inline int pack_string_token(struct flb_pack_state *state,
     char *tmp;
     char *out_buf;
 
+    /* Fast path: if the JSON string does not contain '"' or '\' or any control
+     * chars (<0x20), we can pack it as-is without unescaping. */
+    const char *bad = json_find_escapable_simd(str, (size_t)len);
+    if (bad == NULL) {
+        msgpack_pack_str(pck, len);
+        msgpack_pack_str_body(pck, str, len);
+        return len;
+    }
+
+    /* Slow path: unescape into a temporary buffer as before. */
     if (state->buf_size < len + 1) {
         s = len + 1;
         tmp = flb_realloc(state->buf_data, s);
@@ -173,17 +295,15 @@ static inline int pack_string_token(struct flb_pack_state *state,
             flb_errno();
             return -1;
         }
-        else {
-            state->buf_data = tmp;
-            state->buf_size = s;
-        }
+        state->buf_data = tmp;
+        state->buf_size = s;
     }
     out_buf = state->buf_data;
 
-    /* Always decode any UTF-8 or special characters */
+    /* Always decode UTF-8 escape sequences and specials when needed */
     out_len = flb_unescape_string_utf8(str, len, out_buf);
 
-    /* Pack decoded text */
+    /* Pack the decoded text */
     msgpack_pack_str(pck, out_len);
     msgpack_pack_str_body(pck, out_buf, out_len);
 
@@ -526,12 +646,40 @@ static int pack_json_to_msgpack(const char *js, size_t len, char **buffer,
     return ret;
 }
 
+int flb_pack_json_legacy(const char *js, size_t len, char **buffer, size_t *size,
+                         int *root_type, size_t *consumed)
+{
+    int records;
+
+    return pack_json_to_msgpack(js, len, buffer, size, root_type,
+                                &records, consumed);
+}
+
+int flb_pack_json_recs_legacy(const char *js, size_t len, char **buffer, size_t *size,
+                              int *root_type, int *out_records, size_t *consumed)
+{
+    return pack_json_to_msgpack(js, len, buffer, size, root_type,
+                                out_records, consumed);
+}
+
 /* Pack unlimited serialized JSON messages into msgpack */
 int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
                   int *root_type, size_t *consumed)
 {
     int records;
-    return pack_json_to_msgpack(js, len, buffer, size, root_type, &records, consumed);
+
+#ifdef FLB_HAVE_SIMD
+    /*
+     * When SIMD support is compiled in, route the default JSON pack API through
+     * the extensible frontend so callers inherit the YYJSON backend selection.
+     * Explicit backend-specific entry points remain available for forced JSMN
+     * or YYJSON behavior.
+     */
+    return flb_pack_json_recs_ext(js, len, buffer, size, root_type,
+                                  &records, consumed, NULL);
+#endif
+
+    return flb_pack_json_legacy(js, len, buffer, size, root_type, consumed);
 }
 
 /*
@@ -541,7 +689,13 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
 int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
                        int *root_type, int *out_records, size_t *consumed)
 {
-    return pack_json_to_msgpack(js, len, buffer, size, root_type, out_records, consumed);
+#ifdef FLB_HAVE_SIMD
+    return flb_pack_json_recs_ext(js, len, buffer, size, root_type,
+                                  out_records, consumed, NULL);
+#endif
+
+    return flb_pack_json_recs_legacy(js, len, buffer, size, root_type,
+                                     out_records, consumed);
 }
 
 /* Pack a JSON message using yyjson */
@@ -1511,17 +1665,17 @@ int flb_pack_time_now(msgpack_packer *pck)
 }
 
 int flb_msgpack_expand_map(char *map_data, size_t map_size,
-                           msgpack_object_kv **kv_arr, int kv_arr_len,
-                           char** out_buf, int* out_size)
+                           msgpack_object_kv **kv_arr, size_t kv_arr_len,
+                           char** out_buf, size_t *out_size)
 {
     msgpack_sbuffer sbuf;
     msgpack_packer  pck;
     msgpack_unpacked result;
     size_t off = 0;
     char *ret_buf;
-    int map_num;
-    int i;
-    int len;
+    size_t map_num;
+    size_t i;
+    size_t len;
 
     if (map_data == NULL){
         return -1;
@@ -1539,11 +1693,28 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
     }
 
     len = result.data.via.map.size;
+
+    /*
+     * Guard len + kv_arr_len from overflowing size_t.
+     *
+     * Using `kv_arr_len > SIZE_MAX - len` makes the boundary explicit:
+     * equality is allowed (sum == SIZE_MAX), only strictly larger values fail.
+     */
+    if (kv_arr_len > SIZE_MAX - len) {
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
     map_num = kv_arr_len + len;
+
+    if (map_num > UINT32_MAX) {
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
 
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
-    msgpack_pack_map(&pck, map_num);
+    msgpack_pack_map(&pck, (uint32_t) map_num);
 
     for (i=0; i<len; i++) {
         msgpack_pack_object(&pck, result.data.via.map.ptr[i].key);

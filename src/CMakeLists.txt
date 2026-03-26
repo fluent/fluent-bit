@@ -26,6 +26,7 @@ set(src
   flb_custom.c
   flb_input.c
   flb_input_chunk.c
+  flb_input_ingest.c
   flb_input_log.c
   flb_input_metric.c
   flb_input_trace.c
@@ -116,6 +117,7 @@ endif()
 set(src
   ${src}
   opentelemetry/flb_opentelemetry_logs.c
+  opentelemetry/flb_opentelemetry_metrics.c
   opentelemetry/flb_opentelemetry_traces.c
   opentelemetry/flb_opentelemetry_utils.c
 )
@@ -364,6 +366,11 @@ if(FLB_UNICODE_ENCODER)
   add_subdirectory(simdutf)
 endif()
 
+# ripser
+if(FLB_RIPSER)
+  add_subdirectory(ripser)
+endif()
+
 # WAMRC compiler
 if(FLB_WAMRC)
   add_subdirectory(wamrc)
@@ -448,6 +455,16 @@ set(FLB_DEPS
   ${FLB_DEPS}
   simdutf-static
   flb-simdutf-connector-static
+  )
+endif()
+
+
+# Ripser
+if(FLB_RIPSER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  ripser-static
+  flb-ripser-wrapper-static
   )
 endif()
 

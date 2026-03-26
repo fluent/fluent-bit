@@ -5,7 +5,6 @@ endif()
 set(src
   prom_rw.c
   prom_rw_prot.c
-  prom_rw_conn.c
   prom_rw_config.c
   )
 

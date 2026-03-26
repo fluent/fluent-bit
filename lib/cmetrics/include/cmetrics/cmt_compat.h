@@ -22,7 +22,13 @@
 
 #include <time.h>
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#undef WIN32_LEAN_AND_MEAN
+#else
+#include <windows.h>
+#endif
 #endif
 
 static inline struct tm *cmt_platform_gmtime_r(const time_t *timep, struct tm *result)

@@ -24,6 +24,8 @@
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_exp_histogram.h>
+#include <cmetrics/cmt_atomic.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_time.h>
 #include <cmetrics/cmt_compat.h>
@@ -52,6 +54,54 @@ static cfl_sds_t double_to_string(double val)
     }
 
     return str;
+}
+
+static void destroy_temporary_metric_labels(struct cmt_metric *metric)
+{
+    struct cfl_list *head;
+    struct cfl_list *tmp;
+    struct cmt_map_label *label;
+
+    cfl_list_foreach_safe(head, tmp, &metric->labels) {
+        label = cfl_list_entry(head, struct cmt_map_label, _head);
+        cfl_list_del(&label->_head);
+        cfl_sds_destroy(label->name);
+        free(label);
+    }
+}
+
+static int initialize_temporary_metric(struct cmt_metric *destination,
+                                       struct cmt_metric *source)
+{
+    struct cfl_list *head;
+    struct cmt_map_label *source_label;
+    struct cmt_map_label *destination_label;
+
+    memset(destination, 0, sizeof(struct cmt_metric));
+    cfl_list_init(&destination->labels);
+
+    cfl_list_foreach(head, &source->labels) {
+        source_label = cfl_list_entry(head, struct cmt_map_label, _head);
+
+        destination_label = calloc(1, sizeof(struct cmt_map_label));
+        if (destination_label == NULL) {
+            destroy_temporary_metric_labels(destination);
+            return -1;
+        }
+
+        destination_label->name = cfl_sds_create(source_label->name);
+        if (destination_label->name == NULL) {
+            free(destination_label);
+            destroy_temporary_metric_labels(destination);
+            return -1;
+        }
+
+        cfl_list_add(&destination_label->_head, &destination->labels);
+    }
+
+    cmt_metric_set_timestamp(destination, cmt_metric_get_timestamp(source));
+
+    return 0;
 }
 
 static void format_metric_name(cfl_sds_t *buf, struct cmt_map *map, const char *suffix)
@@ -297,7 +347,7 @@ static void format_histogram_bucket(struct cmt_splunk_hec_context *context, cfl_
     int len = 0;
     char tmp[128];
     cfl_sds_t val;
-    uint64_t metric_val;
+    double metric_val;
     struct cmt_histogram *histogram;
     struct cmt_histogram_buckets *buckets;
     cfl_sds_t metric_str;
@@ -440,7 +490,7 @@ static void format_summary_metric(struct cmt_splunk_hec_context *context, cfl_sd
 
     summary = (struct cmt_summary *) map->parent;
 
-    if (metric->sum_quantiles_set) {
+    if (cmt_atomic_load(&metric->sum_quantiles_set)) {
         for (index = 0; index < summary->quantiles_count; index++) {
             /* Common fields */
             format_context_common(context, buf, map, metric);
@@ -565,6 +615,49 @@ static void format_metric(struct cmt_splunk_hec_context *context, cfl_sds_t *buf
     if (map->type == CMT_HISTOGRAM) {
         return format_histogram_bucket(context, buf, map, metric);
     }
+    else if (map->type == CMT_EXP_HISTOGRAM) {
+        struct cmt_map fake_map;
+        struct cmt_metric fake_metric;
+        struct cmt_histogram fake_histogram;
+        struct cmt_histogram_buckets fake_buckets;
+        uint64_t *bucket_counts = NULL;
+        double *upper_bounds = NULL;
+        size_t upper_bounds_count = 0;
+        size_t bucket_count = 0;
+
+        if (cmt_exp_histogram_to_explicit(metric,
+                                          &upper_bounds,
+                                          &upper_bounds_count,
+                                          &bucket_counts,
+                                          &bucket_count) != 0) {
+            return;
+        }
+
+        fake_buckets.count = upper_bounds_count;
+        fake_buckets.upper_bounds = upper_bounds;
+        fake_histogram.buckets = &fake_buckets;
+
+        memcpy(&fake_map, map, sizeof(struct cmt_map));
+        fake_map.type = CMT_HISTOGRAM;
+        fake_map.parent = &fake_histogram;
+        if (initialize_temporary_metric(&fake_metric, metric) != 0) {
+            free(bucket_counts);
+            free(upper_bounds);
+            return;
+        }
+
+        fake_metric.hist_buckets = bucket_counts;
+        fake_metric.hist_count = bucket_counts[bucket_count - 1];
+        fake_metric.hist_sum = cmt_atomic_load(&metric->exp_hist_sum);
+
+        format_histogram_bucket(context, buf, &fake_map, &fake_metric);
+
+        destroy_temporary_metric_labels(&fake_metric);
+        free(bucket_counts);
+        free(upper_bounds);
+
+        return;
+    }
     else if (map->type == CMT_SUMMARY) {
         return format_summary_metric(context, buf, map, metric);
     }
@@ -656,6 +749,7 @@ cfl_sds_t cmt_encode_splunk_hec_create(struct cmt *cmt, const char *host,
     struct cmt_untyped *untyped;
     struct cmt_summary *summary;
     struct cmt_histogram *histogram;
+    struct cmt_exp_histogram *exp_histogram;
     struct cmt_splunk_hec_context *context;
 
     context = initialize_splunk_hec_context(cmt, host, index, source, source_type);
@@ -693,6 +787,12 @@ cfl_sds_t cmt_encode_splunk_hec_create(struct cmt *cmt, const char *host,
     cfl_list_foreach(head, &cmt->histograms) {
         histogram = cfl_list_entry(head, struct cmt_histogram, _head);
         format_metrics(context, &buf, histogram->map);
+    }
+
+    /* Exponential Histograms */
+    cfl_list_foreach(head, &cmt->exp_histograms) {
+        exp_histogram = cfl_list_entry(head, struct cmt_exp_histogram, _head);
+        format_metrics(context, &buf, exp_histogram->map);
     }
 
     /* Untyped */

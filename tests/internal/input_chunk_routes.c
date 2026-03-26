@@ -18,6 +18,8 @@
 #undef flb_plg_trace
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_routes_mask.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_env.h>
@@ -57,6 +59,99 @@ static int write_test_log_payload(struct cio_chunk *chunk)
 
     ret = cio_chunk_write(chunk, sbuf.data, sbuf.size);
     msgpack_sbuffer_destroy(&sbuf);
+
+    return ret;
+}
+
+static int write_test_grouped_log_payload(struct cio_chunk *chunk)
+{
+    int ret;
+    char *buf;
+    size_t size;
+    struct flb_time ts;
+    struct flb_log_event_encoder *encoder;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (encoder == NULL) {
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_group_init(encoder);
+    if (ret != 0) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_append_metadata_values(
+            encoder,
+            FLB_LOG_EVENT_STRING_VALUE("group", 5),
+            FLB_LOG_EVENT_CSTRING_VALUE("g1"));
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_append_body_values(
+            encoder,
+            FLB_LOG_EVENT_STRING_VALUE("resource", 8),
+            FLB_LOG_EVENT_CSTRING_VALUE("test"));
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_group_header_end(encoder);
+    if (ret != 0) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_begin_record(encoder);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    flb_time_set(&ts, 1700000000, 0);
+    ret = flb_log_event_encoder_set_timestamp(encoder, &ts);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_append_body_values(
+            encoder,
+            FLB_LOG_EVENT_STRING_VALUE("message", 7),
+            FLB_LOG_EVENT_CSTRING_VALUE("hello"));
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_commit_record(encoder);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_group_end(encoder);
+    if (ret != 0) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    size = encoder->output_length;
+    buf = flb_malloc(size);
+    if (buf == NULL) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    memcpy(buf, encoder->output_buffer, size);
+    flb_log_event_encoder_destroy(encoder);
+
+    ret = cio_chunk_write(chunk, buf, size);
+    flb_free(buf);
 
     return ret;
 }
@@ -115,6 +210,7 @@ static int init_test_config(struct flb_config *config,
     /* Initialize properties list (required by flb_input_instance_init) */
     mk_list_init(&in->properties);
     mk_list_init(&in->net_properties);
+    mk_list_init(&in->http_server_properties);
     mk_list_init(&in->oauth2_jwt_properties);
 
     /* Initialize hash tables for chunks (required by flb_input_chunk_destroy) */
@@ -241,6 +337,7 @@ static void cleanup_test_routing_scenario(struct flb_input_chunk *ic,
         /* Release properties */
         flb_kv_release(&in->properties);
         flb_kv_release(&in->net_properties);
+        flb_kv_release(&in->http_server_properties);
         flb_kv_release(&in->oauth2_jwt_properties);
 
         /* Destroy metrics (created by flb_input_instance_init) */
@@ -832,9 +929,139 @@ cleanup:
     flb_free(stream_path);
 }
 
+static void test_chunk_map_grouped_logs_total_records()
+{
+    struct cio_options opts;
+    struct cio_ctx *ctx;
+    struct cio_stream *stream;
+    struct cio_chunk *chunk;
+    struct flb_input_chunk *ic;
+    struct flb_config config;
+    struct flb_input_instance in;
+    struct flb_input_plugin input_plugin;
+    struct flb_output_instance stdout_out;
+    struct flb_output_instance stdout_dummy_one;
+    struct flb_output_instance stdout_dummy_two;
+    struct flb_output_plugin stdout_plugin;
+    char *stream_path;
+    const char *tag_string;
+    int tag_len;
+    int ret;
+    int err;
+    int config_ready;
+
+    stream_path = flb_test_tmpdir_cat("/flb-chunk-grouped-total-records");
+    TEST_CHECK(stream_path != NULL);
+    if (!stream_path) {
+        return;
+    }
+
+    ctx = NULL;
+    stream = NULL;
+    chunk = NULL;
+    ic = NULL;
+    config_ready = FLB_FALSE;
+    tag_string = "test.tag";
+    tag_len = (int) strlen(tag_string);
+
+    cio_utils_recursive_delete(stream_path);
+    memset(&opts, 0, sizeof(opts));
+    cio_options_init(&opts);
+    opts.root_path = stream_path;
+    opts.flags = CIO_OPEN;
+
+    ctx = cio_create(&opts);
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) {
+        flb_free(stream_path);
+        return;
+    }
+
+    stream = cio_stream_create(ctx, "direct", CIO_STORE_FS);
+    TEST_CHECK(stream != NULL);
+    if (!stream) {
+        goto cleanup;
+    }
+
+    chunk = cio_chunk_open(ctx, stream, "meta", CIO_OPEN, 1024, &err);
+    TEST_CHECK(chunk != NULL);
+    if (!chunk) {
+        goto cleanup;
+    }
+
+    ret = cio_chunk_is_up(chunk);
+    if (ret == CIO_FALSE) {
+        ret = cio_chunk_up_force(chunk);
+        TEST_CHECK(ret == CIO_OK);
+        if (ret != CIO_OK) {
+            goto cleanup;
+        }
+    }
+
+    ret = write_legacy_chunk_metadata(chunk, FLB_INPUT_LOGS,
+                                      tag_string, tag_len);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    ret = write_test_grouped_log_payload(chunk);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    memset(&input_plugin, 0, sizeof(input_plugin));
+    input_plugin.name = (char *) "dummy";
+    memset(&stdout_plugin, 0, sizeof(stdout_plugin));
+    stdout_plugin.name = (char *) "stdout";
+    memset(&stdout_dummy_one, 0, sizeof(stdout_dummy_one));
+    memset(&stdout_dummy_two, 0, sizeof(stdout_dummy_two));
+
+    ret = init_test_config(&config, &in, &input_plugin);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        goto cleanup;
+    }
+    config_ready = FLB_TRUE;
+
+#ifdef FLB_HAVE_METRICS
+    cmt_initialize();
+#endif
+
+    ret = flb_input_instance_init(&in, &config);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    ret = add_test_output(&config, &stdout_out, &stdout_plugin, 11, "stdout");
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    ic = flb_input_chunk_map(&in, FLB_INPUT_LOGS, chunk);
+    TEST_CHECK(ic != NULL);
+    if (!ic) {
+        goto cleanup;
+    }
+
+    chunk = NULL;
+
+    TEST_CHECK(ic->total_records == 1);
+
+cleanup:
+    cleanup_test_routing_scenario(ic, &stdout_out, &stdout_dummy_one, &stdout_dummy_two,
+                                  &in, &config, chunk, ctx, config_ready,
+                                  stream_path);
+    flb_free(stream_path);
+}
+
 TEST_LIST = {
     { "chunk_metadata_direct_routes", test_chunk_metadata_direct_routes },
     { "chunk_restore_alias_plugin_match_multiple", test_chunk_restore_alias_plugin_match_multiple },
     { "chunk_restore_alias_plugin_null_matches_all", test_chunk_restore_alias_plugin_null_matches_all },
+    { "chunk_map_grouped_logs_total_records", test_chunk_map_grouped_logs_total_records },
     { 0 }
 };

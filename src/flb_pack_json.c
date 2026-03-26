@@ -20,6 +20,11 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_pack_json.h>
 
+int flb_pack_json_legacy(const char *js, size_t len, char **buffer, size_t *size,
+                         int *root_type, size_t *consumed);
+int flb_pack_json_recs_legacy(const char *js, size_t len, char **buffer, size_t *size,
+                              int *root_type, int *out_records, size_t *consumed);
+
 static int flb_pack_json_ext_internal(const char *json, size_t len,
                                       char **out_buf, size_t *out_size,
                                       int *out_root_type, int *out_records,
@@ -64,12 +69,12 @@ static int flb_pack_json_ext_internal(const char *json, size_t len,
         }
 
         if (require_records) {
-            return flb_pack_json_recs(json, len, out_buf, out_size,
-                                      out_root_type, out_records, consumed);
+            return flb_pack_json_recs_legacy(json, len, out_buf, out_size,
+                                             out_root_type, out_records, consumed);
         }
 
-        return flb_pack_json(json, len, out_buf, out_size,
-                             out_root_type, NULL);
+        return flb_pack_json_legacy(json, len, out_buf, out_size,
+                                    out_root_type, NULL);
     }
     else if (backend == FLB_PACK_JSON_BACKEND_YYJSON) {
         if (require_records) {

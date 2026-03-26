@@ -20,6 +20,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_bucket_queue.h>
@@ -76,6 +77,24 @@ extern struct flb_aws_error_reporter *error_reporter;
 
 static pthread_once_t local_thread_engine_evl_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct mk_event_loop, flb_engine_evl);
+
+static int engine_has_fluentbit_logs_input(struct flb_config *config)
+{
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+
+    mk_list_foreach(head, &config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+
+        if (ins->p != NULL &&
+            ins->p->name != NULL &&
+            strcmp(ins->p->name, "fluentbit_logs") == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
 
 static void flb_engine_evl_init_private()
 {
@@ -286,11 +305,13 @@ static inline int handle_output_event(uint64_t ts,
     int ret;
     int task_id;
     int out_id;
+    int effective_records = 0;
     int retries;
     int retry_seconds;
     uint32_t type;
     uint32_t key;
     double latency_seconds;
+    size_t effective_bytes = 0;
     char *in_name;
     char *out_name;
     struct flb_task *task;
@@ -340,6 +361,14 @@ static inline int handle_output_event(uint64_t ts,
     }
     in_name = (char *) flb_input_name(task->i_ins);
     out_name = (char *) flb_output_name(ins);
+    flb_task_acquire_lock(task);
+    if (flb_task_get_route_data(task, ins,
+                                &effective_records,
+                                &effective_bytes) != 0) {
+        effective_records = task->event_chunk->total_events;
+        effective_bytes = task->event_chunk->size;
+    }
+    flb_task_release_lock(task);
 
     /* If we are in synchronous mode, flush the next waiting task */
     if (ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
@@ -351,19 +380,19 @@ static inline int handle_output_event(uint64_t ts,
     /* A task has finished, delete it */
     if (ret == FLB_OK) {
         /* cmetrics */
-        cmt_counter_add(ins->cmt_proc_records, ts, task->event_chunk->total_events,
+        cmt_counter_add(ins->cmt_proc_records, ts, effective_records,
                         1, (char *[]) {out_name});
 
-        cmt_counter_add(ins->cmt_proc_bytes, ts, task->event_chunk->size,
+        cmt_counter_add(ins->cmt_proc_bytes, ts, effective_bytes,
                         1, (char *[]) {out_name});
 
         if (config->router && task->event_chunk->type == FLB_EVENT_TYPE_LOGS) {
             cmt_counter_add(config->router->logs_records_total, ts,
-                            task->event_chunk->total_events,
+                            effective_records,
                             2, (char *[]) {in_name, out_name});
 
             cmt_counter_add(config->router->logs_bytes_total, ts,
-                            task->event_chunk->size,
+                            effective_bytes,
                             2, (char *[]) {in_name, out_name});
         }
 
@@ -378,9 +407,9 @@ static inline int handle_output_event(uint64_t ts,
 #ifdef FLB_HAVE_METRICS
         if (ins->metrics) {
             flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS,
-                            task->event_chunk->total_events, ins->metrics);
+                            effective_records, ins->metrics);
             flb_metrics_sum(FLB_METRIC_OUT_OK_BYTES,
-                            task->event_chunk->size, ins->metrics);
+                            effective_bytes, ins->metrics);
         }
 #endif
         /* Inform the user if a 'retry' succedeed */
@@ -416,17 +445,17 @@ static inline int handle_output_event(uint64_t ts,
             handle_dlq_if_available(config, task, ins, 0);
 
             /* cmetrics: output_dropped_records_total */
-            cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
+            cmt_counter_add(ins->cmt_dropped_records, ts, effective_records,
                             1, (char *[]) {out_name});
 
             if (config->router && task->event_chunk &&
                 task->event_chunk->type == FLB_EVENT_TYPE_LOGS) {
                 cmt_counter_add(config->router->logs_drop_records_total, ts,
-                                task->records,
+                                effective_records,
                                 2, (char *[]) {in_name, out_name});
 
                 cmt_counter_add(config->router->logs_drop_bytes_total, ts,
-                                task->event_chunk->size,
+                                effective_bytes,
                                 2, (char *[]) {in_name, out_name});
             }
 
@@ -436,7 +465,7 @@ static inline int handle_output_event(uint64_t ts,
 
             /* OLD metrics API */
 #ifdef FLB_HAVE_METRICS
-            flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, effective_records, ins->metrics);
 #endif
             flb_info("[engine] chunk '%s' is not retried (no retry config): "
                      "task_id=%i, input=%s > output=%s (out_id=%i)",
@@ -465,17 +494,17 @@ static inline int handle_output_event(uint64_t ts,
 
             /* cmetrics */
             cmt_counter_inc(ins->cmt_retries_failed, ts, 1, (char *[]) {out_name});
-            cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
+            cmt_counter_add(ins->cmt_dropped_records, ts, effective_records,
                             1, (char *[]) {out_name});
 
             if (config->router && task->event_chunk &&
                 task->event_chunk->type == FLB_EVENT_TYPE_LOGS) {
                 cmt_counter_add(config->router->logs_drop_records_total, ts,
-                                task->records,
+                                effective_records,
                                 2, (char *[]) {in_name, out_name});
 
                 cmt_counter_add(config->router->logs_drop_bytes_total, ts,
-                                task->event_chunk->size,
+                                effective_bytes,
                                 2, (char *[]) {in_name, out_name});
             }
 
@@ -486,7 +515,7 @@ static inline int handle_output_event(uint64_t ts,
             /* OLD metrics API */
 #ifdef FLB_HAVE_METRICS
             flb_metrics_sum(FLB_METRIC_OUT_RETRY_FAILED, 1, ins->metrics);
-            flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, effective_records, ins->metrics);
 #endif
             /* Notify about this failed retry */
             flb_error("[engine] chunk '%s' cannot be retried: "
@@ -538,8 +567,13 @@ static inline int handle_output_event(uint64_t ts,
 
             /* cmetrics */
             cmt_counter_inc(ins->cmt_retries, ts, 1, (char *[]) {out_name});
-            cmt_counter_add(ins->cmt_retried_records, ts, task->records,
+            cmt_counter_add(ins->cmt_retried_records, ts, effective_records,
                             1, (char *[]) {out_name});
+            if (ins->cmt_backpressure_wait) {
+                cmt_histogram_observe(ins->cmt_backpressure_wait, ts,
+                                      (double) retry_seconds, 1,
+                                      (char *[]) {out_name});
+            }
 
             cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
                           calculate_chunk_capacity_percent(ins),
@@ -548,7 +582,7 @@ static inline int handle_output_event(uint64_t ts,
             /* OLD metrics API: update the metrics since a new retry is coming */
 #ifdef FLB_HAVE_METRICS
             flb_metrics_sum(FLB_METRIC_OUT_RETRY, 1, ins->metrics);
-            flb_metrics_sum(FLB_METRIC_OUT_RETRIED_RECORDS, task->records, ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_RETRIED_RECORDS, effective_records, ins->metrics);
 #endif
         }
     }
@@ -556,17 +590,17 @@ static inline int handle_output_event(uint64_t ts,
         handle_dlq_if_available(config, task, ins, 0);
         /* cmetrics */
         cmt_counter_inc(ins->cmt_errors, ts, 1, (char *[]) {out_name});
-        cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
+        cmt_counter_add(ins->cmt_dropped_records, ts, effective_records,
                         1, (char *[]) {out_name});
 
         if (config->router && task->event_chunk &&
             task->event_chunk->type == FLB_EVENT_TYPE_LOGS) {
             cmt_counter_add(config->router->logs_drop_records_total, ts,
-                            task->records,
+                            effective_records,
                             2, (char *[]) {in_name, out_name});
 
             cmt_counter_add(config->router->logs_drop_bytes_total, ts,
-                            task->event_chunk->size,
+                            effective_bytes,
                             2, (char *[]) {in_name, out_name});
         }
 
@@ -577,7 +611,7 @@ static inline int handle_output_event(uint64_t ts,
         /* OLD API */
 #ifdef FLB_HAVE_METRICS
         flb_metrics_sum(FLB_METRIC_OUT_ERROR, 1, ins->metrics);
-        flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
+        flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, effective_records, ins->metrics);
 #endif
 
         flb_task_retry_clean(task, ins);
@@ -870,6 +904,10 @@ int flb_engine_start(struct flb_config *config)
     if (ret == -1) {
         fprintf(stderr, "[engine] log start failed\n");
         return -1;
+    }
+
+    if (engine_has_fluentbit_logs_input(config)) {
+        flb_log_pipeline_enable(config);
     }
 
     flb_info("[fluent bit] version=%s, commit=%.10s, pid=%i",

@@ -22,6 +22,7 @@
 #include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_exp_histogram.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_untyped.h>
@@ -30,6 +31,7 @@
 #include <cmetrics/cmt_decode_msgpack.h>
 #include <cmetrics/cmt_variant_utils.h>
 #include <cmetrics/cmt_mpack_utils.h>
+#include <cmetrics/cmt_atomic.h>
 
 
 static int create_counter_instance(struct cmt_map *map)
@@ -137,6 +139,26 @@ static int create_histogram_instance(struct cmt_map *map)
     return CMT_DECODE_MSGPACK_SUCCESS;
 }
 
+static int create_exp_histogram_instance(struct cmt_map *map)
+{
+    struct cmt_exp_histogram *exp_histogram;
+
+    if (NULL == map) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    exp_histogram = calloc(1, sizeof(struct cmt_exp_histogram));
+
+    if (NULL == exp_histogram) {
+        return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
+    }
+
+    exp_histogram->map = map;
+    map->parent = (void *) exp_histogram;
+
+    return CMT_DECODE_MSGPACK_SUCCESS;
+}
+
 static int create_metric_instance(struct cmt_map *map)
 {
     switch(map->type) {
@@ -148,6 +170,8 @@ static int create_metric_instance(struct cmt_map *map)
             return create_summary_instance(map);
         case CMT_HISTOGRAM:
             return create_histogram_instance(map);
+        case CMT_EXP_HISTOGRAM:
+            return create_exp_histogram_instance(map);
         case CMT_UNTYPED:
             return create_untyped_instance(map);
     }
@@ -382,6 +406,8 @@ static int unpack_metric_label(mpack_reader_t *reader, size_t index, void *conte
 
 static int unpack_metric_ts(mpack_reader_t *reader, size_t index, void *context)
 {
+    int                                result;
+    uint64_t                           timestamp;
     struct cmt_msgpack_decode_context *decode_context;
 
     if (NULL == reader  ||
@@ -391,7 +417,35 @@ static int unpack_metric_ts(mpack_reader_t *reader, size_t index, void *context)
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
 
-    return cmt_mpack_consume_uint_tag(reader, &decode_context->metric->timestamp);
+    result = cmt_mpack_consume_uint_tag(reader, &timestamp);
+
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        cmt_metric_set_timestamp(decode_context->metric, timestamp);
+    }
+
+    return result;
+}
+
+static int unpack_metric_start_ts(mpack_reader_t *reader, size_t index, void *context)
+{
+    int result;
+    uint64_t start_timestamp;
+    struct cmt_msgpack_decode_context *decode_context;
+
+    if (NULL == reader  ||
+        NULL == context ) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    result = cmt_mpack_consume_uint_tag(reader, &start_timestamp);
+
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        cmt_metric_set_start_timestamp(decode_context->metric, start_timestamp);
+    }
+
+    return result;
 }
 
 static int unpack_metric_value(mpack_reader_t *reader, size_t index, void *context)
@@ -409,8 +463,67 @@ static int unpack_metric_value(mpack_reader_t *reader, size_t index, void *conte
 
     result = cmt_mpack_consume_double_tag(reader, &value);
 
-    if(CMT_DECODE_MSGPACK_SUCCESS == result) {
-        decode_context->metric->val = cmt_math_d64_to_uint64(value);
+    if (CMT_DECODE_MSGPACK_SUCCESS == result &&
+        decode_context->metric_value_type_set == CMT_FALSE) {
+        cmt_metric_set_double(decode_context->metric,
+                              decode_context->metric->timestamp,
+                              value);
+    }
+
+    return result;
+}
+
+static int unpack_metric_value_type(mpack_reader_t *reader, size_t index, void *context)
+{
+    uint64_t value;
+    int result;
+    struct cmt_msgpack_decode_context *decode_context;
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    result = cmt_mpack_consume_uint_tag(reader, &value);
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        if (value == CMT_METRIC_VALUE_INT64 ||
+            value == CMT_METRIC_VALUE_UINT64 ||
+            value == CMT_METRIC_VALUE_DOUBLE) {
+            cmt_atomic_store(&decode_context->metric->value_type, value);
+        }
+    }
+
+    return result;
+}
+
+static int unpack_metric_value_int64(mpack_reader_t *reader, size_t index, void *context)
+{
+    int64_t value;
+    int result;
+    struct cmt_msgpack_decode_context *decode_context;
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    result = cmt_mpack_consume_int_tag(reader, &value);
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        cmt_metric_set_int64(decode_context->metric,
+                             decode_context->metric->timestamp,
+                             value);
+        decode_context->metric_value_type_set = CMT_TRUE;
+    }
+
+    return result;
+}
+
+static int unpack_metric_value_uint64(mpack_reader_t *reader, size_t index, void *context)
+{
+    uint64_t value;
+    int result;
+    struct cmt_msgpack_decode_context *decode_context;
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    result = cmt_mpack_consume_uint_tag(reader, &value);
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        cmt_metric_set_uint64(decode_context->metric,
+                              decode_context->metric->timestamp,
+                              value);
+        decode_context->metric_value_type_set = CMT_TRUE;
     }
 
     return result;
@@ -445,7 +558,7 @@ static int unpack_summary_quantiles_set(mpack_reader_t *reader, size_t index, vo
     result = cmt_mpack_consume_uint_tag(reader, &value);
 
     if (result == CMT_DECODE_MSGPACK_SUCCESS) {
-        decode_context->metric->sum_quantiles_set = value;
+        cmt_atomic_store(&decode_context->metric->sum_quantiles_set, value);
     }
 
     return result;
@@ -461,14 +574,38 @@ static int unpack_summary_quantile(mpack_reader_t *reader, size_t index, void *c
     }
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    if (decode_context->metric == NULL ||
+        decode_context->metric->sum_quantiles == NULL ||
+        index >= decode_context->metric->sum_quantiles_count) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
+
     return cmt_mpack_consume_uint_tag(reader, &decode_context->metric->sum_quantiles[index]);
 }
 
 static int unpack_summary_quantiles(mpack_reader_t *reader, size_t index, void *context)
 {
+    size_t expected_count;
+    size_t entry_count;
+    struct cmt_msgpack_decode_context *decode_context;
+
     if (NULL == reader  ||
         NULL == context ) {
         return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    expected_count = 0;
+
+    if (decode_context->metric != NULL) {
+        expected_count = decode_context->metric->sum_quantiles_count;
+    }
+
+    entry_count = cmt_mpack_peek_array_length(reader);
+
+    if (entry_count != expected_count) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
     }
 
     return cmt_mpack_unpack_array(reader, unpack_summary_quantile, context);
@@ -476,6 +613,8 @@ static int unpack_summary_quantiles(mpack_reader_t *reader, size_t index, void *
 
 static int unpack_summary_count(mpack_reader_t *reader, size_t index, void *context)
 {
+    int                                result;
+    uint64_t                           value;
     struct cmt_msgpack_decode_context *decode_context;
 
     if (NULL == reader  ||
@@ -485,11 +624,19 @@ static int unpack_summary_count(mpack_reader_t *reader, size_t index, void *cont
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
 
-    return cmt_mpack_consume_uint_tag(reader, &decode_context->metric->sum_count);
+    result = cmt_mpack_consume_uint_tag(reader, &value);
+
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        cmt_atomic_store(&decode_context->metric->sum_count, value);
+    }
+
+    return result;
 }
 
 static int unpack_summary_sum(mpack_reader_t *reader, size_t index, void *context)
 {
+    int                                result;
+    uint64_t                           value;
     struct cmt_msgpack_decode_context *decode_context;
 
     if (NULL == reader  ||
@@ -499,7 +646,13 @@ static int unpack_summary_sum(mpack_reader_t *reader, size_t index, void *contex
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
 
-    return cmt_mpack_consume_uint_tag(reader, &decode_context->metric->sum_sum);
+    result = cmt_mpack_consume_uint_tag(reader, &value);
+
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        cmt_atomic_store(&decode_context->metric->sum_sum, value);
+    }
+
+    return result;
 }
 
 static int unpack_metric_summary(mpack_reader_t *reader, size_t index, void *context)
@@ -544,7 +697,8 @@ static int unpack_histogram_sum(mpack_reader_t *reader, size_t index, void *cont
     result = cmt_mpack_consume_double_tag(reader, &value);
 
     if (result == CMT_DECODE_MSGPACK_SUCCESS) {
-        decode_context->metric->hist_sum = cmt_math_d64_to_uint64(value);
+        cmt_atomic_store(&decode_context->metric->hist_sum,
+                         cmt_math_d64_to_uint64(value));
     }
 
     return result;
@@ -552,6 +706,8 @@ static int unpack_histogram_sum(mpack_reader_t *reader, size_t index, void *cont
 
 static int unpack_histogram_count(mpack_reader_t *reader, size_t index, void *context)
 {
+    int                                result;
+    uint64_t                           value;
     struct cmt_msgpack_decode_context *decode_context;
 
     if (NULL == reader  ||
@@ -561,12 +717,20 @@ static int unpack_histogram_count(mpack_reader_t *reader, size_t index, void *co
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
 
-    return cmt_mpack_consume_uint_tag(reader, &decode_context->metric->hist_count);
+    result = cmt_mpack_consume_uint_tag(reader, &value);
+
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        cmt_atomic_store(&decode_context->metric->hist_count, value);
+    }
+
+    return result;
 }
 
 static int unpack_histogram_bucket(mpack_reader_t *reader, size_t index, void *context)
 {
     struct cmt_msgpack_decode_context *decode_context;
+    struct cmt_histogram *histogram;
+    size_t expected_count;
 
     if (NULL == reader ||
         NULL == context) {
@@ -575,12 +739,32 @@ static int unpack_histogram_bucket(mpack_reader_t *reader, size_t index, void *c
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
 
+    if (decode_context->map == NULL ||
+        decode_context->metric == NULL ||
+        decode_context->metric->hist_buckets == NULL ||
+        decode_context->map->parent == NULL) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
+
+    histogram = (struct cmt_histogram *) decode_context->map->parent;
+    if (histogram->buckets == NULL) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
+
+    expected_count = histogram->buckets->count + 1;
+    if (index >= expected_count) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
+
     return cmt_mpack_consume_uint_tag(reader, &decode_context->metric->hist_buckets[index]);
 }
 
 static int unpack_histogram_buckets(mpack_reader_t *reader, size_t index, void *context)
 {
     struct cmt_msgpack_decode_context *decode_context;
+    struct cmt_histogram *histogram;
+    size_t expected_count;
+    size_t entry_count;
 
     if (NULL == reader  ||
         NULL == context ) {
@@ -588,6 +772,22 @@ static int unpack_histogram_buckets(mpack_reader_t *reader, size_t index, void *
     }
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    if (decode_context->map == NULL ||
+        decode_context->map->parent == NULL) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
+
+    histogram = (struct cmt_histogram *) decode_context->map->parent;
+    if (histogram->buckets == NULL) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
+
+    entry_count = cmt_mpack_peek_array_length(reader);
+    expected_count = histogram->buckets->count + 1;
+    if (entry_count != expected_count) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
 
     return cmt_mpack_unpack_array(reader, unpack_histogram_bucket, decode_context);
 }
@@ -612,6 +812,201 @@ static int unpack_metric_histogram(mpack_reader_t *reader, size_t index, void *c
     decode_context = (struct cmt_msgpack_decode_context *) context;
 
     result = cmt_mpack_unpack_map(reader, callbacks, (void *) decode_context);
+
+    return result;
+}
+
+static int unpack_exp_histogram_scale(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_msgpack_decode_context *decode_context;
+    int64_t value;
+    int result;
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    result = cmt_mpack_consume_int_tag(reader, &value);
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        decode_context->metric->exp_hist_scale = (int32_t) value;
+    }
+    return result;
+}
+
+static int unpack_exp_histogram_zero_count(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_msgpack_decode_context *decode_context;
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    return cmt_mpack_consume_uint_tag(reader, &decode_context->metric->exp_hist_zero_count);
+}
+
+static int unpack_exp_histogram_zero_threshold(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_msgpack_decode_context *decode_context;
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    return cmt_mpack_consume_double_tag(reader, &decode_context->metric->exp_hist_zero_threshold);
+}
+
+static int unpack_exp_histogram_positive_offset(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_msgpack_decode_context *decode_context;
+    int64_t value;
+    int result;
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    result = cmt_mpack_consume_int_tag(reader, &value);
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        decode_context->metric->exp_hist_positive_offset = (int32_t) value;
+    }
+    return result;
+}
+
+static int unpack_exp_histogram_negative_offset(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_msgpack_decode_context *decode_context;
+    int64_t value;
+    int result;
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    result = cmt_mpack_consume_int_tag(reader, &value);
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        decode_context->metric->exp_hist_negative_offset = (int32_t) value;
+    }
+    return result;
+}
+
+static int unpack_exp_histogram_positive_bucket(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_msgpack_decode_context *decode_context;
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    return cmt_mpack_consume_uint_tag(reader, &decode_context->metric->exp_hist_positive_buckets[index]);
+}
+
+static int unpack_exp_histogram_negative_bucket(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_msgpack_decode_context *decode_context;
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    return cmt_mpack_consume_uint_tag(reader, &decode_context->metric->exp_hist_negative_buckets[index]);
+}
+
+static int unpack_exp_histogram_positive_buckets(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_msgpack_decode_context *decode_context;
+    size_t count;
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    count = cmt_mpack_peek_array_length(reader);
+
+    if (decode_context->metric->exp_hist_positive_buckets != NULL) {
+        free(decode_context->metric->exp_hist_positive_buckets);
+        decode_context->metric->exp_hist_positive_buckets = NULL;
+        decode_context->metric->exp_hist_positive_count = 0;
+    }
+
+    if (count > 0) {
+        decode_context->metric->exp_hist_positive_buckets = calloc(count, sizeof(uint64_t));
+        if (decode_context->metric->exp_hist_positive_buckets == NULL) {
+            return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
+        }
+        decode_context->metric->exp_hist_positive_count = count;
+    }
+
+    return cmt_mpack_unpack_array(reader, unpack_exp_histogram_positive_bucket, context);
+}
+
+static int unpack_exp_histogram_negative_buckets(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_msgpack_decode_context *decode_context;
+    size_t count;
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    count = cmt_mpack_peek_array_length(reader);
+
+    if (decode_context->metric->exp_hist_negative_buckets != NULL) {
+        free(decode_context->metric->exp_hist_negative_buckets);
+        decode_context->metric->exp_hist_negative_buckets = NULL;
+        decode_context->metric->exp_hist_negative_count = 0;
+    }
+
+    if (count > 0) {
+        decode_context->metric->exp_hist_negative_buckets = calloc(count, sizeof(uint64_t));
+        if (decode_context->metric->exp_hist_negative_buckets == NULL) {
+            return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
+        }
+        decode_context->metric->exp_hist_negative_count = count;
+    }
+
+    return cmt_mpack_unpack_array(reader, unpack_exp_histogram_negative_bucket, context);
+}
+
+static int unpack_exp_histogram_count(mpack_reader_t *reader, size_t index, void *context)
+{
+    int                                result;
+    uint64_t                           value;
+    struct cmt_msgpack_decode_context *decode_context;
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    result = cmt_mpack_consume_uint_tag(reader, &value);
+
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        cmt_atomic_store(&decode_context->metric->exp_hist_count, value);
+    }
+
+    return result;
+}
+
+static int unpack_exp_histogram_sum_set(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_msgpack_decode_context *decode_context;
+    uint64_t value;
+    int result;
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    result = cmt_mpack_consume_uint_tag(reader, &value);
+
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        cmt_atomic_store(&decode_context->metric->exp_hist_sum_set,
+                         value ? CMT_TRUE : CMT_FALSE);
+    }
+
+    return result;
+}
+
+static int unpack_exp_histogram_sum(mpack_reader_t *reader, size_t index, void *context)
+{
+    int                                result;
+    uint64_t                           value;
+    struct cmt_msgpack_decode_context *decode_context;
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    result = cmt_mpack_consume_uint_tag(reader, &value);
+
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        cmt_atomic_store(&decode_context->metric->exp_hist_sum, value);
+    }
+
+    return result;
+}
+
+static int unpack_metric_exp_histogram(mpack_reader_t *reader, size_t index, void *context)
+{
+    int result;
+    struct cmt_msgpack_decode_context *decode_context;
+    struct cmt_mpack_map_entry_callback_t callbacks[] = {
+        {"scale",           unpack_exp_histogram_scale},
+        {"zero_count",      unpack_exp_histogram_zero_count},
+        {"zero_threshold",  unpack_exp_histogram_zero_threshold},
+        {"positive_offset", unpack_exp_histogram_positive_offset},
+        {"positive_buckets",unpack_exp_histogram_positive_buckets},
+        {"negative_offset", unpack_exp_histogram_negative_offset},
+        {"negative_buckets",unpack_exp_histogram_negative_buckets},
+        {"count",           unpack_exp_histogram_count},
+        {"sum_set",         unpack_exp_histogram_sum_set},
+        {"sum",             unpack_exp_histogram_sum},
+        {NULL, NULL}
+    };
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+    cmt_metric_exp_hist_lock(decode_context->metric);
+    result = cmt_mpack_unpack_map(reader, callbacks, context);
+    cmt_metric_exp_hist_unlock(decode_context->metric);
 
     return result;
 }
@@ -642,10 +1037,15 @@ static int unpack_metric(mpack_reader_t *reader,
     struct cmt_mpack_map_entry_callback_t callbacks[] = \
         {
             {"ts",        unpack_metric_ts},
+            {"start_ts",  unpack_metric_start_ts},
             {"value",     unpack_metric_value},
+            {"value_type", unpack_metric_value_type},
+            {"value_int64", unpack_metric_value_int64},
+            {"value_uint64", unpack_metric_value_uint64},
             {"labels",    unpack_metric_labels},
             {"summary",   unpack_metric_summary},
             {"histogram", unpack_metric_histogram},
+            {"exp_histogram", unpack_metric_exp_histogram},
             {"hash",      unpack_metric_hash},
             {NULL,        NULL}
         };
@@ -701,6 +1101,7 @@ static int unpack_metric(mpack_reader_t *reader,
     cfl_list_init(&metric->labels);
 
     decode_context->metric = metric;
+    decode_context->metric_value_type_set = CMT_FALSE;
 
     result = cmt_mpack_unpack_map(reader, callbacks, (void *) decode_context);
 
@@ -713,6 +1114,12 @@ static int unpack_metric(mpack_reader_t *reader,
 
         if (NULL != metric->sum_quantiles) {
             free(metric->sum_quantiles);
+        }
+        if (NULL != metric->exp_hist_positive_buckets) {
+            free(metric->exp_hist_positive_buckets);
+        }
+        if (NULL != metric->exp_hist_negative_buckets) {
+            free(metric->exp_hist_negative_buckets);
         }
 
         free(metric);
@@ -727,6 +1134,8 @@ static int unpack_metric(mpack_reader_t *reader,
 static int unpack_metric_array_entry(mpack_reader_t *reader, size_t index, void *context)
 {
     int                                result;
+    uint64_t                          *old_negative_buckets;
+    uint64_t                          *old_positive_buckets;
     struct cmt_metric                 *metric;
     struct cmt_msgpack_decode_context *decode_context;
 
@@ -741,6 +1150,9 @@ static int unpack_metric_array_entry(mpack_reader_t *reader, size_t index, void 
     result = unpack_metric(reader, decode_context, &metric);
 
     if (CMT_DECODE_MSGPACK_SUCCESS == result) {
+        old_positive_buckets = NULL;
+        old_negative_buckets = NULL;
+
         if (0 == cfl_list_size(&metric->labels)) {
             /* Should we care about finding more than one "implicitly static metric" in
              * the array?
@@ -749,19 +1161,68 @@ static int unpack_metric_array_entry(mpack_reader_t *reader, size_t index, void 
 
             if (decode_context->map->type == CMT_HISTOGRAM) {
                 decode_context->map->metric.hist_buckets = metric->hist_buckets;
-                decode_context->map->metric.hist_count = metric->hist_count;
-                decode_context->map->metric.hist_sum = metric->hist_sum;
+                cmt_atomic_store(&decode_context->map->metric.hist_count,
+                                 cmt_atomic_load(&metric->hist_count));
+                cmt_atomic_store(&decode_context->map->metric.hist_sum,
+                                 cmt_atomic_load(&metric->hist_sum));
             }
             else if (decode_context->map->type == CMT_SUMMARY) {
-                decode_context->map->metric.sum_quantiles_set = metric->sum_quantiles_set;
+                cmt_atomic_store(&decode_context->map->metric.sum_quantiles_set, cmt_atomic_load(&metric->sum_quantiles_set));
                 decode_context->map->metric.sum_quantiles = metric->sum_quantiles;
-                decode_context->map->metric.sum_count = metric->sum_count;
-                decode_context->map->metric.sum_sum = metric->sum_sum;
+                cmt_atomic_store(&decode_context->map->metric.sum_count,
+                                 cmt_atomic_load(&metric->sum_count));
+                cmt_atomic_store(&decode_context->map->metric.sum_sum,
+                                 cmt_atomic_load(&metric->sum_sum));
+            }
+            else if (decode_context->map->type == CMT_EXP_HISTOGRAM) {
+                cmt_metric_exp_hist_lock(&decode_context->map->metric);
+
+                old_positive_buckets =
+                    decode_context->map->metric.exp_hist_positive_buckets;
+                old_negative_buckets =
+                    decode_context->map->metric.exp_hist_negative_buckets;
+
+                decode_context->map->metric.exp_hist_scale = metric->exp_hist_scale;
+                decode_context->map->metric.exp_hist_zero_count = metric->exp_hist_zero_count;
+                decode_context->map->metric.exp_hist_zero_threshold = metric->exp_hist_zero_threshold;
+                decode_context->map->metric.exp_hist_positive_offset = metric->exp_hist_positive_offset;
+                decode_context->map->metric.exp_hist_positive_count = metric->exp_hist_positive_count;
+                decode_context->map->metric.exp_hist_positive_buckets = metric->exp_hist_positive_buckets;
+                decode_context->map->metric.exp_hist_negative_offset = metric->exp_hist_negative_offset;
+                decode_context->map->metric.exp_hist_negative_count = metric->exp_hist_negative_count;
+                decode_context->map->metric.exp_hist_negative_buckets = metric->exp_hist_negative_buckets;
+                cmt_atomic_store(&decode_context->map->metric.exp_hist_count,
+                                 cmt_atomic_load(&metric->exp_hist_count));
+                cmt_atomic_store(&decode_context->map->metric.exp_hist_sum_set,
+                                 cmt_atomic_load(&metric->exp_hist_sum_set));
+                cmt_atomic_store(&decode_context->map->metric.exp_hist_sum,
+                                 cmt_atomic_load(&metric->exp_hist_sum));
+
+                cmt_metric_exp_hist_unlock(&decode_context->map->metric);
+
+                if (old_positive_buckets != NULL) {
+                    free(old_positive_buckets);
+                }
+                if (old_negative_buckets != NULL) {
+                    free(old_negative_buckets);
+                }
             }
 
-            decode_context->map->metric.val = metric->val;
+            cmt_atomic_store(&decode_context->map->metric.val,
+                             cmt_atomic_load(&metric->val));
+            cmt_atomic_store(&decode_context->map->metric.value_type,
+                             cmt_atomic_load(&metric->value_type));
+            cmt_atomic_store(&decode_context->map->metric.val_int64,
+                             cmt_atomic_load(&metric->val_int64));
+            cmt_atomic_store(&decode_context->map->metric.val_uint64,
+                             cmt_atomic_load(&metric->val_uint64));
             decode_context->map->metric.hash = metric->hash;
-            decode_context->map->metric.timestamp = metric->timestamp;
+            cmt_atomic_store(&decode_context->map->metric.timestamp,
+                             cmt_atomic_load(&metric->timestamp));
+            cmt_atomic_store(&decode_context->map->metric.start_timestamp,
+                             cmt_atomic_load(&metric->start_timestamp));
+            cmt_atomic_store(&decode_context->map->metric.start_timestamp_set,
+                             cmt_atomic_load(&metric->start_timestamp_set));
 
             free(metric);
         }
@@ -1297,6 +1758,34 @@ static int append_unpacked_histogram_to_metrics_context(
     return CMT_DECODE_MSGPACK_SUCCESS;
 }
 
+static int append_unpacked_exp_histogram_to_metrics_context(
+    struct cmt *context,
+    struct cmt_map *map)
+{
+    struct cmt_exp_histogram *exp_histogram;
+
+    if (NULL == context || NULL == map) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    exp_histogram = map->parent;
+    if (NULL == exp_histogram) {
+        return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
+    }
+
+    exp_histogram->cmt = context;
+    exp_histogram->map = map;
+    map->parent = (void *) exp_histogram;
+
+    memcpy(&exp_histogram->opts, map->opts, sizeof(struct cmt_opts));
+    free(map->opts);
+    map->opts = &exp_histogram->opts;
+
+    cfl_list_add(&exp_histogram->_head, &context->exp_histograms);
+
+    return CMT_DECODE_MSGPACK_SUCCESS;
+}
+
 static int unpack_basic_type_entry(mpack_reader_t *reader, size_t index, void *context)
 {
     int             result;
@@ -1324,6 +1813,9 @@ static int unpack_basic_type_entry(mpack_reader_t *reader, size_t index, void *c
         }
         else if (CMT_HISTOGRAM == map->type) {
             result = append_unpacked_histogram_to_metrics_context(cmt, map);
+        }
+        else if (CMT_EXP_HISTOGRAM == map->type) {
+            result = append_unpacked_exp_histogram_to_metrics_context(cmt, map);
         }
         else if (CMT_UNTYPED == map->type) {
             result = append_unpacked_untyped_to_metrics_context(cmt, map);

@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.12)
 project(fluent-bit C)
 
+include(CheckCCompilerFlag)
+
 # CMP0069 ensures that LTO is enabled for all compilers
 cmake_policy(SET CMP0069 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
@@ -150,6 +152,18 @@ if (NOT DEFINED FLB_USE_SIMDUTF)
   endif()
 endif()
 
+# another try for CXX
+if (NOT DEFINED FLB_USE_RIPSER)
+  check_language(CXX)
+  if(CMAKE_CXX_COMPILER)
+    message(STATUS "CXX compiler found, enable ripser.")
+    set(FLB_USE_RIPSER Yes)
+  else()
+    message(STATUS "CXX compiler not found, disable ripser.")
+    set(FLB_USE_RIPSER No)
+  endif()
+endif()
+
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
@@ -195,7 +209,8 @@ option(FLB_SIGNV4              "Enable AWS Signv4 support"    Yes)
 option(FLB_AWS                 "Enable AWS support"           Yes)
 option(FLB_STATIC_CONF         "Build binary using static configuration")
 option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"                    Yes)
-option(FLB_SIMD                "Enable SIMD support"                         No)
+set(FLB_SIMD "Auto" CACHE STRING "Enable SIMD support (On, Off, Auto)")
+set_property(CACHE FLB_SIMD PROPERTY STRINGS "On;Off;Auto")
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
 option(FLB_AVRO_ENCODER        "Build with Avro encoding support"            No)
 option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support"      No)
@@ -207,6 +222,7 @@ option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protec
 option(FLB_ENFORCE_ALIGNMENT   "Enable limited platform specific aligned memory access" No)
 option(FLB_KAFKA               "Enable Kafka support"         Yes)
 option(FLB_ZIG                 "Enable zig integration"       Yes)
+option(FLB_RIPSER              "Enable Ripser support"        ${FLB_USE_RIPSER})
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
@@ -245,7 +261,64 @@ option(FLB_EVENT_LOOP_SELECT    "Enable select(2) event loop backend" No)
 option(FLB_EVENT_LOOP_LIBEVENT  "Enable libevent event loop backend"  No)
 
 # SIMD support
-if(FLB_SIMD)
+# ------------
+# FLB_SIMD is a tri-state cache variable:
+#   Auto : enable SIMD only when the target architecture/toolchain is known-good
+#   On   : require SIMD support and fail during configure otherwise
+#   Off  : disable SIMD explicitly
+string(TOUPPER "${FLB_SIMD}" FLB_SIMD_MODE)
+
+if(FLB_SIMD_MODE MATCHES "^(ON|YES|TRUE|1)$")
+  set(FLB_SIMD_MODE "ON")
+elseif(FLB_SIMD_MODE MATCHES "^(OFF|NO|FALSE|0)$")
+  set(FLB_SIMD_MODE "OFF")
+elseif(NOT FLB_SIMD_MODE STREQUAL "AUTO")
+  message(FATAL_ERROR "FLB_SIMD must be one of: On, Off, Auto")
+endif()
+
+set(FLB_SIMD_ENABLED No)
+set(FLB_SIMD_RISCV_C_FLAGS "")
+
+if(NOT FLB_SIMD_MODE STREQUAL "OFF")
+  set(FLB_SIMD_SUPPORTED_ARCH No)
+
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$" AND (CMAKE_SIZEOF_VOID_P GREATER 4))
+    set(FLB_SIMD_SUPPORTED_ARCH Yes)
+    set(FLB_SIMD_ENABLED Yes)
+  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64|AARCH64)$")
+    set(FLB_SIMD_SUPPORTED_ARCH Yes)
+    set(FLB_SIMD_ENABLED Yes)
+  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv64)")
+    set(FLB_SIMD_SUPPORTED_ARCH Yes)
+    check_c_compiler_flag("-march=rv64gcv_zba" FLB_SIMD_RISCV_COMPILER_FLAG)
+
+    if(FLB_SIMD_RISCV_COMPILER_FLAG)
+      set(FLB_SIMD_ENABLED Yes)
+      set(FLB_SIMD_RISCV_C_FLAGS "-march=rv64gcv_zba")
+    elseif(FLB_SIMD_MODE STREQUAL "ON")
+      message(FATAL_ERROR
+        "FLB_SIMD=On requires compiler support for -march=rv64gcv_zba on riscv64")
+    else()
+      message(WARNING
+        "FLB_SIMD=Auto disabled SIMD on riscv64 because the compiler does not "
+        "support -march=rv64gcv_zba")
+    endif()
+  endif()
+
+  if(NOT FLB_SIMD_SUPPORTED_ARCH)
+    if(FLB_SIMD_MODE STREQUAL "ON")
+      message(FATAL_ERROR
+        "FLB_SIMD=On is only supported on x86_64, aarch64/arm64, and "
+        "riscv64 with RVV compiler support")
+    else()
+      message(STATUS
+        "FLB_SIMD=Auto disabled SIMD on unsupported architecture: "
+        "${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+  endif()
+endif()
+
+if(FLB_SIMD_ENABLED)
   FLB_DEFINITION(FLB_HAVE_SIMD)
 endif()
 
@@ -652,14 +725,22 @@ add_subdirectory(${FLB_PATH_LIB_RING_BUFFER} EXCLUDE_FROM_ALL)
 
 # yyson
 add_subdirectory(${FLB_PATH_LIB_YYJSON} EXCLUDE_FROM_ALL)
+if (TARGET yyjson AND NOT FLB_COVERAGE AND
+    CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang|Intel")
+  # yyjson's O0 reader can exceed the default coroutine stack budget.
+  # Keep debug symbols, but force enough optimization to shrink the frame.
+  target_compile_options(yyjson PRIVATE
+    $<$<AND:$<COMPILE_LANGUAGE:C>,$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>>:-Og>
+  )
+endif()
 
 # Avro
 if(FLB_AVRO_ENCODER)
   # jansson
   option(JANSSON_BUILD_DOCS         OFF)
   option(JANSSON_EXAMPLES           OFF)
-  option(JANSSON_WITHOUT_TESTS       ON)
   option(JANSSON_BUILD_SHARED_LIBS  OFF)
+  set(JANSSON_WITHOUT_TESTS ON CACHE BOOL "" FORCE)
   add_subdirectory(${FLB_PATH_LIB_JANSSON})
 
   #avro
@@ -830,6 +911,14 @@ if(FLB_WASM)
     enable_language (ASM)
     FLB_DEFINITION(FLB_HAVE_WASM)
   endif ()
+endif()
+
+# ripser
+if(FLB_RIPSER)
+  enable_language(CXX)
+  set (CMAKE_CXX_STANDARD 11)
+  add_subdirectory(${FLB_PATH_LIB_RIPSER} EXCLUDE_FROM_ALL)
+  FLB_DEFINITION(FLB_HAVE_RIPSER)
 endif()
 
 # Kafka support (library in general)

@@ -35,6 +35,11 @@ on:
       cosign_key:
         description: The optional Cosign key to use for verifying the images.
         required: false
+
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   call-test-images-cosign-verify:
     name: Cosign verification of container image
@@ -45,7 +50,7 @@ jobs:
         uses: sigstore/cosign-installer@v2
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -87,7 +92,7 @@ jobs:
             expected: arm
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -136,7 +141,7 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -144,7 +149,7 @@ jobs:
 
       - name: Set up QEMU using standard action
         if: ${{ matrix.arch != 'linux/arm64' }}
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       # Without this QEMU fails for ARM64
       - name: Set up binary emulation for QEMU
@@ -202,4 +207,3 @@ jobs:
           REGISTRY: ${{ inputs.registry }}
           IMAGE_NAME: ${{ inputs.image }}
           IMAGE_TAG: ${{ inputs.image-tag }}
-

@@ -254,7 +254,6 @@ int flb_secure_forward_set_helo(struct flb_input_instance *in,
 static int send_helo(struct flb_input_instance *in, struct flb_connection *connection,
                      struct flb_in_fw_helo *helo)
 {
-    int result;
     size_t sent;
     ssize_t bytes;
     msgpack_packer mp_pck;
@@ -302,16 +301,10 @@ static int send_helo(struct flb_input_instance *in, struct flb_connection *conne
 
     if (bytes == -1) {
         flb_plg_error(in, "cannot send HELO");
-
-        result = -1;
-    }
-    else {
-        result = 0;
+        return -1;
     }
 
-    result = flb_secure_forward_set_helo(in, helo, nonce, user_auth_salt);
-
-    return result;
+    return flb_secure_forward_set_helo(in, helo, nonce, user_auth_salt);
 }
 
 static void flb_secure_forward_format_bin_to_hex(uint8_t *buf, size_t len, char *out)
@@ -827,7 +820,7 @@ static int send_ack(struct flb_input_instance *in, struct fw_conn *conn,
 
 }
 
-static size_t get_options_metadata(msgpack_object *arr, int expected, size_t *idx)
+static int get_options_metadata(msgpack_object *arr, int expected, int *idx)
 {
     size_t i;
     msgpack_object *options;
@@ -880,7 +873,7 @@ static size_t get_options_metadata(msgpack_object *arr, int expected, size_t *id
             return -1;
         }
 
-        *idx = i;
+        *idx = (int) i;
 
         return 0;
     }
@@ -888,7 +881,7 @@ static size_t get_options_metadata(msgpack_object *arr, int expected, size_t *id
     return 0;
 }
 
-static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
+static int get_options_chunk(msgpack_object *arr, int expected, int *idx)
 {
     size_t i;
     msgpack_object *options;
@@ -941,7 +934,7 @@ static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
             return -1;
         }
 
-        *idx = i;
+        *idx = (int) i;
         return 0;
     }
 
@@ -1075,8 +1068,19 @@ static int fw_process_message_mode_entry(
 static size_t receiver_recv(struct fw_conn *conn, char *buf, size_t try_size) {
     size_t off;
     size_t actual_size;
+    size_t buf_len;
 
-    off = conn->buf_len - conn->rest;
+    if (conn->rest > conn->buf_len) {
+        return 0;
+    }
+
+    buf_len = conn->buf_len;
+    off = buf_len - conn->rest;
+
+    if (off > buf_len) {
+        return 0;
+    }
+
     actual_size = try_size;
 
     if (actual_size > conn->rest) {
@@ -1256,9 +1260,9 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     int stag_len;
     int event_type;
     int contain_options = FLB_FALSE;
+    int chunk_id = -1;
+    int metadata_id = -1;
     size_t index = 0;
-    size_t chunk_id = -1;
-    size_t metadata_id = -1;
     const char *stag;
     flb_sds_t out_tag = NULL;
     size_t bytes;
@@ -1348,11 +1352,17 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
              *
              *  https://github.com/msgpack/msgpack-c/issues/514
              */
+            if (bytes > 0 && all_used > SIZE_MAX - bytes) {
+                flb_plg_error(ctx->ins, "incoming frame size accounting overflow");
+                goto cleanup_msgpack;
+            }
+
             all_used += bytes;
 
 
             /* Map the array */
             root = result.data;
+            contain_options = FLB_FALSE;
 
             if (root.type != MSGPACK_OBJECT_ARRAY) {
                 flb_plg_debug(ctx->ins,
@@ -1526,6 +1536,13 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 }
 
                 if (data) {
+                    if (len > ctx->buffer_max_size) {
+                        flb_plg_error(ctx->ins,
+                                      "packedforward payload too large (%zu bytes), limit=%zu",
+                                      len, ctx->buffer_max_size);
+                        goto cleanup_msgpack;
+                    }
+
                     /* Get event type early for use in both compressed/uncompressed paths */
                     event_type = FLB_EVENT_TYPE_LOGS;
                     if (contain_options) {
@@ -1571,16 +1588,35 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                     }
 
                     if (conn->compression_type != FLB_COMPRESSION_ALGORITHM_NONE) {
+                        char *decoded_payload = NULL;
                         char *decomp_buf = NULL;
                         uint8_t *append_ptr;
                         size_t available_space;
                         size_t decomp_len;
+                        size_t total_decompressed;
                         int decomp_ret;
                         size_t required_size;
 
+                        total_decompressed = 0;
+
                         available_space = flb_decompression_context_get_available_space(conn->d_ctx);
                         if (len > available_space) {
+                            if (conn->d_ctx->input_buffer_length > SIZE_MAX - len) {
+                                flb_plg_error(ctx->ins,
+                                              "decompression input size overflow");
+
+                                goto cleanup_decompress;
+                            }
+
                             required_size = conn->d_ctx->input_buffer_length + len;
+                            if (required_size > ctx->buffer_max_size) {
+                                flb_plg_error(ctx->ins,
+                                              "compressed payload exceeds limit (%zu bytes)",
+                                              ctx->buffer_max_size);
+
+                                goto cleanup_decompress;
+                            }
+
                             if (flb_decompression_context_resize_buffer(conn->d_ctx, required_size) != 0) {
                                 flb_plg_error(ctx->ins, "cannot resize decompression buffer");
 
@@ -1598,6 +1634,14 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                             goto cleanup_decompress;
                         }
 
+                        decoded_payload = flb_malloc(ctx->buffer_max_size);
+                        if (!decoded_payload) {
+                            flb_errno();
+                            flb_free(decomp_buf);
+
+                            goto cleanup_decompress;
+                        }
+
                         do {
                             decomp_len = ctx->buffer_chunk_size;
                             decomp_ret = flb_decompress(conn->d_ctx, decomp_buf, &decomp_len);
@@ -1605,6 +1649,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                             if (decomp_ret == FLB_DECOMPRESSOR_FAILURE) {
                                 if (decomp_len > 0) {
                                     flb_plg_error(ctx->ins, "decompression failed, data may be corrupt");
+                                    flb_free(decoded_payload);
                                     flb_free(decomp_buf);
 
                                     goto cleanup_decompress;
@@ -1613,15 +1658,49 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                             }
 
                             if (decomp_len > 0) {
-                                if (append_log(ins, conn, event_type, out_tag, decomp_buf, decomp_len) == -1) {
+                                if (total_decompressed > SIZE_MAX - decomp_len) {
+                                    flb_plg_error(ctx->ins,
+                                                  "decompressed output size overflow");
+                                    flb_free(decoded_payload);
                                     flb_free(decomp_buf);
 
                                     goto cleanup_decompress;
                                 }
+
+                                total_decompressed += decomp_len;
+
+                                if (total_decompressed > ctx->buffer_max_size) {
+                                    flb_plg_error(ctx->ins,
+                                                  "decompressed payload exceeds limit (%zu bytes)",
+                                                  ctx->buffer_max_size);
+                                    flb_free(decoded_payload);
+                                    flb_free(decomp_buf);
+
+                                    goto cleanup_decompress;
+                                }
+
+                                memcpy(decoded_payload + (total_decompressed - decomp_len),
+                                       decomp_buf,
+                                       decomp_len);
                             }
                         } while (decomp_len > 0);
 
                         flb_free(decomp_buf);
+
+                        if (total_decompressed > 0) {
+                            if (append_log(ins,
+                                           conn,
+                                           event_type,
+                                           out_tag,
+                                           decoded_payload,
+                                           total_decompressed) == -1) {
+                                flb_free(decoded_payload);
+
+                                goto cleanup_decompress;
+                            }
+                        }
+
+                        flb_free(decoded_payload);
 
                         flb_decompression_context_destroy(conn->d_ctx);
                         conn->d_ctx = NULL;

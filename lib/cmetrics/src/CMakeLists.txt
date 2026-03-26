@@ -14,6 +14,7 @@ set(src
   cmt_untyped.c
   cmt_summary.c
   cmt_histogram.c
+  cmt_exp_histogram.c
   cmt_metric.c
   cmt_metric_histogram.c
   cmt_map.c
@@ -76,6 +77,9 @@ endif()
 # Static Library
 add_library(cmetrics-static STATIC ${src})
 target_link_libraries(cmetrics-static mpack-static cfl-static fluent-otel-proto)
+if(NOT MSVC)
+  target_link_libraries(cmetrics-static m)
+endif()
 
 # Install Library
 if(MSVC)

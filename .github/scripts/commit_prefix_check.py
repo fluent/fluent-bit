@@ -16,6 +16,7 @@ import os
 import re
 import sys
 from git import Repo
+from git.exc import GitCommandError
 
 repo = Repo(".")
 
@@ -127,6 +128,18 @@ def infer_prefix_from_paths(paths):
     return prefixes, build_optional
 
 
+def is_http_server_interface_path(path):
+    p = path.replace(os.sep, "/")
+
+    return (
+        p.startswith("src/http_server/")
+        or p == "src/flb_http_common.c"
+        or p.startswith("include/fluent-bit/http_server/")
+        or p == "include/fluent-bit/flb_http_common.h"
+        or p == "HTTP_SERVER_API.md"
+    )
+
+
 # ------------------------------------------------
 # detect_bad_squash() must satisfy the tests EXACTLY
 # ------------------------------------------------
@@ -203,7 +216,15 @@ def validate_commit(commit):
         return False, "Missing Signed-off-by line"
 
     # Determine expected prefixes + build option flag
-    files = commit.stats.files.keys()
+    try:
+        files = commit.stats.files.keys()
+    except GitCommandError as e:
+        return False, (
+            f"Could not inspect files changed by commit {commit.hexsha[:10]}: {e}\n"
+            "The repository checkout is likely missing commit parent history. "
+            "Use a full-depth checkout for commit-prefix validation."
+        )
+
     expected, build_optional = infer_prefix_from_paths(files)
 
     # When no prefix can be inferred (docs/tools), allow anything
@@ -243,7 +264,7 @@ def validate_commit(commit):
     }
 
     # Prefixes that are allowed to cover multiple subcomponents
-    umbrella_prefixes = {"lib:", "tests:"}
+    umbrella_prefixes = {"lib:", "tests:", "http_server:"}
 
     # If more than one non-build prefix is inferred AND the subject is not an umbrella
     # prefix, check if the subject prefix is in the expected list. If it is, allow it
@@ -264,6 +285,15 @@ def validate_commit(commit):
 
             elif subj_lower == "tests:":
                 if not all(p.startswith("tests/") for p in norm_paths):
+                    expected_list = sorted(expected)
+                    expected_str = ", ".join(expected_list)
+                    return False, (
+                        f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+                        f"Expected one of: {expected_str}"
+                    )
+
+            elif subj_lower == "http_server:":
+                if not all(is_http_server_interface_path(p) for p in norm_paths):
                     expected_list = sorted(expected)
                     expected_str = ", ".join(expected_list)
                     return False, (

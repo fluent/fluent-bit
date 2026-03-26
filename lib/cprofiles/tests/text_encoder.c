@@ -20,11 +20,14 @@
 #include <time.h>
 #include "cprof_tests.h"
 #include <cprofiles/cprof_decode_msgpack.h>
+#include <cprofiles/cprof_decode_opentelemetry.h>
+#include <cprofiles/cprof_encode_opentelemetry.h>
 #include <cprofiles/cprof_encode_text.h>
 
 #include <stdio.h>
 #include <inttypes.h>
 #include <stdlib.h>
+#include <string.h>
 
 unsigned char serialized_data[] = {
     0x82, 0xA4, 0x6D, 0x65, 0x74, 0x61, 0x80, 0xA8, 0x70, 0x72, 0x6F, 0x66,
@@ -659,7 +662,192 @@ static void test_encoder()
     }
 }
 
+static struct cprof *create_otlp_text_fixture(void)
+{
+    struct cprof *cprof;
+    struct cprof_resource_profiles *resource_profiles;
+    struct cprof_scope_profiles *scope_profiles;
+    struct cprof_profile *profile;
+    struct cprof_sample *sample;
+    struct cprof_location *location;
+    struct cprof_line *line;
+    struct cprof_function *function;
+    struct cprof_mapping *mapping;
+    struct cprof_resource *resource;
+    struct cfl_kvlist *attrs;
+    size_t id_bin;
+    size_t id_func;
+
+    cprof = cprof_create();
+    if (cprof == NULL) {
+        return NULL;
+    }
+
+    resource_profiles = cprof_resource_profiles_create("");
+    if (resource_profiles == NULL) {
+        cprof_destroy(cprof);
+        return NULL;
+    }
+
+    attrs = cfl_kvlist_create();
+    if (attrs == NULL) {
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+
+    resource = cprof_resource_create(attrs);
+    if (resource == NULL) {
+        cfl_kvlist_destroy(attrs);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+    resource_profiles->resource = resource;
+
+    scope_profiles = cprof_scope_profiles_create(resource_profiles, "");
+    if (scope_profiles == NULL) {
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+
+    scope_profiles->scope = cprof_instrumentation_scope_create("", "", NULL, 0);
+    if (scope_profiles->scope == NULL) {
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+
+    profile = cprof_profile_create();
+    if (profile == NULL) {
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+
+    profile->time_nanos = 1000;
+    profile->duration_nanos = 100;
+    cprof_sample_type_str_create(profile, "cpu", "nanoseconds",
+                                 CPROF_AGGREGATION_TEMPORALITY_CUMULATIVE);
+
+    id_bin = cprof_profile_string_add(profile, "/bin/app", -1);
+    id_func = cprof_profile_string_add(profile, "leaf_func", -1);
+    if (id_bin == 0 || id_func == 0) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+
+    mapping = cprof_mapping_create(profile);
+    function = cprof_function_create(profile);
+    location = cprof_location_create(profile);
+    sample = cprof_sample_create(profile);
+    if (mapping == NULL || function == NULL || location == NULL || sample == NULL) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+
+    mapping->memory_start = 0x1000ULL;
+    mapping->memory_limit = 0x2000ULL;
+    mapping->filename = (int64_t) id_bin;
+
+    function->name = (int64_t) id_func;
+    function->system_name = (int64_t) id_func;
+    function->start_line = 10;
+
+    location->mapping_index = 0;
+    location->address = 0x1010ULL;
+    line = cprof_line_create(location);
+    if (line == NULL) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+    line->function_index = 0;
+    line->line = 10;
+
+    if (cprof_sample_add_location_index(sample, 0) != 0 ||
+        cprof_sample_add_value(sample, 7) != 0) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+
+    cfl_list_add(&profile->_head, &scope_profiles->profiles);
+
+    if (cprof_resource_profiles_add(cprof, resource_profiles) != 0) {
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+
+    return cprof;
+}
+
+static void test_encoder_otlp_roundtrip_resolved_locations()
+{
+    cfl_sds_t otlp_result;
+    cfl_sds_t text_result;
+    struct cprof *source_context;
+    struct cprof *decoded_context;
+    int result;
+    size_t offset;
+
+    source_context = create_otlp_text_fixture();
+    TEST_CHECK(source_context != NULL);
+    if (source_context == NULL) {
+        return;
+    }
+
+    result = cprof_encode_opentelemetry_create(&otlp_result, source_context);
+    cprof_destroy(source_context);
+    TEST_CHECK(result == CPROF_ENCODE_OPENTELEMETRY_SUCCESS);
+    if (result != CPROF_ENCODE_OPENTELEMETRY_SUCCESS) {
+        return;
+    }
+
+    offset = 0;
+    decoded_context = NULL;
+    result = cprof_decode_opentelemetry_create(&decoded_context,
+                                               (unsigned char *) otlp_result,
+                                               cfl_sds_len(otlp_result),
+                                               &offset);
+    cprof_encode_opentelemetry_destroy(otlp_result);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_SUCCESS);
+    TEST_CHECK(decoded_context != NULL);
+    if (result != CPROF_DECODE_OPENTELEMETRY_SUCCESS || decoded_context == NULL) {
+        return;
+    }
+
+    result = cprof_encode_text_create(&text_result,
+                                      decoded_context,
+                                      CPROF_ENCODE_TEXT_RENDER_RESOLVED);
+    TEST_CHECK(result == CPROF_ENCODE_TEXT_SUCCESS);
+    if (result == CPROF_ENCODE_TEXT_SUCCESS) {
+        TEST_CHECK(strstr(text_result, "Location index : [ \"leaf_func\"") != NULL);
+        TEST_CHECK(strstr(text_result, "Locations start index : ") == NULL);
+        TEST_CHECK(strstr(text_result, "Locations length : ") == NULL);
+
+        cprof_encode_text_destroy(text_result);
+    }
+
+    cprof_decode_opentelemetry_destroy(decoded_context);
+}
+
 TEST_LIST = {
     {"encoder", test_encoder},
+    {"encoder_otlp_roundtrip_resolved_locations", test_encoder_otlp_roundtrip_resolved_locations},
     { 0 }
 };

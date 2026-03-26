@@ -38,6 +38,7 @@
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_output_thread.h>
+#include <fluent-bit/http_server/flb_http_server_config_map.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_pack.h>
 
@@ -46,6 +47,10 @@ FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
 /* Histogram buckets for output latency in seconds */
 static const double output_latency_buckets[] = {
     0.5, 1.0, 1.5, 2.5, 5.0, 10.0, 20.0, 30.0
+};
+
+static const double output_backpressure_wait_buckets[] = {
+    0.010, 0.050, 0.100, 0.250, 0.500, 1.0, 2.0, 5.0, 15.0, 30.0, 60.0
 };
 
 struct flb_config_map output_global_properties[] = {
@@ -166,6 +171,7 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
 
     flb_kv_release(&ins->properties);
     flb_kv_release(&ins->net_properties);
+    flb_kv_release(&ins->http_server_properties);
     flb_kv_release(&ins->oauth2_properties);
 
 #ifdef FLB_HAVE_TLS
@@ -512,6 +518,14 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
         flb_config_map_destroy(ins->net_config_map);
     }
 
+    if (ins->http_server_config_map) {
+        flb_config_map_destroy(ins->http_server_config_map);
+    }
+
+    if (ins->http_server_config) {
+        flb_free(ins->http_server_config);
+    }
+
     if (ins->oauth2_config_map) {
         flb_config_map_destroy(ins->oauth2_config_map);
     }
@@ -694,6 +708,15 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         return NULL;
     }
 
+    instance->http_server_config = flb_calloc(1, sizeof(struct flb_http_server_config));
+    if (!instance->http_server_config) {
+        flb_errno();
+        flb_free(instance);
+        return NULL;
+    }
+
+    flb_http_server_config_init(instance->http_server_config);
+
     /* Initialize event type, if not set, default to FLB_OUTPUT_LOGS */
     if (plugin->event_type == 0) {
         instance->event_type = FLB_OUTPUT_LOGS;
@@ -720,6 +743,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         if (instance->flags & FLB_OUTPUT_SYNCHRONOUS) {
             flb_task_queue_destroy(instance->singleplex_queue);
         }
+        flb_free(instance->http_server_config);
         flb_free(instance);
         return NULL;
     }
@@ -736,6 +760,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
             if (instance->flags & FLB_OUTPUT_SYNCHRONOUS) {
                 flb_task_queue_destroy(instance->singleplex_queue);
             }
+            flb_free(instance->http_server_config);
             flb_free(instance);
             return NULL;
         }
@@ -798,6 +823,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
             if (instance->flags & FLB_OUTPUT_SYNCHRONOUS) {
                 flb_task_queue_destroy(instance->singleplex_queue);
             }
+            flb_free(instance->http_server_config);
             flb_free(instance);
             return NULL;
         }
@@ -808,6 +834,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     if (instance->flags & FLB_OUTPUT_SYNCHRONOUS) {
         instance->singleplex_queue = flb_task_queue_create();
         if (!instance->singleplex_queue) {
+            flb_free(instance->http_server_config);
             flb_free(instance);
             flb_errno();
             return NULL;
@@ -816,6 +843,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
     flb_kv_init(&instance->properties);
     flb_kv_init(&instance->net_properties);
+    flb_kv_init(&instance->http_server_properties);
     flb_kv_init(&instance->oauth2_properties);
     mk_list_init(&instance->upstreams);
     mk_list_init(&instance->flush_list);
@@ -948,6 +976,18 @@ int flb_output_set_property(struct flb_output_instance *ins,
     }
     else if (strncasecmp("oauth2", k, 6) == 0 && tmp) {
         kv = flb_kv_item_create(&ins->oauth2_properties, (char *) k, NULL);
+        if (!kv) {
+            if (tmp) {
+                flb_sds_destroy(tmp);
+            }
+            return -1;
+        }
+        kv->val = tmp;
+    }
+    else if ((ins->p->flags & FLB_OUTPUT_HTTP_SERVER) != 0 &&
+             flb_http_server_property_is_allowed(k) == FLB_TRUE &&
+             tmp != NULL) {
+        kv = flb_kv_item_create(&ins->http_server_properties, (char *) k, NULL);
         if (!kv) {
             if (tmp) {
                 flb_sds_destroy(tmp);
@@ -1197,12 +1237,64 @@ int flb_output_oauth2_property_check(struct flb_output_instance *ins,
     return 0;
 }
 
+static int flb_output_http_server_property_check(struct flb_output_instance *ins,
+                                                 struct flb_config *config)
+{
+    int ret = 0;
+
+    if (ins->http_server_config_map == NULL) {
+        ins->http_server_config_map = flb_http_server_get_config_map(config);
+        if (!ins->http_server_config_map) {
+            return -1;
+        }
+    }
+
+    if (mk_list_size(&ins->http_server_properties) > 0) {
+        ret = flb_config_map_properties_check(ins->p->name,
+                                              &ins->http_server_properties,
+                                              ins->http_server_config_map);
+        if (ret == -1) {
+            if (config->program_name) {
+                flb_helper("try the command: %s -o %s -h\n",
+                           config->program_name, ins->p->name);
+            }
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 int flb_output_plugin_property_check(struct flb_output_instance *ins,
                                      struct flb_config *config)
 {
     int ret = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
     struct mk_list *config_map;
+    struct flb_kv *kv;
+    struct flb_kv *moved;
     struct flb_output_plugin *p = ins->p;
+
+    if ((p->flags & FLB_OUTPUT_HTTP_SERVER) != 0) {
+        mk_list_foreach_safe(head, tmp, &ins->properties) {
+            kv = mk_list_entry(head, struct flb_kv, _head);
+
+            if (flb_http_server_property_is_allowed(kv->key) == FLB_FALSE) {
+                continue;
+            }
+
+            moved = flb_kv_item_create(&ins->http_server_properties, kv->key, NULL);
+            if (moved == NULL) {
+                return -1;
+            }
+
+            moved->val = kv->val;
+            kv->val = NULL;
+            mk_list_del(&kv->_head);
+            flb_kv_item_destroy(kv);
+        }
+    }
 
     if (p->config_map) {
         /*
@@ -1402,6 +1494,22 @@ int flb_output_init_all(struct flb_config *config)
                                                 buckets,
                                                 2, (char *[]) {"input", "output"});
 
+        buckets = cmt_histogram_buckets_create_size((double *) output_backpressure_wait_buckets,
+                                                    sizeof(output_backpressure_wait_buckets) / sizeof(double));
+        if (!buckets) {
+            flb_error("could not create backpressure wait histogram buckets for %s", name);
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+
+        ins->cmt_backpressure_wait = cmt_histogram_create(ins->cmt,
+                                                "fluentbit",
+                                                "output",
+                                                "backpressure_wait_seconds",
+                                                "Output backpressure wait in seconds",
+                                                buckets,
+                                                1, (char *[]) {"output"});
+
         /* old API */
         ins->metrics = flb_metrics_create(name);
         if (ins->metrics) {
@@ -1555,6 +1663,14 @@ int flb_output_init_all(struct flb_config *config)
         /* Check OAuth2 properties if any */
         if (mk_list_size(&ins->oauth2_properties) > 0) {
             if (flb_output_oauth2_property_check(ins, config) == -1) {
+                flb_output_instance_destroy(ins);
+                return -1;
+            }
+        }
+
+        if ((p->flags & FLB_OUTPUT_HTTP_SERVER) != 0 ||
+            mk_list_size(&ins->http_server_properties) > 0) {
+            if (flb_output_http_server_property_check(ins, config) == -1) {
                 flb_output_instance_destroy(ins);
                 return -1;
             }

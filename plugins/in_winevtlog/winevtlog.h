@@ -43,8 +43,10 @@ struct winevtlog_config {
     int string_inserts;
     int read_existing_events;
     int render_event_as_xml;
+    int render_event_as_text;
     int use_ansi;
     int ignore_missing_channels;
+    flb_sds_t render_event_text_key;
     flb_sds_t event_query;
     flb_sds_t remote_server;
     flb_sds_t remote_domain;
@@ -133,6 +135,9 @@ void winevtlog_close_all(struct mk_list *list);
 void winevtlog_pack_xml_event(WCHAR *system_xml, WCHAR *message,
                               PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
                               struct winevtlog_config *ctx);
+void winevtlog_pack_text_event(PEVT_VARIANT system, WCHAR *message,
+                               PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
+                               struct winevtlog_config *ctx);
 void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
                           PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
                           struct winevtlog_config *ctx);

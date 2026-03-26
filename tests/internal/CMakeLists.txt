@@ -118,6 +118,14 @@ if(FLB_METRICS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     metrics.c
+    cumulative_to_delta.c
+    )
+endif()
+
+if(FLB_HTTP_SERVER)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    http_server.c
     )
 endif()
 
@@ -169,6 +177,13 @@ if(FLB_LUAJIT)
     )
 endif()
 
+if(FLB_RIPSER)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    ripser.c
+    )
+endif()
+
 set(UNIT_TESTS_DATA
   data/tls/certificate.pem
   data/tls/private_key.pem
@@ -179,6 +194,7 @@ set(UNIT_TESTS_DATA
   data/input_chunk/log/a_thousand_plus_one_bytes.log
   data/input_chunk/log/test_buffer_valid.log
   data/opentelemetry/logs.json
+  data/opentelemetry/metrics.json
   )
 
 set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)
@@ -239,6 +255,18 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
 endfunction(prepare_unit_tests)
 
 prepare_unit_tests(flb-it- "${UNIT_TESTS_FILES}")
+
+if(FLB_METRICS AND FLB_PROCESSOR_CUMULATIVE_TO_DELTA)
+  set(CUMULATIVE_TO_DELTA_PLUGIN_DIR
+    ${PROJECT_SOURCE_DIR}/plugins/processor_cumulative_to_delta)
+  set(CUMULATIVE_TO_DELTA_CORE_SOURCE
+    ${CUMULATIVE_TO_DELTA_PLUGIN_DIR}/cumulative_to_delta_core.c)
+
+  target_sources(flb-it-cumulative_to_delta PRIVATE
+    ${CUMULATIVE_TO_DELTA_CORE_SOURCE})
+  target_include_directories(flb-it-cumulative_to_delta PRIVATE
+    ${CUMULATIVE_TO_DELTA_PLUGIN_DIR})
+endif()
 
 if(FLB_TESTS_INTERNAL_FUZZ)
   add_subdirectory(fuzzers)

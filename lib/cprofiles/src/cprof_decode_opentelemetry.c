@@ -32,81 +32,90 @@ static inline size_t minimum_size(size_t first_size, size_t second_size)
     return second_size;
 }
 
-static struct cprof_resource *
-            decode_resource(
-                Opentelemetry__Proto__Resource__V1__Resource *input_resource)
+static int decode_resource(struct cprof_resource **output_resource,
+                           Opentelemetry__Proto__Resource__V1__Resource *input_resource,
+                           Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary *dictionary)
 {
-    struct cprof_resource *output_resource;
-    struct cfl_kvlist     *attributes;
-    int                    result;
+    struct cfl_kvlist *attributes;
+    int                result;
+
+    *output_resource = NULL;
 
     if (input_resource == NULL) {
-        output_resource = cprof_resource_create(NULL);
-        if (output_resource != NULL) {
-            output_resource->dropped_attributes_count = 0;
+        *output_resource = cprof_resource_create(NULL);
+        if (*output_resource != NULL) {
+            (*output_resource)->dropped_attributes_count = 0;
+
+            return CPROF_DECODE_OPENTELEMETRY_SUCCESS;
         }
-        return output_resource;
+
+        return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
     }
 
     attributes = cfl_kvlist_create();
 
     if (attributes == NULL) {
-        return NULL;
+        return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
     }
 
     result = convert_kvarray_to_kvlist(attributes,
                                        input_resource->attributes,
-                                       input_resource->n_attributes);
+                                       input_resource->n_attributes,
+                                       dictionary != NULL ? dictionary->string_table : NULL,
+                                       dictionary != NULL ? dictionary->n_string_table : 0);
 
     if (result != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
         cfl_kvlist_destroy(attributes);
-
-        attributes = NULL;
+        return result;
     }
 
-    output_resource = cprof_resource_create(attributes);
+    *output_resource = cprof_resource_create(attributes);
 
-    if (output_resource == NULL) {
-        if (attributes != NULL) {
-            cfl_kvlist_destroy(attributes);
-        }
+    if (*output_resource == NULL) {
+        cfl_kvlist_destroy(attributes);
 
-        return NULL;
+        return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
     }
 
-    output_resource->dropped_attributes_count = input_resource->dropped_attributes_count;
+    (*output_resource)->dropped_attributes_count = input_resource->dropped_attributes_count;
 
-    return output_resource;
+    return CPROF_DECODE_OPENTELEMETRY_SUCCESS;
 }
 
 
-static struct cprof_instrumentation_scope *decode_instrumentation_scope(
-    Opentelemetry__Proto__Common__V1__InstrumentationScope *input_instrumentation_scope)
+static int decode_instrumentation_scope(
+    struct cprof_instrumentation_scope **instrumentation_scope,
+    Opentelemetry__Proto__Common__V1__InstrumentationScope *input_instrumentation_scope,
+    Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary *dictionary)
 {
-    struct cprof_instrumentation_scope *instrumentation_scope;
-    int                                 result;
+    int result;
 
-    instrumentation_scope = cprof_instrumentation_scope_create(
+    *instrumentation_scope = NULL;
+
+    *instrumentation_scope = cprof_instrumentation_scope_create(
         input_instrumentation_scope->name,
         input_instrumentation_scope->version,
         NULL,
         input_instrumentation_scope->dropped_attributes_count);
 
-    if (instrumentation_scope == NULL) {
-        return NULL;
+    if (*instrumentation_scope == NULL) {
+        return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
     }
 
-    result = convert_kvarray_to_kvlist(instrumentation_scope->attributes,
+    result = convert_kvarray_to_kvlist((*instrumentation_scope)->attributes,
                                        input_instrumentation_scope->attributes,
-                                       input_instrumentation_scope->n_attributes);
+                                       input_instrumentation_scope->n_attributes,
+                                       dictionary != NULL ? dictionary->string_table : NULL,
+                                       dictionary != NULL ? dictionary->n_string_table : 0);
 
     if (result != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
-        cprof_instrumentation_scope_destroy(instrumentation_scope);
+        cprof_instrumentation_scope_destroy(*instrumentation_scope);
+        *instrumentation_scope = NULL;
 
-        return NULL;
+        return result;
     }
 
-    return instrumentation_scope;
+    return CPROF_DECODE_OPENTELEMETRY_SUCCESS;
 }
 
 
@@ -120,17 +129,25 @@ static int decode_profile_sample_entry(struct cprof_sample *sample,
     Opentelemetry__Proto__Profiles__V1development__Stack *stack;
 
     /* Resolve stack_index to location indices from dictionary.stack_table */
-    if (dictionary != NULL && dictionary->stack_table != NULL &&
-        input_sample->stack_index >= 0 &&
-        (size_t)input_sample->stack_index < dictionary->n_stack_table) {
+    if (input_sample->stack_index >= 0) {
+        if (dictionary == NULL ||
+            dictionary->stack_table == NULL ||
+            (size_t) input_sample->stack_index >= dictionary->n_stack_table) {
+            return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+        }
+
         stack = dictionary->stack_table[input_sample->stack_index];
+        if (stack == NULL) {
+            return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+        }
+
         if (stack != NULL && stack->location_indices != NULL) {
             for (index = 0; index < stack->n_location_indices; index++) {
                 location_index = stack->location_indices[index];
 
                 if (location_index < 0 ||
-                    (dictionary->location_table != NULL &&
-                     (size_t) location_index >= dictionary->n_location_table)) {
+                    dictionary->location_table == NULL ||
+                    (size_t) location_index >= dictionary->n_location_table) {
                     return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
                 }
 
@@ -151,6 +168,13 @@ static int decode_profile_sample_entry(struct cprof_sample *sample,
     }
 
     for (index = 0; index < input_sample->n_attribute_indices; index++) {
+        if (dictionary == NULL ||
+            dictionary->attribute_table == NULL ||
+            input_sample->attribute_indices[index] < 0 ||
+            (size_t) input_sample->attribute_indices[index] >= dictionary->n_attribute_table) {
+            return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+        }
+
         result = cprof_sample_add_attribute(sample,
             (uint64_t)input_sample->attribute_indices[index]);
         if (result != 0) {
@@ -166,7 +190,18 @@ static int decode_profile_sample_entry(struct cprof_sample *sample,
         }
     }
 
-    sample->link = (uint64_t)(input_sample->link_index >= 0 ? input_sample->link_index : 0);
+    if (input_sample->link_index >= 0) {
+        if (dictionary == NULL ||
+            dictionary->link_table == NULL ||
+            (size_t) input_sample->link_index >= dictionary->n_link_table) {
+            return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+        }
+
+        sample->link = (uint64_t) input_sample->link_index;
+    }
+    else {
+        sample->link = 0;
+    }
 
     return CPROF_DECODE_OPENTELEMETRY_SUCCESS;
 }
@@ -206,9 +241,9 @@ static int decode_line_entry(struct cprof_line *line,
     Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary *dictionary)
 {
     if (input_line->function_index < 0 ||
-        (dictionary != NULL &&
-         dictionary->function_table != NULL &&
-         (size_t) input_line->function_index >= dictionary->n_function_table)) {
+        dictionary == NULL ||
+        dictionary->function_table == NULL ||
+        (size_t) input_line->function_index >= dictionary->n_function_table) {
         return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
     }
 
@@ -228,9 +263,9 @@ static int decode_location_entry(struct cprof_location *location,
     struct cprof_line *line;
 
     if (input_location->mapping_index < 0 ||
-        (dictionary != NULL &&
-         dictionary->mapping_table != NULL &&
-         (size_t) input_location->mapping_index >= dictionary->n_mapping_table)) {
+        dictionary == NULL ||
+        dictionary->mapping_table == NULL ||
+        (size_t) input_location->mapping_index >= dictionary->n_mapping_table) {
         return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
     }
 
@@ -370,6 +405,10 @@ static int decode_profile_entry(struct cprof_profile *profile,
         /* Mappings */
         if (dictionary->mapping_table != NULL) {
             for (index = 0; index < dictionary->n_mapping_table; index++) {
+                if (dictionary->mapping_table[index] == NULL) {
+                    return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+                }
+
                 mapping = cprof_mapping_create(profile);
                 if (mapping == NULL) {
                     return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
@@ -384,6 +423,10 @@ static int decode_profile_entry(struct cprof_profile *profile,
         /* Locations */
         if (dictionary->location_table != NULL) {
             for (index = 0; index < dictionary->n_location_table; index++) {
+                if (dictionary->location_table[index] == NULL) {
+                    return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+                }
+
                 location = cprof_location_create(profile);
                 if (location == NULL) {
                     return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
@@ -400,6 +443,10 @@ static int decode_profile_entry(struct cprof_profile *profile,
         /* Functions */
         if (dictionary->function_table != NULL) {
             for (index = 0; index < dictionary->n_function_table; index++) {
+                if (dictionary->function_table[index] == NULL) {
+                    return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+                }
+
                 function = cprof_function_create(profile);
                 if (function == NULL) {
                     return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
@@ -422,6 +469,10 @@ static int decode_profile_entry(struct cprof_profile *profile,
                 return result;
             }
             for (index = 0; index < dictionary->n_attribute_table; index++) {
+                if (dictionary->attribute_table[index] == NULL) {
+                    return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+                }
+
                 attribute_unit = cprof_attribute_unit_create(profile);
                 if (attribute_unit == NULL) {
                     return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
@@ -437,6 +488,10 @@ static int decode_profile_entry(struct cprof_profile *profile,
         /* Link table */
         if (dictionary->link_table != NULL) {
             for (index = 0; index < dictionary->n_link_table; index++) {
+                if (dictionary->link_table[index] == NULL) {
+                    return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+                }
+
                 link = cprof_link_create(profile);
                 if (link == NULL) {
                     return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
@@ -465,7 +520,6 @@ static int decode_profile_entry(struct cprof_profile *profile,
                     return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
                 }
 
-                indexed_attribute_key = "";
                 indexed_attribute_key_index = indexed_attribute_entry->key_strindex;
 
                 if (dictionary->string_table != NULL &&
@@ -474,11 +528,17 @@ static int decode_profile_entry(struct cprof_profile *profile,
                     dictionary->string_table[indexed_attribute_key_index] != NULL) {
                     indexed_attribute_key = dictionary->string_table[indexed_attribute_key_index];
                 }
+                else {
+                    return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+                }
 
-                indexed_attribute_value = clone_variant(indexed_attribute_entry->value);
+                result = clone_variant(&indexed_attribute_value,
+                                       indexed_attribute_entry->value,
+                                       dictionary->string_table,
+                                       dictionary->n_string_table);
 
-                if (indexed_attribute_value == NULL) {
-                    return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+                if (result != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
+                    return result;
                 }
 
                 if (cfl_kvlist_insert(profile->attributes,
@@ -606,14 +666,20 @@ static int decode_scope_profiles_entry(struct cprof_resource_profiles *resource_
     }
 
     if (input_scope_profiles->scope != NULL) {
-        profiles->scope = decode_instrumentation_scope(input_scope_profiles->scope);
+        result = decode_instrumentation_scope(&profiles->scope,
+                                              input_scope_profiles->scope,
+                                              dictionary);
     }
     else {
         profiles->scope = cprof_instrumentation_scope_create(NULL, NULL, NULL, 0);
+        result = profiles->scope != NULL ?
+                 CPROF_DECODE_OPENTELEMETRY_SUCCESS :
+                 CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
     }
 
-    if (profiles->scope == NULL) {
-        return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    if (result != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
+        cprof_scope_profiles_destroy(profiles);
+        return result;
     }
 
     if (input_scope_profiles->profiles != NULL && input_scope_profiles->n_profiles > 0) {
@@ -645,12 +711,11 @@ static int decode_resource_profiles_entry(struct cprof *context,
         return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
     }
 
-    profile->resource = decode_resource(resource_profile->resource);
+    result = decode_resource(&profile->resource, resource_profile->resource, dictionary);
 
-    if (profile->resource == NULL) {
+    if (result != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
         cprof_resource_profiles_destroy(profile);
-
-        return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        return result;
     }
 
     result = CPROF_DECODE_OPENTELEMETRY_SUCCESS;
@@ -740,6 +805,10 @@ int cprof_decode_opentelemetry_create(struct cprof **result_context,
 
     if (result == CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
         *result_context = context;
+
+        if (offset != NULL) {
+            *offset = in_size;
+        }
     }
     else if (context != NULL) {
         cprof_destroy(context);
