@@ -1401,9 +1401,15 @@ void flb_json_mut_doc_destroy(struct flb_json_mut_doc *document)
 void flb_json_mut_doc_set_root(struct flb_json_mut_doc *document,
                                struct flb_json_mut_val *root)
 {
-    if (document != NULL) {
-        document->root = root;
+    if (document == NULL) {
+        return;
     }
+
+    if (root != NULL && root->owner != document) {
+        return;
+    }
+
+    document->root = root;
 }
 
 char *flb_json_mut_write(struct flb_json_mut_doc *document, size_t *length)
@@ -1522,7 +1528,7 @@ int flb_json_mut_arr_add_val(struct flb_json_mut_val *array,
         return 0;
     }
 
-    if (array->owner == NULL) {
+    if (array->owner == NULL || value->owner != array->owner) {
         return 0;
     }
 
@@ -1581,6 +1587,10 @@ int flb_json_mut_obj_add_int(struct flb_json_mut_doc *document,
 {
     struct flb_json_mut_val *entry;
 
+    if (document == NULL || object == NULL || key == NULL) {
+        return 0;
+    }
+
     entry = mut_value_create(document, FLB_JSON_MUT_INT);
     if (entry == NULL) {
         return 0;
@@ -1598,6 +1608,10 @@ int flb_json_mut_obj_add_real(struct flb_json_mut_doc *document,
 {
     struct flb_json_mut_val *entry;
 
+    if (document == NULL || object == NULL || key == NULL) {
+        return 0;
+    }
+
     entry = mut_value_create(document, FLB_JSON_MUT_REAL);
     if (entry == NULL) {
         return 0;
@@ -1613,6 +1627,10 @@ int flb_json_mut_obj_add_str(struct flb_json_mut_doc *document,
                              const char *key,
                              const char *value)
 {
+    if (document == NULL || object == NULL || key == NULL || value == NULL) {
+        return 0;
+    }
+
     return flb_json_mut_obj_add_strncpy(document, object,
                                         key, value, strlen(value));
 }
@@ -1657,6 +1675,10 @@ int flb_json_mut_obj_add_uint(struct flb_json_mut_doc *document,
 {
     struct flb_json_mut_val *entry;
 
+    if (document == NULL || object == NULL || key == NULL) {
+        return 0;
+    }
+
     entry = mut_value_create(document, FLB_JSON_MUT_UINT);
     if (entry == NULL) {
         return 0;
@@ -1677,6 +1699,10 @@ int flb_json_mut_obj_add_val(struct flb_json_mut_doc *document,
 
     if (document == NULL || object == NULL || key == NULL || value == NULL ||
         object->type != FLB_JSON_MUT_OBJECT) {
+        return 0;
+    }
+
+    if (object->owner != document || value->owner != document) {
         return 0;
     }
 
