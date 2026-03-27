@@ -1047,6 +1047,8 @@ static int append_binary_id_field(ProtobufCBinaryData *field,
                                   msgpack_object *value,
                                   size_t expected_size)
 {
+    size_t i;
+
     if (value == NULL) {
         return 0;
     }
@@ -1075,7 +1077,7 @@ static int append_binary_id_field(ProtobufCBinaryData *field,
         return -1;
     }
 
-    for (size_t i = 0; i < expected_size; i++) {
+    for (i = 0; i < expected_size; i++) {
         int high;
         int low;
         char *str = (char *) value->via.str.ptr;
@@ -1231,6 +1233,7 @@ static void destroy_export_logs(
 {
     size_t index;
     size_t inner;
+    size_t record_index;
     Opentelemetry__Proto__Logs__V1__ResourceLogs *resource_log;
     Opentelemetry__Proto__Logs__V1__ScopeLogs *scope_log;
 
@@ -1250,7 +1253,7 @@ static void destroy_export_logs(
                 continue;
             }
 
-            for (size_t record_index = 0;
+            for (record_index = 0;
                  record_index < scope_log->n_log_records;
                  record_index++) {
                 destroy_log_record(scope_log->log_records[record_index]);
