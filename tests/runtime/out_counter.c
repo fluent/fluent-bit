@@ -62,7 +62,7 @@ static int run_counter_and_capture(const char *payload, size_t payload_size,
         goto restore_stdout;
     }
 
-    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "0.2", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     if (in_ffd < 0) {
