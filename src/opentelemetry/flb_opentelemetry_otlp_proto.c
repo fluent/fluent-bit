@@ -402,6 +402,11 @@ static Opentelemetry__Proto__Common__V1__KeyValue *msgpack_kv_to_otlp_any_value(
         return NULL;
     }
 
+    if (input_pair->key.type != MSGPACK_OBJECT_STR) {
+        flb_free(kv);
+        return NULL;
+    }
+
     kv->key = flb_strndup(input_pair->key.via.str.ptr, input_pair->key.via.str.size);
     if (kv->key == NULL) {
         flb_free(kv);
@@ -1054,6 +1059,10 @@ static int append_binary_id_field(ProtobufCBinaryData *field,
     }
 
     if (value->type == MSGPACK_OBJECT_BIN) {
+        if (value->via.bin.size != expected_size) {
+            return 0;
+        }
+
         field->data = flb_malloc(value->via.bin.size);
         if (field->data == NULL) {
             return -1;
