@@ -91,6 +91,9 @@ struct flb_out_kafka {
     /* Head of defined topics by configuration */
     struct mk_list topics;
 
+    /* List of message headers defined in configuration */
+    struct mk_list *headers;
+
     /*
      * Blocked Status: since rdkafka have it own buffering queue, there is a
      * chance that the queue becomes full, when that happens our default
