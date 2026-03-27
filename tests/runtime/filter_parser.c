@@ -1386,6 +1386,83 @@ void flb_test_filter_parser_reserve_on_preserve_on()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_filter_parser_nest_under_on()
+{
+    int ret;
+    int bytes;
+    char *p, *output, *expected;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_parser *parser;
+
+    struct flb_lib_out_cb cb;
+    cb.cb   = callback_test;
+    cb.data = NULL;
+
+    clear_output();
+
+    ctx = flb_create();
+
+    /* Configure service */
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd,
+                  "Tag", "test",
+                  NULL);
+
+    /* Parser */
+    parser = flb_parser_create("json", "json", NULL,
+                               FLB_FALSE,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE, FLB_FALSE,
+                               NULL, 0, NULL, ctx->config);
+    TEST_CHECK(parser != NULL);
+
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "parser", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "test",
+                         "Key_Name", "to_parse",
+                         "Nest_Under", "nest_key",
+                         "Parser", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Output */
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "Match", "*",
+                   "format", "json",
+                   NULL);
+
+    /* Start the engine */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data */
+    p = "[1,{\"hello\":\"world\",\"some_object\":{\"foo\":\"bar\"},\"to_parse\":\"{\\\"key\\\":\\\"value\\\",\\\"object\\\":{\\\"a\\\":\\\"b\\\"}}\"}]";
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    wait_with_timeout(1500, &output); /* waiting flush and ensuring data flush */
+    TEST_CHECK_(output != NULL, "Expected output to not be NULL");
+    if (output != NULL) {
+        /* check extra data was not preserved */
+        expected = "{\"nest_key\":{\"key\":\"value\",\"object\":{\"a\":\"b\"}}}";
+        TEST_CHECK_(strstr(output, expected) != NULL, "Expected output to contain key one , got '%s'", output);
+        free(output);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 TEST_LIST = {
     {"filter_parser_extract_fields", flb_test_filter_parser_extract_fields },
     {"filter_parser_record_accessor", flb_test_filter_parser_record_accessor },
@@ -1401,6 +1478,7 @@ TEST_LIST = {
     {"filter_parser_reserve_off_preserve_on", flb_test_filter_parser_reserve_off_preserve_on},
     {"filter_parser_reserve_on_preserve_off", flb_test_filter_parser_reserve_on_preserve_off},
     {"filter_parser_reserve_on_preserve_on", flb_test_filter_parser_reserve_on_preserve_on},
+    {"filter_parser_nest_under_on", flb_test_filter_parser_nest_under_on},
     {NULL, NULL}
 };
 
