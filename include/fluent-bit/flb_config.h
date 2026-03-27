@@ -339,6 +339,7 @@ struct flb_config {
 #define FLB_CONFIG_LOG_LEVEL(c) (c->log->level)
 
 struct flb_config *flb_config_init();
+void flb_config_env(struct flb_config *config);
 void flb_config_exit(struct flb_config *config);
 const char *flb_config_prop_get(const char *key, struct mk_list *list);
 int flb_config_set_property(struct flb_config *config,
@@ -405,6 +406,10 @@ enum conf_type {
 #define FLB_CONF_DNS_RESOLVER          "dns.resolver"
 #define FLB_CONF_DNS_PREFER_IPV4       "dns.prefer_ipv4"
 #define FLB_CONF_DNS_PREFER_IPV6       "dns.prefer_ipv6"
+
+/* Proxies */
+#define FLB_CONF_HTTP_PROXY            "net.http_proxy"
+#define FLB_CONF_NO_PROXY              "net.no_proxy"
 
 /* Storage / Chunk I/O */
 #define FLB_CONF_STORAGE_PATH          "storage.path"
