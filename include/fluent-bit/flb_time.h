@@ -87,7 +87,7 @@ static inline void flb_time_copy(struct flb_time *dst, struct flb_time *src)
 static inline void flb_time_from_uint64(struct flb_time *dst, uint64_t value)
 {
     dst->tm.tv_sec = (long) (value / 1000000000L);
-    dst->tm.tv_nsec = (long) (value - dst->tm.tv_sec);
+    dst->tm.tv_nsec = (long) (value - ((uint64_t) dst->tm.tv_sec * 1000000000L));
 }
 
 static inline void flb_time_from_double(struct flb_time *dst, double d)
