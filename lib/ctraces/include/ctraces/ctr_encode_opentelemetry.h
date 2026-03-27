@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef CMT_ENCODE_OPENTELEMETRY_H
-#define CMT_ENCODE_OPENTELEMETRY_H
+#ifndef CTR_ENCODE_OPENTELEMETRY_H
+#define CTR_ENCODE_OPENTELEMETRY_H
 
 #include <ctraces/ctraces.h>
 
