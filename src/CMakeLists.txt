@@ -18,6 +18,7 @@ set(src
   flb_pack.c
   flb_pack_json.c
   flb_pack_gelf.c
+  flb_json.c
   flb_sds.c
   flb_sds_list.c
   flb_pipe.c
@@ -118,6 +119,8 @@ set(src
   ${src}
   opentelemetry/flb_opentelemetry_logs.c
   opentelemetry/flb_opentelemetry_metrics.c
+  opentelemetry/flb_opentelemetry_otlp_json.c
+  opentelemetry/flb_opentelemetry_otlp_proto.c
   opentelemetry/flb_opentelemetry_traces.c
   opentelemetry/flb_opentelemetry_utils.c
 )
@@ -410,7 +413,6 @@ set(FLB_DEPS
   ctraces-static
   mk_core
   jsmn
-  yyjson
   ${MSGPACK_LIBRARIES}
   mpack-static
   chunkio-static
@@ -425,6 +427,13 @@ set(FLB_DEPS
   lwrb
   ${NGHTTP2_LIBRARIES}
   )
+
+if(FLB_YYJSON)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    yyjson
+    )
+endif()
 
 if(OPENSSL_FOUND)
   set(FLB_DEPS
