@@ -94,7 +94,7 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
 
     /* 'opts' */
     mpack_write_cstr(writer, "opts");
-    mpack_start_map(writer, 4);
+    mpack_start_map(writer, 5);
 
     /* opts['ns'] */
     mpack_write_cstr(writer, "ns");
@@ -111,6 +111,15 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
     /* opts['description'] */
     mpack_write_cstr(writer, "desc");
     mpack_write_cstr(writer, opts->description);
+
+    /* opts['unit'] */
+    mpack_write_cstr(writer, "unit");
+    if (map->unit != NULL) {
+        mpack_write_cstr(writer, map->unit);
+    }
+    else {
+        mpack_write_cstr(writer, "");
+    }
 
     mpack_finish_map(writer); /* 'opts' */
 

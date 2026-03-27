@@ -181,41 +181,77 @@ static int create_metric_instance(struct cmt_map *map)
 
 static int unpack_opts_ns(mpack_reader_t *reader, size_t index, void *context)
 {
+    struct cmt_map *map;
     struct cmt_opts *opts;
 
-    opts = (struct cmt_opts *) context;
+    map = (struct cmt_map *) context;
+    opts = map->opts;
 
     return cmt_mpack_consume_string_tag(reader, &opts->ns);
 }
 
 static int unpack_opts_ss(mpack_reader_t *reader, size_t index, void *context)
 {
+    struct cmt_map *map;
     struct cmt_opts *opts;
 
-    opts = (struct cmt_opts *) context;
+    map = (struct cmt_map *) context;
+    opts = map->opts;
 
     return cmt_mpack_consume_string_tag(reader, &opts->subsystem);
 }
 
 static int unpack_opts_name(mpack_reader_t *reader, size_t index, void *context)
 {
+    struct cmt_map *map;
     struct cmt_opts *opts;
 
-    opts = (struct cmt_opts *) context;
+    map = (struct cmt_map *) context;
+    opts = map->opts;
 
     return cmt_mpack_consume_string_tag(reader, &opts->name);
 }
 
 static int unpack_opts_desc(mpack_reader_t *reader, size_t index, void *context)
 {
+    struct cmt_map *map;
     struct cmt_opts *opts;
 
-    opts = (struct cmt_opts *) context;
+    map = (struct cmt_map *) context;
+    opts = map->opts;
 
     return cmt_mpack_consume_string_tag(reader, &opts->description);
 }
 
-static int unpack_opts(mpack_reader_t *reader, struct cmt_opts *opts)
+static int unpack_opts_unit(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_map *map;
+    cfl_sds_t       value;
+    int             result;
+
+    map = (struct cmt_map *) context;
+    value = NULL;
+
+    result = cmt_mpack_consume_string_tag(reader, &value);
+    if (result != CMT_DECODE_MSGPACK_SUCCESS) {
+        return result;
+    }
+
+    if (value != NULL && cfl_sds_len(value) > 0) {
+        map->unit = value;
+    }
+    else {
+        if (value != NULL) {
+            cfl_sds_destroy(value);
+        }
+
+        map->unit = NULL;
+    }
+
+    return CMT_DECODE_MSGPACK_SUCCESS;
+}
+
+static int unpack_opts(mpack_reader_t *reader, struct cmt_map *map)
 {
     int                                   result;
     struct cmt_mpack_map_entry_callback_t callbacks[] = {
@@ -223,17 +259,22 @@ static int unpack_opts(mpack_reader_t *reader, struct cmt_opts *opts)
                                                             {"ss",     unpack_opts_ss},
                                                             {"name",   unpack_opts_name},
                                                             {"desc",   unpack_opts_desc},
+                                                            {"unit",   unpack_opts_unit},
                                                             {NULL,     NULL}
                                                         };
+    struct cmt_opts *opts;
 
     if (NULL == reader ||
-        NULL == opts   ) {
+        NULL == map    ||
+        NULL == map->opts) {
         return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
     }
 
+    opts = map->opts;
     memset(opts, 0, sizeof(struct cmt_opts));
+    map->unit = NULL;
 
-    result = cmt_mpack_unpack_map(reader, callbacks, (void *) opts);
+    result = cmt_mpack_unpack_map(reader, callbacks, (void *) map);
 
     if (CMT_DECODE_MSGPACK_SUCCESS == result) {
         /* Ensure required string fields are not NULL */
@@ -1313,7 +1354,7 @@ static int unpack_meta_opts(mpack_reader_t *reader, size_t index, void *context)
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
 
-    return unpack_opts(reader, decode_context->map->opts);
+    return unpack_opts(reader, decode_context->map);
 }
 
 static int unpack_meta_label(mpack_reader_t *reader, size_t index, void *context)

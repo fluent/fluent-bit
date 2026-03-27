@@ -79,6 +79,11 @@ static struct cmt *generate_api_test_data()
     cmt_gauge_set(gauge, ts, 2.0, 0, NULL);
     cmt_gauge_inc(gauge, ts, 0, NULL);
     cmt_gauge_sub(gauge, ts, 5.0, 0, NULL);
+    gauge->map->unit = cfl_sds_create("bytes");
+    if (gauge->map->unit == NULL) {
+        cmt_destroy(cmt);
+        return NULL;
+    }
 
     untyped = cmt_untyped_create(cmt, "kubernetes", "network", "load_untyped", "Network load untyped", 0, NULL);
     if (untyped == NULL) {
@@ -251,6 +256,47 @@ static int are_texts_equivalent_ignoring_line_order(const char *left, const char
     free(right_copy);
 
     return CMT_TRUE;
+}
+
+static Opentelemetry__Proto__Metrics__V1__Metric *find_otlp_metric_by_name(
+    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *service_request,
+    char *name)
+{
+    size_t resource_index;
+    size_t scope_index;
+    size_t metric_index;
+    Opentelemetry__Proto__Metrics__V1__ResourceMetrics *resource_metrics;
+    Opentelemetry__Proto__Metrics__V1__ScopeMetrics *scope_metrics;
+    Opentelemetry__Proto__Metrics__V1__Metric *metric;
+
+    if (service_request == NULL || name == NULL) {
+        return NULL;
+    }
+
+    for (resource_index = 0;
+         resource_index < service_request->n_resource_metrics;
+         resource_index++) {
+        resource_metrics = service_request->resource_metrics[resource_index];
+
+        for (scope_index = 0;
+             scope_index < resource_metrics->n_scope_metrics;
+             scope_index++) {
+            scope_metrics = resource_metrics->scope_metrics[scope_index];
+
+            for (metric_index = 0;
+                 metric_index < scope_metrics->n_metrics;
+                 metric_index++) {
+                metric = scope_metrics->metrics[metric_index];
+
+                if (metric->name != NULL &&
+                    strcmp(metric->name, name) == 0) {
+                    return metric;
+                }
+            }
+        }
+    }
+
+    return NULL;
 }
 
 static cfl_sds_t generate_exponential_histogram_otlp_payload()
@@ -703,7 +749,10 @@ void test_opentelemetry_api_full_roundtrip_with_msgpack()
     struct cmt *api_context;
     struct cmt *decoded_context_1;
     struct cmt *decoded_context_2;
+    struct cmt_gauge *roundtrip_gauge;
     struct cmt *msgpack_context;
+    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *service_request;
+    Opentelemetry__Proto__Metrics__V1__Metric *metric;
 
     cmt_initialize();
 
@@ -767,6 +816,18 @@ void test_opentelemetry_api_full_roundtrip_with_msgpack()
         return;
     }
 
+    roundtrip_gauge = cfl_list_entry_first(&msgpack_context->gauges, struct cmt_gauge, _head);
+    TEST_CHECK(roundtrip_gauge != NULL);
+    if (roundtrip_gauge != NULL) {
+        TEST_CHECK(roundtrip_gauge->map != NULL);
+        if (roundtrip_gauge->map != NULL) {
+            TEST_CHECK(roundtrip_gauge->map->unit != NULL);
+            if (roundtrip_gauge->map->unit != NULL) {
+                TEST_CHECK(strcmp(roundtrip_gauge->map->unit, "bytes") == 0);
+            }
+        }
+    }
+
     otlp_payload_2 = cmt_encode_opentelemetry_create(msgpack_context);
     TEST_CHECK(otlp_payload_2 != NULL);
     if (otlp_payload_2 == NULL) {
@@ -777,6 +838,25 @@ void test_opentelemetry_api_full_roundtrip_with_msgpack()
         cmt_encode_text_destroy(reference_text);
         cmt_destroy(api_context);
         return;
+    }
+
+    service_request =
+        opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(
+            NULL, cfl_sds_len(otlp_payload_2), (uint8_t *) otlp_payload_2);
+    TEST_CHECK(service_request != NULL);
+    if (service_request != NULL) {
+        metric = find_otlp_metric_by_name(service_request,
+                                          "kubernetes_network_load_gauge");
+        TEST_CHECK(metric != NULL);
+        if (metric != NULL) {
+            TEST_CHECK(metric->unit != NULL);
+            if (metric->unit != NULL) {
+                TEST_CHECK(strcmp(metric->unit, "bytes") == 0);
+            }
+        }
+
+        opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__free_unpacked(
+            service_request, NULL);
     }
 
     offset = 0;
