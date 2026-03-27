@@ -230,7 +230,7 @@ static int print_otlp_json(struct flb_stdout *ctx,
         }
 
         formatted = flb_sds_create_len(buffer, length);
-        flb_sds_destroy(buffer);
+        flb_free(buffer);
 
         if (formatted == NULL) {
             flb_sds_destroy(json);
