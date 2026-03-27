@@ -366,6 +366,8 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             return NULL;
         }
 
+        pthread_mutex_init(&instance->metrics_chunk_lock, NULL);
+
         /* format name (with instance id) */
         snprintf(instance->name, sizeof(instance->name) - 1,
                  "%s.%i", plugin->name, id);
@@ -1100,6 +1102,8 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
         flb_hash_table_destroy(ins->ht_profile_chunks);
         ins->ht_profile_chunks = NULL;
     }
+
+    pthread_mutex_destroy(&ins->metrics_chunk_lock);
 
     if (ins->ch_events[0] > 0) {
         mk_event_closesocket(ins->ch_events[0]);
