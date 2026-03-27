@@ -596,7 +596,7 @@ static flb_sds_t test_normalize_json(const char *input)
     }
 
     normalized = flb_sds_create_len(buffer, length);
-    free(buffer);
+    flb_free(buffer);
 
     return normalized;
 }
@@ -2144,6 +2144,10 @@ void test_opentelemetry_metrics_otlp_json_roundtrip()
                                                 expected,
                                                 strlen(expected));
     TEST_CHECK(ret == 0);
+    if (ret != 0 || cfl_list_is_empty(&contexts)) {
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
 
     context = cfl_list_entry_first(&contexts, struct cmt, _head);
     ret = cmt_encode_msgpack_create(context, &msgpack_buffer, &msgpack_size);
@@ -2201,6 +2205,9 @@ void test_opentelemetry_traces_otlp_json_roundtrip()
                                                             &result);
     TEST_CHECK(trace_context != NULL);
     TEST_CHECK(result == 0);
+    if (trace_context == NULL || result != 0) {
+        return;
+    }
 
     ret = ctr_encode_msgpack_create(trace_context, &msgpack_buffer, &msgpack_size);
     TEST_CHECK(ret == 0);
