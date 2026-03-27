@@ -624,6 +624,14 @@ static struct flb_config_map config_map[] = {
      "nanosecond component of the progress check interval."
     },
     {
+     FLB_CONFIG_MAP_TIME, "stat.read_interval_sec", "0s",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, read_interval_sec),
+    },
+    {
+     FLB_CONFIG_MAP_INT, "stat.read_interval_nsec", "250000000",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, read_interval_nsec),
+    },
+    {
      FLB_CONFIG_MAP_TIME, "rotate_wait", FLB_TAIL_ROTATE_WAIT,
      0, FLB_TRUE, offsetof(struct flb_tail_config, rotate_wait),
      "specify the number of extra time in seconds to monitor a file once is "
