@@ -2081,7 +2081,9 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, in
         flb_hash_table_add(in->ht_log_chunks, tag, tag_len, ic, 0);
     }
     else if (event_type == FLB_INPUT_METRICS) {
+        pthread_mutex_lock(&in->metrics_chunk_lock);
         flb_hash_table_add(in->ht_metric_chunks, tag, tag_len, ic, 0);
+        pthread_mutex_unlock(&in->metrics_chunk_lock);
     }
     else if (event_type == FLB_INPUT_TRACES) {
         flb_hash_table_add(in->ht_trace_chunks, tag, tag_len, ic, 0);
@@ -2139,8 +2141,10 @@ int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic,
                                    tag_buf, tag_len, (void *) ic);
         }
         else if (ic->event_type == FLB_INPUT_METRICS) {
+            pthread_mutex_lock(&ic->in->metrics_chunk_lock);
             flb_hash_table_del_ptr(ic->in->ht_metric_chunks,
                                    tag_buf, tag_len, (void *) ic);
+            pthread_mutex_unlock(&ic->in->metrics_chunk_lock);
         }
         else if (ic->event_type == FLB_INPUT_TRACES) {
             flb_hash_table_del_ptr(ic->in->ht_trace_chunks,
@@ -2244,8 +2248,10 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
                                    tag_buf, tag_len, (void *) ic);
         }
         else if (ic->event_type == FLB_INPUT_METRICS) {
+            pthread_mutex_lock(&ic->in->metrics_chunk_lock);
             flb_hash_table_del_ptr(ic->in->ht_metric_chunks,
                                    tag_buf, tag_len, (void *) ic);
+            pthread_mutex_unlock(&ic->in->metrics_chunk_lock);
         }
         else if (ic->event_type == FLB_INPUT_TRACES) {
             flb_hash_table_del_ptr(ic->in->ht_trace_chunks,
@@ -2300,8 +2306,10 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
                                 (void *) &ic, &out_size);
     }
     else if (event_type == FLB_INPUT_METRICS) {
+        pthread_mutex_lock(&in->metrics_chunk_lock);
         id = flb_hash_table_get(in->ht_metric_chunks, tag, tag_len,
                                 (void *) &ic, &out_size);
+        pthread_mutex_unlock(&in->metrics_chunk_lock);
     }
     else if (event_type == FLB_INPUT_TRACES) {
         id = flb_hash_table_get(in->ht_trace_chunks, tag, tag_len,
