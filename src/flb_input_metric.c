@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_input_metric.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_hash_table.h>
+#include <fluent-bit/flb_input.h>
 #include <cfl/cfl.h>
 
 static int input_metrics_append(struct flb_input_instance *ins,
@@ -107,11 +108,13 @@ static int input_metrics_append(struct flb_input_instance *ins,
          * metric chunk can delay task creation for rapidly updated series,
          * which makes runtime consumers miss freshly generated metrics.
          */
+        pthread_mutex_lock(&ins->metrics_chunk_lock);
         chunk_ref = flb_hash_table_get_ptr(ins->ht_metric_chunks, tag, tag_len);
         if (chunk_ref != NULL) {
             flb_hash_table_del_ptr(ins->ht_metric_chunks,
                                    tag, tag_len, chunk_ref);
         }
+        pthread_mutex_unlock(&ins->metrics_chunk_lock);
     }
 
     cmt_encode_msgpack_destroy(mt_buf);
