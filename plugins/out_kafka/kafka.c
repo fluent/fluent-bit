@@ -680,7 +680,8 @@ static int produce_otlp_proto(struct flb_out_kafka *ctx,
             }
         }
 
-        if (ret != CTR_MPACK_INSUFFICIENT_DATA) {
+        if (ret != CTR_MPACK_INSUFFICIENT_DATA &&
+            !(ret == CTR_MPACK_ENGINE_ERROR && off >= event_chunk->size)) {
             flb_plg_error(ctx->ins, "could not decode traces msgpack: %d", ret);
             return FLB_ERROR;
         }
@@ -922,5 +923,5 @@ struct flb_output_plugin out_kafka_plugin = {
     .cb_exit      = cb_kafka_exit,
     .config_map   = config_map,
     .flags        = 0,
-    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES
+    .event_type   = FLB_OUTPUT_LOGS
 };
