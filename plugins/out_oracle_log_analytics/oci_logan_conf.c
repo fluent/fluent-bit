@@ -103,7 +103,7 @@ static int load_oci_credentials(struct flb_oci_logan *ctx)
     char* key = NULL;
     char* val;
 
-    content = flb_file_read(ctx->config_file_location);
+    content = flb_file_read_contents(ctx->config_file_location);
     if (content == NULL || flb_sds_len(content) == 0)
     {
         return -1;
