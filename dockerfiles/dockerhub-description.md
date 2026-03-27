@@ -8,7 +8,7 @@ Optionally, we provide debug images which contain shells and tooling that can be
 
 For a detailed list of tags and versions available, please refer to the the official documentation:
 
-<https://docs.fluentbit.io/manual/installation/docker>
+<https://docs.fluentbit.io/manual/installation/downloads/docker>
 
 ## Getting Started
 
