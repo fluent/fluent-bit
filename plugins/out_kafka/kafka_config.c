@@ -142,6 +142,12 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         ctx->format = FLB_KAFKA_FMT_JSON;
     }
 
+    ins->event_type = FLB_OUTPUT_LOGS;
+    if (ctx->format == FLB_KAFKA_FMT_OTLP_JSON ||
+        ctx->format == FLB_KAFKA_FMT_OTLP_PROTO) {
+        ins->event_type |= FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES;
+    }
+
     /* Config: Message_Key */
     if (ctx->message_key) {
         ctx->message_key_len = strlen(ctx->message_key);
