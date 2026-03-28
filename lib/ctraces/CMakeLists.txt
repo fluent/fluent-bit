@@ -30,12 +30,8 @@ set(CTR_VERSION_MINOR  7)
 set(CTR_VERSION_PATCH  0)
 set(CTR_VERSION_STR "${CTR_VERSION_MAJOR}.${CTR_VERSION_MINOR}.${CTR_VERSION_PATCH}")
 
-# Define __FILENAME__ consistently across Operating Systems
-if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$$(subst ${CMAKE_SOURCE_DIR}/,,$$(abspath $$<))\"'")
-else()
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
-endif()
+# Define __FILENAME__
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
 
 # Configuration options
 option(CTR_DEV             "Enable development mode"                   No)
