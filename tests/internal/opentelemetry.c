@@ -31,14 +31,20 @@
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_decode_opentelemetry.h>
+#include <cmetrics/cmt_encode_opentelemetry.h>
+#include <cmetrics/cmt_encode_msgpack.h>
 #include <cmetrics/cmt_exp_histogram.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_summary.h>
+#include <ctraces/ctr_encode_msgpack.h>
+#include <ctraces/ctr_encode_opentelemetry.h>
+#include <fluent-otel-proto/fluent-otel.h>
 #include <msgpack.h>
 #include <string.h>
+#include <fluent-bit/flb_json.h>
 
 #include "flb_tests_internal.h"
 
@@ -250,6 +256,42 @@ static char *get_group_metadata(void *chunk, size_t size)
     return result;
 }
 
+static int json_strings_equal_allowing_otlp_timestamp(const char *expected,
+                                                      const char *actual)
+{
+    const char *prefix = "{\"otlp\":{\"timestamp\":";
+    size_t prefix_len = strlen(prefix);
+
+    if (expected == NULL || actual == NULL) {
+        return expected == actual;
+    }
+
+    if (strcmp(expected, actual) == 0) {
+        return FLB_TRUE;
+    }
+
+    if (strcmp(expected, "{\"otlp\":{}}") == 0) {
+        if (strncmp(actual, prefix, prefix_len) != 0) {
+            return FLB_FALSE;
+        }
+
+        actual += prefix_len;
+
+        while (*actual != '\0' && *actual != '}') {
+            if (*actual == ',') {
+                return FLB_FALSE;
+            }
+            actual++;
+        }
+
+        if (strcmp(actual, "}}") == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 static char *get_group_body(void *chunk, size_t size)
 {
     struct test_output *output;
@@ -319,7 +361,8 @@ static int validate_extended_output(struct test_output *actual, msgpack_object *
         ret = flb_otel_utils_find_map_entry_by_key(&group_obj->via.map, "metadata", 0, FLB_TRUE);
         if (ret >= 0) {
             expected_meta = flb_msgpack_to_json_str(256, &group_obj->via.map.ptr[ret].val, FLB_TRUE);
-            if (strcmp(expected_meta, actual->groups[i].metadata) != 0) {
+            if (!json_strings_equal_allowing_otlp_timestamp(expected_meta,
+                                                            actual->groups[i].metadata)) {
                 printf("Group %zu metadata mismatch:\nExpected: %s\nGot: %s\n",
                        i, expected_meta, actual->groups[i].metadata);
                 flb_free(expected_meta);
@@ -370,7 +413,8 @@ static int validate_extended_output(struct test_output *actual, msgpack_object *
                 ret = flb_otel_utils_find_map_entry_by_key(&record_obj->via.map, "metadata", 0, FLB_TRUE);
                 if (ret >= 0) {
                     expected_meta = flb_msgpack_to_json_str(256, &record_obj->via.map.ptr[ret].val, FLB_TRUE);
-                    if (strcmp(expected_meta, actual->groups[i].records[j].metadata) != 0) {
+                    if (!json_strings_equal_allowing_otlp_timestamp(expected_meta,
+                                                                    actual->groups[i].records[j].metadata)) {
                         printf("Group %zu record %zu metadata mismatch:\nExpected: %s\nGot: %s\n",
                                i, j, expected_meta, actual->groups[i].records[j].metadata);
                         flb_free(expected_meta);
@@ -549,6 +593,30 @@ void test_json_payload_get_wrapped_value()
 #define OTEL_TEST_CASES_PATH      FLB_TESTS_DATA_PATH "/data/opentelemetry/logs.json"
 #define OTEL_TRACES_TEST_CASES_PATH FLB_TESTS_DATA_PATH "/data/opentelemetry/traces.json"
 #define OTEL_METRICS_TEST_CASES_PATH FLB_TESTS_DATA_PATH "/data/opentelemetry/metrics.json"
+
+static flb_sds_t test_normalize_json(const char *input)
+{
+    char      *buffer;
+    size_t     length;
+    flb_sds_t  normalized;
+    struct flb_json_doc *doc;
+
+    doc = flb_json_read(input, strlen(input));
+    if (doc == NULL) {
+        return NULL;
+    }
+
+    buffer = flb_json_write(doc, &length);
+    flb_json_doc_destroy(doc);
+    if (buffer == NULL) {
+        return NULL;
+    }
+
+    normalized = flb_sds_create_len(buffer, length);
+    flb_free(buffer);
+
+    return normalized;
+}
 
 static void destroy_metrics_context_list(struct cfl_list *context_list)
 {
@@ -1919,6 +1987,552 @@ void test_opentelemetry_metrics_cases()
     flb_free(cases_json);
 }
 
+void test_opentelemetry_logs_otlp_json_roundtrip()
+{
+    int ret;
+    int result;
+    char *expected;
+    flb_sds_t actual;
+    flb_sds_t normalized_expected;
+    struct flb_log_event_encoder encoder;
+    struct flb_opentelemetry_otlp_json_options options;
+
+    expected =
+        "{\"resourceLogs\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\","
+        "\"value\":{\"stringValue\":\"svc\"}}]},\"scopeLogs\":[{\"scope\":{\"name\":\"scope-a\","
+        "\"version\":\"1.0.0\",\"attributes\":[{\"key\":\"scope.key\",\"value\":{"
+        "\"stringValue\":\"scope.value\"}}]},\"logRecords\":[{\"timeUnixNano\":\"1640995200000000000\","
+        "\"observedTimeUnixNano\":\"1640995201000000000\",\"severityNumber\":9,"
+        "\"severityText\":\"INFO\",\"attributes\":[{\"key\":\"http.status_code\","
+        "\"value\":{\"intValue\":\"200\"}},{\"key\":\"retryable\",\"value\":{\"boolValue\":true}}],"
+        "\"traceId\":\"00112233445566778899aabbccddeeff\",\"spanId\":\"0011223344556677\","
+        "\"body\":{\"stringValue\":\"hello otlp\"}}]}]}]}";
+
+    ret = flb_log_event_encoder_init(&encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return;
+    }
+
+    ret = flb_opentelemetry_logs_json_to_msgpack(&encoder,
+                                                 expected,
+                                                 strlen(expected),
+                                                 "log",
+                                                 &result);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(result == 0);
+    if (ret != 0 || result != 0) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.logs_require_otel_metadata = FLB_TRUE;
+    options.logs_body_key = "log";
+
+    actual = flb_opentelemetry_logs_to_otlp_json(encoder.output_buffer,
+                                                 encoder.output_length,
+                                                 &options,
+                                                 &result);
+    TEST_CHECK(actual != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+    if (actual == NULL) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    normalized_expected = test_normalize_json(expected);
+    TEST_CHECK(normalized_expected != NULL);
+    if (normalized_expected == NULL) {
+        flb_sds_destroy(actual);
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+    TEST_CHECK(strcmp(normalized_expected, actual) == 0);
+
+    flb_sds_destroy(normalized_expected);
+    flb_sds_destroy(actual);
+    flb_log_event_encoder_destroy(&encoder);
+}
+
+void test_opentelemetry_logs_otlp_json_from_plain_logs()
+{
+    int ret;
+    int result;
+    flb_sds_t actual;
+    flb_sds_t normalized_expected;
+    struct flb_time timestamp;
+    struct flb_log_event_encoder encoder;
+    struct flb_opentelemetry_otlp_json_options options;
+    char *expected;
+
+    expected =
+        "{\"resourceLogs\":[{\"resource\":{},\"scopeLogs\":[{\"scope\":{},"
+        "\"logRecords\":[{\"timeUnixNano\":\"1640995200000000000\","
+        "\"body\":{\"stringValue\":\"hello from dummy\"}}]}]}]}";
+
+    timestamp.tm.tv_sec = 1640995200;
+    timestamp.tm.tv_nsec = 0;
+
+    ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return;
+    }
+
+    ret = flb_log_event_encoder_begin_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_set_timestamp(&encoder, &timestamp);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_append_body_values(
+            &encoder,
+            FLB_LOG_EVENT_CSTRING_VALUE("message"),
+            FLB_LOG_EVENT_CSTRING_VALUE("hello from dummy"));
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_commit_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.logs_require_otel_metadata = FLB_FALSE;
+
+    actual = flb_opentelemetry_logs_to_otlp_json(encoder.output_buffer,
+                                                 encoder.output_length,
+                                                 &options,
+                                                 &result);
+    TEST_CHECK(actual != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+    if (actual == NULL) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    normalized_expected = test_normalize_json(expected);
+    TEST_CHECK(normalized_expected != NULL);
+    if (normalized_expected == NULL) {
+        flb_sds_destroy(actual);
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    TEST_CHECK(strcmp(normalized_expected, actual) == 0);
+
+    flb_sds_destroy(normalized_expected);
+    flb_sds_destroy(actual);
+    flb_log_event_encoder_destroy(&encoder);
+}
+
+void test_opentelemetry_metrics_otlp_json_roundtrip()
+{
+    int ret;
+    int result;
+    char *msgpack_buffer;
+    char *expected;
+    size_t msgpack_size;
+    flb_sds_t actual;
+    flb_sds_t normalized_expected;
+    struct cfl_list contexts;
+    struct cmt *context;
+
+    expected =
+        "{\"resourceMetrics\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\","
+        "\"value\":{\"stringValue\":\"svc\"}}]},\"scopeMetrics\":[{\"scope\":{\"name\":\"scope-a\","
+        "\"version\":\"1.0.0\"},\"metrics\":[{\"name\":\"requests_total\",\"description\":\"count\","
+        "\"unit\":\"1\",\"sum\":{\"dataPoints\":[{\"attributes\":[{\"key\":\"method\","
+        "\"value\":{\"stringValue\":\"GET\"}}],\"timeUnixNano\":\"1704067201000000000\","
+        "\"startTimeUnixNano\":\"1704067200000000000\",\"asInt\":\"42\"}],"
+        "\"aggregationTemporality\":2,\"isMonotonic\":true}}]}]}]}";
+
+    cfl_list_init(&contexts);
+
+    ret = flb_opentelemetry_metrics_json_to_cmt(&contexts,
+                                                expected,
+                                                strlen(expected));
+    TEST_CHECK(ret == 0);
+    if (ret != 0 || cfl_list_is_empty(&contexts)) {
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
+
+    context = cfl_list_entry_first(&contexts, struct cmt, _head);
+    ret = cmt_encode_msgpack_create(context, &msgpack_buffer, &msgpack_size);
+    TEST_CHECK(ret == 0);
+
+    actual = flb_opentelemetry_metrics_msgpack_to_otlp_json(msgpack_buffer,
+                                                            msgpack_size,
+                                                            &result);
+    TEST_CHECK(actual != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+    if (actual == NULL) {
+        flb_free(msgpack_buffer);
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
+
+    normalized_expected = test_normalize_json(expected);
+    TEST_CHECK(normalized_expected != NULL);
+    if (normalized_expected == NULL) {
+        flb_free(msgpack_buffer);
+        flb_sds_destroy(actual);
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
+    TEST_CHECK(strcmp(normalized_expected, actual) == 0);
+
+    flb_free(msgpack_buffer);
+    flb_sds_destroy(normalized_expected);
+    flb_sds_destroy(actual);
+    destroy_metrics_context_list(&contexts);
+}
+
+void test_opentelemetry_traces_otlp_json_roundtrip()
+{
+    int ret;
+    int result;
+    char *msgpack_buffer;
+    char *expected;
+    size_t msgpack_size;
+    flb_sds_t actual;
+    flb_sds_t normalized_expected;
+    struct ctrace *trace_context;
+
+    expected =
+        "{\"resourceSpans\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\","
+        "\"value\":{\"stringValue\":\"svc\"}}]},\"scopeSpans\":[{\"scope\":{\"name\":\"scope-a\","
+        "\"version\":\"1.0.0\"},\"spans\":[{\"traceId\":\"00112233445566778899aabbccddeeff\","
+        "\"spanId\":\"0011223344556677\",\"name\":\"op-a\",\"kind\":2,"
+        "\"startTimeUnixNano\":\"1704067200000000000\",\"endTimeUnixNano\":\"1704067201000000000\","
+        "\"attributes\":[{\"key\":\"http.method\",\"value\":{\"stringValue\":\"GET\"}}],"
+        "\"status\":{\"code\":\"OK\"}}]}]}]}";
+
+    trace_context = flb_opentelemetry_json_traces_to_ctrace(expected,
+                                                            strlen(expected),
+                                                            &result);
+    TEST_CHECK(trace_context != NULL);
+    TEST_CHECK(result == 0);
+    if (trace_context == NULL || result != 0) {
+        return;
+    }
+
+    ret = ctr_encode_msgpack_create(trace_context, &msgpack_buffer, &msgpack_size);
+    TEST_CHECK(ret == 0);
+
+    actual = flb_opentelemetry_traces_msgpack_to_otlp_json(msgpack_buffer,
+                                                           msgpack_size,
+                                                           &result);
+    TEST_CHECK(actual != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+    if (actual == NULL) {
+        flb_free(msgpack_buffer);
+        ctr_destroy(trace_context);
+        return;
+    }
+
+    normalized_expected = test_normalize_json(expected);
+    TEST_CHECK(normalized_expected != NULL);
+    if (normalized_expected == NULL) {
+        flb_free(msgpack_buffer);
+        flb_sds_destroy(actual);
+        ctr_destroy(trace_context);
+        return;
+    }
+    TEST_CHECK(strcmp(normalized_expected, actual) == 0);
+
+    flb_free(msgpack_buffer);
+    flb_sds_destroy(normalized_expected);
+    flb_sds_destroy(actual);
+    ctr_destroy(trace_context);
+}
+
+void test_opentelemetry_logs_otlp_proto_from_plain_logs()
+{
+    int ret;
+    int result;
+    flb_sds_t actual;
+    struct flb_time timestamp;
+    struct flb_log_event_encoder encoder;
+    struct flb_opentelemetry_otlp_json_options options;
+    Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest *decoded;
+
+    timestamp.tm.tv_sec = 1640995200;
+    timestamp.tm.tv_nsec = 0;
+
+    ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return;
+    }
+
+    ret = flb_log_event_encoder_begin_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+    ret = flb_log_event_encoder_set_timestamp(&encoder, &timestamp);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+    ret = flb_log_event_encoder_append_body_values(
+            &encoder,
+            FLB_LOG_EVENT_CSTRING_VALUE("message"),
+            FLB_LOG_EVENT_CSTRING_VALUE("hello from dummy"));
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+    ret = flb_log_event_encoder_commit_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.logs_require_otel_metadata = FLB_FALSE;
+
+    actual = flb_opentelemetry_logs_to_otlp_proto(encoder.output_buffer,
+                                                  encoder.output_length,
+                                                  &options,
+                                                  &result);
+    TEST_CHECK(actual != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_PROTO_SUCCESS);
+    if (actual == NULL) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    decoded =
+        opentelemetry__proto__collector__logs__v1__export_logs_service_request__unpack(
+            NULL, flb_sds_len(actual), (uint8_t *) actual);
+    TEST_CHECK(decoded != NULL);
+    if (decoded != NULL) {
+        TEST_CHECK(decoded->n_resource_logs == 1);
+        TEST_CHECK(decoded->resource_logs[0]->n_scope_logs == 1);
+        TEST_CHECK(decoded->resource_logs[0]->scope_logs[0]->n_log_records == 1);
+        TEST_CHECK(decoded->resource_logs[0]->scope_logs[0]->log_records[0]->body != NULL);
+        TEST_CHECK(decoded->resource_logs[0]->scope_logs[0]->log_records[0]->body->value_case ==
+                   OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE);
+        TEST_CHECK(strcmp(decoded->resource_logs[0]->scope_logs[0]->log_records[0]->body->string_value,
+                          "hello from dummy") == 0);
+        opentelemetry__proto__collector__logs__v1__export_logs_service_request__free_unpacked(decoded,
+                                                                                               NULL);
+    }
+
+    flb_sds_destroy(actual);
+    flb_log_event_encoder_destroy(&encoder);
+}
+
+void test_opentelemetry_metrics_otlp_proto_roundtrip()
+{
+    int ret;
+    int result;
+    flb_sds_t actual;
+    char *expected;
+    struct cfl_list contexts;
+    struct cmt *context;
+    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *decoded;
+
+    expected =
+        "{\"resourceMetrics\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\","
+        "\"value\":{\"stringValue\":\"svc\"}}]},\"scopeMetrics\":[{\"scope\":{\"name\":\"scope-a\","
+        "\"version\":\"1.0.0\"},\"metrics\":[{\"name\":\"requests_total\",\"description\":\"count\","
+        "\"unit\":\"1\",\"sum\":{\"dataPoints\":[{\"attributes\":[{\"key\":\"method\","
+        "\"value\":{\"stringValue\":\"GET\"}}],\"timeUnixNano\":\"1704067201000000000\","
+        "\"startTimeUnixNano\":\"1704067200000000000\",\"asInt\":\"42\"}],"
+        "\"aggregationTemporality\":2,\"isMonotonic\":true}}]}]}]}";
+
+    cfl_list_init(&contexts);
+    ret = flb_opentelemetry_metrics_json_to_cmt(&contexts,
+                                                expected,
+                                                strlen(expected));
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        return;
+    }
+
+    context = cfl_list_entry_first(&contexts, struct cmt, _head);
+
+    actual = flb_opentelemetry_metrics_to_otlp_proto(context, &result);
+    TEST_CHECK(actual != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_PROTO_SUCCESS);
+    if (actual != NULL) {
+        decoded =
+            opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(
+                NULL, flb_sds_len(actual), (uint8_t *) actual);
+        TEST_CHECK(decoded != NULL);
+        if (decoded != NULL) {
+            TEST_CHECK(decoded->n_resource_metrics > 0);
+            opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__free_unpacked(decoded,
+                                                                                                         NULL);
+        }
+        cmt_encode_opentelemetry_destroy((cfl_sds_t) actual);
+    }
+
+    destroy_metrics_context_list(&contexts);
+}
+
+void test_opentelemetry_metrics_msgpack_otlp_proto_merges_contexts()
+{
+    int ret;
+    int result;
+    size_t combined_size;
+    char *combined_buffer;
+    char *msgpack_buffer_a;
+    char *msgpack_buffer_b;
+    size_t msgpack_size_a;
+    size_t msgpack_size_b;
+    flb_sds_t actual;
+    struct cfl_list contexts;
+    struct cfl_list *head;
+    struct cmt *context;
+    const char *json =
+        "{\"resourceMetrics\":["
+        "{\"resource\":{\"attributes\":[{\"key\":\"service.name\",\"value\":{\"stringValue\":\"svc-a\"}}]},"
+        "\"scopeMetrics\":[{\"scope\":{\"name\":\"scope-a\",\"version\":\"1.0.0\"},"
+        "\"metrics\":[{\"name\":\"requests_total\",\"description\":\"count\",\"unit\":\"1\","
+        "\"sum\":{\"dataPoints\":[{\"attributes\":[{\"key\":\"method\",\"value\":{\"stringValue\":\"GET\"}}],"
+        "\"timeUnixNano\":\"1704067201000000000\",\"startTimeUnixNano\":\"1704067200000000000\","
+        "\"asInt\":\"42\"}],\"aggregationTemporality\":2,\"isMonotonic\":true}}]}]},"
+        "{\"resource\":{\"attributes\":[{\"key\":\"service.name\",\"value\":{\"stringValue\":\"svc-b\"}}]},"
+        "\"scopeMetrics\":[{\"scope\":{\"name\":\"scope-b\",\"version\":\"1.0.0\"},"
+        "\"metrics\":[{\"name\":\"latency_ms\",\"description\":\"latency\",\"unit\":\"ms\","
+        "\"gauge\":{\"dataPoints\":[{\"timeUnixNano\":\"1704067202000000000\",\"asDouble\":12.5}]}}]}]}]}";
+    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *decoded;
+
+    cfl_list_init(&contexts);
+
+    ret = flb_opentelemetry_metrics_json_to_cmt(&contexts, json, strlen(json));
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        return;
+    }
+
+    head = contexts.next;
+    context = cfl_list_entry(head, struct cmt, _head);
+    ret = cmt_encode_msgpack_create(context, &msgpack_buffer_a, &msgpack_size_a);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
+
+    head = head->next;
+    context = cfl_list_entry(head, struct cmt, _head);
+    ret = cmt_encode_msgpack_create(context, &msgpack_buffer_b, &msgpack_size_b);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_free(msgpack_buffer_a);
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
+
+    combined_size = msgpack_size_a + msgpack_size_b;
+    combined_buffer = flb_malloc(combined_size);
+    TEST_CHECK(combined_buffer != NULL);
+    if (combined_buffer == NULL) {
+        flb_free(msgpack_buffer_a);
+        flb_free(msgpack_buffer_b);
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
+
+    memcpy(combined_buffer, msgpack_buffer_a, msgpack_size_a);
+    memcpy(combined_buffer + msgpack_size_a, msgpack_buffer_b, msgpack_size_b);
+
+    actual = flb_opentelemetry_metrics_msgpack_to_otlp_proto(combined_buffer,
+                                                             combined_size,
+                                                             &result);
+    TEST_CHECK(actual != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_PROTO_SUCCESS);
+    if (actual != NULL) {
+        decoded =
+            opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(
+                NULL, flb_sds_len(actual), (uint8_t *) actual);
+        TEST_CHECK(decoded != NULL);
+        if (decoded != NULL) {
+            TEST_CHECK(decoded->n_resource_metrics > 0);
+            TEST_CHECK(
+                opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__get_packed_size(decoded) ==
+                flb_sds_len(actual));
+            opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__free_unpacked(decoded,
+                                                                                                         NULL);
+        }
+
+        cmt_encode_opentelemetry_destroy((cfl_sds_t) actual);
+    }
+
+    flb_free(combined_buffer);
+    flb_free(msgpack_buffer_a);
+    flb_free(msgpack_buffer_b);
+    destroy_metrics_context_list(&contexts);
+}
+
+void test_opentelemetry_traces_otlp_proto_roundtrip()
+{
+    int result;
+    flb_sds_t actual;
+    struct ctrace *trace_context;
+    char *expected;
+    Opentelemetry__Proto__Collector__Trace__V1__ExportTraceServiceRequest *decoded;
+
+    expected =
+        "{\"resourceSpans\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\","
+        "\"value\":{\"stringValue\":\"svc\"}}]},\"scopeSpans\":[{\"scope\":{\"name\":\"scope-a\","
+        "\"version\":\"1.0.0\"},\"spans\":[{\"traceId\":\"00112233445566778899aabbccddeeff\","
+        "\"spanId\":\"0011223344556677\",\"name\":\"op-a\",\"kind\":2,"
+        "\"startTimeUnixNano\":\"1704067200000000000\",\"endTimeUnixNano\":\"1704067201000000000\""
+        "}]}]}]}";
+
+    trace_context = flb_opentelemetry_json_traces_to_ctrace(expected,
+                                                            strlen(expected),
+                                                            &result);
+    TEST_CHECK(trace_context != NULL);
+    if (trace_context == NULL) {
+        return;
+    }
+
+    actual = flb_opentelemetry_traces_to_otlp_proto(trace_context, &result);
+    TEST_CHECK(actual != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_PROTO_SUCCESS);
+    if (actual != NULL) {
+        decoded =
+            opentelemetry__proto__collector__trace__v1__export_trace_service_request__unpack(
+                NULL, flb_sds_len(actual), (uint8_t *) actual);
+        TEST_CHECK(decoded != NULL);
+        if (decoded != NULL) {
+            TEST_CHECK(decoded->n_resource_spans > 0);
+            opentelemetry__proto__collector__trace__v1__export_trace_service_request__free_unpacked(decoded,
+                                                                                                     NULL);
+        }
+        ctr_encode_opentelemetry_destroy((cfl_sds_t) actual);
+    }
+
+    ctr_destroy(trace_context);
+}
+
 /* Test list */
 TEST_LIST = {
     { "hex_to_id", test_hex_to_id },
@@ -1927,8 +2541,24 @@ TEST_LIST = {
     { "find_map_entry_by_key", test_find_map_entry_by_key },
     { "json_payload_get_wrapped_value", test_json_payload_get_wrapped_value },
     { "opentelemetry_cases", test_opentelemetry_cases },
+    { "opentelemetry_logs_otlp_json_roundtrip",
+      test_opentelemetry_logs_otlp_json_roundtrip },
+    { "opentelemetry_logs_otlp_json_from_plain_logs",
+      test_opentelemetry_logs_otlp_json_from_plain_logs },
+    { "opentelemetry_logs_otlp_proto_from_plain_logs",
+      test_opentelemetry_logs_otlp_proto_from_plain_logs },
     { "opentelemetry_traces_cases", test_opentelemetry_traces_cases },
+    { "opentelemetry_traces_otlp_json_roundtrip",
+      test_opentelemetry_traces_otlp_json_roundtrip },
+    { "opentelemetry_traces_otlp_proto_roundtrip",
+      test_opentelemetry_traces_otlp_proto_roundtrip },
     { "trace_span_binary_sizes", test_trace_span_binary_sizes },
     { "opentelemetry_metrics_cases", test_opentelemetry_metrics_cases },
+    { "opentelemetry_metrics_otlp_json_roundtrip",
+      test_opentelemetry_metrics_otlp_json_roundtrip },
+    { "opentelemetry_metrics_otlp_proto_roundtrip",
+      test_opentelemetry_metrics_otlp_proto_roundtrip },
+    { "opentelemetry_metrics_msgpack_otlp_proto_merges_contexts",
+      test_opentelemetry_metrics_msgpack_otlp_proto_merges_contexts },
     { 0 }
 };

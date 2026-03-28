@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_input_metric.h>
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <cfl/cfl.h>
 
 static int input_metrics_append(struct flb_input_instance *ins,
@@ -89,9 +90,31 @@ static int input_metrics_append(struct flb_input_instance *ins,
         return -1;
     }
 
-    /* Append packed metrics */
-    ret = flb_input_chunk_append_raw(ins, FLB_INPUT_METRICS, 0,
+    /*
+     * Metrics chunks still need a positive logical event count when they
+     * enter the chunk/task pipeline. Passing 0 propagates as total_records=0,
+     * and later stages can treat the chunk as empty even though it carries a
+     * valid encoded metrics payload. Use 1 as a non-zero sentinel count.
+     */
+    ret = flb_input_chunk_append_raw(ins, FLB_INPUT_METRICS, 1,
                                      tag, tag_len, mt_buf, mt_size);
+
+    if (ret == 0 && tag != NULL) {
+        void *chunk_ref;
+
+        /*
+         * Keep metric chunks short-lived per append. Reusing the same tag-bound
+         * metric chunk can delay task creation for rapidly updated series,
+         * which makes runtime consumers miss freshly generated metrics.
+         */
+        pthread_mutex_lock(&ins->metrics_chunk_lock);
+        chunk_ref = flb_hash_table_get_ptr(ins->ht_metric_chunks, tag, tag_len);
+        if (chunk_ref != NULL) {
+            flb_hash_table_del_ptr(ins->ht_metric_chunks,
+                                   tag, tag_len, chunk_ref);
+        }
+        pthread_mutex_unlock(&ins->metrics_chunk_lock);
+    }
 
     cmt_encode_msgpack_destroy(mt_buf);
 

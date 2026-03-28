@@ -366,6 +366,8 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             return NULL;
         }
 
+        pthread_mutex_init(&instance->metrics_chunk_lock, NULL);
+
         /* format name (with instance id) */
         snprintf(instance->name, sizeof(instance->name) - 1,
                  "%s.%i", plugin->name, id);
@@ -379,6 +381,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             ctx = flb_calloc(1, sizeof(struct flb_plugin_input_proxy_context));
             if (!ctx) {
                 flb_errno();
+                pthread_mutex_destroy(&instance->metrics_chunk_lock);
                 flb_hash_table_destroy(instance->ht_log_chunks);
                 flb_hash_table_destroy(instance->ht_metric_chunks);
                 flb_hash_table_destroy(instance->ht_trace_chunks);
@@ -436,6 +439,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         mk_list_init(&instance->ingress_queue);
         ret = flb_input_ingress_primitives_init(instance);
         if (ret != 0) {
+            pthread_mutex_destroy(&instance->metrics_chunk_lock);
             if (instance->ht_log_chunks) {
                 flb_hash_table_destroy(instance->ht_log_chunks);
             }
@@ -1100,6 +1104,8 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
         flb_hash_table_destroy(ins->ht_profile_chunks);
         ins->ht_profile_chunks = NULL;
     }
+
+    pthread_mutex_destroy(&ins->metrics_chunk_lock);
 
     if (ins->ch_events[0] > 0) {
         mk_event_closesocket(ins->ch_events[0]);
