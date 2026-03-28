@@ -712,6 +712,12 @@ static struct flb_json_mut_entry *mut_array_entry_create(struct flb_json_mut_doc
 static struct flb_json_mut_val *copy_msgpack_to_mutable(struct flb_json_mut_doc *document,
                                                         msgpack_object *object);
 
+static int flb_json_mut_obj_add_val_len(struct flb_json_mut_doc *document,
+                                        struct flb_json_mut_val *object,
+                                        const char *key,
+                                        size_t key_length,
+                                        struct flb_json_mut_val *value);
+
 static struct flb_json_mut_val *copy_msgpack_array_to_mutable(struct flb_json_mut_doc *document,
                                                               msgpack_object_array *array)
 {
@@ -752,10 +758,11 @@ static struct flb_json_mut_val *copy_msgpack_map_to_mutable(struct flb_json_mut_
         value = copy_msgpack_to_mutable(document, &map->ptr[index].val);
 
         if (key->type != MSGPACK_OBJECT_STR || value == NULL ||
-            !flb_json_mut_obj_add_val(document,
-                                      result,
-                                      key->via.str.ptr,
-                                      value)) {
+            !flb_json_mut_obj_add_val_len(document,
+                                          result,
+                                          key->via.str.ptr,
+                                          key->via.str.size,
+                                          value)) {
             return NULL;
         }
     }
@@ -1511,6 +1518,11 @@ int flb_json_mut_arr_add_strncpy(struct flb_json_mut_doc *document,
 {
     struct flb_json_mut_val *entry;
 
+    if (document == NULL || array == NULL ||
+        array->type != FLB_JSON_MUT_ARRAY) {
+        return 0;
+    }
+
     entry = flb_json_mut_strncpy(document, value, length);
     if (entry == NULL) {
         return 0;
@@ -1660,6 +1672,12 @@ int flb_json_mut_obj_add_strncpy(struct flb_json_mut_doc *document,
 {
     struct flb_json_mut_val *entry;
 
+    if (document == NULL || object == NULL ||
+        key == NULL || value == NULL ||
+        object->type != FLB_JSON_MUT_OBJECT) {
+        return 0;
+    }
+
     entry = flb_json_mut_strncpy(document, value, length);
     if (entry == NULL) {
         return 0;
@@ -1689,12 +1707,12 @@ int flb_json_mut_obj_add_uint(struct flb_json_mut_doc *document,
     return flb_json_mut_obj_add_val(document, object, key, entry);
 }
 
-int flb_json_mut_obj_add_val(struct flb_json_mut_doc *document,
-                             struct flb_json_mut_val *object,
-                             const char *key,
-                             struct flb_json_mut_val *value)
+static int flb_json_mut_obj_add_val_len(struct flb_json_mut_doc *document,
+                                        struct flb_json_mut_val *object,
+                                        const char *key,
+                                        size_t key_length,
+                                        struct flb_json_mut_val *value)
 {
-    size_t                  key_length;
     struct flb_json_mut_kv *entry;
 
     if (document == NULL || object == NULL || key == NULL || value == NULL ||
@@ -1706,7 +1724,6 @@ int flb_json_mut_obj_add_val(struct flb_json_mut_doc *document,
         return 0;
     }
 
-    key_length = strlen(key);
     entry = mut_kv_create(document, key, key_length, value);
     if (entry == NULL) {
         return 0;
@@ -1722,4 +1739,17 @@ int flb_json_mut_obj_add_val(struct flb_json_mut_doc *document,
     object->data.object.tail = entry;
 
     return 1;
+}
+
+int flb_json_mut_obj_add_val(struct flb_json_mut_doc *document,
+                             struct flb_json_mut_val *object,
+                             const char *key,
+                             struct flb_json_mut_val *value)
+{
+    if (key == NULL) {
+        return 0;
+    }
+
+    return flb_json_mut_obj_add_val_len(document, object, key,
+                                        strlen(key), value);
 }
