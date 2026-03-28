@@ -125,6 +125,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         }
     }
 
+    flb_plg_info(ctx->ins, "Initializing k8s hash_table of %d entries", FLB_HASH_TABLE_SIZE);
     if (ctx->kube_meta_cache_ttl > 0) {
         ctx->hash_table = flb_hash_table_create_with_ttl(ctx->kube_meta_cache_ttl,
                                                          FLB_HASH_TABLE_EVICT_OLDER,
