@@ -381,6 +381,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             ctx = flb_calloc(1, sizeof(struct flb_plugin_input_proxy_context));
             if (!ctx) {
                 flb_errno();
+                pthread_mutex_destroy(&instance->metrics_chunk_lock);
                 flb_hash_table_destroy(instance->ht_log_chunks);
                 flb_hash_table_destroy(instance->ht_metric_chunks);
                 flb_hash_table_destroy(instance->ht_trace_chunks);
@@ -438,6 +439,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         mk_list_init(&instance->ingress_queue);
         ret = flb_input_ingress_primitives_init(instance);
         if (ret != 0) {
+            pthread_mutex_destroy(&instance->metrics_chunk_lock);
             if (instance->ht_log_chunks) {
                 flb_hash_table_destroy(instance->ht_log_chunks);
             }
