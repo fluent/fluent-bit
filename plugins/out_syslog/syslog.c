@@ -380,12 +380,109 @@ static flb_sds_t syslog_rfc3164 (flb_sds_t *s, struct flb_time *tms,
     return *s;
 }
 
+static flb_sds_t msgpack_value_to_sd(struct flb_syslog *ctx,
+                                     flb_sds_t *s, const char* key, int key_len,
+                                     msgpack_object *v)
+{
+    char temp[48] = {0};
+    flb_sds_t tmp;
+    int n, start_len, end_len;
+    const char *val = NULL;
+    int val_len = 0;
+
+    if (v->type == MSGPACK_OBJECT_BOOLEAN) {
+        val = v->via.boolean ? "true" : "false";
+        val_len = v->via.boolean ? 4 : 5;
+    }
+    else if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+        val = temp;
+        val_len = snprintf(temp, sizeof(temp) - 1,
+                           "%" PRIu64, v->via.u64);
+    }
+    else if (v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+        val = temp;
+        val_len = snprintf(temp, sizeof(temp) - 1,
+                           "%" PRId64, v->via.i64);
+    }
+    else if (v->type == MSGPACK_OBJECT_FLOAT) {
+        val = temp;
+        val_len = snprintf(temp, sizeof(temp) - 1,
+                           "%f", v->via.f64);
+    }
+    else if (v->type == MSGPACK_OBJECT_STR) {
+        /* String value */
+        val     = v->via.str.ptr;
+        val_len = v->via.str.size;
+    }
+    else if (v->type == MSGPACK_OBJECT_BIN) {
+        /* Bin value */
+        val     = v->via.bin.ptr;
+        val_len = v->via.bin.size;
+    }
+
+    if (!val || !key) {
+        return NULL;
+    }
+
+    tmp = flb_sds_cat(*s, " " , 1);
+    if (!tmp) {
+        return NULL;
+    }
+    *s = tmp;
+
+    start_len = flb_sds_len(*s);
+    if (ctx->allow_longer_sd_id != FLB_TRUE && key_len > 32 ) {
+        /*
+         * RFC5424 defines
+         *   PARAM-NAME      = SD-NAME
+         *   SD-NAME         = 1*32PRINTUSASCII
+         *                     ; except '=', SP, ']', %d34 (")
+         *
+         * https://www.rfc-editor.org/rfc/rfc5424#section-6
+         */
+        key_len = 32;
+    }
+    tmp = flb_sds_cat(*s, key, key_len);
+    if (!tmp) {
+        return NULL;
+    }
+    *s = tmp;
+
+    end_len = flb_sds_len(*s);
+    for(n=start_len; n < end_len; n++) {
+        if (!rfc5424_sp_name[(unsigned char)(*s)[n]]) {
+            (*s)[n] = '_';
+        }
+    }
+
+    tmp = flb_sds_cat(*s, "=\"" , 2);
+    if (!tmp) {
+        return NULL;
+    }
+    *s = tmp;
+
+    tmp = flb_sds_cat_esc(*s, val , val_len,
+                          rfc5424_sp_value, sizeof(rfc5424_sp_value));
+    if (!tmp) {
+        return NULL;
+    }
+    *s = tmp;
+
+    tmp = flb_sds_cat(*s, "\"" , 1);
+    if (!tmp) {
+        return NULL;
+    }
+    *s = tmp;
+
+    return *s;
+}
+
 static flb_sds_t msgpack_to_sd(struct flb_syslog *ctx,
                                flb_sds_t *s, const char *sd, int sd_len,
                                msgpack_object *o)
 {
     flb_sds_t tmp;
-    int i;
+    int i, idx;
     int loop;
     int n, start_len, end_len;
 
@@ -430,11 +527,8 @@ static flb_sds_t msgpack_to_sd(struct flb_syslog *ctx,
     if (loop != 0) {
         msgpack_object_kv *p = o->via.map.ptr;
         for (i = 0; i < loop; i++) {
-            char temp[48] = {0};
             const char *key = NULL;
             int key_len = 0;
-            const char *val = NULL;
-            int val_len = 0;
 
             msgpack_object *k = &p[i].key;
             msgpack_object *v = &p[i].val;
@@ -452,89 +546,16 @@ static flb_sds_t msgpack_to_sd(struct flb_syslog *ctx,
                 key_len = k->via.bin.size;
             }
 
-            if (v->type == MSGPACK_OBJECT_BOOLEAN) {
-                val = v->via.boolean ? "true" : "false";
-                val_len = v->via.boolean ? 4 : 5;
-            }
-            else if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                val = temp;
-                val_len = snprintf(temp, sizeof(temp) - 1,
-                                   "%" PRIu64, v->via.u64);
-            }
-            else if (v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-                val = temp;
-                val_len = snprintf(temp, sizeof(temp) - 1,
-                                   "%" PRId64, v->via.i64);
-            }
-            else if (v->type == MSGPACK_OBJECT_FLOAT) {
-                val = temp;
-                val_len = snprintf(temp, sizeof(temp) - 1,
-                                   "%f", v->via.f64);
-            }
-            else if (v->type == MSGPACK_OBJECT_STR) {
-                /* String value */
-                val     = v->via.str.ptr;
-                val_len = v->via.str.size;
-            }
-            else if (v->type == MSGPACK_OBJECT_BIN) {
-                /* Bin value */
-                val     = v->via.bin.ptr;
-                val_len = v->via.bin.size;
-            }
-
-            if (!val || !key) {
-                continue;
-            }
-
-            tmp = flb_sds_cat(*s, " " , 1);
-            if (!tmp) {
-                return NULL;
-            }
-            *s = tmp;
-
-            start_len = flb_sds_len(*s);
-            if (ctx->allow_longer_sd_id != FLB_TRUE && key_len > 32 ) {
-                /*
-                 * RFC5424 defines
-                 *   PARAM-NAME      = SD-NAME
-                 *   SD-NAME         = 1*32PRINTUSASCII
-                 *                     ; except '=', SP, ']', %d34 (")
-                 *
-                 * https://www.rfc-editor.org/rfc/rfc5424#section-6
-                 */
-                key_len = 32;
-            }
-            tmp = flb_sds_cat(*s, key, key_len);
-            if (!tmp) {
-                return NULL;
-            }
-            *s = tmp;
-
-            end_len = flb_sds_len(*s);
-            for(n=start_len; n < end_len; n++) {
-                if (!rfc5424_sp_name[(unsigned char)(*s)[n]]) {
-                    (*s)[n] = '_';
+            if (v->type == MSGPACK_OBJECT_ARRAY) {
+                for (idx = 0 ;
+                     idx < v->via.array.size;
+                     idx++) {
+                    msgpack_value_to_sd(ctx, s, key, key_len, &v->via.array.ptr[idx]);
                 }
             }
-
-            tmp = flb_sds_cat(*s, "=\"" , 2);
-            if (!tmp) {
-                return NULL;
+            else {
+                msgpack_value_to_sd(ctx, s, key, key_len, v);
             }
-            *s = tmp;
-
-            tmp = flb_sds_cat_esc(*s, val , val_len,
-                                  rfc5424_sp_value, sizeof(rfc5424_sp_value));
-            if (!tmp) {
-                return NULL;
-            }
-            *s = tmp;
-
-            tmp = flb_sds_cat(*s, "\"" , 1);
-            if (!tmp) {
-                return NULL;
-            }
-            *s = tmp;
         }
     }
 
