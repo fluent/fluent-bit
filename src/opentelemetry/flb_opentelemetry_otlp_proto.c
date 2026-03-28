@@ -990,6 +990,12 @@ static struct otlp_proto_logs_scope_state *append_logs_scope_state(
                       sizeof(Opentelemetry__Proto__Logs__V1__ScopeLogs *) *
                       (resource_state->resource_log->n_scope_logs + 1));
     if (tmp == NULL) {
+        flb_free(scope_log->schema_url);
+        flb_free(scope->name);
+        flb_free(scope->version);
+        otlp_kvarray_destroy(scope->attributes, scope->n_attributes);
+        flb_free(scope);
+        flb_free(scope_log);
         return NULL;
     }
 
@@ -1368,8 +1374,10 @@ flb_sds_t flb_opentelemetry_metrics_msgpack_to_otlp_proto(const void *data,
         decoded_count++;
     }
 
-    if (ret != CMT_DECODE_MSGPACK_INSUFFICIENT_DATA &&
-        ret != CMT_DECODE_MSGPACK_SUCCESS) {
+    if (!((ret == CMT_DECODE_MSGPACK_INSUFFICIENT_DATA &&
+           offset == size &&
+           decoded_count > 0) ||
+          (ret == CMT_DECODE_MSGPACK_SUCCESS && offset == size))) {
         cmt_destroy(merged_context);
         set_error(result, FLB_OPENTELEMETRY_OTLP_PROTO_INVALID_ARGUMENT, EINVAL);
         return NULL;
