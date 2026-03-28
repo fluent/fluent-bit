@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_kafka.h>
 
 #include <cmetrics/cmt_encode_opentelemetry.h>
+#include <ctraces/ctr_decode_msgpack.h>
 #include <ctraces/ctr_encode_opentelemetry.h>
 
 #include "kafka_config.h"
@@ -466,6 +467,20 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
             queue_full_retries++;
             goto retry;
         }
+
+        ctx->blocked = FLB_FALSE;
+        if (ctx->format == FLB_KAFKA_FMT_JSON ||
+            ctx->format == FLB_KAFKA_FMT_GELF) {
+            flb_sds_destroy(s);
+        }
+        msgpack_sbuffer_destroy(&mp_sbuf);
+#ifdef FLB_HAVE_AVRO_ENCODER
+        if (ctx->format == FLB_KAFKA_FMT_AVRO) {
+            AVRO_FREE(avro_fast_buffer, out_buf)
+        }
+#endif
+        flb_sds_destroy(raw_key);
+        return FLB_ERROR;
     }
     else {
         flb_plg_debug(ctx->ins, "enqueued message (%zd bytes) for topic '%s'",
@@ -538,6 +553,7 @@ retry:
             goto retry;
         }
 
+        ctx->blocked = FLB_FALSE;
         flb_plg_error(ctx->ins,
                       "failed to produce OTLP payload to topic %s: %s",
                       rd_kafka_topic_name(topic->tp),
@@ -680,13 +696,18 @@ static int produce_otlp_proto(struct flb_out_kafka *ctx,
             }
         }
 
-        if (ret != CTR_MPACK_INSUFFICIENT_DATA &&
-            !(ret == CTR_MPACK_ENGINE_ERROR && off >= event_chunk->size)) {
+        if (ret == CTR_MPACK_INSUFFICIENT_DATA && off >= event_chunk->size) {
+            return FLB_OK;
+        }
+
+        if (ret == CTR_MPACK_ENGINE_ERROR && off >= event_chunk->size) {
+            return FLB_OK;
+        }
+
+        if (ret != CTR_DECODE_MSGPACK_SUCCESS) {
             flb_plg_error(ctx->ins, "could not decode traces msgpack: %d", ret);
             return FLB_ERROR;
         }
-
-        return FLB_OK;
     }
 
     return FLB_ERROR;
