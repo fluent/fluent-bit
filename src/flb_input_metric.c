@@ -23,7 +23,6 @@
 #include <fluent-bit/flb_input_metric.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_hash_table.h>
-#include <fluent-bit/flb_input.h>
 #include <cfl/cfl.h>
 
 static int input_metrics_append(struct flb_input_instance *ins,
