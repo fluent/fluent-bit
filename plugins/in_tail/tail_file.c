@@ -1152,10 +1152,12 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     flb_sds_t inode_str;
 
     if (!S_ISREG(st->st_mode)) {
+        flb_plg_trace(ctx->ins, "skipping non regular file %s (%u)", path, st->st_mode);
         return -1;
     }
 
     if (flb_tail_file_exists(st, ctx) == FLB_TRUE) {
+        flb_plg_trace(ctx->ins, "skipping already tracked file %s", path);
         return -1;
     }
 
@@ -1235,6 +1237,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
                                              ctx->buf_max_size);
 
         if (file->decompression_context == NULL) {
+            flb_plg_trace(ctx->ins,
+                          "skipping file due to decompression "
+                          "context creation failure %s",
+                          path);
             goto error;
         }
     }
@@ -1389,6 +1395,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     /* Set the file position (database offset, head or tail) */
     ret = set_file_position(ctx, file);
     if (ret == -1) {
+        flb_plg_trace(ctx->ins, "skipping file due to seek error %s", path);
         flb_tail_file_remove(file);
         goto error;
     }
@@ -1409,6 +1416,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
 
     if (file->sl_log_event_encoder == NULL) {
+        flb_plg_trace(ctx->ins,
+                      "skipping file due to single line "
+                      "encoder creation error %s",
+                      path);
         flb_tail_file_remove(file);
 
         goto error;
@@ -1418,6 +1429,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
 
     if (file->ml_log_event_encoder == NULL) {
+        flb_plg_trace(ctx->ins,
+                      "skipping file due to multi line "
+                      "encoder creation error %s",
+                      path);
         flb_tail_file_remove(file);
 
         goto error;
