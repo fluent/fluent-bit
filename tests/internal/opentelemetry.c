@@ -259,6 +259,9 @@ static char *get_group_metadata(void *chunk, size_t size)
 static int json_strings_equal_allowing_otlp_timestamp(const char *expected,
                                                       const char *actual)
 {
+    const char *prefix = "{\"otlp\":{\"timestamp\":";
+    size_t prefix_len = strlen(prefix);
+
     if (expected == NULL || actual == NULL) {
         return expected == actual;
     }
@@ -267,9 +270,23 @@ static int json_strings_equal_allowing_otlp_timestamp(const char *expected,
         return FLB_TRUE;
     }
 
-    if (strcmp(expected, "{\"otlp\":{}}") == 0 &&
-        strncmp(actual, "{\"otlp\":{\"timestamp\":", 21) == 0) {
-        return FLB_TRUE;
+    if (strcmp(expected, "{\"otlp\":{}}") == 0) {
+        if (strncmp(actual, prefix, prefix_len) != 0) {
+            return FLB_FALSE;
+        }
+
+        actual += prefix_len;
+
+        while (*actual != '\0' && *actual != '}') {
+            if (*actual == ',') {
+                return FLB_FALSE;
+            }
+            actual++;
+        }
+
+        if (strcmp(actual, "}}") == 0) {
+            return FLB_TRUE;
+        }
     }
 
     return FLB_FALSE;
@@ -1994,6 +2011,9 @@ void test_opentelemetry_logs_otlp_json_roundtrip()
     ret = flb_log_event_encoder_init(&encoder,
                                      FLB_LOG_EVENT_FORMAT_DEFAULT);
     TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return;
+    }
 
     ret = flb_opentelemetry_logs_json_to_msgpack(&encoder,
                                                  expected,
@@ -2002,6 +2022,10 @@ void test_opentelemetry_logs_otlp_json_roundtrip()
                                                  &result);
     TEST_CHECK(ret == 0);
     TEST_CHECK(result == 0);
+    if (ret != 0 || result != 0) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
 
     memset(&options, 0, sizeof(options));
     options.logs_require_otel_metadata = FLB_TRUE;
@@ -2260,15 +2284,31 @@ void test_opentelemetry_logs_otlp_proto_from_plain_logs()
 
     ret = flb_log_event_encoder_begin_record(&encoder);
     TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
     ret = flb_log_event_encoder_set_timestamp(&encoder, &timestamp);
     TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
     ret = flb_log_event_encoder_append_body_values(
             &encoder,
             FLB_LOG_EVENT_CSTRING_VALUE("message"),
             FLB_LOG_EVENT_CSTRING_VALUE("hello from dummy"));
     TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
     ret = flb_log_event_encoder_commit_record(&encoder);
     TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
 
     memset(&options, 0, sizeof(options));
     options.logs_require_otel_metadata = FLB_FALSE;
