@@ -53,6 +53,8 @@
 #include <fluent-bit/tls/flb_tls.h>
 #include <time.h>
 #include <fluent-bit/flb_signv4_ng.h>
+#include <fluent-bit/flb_config_map.h>
+#include <fluent-bit/flb_upstream_ha.h>
 
 void flb_http_client_debug(struct flb_http_client *c,
                            struct flb_callback *cb_ctx)
