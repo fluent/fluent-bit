@@ -845,7 +845,7 @@ void flb_test_input_chunk_grouped_release_space_drop_counters(void)
                    "Host", "127.0.0.1",
                    "Port", "1",
                    "retry_limit", "no_retries",
-                   "storage.total_limit_size", "1K",
+                   "storage.total_limit_size", "1M",
                    NULL);
 
     ret = flb_start(ctx);
