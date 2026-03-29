@@ -130,6 +130,9 @@ static int configure(struct type_converter_ctx *ctx,
     flb_config_map_foreach(head, mv, ctx->float_keys) {
         config_rule(ctx, "float", mv);
     }
+    flb_config_map_foreach(head, mv, ctx->map_keys) {
+        config_rule(ctx, "map", mv);
+    }
 
     if (mk_list_size(&ctx->conv_entries) == 0) {
         flb_plg_error(ctx->ins, "no rules");
@@ -384,6 +387,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct type_converter_ctx, str_keys),
      "Convert string to other type. e.g. str_key id id_val integer"
     },
+    {
+     FLB_CONFIG_MAP_SLIST_3, "map_key", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct type_converter_ctx, map_keys),
+     "Convert map to other type. e.g. map_key obj obj_str json_string"
+    },
+
     {0}
 };
   
