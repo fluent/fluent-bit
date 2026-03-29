@@ -331,7 +331,8 @@ flb_runtime_lock_tests("runtime-port-2020"
 
 flb_runtime_lock_tests("runtime-port-4318"
   flb-rt-in_opentelemetry
-  flb-rt-in_opentelemetry_routing)
+  flb-rt-in_opentelemetry_routing
+  flb-rt-processor_cumulative_to_delta)
 
 flb_runtime_lock_tests("runtime-port-5170"
   flb-rt-in_tcp
