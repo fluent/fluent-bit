@@ -874,6 +874,7 @@ jobs:
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
+          target_commitish: '4.0'
           make_latest: false
 
       - name: Release 4.1 - not latest
@@ -885,6 +886,7 @@ jobs:
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
+          target_commitish: '4.1'
           make_latest: false
 
       - name: Release 4.2 - not latest
@@ -896,6 +898,7 @@ jobs:
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
+          target_commitish: '4.2'
           make_latest: false
           
       - name: Release 5.0 and latest
