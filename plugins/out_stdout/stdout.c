@@ -178,9 +178,7 @@ static int print_otlp_json(struct flb_stdout *ctx,
     int result;
     int pretty;
     flb_sds_t json;
-    struct flb_opentelemetry_otlp_json_options options;
-    size_t length;
-    char *buffer;
+    struct flb_opentelemetry_otlp_logs_options options;
 
     json = NULL;
     pretty = (ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP_PRETTY);
@@ -207,17 +205,35 @@ static int print_otlp_json(struct flb_stdout *ctx,
     }
 #ifdef FLB_HAVE_METRICS
     else if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
-        json = flb_opentelemetry_metrics_msgpack_to_otlp_json(event_chunk->data,
-                                                              event_chunk->size,
-                                                              &result);
+        if (pretty) {
+            json = flb_opentelemetry_metrics_msgpack_to_otlp_json_pretty(
+                event_chunk->data,
+                event_chunk->size,
+                &result);
+        }
+        else {
+            json = flb_opentelemetry_metrics_msgpack_to_otlp_json(event_chunk->data,
+                                                                  event_chunk->size,
+                                                                  &result);
+        }
     }
 #endif
     else if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
-        json = flb_opentelemetry_traces_msgpack_to_otlp_json(event_chunk->data,
-                                                             event_chunk->size,
-                                                             &result);
+        if (pretty) {
+            json = flb_opentelemetry_traces_msgpack_to_otlp_json_pretty(
+                event_chunk->data,
+                event_chunk->size,
+                &result);
+        }
+        else {
+            json = flb_opentelemetry_traces_msgpack_to_otlp_json(event_chunk->data,
+                                                                 event_chunk->size,
+                                                                 &result);
+        }
     }
     else {
+        flb_plg_error(ctx->ins, "unsupported OTLP event chunk type: %d",
+                      event_chunk->type);
         return -1;
     }
 
@@ -225,26 +241,6 @@ static int print_otlp_json(struct flb_stdout *ctx,
         flb_plg_error(ctx->ins, "could not convert event chunk to OTLP JSON: %d",
                       result);
         return -1;
-    }
-
-    if (pretty && event_chunk->type != FLB_EVENT_TYPE_LOGS) {
-        buffer = flb_json_prettify(json, flb_sds_len(json), &length);
-        if (buffer == NULL) {
-            flb_sds_destroy(json);
-            flb_plg_error(ctx->ins, "could not render pretty OTLP JSON payload");
-            return -1;
-        }
-
-        flb_sds_destroy(json);
-        fwrite(buffer, 1, length, stdout);
-        fputc('\n', stdout);
-        fflush(stdout);
-#ifdef FLB_HAVE_YYJSON
-        flb_free(buffer);
-#else
-        flb_sds_destroy(buffer);
-#endif
-        return 0;
     }
 
     fwrite(json, 1, flb_sds_len(json), stdout);
@@ -337,6 +333,13 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
     }
 
     if (event_chunk->type == FLB_EVENT_TYPE_PROFILES) {
+        if (ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP ||
+            ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
+            flb_plg_error(ctx->ins,
+                          "OTLP JSON format is not supported for profiles");
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+
         print_profiles_text(ctx->ins, (char *)
                             event_chunk->data,
                             event_chunk->size);
