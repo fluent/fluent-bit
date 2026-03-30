@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <ctype.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
@@ -109,38 +110,99 @@ static int append_rendered_root_array_content(flb_sds_t *target,
                                               flb_sds_t rendered,
                                               const char *root_key)
 {
-    flb_sds_t  prefix;
     char      *content_start;
-    char      *suffix;
+    char      *content_end;
+    char      *cursor;
     size_t     content_length;
+    size_t     key_length;
+    int        escape_next;
+    int        in_string;
+    int        array_depth;
 
     if (target == NULL || *target == NULL || first_entry == NULL ||
         rendered == NULL || root_key == NULL) {
         return -1;
     }
 
-    prefix = flb_sds_create_size(strlen(root_key) + 8);
-    if (prefix == NULL) {
+    key_length = strlen(root_key);
+    cursor = rendered;
+
+    while (*cursor != '\0' && isspace((unsigned char) *cursor)) {
+        cursor++;
+    }
+    if (*cursor != '{') {
+        return -1;
+    }
+    cursor++;
+
+    while (*cursor != '\0' && isspace((unsigned char) *cursor)) {
+        cursor++;
+    }
+    if (*cursor != '"' ||
+        strncmp(cursor + 1, root_key, key_length) != 0 ||
+        cursor[key_length + 1] != '"') {
+        return -1;
+    }
+    cursor += key_length + 2;
+
+    while (*cursor != '\0' && isspace((unsigned char) *cursor)) {
+        cursor++;
+    }
+    if (*cursor != ':') {
+        return -1;
+    }
+    cursor++;
+
+    while (*cursor != '\0' && isspace((unsigned char) *cursor)) {
+        cursor++;
+    }
+    if (*cursor != '[') {
         return -1;
     }
 
-    prefix = flb_sds_printf(&prefix, "{\"%s\":[", root_key);
-    if (prefix == NULL) {
+    content_start = cursor + 1;
+    cursor++;
+    array_depth = 1;
+    in_string = FLB_FALSE;
+    escape_next = FLB_FALSE;
+
+    while (*cursor != '\0' && array_depth > 0) {
+        if (in_string) {
+            if (escape_next) {
+                escape_next = FLB_FALSE;
+            }
+            else if (*cursor == '\\') {
+                escape_next = FLB_TRUE;
+            }
+            else if (*cursor == '"') {
+                in_string = FLB_FALSE;
+            }
+        }
+        else {
+            if (*cursor == '"') {
+                in_string = FLB_TRUE;
+            }
+            else if (*cursor == '[') {
+                array_depth++;
+            }
+            else if (*cursor == ']') {
+                array_depth--;
+            }
+        }
+
+        cursor++;
+    }
+
+    if (array_depth != 0) {
         return -1;
     }
 
-    if (flb_sds_len(rendered) < flb_sds_len(prefix) + 2 ||
-        strncmp(rendered, prefix, flb_sds_len(prefix)) != 0 ||
-        strcmp(rendered + flb_sds_len(rendered) - 2, "]}") != 0) {
-        flb_sds_destroy(prefix);
-        return -1;
+    content_end = cursor - 1;
+    while (content_end > content_start &&
+           isspace((unsigned char) *(content_end - 1))) {
+        content_end--;
     }
-
-    content_start = rendered + flb_sds_len(prefix);
-    suffix = rendered + flb_sds_len(rendered) - 2;
-    content_length = (size_t) (suffix - content_start);
-
-    flb_sds_destroy(prefix);
+    content_length = (size_t) (content_end - content_start);
 
     if (content_length == 0) {
         return 0;
@@ -161,6 +223,66 @@ static int append_rendered_root_array_content(flb_sds_t *target,
     *first_entry = FLB_FALSE;
 
     return 0;
+}
+
+static flb_sds_t wrap_rendered_root_array_output(const char *root_key,
+                                                 flb_sds_t content,
+                                                 int pretty)
+{
+    flb_sds_t output;
+    const char *prefix;
+    const char *suffix;
+    size_t prefix_length;
+    size_t suffix_length;
+
+    if (root_key == NULL || content == NULL) {
+        return NULL;
+    }
+
+    if (pretty == FLB_TRUE) {
+        prefix = "{\n  \"";
+        suffix = "\n  ]\n}";
+    }
+    else {
+        prefix = "{\"";
+        suffix = "]}";
+    }
+
+    output = flb_sds_create_size(strlen(root_key) + flb_sds_len(content) + 16);
+    if (output == NULL) {
+        return NULL;
+    }
+
+    prefix_length = strlen(prefix);
+    output = flb_sds_cat(output, prefix, prefix_length);
+    if (output == NULL) {
+        return NULL;
+    }
+
+    output = flb_sds_cat(output, root_key, strlen(root_key));
+    if (output == NULL) {
+        return NULL;
+    }
+
+    if (pretty == FLB_TRUE) {
+        output = flb_sds_cat(output, "\": [", 4);
+    }
+    else {
+        output = flb_sds_cat(output, "\":[", 3);
+    }
+    if (output == NULL) {
+        return NULL;
+    }
+
+    output = flb_sds_cat(output, content, flb_sds_len(content));
+    if (output == NULL) {
+        return NULL;
+    }
+
+    suffix_length = strlen(suffix);
+    output = flb_sds_cat(output, suffix, suffix_length);
+
+    return output;
 }
 
 static int json_add_uint64_string(struct flb_json_mut_doc *doc,
@@ -1341,7 +1463,7 @@ static void destroy_logs_resource_states(struct otlp_logs_resource_state *states
 static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
     const void *event_chunk_data,
     size_t event_chunk_size,
-    struct flb_opentelemetry_otlp_json_options *options,
+    struct flb_opentelemetry_otlp_logs_options *options,
     int pretty,
     int *result)
 {
@@ -1584,7 +1706,7 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
 
 flb_sds_t flb_opentelemetry_logs_to_otlp_json(const void *event_chunk_data,
                                               size_t event_chunk_size,
-                                              struct flb_opentelemetry_otlp_json_options *options,
+                                              struct flb_opentelemetry_otlp_logs_options *options,
                                               int *result)
 {
     return flb_opentelemetry_logs_to_otlp_json_render(event_chunk_data,
@@ -1596,7 +1718,7 @@ flb_sds_t flb_opentelemetry_logs_to_otlp_json(const void *event_chunk_data,
 
 flb_sds_t flb_opentelemetry_logs_to_otlp_json_pretty(const void *event_chunk_data,
                                                      size_t event_chunk_size,
-                                                     struct flb_opentelemetry_otlp_json_options *options,
+                                                     struct flb_opentelemetry_otlp_logs_options *options,
                                                      int *result)
 {
     return flb_opentelemetry_logs_to_otlp_json_render(event_chunk_data,
@@ -3104,6 +3226,78 @@ flb_sds_t flb_opentelemetry_metrics_msgpack_to_otlp_json(const void *data,
     return json;
 }
 
+flb_sds_t flb_opentelemetry_metrics_msgpack_to_otlp_json_pretty(const void *data,
+                                                                size_t size,
+                                                                int *result)
+{
+    int       ret;
+    int       first_entry;
+    size_t    offset;
+    flb_sds_t rendered;
+    flb_sds_t output;
+    struct cmt *context;
+
+    if (data == NULL || size == 0) {
+        set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_ARGUMENT, EINVAL);
+        return NULL;
+    }
+
+    rendered = NULL;
+    output = flb_sds_create("");
+    offset = 0;
+    first_entry = FLB_TRUE;
+
+    if (output == NULL) {
+        set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, ENOMEM);
+        return NULL;
+    }
+
+    while ((ret = cmt_decode_msgpack_create(&context, (char *) data, size, &offset)) ==
+           CMT_DECODE_MSGPACK_SUCCESS) {
+        rendered = flb_opentelemetry_metrics_to_otlp_json_render(context,
+                                                                 FLB_TRUE,
+                                                                 result);
+        cmt_destroy(context);
+
+        if (rendered == NULL) {
+            flb_sds_destroy(output);
+            return NULL;
+        }
+
+        if (append_rendered_root_array_content(&output,
+                                               &first_entry,
+                                               rendered,
+                                               "resourceMetrics") != 0) {
+            flb_sds_destroy(rendered);
+            flb_sds_destroy(output);
+            set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, EINVAL);
+            return NULL;
+        }
+
+        flb_sds_destroy(rendered);
+    }
+
+    if (ret != CMT_DECODE_MSGPACK_INSUFFICIENT_DATA &&
+        ret != CMT_DECODE_MSGPACK_SUCCESS) {
+        flb_sds_destroy(output);
+        set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_ARGUMENT, EINVAL);
+        return NULL;
+    }
+
+    rendered = wrap_rendered_root_array_output("resourceMetrics",
+                                               output,
+                                               FLB_TRUE);
+    flb_sds_destroy(output);
+    if (rendered == NULL) {
+        set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, ENOMEM);
+        return NULL;
+    }
+
+    set_result(result, FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+
+    return rendered;
+}
+
 static struct flb_json_mut_val *ctr_attributes_to_kv_array(struct flb_json_mut_doc *doc,
                                                   struct ctrace_attributes *attributes)
 {
@@ -3471,8 +3665,9 @@ static struct flb_json_mut_val *create_trace_resource_json(struct flb_json_mut_d
     return json;
 }
 
-flb_sds_t flb_opentelemetry_traces_to_otlp_json(struct ctrace *context,
-                                                int *result)
+static flb_sds_t flb_opentelemetry_traces_to_otlp_json_render(struct ctrace *context,
+                                                              int pretty,
+                                                              int *result)
 {
     struct cfl_list            *resource_head;
     struct cfl_list            *scope_head;
@@ -3573,7 +3768,7 @@ flb_sds_t flb_opentelemetry_traces_to_otlp_json(struct ctrace *context,
         }
     }
 
-    output = otlp_doc_to_sds(doc, FLB_FALSE);
+    output = otlp_doc_to_sds(doc, pretty);
     flb_json_mut_doc_destroy(doc);
 
     if (output == NULL) {
@@ -3584,6 +3779,14 @@ flb_sds_t flb_opentelemetry_traces_to_otlp_json(struct ctrace *context,
     set_result(result, FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
 
     return output;
+}
+
+flb_sds_t flb_opentelemetry_traces_to_otlp_json(struct ctrace *context,
+                                                int *result)
+{
+    return flb_opentelemetry_traces_to_otlp_json_render(context,
+                                                        FLB_FALSE,
+                                                        result);
 }
 
 
@@ -3655,4 +3858,74 @@ flb_sds_t flb_opentelemetry_traces_msgpack_to_otlp_json(const void *data,
     set_result(result, FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
 
     return json;
+}
+
+flb_sds_t flb_opentelemetry_traces_msgpack_to_otlp_json_pretty(const void *data,
+                                                               size_t size,
+                                                               int *result)
+{
+    int             ret;
+    int             first_entry;
+    size_t          offset;
+    flb_sds_t       rendered;
+    flb_sds_t       output;
+    struct ctrace  *context;
+
+    if (data == NULL || size == 0) {
+        set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_ARGUMENT, EINVAL);
+        return NULL;
+    }
+
+    rendered = NULL;
+    output = flb_sds_create("");
+    offset = 0;
+    first_entry = FLB_TRUE;
+
+    if (output == NULL) {
+        set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, ENOMEM);
+        return NULL;
+    }
+
+    while ((ret = ctr_decode_msgpack_create(&context, (char *) data, size, &offset)) ==
+           CTR_DECODE_MSGPACK_SUCCESS) {
+        rendered = flb_opentelemetry_traces_to_otlp_json_render(context, FLB_TRUE, result);
+        ctr_destroy(context);
+
+        if (rendered == NULL) {
+            flb_sds_destroy(output);
+            return NULL;
+        }
+
+        if (append_rendered_root_array_content(&output,
+                                               &first_entry,
+                                               rendered,
+                                               "resourceSpans") != 0) {
+            flb_sds_destroy(rendered);
+            flb_sds_destroy(output);
+            set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, EINVAL);
+            return NULL;
+        }
+
+        flb_sds_destroy(rendered);
+    }
+
+    if (ret != CTR_DECODE_MSGPACK_SUCCESS &&
+        !(ret == CTR_MPACK_ENGINE_ERROR && offset >= size)) {
+        flb_sds_destroy(output);
+        set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_ARGUMENT, EINVAL);
+        return NULL;
+    }
+
+    rendered = wrap_rendered_root_array_output("resourceSpans",
+                                               output,
+                                               FLB_TRUE);
+    flb_sds_destroy(output);
+    if (rendered == NULL) {
+        set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, ENOMEM);
+        return NULL;
+    }
+
+    set_result(result, FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+
+    return rendered;
 }
