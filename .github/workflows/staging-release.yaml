@@ -732,7 +732,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install cosign
-        uses: sigstore/cosign-installer@v2
+        uses: sigstore/cosign-installer@v3
 
       - name: Get public key and add to S3 bucket
         # Only run if we have a key defined
