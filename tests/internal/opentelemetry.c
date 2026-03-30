@@ -1995,7 +1995,7 @@ void test_opentelemetry_logs_otlp_json_roundtrip()
     flb_sds_t actual;
     flb_sds_t normalized_expected;
     struct flb_log_event_encoder encoder;
-    struct flb_opentelemetry_otlp_json_options options;
+    struct flb_opentelemetry_otlp_logs_options options;
 
     expected =
         "{\"resourceLogs\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\","
@@ -2064,7 +2064,7 @@ void test_opentelemetry_logs_otlp_json_from_plain_logs()
     flb_sds_t normalized_expected;
     struct flb_time timestamp;
     struct flb_log_event_encoder encoder;
-    struct flb_opentelemetry_otlp_json_options options;
+    struct flb_opentelemetry_otlp_logs_options options;
     char *expected;
 
     expected =
@@ -2270,7 +2270,7 @@ void test_opentelemetry_logs_otlp_proto_from_plain_logs()
     flb_sds_t actual;
     struct flb_time timestamp;
     struct flb_log_event_encoder encoder;
-    struct flb_opentelemetry_otlp_json_options options;
+    struct flb_opentelemetry_otlp_logs_options options;
     Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest *decoded;
 
     timestamp.tm.tv_sec = 1640995200;
