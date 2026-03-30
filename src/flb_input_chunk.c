@@ -73,9 +73,13 @@ struct flb_input_chunk_meta_view {
 };
 
 /*
- * Mirror the leading layout we need from chunkio's private cio_file backend
- * so size projection can follow alloc_size/realloc_size growth without
- * depending on private headers in this translation unit.
+ * Mirror the leading layout we need from chunkio's private cio_file backend.
+ *
+ * We intentionally avoid including <chunkio/cio_file.h> here because that
+ * header pulls additional private includes that are not available through this
+ * translation unit's normal include path in this build. We only need the
+ * stable leading allocation fields to estimate alloc_size/realloc_size growth
+ * for storage.total_limit_size decisions.
  */
 struct flb_input_chunk_cio_file_view {
     int fd;
@@ -712,6 +716,9 @@ static size_t flb_input_chunk_get_projected_write_size(
                 struct flb_input_chunk *ic,
                 size_t append_size)
 {
+    size_t increment_size;
+    size_t increments;
+    size_t needed_size;
     size_t page_size;
     size_t meta_size;
     size_t logical_size;
@@ -719,6 +726,7 @@ static size_t flb_input_chunk_get_projected_write_size(
     size_t current_size;
     size_t realloc_size;
     size_t projected_size;
+    size_t target_size;
     struct cio_chunk *chunk;
     struct flb_input_chunk_cio_file_view *chunk_file;
 
@@ -736,8 +744,16 @@ static size_t flb_input_chunk_get_projected_write_size(
     }
 
     meta_size = (size_t) cio_meta_size(ic->chunk);
+    if ((size_t) flb_input_chunk_get_size(ic) > SIZE_MAX - meta_size - 24) {
+        return SIZE_MAX;
+    }
+
     logical_size = (size_t) flb_input_chunk_get_size(ic) + meta_size + 24;
-    projected_size = logical_size + append_size;
+    if (logical_size > SIZE_MAX - append_size) {
+        return SIZE_MAX;
+    }
+    target_size = logical_size + append_size;
+    projected_size = target_size;
 
     alloc_size = 0;
     realloc_size = page_size;
@@ -753,11 +769,24 @@ static size_t flb_input_chunk_get_projected_write_size(
         alloc_size = page_size;
     }
 
-    if (projected_size > alloc_size) {
-        projected_size = alloc_size + realloc_size;
+    if (target_size > alloc_size) {
+        projected_size = alloc_size;
+        needed_size = target_size - projected_size;
 
-        while (projected_size < logical_size + append_size) {
-            projected_size += realloc_size;
+        increments = needed_size / realloc_size;
+        if ((needed_size % realloc_size) != 0) {
+            increments++;
+        }
+
+        if (increments > (SIZE_MAX - projected_size) / realloc_size) {
+            return SIZE_MAX;
+        }
+
+        increment_size = increments * realloc_size;
+        projected_size += increment_size;
+
+        if (projected_size > SIZE_MAX - (page_size - 1)) {
+            return SIZE_MAX;
         }
 
         projected_size = ((projected_size + page_size - 1) / page_size) * page_size;
