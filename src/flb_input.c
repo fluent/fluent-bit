@@ -54,6 +54,13 @@
 
 pthread_key_t libco_in_param_key;
 pthread_once_t libco_in_param_key_once = PTHREAD_ONCE_INIT;
+
+static void libco_in_param_key_destroy(void *data)
+{
+    struct flb_libco_inparams *params = (struct flb_libco_inparams*)data;
+
+    flb_free(params);
+}
 void libco_in_param_key_init_func(void) {
     pthread_key_create(&libco_in_param_key, libco_in_param_key_destroy);
 }

@@ -631,13 +631,6 @@ static FLB_INLINE void flb_input_coro_resume(struct flb_input_coro *input_coro)
     flb_coro_resume(input_coro->coro);
 }
 
-static void libco_in_param_key_destroy(void *data)
-{
-    struct flb_libco_inparams *params = (struct flb_libco_inparams*)data;
-
-    flb_free(params);
-}
-
 static FLB_INLINE
 struct flb_input_coro *flb_input_coro_collect(struct flb_input_collector *coll,
                                               struct flb_config *config)
