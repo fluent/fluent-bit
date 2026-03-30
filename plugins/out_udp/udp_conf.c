@@ -68,6 +68,12 @@ struct flb_out_udp *flb_udp_conf_create(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins, "unrecognized 'format' option '%s'. "
                           "Using 'msgpack'", tmp);
         }
+        else if (ret == FLB_PACK_JSON_FORMAT_OTLP ||
+                 ret == FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
+            flb_plg_error(ctx->ins,
+                          "format '%s' is not supported by out_udp",
+                          tmp);
+        }
         else {
             ctx->out_format = ret;
         }
