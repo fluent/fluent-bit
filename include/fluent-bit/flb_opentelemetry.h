@@ -111,13 +111,16 @@ enum flb_opentelemetry_otlp_proto_result {
     FLB_OPENTELEMETRY_OTLP_PROTO_INVALID_LOG_EVENT = -3
 };
 
-struct flb_opentelemetry_otlp_json_options {
+struct flb_opentelemetry_otlp_logs_options {
     int logs_require_otel_metadata;
     const char *logs_body_key;
     const char **logs_body_keys;
     size_t logs_body_key_count;
     int logs_body_key_attributes;
 };
+
+/* Backward-compatible alias for older external callers. */
+#define flb_opentelemetry_otlp_json_options flb_opentelemetry_otlp_logs_options
 
 static struct flb_otel_error_map otel_error_map[] = {
     {"FLB_OTEL_RESOURCE_INVALID_ATTRIBUTE",                  FLB_OTEL_RESOURCE_INVALID_ATTRIBUTE},
@@ -219,6 +222,10 @@ flb_sds_t flb_opentelemetry_traces_msgpack_to_otlp_json(const void *data,
                                                         size_t size,
                                                         int *result);
 
+flb_sds_t flb_opentelemetry_traces_msgpack_to_otlp_json_pretty(const void *data,
+                                                               size_t size,
+                                                               int *result);
+
 flb_sds_t flb_opentelemetry_metrics_to_otlp_json(struct cmt *context,
                                                  int *result);
 
@@ -226,16 +233,26 @@ flb_sds_t flb_opentelemetry_metrics_msgpack_to_otlp_json(const void *data,
                                                          size_t size,
                                                          int *result);
 
+flb_sds_t flb_opentelemetry_metrics_msgpack_to_otlp_json_pretty(const void *data,
+                                                                size_t size,
+                                                                int *result);
+
 flb_sds_t flb_opentelemetry_logs_to_otlp_json(const void *event_chunk_data,
                                               size_t event_chunk_size,
-                                              struct flb_opentelemetry_otlp_json_options *options,
+                                              struct flb_opentelemetry_otlp_logs_options *options,
                                               int *result);
 
 flb_sds_t flb_opentelemetry_logs_to_otlp_json_pretty(const void *event_chunk_data,
                                                      size_t event_chunk_size,
-                                                     struct flb_opentelemetry_otlp_json_options *options,
+                                                     struct flb_opentelemetry_otlp_logs_options *options,
                                                      int *result);
 
+/*
+ * OTLP protobuf encoding entry points.
+ * Destroy returned payloads with the matching flb_opentelemetry_*_proto_destroy()
+ * helper instead of calling flb_sds_destroy() or backend-specific encoders
+ * directly.
+ */
 flb_sds_t flb_opentelemetry_traces_to_otlp_proto(struct ctrace *context,
                                                  int *result);
 
@@ -248,8 +265,12 @@ flb_sds_t flb_opentelemetry_metrics_msgpack_to_otlp_proto(const void *data,
 
 flb_sds_t flb_opentelemetry_logs_to_otlp_proto(const void *event_chunk_data,
                                                size_t event_chunk_size,
-                                               struct flb_opentelemetry_otlp_json_options *options,
+                                               struct flb_opentelemetry_otlp_logs_options *options,
                                                int *result);
+
+void flb_opentelemetry_traces_proto_destroy(flb_sds_t payload);
+void flb_opentelemetry_metrics_proto_destroy(flb_sds_t payload);
+void flb_opentelemetry_logs_proto_destroy(flb_sds_t payload);
 
 int flb_opentelemetry_log_is_otlp(struct flb_log_event *log_event);
 
