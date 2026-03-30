@@ -572,7 +572,7 @@ static int produce_otlp_json(struct flb_out_kafka *ctx,
 {
     int result;
     flb_sds_t payload;
-    struct flb_opentelemetry_otlp_json_options options;
+    struct flb_opentelemetry_otlp_logs_options options;
     static const char *default_logs_body_keys[] = {"log", "message"};
 
     payload = NULL;
@@ -628,7 +628,7 @@ static int produce_otlp_proto(struct flb_out_kafka *ctx,
     size_t off;
     struct ctrace *ctr;
     flb_sds_t payload;
-    struct flb_opentelemetry_otlp_json_options options;
+    struct flb_opentelemetry_otlp_logs_options options;
     static const char *default_logs_body_keys[] = {"log", "message"};
 
     if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
@@ -650,7 +650,7 @@ static int produce_otlp_proto(struct flb_out_kafka *ctx,
         }
 
         result = produce_raw_payload(payload, flb_sds_len(payload), ctx);
-        flb_sds_destroy(payload);
+        flb_opentelemetry_logs_proto_destroy(payload);
         return result;
     }
 #ifdef FLB_HAVE_METRICS
@@ -666,7 +666,7 @@ static int produce_otlp_proto(struct flb_out_kafka *ctx,
         }
 
         result = produce_raw_payload(payload, cfl_sds_len((cfl_sds_t) payload), ctx);
-        cmt_encode_opentelemetry_destroy((cfl_sds_t) payload);
+        flb_opentelemetry_metrics_proto_destroy(payload);
 
         return result;
     }
@@ -689,7 +689,7 @@ static int produce_otlp_proto(struct flb_out_kafka *ctx,
             }
 
             result = produce_raw_payload(payload, flb_sds_len(payload), ctx);
-            ctr_encode_opentelemetry_destroy((cfl_sds_t) payload);
+            flb_opentelemetry_traces_proto_destroy(payload);
             ctr_destroy(ctr);
             if (result != FLB_OK) {
                 return result;
