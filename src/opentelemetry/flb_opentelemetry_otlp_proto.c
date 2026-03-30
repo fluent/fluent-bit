@@ -1328,6 +1328,27 @@ static void destroy_export_logs(
     flb_free(export_logs->resource_logs);
 }
 
+void flb_opentelemetry_traces_proto_destroy(flb_sds_t payload)
+{
+    if (payload != NULL) {
+        ctr_encode_opentelemetry_destroy((cfl_sds_t) payload);
+    }
+}
+
+void flb_opentelemetry_metrics_proto_destroy(flb_sds_t payload)
+{
+    if (payload != NULL) {
+        cmt_encode_opentelemetry_destroy((cfl_sds_t) payload);
+    }
+}
+
+void flb_opentelemetry_logs_proto_destroy(flb_sds_t payload)
+{
+    if (payload != NULL) {
+        flb_sds_destroy(payload);
+    }
+}
+
 flb_sds_t flb_opentelemetry_metrics_to_otlp_proto(struct cmt *context,
                                                   int *result)
 {
@@ -1446,7 +1467,7 @@ flb_sds_t flb_opentelemetry_traces_to_otlp_proto(struct ctrace *context,
 
 flb_sds_t flb_opentelemetry_logs_to_otlp_proto(const void *event_chunk_data,
                                                size_t event_chunk_size,
-                                               struct flb_opentelemetry_otlp_json_options *options,
+                                               struct flb_opentelemetry_otlp_logs_options *options,
                                                int *result)
 {
     int ret;
