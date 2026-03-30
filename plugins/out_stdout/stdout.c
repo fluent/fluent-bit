@@ -178,13 +178,11 @@ static int print_otlp_json(struct flb_stdout *ctx,
     int result;
     int pretty;
     flb_sds_t json;
-    flb_sds_t formatted;
     struct flb_opentelemetry_otlp_json_options options;
     size_t length;
     char *buffer;
 
     json = NULL;
-    formatted = NULL;
     pretty = (ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP_PRETTY);
 
     if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
@@ -194,10 +192,18 @@ static int print_otlp_json(struct flb_stdout *ctx,
         options.logs_body_key_count = 2;
         options.logs_body_key_attributes = FLB_FALSE;
 
-        json = flb_opentelemetry_logs_to_otlp_json(event_chunk->data,
-                                                   event_chunk->size,
-                                                   &options,
-                                                   &result);
+        if (pretty) {
+            json = flb_opentelemetry_logs_to_otlp_json_pretty(event_chunk->data,
+                                                              event_chunk->size,
+                                                              &options,
+                                                              &result);
+        }
+        else {
+            json = flb_opentelemetry_logs_to_otlp_json(event_chunk->data,
+                                                       event_chunk->size,
+                                                       &options,
+                                                       &result);
+        }
     }
 #ifdef FLB_HAVE_METRICS
     else if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
@@ -221,7 +227,7 @@ static int print_otlp_json(struct flb_stdout *ctx,
         return -1;
     }
 
-    if (pretty) {
+    if (pretty && event_chunk->type != FLB_EVENT_TYPE_LOGS) {
         buffer = flb_json_prettify(json, flb_sds_len(json), &length);
         if (buffer == NULL) {
             flb_sds_destroy(json);
@@ -229,21 +235,16 @@ static int print_otlp_json(struct flb_stdout *ctx,
             return -1;
         }
 
-        formatted = flb_sds_create_len(buffer, length);
+        flb_sds_destroy(json);
+        fwrite(buffer, 1, length, stdout);
+        fputc('\n', stdout);
+        fflush(stdout);
 #ifdef FLB_HAVE_YYJSON
         flb_free(buffer);
 #else
         flb_sds_destroy(buffer);
 #endif
-
-        if (formatted == NULL) {
-            flb_sds_destroy(json);
-            flb_plg_error(ctx->ins, "could not allocate pretty OTLP JSON payload");
-            return -1;
-        }
-
-        flb_sds_destroy(json);
-        json = formatted;
+        return 0;
     }
 
     fwrite(json, 1, flb_sds_len(json), stdout);
