@@ -72,6 +72,23 @@ struct flb_input_chunk_meta_view {
     uint16_t routing_data_length;
 };
 
+/*
+ * Mirror the leading layout we need from chunkio's private cio_file backend
+ * so size projection can follow alloc_size/realloc_size growth without
+ * depending on private headers in this translation unit.
+ */
+struct flb_input_chunk_cio_file_view {
+    int fd;
+    int flags;
+    int synced;
+    int allocate_strategy;
+    size_t fs_size;
+    size_t data_size;
+    size_t page_size;
+    size_t alloc_size;
+    size_t realloc_size;
+};
+
 static inline int input_chunk_has_magic_bytes(char *buf, int len)
 {
     unsigned char *p;
@@ -698,26 +715,55 @@ static size_t flb_input_chunk_get_projected_write_size(
     size_t page_size;
     size_t meta_size;
     size_t logical_size;
+    size_t alloc_size;
     size_t current_size;
+    size_t realloc_size;
     size_t projected_size;
     struct cio_chunk *chunk;
+    struct flb_input_chunk_cio_file_view *chunk_file;
 
     page_size = 4096;
     chunk = (struct cio_chunk *) ic->chunk;
+    chunk_file = NULL;
 
     if (chunk != NULL && chunk->ctx != NULL && chunk->ctx->page_size > 0) {
         page_size = (size_t) chunk->ctx->page_size;
+    }
+
+    if (chunk != NULL && chunk->backend != NULL &&
+        chunk->st != NULL && chunk->st->type == CIO_STORE_FS) {
+        chunk_file = (struct flb_input_chunk_cio_file_view *) chunk->backend;
     }
 
     meta_size = (size_t) cio_meta_size(ic->chunk);
     logical_size = (size_t) flb_input_chunk_get_size(ic) + meta_size + 24;
     projected_size = logical_size + append_size;
 
-    if (projected_size == 0) {
-        projected_size = page_size;
+    alloc_size = 0;
+    realloc_size = page_size;
+
+    if (chunk_file != NULL) {
+        alloc_size = chunk_file->alloc_size;
+        if (chunk_file->realloc_size > 0) {
+            realloc_size = chunk_file->realloc_size;
+        }
+    }
+
+    if (alloc_size == 0) {
+        alloc_size = page_size;
+    }
+
+    if (projected_size > alloc_size) {
+        projected_size = alloc_size + realloc_size;
+
+        while (projected_size < logical_size + append_size) {
+            projected_size += realloc_size;
+        }
+
+        projected_size = ((projected_size + page_size - 1) / page_size) * page_size;
     }
     else {
-        projected_size = ((projected_size + page_size - 1) / page_size) * page_size;
+        projected_size = alloc_size;
     }
 
     current_size = 0;
