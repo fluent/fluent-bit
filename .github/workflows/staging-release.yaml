@@ -537,7 +537,7 @@ jobs:
 
   staging-release-images-latest-tags:
     # Only update latest tags for 5.0 releases
-    if: startsWith(github.event.inputs.version, '5.')
+    if: startsWith(github.event.inputs.version, '5.0')
     name: Release latest Linux container images
     runs-on: ubuntu-latest
     needs:
@@ -1047,6 +1047,7 @@ jobs:
         with:
           repository: fluent/fluent-bit-docs
           token: ${{ secrets.GH_PA_TOKEN }}
+          ref: master
 
       - name: Ensure we have the script we need
         run: |
@@ -1155,7 +1156,7 @@ jobs:
         if: startsWith(inputs.version, '4.2')
         uses: actions/checkout@v6
         with:
-          ref: 4.2
+          ref: '4.2'
 
       - name: Release 5.0
         if: startsWith(inputs.version, '5.0')
