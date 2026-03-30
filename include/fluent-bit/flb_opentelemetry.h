@@ -231,6 +231,11 @@ flb_sds_t flb_opentelemetry_logs_to_otlp_json(const void *event_chunk_data,
                                               struct flb_opentelemetry_otlp_json_options *options,
                                               int *result);
 
+flb_sds_t flb_opentelemetry_logs_to_otlp_json_pretty(const void *event_chunk_data,
+                                                     size_t event_chunk_size,
+                                                     struct flb_opentelemetry_otlp_json_options *options,
+                                                     int *result);
+
 flb_sds_t flb_opentelemetry_traces_to_otlp_proto(struct ctrace *context,
                                                  int *result);
 
