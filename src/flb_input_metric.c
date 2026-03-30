@@ -37,19 +37,19 @@ static int input_metrics_append(struct flb_input_instance *ins,
     struct cmt *out_context = NULL;
     struct cmt *encode_context;
 
+    if (tag == NULL) {
+        if (ins->tag && ins->tag_len > 0) {
+            tag = ins->tag;
+            tag_len = ins->tag_len;
+        }
+        else {
+            tag = ins->name;
+            tag_len = strlen(ins->name);
+        }
+    }
+
     processor_is_active = flb_processor_is_active(ins->processor);
     if (processor_is_active) {
-        if (!tag) {
-            if (ins->tag && ins->tag_len > 0) {
-                tag = ins->tag;
-                tag_len = ins->tag_len;
-            }
-            else {
-                tag = ins->name;
-                tag_len = strlen(ins->name);
-            }
-        }
-
         ret = flb_processor_run(ins->processor,
                                 processor_starting_stage,
                                 FLB_PROCESSOR_METRICS,
