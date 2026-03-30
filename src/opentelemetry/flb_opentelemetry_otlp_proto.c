@@ -133,6 +133,10 @@ static int msgpack_map_get_int64(msgpack_object_map *map,
     }
 
     if (value->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+        if (value->via.u64 > INT64_MAX) {
+            return -1;
+        }
+
         *result = (int64_t) value->via.u64;
         return 0;
     }
@@ -147,6 +151,7 @@ static int msgpack_map_get_int64(msgpack_object_map *map,
 
 static void otlp_kvpair_destroy(Opentelemetry__Proto__Common__V1__KeyValue *kvpair);
 static void otlp_any_value_destroy(Opentelemetry__Proto__Common__V1__AnyValue *value);
+static void destroy_log_record(Opentelemetry__Proto__Logs__V1__LogRecord *record);
 
 static Opentelemetry__Proto__Common__V1__ArrayValue *otlp_array_value_initialize(size_t entry_count)
 {
@@ -505,6 +510,12 @@ static Opentelemetry__Proto__Common__V1__AnyValue *msgpack_object_to_otlp_any_va
         value = otlp_any_value_initialize(object->type, 0);
         if (value != NULL) {
             if (object->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                if (object->via.u64 > INT64_MAX) {
+                    otlp_any_value_destroy(value);
+                    value = NULL;
+                    break;
+                }
+
                 value->int_value = (int64_t) object->via.u64;
             }
             else {
@@ -910,7 +921,10 @@ static struct otlp_proto_logs_resource_state *append_logs_resource_state(
                       (export_logs->n_resource_logs + 1));
     if (tmp == NULL) {
         otlp_kvarray_destroy(resource->attributes, resource->n_attributes);
-        flb_free(resource_log->schema_url);
+        if (resource_log->schema_url != NULL &&
+            resource_log->schema_url != protobuf_c_empty_string) {
+            flb_free(resource_log->schema_url);
+        }
         flb_free(resource);
         flb_free(resource_log);
         return NULL;
@@ -990,7 +1004,10 @@ static struct otlp_proto_logs_scope_state *append_logs_scope_state(
                       sizeof(Opentelemetry__Proto__Logs__V1__ScopeLogs *) *
                       (resource_state->resource_log->n_scope_logs + 1));
     if (tmp == NULL) {
-        flb_free(scope_log->schema_url);
+        if (scope_log->schema_url != NULL &&
+            scope_log->schema_url != protobuf_c_empty_string) {
+            flb_free(scope_log->schema_url);
+        }
         flb_free(scope->name);
         flb_free(scope->version);
         otlp_kvarray_destroy(scope->attributes, scope->n_attributes);
@@ -1438,6 +1455,7 @@ flb_sds_t flb_opentelemetry_logs_to_otlp_proto(const void *event_chunk_data,
     int record_type;
     int64_t resource_id;
     int64_t scope_id;
+    Opentelemetry__Proto__Logs__V1__LogRecord *record;
     size_t logs_body_key_count;
     flb_sds_t output;
     struct flb_log_event event;
@@ -1616,11 +1634,10 @@ flb_sds_t flb_opentelemetry_logs_to_otlp_proto(const void *event_chunk_data,
 
         current_scope->scope_log->log_records = tmp;
 
+        record = flb_calloc(1, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord));
         current_scope->scope_log->log_records[
-            current_scope->scope_log->n_log_records] =
-            flb_calloc(1, sizeof(Opentelemetry__Proto__Logs__V1__LogRecord));
-        if (current_scope->scope_log->log_records[
-                current_scope->scope_log->n_log_records] == NULL) {
+            current_scope->scope_log->n_log_records] = record;
+        if (record == NULL) {
             flb_log_event_decoder_destroy(&decoder);
             destroy_export_logs(&export_logs);
             destroy_logs_resource_states(resource_states, resource_state_count);
@@ -1628,17 +1645,17 @@ flb_sds_t flb_opentelemetry_logs_to_otlp_proto(const void *event_chunk_data,
             return NULL;
         }
 
-        opentelemetry__proto__logs__v1__log_record__init(
-            current_scope->scope_log->log_records[
-                current_scope->scope_log->n_log_records]);
+        opentelemetry__proto__logs__v1__log_record__init(record);
 
         if (log_record_to_proto(
-                current_scope->scope_log->log_records[
-                    current_scope->scope_log->n_log_records],
+                record,
                 &event,
                 logs_body_keys,
                 logs_body_key_count,
                 logs_body_key_attributes) != 0) {
+            destroy_log_record(record);
+            current_scope->scope_log->log_records[
+                current_scope->scope_log->n_log_records] = NULL;
             flb_log_event_decoder_destroy(&decoder);
             destroy_export_logs(&export_logs);
             destroy_logs_resource_states(resource_states, resource_state_count);
