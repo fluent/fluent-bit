@@ -118,7 +118,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
     msgpack_object *obj;
     flb_sds_t tag_from_record = NULL;
     int idx = 0;
-    flb_sds_t write_op;
+    flb_sds_t write_op = NULL;
     size_t op_str_size = 0;
     int op_ret = FLB_FALSE;
     int error_op = FLB_FALSE;
@@ -325,11 +325,13 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                     }
                     if (status_buffer_avail(ctx, bulk_statuses, 50) == FLB_FALSE) {
                         flb_sds_destroy(write_op);
+                        write_op = NULL;
 
                         break;
                     }
                 }
                 flb_sds_destroy(write_op);
+                write_op = NULL;
             }
 
         proceed:
@@ -349,7 +351,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
     if (idx % 2 != 0) {
         flb_plg_warn(ctx->ins, "decode payload of Bulk API is failed");
         msgpack_unpacked_destroy(&result);
-        if (error_op == FLB_FALSE) {
+        if (error_op == FLB_FALSE && write_op != NULL) {
             /* On lacking of body case in non-error case, there is no
              * releasing memory code paths. We should proceed to do
              * it here. */

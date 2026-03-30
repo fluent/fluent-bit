@@ -452,12 +452,14 @@ static int decode_histogram_points(struct cmt *cmt,
         }
     }
 
-    metric->hist_sum = cmt_math_d64_to_uint64(hist->sum);
+    cmt_metric_hist_sum_set(metric, hist->timestamp * 1000000, hist->sum);
     if (hist->count_case == PROMETHEUS__HISTOGRAM__COUNT_COUNT_INT) {
-        metric->hist_count = hist->count_int;
+        cmt_metric_hist_count_set(metric, hist->timestamp * 1000000,
+                                  hist->count_int);
     }
     else if (hist->count_case == PROMETHEUS__HISTOGRAM__COUNT_COUNT_FLOAT) {
-        metric->hist_count = hist->count_float;
+        cmt_metric_hist_count_set(metric, hist->timestamp * 1000000,
+                                  hist->count_float);
     }
     else {
         if (static_metric_detected == CMT_FALSE) {

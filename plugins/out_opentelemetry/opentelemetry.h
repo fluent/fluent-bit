@@ -21,6 +21,7 @@
 #define FLB_OUT_OPENTELEMETRY_H
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_http_client.h>
@@ -59,6 +60,9 @@ struct opentelemetry_context {
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;
+    struct flb_oauth2_config oauth2_config;
+    struct flb_oauth2 *oauth2_ctx;
+    const char *oauth2_auth_method;
 
     /* AWS Auth */
 #ifdef FLB_HAVE_SIGNV4

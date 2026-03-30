@@ -31,6 +31,10 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_conditionals.h>
+#include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_plugin.h>
 #include <cfl/cfl.h>
 
 struct flb_config_map processor_global_properties[] = {
@@ -50,6 +54,224 @@ struct flb_config_map processor_global_properties[] = {
 
     {0}
 };
+
+static const char *processor_metrics_scope(struct flb_processor *proc)
+{
+    if (proc->source_plugin_type == FLB_PLUGIN_INPUT) {
+        return "input";
+    }
+    else if (proc->source_plugin_type == FLB_PLUGIN_OUTPUT) {
+        return "output";
+    }
+
+    return "unknown";
+}
+
+static const char *processor_metrics_owner(struct flb_processor *proc)
+{
+    struct flb_input_instance *in;
+    struct flb_output_instance *out;
+
+    if (proc->source_plugin_type == FLB_PLUGIN_INPUT) {
+        in = proc->data;
+        if (in != NULL) {
+            return flb_input_name(in);
+        }
+    }
+    else if (proc->source_plugin_type == FLB_PLUGIN_OUTPUT) {
+        out = proc->data;
+        if (out != NULL) {
+            return flb_output_name(out);
+        }
+    }
+
+    return "unknown";
+}
+
+static struct cmt *processor_metrics_context(struct flb_processor *proc)
+{
+    struct flb_input_instance *in;
+    struct flb_output_instance *out;
+
+    if (proc->source_plugin_type == FLB_PLUGIN_INPUT) {
+        in = proc->data;
+        if (in != NULL) {
+            return in->cmt;
+        }
+    }
+    else if (proc->source_plugin_type == FLB_PLUGIN_OUTPUT) {
+        out = proc->data;
+        if (out != NULL) {
+            return out->cmt;
+        }
+    }
+
+    return NULL;
+}
+
+static const char *processor_signal_type_to_string(int type)
+{
+    if (type == FLB_PROCESSOR_LOGS) {
+        return "logs";
+    }
+    else if (type == FLB_PROCESSOR_METRICS) {
+        return "metrics";
+    }
+    else if (type == FLB_PROCESSOR_TRACES) {
+        return "traces";
+    }
+    else if (type == FLB_PROCESSOR_PROFILES) {
+        return "profiles";
+    }
+
+    return "unknown";
+}
+
+static int processor_metrics_register(struct flb_processor *proc)
+{
+    struct cmt *cmt;
+
+    if (proc == NULL) {
+        return -1;
+    }
+
+    if (proc->cmt_invocations != NULL) {
+        return 0;
+    }
+
+    cmt = processor_metrics_context(proc);
+    if (cmt == NULL) {
+        return 0;
+    }
+
+    proc->cmt_invocations = cmt_counter_create(cmt,
+                                               "fluentbit",
+                                               "processor",
+                                               "invocations_total",
+                                               "Total number of processor unit invocations.",
+                                               5,
+                                               (char *[]) {"scope", "owner",
+                                                           "processor", "stage",
+                                                           "signal"});
+    if (proc->cmt_invocations == NULL) {
+        return -1;
+    }
+
+    proc->cmt_errors = cmt_counter_create(cmt,
+                                          "fluentbit",
+                                          "processor",
+                                          "errors_total",
+                                          "Total number of processor unit errors.",
+                                          5,
+                                          (char *[]) {"scope", "owner",
+                                                      "processor", "stage",
+                                                      "signal"});
+    if (proc->cmt_errors == NULL) {
+        return -1;
+    }
+
+    proc->cmt_items_in = cmt_counter_create(cmt,
+                                            "fluentbit",
+                                            "processor",
+                                            "items_in_total",
+                                            "Total number of items seen by processor units.",
+                                            5,
+                                            (char *[]) {"scope", "owner",
+                                                        "processor", "stage",
+                                                        "signal"});
+    if (proc->cmt_items_in == NULL) {
+        return -1;
+    }
+
+    proc->cmt_items_out = cmt_counter_create(cmt,
+                                             "fluentbit",
+                                             "processor",
+                                             "items_out_total",
+                                             "Total number of items produced by processor units.",
+                                             5,
+                                             (char *[]) {"scope", "owner",
+                                                         "processor", "stage",
+                                                         "signal"});
+    if (proc->cmt_items_out == NULL) {
+        return -1;
+    }
+
+    proc->cmt_items_drop = cmt_counter_create(cmt,
+                                              "fluentbit",
+                                              "processor",
+                                              "items_drop_total",
+                                              "Total number of items dropped by processor units.",
+                                              5,
+                                              (char *[]) {"scope", "owner",
+                                                          "processor", "stage",
+                                                          "signal"});
+    if (proc->cmt_items_drop == NULL) {
+        return -1;
+    }
+
+    proc->cmt_items_add = cmt_counter_create(cmt,
+                                             "fluentbit",
+                                             "processor",
+                                             "items_add_total",
+                                             "Total number of items added by processor units.",
+                                             5,
+                                             (char *[]) {"scope", "owner",
+                                                         "processor", "stage",
+                                                         "signal"});
+    if (proc->cmt_items_add == NULL) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static void processor_metrics_update(struct flb_processor *proc,
+                                     struct flb_processor_unit *pu,
+                                     const char *scope,
+                                     const char *owner,
+                                     const char *signal,
+                                     int in_items,
+                                     int out_items,
+                                     int item_metrics_available,
+                                     int error)
+{
+    char stage_label[32];
+    char *labels[5];
+
+    if (proc == NULL || pu == NULL || proc->cmt_invocations == NULL) {
+        return;
+    }
+    snprintf(stage_label, sizeof(stage_label) - 1, "%zu", pu->stage);
+    stage_label[sizeof(stage_label) - 1] = '\0';
+
+    labels[0] = (char *) scope;
+    labels[1] = (char *) owner;
+    labels[2] = (char *) pu->name;
+    labels[3] = (char *) stage_label;
+    labels[4] = (char *) signal;
+
+    cmt_counter_inc(proc->cmt_invocations, cfl_time_now(), 5, labels);
+
+    if (error == FLB_TRUE) {
+        cmt_counter_inc(proc->cmt_errors, cfl_time_now(), 5, labels);
+    }
+
+    if (item_metrics_available == FLB_TRUE && in_items >= 0 && out_items >= 0) {
+        cmt_counter_add(proc->cmt_items_in, cfl_time_now(), in_items, 5, labels);
+        cmt_counter_add(proc->cmt_items_out, cfl_time_now(), out_items, 5, labels);
+
+        if (in_items > out_items) {
+            cmt_counter_add(proc->cmt_items_drop, cfl_time_now(),
+                            (in_items - out_items),
+                            5, labels);
+        }
+        else if (out_items > in_items) {
+            cmt_counter_add(proc->cmt_items_add, cfl_time_now(),
+                            (out_items - in_items),
+                            5, labels);
+        }
+    }
+}
 
 static int append_raw_record_to_encoder(struct flb_log_event_encoder *encoder,
                                         char *record_base,
@@ -967,6 +1189,12 @@ int flb_processor_init(struct flb_processor *proc)
     struct mk_list *head;
     struct flb_processor_unit *pu;
 
+    ret = processor_metrics_register(proc);
+    if (ret != 0) {
+        flb_error("[processor] could not register processor metrics");
+        return -1;
+    }
+
     /* Go through every unit and initialize it */
     mk_list_foreach(head, &proc->logs) {
         pu = mk_list_entry(head, struct flb_processor_unit, _head);
@@ -1043,6 +1271,10 @@ int flb_processor_run(struct flb_processor *proc,
                       void **out_buf, size_t *out_size)
 {
     int ret;
+    int pu_error;
+    int unit_in_items;
+    int unit_out_items;
+    int item_metrics_available;
     int finalize;
     void *cur_buf = NULL;
     size_t cur_size;
@@ -1055,6 +1287,9 @@ int flb_processor_run(struct flb_processor *proc,
     struct flb_filter_instance *f_ins;
     struct flb_processor_instance *p_ins;
     struct flb_mp_chunk_cobj *chunk_cobj = NULL;
+    const char *metrics_scope;
+    const char *metrics_owner;
+    const char *metrics_signal;
 #ifdef FLB_HAVE_METRICS
     int in_records = 0;
     int out_records = 0;
@@ -1075,6 +1310,10 @@ int flb_processor_run(struct flb_processor *proc,
     else if (type == FLB_PROCESSOR_PROFILES) {
         list = &proc->profiles;
     }
+
+    metrics_scope = processor_metrics_scope(proc);
+    metrics_owner = processor_metrics_owner(proc);
+    metrics_signal = processor_signal_type_to_string(type);
 
 #ifdef FLB_HAVE_METRICS
     /* timestamp */
@@ -1099,6 +1338,16 @@ int flb_processor_run(struct flb_processor *proc,
 
         tmp_buf = NULL;
         tmp_size = 0;
+        pu_error = FLB_FALSE;
+        unit_in_items = -1;
+        unit_out_items = -1;
+        item_metrics_available = FLB_FALSE;
+
+        if (type == FLB_PROCESSOR_LOGS) {
+            unit_in_items = flb_mp_count_log_records(cur_buf, cur_size);
+            unit_out_items = unit_in_items;
+            item_metrics_available = FLB_TRUE;
+        }
 
         ret = acquire_lock(&pu->lock,
                            FLB_PROCESSOR_LOCK_RETRY_LIMIT,
@@ -1136,7 +1385,7 @@ int flb_processor_run(struct flb_processor *proc,
             }
 #ifdef FLB_HAVE_METRICS
             name = (char *) (flb_filter_name(f_ins));
-            in_records = flb_mp_count(cur_buf, cur_size);
+            in_records = flb_mp_count_log_records(cur_buf, cur_size);
             cmt_counter_add(f_ins->cmt_records, ts, in_records,
                     1, (char *[]) {name});
             cmt_counter_add(f_ins->cmt_bytes, ts, tmp_size,
@@ -1170,6 +1419,7 @@ int flb_processor_run(struct flb_processor *proc,
                 if (tmp_size == 0) {
                     *out_buf = NULL;
                     *out_size = 0;
+                    unit_out_items = 0;
 
 #ifdef FLB_HAVE_METRICS
                     /* cmetrics */
@@ -1180,6 +1430,14 @@ int flb_processor_run(struct flb_processor *proc,
                     flb_metrics_sum(FLB_METRIC_N_DROPPED,
                                     in_records, f_ins->metrics);
 #endif
+                    processor_metrics_update(proc, pu,
+                                             metrics_scope,
+                                             metrics_owner,
+                                             metrics_signal,
+                                             unit_in_items,
+                                             unit_out_items,
+                                             item_metrics_available,
+                                             pu_error);
                     release_lock(&pu->lock,
                                  FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                  FLB_PROCESSOR_LOCK_RETRY_DELAY);
@@ -1190,7 +1448,8 @@ int flb_processor_run(struct flb_processor *proc,
                 /* set new buffer */
                 cur_buf = tmp_buf;
                 cur_size = tmp_size;
-                out_records = flb_mp_count(tmp_buf, tmp_size);
+                out_records = flb_mp_count_log_records(tmp_buf, tmp_size);
+                unit_out_items = out_records;
 #ifdef FLB_HAVE_METRICS
                     if (out_records > in_records) {
                         diff = (out_records - in_records);
@@ -1219,6 +1478,7 @@ int flb_processor_run(struct flb_processor *proc,
             }
             else if (ret == FLB_FILTER_NOTOUCH) {
                 /* keep original data, do nothing */
+                unit_out_items = unit_in_items;
             }
         }
         else {
@@ -1245,6 +1505,15 @@ int flb_processor_run(struct flb_processor *proc,
                                 flb_free(cur_buf);
                             }
 
+                            pu_error = FLB_TRUE;
+                            processor_metrics_update(proc, pu,
+                                                     metrics_scope,
+                                                     metrics_owner,
+                                                     metrics_signal,
+                                                     unit_in_items,
+                                                     unit_out_items,
+                                                     item_metrics_available,
+                                                     pu_error);
                             release_lock(&pu->lock,
                                         FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                         FLB_PROCESSOR_LOCK_RETRY_DELAY);
@@ -1265,6 +1534,7 @@ int flb_processor_run(struct flb_processor *proc,
                     /* Invoke processor plugin callback */
                     ret = p_ins->p->cb_process_logs(p_ins, chunk_cobj, tag, tag_len);
                     if (ret != FLB_PROCESSOR_SUCCESS) {
+                        pu_error = FLB_TRUE;
                         flb_warn("[processor] failed to process chunk");
                     }
                     chunk_cobj->record_pos = NULL;
@@ -1289,13 +1559,24 @@ int flb_processor_run(struct flb_processor *proc,
                     }
 
                     if (finalize == FLB_TRUE) {
+                        flb_mp_chunk_cobj_normalize_groups(chunk_cobj);
+
                         if (cfl_list_size(&chunk_cobj->records) == 0) {
                             flb_log_event_encoder_reset(p_ins->log_encoder);
                             flb_mp_chunk_cobj_destroy(chunk_cobj);
 
                             *out_buf = NULL;
                             *out_size = 0;
+                            unit_out_items = 0;
 
+                            processor_metrics_update(proc, pu,
+                                                     metrics_scope,
+                                                     metrics_owner,
+                                                     metrics_signal,
+                                                     unit_in_items,
+                                                     unit_out_items,
+                                                     item_metrics_available,
+                                                     pu_error);
                             release_lock(&pu->lock,
                                         FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                         FLB_PROCESSOR_LOCK_RETRY_DELAY);
@@ -1315,6 +1596,15 @@ int flb_processor_run(struct flb_processor *proc,
                                         FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                         FLB_PROCESSOR_LOCK_RETRY_DELAY);
 
+                            pu_error = FLB_TRUE;
+                            processor_metrics_update(proc, pu,
+                                                     metrics_scope,
+                                                     metrics_owner,
+                                                     metrics_signal,
+                                                     unit_in_items,
+                                                     unit_out_items,
+                                                     item_metrics_available,
+                                                     pu_error);
                             return -1;
                         }
 
@@ -1331,6 +1621,13 @@ int flb_processor_run(struct flb_processor *proc,
                         flb_mp_chunk_cobj_destroy(chunk_cobj);
                         chunk_cobj = NULL;
                     }
+
+                    if (chunk_cobj != NULL) {
+                        unit_out_items = flb_mp_chunk_cobj_count_log_records(chunk_cobj);
+                    }
+                    else if (cur_buf != NULL) {
+                        unit_out_items = flb_mp_count_log_records(cur_buf, cur_size);
+                    }
                 }
             }
             else if (type == FLB_PROCESSOR_METRICS) {
@@ -1343,6 +1640,15 @@ int flb_processor_run(struct flb_processor *proc,
                                                        tag_len);
 
                     if (ret != FLB_PROCESSOR_SUCCESS) {
+                        pu_error = FLB_TRUE;
+                        processor_metrics_update(proc, pu,
+                                                 metrics_scope,
+                                                 metrics_owner,
+                                                 metrics_signal,
+                                                 unit_in_items,
+                                                 unit_out_items,
+                                                 item_metrics_available,
+                                                 pu_error);
                         release_lock(&pu->lock,
                                      FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                      FLB_PROCESSOR_LOCK_RETRY_DELAY);
@@ -1371,6 +1677,15 @@ int flb_processor_run(struct flb_processor *proc,
                                                       tag,
                                                       tag_len);
                     if (ret == FLB_PROCESSOR_FAILURE) {
+                        pu_error = FLB_TRUE;
+                        processor_metrics_update(proc, pu,
+                                                 metrics_scope,
+                                                 metrics_owner,
+                                                 metrics_signal,
+                                                 unit_in_items,
+                                                 unit_out_items,
+                                                 item_metrics_available,
+                                                 pu_error);
                         release_lock(&pu->lock,
                                      FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                      FLB_PROCESSOR_LOCK_RETRY_DELAY);
@@ -1385,6 +1700,14 @@ int flb_processor_run(struct flb_processor *proc,
                              * will enqueue the trace through a different mechanism,
                              * we just return saying nothing else is needed.
                              */
+                            processor_metrics_update(proc, pu,
+                                                     metrics_scope,
+                                                     metrics_owner,
+                                                     metrics_signal,
+                                                     unit_in_items,
+                                                     unit_out_items,
+                                                     item_metrics_available,
+                                                     pu_error);
                             release_lock(&pu->lock,
                                          FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                          FLB_PROCESSOR_LOCK_RETRY_DELAY);
@@ -1402,6 +1725,15 @@ int flb_processor_run(struct flb_processor *proc,
                                                         tag_len);
 
                     if (ret != FLB_PROCESSOR_SUCCESS) {
+                        pu_error = FLB_TRUE;
+                        processor_metrics_update(proc, pu,
+                                                 metrics_scope,
+                                                 metrics_owner,
+                                                 metrics_signal,
+                                                 unit_in_items,
+                                                 unit_out_items,
+                                                 item_metrics_available,
+                                                 pu_error);
                         release_lock(&pu->lock,
                                      FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                      FLB_PROCESSOR_LOCK_RETRY_DELAY);
@@ -1412,12 +1744,52 @@ int flb_processor_run(struct flb_processor *proc,
             }
         }
 
+        processor_metrics_update(proc, pu,
+                                 metrics_scope,
+                                 metrics_owner,
+                                 metrics_signal,
+                                 unit_in_items,
+                                 unit_out_items,
+                                 item_metrics_available,
+                                 pu_error);
         release_lock(&pu->lock,
                      FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                      FLB_PROCESSOR_LOCK_RETRY_DELAY);
     }
 
     /* set output buffer */
+    if (type == FLB_PROCESSOR_LOGS &&
+        cur_buf != NULL) {
+        ret = flb_mp_normalize_log_buffer_groups_msgpack(cur_buf, cur_size,
+                                                         (char **) &tmp_buf,
+                                                         &tmp_size);
+        if (ret == 0) {
+            if (cur_buf != data) {
+                flb_free(cur_buf);
+            }
+
+            cur_buf = tmp_buf;
+            cur_size = tmp_size;
+        }
+    }
+
+    if (type == FLB_PROCESSOR_LOGS &&
+        (cur_buf == NULL || flb_mp_count_log_records(cur_buf, cur_size) == 0)) {
+        if (cur_buf != data) {
+            flb_free(cur_buf);
+        }
+
+        if (out_buf != NULL) {
+            *out_buf = NULL;
+        }
+
+        if (out_size != NULL) {
+            *out_size = 0;
+        }
+
+        return 0;
+    }
+
     if (out_buf != NULL) {
         *out_buf = cur_buf;
     }

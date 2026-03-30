@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_oauth2_jwt.h>
 #include "opentelemetry.h"
 
 /* default HTTP port for OTLP/HTTP is 4318 */
@@ -35,12 +36,23 @@ struct flb_opentelemetry *opentelemetry_config_create(struct flb_input_instance 
         return NULL;
     }
     ctx->ins = ins;
+    ctx->oauth2_cfg.jwks_refresh_interval = 300;
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
         flb_free(ctx);
         return NULL;
+    }
+
+    if (ins->oauth2_jwt_config_map && mk_list_size(&ins->oauth2_jwt_properties) > 0) {
+        ret = flb_config_map_set(&ins->oauth2_jwt_properties,
+                                 ins->oauth2_jwt_config_map,
+                                 &ctx->oauth2_cfg);
+        if (ret == -1) {
+            flb_free(ctx);
+            return NULL;
+        }
     }
 
     /* Listen interface (if not set, defaults to 0.0.0.0:4318) */
@@ -56,6 +68,11 @@ struct flb_opentelemetry *opentelemetry_config_create(struct flb_input_instance 
 int opentelemetry_config_destroy(struct flb_opentelemetry *ctx)
 {
     flb_http_server_destroy(&ctx->http_server);
+
+    if (ctx->oauth2_ctx) {
+        flb_oauth2_jwt_context_destroy(ctx->oauth2_ctx);
+        ctx->oauth2_ctx = NULL;
+    }
 
     flb_free(ctx->listen);
     flb_free(ctx->tcp_port);

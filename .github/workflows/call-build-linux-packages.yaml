@@ -120,12 +120,12 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Raspbian requires ARMv6 emulation
       - name: Set up QEMU
         if: contains(matrix.distro, 'raspbian')
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           image: tonistiigi/binfmt:qemu-v7.0.0-28 # See: https://github.com/docker/setup-qemu-action/issues/198#issuecomment-2653791775
 
@@ -237,7 +237,7 @@ jobs:
 
       - name: Import GPG key for signing
         id: import_gpg
-        uses: crazy-max/ghaction-import-gpg@v6
+        uses: crazy-max/ghaction-import-gpg@v7
         with:
           gpg_private_key: ${{ secrets.gpg_private_key }}
           passphrase: ${{ secrets.gpg_private_key_passphrase }}

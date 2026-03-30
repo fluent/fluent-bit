@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto_constants.h>
+#include <fluent-bit/flb_compression.h>
 
 #include <math.h>
 
@@ -30,6 +31,19 @@
 #include "azure_blob_conf.h"
 #include "azure_blob_uri.h"
 #include "azure_blob_http.h"
+
+static const char *azb_blob_extension(struct flb_azure_blob *ctx)
+{
+    if (ctx->compress_blob != FLB_TRUE) {
+        return "";
+    }
+
+    if (ctx->compression == FLB_COMPRESSION_ALGORITHM_ZSTD) {
+        return ".zst";
+    }
+
+    return ".gz";
+}
 
 flb_sds_t azb_block_blob_blocklist_uri(struct flb_azure_blob *ctx, char *name)
 {
@@ -60,7 +74,7 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *name,
 {
     int len;
     flb_sds_t uri;
-    char *ext;
+    const char *ext;
     char *encoded_blockid;
 
     len = strlen(blockid);
@@ -75,12 +89,7 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *name,
         return NULL;
     }
 
-    if (ctx->compress_blob == FLB_TRUE) {
-        ext = ".gz";
-    }
-    else {
-        ext = "";
-    }
+    ext = azb_blob_extension(ctx);
 
     if (ctx->path) {
         if (ms > 0) {
@@ -114,7 +123,7 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *name,
 flb_sds_t azb_block_blob_uri_commit(struct flb_azure_blob *ctx,
                                     char *tag, uint64_t ms, char *str)
 {
-    char *ext;
+    const char *ext;
     flb_sds_t uri;
 
     uri = azb_uri_container(ctx);
@@ -122,12 +131,7 @@ flb_sds_t azb_block_blob_uri_commit(struct flb_azure_blob *ctx,
         return NULL;
     }
 
-    if (ctx->compress_blob == FLB_TRUE) {
-        ext = ".gz";
-    }
-    else {
-        ext = "";
-    }
+    ext = azb_blob_extension(ctx);
 
     if (ctx->path) {
         flb_sds_printf(&uri, "/%s/%s.%s.%" PRIu64 "%s?comp=blocklist", ctx->path, tag, str,

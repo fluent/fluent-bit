@@ -540,10 +540,10 @@ curl -v 'http://localhost:9090/receive' -H 'Content-Type: application/x-protobuf
 --data-binary '@prometheus_remote_write_payload.snp'\n\n");
 
     sample_file = fopen("prometheus_remote_write_payload.bin", "wb+");
-
-    fwrite(payload, 1, cfl_sds_len(payload), sample_file);
-
-    fclose(sample_file);
+    if (sample_file != NULL) {
+        fwrite(payload, 1, cfl_sds_len(payload), sample_file);
+        fclose(sample_file);
+    }
 
     cmt_encode_prometheus_remote_write_destroy(payload);
 
@@ -604,12 +604,12 @@ curl -v 'http://localhost:9090/v1/metrics' -H 'Content-Type: application/x-proto
 --data-binary '@opentelemetry_payload.bin'\n\n");
 
     sample_file = fopen("opentelemetry_payload.bin", "wb+");
+    if (sample_file != NULL) {
+        fwrite(payload, 1, cfl_sds_len(payload), sample_file);
+        fclose(sample_file);
+    }
 
-    fwrite(payload, 1, cfl_sds_len(payload), sample_file);
-
-    fclose(sample_file);
-
-    cmt_encode_prometheus_remote_write_destroy(payload);
+    cmt_encode_opentelemetry_destroy(payload);
 
     cmt_destroy(cmt);
 }
@@ -644,10 +644,10 @@ we need to encode it as JSON and to send AWS Cloudwatch with out_cloudwatch plug
 fluent-bit\n\n");
 
     sample_file = fopen("cloudwatch_emf_payload.bin", "wb+");
-
-    fwrite(mp_buf, 1, mp_size, sample_file);
-
-    fclose(sample_file);
+    if (sample_file != NULL) {
+        fwrite(mp_buf, 1, mp_size, sample_file);
+        fclose(sample_file);
+    }
 
     cmt_encode_cloudwatch_emf_destroy(mp_buf);
 

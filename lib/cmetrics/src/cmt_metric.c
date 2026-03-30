@@ -21,6 +21,8 @@
 #include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_math.h>
 #include <cmetrics/cmt_atomic.h>
+#include <stdlib.h>
+#include <string.h>
 
 static inline int metric_exchange(struct cmt_metric *metric,
                                   double new_value, double old_value)
@@ -246,4 +248,141 @@ uint64_t cmt_metric_get_timestamp(struct cmt_metric *metric)
     val = cmt_atomic_load(&metric->timestamp);
 
     return val;
+}
+
+void cmt_metric_set_timestamp(struct cmt_metric *metric, uint64_t timestamp)
+{
+    cmt_atomic_store(&metric->timestamp, timestamp);
+}
+
+void cmt_metric_set_start_timestamp(struct cmt_metric *metric, uint64_t start_timestamp)
+{
+    cmt_atomic_store(&metric->start_timestamp, start_timestamp);
+    cmt_atomic_store(&metric->start_timestamp_set, 1);
+}
+
+void cmt_metric_unset_start_timestamp(struct cmt_metric *metric)
+{
+    cmt_atomic_store(&metric->start_timestamp, 0);
+    cmt_atomic_store(&metric->start_timestamp_set, 0);
+}
+
+int cmt_metric_has_start_timestamp(struct cmt_metric *metric)
+{
+    return cmt_atomic_load(&metric->start_timestamp_set) != 0;
+}
+
+uint64_t cmt_metric_get_start_timestamp(struct cmt_metric *metric)
+{
+    return cmt_atomic_load(&metric->start_timestamp);
+}
+
+void cmt_metric_set_exp_hist_count(struct cmt_metric *metric, uint64_t count)
+{
+    cmt_atomic_store(&metric->exp_hist_count, count);
+}
+
+void cmt_metric_set_exp_hist_sum(struct cmt_metric *metric, int sum_set, double sum)
+{
+    cmt_atomic_store(&metric->exp_hist_sum_set, sum_set ? CMT_TRUE : CMT_FALSE);
+
+    if (sum_set) {
+        cmt_atomic_store(&metric->exp_hist_sum, cmt_math_d64_to_uint64(sum));
+    }
+    else {
+        cmt_atomic_store(&metric->exp_hist_sum, 0);
+    }
+}
+
+void cmt_metric_exp_hist_lock(struct cmt_metric *metric)
+{
+    while (cmt_atomic_compare_exchange(&metric->exp_hist_lock, 0, 1) == 0) {
+    }
+}
+
+void cmt_metric_exp_hist_unlock(struct cmt_metric *metric)
+{
+    cmt_atomic_store(&metric->exp_hist_lock, 0);
+}
+
+int cmt_metric_exp_hist_get_snapshot(struct cmt_metric *metric,
+                                     struct cmt_exp_histogram_snapshot *snapshot)
+{
+    if (metric == NULL || snapshot == NULL) {
+        return -1;
+    }
+
+    memset(snapshot, 0, sizeof(struct cmt_exp_histogram_snapshot));
+
+    cmt_metric_exp_hist_lock(metric);
+
+    snapshot->scale = metric->exp_hist_scale;
+    snapshot->zero_count = metric->exp_hist_zero_count;
+    snapshot->zero_threshold = metric->exp_hist_zero_threshold;
+    snapshot->positive_offset = metric->exp_hist_positive_offset;
+    snapshot->positive_count = metric->exp_hist_positive_count;
+    snapshot->negative_offset = metric->exp_hist_negative_offset;
+    snapshot->negative_count = metric->exp_hist_negative_count;
+    snapshot->count = cmt_atomic_load(&metric->exp_hist_count);
+    snapshot->sum_set = cmt_atomic_load(&metric->exp_hist_sum_set);
+    snapshot->sum = cmt_atomic_load(&metric->exp_hist_sum);
+
+    if (snapshot->positive_count > 0) {
+        if (metric->exp_hist_positive_buckets == NULL) {
+            cmt_metric_exp_hist_unlock(metric);
+            return -1;
+        }
+
+        snapshot->positive_buckets = calloc(snapshot->positive_count,
+                                            sizeof(uint64_t));
+        if (snapshot->positive_buckets == NULL) {
+            cmt_metric_exp_hist_unlock(metric);
+            return -1;
+        }
+
+        memcpy(snapshot->positive_buckets, metric->exp_hist_positive_buckets,
+               sizeof(uint64_t) * snapshot->positive_count);
+    }
+
+    if (snapshot->negative_count > 0) {
+        if (metric->exp_hist_negative_buckets == NULL) {
+            free(snapshot->positive_buckets);
+            snapshot->positive_buckets = NULL;
+            cmt_metric_exp_hist_unlock(metric);
+            return -1;
+        }
+
+        snapshot->negative_buckets = calloc(snapshot->negative_count,
+                                            sizeof(uint64_t));
+        if (snapshot->negative_buckets == NULL) {
+            free(snapshot->positive_buckets);
+            snapshot->positive_buckets = NULL;
+            cmt_metric_exp_hist_unlock(metric);
+            return -1;
+        }
+
+        memcpy(snapshot->negative_buckets, metric->exp_hist_negative_buckets,
+               sizeof(uint64_t) * snapshot->negative_count);
+    }
+
+    cmt_metric_exp_hist_unlock(metric);
+
+    return 0;
+}
+
+void cmt_metric_exp_hist_snapshot_destroy(struct cmt_exp_histogram_snapshot *snapshot)
+{
+    if (snapshot == NULL) {
+        return;
+    }
+
+    if (snapshot->positive_buckets != NULL) {
+        free(snapshot->positive_buckets);
+        snapshot->positive_buckets = NULL;
+    }
+
+    if (snapshot->negative_buckets != NULL) {
+        free(snapshot->negative_buckets);
+        snapshot->negative_buckets = NULL;
+    }
 }

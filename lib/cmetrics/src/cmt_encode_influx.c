@@ -26,6 +26,7 @@
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_exp_histogram.h>
+#include <cmetrics/cmt_atomic.h>
 #include <cmetrics/cmt_compat.h>
 
 #include <ctype.h>
@@ -193,8 +194,8 @@ static void append_metric_value(struct cmt_map *map,
 
             fake_metric = *metric;
             fake_metric.hist_buckets = bucket_values;
-            fake_metric.hist_count = metric->exp_hist_count;
-            fake_metric.hist_sum = metric->exp_hist_sum;
+            fake_metric.hist_count = bucket_values[bucket_count - 1];
+            fake_metric.hist_sum = cmt_atomic_load(&metric->exp_hist_sum);
 
             append_histogram_metric_value(&fake_map, buf, &fake_metric);
 
@@ -276,7 +277,7 @@ static void format_metric(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
     struct cmt_opts *opts;
     struct cmt_label *slabel;
 
-    if (map->type == CMT_SUMMARY && !metric->sum_quantiles_set) {
+    if (map->type == CMT_SUMMARY && !cmt_atomic_load(&metric->sum_quantiles_set)) {
         return;
     }
 
