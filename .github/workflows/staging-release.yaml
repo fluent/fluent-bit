@@ -536,8 +536,8 @@ jobs:
           TAG: ${{ steps.get-tag.outputs.tag }}
 
   staging-release-images-latest-tags:
-    # Only update latest tags for 4.0 releases
-    if: startsWith(github.event.inputs.version, '4.')
+    # Only update latest tags for 5.0 releases
+    if: startsWith(github.event.inputs.version, '5.')
     name: Release latest Linux container images
     runs-on: ubuntu-latest
     needs:
@@ -887,7 +887,7 @@ jobs:
           tag_name: v${{ inputs.version }}
           make_latest: false
 
-      - name: Release 4.2 and latest
+      - name: Release 4.2 - not latest
         uses: softprops/action-gh-release@v2
         if: startsWith(inputs.version, '4.2')
         with:
@@ -896,8 +896,19 @@ jobs:
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
+          make_latest: false
+          
+      - name: Release 5.0 and latest
+        uses: softprops/action-gh-release@v2
+        if: startsWith(inputs.version, '5.0')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          draft: false
+          generate_release_notes: true
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
           make_latest: true
-
+          
   staging-release-windows-checksums:
     name: Get Windows checksums for new release
     runs-on: ubuntu-22.04
@@ -1020,9 +1031,18 @@ jobs:
         with:
           repository: fluent/fluent-bit-docs
           token: ${{ secrets.GH_PA_TOKEN }}
+          ref: '4.1'
 
-      - name: Release 4.2 and latest
+      - name: Release 4.2 - not latest
         if: startsWith(inputs.version, '4.2')
+        uses: actions/checkout@v6
+        with:
+          repository: fluent/fluent-bit-docs
+          token: ${{ secrets.GH_PA_TOKEN }}
+          ref: '4.2'
+
+      - name: Release 5.0 and latest
+        if: startsWith(inputs.version, '5.0')
         uses: actions/checkout@v6
         with:
           repository: fluent/fluent-bit-docs
@@ -1135,8 +1155,14 @@ jobs:
         if: startsWith(inputs.version, '4.2')
         uses: actions/checkout@v6
         with:
-          ref: master
+          ref: 4.2
 
+      - name: Release 5.0
+        if: startsWith(inputs.version, '5.0')
+        uses: actions/checkout@v6
+        with:
+          ref: master
+          
       # Get the new version to use
       - name: 'Get next minor version'
         id: semvers
