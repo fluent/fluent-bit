@@ -81,19 +81,25 @@ static void set_error(int *result, int value, int err)
     errno = err;
 }
 
-static flb_sds_t otlp_doc_to_sds(struct flb_json_mut_doc *doc)
+static flb_sds_t otlp_doc_to_sds(struct flb_json_mut_doc *doc, int pretty)
 {
     char      *json_buffer;
     size_t     json_size;
     flb_sds_t  json;
 
-    json_buffer = flb_json_mut_write(doc, &json_size);
+    if (pretty == FLB_TRUE) {
+        json_buffer = flb_json_mut_write_pretty(doc, &json_size);
+    }
+    else {
+        json_buffer = flb_json_mut_write(doc, &json_size);
+    }
+
     if (json_buffer == NULL) {
         return NULL;
     }
 
     json = flb_sds_create_len(json_buffer, json_size);
-    free(json_buffer);
+    flb_free(json_buffer);
 
     return json;
 }
@@ -1332,10 +1338,12 @@ static void destroy_logs_resource_states(struct otlp_logs_resource_state *states
     flb_free(states);
 }
 
-flb_sds_t flb_opentelemetry_logs_to_otlp_json(const void *event_chunk_data,
-                                              size_t event_chunk_size,
-                                              struct flb_opentelemetry_otlp_json_options *options,
-                                              int *result)
+static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
+    const void *event_chunk_data,
+    size_t event_chunk_size,
+    struct flb_opentelemetry_otlp_json_options *options,
+    int pretty,
+    int *result)
 {
     int                              ret;
     int32_t                          record_type;
@@ -1561,7 +1569,7 @@ flb_sds_t flb_opentelemetry_logs_to_otlp_json(const void *event_chunk_data,
         return NULL;
     }
 
-    json = otlp_doc_to_sds(doc);
+    json = otlp_doc_to_sds(doc, pretty);
     flb_json_mut_doc_destroy(doc);
 
     if (json == NULL) {
@@ -1572,6 +1580,30 @@ flb_sds_t flb_opentelemetry_logs_to_otlp_json(const void *event_chunk_data,
     set_result(result, FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
 
     return json;
+}
+
+flb_sds_t flb_opentelemetry_logs_to_otlp_json(const void *event_chunk_data,
+                                              size_t event_chunk_size,
+                                              struct flb_opentelemetry_otlp_json_options *options,
+                                              int *result)
+{
+    return flb_opentelemetry_logs_to_otlp_json_render(event_chunk_data,
+                                                      event_chunk_size,
+                                                      options,
+                                                      FLB_FALSE,
+                                                      result);
+}
+
+flb_sds_t flb_opentelemetry_logs_to_otlp_json_pretty(const void *event_chunk_data,
+                                                     size_t event_chunk_size,
+                                                     struct flb_opentelemetry_otlp_json_options *options,
+                                                     int *result)
+{
+    return flb_opentelemetry_logs_to_otlp_json_render(event_chunk_data,
+                                                      event_chunk_size,
+                                                      options,
+                                                      FLB_TRUE,
+                                                      result);
 }
 
 static struct cfl_kvlist *fetch_metadata_kvlist_key(struct cfl_kvlist *kvlist,
@@ -2698,8 +2730,9 @@ static struct flb_json_mut_val *create_metric_json(struct flb_json_mut_doc *doc,
     return metric;
 }
 
-flb_sds_t flb_opentelemetry_metrics_to_otlp_json(struct cmt *context,
-                                                 int *result)
+static flb_sds_t flb_opentelemetry_metrics_to_otlp_json_render(struct cmt *context,
+                                                               int pretty,
+                                                               int *result)
 {
     size_t                     index;
     size_t                     resource_count;
@@ -2980,7 +3013,7 @@ flb_sds_t flb_opentelemetry_metrics_to_otlp_json(struct cmt *context,
     flb_free(scope_metric_arrays);
     flb_free(scope_counts);
 
-    json = otlp_doc_to_sds(doc);
+    json = otlp_doc_to_sds(doc, pretty);
     flb_json_mut_doc_destroy(doc);
 
     if (json == NULL) {
@@ -2991,6 +3024,14 @@ flb_sds_t flb_opentelemetry_metrics_to_otlp_json(struct cmt *context,
     set_result(result, FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
 
     return json;
+}
+
+flb_sds_t flb_opentelemetry_metrics_to_otlp_json(struct cmt *context,
+                                                 int *result)
+{
+    return flb_opentelemetry_metrics_to_otlp_json_render(context,
+                                                         FLB_FALSE,
+                                                         result);
 }
 
 flb_sds_t flb_opentelemetry_metrics_msgpack_to_otlp_json(const void *data,
@@ -3532,7 +3573,7 @@ flb_sds_t flb_opentelemetry_traces_to_otlp_json(struct ctrace *context,
         }
     }
 
-    output = otlp_doc_to_sds(doc);
+    output = otlp_doc_to_sds(doc, FLB_FALSE);
     flb_json_mut_doc_destroy(doc);
 
     if (output == NULL) {
@@ -3544,6 +3585,7 @@ flb_sds_t flb_opentelemetry_traces_to_otlp_json(struct ctrace *context,
 
     return output;
 }
+
 
 flb_sds_t flb_opentelemetry_traces_msgpack_to_otlp_json(const void *data,
                                                         size_t size,
