@@ -32,20 +32,26 @@ ENV MSVS_BUILD_TOOLS_VERSION="$MSVS_VERSION" `
 
 RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
     $msvs_build_tools_dist=\"${env:TMP}\${msvs_build_tools_dist_name}\"; `
-    $msvs_build_tools_channel=\"C:\local\VisualStudio.chman\"; `
     $msvs_build_tools_dist_url=\"${env:MSVS_BUILD_TOOLS_DOWNLOAD_URL}/${env:MSVS_BUILD_TOOLS_VERSION}/release/${msvs_build_tools_dist_name}\"; `
-    $msvs_build_tools_channel_url=\"${env:MSVS_BUILD_TOOLS_DOWNLOAD_URL}/${env:MSVS_BUILD_TOOLS_VERSION}/release/channel\"; `
     Write-Host \"Downloading Visual Studio Build Tools...\"; `
     Write-Host \"${msvs_build_tools_dist_url} -> ${msvs_build_tools_dist}\"; `
-    Write-Host \"${msvs_build_tools_channel_url} -> ${msvs_build_tools_channel}\"; `
-    Invoke-WebRequest -OutFile \"${msvs_build_tools_dist}\" \"${msvs_build_tools_dist_url}\"; `
-    Invoke-WebRequest -OutFile \"${msvs_build_tools_channel}\" \"${msvs_build_tools_channel_url}\"; `
+    $max_retries = 5; `
+    for ($retry = 1; $retry -le $max_retries; $retry++) { `
+      try { `
+        Invoke-WebRequest -OutFile \"${msvs_build_tools_dist}\" \"${msvs_build_tools_dist_url}\"; `
+        break; `
+      } catch { `
+        if ($retry -eq $max_retries) { `
+          throw `
+        }; `
+        Write-Host \"Download attempt $retry failed: $($_.Exception.Message)\"; `
+        Start-Sleep -Seconds (10 * $retry); `
+      } `
+    }; `
     Write-Host \"Installing Visual Studio Build Tools into ${env:MSVS_HOME}...\"; `
     $p = Start-Process \"${msvs_build_tools_dist}\" `
       -ArgumentList '--quiet ', '--wait ', '--norestart ', '--nocache', `
       \"--installPath ${env:MSVS_HOME}\", `
-      \"--channelUri ${msvs_build_tools_channel}\", `
-      \"--installChannelUri ${msvs_build_tools_channel}\", `
       '--add Microsoft.VisualStudio.Workload.VCTools', `
       '--add Microsoft.VisualStudio.Workload.MSBuildTools', `
       '--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64', `
@@ -59,8 +65,7 @@ RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
     if (-not (Test-Path \"${env:MSVS_HOME}\VC\Auxiliary\Build\vcvars64.bat\")) { `
       throw \"Visual Studio Build Tools installation is incomplete: ${env:MSVS_HOME}\VC\Auxiliary\Build\vcvars64.bat not found\" `
     }; `
-    Remove-Item -Force \"${msvs_build_tools_dist}\"; `
-    Remove-Item -Path \"${msvs_build_tools_channel}\" -Force;
+    Remove-Item -Force \"${msvs_build_tools_dist}\";
 
 ENV CMAKE_HOME="C:\cmake"
 ARG CMAKE_VERSION="3.31.6"
