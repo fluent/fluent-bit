@@ -231,7 +231,7 @@ void test_parser_time_lookup()
             continue;
         }
 
-        epoch = flb_parser_tm2time(&tm, FLB_FALSE);
+        epoch = flb_parser_tm2time(&tm, p);
         epoch -= year_diff;
         TEST_CHECK(t->epoch == epoch);
         TEST_CHECK(t->frac_seconds == ns);
@@ -517,6 +517,114 @@ void test_mysql_unquoted()
 
 }
 
+/*
+ * IANA time_zone (DST-aware) for naive timestamps; requires tzdata on the system.
+ */
+void test_parser_time_zone_iana(void)
+{
+#ifndef FLB_SYSTEM_WINDOWS
+    struct flb_config *config;
+    struct flb_parser *p;
+    struct flb_tm tm;
+    double ns;
+    time_t epoch;
+    int ret;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    if (!config) {
+        return;
+    }
+
+    p = flb_parser_create("iana_ny", "regex",
+                          "^(?<time>.*)$",
+                          FLB_FALSE,
+                          "%m/%d/%Y %H:%M:%S",
+                          "time",
+                          NULL,
+                          FLB_FALSE,
+                          FLB_TRUE,
+                          FLB_FALSE,
+                          "America/New_York",
+                          FLB_FALSE,
+                          NULL, 0, NULL, config);
+    if (!TEST_CHECK(p != NULL)) {
+        flb_config_exit(config);
+        return;
+    }
+
+    ret = flb_parser_time_lookup("07/17/2017 16:17:03", 19, 0, p, &tm, &ns);
+    TEST_CHECK(ret == 0);
+    epoch = flb_parser_tm2time(&tm, p);
+    TEST_CHECK(epoch == (time_t) 1500322623);
+
+    ret = flb_parser_time_lookup("01/15/2017 15:00:00", 19, 0, p, &tm, &ns);
+    TEST_CHECK(ret == 0);
+    epoch = flb_parser_tm2time(&tm, p);
+    TEST_CHECK(epoch == (time_t) 1484510400);
+
+    flb_parser_destroy(p);
+    flb_config_exit(config);
+#else
+    TEST_CHECK(1);
+#endif
+}
+
+/*
+ * IANA Australia/Sydney: southern-hemisphere DST (AEDT +11 vs AEST +10).
+ */
+void test_parser_time_zone_iana_australia(void)
+{
+#ifndef FLB_SYSTEM_WINDOWS
+    struct flb_config *config;
+    struct flb_parser *p;
+    struct flb_tm tm;
+    double ns;
+    time_t epoch;
+    int ret;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    if (!config) {
+        return;
+    }
+
+    p = flb_parser_create("iana_sydney", "regex",
+                          "^(?<time>.*)$",
+                          FLB_FALSE,
+                          "%m/%d/%Y %H:%M:%S",
+                          "time",
+                          NULL,
+                          FLB_FALSE,
+                          FLB_TRUE,
+                          FLB_FALSE,
+                          "Australia/Sydney",
+                          FLB_FALSE,
+                          NULL, 0, NULL, config);
+    if (!TEST_CHECK(p != NULL)) {
+        flb_config_exit(config);
+        return;
+    }
+
+    /* January: AEDT (daylight); same wall-clock seasonality as NY July test */
+    ret = flb_parser_time_lookup("01/15/2017 15:00:00", 19, 0, p, &tm, &ns);
+    TEST_CHECK(ret == 0);
+    epoch = flb_parser_tm2time(&tm, p);
+    TEST_CHECK(epoch == (time_t) 1484452800);
+
+    /* July: AEST (standard) */
+    ret = flb_parser_time_lookup("07/17/2017 16:17:03", 19, 0, p, &tm, &ns);
+    TEST_CHECK(ret == 0);
+    epoch = flb_parser_tm2time(&tm, p);
+    TEST_CHECK(epoch == (time_t) 1500272223);
+
+    flb_parser_destroy(p);
+    flb_config_exit(config);
+#else
+    TEST_CHECK(1);
+#endif
+}
+
 
 TEST_LIST = {
     { "tzone_offset", test_parser_tzone_offset},
@@ -524,5 +632,7 @@ TEST_LIST = {
     { "json_time_lookup", test_json_parser_time_lookup},
     { "regex_time_lookup", test_regex_parser_time_lookup},
     { "mysql_unquoted" , test_mysql_unquoted },
+    { "time_zone_iana", test_parser_time_zone_iana },
+    { "time_zone_iana_australia", test_parser_time_zone_iana_australia },
     { 0 }
 };

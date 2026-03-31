@@ -211,7 +211,7 @@ int flb_parser_json_do(struct flb_parser *parser,
         skip = map_size;
     }
     else {
-        time_lookup = flb_parser_tm2time(&tm, parser->time_system_timezone);
+        time_lookup = flb_parser_tm2time(&tm, parser);
     }
 
     /* Compose a new map without the time_key field */

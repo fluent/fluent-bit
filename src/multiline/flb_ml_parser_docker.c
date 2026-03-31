@@ -36,6 +36,7 @@ static struct flb_parser *docker_parser_create(struct flb_config *config)
                           FLB_TRUE,               /* time keep */
                           FLB_FALSE,              /* time strict */
                           FLB_FALSE,              /* time system timezone */
+                          NULL,                   /* time zone (IANA) */
                           FLB_FALSE,              /* no bare keys */
                           NULL,                   /* parser types */
                           0,                      /* types len */
