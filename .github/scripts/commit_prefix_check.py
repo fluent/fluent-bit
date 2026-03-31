@@ -178,6 +178,47 @@ def detect_bad_squash(body):
 # Validate commit based on expected behavior and test rules
 # ------------------------------------------------
 def validate_commit(commit):
+    VERSION_PATTERN = re.compile(
+        r"set\(FLB_VERSION_(MAJOR|MINOR|PATCH)\s+\d+\)"
+    )
+
+    def is_version_bump(commit):
+        if not commit.parents:
+            return False
+
+        diffs = commit.diff(commit.parents[0], create_patch=True)
+        found_version_change = False
+        saw_cmakelists = False
+
+        for d in diffs:
+            path = (d.b_path or "").replace("\\", "/")
+
+            if not path.endswith("CMakeLists.txt"):
+                continue
+
+            saw_cmakelists = True
+            patch = d.diff.decode(errors="ignore")
+
+            for line in patch.splitlines():
+                stripped = line.lstrip()
+
+                if not stripped:
+                    continue
+
+                if stripped.startswith(("diff --git ", "index ", "@@ ", "+++ ", "--- ")):
+                    continue
+
+                if not stripped.startswith(("+", "-")):
+                    continue
+
+                if VERSION_PATTERN.search(stripped):
+                    found_version_change = True
+                    continue
+
+                return False
+
+        return saw_cmakelists and found_version_change
+
     msg = commit.message.strip()
     first_line, *rest = msg.split("\n")
     body = "\n".join(rest)
@@ -224,6 +265,14 @@ def validate_commit(commit):
             "The repository checkout is likely missing commit parent history. "
             "Use a full-depth checkout for commit-prefix validation."
         )
+
+    # -------------------------------
+    # release special rule
+    # -------------------------------
+    if is_version_bump(commit):
+        if not first_line.startswith("release:"):
+            return False, "Version bump must use release: prefix"
+        return True, ""
 
     expected, build_optional = infer_prefix_from_paths(files)
 
