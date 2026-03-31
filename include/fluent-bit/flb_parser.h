@@ -49,6 +49,7 @@ struct flb_parser {
     char *time_key;       /* field name that contains the time */
     int time_offset;      /* fixed UTC offset */
     int time_system_timezone; /* use the system timezone as a fallback */
+    char *time_zone;      /* IANA timezone for naive timestamps (e.g. America/New_York) */
     int time_keep;        /* keep time field */
     int time_strict;      /* parse time field strictly */
     int logfmt_no_bare_keys; /* in logfmt parsers, require all keys to have values */
@@ -75,21 +76,10 @@ enum {
     FLB_PARSER_TYPE_HEX,
 };
 
-static inline time_t flb_parser_tm2time(const struct flb_tm *src,
-                                        int use_system_timezone)
-{
-    struct tm tmp;
-    time_t res;
+time_t flb_parser_tm2time_simple(const struct flb_tm *src,
+                                 int use_system_timezone);
 
-    tmp = src->tm;
-    if (use_system_timezone) {
-        tmp.tm_isdst = -1;
-        res = mktime(&tmp);
-    } else {
-        res = timegm(&tmp) - flb_tm_gmtoff(src);
-    }
-    return res;
-}
+time_t flb_parser_tm2time(const struct flb_tm *src, struct flb_parser *parser);
 
 
 struct flb_parser *flb_parser_create(const char *name, const char *format,
@@ -100,6 +90,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      int time_keep,
                                      int time_strict,
                                      int time_system_timezone,
+                                     const char *time_zone,
                                      int logfmt_no_bare_keys,
                                      struct flb_parser_types *types,
                                      int types_len,
