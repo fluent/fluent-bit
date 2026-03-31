@@ -15,6 +15,20 @@
 #include <fluent-bit/flb_mem.h>
 #include <inttypes.h>
 
+static int choose_block_size(size_t size)
+{
+    int block_size = 8 * 1024 * 1024;
+
+    while ((size_t) block_size <= size) {
+        block_size *= 2;
+        if (block_size > 64 * 1024 * 1024) {
+            return 64 * 1024 * 1024;
+        }
+    }
+
+    return block_size;
+}
+
 /*
  * GArrowTable is the central structure that represents "table" (a.k.a.
  * data frame).
@@ -45,6 +59,10 @@ static GArrowTable* parse_json(uint8_t *json, int size)
             g_object_unref(input);
             return NULL;
         }
+
+        g_object_set(options,
+                     "block-size", choose_block_size(size),
+                     NULL);
 
         reader = garrow_json_reader_new(GARROW_INPUT_STREAM(input), options, &error);
         if (reader == NULL) {
