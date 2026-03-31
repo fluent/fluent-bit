@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -637,7 +637,7 @@ static flb_sds_t get_metadata_auth_header(struct flb_splunk *ctx)
 static inline int splunk_format(const void *in_buf, size_t in_bytes,
                                 char *tag, int tag_len,
                                 char **out_buf, size_t *out_size,
-                                struct flb_splunk *ctx)
+                                struct flb_splunk *ctx, struct flb_config *config)
 {
     int ret;
     char *err;
@@ -726,7 +726,7 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
         /* Validate packaging */
         if (ret != 0) {
             /* Format invalid record */
-            err = flb_msgpack_to_json_str(2048, &map);
+            err = flb_msgpack_to_json_str(2048, &map, config->json_escape_unicode);
             if (err) {
                 /* Print error and continue processing other records */
                 flb_plg_warn(ctx->ins, "could not process or pack record: %s", err);
@@ -737,7 +737,8 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
         }
 
         /* Format as JSON */
-        record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+        record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                             config->json_escape_unicode);
         if (!record) {
             flb_errno();
             msgpack_sbuffer_destroy(&mp_sbuf);
@@ -898,7 +899,8 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
                             event_chunk->size,
                             (char *) event_chunk->tag,
                             flb_sds_len(event_chunk->tag),
-                            &buf_data, &buf_size, ctx);
+                            &buf_data, &buf_size, ctx,
+                            config);
     }
 
     if (ret == -1) {
@@ -962,14 +964,14 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
+    else if (ctx->auth_header) {
+        flb_http_add_header(c, "Authorization", 13,
+                            ctx->auth_header, flb_sds_len(ctx->auth_header));
+    }
     else if (metadata_auth_header) {
         flb_http_add_header(c, "Authorization", 13,
                             metadata_auth_header,
                             flb_sds_len(metadata_auth_header));
-    }
-    else if (ctx->auth_header) {
-        flb_http_add_header(c, "Authorization", 13,
-                            ctx->auth_header, flb_sds_len(ctx->auth_header));
     }
 
     /* Append Channel identifier header */
@@ -1070,7 +1072,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_STR, "http_passwd", "",
+     FLB_CONFIG_MAP_STR, "http_passwd", NULL,
      0, FLB_TRUE, offsetof(struct flb_splunk, http_passwd),
      "Set HTTP auth password"
     },
@@ -1183,7 +1185,7 @@ static int cb_splunk_format_test(struct flb_config *config,
     struct flb_splunk *ctx = plugin_context;
 
     return splunk_format(data, bytes, (char *) tag, tag_len,
-                         (char**) out_data, out_size,ctx);
+                         (char**) out_data, out_size, ctx, config);
 }
 
 struct flb_output_plugin out_splunk_plugin = {

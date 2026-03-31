@@ -19,8 +19,49 @@
 
 #include <simdutf.h>
 #include <fluent-bit/simdutf/flb_simdutf_connector.h>
-#include <memory.h>
 #include <memory>
+extern "C"
+{
+#include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_mem.h>
+}
+
+typedef int (*conversion_function)(const char16_t *buf, size_t len,
+                                   char **utf8_output, size_t *out_size);
+
+static int convert_from_unicode(conversion_function convert,
+                                const char *input, size_t length,
+                                char **output, size_t *out_size)
+{
+    size_t len;
+    std::unique_ptr<char16_t, decltype(&flb_free)> temp_buffer(NULL, flb_free);
+    const char16_t *aligned_input = NULL;
+    int status;
+
+    len = length;
+    if (len % 2) {
+        len--;
+    }
+    if (len < 2) {
+        return FLB_SIMDUTF_CONNECTOR_CONVERT_NOP;
+    }
+
+    /* Check alignment to determine whether to copy or not */
+    if ((uintptr_t) input % 2 == 0) {
+        aligned_input = (const char16_t *) input;
+    }
+    else {
+        temp_buffer.reset((char16_t *) flb_malloc(len));
+        if (temp_buffer.get() == NULL) {
+            flb_errno();
+            return FLB_SIMDUTF_CONNECTOR_CONVERT_ERROR;
+        }
+        memcpy(temp_buffer.get(), input, len);
+        aligned_input = temp_buffer.get();
+    }
+
+    return convert(aligned_input, len / 2, output, out_size);
+}
 
 int flb_simdutf_connector_utf8_length_from_utf16le(const char16_t *buf, size_t len)
 {
@@ -61,23 +102,24 @@ int flb_simdutf_connector_convert_utf16le_to_utf8(const char16_t *buf, size_t le
                                                   char **utf8_output, size_t *out_size)
 {
     size_t clen = 0;
-    size_t converted = 0;
-    simdutf::result result;
+    simdutf::result result = {};
 
     clen = simdutf::utf8_length_from_utf16le(buf, len);
-    /* convert_utfXXXX_to_utf8 function needs to pass allocated memory region with C++ style */
-    std::unique_ptr<char[]> output{new char[clen]};
-    converted = simdutf::convert_utf16le_to_utf8(buf, len, output.get());
-    result = simdutf::validate_utf8_with_errors(output.get(), clen);
-    if (result.error == simdutf::error_code::SUCCESS && converted > 0) {
-        std::string result_string(output.get(), clen);
+    *utf8_output = (char *) flb_malloc(clen + 1);
+    if (*utf8_output == NULL) {
+        flb_errno();
+        return FLB_SIMDUTF_CONNECTOR_CONVERT_ERROR;
+    }
 
-        *utf8_output = strdup(result_string.c_str());
-        *out_size = converted;
+    result = simdutf::convert_utf16le_to_utf8_with_errors(buf, len, *utf8_output);
+    if (result.error == simdutf::error_code::SUCCESS && result.count > 0) {
+        (*utf8_output)[result.count] = '\0';
+        *out_size = result.count;
 
         return FLB_SIMDUTF_ERROR_CODE_SUCCESS;
     }
     else {
+        flb_free(*utf8_output);
         *utf8_output = NULL;
         *out_size = 0;
 
@@ -89,23 +131,24 @@ int flb_simdutf_connector_convert_utf16be_to_utf8(const char16_t *buf, size_t le
                                                   char **utf8_output, size_t *out_size)
 {
     size_t clen = 0;
-    size_t converted = 0;
-    simdutf::result result;
+    simdutf::result result = {};
 
     clen = simdutf::utf8_length_from_utf16be(buf, len);
-    /* convert_utfXXXX_to_utf8 function needs to pass allocated memory region with C++ style */
-    std::unique_ptr<char[]> output{new char[clen]};
-    converted = simdutf::convert_utf16be_to_utf8(buf, len, output.get());
-    result = simdutf::validate_utf8_with_errors(output.get(), clen);
-    if (result.error == simdutf::error_code::SUCCESS && converted > 0) {
-        std::string result_string(output.get(), clen);
+    *utf8_output = (char *) flb_malloc(clen + 1);
+    if (*utf8_output == NULL) {
+        flb_errno();
+        return FLB_SIMDUTF_CONNECTOR_CONVERT_ERROR;
+    }
 
-        *utf8_output = strdup(result_string.c_str());
-        *out_size = converted;
+    result = simdutf::convert_utf16be_to_utf8_with_errors(buf, len, *utf8_output);
+    if (result.error == simdutf::error_code::SUCCESS && result.count > 0) {
+        (*utf8_output)[result.count] = '\0';
+        *out_size = result.count;
 
         return FLB_SIMDUTF_ERROR_CODE_SUCCESS;
     }
     else {
+        flb_free(*utf8_output);
         *utf8_output = NULL;
         *out_size = 0;
 
@@ -117,23 +160,24 @@ int flb_simdutf_connector_convert_utf16_to_utf8(const char16_t *buf, size_t len,
                                                 char **utf8_output, size_t *out_size)
 {
     size_t clen = 0;
-    size_t converted = 0;
-    simdutf::result result;
+    simdutf::result result = {};
 
     clen = simdutf::utf8_length_from_utf16(buf, len);
-    /* convert_utfXXXX_to_utf8 function needs to pass allocated memory region with C++ style */
-    std::unique_ptr<char[]> output{new char[clen]};
-    converted = simdutf::convert_utf16_to_utf8(buf, len, output.get());
-    result = simdutf::validate_utf8_with_errors(output.get(), clen);
-    if (result.error == simdutf::error_code::SUCCESS && converted > 0) {
-        std::string result_string(output.get(), clen);
+    *utf8_output = (char *) flb_malloc(clen + 1);
+    if (*utf8_output == NULL) {
+        flb_errno();
+        return FLB_SIMDUTF_CONNECTOR_CONVERT_ERROR;
+    }
 
-        *utf8_output = strdup(result_string.c_str());
-        *out_size = converted;
+    result = simdutf::convert_utf16_to_utf8_with_errors(buf, len, *utf8_output);
+    if (result.error == simdutf::error_code::SUCCESS && result.count > 0) {
+        (*utf8_output)[result.count] = '\0';
+        *out_size = result.count;
 
         return FLB_SIMDUTF_ERROR_CODE_SUCCESS;
     }
     else {
+        flb_free(*utf8_output);
         *utf8_output = NULL;
         *out_size = 0;
 
@@ -155,11 +199,7 @@ int flb_simdutf_connector_convert_from_unicode(int preferred_encoding,
                                                const char *input, size_t length,
                                                char **output, size_t *out_size)
 {
-    size_t len = 0;
-    size_t i = 0;
     int encoding = 0;
-    std::u16string str16;
-
     if (preferred_encoding == FLB_SIMDUTF_ENCODING_TYPE_UNICODE_AUTO) {
         encoding = simdutf::detect_encodings(input, length);
     }
@@ -175,46 +215,22 @@ int flb_simdutf_connector_convert_from_unicode(int preferred_encoding,
         return FLB_SIMDUTF_CONNECTOR_CONVERT_NOP;
     }
     else if ((encoding & simdutf::encoding_type::UTF16_LE) == simdutf::encoding_type::UTF16_LE) {
-        len = length;
-        if (len % 2) {
-            len--;
+        /* Skip the UTF-16 BOM */
+        if (length >= 2 && input[0] == '\xFF' && input[1] == '\xFE') {
+            input += 2;
+            length -= 2;
         }
-        if (len < 2) {
-            return FLB_SIMDUTF_CONNECTOR_CONVERT_NOP;
-        }
-        for (i = 0 ; i < len;) {
-            if (i + 2 > len) {
-                break;
-            }
-            /* little-endian */
-            int lo = input[i++] & 0xFF;
-            int hi = input[i++] & 0xFF;
-            str16.push_back(hi << 8 | lo);
-        }
-
-        return flb_simdutf_connector_convert_utf16le_to_utf8(str16.c_str(), str16.size(),
-                                                             output, out_size);
+        return convert_from_unicode(flb_simdutf_connector_convert_utf16le_to_utf8,
+                                    input, length, output, out_size);
     }
     else if ((encoding & simdutf::encoding_type::UTF16_BE) == simdutf::encoding_type::UTF16_BE) {
-        len = length;
-        if (len % 2) {
-            len--;
+        /* Skip the UTF-16 BOM */
+        if (length >= 2 && input[0] == '\xFE' && input[1] == '\xFF') {
+            input += 2;
+            length -= 2;
         }
-        if (len < 2) {
-            return FLB_SIMDUTF_CONNECTOR_CONVERT_NOP;
-        }
-        for (i = 0; i < len;) {
-            if (i + 2 > len) {
-                break;
-            }
-            /* big-endian */
-            int lo = input[i++] & 0xFF;
-            int hi = input[i++] & 0xFF;
-            str16.push_back(lo | hi << 8);
-        }
-
-        return flb_simdutf_connector_convert_utf16be_to_utf8(str16.c_str(), str16.size(),
-                                                             output, out_size);
+        return convert_from_unicode(flb_simdutf_connector_convert_utf16be_to_utf8,
+                                    input, length, output, out_size);
     }
     else {
         /* Note: UTF-32LE and UTF-32BE are used for internal usages

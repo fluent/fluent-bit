@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@
 
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_custom.h>
 
 struct flb_api *flb_api_create()
 {
@@ -37,6 +38,7 @@ struct flb_api *flb_api_create()
 
     api->output_get_property = flb_output_get_property;
     api->input_get_property = flb_input_get_property;
+    api->custom_get_property = flb_custom_get_property;
 
 #ifdef FLB_HAVE_METRICS
     api->output_get_cmt_instance = flb_output_get_cmt_instance;
@@ -46,6 +48,7 @@ struct flb_api *flb_api_create()
     api->log_print = flb_log_print;
     api->input_log_check = flb_input_log_check;
     api->output_log_check = flb_output_log_check;
+    api->custom_log_check = flb_custom_log_check;
 
     return api;
 }

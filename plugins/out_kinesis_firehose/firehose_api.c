@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -38,6 +38,7 @@
 
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/aws/flb_aws_compress.h>
+#include <fluent-bit/aws/flb_aws_aggregation.h>
 
 #include <monkey/mk_core.h>
 #include <msgpack.h>
@@ -52,6 +53,9 @@
 #include "firehose_api.h"
 
 #define ERR_CODE_SERVICE_UNAVAILABLE "ServiceUnavailableException"
+
+/* Forward declarations */
+static int send_log_events(struct flb_firehose *ctx, struct flush *buf);
 
 static struct flb_aws_header put_record_batch_header = {
     .key = "X-Amz-Target",
@@ -142,6 +146,29 @@ static int end_put_payload(struct flb_firehose *ctx, struct flush *buf,
 
 
 /*
+ * Process event with simple aggregation (Firehose version)
+ * Uses shared aggregation implementation
+ */
+static int process_event_simple_aggregation(struct flb_firehose *ctx, struct flush *buf,
+                                            const msgpack_object *obj, struct flb_time *tms,
+                                            struct flb_config *config)
+{
+    return flb_aws_aggregation_process_event(&buf->agg_buf,
+                                            buf->tmp_buf,
+                                            buf->tmp_buf_size,
+                                            &buf->tmp_buf_offset,
+                                            obj,
+                                            tms,
+                                            config,
+                                            ctx->ins,
+                                            ctx->delivery_stream,
+                                            ctx->log_key,
+                                            ctx->time_key,
+                                            ctx->time_key_format,
+                                            MAX_EVENT_SIZE);
+}
+
+/*
  * Processes the msgpack object
  * -1 = failure, record not added
  * 0 = success, record added
@@ -152,7 +179,8 @@ static int end_put_payload(struct flb_firehose *ctx, struct flush *buf,
  * which means a send must occur
  */
 static int process_event(struct flb_firehose *ctx, struct flush *buf,
-                         const msgpack_object *obj, struct flb_time *tms)
+                         const msgpack_object *obj, struct flb_time *tms,
+                         struct flb_config *config)
 {
     size_t written = 0;
     int ret;
@@ -170,8 +198,8 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
     ret = flb_msgpack_to_json(tmp_buf_ptr,
-                                  buf->tmp_buf_size - buf->tmp_buf_offset,
-                                  obj);
+                              buf->tmp_buf_size - buf->tmp_buf_offset,
+                              obj, config->json_escape_unicode);
     if (ret <= 0) {
         /*
          * negative value means failure to write to buffer,
@@ -355,6 +383,102 @@ static void reset_flush_buf(struct flb_firehose *ctx, struct flush *buf) {
     buf->data_size += strlen(ctx->delivery_stream);
 }
 
+/* Finalize and send aggregated record */
+static int send_aggregated_record(struct flb_firehose *ctx, struct flush *buf) {
+    int ret;
+    size_t agg_size;
+    size_t b64_len;
+    struct firehose_event *event;
+    void *compressed_tmp_buf;
+    size_t compressed_size;
+
+    /* Finalize the aggregated record */
+    ret = flb_aws_aggregation_finalize(&buf->agg_buf, 1, &agg_size);
+    if (ret < 0) {
+        /* No data to finalize */
+        return 0;
+    }
+
+    /* Handle compression if enabled */
+    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+        ret = flb_aws_compression_b64_truncate_compress(ctx->compression,
+                                                       MAX_B64_EVENT_SIZE,
+                                                       buf->agg_buf.agg_buf,
+                                                       agg_size,
+                                                       &compressed_tmp_buf,
+                                                       &compressed_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Unable to compress aggregated record, discarding, %s",
+                         ctx->delivery_stream);
+            flb_aws_aggregation_reset(&buf->agg_buf);
+            return 0;
+        }
+
+        /* Ensure event_buf is large enough */
+        if (buf->event_buf == NULL || buf->event_buf_size < compressed_size) {
+            flb_free(buf->event_buf);
+            buf->event_buf = compressed_tmp_buf;
+            buf->event_buf_size = compressed_size;
+            compressed_tmp_buf = NULL;
+        } else {
+            memcpy(buf->event_buf, compressed_tmp_buf, compressed_size);
+            flb_free(compressed_tmp_buf);
+        }
+        agg_size = compressed_size;
+    }
+    else {
+        /* Base64 encode the aggregated record */
+        size_t size = (agg_size * 1.5) + 4;
+        if (buf->event_buf == NULL || buf->event_buf_size < size) {
+            flb_free(buf->event_buf);
+            buf->event_buf = flb_malloc(size);
+            buf->event_buf_size = size;
+            if (buf->event_buf == NULL) {
+                flb_errno();
+                return -1;
+            }
+        }
+
+        ret = flb_base64_encode((unsigned char *) buf->event_buf, size, &b64_len,
+                                (unsigned char *) buf->agg_buf.agg_buf, agg_size);
+        if (ret != 0) {
+            flb_errno();
+            return -1;
+        }
+        agg_size = b64_len;
+    }
+
+    /* Copy to tmp_buf for sending */
+    if (buf->tmp_buf_size < agg_size) {
+        flb_plg_error(ctx->ins, "Aggregated record too large for buffer");
+        flb_aws_aggregation_reset(&buf->agg_buf);
+        return 0;
+    }
+
+    memcpy(buf->tmp_buf, buf->event_buf, agg_size);
+
+    /* Create event record */
+    event = &buf->events[0];
+    event->json = buf->tmp_buf;
+    event->len = agg_size;
+    event->timestamp.tv_sec = 0;
+    event->timestamp.tv_nsec = 0;
+    buf->event_index = 1;
+
+    /* Calculate data_size for the payload */
+    buf->data_size = PUT_RECORD_BATCH_HEADER_LEN + PUT_RECORD_BATCH_FOOTER_LEN;
+    buf->data_size += strlen(ctx->delivery_stream);
+    buf->data_size += agg_size + PUT_RECORD_BATCH_PER_RECORD_LEN;
+
+    /* Send the aggregated record */
+    ret = send_log_events(ctx, buf);
+
+    /* Reset aggregation buffer */
+    flb_aws_aggregation_reset(&buf->agg_buf);
+
+    return ret;
+}
+
 /* constructs a put payload, and then sends */
 static int send_log_events(struct flb_firehose *ctx, struct flush *buf) {
     int ret;
@@ -431,7 +555,8 @@ static int send_log_events(struct flb_firehose *ctx, struct flush *buf) {
  * Processes the msgpack object, sends the current batch if needed
  */
 static int add_event(struct flb_firehose *ctx, struct flush *buf,
-                     const msgpack_object *obj, struct flb_time *tms)
+                     const msgpack_object *obj, struct flb_time *tms,
+                     struct flb_config *config)
 {
     int ret;
     struct firehose_event *event;
@@ -443,9 +568,49 @@ static int add_event(struct flb_firehose *ctx, struct flush *buf,
         reset_flush_buf(ctx, buf);
     }
 
+    /* Use simple aggregation if enabled */
+    if (ctx->simple_aggregation) {
+retry_add_event_agg:
+        retry_add = FLB_FALSE;
+        ret = process_event_simple_aggregation(ctx, buf, obj, tms, config);
+        if (ret < 0) {
+            return -1;
+        }
+        else if (ret == 1) {
+            /* Buffer full - check if buffer was empty before sending (record too large) */
+            if (buf->agg_buf.agg_buf_offset == 0) {
+                flb_plg_warn(ctx->ins, "Discarding unprocessable record (too large for aggregation buffer), %s",
+                             ctx->delivery_stream);
+                reset_flush_buf(ctx, buf);
+                return 0;
+            }
+
+            /* Send aggregated record and retry */
+            ret = send_aggregated_record(ctx, buf);
+            reset_flush_buf(ctx, buf);
+            if (ret < 0) {
+                return -1;
+            }
+            retry_add = FLB_TRUE;
+        }
+        else if (ret == 2) {
+            /* Discard this record */
+            flb_plg_warn(ctx->ins, "Discarding large or unprocessable record, %s",
+                         ctx->delivery_stream);
+            return 0;
+        }
+
+        if (retry_add == FLB_TRUE) {
+            goto retry_add_event_agg;
+        }
+
+        return 0;
+    }
+
+    /* Normal processing without aggregation */
 retry_add_event:
     retry_add = FLB_FALSE;
-    ret = process_event(ctx, buf, obj, tms);
+    ret = process_event(ctx, buf, obj, tms, config);
     if (ret < 0) {
         return -1;
     }
@@ -510,7 +675,8 @@ send:
  * return value is the number of events processed (number sent is stored in buf)
  */
 int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
-                             const char *data, size_t bytes)
+                             const char *data, size_t bytes,
+                             struct flb_config *config)
 {
     // size_t off = 0;
     int i = 0;
@@ -573,7 +739,7 @@ int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
                     if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
                         found = FLB_TRUE;
                         val = (kv+j)->val;
-                        ret = add_event(ctx, buf, &val, &log_event.timestamp);
+                        ret = add_event(ctx, buf, &val, &log_event.timestamp, config);
                         if (ret < 0 ) {
                             goto error;
                         }
@@ -591,7 +757,7 @@ int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
             continue;
         }
 
-        ret = add_event(ctx, buf, &map, &log_event.timestamp);
+        ret = add_event(ctx, buf, &map, &log_event.timestamp, config);
         if (ret < 0 ) {
             goto error;
         }
@@ -600,7 +766,13 @@ int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
     flb_log_event_decoder_destroy(&log_decoder);
 
     /* send any remaining events */
-    ret = send_log_events(ctx, buf);
+    if (ctx->simple_aggregation) {
+        /* Send any remaining aggregated data */
+        ret = send_aggregated_record(ctx, buf);
+    }
+    else {
+        ret = send_log_events(ctx, buf);
+    }
     reset_flush_buf(ctx, buf);
 
     if (ret < 0) {
@@ -950,6 +1122,9 @@ int put_record_batch(struct flb_firehose *ctx, struct flush *buf,
 void flush_destroy(struct flush *buf)
 {
     if (buf) {
+        if (buf->agg_buf_initialized) {
+            flb_aws_aggregation_destroy(&buf->agg_buf);
+        }
         flb_free(buf->tmp_buf);
         flb_free(buf->out_buf);
         flb_free(buf->events);

@@ -1,0 +1,335 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: spec test on nuttx
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+    paths:
+      - ".github/workflows/spec_test_on_nuttx.yml"
+      - "core/**"
+      - "!core/deps/**"
+      - "product-mini/**"
+      - "!samples/workload/**"
+      - "tests/wamr-test-suites/**"
+      - "wamr-compiler/**"
+      - "wamr-sdk/**"
+  schedule:
+    - cron:  '0 0 * * *'
+
+  workflow_dispatch:
+
+# Note on INTERPRETERS_WAMR_STACK_GUARD_SIZE:
+# https://github.com/apache/nuttx-apps/pull/2241 is not included in
+# releases/12.4 branch as of writing this.
+env:
+  LLVM_CACHE_SUFFIX: "build-llvm_libraries_ex"
+  WASI_SDK_PATH: "/opt/wasi-sdk"
+
+permissions:
+  contents: read
+
+jobs:
+  build_llvm_libraries:
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/build_llvm_libraries.yml
+    with:
+      os: "ubuntu-22.04"
+      arch: "ARM RISCV AArch64"
+      container_image: ghcr.io/no1wudi/nuttx/apache-nuttx-ci-linux@sha256:8c4e00b607d4d6d66ba8f51c4544819a616eac69d3a2ac669e2af2150e2eb0f9
+
+  build_llvm_libraries_xtensa:
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/build_llvm_libraries.yml
+    with:
+      os: "ubuntu-22.04"
+      arch: "Xtensa"
+      extra_build_llvm_options: "--platform xtensa"
+      cache_key_suffix: "-xtensa"
+      container_image: ghcr.io/no1wudi/nuttx/apache-nuttx-ci-linux@sha256:8c4e00b607d4d6d66ba8f51c4544819a616eac69d3a2ac669e2af2150e2eb0f9
+
+  spec_test_on_qemu:
+    runs-on: ubuntu-latest
+    needs: [build_llvm_libraries, build_llvm_libraries_xtensa]
+    container:
+      image: ghcr.io/no1wudi/nuttx/apache-nuttx-ci-linux@sha256:8c4e00b607d4d6d66ba8f51c4544819a616eac69d3a2ac669e2af2150e2eb0f9
+    strategy:
+      matrix:
+        target_config: [
+          # {
+          #   config: "boards/arm64/qemu/qemu-armv8a/configs/nsh",
+          #   target: "aarch64_vfp",
+          #   fpu_type: "fp"
+          # },
+          # {
+          #   config: "boards/arm/imx6/sabre-6quad/configs/nsh",
+          #   target: "thumbv7",
+          #   fpu_type: "none"
+          # },
+          {
+            config: "boards/arm/imx6/sabre-6quad/configs/nsh",
+            target: "thumbv7_vfp",
+            fpu_type: "dp"
+          },
+          {
+            config: "boards/risc-v/qemu-rv/rv-virt/configs/nsh",
+            target: "riscv32",
+            fpu_type: "none"
+          },
+          #{
+          #  config: "boards/risc-v/qemu-rv/rv-virt/configs/nsh",
+          #  target: "riscv32_ilp32f",
+          #  fpu_type: "fp"
+          #},
+          # {
+          #   config: "boards/risc-v/qemu-rv/rv-virt/configs/nsh",
+          #   target: "riscv32_ilp32d",
+          #   fpu_type: "dp"
+          # },
+          {
+            config: "boards/risc-v/qemu-rv/rv-virt/configs/nsh64",
+            target: "riscv64",
+            fpu_type: "none"
+          },
+          {
+            config: "boards/xtensa/esp32s3/esp32s3-devkit/configs/qemu_debug",
+            target: "xtensa",
+            fpu_type: "none"
+          },
+        ]
+
+        wamr_test_option: [
+          {
+            mode: "-t aot",
+            option: "CONFIG_INTERPRETERS_WAMR_AOT"
+          },
+          {
+            mode: "-t aot -X",
+            option: "CONFIG_INTERPRETERS_WAMR_AOT"
+          },
+          # {
+          #   mode: "-t classic-interp",
+          #   option: "CONFIG_INTERPRETERS_WAMR_CLASSIC"
+          # },
+          # {
+          #   mode: "-t fast-interp",
+          #   option: "CONFIG_INTERPRETERS_WAMR_FAST"
+          # },
+        ]
+
+        wamr_feature_option:
+          # Empty option for default
+          - { option: "", mode: "" }
+          # need to install menhir
+          # - { option: "CONFIG_INTERPRETERS_WAMR_GC CONFIG_INTERPRETERS_WAMR_AOT_STACK_FRAME", mode: "-G" }
+
+        exclude:
+          # XIP is not fully supported yet on RISCV64, some relocations can not be resolved
+          - target_config: { config: "boards/risc-v/qemu-rv/rv-virt/configs/nsh64" }
+            wamr_test_option: { mode: "-t aot -X" }
+
+          # Our xtensa environment doesn't have enough memory
+          - target_config: { target: "xtensa" }
+            wamr_feature_option: { mode: "-G" }
+
+    steps:
+      # Note: we use an unreleased version nuttx for xtensa because
+      # 12.4 doesn't contain necessary esp32s3 changes.
+      - name: Checkout NuttX
+        uses: actions/checkout@v4
+        with:
+          repository: apache/nuttx
+          ref: ${{ matrix.target_config.target == 'xtensa' && '985d395b025cf2012b22f6bb4461959fa6d87645' || 'releases/12.9' }}
+          path: nuttx
+
+      - name: Checkout NuttX Apps
+        uses: actions/checkout@v4
+        with:
+          repository: apache/nuttx-apps
+          ref: ${{ matrix.target_config.target == 'xtensa' && '2ef3eb25c0cec944b13792185f7e5d5a05990d5f' || 'releases/12.9' }}
+          path: apps
+
+      - name: Checkout WAMR
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          path: apps/interpreters/wamr/wamr
+
+      - name: Get LLVM libraries
+        if: contains(matrix.wamr_test_option.mode, 'aot')
+        id: retrieve_llvm_libs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ./core/deps/llvm/build/bin
+            ./core/deps/llvm/build/include
+            ./core/deps/llvm/build/lib
+            ./core/deps/llvm/build/libexec
+            ./core/deps/llvm/build/share
+          key: ${{ matrix.target_config.target == 'xtensa' && needs.build_llvm_libraries_xtensa.outputs.cache_key || needs.build_llvm_libraries.outputs.cache_key }}
+
+      - name: Quit if cache miss
+        if: contains(matrix.wamr_test_option.mode, 'aot') && steps.retrieve_llvm_libs.outputs.cache-hit != 'true'
+        run: echo "::error::can not get prebuilt llvm libraries" && exit 1
+
+      - name: Copy LLVM
+        if: contains(matrix.wamr_test_option.mode, 'aot')
+        run: cp -r core/deps/llvm apps/interpreters/wamr/wamr/core/deps/llvm
+
+      - name: Build wamrc
+        if: contains(matrix.wamr_test_option.mode, 'aot')
+        working-directory: apps/interpreters/wamr/wamr/wamr-compiler
+        run: |
+          cmake -B build -DWAMR_BUILD_SHRUNK_MEMORY=0 -S .
+          cmake --build build
+
+      # the nuttx version we use for xtensa requires esptool.py newer than
+      # what we have in our version of the apache-nuttx-ci-linux image.
+      - name: Install the latest esptool.py (xtensa)
+        if: matrix.target_config.target == 'xtensa'
+        run: |
+          pip3 install esptool==4.7.0
+          esptool.py version
+
+      - name: Configure NuttX
+        run: |
+          tools/configure.sh ${{ matrix.target_config.config }}
+        working-directory: nuttx
+
+      # depending on configurations, the iwasm command line generated
+      # by spec-test-script can be longer than the default NSH_LINELEN,
+      # which is 64 or 80.
+      - name: Enable WAMR for NuttX
+        run: |
+          kconfig-tweak --enable CONFIG_INTERPRETERS_WAMR
+          kconfig-tweak --enable CONFIG_INTERPRETERS_WAMR_LOG
+          kconfig-tweak --enable CONFIG_INTERPRETERS_WAMR_LIBC_BUILTIN
+          kconfig-tweak --enable CONFIG_INTERPRETERS_WAMR_REF_TYPES
+          kconfig-tweak --enable CONFIG_INTERPRETERS_WAMR_ENABLE_SPEC_TEST
+          kconfig-tweak --enable CONFIG_INTERPRETERS_WAMR_SHARED_MEMORY
+          kconfig-tweak --enable CONFIG_INTERPRETERS_WAMR_BULK_MEMORY
+          kconfig-tweak --set-val CONFIG_INTERPRETERS_WAMR_STACK_GUARD_SIZE 1024
+          kconfig-tweak --enable CONFIG_FS_HOSTFS
+          kconfig-tweak --enable CONFIG_ARM_SEMIHOSTING_HOSTFS
+          kconfig-tweak --enable CONFIG_ARM_SEMIHOSTING_HOSTFS_CACHE_COHERENCE
+          kconfig-tweak --enable CONFIG_RISCV_SEMIHOSTING_HOSTFS
+          kconfig-tweak --enable CONFIG_RISCV_SEMIHOSTING_HOSTFS_CACHE_COHERENCE
+          kconfig-tweak --enable CONFIG_XTENSA_SEMIHOSTING_HOSTFS
+          kconfig-tweak --enable CONFIG_XTENSA_SEMIHOSTING_HOSTFS_CACHE_COHERENCE
+          kconfig-tweak --enable CONFIG_LIBC_FLOATINGPOINT
+          kconfig-tweak --set-val CONFIG_NSH_LINELEN 255
+        working-directory: nuttx
+
+      - name: Set WAMR stack size for NuttX
+        if: matrix.target_config.target != 'xtensa'
+        run: |
+          kconfig-tweak --set-val CONFIG_INTERPRETERS_WAMR_STACKSIZE 327680
+        working-directory: nuttx
+
+      # because qemu doesn't have a proper emulation of esp32s3 psram,
+      # we are limited to the internal ram, which is about 400KB.
+      - name: Set WAMR stack size for NuttX (xtensa)
+        if: matrix.target_config.target == 'xtensa'
+        run: |
+          kconfig-tweak --set-val CONFIG_INTERPRETERS_WAMR_STACKSIZE 25600
+        working-directory: nuttx
+
+      - name: Enable WAMR interpreter/aot runtime for NuttX
+        if: matrix.wamr_test_option.option != ''
+        run: |
+          for x in ${{ matrix.wamr_test_option.option }}; do
+            kconfig-tweak --enable $x
+          done
+        working-directory: nuttx
+
+      - name: Enable WAMR Features for NuttX
+        if: matrix.wamr_feature_option.option != ''
+        run: |
+          for x in ${{ matrix.wamr_feature_option.option }}; do
+            kconfig-tweak --enable $x
+          done
+        working-directory: nuttx
+
+      - name: Disable FPU for NuttX
+        if: matrix.target_config.fpu_type == 'none'
+        run: |
+          kconfig-tweak --disable CONFIG_ARCH_FPU
+        working-directory: nuttx
+
+      - name: Disable DPFPU for NuttX
+        if: matrix.target_config.fpu_type == 'fp'
+        run: |
+          kconfig-tweak --disable CONFIG_ARCH_DPFPU
+        working-directory: nuttx
+
+      # Note: while a real hardware would need
+      # INTERPRETERS_WAMR_MEM_DUAL_BUS_MIRROR=y,
+      # it doesn't work with xtensa qemu which we use on the CI because it
+      # doesn't have a proper emulation of I/D separate mappings.
+      # we work it around by using INTERPRETERS_WAMR_MEM_DUAL_BUS_MIRROR=n.
+      # this configuration won't work on a real hardware.
+      - name: Tweak NuttX config (xtensa)
+        if: matrix.target_config.target == 'xtensa'
+        run: |
+          kconfig-tweak --enable CONFIG_INTERPRETERS_WAMR_AOT_WORD_ALIGN_READ
+          kconfig-tweak --disable CONFIG_INTERPRETERS_WAMR_MEM_DUAL_BUS_MIRROR
+        working-directory: nuttx
+
+      - name: Build NuttX
+        run: |
+          make olddefconfig
+          make -j$(nproc)
+        working-directory: nuttx
+
+      # for xtensa, build a 8MB firmware image.
+      # simple boot is assumed. (thus the nuttx.bin offset in the image is 0)
+      # qemu will infer the flash size from the file size.
+      - name: Post build processing (xtensa)
+        if: matrix.target_config.target == 'xtensa'
+        run: |
+          cd nuttx
+          dd if=/dev/zero of=flash.img bs=1024 count=8192
+          dd if=nuttx.bin of=flash.img conv=notrunc
+          mv flash.img nuttx
+
+      - name: Build firmware path
+        id: build_firmware_path
+        run: |
+          echo "firmware=$PWD/nuttx/nuttx" >> $GITHUB_OUTPUT
+
+      # for xtensa, use the espressif fork of qemu, which has esp32s3 support.
+      - name: Install QEMU (xtensa)
+        if: matrix.target_config.target == 'xtensa'
+        run: |
+          apt-get remove -y qemu-system-misc
+          apt-get update && apt-get install -y libsdl2-2.0-0
+          ./.github/scripts/install_qemu_xtensa.sh
+          qemu-system-xtensa --version
+        working-directory: apps/interpreters/wamr/wamr
+
+      - name: Test
+        run: |
+          cd apps/interpreters/wamr/wamr/tests/wamr-test-suites
+          ./test_wamr.sh -s spec ${{ matrix.wamr_test_option.mode }} -m ${{ matrix.target_config.target }} -b -Q -F ${{ steps.build_firmware_path.outputs.firmware }} ${{ matrix.wamr_feature_option.mode}}
+
+      - name: pack the log
+        if: always()
+        run: |
+          mkdir log
+          cp $PWD/nuttx/.config log/dot-config
+          cp ${{ steps.build_firmware_path.outputs.firmware }} log
+          tar -C apps/interpreters/wamr/wamr/tests/wamr-test-suites/workspace -cvzf log/report.tgz report
+
+      - name: upload the log
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: spec-test-log-${{ github.run_id }}-${{ strategy.job-index }}-${{ matrix.target_config.target }}
+          path: log

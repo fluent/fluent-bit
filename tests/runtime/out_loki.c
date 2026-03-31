@@ -644,6 +644,52 @@ void flb_test_remove_keys()
     flb_destroy(ctx);
 }
 
+void flb_test_remove_keys_workers()
+{
+    int ret;
+    int i;
+    int size = sizeof(JSON_LABEL_KEYS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error",
+                    NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Loki output with multiple workers */
+    out_ffd = flb_output(ctx, (char *) "loki", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "remove_keys", "foo, $data['l_key']",
+                   "workers", "2",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_remove_keys,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest multiple data samples */
+    for (i = 0; i < 10; i++) {
+        flb_lib_push(ctx, in_ffd, (char *) JSON_LABEL_KEYS, size);
+    }
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 static void cb_check_label_map_path(void *ctx, int ffd,
                                     int res_ret, void *res_data, size_t res_size,
                                     void *data)
@@ -972,6 +1018,7 @@ TEST_LIST = {
     {"remove_keys_remove_map" , flb_test_remove_map},
     {"labels_ra"              , flb_test_labels_ra },
     {"remove_keys"            , flb_test_remove_keys },
+    {"remove_keys_workers"    , flb_test_remove_keys_workers },
     {"basic"                  , flb_test_basic },
     {"labels"                 , flb_test_labels },
     {"label_keys"             , flb_test_label_keys },

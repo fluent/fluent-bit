@@ -195,8 +195,8 @@ static flb_sds_t build_request_body(struct flb_filter_nightfall *ctx,
     msgpack_pack_str_with_body(&req_pk, "policyUUIDs", 11);
     msgpack_pack_array(&req_pk, 1);
     msgpack_pack_str_with_body(&req_pk, ctx->policy_id, 36);
-    
-    request_body = flb_msgpack_raw_to_json_sds(req_sbuf.data, req_sbuf.size);
+
+    request_body = flb_msgpack_raw_to_json_sds(req_sbuf.data, req_sbuf.size, FLB_TRUE);
 
     msgpack_sbuffer_destroy(&req_sbuf);
     flb_sds_destroy(num_str);

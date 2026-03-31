@@ -33,6 +33,7 @@ struct cmt_mpack_map_entry_callback_t {
 };
 
 int cmt_mpack_consume_double_tag(mpack_reader_t *reader, double *output_buffer);
+int cmt_mpack_consume_int_tag(mpack_reader_t *reader, int64_t *output_buffer);
 int cmt_mpack_consume_uint_tag(mpack_reader_t *reader, uint64_t *output_buffer);
 int cmt_mpack_consume_string_tag(mpack_reader_t *reader, cfl_sds_t *output_buffer);
 int cmt_mpack_unpack_map(mpack_reader_t *reader, 

@@ -23,7 +23,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs glibc-devel \
-    libyaml-devel zlib-devel libcurl-devel \
+    libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -48,7 +48,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    libyaml-devel zlib-devel libcurl-devel \
+    libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -73,7 +73,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    libyaml-devel zlib-devel libcurl-devel \
+    libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -100,7 +100,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    libyaml-devel zlib-devel libcurl-devel \
+    libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -130,6 +130,7 @@ WORKDIR /tmp/fluent-bit/build/
 # ARG CFLAGS
 ARG CMAKE_INSTALL_PREFIX=/opt/fluent-bit/
 ARG CMAKE_INSTALL_SYSCONFDIR=/etc/
+ARG FLB_SIMD=On
 ARG FLB_RELEASE=On
 ARG FLB_TRACE=On
 ARG FLB_SQLDB=On
@@ -141,6 +142,7 @@ ARG FLB_CHUNK_TRACE=On
 
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
+    -DFLB_SIMD="$FLB_SIMD" \
     -DFLB_RELEASE="$FLB_RELEASE" \
     -DFLB_TRACE="$FLB_TRACE" \
     -DFLB_SQLDB="$FLB_SQLDB" \

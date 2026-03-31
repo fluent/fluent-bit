@@ -908,7 +908,6 @@ typedef enum {
 } nghttp2_data_flag;
 
 #ifndef NGHTTP2_NO_SSIZE_T
-
 /**
  * @functypedef
  *
@@ -977,9 +976,7 @@ typedef enum {
  * Returning :enum:`nghttp2_error.NGHTTP2_ERR_CALLBACK_FAILURE` will
  * signal the entire session failure.
  */
-
-typedef ptrdiff_t ssize_t;
- typedef ssize_t (*nghttp2_data_source_read_callback)(
+typedef ssize_t (*nghttp2_data_source_read_callback)(
   nghttp2_session *session, int32_t stream_id, uint8_t *buf, size_t length,
   uint32_t *data_flags, nghttp2_data_source *source, void *user_data);
 

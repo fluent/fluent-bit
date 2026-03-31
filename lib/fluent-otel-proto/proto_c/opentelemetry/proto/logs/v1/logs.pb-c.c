@@ -230,7 +230,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__logs__v1__resource_l
   {
     "resource",
     1,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Logs__V1__ResourceLogs, resource),
@@ -294,7 +294,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__logs__v1__scope_logs
   {
     "scope",
     1,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Logs__V1__ScopeLogs, scope),
@@ -353,7 +353,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__logs__v1__scope_logs__des
   (ProtobufCMessageInit) opentelemetry__proto__logs__v1__scope_logs__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCFieldDescriptor opentelemetry__proto__logs__v1__log_record__field_descriptors[10] =
+static const ProtobufCFieldDescriptor opentelemetry__proto__logs__v1__log_record__field_descriptors[11] =
 {
   {
     "time_unix_nano",
@@ -394,7 +394,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__logs__v1__log_record
   {
     "body",
     5,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Logs__V1__LogRecord, body),
@@ -475,11 +475,24 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__logs__v1__log_record
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "event_name",
+    12,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_STRING,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Logs__V1__LogRecord, event_name),
+    NULL,
+    &protobuf_c_empty_string,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned opentelemetry__proto__logs__v1__log_record__field_indices_by_name[] = {
   4,   /* field[4] = attributes */
   3,   /* field[3] = body */
   5,   /* field[5] = dropped_attributes_count */
+  10,   /* field[10] = event_name */
   6,   /* field[6] = flags */
   9,   /* field[9] = observed_time_unix_nano */
   1,   /* field[1] = severity_number */
@@ -492,7 +505,7 @@ static const ProtobufCIntRange opentelemetry__proto__logs__v1__log_record__numbe
 {
   { 1, 0 },
   { 5, 3 },
-  { 0, 10 }
+  { 0, 11 }
 };
 const ProtobufCMessageDescriptor opentelemetry__proto__logs__v1__log_record__descriptor =
 {
@@ -502,7 +515,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__logs__v1__log_record__des
   "Opentelemetry__Proto__Logs__V1__LogRecord",
   "opentelemetry.proto.logs.v1",
   sizeof(Opentelemetry__Proto__Logs__V1__LogRecord),
-  10,
+  11,
   opentelemetry__proto__logs__v1__log_record__field_descriptors,
   opentelemetry__proto__logs__v1__log_record__field_indices_by_name,
   2,  opentelemetry__proto__logs__v1__log_record__number_ranges,

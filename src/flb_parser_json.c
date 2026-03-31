@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_pack_json.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_parser_decoder.h>
 
@@ -60,8 +61,8 @@ int flb_parser_json_do(struct flb_parser *parser,
     consumed = 0;
 
     /* Convert incoming in_buf JSON message to message pack format */
-    ret = flb_pack_json_recs(in_buf, in_size, &mp_buf, &mp_size, &root_type,
-                             &records, &consumed);
+    ret = flb_pack_json_recs(in_buf, in_size, &mp_buf, &mp_size,
+                             &root_type, &records, &consumed);
     if (ret != 0) {
         return -1;
     }

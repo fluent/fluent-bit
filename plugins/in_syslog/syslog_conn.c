@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -178,6 +178,8 @@ struct syslog_conn *syslog_conn_add(struct flb_connection *connection,
     conn->ins     = ctx->ins;
     conn->buf_len = 0;
     conn->buf_parsed = 0;
+    conn->frame_expected_len = 0;
+    conn->frame_have_len = 0;
 
     /* Allocate read buffer */
     conn->buf_data = flb_malloc(ctx->buffer_chunk_size);

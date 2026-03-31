@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -587,7 +587,8 @@ static int opensearch_format(struct flb_config *config,
         }
 
         /* Convert msgpack to JSON */
-        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
+        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size,
+                                              config->json_escape_unicode);
         msgpack_sbuffer_destroy(&tmp_sbuf);
         if (!out_buf) {
             flb_log_event_decoder_destroy(&log_decoder);
@@ -684,6 +685,11 @@ static int cb_opensearch_init(struct flb_output_instance *ins,
     ctx = flb_os_conf_create(ins, config);
     if (!ctx) {
         flb_plg_error(ins, "cannot initialize plugin");
+        return -1;
+    }
+
+    if (ctx->index == NULL && ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
+        flb_plg_error(ins, "cannot initialize plugin, index is not set and logstash_format and generate_id are both off");
         return -1;
     }
 
@@ -881,7 +887,8 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
 
     /* Convert format */
     if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
-        pack = flb_msgpack_raw_to_json_sds(event_chunk->data, event_chunk->size);
+        pack = flb_msgpack_raw_to_json_sds(event_chunk->data, event_chunk->size,
+                                           config->json_escape_unicode);
         if (pack) {
             ret = 0;
 
@@ -967,6 +974,10 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
         flb_plg_warn(ctx->ins, "http_do=%i URI=%s", ret, ctx->uri);
+        if (signature) {
+            flb_sds_destroy(signature);
+            signature = NULL;
+        }
         goto retry;
     }
     else {
@@ -980,6 +991,10 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
             else {
                 flb_plg_error(ctx->ins, "HTTP status=%i URI=%s",
                               c->resp.status, ctx->uri);
+            }
+            if (signature) {
+                flb_sds_destroy(signature);
+                signature = NULL;
             }
             goto retry;
         }
@@ -1014,6 +1029,10 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
                         fflush(stderr);
                     }
                 }
+                if (signature) {
+                    flb_sds_destroy(signature);
+                    signature = NULL;
+                }
                 goto retry;
             }
             else {
@@ -1022,6 +1041,10 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
             }
         }
         else {
+            if (signature) {
+                flb_sds_destroy(signature);
+                signature = NULL;
+            }
             goto retry;
         }
     }

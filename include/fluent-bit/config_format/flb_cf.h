@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -173,6 +173,11 @@ struct cfl_variant *flb_cf_section_property_add(struct flb_cf *cf,
                                               struct cfl_kvlist *kv_list,
                                               char *k_buf, size_t k_len,
                                               char *v_buf, size_t v_len);
+
+struct cfl_variant *flb_cf_section_property_add_variant(struct flb_cf *cf,
+                                                        struct cfl_kvlist *kv_list,
+                                                        char *k_buf, size_t k_len,
+                                                        struct cfl_variant *variant);
 
 struct cfl_array *flb_cf_section_property_add_list(struct flb_cf *cf,
                                                    struct cfl_kvlist *kv_list,

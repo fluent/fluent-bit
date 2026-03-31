@@ -1,0 +1,57 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: wamr_wasi_extensions
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+    paths:
+      - ".github/workflows/wamr_wasi_extensions.yml"
+      - "wamr_wasi_extensios/**"
+      - "core/iwasm/libraries/wasi-nn/include/**"
+      - "core/iwasm/libraries/lib-socket/**"
+  # allow to be triggered manually
+  workflow_dispatch:
+
+# Cancel any in-flight jobs for the same PR/branch so there's only one active
+# at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_wamr_wasi_extensions:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, macos-13, macos-14]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install-wasi-sdk-wabt
+        uses: ./.github/actions/install-wasi-sdk-wabt
+        with:
+          os: ${{ matrix.os }}
+
+      - name: Build wamr-wasi-extensions
+        run: |
+          mkdir dist
+          ./build_libs.sh $(pwd)/dist/wamr-wasi-extensions
+        working-directory: wamr-wasi-extensions
+
+      - name: Build wamr-wasi-extensions samples
+        run: |
+          ./build_samples.sh $(pwd)/dist/wamr-wasi-extensions
+        working-directory: wamr-wasi-extensions
+
+      - name: Upload artifacts
+        if: matrix.os == 'macos-14'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wamr-wasi-extensions
+          path: wamr-wasi-extensions/dist
+          retention-days: 10

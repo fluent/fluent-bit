@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2022 The Fluent Bit Authors
+ *  Copyright (C) 2022-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -236,7 +236,7 @@ int we_wmi_memory_init(struct flb_we *ctx)
     }
     ctx->wmi_memory->pool_nonpaged_bytes = g;
 
-    g = cmt_gauge_create(ctx->cmt, "windows", "memory", "pool_nonpaged_allocs_total",
+    g = cmt_gauge_create(ctx->cmt, "windows", "memory", "pool_paged_allocs_total",
                          "Number of bytes of allocated space in paged pool (PoolPagedAllocs)",
                          0, NULL);
 

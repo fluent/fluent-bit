@@ -16,7 +16,9 @@ set(src
   flb_hash_table.c
   flb_help.c
   flb_pack.c
+  flb_pack_json.c
   flb_pack_gelf.c
+  flb_json.c
   flb_sds.c
   flb_sds_list.c
   flb_pipe.c
@@ -25,6 +27,7 @@ set(src
   flb_custom.c
   flb_input.c
   flb_input_chunk.c
+  flb_input_ingest.c
   flb_input_log.c
   flb_input_metric.c
   flb_input_trace.c
@@ -53,6 +56,8 @@ set(src
   flb_upstream_ha.c
   flb_upstream_node.c
   flb_router.c
+  flb_router_condition.c
+  flb_router_config.c
   flb_worker.c
   flb_coro.c
   flb_time.c
@@ -85,12 +90,15 @@ set(src
   flb_log_event_encoder_dynamic_field.c
   flb_processor.c
   flb_reload.c
+  flb_supervisor.c
   flb_msgpack_append_message.c
   flb_notification.c
   flb_lock.c
   flb_cfl_ra_key.c
   flb_cfl_record_accessor.c
   flb_conditionals.c
+  flb_mem.c
+  flb_blob_db.c
   )
 
 # Config format
@@ -105,6 +113,17 @@ if(FLB_HAVE_LIBYAML)
     config_format/flb_cf_yaml.c
     )
 endif()
+
+# OpenTelemetry Helpers
+set(src
+  ${src}
+  opentelemetry/flb_opentelemetry_logs.c
+  opentelemetry/flb_opentelemetry_metrics.c
+  opentelemetry/flb_opentelemetry_otlp_json.c
+  opentelemetry/flb_opentelemetry_otlp_proto.c
+  opentelemetry/flb_opentelemetry_traces.c
+  opentelemetry/flb_opentelemetry_utils.c
+)
 
 # Multiline subsystem
 add_subdirectory(multiline)
@@ -147,6 +166,7 @@ if(FLB_TLS)
     ${src}
     "tls/flb_tls.c"
     "flb_oauth2.c"
+    "flb_oauth2_jwt.c"
     )
 
   # Make sure our output targets links to the TLS library
@@ -245,7 +265,7 @@ if(FLB_SQLDB)
     )
   set(extra_libs
     ${extra_libs}
-    "sqlite3")
+    ${SQLITE_LIBRARIES})
 endif()
 
 if(FLB_STATIC_CONF)
@@ -347,10 +367,11 @@ endif()
 
 if(FLB_UNICODE_ENCODER)
   add_subdirectory(simdutf)
-  set(src
-    ${src}
-    "flb_unicode.c"
-    )
+endif()
+
+# ripser
+if(FLB_RIPSER)
+  add_subdirectory(ripser)
 endif()
 
 # WAMRC compiler
@@ -392,11 +413,11 @@ set(FLB_DEPS
   ctraces-static
   mk_core
   jsmn
-  msgpack-c-static
+  ${MSGPACK_LIBRARIES}
   mpack-static
   chunkio-static
   miniz
-  libzstd_static
+  ${LIBZSTD_LIBRARIES}
 
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
@@ -406,6 +427,13 @@ set(FLB_DEPS
   lwrb
   ${NGHTTP2_LIBRARIES}
   )
+
+if(FLB_YYJSON)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    yyjson
+    )
+endif()
 
 if(OPENSSL_FOUND)
   set(FLB_DEPS
@@ -439,6 +467,16 @@ set(FLB_DEPS
   )
 endif()
 
+
+# Ripser
+if(FLB_RIPSER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  ripser-static
+  flb-ripser-wrapper-static
+  )
+endif()
+
 # AWS specific
 if(FLB_AWS)
   set(FLB_DEPS
@@ -455,6 +493,10 @@ if(FLB_RECORD_ACCESSOR)
     )
 endif()
 
+set(FLB_DEPS
+  ${FLB_DEPS}
+  )
+
 # Stream Processor
 if(FLB_STREAM_PROCESSOR)
   set(FLB_DEPS
@@ -462,6 +504,17 @@ if(FLB_STREAM_PROCESSOR)
     flb-sp
     )
 endif()
+
+# Unicode Conversions
+add_subdirectory(unicode)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  flb-conv
+  )
+set(src
+  ${src}
+  flb_unicode.c
+  )
 
 if (MSVC)
 set(flb_rc_files
@@ -486,8 +539,6 @@ if(FLB_SHARED_LIB)
   if (MSVC)
     set_target_properties(fluent-bit-shared
       PROPERTIES PDB_NAME fluent-bit.dll)
-    target_link_options(fluent-bit-shared
-      PUBLIC /pdb:$<TARGET_PDB_FILE:fluent-bit-shared>)
   endif()
 
   # Library install routines
@@ -521,8 +572,10 @@ if(FLB_BINARY)
   else()
     add_executable(fluent-bit-bin fluent-bit.c flb_dump.c)
   endif()
+  if (MSVC)
+    set_target_properties(fluent-bit-bin PROPERTIES IMPORT_SUFFIX ".exe.lib")
+  endif(MSVC)
   add_sanitizers(fluent-bit-bin)
-
 
   if(FLB_STATIC_CONF)
     add_dependencies(fluent-bit-bin flb-static-conf)
@@ -547,6 +600,11 @@ if(FLB_BINARY)
   endif()
 
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT})
+
+  # KAFKA SPECIFIC
+  if(FLB_SASL_ENABLED)
+    target_link_libraries(fluent-bit-bin sasl2)
+  endif()
 
   set_target_properties(fluent-bit-bin
     PROPERTIES

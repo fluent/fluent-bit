@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -35,6 +35,9 @@ struct syslog_conn {
     size_t buf_size;                 /* Buffer size                       */
     size_t buf_len;                  /* Buffer length                     */
     size_t buf_parsed;               /* Parsed buffer (offset)            */
+    /* Octet-counting framing state */
+    size_t frame_expected_len;       /* remaining message bytes needed    */
+    int    frame_have_len;           /* 0 = need length, 1 = have length  */
     struct flb_input_instance *ins;  /* Parent plugin instance            */
     struct flb_syslog *ctx;          /* Plugin configuration context      */
     struct flb_connection *connection;

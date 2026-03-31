@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -85,6 +85,7 @@ static int stat_update(struct flb_ne *ctx)
     mk_list_init(&list);
     ret = ne_utils_file_read_lines(ctx->path_procfs, "/stat", &list);
     if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to read %s/stat", ctx->path_procfs);
         return -1;
     }
 

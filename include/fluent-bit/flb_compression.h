@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@
 
 #define FLB_COMPRESSION_ALGORITHM_NONE                    0
 #define FLB_COMPRESSION_ALGORITHM_GZIP                    1
+#define FLB_COMPRESSION_ALGORITHM_ZSTD                    2
 
 #define FLB_DECOMPRESSOR_STATE_FAILED                    -1
 #define FLB_DECOMPRESSOR_STATE_EXPECTING_HEADER           0

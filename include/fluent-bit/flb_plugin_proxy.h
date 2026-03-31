@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@
 /* Plugin Types */
 #define FLB_PROXY_INPUT_PLUGIN     1
 #define FLB_PROXY_OUTPUT_PLUGIN    2
+#define FLB_PROXY_CUSTOM_PLUGIN    3
 
 /* Proxies available */
 #define FLB_PROXY_GOLANG          11
@@ -39,6 +40,7 @@ struct flb_plugin_proxy_def {
     int flags;
     char *name;               /* plugin short name                           */
     char *description;        /* plugin description                          */
+    int event_type;           /* event type (logs/metrics/traces)            */
 };
 
 /* Proxy context */
@@ -64,6 +66,8 @@ struct flb_plugin_proxy_context {
 
 struct flb_plugin_input_proxy_context {
     int coll_fd;
+    /* This context is set by the remote init and is passed to remote collect */
+    void *remote_context;
     /* A proxy ptr is needed to store the proxy type/lang (OUTPUT/GOLANG) */
     struct flb_plugin_proxy *proxy;
 };

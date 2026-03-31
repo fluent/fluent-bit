@@ -1,0 +1,1759 @@
+{
+    "test cases": [
+        {
+            "deprecated": true,
+            "ids": [
+                47,
+                48,
+                49,
+                50,
+                51,
+                52,
+                53,
+                54,
+                55,
+                56,
+                57,
+                58,
+                59,
+                60,
+                61,
+                62,
+                63,
+                64,
+                65,
+                66,
+                67,
+                68,
+                69,
+                70,
+                71,
+                72,
+                73,
+                74,
+                75,
+                76,
+                77,
+                78,
+                79,
+                80,
+                81,
+                82,
+                83,
+                84
+            ],
+            "runtime": "iwasm-default",
+            "mode": "classic-interp",
+            "file": "PoC.wasm",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "",
+                "description": "no segfault"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2857
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "10276.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f 4",
+            "argument": "110236574",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: out of bounds memory access",
+                "description": "no error 'type mismatch'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2858
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "3605.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f 4",
+            "argument": "1",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: out of bounds memory access",
+                "description": "no error 'type mismatch'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2863
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "test.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0",
+            "argument": "",
+            "expected return": {
+                "ret code": 255,
+                "stdout content": "WASM module load failed: unexpected end opcodes from unbalanced control flow structures",
+                "description": "no sanitizer 'Heap Buffer Overflow'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2965
+            ],
+            "runtime": "iwasm-multi-tier-jit-wasi-disabled",
+            "file": "i64.shl_75.wasm",
+            "mode": "fast-jit",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0xd060000000000000:i64",
+                "description": "expected output 0xd060000000000000:i64"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2966,
+                2964,
+                2963,
+                2962
+            ],
+            "runtime": "iwasm-multi-tier-jit-wasi-disabled",
+            "file": "*.wasm",
+            "mode": "fast-jit",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0x0:i32",
+                "description": "expected output 0x0:i32"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2961,
+                2960,
+                2959,
+                2958
+            ],
+            "runtime": "iwasm-multi-tier-jit-wasi-disabled",
+            "file": "*.wasm",
+            "mode": "fast-jit",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0x1:i32",
+                "description": "expected output 0x1:i32"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2956
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "iwasm_fast_interp_unexpected_value2.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0xffffffffffffffff:i64",
+                "description": "expected output 0xffffffffffffffff:i64"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2955
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "iwasm_fast_interp_unexpected_value.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0x44e5d17eb93a0ce:i64",
+                "description": "expected output 0x44e5d17eb93a0ce:i64"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2954
+            ],
+            "runtime": "iwasm-multi-tier-jit-wasi-disabled",
+            "file": "iwasm_jit_unexpected_exception_stack_underflow.wasm",
+            "mode": "llvm-jit",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "",
+                "description": "expected no exception"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2953
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "iwasm_fast_interp_unexpected_exception2.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0x16006d52ce3ebd1a:i64",
+                "description": "expected no exception"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2952,
+                2951
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "*.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "",
+                "description": "expected no exception"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2950
+            ],
+            "runtime": "iwasm-multi-tier-jit-wasi-disabled",
+            "file": "iwasm_fast_jit_unexpected_moob.wasm",
+            "mode": "fast-jit",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "",
+                "description": "expected no exception"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2949,
+                2944
+            ],
+            "runtime": "iwasm-multi-tier-jit-wasi-disabled",
+            "file": "*.wasm",
+            "mode": "fast-jit",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "",
+                "description": "expected no exception"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2948,
+                2946
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "*.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: integer divide by zero",
+                "description": "expected Exception: integer divide by zero"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2947
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "iwasm_fast_interp_int_overflow_double_free.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: integer overflow",
+                "description": "expected Exception: integer overflow"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2945
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "iwasm_fast_interp_moob_unhandled.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: out of bounds memory access",
+                "description": "expected Exception: out of bounds memory access"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3020
+            ],
+            "runtime": "iwasm-multi-tier-jit-wasi-disabled",
+            "file": "all_wamr_memory.init_no_exception2.wasm",
+            "mode": "fast-jit",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: out of bounds memory access",
+                "description": "Exception: out of bounds memory access"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3021
+            ],
+            "runtime": "iwasm-multi-tier-jit-wasi-disabled",
+            "file": "all_wamr_table.init_no_exception.wasm",
+            "mode": "fast-jit",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: out of bounds table access",
+                "description": "Exception: out of bounds table access"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3023
+            ],
+            "runtime": "iwasm-multi-tier-jit-wasi-disabled",
+            "file": "all_wamr_table.init_no_exception2.wasm",
+            "mode": "fast-jit",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: out of bounds table access",
+                "description": "Exception: out of bounds table access"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3026
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "wamr_fast_interpreter_memory_oob.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0xffffffffffffffff:i64",
+                "description": "no 'out of bounds memory access' exception"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3027
+            ],
+            "runtime": "iwasm-llvm-jit-wasi-disabled",
+            "file": "wamr_jit_memory_oob2.wasm",
+            "mode": "llvm-jit",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: out of bounds memory access",
+                "description": "Exception: out of bounds memory access"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3061
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "wamr_fast_interpreter_crash.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0x1:i32",
+                "description": "no 'double free or corruption'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3062
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "wamr_fast_interpreter_wrong_float.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "nan:f32",
+                "description": "expected nan but not 0"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3090
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "wamr_fast_interpreter_SIGSEGV.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "",
+                "description": "no 'unhandled SIGSEGV'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                292001
+            ],
+            "runtime": "iwasm-llvm-jit-wasi-disabled",
+            "file": "f64.load_147_5_17034195850743225.wasm",
+            "mode": "llvm-jit",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0:f64",
+                "description": "no 'undeclared function reference'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                292002
+            ],
+            "runtime": "iwasm-llvm-jit-wasi-disabled",
+            "file": "v128.load16x4_u_169_0_17034190656771224.wasm",
+            "mode": "llvm-jit",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0x0000000000000000 0x0000000000000000>:v128",
+                "description": "no 'undeclared function reference'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2921
+            ],
+            "runtime": "iwasm-llvm-jit-wasi-disabled",
+            "file": "v128.load64_lane_2635_10_1703418883268537.wasm",
+            "mode": "llvm-jit",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 255,
+                "stdout content": "WASM module load failed: invalid opcode 0xfd 277e8c.",
+                "description": "WASM module load failed: invalid opcode 0xfd 277e8c."
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3122
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "test.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: lookup the entry point symbol (like main, _main, __main_argc_argv) failed",
+                "description": "no AddressSanitizer SEGV"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3123
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "fast_nterpreter_unexpected_MEMOOB.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "3:f64",
+                "description": "no 'out of bounds memory access' exception"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3130
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "test.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0",
+            "argument": "",
+            "expected return": {
+                "ret code": 255,
+                "stdout content": "WASM module load failed: unknown label, unexpected end of section or function",
+                "description": "no AddressSanitizer SEGV"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                315101
+            ],
+            "runtime": "iwasm-default-gc-enabled",
+            "file": "test.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "in specttest.print_i32(4)",
+                "description": "no random result"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                315102
+            ],
+            "runtime": "iwasm-default-gc-enabled",
+            "file": "test.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "in specttest.print_i32(4)",
+                "description": "no random result"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3137
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "test.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0",
+            "argument": "",
+            "expected return": {
+                "ret code": 255,
+                "stdout content": "WASM module load failed: unknown local",
+                "description": "no sanitizer 'heap-buffer-overflow'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2943
+            ],
+            "runtime": "iwasm-multi-tier-jit-wasi-disabled",
+            "file": "iwasm_jit_timeout.wasm",
+            "mode": "llvm-jit",
+            "options": " --heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0x0:i32",
+                "description": "no hanging"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2942
+            ],
+            "runtime": "iwasm-multi-tier-jit-wasi-disabled",
+            "file": "iwasm_jit_without_exception.wasm",
+            "mode": "llvm-jit",
+            "options": " --heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: out of bounds memory access",
+                "description": "expected Exception: out of bounds memory access"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2931
+            ],
+            "runtime": "iwasm-multi-tier-jit",
+            "file": "case.wasm",
+            "mode": "fast-jit",
+            "options": "",
+            "argument": "",
+            "expected return": {
+                "ret code": 3,
+                "stdout content": "",
+                "description": "expected return code: 3"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2897
+            ],
+            "runtime": "iwasm-multi-tier-jit",
+            "file": "test.wasm",
+            "mode": "llvm-jit",
+            "options": "",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "",
+                "description": "expected no exception"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2847
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0x10000:i32,0x10000:i32,0x10000:i32,0x10000:i32,0x10000:i32,0x10000:i32",
+                "description": "since optimization to one large page when page count is 65536 is removed, the output should be the same with other runtimes"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2849
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0x0:i32,0x3867603a4258fb3a:i64,0:f64",
+                "description": "since optimization to one large page when page count is 65536 is removed, the output should be the same with other runtimes"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2861
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0x0:i32,0x0:i32,0x0:i32,0x0:i32,0x0:i32,0x0:i32,-1.127242e+18:f32,0x75a142e20792c8c8:i64",
+                "description": "since optimization to one large page when page count is 65536 is removed, the output should be the same with other runtimes"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2862
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "1.844674e+19:f64,0x200d:i32,0x200d:i32,0x200d:i32,0x200d:i32",
+                "description": "since optimization to one large page when page count is 65536 is removed, the output should be the same with other runtimes"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2865
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": true,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: integer divide by zero",
+                "description": "since optimization to one large page when page count is 65536 is removed, the output should be the same with other runtimes"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2833
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "filea12287_4.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile success"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0x0000000000000000 0x0000000000000000>:v128,<0x0000000000000000 0x0000000000000000>:v128,<0x0000000000000000 0x0000000000000000>:v128,<0x0000000000000000 0x0000000000000000>:v128,<0x0000000000000000 0x0000000000000000>:v128,<0x0000000000000000 0x0000000000000000>:v128,<0x0000000000000000 0x0000000000000000>:v128",
+                "description": " Other runtimes are using qNaN(0x7fc00000) as the result while WAMR is using 0xffffffff(it is a NaN with arbitrary content) as the result."
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2832
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "filea5770.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile success"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: out of bounds memory access",
+                "description": " Other runtimes are using qNaN(0x7fc00000) as the result while WAMR is using 0xffffffff(it is a NaN with arbitrary content) as the result."
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2829
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": true,
+                "in file": "filea262_9.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile success, it's ombination of issue #2678 and issue #2773"
+                }
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2797
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "v19_tcs_memory.init_647.wasm",
+            "mode": "classic-interp",
+            "options": " --heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: out of bounds memory access",
+                "description": "expected OOB exception"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2790
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": true,
+                "in file": "232.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile success, no 'Error: WASM data stack underflow.'"
+                }
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2787
+            ],
+            "runtime": "iwasm-default",
+            "file": "sock_shutdown.wasm",
+            "mode": "classic-interp",
+            "options": "",
+            "argument": "",
+            "expected return": {
+                "ret code": 8,
+                "stdout content": "",
+                "description": "sock_shutdown on a non-socket file descriptor should fail with 57 notsock"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2784
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": true,
+                "in file": "6.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile success"
+                }
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2759
+            ],
+            "runtime": "iwasm-multi-tier-jit",
+            "file": "case.wasm",
+            "mode": "fast-jit",
+            "options": "",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "",
+                "description": "Fast-jit callnative compilation issue, fix with #2765"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2732
+            ],
+            "runtime": "iwasm-multi-tier-jit",
+            "file": "filea9.wasm",
+            "mode": "llvm-jit",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: integer divide by zero",
+                "description": "TODO: implement limitation, refer to #2773"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2726
+            ],
+            "runtime": "iwasm-default",
+            "file": "poc",
+            "mode": "classic-interp",
+            "options": "",
+            "argument": "",
+            "expected return": {
+                "ret code": 255,
+                "stdout content": "WASM module load failed: section size mismatch: function body END opcode expected",
+                "description": "no 'Heap out of bound read of size 1 in wasm_loader_prepare_bytecode function'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3165
+            ],
+            "runtime": "iwasm-llvm-jit-wasi-disabled",
+            "file": "iwasm_jit_select_exception.wasm",
+            "mode": "llvm-jit",
+            "options": " --heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "func:ref.null",
+                "description": "expected no 'WASM module load failed: Error: invalid stack values with different type'"
+            }
+        },
+        {
+            "deprecated": true,
+            "ids": [
+                2720
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: out of bounds memory access",
+                "description": "TODO: current are infinite looping Exception: out of bounds memory access"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2714
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0x1c664075fffffa38 0xe5d70a533e8e2025>:v128,<0x1c664075fffffa38 0xe5d70a533e8e2025>:v128,<0x1c664075fffffa38 0xe5d70a533e8e2025>:v128,<0x1c664075fffffa38 0xe5d70a533e8e2025>:v128,<0x1c664075fffffa38 0xe5d70a533e8e2025>:v128,<0x1c664075fffffa38 0xe5d70a533e8e2025>:v128,<0x1c664075fffffa38 0xe5d70a533e8e2025>:v128,<0x1c664075fffffa38 0xe5d70a533e8e2025>:v128,0x7fffffff:i32",
+                "description": "expected 305509764278724137911362181367523703352 TODO: result wamtime = wasmer != wasmedge = wamr"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2713
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0xffffffff0000ffff 0xffffffffffffffff>:v128,<0xffffffff0000ffff 0xffffffffffffffff>:v128,<0xffffffff0000ffff 0xffffffffffffffff>:v128,<0xffffffff0000ffff 0xffffffffffffffff>:v128,<0xffffffff0000ffff 0xffffffffffffffff>:v128,<0xffffffff0000ffff 0xffffffffffffffff>:v128,<0xffffffff0000ffff 0xffffffffffffffff>:v128",
+                "description": "expected 340282366920938463463374607427473309695"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2712
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0x1b702910:i32,<0x0000000000000000 0x6fe8006200000000>:v128,<0x0000000000000000 0x6fe8006200000000>:v128,<0x0000000000000000 0x6fe8006200000000>:v128,<0x0000000000000000 0x6fe8006200000000>:v128,<0x0000000000000000 0x6fe8006200000000>:v128,<0x0000000000000000 0x6fe8006200000000>:v128,<0x0000000000000000 0x6fe8006200000000>:v128,<0x0000000000000000 0x6fe8006200000000>:v128",
+                "description": "expected 148748928167665668300046743006804443136"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2711
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0x0000000000000000 0xffffffffffffffff>:v128,<0x0000000000000000 0xffffffffffffffff>:v128,<0x0000000000000000 0xffffffffffffffff>:v128,<0x0000000000000000 0xffffffffffffffff>:v128,<0x0000000000000000 0xffffffffffffffff>:v128,<0x0000000000000000 0xffffffffffffffff>:v128,<0x0000000000000000 0xffffffffffffffff>:v128",
+                "description": "expected 340282366920938463444927863358058659840"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2710
+            ],
+            "runtime": "iwasm-multi-tier-jit",
+            "file": "t.wasm",
+            "mode": "fast-jit",
+            "options": "",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "",
+                "description": "expected no fast jit compilation error"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2709
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0x0000000000000000 0x0000000000000000>:v128,<0x0000000000000000 0x0000000000000000>:v128,<0x0000000000000000 0x0000000000000000>:v128,<0x0000000000000000 0x0000000000000000>:v128,<0x0000000000000000 0x0000000000000000>:v128,<0x0000000000000000 0x0000000000000000>:v128,<0x0000000000000000 0x0000000000000000>:v128",
+                "description": "expected 0"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                270801
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "filea3054_instr_instr.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0xffffffff00000000 0xffffffff00000000>:v128,<0xffffffff00000000 0xffffffff00000000>:v128,<0xffffffff00000000 0xffffffff00000000>:v128,<0xffffffff00000000 0xffffffff00000000>:v128,<0xffffffff00000000 0xffffffff00000000>:v128,<0xffffffff00000000 0xffffffff00000000>:v128,<0xffffffff00000000 0xffffffff00000000>:v128",
+                "description": "expected same return with 270802"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                270802
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "filea3054.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected same return with 270801"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0xffffffff00000000 0xffffffff00000000>:v128,<0xffffffff00000000 0xffffffff00000000>:v128,<0xffffffff00000000 0xffffffff00000000>:v128,<0xffffffff00000000 0xffffffff00000000>:v128,<0xffffffff00000000 0xffffffff00000000>:v128,<0xffffffff00000000 0xffffffff00000000>:v128,<0xffffffff00000000 0xffffffff00000000>:v128",
+                "description": "expected 0"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2706
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0xffffffffffffffff 0xffffffffffffffff>:v128,<0xffffffffffffffff 0xffffffffffffffff>:v128,<0xffffffffffffffff 0xffffffffffffffff>:v128,<0xffffffffffffffff 0xffffffffffffffff>:v128,<0xffffffffffffffff 0xffffffffffffffff>:v128,<0xffffffffffffffff 0xffffffffffffffff>:v128,<0xffffffffffffffff 0xffffffffffffffff>:v128",
+                "description": "expected 340282366920938463463374607431768211455 TODO: result wamtime = wasmer != wasmedge = wamr"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2705
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0x423f52a258c09ad9 0x4f558a41e9a7b624>:v128,<0x423f52a258c09ad9 0x4f558a41e9a7b624>:v128,<0x423f52a258c09ad9 0x4f558a41e9a7b624>:v128,<0x423f52a258c09ad9 0x4f558a41e9a7b624>:v128,<0x423f52a258c09ad9 0x4f558a41e9a7b624>:v128,<0x423f52a258c09ad9 0x4f558a41e9a7b624>:v128,<0x423f52a258c09ad9 0x4f558a41e9a7b624>:v128,<0x423f52a258c09ad9 0x4f558a41e9a7b624>:v128,<0x423f52a258c09ad9 0x4f558a41e9a7b624>:v128",
+                "description": "expected 105453161094652439705331636252451052249 TODO: result wamtime = wasmer != wasmedge = wamr"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2704
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0xffff0000ffff0000 0xffff0000ffff0000>:v128,<0xffff0000ffff0000 0xffff0000ffff0000>:v128,<0xffff0000ffff0000 0xffff0000ffff0000>:v128,<0xffff0000ffff0000 0xffff0000ffff0000>:v128,<0xffff0000ffff0000 0xffff0000ffff0000>:v128,<0xffff0000ffff0000 0xffff0000ffff0000>:v128,<0xffff0000ffff0000 0xffff0000ffff0000>:v128",
+                "description": "expected 340277174703306882242637262502835978240 TODO: result wamtime = wasmer != wasmedge = wamr"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2703
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0x00000000ffffffad 0x0000000000000000>:v128,<0x00000000ffffffad 0x0000000000000000>:v128,<0x00000000ffffffad 0x0000000000000000>:v128,<0x00000000ffffffad 0x0000000000000000>:v128,<0x00000000ffffffad 0x0000000000000000>:v128",
+                "description": "expected 4294967213"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2702
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0x0000070700000707 0x0000070700000707>:v128,<0x0000070700000707 0x0000070700000707>:v128,<0x0000070700000707 0x0000070700000707>:v128,<0x0000070700000707 0x0000070700000707>:v128,<0x0000070700000707 0x0000070700000707>:v128,<0x0000070700000707 0x0000070700000707>:v128,<0x0000070700000707 0x0000070700000707>:v128",
+                "description": "expected 142531464396347235927115696178951"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2701
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0x0000ffb100000000 0x8c4357900000006e>:v128,<0x0000ffb100000000 0x8c4357900000006e>:v128,<0x0000ffb100000000 0x8c4357900000006e>:v128,<0x0000ffb100000000 0x8c4357900000006e>:v128,<0x0000ffb100000000 0x8c4357900000006e>:v128,<0x0000ffb100000000 0x8c4357900000006e>:v128,<0x0000ffb100000000 0x8c4357900000006e>:v128,<0x0000ffb100000000 0x8c4357900000006e>:v128,<0x0000ffb100000000 0x8c4357900000006e>:v128",
+                "description": "expected 186441579277900977436178157818221690880"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                2700
+            ],
+            "compile_options": {
+                "compiler": "wamrc",
+                "only compile": false,
+                "in file": "*.wasm",
+                "out file": "out.aot",
+                "options": "",
+                "expected return": {
+                    "ret code": 0,
+                    "stdout content": "Compile success",
+                    "description": "expected compile successfully"
+                }
+            },
+            "runtime": "iwasm-default",
+            "file": "out.aot",
+            "mode": "aot",
+            "options": "--heap-size=0 -f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "<0x00f400a0008c00d0 0x005300e0002c00c0>:v128,<0x00f400a0008c00d0 0x005300e0002c00c0>:v128,<0x00f400a0008c00d0 0x005300e0002c00c0>:v128,<0x00f400a0008c00d0 0x005300e0002c00c0>:v128,<0x00f400a0008c00d0 0x005300e0002c00c0>:v128,<0x00f400a0008c00d0 0x005300e0002c00c0>:v128,<0x00f400a0008c00d0 0x005300e0002c00c0>:v128",
+                "description": "expected 430978386419990166286238566612467920"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3170
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "iwasm_faster_interp_no_oom.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: out of bounds memory access",
+                "description": "OOB"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3210
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "3210.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "",
+                "description": "no segfault"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3286
+            ],
+            "runtime": "iwasm-llvm-jit-wasi-disabled",
+            "file": "f32x4.add_66_116_17118879201058803.wasm",
+            "mode": "llvm-jit",
+            "options": "",
+            "argument": "",
+            "expected return": {
+                "ret code": 255,
+                "stdout content": "WASM module load failed: invalid opcode 0xfd a5.",
+                "description": "report invalid opcode"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3336
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "memory.init_2164_858_1712663578577073.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0",
+            "argument": "",
+            "expected return": {
+                "ret code": 255,
+                "stdout content": "WASM module load failed: undeclared function reference",
+                "description": "expected 'undeclared function reference'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3337
+            ],
+            "runtime": "iwasm-llvm-jit-wasi-disabled",
+            "file": "f32x4.gt_55_571_17107906309149652.wasm",
+            "mode": "llvm-jit",
+            "options": "--heap-size=0",
+            "argument": "",
+            "expected return": {
+                "ret code": 255,
+                "stdout content": "WASM module load failed: opcode else found without matched opcode if",
+                "description": "duplicated else opcodes for if block"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3346
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "test.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: unreachable",
+                "description": "no sanitizer 'heap-buffer-overflow'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3347
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "test.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0",
+            "argument": "",
+            "expected return": {
+                "ret code": 255,
+                "stdout content": "WASM module load failed: unknown label, unexpected end of section or function",
+                "description": "no 'Out-of-Bound Memory Read'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3386
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "test.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0x1:i32",
+                "description": "return 1 but not 0"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3387
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "test.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: integer overflow",
+                "description": "expected 'integer overflow'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3388
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "test.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0x0:i64",
+                "description": "no 'integer divide by zero'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3401
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "f64.const_6LLPBLPP_856_1714940342309342.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "-0.5392354:f64",
+                "description": "no 'invalid local type'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3402
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "tt_finterp_exceptionx.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0x2d0:i64",
+                "description": "no 'integer overflow'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3403
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "test.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "0x7a:i64",
+                "description": "no '0x100000001:i64'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3410
+            ],
+            "runtime": "iwasm-default-gc-enabled",
+            "file": "kotlin_wasm_wasi_example_wasm_wasi_prod.wasm",
+            "mode": "fast-interp",
+            "options": "",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "Hello from Kotlin via WASI\nCurrent 'realtime' timestamp is:",
+                "description": "no 'struct or array as field is not supported in constant expr'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3411
+            ],
+            "runtime": "iwasm-default-gc-enabled",
+            "file": "kotlin_wasm_wasi_example_wasm_wasi_dev.wasm",
+            "mode": "fast-interp",
+            "options": "",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "Hello from Kotlin via WASI\nCurrent 'realtime' timestamp is:",
+                "description": "no 'type mismatch: expect (ref null ht) but got other1 unknown type'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3467
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "tt_unreachable.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 1,
+                "stdout content": "Exception: unreachable",
+                "description": "no '-1.861157e+19:f32'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3468
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "i64.add.wasm",
+            "mode": "fast-interp",
+            "options": "--heap-size=0 -f to_test",
+            "argument": "",
+            "expected return": {
+                "ret code": 255,
+                "stdout content": "WASM module load failed: unknown type",
+                "description": "no '0x0:i64'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3491
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "nop_0LM_592_17171016522810388.wasm",
+            "mode": "fast-interp",
+            "options": "",
+            "argument": "",
+            "expected return": {
+                "ret code": 255,
+                "stdout content": "WASM module load failed: data count and data section have inconsistent lengths",
+                "description": "Check data segment count"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3513
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "iwasm_poc_04.wasm",
+            "mode": "fast-interp",
+            "options": "-f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "",
+                "description": "no sanitizer 'heap-buffer-overflow'"
+            }
+        },
+        {
+            "deprecated": false,
+            "ids": [
+                3514
+            ],
+            "runtime": "iwasm-default-wasi-disabled",
+            "file": "iwasm_poc_05.wasm",
+            "mode": "fast-interp",
+            "options": "-f main",
+            "argument": "",
+            "expected return": {
+                "ret code": 0,
+                "stdout content": "",
+                "description": "no sanitizer 'heap-buffer-overflow'"
+            }
+        }
+    ]
+}

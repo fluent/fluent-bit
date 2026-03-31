@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,6 +22,13 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_opentelemetry.h>
+#include <fluent-bit/aws/flb_aws_msk_iam.h>
+#include <fluent-bit/flb_kafka.h>
+
+#include <cmetrics/cmt_encode_opentelemetry.h>
+#include <ctraces/ctr_decode_msgpack.h>
+#include <ctraces/ctr_encode_opentelemetry.h>
 
 #include "kafka_config.h"
 #include "kafka_topic.h"
@@ -29,7 +36,8 @@
 void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
                   void *opaque)
 {
-    struct flb_out_kafka *ctx = (struct flb_out_kafka *) opaque;
+    struct flb_kafka_opaque *op = (struct flb_kafka_opaque *) opaque;
+    struct flb_out_kafka *ctx = op ? (struct flb_out_kafka *) op->ptr : NULL;
 
     if (rkmessage->err) {
         flb_plg_warn(ctx->ins, "message delivery failed: %s",
@@ -45,9 +53,11 @@ void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
 void cb_kafka_logger(const rd_kafka_t *rk, int level,
                      const char *fac, const char *buf)
 {
+    struct flb_kafka_opaque *op;
     struct flb_out_kafka *ctx;
 
-    ctx = (struct flb_out_kafka *) rd_kafka_opaque(rk);
+    op = (struct flb_kafka_opaque *) rd_kafka_opaque(rk);
+    ctx = op ? (struct flb_out_kafka *) op->ptr : NULL;
 
     if (level <= FLB_KAFKA_LOG_ERR) {
         flb_plg_error(ctx->ins, "%s: %s",
@@ -136,7 +146,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     // an embedded schemaid which is used
     // the embedding is a null byte
     // followed by a 16 byte schemaid
-#define AVRO_SCHEMA_OVERHEAD 16 + 1
+#define AVRO_SCHEMA_OVERHEAD 4 + 1
 #endif
 
     flb_debug("in produce_message\n");
@@ -279,7 +289,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
 
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
-        s = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+        s = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                        config->json_escape_unicode);
         if (!s) {
             flb_plg_error(ctx->ins, "error encoding to JSON");
             msgpack_sbuffer_destroy(&mp_sbuf);
@@ -306,29 +317,29 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
 #ifdef FLB_HAVE_AVRO_ENCODER
     else if (ctx->format == FLB_KAFKA_FMT_AVRO) {
 
-        flb_plg_debug(ctx->ins, "avro schema ID:%s:\n", ctx->avro_fields.schema_id);
+        flb_plg_debug(ctx->ins, "avro schema ID:%d:\n", ctx->avro_fields.schema_id);
         flb_plg_debug(ctx->ins, "avro schema string:%s:\n", ctx->avro_fields.schema_str);
 
 	// if there's no data then log it and return
         if (mp_sbuf.size == 0) {
-            flb_plg_error(ctx->ins, "got zero bytes decoding to avro AVRO:schemaID:%s:\n", ctx->avro_fields.schema_id);
+            flb_plg_error(ctx->ins, "got zero bytes decoding to avro AVRO:schemaID:%d:\n", ctx->avro_fields.schema_id);
             msgpack_sbuffer_destroy(&mp_sbuf);
             return FLB_OK;
         }
 
 	// is the line is too long log it and return
         if (mp_sbuf.size > AVRO_LINE_MAX_LEN) {
-            flb_plg_warn(ctx->ins, "skipping long line AVRO:len:%zu:limit:%zu:schemaID:%s:\n", (size_t)mp_sbuf.size, (size_t)AVRO_LINE_MAX_LEN, ctx->avro_fields.schema_id);
+            flb_plg_warn(ctx->ins, "skipping long line AVRO:len:%zu:limit:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, (size_t)AVRO_LINE_MAX_LEN, ctx->avro_fields.schema_id);
             msgpack_sbuffer_destroy(&mp_sbuf);
             return FLB_OK;
         }
 
-        flb_plg_debug(ctx->ins, "using default buffer AVRO:len:%zu:limit:%zu:schemaID:%s:\n", (size_t)mp_sbuf.size, (size_t)AVRO_DEFAULT_BUFFER_SIZE, ctx->avro_fields.schema_id);
+        flb_plg_debug(ctx->ins, "using default buffer AVRO:len:%zu:limit:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, (size_t)AVRO_DEFAULT_BUFFER_SIZE, ctx->avro_fields.schema_id);
         out_buf = avro_buff;
         out_size = AVRO_DEFAULT_BUFFER_SIZE;
 
 	if (mp_sbuf.size + AVRO_SCHEMA_OVERHEAD >= AVRO_DEFAULT_BUFFER_SIZE) {
-            flb_plg_info(ctx->ins, "upsizing to dynamic buffer AVRO:len:%zu:schemaID:%s:\n", (size_t)mp_sbuf.size, ctx->avro_fields.schema_id);
+            flb_plg_info(ctx->ins, "upsizing to dynamic buffer AVRO:len:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, ctx->avro_fields.schema_id);
             avro_fast_buffer = false;
             // avro will always be  smaller than msgpack
             // it contains no meta-info aside from the schemaid
@@ -338,14 +349,14 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
             out_size = mp_sbuf.size + AVRO_SCHEMA_OVERHEAD;
             out_buf = flb_malloc(out_size);
             if (!out_buf) {
-                flb_plg_error(ctx->ins, "error allocating memory for decoding to AVRO:schema:%s:schemaID:%s:\n", ctx->avro_fields.schema_str, ctx->avro_fields.schema_id);
+                flb_plg_error(ctx->ins, "error allocating memory for decoding to AVRO:schema:%s:schemaID:%d:\n", ctx->avro_fields.schema_str, ctx->avro_fields.schema_id);
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 return FLB_ERROR;
             }
 	}
 
         if(!flb_msgpack_raw_to_avro_sds(mp_sbuf.data, mp_sbuf.size, &ctx->avro_fields, out_buf, &out_size)) {
-            flb_plg_error(ctx->ins, "error encoding to AVRO:schema:%s:schemaID:%s:\n", ctx->avro_fields.schema_str, ctx->avro_fields.schema_id);
+            flb_plg_error(ctx->ins, "error encoding to AVRO:schema:%s:schemaID:%d:\n", ctx->avro_fields.schema_str, ctx->avro_fields.schema_id);
             msgpack_sbuffer_destroy(&mp_sbuf);
             if (!avro_fast_buffer) {
                 flb_free(out_buf);
@@ -456,6 +467,20 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
             queue_full_retries++;
             goto retry;
         }
+
+        ctx->blocked = FLB_FALSE;
+        if (ctx->format == FLB_KAFKA_FMT_JSON ||
+            ctx->format == FLB_KAFKA_FMT_GELF) {
+            flb_sds_destroy(s);
+        }
+        msgpack_sbuffer_destroy(&mp_sbuf);
+#ifdef FLB_HAVE_AVRO_ENCODER
+        if (ctx->format == FLB_KAFKA_FMT_AVRO) {
+            AVRO_FREE(avro_fast_buffer, out_buf)
+        }
+#endif
+        flb_sds_destroy(raw_key);
+        return FLB_ERROR;
     }
     else {
         flb_plg_debug(ctx->ins, "enqueued message (%zd bytes) for topic '%s'",
@@ -481,6 +506,213 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     return FLB_OK;
 }
 
+static int produce_raw_payload(const void *payload, size_t payload_size,
+                               struct flb_out_kafka *ctx)
+{
+    int ret;
+    int queue_full_retries;
+    char *message_key;
+    size_t message_key_len;
+    struct flb_kafka_topic *topic;
+
+    if (payload == NULL || payload_size == 0) {
+        return FLB_OK;
+    }
+
+    queue_full_retries = 0;
+    message_key = ctx->message_key;
+    message_key_len = ctx->message_key_len;
+    topic = flb_kafka_topic_default(ctx);
+
+    if (topic == NULL) {
+        flb_plg_error(ctx->ins, "no default topic found");
+        return FLB_ERROR;
+    }
+
+retry:
+    if (ctx->queue_full_retries > 0 &&
+        queue_full_retries >= ctx->queue_full_retries) {
+        ctx->blocked = FLB_FALSE;
+        return FLB_RETRY;
+    }
+
+    ret = rd_kafka_produce(topic->tp,
+                           RD_KAFKA_PARTITION_UA,
+                           RD_KAFKA_MSG_F_COPY,
+                           (void *) payload,
+                           payload_size,
+                           message_key,
+                           message_key_len,
+                           ctx);
+    if (ret == -1) {
+        if (rd_kafka_last_error() == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
+            ctx->blocked = FLB_TRUE;
+            flb_time_sleep(1000);
+            rd_kafka_poll(ctx->kafka.rk, 0);
+            queue_full_retries++;
+            goto retry;
+        }
+
+        ctx->blocked = FLB_FALSE;
+        flb_plg_error(ctx->ins,
+                      "failed to produce OTLP payload to topic %s: %s",
+                      rd_kafka_topic_name(topic->tp),
+                      rd_kafka_err2str(rd_kafka_last_error()));
+        return FLB_ERROR;
+    }
+
+    ctx->blocked = FLB_FALSE;
+    rd_kafka_poll(ctx->kafka.rk, 0);
+
+    return FLB_OK;
+}
+
+static int produce_otlp_json(struct flb_out_kafka *ctx,
+                             struct flb_event_chunk *event_chunk)
+{
+    int result;
+    flb_sds_t payload;
+    struct flb_opentelemetry_otlp_logs_options options;
+    static const char *default_logs_body_keys[] = {"log", "message"};
+
+    payload = NULL;
+
+    if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+        memset(&options, 0, sizeof(options));
+        options.logs_require_otel_metadata = FLB_FALSE;
+        options.logs_body_keys = default_logs_body_keys;
+        options.logs_body_key_count = 2;
+        options.logs_body_key_attributes = FLB_FALSE;
+
+        payload = flb_opentelemetry_logs_to_otlp_json(event_chunk->data,
+                                                      event_chunk->size,
+                                                      &options,
+                                                      &result);
+    }
+#ifdef FLB_HAVE_METRICS
+    else if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
+        payload = flb_opentelemetry_metrics_msgpack_to_otlp_json(
+            event_chunk->data,
+            event_chunk->size,
+            &result);
+    }
+#endif
+    else if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
+        payload = flb_opentelemetry_traces_msgpack_to_otlp_json(
+            event_chunk->data,
+            event_chunk->size,
+            &result);
+    }
+    else {
+        return FLB_ERROR;
+    }
+
+    if (payload == NULL) {
+        flb_plg_error(ctx->ins,
+                      "could not convert event chunk to OTLP JSON: %d",
+                      result);
+        return FLB_ERROR;
+    }
+
+    result = produce_raw_payload(payload, flb_sds_len(payload), ctx);
+    flb_sds_destroy(payload);
+
+    return result;
+}
+
+static int produce_otlp_proto(struct flb_out_kafka *ctx,
+                              struct flb_event_chunk *event_chunk)
+{
+    int ret;
+    int result;
+    size_t off;
+    struct ctrace *ctr;
+    flb_sds_t payload;
+    struct flb_opentelemetry_otlp_logs_options options;
+    static const char *default_logs_body_keys[] = {"log", "message"};
+
+    if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+        memset(&options, 0, sizeof(options));
+        options.logs_require_otel_metadata = FLB_FALSE;
+        options.logs_body_keys = default_logs_body_keys;
+        options.logs_body_key_count = 2;
+        options.logs_body_key_attributes = FLB_FALSE;
+
+        payload = flb_opentelemetry_logs_to_otlp_proto(event_chunk->data,
+                                                       event_chunk->size,
+                                                       &options,
+                                                       &result);
+        if (payload == NULL) {
+            flb_plg_error(ctx->ins,
+                          "could not convert event chunk to OTLP protobuf: %d",
+                          result);
+            return FLB_ERROR;
+        }
+
+        result = produce_raw_payload(payload, flb_sds_len(payload), ctx);
+        flb_opentelemetry_logs_proto_destroy(payload);
+        return result;
+    }
+#ifdef FLB_HAVE_METRICS
+    else if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
+        payload = flb_opentelemetry_metrics_msgpack_to_otlp_proto(event_chunk->data,
+                                                                  event_chunk->size,
+                                                                  &result);
+        if (payload == NULL) {
+            flb_plg_error(ctx->ins,
+                          "could not convert metrics chunk to OTLP protobuf: %d",
+                          result);
+            return FLB_ERROR;
+        }
+
+        result = produce_raw_payload(payload, cfl_sds_len((cfl_sds_t) payload), ctx);
+        flb_opentelemetry_metrics_proto_destroy(payload);
+
+        return result;
+    }
+#endif
+    else if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
+        off = 0;
+
+        while ((ret = ctr_decode_msgpack_create(&ctr,
+                                                (char *) event_chunk->data,
+                                                event_chunk->size,
+                                                &off)) == CTR_DECODE_MSGPACK_SUCCESS) {
+            payload = flb_opentelemetry_traces_to_otlp_proto(ctr, &result);
+
+            if (payload == NULL) {
+                ctr_destroy(ctr);
+                flb_plg_error(ctx->ins,
+                              "could not convert trace context to OTLP protobuf: %d",
+                              result);
+                return FLB_ERROR;
+            }
+
+            result = produce_raw_payload(payload, flb_sds_len(payload), ctx);
+            flb_opentelemetry_traces_proto_destroy(payload);
+            ctr_destroy(ctr);
+            if (result != FLB_OK) {
+                return result;
+            }
+        }
+
+        if (ret == CTR_MPACK_INSUFFICIENT_DATA && off >= event_chunk->size) {
+            return FLB_OK;
+        }
+
+        if (ret == CTR_MPACK_ENGINE_ERROR && off >= event_chunk->size) {
+            return FLB_OK;
+        }
+
+        if (ret != CTR_DECODE_MSGPACK_SUCCESS) {
+            flb_plg_error(ctx->ins, "could not decode traces msgpack: %d", ret);
+            return FLB_ERROR;
+        }
+    }
+
+    return FLB_ERROR;
+}
+
 static void cb_kafka_flush(struct flb_event_chunk *event_chunk,
                            struct flb_output_flush *out_flush,
                            struct flb_input_instance *i_ins,
@@ -500,6 +732,21 @@ static void cb_kafka_flush(struct flb_event_chunk *event_chunk,
      */
     if (ctx->blocked == FLB_TRUE) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    if (ctx->format == FLB_KAFKA_FMT_OTLP_JSON) {
+        FLB_OUTPUT_RETURN(produce_otlp_json(ctx, event_chunk));
+    }
+
+    if (ctx->format == FLB_KAFKA_FMT_OTLP_PROTO) {
+        FLB_OUTPUT_RETURN(produce_otlp_proto(ctx, event_chunk));
+    }
+
+    if (event_chunk->type != FLB_EVENT_TYPE_LOGS) {
+        flb_plg_error(ctx->ins,
+                      "format '%s' only supports logs; use 'otlp_json' or 'otlp_proto' for metrics and traces",
+                      ctx->format_str != NULL ? ctx->format_str : "json");
+        FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
     ret = flb_log_event_decoder_init(&log_decoder,
@@ -574,7 +821,7 @@ static struct flb_config_map config_map[] = {
    {
     FLB_CONFIG_MAP_STR, "format", (char *)NULL,
     0, FLB_TRUE, offsetof(struct flb_out_kafka, format_str),
-    "Set the record output format."
+    "Set the record output format. Supported values include json, msgpack, gelf, raw, otlp_json and otlp_proto."
    },
    {
     FLB_CONFIG_MAP_STR, "message_key", (char *)NULL,
@@ -633,8 +880,8 @@ static struct flb_config_map config_map[] = {
     "Set AVRO schema."
    },
    {
-    FLB_CONFIG_MAP_STR, "schema_id", (char *)NULL,
-    0, FLB_FALSE, 0,
+    FLB_CONFIG_MAP_INT, "schema_id", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, avro_fields) + offsetof(struct flb_avro_fields, schema_id),
     "Set AVRO schema ID."
    },
 #endif
@@ -671,6 +918,20 @@ static struct flb_config_map config_map[] = {
     "If you specify a key name with this option, then only the value of "
     "that key will be sent to Kafka."
    },
+
+#ifdef FLB_HAVE_AWS_MSK_IAM
+   {
+    FLB_CONFIG_MAP_STR, "aws_msk_iam_cluster_arn", NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, aws_msk_iam_cluster_arn),
+    "ARN of the MSK cluster when using AWS IAM authentication"
+   },
+   {
+    FLB_CONFIG_MAP_BOOL, "aws_msk_iam", "false",
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, aws_msk_iam),
+    "Enable AWS MSK IAM authentication"
+   },
+#endif
+
    /* EOF */
    {0}
 };
@@ -682,5 +943,6 @@ struct flb_output_plugin out_kafka_plugin = {
     .cb_flush     = cb_kafka_flush,
     .cb_exit      = cb_kafka_exit,
     .config_map   = config_map,
-    .flags        = 0
+    .flags        = 0,
+    .event_type   = FLB_OUTPUT_LOGS
 };

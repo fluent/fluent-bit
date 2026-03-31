@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_hash_table.h>
 #endif
+#include <fluent-bit/flb_simd.h>
 
 #include "tail.h"
 #include "tail_file.h"
@@ -48,9 +49,7 @@
 #include "win32.h"
 #endif
 
-#ifdef FLB_HAVE_UNICODE_ENCODER
 #include <fluent-bit/flb_unicode.h>
-#endif
 
 #include <cfl/cfl.h>
 
@@ -425,11 +424,63 @@ static int ml_stream_buffer_flush(struct flb_tail_config *ctx, struct flb_tail_f
     return 0;
 }
 
+/* Skip leading '\0' quickly. Returns new data pointer and bumps processed_bytes. */
+static FLB_INLINE const char *flb_skip_leading_zeros_simd(const char *data, const char *end, size_t *processed_bytes)
+{
+#ifdef FLB_HAVE_SIMD
+    const size_t vlen = FLB_SIMD_VEC8_INST_LEN;
+
+    while ((size_t)(end - data) >= vlen) {
+        size_t i;
+        flb_vector8 v;
+        flb_vector8_load(&v, (const uint8_t *)data);
+
+        if (!flb_vector8_has(v, (uint8_t)'\0')) {
+            return data;
+        }
+
+        for (i = 0; i < vlen; i++) {
+            if (data[i] != '\0') {
+                *processed_bytes += i;
+                return data + i;
+            }
+        }
+
+        data += vlen;
+        *processed_bytes += vlen;
+    }
+#endif
+    while (data < end && *data == '\0') {
+        data++;
+        (*processed_bytes)++;
+    }
+    return data;
+}
+
+/* Return a UTF-8 safe cut position <= max */
+static size_t utf8_safe_truncate_pos(const char *s, size_t len, size_t max)
+{
+    size_t cut = 0;
+
+    cut = (len <= max) ? len : max;
+    if (cut == len) {
+        return cut;
+    }
+
+    /* backtrack over continuation bytes 10xxxxxx */
+    while (cut > 0 && ((unsigned char)s[cut] & 0xC0) == 0x80) {
+        cut--;
+    }
+
+    return cut;
+}
+
 static int process_content(struct flb_tail_file *file, size_t *bytes)
 {
     size_t len;
     int lines = 0;
     int ret;
+    int data_len;
     size_t processed_bytes = 0;
     char *data;
     char *end;
@@ -445,10 +496,22 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     time_t now = time(NULL);
     struct flb_time out_time = {0};
     struct flb_tail_config *ctx;
-#ifdef FLB_HAVE_UNICODE_ENCODER
     char *decoded = NULL;
+#ifdef FLB_HAVE_UNICODE_ENCODER
     size_t decoded_len;
 #endif
+    size_t cut = 0;
+    size_t eff_max = 0;
+    size_t dec_len = 0;
+    size_t window = 0;
+    int truncation_happened = FLB_FALSE;
+    size_t bytes_override = 0;
+    void *nl = NULL;
+#ifdef FLB_HAVE_METRICS
+    uint64_t ts;
+    char *name;
+#endif
+
 
     ctx = (struct flb_tail_config *) file->config;
 
@@ -470,18 +533,97 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             end  = data + decoded_len;
         }
         else if (ret == FLB_UNICODE_CONVERT_NOP) {
-            flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'", end - data, data);
+            data_len = (int) (end - data);
+            flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'",
+                          data_len, data);
+            /* Skip the UTF-8 BOM */
+            if (file->buf_len >= 3 &&
+                data[0] == '\xEF' &&
+                data[1] == '\xBB' &&
+                data[2] == '\xBF') {
+                data += 3;
+                processed_bytes += 3;
+            }
         }
         else {
-            flb_plg_error(ctx->ins, "encoding failed '%.*s'", end - data, data);
+            data_len = (int) (end - data);
+            flb_plg_error(ctx->ins, "encoding failed '%.*s'", data_len, data);
         }
     }
 #endif
+    if (ctx->generic_input_encoding_type != FLB_GENERIC_UNSPECIFIED) {
+        original_len = end - data;
+        decoded = NULL;
+        ret = flb_unicode_generic_convert_to_utf8(ctx->generic_input_encoding_name,
+                                                  (unsigned char*)data, (unsigned char**)&decoded,
+                                                  end - data);
+        if (ret > 0) {
+            data = decoded;
+            /* Generic encoding conversion returns decoded length precisely with ret. */
+            end  = data + (size_t) ret;
+        }
+        else {
+            data_len = (int) (end - data);
+            flb_plg_error(ctx->ins, "encoding failed '%.*s' with status %d",
+                          data_len, data, ret);
+        }
+    }
 
     /* Skip null characters from the head (sometimes introduced by copy-truncate log rotation) */
-    while (data < end && *data == '\0') {
-        data++;
-        processed_bytes++;
+    if (data < end) {
+        data = (char *)flb_skip_leading_zeros_simd(data, end, &processed_bytes);
+    }
+
+    if (ctx->truncate_long_lines == FLB_TRUE &&
+        file->buf_size >= ctx->buf_max_size) {
+        /* Use buf_max_size as the truncation threshold */
+        if (ctx->buf_max_size > 0) {
+            eff_max = ctx->buf_max_size - 1;
+        }
+        else {
+            eff_max = 0;
+        }
+        dec_len = (size_t)(end - data);
+        window = ctx->buf_max_size + 1;
+        if (window > dec_len) {
+            window = dec_len;
+        }
+
+        nl = memchr(data, '\n', window);
+        if (nl == NULL && eff_max > 0 && dec_len >= eff_max) {
+            if (file->skip_next == FLB_TRUE) {
+                bytes_override = (original_len > 0) ? original_len : file->buf_len;
+                goto truncation_end;
+            }
+            cut = utf8_safe_truncate_pos(data, dec_len, eff_max);
+
+            if (cut > 0) {
+                if (ctx->multiline == FLB_TRUE) {
+                    flb_tail_mult_flush(file, ctx);
+                }
+
+                flb_tail_file_pack_line(NULL, data, cut, file, processed_bytes);
+                file->skip_next = FLB_TRUE;
+
+    #ifdef FLB_HAVE_METRICS
+                cmt_counter_inc(ctx->cmt_long_line_truncated,
+                                cfl_time_now(), 1,
+                                (char*[]){ (char*) flb_input_name(ctx->ins) });
+                /* Old api */
+                flb_metrics_sum(FLB_TAIL_METRIC_L_TRUNCATED, 1, ctx->ins->metrics);
+    #endif
+                if (original_len > 0) {
+                    bytes_override = original_len;
+                }
+                else {
+                    bytes_override = file->buf_len;
+                }
+                truncation_happened = FLB_TRUE;
+
+                lines++;
+                goto truncation_end;
+            }
+        }
     }
 
     while (data < end && (p = memchr(data, '\n', end - data))) {
@@ -543,6 +685,17 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                                      &out_time,
                                      line,
                                      line_len);
+            if (ret == FLB_MULTILINE_TRUNCATED) {
+                flb_plg_warn(ctx->ins, "multiline message truncated due to buffer limit");
+#ifdef FLB_HAVE_METRICS
+                name = (char *) flb_input_name(ctx->ins);
+                ts = cfl_time_now();
+                cmt_counter_inc(ctx->cmt_multiline_truncated, ts, 1, (char *[]) {name});
+
+                /* Old api */
+                flb_metrics_sum(FLB_TAIL_METRIC_M_TRUNCATED, 1, ctx->ins->metrics);
+#endif
+            }
             goto go_next;
         }
         else if (ctx->docker_mode) {
@@ -628,22 +781,26 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         processed_bytes += len + 1;
         lines++;
         file->parsed = 0;
-        file->last_processed_bytes += processed_bytes;
+        file->last_processed_bytes = processed_bytes;
     }
 
-#ifdef FLB_HAVE_UNICODE_ENCODER
+truncation_end:
     if (decoded) {
         flb_free(decoded);
         decoded = NULL;
     }
-#endif
+
     file->parsed = file->buf_len;
 
     if (lines > 0) {
         /* Append buffer content to a chunk */
-        if (original_len > 0) {
+        if (truncation_happened) {
+            *bytes = bytes_override;
+        }
+        else if (original_len > 0) {
             *bytes = original_len;
-        } else {
+        }
+        else {
             *bytes = processed_bytes;
         }
 
@@ -1398,16 +1555,21 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
         return FLB_TAIL_ERROR;
     }
 
-    /* Check if the file was truncated */
-    if (file->offset > st.st_size) {
+    int64_t size_delta = st.st_size - file->size;
+    if (size_delta != 0) {
+        file->size = st.st_size;
+    }
+
+    /* Check if the file was truncated by comparing current size with previous size */
+    if (size_delta < 0) {
         offset = lseek(file->fd, 0, SEEK_SET);
         if (offset == -1) {
             flb_errno();
             return FLB_TAIL_ERROR;
         }
 
-        flb_plg_debug(ctx->ins, "inode=%"PRIu64" file truncated %s",
-                      file->inode, file->name);
+        flb_plg_debug(ctx->ins, "adjust_counters: inode=%"PRIu64" file truncated %s (diff: %"PRId64" bytes)",
+                      file->inode, file->name, size_delta);
         file->offset = offset;
         file->buf_len = 0;
 
@@ -1419,8 +1581,8 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
 #endif
     }
     else {
-        file->size = st.st_size;
-        file->pending_bytes = (st.st_size - file->offset);
+        // Avoid negative pending_bytes when fstat() has stale data and size < offset
+        file->pending_bytes = (st.st_size > file->offset) ? (st.st_size - file->offset) : 0;
     }
 
     return FLB_TAIL_OK;
@@ -1433,12 +1595,13 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
     size_t                  file_buffer_capacity;
     size_t                  stream_data_length;
     ssize_t                 raw_data_length;
-    size_t                  processed_bytes;
+    size_t                  processed_bytes = 0;
     uint8_t                *read_buffer;
     size_t                  read_size;
     size_t                  size;
     char                   *tmp;
     int                     ret;
+    int                     lines;
     struct flb_tail_config *ctx;
 
     /* Check if we the engine issued a pause */
@@ -1456,12 +1619,47 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
          * If there is no more room for more data, try to increase the
          * buffer under the limit of buffer_max_size.
          */
+        if (ctx->truncate_long_lines == FLB_TRUE) {
+            lines = process_content(file, &processed_bytes);
+            if (lines < 0) {
+                flb_plg_debug(ctx->ins, "inode=%"PRIu64" file=%s process content ERROR",
+                              file->inode, file->name);
+                return FLB_TAIL_ERROR;
+            }
+
+            if (lines > 0) {
+                file->stream_offset += processed_bytes;
+                file->last_processed_bytes = 0;
+                consume_bytes(file->buf_data, processed_bytes, file->buf_len);
+                file->buf_len -= processed_bytes;
+                file->buf_data[file->buf_len] = '\0';
+
+#ifdef FLB_HAVE_SQLDB
+                if (file->config->db) {
+                    flb_tail_db_file_offset(file, file->config);
+                }
+#endif
+                return adjust_counters(ctx, file);
+            }
+        }
         if (file->buf_size >= ctx->buf_max_size) {
             if (ctx->skip_long_lines == FLB_FALSE) {
                 flb_plg_error(ctx->ins, "file=%s requires a larger buffer size, "
                           "lines are too long. Skipping file.", file->name);
                 return FLB_TAIL_ERROR;
             }
+
+#ifdef FLB_HAVE_METRICS
+            if (file->skip_next == FLB_FALSE) {
+                cmt_counter_inc(ctx->cmt_long_line_skipped,
+                                cfl_time_now(), 1,
+                                (char *[]) { (char *) flb_input_name(ctx->ins) });
+
+                /* Old API */
+                flb_metrics_sum(FLB_TAIL_METRIC_L_SKIPPED, 1, ctx->ins->metrics);
+
+            }
+#endif
 
             /* Warn the user */
             if (file->skip_warn == FLB_FALSE) {
@@ -1619,6 +1817,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 
         /* Adjust the file offset and buffer */
         file->stream_offset += processed_bytes;
+        file->last_processed_bytes = 0;
         consume_bytes(file->buf_data, processed_bytes, file->buf_len);
         file->buf_len -= processed_bytes;
         file->buf_data[file->buf_len] = '\0';

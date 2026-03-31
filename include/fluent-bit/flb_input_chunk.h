@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +24,9 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_routes_mask.h>
+#include <stdint.h>
+
+struct cio_chunk;
 
 #include <monkey/mk_core.h>
 #include <msgpack.h>
@@ -41,6 +44,26 @@
 
 /* Number of bytes reserved for Metadata Header on Chunks */
 #define FLB_INPUT_CHUNK_META_HEADER   4
+
+/* Chunk metadata flags */
+#define FLB_CHUNK_FLAG_DIRECT_ROUTES        (1 << 0)
+#define FLB_CHUNK_FLAG_DIRECT_ROUTE_LABELS  (1 << 1)
+#define FLB_CHUNK_FLAG_DIRECT_ROUTE_WIDE_IDS (1 << 2)
+#define FLB_CHUNK_FLAG_DIRECT_ROUTE_PLUGIN_IDS (1 << 3)
+
+#define FLB_CHUNK_DIRECT_ROUTE_LABEL_ALIAS_FLAG 0x8000
+#define FLB_CHUNK_DIRECT_ROUTE_LABEL_LENGTH_MASK 0x7FFF
+
+struct flb_output_instance;
+
+struct flb_chunk_direct_route {
+    uint32_t id;
+    uint16_t label_length;
+    const char *label;
+    uint8_t label_is_alias;
+    uint16_t plugin_name_length;
+    const char *plugin_name;
+};
 
 /* Chunks magic bytes (starting from Fluent Bit v1.8.10) */
 #define FLB_INPUT_CHUNK_MAGIC_BYTE_0  (unsigned char) 0xF1
@@ -78,6 +101,7 @@ struct flb_input_chunk {
 #ifdef FLB_HAVE_CHUNK_TRACE
     struct flb_chunk_trace *trace;
 #endif /* FLB_HAVE_CHUNK_TRACE */
+    double create_time;           /* chunk creation time in seconds with fractional precision) */
     flb_route_mask_element *routes_mask; /* track the output plugins the chunk routes to */
     struct mk_list _head;
 };
@@ -100,6 +124,11 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
                                size_t records,
                                const char *tag, size_t tag_len,
                                const void *buf, size_t buf_size);
+int flb_input_chunk_ring_buffer_enqueue(struct flb_input_instance *in,
+                                        int event_type,
+                                        size_t records,
+                                        const char *tag, size_t tag_len,
+                                        const void *buf, size_t buf_size);
 
 const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size);
 int flb_input_chunk_release_lock(struct flb_input_chunk *ic);
@@ -109,9 +138,24 @@ int flb_input_chunk_get_event_type(struct flb_input_chunk *ic);
 int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
                             const char **tag_buf, int *tag_len);
 
+int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
+                                    int event_type,
+                                    char *tag, int tag_len,
+                                    const struct flb_chunk_direct_route *routes,
+                                    int route_count);
+int flb_chunk_route_plugin_matches(struct flb_output_instance *o_ins,
+                                   const struct flb_chunk_direct_route *route);
+int flb_input_chunk_has_direct_routes(struct flb_input_chunk *ic);
+int flb_input_chunk_get_direct_routes(struct flb_input_chunk *ic,
+                                      struct flb_chunk_direct_route **routes,
+                                      int *route_count);
+void flb_input_chunk_destroy_direct_routes(struct flb_chunk_direct_route *routes,
+                                           int route_count);
+
 void flb_input_chunk_ring_buffer_cleanup(struct flb_input_instance *ins);
 void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data);
 ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic);
+ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic);
 size_t flb_input_chunk_set_limits(struct flb_input_instance *in);
 size_t flb_input_chunk_total_size(struct flb_input_instance *in);
 struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,

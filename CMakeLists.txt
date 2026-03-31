@@ -1,12 +1,14 @@
 cmake_minimum_required(VERSION 3.12)
 project(fluent-bit C)
 
+include(CheckCCompilerFlag)
+
 # CMP0069 ensures that LTO is enabled for all compilers
 cmake_policy(SET CMP0069 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
-set(FLB_VERSION_MAJOR  4)
+set(FLB_VERSION_MAJOR  5)
 set(FLB_VERSION_MINOR  0)
 set(FLB_VERSION_PATCH  2)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
@@ -67,15 +69,30 @@ if (MSVC)
   #   /wd4100 .. C4100 (unreferenced formal parameter)
   #   /wd5045 .. C5045 (Spectre mitigation)
   #
+  # Restore /OPT:REF after setting /Debug, enable /OPT:ICF for 64-bit
+  # builds per Microsoft recommended best practices.
   set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS /DNDEBUG /O2 /Zi /wd4100 /wd4711 /wd5045")
-  set(CMAKE_EXE_LINKER_FLAGS "/Debug /INCREMENTAL:NO")
+  set(CMAKE_EXE_LINKER_FLAGS "/DEBUG /OPT:REF /INCREMENTAL:NO")
+  set(CMAKE_SHARED_LINKER_FLAGS "/DEBUG /OPT:REF /INCREMENTAL:NO")
   set(CMAKE_BUILD_TYPE None)
+  if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /OPT:ICF")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /OPT:ICF")
+  endif()
 
   # Use add_compile_options() to set /MT since Visual Studio
   # Generator does not notice /MT in CMAKE_C_FLAGS.
   add_compile_options(/MT)
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
+  if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Prevent the toolchain from emitting an executable stack on Linux targets,
+    # which triggers kernel warnings (e.g. "started with executable stack") and
+    # weakens security hardening. The linker flag is not supported on macOS.
+    add_compile_options(-Wa,--noexecstack)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,noexecstack")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,noexecstack")
+  endif()
   # The following flags are to enhance security, but it may impact performance,
   # we disable them by default.
   if (FLB_WASM_STACK_PROTECT)
@@ -120,6 +137,33 @@ include(cmake/platform_feature_checks.cmake)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
 find_package(Sanitizers)
 
+# Check for CXX support
+include(CheckLanguage)
+check_language(CXX)
+
+# Enable CXX features if CXX is available
+if (NOT DEFINED FLB_USE_SIMDUTF)
+  if(CMAKE_CXX_COMPILER)
+    message(STATUS "CXX compiler found, enable simdutf.")
+    set(FLB_USE_SIMDUTF Yes)
+  else()
+    message(STATUS "CXX compiler not found, disable simdutf.")
+    set(FLB_USE_SIMDUTF No)
+  endif()
+endif()
+
+# another try for CXX
+if (NOT DEFINED FLB_USE_RIPSER)
+  check_language(CXX)
+  if(CMAKE_CXX_COMPILER)
+    message(STATUS "CXX compiler found, enable ripser.")
+    set(FLB_USE_RIPSER Yes)
+  else()
+    message(STATUS "CXX compiler not found, disable ripser.")
+    set(FLB_USE_RIPSER No)
+  endif()
+endif()
+
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
@@ -136,10 +180,11 @@ option(FLB_SMALL               "Optimise for small size"       No)
 set(FLB_SECURITY "ReleaseOnly" CACHE STRING "Build with security optimizations")
 set_property(CACHE FLB_SECURITY PROPERTY STRINGS "On;Off;ReleaseOnly")
 option(FLB_COVERAGE            "Build with code-coverage"      No)
+option(FLB_COMPILER_STRICT_POINTER_TYPES "Build with -Werror=incompatible-pointer-types" No)
 option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
 option(FLB_REGEX               "Build with Regex support"     Yes)
 option(FLB_UTF8_ENCODER        "Build with UTF8 encoding support" Yes)
-option(FLB_UNICODE_ENCODER     "Build with Unicode (UTF-16LE, UTF-16BE) encoding support" Yes)
+option(FLB_UNICODE_ENCODER     "Build with Unicode (UTF-16LE, UTF-16BE) encoding support" ${FLB_USE_SIMDUTF})
 option(FLB_PARSER              "Build with Parser support"    Yes)
 option(FLB_TLS                 "Build with SSL/TLS support"   Yes)
 option(FLB_BINARY              "Build executable binary"      Yes)
@@ -164,7 +209,8 @@ option(FLB_SIGNV4              "Enable AWS Signv4 support"    Yes)
 option(FLB_AWS                 "Enable AWS support"           Yes)
 option(FLB_STATIC_CONF         "Build binary using static configuration")
 option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"                    Yes)
-option(FLB_SIMD                "Enable SIMD support"                         No)
+set(FLB_SIMD "Auto" CACHE STRING "Enable SIMD support (On, Off, Auto)")
+set_property(CACHE FLB_SIMD PROPERTY STRINGS "On;Off;Auto")
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
 option(FLB_AVRO_ENCODER        "Build with Avro encoding support"            No)
 option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support"      No)
@@ -176,6 +222,7 @@ option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protec
 option(FLB_ENFORCE_ALIGNMENT   "Enable limited platform specific aligned memory access" No)
 option(FLB_KAFKA               "Enable Kafka support"         Yes)
 option(FLB_ZIG                 "Enable zig integration"       Yes)
+option(FLB_RIPSER              "Enable Ripser support"        ${FLB_USE_RIPSER})
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
@@ -191,6 +238,9 @@ option(FLB_CUSTOM_CALYPTIA     "Enable Calyptia Support"      Yes)
 
 # Config formats
 option(FLB_CONFIG_YAML         "Enable YAML config format"    Yes)
+
+option(FLB_BENCHMARKS          "Enable benchmarks"             No)
+
 
 # List of plugins available and defaults for each option
 include(cmake/plugins_options.cmake)
@@ -211,7 +261,64 @@ option(FLB_EVENT_LOOP_SELECT    "Enable select(2) event loop backend" No)
 option(FLB_EVENT_LOOP_LIBEVENT  "Enable libevent event loop backend"  No)
 
 # SIMD support
-if(FLB_SIMD)
+# ------------
+# FLB_SIMD is a tri-state cache variable:
+#   Auto : enable SIMD only when the target architecture/toolchain is known-good
+#   On   : require SIMD support and fail during configure otherwise
+#   Off  : disable SIMD explicitly
+string(TOUPPER "${FLB_SIMD}" FLB_SIMD_MODE)
+
+if(FLB_SIMD_MODE MATCHES "^(ON|YES|TRUE|1)$")
+  set(FLB_SIMD_MODE "ON")
+elseif(FLB_SIMD_MODE MATCHES "^(OFF|NO|FALSE|0)$")
+  set(FLB_SIMD_MODE "OFF")
+elseif(NOT FLB_SIMD_MODE STREQUAL "AUTO")
+  message(FATAL_ERROR "FLB_SIMD must be one of: On, Off, Auto")
+endif()
+
+set(FLB_SIMD_ENABLED No)
+set(FLB_SIMD_RISCV_C_FLAGS "")
+
+if(NOT FLB_SIMD_MODE STREQUAL "OFF")
+  set(FLB_SIMD_SUPPORTED_ARCH No)
+
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$" AND (CMAKE_SIZEOF_VOID_P GREATER 4))
+    set(FLB_SIMD_SUPPORTED_ARCH Yes)
+    set(FLB_SIMD_ENABLED Yes)
+  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64|AARCH64)$")
+    set(FLB_SIMD_SUPPORTED_ARCH Yes)
+    set(FLB_SIMD_ENABLED Yes)
+  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv64)")
+    set(FLB_SIMD_SUPPORTED_ARCH Yes)
+    check_c_compiler_flag("-march=rv64gcv_zba" FLB_SIMD_RISCV_COMPILER_FLAG)
+
+    if(FLB_SIMD_RISCV_COMPILER_FLAG)
+      set(FLB_SIMD_ENABLED Yes)
+      set(FLB_SIMD_RISCV_C_FLAGS "-march=rv64gcv_zba")
+    elseif(FLB_SIMD_MODE STREQUAL "ON")
+      message(FATAL_ERROR
+        "FLB_SIMD=On requires compiler support for -march=rv64gcv_zba on riscv64")
+    else()
+      message(WARNING
+        "FLB_SIMD=Auto disabled SIMD on riscv64 because the compiler does not "
+        "support -march=rv64gcv_zba")
+    endif()
+  endif()
+
+  if(NOT FLB_SIMD_SUPPORTED_ARCH)
+    if(FLB_SIMD_MODE STREQUAL "ON")
+      message(FATAL_ERROR
+        "FLB_SIMD=On is only supported on x86_64, aarch64/arm64, and "
+        "riscv64 with RVV compiler support")
+    else()
+      message(STATUS
+        "FLB_SIMD=Auto disabled SIMD on unsupported architecture: "
+        "${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+  endif()
+endif()
+
+if(FLB_SIMD_ENABLED)
   FLB_DEFINITION(FLB_HAVE_SIMD)
 endif()
 
@@ -236,7 +343,10 @@ option(FLB_PREFER_SYSTEM_LIB_CARES        "Prefer the libcares system library"  
 option(FLB_PREFER_SYSTEM_LIB_JEMALLOC     "Prefer the libjemalloc system library"     ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_KAFKA        "Prefer the libkafka system library"        ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_LUAJIT       "Prefer the libluajit system library"       ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_MSGPACK      "Prefer the libmsgpack system library"      ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_NGHTTP2      "Prefer the libnghttp2 system library"      ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_SQLITE       "Prefer the libsqlite3 system library"      ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_ZSTD         "Prefer the libzstd system library"         ${FLB_PREFER_SYSTEM_LIBS})
 
 # Enable all features
 if(FLB_ALL)
@@ -293,6 +403,7 @@ if(FLB_DEV)
   set(FLB_HTTP_SERVER       On)
   set(FLB_HTTP_CLIENT_DEBUG On)
   set(FLB_TESTS_INTERNAL    On)
+  set(FLB_BENCHMARKS        On)
 endif()
 
 if(FLB_TRACE)
@@ -405,12 +516,31 @@ if(FLB_SMALL)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -g0 ${strip_flag} -fno-stack-protector -fomit-frame-pointer -DNDEBUG -U_FORTIFY_SOURCE")
 endif()
 
+# simdutf
+if(FLB_UNICODE_ENCODER)
+  if (NOT FLB_USE_SIMDUTF)
+    message(STATUS "FLB_USE_SIMDUTF is disabled. Disabling FLB_UNICODE_ENCODER support.")
+    set(FLB_UNICODE_ENCODER OFF)
+  endif()
+endif()
+
 if(FLB_COVERAGE)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
   if (FLB_UNICODE_ENCODER)
     set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
   endif()
   set(CMAKE_BUILD_TYPE "Debug")
+endif()
+
+if(FLB_COMPILER_STRICT_POINTER_TYPES)
+  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    add_compile_options(-Werror=incompatible-pointer-types)
+  endif()
+  # Currently, AppleClang has more struct rules when using -Werror=incompatible-pointer-types.
+  # We still permit to discarding const qualifiers warnings.
+  if(CMAKE_C_COMPILER_ID MATCHES "AppleClang")
+    add_compile_options(-Wno-incompatible-pointer-types-discards-qualifiers)
+  endif()
 endif()
 
 # Enable Debug symbols if specified
@@ -518,11 +648,20 @@ FLB_OPTION(FLUENT_PROTO_PROFILES ON)
 add_subdirectory(${FLB_PATH_LIB_FLUENT_OTEL} EXCLUDE_FROM_ALL)
 
 # MsgPack options
-option(MSGPACK_ENABLE_CXX             OFF)
-option(MSGPACK_ENABLE_SHARED          OFF)
-option(MSGPACK_BUILD_TESTS            OFF)
-option(MSGPACK_BUILD_EXAMPLES         OFF)
-add_subdirectory(${FLB_PATH_LIB_MSGPACK} EXCLUDE_FROM_ALL)
+if(FLB_PREFER_SYSTEM_LIB_MSGPACK)
+  find_package(PkgConfig)
+  # Try msgpack first (Ubuntu/Debian), then msgpack-c (Arch Linux)
+  pkg_check_modules(MSGPACK msgpack>=4.0.0)
+  if(NOT MSGPACK_FOUND)
+    pkg_check_modules(MSGPACK msgpack-c>=4.0.0)
+  endif()
+endif()
+if(MSGPACK_FOUND)
+  include_directories(${MSGPACK_INCLUDE_DIRS})
+  link_directories(${MSGPACK_LIBRARY_DIRS})
+else()
+  include(cmake/msgpack.cmake)
+endif()
 
 # MPack
 add_definitions(-DMPACK_EXTENSIONS=1)
@@ -532,24 +671,81 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
 # Zstd (zstd)
-set(ZSTD_BUILD_STATIC ON)
-set(ZSTD_BUILD_SHARED OFF)
-set(ZSTD_BUILD_COMPRESSION ON)
-set(ZSTD_BUILD_DECOMPRESSION ON)
-set(ZSTD_BUILD_DICTBUILDER OFF)
-set(ZSTD_BUILD_DEPRECATED OFF)
-add_subdirectory(${FLB_PATH_LIB_ZSTD}/build/cmake EXCLUDE_FROM_ALL)
+if(FLB_PREFER_SYSTEM_LIB_ZSTD)
+  find_package(ZSTD 1.4.8 QUIET)
+  if(ZSTD_FOUND)
+    set(LIBZSTD_FOUND TRUE)
+    # Use the target provided by find_package(ZSTD)
+    # Modern FindZSTD provides ZSTD::libzstd_static or ZSTD::libzstd_shared
+    if(TARGET ZSTD::libzstd_static)
+      set(LIBZSTD_LIBRARIES ZSTD::libzstd_static)
+    elseif(TARGET ZSTD::libzstd_shared)
+      set(LIBZSTD_LIBRARIES ZSTD::libzstd_shared)
+    elseif(TARGET ZSTD::ZSTD)
+      set(LIBZSTD_LIBRARIES ZSTD::ZSTD)
+    else()
+      # Fallback: create a wrapper if no target is provided
+      add_library(BUNDLED::ZSTD INTERFACE IMPORTED)
+      if(ZSTD_LIBRARIES)
+        set_property(TARGET BUNDLED::ZSTD PROPERTY
+          INTERFACE_LINK_LIBRARIES "${ZSTD_LIBRARIES}")
+      endif()
+      if(ZSTD_INCLUDE_DIRS)
+        set_property(TARGET BUNDLED::ZSTD PROPERTY
+          INTERFACE_INCLUDE_DIRECTORIES "${ZSTD_INCLUDE_DIRS}")
+      endif()
+      set(LIBZSTD_LIBRARIES BUNDLED::ZSTD)
+    endif()
+   else()
+    find_package(PkgConfig)
+    pkg_check_modules(LIBZSTD libzstd>=1.4.8)
+    if(LIBZSTD_FOUND)
+      include_directories(${LIBZSTD_INCLUDE_DIRS})
+      link_directories(${LIBZSTD_LIBRARY_DIRS})
+      add_library(BUNDLED::ZSTD INTERFACE IMPORTED)
+      set_property(TARGET BUNDLED::ZSTD PROPERTY
+        INTERFACE_LINK_LIBRARIES "${LIBZSTD_LIBRARIES}")
+      set(LIBZSTD_LIBRARIES BUNDLED::ZSTD)
+    endif()
+  endif()
+endif()
+
+if(NOT LIBZSTD_FOUND)
+  include(cmake/zstd.cmake)
+
+  if(NOT MSVC)
+    target_compile_options(libzstd_static PRIVATE -fvisibility=hidden)
+  endif()
+
+  set(LIBZSTD_LIBRARIES libzstd_static)
+endif()
 
 # ring buffer library
 add_subdirectory(${FLB_PATH_LIB_RING_BUFFER} EXCLUDE_FROM_ALL)
+
+# yyjson
+option(FLB_YYJSON "Enable yyjson backend" ON)
+if(FLB_YYJSON)
+  add_subdirectory(${FLB_PATH_LIB_YYJSON} EXCLUDE_FROM_ALL)
+  FLB_DEFINITION(FLB_HAVE_YYJSON)
+
+  if (TARGET yyjson AND NOT FLB_COVERAGE AND
+      CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang|Intel")
+    # yyjson's O0 reader can exceed the default coroutine stack budget.
+    # Keep debug symbols, but force enough optimization to shrink the frame.
+    target_compile_options(yyjson PRIVATE
+      $<$<AND:$<COMPILE_LANGUAGE:C>,$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>>:-Og>
+    )
+  endif()
+endif()
 
 # Avro
 if(FLB_AVRO_ENCODER)
   # jansson
   option(JANSSON_BUILD_DOCS         OFF)
   option(JANSSON_EXAMPLES           OFF)
-  option(JANSSON_WITHOUT_TESTS       ON)
   option(JANSSON_BUILD_SHARED_LIBS  OFF)
+  set(JANSSON_WITHOUT_TESTS ON CACHE BOOL "" FORCE)
   add_subdirectory(${FLB_PATH_LIB_JANSSON})
 
   #avro
@@ -562,7 +758,10 @@ if(FLB_UTF8_ENCODER)
 endif()
 
 # simdutf
-if(FLB_UNICODE_ENCODER)
+if(FLB_UNICODE_ENCODER AND FLB_USE_SIMDUTF)
+  if (NOT FLB_USE_SIMDUTF)
+    message(FATAL_ERROR "FLB_UNICODE_ENCODER requires FLB_USE_SIMDUTF")
+  endif()
   enable_language(CXX)
   set (CMAKE_CXX_STANDARD 11)
   add_subdirectory(${FLB_PATH_LIB_SIMDUTF} EXCLUDE_FROM_ALL)
@@ -719,6 +918,48 @@ if(FLB_WASM)
   endif ()
 endif()
 
+# ripser
+if(FLB_RIPSER)
+  enable_language(CXX)
+  set (CMAKE_CXX_STANDARD 11)
+  add_subdirectory(${FLB_PATH_LIB_RIPSER} EXCLUDE_FROM_ALL)
+  FLB_DEFINITION(FLB_HAVE_RIPSER)
+endif()
+
+# Kafka support (library in general)
+if(FLB_KAFKA)
+  if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
+    if(FLB_PREFER_SYSTEM_LIB_KAFKA)
+      find_package(PkgConfig)
+      pkg_check_modules(KAFKA rdkafka>=2.3.0)
+    endif()
+    if(KAFKA_FOUND)
+      include_directories(${KAFKA_INCLUDE_DIRS})
+      link_directories(${KAFKA_LIBRARY_DIRS})
+    else()
+      include(cmake/kafka.cmake)
+    endif()
+  endif()
+endif()
+
+# AWS MSK IAM detection (must come after Kafka section)
+if(FLB_AWS AND FLB_KAFKA)
+  # Check if Kafka OAuth Bearer support was detected
+  # On Windows: uses SSPI (no Cyrus SASL needed, just SSL)
+  # On Linux/macOS: uses Cyrus SASL (libsasl2)
+  if(DEFINED FLB_KAFKA_MSK_IAM_ENABLED AND FLB_KAFKA_MSK_IAM_ENABLED)
+    set(FLB_HAVE_AWS_MSK_IAM ON)  # Set CMake variable
+    FLB_DEFINITION(FLB_HAVE_AWS_MSK_IAM)  # Set preprocessor definition
+    message(STATUS "AWS MSK IAM authentication: ENABLED")
+  else()
+    message(STATUS "AWS MSK IAM authentication: DISABLED (requires Kafka with OAuth Bearer support)")
+  endif()
+else()
+  if(FLB_AWS AND NOT FLB_KAFKA)
+    message(STATUS "AWS MSK IAM authentication: DISABLED (requires FLB_KAFKA=ON)")
+  endif()
+endif()
+
 # AWS
 if (FLB_AWS)
   FLB_DEFINITION(FLB_HAVE_AWS)
@@ -746,8 +987,17 @@ if (FLB_SIGNV4)
 endif()
 
 if(FLB_SQLDB)
+  if(FLB_PREFER_SYSTEM_LIB_SQLITE)
+    find_package(PkgConfig)
+    pkg_check_modules(SQLITE sqlite3>=3.0.0)
+  endif()
+  if(SQLITE_FOUND)
+    include_directories(${SQLITE_INCLUDE_DIRS})
+    link_directories(${SQLITE_LIBRARY_DIRS})
+  else()
+    include(cmake/sqlite.cmake)
+  endif()
   FLB_DEFINITION(FLB_HAVE_SQLDB)
-  add_subdirectory(${FLB_PATH_LIB_SQLITE})
 endif()
 
 if(FLB_TRACE)
@@ -847,6 +1097,18 @@ check_c_source_compiles("
   }" FLB_HAVE_GMTOFF)
 if(FLB_HAVE_GMTOFF)
   FLB_DEFINITION(FLB_HAVE_GMTOFF)
+endif()
+
+# tm_zone support
+check_c_source_compiles("
+  #include <time.h>
+  int main() {
+     struct tm tm;
+     tm.tm_zone = \"GMT\";
+     return 0;
+  }" FLB_HAVE_TIME_ZONE)
+if(FLB_HAVE_TIME_ZONE)
+  FLB_DEFINITION(FLB_HAVE_TIME_ZONE)
 endif()
 
 # clock_get_time() support for macOS.
@@ -966,6 +1228,10 @@ else()
   FLB_DEFINITION_VAL(FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE ${FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE})
 endif()
 
+if (FLB_BENCHMARKS)
+  add_subdirectory(benchmarks)
+endif()
+
 # Build tools/xxd-c
 add_subdirectory(tools/xxd-c)
 
@@ -996,12 +1262,8 @@ else()
     set(AUTOCONF_HOST_OPT "--host=${GNU_HOST}")
 endif()
 
-if(CMAKE_GENERATOR MATCHES "Ninja")
-  if(FLB_SYSTEM_WINDOWS)
-    MESSAGE(FATAL_ERROR "Building with Ninja is not supported on Windows")
-  else()
-    set(EXTERNAL_BUILD_TOOL "make")
-  endif()
+if(CMAKE_GENERATOR MATCHES "Ninja" AND NOT FLB_SYSTEM_WINDOWS)
+  set(EXTERNAL_BUILD_TOOL "make")
 else()
   set(EXTERNAL_BUILD_TOOL "$(MAKE)")
 endif()
@@ -1051,54 +1313,7 @@ endif()
 # LibBacktrace (friendly stacktrace support)
 # =========================================
 if(FLB_BACKTRACE)
-  if(FLB_PREFER_SYSTEM_LIB_BACKTRACE)
-    find_path(LIBBACKTRACE_INCLUDE_DIRS NAMES backtrace.h)
-    find_library(LIBBACKTRACE_LIBRARIES NAMES backtrace)
-  endif()
-  if(LIBBACKTRACE_INCLUDE_DIRS AND LIBBACKTRACE_LIBRARIES)
-    message(STATUS "libbacktrace found (${LIBBACKTRACE_LIBRARIES})")
-    include_directories(${LIBBACKTRACE_INCLUDE_DIRS})
-    link_directories(${LIBBACKTRACE_LIBRARY_DIRS})
-  else()
-    message(STATUS "libbacktrace not found, building ourselves")
-    if (CMAKE_OSX_SYSROOT)
-      # From macOS Mojave, /usr/include does not store C SDK headers.
-      # For libbacktrace building on macOS, we have to tell C headers where they are located.
-      set(DEPS_C_COMPILER "${CMAKE_C_COMPILER} -isysroot ${CMAKE_OSX_SYSROOT}")
-    else()
-      set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
-    endif()
-    set(FLB_LIBBACKTRACE_PATH "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
-    ExternalProject_Add(backtrace
-      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/
-      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-      BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
-      BUILD_BYPRODUCTS ${FLB_LIBBACKTRACE_PATH}
-      INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} DESTDIR= install
-      )
-    add_library(libbacktrace STATIC IMPORTED GLOBAL)
-    set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION ${FLB_LIBBACKTRACE_PATH})
-    add_dependencies(libbacktrace backtrace)
-    include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
-    set(LIBBACKTRACE_LIBRARIES "libbacktrace")
-  endif()
-  FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
-endif()
-
-# Kafka support (library in general)
-if(FLB_KAFKA)
-  if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
-    if(FLB_PREFER_SYSTEM_LIB_KAFKA)
-      find_package(PkgConfig)
-      pkg_check_modules(KAFKA rdkafka>=2.3.0)
-    endif()
-    if(KAFKA_FOUND)
-      include_directories(${KAFKA_INCLUDE_DIRS})
-      link_directories(${KAFKA_LIBRARY_DIRS})
-    else()
-      include(cmake/kafka.cmake)
-    endif()
-  endif()
+  include(cmake/libbacktrace.cmake)
 endif()
 
 # Onigmo (Regex Engine) options
@@ -1116,6 +1331,7 @@ if(FLB_REGEX)
     FLB_DEFINITION_VAL(ONIG_EXTERN "extern")
   endif()
   add_subdirectory(${FLB_PATH_LIB_ONIGMO} EXCLUDE_FROM_ALL)
+  target_include_directories(onigmo-static INTERFACE ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_ONIGMO})
 endif()
 
 # tutf8e (UTF8 Encoding)
@@ -1161,6 +1377,14 @@ if(FLB_ARROW AND ARROW_GLIB_FOUND)
   FLB_DEFINITION(FLB_HAVE_ARROW)
 else()
   set(FLB_ARROW OFF)
+endif()
+
+# Additional prerequisites for Apache Parquet
+pkg_check_modules(ARROW_GLIB_PARQUET QUIET parquet-glib)
+if(FLB_ARROW AND ARROW_GLIB_PARQUET_FOUND)
+  FLB_DEFINITION(FLB_HAVE_ARROW_PARQUET)
+else()
+  message(STATUS "Arrow GLib Parquet not found. Disabling parquet compression")
 endif()
 
 # EBPF Support

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -60,6 +60,12 @@ int cb_null_init(struct flb_output_instance *ins, struct flb_config *config,
         if (ret == -1) {
             flb_plg_error(ctx->ins, "unrecognized 'format' option. "
                           "Using 'msgpack'");
+        }
+        else if (ret == FLB_PACK_JSON_FORMAT_OTLP ||
+                 ret == FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
+            flb_plg_error(ctx->ins,
+                          "format '%s' is not supported by out_null",
+                          tmp);
         }
         else {
             ctx->out_format = ret;
@@ -123,7 +129,8 @@ static void cb_null_flush(struct flb_event_chunk *event_chunk,
                                                event_chunk->size,
                                                ctx->out_format,
                                                ctx->json_date_format,
-                                               ctx->date_key);
+                                               ctx->date_key,
+                                               config->json_escape_unicode);
         flb_sds_destroy(json);
     }
 

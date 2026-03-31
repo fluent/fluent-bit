@@ -36,7 +36,7 @@ struct cmt_histogram_buckets *cmt_histogram_buckets_create_size(double *bkts, si
     }
 
     /* besides buckets set by the user, we add an implicit bucket for +inf */
-    upper_bounds = calloc(1, sizeof(double) * count + 1);
+    upper_bounds = calloc(1, sizeof(double) * (count + 1));
     if (!upper_bounds) {
         cmt_errno();
         return NULL;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@
 
 #include "splunk.h"
 #include "splunk_config.h"
-#include "splunk_conn.h"
 #include "splunk_config.h"
 
 static void delete_hec_tokens(struct flb_splunk *ctx)
@@ -134,7 +133,6 @@ struct flb_splunk *splunk_config_create(struct flb_input_instance *ins)
         return NULL;
     }
     ctx->ins = ins;
-    mk_list_init(&ctx->connections);
     mk_list_init(&ctx->auth_tokens);
 
     /* Load the config map */
@@ -158,19 +156,6 @@ struct flb_splunk *splunk_config_create(struct flb_input_instance *ins)
     ctx->listen = flb_strdup(ins->host.listen);
     snprintf(port, sizeof(port) - 1, "%d", ins->host.port);
     ctx->tcp_port = flb_strdup(port);
-
-    /* HTTP Server specifics */
-    ctx->server = flb_calloc(1, sizeof(struct mk_server));
-    if (ctx->server == NULL) {
-        flb_plg_error(ctx->ins, "error on mk_server allocation");
-        splunk_config_destroy(ctx);
-        return NULL;
-    }
-    ctx->server->keep_alive = MK_TRUE;
-
-    /* monkey detects server->workers == 0 as the server not being initialized at the
-     * moment so we want to make sure that it stays that way!
-     */
 
     ret = flb_log_event_encoder_init(&ctx->log_encoder,
                                      FLB_LOG_EVENT_FORMAT_DEFAULT);
@@ -229,33 +214,27 @@ struct flb_splunk *splunk_config_create(struct flb_input_instance *ins)
         }
     }
 
+    /* Create record accessor for tag_key if specified */
+    if (ctx->tag_key) {
+        ctx->ra_tag_key = flb_ra_create(ctx->tag_key, FLB_TRUE);
+        if (!ctx->ra_tag_key) {
+            flb_plg_error(ctx->ins, "invalid record accessor pattern for tag_key: %s", ctx->tag_key);
+            splunk_config_destroy(ctx);
+            return NULL;
+        }
+    }
+
     return ctx;
 }
 
 int splunk_config_destroy(struct flb_splunk *ctx)
 {
-    /* release all connections */
-    splunk_conn_release_all(ctx);
+    if (ctx->ra_tag_key) {
+        flb_ra_destroy(ctx->ra_tag_key);
+    }
 
     flb_log_event_encoder_destroy(&ctx->log_encoder);
-
-    if (ctx->collector_id != -1) {
-        flb_input_collector_delete(ctx->collector_id, ctx->ins);
-
-        ctx->collector_id = -1;
-    }
-
-    if (ctx->downstream != NULL) {
-        flb_downstream_destroy(ctx->downstream);
-    }
-
-    if (ctx->enable_http2) {
-        flb_http_server_destroy(&ctx->http_server);
-    }
-
-    if (ctx->server) {
-        flb_free(ctx->server);
-    }
+    flb_http_server_destroy(&ctx->http_server);
 
     if (ctx->success_headers_str != NULL) {
         flb_sds_destroy(ctx->success_headers_str);

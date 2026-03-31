@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -102,6 +102,11 @@ struct flb_aws_client {
 
     /* Send all log messages as debug; used in AWS Cred Providers on init */
     int debug_only;
+
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    /* Callbacks context */
+    struct flb_callback *http_cb_ctx;
+#endif
 };
 
 /* frees dynamic_headers */
@@ -192,9 +197,13 @@ int flb_aws_is_auth_error(char *payload, size_t payload_size);
 
 int flb_read_file(const char *path, char **out_buf, size_t *out_size);
 
-//* Constructs S3 object key as per the format. */
+/* Constructs S3 object key as per the format. */
 flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
                          char *tag_delimiter, uint64_t seq_index);
+
+/* Constructs S3 object key as per the blob format. */
+flb_sds_t flb_get_s3_blob_key(const char *format, const char *tag,
+                              char *tag_delimiter, const char *blob_path);
 
 /*
  * This function is an extension to strftime which can support milliseconds with %3N,

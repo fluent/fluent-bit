@@ -1,0 +1,123 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+# hadolint global ignore=DL3003,DL3008,DL3009,DL3059
+
+FROM mcr.microsoft.com/devcontainers/rust:1-1-bullseye@sha256:ddc1ee022d327f024c07484c9333db3fbbfd504bc096cdb66635653a2bebb33e
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asian/Shanghai
+
+# hadolint ignore=DL3009
+RUN apt-get update \
+  && apt-get upgrade -y \
+  && apt-get install -y --no-install-recommends cmake
+
+RUN rustup target add wasm32-wasip1
+
+#
+# Openvino
+# Refer to
+#   - https://docs.openvino.ai/2022.3/openvino_docs_install_guides_installing_openvino_from_archive_linux.html
+#   - https://docs.openvino.ai/2023.3/openvino_docs_install_guides_installing_openvino_from_archive_linux.html
+#   - https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-archive-linux.html
+#
+RUN wget -q https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+  && echo "deb https://apt.repos.intel.com/openvino/2023 ubuntu20 main" | tee /etc/apt/sources.list.d/intel-openvino-2023.list
+RUN apt-get update \
+  && apt-get upgrade -y \
+  && apt-get install --no-install-recommends -y openvino-2023.2.0
+
+# Activate after upgrading to wasi-nn 0.7.0
+# #
+# # wasi-nn
+# # compilation requirements
+# WORKDIR /workspaces/wasi-nn
+# RUN git clone https://github.com/bytecodealliance/wasi-nn.git . \
+#   # update new wasmtime's cli (#100). Apr 27, 2024
+#   && git checkout 556890b121dd1171665d835aba4d04a7e29e37dc
+#
+# WORKDIR /workspaces/wasi-nn/rust/examples/classification-example/
+# RUN cargo build --target=wasm32-wasip1
+#
+# ARG FIXTURE=https://download.01.org/openvinotoolkit/fixtures/mobilenet
+# RUN cp target/wasm32-wasip1/debug/wasi-nn-example.wasm . \
+#   && wget -q --no-clobber $FIXTURE/mobilenet.xml \
+#   && wget -q --no-clobber $FIXTURE/mobilenet.bin
+# # There are model files(mobilenet*) and wasm files(wasi-nn-example.wasm) in the directory,
+
+#
+# wasmedge
+WORKDIR /tmp
+RUN wget -q https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh \
+  && chmod a+x ./install.sh
+# RUN ./install.sh -p /opt/wasmedge --plugins wasi_nn-tensorflowlite wasi_nn-openvino
+RUN ./install.sh -r yes -D -p /opt/wasmedge --plugins wasi_nn-openvino --dist ubuntu20.04 -v 0.14.0 \
+  && /opt/wasmedge/bin/wasmedge --version
+ENV PATH=/opt/wasmedge/bin:${PATH}
+# ENV WASMEDGE_LIB_DIR=/opt/wasmedge/lib
+
+#
+# wasmedge-wasinn-examples
+# based on wasi-nn 0.6.0
+WORKDIR /workspaces/wasmedge-wasinn-examples
+RUN git clone --depth 1 https://github.com/second-state/WasmEdge-WASINN-examples.git .
+
+# recompile with debug info
+ARG FIXTURE=https://download.01.org/openvinotoolkit/fixtures/mobilenet
+WORKDIR /workspaces/wasmedge-wasinn-examples/openvino-mobilenet-image/
+RUN pushd rust \
+  && cargo build --target=wasm32-wasip1 \
+  && popd \
+  && wget -q --no-clobber $FIXTURE/mobilenet.xml \
+  && wget -q --no-clobber $FIXTURE/mobilenet.bin \
+  && ls -l mobilenet.xml mobilenet.bin
+
+WORKDIR /workspaces/wasmedge-wasinn-examples/openvino-mobilenet-raw/
+RUN pushd rust \
+  && cargo build --target=wasm32-wasip1 \
+  && popd \
+  && wget -q --no-clobber $FIXTURE/mobilenet.xml \
+  && wget -q --no-clobber $FIXTURE/mobilenet.bin \
+  && wget -q --no-clobber $FIXTURE/tensor-1x224x224x3-f32.bgr \
+  && ls -l mobilenet.xml mobilenet.bin tensor-1x224x224x3-f32.bgr
+
+WORKDIR /workspaces/wasmedge-wasinn-examples/openvino-road-segmentation-adas/
+RUN pushd openvino-road-seg-adas \
+  && cargo build --target=wasm32-wasip1
+
+WORKDIR /workspaces/wasmedge-wasinn-examples/tflite-birds_v1-image/
+RUN pushd rust \
+  && cargo build --target=wasm32-wasip1
+
+# mount models when running
+WORKDIR /workspaces/wasmedge-wasinn-examples/wasmedge-ggml/qwen
+RUN wget --progress=dot:giga https://www.modelscope.cn/models/qwen/Qwen1.5-0.5B-Chat-GGUF/resolve/master/qwen1_5-0_5b-chat-q2_k.gguf
+RUN cargo build --target=wasm32-wasip1
+#
+#
+# iwasm. build from source
+WORKDIR /workspaces/wamr
+COPY . .
+
+WORKDIR /workspaces/wamr/product-mini/platforms/linux
+
+RUN OpenVINO_DIR=/usr/lib/openvino-2023.2.0 \
+    cmake -S . -B build \
+    -DWAMR_BUILD_WASI_NN=1 -DWAMR_BUILD_WASI_EPHEMERAL_NN=1 \
+    -DWAMR_BUILD_WASI_NN_OPENVINO=1 \
+    -DWAMR_BUILD_WASI_NN_TFLITE=1 \
+    -DWAMR_BUILD_WASI_NN_LLAMACPP=1 \
+  && cmake --build build \
+  && cmake --install build
+
+ENV LD_LIBRARY_PATH=/usr/local/lib
+
+
+# add smoke test script
+COPY core/iwasm/libraries/wasi-nn/test/run_smoke_test.py /
+
+WORKDIR /workspaces/wasmedge-wasinn-examples
+CMD ["python3", "/run_smoke_test.py"]

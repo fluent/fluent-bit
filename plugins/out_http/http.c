@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -109,10 +109,10 @@ static void append_headers(struct flb_http_client *c,
     }
 }
 
-static int http_post(struct flb_out_http *ctx,
-                     const void *body, size_t body_len,
-                     const char *tag, int tag_len,
-                     char **headers)
+static int http_request(struct flb_out_http *ctx,
+                        const void *body, size_t body_len,
+                        const char *tag, int tag_len,
+                        char **headers)
 {
     int ret = 0;
     int out_ret = FLB_OK;
@@ -173,11 +173,23 @@ static int http_post(struct flb_out_http *ctx,
 
 
     /* Create HTTP client context */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
+    c = flb_http_client(u_conn, ctx->http_method, ctx->uri,
                         payload_buf, payload_size,
                         ctx->host, ctx->port,
                         ctx->proxy, 0);
 
+    if (c == NULL) {
+        flb_plg_error(ctx->ins, "[http_client] failed to create HTTP client");
+        if (payload_buf != body) {
+            flb_free(payload_buf);
+        }
+
+        if (u_conn) {
+            flb_upstream_conn_release(u_conn);
+        }
+
+        return FLB_RETRY;
+    }
 
     if (c->proxy.host) {
         flb_plg_debug(ctx->ins, "[http_client] proxy host: %s port: %i",
@@ -192,6 +204,15 @@ static int http_post(struct flb_out_http *ctx,
      * This needs to be improved through a more clean API.
      */
     c->cb_ctx = ctx->ins->callback;
+
+    flb_http_set_response_timeout(c, ctx->response_timeout);
+
+    if (ctx->read_idle_timeout > 0) {
+        flb_http_set_read_idle_timeout(c, ctx->read_idle_timeout);
+    }
+    else {
+        flb_http_set_read_idle_timeout(c, ctx->ins->net_setup.io_timeout);
+    }
 
     /* Append headers */
     if (headers) {
@@ -281,7 +302,7 @@ static int http_post(struct flb_out_http *ctx,
 #endif
 #endif
 
-    ret = flb_http_do(c, &b_sent);
+    ret = flb_http_do_with_oauth2(c, &b_sent, ctx->oauth2_ctx);
     if (ret == 0) {
         /*
          * Only allow the following HTTP status:
@@ -427,7 +448,8 @@ static int compose_payload_gelf(struct flb_out_http *ctx,
 
 static int compose_payload(struct flb_out_http *ctx,
                            const void *in_body, size_t in_size,
-                           void **out_body, size_t *out_size)
+                           void **out_body, size_t *out_size,
+                           struct flb_config *config)
 {
     flb_sds_t encoded;
 
@@ -442,7 +464,8 @@ static int compose_payload(struct flb_out_http *ctx,
                                                   in_size,
                                                   ctx->out_format,
                                                   ctx->json_date_format,
-                                                  ctx->date_key);
+                                                  ctx->date_key,
+                                                  config->json_escape_unicode);
         if (encoded == NULL) {
             flb_plg_error(ctx->ins, "failed to convert json");
             return FLB_ERROR;
@@ -518,7 +541,7 @@ err:
     return NULL;
 }
 
-static int post_all_requests(struct flb_out_http *ctx,
+static int send_all_requests(struct flb_out_http *ctx,
                              const char *data, size_t size,
                              flb_sds_t body_key,
                              flb_sds_t headers_key,
@@ -587,8 +610,10 @@ static int post_all_requests(struct flb_out_http *ctx,
         }
 
         if (body_found && headers_found) {
-            flb_plg_trace(ctx->ins, "posting record %zu", record_count++);
-            ret = http_post(ctx, body, body_size, event_chunk->tag,
+            flb_plg_trace(ctx->ins, "sending record %zu via %s",
+                          record_count++,
+                          ctx->http_method == FLB_HTTP_POST ? "POST" : "PUT");
+            ret = http_request(ctx, body, body_size, event_chunk->tag,
                     flb_sds_len(event_chunk->tag), headers);
         }
         else {
@@ -620,16 +645,16 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
     (void) i_ins;
 
     if (ctx->body_key) {
-        ret = post_all_requests(ctx, event_chunk->data, event_chunk->size,
+        ret = send_all_requests(ctx, event_chunk->data, event_chunk->size,
                                 ctx->body_key, ctx->headers_key, event_chunk);
         if (ret < 0) {
             flb_plg_error(ctx->ins,
-                          "failed to post requests body key \"%s\"", ctx->body_key);
+                          "failed to send requests using body key \"%s\"", ctx->body_key);
         }
     }
     else {
         ret = compose_payload(ctx, event_chunk->data, event_chunk->size,
-                              &out_body, &out_size);
+                              &out_body, &out_size, config);
         if (ret != FLB_OK) {
             FLB_OUTPUT_RETURN(ret);
         }
@@ -638,15 +663,15 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
             (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
             (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
             (ctx->out_format == FLB_HTTP_OUT_GELF)) {
-            ret = http_post(ctx, out_body, out_size,
-                            event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
+            ret = http_request(ctx, out_body, out_size,
+                               event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
             flb_sds_destroy(out_body);
         }
         else {
             /* msgpack */
-            ret = http_post(ctx,
-                            event_chunk->data, event_chunk->size,
-                            event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
+            ret = http_request(ctx,
+                               event_chunk->data, event_chunk->size,
+                               event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
         }
     }
 
@@ -679,6 +704,16 @@ static struct flb_config_map config_map[] = {
      "Specify if the response paylod should be logged or not"
     },
     {
+     FLB_CONFIG_MAP_TIME, "http.response_timeout", "60s",
+     0, FLB_TRUE, offsetof(struct flb_out_http, response_timeout),
+     "Set maximum time to wait for a server response"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "http.read_idle_timeout", "0s",
+     0, FLB_TRUE, offsetof(struct flb_out_http, read_idle_timeout),
+     "Set maximum allowed time between two consecutive reads"
+    },
+    {
      FLB_CONFIG_MAP_STR, "http_user", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, http_user),
      "Set HTTP auth user"
@@ -687,6 +722,91 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_out_http, http_passwd),
      "Set HTTP auth password"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "oauth2.enable", "false",
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.enabled),
+     "Enable OAuth2 client credentials for outgoing requests"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.token_url", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.token_url),
+     "OAuth2 token endpoint URL"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.client_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.client_id),
+     "OAuth2 client_id"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.client_secret", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.client_secret),
+     "OAuth2 client_secret"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.scope", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.scope),
+     "Optional OAuth2 scope"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.audience", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.audience),
+     "Optional OAuth2 audience parameter"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.resource", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.resource),
+     "Optional OAuth2 resource parameter"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.auth_method", "basic",
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_auth_method),
+     "OAuth2 client authentication method: basic, post or private_key_jwt"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_key_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http,
+                           oauth2_config.jwt_key_file),
+     "Path to PEM private key used by private_key_jwt"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_cert_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http,
+                           oauth2_config.jwt_cert_file),
+     "Path to certificate file used by private_key_jwt"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_aud", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http,
+                           oauth2_config.jwt_aud),
+     "Audience for private_key_jwt assertion (defaults to oauth2.token_url)"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_header", "kid",
+     0, FLB_TRUE, offsetof(struct flb_out_http,
+                           oauth2_config.jwt_header),
+     "JWT header claim name for private_key_jwt thumbprint (kid or x5t)"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "oauth2.jwt_ttl_seconds", "300",
+     0, FLB_TRUE, offsetof(struct flb_out_http,
+                           oauth2_config.jwt_ttl),
+     "Lifetime in seconds for private_key_jwt client assertions"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "oauth2.refresh_skew_seconds", "60",
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.refresh_skew),
+     "Seconds before expiry to refresh the access token"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "oauth2.timeout", "0s",
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.timeout),
+     "Timeout for OAuth2 token requests (defaults to response_timeout when unset)"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "oauth2.connect_timeout", "0s",
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.connect_timeout),
+     "Connect timeout for OAuth2 token requests"
     },
 #ifdef FLB_HAVE_SIGNV4
 #ifdef FLB_HAVE_AWS
@@ -737,6 +857,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "uri", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, uri),
      "Specify an optional HTTP URI for the target web server, e.g: /something"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "http_method", "POST",
+     0, FLB_FALSE, 0,
+     "Specify the HTTP method to use. Supported methods are POST and PUT"
     },
 
     /* Gelf Properties */
@@ -792,7 +917,7 @@ static int cb_http_format_test(struct flb_config *config,
     struct flb_out_http *ctx = plugin_context;
     int ret;
 
-    ret = compose_payload(ctx, data, bytes, out_data, out_size);
+    ret = compose_payload(ctx, data, bytes, out_data, out_size, config);
     if (ret != FLB_OK) {
         flb_error("ret=%d", ret);
         return -1;

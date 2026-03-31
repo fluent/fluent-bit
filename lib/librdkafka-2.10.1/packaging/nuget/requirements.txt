@@ -1,0 +1,3 @@
+boto3~=1.38
+rpmfile~=1.1
+filemagic~=1.6

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_compression.h>
 
 #include "azure_blob.h"
 #include "azure_blob_conf.h"
@@ -647,12 +648,27 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         }
     }
 
-    /* Compress (gzip) */
+    /* Check for invalid configuration: buffering enabled with appendblob */
+    if (ctx->buffering_enabled == FLB_TRUE && ctx->btype == AZURE_BLOB_APPENDBLOB) {
+        flb_plg_error(ctx->ins,
+                      "buffering is not supported with 'appendblob' blob_type. "
+                      "Please use 'blockblob' blob_type or disable buffering.");
+        return NULL;
+    }
+
+    /* Compress payload over the wire */
     tmp = (char *) flb_output_get_property("compress", ins);
-    ctx->compress_gzip = FLB_FALSE;
+    ctx->compression = FLB_COMPRESSION_ALGORITHM_NONE;
     if (tmp) {
         if (strcasecmp(tmp, "gzip") == 0) {
-            ctx->compress_gzip = FLB_TRUE;
+            ctx->compression = FLB_COMPRESSION_ALGORITHM_GZIP;
+        }
+        else if (strcasecmp(tmp, "zstd") == 0) {
+            ctx->compression = FLB_COMPRESSION_ALGORITHM_ZSTD;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid compress value '%s' (supported: gzip, zstd)", tmp);
+            return NULL;
         }
     }
 
@@ -708,6 +724,12 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
 
         ctx->u = flb_upstream_create(config, ctx->real_endpoint, port, io_flags,
                                      ins->tls);
+        if (ctx->buffering_enabled ==  FLB_TRUE){
+            flb_stream_disable_flags(&ctx->u->base, FLB_IO_ASYNC);
+            ctx->u->base.net.io_timeout = ctx->io_timeout;
+        }
+
+        flb_plg_debug(ctx->ins, "async flag is %d", flb_stream_is_async(&ctx->u->base));
         if (!ctx->u) {
             flb_plg_error(ctx->ins, "cannot create upstream for endpoint '%s'",
                           ctx->real_endpoint);

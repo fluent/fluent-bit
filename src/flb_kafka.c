@@ -215,3 +215,42 @@ err:
     }
     return NULL;
 }
+
+struct flb_kafka_opaque *flb_kafka_opaque_create()
+{
+    struct flb_kafka_opaque *opaque;
+
+    opaque = flb_calloc(1, sizeof(struct flb_kafka_opaque));
+    if (!opaque) {
+        flb_error("[flb_kafka] Failed to allocate opaque object");
+        return NULL;
+    }
+
+    return opaque;
+}
+
+/* note: opaque_destroy only destroy the context, not it */
+void flb_kafka_opaque_destroy(struct flb_kafka_opaque *opaque)
+{
+    if (!opaque) {
+        return;
+    }
+
+    flb_free(opaque);
+}
+
+void flb_kafka_opaque_set(struct flb_kafka_opaque *opaque, void *ptr, void *msk_iam_ctx)
+{
+    if (!opaque) {
+        return;
+    }
+
+    /* only set ptr and msk_iam_ctx if they come with non valid values */
+    if (ptr) {
+        opaque->ptr = ptr;
+    }
+
+    if (msk_iam_ctx) {
+        opaque->msk_iam_ctx = msk_iam_ctx;
+    }
+}

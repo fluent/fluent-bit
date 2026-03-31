@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_http_common.h>
 #include <fluent-bit/flb_http_client_http1.h>
 #include <fluent-bit/flb_http_client_http2.h>
+#include <time.h>
 
 #define HTTP_CLIENT_TEMPORARY_BUFFER_SIZE (1024 * 64)
 
@@ -221,6 +222,7 @@ struct flb_http_client {
     int method;
     int flags;
     int header_len;
+    int base_header_len;
     int header_size;
     char *header_buf;
 
@@ -245,6 +247,13 @@ struct flb_http_client {
     /* Response */
     struct flb_http_client_response resp;
 
+    /* State tracking */
+    time_t ts_start;
+    time_t last_read_ts;
+
+    int response_timeout;
+    int read_idle_timeout;
+
     /* Tests */
     int test_mode;
     struct flb_test_http_response test_response;
@@ -252,6 +261,8 @@ struct flb_http_client {
     /* Reference to Callback context */
     void *cb_ctx;
 };
+
+struct flb_oauth2;
 
 struct flb_http_client_ng {
     struct cfl_list         sessions;
@@ -369,10 +380,14 @@ int flb_http_proxy_auth(struct flb_http_client *c,
                         const char *user, const char *passwd);
 int flb_http_bearer_auth(struct flb_http_client *c,
                         const char *token);
+int flb_http_remove_header(struct flb_http_client *c,
+                          const char *key, size_t key_len);
 int flb_http_set_keepalive(struct flb_http_client *c);
 int flb_http_set_content_encoding_gzip(struct flb_http_client *c);
 int flb_http_set_content_encoding_zstd(struct flb_http_client *c);
 int flb_http_set_content_encoding_snappy(struct flb_http_client *c);
+int flb_http_set_read_idle_timeout(struct flb_http_client *c, int timeout);
+int flb_http_set_response_timeout(struct flb_http_client *c, int timeout);
 
 int flb_http_set_callback_context(struct flb_http_client *c,
                                   struct flb_callback *cb_ctx);
@@ -387,6 +402,8 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
 int flb_http_do_request(struct flb_http_client *c, size_t *bytes);
 
 int flb_http_do(struct flb_http_client *c, size_t *bytes);
+int flb_http_do_with_oauth2(struct flb_http_client *c, size_t *bytes,
+                            struct flb_oauth2 *oauth2);
 int flb_http_client_proxy_connect(struct flb_connection *u_conn);
 void flb_http_client_destroy(struct flb_http_client *c);
 int flb_http_buffer_size(struct flb_http_client *c, size_t size);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -128,6 +128,13 @@ static int network_init(struct k8s_events *ctx, struct flb_config *config)
         return -1;
     }
 
+    if (flb_input_upstream_set(ctx->upstream, ctx->ins) != 0) {
+        flb_plg_error(ctx->ins, "network upstream setup failed");
+        flb_upstream_destroy(ctx->upstream);
+        ctx->upstream = NULL;
+        return -1;
+    }
+
     return 0;
 }
 
@@ -225,6 +232,45 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
     }
 
 #ifdef FLB_HAVE_SQLDB
+    /* Database sync mode (needs to be set before opening the database) */
+    ctx->db_sync = 1;  /* default: sqlite sync 'normal' */
+    tmp = flb_input_get_property("db.sync", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "extra") == 0) {
+            ctx->db_sync = 3;
+        }
+        else if (strcasecmp(tmp, "full") == 0) {
+            ctx->db_sync = 2;
+        }
+        else if (strcasecmp(tmp, "normal") == 0) {
+            ctx->db_sync = 1;
+        }
+        else if (strcasecmp(tmp, "off") == 0) {
+            ctx->db_sync = 0;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid database 'db.sync' value: %s", tmp);
+            k8s_events_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    /* Journal mode validation */
+    tmp = flb_input_get_property("db.journal_mode", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "DELETE") != 0 &&
+            strcasecmp(tmp, "TRUNCATE") != 0 &&
+            strcasecmp(tmp, "PERSIST") != 0 &&
+            strcasecmp(tmp, "MEMORY") != 0 &&
+            strcasecmp(tmp, "WAL") != 0 &&
+            strcasecmp(tmp, "OFF") != 0) {
+
+            flb_plg_error(ctx->ins, "invalid db.journal_mode=%s", tmp);
+            k8s_events_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
     /* Initialize database */
     tmp = flb_input_get_property("db", ins);
     if (tmp) {

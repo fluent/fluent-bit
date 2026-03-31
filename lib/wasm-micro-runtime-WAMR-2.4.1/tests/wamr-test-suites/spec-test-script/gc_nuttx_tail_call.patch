@@ -1,0 +1,56 @@
+diff --git a/test/core/return_call.wast b/test/core/return_call.wast
+index 8a3d7512..5a4eba68 100644
+--- a/test/core/return_call.wast
++++ b/test/core/return_call.wast
+@@ -103,22 +103,22 @@
+ (assert_return (invoke "count" (i64.const 0)) (i64.const 0))
+ (assert_return (invoke "count" (i64.const 1000)) (i64.const 0))
+ (;Return to the original configuration after we have corrected the error in the AOT/JIT tail-call implementation.;)
+-(assert_return (invoke "count" (i64.const 100_000)) (i64.const 0))
++(assert_return (invoke "count" (i64.const 1_001)) (i64.const 0))
+ 
+ (assert_return (invoke "even" (i64.const 0)) (i32.const 44))
+ (assert_return (invoke "even" (i64.const 1)) (i32.const 99))
+ (assert_return (invoke "even" (i64.const 100)) (i32.const 44))
+ (assert_return (invoke "even" (i64.const 77)) (i32.const 99))
+ (;Return to the original configuration after we have corrected the error in the AOT/JIT tail-call implementation.;)
+-(assert_return (invoke "even" (i64.const 100_000)) (i32.const 44))
+-(assert_return (invoke "even" (i64.const 100_001)) (i32.const 99))
++(assert_return (invoke "even" (i64.const 1_000)) (i32.const 44))
++(assert_return (invoke "even" (i64.const 1_001)) (i32.const 99))
+ (assert_return (invoke "odd" (i64.const 0)) (i32.const 99))
+ (assert_return (invoke "odd" (i64.const 1)) (i32.const 44))
+ (assert_return (invoke "odd" (i64.const 200)) (i32.const 99))
+ (assert_return (invoke "odd" (i64.const 77)) (i32.const 44))
+ (;Return to the original configuration after we have corrected the error in the AOT/JIT tail-call implementation.;)
+-(assert_return (invoke "odd" (i64.const 100_000)) (i32.const 99))
+-(assert_return (invoke "odd" (i64.const  99_999)) (i32.const 44))
++(assert_return (invoke "odd" (i64.const 1_000)) (i32.const 99))
++(assert_return (invoke "odd" (i64.const   999)) (i32.const 44))
+ 
+ 
+ ;; Invalid typing
+diff --git a/test/core/return_call_indirect.wast b/test/core/return_call_indirect.wast
+index 7f68b4a5..08a31417 100644
+--- a/test/core/return_call_indirect.wast
++++ b/test/core/return_call_indirect.wast
+@@ -257,15 +257,15 @@
+ (assert_return (invoke "even" (i32.const 1)) (i32.const 99))
+ (assert_return (invoke "even" (i32.const 100)) (i32.const 44))
+ (assert_return (invoke "even" (i32.const 77)) (i32.const 99))
+-(assert_return (invoke "even" (i32.const 100_000)) (i32.const 44))
+-(assert_return (invoke "even" (i32.const 111_111)) (i32.const 99))
++(assert_return (invoke "even" (i32.const 1_000)) (i32.const 44))
++(assert_return (invoke "even" (i32.const 1_001)) (i32.const 99))
+ (assert_return (invoke "odd" (i32.const 0)) (i32.const 99))
+ (assert_return (invoke "odd" (i32.const 1)) (i32.const 44))
+ (assert_return (invoke "odd" (i32.const 200)) (i32.const 99))
+ (assert_return (invoke "odd" (i32.const 77)) (i32.const 44))
+ (;Return to the original configuration after we have corrected the error in the AOT/JIT tail-call implementation.;)
+-(assert_return (invoke "odd" (i32.const 100_002)) (i32.const 99))
+-(assert_return (invoke "odd" (i32.const 100_003)) (i32.const 44))
++(assert_return (invoke "odd" (i32.const 1_002)) (i32.const 99))
++(assert_return (invoke "odd" (i32.const 1_003)) (i32.const 44))
+ 
+ 
+ ;; Invalid syntax

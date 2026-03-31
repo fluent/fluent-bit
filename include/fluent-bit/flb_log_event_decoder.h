@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -62,6 +62,7 @@ struct flb_log_event_decoder {
     size_t            length;
     int               last_result;
     int               read_groups;
+    unsigned int      recursion_depth;  /* Safety guard for recursion limit */
 };
 
 void flb_log_event_decoder_reset(struct flb_log_event_decoder *context,

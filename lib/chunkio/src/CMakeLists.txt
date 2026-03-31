@@ -23,8 +23,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
     )
   set(libs
     ${libs}
-    Shell32.lib
-    Shlwapi.lib)
+    Shell32.lib)
 else()
   set(src
     ${src}

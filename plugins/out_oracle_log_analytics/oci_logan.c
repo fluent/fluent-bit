@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -1103,7 +1103,7 @@ static int total_flush(struct flb_event_chunk *event_chunk,
     /* pack oci fields */
     /* pack_oci_fields(&mp_pck, ctx); */
 
-    num_records = flb_mp_count(event_chunk->data, event_chunk->size);
+    num_records = flb_mp_count_log_records(event_chunk->data, event_chunk->size);
 
     while ((ret = flb_log_event_decoder_next(
         &log_decoder,
@@ -1161,7 +1161,8 @@ static int total_flush(struct flb_event_chunk *event_chunk,
         goto clean_up;
     }
 
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                          config->json_escape_unicode);
     msgpack_sbuffer_destroy(&mp_sbuf);
     flb_log_event_decoder_destroy(&log_decoder);
 

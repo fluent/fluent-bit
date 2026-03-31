@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -80,6 +80,10 @@ struct flb_out_ws *flb_ws_conf_create(struct flb_output_instance *ins,
         ret = flb_pack_to_json_format_type(tmp);
         if (ret == -1) {
             flb_error("[out_ws] unrecognized 'format' option '%s'. Using 'msgpack'", tmp);
+        }
+        else if (ret == FLB_PACK_JSON_FORMAT_OTLP ||
+                 ret == FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
+            flb_error("[out_ws] format '%s' is not supported", tmp);
         }
         else {
             ctx->out_format = ret;

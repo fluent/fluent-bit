@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_opentelemetry.h>
+#include <fluent-bit/flb_json.h>
 
 #include <ctraces/ctraces.h>
 #include <ctraces/ctr_decode_msgpack.h>
@@ -169,6 +171,86 @@ static void print_traces_text(struct flb_output_instance *ins,
     }
 }
 
+static int print_otlp_json(struct flb_stdout *ctx,
+                           struct flb_event_chunk *event_chunk)
+{
+    static const char *default_logs_body_keys[] = {"log", "message"};
+    int result;
+    int pretty;
+    flb_sds_t json;
+    struct flb_opentelemetry_otlp_logs_options options;
+
+    json = NULL;
+    pretty = (ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP_PRETTY);
+
+    if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+        memset(&options, 0, sizeof(options));
+        options.logs_require_otel_metadata = FLB_FALSE;
+        options.logs_body_keys = default_logs_body_keys;
+        options.logs_body_key_count = 2;
+        options.logs_body_key_attributes = FLB_FALSE;
+
+        if (pretty) {
+            json = flb_opentelemetry_logs_to_otlp_json_pretty(event_chunk->data,
+                                                              event_chunk->size,
+                                                              &options,
+                                                              &result);
+        }
+        else {
+            json = flb_opentelemetry_logs_to_otlp_json(event_chunk->data,
+                                                       event_chunk->size,
+                                                       &options,
+                                                       &result);
+        }
+    }
+#ifdef FLB_HAVE_METRICS
+    else if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
+        if (pretty) {
+            json = flb_opentelemetry_metrics_msgpack_to_otlp_json_pretty(
+                event_chunk->data,
+                event_chunk->size,
+                &result);
+        }
+        else {
+            json = flb_opentelemetry_metrics_msgpack_to_otlp_json(event_chunk->data,
+                                                                  event_chunk->size,
+                                                                  &result);
+        }
+    }
+#endif
+    else if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
+        if (pretty) {
+            json = flb_opentelemetry_traces_msgpack_to_otlp_json_pretty(
+                event_chunk->data,
+                event_chunk->size,
+                &result);
+        }
+        else {
+            json = flb_opentelemetry_traces_msgpack_to_otlp_json(event_chunk->data,
+                                                                 event_chunk->size,
+                                                                 &result);
+        }
+    }
+    else {
+        flb_plg_error(ctx->ins, "unsupported OTLP event chunk type: %d",
+                      event_chunk->type);
+        return -1;
+    }
+
+    if (json == NULL) {
+        flb_plg_error(ctx->ins, "could not convert event chunk to OTLP JSON: %d",
+                      result);
+        return -1;
+    }
+
+    fwrite(json, 1, flb_sds_len(json), stdout);
+    fputc('\n', stdout);
+    fflush(stdout);
+    flb_sds_destroy(json);
+
+    return 0;
+}
+
 static void print_profiles_text(struct flb_output_instance *ins,
                                 const void *data, size_t bytes)
 {
@@ -186,7 +268,9 @@ static void print_profiles_text(struct flb_output_instance *ins,
                                               bytes, &off)) ==
                                                 CPROF_DECODE_MSGPACK_SUCCESS) {
         /* convert to text representation */
-        ret = cprof_encode_text_create(&text, profiles_context);
+        ret = cprof_encode_text_create(&text,
+                                       profiles_context,
+                                       CPROF_ENCODE_TEXT_RENDER_RESOLVED);
 
         if (ret != CPROF_ENCODE_TEXT_SUCCESS) {
             flb_plg_debug(ins, "cprofiles text encoder returned : %d", ret);
@@ -229,7 +313,9 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
 
 #ifdef FLB_HAVE_METRICS
     /* Check if the event type is metrics, handle the payload differently */
-    if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
+    if (event_chunk->type == FLB_EVENT_TYPE_METRICS &&
+        ctx->out_format != FLB_PACK_JSON_FORMAT_OTLP &&
+        ctx->out_format != FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
         print_metrics_text(ctx->ins, (char *)
                            event_chunk->data,
                            event_chunk->size);
@@ -237,7 +323,9 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
     }
 #endif
 
-    if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
+    if (event_chunk->type == FLB_EVENT_TYPE_TRACES &&
+        ctx->out_format != FLB_PACK_JSON_FORMAT_OTLP &&
+        ctx->out_format != FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
         print_traces_text(ctx->ins, (char *)
                           event_chunk->data,
                           event_chunk->size);
@@ -245,9 +333,25 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
     }
 
     if (event_chunk->type == FLB_EVENT_TYPE_PROFILES) {
+        if (ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP ||
+            ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
+            flb_plg_error(ctx->ins,
+                          "OTLP JSON format is not supported for profiles");
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+
         print_profiles_text(ctx->ins, (char *)
                             event_chunk->data,
                             event_chunk->size);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
+
+    if (ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP ||
+        ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
+        if (print_otlp_json(ctx, event_chunk) != 0) {
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+
         FLB_OUTPUT_RETURN(FLB_OK);
     }
 
@@ -257,7 +361,8 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                                                event_chunk->size,
                                                ctx->out_format,
                                                ctx->json_date_format,
-                                               ctx->date_key);
+                                               ctx->date_key,
+                                               config->json_escape_unicode);
         write(STDOUT_FILENO, json, flb_sds_len(json));
         flb_sds_destroy(json);
 
@@ -340,7 +445,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "format", NULL,
      0, FLB_FALSE, 0,
-     "Specifies the data format to be printed. Supported formats are msgpack json, json_lines and json_stream."
+     "Specifies the data format to be printed. Supported formats are msgpack, json, json_lines, json_stream, otlp_json and otlp_json_pretty."
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,13 +27,15 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_reload.h>
+#include <fluent-bit/http_server/flb_hs_utils.h>
 #include "reload.h"
 
 #include <signal.h>
 
 #include <fluent-bit/flb_http_server.h>
 
-static void handle_reload_request(mk_request_t *request, struct flb_config *config)
+static int handle_reload_request(struct flb_http_response *response,
+                                 struct flb_config *config)
 {
     int ret;
     flb_sds_t out_buf;
@@ -69,9 +71,9 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
     else {
         ret = GenerateConsoleCtrlEvent(1 /* CTRL_BREAK_EVENT_1 */, 0);
         if (ret == 0) {
-            mk_http_status(request, 500);
-            mk_http_done(request);
-            return;
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            flb_http_response_set_status(response, 500);
+            return flb_http_response_commit(response);
         }
 
         msgpack_pack_str(&mp_pck, 4);
@@ -99,9 +101,9 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
     else {
         ret = kill(getpid(), SIGHUP);
         if (ret != 0) {
-            mk_http_status(request, 500);
-            mk_http_done(request);
-            return;
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            flb_http_response_set_status(response, 500);
+            return flb_http_response_commit(response);
         }
 
         msgpack_pack_str(&mp_pck, 4);
@@ -114,24 +116,24 @@ static void handle_reload_request(mk_request_t *request, struct flb_config *conf
 #endif
 
     /* Export to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     msgpack_sbuffer_destroy(&mp_sbuf);
     if (!out_buf) {
-        mk_http_status(request, 400);
-        mk_http_done(request);
-        return;
+        flb_http_response_set_status(response, 500);
+        return flb_http_response_commit(response);
     }
     out_size = flb_sds_len(out_buf);
 
-    mk_http_status(request, http_status);
-    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_JSON);
-    mk_http_send(request, out_buf, out_size, NULL);
-    mk_http_done(request);
+    flb_hs_response_set_payload(response, http_status,
+                                FLB_HS_CONTENT_TYPE_JSON,
+                                out_buf, out_size);
 
     flb_sds_destroy(out_buf);
+    return 0;
 }
 
-static void handle_get_reload_status(mk_request_t *request, struct flb_config *config)
+static int handle_get_reload_status(struct flb_http_response *response,
+                                    struct flb_config *config)
 {
     flb_sds_t out_buf;
     size_t out_size;
@@ -148,45 +150,44 @@ static void handle_get_reload_status(mk_request_t *request, struct flb_config *c
     msgpack_pack_int64(&mp_pck, config->hot_reloaded_count);
 
     /* Export to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     msgpack_sbuffer_destroy(&mp_sbuf);
     if (!out_buf) {
-        mk_http_status(request, 400);
-        mk_http_done(request);
-        return;
+        flb_http_response_set_status(response, 500);
+        return flb_http_response_commit(response);
     }
     out_size = flb_sds_len(out_buf);
 
-    mk_http_status(request, 200);
-    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_JSON);
-    mk_http_send(request, out_buf, out_size, NULL);
-    mk_http_done(request);
+    flb_hs_response_set_payload(response, 200,
+                                FLB_HS_CONTENT_TYPE_JSON,
+                                out_buf, out_size);
 
     flb_sds_destroy(out_buf);
+    return 0;
 }
 
-static void cb_reload(mk_request_t *request, void *data)
+static int cb_reload(struct flb_hs *hs,
+                     struct flb_http_request *request,
+                     struct flb_http_response *response)
 {
-    struct flb_hs *hs = data;
     struct flb_config *config = hs->config;
 
-    if (request->method == MK_METHOD_POST ||
-        request->method == MK_METHOD_PUT) {
-        handle_reload_request(request, config);
+    if (request->method == HTTP_METHOD_POST ||
+        request->method == HTTP_METHOD_PUT) {
+        return handle_reload_request(response, config);
     }
-    else if (request->method == MK_METHOD_GET) {
-        handle_get_reload_status(request, config);
+    else if (request->method == HTTP_METHOD_GET) {
+        return handle_get_reload_status(response, config);
     }
-    else {
-        mk_http_status(request, 400);
-        mk_http_done(request);
-    }
+
+    flb_http_response_set_status(response, 405);
+    flb_http_response_set_header(response, "Allow", 5, "GET, POST, PUT", 14);
+    return flb_http_response_commit(response);
 }
 
 /* Perform registration */
 int api_v2_reload(struct flb_hs *hs)
 {
-    mk_vhost_handler(hs->ctx, hs->vid, "/api/v2/reload", cb_reload, hs);
-
-    return 0;
+    return flb_hs_register_endpoint(hs, "/api/v2/reload",
+                                    FLB_HS_ROUTE_EXACT, cb_reload);
 }

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -150,7 +150,9 @@ cfl_sds_t cm_utils_variant_convert_to_json(struct cfl_variant *value)
 
     mpack_writer_destroy(&writer);
 
-    json_result = flb_msgpack_raw_to_json_sds(data, size);
+    /* Using JSON escape here to keep backward compatibility */
+    json_result = flb_msgpack_raw_to_json_sds(data, size, FLB_TRUE);
+    MPACK_FREE(data);
 
     return json_result;
 }

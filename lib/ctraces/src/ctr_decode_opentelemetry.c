@@ -299,10 +299,18 @@ static int convert_any_value(struct opentelemetry_decode_value *ctr_val,
 {
     int result;
 
+    if (val == NULL) {
+        return -1;
+    }
     switch (val->value_case) {
 
         case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE:
             result = convert_string_value(ctr_val, value_type, key, val->string_value);
+            break;
+
+        case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX:
+            /* Profiling-only string dictionary reference: ignore in traces. */
+            result = 0;
             break;
 
         case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BOOL_VALUE:
@@ -540,7 +548,7 @@ int ctr_decode_opentelemetry_create(struct ctrace **out_ctr,
 
     for (resource_span_index = 0; resource_span_index < service_request->n_resource_spans; resource_span_index++) {
         otel_resource_span = service_request->resource_spans[resource_span_index];
-        if (otel_resource_span == NULL) {
+        if (otel_resource_span == NULL || otel_resource_span->resource == NULL) {
             opentelemetry__proto__collector__trace__v1__export_trace_service_request__free_unpacked(service_request, NULL);
             ctr_destroy(ctr);
             return CTR_DECODE_OPENTELEMETRY_INVALID_PAYLOAD;

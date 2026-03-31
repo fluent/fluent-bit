@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,8 +28,12 @@
 #include "tcp.h"
 #include "tcp_conn.h"
 
-static inline void consume_bytes(char *buf, int bytes, int length)
+static inline void consume_bytes(char *buf, size_t bytes, size_t length)
 {
+    if (bytes == 0 || bytes > length) {
+        return;
+    }
+
     memmove(buf, buf + bytes, length - bytes);
 }
 
@@ -132,9 +136,11 @@ static inline int process_pack(struct tcp_conn *conn,
     msgpack_unpacked_destroy(&result);
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        flb_input_log_append(conn->ins, NULL, 0,
-                             ctx->log_encoder->output_buffer,
-                             ctx->log_encoder->output_length);
+        if (ctx->log_encoder->output_length > 0) {
+            flb_input_log_append(conn->ins, NULL, 0,
+                                 ctx->log_encoder->output_buffer,
+                                 ctx->log_encoder->output_length);
+        }
         ret = 0;
     }
     else {
@@ -152,6 +158,7 @@ static ssize_t parse_payload_json(struct tcp_conn *conn)
     int ret;
     int out_size;
     char *pack;
+    ssize_t processed;
 
     ret = flb_pack_json_state(conn->buf_data, conn->buf_len,
                               &pack, &out_size, &conn->pack_state);
@@ -170,10 +177,23 @@ static ssize_t parse_payload_json(struct tcp_conn *conn)
     }
 
     /* Process the packaged JSON and return the last byte used */
-    process_pack(conn, pack, out_size);
-    flb_free(pack);
+    if (out_size < 0) {
+        flb_free(pack);
+        return -1;
+    }
 
-    return conn->pack_state.last_byte;
+    ret = process_pack(conn, pack, (size_t) out_size);
+    flb_free(pack);
+    if (ret < 0) {
+        return -1;
+    }
+
+    processed = conn->pack_state.last_byte;
+    if (processed < 0 || processed > conn->buf_len) {
+        return -1;
+    }
+
+    return processed;
 }
 
 /*
@@ -183,8 +203,8 @@ static ssize_t parse_payload_json(struct tcp_conn *conn)
 static ssize_t parse_payload_none(struct tcp_conn *conn)
 {
     int ret;
-    int len;
-    int sep_len;
+    size_t len;
+    size_t sep_len;
     size_t consumed = 0;
     char *buf;
     char *s;
@@ -203,7 +223,7 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
     flb_log_event_encoder_reset(ctx->log_encoder);
 
     while ((s = strstr(buf, separator))) {
-        len = (s - buf);
+        len = (size_t) (s - buf);
         if (len == 0) {
             break;
         }
@@ -244,7 +264,7 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
                 break;
             }
 
-            consumed += len + 1;
+            consumed += len + sep_len;
             buf += len + sep_len;
         }
         else {
@@ -253,9 +273,11 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        flb_input_log_append(conn->ins, NULL, 0,
-                             ctx->log_encoder->output_buffer,
-                             ctx->log_encoder->output_length);
+        if (ctx->log_encoder->output_length > 0) {
+            flb_input_log_append(conn->ins, NULL, 0,
+                                 ctx->log_encoder->output_buffer,
+                                 ctx->log_encoder->output_length);
+        }
     }
     else {
         flb_plg_error(ctx->ins, "log event encoding error : %d", ret);
@@ -276,6 +298,7 @@ int tcp_conn_event(void *data)
     struct tcp_conn *conn;
     struct flb_connection *connection;
     struct flb_in_tcp_config *ctx;
+    int ret = 0;
 
     connection = (struct flb_connection *) data;
 
@@ -285,6 +308,8 @@ int tcp_conn_event(void *data)
 
     event = &connection->event;
 
+    conn->busy = FLB_TRUE;
+
     if (event->mask & MK_EVENT_READ) {
         available = (conn->buf_size - conn->buf_len) - 1;
         if (available < 1) {
@@ -292,6 +317,7 @@ int tcp_conn_event(void *data)
                 flb_plg_warn(ctx->ins,
                              "fd=%i incoming data exceeds 'Buffer_Size' (%zu KB)",
                              event->fd, (ctx->buffer_size / 1024));
+                conn->busy = FLB_FALSE;
                 tcp_conn_del(conn);
                 return -1;
             }
@@ -299,6 +325,7 @@ int tcp_conn_event(void *data)
             size = conn->buf_size + ctx->chunk_size;
             tmp = flb_realloc(conn->buf_data, size);
             if (!tmp) {
+                conn->busy = FLB_FALSE;
                 flb_errno();
                 return -1;
             }
@@ -317,6 +344,7 @@ int tcp_conn_event(void *data)
 
         if (bytes <= 0) {
             flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
+            conn->busy = FLB_FALSE;
             tcp_conn_del(conn);
             return -1;
         }
@@ -341,28 +369,62 @@ int tcp_conn_event(void *data)
             ret_payload = parse_payload_json(conn);
             if (ret_payload == 0) {
                 /* Incomplete JSON message, we need more data */
-                return -1;
+                ret = -1;
+                goto cleanup;
             }
             else if (ret_payload == -1) {
                 flb_pack_state_reset(&conn->pack_state);
-                flb_pack_state_init(&conn->pack_state);
+                if (flb_pack_state_init(&conn->pack_state) == -1) {
+                    flb_plg_error(ctx->ins,
+                                  "fd=%i failed to reinitialize JSON parser state",
+                                  event->fd);
+                    conn->pending_close = FLB_TRUE;
+                    ret = -1;
+                    goto cleanup;
+                }
                 conn->pack_state.multiple = FLB_TRUE;
-                return -1;
+                ret = -1;
+                goto cleanup;
             }
         }
         else if (ctx->format == FLB_TCP_FMT_NONE) {
             ret_payload = parse_payload_none(conn);
             if (ret_payload == 0) {
-                return -1;
+                ret = -1;
+                goto cleanup;
             }
             else if (ret_payload == -1) {
                 conn->buf_len = 0;
-                return -1;
+                ret = -1;
+                goto cleanup;
             }
         }
 
 
-        consume_bytes(conn->buf_data, ret_payload, conn->buf_len);
+        if (ret_payload < 0 || ret_payload > conn->buf_len) {
+            flb_plg_warn(ctx->ins,
+                         "fd=%i invalid payload consume length=%zd buf_len=%i",
+                         event->fd, ret_payload, conn->buf_len);
+
+            if (ctx->format == FLB_TCP_FMT_JSON) {
+                flb_pack_state_reset(&conn->pack_state);
+                if (flb_pack_state_init(&conn->pack_state) == -1) {
+                    flb_plg_error(ctx->ins,
+                                  "fd=%i failed to reinitialize JSON parser state",
+                                  event->fd);
+                    conn->pending_close = FLB_TRUE;
+                    ret = -1;
+                    goto cleanup;
+                }
+                conn->pack_state.multiple = FLB_TRUE;
+            }
+
+            conn->buf_len = 0;
+            ret = -1;
+            goto cleanup;
+        }
+
+        consume_bytes(conn->buf_data, (size_t) ret_payload, (size_t) conn->buf_len);
         conn->buf_len -= ret_payload;
         conn->buf_data[conn->buf_len] = '\0';
 
@@ -373,16 +435,27 @@ int tcp_conn_event(void *data)
             conn->pack_state.buf_len = 0;
         }
 
-        return bytes;
+        ret = bytes;
+        goto cleanup;
     }
 
     if (event->mask & MK_EVENT_CLOSE) {
         flb_plg_trace(ctx->ins, "fd=%i hangup", event->fd);
+        conn->busy = FLB_FALSE;
         tcp_conn_del(conn);
         return -1;
     }
 
-    return 0;
+    ret = 0;
+
+cleanup:
+    conn->busy = FLB_FALSE;
+    if (conn->pending_close) {
+        tcp_conn_del(conn);
+        return -1;
+    }
+
+    return ret;
 }
 
 /* Create a new mqtt request instance */
@@ -447,6 +520,9 @@ struct tcp_conn *tcp_conn_add(struct flb_connection *connection,
     }
 
     mk_list_add(&conn->_head, &ctx->connections);
+
+    conn->busy = FLB_FALSE;
+    conn->pending_close = FLB_FALSE;
 
     return conn;
 }

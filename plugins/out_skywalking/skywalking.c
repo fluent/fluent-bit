@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -152,7 +152,8 @@ static void sw_msgpack_pack_kv_int64_t(msgpack_packer* pk, const char* key,
 }
 
 static void sw_msgpack_pack_log_body(msgpack_packer* pk,
-                                     msgpack_object* obj, size_t obj_size)
+                                     msgpack_object* obj, size_t obj_size,
+                                     struct flb_config *config)
 {
     int i, j = 0;
     int log_entry_num = 0;
@@ -196,7 +197,8 @@ static void sw_msgpack_pack_log_body(msgpack_packer* pk,
                                value.via.str.ptr, value.via.str.size);
     }
 
-    out_body_str = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size);
+    out_body_str = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size,
+                                               config->json_escape_unicode);
     if (!out_body_str) {
         msgpack_sbuffer_destroy(&sbuf);
         flb_free(valid_log_entry);
@@ -225,7 +227,7 @@ static void sw_msgpack_pack_log_body(msgpack_packer* pk,
 }
 
 static int sw_format(struct flb_output_sw* ctx, const void *data, size_t bytes,
-                     void** buf, size_t* buf_len)
+                     void** buf, size_t* buf_len, struct flb_config *config)
 {
     int ret = 0;
     int chunk_size = 0;
@@ -250,7 +252,7 @@ static int sw_format(struct flb_output_sw* ctx, const void *data, size_t bytes,
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
 
-    chunk_size = flb_mp_count(data, bytes);
+    chunk_size = flb_mp_count_log_records(data, bytes);
     flb_plg_debug(ctx->ins, "%i messages flushed", chunk_size);
 
     msgpack_pack_array(&pk, chunk_size);
@@ -270,10 +272,10 @@ static int sw_format(struct flb_output_sw* ctx, const void *data, size_t bytes,
                                flb_sds_len(ctx->svc_name));
         sw_msgpack_pack_kv_str(&pk, "serviceInstance", 15,
                                ctx->svc_inst_name, flb_sds_len(ctx->svc_inst_name));
-        sw_msgpack_pack_log_body(&pk, &map, map_size);
+        sw_msgpack_pack_log_body(&pk, &map, map_size, config);
     }
 
-    out_str = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size);
+    out_str = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size, config->json_escape_unicode);
     if (!out_str) {
         ret = -1;
         goto done;
@@ -323,7 +325,7 @@ static void cb_sw_flush(struct flb_event_chunk *event_chunk,
     tmp_ret = sw_format(ctx,
                         event_chunk->data,
                         event_chunk->size,
-                        &buf, &buf_len);
+                        &buf, &buf_len, config);
     if (tmp_ret != 0) {
         flb_plg_error(ctx->ins, "failed to create buffer");
         FLB_OUTPUT_RETURN(FLB_RETRY);

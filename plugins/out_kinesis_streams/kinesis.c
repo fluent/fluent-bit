@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/aws/flb_aws_compress.h>
 
 #include <monkey/mk_core.h>
 #include <msgpack.h>
@@ -127,24 +128,36 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
      * @param ctx The Kinesis output plugin context.
      */
     flb_plg_debug(ins, "Retrieved port from ins->host.port: %d", ins->host.port);
-    
-    if (ins->host.port >= FLB_KINESIS_MIN_PORT && ins->host.port <= FLB_KINESIS_MAX_PORT) {
-        ctx->port = ins->host.port;
-        flb_plg_debug(ins, "Setting port to: %d", ctx->port);
-    }
-    else if (ins->host.port == 0) {
+
+    if (ins->host.port == 0) {
         ctx->port = FLB_KINESIS_DEFAULT_HTTPS_PORT;
         flb_plg_debug(ins, "Port not set. Using default HTTPS port: %d", ctx->port);
     }
+    else if (ins->host.port == (ctx->port = (uint16_t)ins->host.port)) {
+        flb_plg_debug(ins, "Setting port to: %d", ctx->port);
+    }
     else {
-        flb_plg_error(ins, "Invalid port number: %d. Must be between %d and %d", 
-                      ins->host.port, FLB_KINESIS_MIN_PORT, FLB_KINESIS_MAX_PORT);
+        flb_plg_error(ins, "Invalid port number: %d. Must be between %d and %d",
+                      ins->host.port, 1, UINT16_MAX);
         goto error;
     }
 
     tmp = flb_output_get_property("log_key", ins);
     if (tmp) {
         ctx->log_key = tmp;
+    }
+
+    tmp = flb_output_get_property("compression", ins);
+    if (tmp) {
+        ret = flb_aws_compression_get_type(tmp);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
+            goto error;
+        }
+        ctx->compression = ret;
+    }
+    else {
+        ctx->compression = FLB_AWS_COMPRESS_NONE;
     }
 
     tmp = flb_output_get_property("region", ins);
@@ -309,10 +322,10 @@ error:
     return -1;
 }
 
-static struct flush *new_flush_buffer(const char *tag, int tag_len)
+static struct flush *new_flush_buffer(struct flb_kinesis *ctx, const char *tag, int tag_len)
 {
     struct flush *buf;
-
+    int ret;
 
     buf = flb_calloc(1, sizeof(struct flush));
     if (!buf) {
@@ -339,6 +352,18 @@ static struct flush *new_flush_buffer(const char *tag, int tag_len)
     buf->tag = tag;
     buf->tag_len = tag_len;
 
+    /* Initialize aggregation buffer if simple_aggregation is enabled */
+    buf->agg_buf_initialized = FLB_FALSE;
+    if (ctx->simple_aggregation) {
+        ret = flb_aws_aggregation_init(&buf->agg_buf, MAX_EVENT_SIZE);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to initialize aggregation buffer");
+            kinesis_flush_destroy(buf);
+            return NULL;
+        }
+        buf->agg_buf_initialized = FLB_TRUE;
+    }
+
     return buf;
 }
 
@@ -354,7 +379,7 @@ static void cb_kinesis_flush(struct flb_event_chunk *event_chunk,
     (void) i_ins;
     (void) config;
 
-    buf = new_flush_buffer(event_chunk->tag, flb_sds_len(event_chunk->tag));
+    buf = new_flush_buffer(ctx, event_chunk->tag, flb_sds_len(event_chunk->tag));
     if (!buf) {
         flb_plg_error(ctx->ins, "Failed to construct flush buffer");
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -362,7 +387,8 @@ static void cb_kinesis_flush(struct flb_event_chunk *event_chunk,
 
     ret = process_and_send_to_kinesis(ctx, buf,
                                       event_chunk->data,
-                                      event_chunk->size);
+                                      event_chunk->size,
+                                      config);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to send records to kinesis");
         kinesis_flush_destroy(buf);
@@ -501,6 +527,21 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kinesis, profile),
      "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
      "$HOME/.aws/ directory."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "simple_aggregation", "false",
+     0, FLB_TRUE, offsetof(struct flb_kinesis, simple_aggregation),
+     "Enable simple aggregation to combine multiple records into single API calls. "
+     "This reduces the number of requests and can improve throughput."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "compression", NULL,
+     0, FLB_FALSE, 0,
+    "Compression type for Kinesis records. Each log record is individually compressed "
+    "and sent to Kinesis Data Streams. Supported values: 'gzip', 'zstd', 'snappy'. "
+    "Defaults to no compression."
     },
 
     /* EOF */

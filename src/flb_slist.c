@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -188,7 +188,10 @@ int flb_slist_split_tokens(struct mk_list *list, const char *str, int max_split)
 
     buf = (char *) str;
     while ((tmp = token_retrieve(&buf))) {
-        flb_slist_add_sds(list, tmp);
+        if (flb_slist_add_sds(list, tmp) == -1) {
+            flb_sds_destroy(tmp);
+            return -1;
+        }
         if (!buf) {
             break;
         }
@@ -202,7 +205,9 @@ int flb_slist_split_tokens(struct mk_list *list, const char *str, int max_split)
             }
 
             if (*p) {
-                flb_slist_add(list, p);
+                if (flb_slist_add(list, p) == -1) {
+                    return -1;
+                }
             }
             break;
         }

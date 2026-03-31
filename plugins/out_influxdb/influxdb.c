@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -216,7 +216,8 @@ static int influxdb_format(struct flb_config *config,
             /* is this a string ? */
             if (quote == FLB_TRUE) {
                 ret = flb_utils_write_str_buf(val, val_len,
-                                              &str, &str_size);
+                                              &str, &str_size,
+                                              config->json_escape_unicode);
                 if (ret == -1) {
                     flb_errno();
                     goto error;

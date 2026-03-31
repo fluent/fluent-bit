@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@
 
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_sds.h>
-
 struct flb_event_chunk *flb_event_chunk_create(int type,
                                                int total_events,
                                                char *tag_buf, int tag_len,

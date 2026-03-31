@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@
 
 #include <sqlite3.h>
 #include <fluent-bit.h>
+#include <fluent-bit/flb_lock.h>
 
 struct flb_sqldb {
     char *path;               /* physical path of the database */
@@ -30,6 +31,7 @@ struct flb_sqldb {
     int users;                /* number of active users        */
     void *parent;             /* if shared, ref to parent      */
     sqlite3 *handler;         /* SQLite3 handler               */
+    flb_lock_t lock;          /* thread safety mechanism       */
     struct mk_list _head;     /* Link to config->sqldb_list    */
 };
 
@@ -40,6 +42,11 @@ int flb_sqldb_close(struct flb_sqldb *db);
 int flb_sqldb_query(struct flb_sqldb *db, const char *sql,
                     int (*callback) (void *, int, char **, char **),
                     void *data);
+
 int64_t flb_sqldb_last_id(struct flb_sqldb *db);
+
+int flb_sqldb_lock(struct flb_sqldb *db);
+
+int flb_sqldb_unlock(struct flb_sqldb *db);
 
 #endif

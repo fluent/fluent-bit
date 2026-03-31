@@ -36,6 +36,49 @@ struct url_check url_checks[] = {
     {0, "https://fluentbit.io:1234/", "https", "fluentbit.io", "1234", "/"},
     {0, "https://fluentbit.io:1234/v", "https", "fluentbit.io", "1234", "/v"},
     {-1, "://", NULL, NULL, NULL, NULL},
+    // IPv6 tests
+    {0, "https://[::1]/something", "https", "::1", "443", "/something"},
+    {0, "http://[::1]/something", "http", "::1", "80", "/something"},
+    {0, "https://[::1]", "https", "::1", "443", "/"},
+    {0, "https://[::1]:1234/something", "https", "::1", "1234", "/something"},
+    {0, "http://[::1]:1234", "http", "::1", "1234", "/"},
+    {0, "http://[::1]:1234/", "http", "::1", "1234", "/"},
+    {0, "http://[::1]:1234/v", "http", "::1", "1234", "/v"},
+    {0, "https://[2001:db8::1]", "https", "2001:db8::1", "443", "/"},
+    {0, "https://[2001:db8::1]:1234/something", "https", "2001:db8::1", "1234", "/something"},
+    {0, "http://[2001:0db8:0000:0000:0000:0000:0000:0001]:1234/something", "http", "2001:0db8:0000:0000:0000:0000:0000:0001", "1234", "/something"},
+    {0, "https://[::192.9.5.5]:1234/v", "https", "::192.9.5.5", "1234", "/v"},
+    {0, "https://[::1]/path?query=[value]", "https", "::1", "443", "/path?query=[value]"},
+    /* Query string with brackets (no path) */
+    {0, "https://example.com?query=[1]", "https", "example.com", "443", "/?query=[1]"},
+    {0, "http://example.com?query=[value]&other=[2]", "http", "example.com", "80", "/?query=[value]&other=[2]"},
+    {0, "https://[::1]?query=[value]", "https", "::1", "443", "/?query=[value]"},
+    {0, "https://[2001:db8::1]:8080?query=[1]", "https", "2001:db8::1", "8080", "/?query=[1]"},
+    /* Fragment with brackets */
+    {0, "https://example.com#fragment=[1]", "https", "example.com", "443", "/#fragment=[1]"},
+    {0, "https://[::1]#fragment=[value]", "https", "::1", "443", "/#fragment=[value]"},
+    /* Query and fragment with brackets */
+    {0, "https://example.com?query=[1]#fragment=[2]", "https", "example.com", "443", "/?query=[1]#fragment=[2]"},
+    /* Port with query/fragment (non-IPv6) */
+    {0, "https://example.com:8080?query=[1]", "https", "example.com", "8080", "/?query=[1]"},
+    {0, "http://example.com:9000#fragment=[1]", "http", "example.com", "9000", "/#fragment=[1]"},
+    /* Empty query/fragment */
+    {0, "https://example.com?", "https", "example.com", "443", "/?"},
+    {0, "https://example.com#", "https", "example.com", "443", "/#"},
+    {0, "https://[::1]?", "https", "::1", "443", "/?"},
+    /* IPv6 edge cases - malformed brackets */
+    {-1, "http://[::1:8080/path", NULL, NULL, NULL, NULL},  /* missing closing bracket */
+    {-1, "http://::1]:8080/path", NULL, NULL, NULL, NULL},  /* missing opening bracket in host */
+    {-1, "http://[]:8080/path", NULL, NULL, NULL, NULL},    /* empty brackets */
+    {-1, "http://host]name.com/path", NULL, NULL, NULL, NULL},  /* closing bracket in hostname without opening */
+    {-1, "http://host]name.com?query=1", NULL, NULL, NULL, NULL},  /* closing bracket in hostname without opening (query) */
+    /* Colons in query/fragment should not be treated as port separators */
+    {0, "https://example.com?q=a:b", "https", "example.com", "443", "/?q=a:b"},
+    {0, "https://example.com/path?time=12:30:45", "https", "example.com", "443", "/path?time=12:30:45"},
+    {0, "http://example.com#section:subsection", "http", "example.com", "80", "/#section:subsection"},
+    {0, "https://example.com?q=a:b#frag:ment", "https", "example.com", "443", "/?q=a:b#frag:ment"},
+    {0, "https://[::1]?time=12:30", "https", "::1", "443", "/?time=12:30"},
+    {0, "http://example.com:8080?q=a:b:c", "http", "example.com", "8080", "/?q=a:b:c"}
 };
 
 void test_url_split_sds()
@@ -203,13 +246,19 @@ void test_url_split()
 }
 
 /* test case loop for flb_utils_write_str */
-static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int buf_size);
+static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int buf_size,
+                                            int escape_unicode);
 static void write_str_test_cases(struct write_str_case *cases) {
-    write_str_test_cases_w_buf_size(cases, 100);
+    write_str_test_cases_w_buf_size(cases, 100, FLB_TRUE);
+}
+
+static void write_raw_str_test_cases(struct write_str_case *cases) {
+    write_str_test_cases_w_buf_size(cases, 100, FLB_FALSE);
 }
 
 /* test case loop for flb_utils_write_str */
-static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int buf_size)
+static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int buf_size,
+                                            int escape_unicode)
 {
     char *buf = flb_calloc(buf_size + 1, sizeof(char));
     int size = buf_size + 1;
@@ -220,7 +269,8 @@ static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int bu
     while (!(tcase->input == 0 && tcase->output == 0)) {
         memset(buf, 0, size);
         off = 0;
-        ret = flb_utils_write_str(buf, &off, buf_size, tcase->input, tcase->input_len);
+        ret = flb_utils_write_str(buf, &off, buf_size, tcase->input, tcase->input_len,
+                                  escape_unicode);
 
         if(!TEST_CHECK(ret == tcase->ret)) {
             TEST_MSG("Input string: %s", tcase->input);
@@ -262,30 +312,30 @@ void test_write_str()
     char jp_expected_output[] = "\\u3042";
 
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "a", 1);
+    ret = flb_utils_write_str(buf, &off, size, "a", 1, FLB_TRUE);
     TEST_CHECK(ret == FLB_TRUE);
     TEST_CHECK(memcmp(buf, "a", off) == 0);
 
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "\n", 1);
+    ret = flb_utils_write_str(buf, &off, size, "\n", 1, FLB_TRUE);
     TEST_CHECK(ret == FLB_TRUE);
     TEST_CHECK(memcmp(buf, "\\n", off) == 0);
 
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82", 3);
+    ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82", 3, FLB_TRUE);
     TEST_CHECK(ret == FLB_TRUE);
     TEST_CHECK(memcmp(buf, jp_expected_output, off) == 0);
 
     /* Truncated bytes: 'buf' should not be touched and off == 0 */
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82\xe3", 1);
+    ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82\xe3", 1, FLB_TRUE);
     TEST_CHECK(ret == FLB_TRUE);
     TEST_CHECK(off == 0);
     TEST_CHECK(memcmp(buf, jp_expected_output, off) == 0);
 
     /* Error: buffer too small */
     off = 0;
-    ret = flb_utils_write_str(buf, &off, size, "aaaaaaaaaaa", 11);
+    ret = flb_utils_write_str(buf, &off, size, "aaaaaaaaaaa", 11, FLB_TRUE);
     TEST_CHECK(ret == FLB_FALSE);
 }
 
@@ -369,6 +419,14 @@ void test_write_str_special_bytes()
             "\\u4f60\\u597d\\u4e16\\u754c",
             FLB_TRUE
         },
+        /*
+         * Escaped leading hex (two hex, one valid unicode)
+         */
+        {
+            "你好我来自一个汉字文化影响的地方", 48,
+            "\\u4f60\\u597d\\u6211\\u6765\\u81ea\\u4e00\\u4e2a\\u6c49\\u5b57\\u6587\\u5316\\u5f71\\u54cd\\u7684\\u5730\\u65b9",
+            FLB_TRUE
+        },
         {
             "\xC3\xA1\x0A", 3,  /* UTF-8 encoding of á and newline */
             "\\u00e1\\n",       /* Expected escaped output */
@@ -378,6 +436,113 @@ void test_write_str_special_bytes()
     };
 
     write_str_test_cases(cases);
+}
+
+void test_write_raw_str_special_bytes()
+{
+    struct write_str_case cases[] = {
+        /*
+         * Input: "你好世界" (12 bytes)
+         * Output: "你好世界" (raw)
+         */
+        {
+            "\xE4\xBD\xA0\xE5\xA5\xBD\xE4\xB8\x96\xE7\x95\x8C", 12,
+            "\xE4\xBD\xA0\xE5\xA5\xBD\xE4\xB8\x96\xE7\x95\x8C",
+            FLB_TRUE
+        },
+        /*
+         * Input: "你好我来自一个汉字文化影响的地方" (48 bytes)
+         * Output: "你好我来自一个汉字文化影响的地方" (raw)
+         */
+        {
+            "\xE4\xBD\xA0\xE5\xA5\xBD\xE6\x88\x91\xE6\x9D\xA5\xE8\x87\xAA" \
+            "\xE4\xB8\x80\xE4\xB8\xAA\xE6\xB1\x89\xE5\xAD\x97\xE6\x96\x87" \
+            "\xE5\x8C\x96\xE5\xBD\xB1\xE5\x93\x8D\xE7\x9A\x84\xE5\x9C\xB0" \
+            "\xE6\x96\xB9",
+            48,
+            "\xE4\xBD\xA0\xE5\xA5\xBD\xE6\x88\x91\xE6\x9D\xA5\xE8\x87\xAA" \
+            "\xE4\xB8\x80\xE4\xB8\xAA\xE6\xB1\x89\xE5\xAD\x97\xE6\x96\x87" \
+            "\xE5\x8C\x96\xE5\xBD\xB1\xE5\x93\x8D\xE7\x9A\x84\xE5\x9C\xB0" \
+            "\xE6\x96\xB9",
+            FLB_TRUE
+        },
+        /* Test string with a quote */
+        {
+            "\"hello\"", 7,
+            "\\\"hello\\\"",
+            FLB_TRUE
+        },
+        { 0 }
+    };
+
+    write_raw_str_test_cases(cases);
+}
+
+void test_write_raw_str_invalid_sequences()
+{
+    struct write_str_case cases[] = {
+        /*
+         * Case 1: Stray continuation byte (0x80)
+         */
+        {
+            "hello \x80 world", 13,
+            "hello \xEF\xBF\xBD world",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 2: Incomplete multi-byte sequence
+         */
+        {
+            "a\xE6\x97""b", 4,
+            "a""\xEF\xBF\xBD""\xEF\xBF\xBD""b",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 3: Overlong encoding
+         */
+        {
+            "a\xC0\xAF""b", 4,
+            "a""\xEF\xBF\xBD""\xEF\xBF\xBD""b",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 4: With an invalid starting byte
+         */
+        {
+            "start-\xFF-end", 11,
+            "start-\xEF\xBF\xBD-end",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 5: Mix of valid and invalid sequences
+         */
+        {
+            /* Input: "你好<stray_byte>世界" */
+            "\xE4\xBD\xA0\xE5\xA5\xBD" "\x80" "\xE4\xB8\x96\xE7\x95\x8C", 13,
+            /* Output: "你好<replacement_char>世界" */
+            "\xE4\xBD\xA0\xE5\xA5\xBD" "\xEF\xBF\xBD" "\xE4\xB8\x96\xE7\x95\x8C",
+            FLB_TRUE
+        },
+
+        /*
+         * Case 6: Sequence with invalid continuation byte
+         */
+        {
+            /* Input: "a" + 日(E6 97 A5) + ASCII "b" */
+            "a\xE6\x97""b", 4,
+            "a""\xEF\xBF\xBD""\xEF\xBF\xBD""b",
+            FLB_TRUE
+        },
+
+        /* End of cases */
+        { 0 }
+    };
+
+    write_raw_str_test_cases(cases);
 }
 
 void test_write_str_invalid_leading_byte_case_2()
@@ -464,7 +629,7 @@ void test_write_str_buffer_overrun()
         },
         { 0 }
     };
-    write_str_test_cases_w_buf_size(cases, 5);
+    write_str_test_cases_w_buf_size(cases, 5, FLB_TRUE);
 }
 
 struct proxy_url_check {
@@ -484,6 +649,12 @@ struct proxy_url_check proxy_url_checks[] = {
      "http", "proxy.com", "80", NULL, NULL},
     {0, "http://proxy.com:8080",
      "http", "proxy.com", "8080", NULL, NULL},
+    {0, "proxy.com:8080",
+     "http", "proxy.com", "8080", NULL, NULL},
+    {0, "foo:bar@proxy.com:8080",
+     "http", "proxy.com", "8080", "foo", "bar"},
+    {0, "proxy.com",
+     "http", "proxy.com", "80", NULL, NULL},
     /* issue #5530. Password contains @ */
     {0, "http://example_user:example_pass_w_@_char@proxy.com:8080",
      "http", "proxy.com", "8080", "example_user", "example_pass_w_@_char"},
@@ -542,8 +713,8 @@ void test_proxy_url_split() {
 
         /* Username */
         if (u->username) {
-            TEST_CHECK(port != NULL);
-            ret = strcmp(u->port, port);
+            TEST_CHECK(username != NULL);
+            ret = strcmp(u->username, username);
             TEST_CHECK(ret == 0);
             TEST_MSG("Expected username: %s", u->username);
             TEST_MSG("Produced username: %s", username);
@@ -555,8 +726,8 @@ void test_proxy_url_split() {
 
         /* Password */
         if (u->password) {
-            TEST_CHECK(port != NULL);
-            ret = strcmp(u->port, port);
+            TEST_CHECK(password != NULL);
+            ret = strcmp(u->password, password);
             TEST_CHECK(ret == 0);
             TEST_MSG("Expected password: %s", u->password);
             TEST_MSG("Produced password: %s", password);
@@ -790,12 +961,53 @@ void test_size_to_bytes()
     }
 }
 
+struct size_to_bytes_check size_to_binary_bytes_checks[] = {
+    {"922337.63", 922337},
+    {"2K",2048},
+    {"5.7263K", 5863},
+    {"5.7263KB", 5863},
+    {"5.7263KiB", 5863},
+    {"9223372036854775.23K", -1},
+    {"1M", 1048576},
+    {"1.1M", 1153433},
+    {"1.1MB", 1153433},
+    {"1.1MiB", 1153433},
+    {"3.592M", 3766484},
+    {"52.752383M", 55314882},
+    {"52.752383MB", 55314882},
+    {"52.752383MiB", 55314882},
+    {"9223372036854.42M", -1},
+    {"492.364G",528671819431},
+    {"492.364GB",528671819431},
+    {"492.364GiB",528671819431},
+    {"1.2973G", 1392965268},
+    {"9223372036.78G", -1},
+};
+
+void test_size_to_binary_bytes()
+{
+    int i;
+    int size;
+    int64_t ret;
+    struct size_to_bytes_check *u;
+
+    size = sizeof(size_to_binary_bytes_checks) / sizeof(struct size_to_bytes_check);
+    for (i = 0; i < size; i++) {
+        u = &size_to_binary_bytes_checks[i];
+
+        ret = flb_utils_size_to_binary_bytes(u->size);
+        TEST_CHECK_(ret == u->ret, "ret = %zu, u->ret = %zu", ret, u->ret);
+    }
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "url_split", test_url_split },
     { "url_split_sds", test_url_split_sds },
     { "write_str", test_write_str },
     { "write_str_special_bytes", test_write_str_special_bytes },
+    { "write_raw_str_special_bytes", test_write_raw_str_special_bytes },
+    { "write_raw_str_invalid_bytes", test_write_raw_str_invalid_sequences},
     { "test_write_str_invalid_trailing_bytes", test_write_str_invalid_trailing_bytes },
     { "test_write_str_invalid_leading_byte", test_write_str_invalid_leading_byte },
     { "test_write_str_edge_cases", test_write_str_edge_cases },
@@ -807,5 +1019,6 @@ TEST_LIST = {
     { "test_flb_utils_split_quoted_errors", test_flb_utils_split_quoted_errors},
     { "test_flb_utils_get_machine_id", test_flb_utils_get_machine_id },
     { "test_size_to_bytes", test_size_to_bytes },
+    { "test_size_to_bianry_bytes", test_size_to_binary_bytes },
     { 0 }
 };

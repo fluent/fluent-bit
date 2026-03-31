@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,6 +22,12 @@
 
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_reload.h>
+
+#define FLEET_HEADERS_CONFIG_VERSION "Fleet-Config-Version"
+
+#define FLEET_INITIAL_MAX_TRIES 1
+#define FLEET_INITIAL_RETRY_INTERVAL_SECONDS     10
+#define FLEET_INITIAL_RETRY_INTERVAL_NANOSECONDS 0
 
 struct flb_in_calyptia_fleet_config {
     /* Time interval check */
@@ -61,6 +67,10 @@ struct flb_in_calyptia_fleet_config {
     struct flb_upstream *u;
 
     int collect_fd;
+
+    /* track the initial configuration update */
+    int initial_fd;
+    int initial_retries;
 };
 
 struct reload_ctx {
@@ -70,9 +80,9 @@ struct reload_ctx {
 
 flb_sds_t fleet_config_filename(struct flb_in_calyptia_fleet_config *ctx, char *fname);
 
-#define new_fleet_config_filename(a) fleet_config_filename((a), "new")
-#define cur_fleet_config_filename(a) fleet_config_filename((a), "cur")
-#define old_fleet_config_filename(a) fleet_config_filename((a), "old")
+#define legacy_new_fleet_config_filename(a) fleet_config_filename((a), "new")
+#define legacy_cur_fleet_config_filename(a) fleet_config_filename((a), "cur")
+#define legacy_old_fleet_config_filename(a) fleet_config_filename((a), "old")
 #define hdr_fleet_config_filename(a) fleet_config_filename((a), "header")
 
 int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx);

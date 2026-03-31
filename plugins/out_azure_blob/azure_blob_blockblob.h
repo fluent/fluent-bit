@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -25,11 +25,11 @@
 
 flb_sds_t azb_block_blob_blocklist_uri(struct flb_azure_blob *ctx, char *name);
 flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *tag, char *blockid,
-                             uint64_t ms);
+                             uint64_t ms, char *random_str);
 char *azb_block_blob_id_logs(uint64_t *ms);
 char *azb_block_blob_id_blob(struct flb_azure_blob *ctx, char *path, uint64_t part_id);
 
-int azb_block_blob_commit_block(struct flb_azure_blob *ctx, char *blockid, char *tag, uint64_t ms);
+int azb_block_blob_commit_block(struct flb_azure_blob *ctx, char *blockid, char *tag, uint64_t ms, char *str);
 int azb_block_blob_commit_file_parts(struct flb_azure_blob *ctx, uint64_t file_id,
                                      cfl_sds_t path, cfl_sds_t part_ids);
 

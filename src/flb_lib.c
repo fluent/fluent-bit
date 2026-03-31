@@ -2,7 +2,7 @@
 
 /*  Fluent Bit Demo
  *  ===============
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_input.h>
@@ -29,14 +30,19 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_callback.h>
+#include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/tls/flb_tls.h>
+#include <fluent-bit/config_format/flb_cf.h>
 
 #include <signal.h>
 #include <stdarg.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <stdlib.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -334,7 +340,7 @@ int flb_input_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc)
     struct flb_input_instance *i_ins;
 
     i_ins = in_instance_get(ctx, ffd);
-    if (!i_ins) {
+    if (!i_ins || proc == NULL) {
         return -1;
     }
 
@@ -342,6 +348,8 @@ int flb_input_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc)
         flb_processor_destroy(i_ins->processor);
     }
 
+    proc->data = i_ins;
+    proc->source_plugin_type = FLB_PLUGIN_INPUT;
     i_ins->processor = proc;
 
     return 0;
@@ -550,7 +558,7 @@ int flb_output_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc
     struct flb_output_instance *o_ins;
 
     o_ins = out_instance_get(ctx, ffd);
-    if (!o_ins) {
+    if (!o_ins || proc == NULL) {
         return -1;
     }
 
@@ -558,6 +566,8 @@ int flb_output_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc
         flb_processor_destroy(o_ins->processor);
     }
 
+    proc->data = o_ins;
+    proc->source_plugin_type = FLB_PLUGIN_OUTPUT;
     o_ins->processor = proc;
 
     return 0;
@@ -675,16 +685,80 @@ int flb_service_set(flb_ctx_t *ctx, ...)
 /* Load a configuration file that may be used by the input or output plugin */
 int flb_lib_config_file(struct flb_lib_ctx *ctx, const char *path)
 {
-    if (access(path, R_OK) != 0) {
+    struct flb_cf *cf;
+    int ret;
+    char tmp[PATH_MAX + 1];
+    char *cfg = NULL;
+    char *end;
+    char *real_path;
+    struct stat st;
+
+    /* Check if file exists and resolve path */
+    ret = stat(path, &st);
+    if (ret == -1 && errno == ENOENT) {
+        /* Try to resolve the real path (if exists) */
+        if (path[0] == '/') {
+            fprintf(stderr, "Error: configuration file not found: %s\n", path);
+            return -1;
+        }
+
+        if (ctx->config->conf_path) {
+            snprintf(tmp, PATH_MAX, "%s%s", ctx->config->conf_path, path);
+            cfg = tmp;
+        }
+        else {
+            cfg = (char *) path;
+        }
+    }
+    else {
+        cfg = (char *) path;
+    }
+
+    if (access(cfg, R_OK) != 0) {
         perror("access");
+        fprintf(stderr, "Error: cannot read configuration file: %s\n", cfg);
         return -1;
     }
 
-    ctx->config->file = mk_rconf_open(path);
-    if (!ctx->config->file) {
-        fprintf(stderr, "Error reading configuration file: %s\n", path);
+    /* Use modern config format API that supports both .conf and .yaml/.yml */
+    cf = flb_cf_create_from_file(NULL, cfg);
+    if (!cf) {
+        fprintf(stderr, "Error reading configuration file: %s\n", cfg);
         return -1;
     }
+
+    /* Set configuration root path */
+    if (cfg) {
+        real_path = realpath(cfg, NULL);
+        if (real_path) {
+            end = strrchr(real_path, FLB_DIRCHAR);
+            if (end) {
+                end++;
+                *end = '\0';
+                if (ctx->config->conf_path) {
+                    flb_free(ctx->config->conf_path);
+                }
+                ctx->config->conf_path = flb_strdup(real_path);
+            }
+            free(real_path);
+        }
+    }
+
+    /* Load the configuration format into the config */
+    ret = flb_config_load_config_format(ctx->config, cf);
+    if (ret != 0) {
+        flb_cf_destroy(cf);
+        fprintf(stderr, "Error loading configuration from file: %s\n", cfg);
+        return -1;
+    }
+
+    /* Destroy old cf_main if it exists (created by flb_config_init) */
+    if (ctx->config->cf_main) {
+        flb_cf_destroy(ctx->config->cf_main);
+    }
+
+    /* Store the config format object */
+    ctx->config->cf_main = cf;
 
     return 0;
 }
@@ -803,7 +877,7 @@ int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len)
 /* Emulate some data from the response */
 int flb_lib_response(flb_ctx_t *ctx, int ffd, int status, const void *data, size_t len)
 {
-    int ret;
+    int ret = -1;
     struct flb_output_instance *o_ins;
 
     if (ctx->status == FLB_LIB_NONE || ctx->status == FLB_LIB_ERROR) {
@@ -816,7 +890,7 @@ int flb_lib_response(flb_ctx_t *ctx, int ffd, int status, const void *data, size
         return -1;
     }
 
-    /* If input's test_formatter is registered, priorize to run it. */
+    /* If output's test_response callback is registered, prioritize to run it. */
     if (o_ins->test_response.callback != NULL) {
         ret = flb_output_run_response(ctx, o_ins, status, data, len);
     }
@@ -965,8 +1039,9 @@ int flb_stop(flb_ctx_t *ctx)
         return 0;
     }
 
-    if (ctx->config->file) {
-        mk_rconf_free(ctx->config->file);
+    if (ctx->config->cf_main) {
+        flb_cf_destroy(ctx->config->cf_main);
+        ctx->config->cf_main = NULL;
     }
 
     flb_debug("[lib] sending STOP signal to the engine");

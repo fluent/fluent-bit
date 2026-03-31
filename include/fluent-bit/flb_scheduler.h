@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -192,15 +192,22 @@ struct flb_sched_timer_coro {
     struct cfl_list _head;
 };
 
+#define FLB_SCHED_TLS_MAGIC 0x53544350u
+
 /* parameter for timer callback running under a co-routine */
 struct flb_sched_timer_coro_cb_params {
     struct flb_sched_timer_coro *stc;
     struct flb_config *config;
     void *data;
+    uint32_t magic;
     struct flb_coro *coro;
 };
 
+#ifndef FLB_HAVE_C_TLS
+FLB_TLS_DECLARE(struct flb_sched_timer_coro_cb_params, sched_timer_coro_cb_params);
+#else
 extern FLB_TLS_DEFINE(struct flb_sched_timer_coro_cb_params, sched_timer_coro_cb_params);
+#endif
 
 
 struct flb_timer_cb_coro_params {
@@ -259,6 +266,7 @@ static FLB_INLINE void sched_timer_cb_params_set(struct flb_sched_timer_coro *st
     params->config = config;
     params->data = data;
     params->coro = coro;
+    params->magic = FLB_SCHED_TLS_MAGIC;
 
     FLB_TLS_SET(sched_timer_coro_cb_params, params);
     co_switch(coro->callee);

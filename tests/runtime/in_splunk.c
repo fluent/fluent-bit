@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_gzip.h>
 #include <monkey/mk_core.h>
 #include "flb_tests_runtime.h"
+#include "../../plugins/in_splunk/splunk_prot.h"
 
 #define JSON_CONTENT_TYPE "application/json"
 
@@ -922,6 +923,92 @@ void flb_test_splunk_collector_event_1_0()
     flb_test_splunk(8819, "/services/collector/event/1.0");
 }
 
+void flb_test_splunk_xff_extract()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    int num;
+    size_t b_sent;
+    char *buf = "{\"event\": \"Pony 1 has left the barn\"}";
+    char *expected = "\"xff\":\"203.0.113.1\"";
+    char *xff_value = " 203.0.113.1, 70.41.3.18, 150.172.238.178";
+    char sport[16];
+    int port = 8820;
+
+    snprintf(sport, 16, "%d", port);
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = expected;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "port", sport,
+                        "add_remote_addr", "true",
+                        "remote_addr_key", "xff",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = splunk_client_ctx_create(port);
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/services/collector/event",
+                        buf, strlen(buf), "127.0.0.1", port, NULL, 0);
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE,
+                              strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              JSON_CONTENT_TYPE, strlen(JSON_CONTENT_TYPE));
+    TEST_CHECK(ret == 0);
+    ret = flb_http_add_header(c, SPLUNK_XFF_HEADER,
+                              strlen(SPLUNK_XFF_HEADER),
+                              xff_value, strlen(xff_value));
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("splunk_client failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(b_sent > 0)){
+        TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+    }
+    else if (!TEST_CHECK(c->resp.status == 200)) {
+        TEST_MSG("http response code error. expect: 200, got: %d\n", c->resp.status);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     {"health", flb_test_splunk_health},
     {"collector", flb_test_splunk_collector},
@@ -936,5 +1023,6 @@ TEST_LIST = {
     {"tag_key", flb_test_splunk_tag_key},
     {"collector_event_with_auth_key", flb_test_splunk_collector_event_hec_token_key},
     {"collector_raw_with_auth_key", flb_test_splunk_collector_raw_hec_token_key},
+    {"collector_xff_extract", flb_test_splunk_xff_extract},
     {NULL, NULL}
 };

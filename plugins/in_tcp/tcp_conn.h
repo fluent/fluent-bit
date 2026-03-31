@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -49,6 +49,9 @@ struct tcp_conn {
     struct flb_in_tcp_config *ctx;    /* Plugin configuration context      */
     struct flb_pack_state pack_state; /* Internal JSON parser              */
     struct flb_connection *connection;
+
+    int busy;                         /* Connection is being processed     */
+    int pending_close;                /* Defer closing until processing ends */
 
     struct mk_list _head;
 };

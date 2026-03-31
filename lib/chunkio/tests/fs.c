@@ -964,6 +964,143 @@ void test_legacy_failure()
     test_legacy_core(CIO_TRUE);
 }
 
+/*
+ * Test case: Prevent unsigned underflow when writing large metadata to a
+ * chunk with small initial allocation.
+ *
+ * This test specifically validates the fix for the bug where calculating
+ * content_av = alloc_size - CIO_FILE_HEADER_MIN - size could underflow
+ * when size is large, causing the resize check to be skipped and leading
+ * to out-of-bounds writes.
+ *
+ * Scenario:
+ * - Create chunk with minimal initial size (e.g., ~100 bytes page-aligned)
+ * - Write small metadata (10 bytes) and small content (20 bytes)
+ * - Write large metadata (80 bytes) that would cause underflow:
+ *   old code: content_av = 100 - 24 - 80 = -4 (wraps to huge unsigned)
+ * - Verify resize happens correctly and no buffer overrun occurs
+ */
+static void test_metadata_unsigned_underflow()
+{
+    int ret;
+    int err;
+    char *meta_buf;
+    int meta_len;
+    void *content_buf;
+    size_t content_size;
+    struct cio_ctx *ctx;
+    struct cio_chunk *chunk;
+    struct cio_stream *stream;
+    struct cio_options cio_opts;
+
+    /* Test data */
+    const char *small_meta = "small";
+    const char *large_meta = "this-is-a-very-large-metadata-string-that-would-cause-unsigned-underflow-in-old-code";
+    const char *content_data = "test-content";
+
+    /* Cleanup any existing test directory */
+    cio_utils_recursive_delete(CIO_ENV);
+
+    /* Initialize options */
+    cio_options_init(&cio_opts);
+    cio_opts.root_path = CIO_ENV;
+    cio_opts.log_cb = log_cb;
+    cio_opts.log_level = CIO_LOG_INFO;
+    cio_opts.flags = CIO_CHECKSUM;
+
+    /* Create context */
+    ctx = cio_create(&cio_opts);
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) {
+        printf("cannot create context\n");
+        exit(1);
+    }
+
+    /* Create stream */
+    stream = cio_stream_create(ctx, "test_stream_underflow", CIO_STORE_FS);
+    TEST_CHECK(stream != NULL);
+    if (!stream) {
+        printf("cannot create stream\n");
+        cio_destroy(ctx);
+        exit(1);
+    }
+
+    /* Create chunk with minimal initial size (forces small alloc_size) */
+    chunk = cio_chunk_open(ctx, stream, "test_chunk_underflow", CIO_OPEN, 100, &err);
+    TEST_CHECK(chunk != NULL);
+    if (!chunk) {
+        printf("cannot open chunk\n");
+        cio_destroy(ctx);
+        exit(1);
+    }
+
+    /* Step 1: Write small initial metadata */
+    ret = cio_meta_write(chunk, (char *) small_meta, strlen(small_meta));
+    TEST_CHECK(ret == CIO_OK);
+
+    /* Step 2: Write some content data */
+    ret = cio_chunk_write(chunk, content_data, strlen(content_data));
+    TEST_CHECK(ret == CIO_OK);
+
+    /* Verify initial state */
+    ret = cio_meta_read(chunk, &meta_buf, &meta_len);
+    TEST_CHECK(ret == CIO_OK);
+    TEST_CHECK(meta_len == (int) strlen(small_meta));
+    TEST_CHECK(memcmp(meta_buf, small_meta, strlen(small_meta)) == 0);
+
+    ret = cio_chunk_get_content_copy(chunk, &content_buf, &content_size);
+    TEST_CHECK(ret == CIO_OK);
+    TEST_CHECK(content_size == strlen(content_data));
+    TEST_CHECK(memcmp(content_buf, content_data, strlen(content_data)) == 0);
+    free(content_buf);
+
+    /* Step 3: Write large metadata that would cause underflow in old code
+     * This is the critical test - the new metadata (80 bytes) is larger than
+     * what would fit without resize, and with a small initial alloc_size,
+     * the old calculation would have underflowed.
+     */
+    ret = cio_meta_write(chunk, (char *) large_meta, strlen(large_meta));
+    TEST_CHECK(ret == CIO_OK);
+
+    /* Step 4: Verify metadata was written correctly */
+    ret = cio_meta_read(chunk, &meta_buf, &meta_len);
+    TEST_CHECK(ret == CIO_OK);
+    TEST_CHECK(meta_len == (int) strlen(large_meta));
+    TEST_CHECK(memcmp(meta_buf, large_meta, strlen(large_meta)) == 0);
+
+    /* Step 5: Verify content data integrity - must be preserved */
+    ret = cio_chunk_get_content_copy(chunk, &content_buf, &content_size);
+    TEST_CHECK(ret == CIO_OK);
+    TEST_CHECK(content_size == strlen(content_data));
+    TEST_CHECK(memcmp(content_buf, content_data, strlen(content_data)) == 0);
+
+    /* Step 6: Sync to disk to ensure persistence */
+    ret = cio_chunk_sync(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    /* Step 7: Put chunk down and up again to test persistence */
+    ret = cio_chunk_down(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_up(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    /* Step 8: Final validation after persistence cycle */
+    ret = cio_meta_read(chunk, &meta_buf, &meta_len);
+    TEST_CHECK(ret == CIO_OK);
+    TEST_CHECK(meta_len == (int) strlen(large_meta));
+    TEST_CHECK(memcmp(meta_buf, large_meta, strlen(large_meta)) == 0);
+
+    ret = cio_chunk_get_content_copy(chunk, &content_buf, &content_size);
+    TEST_CHECK(ret == CIO_OK);
+    TEST_CHECK(content_size == strlen(content_data));
+    TEST_CHECK(memcmp(content_buf, content_data, strlen(content_data)) == 0);
+
+    /* Cleanup */
+    free(content_buf);
+    cio_destroy(ctx);
+}
+
 TEST_LIST = {
     {"fs_write",   test_fs_write},
     {"fs_checksum",  test_fs_checksum},
@@ -976,5 +1113,6 @@ TEST_LIST = {
     {"fs_deep_hierachy", test_deep_hierarchy},
     {"legacy_success", test_legacy_success},
     {"legacy_failure", test_legacy_failure},
+    {"metadata_unsigned_underflow", test_metadata_unsigned_underflow},
     { 0 }
 };

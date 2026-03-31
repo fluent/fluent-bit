@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_aws_credentials.h>
@@ -32,8 +33,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define AWS_SERVICE_ENDPOINT_FORMAT            "%s.%s.amazonaws.com"
-#define AWS_SERVICE_ENDPOINT_BASE_LEN          15
+#define AWS_SERVICE_ENDPOINT_FORMAT            "%s.%s%s"
+#define AWS_SERVICE_ENDPOINT_SUFFIX_COM        ".amazonaws.com"
+#define AWS_SERVICE_ENDPOINT_SUFFIX_COM_CN     ".amazonaws.com.cn"
+#define AWS_SERVICE_ENDPOINT_SUFFIX_EU         ".amazonaws.eu"
 
 #define TAG_PART_DESCRIPTOR "$TAG[%d]"
 #define TAG_DESCRIPTOR "$TAG"
@@ -70,29 +73,30 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    size_t dynamic_headers_len);
 
 /*
- * https://service.region.amazonaws.com(.cn)
+ * https://service.region.amazonaws.[com(.cn)|eu]
  */
 char *flb_aws_endpoint(char* service, char* region)
 {
     char *endpoint = NULL;
-    size_t len = AWS_SERVICE_ENDPOINT_BASE_LEN;
-    int is_cn = FLB_FALSE;
+    const char *domain_suffix = AWS_SERVICE_ENDPOINT_SUFFIX_COM;
+    size_t len;
     int bytes;
 
 
-    /* In the China regions, ".cn" is appended to the URL */
-    if (strcmp("cn-north-1", region) == 0) {
-        len += 3;
-        is_cn = FLB_TRUE;
+    /* China regions end with amazonaws.com.cn */
+    if (strcmp("cn-north-1", region) == 0 ||
+        strcmp("cn-northwest-1", region) == 0) {
+        domain_suffix = AWS_SERVICE_ENDPOINT_SUFFIX_COM_CN;
     }
-    if (strcmp("cn-northwest-1", region) == 0) {
-        len += 3;
-        is_cn = FLB_TRUE;
+    else if (strncmp(region, "eusc-", 5) == 0) {
+        domain_suffix = AWS_SERVICE_ENDPOINT_SUFFIX_EU;
     }
 
-    len += strlen(service);
+    len = strlen(service);
+    len += 1; /* dot between service and region */
     len += strlen(region);
-    len++; /* null byte */
+    len += strlen(domain_suffix);
+    len += 1; /* null byte */
 
     endpoint = flb_calloc(len, sizeof(char));
     if (!endpoint) {
@@ -100,16 +104,11 @@ char *flb_aws_endpoint(char* service, char* region)
         return NULL;
     }
 
-    bytes = snprintf(endpoint, len, AWS_SERVICE_ENDPOINT_FORMAT, service, region);
-    if (bytes < 0) {
+    bytes = snprintf(endpoint, len, AWS_SERVICE_ENDPOINT_FORMAT, service, region, domain_suffix);
+    if (bytes < 0 || bytes >= len) {
         flb_errno();
         flb_free(endpoint);
         return NULL;
-    }
-
-    if (is_cn) {
-        memcpy(endpoint + bytes, ".cn", 3);
-        endpoint[bytes + 3] = '\0';
     }
 
     return endpoint;
@@ -268,6 +267,14 @@ struct flb_aws_client *flb_aws_client_create()
     client->client_vtable = &client_vtable;
     client->retry_requests = FLB_FALSE;
     client->debug_only = FLB_FALSE;
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    client->http_cb_ctx = flb_callback_create("aws client");
+    if (!client->http_cb_ctx) {
+        flb_errno();
+        flb_free(client);
+        return NULL;
+    }
+#endif
     return client;
 }
 
@@ -291,6 +298,11 @@ void flb_aws_client_destroy(struct flb_aws_client *aws_client)
         if (aws_client->extra_user_agent) {
             flb_sds_destroy(aws_client->extra_user_agent);
         }
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+        if (aws_client->http_cb_ctx) {
+            flb_callback_destroy(aws_client->http_cb_ctx);
+        }
+#endif
         flb_free(aws_client);
     }
 }
@@ -385,6 +397,10 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         }
         goto error;
     }
+
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    flb_http_client_debug_enable(c, aws_client->http_cb_ctx);
+#endif
 
     /* Increase the maximum HTTP response buffer size to fit large responses from AWS services */
     ret = flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE);
@@ -808,6 +824,203 @@ char* strtok_concurrent(
 #else
     return strtok_r(str, delimiters, context);
 #endif
+}
+
+/* Constructs S3 object key as per the blob format. */
+flb_sds_t flb_get_s3_blob_key(const char *format,
+                              const char *tag,
+                              char *tag_delimiter,
+                              const char *blob_path)
+{
+    int i = 0;
+    int ret = 0;
+    char *tag_token = NULL;
+    char *random_alphanumeric;
+    /* concurrent safe strtok_r requires a tracking ptr */
+    char *strtok_saveptr;
+    flb_sds_t tmp = NULL;
+    flb_sds_t buf = NULL;
+    flb_sds_t s3_key = NULL;
+    flb_sds_t tmp_key = NULL;
+    flb_sds_t tmp_tag = NULL;
+    flb_sds_t sds_result = NULL;
+    char *valid_blob_path = NULL;
+
+    if (strlen(format) > S3_KEY_SIZE){
+        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    }
+
+    tmp_tag = flb_sds_create_len(tag, strlen(tag));
+    if(!tmp_tag){
+        goto error;
+    }
+
+    s3_key = flb_sds_create_len(format, strlen(format));
+    if (!s3_key) {
+        goto error;
+    }
+
+    /* Check if delimiter(s) specifed exists in the tag. */
+    for (i = 0; i < strlen(tag_delimiter); i++){
+        if (strchr(tag, tag_delimiter[i])){
+            ret = 1;
+            break;
+        }
+    }
+
+    tmp = flb_sds_create_len(TAG_PART_DESCRIPTOR, 5);
+    if (!tmp) {
+        goto error;
+    }
+    if (strstr(s3_key, tmp)){
+        if(ret == 0){
+            flb_warn("[s3_key] Invalid Tag delimiter: does not exist in tag. "
+                    "tag=%s, format=%s", tag, format);
+        }
+    }
+
+    flb_sds_destroy(tmp);
+    tmp = NULL;
+
+    /* Split the string on the delimiters */
+    tag_token = strtok_concurrent(tmp_tag, tag_delimiter, &strtok_saveptr);
+
+    /* Find all occurences of $TAG[*] and
+     * replaces it with the right token from tag.
+     */
+    i = 0;
+    while(tag_token != NULL && i < MAX_TAG_PARTS) {
+        buf = flb_sds_create_size(10);
+        if (!buf) {
+            goto error;
+        }
+        tmp = flb_sds_printf(&buf, TAG_PART_DESCRIPTOR, i);
+        if (!tmp) {
+            goto error;
+        }
+
+        tmp_key = replace_uri_tokens(s3_key, tmp, tag_token);
+        if (!tmp_key) {
+            goto error;
+        }
+
+        if(strlen(tmp_key) > S3_KEY_SIZE){
+            flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+        }
+
+        if (buf != tmp) {
+            flb_sds_destroy(buf);
+        }
+        flb_sds_destroy(tmp);
+        tmp = NULL;
+        buf = NULL;
+        flb_sds_destroy(s3_key);
+        s3_key = tmp_key;
+        tmp_key = NULL;
+
+        tag_token = strtok_concurrent(NULL, tag_delimiter, &strtok_saveptr);
+        i++;
+    }
+
+    tmp = flb_sds_create_len(TAG_PART_DESCRIPTOR, 5);
+    if (!tmp) {
+        goto error;
+    }
+
+    /* A match against "$TAG[" indicates an invalid or out of bounds tag part. */
+    if (strstr(s3_key, tmp)){
+        flb_warn("[s3_key] Invalid / Out of bounds tag part: At most 10 tag parts "
+                 "($TAG[0] - $TAG[9]) can be processed. tag=%s, format=%s, delimiters=%s",
+                 tag, format, tag_delimiter);
+    }
+
+    /* Find all occurences of $TAG and replace with the entire tag. */
+    tmp_key = replace_uri_tokens(s3_key, TAG_DESCRIPTOR, tag);
+    if (!tmp_key) {
+        goto error;
+    }
+
+    if(strlen(tmp_key) > S3_KEY_SIZE){
+        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    }
+
+    flb_sds_destroy(s3_key);
+    s3_key = tmp_key;
+    tmp_key = NULL;
+
+    flb_sds_len_set(s3_key, strlen(s3_key));
+
+    valid_blob_path = (char *) blob_path;
+
+    while (*valid_blob_path == '.' ||
+           *valid_blob_path == '/') {
+            valid_blob_path++;
+    }
+
+    /* Append the blob path. */
+    sds_result = flb_sds_cat(s3_key, valid_blob_path, strlen(valid_blob_path));
+
+    if (!sds_result) {
+        goto error;
+    }
+
+    s3_key = sds_result;
+
+    if(strlen(s3_key) > S3_KEY_SIZE){
+        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    }
+
+    /* Find all occurences of $UUID and replace with a random string. */
+    random_alphanumeric = flb_sts_session_name();
+    if (!random_alphanumeric) {
+        goto error;
+    }
+    /* only use 8 chars of the random string */
+    random_alphanumeric[8] = '\0';
+    tmp_key = replace_uri_tokens(s3_key, RANDOM_STRING, random_alphanumeric);
+    if (!tmp_key) {
+        flb_free(random_alphanumeric);
+        goto error;
+    }
+
+    if(strlen(tmp_key) > S3_KEY_SIZE){
+        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    }
+
+    flb_sds_destroy(s3_key);
+    s3_key = tmp_key;
+    tmp_key = NULL;
+
+    flb_free(random_alphanumeric);
+
+    flb_sds_destroy(tmp);
+    tmp = NULL;
+
+    flb_sds_destroy(tmp_tag);
+    tmp_tag = NULL;
+
+    return s3_key;
+
+    error:
+        flb_errno();
+
+        if (tmp_tag){
+            flb_sds_destroy(tmp_tag);
+        }
+
+        if (s3_key){
+            flb_sds_destroy(s3_key);
+        }
+
+        if (buf && buf != tmp){
+            flb_sds_destroy(buf);
+        }
+
+        if (tmp){
+            flb_sds_destroy(tmp);
+        }
+
+        return NULL;
 }
 
 /* Constructs S3 object key as per the format. */

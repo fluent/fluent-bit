@@ -1,0 +1,605 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="758" onload="init(evt)" viewBox="0 0 1200 758" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="758.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="741" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="741" > </text>
+<g id="frames">
+<g >
+<title>[Wasm] [fib2] fibonacci (1,321,095,222 samples, 93.80%)</title><rect x="83.2" y="341" width="1106.8" height="15.0" fill="rgb(218,159,32)" rx="2" ry="2" />
+<text  x="86.21" y="351.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (382,407,564 samples, 27.15%)</title><rect x="869.6" y="213" width="320.4" height="15.0" fill="rgb(245,35,33)" rx="2" ry="2" />
+<text  x="872.59" y="223.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (15,340,273 samples, 1.09%)</title><rect x="1177.1" y="101" width="12.9" height="15.0" fill="rgb(213,210,13)" rx="2" ry="2" />
+<text  x="1180.11" y="111.5" ></text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,359,552,763 samples, 96.53%)</title><rect x="51.0" y="357" width="1139.0" height="15.0" fill="rgb(252,138,7)" rx="2" ry="2" />
+<text  x="53.99" y="367.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="517" width="1180.0" height="15.0" fill="rgb(218,120,5)" rx="2" ry="2" />
+<text  x="13.00" y="527.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (27,274,310 samples, 1.94%)</title><rect x="1167.1" y="117" width="22.9" height="15.0" fill="rgb(234,117,51)" rx="2" ry="2" />
+<text  x="1170.11" y="127.5" >[..</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (62,450,767 samples, 4.43%)</title><rect x="1137.6" y="149" width="52.4" height="15.0" fill="rgb(225,21,1)" rx="2" ry="2" />
+<text  x="1140.64" y="159.5" >[Wasm..</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="485" width="1180.0" height="15.0" fill="rgb(233,228,10)" rx="2" ry="2" />
+<text  x="13.00" y="495.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,388,674,508 samples, 98.59%)</title><rect x="26.6" y="389" width="1163.4" height="15.0" fill="rgb(253,174,18)" rx="2" ry="2" />
+<text  x="29.59" y="399.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,170,751,868 samples, 83.12%)</title><rect x="209.2" y="309" width="980.8" height="15.0" fill="rgb(227,120,21)" rx="2" ry="2" />
+<text  x="212.17" y="319.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="533" width="1180.0" height="15.0" fill="rgb(254,106,47)" rx="2" ry="2" />
+<text  x="13.00" y="543.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (120,820,158 samples, 8.58%)</title><rect x="1088.7" y="165" width="101.3" height="15.0" fill="rgb(205,47,33)" rx="2" ry="2" />
+<text  x="1091.74" y="175.5" >[Wasm] [fib2..</text>
+</g>
+<g >
+<title>invoke_i_i (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="565" width="1180.0" height="15.0" fill="rgb(238,144,29)" rx="2" ry="2" />
+<text  x="13.00" y="575.5" >invoke_i_i</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,375,872,224 samples, 97.68%)</title><rect x="37.3" y="373" width="1152.7" height="15.0" fill="rgb(219,165,53)" rx="2" ry="2" />
+<text  x="40.32" y="383.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>load_run_wasm_file (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="645" width="1180.0" height="15.0" fill="rgb(233,129,29)" rx="2" ry="2" />
+<text  x="13.00" y="655.5" >load_run_wasm_file</text>
+</g>
+<g >
+<title>load_run_fib_aot (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="661" width="1180.0" height="15.0" fill="rgb(248,119,41)" rx="2" ry="2" />
+<text  x="13.00" y="671.5" >load_run_fib_aot</text>
+</g>
+<g >
+<title>[Wasm] [fib2] run (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="549" width="1180.0" height="15.0" fill="rgb(235,16,45)" rx="2" ry="2" />
+<text  x="13.00" y="559.5" >[Wasm] [fib2] run</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (42,420,273 samples, 3.01%)</title><rect x="1154.4" y="133" width="35.6" height="15.0" fill="rgb(239,213,43)" rx="2" ry="2" />
+<text  x="1157.42" y="143.5" >[Wa..</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,266,323,684 samples, 89.91%)</title><rect x="129.1" y="325" width="1060.9" height="15.0" fill="rgb(248,225,3)" rx="2" ry="2" />
+<text  x="132.10" y="335.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>linux_perf_samp (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="693" width="1180.0" height="15.0" fill="rgb(241,6,8)" rx="2" ry="2" />
+<text  x="13.00" y="703.5" >linux_perf_samp</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (280,259,464 samples, 19.90%)</title><rect x="955.2" y="197" width="234.8" height="15.0" fill="rgb(243,108,14)" rx="2" ry="2" />
+<text  x="958.17" y="207.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>start_thread (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="677" width="1180.0" height="15.0" fill="rgb(248,153,5)" rx="2" ry="2" />
+<text  x="13.00" y="687.5" >start_thread</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (2,334,521 samples, 0.17%)</title><rect x="1188.0" y="69" width="1.9" height="15.0" fill="rgb(237,160,49)" rx="2" ry="2" />
+<text  x="1190.97" y="79.5" ></text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (666,394,609 samples, 47.31%)</title><rect x="631.7" y="245" width="558.3" height="15.0" fill="rgb(213,187,32)" rx="2" ry="2" />
+<text  x="634.67" y="255.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (943,121,736 samples, 66.96%)</title><rect x="399.9" y="277" width="790.1" height="15.0" fill="rgb(219,155,33)" rx="2" ry="2" />
+<text  x="402.87" y="287.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,169,581 samples, 0.08%)</title><rect x="1188.9" y="53" width="1.0" height="15.0" fill="rgb(237,124,2)" rx="2" ry="2" />
+<text  x="1191.95" y="63.5" ></text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,169,581 samples, 0.08%)</title><rect x="1188.9" y="37" width="1.0" height="15.0" fill="rgb(251,93,20)" rx="2" ry="2" />
+<text  x="1191.95" y="47.5" ></text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (194,755,877 samples, 13.83%)</title><rect x="1026.8" y="181" width="163.2" height="15.0" fill="rgb(215,30,29)" rx="2" ry="2" />
+<text  x="1029.80" y="191.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,406,148,966 samples, 99.83%)</title><rect x="12.0" y="437" width="1178.0" height="15.0" fill="rgb(254,68,36)" rx="2" ry="2" />
+<text  x="14.95" y="447.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>all (1,408,481,525 samples, 100%)</title><rect x="10.0" y="709" width="1180.0" height="15.0" fill="rgb(236,29,9)" rx="2" ry="2" />
+<text  x="13.00" y="719.5" ></text>
+</g>
+<g >
+<title>wasm_func_call (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="629" width="1180.0" height="15.0" fill="rgb(245,143,47)" rx="2" ry="2" />
+<text  x="13.00" y="639.5" >wasm_func_call</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (5,943,602 samples, 0.42%)</title><rect x="1185.0" y="85" width="5.0" height="15.0" fill="rgb(251,87,10)" rx="2" ry="2" />
+<text  x="1187.98" y="95.5" ></text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="469" width="1180.0" height="15.0" fill="rgb(249,99,1)" rx="2" ry="2" />
+<text  x="13.00" y="479.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>wasm_runtime_call_wasm (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="613" width="1180.0" height="15.0" fill="rgb(241,228,3)" rx="2" ry="2" />
+<text  x="13.00" y="623.5" >wasm_runtime_call_wasm</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,401,486,191 samples, 99.50%)</title><rect x="15.9" y="405" width="1174.1" height="15.0" fill="rgb(242,25,16)" rx="2" ry="2" />
+<text  x="18.86" y="415.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>aot_call_function (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="597" width="1180.0" height="15.0" fill="rgb(234,207,25)" rx="2" ry="2" />
+<text  x="13.00" y="607.5" >aot_call_function</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (531,941,563 samples, 37.77%)</title><rect x="744.3" y="229" width="445.7" height="15.0" fill="rgb(233,184,39)" rx="2" ry="2" />
+<text  x="747.31" y="239.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,406,148,966 samples, 99.83%)</title><rect x="12.0" y="453" width="1178.0" height="15.0" fill="rgb(246,125,49)" rx="2" ry="2" />
+<text  x="14.95" y="463.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,061,055,435 samples, 75.33%)</title><rect x="301.1" y="293" width="888.9" height="15.0" fill="rgb(248,39,32)" rx="2" ry="2" />
+<text  x="304.07" y="303.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="501" width="1180.0" height="15.0" fill="rgb(217,150,5)" rx="2" ry="2" />
+<text  x="13.00" y="511.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (1,403,816,880 samples, 99.67%)</title><rect x="13.9" y="421" width="1176.1" height="15.0" fill="rgb(208,33,41)" rx="2" ry="2" />
+<text  x="16.91" y="431.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>[Wasm] [fib2] fibonacci (800,646,766 samples, 56.84%)</title><rect x="519.2" y="261" width="670.8" height="15.0" fill="rgb(252,110,19)" rx="2" ry="2" />
+<text  x="522.19" y="271.5" >[Wasm] [fib2] fibonacci</text>
+</g>
+<g >
+<title>invoke_native_with_hw_bound_check (1,408,481,525 samples, 100.00%)</title><rect x="10.0" y="581" width="1180.0" height="15.0" fill="rgb(243,145,41)" rx="2" ry="2" />
+<text  x="13.00" y="591.5" >invoke_native_with_hw_bound_check</text>
+</g>
+</g>
+</svg>

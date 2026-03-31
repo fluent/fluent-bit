@@ -1,0 +1,19 @@
+---
+pipeline:
+  inputs:
+    - name: metrics
+      routes:
+        metrics:
+          - name: cpu_hot
+            condition:
+              rules:
+                - field: "$metric.name"
+                  op: eq
+                  value: "cpu_usage"
+                - field: "$resource['service.name']"
+                  op: eq
+                  value: "checkout"
+            to:
+              outputs:
+                - name: prometheus_remote
+                  fallback: s3_backup

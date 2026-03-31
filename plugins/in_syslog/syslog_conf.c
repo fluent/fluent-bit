@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -105,6 +105,19 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
     }
     else {
         ctx->mode = FLB_SYSLOG_UNIX_UDP;
+    }
+
+    /* TCP Frame type (only applies to stream modes; default newline) */
+    ctx->frame_type = FLB_SYSLOG_FRAME_NEWLINE;
+    if (ctx->format_str != NULL) {
+        if (strcasecmp(ctx->format_str, "octet_counting") == 0 ||
+            strcasecmp(ctx->format_str, "octet") == 0) {
+            ctx->frame_type = FLB_SYSLOG_FRAME_OCTET_COUNTING;
+        }
+        else if (strcasecmp(ctx->format_str, "newline") != 0) {
+            flb_plg_warn(ins, "[in_syslog] unknown frame '%s', using 'newline'",
+                         ctx->format_str);
+        }
     }
 
     /* Check if TCP mode was requested */

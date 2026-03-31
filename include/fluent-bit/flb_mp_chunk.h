@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -36,6 +36,10 @@ struct flb_mp_chunk_record {
     struct flb_log_event event;
     struct cfl_object *cobj_metadata;
     struct cfl_object *cobj_record;
+    struct cfl_object *cobj_group_metadata;
+    struct cfl_object *cobj_group_attributes;
+    int owns_group_metadata;
+    int owns_group_attributes;
     struct cfl_list _head;
 };
 
@@ -46,6 +50,9 @@ struct flb_mp_chunk_cobj {
 
     struct flb_mp_chunk_record *record_pos;
     struct cfl_list records;
+
+    struct cfl_object *active_group_metadata;
+    struct cfl_object *active_group_attributes;
 
     /* Condition for filtering records during processing */
     struct flb_condition *condition;
@@ -64,6 +71,8 @@ struct flb_mp_chunk_cobj *flb_mp_chunk_cobj_create(struct flb_log_event_encoder 
 int flb_mp_chunk_cobj_destroy(struct flb_mp_chunk_cobj *chunk_cobj);
 
 int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size);
+int flb_mp_chunk_cobj_count_log_records(struct flb_mp_chunk_cobj *chunk_cobj);
+int flb_mp_chunk_cobj_normalize_groups(struct flb_mp_chunk_cobj *chunk_cobj);
 
 
 

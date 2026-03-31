@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -29,20 +29,42 @@
 
 int api_v1_registration(struct flb_hs *hs)
 {
-    api_v1_uptime(hs);
-    api_v1_metrics(hs);
-    api_v1_plugins(hs);
+    int ret;
+
+    ret = api_v1_uptime(hs);
+    if (ret != 0) {
+        return ret;
+    }
+
+    ret = api_v1_metrics(hs);
+    if (ret != 0) {
+        return ret;
+    }
+
+    ret = api_v1_plugins(hs);
+    if (ret != 0) {
+        return ret;
+    }
 
 #ifdef FLB_HAVE_CHUNK_TRACE
-    api_v1_trace(hs);
+    ret = api_v1_trace(hs);
+    if (ret != 0) {
+        return ret;
+    }
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
     if (hs->config->health_check == FLB_TRUE) {
-        api_v1_health(hs);
+        ret = api_v1_health(hs);
+        if (ret != 0) {
+            return ret;
+        }
     }
 
     if (hs->config->storage_metrics == FLB_TRUE) {
-        api_v1_storage_metrics(hs);
+        ret = api_v1_storage_metrics(hs);
+        if (ret != 0) {
+            return ret;
+        }
     }
 
     return 0;

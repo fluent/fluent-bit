@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,7 +22,13 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_record_accessor.h>
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+#include <fluent-bit/flb_aws_credentials.h>
+#endif
+#endif
 
 #include "opentelemetry.h"
 #include "opentelemetry_conf.h"
@@ -167,7 +173,7 @@ static int config_add_labels(struct flb_output_instance *ins,
         k = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
         v = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
 
-        kv = flb_kv_item_create(&ctx->kv_labels, k->str, v->str);
+        kv = flb_kv_item_set(&ctx->kv_labels, k->str, v->str);
         if (!kv) {
             flb_plg_error(ins, "could not append label %s=%s\n", k->str, v->str);
             return -1;
@@ -199,6 +205,9 @@ static int check_proxy(struct flb_output_instance *ins,
             return -1;
         }
 
+        if (ctx->proxy_host) {
+            flb_free(ctx->proxy_host);
+        }
         ctx->proxy_host = host;
         ctx->proxy_port = atoi(port);
         ctx->proxy = tmp;
@@ -254,6 +263,8 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     const char *tmp = NULL;
     uint64_t http_client_flags;
     int http_protocol_version;
+    int http2_config_value;
+    int http2_effective_value;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct opentelemetry_context));
@@ -262,6 +273,11 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         return NULL;
     }
     ctx->ins = ins;
+    ctx->oauth2_config.enabled = FLB_FALSE;
+    ctx->oauth2_config.auth_method = FLB_OAUTH2_AUTH_METHOD_BASIC;
+    ctx->oauth2_config.refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
+    ctx->oauth2_ctx = NULL;
+    ctx->oauth2_auth_method = NULL;
     mk_list_init(&ctx->kv_labels);
     mk_list_init(&ctx->log_body_key_list);
 
@@ -271,13 +287,35 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         return NULL;
     }
 
-    /* Parse 'add_label' */
-    ret = config_add_labels(ins, ctx);
-    if (ret == -1) {
+    if (ins->oauth2_config_map && mk_list_size(&ins->oauth2_properties) > 0) {
+        ret = flb_config_map_set(&ins->oauth2_properties,
+                                 ins->oauth2_config_map,
+                                 &ctx->oauth2_config);
+        if (ret == -1) {
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+
+        tmp = flb_kv_get_key_value("oauth2.auth_method", &ins->oauth2_properties);
+        if (tmp) {
+            ctx->oauth2_auth_method = tmp;
+        }
+    }
+
+    if (ctx->max_resources < 0) {
+        flb_plg_error(ins, "max_resources must be greater than or equal to zero");
+        flb_opentelemetry_context_destroy(ctx);
         return NULL;
     }
 
-    ret = check_proxy(ins, ctx, host, port, protocol, metrics_uri);
+    if (ctx->max_scopes < 0) {
+        flb_plg_error(ins, "max_scopes must be greater than or equal to zero");
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
+
+    /* Parse 'add_label' */
+    ret = config_add_labels(ins, ctx);
     if (ret == -1) {
         flb_opentelemetry_context_destroy(ctx);
         return NULL;
@@ -288,6 +326,46 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_opentelemetry_context_destroy(ctx);
         return NULL;
     }
+
+    ret = check_proxy(ins, ctx, host, port, protocol, metrics_uri);
+    if (ret == -1) {
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
+
+    ret = check_proxy(ins, ctx, host, port, protocol, traces_uri);
+    if (ret == -1) {
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
+
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    if (ctx->has_aws_auth) {
+        if (!ctx->aws_service) {
+            flb_plg_error(ins, "aws_auth option requires " FLB_OPENTELEMETRY_AWS_CREDENTIAL_PREFIX "service to be set");
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+
+        ctx->aws_provider = flb_managed_chain_provider_create(
+            ins,
+            config,
+            FLB_OPENTELEMETRY_AWS_CREDENTIAL_PREFIX,
+            NULL,
+            flb_aws_client_generator()
+        );
+        if (!ctx->aws_provider) {
+            flb_plg_error(ins, "failed to create aws credential provider for sigv4 auth");
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+
+        ctx->aws_region = flb_output_get_property(FLB_OPENTELEMETRY_AWS_CREDENTIAL_PREFIX
+                                                  "region", ctx->ins);
+    }
+#endif
+#endif
 
     /* Check if SSL/TLS is enabled */
 #ifdef FLB_HAVE_TLS
@@ -321,13 +399,68 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     }
 
     if (!upstream) {
-        flb_free(ctx);
+        flb_opentelemetry_context_destroy(ctx);
         return NULL;
     }
 
     ctx->u = upstream;
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
+
+    if (ctx->oauth2_config.connect_timeout <= 0 &&
+        ins->net_setup.connect_timeout > 0) {
+        ctx->oauth2_config.connect_timeout = ins->net_setup.connect_timeout;
+    }
+
+    if (ctx->oauth2_config.enabled == FLB_TRUE) {
+        tmp = ctx->oauth2_auth_method ? ctx->oauth2_auth_method :
+              flb_output_get_property("oauth2.auth_method", ins);
+
+        if (tmp) {
+            if (strcasecmp(tmp, "basic") == 0) {
+                ctx->oauth2_config.auth_method = FLB_OAUTH2_AUTH_METHOD_BASIC;
+            }
+            else if (strcasecmp(tmp, "post") == 0) {
+                ctx->oauth2_config.auth_method = FLB_OAUTH2_AUTH_METHOD_POST;
+            }
+            else if (strcasecmp(tmp, "private_key_jwt") == 0) {
+                ctx->oauth2_config.auth_method =
+                    FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT;
+            }
+            else {
+                flb_plg_error(ctx->ins, "invalid oauth2.auth_method '%s'", tmp);
+                flb_opentelemetry_context_destroy(ctx);
+                return NULL;
+            }
+        }
+
+        if (!ctx->oauth2_config.token_url || !ctx->oauth2_config.client_id) {
+            flb_plg_error(ctx->ins, "oauth2 requires token_url and client_id");
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+
+        if (ctx->oauth2_config.auth_method == FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT) {
+            if (!ctx->oauth2_config.jwt_key_file ||
+                !ctx->oauth2_config.jwt_cert_file) {
+                flb_plg_error(ctx->ins, "oauth2 private_key_jwt requires jwt_key_file and jwt_cert_file");
+                flb_opentelemetry_context_destroy(ctx);
+                return NULL;
+            }
+        }
+        else if (!ctx->oauth2_config.client_secret) {
+            flb_plg_error(ctx->ins, "oauth2 basic/post require client_secret");
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+
+        ctx->oauth2_ctx = flb_oauth2_create_from_config(config, &ctx->oauth2_config);
+        if (!ctx->oauth2_ctx) {
+            flb_plg_error(ctx->ins, "failed to initialize oauth2 context");
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+    }
 
     ctx->logs_uri_sanitized = sanitize_uri(ctx->logs_uri);
     ctx->traces_uri_sanitized = sanitize_uri(ctx->traces_uri);
@@ -409,6 +542,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         }
         else {
             flb_plg_error(ctx->ins, "Unknown compression method %s", tmp);
+            flb_opentelemetry_context_destroy(ctx);
             return NULL;
         }
     }
@@ -496,7 +630,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         flb_plg_error(ins, "failed to create record accessor for resource attributes");
     }
 
-    ctx->ra_resource_schema_url = flb_ra_create("$schema_url", FLB_FALSE);
+    ctx->ra_resource_schema_url = flb_ra_create("$resource['schema_url']", FLB_FALSE);
     if (ctx->ra_resource_schema_url == NULL) {
         flb_plg_error(ins, "failed to create record accessor for resource schema url");
     }
@@ -572,11 +706,19 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
 
     ctx->enable_http2_flag = FLB_TRUE;
 
+    if (ctx->enable_http2) {
+        http2_config_value = flb_utils_bool(ctx->enable_http2);
+    }
+    else {
+        http2_config_value = FLB_FALSE;
+    }
+
+    http2_effective_value = http2_config_value;
+
     /* if gRPC has been enabled, auto-enable HTTP/2 to make end-user life easier */
-    if (ctx->enable_grpc_flag && !flb_utils_bool(ctx->enable_http2)) {
+    if (ctx->enable_grpc_flag && http2_config_value == FLB_FALSE) {
         flb_plg_info(ctx->ins, "gRPC enabled, HTTP/2 has been auto-enabled");
-        flb_sds_destroy(ctx->enable_http2);
-        ctx->enable_http2 = flb_sds_create("on");
+        http2_effective_value = FLB_TRUE;
     }
 
     /*
@@ -584,10 +726,10 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
      * moving forward it wont be necessary since we are now setting some special defaults
      * in case of gRPC is enabled (which is the only case where HTTP/2 is mandatory).
      */
-    if (strcasecmp(ctx->enable_http2, "force") == 0) {
+    if (ctx->enable_http2 && strcasecmp(ctx->enable_http2, "force") == 0) {
         http_protocol_version = HTTP_PROTOCOL_VERSION_20;
     }
-    else if (flb_utils_bool(ctx->enable_http2)) {
+    else if (http2_effective_value == FLB_TRUE) {
         if (!ins->use_tls) {
             http_protocol_version = HTTP_PROTOCOL_VERSION_20;
         }
@@ -751,6 +893,19 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
     if (ctx->ra_log_meta_otlp_trace_flags) {
         flb_ra_destroy(ctx->ra_log_meta_otlp_trace_flags);
     }
+
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    if (ctx->aws_provider) {
+        flb_aws_provider_destroy(ctx->aws_provider);
+    }
+#endif
+#endif
+
+    if (ctx->oauth2_ctx) {
+        flb_oauth2_destroy(ctx->oauth2_ctx);
+    }
+    flb_oauth2_config_destroy(&ctx->oauth2_config);
 
     flb_free(ctx->proxy_host);
     flb_free(ctx);

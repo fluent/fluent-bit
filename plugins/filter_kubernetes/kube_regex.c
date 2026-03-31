@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -34,8 +34,12 @@ int flb_kube_regex_init(struct flb_kube *ctx)
             ctx->regex = flb_regex_create(KUBE_TAG_TO_REGEX);
         }
     }
+    ctx->deploymentRegex = flb_regex_create(DEPLOYMENT_REGEX);
 
     if (!ctx->regex) {
+        return -1;
+    }
+    if (!ctx->deploymentRegex) {
         return -1;
     }
 

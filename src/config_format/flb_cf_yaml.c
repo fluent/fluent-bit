@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -537,8 +537,10 @@ static char *dirname(char *path)
     ptr = strrchr(path, '\\');
 
     if (ptr == NULL) {
-        return path;
+        /* No directory component */
+        return ".";
     }
+
     *ptr++='\0';
     return path;
 }
@@ -623,7 +625,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
 
         if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
 
-            if (read_config(conf, ctx, state, buf) < 0) {
+            if (read_config(conf, ctx, state->file, buf) < 0) {
                 return -1;
             }
         }
@@ -754,7 +756,9 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
     struct cfl_kvpair *kvp;
     struct cfl_variant *var;
     struct cfl_array *arr;
-    int idx;
+    size_t idx;
+    size_t entry_count;
+    int array_all_strings;
 
     cfl_list_foreach(head, &state->keyvals->list) {
         kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
@@ -773,33 +777,57 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
             }
             break;
         case CFL_VARIANT_ARRAY:
-            arr = flb_cf_section_property_add_list(conf, properties,
-                                                    kvp->key, cfl_sds_len(kvp->key));
+            entry_count = kvp->val->data.as_array->entry_count;
+            array_all_strings = 1;
 
-            if (arr == NULL) {
-                flb_error("unable to add property list");
-                return YAML_FAILURE;
-            }
-            for (idx = 0; idx < kvp->val->data.as_array->entry_count; idx++) {
+            for (idx = 0; idx < entry_count; idx++) {
                 var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
+                if (var == NULL || var->type != CFL_VARIANT_STRING) {
+                    array_all_strings = 0;
+                    break;
+                }
+            }
 
-                if (var == NULL) {
-                    flb_error("unable to retrieve from array by index");
+            if (array_all_strings == 1) {
+                arr = flb_cf_section_property_add_list(conf, properties,
+                                                        kvp->key, cfl_sds_len(kvp->key));
+
+                if (arr == NULL) {
+                    flb_error("unable to add property list");
                     return YAML_FAILURE;
                 }
-                switch (var->type) {
-                case CFL_VARIANT_STRING:
+
+                for (idx = 0; idx < entry_count; idx++) {
+                    var = cfl_array_fetch_by_index(kvp->val->data.as_array, idx);
 
                     if (cfl_array_append_string(arr, var->data.as_string) < 0) {
                         flb_error("unable to append string to array");
                         return YAML_FAILURE;
                     }
-                    break;
-                default:
-                    flb_error("unable to copy value for property");
-                    return YAML_FAILURE;
                 }
             }
+            else {
+                if (flb_cf_section_property_add_variant(conf,
+                                                         properties,
+                                                         kvp->key,
+                                                         cfl_sds_len(kvp->key),
+                                                         kvp->val) == NULL) {
+                    flb_error("unable to add variant property");
+                    return YAML_FAILURE;
+                }
+                kvp->val = NULL;
+            }
+            break;
+        case CFL_VARIANT_KVLIST:
+            if (flb_cf_section_property_add_variant(conf,
+                                                     properties,
+                                                     kvp->key,
+                                                     cfl_sds_len(kvp->key),
+                                                     kvp->val) == NULL) {
+                flb_error("unable to add variant property");
+                return YAML_FAILURE;
+            }
+            kvp->val = NULL;
             break;
         default:
             flb_error("unknown value type for properties: %d", kvp->val->type);
@@ -1990,6 +2018,10 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             if (state->section == SECTION_PROCESSOR) {
                 state = state_push_variant(ctx, state, 0);
             }
+            else if (strcmp(state->key, "routes") == 0 ||
+                     strcmp(state->key, "processors") == 0) {
+                state = state_push_variant(ctx, state, 0);
+            }
             else {
                 state = state_push_witharr(ctx, state, STATE_PLUGIN_VAL_LIST);
             }
@@ -2000,6 +2032,29 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             }
             break;
         case YAML_MAPPING_START_EVENT:
+
+            if (strcmp(state->key, "processors") == 0) {
+                struct flb_cf_group *group;
+
+                group = flb_cf_group_create(conf, state->cf_section,
+                                             state->key,
+                                             strlen(state->key));
+
+                if (group == NULL) {
+                    flb_error("unable to create processors group");
+                    return YAML_FAILURE;
+                }
+
+                state->cf_group = group;
+                state = state_push(ctx, STATE_INPUT_PROCESSORS);
+
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+
+                break;
+            }
 
             if (state->section == SECTION_PROCESSOR) {
                 /* when in a processor section, we allow plugins to have nested
@@ -2013,15 +2068,12 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 break;
             }
 
-            if (strcmp(state->key, "processors") == 0) {
-                state = state_push(ctx, STATE_INPUT_PROCESSORS);
+            if (strcmp(state->key, "routes") == 0 ||
+                strcmp(state->key, "processors") == 0) {
+                state = state_push_variant(ctx, state, 1);
 
                 if (state == NULL) {
                     flb_error("unable to allocate state");
-                    return YAML_FAILURE;
-                }
-
-                if (state_create_group(conf, state, "processors") == YAML_FAILURE) {
                     return YAML_FAILURE;
                 }
                 break;
@@ -2881,7 +2933,29 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         status = yaml_parser_parse(&parser, &event);
 
         if (status == YAML_FAILURE) {
-            flb_error("[config] invalid YAML format in file %s", cfg_file);
+            if (parser.problem) {
+                flb_error("[config] invalid YAML in file %s at line %zu, column %zu: %s",
+                          cfg_file,
+                          parser.problem_mark.line + 1,
+                          parser.problem_mark.column + 1,
+                          parser.problem);
+
+                /* Provide contextual hint if the error is not on the first line */
+                if (parser.problem_mark.line > 0) {
+                    flb_error("[config] hint: check line %zu (above) for missing ':' or incorrect indentation",
+                              parser.problem_mark.line);
+                }
+            }
+            else {
+                flb_error("[config] invalid YAML format in file %s at line %zu, column %zu",
+                          cfg_file,
+                          parser.problem_mark.line + 1,
+                          parser.problem_mark.column + 1);
+
+                if (parser.problem_mark.line > 0) {
+                    flb_error("[config] hint: check line %zu for syntax issues", parser.problem_mark.line);
+                }
+            }
             code = -1;
             goto done;
         }

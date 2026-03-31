@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@
 struct nginx_ctx
 {
     int coll_id;                    /* collector id */
+    int scrape_interval;            /* collection interval */
     flb_sds_t status_url;
     struct flb_parser *parser;
     struct flb_input_instance *ins; /* Input plugin instace */

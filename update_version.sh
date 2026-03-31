@@ -62,25 +62,32 @@ if [[ -z "$patch" ]]; then
 fi
 
 # Build version
-sed_wrapper -i "s/FLB_VERSION_MAJOR  [0-9]/FLB_VERSION_MAJOR  $major/g" "$SCRIPT_DIR"/CMakeLists.txt
-sed_wrapper -i "s/FLB_VERSION_MINOR  [0-9]/FLB_VERSION_MINOR  $minor/g" "$SCRIPT_DIR"/CMakeLists.txt
-sed_wrapper -i "s/FLB_VERSION_PATCH  [0-9]/FLB_VERSION_PATCH  $patch/g" "$SCRIPT_DIR"/CMakeLists.txt
+sed_wrapper -i -E "s/(FLB_VERSION_MAJOR[[:space:]]+)[0-9]+/\1$major/g" "$SCRIPT_DIR"/CMakeLists.txt
+sed_wrapper -i -E "s/(FLB_VERSION_MINOR[[:space:]]+)[0-9]+/\1$minor/g" "$SCRIPT_DIR"/CMakeLists.txt
+sed_wrapper -i -E "s/(FLB_VERSION_PATCH[[:space:]]+)[0-9]+/\1$patch/g" "$SCRIPT_DIR"/CMakeLists.txt
 
 # Dockerfile
-sed_wrapper -i "s/ARG RELEASE_VERSION=[0-9].[0-9].[0-9]/ARG RELEASE_VERSION=$NEW_VERSION/g" "$SCRIPT_DIR"/dockerfiles/Dockerfile
-sed_wrapper -i "s/ARG RELEASE_VERSION=[0-9].[0-9].[0-9]/ARG RELEASE_VERSION=$NEW_VERSION/g" "$SCRIPT_DIR"/dockerfiles/Dockerfile*
+sed_wrapper -i -E "s/(ARG RELEASE_VERSION=)[0-9]+\.[0-9]+\.[0-9]+/\1$NEW_VERSION/g" "$SCRIPT_DIR"/dockerfiles/Dockerfile
+sed_wrapper -i -E "s/(ARG RELEASE_VERSION=)[0-9]+\.[0-9]+\.[0-9]+/\1$NEW_VERSION/g" "$SCRIPT_DIR"/dockerfiles/Dockerfile*
 
 
 # Snap
 sed_wrapper -i -E "s/version: '[0-9]+\.[0-9]+\.[0-9]+'/version: '$NEW_VERSION'/g" "$SCRIPT_DIR"/snap/snapcraft.yaml
 
 # Bitbake / Yocto
-if [[ -f "fluent-bit-$NEW_VERSION.bb" ]]; then
+if [[ -f "$SCRIPT_DIR/fluent-bit-$NEW_VERSION.bb" ]]; then
     echo "ERROR: existing fluent-bit-$NEW_VERSION.bb"
     exit 1
 else
-    mv -vf "$SCRIPT_DIR"/fluent-bit-*.*.*.bb "fluent-bit-$NEW_VERSION.bb"
-    sed_wrapper -i -E "s/^PV =.*$/PV = \"$NEW_VERSION\"/g" "fluent-bit-$NEW_VERSION.bb"
+    old_bb=$(find "$SCRIPT_DIR" -maxdepth 1 -type f -name 'fluent-bit-[0-9]*.[0-9]*.[0-9]*.bb' | head -n1)
+    if [[ -z "$old_bb" ]]; then
+        echo "ERROR: no existing .bb file found" >&2
+        exit 1
+    fi
+    mv -vf "$old_bb" "$SCRIPT_DIR/fluent-bit-$NEW_VERSION.bb"
+    sed_wrapper -i -E \
+      "s/^PV *= *\"?[0-9]+\.[0-9]+\.[0-9]+\"?/PV = \"$NEW_VERSION\"/g" \
+      "$SCRIPT_DIR/fluent-bit-$NEW_VERSION.bb"
 fi
 
 if [[ "${DISABLE_COMMIT:-no}" == "no" ]]; then

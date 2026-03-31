@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -32,6 +32,9 @@ struct flb_time {
 
 struct flb_tm {
     struct tm tm;
+#ifndef FLB_HAVE_TIME_ZONE
+    char *tm_zone;
+#endif
 #ifndef FLB_HAVE_GMTOFF
     long int tm_gmtoff;
 #endif
@@ -41,6 +44,12 @@ struct flb_tm {
 #define flb_tm_gmtoff(x) (x)->tm_gmtoff
 #else
 #define flb_tm_gmtoff(x) (x)->tm.tm_gmtoff
+#endif
+
+#ifndef FLB_HAVE_TIME_ZONE
+#define flb_tm_zone(x) (x)->tm_zone
+#else
+#define flb_tm_zone(x) (x)->tm.tm_zone
 #endif
 
 /*
@@ -78,7 +87,7 @@ static inline void flb_time_copy(struct flb_time *dst, struct flb_time *src)
 static inline void flb_time_from_uint64(struct flb_time *dst, uint64_t value)
 {
     dst->tm.tv_sec = (long) (value / 1000000000L);
-    dst->tm.tv_nsec = (long) (value - dst->tm.tv_sec);
+    dst->tm.tv_nsec = (long) (value - ((uint64_t) dst->tm.tv_sec * 1000000000L));
 }
 
 static inline void flb_time_from_double(struct flb_time *dst, double d)

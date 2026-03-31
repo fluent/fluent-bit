@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,6 +26,10 @@ Opentelemetry__Proto__Common__V1__KeyValueList *otlp_kvlist_value_initialize(siz
 Opentelemetry__Proto__Common__V1__AnyValue *otlp_any_value_initialize(int data_type, size_t entry_count);
 
 void otlp_kvarray_destroy(Opentelemetry__Proto__Common__V1__KeyValue **kvarray, size_t entry_count);
+int otlp_kvarray_append(Opentelemetry__Proto__Common__V1__KeyValue ***base,
+                        size_t *base_count,
+                        Opentelemetry__Proto__Common__V1__KeyValue **extra,
+                        size_t extra_count);
 void otlp_kvpair_destroy(Opentelemetry__Proto__Common__V1__KeyValue *kvpair);
 void otlp_kvlist_destroy(Opentelemetry__Proto__Common__V1__KeyValueList *kvlist);
 void otlp_array_destroy(Opentelemetry__Proto__Common__V1__ArrayValue *array);

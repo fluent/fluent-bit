@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_opentelemetry.h>
 
 #include <fluent-bit/http_server/flb_http_server.h>
 
@@ -42,127 +43,20 @@
 #include "opentelemetry_logs.h"
 #include "opentelemetry_traces.h"
 
-#include "http_conn.h"
-
 #define HTTP_CONTENT_JSON  0
 
-static int send_response(struct http_conn *conn, int http_status, char *message)
+static int is_profiles_export_path(const char *path)
 {
-    int len;
-    flb_sds_t out;
-    size_t sent;
-
-    out = flb_sds_create_size(256);
-    if (!out) {
-        return -1;
+    if (path == NULL) {
+        return FLB_FALSE;
     }
 
-    if (message) {
-        len = strlen(message);
-    }
-    else {
-        len = 0;
+    if (strcmp(path, "/opentelemetry.proto.collector.profiles.v1experimental.ProfilesService/Export") == 0 ||
+        strcmp(path, "/opentelemetry.proto.collector.profiles.v1development.ProfilesService/Export") == 0) {
+        return FLB_TRUE;
     }
 
-    if (http_status == 201) {
-        flb_sds_printf(&out,
-                       "HTTP/1.1 201 Created \r\n"
-                       "Server: Fluent Bit v%s\r\n"
-                       "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR);
-    }
-    else if (http_status == 200) {
-        flb_sds_printf(&out,
-                       "HTTP/1.1 200 OK\r\n"
-                       "Server: Fluent Bit v%s\r\n"
-                       "Content-Length: 0\r\n\r\n",
-                       FLB_VERSION_STR);
-    }
-    else if (http_status == 204) {
-        flb_sds_printf(&out,
-                       "HTTP/1.1 204 No Content\r\n"
-                       "Server: Fluent Bit v%s\r\n"
-                       "\r\n",
-                       FLB_VERSION_STR);
-    }
-    else if (http_status == 400) {
-        flb_sds_printf(&out,
-                       "HTTP/1.1 400 Bad Request\r\n"
-                       "Server: Fluent Bit v%s\r\n"
-                       "Content-Length: %i\r\n\r\n%s",
-                       FLB_VERSION_STR,
-                       len, message);
-    }
-
-    /* We should check the outcome of this operation */
-    flb_io_net_write(conn->connection,
-                     (void *) out,
-                     flb_sds_len(out),
-                     &sent);
-
-    flb_sds_destroy(out);
-
-    return 0;
-}
-
-static int process_payload_metrics(struct flb_opentelemetry *ctx, struct http_conn *conn,
-                                   flb_sds_t tag,
-                                   size_t tag_len,
-                                   struct mk_http_session *session,
-                                   struct mk_http_request *request)
-{
-    struct cfl_list  decoded_contexts;
-    struct cfl_list *iterator;
-    struct cmt      *context;
-    size_t           offset;
-    int              result;
-
-    offset = 0;
-
-    result = cmt_decode_opentelemetry_create(&decoded_contexts,
-                                             request->data.data,
-                                             request->data.len,
-                                             &offset);
-    if (result != CMT_DECODE_OPENTELEMETRY_SUCCESS) {
-        flb_plg_error(ctx->ins, "could not decode metrics payload");
-        return -1;
-    }
-
-    if (result == CMT_DECODE_OPENTELEMETRY_SUCCESS) {
-        cfl_list_foreach(iterator, &decoded_contexts) {
-            context = cfl_list_entry(iterator, struct cmt, _head);
-
-            result = flb_input_metrics_append(ctx->ins, tag, tag_len, context);
-
-            if (result != 0) {
-                flb_plg_debug(ctx->ins, "could not ingest metrics context : %d", result);
-            }
-        }
-
-        cmt_decode_opentelemetry_destroy(&decoded_contexts);
-    }
-
-    return 0;
-}
-
-
-static inline int mk_http_point_header(mk_ptr_t *h,
-                                       struct mk_http_parser *parser, int key)
-{
-    struct mk_http_header *header;
-
-    header = &parser->headers[key];
-    if (header->type == key) {
-        h->data = header->val.data;
-        h->len  = header->val.len;
-        return 0;
-    }
-    else {
-        h->data = NULL;
-        h->len  = -1;
-    }
-
-    return -1;
+    return FLB_FALSE;
 }
 
 static \
@@ -173,7 +67,7 @@ int uncompress_zlib(struct flb_opentelemetry *ctx,
                     size_t input_size)
 {
     flb_plg_warn(ctx->ins, "zlib decompression is not supported");
-    return 0;
+    return -1;
 }
 
 static \
@@ -206,7 +100,7 @@ int uncompress_deflate(struct flb_opentelemetry *ctx,
                        size_t input_size)
 {
     flb_plg_warn(ctx->ins, "deflate decompression is not supported");
-    return 0;
+    return -1;
 }
 
 static \
@@ -324,296 +218,6 @@ static int http_header_lookup(int version, void *ptr, char *key,
     return -1;
 }
 
-/* Used for HTTP/1.1 */
-int opentelemetry_prot_uncompress(struct flb_opentelemetry *ctx,
-                                  struct mk_http_request *request,
-                                  char **output_buffer,
-                                  size_t *output_size)
-{
-    int ret = 0;
-    char *body;
-    size_t body_size;
-    char *encoding;
-    size_t encoding_len;
-
-    *output_buffer = NULL;
-    *output_size = 0;
-
-    /* get the Content-Encoding */
-    ret = http_header_lookup(HTTP_PROTOCOL_VERSION_11,
-                             request,
-                             "Content-Encoding",
-                             &encoding, &encoding_len);
-
-    /* FYI: no encoding was found, assume no payload compression */
-    if (ret < 0) {
-        return 0;
-    }
-
-    /* set the payload pointers */
-    body = request->data.data;
-    body_size = request->data.len;
-
-    if (strncasecmp(encoding, "gzip", 4) == 0 && encoding_len == 4) {
-        return uncompress_gzip(ctx,
-                               output_buffer, output_size,
-                               body, body_size);
-    }
-    else if (strncasecmp(encoding, "zlib", 4) == 0 && encoding_len == 4) {
-        return uncompress_zlib(ctx,
-                               output_buffer, output_size,
-                               body, body_size);
-    }
-    else if (strncasecmp(encoding, "zstd", 4) == 0 && encoding_len == 4) {
-        return uncompress_zstd(ctx,
-                               output_buffer, output_size,
-                               body, body_size);
-    }
-    else if (strncasecmp(encoding, "snappy", 6) == 0 && encoding_len == 6) {
-        return uncompress_snappy(ctx,
-                                 output_buffer, output_size,
-                                 body, body_size);
-    }
-    else if (strncasecmp(encoding, "deflate", 7) == 0 && encoding_len == 7) {
-        return uncompress_deflate(ctx,
-                                  output_buffer, output_size,
-                                  body, body_size);
-    }
-    else {
-        return -2;
-    }
-
-    return 0;
-}
-
-
-/*
- * Handle an incoming request. It performs extra checks over the request, if
- * everything is OK, it enqueue the incoming payload.
- */
-int opentelemetry_prot_handle(struct flb_opentelemetry *ctx, struct http_conn *conn,
-                              struct mk_http_session *session,
-                              struct mk_http_request *request)
-{
-    int i;
-    int ret = -1;
-    int len;
-    char *uri;
-    char *qs;
-    char *out_chunked = NULL;
-    flb_sds_t content_type = NULL;
-    size_t out_chunked_size = 0;
-    off_t diff;
-    size_t tag_len;
-    flb_sds_t tag;
-    char *original_data = NULL;
-    size_t original_data_size;
-    char *uncompressed_data = NULL;
-    size_t uncompressed_data_size;
-    struct mk_http_header *header;
-
-    if (request->uri.data[0] != '/') {
-        send_response(conn, 400, "error: invalid request\n");
-        return -1;
-    }
-
-    /* Decode URI */
-    uri = mk_utils_url_decode(request->uri);
-    if (!uri) {
-        uri = mk_mem_alloc_z(request->uri.len + 1);
-        if (!uri) {
-            return -1;
-        }
-        memcpy(uri, request->uri.data, request->uri.len);
-        uri[request->uri.len] = '\0';
-    }
-
-    if (strcmp(uri, "/v1/metrics") != 0 &&
-        strcmp(uri, "/v1/traces") != 0  &&
-        strcmp(uri, "/v1/logs") != 0) {
-
-        send_response(conn, 400, "error: invalid endpoint\n");
-        mk_mem_free(uri);
-
-        return -1;
-    }
-
-    /* Try to match a query string, so we can remove it */
-    qs = strchr(uri, '?');
-    if (qs) {
-        /* remove the query string part */
-        diff = qs - uri;
-        uri[diff] = '\0';
-    }
-
-    /* Compose the query string using the URI */
-    len = strlen(uri);
-
-    if (ctx->tag_from_uri != FLB_TRUE) {
-        tag = flb_sds_create(ctx->ins->tag);
-    }
-    else {
-        tag = flb_sds_create_size(len);
-        if (!tag) {
-            mk_mem_free(uri);
-            return -1;
-        }
-
-        /* New tag skipping the URI '/' */
-        flb_sds_cat_safe(&tag, uri + 1, len - 1);
-
-        /* Sanitize, only allow alphanum chars */
-        for (i = 0; i < flb_sds_len(tag); i++) {
-            if (!isalnum(tag[i]) && tag[i] != '_' && tag[i] != '.') {
-                tag[i] = '_';
-            }
-        }
-    }
-
-    tag_len = flb_sds_len(tag);
-
-    /* Check if we have a Host header: Hostname ; port */
-    mk_http_point_header(&request->host, &session->parser, MK_HEADER_HOST);
-
-    /* Header: Connection */
-    mk_http_point_header(&request->connection, &session->parser,
-                         MK_HEADER_CONNECTION);
-
-    /* HTTP/1.1 needs Host header */
-    if (!request->host.data && request->protocol == MK_HTTP_PROTOCOL_11) {
-        flb_sds_destroy(tag);
-        mk_mem_free(uri);
-        return -1;
-    }
-
-    /* Should we close the session after this request ? */
-    mk_http_keepalive_check(session, request, ctx->server);
-
-    /* Content Length */
-    header = &session->parser.headers[MK_HEADER_CONTENT_LENGTH];
-    if (header->type == MK_HEADER_CONTENT_LENGTH) {
-        request->_content_length.data = header->val.data;
-        request->_content_length.len  = header->val.len;
-    }
-    else {
-        request->_content_length.data = NULL;
-    }
-
-    mk_http_point_header(&request->content_type, &session->parser, MK_HEADER_CONTENT_TYPE);
-
-    if (request->method != MK_METHOD_POST) {
-        flb_sds_destroy(tag);
-        mk_mem_free(uri);
-        send_response(conn, 400, "error: invalid HTTP method\n");
-        return -1;
-    }
-
-    original_data = request->data.data;
-    original_data_size = request->data.len;
-
-    if (request->data.len <= 0 && !mk_http_parser_is_content_chunked(&session->parser)) {
-        flb_sds_destroy(tag);
-        mk_mem_free(uri);
-        send_response(conn, 400, "error: no payload found\n");
-        return -1;
-    }
-
-    /* check if the request comes with chunked transfer encoding */
-    if (mk_http_parser_is_content_chunked(&session->parser)) {
-        out_chunked = NULL;
-        out_chunked_size = 0;
-
-        /* decode the chunks */
-        ret = mk_http_parser_chunked_decode(&session->parser,
-                                            conn->buf_data,
-                                            conn->buf_len,
-                                            &out_chunked,
-                                            &out_chunked_size);
-        if (ret == -1) {
-            flb_sds_destroy(tag);
-            mk_mem_free(uri);
-            send_response(conn, 400, "error: invalid chunked data\n");
-            return -1;
-        }
-        else {
-            request->data.data = out_chunked;
-            request->data.len = out_chunked_size;
-        }
-    }
-
-    /*
-     * HTTP/1.x can have the payload compressed, we try to detect based on the
-     * Content-Encoding header.
-     *
-     * Note that HTTP/1.x real payload can only be a JSON or a Protobuf message (no gRPC)
-     */
-    ret = opentelemetry_prot_uncompress(ctx,
-                                        request,
-                                        &uncompressed_data,
-                                        &uncompressed_data_size);
-
-    if (ret > 0) {
-        request->data.data = uncompressed_data;
-        request->data.len = uncompressed_data_size;
-    }
-
-    if (request->content_type.data != NULL) {
-        content_type = flb_sds_create_len(request->content_type.data,
-                                          request->content_type.len);
-    }
-
-    if (strcmp(uri, "/v1/metrics") == 0) {
-        ret = process_payload_metrics(ctx, conn, tag, tag_len, session, request);
-    }
-    else if (strcmp(uri, "/v1/traces") == 0) {
-        ret = opentelemetry_process_traces(ctx, content_type, tag, tag_len,
-                                           request->data.data, request->data.len);
-    }
-    else if (strcmp(uri, "/v1/logs") == 0) {
-        ret = opentelemetry_process_logs(ctx, content_type, tag, tag_len,
-                                         request->data.data, request->data.len);
-    }
-
-    request->data.data = original_data;
-    request->data.len = original_data_size;
-
-    if (content_type != NULL) {
-        flb_sds_destroy(content_type);
-    }
-
-    if (uncompressed_data != NULL) {
-        flb_free(uncompressed_data);
-    }
-
-    if (out_chunked != NULL) {
-        mk_mem_free(out_chunked);
-    }
-
-    mk_mem_free(uri);
-    flb_sds_destroy(tag);
-
-    if (ret == -1) {
-        send_response(conn, 400, "error: invalid request\n");
-        return -1;
-    }
-    else {
-        send_response(conn, ctx->successful_response_code, NULL);
-    }
-
-    return ret;
-}
-
-/*
- * Handle an incoming request which has resulted in an http parser error.
- */
-int opentelemetry_prot_handle_error(struct flb_opentelemetry *ctx, struct http_conn *conn,
-                                    struct mk_http_session *session,
-                                    struct mk_http_request *request)
-{
-    send_response(conn, 400, "error: invalid request\n");
-    return -1;
-}
-
 /* New gen HTTP server */
 static int send_response_ng(struct flb_http_response *response,
                             int http_status,
@@ -706,6 +310,17 @@ static int send_grpc_response_ng(struct flb_http_response *response,
     cfl_sds_destroy(body_buffer);
 
     return 0;
+}
+
+static int send_grpc_error_response_ng(struct flb_http_response *response,
+                                       int grpc_status,
+                                       const char *grpc_message)
+{
+    const char *message;
+
+    message = grpc_message != NULL ? grpc_message : "";
+
+    return send_grpc_response_ng(response, NULL, 0, grpc_status, (char *) message);
 }
 
 static int send_export_logs_service_response_ng(struct flb_http_response *response,
@@ -829,6 +444,47 @@ static int send_export_traces_service_response_ng(struct flb_http_response *resp
 
     return 0;
 }
+
+static int send_export_profiles_service_response_ng(struct flb_http_response *response,
+                                                    int status)
+{
+    uint8_t                                                                    *message_buffer;
+    size_t                                                                      message_length;
+    const char                                                                 *grpc_message;
+    int                                                                         grpc_status;
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceResponse message;
+
+    if (status == 0) {
+        opentelemetry__proto__collector__profiles__v1development__export_profiles_service_response__init(&message);
+
+        message_length = opentelemetry__proto__collector__profiles__v1development__export_profiles_service_response__get_packed_size(&message);
+
+        message_buffer = flb_calloc(message_length, sizeof(uint8_t));
+        if (message_buffer == NULL) {
+            return -1;
+        }
+
+        opentelemetry__proto__collector__profiles__v1development__export_profiles_service_response__pack(&message, message_buffer);
+
+        grpc_status  = 0;
+        grpc_message = "-";
+    }
+    else {
+        grpc_status  = 2; /* gRPC UNKNOWN */
+        grpc_message = "Serialization error.";
+        message_buffer = NULL;
+        message_length = 0;
+    }
+
+    send_grpc_response_ng(response, message_buffer, message_length, grpc_status, (char *) grpc_message);
+
+    if (message_buffer != NULL) {
+        flb_free(message_buffer);
+    }
+
+    return 0;
+}
+
 static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
                                       flb_sds_t tag,
                                       struct flb_http_request *request,
@@ -837,6 +493,7 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
 {
     struct cfl_list  decoded_contexts;
     struct cfl_list *iterator;
+    struct cfl_list *tmp;
     struct cmt      *context;
     size_t           offset;
     int              result = -1;
@@ -844,14 +501,13 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
     offset = 0;
 
     /* note: if the content type is gRPC, it was already decoded */
-    if (strcasecmp(request->content_type, "application/json") == 0) {
-        flb_plg_error(ctx->ins, "Unsupported metrics with content type %s",
-                      request->content_type);
+    if (opentelemetry_is_json_content_type(request->content_type) == FLB_TRUE) {
+        result = flb_opentelemetry_metrics_json_to_cmt(&decoded_contexts,
+                                                       payload,
+                                                       payload_size);
     }
-    else if (strcasecmp(request->content_type, "application/grpc") == 0 ||
-        strcasecmp(request->content_type, "application/x-protobuf") == 0 ||
-        strcasecmp(request->content_type, "application/json") == 0) {
-
+    else if (opentelemetry_is_protobuf_content_type(request->content_type) ==
+             FLB_TRUE) {
         result = cmt_decode_opentelemetry_create(&decoded_contexts,
                                                  payload,
                                                  payload_size,
@@ -863,12 +519,26 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
     }
 
     if (result == CMT_DECODE_OPENTELEMETRY_SUCCESS) {
-        cfl_list_foreach(iterator, &decoded_contexts) {
+        cfl_list_foreach_safe(iterator, tmp, &decoded_contexts) {
             context = cfl_list_entry(iterator, struct cmt, _head);
 
-            result = flb_input_metrics_append(ctx->ins, tag, cfl_sds_len(tag), context);
+            if (opentelemetry_uses_worker_ingress_queue(ctx)) {
+                cfl_list_del(&context->_head);
+            }
 
-            if (result != 0) {
+            result = opentelemetry_ingest_metrics(ctx,
+                                                  tag,
+                                                  cfl_sds_len(tag),
+                                                  context);
+
+            if (result == FLB_INPUT_INGRESS_BUSY) {
+                cmt_decode_opentelemetry_destroy(&decoded_contexts);
+                return FLB_INPUT_INGRESS_BUSY;
+            }
+            else if (result != 0) {
+                if (opentelemetry_uses_worker_ingress_queue(ctx)) {
+                    cmt_destroy(context);
+                }
                 flb_plg_debug(ctx->ins, "could not ingest metrics context : %d", result);
             }
         }
@@ -897,7 +567,9 @@ static int ingest_profiles_context_as_log_entry(struct flb_opentelemetry *ctx,
         return -1;
     }
 
-    ret = cprof_encode_text_create(&text_encoded_profiles_context, profiles_context);
+    ret = cprof_encode_text_create(&text_encoded_profiles_context,
+                                   profiles_context,
+                                   CPROF_ENCODE_TEXT_RENDER_DICTIONARIES_AND_INDEXES);
 
     if (ret != CPROF_ENCODE_TEXT_SUCCESS) {
         flb_log_event_encoder_destroy(encoder);
@@ -931,13 +603,46 @@ static int ingest_profiles_context_as_log_entry(struct flb_opentelemetry *ctx,
         return -4;
     }
 
-    ret = flb_input_log_append(ctx->ins,
-                               tag,
-                               flb_sds_len(tag),
-                               encoder->output_buffer,
-                               encoder->output_length);
+    if (opentelemetry_uses_worker_ingress_queue(ctx)) {
+        size_t allocation_size;
+        void *resized_buffer;
+
+        allocation_size = encoder->buffer.alloc;
+
+        if (allocation_size > encoder->output_length) {
+            resized_buffer = flb_realloc(encoder->output_buffer,
+                                         encoder->output_length);
+            if (resized_buffer != NULL) {
+                encoder->buffer.data = resized_buffer;
+                encoder->output_buffer = resized_buffer;
+                encoder->buffer.alloc = encoder->output_length;
+                allocation_size = encoder->output_length;
+            }
+        }
+
+        ret = opentelemetry_ingest_logs_take(ctx,
+                                             tag,
+                                             flb_sds_len(tag),
+                                             encoder->output_buffer,
+                                             encoder->output_length,
+                                             allocation_size);
+        if (ret == 0 || ret == FLB_INPUT_INGRESS_BUSY) {
+            flb_log_event_encoder_claim_internal_buffer_ownership(encoder);
+        }
+    }
+    else {
+        ret = opentelemetry_ingest_logs(ctx,
+                                        tag,
+                                        flb_sds_len(tag),
+                                        encoder->output_buffer,
+                                        encoder->output_length);
+    }
 
     flb_log_event_encoder_destroy(encoder);
+
+    if (ret == FLB_INPUT_INGRESS_BUSY) {
+        return FLB_INPUT_INGRESS_BUSY;
+    }
 
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         return -5;
@@ -949,7 +654,8 @@ static int ingest_profiles_context_as_log_entry(struct flb_opentelemetry *ctx,
 static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
                                        flb_sds_t tag,
                                        struct flb_http_request *request,
-                                       struct flb_http_response *response)
+                                       char *payload,
+                                       size_t payload_size)
 {
     struct cprof *profiles_context;
     size_t        offset;
@@ -959,32 +665,20 @@ static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
         flb_error("[otel] content type missing");
         return -1;
     }
-    else if (strcasecmp(request->content_type, "application/json") == 0) {
+    else if (opentelemetry_is_json_content_type(request->content_type) == FLB_TRUE) {
         flb_error("[otel] unsuported profiles encoding type : %s",
                   request->content_type);
 
         return -1;
     }
-    else if (strcasecmp(request->content_type, "application/x-protobuf") == 0) {
-        flb_error("[otel] unsuported profiles encoding type : %s",
-                  request->content_type);
-
-        return -1;
-    }
-    else if (strcasecmp(request->content_type, "application/grpc") == 0) {
-        if (cfl_sds_len(request->body) < 5) {
-            flb_error("[otel] malformed grpc packet of size %zu",
-                      cfl_sds_len(request->body));
-
-            return -1;
-        }
-
+    else if (opentelemetry_is_protobuf_content_type(request->content_type) ==
+             FLB_TRUE) {
         profiles_context = NULL;
         offset = 0;
 
         ret = cprof_decode_opentelemetry_create(&profiles_context,
-                                                &((uint8_t *) request->body)[5],
-                                                (cfl_sds_len(request->body)) - 5,
+                                                (uint8_t *) payload,
+                                                payload_size,
                                                 &offset);
 
         if (ret != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
@@ -998,15 +692,24 @@ static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
             ret = ingest_profiles_context_as_log_entry(ctx,
                                                        tag,
                                                        profiles_context);
+
+            cprof_decode_opentelemetry_destroy(profiles_context);
         }
         else {
-            ret = flb_input_profiles_append(ctx->ins,
-                                            tag,
-                                            flb_sds_len(tag),
-                                            profiles_context);
+            ret = opentelemetry_ingest_profiles(ctx,
+                                                tag,
+                                                flb_sds_len(tag),
+                                                profiles_context);
+
+            if (ret != FLB_INPUT_INGRESS_BUSY &&
+                (ret != 0 || !opentelemetry_uses_worker_ingress_queue(ctx))) {
+                cprof_decode_opentelemetry_destroy(profiles_context);
+            }
         }
 
-        cprof_decode_opentelemetry_destroy(profiles_context);
+        if (ret == FLB_INPUT_INGRESS_BUSY) {
+            return ret;
+        }
 
         if (ret != 0) {
             flb_error("[otel] profile ingestion error : %d",
@@ -1037,9 +740,23 @@ static int send_export_service_response_ng(struct flb_http_response *response,
         return send_export_traces_service_response_ng(response, result);
     case 'L':
         return  send_export_logs_service_response_ng(response, result);
+    case 'P':
+        return send_export_profiles_service_response_ng(response, result);
     default:
         return -1;
     }
+}
+
+static int send_ingress_busy_response_ng(struct flb_http_response *response,
+                                         int grpc_request)
+{
+    if (grpc_request == FLB_TRUE) {
+        return send_grpc_error_response_ng(response, 14, "server overloaded");
+    }
+
+    return send_response_ng(response,
+                            503,
+                            "server overloaded: deferred ingress queue is full\n");
 }
 
 /*
@@ -1054,15 +771,18 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
                                  struct flb_http_response *response)
 {
     int ret = -1;
+    size_t auth_len = 0;
     int grpc_request = FLB_FALSE;
     int grpc_uncompressed = FLB_FALSE;
     size_t grpc_offset = 0;
     uint64_t  grpc_size = 0;
     flb_sds_t tag = NULL;
+    char *auth_header = NULL;
     char payload_type;
     char *encoding = NULL;
     size_t encoding_size = 0;
     char *buf = (char *) request->body;
+    size_t request_body_size = 0;
     char *payload = NULL;
     size_t payload_size = 0;
     size_t max_grpc_size = 16 * 1024 * 1024; /* 16M limit per message */
@@ -1089,7 +809,7 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
         grpc_request = FLB_TRUE;
     }
     else if (context->profile_support_enabled &&
-             strcmp(request->path, "/opentelemetry.proto.collector.profiles.v1experimental.ProfilesService/Export") == 0) {
+             is_profiles_export_path(request->path) == FLB_TRUE) {
         grpc_request = FLB_TRUE;
     }
     else {
@@ -1101,38 +821,83 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
     /* HTTP/1.1 needs Host header */
     if (request->protocol_version == HTTP_PROTOCOL_VERSION_11 &&
         request->host == NULL) {
+        if (grpc_request) {
+            send_grpc_error_response_ng(response, 3, "missing host header");
+            return -1;
+        }
         return -1;
     }
 
+    if (context->oauth2_ctx) {
+        auth_header = flb_http_request_get_header(request, "authorization");
+        if (auth_header != NULL) {
+            auth_len = strlen(auth_header);
+        }
+
+        ret = flb_oauth2_jwt_validate(context->oauth2_ctx, auth_header, auth_len);
+        if (ret != FLB_OAUTH2_JWT_OK) {
+            flb_plg_error(context->ins,
+                          "OAuth2 validation failed: %s (rejecting request with 401)",
+                          flb_oauth2_jwt_status_message(ret));
+
+            if (grpc_request) {
+                send_grpc_error_response_ng(response, 16, "unauthorized");
+            }
+            else {
+                send_response_ng(response, 401, NULL);
+            }
+
+            return -1;
+        }
+    }
+
     if (request->method != HTTP_METHOD_POST) {
-        send_response_ng(response, 400, "error: invalid HTTP method\n");
+        if (grpc_request) {
+            send_grpc_error_response_ng(response, 3, "invalid HTTP method");
+        }
+        else {
+            send_response_ng(response, 400, "error: invalid HTTP method\n");
+        }
         return -1;
     }
 
     /* check content-length */
     if (request->content_length <= 0) {
-        send_response_ng(response, 400, "error: invalid content-length\n");
+        if (grpc_request) {
+            send_grpc_error_response_ng(response, 3, "invalid content-length");
+        }
+        else {
+            send_response_ng(response, 400, "error: invalid content-length\n");
+        }
         return -1;
     }
 
     if (request->body == NULL) {
-        send_response_ng(response, 400, "error: invalid payload\n");
+        if (grpc_request) {
+            send_grpc_error_response_ng(response, 3, "invalid payload");
+        }
+        else {
+            send_response_ng(response, 400, "error: invalid payload\n");
+        }
         return -1;
     }
+    request_body_size = cfl_sds_len(request->body);
 
     /* If this is a gRPC request validate the content-type */
     if (grpc_request && request->content_type == NULL) {
-        send_response_ng(response, 400, "error: missing content type for expected gRPC request\n");
+        send_grpc_error_response_ng(response, 3, "missing content-type");
         return -1;
     }
 
     /* Check if the payload is gRPC compressed */
-    if (grpc_request && strcasecmp(request->content_type, "application/grpc") == 0) {
+    if (grpc_request &&
+        opentelemetry_is_grpc_content_type(request->content_type) == FLB_TRUE) {
 
 next_grpc_message:
 
-        if (grpc_offset + 5 > cfl_sds_len(request->body)) {
-            send_response_ng(response, 400, "error: invalid gRPC packet\n");
+        if (grpc_offset > request_body_size ||
+            request_body_size - grpc_offset < 5) {
+            send_grpc_error_response_ng(response, 3, "invalid gRPC packet");
             return -1;
         }
 
@@ -1143,12 +908,12 @@ next_grpc_message:
                     ((uint64_t) (uint8_t) buf[4]);
 
         if (grpc_size == 0 || grpc_size > max_grpc_size) {
-            send_response_ng(response, 400, "error: gRPC message size out of valid range\n");
+            send_grpc_error_response_ng(response, 3, "gRPC message size out of valid range");
             return -1;
         }
 
-        if (cfl_sds_len(request->body) < grpc_size + 5) {
-            send_response_ng(response, 400, "error: invalid gRPC packet\n");
+        if (request_body_size - grpc_offset < grpc_size + 5) {
+            send_grpc_error_response_ng(response, 3, "invalid gRPC packet");
             return -1;
         }
 
@@ -1160,7 +925,7 @@ next_grpc_message:
 
             /* malformed gRPC message */
             if (ret == -1) {
-                send_response_ng(response, 400, "error: missing gRPC encoding\n");
+                send_grpc_error_response_ng(response, 3, "missing gRPC encoding");
                 return -1;
             }
 
@@ -1193,12 +958,12 @@ next_grpc_message:
                                         buf, grpc_size);
             }
             else {
-                send_response_ng(response, 400, "error: unsupported gRPC encoding\n");
+                send_grpc_error_response_ng(response, 12, "unsupported gRPC encoding");
                 return -1;
             }
 
             if (ret <= 0) {
-                send_response_ng(response, 400, "error: decompression error\n");
+                send_grpc_error_response_ng(response, 13, "decompression error");
                 return -1;
             }
 
@@ -1206,7 +971,7 @@ next_grpc_message:
         }
         else {
             /* uncompressed payload */
-            payload = buf + grpc_offset + 5;
+            payload = buf + 5;
             payload_size = grpc_size;
             grpc_uncompressed = FLB_FALSE;
         }
@@ -1264,7 +1029,7 @@ next_grpc_message:
                                          payload, payload_size);
     }
     else if (context->profile_support_enabled &&
-             strcmp(request->path, "/opentelemetry.proto.collector.profiles.v1experimental.ProfilesService/Export") == 0) {
+             is_profiles_export_path(request->path) == FLB_TRUE) {
         payload_type = 'P';
         if (context->tag_from_uri == FLB_TRUE) {
             tag = flb_sds_create("v1development_profiles");
@@ -1272,7 +1037,7 @@ next_grpc_message:
         else {
             tag = flb_sds_create(context->ins->tag);
         }
-        ret = process_payload_profiles_ng(context, tag, request, response);
+        ret = process_payload_profiles_ng(context, tag, request, payload, payload_size);
     }
 
     if (grpc_request) {
@@ -1283,16 +1048,24 @@ next_grpc_message:
         }
 
         /* check if we have more gRPC messages to process */
-        if (grpc_offset < cfl_sds_len(request->body)) {
+        if (grpc_offset < request_body_size) {
             buf = (char *) request->body + grpc_offset;
             goto next_grpc_message;
         }
 
-        send_export_service_response_ng(response, ret, payload_type);
+        if (ret == FLB_INPUT_INGRESS_BUSY) {
+            send_ingress_busy_response_ng(response, grpc_request);
+        }
+        else {
+            send_export_service_response_ng(response, ret, payload_type);
+        }
     }
     else {
         if (ret == 0) {
             send_response_ng(response, context->successful_response_code, NULL);
+        }
+        else if (ret == FLB_INPUT_INGRESS_BUSY) {
+            send_ingress_busy_response_ng(response, grpc_request);
         }
         else {
             send_response_ng(response, 400, "invalid request: deserialisation error\n");

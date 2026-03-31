@@ -24,9 +24,14 @@
 #include "we_metric.h"
 #include "we_perflib.h"
 
-double we_perflib_get_adjusted_counter_value(struct we_perflib_counter *counter)
+double we_perflib_get_adjusted_counter_value(struct we_perflib_counter *counter,
+                                             struct we_perflib_metric_source *source)
 {
     double result;
+
+    if (source->use_secondary_value) {
+        return (double) counter->secondary_value.as_qword;
+    }
 
     result = (double) counter->primary_value.as_qword;
 
@@ -492,6 +497,8 @@ static int we_perflib_process_object_type(
     perflib_object->counter_count = perf_object->NumCounters;
     perflib_object->instance_count = perf_object->NumInstances;
 
+    perflib_object->total_byte_length = perf_object->TotalByteLength;
+    perflib_object->definition_length = perf_object->DefinitionLength;
 
     perflib_object->instances = flb_hash_table_create(
                                                       FLB_HASH_TABLE_EVICT_NONE,
@@ -623,6 +630,7 @@ static int we_perflib_process_counter(
                     struct we_perflib_counter            **out_counter)
 {
     struct we_perflib_counter *perflib_instance_counter;
+    uint32_t counter_type = counter_definition->type;
 
     perflib_instance_counter = we_perflib_create_counter(counter_definition);
 
@@ -633,6 +641,18 @@ static int we_perflib_process_counter(
     memcpy(&perflib_instance_counter->primary_value,
            &input_data_block[counter_definition->offset],
            counter_definition->size);
+
+    if (counter_type == PERF_AVERAGE_BULK ||
+        counter_type == PERF_RAW_FRACTION ||
+        counter_type == PERF_100NSEC_TIMER_INV ||
+        counter_type == PERF_COUNTER_TIMER_INV ||
+        counter_type == PERF_100NSEC_MULTI_TIMER_INV ||
+        counter_type == PERF_COUNTER_MULTI_TIMER_INV) {
+
+        memcpy(&perflib_instance_counter->secondary_value,
+               &input_data_block[counter_definition->offset + counter_definition->size],
+               sizeof(union we_perflib_value));
+    }
 
     if (counter_definition->size > sizeof(union we_perflib_value)) {
         we_perflib_destroy_counter(perflib_instance_counter);
@@ -795,10 +815,56 @@ static int we_perflib_process_instances(struct we_perflib_context *context,
 {
     struct we_perflib_instance *perflib_instance;
     size_t                      instance_index;
+    size_t                      total_instance_data_size;
+    PERF_COUNTER_BLOCK         *first_counter_block;
     int                         result;
     int                         offset;
 
     offset = 0;
+
+    /* Calculate the total size of all instance and counter data blocks */
+    total_instance_data_size = perflib_object->total_byte_length -
+                               perflib_object->definition_length;
+
+    /*
+     * If the total size of instance data is exactly equal to the
+     * size of the first counter block, we can infer this is a single-instance
+     * object that lacks a PERF_INSTANCE_DEFINITION block.
+     */
+    if (perflib_object->instance_count == PERF_NO_INSTANCES) {
+        first_counter_block = (PERF_COUNTER_BLOCK *)input_data_block;
+
+        if (first_counter_block->ByteLength == total_instance_data_size) {
+            /* Path for special single-instance objects like "Cache" and "System" */
+            perflib_instance = we_perflib_create_instance(perflib_object->counter_count);
+            if (perflib_instance == NULL) {
+                return -1;
+            }
+
+            perflib_instance->name = flb_strdup("_Total");
+            perflib_instance->parent = perflib_object;
+
+            result = we_perflib_process_counters(context, perflib_object,
+                                                 perflib_instance, input_data_block);
+
+            if (result < 0) {
+                we_perflib_destroy_instance(perflib_instance);
+                return -1;
+            }
+            offset += result;
+
+            result = flb_hash_table_add(perflib_object->instances,
+                                        perflib_instance->name, strlen(perflib_instance->name),
+                                        perflib_instance, 0);
+
+            if (result < 0) {
+                we_perflib_destroy_instance(perflib_instance);
+                return -2;
+            }
+
+            return offset;
+        }
+    }
 
     for (instance_index = 0 ;
          instance_index < perflib_object->instance_count ;
@@ -976,12 +1042,12 @@ int we_perflib_update_counters(struct flb_we                   *ctx,
 
                 if (metric_source->parent->type == CMT_COUNTER) {
                     cmt_counter_set(metric_entry, timestamp,
-                                    we_perflib_get_adjusted_counter_value(counter),
+                                    we_perflib_get_adjusted_counter_value(counter, metric_source),
                                     metric_label_count, metric_label_list);
                 }
                 else if (metric_source->parent->type == CMT_GAUGE) {
                     cmt_gauge_set(metric_entry, timestamp,
-                                  we_perflib_get_adjusted_counter_value(counter),
+                                  we_perflib_get_adjusted_counter_value(counter, metric_source),
                                   metric_label_count, metric_label_list);
                 }
             }

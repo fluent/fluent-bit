@@ -14,15 +14,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, windows-2019]
+        os: [windows-latest]
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: true
 
-      - name: Build on ${{ matrix.os }} with vs-2019
+      - name: Build on ${{ matrix.os }}
         run: |
           .\scripts\win_build.bat
 
@@ -79,9 +79,9 @@ jobs:
         working-directory: ctraces
 
   build-debian:
-    name: Debian Buster build to confirm no issues once used downstream
+    name: Debian Bullseye build to confirm no issues once used downstream
     runs-on: ubuntu-latest
-    container: debian:buster
+    container: debian:bullseye
     steps:
       - name: Set up base image dependencies
         run: |
@@ -132,12 +132,12 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: true
 
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@v3.0.0
+        uses: uraimo/run-on-arch-action@v3.0.1
         with:
           arch: aarch64
           distro: ubuntu_latest
@@ -166,7 +166,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: true
 
@@ -197,7 +197,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: true
 

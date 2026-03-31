@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -33,17 +33,25 @@
 #define _GNU_SOURCE
 #include <string.h>
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
+
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_lock.h>
+#include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_http_common.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/tls/flb_tls.h>
+#include <time.h>
 #include <fluent-bit/flb_signv4_ng.h>
 
 void flb_http_client_debug(struct flb_http_client *c,
@@ -243,7 +251,7 @@ static int check_connection(struct flb_http_client *c)
     buf = flb_malloc(len + 1);
     if (!buf) {
         flb_errno();
-        return -1;
+        return FLB_HTTP_ERROR;
     }
 
     memcpy(buf, header, len);
@@ -263,6 +271,19 @@ static int check_connection(struct flb_http_client *c)
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
+}
+
+static inline void http_client_response_reset(struct flb_http_client *c)
+{
+    c->resp.data_len = 0;
+    c->resp.status = 0;
+    c->resp.content_length = -1;
+    c->resp.chunked_encoding = FLB_FALSE;
+    c->resp.connection_close = -1;
+    c->resp.headers_end = NULL;
+    c->resp.payload = NULL;
+    c->resp.payload_size = 0;
+    c->resp.chunk_processed_end = NULL;
 }
 
 static int process_chunked_data(struct flb_http_client *c)
@@ -603,11 +624,55 @@ static int add_host_and_content_length(struct flb_http_client *c)
         out_port = c->port;
     }
 
-    if (c->flags & FLB_IO_TLS && out_port == 443) {
-        tmp = flb_sds_copy(host, out_host, strlen(out_host));
+    /* Check if out_host is an unbracketed IPv6 address */
+    struct in6_addr addr;
+    char *zone_id;
+    char addr_buf[INET6_ADDRSTRLEN];
+    int is_ipv6 = 0;
+    int is_https_default_port;
+    const char *host_for_header;
+
+    if (out_host && out_host[0] != '[') {
+        /* Strip zone ID if present (e.g., fe80::1%eth0 -> fe80::1) */
+        zone_id = strchr(out_host, '%');
+        if (zone_id) {
+            len = zone_id - out_host;
+            if (len < INET6_ADDRSTRLEN) {
+                memcpy(addr_buf, out_host, len);
+                addr_buf[len] = '\0';
+                is_ipv6 = (inet_pton(AF_INET6, addr_buf, &addr) == 1);
+            }
+        }
+        else {
+            is_ipv6 = (inet_pton(AF_INET6, out_host, &addr) == 1);
+        }
+    }
+
+    /* Use stripped address (without zone ID) for Host header if zone ID was present */
+    host_for_header = (is_ipv6 && zone_id) ? addr_buf : out_host;
+
+    /* Check if connection uses TLS and port is 443 (HTTPS default) */
+    is_https_default_port = flb_stream_get_flag_status(&u->base, FLB_IO_TLS) && out_port == 443;
+
+    if (is_https_default_port) {
+        if (is_ipv6) {
+            /* IPv6 address needs brackets for RFC compliance */
+            tmp = flb_sds_printf(&host, "[%s]", host_for_header);
+        }
+        else {
+            /* HTTPS on default port 443 - omit port from Host header */
+            tmp = flb_sds_copy(host, out_host, strlen(out_host));
+        }
     }
     else {
-        tmp = flb_sds_printf(&host, "%s:%i", out_host, out_port);
+        if (is_ipv6) {
+            /* IPv6 address needs brackets when combined with port */
+            tmp = flb_sds_printf(&host, "[%s]:%i", host_for_header, out_port);
+        }
+        else {
+            /* IPv4 address, domain name, or already bracketed IPv6 */
+            tmp = flb_sds_printf(&host, "%s:%i", out_host, out_port);
+        }
     }
 
     if (!tmp) {
@@ -738,6 +803,7 @@ struct flb_http_client *create_http_client(struct flb_connection *u_conn,
     c->header_buf  = buf;
     c->header_size = FLB_HTTP_BUF_SIZE;
     c->header_len  = ret;
+    c->base_header_len = ret;
     c->flags       = flags;
     c->allow_dup_headers = FLB_TRUE;
     mk_list_init(&c->headers);
@@ -824,7 +890,11 @@ struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
         c->flags |= FLB_HTTP_11;
     }
 
-    add_host_and_content_length(c);
+    ret = add_host_and_content_length(c);
+    if (ret != 0) {
+        flb_http_client_destroy(c);
+        return NULL;
+    }
 
     /* Check proxy data */
     if (proxy) {
@@ -974,6 +1044,25 @@ int flb_http_add_header(struct flb_http_client *c,
     }
 
     return 0;
+}
+
+int flb_http_remove_header(struct flb_http_client *c,
+                          const char *key, size_t key_len)
+{
+    int removed = 0;
+    struct flb_kv *kv;
+    struct mk_list *tmp;
+    struct mk_list *head;
+
+    mk_list_foreach_safe(head, tmp, &c->headers) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (flb_sds_casecmp(kv->key, key, key_len) == 0) {
+            flb_kv_item_destroy(kv);
+            removed++;
+        }
+    }
+
+    return removed;
 }
 
 /*
@@ -1133,6 +1222,18 @@ int flb_http_set_content_encoding_snappy(struct flb_http_client *c)
                               sizeof(FLB_HTTP_HEADER_CONTENT_ENCODING) - 1,
                               "snappy", 6);
     return ret;
+}
+
+int flb_http_set_read_idle_timeout(struct flb_http_client *c, int timeout)
+{
+    c->read_idle_timeout = timeout;
+    return 0;
+}
+
+int flb_http_set_response_timeout(struct flb_http_client *c, int timeout)
+{
+    c->response_timeout = timeout;
+    return 0;
 }
 
 int flb_http_set_callback_context(struct flb_http_client *c,
@@ -1353,6 +1454,8 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     size_t bytes_body = 0;
     char *tmp;
 
+    c->header_len = c->base_header_len;
+
     /* Try to add keep alive header */
     flb_http_set_keepalive(c);
 
@@ -1413,8 +1516,12 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     /* number of sent bytes */
     *bytes = (bytes_header + bytes_body);
 
+    /* Initialize timeout tracking */
+    c->ts_start = time(NULL);
+    c->last_read_ts = c->ts_start;
+
     /* prep c->resp for incoming data */
-    c->resp.data_len = 0;
+    http_client_response_reset(c);
 
     /* at this point we've sent our request so we expect more data in response*/
     return FLB_HTTP_MORE;
@@ -1436,6 +1543,7 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
     int r_bytes;
     ssize_t available;
     size_t out_size;
+    time_t now;
 
     /* If the caller has consumed some of the payload (via bytes_consumed)
      * we consume those bytes off the payload
@@ -1479,6 +1587,21 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
             }
             available = flb_http_buffer_available(c) - 1;
         }
+        now = time(NULL);
+
+        if (c->response_timeout > 0 && (now - c->ts_start) > c->response_timeout) {
+            flb_error("[http_client] response timeout reached (elapsed=%lds, limit=%ds)",
+                      (long)(now - c->ts_start), c->response_timeout);
+            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+            return FLB_HTTP_ERROR;
+        }
+
+        if (c->read_idle_timeout > 0 &&  (now - c->last_read_ts) > c->read_idle_timeout) {
+            flb_error("[http_client] read idle timeout reached (idle=%lds, limit=%ds)",
+                      (long)(now - c->last_read_ts), c->read_idle_timeout);
+            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+            return FLB_HTTP_ERROR;
+        }
 
         r_bytes = flb_io_net_read(c->u_conn,
                                   c->resp.data + c->resp.data_len,
@@ -1493,6 +1616,10 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
         if (r_bytes >= 0) {
             c->resp.data_len += r_bytes;
             c->resp.data[c->resp.data_len] = '\0';
+
+            if (r_bytes > 0) {
+                c->last_read_ts = now;
+            }
 
             ret = process_data(c);
             if (ret == FLB_HTTP_ERROR) {
@@ -1530,17 +1657,25 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 
     /* Read the server response, we need at least 19 bytes */
     while (ret == FLB_HTTP_MORE || ret == FLB_HTTP_CHUNK_AVAILABLE) {
-        /* flb_http_do does not consume any bytes during processing
+        /*
+         * flb_http_do does not consume any bytes during processing
          * so we always pass 0 consumed_bytes because we fetch until
          * the end chunk before returning to the caller
          */
-
         ret = flb_http_get_response_data(c, 0);
+    }
+
+
+    if (ret != FLB_HTTP_OK) {
+        return ret;
     }
 
     /* Check 'Connection' response header */
     ret = check_connection(c);
-    if (ret == FLB_HTTP_OK) {
+    if (ret == FLB_HTTP_ERROR) {
+        return ret;
+    }
+    else if (ret == FLB_HTTP_OK) {
         /*
          * If the server replied that the connection will be closed
          * and our Upstream connection is in keepalive mode, we must
@@ -1555,6 +1690,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                       c->u_conn->fd);
         }
     }
+    else if (ret == FLB_HTTP_NOT_FOUND) {
+        /* Connection header not found, continue normally */
+    }
 
 #ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
     flb_http_client_debug_cb(c, "_debug.http.response_headers");
@@ -1564,6 +1702,66 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 #endif
 
     return 0;
+}
+
+int flb_http_do_with_oauth2(struct flb_http_client *c, size_t *bytes,
+                            struct flb_oauth2 *oauth2)
+{
+    int ret;
+    flb_sds_t token = NULL;
+    struct flb_upstream *u;
+
+    if (!oauth2 || oauth2->cfg.enabled == FLB_FALSE) {
+        return flb_http_do(c, bytes);
+    }
+
+    flb_http_allow_duplicated_headers(c, FLB_FALSE);
+
+    ret = flb_oauth2_get_access_token(oauth2, &token, FLB_FALSE);
+    if (ret != 0 || token == NULL) {
+        return -1;
+    }
+
+    flb_http_remove_header(c, FLB_HTTP_HEADER_AUTH, strlen(FLB_HTTP_HEADER_AUTH));
+    ret = flb_http_bearer_auth(c, token);
+    if (ret != 0) {
+        return ret;
+    }
+
+    ret = flb_http_do(c, bytes);
+    if (ret != 0) {
+        return ret;
+    }
+
+    if (c->resp.status == 401) {
+        flb_info("[http_client] 401 received; refreshing OAuth2 token and retrying once");
+        flb_oauth2_invalidate_token(oauth2);
+
+        /* If connection was closed, get a new one */
+        if (c->resp.connection_close == FLB_TRUE && c->u_conn) {
+            u = c->u_conn->upstream;
+            flb_upstream_conn_release(c->u_conn);
+            c->u_conn = flb_upstream_conn_get(u);
+            if (!c->u_conn) {
+                return -1;
+            }
+        }
+
+        ret = flb_oauth2_get_access_token(oauth2, &token, FLB_TRUE);
+        if (ret != 0 || token == NULL) {
+            return -1;
+        }
+
+        flb_http_remove_header(c, FLB_HTTP_HEADER_AUTH, strlen(FLB_HTTP_HEADER_AUTH));
+        ret = flb_http_bearer_auth(c, token);
+        if (ret != 0) {
+            return ret;
+        }
+
+        ret = flb_http_do(c, bytes);
+    }
+
+    return ret;
 }
 
 /*

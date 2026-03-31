@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -76,6 +76,7 @@ struct flb_tls_backend {
 
     /* Additional settings */
     int (*context_alpn_set) (void *, const char *);
+    int (*context_set_verify_client) (void *, int);
 
     /* TLS Protocol version */
     int (*set_minmax_proto) (struct flb_tls *tls, const char *, const char *);
@@ -84,6 +85,7 @@ struct flb_tls_backend {
 
     /* Session management */
     void *(*session_create) (struct flb_tls *, int);
+    void (*session_invalidate) (void *);
     int (*session_destroy) (void *);
     const char *(*session_alpn_get) (void *);
 
@@ -92,15 +94,26 @@ struct flb_tls_backend {
     int (*net_write) (struct flb_tls_session *, const void *data,
                       size_t len);
     int (*net_handshake) (struct flb_tls *, char *, void *);
+
+#if defined(FLB_SYSTEM_WINDOWS)
+    int (*set_certstore_name)(struct flb_tls *tls, const char *certstore_name);
+    int (*set_use_enterprise_store)(struct flb_tls *tls, int use_enterprise);
+    int (*set_client_thumbprints)(struct flb_tls *tls, const char *thumbprints);
+#endif
 };
 
 /* Main TLS context */
 struct flb_tls {
     int verify;                       /* FLB_TRUE | FLB_FALSE      */
+    int verify_client;                /* Verify client certificate */
     int debug;                        /* Debug level               */
     char *vhost;                      /* Virtual hostname for SNI  */
     int mode;                         /* Client or Server          */
     int verify_hostname;              /* Verify hostname           */
+#if defined(FLB_SYSTEM_WINDOWS)
+    char *certstore_name;             /* Windows CertStore Name    */
+    int use_enterprise_store;         /* Use Enterprise store or not */
+#endif
 
     /* Bakend library for TLS */
     void *ctx;                        /* TLS context created */
@@ -120,8 +133,14 @@ struct flb_tls *flb_tls_create(int mode,
 int flb_tls_destroy(struct flb_tls *tls);
 
 int flb_tls_set_alpn(struct flb_tls *tls, const char *alpn);
+int flb_tls_set_verify_client(struct flb_tls *tls, int verify_client);
 
 int flb_tls_set_verify_hostname(struct flb_tls *tls, int verify_hostname);
+#if defined(FLB_SYSTEM_WINDOWS)
+int flb_tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name);
+int flb_tls_set_use_enterprise_store(struct flb_tls *tls, int use_enterprise);
+int flb_tls_set_client_thumbprints(struct flb_tls *tls, const char *thumbprints);
+#endif
 
 int flb_tls_load_system_certificates(struct flb_tls *tls);
 int flb_tls_set_minmax_proto(struct flb_tls *tls,
@@ -131,6 +150,7 @@ int flb_tls_set_ciphers(struct flb_tls *tls, const char *ciphers);
 struct mk_list *flb_tls_get_config_map(struct flb_config *config);
 
 int flb_tls_session_destroy(struct flb_tls_session *session);
+int flb_tls_session_invalidate(struct flb_tls_session *session);
 
 int flb_tls_session_create(struct flb_tls *tls,
                            struct flb_connection *connection,

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -366,7 +366,8 @@ static ssize_t http2_data_source_read_callback(nghttp2_session *session,
     }
     else {
         if (content_length > 0) {
-            memcpy(buf, stream->request.body, content_length);
+            memcpy(buf,
+                   &stream->request.body[body_offset], content_length);
 
             stream->request.body_read_offset += content_length;
         }

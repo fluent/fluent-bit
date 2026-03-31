@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -48,10 +48,13 @@
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_mp.h>
 
+#include <cfl/cfl.h>
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_decode_msgpack.h>
 #include <cmetrics/cmt_encode_msgpack.h>
 
@@ -81,6 +84,7 @@ int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_inst
 #define FLB_OUTPUT_NO_MULTIPLEX  512  /* run one task at a time, one task per flush */
 #define FLB_OUTPUT_PRIVATE      1024
 #define FLB_OUTPUT_SYNCHRONOUS  2048  /* run one task at a time, no flush cycle limit */
+#define FLB_OUTPUT_HTTP_SERVER  4096  /* output uses the generic HTTP server  */
 
 
 /*
@@ -104,6 +108,7 @@ int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_inst
     const char *tag    = event_chunk->tag;
 
 struct flb_output_flush;
+struct flb_http_server_config;
 
 /*
  * Tests callbacks
@@ -369,6 +374,11 @@ struct flb_output_instance {
     char *tls_min_version;               /* Minimum protocol version of TLS */
     char *tls_max_version;               /* Maximum protocol version of TLS */
     char *tls_ciphers;                   /* TLS ciphers */
+# if defined(FLB_SYSTEM_WINDOWS)
+    char *tls_win_certstore_name;            /* CertStore Name (Windows) */
+    int tls_win_use_enterprise_certstore;    /* Use enterprise CertStore */
+    char *tls_win_thumbprints;               /* CertStore Thumbprints (Windows) */
+# endif
 #endif
 
     /*
@@ -427,6 +437,13 @@ struct flb_output_instance {
     struct mk_list *net_config_map;
     struct mk_list net_properties;
 
+    struct mk_list *http_server_config_map;
+    struct flb_http_server_config *http_server_config;
+    struct mk_list http_server_properties;
+
+    struct mk_list *oauth2_config_map;
+    struct mk_list oauth2_properties;
+
     struct mk_list *tls_config_map;
 
     struct mk_list _head;                /* link to config->inputs       */
@@ -450,6 +467,10 @@ struct flb_output_instance {
     struct cmt_gauge   *cmt_upstream_busy_connections;
     /* m: output_chunk_available_capacity_percent */
     struct cmt_gauge   *cmt_chunk_available_capacity_percent;
+    /* m: output_latency_seconds */
+    struct cmt_histogram *cmt_latency;
+    /* m: output_backpressure_wait_seconds */
+    struct cmt_histogram *cmt_backpressure_wait;
 
     /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
@@ -584,7 +605,11 @@ struct flb_out_flush_params {
     struct flb_coro *coro;                      /* coroutine context     */
 };
 
+#ifndef FLB_HAVE_C_TLS
+FLB_TLS_DECLARE(struct flb_out_flush_params, out_flush_params);
+#else
 extern FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
+#endif
 
 #define FLB_OUTPUT_RETURN(x)                                            \
     flb_output_return_do(x);                                            \
@@ -662,6 +687,13 @@ static FLB_INLINE void output_pre_cb_flush(void)
         flb_debug("[output] skipping flush for event chunk with zero records.");
         FLB_OUTPUT_RETURN(FLB_OK);
     }
+    /* Skip flush if processed event chunk has no data (empty after processing) */
+    else if (persisted_params.event_chunk &&
+             persisted_params.event_chunk->type == FLB_EVENT_TYPE_METRICS &&
+             persisted_params.event_chunk->size == 0) {
+        flb_debug("[output] skipping flush for event chunk with no data after processing.");
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
 
     /* Continue, we will resume later */
     out_p = persisted_params.out_plugin;
@@ -701,7 +733,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
 {
     int ret;
     size_t records;
-    void *p_buf;
+    void *p_buf = NULL;
     size_t p_size;
     size_t stack_size;
     struct flb_coro *coro;
@@ -718,7 +750,9 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
     struct ctrace *trace_context;
     struct cprof *profile_context;
     size_t chunk_offset;
+    struct cmt *encode_context = NULL;
     struct cmt *cmt_out_context = NULL;
+
 
     /* Custom output coroutine info */
     out_flush = (struct flb_output_flush *) flb_calloc(1, sizeof(struct flb_output_flush));
@@ -749,8 +783,12 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
 
     /* Logs processor */
     evc = task->event_chunk;
+
     if (flb_processor_is_active(o_ins->processor)) {
         if (evc->type == FLB_EVENT_TYPE_LOGS) {
+            char *normalized_buf;
+            size_t normalized_size;
+
             /* run the processor */
             ret = flb_processor_run(o_ins->processor,
                                     0,
@@ -764,7 +802,22 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                 return NULL;
             }
 
-            records = flb_mp_count(p_buf, p_size);
+            normalized_buf = NULL;
+            normalized_size = 0;
+
+            ret = flb_mp_normalize_log_buffer_groups_msgpack(p_buf, p_size,
+                                                             &normalized_buf,
+                                                             &normalized_size);
+            if (ret == 0) {
+                if (p_buf != evc->data) {
+                    flb_free(p_buf);
+                }
+
+                p_buf = normalized_buf;
+                p_size = normalized_size;
+            }
+
+            records = flb_mp_count_log_records(p_buf, p_size);
             tmp = flb_event_chunk_create(evc->type, records, evc->tag, flb_sds_len(evc->tag), p_buf, p_size);
             if (!tmp) {
                 flb_coro_destroy(coro);
@@ -779,10 +832,8 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
 
             if (p_buf == NULL) {
                 flb_errno();
-
                 flb_coro_destroy(coro);
                 flb_free(out_flush);
-
                 return NULL;
             }
 
@@ -796,6 +847,8 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                             (char *) evc->data,
                             evc->size,
                             &chunk_offset)) == CMT_DECODE_MSGPACK_SUCCESS) {
+
+                cmt_out_context = NULL;
                 ret = flb_processor_run(o_ins->processor,
                                         0,
                                         FLB_PROCESSOR_METRICS,
@@ -807,6 +860,22 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                                         NULL);
 
                 if (ret == 0) {
+                    if (cmt_out_context) {
+                        encode_context = cmt_out_context;
+                    }
+                    else {
+                        encode_context = metrics_context;
+                    }
+
+                    /* if the cmetrics context lacks time series just skip it */
+                    if (flb_metrics_is_empty(encode_context)) {
+                        if (encode_context != metrics_context) {
+                            cmt_destroy(encode_context);
+                        }
+                        cmt_destroy(metrics_context);
+                        continue;
+                    }
+
                     if (cmt_out_context != NULL) {
                         ret = cmt_encode_msgpack_create(cmt_out_context,
                                                         &serialized_context_buffer,
@@ -815,7 +884,6 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                         if (cmt_out_context != metrics_context) {
                             cmt_destroy(cmt_out_context);
                         }
-
                     }
                     else {
                         ret = cmt_encode_msgpack_create(metrics_context,
@@ -829,23 +897,17 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                         flb_coro_destroy(coro);
                         flb_free(out_flush);
                         flb_free(p_buf);
-
                         return NULL;
                     }
 
-                    if ((serialization_buffer_offset +
-                         serialized_context_size) > p_size) {
-                        resized_serialization_buffer = \
-                            flb_realloc(p_buf, p_size + serialized_context_size);
-
+                    if ((serialization_buffer_offset + serialized_context_size) > p_size) {
+                        resized_serialization_buffer = flb_realloc(p_buf, p_size + serialized_context_size);
                         if (resized_serialization_buffer == NULL) {
                             flb_errno();
-
                             cmt_encode_msgpack_destroy(serialized_context_buffer);
                             flb_coro_destroy(coro);
                             flb_free(out_flush);
                             flb_free(p_buf);
-
                             return NULL;
                         }
 
@@ -861,29 +923,49 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
 
                     cmt_encode_msgpack_destroy(serialized_context_buffer);
                 }
+                else {
+                    cmt_destroy(metrics_context);
+                    if (cmt_out_context != NULL && cmt_out_context != metrics_context) {
+                        cmt_destroy(cmt_out_context);
+                    }
+                    flb_coro_destroy(coro);
+                    flb_free(out_flush);
+                    flb_free(p_buf);
+                    return NULL;
+                }
             }
 
             if (serialization_buffer_offset == 0) {
-                flb_coro_destroy(coro);
-                flb_free(out_flush);
+                flb_debug("[output] skipping flush for metrics event chunk with zero metrics after processing.");
                 flb_free(p_buf);
+                p_buf = NULL; /* Mark as freed to avoid double-free */
 
-                return NULL;
+                /* Create an empty processed event chunk to signal success */
+                out_flush->processed_event_chunk = flb_event_chunk_create(
+                                                    evc->type,
+                                                    0,
+                                                    evc->tag,
+                                                    flb_sds_len(evc->tag),
+                                                    NULL,
+                                                    0);
             }
-
-            out_flush->processed_event_chunk = flb_event_chunk_create(
-                                                evc->type,
-                                                0,
-                                                evc->tag,
-                                                flb_sds_len(evc->tag),
-                                                p_buf,
-                                                p_size);
+            else {
+                p_size = serialization_buffer_offset;
+                out_flush->processed_event_chunk = flb_event_chunk_create(
+                                                    evc->type,
+                                                    0,
+                                                    evc->tag,
+                                                    flb_sds_len(evc->tag),
+                                                    p_buf,
+                                                    p_size);
+            }
 
             if (out_flush->processed_event_chunk == NULL) {
                 flb_coro_destroy(coro);
                 flb_free(out_flush);
-                flb_free(p_buf);
-
+                if (p_buf != NULL) {
+                    flb_free(p_buf);
+                }
                 return NULL;
             }
         }
@@ -1135,10 +1217,13 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
  */
 static inline void flb_output_return(int ret, struct flb_coro *co) {
     int n;
+    int records;
     int pipe_fd;
     uint32_t set;
     uint64_t val;
+    size_t bytes;
     struct flb_task *task;
+    struct flb_event_chunk *counted_event_chunk;
     struct flb_output_flush *out_flush;
     struct flb_output_instance *o_ins;
     struct flb_out_thread_instance *th_ins = NULL;
@@ -1147,10 +1232,22 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     o_ins = out_flush->o_ins;
     task = out_flush->task;
 
+    if (out_flush->processed_event_chunk) {
+        counted_event_chunk = out_flush->processed_event_chunk;
+    }
+    else {
+        counted_event_chunk = task->event_chunk;
+    }
+
+    records = task->event_chunk->total_events;
+    if (counted_event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+        records = counted_event_chunk->total_events;
+    }
+    bytes = counted_event_chunk->size;
+
     flb_task_acquire_lock(task);
-
+    flb_task_set_route_data(task, o_ins, records, bytes);
     flb_task_deactivate_route(task, o_ins);
-
     flb_task_release_lock(task);
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -1270,6 +1367,20 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
         }
     }
 
+    /* HTTP server properties */
+    if (ins->http_server_config_map && ins->http_server_config) {
+        ret = flb_config_map_set(&ins->http_server_properties,
+                                 ins->http_server_config_map,
+                                 ins->http_server_config);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    /* OAuth2 properties are validated but not automatically applied here.
+     * Plugins should call flb_config_map_set() with &ctx->oauth2_config
+     * in their init callback after calling flb_output_config_map_set(). */
+
     return 0;
 }
 
@@ -1306,6 +1417,8 @@ void flb_output_set_context(struct flb_output_instance *ins, void *context);
 int flb_output_instance_destroy(struct flb_output_instance *ins);
 int flb_output_net_property_check(struct flb_output_instance *ins,
                                   struct flb_config *config);
+int flb_output_oauth2_property_check(struct flb_output_instance *ins,
+                                      struct flb_config *config);
 int flb_output_plugin_property_check(struct flb_output_instance *ins,
                                      struct flb_config *config);
 int flb_output_init_all(struct flb_config *config);

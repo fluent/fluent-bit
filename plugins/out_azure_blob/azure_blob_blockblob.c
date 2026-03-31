@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto_constants.h>
+#include <fluent-bit/flb_compression.h>
 
 #include <math.h>
 
@@ -30,6 +31,19 @@
 #include "azure_blob_conf.h"
 #include "azure_blob_uri.h"
 #include "azure_blob_http.h"
+
+static const char *azb_blob_extension(struct flb_azure_blob *ctx)
+{
+    if (ctx->compress_blob != FLB_TRUE) {
+        return "";
+    }
+
+    if (ctx->compression == FLB_COMPRESSION_ALGORITHM_ZSTD) {
+        return ".zst";
+    }
+
+    return ".gz";
+}
 
 flb_sds_t azb_block_blob_blocklist_uri(struct flb_azure_blob *ctx, char *name)
 {
@@ -56,11 +70,11 @@ flb_sds_t azb_block_blob_blocklist_uri(struct flb_azure_blob *ctx, char *name)
 }
 
 flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *name,
-                             char *blockid, uint64_t ms)
+                             char *blockid, uint64_t ms, char *random_str)
 {
     int len;
     flb_sds_t uri;
-    char *ext;
+    const char *ext;
     char *encoded_blockid;
 
     len = strlen(blockid);
@@ -75,31 +89,26 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *name,
         return NULL;
     }
 
-    if (ctx->compress_blob == FLB_TRUE) {
-        ext = ".gz";
-    }
-    else {
-        ext = "";
-    }
+    ext = azb_blob_extension(ctx);
 
     if (ctx->path) {
         if (ms > 0) {
-            flb_sds_printf(&uri, "/%s/%s.%" PRIu64 "%s?blockid=%s&comp=block",
-                        ctx->path, name, ms, ext, encoded_blockid);
+            flb_sds_printf(&uri, "/%s/%s.%s.%" PRIu64 "%s?blockid=%s&comp=block",
+                    ctx->path, name, random_str, ms, ext, encoded_blockid);
         }
         else {
-            flb_sds_printf(&uri, "/%s/%s%s?blockid=%s&comp=block",
-                        ctx->path, name, ext, encoded_blockid);
+            flb_sds_printf(&uri, "/%s/%s.%s%s?blockid=%s&comp=block",
+                    ctx->path, name, random_str, ext, encoded_blockid);
         }
     }
     else {
         if (ms > 0) {
-            flb_sds_printf(&uri, "/%s.%" PRIu64 "%s?blockid=%s&comp=block",
-                        name, ms, ext, encoded_blockid);
+            flb_sds_printf(&uri, "/%s.%s.%" PRIu64 "%s?blockid=%s&comp=block",
+                    name, random_str, ms, ext, encoded_blockid);
         }
         else {
-            flb_sds_printf(&uri, "/%s%s?blockid=%s&comp=block",
-                           name, ext, encoded_blockid);
+            flb_sds_printf(&uri, "/%s.%s%s?blockid=%s&comp=block",
+                    name, random_str, ext, encoded_blockid);
         }
     }
 
@@ -112,9 +121,9 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *name,
 }
 
 flb_sds_t azb_block_blob_uri_commit(struct flb_azure_blob *ctx,
-                                    char *tag, uint64_t ms)
+                                    char *tag, uint64_t ms, char *str)
 {
-    char *ext;
+    const char *ext;
     flb_sds_t uri;
 
     uri = azb_uri_container(ctx);
@@ -122,19 +131,14 @@ flb_sds_t azb_block_blob_uri_commit(struct flb_azure_blob *ctx,
         return NULL;
     }
 
-    if (ctx->compress_blob == FLB_TRUE) {
-        ext = ".gz";
-    }
-    else {
-        ext = "";
-    }
+    ext = azb_blob_extension(ctx);
 
     if (ctx->path) {
-        flb_sds_printf(&uri, "/%s/%s.%" PRIu64 "%s?comp=blocklist", ctx->path, tag,
-                       ms, ext);
+        flb_sds_printf(&uri, "/%s/%s.%s.%" PRIu64 "%s?comp=blocklist", ctx->path, tag, str,
+                ms, ext);
     }
     else {
-        flb_sds_printf(&uri, "/%s.%" PRIu64 "%s?comp=blocklist", tag, ms, ext);
+        flb_sds_printf(&uri, "/%s.%s.%" PRIu64 "%s?comp=blocklist", tag, str, ms, ext);
     }
 
     if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
@@ -258,6 +262,11 @@ int azb_block_blob_put_block_list(struct flb_azure_blob *ctx, flb_sds_t uri, flb
     struct flb_http_client *c;
     struct flb_connection *u_conn;
 
+    if (ctx->buffering_enabled == FLB_TRUE){
+        ctx->u->base.flags &= ~(FLB_IO_ASYNC);
+        ctx->u->base.net.io_timeout = ctx->io_timeout;
+    }
+
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
@@ -286,7 +295,7 @@ int azb_block_blob_put_block_list(struct flb_azure_blob *ctx, flb_sds_t uri, flb
 
     /* Validate HTTP status */
     if (ret == -1) {
-        flb_plg_error(ctx->ins, "error sending append_blob");
+        flb_plg_error(ctx->ins, "error sending block_blob");
         return FLB_RETRY;
     }
 
@@ -326,14 +335,14 @@ int azb_block_blob_put_block_list(struct flb_azure_blob *ctx, flb_sds_t uri, flb
 }
 
 /* Commit a single block */
-int azb_block_blob_commit_block(struct flb_azure_blob *ctx, char *blockid, char *tag, uint64_t ms)
+int azb_block_blob_commit_block(struct flb_azure_blob *ctx, char *blockid, char *tag, uint64_t ms, char *str)
 {
     int ret;
     flb_sds_t uri = NULL;
     flb_sds_t payload;
 
     /* Compose commit URI */
-    uri = azb_block_blob_uri_commit(ctx, tag, ms);
+    uri = azb_block_blob_uri_commit(ctx, tag, ms, str);
     if (!uri) {
         return FLB_ERROR;
     }

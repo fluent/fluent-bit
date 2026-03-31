@@ -1,0 +1,4 @@
+*.zip
+build
+*.log
+**/out.aot

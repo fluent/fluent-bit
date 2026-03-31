@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,7 +26,10 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
 
+#include <ctype.h>
+
 #include <stdio.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -43,6 +46,12 @@
 #define S_ISDIR(m)      (((m) & S_IFMT) == S_IFDIR)
 #else
 #define NEWLINE "\n"
+#endif
+
+#ifdef FLB_SYSTEM_WINDOWS
+#define FLB_PATH_SEPARATOR "\\"
+#else
+#define FLB_PATH_SEPARATOR "/"
 #endif
 
 struct flb_file_conf {
@@ -74,6 +83,96 @@ static char *check_delimiter(const char *str)
     }
 
     return NULL;
+}
+
+/*
+ * Convert the user-controlled tag into a safe, relative path. Each component is
+ * cleaned so only filesystem-friendly characters remain, ".." segments are
+ * collapsed into a single underscore and leading separators are dropped to
+ * guarantee the result stays within the configured base path.
+ */
+static int sanitize_tag_name(const char *tag, char *buf, size_t size)
+{
+    size_t i;
+    size_t out_len = 0;
+    size_t component_len;
+    char sanitized_char;
+    const char *p;
+    const char *component_start;
+
+    if (tag == NULL || buf == NULL || size < 2) {
+        return -1;
+    }
+
+    p = tag;
+
+    while (*p != '\0') {
+        component_len = 0;
+        component_start = NULL;
+
+        /* Skip consecutive separators so we never generate empty components */
+        while (*p == '/' || *p == '\\') {
+            p++;
+        }
+
+        if (*p == '\0') {
+            break;
+        }
+
+        component_start = p;
+
+        while (*p != '\0' && *p != '/' && *p != '\\') {
+            component_len++;
+            p++;
+        }
+
+        if (component_len == 0) {
+            continue;
+        }
+
+        if (out_len > 0) {
+            if (out_len >= size - 1) {
+                break;
+            }
+
+            buf[out_len++] = FLB_PATH_SEPARATOR[0];
+        }
+
+        if ((component_len == 1 && component_start[0] == '.') ||
+            (component_len == 2 && component_start[0] == '.' && component_start[1] == '.')) {
+            if (out_len >= size - 1) {
+                break;
+            }
+
+            buf[out_len++] = '_';
+            continue;
+        }
+
+        for (i = 0; i < component_len; i++) {
+            sanitized_char = component_start[i];
+
+            if (!isalnum((unsigned char) sanitized_char) && sanitized_char != '-' &&
+                sanitized_char != '_' && sanitized_char != '.') {
+                sanitized_char = '_';
+            }
+
+            if (out_len >= size - 1) {
+                break;
+            }
+
+            buf[out_len++] = sanitized_char;
+        }
+    }
+
+    if (out_len == 0) {
+        buf[0] = '_';
+        buf[1] = '\0';
+        return 0;
+    }
+
+    buf[out_len] = '\0';
+
+    return 0;
 }
 
 
@@ -322,11 +421,11 @@ static int template_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
 }
 
 
-static int plain_output(FILE *fp, msgpack_object *obj, size_t alloc_size)
+static int plain_output(FILE *fp, msgpack_object *obj, size_t alloc_size, int escape_unicode)
 {
     char *buf;
 
-    buf = flb_msgpack_to_json_str(alloc_size, obj);
+    buf = flb_msgpack_to_json_str(alloc_size, obj, escape_unicode);
     if (buf) {
         fprintf(fp, "%s" NEWLINE,
                 buf);
@@ -368,7 +467,12 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
 #ifdef FLB_SYSTEM_MACOS
     char *parent_dir = NULL;
 #endif
-
+#ifdef FLB_SYSTEM_WINDOWS
+    char parent_path[MAX_PATH];
+    DWORD err;
+    char *p;
+    char *sep;
+#endif
     int ret;
 
     if (!dir) {
@@ -391,15 +495,48 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
     }
 
 #ifdef FLB_SYSTEM_WINDOWS
-    char path[MAX_PATH];
-
-    if (_fullpath(path, dir, MAX_PATH) == NULL) {
+    if (strncpy_s(parent_path, MAX_PATH, dir, _TRUNCATE) != 0) {
+        flb_plg_error(ins, "path is too long: %s", dir);
         return -1;
     }
 
-    if (SHCreateDirectoryExA(NULL, path, NULL) != ERROR_SUCCESS) {
-        return -1;
+    p = parent_path;
+
+    /* Skip the drive letter if present (e.g., "C:") */
+    if (p[1] == ':') {
+        p += 2;
     }
+
+    /* Normalize all forward slashes to backslashes */
+    while (*p != '\0') {
+        if (*p == '/') {
+            *p = '\\';
+        }
+        p++;
+    }
+
+    flb_plg_debug(ins, "processing path '%s'", parent_path);
+    sep = strstr(parent_path, FLB_PATH_SEPARATOR);
+    if (sep != NULL && PathRemoveFileSpecA(parent_path)) {
+        flb_plg_debug(ins, "creating directory (recursive) %s", parent_path);
+        ret = mkpath(ins, parent_path);
+        if (ret != 0) {
+            /* If creating the parent failed, we cannot continue. */
+            return -1;
+        }
+    }
+
+    flb_plg_debug(ins, "attempting to create final directory '%s'", dir);
+    if (!CreateDirectoryA(dir, NULL)) {
+        err = GetLastError();
+
+        if (err != ERROR_ALREADY_EXISTS) {
+            flb_plg_error(ins, "could not create directory '%s' (error=%lu)",
+                          dir, err);
+            return -1;
+        }
+    }
+
     return 0;
 #elif FLB_SYSTEM_MACOS
     dup_dir = strdup(dir);
@@ -458,7 +595,8 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
     size_t last_off = 0;
     size_t alloc_size = 0;
     size_t total;
-    char out_file[PATH_MAX];
+    char out_file[PATH_MAX * 2];
+    char sanitized_tag[PATH_MAX];
     char *buf;
     long file_pos;
     struct flb_file_conf *ctx = out_context;
@@ -469,22 +607,33 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
     (void) config;
 
     /* Set the right output file */
+    if (ctx->out_file == NULL) {
+        ret = sanitize_tag_name(event_chunk->tag,
+                                sanitized_tag,
+                                sizeof(sanitized_tag));
+
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "failed to sanitize tag for output file");
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+    }
+
     if (ctx->out_path) {
         if (ctx->out_file) {
-            snprintf(out_file, PATH_MAX - 1, "%s/%s",
+            snprintf(out_file, sizeof(out_file) , "%s" FLB_PATH_SEPARATOR "%s",
                      ctx->out_path, ctx->out_file);
         }
         else {
-            snprintf(out_file, PATH_MAX - 1, "%s/%s",
-                     ctx->out_path, event_chunk->tag);
+            snprintf(out_file, sizeof(out_file), "%s" FLB_PATH_SEPARATOR "%s",
+                     ctx->out_path, sanitized_tag);
         }
     }
     else {
         if (ctx->out_file) {
-            snprintf(out_file, PATH_MAX - 1, "%s", ctx->out_file);
+            snprintf(out_file, PATH_MAX, "%s", ctx->out_file);
         }
         else {
-            snprintf(out_file, PATH_MAX - 1, "%s", event_chunk->tag);
+            snprintf(out_file, PATH_MAX, "%s", sanitized_tag);
         }
     }
 
@@ -572,7 +721,8 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
 
         switch (ctx->format){
         case FLB_OUT_FILE_FMT_JSON:
-            buf = flb_msgpack_to_json_str(alloc_size, log_event.body);
+            buf = flb_msgpack_to_json_str(alloc_size, log_event.body,
+                                          config->json_escape_unicode);
             if (buf) {
                 fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
                         event_chunk->tag,
@@ -604,7 +754,7 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
                         log_event.body, ctx);
             break;
         case FLB_OUT_FILE_FMT_PLAIN:
-            plain_output(fp, log_event.body, alloc_size);
+            plain_output(fp, log_event.body, alloc_size, config->json_escape_unicode);
 
             break;
         case FLB_OUT_FILE_FMT_TEMPLATE:

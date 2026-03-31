@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/http_server/flb_http_server_config_map.h>
 
 
 
@@ -200,6 +201,7 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
 {
     struct mk_list *head;
     struct mk_list *config_map;
+    struct mk_list *http_config_map;
     struct flb_mp_map_header mh;
     struct flb_config_map *m;
     msgpack_sbuffer mp_sbuf;
@@ -269,6 +271,11 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
         if ((ins->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) != 0) {
             options_size += 3;
         }
+        if ((ins->flags & FLB_INPUT_HTTP_SERVER) != 0) {
+            http_config_map = flb_http_server_get_config_map(ins->config);
+            options_size += mk_list_size(http_config_map);
+            flb_config_map_destroy(http_config_map);
+        }
 
         msgpack_pack_array(&mp_pck, options_size);
 
@@ -276,6 +283,14 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
             pack_config_map_entry(&mp_pck, &m_input_net_listen);
             pack_config_map_entry(&mp_pck, &m_input_net_host);
             pack_config_map_entry(&mp_pck, &m_input_net_port);
+        }
+        if ((ins->flags & FLB_INPUT_HTTP_SERVER) != 0) {
+            http_config_map = flb_http_server_get_config_map(ins->config);
+            mk_list_foreach(head, http_config_map) {
+                m = mk_list_entry(head, struct flb_config_map, _head);
+                pack_config_map_entry(&mp_pck, m);
+            }
+            flb_config_map_destroy(http_config_map);
         }
 
         mk_list_foreach(head, config_map) {
@@ -471,12 +486,13 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
 {
     struct mk_list *head;
     struct mk_list *config_map;
+    struct mk_list *http_config_map;
     struct flb_mp_map_header mh;
     struct flb_config_map *m;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     int options_size = 0;
-    struct mk_list *tls_config;
+    struct mk_list *tls_config_map;
     struct flb_config_map m_output_net_host = {
         .type =      FLB_CONFIG_MAP_STR,
         .name =      "host",
@@ -532,14 +548,17 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
 
         config_map = flb_config_map_create(ins->config, ins->p->config_map);
         options_size = mk_list_size(config_map);
-
-        options_size = mk_list_size(config_map);
         if (ins->flags & FLB_OUTPUT_NET) {
             options_size += 2;
         }
+        if (ins->flags & FLB_OUTPUT_HTTP_SERVER) {
+            http_config_map = flb_http_server_get_config_map(ins->config);
+            options_size += mk_list_size(http_config_map);
+            flb_config_map_destroy(http_config_map);
+        }
         if (ins->flags & FLB_IO_OPT_TLS) {
-            tls_config = flb_tls_get_config_map(ins->config);
-            options_size += mk_list_size(tls_config);
+            tls_config_map = flb_tls_get_config_map(ins->config);
+            options_size += mk_list_size(tls_config_map);
         }
 
         msgpack_pack_array(&mp_pck, options_size);
@@ -548,12 +567,20 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
             pack_config_map_entry(&mp_pck, &m_output_net_host);
             pack_config_map_entry(&mp_pck, &m_output_net_port);
         }
-        if (ins->flags & FLB_IO_OPT_TLS) {
-            mk_list_foreach(head, tls_config) {
+        if (ins->flags & FLB_OUTPUT_HTTP_SERVER) {
+            http_config_map = flb_http_server_get_config_map(ins->config);
+            mk_list_foreach(head, http_config_map) {
                 m = mk_list_entry(head, struct flb_config_map, _head);
                 pack_config_map_entry(&mp_pck, m);
             }
-            flb_config_map_destroy(tls_config);
+            flb_config_map_destroy(http_config_map);
+        }
+        if (ins->flags & FLB_IO_OPT_TLS) {
+            mk_list_foreach(head, tls_config_map) {
+                m = mk_list_entry(head, struct flb_config_map, _head);
+                pack_config_map_entry(&mp_pck, m);
+            }
+            flb_config_map_destroy(tls_config_map);
         }
 
         mk_list_foreach(head, config_map) {
@@ -710,10 +737,11 @@ flb_sds_t flb_help_build_json_schema(struct flb_config *config)
      * - fluent-bit
      * - customs
      * - inputs
+     * - processors
      * - filters
      * - outputs
      */
-    msgpack_pack_map(&mp_pck, 5);
+    msgpack_pack_map(&mp_pck, 6);
 
     /* Fluent Bit */
     msgpack_pack_str(&mp_pck, 10);
@@ -825,7 +853,7 @@ flb_sds_t flb_help_build_json_schema(struct flb_config *config)
     }
     flb_mp_array_header_end(&mh);
 
-    json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return json;

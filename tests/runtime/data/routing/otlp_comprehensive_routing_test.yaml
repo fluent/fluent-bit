@@ -1,0 +1,184 @@
+pipeline:
+  inputs:
+    - name: opentelemetry
+      port: 4318
+      routes:
+        logs:
+          # Route 1: Match by resource attribute - service_name
+          - name: service_a_logs
+            condition:
+              rules:
+                - context: otel_resource_attributes
+                  field: "$service_name"
+                  op: eq
+                  value: "service-a"
+            to:
+              outputs:
+                - name: service_a_destination
+
+          # Route 2: Match by resource attribute - service_version
+          - name: version_2_logs
+            condition:
+              rules:
+                - context: otel_resource_attributes
+                  field: "$service_version"
+                  op: eq
+                  value: "2.0.0"
+            to:
+              outputs:
+                - name: version_2_destination
+
+          # Route 3: Match by resource attribute - environment
+          - name: production_logs
+            condition:
+              rules:
+                - context: otel_resource_attributes
+                  field: "$environment"
+                  op: eq
+                  value: "production"
+            to:
+              outputs:
+                - name: production_destination
+
+          # Route 4: Match by scope name
+          - name: scope_a_logs
+            condition:
+              rules:
+                - context: otel_scope_metadata
+                  field: "$name"
+                  op: eq
+                  value: "scope-a"
+            to:
+              outputs:
+                - name: scope_a_destination
+
+          # Route 5: Match by scope version
+          - name: scope_v2_logs
+            condition:
+              rules:
+                - context: otel_scope_metadata
+                  field: "$version"
+                  op: eq
+                  value: "v2.0"
+            to:
+              outputs:
+                - name: scope_v2_destination
+
+          # Route 6: Match by scope attributes
+          - name: backend_component_logs
+            condition:
+              rules:
+                - context: otel_scope_attributes
+                  field: "$component"
+                  op: eq
+                  value: "backend"
+            to:
+              outputs:
+                - name: backend_component_destination
+
+          # Route 7: Match by record body content
+          - name: error_body_logs
+            condition:
+              rules:
+                - context: body
+                  field: "$log"
+                  op: regex
+                  value: "error"
+            to:
+              outputs:
+                - name: error_body_destination
+
+          # Route 8: Match by record attributes (metadata)
+          - name: info_level_logs
+            condition:
+              rules:
+                - context: metadata
+                  field: "$otlp['attributes']['level']"
+                  op: eq
+                  value: "info"
+            to:
+              outputs:
+                - name: info_level_destination
+
+          # Route 9: Match by record attributes in metadata
+          - name: select_operation_logs
+            condition:
+              rules:
+                - context: metadata
+                  field: "$otlp['attributes']['operation']"
+                  op: eq
+                  value: "SELECT"
+            to:
+              outputs:
+                - name: select_operation_destination
+
+          # Route 10: Default route for unmatched records
+          - name: default_logs
+            condition:
+              default: true
+            to:
+              outputs:
+                - name: default_destination
+
+  outputs:
+    - name: file
+      alias: service_a_destination
+      match: service_a_logs
+      path: otlp_routing_test_output
+      file: service_a_logs.out
+
+    - name: file
+      alias: version_2_destination
+      match: version_2_logs
+      path: otlp_routing_test_output
+      file: version_2_logs.out
+
+    - name: file
+      alias: production_destination
+      match: production_logs
+      path: otlp_routing_test_output
+      file: production_logs.out
+
+    - name: file
+      alias: scope_a_destination
+      match: scope_a_logs
+      path: otlp_routing_test_output
+      file: scope_a_logs.out
+
+    - name: file
+      alias: scope_v2_destination
+      match: scope_v2_logs
+      path: otlp_routing_test_output
+      file: scope_v2_logs.out
+
+    - name: file
+      alias: backend_component_destination
+      match: backend_component_logs
+      path: otlp_routing_test_output
+      file: backend_component_logs.out
+
+    - name: file
+      alias: error_body_destination
+      match: error_body_logs
+      path: otlp_routing_test_output
+      file: error_body_logs.out
+
+    - name: file
+      alias: info_level_destination
+      match: info_level_logs
+      path: otlp_routing_test_output
+      file: info_level_logs.out
+
+    - name: file
+      alias: select_operation_destination
+      match: select_operation_logs
+      path: otlp_routing_test_output
+      file: select_operation_logs.out
+
+    - name: file
+      alias: default_destination
+      match: default_logs
+      path: otlp_routing_test_output
+      file: default_logs.out
+
+

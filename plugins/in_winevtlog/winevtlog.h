@@ -23,6 +23,18 @@
 
 #include <winevt.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_input_plugin.h>
+
+struct winevtlog_session;
+
+/* reconnect backoff */
+struct winevtlog_backoff {
+    DWORD base_ms;
+    DWORD max_ms;
+    DWORD multiplier_x1000;
+    DWORD jitter_pct;
+    DWORD max_retries;
+};
 
 struct winevtlog_config {
     unsigned int interval_sec;
@@ -31,15 +43,24 @@ struct winevtlog_config {
     int string_inserts;
     int read_existing_events;
     int render_event_as_xml;
+    int render_event_as_text;
     int use_ansi;
     int ignore_missing_channels;
+    flb_sds_t render_event_text_key;
     flb_sds_t event_query;
+    flb_sds_t remote_server;
+    flb_sds_t remote_domain;
+    flb_sds_t remote_username;
+    flb_sds_t remote_password;
+    struct winevtlog_session *session;
 
     struct mk_list *active_channel;
     struct flb_sqldb *db;
     flb_pipefd_t coll_fd;
     struct flb_input_instance *ins;
     struct flb_log_event_encoder *log_encoder;
+    struct winevtlog_backoff backoff;
+    flb_sds_t backoff_multiplier_str;
 };
 
 /* Some channels has very heavy contents for 10 events at same time.
@@ -50,15 +71,38 @@ struct winevtlog_config {
 struct winevtlog_channel {
     EVT_HANDLE subscription;
     EVT_HANDLE bookmark;
+    EVT_HANDLE remote;
     HANDLE signal_event;
     EVT_HANDLE events[SUBSCRIBE_ARRAY_SIZE];
     int count;
+    struct winevtlog_session *session;
+
+    /* reconnect */
+    BOOL   cancelled_by_us;
+    BOOL   reconnect_needed;
+    DWORD  last_error;
+    DWORD  retry_attempts;
+    ULONGLONG next_retry_deadline;
+    ULONGLONG prng_state;
 
     char *name;
     char *query;
     unsigned int time_updated;
     unsigned int time_created;
     struct mk_list _head;
+};
+
+#define WINEVTLOG_SESSION_CREATE_OK              0
+#define WINEVTLOG_SESSION_ALLOC_FAILED           1
+#define WINEVTLOG_SESSION_SERVER_EMPTY           2
+#define WINEVTLOG_SESSION_FAILED_TO_CONVERT_WIDE 3
+
+struct winevtlog_session {
+    PWSTR server;
+    PWSTR domain;
+    PWSTR username;
+    PWSTR password;
+    EVT_RPC_LOGIN_FLAGS flags;
 };
 
 struct winevtlog_sqlite_record {
@@ -91,6 +135,9 @@ void winevtlog_close_all(struct mk_list *list);
 void winevtlog_pack_xml_event(WCHAR *system_xml, WCHAR *message,
                               PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
                               struct winevtlog_config *ctx);
+void winevtlog_pack_text_event(PEVT_VARIANT system, WCHAR *message,
+                               PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
+                               struct winevtlog_config *ctx);
 void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
                           PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
                           struct winevtlog_config *ctx);
@@ -98,8 +145,13 @@ void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
 /*
  * Save the read offset to disk.
  */
-int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db);
-int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct flb_sqldb *db);
+int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct winevtlog_config *ctx, struct flb_sqldb *db);
+int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct winevtlog_config *ctx, struct flb_sqldb *db);
+
+/* Non blocking reconnection utilities */
+int   winevtlog_try_reconnect(struct winevtlog_channel *ch, struct winevtlog_config *ctx);
+void  winevtlog_schedule_retry(struct winevtlog_channel *ch, struct winevtlog_config *ctx);
+void  winevtlog_request_cancel(struct winevtlog_channel *ch);
 
 /*
  * SQL templates

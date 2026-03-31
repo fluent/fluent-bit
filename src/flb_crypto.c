@@ -17,7 +17,49 @@
 
 #include <fluent-bit/flb_crypto.h>
 #include <openssl/bio.h>
+#include <openssl/bn.h>
+#include <openssl/rsa.h>
+#include <openssl/evp.h>
+#include <openssl/opensslv.h>
 #include <string.h>
+
+/*
+ * OpenSSL version compatibility macros
+ *
+ * EVP_MD_CTX_new/free were introduced in OpenSSL 1.1.0
+ * For OpenSSL 1.0.2, use EVP_MD_CTX_create/destroy
+ */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#define EVP_MD_CTX_new() EVP_MD_CTX_create()
+#define EVP_MD_CTX_free(ctx) EVP_MD_CTX_destroy(ctx)
+
+/*
+ * RSA_set0_key was introduced in OpenSSL 1.1.0
+ * For OpenSSL 1.0.2, provide compatibility implementation
+ */
+static int RSA_set0_key(RSA *rsa, BIGNUM *n, BIGNUM *e, BIGNUM *d)
+{
+    if (n == NULL || e == NULL) {
+        return 0;
+    }
+
+    if (rsa->n) {
+        BN_free(rsa->n);
+    }
+    if (rsa->e) {
+        BN_free(rsa->e);
+    }
+    if (rsa->d) {
+        BN_free(rsa->d);
+    }
+
+    rsa->n = n;
+    rsa->e = e;
+    rsa->d = d;
+
+    return 1;
+}
+#endif
 
 static int flb_crypto_get_rsa_padding_type_by_id(int padding_type_id)
 {
@@ -109,6 +151,116 @@ static int flb_crypto_import_pem_key(int key_type,
     }
 
     return result;
+}
+
+/* Build RSA public key from modulus and exponent (base64url encoded) */
+static int flb_crypto_build_rsa_public_key_from_components(unsigned char *modulus_bytes,
+                                                           size_t modulus_len,
+                                                           unsigned char *exponent_bytes,
+                                                           size_t exponent_len,
+                                                           EVP_PKEY **pkey)
+{
+    BIGNUM *n = NULL;
+    BIGNUM *e = NULL;
+    BIGNUM *n_dup = NULL;
+    BIGNUM *e_dup = NULL;
+    RSA *rsa = NULL;
+    int ret = FLB_CRYPTO_BACKEND_ERROR;
+
+    if (!modulus_bytes || !exponent_bytes || !pkey) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    n = BN_bin2bn(modulus_bytes, modulus_len, NULL);
+    e = BN_bin2bn(exponent_bytes, exponent_len, NULL);
+    if (!n || !e) {
+        goto cleanup;
+    }
+
+#if OPENSSL_VERSION_MAJOR < 3
+    /* OpenSSL 1.1.1: Build RSA key directly */
+    rsa = RSA_new();
+    if (!rsa) {
+        goto cleanup;
+    }
+
+    if (RSA_set0_key(rsa, n, e, NULL) != 1) {
+        goto cleanup;
+    }
+    n = e = NULL; /* ownership transferred */
+
+    *pkey = EVP_PKEY_new();
+    if (!*pkey) {
+        goto cleanup;
+    }
+
+    if (EVP_PKEY_assign_RSA(*pkey, rsa) != 1) {
+        EVP_PKEY_free(*pkey);
+        *pkey = NULL;
+        goto cleanup;
+    }
+    rsa = NULL; /* ownership transferred */
+#else
+    /* OpenSSL 3.x: Build RSA key and wrap in EVP_PKEY */
+    rsa = RSA_new();
+    if (!rsa) {
+        goto cleanup;
+    }
+
+    n_dup = BN_dup(n);
+    if (!n_dup) {
+        goto cleanup;
+    }
+
+    e_dup = BN_dup(e);
+    if (!e_dup) {
+        BN_free(n_dup);
+        n_dup = NULL;
+        goto cleanup;
+    }
+
+    if (RSA_set0_key(rsa, n_dup, e_dup, NULL) != 1) {
+        BN_free(n_dup);
+        BN_free(e_dup);
+        n_dup = e_dup = NULL;
+        goto cleanup;
+    }
+    n_dup = e_dup = NULL; /* ownership transferred to RSA */
+
+    *pkey = EVP_PKEY_new();
+    if (!*pkey) {
+        goto cleanup;
+    }
+
+    if (EVP_PKEY_set1_RSA(*pkey, rsa) != 1) {
+        EVP_PKEY_free(*pkey);
+        *pkey = NULL;
+        goto cleanup;
+    }
+    RSA_free(rsa);
+    rsa = NULL;
+#endif
+
+    ret = FLB_CRYPTO_SUCCESS;
+
+cleanup:
+    if (rsa) {
+        RSA_free(rsa);
+    }
+    if (n_dup) {
+        BN_free(n_dup);
+    }
+    if (e_dup) {
+        BN_free(e_dup);
+    }
+    if (n) {
+        BN_free(n);
+    }
+    if (e) {
+        BN_free(e);
+    }
+
+    return ret;
 }
 
 int flb_crypto_init(struct flb_crypto *context,
@@ -394,6 +546,153 @@ int flb_crypto_decrypt_simple(int padding_type,
         result = flb_crypto_decrypt(&context,
                                     input_buffer, input_length,
                                     output_buffer, output_length);
+
+        flb_crypto_cleanup(&context);
+    }
+
+    return result;
+}
+
+int flb_crypto_init_from_rsa_components(struct flb_crypto *context,
+                                        int padding_type,
+                                        int digest_algorithm,
+                                        unsigned char *modulus_bytes,
+                                        size_t modulus_len,
+                                        unsigned char *exponent_bytes,
+                                        size_t exponent_len)
+{
+    int result;
+
+    if (context == NULL) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    if (modulus_bytes == NULL || exponent_bytes == NULL) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    memset(context, 0, sizeof(struct flb_crypto));
+
+    result = flb_crypto_build_rsa_public_key_from_components(modulus_bytes,
+                                                              modulus_len,
+                                                              exponent_bytes,
+                                                              exponent_len,
+                                                              &context->key);
+
+    if (result != FLB_CRYPTO_SUCCESS) {
+        if (result == FLB_CRYPTO_BACKEND_ERROR) {
+            context->last_error = ERR_get_error();
+        }
+        flb_crypto_cleanup(context);
+        return result;
+    }
+
+    context->backend_context = EVP_PKEY_CTX_new(context->key, NULL);
+
+    if (context->backend_context == NULL) {
+        context->last_error = ERR_get_error();
+        flb_crypto_cleanup(context);
+        return FLB_CRYPTO_BACKEND_ERROR;
+    }
+
+    context->block_size = (size_t) EVP_PKEY_size(context->key);
+    context->padding_type = flb_crypto_get_rsa_padding_type_by_id(padding_type);
+    context->digest_algorithm = flb_crypto_get_digest_algorithm_instance_by_id(digest_algorithm);
+
+    return FLB_CRYPTO_SUCCESS;
+}
+
+int flb_crypto_verify(struct flb_crypto *context,
+                      unsigned char *data,
+                      size_t data_length,
+                      unsigned char *signature,
+                      size_t signature_length)
+{
+    EVP_MD_CTX *md_ctx = NULL;
+    EVP_PKEY_CTX *pkey_ctx = NULL;
+    int result = FLB_CRYPTO_BACKEND_ERROR;
+
+    if (context == NULL || data == NULL || signature == NULL) {
+        return FLB_CRYPTO_INVALID_ARGUMENT;
+    }
+
+    md_ctx = EVP_MD_CTX_new();
+    if (!md_ctx) {
+        if (context) {
+            context->last_error = ERR_get_error();
+        }
+        return FLB_CRYPTO_BACKEND_ERROR;
+    }
+
+    if (EVP_DigestVerifyInit(md_ctx, &pkey_ctx, context->digest_algorithm, NULL, context->key) <= 0) {
+        if (context) {
+            context->last_error = ERR_get_error();
+        }
+        EVP_MD_CTX_free(md_ctx);
+        return FLB_CRYPTO_BACKEND_ERROR;
+    }
+
+    if (EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, context->padding_type) <= 0) {
+        if (context) {
+            context->last_error = ERR_get_error();
+        }
+        EVP_MD_CTX_free(md_ctx);
+        return FLB_CRYPTO_BACKEND_ERROR;
+    }
+
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+    /* OpenSSL 1.1.0+: Use the convenient EVP_DigestVerify() function */
+    result = EVP_DigestVerify(md_ctx, signature, signature_length, data, data_length);
+#else
+    /* OpenSSL 1.0.2: Use Init/Update/Final pattern */
+    if (EVP_DigestVerifyUpdate(md_ctx, data, data_length) <= 0) {
+        if (context) {
+            context->last_error = ERR_get_error();
+        }
+        EVP_MD_CTX_free(md_ctx);
+        return FLB_CRYPTO_BACKEND_ERROR;
+    }
+    result = EVP_DigestVerifyFinal(md_ctx, signature, signature_length);
+#endif
+    EVP_MD_CTX_free(md_ctx);
+
+    if (result == 1) {
+        return FLB_CRYPTO_SUCCESS;
+    }
+    else {
+        if (context) {
+            context->last_error = ERR_get_error();
+        }
+        return FLB_CRYPTO_BACKEND_ERROR;
+    }
+}
+
+int flb_crypto_verify_simple(int padding_type,
+                             int digest_algorithm,
+                             unsigned char *modulus_bytes,
+                             size_t modulus_len,
+                             unsigned char *exponent_bytes,
+                             size_t exponent_len,
+                             unsigned char *data,
+                             size_t data_length,
+                             unsigned char *signature,
+                             size_t signature_length)
+{
+    struct flb_crypto context;
+    int result;
+
+    result = flb_crypto_init_from_rsa_components(&context,
+                                                 padding_type,
+                                                 digest_algorithm,
+                                                 modulus_bytes,
+                                                 modulus_len,
+                                                 exponent_bytes,
+                                                 exponent_len);
+
+    if (result == FLB_CRYPTO_SUCCESS) {
+        result = flb_crypto_verify(&context,
+                                   data, data_length,
+                                   signature, signature_length);
 
         flb_crypto_cleanup(&context);
     }

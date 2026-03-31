@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2022 The Fluent Bit Authors
+ *  Copyright (C) 2022-2025 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,6 +22,8 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
+
+#include <windows.h>
 
 #include "we.h"
 #include "we_logical_disk.h"
@@ -59,15 +61,7 @@ struct we_perflib_metric_source logical_disk_metric_sources[] = {
                                  "% Disk Write Time",
                                  NULL),
 
-        WE_PERFLIB_METRIC_SOURCE("free_megabytes",
-                                 "Free Megabytes",
-                                 NULL),
-
-        /* FIXME: Prometheus windows exporter uses '% Free Space_Base' as
-         * query for size_(mega)bytes metrics, but it does not work. */
-        /* WE_PERFLIB_METRIC_SOURCE("size_megabytes", */
-        /*                          "% Free Space_Base", */
-        /*                          NULL), */
+        /* 'free_bytes' and 'size_bytes' are now collected via Windows API */
 
         WE_PERFLIB_METRIC_SOURCE("idle_seconds_total",
                                  "% Idle Time",
@@ -87,6 +81,14 @@ struct we_perflib_metric_source logical_disk_metric_sources[] = {
 
         WE_PERFLIB_METRIC_SOURCE("read_write_latency_seconds_total",
                                  "Avg. Disk sec/Transfer",
+                                 NULL),
+
+        WE_PERFLIB_METRIC_SOURCE("avg_read_requests_queued",
+                                 "Avg. Disk Read Queue Length",
+                                 NULL),
+
+        WE_PERFLIB_METRIC_SOURCE("avg_write_requests_queued",
+                                 "Avg. Disk Write Queue Length",
                                  NULL),
 
         WE_PERFLIB_TERMINATOR_SOURCE()
@@ -121,13 +123,7 @@ struct we_perflib_metric_spec logical_disk_metric_specs[] = {
                                 "Total amount of writeing time to the disk",
                                 "volume"),
 
-        WE_PERFLIB_GAUGE_SPEC("free_megabytes",
-                              "Free megabytes on the disk",
-                              "volume"),
-
-        /* WE_PERFLIB_COUNTER_SPEC("size_megabytes", */
-        /*                         "Total amount of free megabytes on the disk", */
-        /*                         "volume"), */
+        /* 'free_bytes' and 'size_bytes' are now collected via Windows API */
 
         WE_PERFLIB_COUNTER_SPEC("idle_seconds_total",
                                 "Total amount of idling time on the disk",
@@ -149,6 +145,14 @@ struct we_perflib_metric_spec logical_disk_metric_specs[] = {
                                 "Average latency, in seconds, to transfer operations on the disk",
                                 "volume"),
 
+        WE_PERFLIB_GAUGE_SPEC("avg_read_requests_queued",
+                              "Average number of read requests that were queued for the selected disk during the sample interval",
+                              "volume"),
+
+        WE_PERFLIB_GAUGE_SPEC("avg_write_requests_queued",
+                              "Average number of write requests that were queued for the selected disk during the sample interval",
+                              "volume"),
+
         WE_PERFLIB_TERMINATOR_SPEC()
     };
 
@@ -157,8 +161,26 @@ int we_logical_disk_init(struct flb_we *ctx)
 {
     struct we_perflib_metric_source *metric_sources;
     int                              result;
+    struct cmt_gauge                *g;
 
     ctx->logical_disk.operational = FLB_FALSE;
+
+    /* Create gauges for metrics collected via Windows API */
+    g = cmt_gauge_create(ctx->cmt, "windows", "logical_disk", "size_bytes",
+                         "Total size of the disk in bytes",
+                         1, (char *[]) {"volume"});
+    if (!g) {
+        return -1;
+    }
+    ctx->logical_disk.size_bytes = g;
+
+    g = cmt_gauge_create(ctx->cmt, "windows", "logical_disk", "free_bytes",
+                         "Free space on the disk in bytes",
+                         1, (char *[]) {"volume"});
+    if (!g) {
+        return -1;
+    }
+    ctx->logical_disk.free_bytes = g;
 
     ctx->logical_disk.metrics = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 32, 128);
 
@@ -203,11 +225,13 @@ int we_logical_disk_init(struct flb_we *ctx)
 
 int we_logical_disk_exit(struct flb_we *ctx)
 {
-    we_deinitialize_perflib_metric_sources(ctx->logical_disk.metric_sources);
-    we_deinitialize_perflib_metric_specs(ctx->logical_disk.metric_specs);
+    if (ctx->logical_disk.operational) {
+        we_deinitialize_perflib_metric_sources(ctx->logical_disk.metric_sources);
+        we_deinitialize_perflib_metric_specs(ctx->logical_disk.metric_specs);
 
-    flb_free(ctx->logical_disk.metric_sources);
-    flb_free(ctx->logical_disk.metric_specs);
+        flb_free(ctx->logical_disk.metric_sources);
+        flb_free(ctx->logical_disk.metric_specs);
+    }
 
     ctx->logical_disk.operational = FLB_FALSE;
 
@@ -219,15 +243,16 @@ static int logical_disk_regex_match(struct flb_regex *regex, char *instance_name
     if (regex == NULL) {
         return 0;
     }
-    return flb_regex_match(regex, instance_name, strlen(instance_name));
+    return flb_regex_match(regex, (unsigned char *)instance_name, strlen(instance_name));
 }
 
 
 int we_logical_disk_instance_hook(char *instance_name, struct flb_we *ctx)
 {
-    if (strcasestr(instance_name, "Total") != NULL) {
+    if (strcasecmp(instance_name, "_Total") == 0) {
         return 1;
     }
+
     if (logical_disk_regex_match(ctx->denying_disk_regex, instance_name) ||
         !logical_disk_regex_match(ctx->allowing_disk_regex, instance_name)) {
         return 1;
@@ -256,17 +281,145 @@ int we_logical_disk_label_prepend_hook(char                           **label_li
     return 0;
 }
 
+static BOOL we_get_volume_perflib_instance_name(LPCWSTR volume_guid_path, LPWSTR out_buffer, DWORD out_buffer_size)
+{
+    wchar_t device_name[MAX_PATH] = {0};
+    wchar_t dos_drive[3] = L" :";
+    DWORD i;
+
+    wchar_t temp_guid_path[MAX_PATH];
+    wcsncpy(temp_guid_path, volume_guid_path, MAX_PATH - 1);
+    temp_guid_path[wcslen(temp_guid_path) - 1] = L'\0';
+    LPCWSTR perflib_name = NULL;
+
+    if (QueryDosDeviceW(&temp_guid_path[4], device_name, ARRAYSIZE(device_name))) {
+        perflib_name = wcsstr(device_name, L"\\Device\\");
+        if (perflib_name != NULL) {
+            perflib_name += wcslen(L"\\Device\\");
+            wcsncpy(out_buffer, perflib_name, out_buffer_size - 1);
+
+            return FLB_TRUE;
+        }
+    }
+    return FLB_FALSE;
+}
+
+static int we_logical_disk_update_from_api(struct flb_we *ctx)
+{
+    HANDLE h_find_volume = INVALID_HANDLE_VALUE;
+    wchar_t volume_name_w[MAX_PATH] = {0};
+    wchar_t path_names_w[MAX_PATH] = {0};
+    wchar_t perflib_instance_name_w[MAX_PATH] = {0};
+    wchar_t file_system_name_w[MAX_PATH] = {0};
+    char volume_label_utf8[MAX_PATH] = {0};
+    ULARGE_INTEGER free_bytes_available;
+    ULARGE_INTEGER total_number_of_bytes;
+    ULARGE_INTEGER total_number_of_free_bytes;
+    uint64_t timestamp;
+
+    timestamp = cfl_time_now();
+    h_find_volume = FindFirstVolumeW(volume_name_w, ARRAYSIZE(volume_name_w));
+
+    if (h_find_volume == INVALID_HANDLE_VALUE) {
+        flb_plg_error(ctx->ins, "FindFirstVolumeW failed with error %lu", GetLastError());
+
+        return -1;
+    }
+
+    do {
+        DWORD path_names_len = 0;
+        BOOL has_mount_point;
+
+        if (GetVolumeInformationW(volume_name_w, NULL, 0, NULL, NULL, NULL,
+                                  file_system_name_w, ARRAYSIZE(file_system_name_w))) {
+            if (wcscmp(file_system_name_w, L"NTFS") != 0 &&
+                wcscmp(file_system_name_w, L"ReFS") != 0) {
+                /* Note: Skip volumes that are not NTFS or ReFS
+                 * (e.g., FAT32 system partitions for UEFI etc.)
+                 * This is because they are ephemeral volumes or rarely read/written by Windows systems.
+                 */
+                continue;
+            }
+        }
+        else {
+            continue;
+        }
+
+        has_mount_point = GetVolumePathNamesForVolumeNameW(volume_name_w,
+                                                           path_names_w,
+                                                           ARRAYSIZE(path_names_w),
+                                                           &path_names_len) && path_names_w[0] != L'\0';
+
+        if (has_mount_point) {
+            wcstombs(volume_label_utf8, path_names_w, MAX_PATH - 1);
+            size_t len = strlen(volume_label_utf8);
+            if (len > 1 && (volume_label_utf8[len - 1] == '\\' || volume_label_utf8[len - 1] == '/')) {
+                volume_label_utf8[len - 1] = '\0';
+            }
+        }
+        else {
+            if (we_get_volume_perflib_instance_name(volume_name_w,
+                                                    perflib_instance_name_w,
+                                                    ARRAYSIZE(perflib_instance_name_w))) {
+                wcstombs(volume_label_utf8, perflib_instance_name_w, MAX_PATH - 1);
+            }
+            else {
+                continue;
+            }
+        }
+
+        /* Apply the same filtering logic as perflib */
+        if (we_logical_disk_instance_hook(volume_label_utf8, ctx) != 0) {
+            continue;
+        }
+
+        if (GetDiskFreeSpaceExW(volume_name_w,
+                                &free_bytes_available,
+                                &total_number_of_bytes,
+                                &total_number_of_free_bytes)) {
+            cmt_gauge_set(ctx->logical_disk.size_bytes, timestamp,
+                          (double)total_number_of_bytes.QuadPart,
+                          1, (char *[]) {volume_label_utf8});
+
+            cmt_gauge_set(ctx->logical_disk.free_bytes, timestamp,
+                          (double)total_number_of_free_bytes.QuadPart,
+                          1, (char *[]) {volume_label_utf8});
+        }
+        else {
+            flb_plg_warn(ctx->ins, "Could not get disk space for volume %s, error %lu",
+                         volume_label_utf8, GetLastError());
+        }
+    } while (FindNextVolumeW(h_find_volume, volume_name_w, ARRAYSIZE(volume_name_w)));
+
+    FindVolumeClose(h_find_volume);
+    return 0;
+}
+
 int we_logical_disk_update(struct flb_we *ctx)
 {
+    int result;
     if (!ctx->logical_disk.operational) {
         flb_plg_error(ctx->ins, "logical_disk collector not yet in operational state");
 
         return -1;
     }
 
-    return we_perflib_update_counters(ctx,
-                                      ctx->logical_disk.query,
-                                      ctx->logical_disk.metric_sources,
-                                      we_logical_disk_instance_hook,
-                                      we_logical_disk_label_prepend_hook);
+    /* Update I/O counters from Perflib */
+    result = we_perflib_update_counters(ctx,
+                                        ctx->logical_disk.query,
+                                        ctx->logical_disk.metric_sources,
+                                        we_logical_disk_instance_hook,
+                                        we_logical_disk_label_prepend_hook);
+    if (result != 0) {
+        flb_plg_error(ctx->ins, "could not update logical_disk collector for perflib part");
+    }
+
+    /* Update size/free metrics from Windows API */
+    result = we_logical_disk_update_from_api(ctx);
+    if (result != 0) {
+        flb_plg_error(ctx->ins, "could not update logical_disk collector for api part");
+        return -1;
+    }
+
+    return 0;
 }

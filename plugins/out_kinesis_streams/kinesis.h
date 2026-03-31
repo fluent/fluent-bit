@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,12 +26,11 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/aws/flb_aws_aggregation.h>
 
 #define DEFAULT_TIME_KEY_FORMAT "%Y-%m-%dT%H:%M:%S"
 
 #define FLB_KINESIS_DEFAULT_HTTPS_PORT    443
-#define FLB_KINESIS_MIN_PORT              1
-#define FLB_KINESIS_MAX_PORT              65535
 
 /* buffers used for each flush */
 struct flush {
@@ -57,6 +56,10 @@ struct flush {
     /* buffer used to temporarily hold an event during processing */
     char *event_buf;
     size_t event_buf_size;
+
+    /* aggregation buffer for simple_aggregation mode */
+    struct flb_aws_agg_buffer agg_buf;
+    int agg_buf_initialized;
 
     int records_sent;
     int records_processed;
@@ -94,9 +97,11 @@ struct flb_kinesis {
     const char *log_key;
     const char *external_id;
     int retry_requests;
+    int simple_aggregation;
+    int compression;
     char *sts_endpoint;
     int custom_endpoint;
-    int port;
+    uint16_t port;
     char *profile;
 
     /* in this plugin the 'random' partition key is a uuid + fluent tag + timestamp */

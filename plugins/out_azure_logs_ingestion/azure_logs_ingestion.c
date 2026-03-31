@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -25,8 +25,10 @@
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_hmac.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
 
 #include "azure_logs_ingestion.h"
@@ -54,17 +56,17 @@ static int cb_azure_logs_ingestion_init(struct flb_output_instance *ins,
     allocates sds string */
 static int az_li_format(const void *in_buf, size_t in_bytes,
                         char **out_buf, size_t *out_size,
-                        struct flb_az_li *ctx)
+                        struct flb_az_li *ctx,
+                        struct flb_config *config)
 {
     int i;
+    int ret;
     int array_size = 0;
     int map_size;
-    size_t off = 0;
     double t;
     struct flb_time tm;
-    msgpack_unpacked result;
-    msgpack_object root;
-    msgpack_object *obj;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
     msgpack_object map;
     msgpack_object k;
     msgpack_object v;
@@ -79,26 +81,28 @@ static int az_li_format(const void *in_buf, size_t in_bytes,
     int len;
 
     /* Count number of items */
-    array_size = flb_mp_count(in_buf, in_bytes);
-    msgpack_unpacked_init(&result);
+    array_size = flb_mp_count_log_records(in_buf, in_bytes);
 
     /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
     msgpack_pack_array(&mp_pck, array_size);
 
-    off = 0;
-    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        root = result.data;
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) in_buf, in_bytes);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return -1;
+    }
 
-        /* Get timestamp */
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
+    while ((ret = flb_log_event_decoder_next(&log_decoder, &log_event)) ==
+           FLB_EVENT_DECODER_SUCCESS) {
+        flb_time_copy(&tm, &log_event.timestamp);
 
         /* Create temporary msgpack buffer */
         msgpack_sbuffer_init(&tmp_sbuf);
         msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
-        map = root.via.array.ptr[1];
+        map = *log_event.body;
         map_size = map.via.map.size;
 
         msgpack_pack_map(&mp_pck, map_size + 1);
@@ -141,16 +145,17 @@ static int az_li_format(const void *in_buf, size_t in_bytes,
         msgpack_sbuffer_destroy(&tmp_sbuf);
     }
 
-    record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                         config->json_escape_unicode);
     if (!record) {
         flb_errno();
         msgpack_sbuffer_destroy(&mp_sbuf);
-        msgpack_unpacked_destroy(&result);
+        flb_log_event_decoder_destroy(&log_decoder);
         return -1;
     }
 
     msgpack_sbuffer_destroy(&mp_sbuf);
-    msgpack_unpacked_destroy(&result);
+    flb_log_event_decoder_destroy(&log_decoder);
 
     *out_buf = record;
     *out_size = flb_sds_len(record);
@@ -266,7 +271,8 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
 
     /* Convert binary logs into a JSON payload */
     ret = az_li_format(event_chunk->data, event_chunk->size,
-                       &json_payload, &json_payload_size, ctx);
+                       &json_payload, &json_payload_size, ctx,
+                       config);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);

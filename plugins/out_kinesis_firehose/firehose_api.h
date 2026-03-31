@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -37,7 +37,8 @@
 void flush_destroy(struct flush *buf);
 
 int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
-                             const char *data, size_t bytes);
+                             const char *data, size_t bytes,
+                             struct flb_config *config);
 
 int put_record_batch(struct flb_firehose *ctx, struct flush *buf,
                      size_t payload_size, int num_records);

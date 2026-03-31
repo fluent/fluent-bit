@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -94,8 +94,14 @@ struct flb_net_setup {
     /* allow this port to be shared */
     int   share_port;
 
+    /* backlog size for listening sockets */
+    int   backlog;
+
     /* maximum number of allowed active TCP connections */
     int max_worker_connections;
+
+    /* If true, ignore HTTP_PROXY, NO_PROXY, etc. */
+    int proxy_env_ignore;
 };
 
 /* Defines a host service and it properties */
@@ -155,7 +161,8 @@ flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port,
                                  char *source_addr);
 
 int flb_net_tcp_fd_connect(flb_sockfd_t fd, const char *host, unsigned long port);
-flb_sockfd_t flb_net_server(const char *port, const char *listen_addr, int share_port);
+flb_sockfd_t flb_net_server(const char *port, const char *listen_addr,
+                            int backlog, int share_port);
 flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr, int share_port);
 flb_sockfd_t flb_net_server_unix(const char *listen_path, int stream_mode,
                                  int backlog, int share_port);

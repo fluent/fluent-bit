@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -266,6 +266,13 @@ int flb_log_event_encoder_dynamic_field_init(
 void flb_log_event_encoder_dynamic_field_destroy(
     struct flb_log_event_encoder_dynamic_field *field)
 {
+    /*
+     * Ensure any outstanding scopes are cleaned up before releasing the
+     * underlying buffer. Otherwise these allocations would leak if the
+     * caller did not properly flush or rollback all scopes.
+     */
+    flb_log_event_encoder_dynamic_field_reset(field);
+
     msgpack_sbuffer_destroy(&field->buffer);
 
     field->initialized = FLB_FALSE;

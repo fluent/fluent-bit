@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -79,6 +79,10 @@ static struct flb_ml_stream_group *stream_group_create(struct flb_ml_stream *mst
     msgpack_sbuffer_init(&group->mp_sbuf);
     msgpack_packer_init(&group->mp_pck, &group->mp_sbuf, msgpack_sbuffer_write);
 
+    group->truncated = FLB_FALSE;
+    /* parent stream reference */
+    group->stream = mst;
+
     mk_list_add(&group->_head, &mst->groups);
 
     return group;
@@ -143,6 +147,7 @@ static void stream_group_destroy(struct flb_ml_stream_group *group)
     msgpack_sbuffer_destroy(&group->mp_sbuf);
 
     mk_list_del(&group->_head);
+    flb_ml_stream_group_purge_metadata(group);
     flb_free(group);
 }
 

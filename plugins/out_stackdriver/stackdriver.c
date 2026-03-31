@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -50,6 +50,10 @@ pthread_key_t oauth2_type;
 pthread_key_t oauth2_token;
 pthread_key_t oauth2_token_expires;
 
+static int oauth2_cache_initialized = FLB_FALSE;
+static int oauth2_cache_users = 0;
+static pthread_mutex_t oauth2_cache_lock = PTHREAD_MUTEX_INITIALIZER;
+
 static void oauth2_cache_exit(void *ptr)
 {
     if (ptr) {
@@ -64,12 +68,60 @@ static void oauth2_cache_free_expiration(void *ptr)
     }
 }
 
-static void oauth2_cache_init()
+static int oauth2_cache_init()
 {
-    /* oauth2 pthread key */
-    pthread_key_create(&oauth2_type, oauth2_cache_exit);
-    pthread_key_create(&oauth2_token, oauth2_cache_exit);
-    pthread_key_create(&oauth2_token_expires, oauth2_cache_free_expiration);
+    int ret;
+
+    ret = 0;
+
+    pthread_mutex_lock(&oauth2_cache_lock);
+
+    if (oauth2_cache_initialized == FLB_FALSE) {
+        /* oauth2 pthread key */
+        ret = pthread_key_create(&oauth2_type, oauth2_cache_exit);
+        if (ret != 0) {
+            goto done;
+        }
+        ret = pthread_key_create(&oauth2_token, oauth2_cache_exit);
+        if (ret != 0) {
+            pthread_key_delete(oauth2_type);
+            goto done;
+        }
+        ret = pthread_key_create(&oauth2_token_expires,
+                                 oauth2_cache_free_expiration);
+        if (ret != 0) {
+            pthread_key_delete(oauth2_type);
+            pthread_key_delete(oauth2_token);
+            goto done;
+        }
+        oauth2_cache_initialized = FLB_TRUE;
+    }
+
+    if (ret == 0) {
+        oauth2_cache_users++;
+    }
+
+done:
+    pthread_mutex_unlock(&oauth2_cache_lock);
+    return ret;
+}
+
+static void oauth2_cache_cleanup(void)
+{
+    pthread_mutex_lock(&oauth2_cache_lock);
+
+    if (oauth2_cache_users > 0) {
+        oauth2_cache_users--;
+        if (oauth2_cache_users == 0 &&
+            oauth2_cache_initialized == FLB_TRUE) {
+            pthread_key_delete(oauth2_type);
+            pthread_key_delete(oauth2_token);
+            pthread_key_delete(oauth2_token_expires);
+            oauth2_cache_initialized = FLB_FALSE;
+        }
+    }
+
+    pthread_mutex_unlock(&oauth2_cache_lock);
 }
 
 /* Set oauth2 type and token in pthread keys */
@@ -396,7 +448,7 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
     /* Copy string to prevent race conditions (get_oauth2 can free the string) */
     if (ret == 0) {
         /* Update pthread keys cached values */
-        oauth2_cache_set(ctx->o->token_type, ctx->o->access_token, ctx->o->expires);
+        oauth2_cache_set(ctx->o->token_type, ctx->o->access_token, ctx->o->expires_at);
 
         /* Compose outgoing buffer using cached values */
         output = oauth2_cache_to_token();
@@ -1221,7 +1273,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     /* Load config map */
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
-        return -1;
+        goto error;
     }
 
     /* Set context */
@@ -1237,10 +1289,20 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     }
 
     /* Initialize oauth2 cache pthread keys */
-    oauth2_cache_init();
+    ret = oauth2_cache_init();
+    if (ret != 0) {
+        flb_plg_error(ins, "failed to initialize oauth2 cache");
+        goto error;
+    }
+    ctx->oauth2_cache_acquired = FLB_TRUE;
 
     /* Create mutex for acquiring oauth tokens (they are shared across flush coroutines) */
-    pthread_mutex_init(&ctx->token_mutex, NULL);
+    ret = pthread_mutex_init(&ctx->token_mutex, NULL);
+    if (ret != 0) {
+        flb_plg_error(ins, "failed to initialize token mutex");
+        goto error;
+    }
+    ctx->token_mutex_initialized = FLB_TRUE;
 
     /* Create Upstream context for Stackdriver Logging (no oauth2 service) */
     ctx->u = flb_upstream_create_url(config, ctx->cloud_logging_write_url,
@@ -1253,15 +1315,15 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
 
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "upstream creation failed");
-        return -1;
+        goto error;
     }
     if (!ctx->metadata_u) {
         flb_plg_error(ctx->ins, "metadata upstream creation failed");
-        return -1;
+        goto error;
     }
     if (!ctx->o) {
         flb_plg_error(ctx->ins, "cannot create oauth2 context");
-        return -1;
+        goto error;
     }
     flb_output_upstream_set(ctx->u, ins);
 
@@ -1282,19 +1344,19 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     if (ctx->metadata_server_auth) {
         ret = gce_metadata_read_project_id(ctx);
         if (ret == -1) {
-            return -1;
+            goto error;
         }
 
         if (ctx->resource_type != RESOURCE_TYPE_GENERIC_NODE
             && ctx->resource_type != RESOURCE_TYPE_GENERIC_TASK) {
             ret = gce_metadata_read_zone(ctx);
             if (ret == -1) {
-                return -1;
+                goto error;
             }
 
             ret = gce_metadata_read_instance_id(ctx);
             if (ret == -1) {
-                return -1;
+                goto error;
             }
         }
     }
@@ -1302,7 +1364,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     /* Validate project_id */
     if (!ctx->project_id) {
         flb_plg_error(ctx->ins, "property 'project_id' is not set");
-        return -1;
+        goto error;
     }
 
     if (!ctx->export_to_project_id) {
@@ -1312,10 +1374,22 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     ret = flb_stackdriver_regex_init(ctx);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "failed to init stackdriver custom regex");
-        return -1;
+        goto error;
     }
 
     return 0;
+
+error:
+    if (ctx->token_mutex_initialized == FLB_TRUE) {
+        pthread_mutex_destroy(&ctx->token_mutex);
+        ctx->token_mutex_initialized = FLB_FALSE;
+    }
+    if (ctx->oauth2_cache_acquired == FLB_TRUE) {
+        oauth2_cache_cleanup();
+        ctx->oauth2_cache_acquired = FLB_FALSE;
+    }
+    flb_stackdriver_conf_destroy(ctx);
+    return -1;
 }
 
 static int validate_severity_level(severity_t * s,
@@ -1697,7 +1771,9 @@ static int pack_payload(int insert_id_extracted,
 static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                                     int total_records,
                                     const char *tag, int tag_len,
-                                    const void *data, size_t bytes)
+                                    const void *data, size_t bytes,
+                                    struct flb_config *config,
+                                    int *formatted_records)
 {
     int len;
     int ret;
@@ -1776,6 +1852,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     /* Count number of records */
     array_size = total_records;
 
+    if (formatted_records != NULL) {
+        *formatted_records = 0;
+    }
+
     /* Parameters for labels */
     msgpack_object *payload_labels_ptr;
     int labels_size = 0;
@@ -1816,6 +1896,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     /* Sounds like this should compare to -1 instead of zero */
     if (array_size == 0) {
         return NULL;
+    }
+
+    if (formatted_records != NULL) {
+        *formatted_records = array_size;
     }
 
     /* Create temporal msgpack buffer */
@@ -2576,7 +2660,8 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     flb_log_event_decoder_destroy(&log_decoder);
 
     /* Convert from msgpack to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                          config->json_escape_unicode);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (!out_buf) {
@@ -2601,10 +2686,10 @@ static int stackdriver_format_test(struct flb_config *config,
     struct flb_stackdriver *ctx = plugin_context;
 
     /* Count number of records */
-    total_records = flb_mp_count(data, bytes);
+    total_records = flb_mp_count_log_records(data, bytes);
 
     payload = stackdriver_format(ctx, total_records,
-                                (char *) tag, tag_len, data, bytes);
+                                (char *) tag, tag_len, data, bytes, config, NULL);
     if (payload == NULL) {
         return -1;
     }
@@ -2653,7 +2738,7 @@ static void update_http_metrics(struct flb_stackdriver* ctx,
 }
 
 static void update_retry_metric(struct flb_stackdriver *ctx,
-                                 struct flb_event_chunk *event_chunk,
+                                 int retried_records,
                                  uint64_t ts,
                                  int http_status)
 {
@@ -2663,7 +2748,7 @@ static void update_retry_metric(struct flb_stackdriver *ctx,
     /* convert status to string format */
     snprintf(tmp, sizeof(tmp) - 1, "%i", http_status);
     cmt_counter_add(ctx->cmt_retried_records_total,
-                    ts, event_chunk->total_events, 2, (char *[]) {tmp, name});
+                    ts, retried_records, 2, (char *[]) {tmp, name});
 
 }
 #endif
@@ -2671,7 +2756,6 @@ static void update_retry_metric(struct flb_stackdriver *ctx,
 static int parse_partial_success_response(struct flb_http_client* c,
                                           struct flb_stackdriver* ctx,
                                           uint64_t ts,
-                                          int total_events,
                                           int* grpc_status_codes)
 {
     int ret;
@@ -2855,6 +2939,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     int code;
     int ret_partial_success;
     int ret_code = FLB_RETRY;
+    int formatted_records = 0;
     int grpc_status_counts[GRPC_STATUS_CODES_SIZE] = {0};
     size_t b_sent;
     flb_sds_t token;
@@ -2877,7 +2962,9 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     payload_buf = stackdriver_format(ctx,
                                      event_chunk->total_events,
                                      event_chunk->tag, flb_sds_len(event_chunk->tag),
-                                     event_chunk->data, event_chunk->size);
+                                     event_chunk->data, event_chunk->size,
+                                     config,
+                                     &formatted_records);
     if (!payload_buf) {
 #ifdef FLB_HAVE_METRICS
         cmt_counter_inc(ctx->cmt_failed_requests,
@@ -2905,7 +2992,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
 
-        update_retry_metric(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
+        update_retry_metric(ctx, formatted_records, ts, STACKDRIVER_NET_ERROR);
 #endif
         flb_sds_destroy(payload_buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -2988,7 +3075,6 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
                 parse_partial_success_response(c,
                                                ctx,
                                                ts,
-                                               (int) event_chunk->total_events,
                                                grpc_status_counts);
 
             int failed_records = 0;
@@ -3001,16 +3087,16 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
               cmt_counter_add(ctx->ins->cmt_dropped_records, ts,
                               failed_records, 1, (char* []) {name});
               int successful_records =
-                  (int) event_chunk->total_events - failed_records;
+                  formatted_records - failed_records;
               if (successful_records != 0) {
                 add_record_metrics(ctx, ts, successful_records, 200, 0);
               }
             }
             else {
-              add_record_metrics(ctx, ts, (int) event_chunk->total_events,
+              add_record_metrics(ctx, ts, formatted_records,
                                  c->resp.status, -1);
               cmt_counter_add(ctx->ins->cmt_dropped_records, ts,
-                              (int) event_chunk->total_events, 1,
+                              formatted_records, 1,
                               (char* []) {name});
             }
 #endif
@@ -3041,7 +3127,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         if (write_entries_latency > 0.0) {
           cmt_histogram_observe(ctx->cmt_write_entries_latency, ts, write_entries_latency, 1, (char *[]) {name});
         }
-        add_record_metrics(ctx, ts, (int) event_chunk->total_events, 200, 0);
+        add_record_metrics(ctx, ts, formatted_records, 200, 0);
 
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS, 1, ctx->ins->metrics);
@@ -3054,7 +3140,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     }
 
     if (ret_code == FLB_RETRY) {
-        update_retry_metric(ctx, event_chunk, ts, c->resp.status);
+        update_retry_metric(ctx, formatted_records, ts, c->resp.status);
     }
 
     /* Update metrics counter by using labels/http status code */
@@ -3084,6 +3170,10 @@ static int cb_stackdriver_exit(void *data, struct flb_config *config)
         return -1;
     }
 
+    if (ctx->oauth2_cache_acquired == FLB_TRUE) {
+        oauth2_cache_cleanup();
+        ctx->oauth2_cache_acquired = FLB_FALSE;
+    }
     flb_stackdriver_conf_destroy(ctx);
     return 0;
 }

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -90,50 +90,33 @@ static int get_chunk_event_type(struct flb_input_instance *ins, msgpack_object o
     return type;
 }
 
-static int is_gzip_compressed(msgpack_object options)
+static int get_compression_type(msgpack_object options)
 {
     int i;
-    msgpack_object k;
-    msgpack_object v;
+    msgpack_object k, v;
 
     if (options.type != MSGPACK_OBJECT_MAP) {
         return -1;
     }
 
-
     for (i = 0; i < options.via.map.size; i++) {
         k = options.via.map.ptr[i].key;
         v = options.via.map.ptr[i].val;
 
-        if (k.type != MSGPACK_OBJECT_STR) {
-            return -1;
-        }
-
-        if (k.via.str.size != 10) {
-            continue;
-        }
-
-        if (strncmp(k.via.str.ptr, "compressed", 10) == 0) {
-            if (v.type != MSGPACK_OBJECT_STR) {
-                return -1;
+        if (k.type == MSGPACK_OBJECT_STR && k.via.str.size == 10 &&
+            strncmp(k.via.str.ptr, "compressed", 10) == 0) {
+            if (v.type == MSGPACK_OBJECT_STR) {
+                if (v.via.str.size == 4 && strncmp(v.via.str.ptr, "gzip", 4) == 0) {
+                    return FLB_COMPRESSION_ALGORITHM_GZIP;
+                }
+                if (v.via.str.size == 4 && strncmp(v.via.str.ptr, "zstd", 4) == 0) {
+                    return FLB_COMPRESSION_ALGORITHM_ZSTD;
+                }
             }
-
-            if (v.via.str.size != 4) {
-                return -1;
-            }
-
-            if (strncmp(v.via.str.ptr, "gzip", 4) == 0) {
-                return FLB_TRUE;
-            }
-            else if (strncmp(v.via.str.ptr, "text", 4) == 0) {
-                return FLB_FALSE;
-            }
-
-            return -1;
         }
     }
 
-    return FLB_FALSE;
+    return FLB_COMPRESSION_ALGORITHM_NONE;
 }
 
 static inline void print_msgpack_error_code(struct flb_input_instance *in,
@@ -271,7 +254,6 @@ int flb_secure_forward_set_helo(struct flb_input_instance *in,
 static int send_helo(struct flb_input_instance *in, struct flb_connection *connection,
                      struct flb_in_fw_helo *helo)
 {
-    int result;
     size_t sent;
     ssize_t bytes;
     msgpack_packer mp_pck;
@@ -319,16 +301,10 @@ static int send_helo(struct flb_input_instance *in, struct flb_connection *conne
 
     if (bytes == -1) {
         flb_plg_error(in, "cannot send HELO");
-
-        result = -1;
-    }
-    else {
-        result = 0;
+        return -1;
     }
 
-    result = flb_secure_forward_set_helo(in, helo, nonce, user_auth_salt);
-
-    return result;
+    return flb_secure_forward_set_helo(in, helo, nonce, user_auth_salt);
 }
 
 static void flb_secure_forward_format_bin_to_hex(uint8_t *buf, size_t len, char *out)
@@ -491,7 +467,10 @@ static int user_authentication(struct flb_input_instance *ins,
 
     mk_list_foreach_safe(head, tmp, &ctx->users) {
         user = mk_list_entry(head, struct flb_in_fw_user, _head);
-        if (strncmp(user->name, username, strlen(user->name)) != 0) {
+        if (flb_sds_len(user->name) != flb_sds_len(username)) {
+            continue;
+        }
+        if (strncmp(user->name, username, flb_sds_len(user->name)) != 0) {
             continue;
         }
 
@@ -500,6 +479,10 @@ static int user_authentication(struct flb_input_instance *ins,
         }
 
         userauth_digest = flb_calloc(128, sizeof(char));
+        if (!userauth_digest) {
+            flb_errno();
+            return FLB_FALSE;
+        }
 
         if (flb_secure_forward_password_digest(ins, conn,
                                                username, user->password,
@@ -535,7 +518,6 @@ static int check_ping(struct flb_input_instance *ins,
     flb_sds_t username = NULL;
     flb_sds_t password_digest = NULL;
     size_t hostname_len = 0;
-    size_t shared_key_digest_len = 0;
     size_t password_digest_len = 0;
     char *serverside = NULL;
     size_t user_count = 0;
@@ -543,6 +525,10 @@ static int check_ping(struct flb_input_instance *ins,
     struct flb_in_fw_config *ctx = conn->ctx;
 
     serverside = flb_calloc(128, sizeof(char));
+    if (!serverside) {
+        flb_errno();
+        return -1;
+    }
 
     /* Wait for client PING */
     ret = secure_forward_read(ins, conn->connection, buf, sizeof(buf) - 1, &out_len);
@@ -603,7 +589,7 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid shared_key_salt type message");
         flb_free(serverside);
-        flb_free(hostname);
+        flb_sds_destroy(hostname);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -614,22 +600,21 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid shared_key_digest type message");
         flb_free(serverside);
-        flb_free(hostname);
+        flb_sds_destroy(hostname);
         msgpack_unpacked_destroy(&result);
-
         return -1;
     }
+
     shared_key_digest = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
-    shared_key_digest_len = o.via.str.size;
 
     /* username */
     o = root.via.array.ptr[4];
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid username type message");
         flb_free(serverside);
-        flb_free(hostname);
-        flb_free(shared_key_salt);
-        flb_free(shared_key_digest);
+        flb_sds_destroy(hostname);
+        flb_sds_destroy(shared_key_salt);
+        flb_sds_destroy(shared_key_digest);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -640,10 +625,10 @@ static int check_ping(struct flb_input_instance *ins,
     if (o.type != MSGPACK_OBJECT_STR) {
         flb_plg_error(ins, "Invalid password_digest type message");
         flb_free(serverside);
-        flb_free(hostname);
-        flb_free(shared_key_salt);
-        flb_free(shared_key_digest);
-        flb_free(username);
+        flb_sds_destroy(hostname);
+        flb_sds_destroy(shared_key_salt);
+        flb_sds_destroy(shared_key_digest);
+        flb_sds_destroy(username);
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -656,11 +641,11 @@ static int check_ping(struct flb_input_instance *ins,
                                            shared_key_salt, hostname, hostname_len,
                                            serverside, 128)) {
         flb_free(serverside);
-        flb_free(username);
-        flb_free(password_digest);
-        flb_free(shared_key_salt);
-        flb_free(shared_key_digest);
-        flb_free(hostname);
+        flb_sds_destroy(username);
+        flb_sds_destroy(password_digest);
+        flb_sds_destroy(shared_key_salt);
+        flb_sds_destroy(shared_key_digest);
+        flb_sds_destroy(hostname);
         flb_plg_error(ctx->ins, "failed to hash shared_key");
         return -1;
     }
@@ -783,11 +768,10 @@ static int send_pong(struct flb_input_instance *in,
     if (bytes == -1) {
         flb_plg_error(in, "cannot send PONG");
 
-        result = -1;
-    }
-    else if (userauth == FLB_FALSE)  {
-        flb_plg_error(in, "cannot send PONG");
-
+        /*
+         * The 'userauth == FLB_FALSE' case is not an error; it's a successful
+         * transmission of a failure notification. We only fail if the write fails.
+         */
         result = -1;
     }
     else {
@@ -836,7 +820,7 @@ static int send_ack(struct flb_input_instance *in, struct fw_conn *conn,
 
 }
 
-static size_t get_options_metadata(msgpack_object *arr, int expected, size_t *idx)
+static int get_options_metadata(msgpack_object *arr, int expected, int *idx)
 {
     size_t i;
     msgpack_object *options;
@@ -889,7 +873,7 @@ static size_t get_options_metadata(msgpack_object *arr, int expected, size_t *id
             return -1;
         }
 
-        *idx = i;
+        *idx = (int) i;
 
         return 0;
     }
@@ -897,7 +881,7 @@ static size_t get_options_metadata(msgpack_object *arr, int expected, size_t *id
     return 0;
 }
 
-static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
+static int get_options_chunk(msgpack_object *arr, int expected, int *idx)
 {
     size_t i;
     msgpack_object *options;
@@ -950,7 +934,7 @@ static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
             return -1;
         }
 
-        *idx = i;
+        *idx = (int) i;
         return 0;
     }
 
@@ -1084,8 +1068,19 @@ static int fw_process_message_mode_entry(
 static size_t receiver_recv(struct fw_conn *conn, char *buf, size_t try_size) {
     size_t off;
     size_t actual_size;
+    size_t buf_len;
 
-    off = conn->buf_len - conn->rest;
+    if (conn->rest > conn->buf_len) {
+        return 0;
+    }
+
+    buf_len = conn->buf_len;
+    off = buf_len - conn->rest;
+
+    if (off > buf_len) {
+        return 0;
+    }
+
     actual_size = try_size;
 
     if (actual_size > conn->rest) {
@@ -1155,8 +1150,8 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
     else if (event_type == FLB_EVENT_TYPE_TRACES) {
         off = 0;
         ret = ctr_decode_msgpack_create(&ctr, (char *) data, len, &off);
-        if (ret == -1) {
-            flb_error("could not decode trace message. ret=%d", ret);
+        if (ret != CTR_DECODE_MSGPACK_SUCCESS) {
+            flb_plg_error(ins, "could not decode trace message. ret=%d", ret);
             return -1;
         }
 
@@ -1168,7 +1163,7 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
             ctr_decode_msgpack_destroy(ctr);
             return -1;
         }
-        ctr_decode_msgpack_destroy(ctr);
+        /* Note: flb_input_trace_append takes ownership of ctr and destroys it on success */
     }
 
     return 0;
@@ -1194,35 +1189,45 @@ int fw_prot_secure_forward_handshake_start(struct flb_input_instance *ins,
 int fw_prot_secure_forward_handshake(struct flb_input_instance *ins,
                                      struct fw_conn *conn)
 {
-    int ret;
     char *shared_key_salt = NULL;
     int userauth = FLB_TRUE;
     flb_sds_t reason = NULL;
+    int ping_ret;
+    int pong_ret;
 
     reason = flb_sds_create_size(32);
     flb_plg_debug(ins, "protocol: checking PING");
-    ret = check_ping(ins, conn, &shared_key_salt);
-    if (ret == -1) {
+    ping_ret = check_ping(ins, conn, &shared_key_salt);
+    if (ping_ret == -1) {
         flb_plg_error(ins, "handshake error checking PING");
 
         goto error;
     }
-    else if (ret == -2) {
+    else if (ping_ret == -2) {
         flb_plg_warn(ins, "user authentication is failed");
         userauth = FLB_FALSE;
         reason = flb_sds_cat(reason, "username/password mismatch", 26);
     }
 
     flb_plg_debug(ins, "protocol: sending PONG");
-    ret = send_pong(ins, conn, shared_key_salt, userauth, reason);
-    if (ret == -1) {
-        flb_plg_error(ins, "handshake error sending PONG");
+    pong_ret = send_pong(ins, conn, shared_key_salt, userauth, reason);
+    if (pong_ret == -1) {
+        flb_plg_error(ins, "handshake error: could not send PONG to client");
 
         goto error;
     }
 
     flb_sds_destroy(shared_key_salt);
     flb_sds_destroy(reason);
+
+    /*
+     * If the initial authentication check failed (either shared_key or user),
+     * we have successfully notified the client with a PONG failure message,
+     * so we must now terminate the handshake by returning an error.
+     */
+    if (ping_ret < 0) {
+        return -1;
+    }
 
     return 0;
 
@@ -1237,21 +1242,31 @@ error:
     return -1;
 }
 
+static int sniff_magic(const uint8_t *p, size_t n) {
+    if (n >= 2 && p[0]==0x1f && p[1]==0x8b) {
+        return FLB_COMPRESSION_ALGORITHM_GZIP;
+    }
+    if (n >= 4 && p[0]==0x28 && p[1]==0xb5 &&
+                  p[2]==0x2f && p[3]==0xfd) {
+        return FLB_COMPRESSION_ALGORITHM_ZSTD;
+    }
+
+    return FLB_COMPRESSION_ALGORITHM_NONE;
+}
+
 int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
 {
     int ret;
     int stag_len;
     int event_type;
     int contain_options = FLB_FALSE;
+    int chunk_id = -1;
+    int metadata_id = -1;
     size_t index = 0;
-    size_t chunk_id = -1;
-    size_t metadata_id = -1;
     const char *stag;
     flb_sds_t out_tag = NULL;
     size_t bytes;
     size_t recv_len;
-    size_t gz_size;
-    void *gz_data;
     msgpack_object tag;
     msgpack_object entry;
     msgpack_object map;
@@ -1337,11 +1352,17 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
              *
              *  https://github.com/msgpack/msgpack-c/issues/514
              */
+            if (bytes > 0 && all_used > SIZE_MAX - bytes) {
+                flb_plg_error(ctx->ins, "incoming frame size accounting overflow");
+                goto cleanup_msgpack;
+            }
+
             all_used += bytes;
 
 
             /* Map the array */
             root = result.data;
+            contain_options = FLB_FALSE;
 
             if (root.type != MSGPACK_OBJECT_ARRAY) {
                 flb_plg_debug(ctx->ins,
@@ -1515,157 +1536,193 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 }
 
                 if (data) {
-                    ret = is_gzip_compressed(root.via.array.ptr[2]);
-                    if (ret == -1) {
-                        flb_plg_error(ctx->ins, "invalid 'compressed' option");
-                        msgpack_unpacked_destroy(&result);
-                        msgpack_unpacker_free(unp);
-                        flb_sds_destroy(out_tag);
-                        return -1;
+                    if (len > ctx->buffer_max_size) {
+                        flb_plg_error(ctx->ins,
+                                      "packedforward payload too large (%zu bytes), limit=%zu",
+                                      len, ctx->buffer_max_size);
+                        goto cleanup_msgpack;
                     }
 
-                    if (ret == FLB_TRUE) {
-                        size_t prev_pos = 0;
-                        size_t gzip_payloads_count = 0;
-                        size_t loop = 0;
-                        size_t *gzip_borders = NULL;
-                        const size_t original_len = len;
+                    /* Get event type early for use in both compressed/uncompressed paths */
+                    event_type = FLB_EVENT_TYPE_LOGS;
+                    if (contain_options) {
+                        ret = get_chunk_event_type(ins, root.via.array.ptr[2]);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins, "invalid chunk event type");
+                            msgpack_unpacked_destroy(&result);
+                            flb_sds_destroy(out_tag);
+                            msgpack_unpacker_free(unp);
+                            return -1;
+                        }
+                        event_type = ret;
+                    }
 
-                        gzip_payloads_count = flb_gzip_count(data, len, NULL, 0);
-                        flb_plg_debug(ctx->ins, "concatenated gzip payload count is %zd",
-                                     gzip_payloads_count);
-                        if (gzip_payloads_count > 0) {
-                            gzip_borders = (size_t *)flb_calloc(1, sizeof(size_t) * (gzip_payloads_count + 1));
-                            if (gzip_borders == NULL) {
-                                flb_errno();
-                                return -1;
+                    /* Initialize decompressor on first compressed chunk */
+                    if (conn->d_ctx == NULL && contain_options) {
+                        int opt_type = contain_options ? get_compression_type(root.via.array.ptr[2]) : FLB_COMPRESSION_ALGORITHM_NONE;
+                        int sniff = sniff_magic((const uint8_t *)data, len);
+                        int type = opt_type;
+
+                        if (sniff != FLB_COMPRESSION_ALGORITHM_NONE &&
+                            opt_type != FLB_COMPRESSION_ALGORITHM_NONE &&
+                            sniff != opt_type) {
+                            flb_plg_warn(ctx->ins, "compressed=%s but magic says %s; using magic",
+                                         opt_type == FLB_COMPRESSION_ALGORITHM_ZSTD ? "zstd" : "gzip",
+                                         sniff    == FLB_COMPRESSION_ALGORITHM_ZSTD ? "zstd" : "gzip");
+                            type = sniff;
+                        }
+                        else if (opt_type == FLB_COMPRESSION_ALGORITHM_NONE) {
+                            type = sniff;
+                        }
+                        if (type > 0) {
+                            conn->compression_type = type;
+                            conn->d_ctx = flb_decompression_context_create(
+                                                conn->compression_type,
+                                                FLB_DECOMPRESSION_BUFFER_SIZE);
+                            if (!conn->d_ctx) {
+                                flb_plg_error(ctx->ins, "failed to create decompression context");
+
+                                goto cleanup_msgpack;
                             }
-                            if (flb_gzip_count(data, len, &gzip_borders, gzip_payloads_count) < 0) {
+                        }
+                    }
+
+                    if (conn->compression_type != FLB_COMPRESSION_ALGORITHM_NONE) {
+                        char *decoded_payload = NULL;
+                        char *decomp_buf = NULL;
+                        uint8_t *append_ptr;
+                        size_t available_space;
+                        size_t decomp_len;
+                        size_t total_decompressed;
+                        int decomp_ret;
+                        size_t required_size;
+
+                        total_decompressed = 0;
+
+                        available_space = flb_decompression_context_get_available_space(conn->d_ctx);
+                        if (len > available_space) {
+                            if (conn->d_ctx->input_buffer_length > SIZE_MAX - len) {
                                 flb_plg_error(ctx->ins,
-                                             "failed to traverse boundaries of concatenated gzip payloads");
-                                return -1;
+                                              "decompression input size overflow");
+
+                                goto cleanup_decompress;
+                            }
+
+                            required_size = conn->d_ctx->input_buffer_length + len;
+                            if (required_size > ctx->buffer_max_size) {
+                                flb_plg_error(ctx->ins,
+                                              "compressed payload exceeds limit (%zu bytes)",
+                                              ctx->buffer_max_size);
+
+                                goto cleanup_decompress;
+                            }
+
+                            if (flb_decompression_context_resize_buffer(conn->d_ctx, required_size) != 0) {
+                                flb_plg_error(ctx->ins, "cannot resize decompression buffer");
+
+                                goto cleanup_decompress;
                             }
                         }
+                        append_ptr = flb_decompression_context_get_append_buffer(conn->d_ctx);
+                        memcpy(append_ptr, data, len);
+                        conn->d_ctx->input_buffer_length += len;
 
-                    retry_uncompress:
-                        if (gzip_payloads_count > 0) {
-                            if (loop == 0) {
-                                len = gzip_borders[loop];
-                            }
-                            else if (gzip_borders[loop] == original_len) {
-                                len = original_len - gzip_borders[loop - 1];
-                            }
-                            else if (loop >= 1) {
-                                len = gzip_borders[loop] - gzip_borders[loop - 1];
-                            }
-                        }
-                        flb_plg_trace(ctx->ins,
-                                      "[gzip decompression] loop = %zd, len = %zd, original_len = %zd",
-                                      loop, len, original_len);
+                        decomp_buf = flb_malloc(ctx->buffer_chunk_size);
+                        if (!decomp_buf) {
+                            flb_errno();
 
-                        ret = flb_gzip_uncompress((void *) (data + prev_pos), len,
-                                                  &gz_data, &gz_size);
-                        if (ret == -1) {
-                            flb_plg_error(ctx->ins, "gzip uncompress failure");
-                            msgpack_unpacked_destroy(&result);
-                            msgpack_unpacker_free(unp);
-                            flb_sds_destroy(out_tag);
-                            if (gzip_borders != NULL) {
-                                flb_free(gzip_borders);
-                            }
-                            return -1;
+                            goto cleanup_decompress;
                         }
 
-                        event_type = FLB_EVENT_TYPE_LOGS;
-                        if (contain_options) {
-                            ret = get_chunk_event_type(ins, root.via.array.ptr[2]);
-                            if (ret == -1) {
-                                msgpack_unpacked_destroy(&result);
-                                msgpack_unpacker_free(unp);
-                                flb_sds_destroy(out_tag);
-                                flb_free(gz_data);
-                                if (gzip_borders != NULL) {
-                                    flb_free(gzip_borders);
+                        decoded_payload = flb_malloc(ctx->buffer_max_size);
+                        if (!decoded_payload) {
+                            flb_errno();
+                            flb_free(decomp_buf);
+
+                            goto cleanup_decompress;
+                        }
+
+                        do {
+                            decomp_len = ctx->buffer_chunk_size;
+                            decomp_ret = flb_decompress(conn->d_ctx, decomp_buf, &decomp_len);
+
+                            if (decomp_ret == FLB_DECOMPRESSOR_FAILURE) {
+                                if (decomp_len > 0) {
+                                    flb_plg_error(ctx->ins, "decompression failed, data may be corrupt");
+                                    flb_free(decoded_payload);
+                                    flb_free(decomp_buf);
+
+                                    goto cleanup_decompress;
                                 }
-                                return -1;
-                            }
-                            event_type = ret;
-                        }
-
-                        ret = append_log(ins, conn,
-                                         event_type,
-                                         out_tag, gz_data, gz_size);
-                        if (ret == -1) {
-                            msgpack_unpacked_destroy(&result);
-                            msgpack_unpacker_free(unp);
-                            flb_sds_destroy(out_tag);
-                            flb_free(gz_data);
-                            if (gzip_borders != NULL) {
-                                flb_free(gzip_borders);
+                                break;
                             }
 
-                            return -1;
-                        }
-                        flb_free(gz_data);
+                            if (decomp_len > 0) {
+                                if (total_decompressed > SIZE_MAX - decomp_len) {
+                                    flb_plg_error(ctx->ins,
+                                                  "decompressed output size overflow");
+                                    flb_free(decoded_payload);
+                                    flb_free(decomp_buf);
 
-                        /* a valid payload of gzip is larger than 18 bytes. */
-                        if (gzip_payloads_count > 0) {
-                            if ((gzip_payloads_count - loop) > 0 &&
-                                (original_len - gzip_borders[loop]) >= 18) {
-                                len = original_len - gzip_borders[loop];
-                                flb_plg_debug(ctx->ins, "left unconsumed %zd byte(s)", len);
-                                prev_pos = gzip_borders[loop];
-                                loop++;
-                                goto retry_uncompress;
-                            }
-                            else {
-                                flb_plg_debug(ctx->ins, "left unconsumed %zd byte(s)",
-                                              original_len - gzip_borders[loop]);
-                            }
-                            if (loop == gzip_payloads_count) {
-                                if (gzip_borders != NULL) {
-                                    flb_free(gzip_borders);
+                                    goto cleanup_decompress;
                                 }
+
+                                total_decompressed += decomp_len;
+
+                                if (total_decompressed > ctx->buffer_max_size) {
+                                    flb_plg_error(ctx->ins,
+                                                  "decompressed payload exceeds limit (%zu bytes)",
+                                                  ctx->buffer_max_size);
+                                    flb_free(decoded_payload);
+                                    flb_free(decomp_buf);
+
+                                    goto cleanup_decompress;
+                                }
+
+                                memcpy(decoded_payload + (total_decompressed - decomp_len),
+                                       decomp_buf,
+                                       decomp_len);
+                            }
+                        } while (decomp_len > 0);
+
+                        flb_free(decomp_buf);
+
+                        if (total_decompressed > 0) {
+                            if (append_log(ins,
+                                           conn,
+                                           event_type,
+                                           out_tag,
+                                           decoded_payload,
+                                           total_decompressed) == -1) {
+                                flb_free(decoded_payload);
+
+                                goto cleanup_decompress;
                             }
                         }
+
+                        flb_free(decoded_payload);
+
+                        flb_decompression_context_destroy(conn->d_ctx);
+                        conn->d_ctx = NULL;
+                        conn->compression_type = FLB_COMPRESSION_ALGORITHM_NONE;
                     }
                     else {
-                        event_type = FLB_EVENT_TYPE_LOGS;
-                        if (contain_options) {
-                            ret = get_chunk_event_type(ins, root.via.array.ptr[2]);
-                            if (ret == -1) {
-                                msgpack_unpacked_destroy(&result);
-                                msgpack_unpacker_free(unp);
-                                flb_sds_destroy(out_tag);
-                                return -1;
-                            }
-                            event_type = ret;
-                        }
-
-                        ret = append_log(ins, conn,
-                                         event_type,
-                                         out_tag, data, len);
-                        if (ret == -1) {
-                            msgpack_unpacked_destroy(&result);
-                            msgpack_unpacker_free(unp);
-                            flb_sds_destroy(out_tag);
-                            return -1;
+                        if (append_log(ins, conn, event_type, out_tag, data, len) == -1) {
+                            goto cleanup_msgpack;
                         }
                     }
+                }
 
-                    /* Handle ACK response */
-                    if (chunk_id != -1) {
-                        chunk = root.via.array.ptr[2].via.map.ptr[chunk_id].val;
-                        send_ack(ctx->ins, conn, chunk);
-                    }
+                /* Handle ACK response (common to all paths) */
+                if (chunk_id != -1) {
+                    chunk = root.via.array.ptr[2].via.map.ptr[chunk_id].val;
+                    send_ack(ctx->ins, conn, chunk);
                 }
             }
             else {
                 flb_plg_warn(ctx->ins, "invalid data format, type=%i",
                              entry.type);
-                msgpack_unpacked_destroy(&result);
-                msgpack_unpacker_free(unp);
-                return -1;
+                goto cleanup_msgpack;
             }
 
             ret = msgpack_unpacker_next(unp, &result);
@@ -1692,4 +1749,16 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     };
 
     return 0;
+
+cleanup_decompress:
+    flb_decompression_context_destroy(conn->d_ctx);
+    conn->d_ctx = NULL;
+    conn->compression_type = FLB_COMPRESSION_ALGORITHM_NONE;
+    /* FALLTHRU */
+cleanup_msgpack:
+    msgpack_unpacked_destroy(&result);
+    msgpack_unpacker_free(unp);
+    flb_sds_destroy(out_tag);
+
+    return -1;
 }

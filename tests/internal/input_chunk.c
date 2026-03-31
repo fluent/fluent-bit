@@ -9,6 +9,8 @@
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event_encoder.h>
+#include <cmetrics/cmt_counter.h>
 #include "flb_tests_internal.h"
 #include "chunkio/chunkio.h"
 #include "data/input_chunk/log/test_buffer_drop_chunks.h"
@@ -162,7 +164,17 @@ void do_test(char *system, const char *target, ...)
     int out_ffd;
     char path[PATH_MAX];
     struct tail_test_result result = {0};
+    char *tmpdir;
     char storage_path[PATH_MAX];
+
+    tmpdir = flb_test_env_tmpdir();
+    TEST_CHECK(tmpdir != NULL);
+    if (!tmpdir) {
+        return;
+    }
+    snprintf(storage_path, sizeof(storage_path) - 1, "%s/input-chunk-test-%s",
+             tmpdir, target);
+    flb_free(tmpdir);
 
     result.nMatched = 0;
     result.target = target;
@@ -175,8 +187,6 @@ void do_test(char *system, const char *target, ...)
     set_result(0);
 
     ctx = flb_create();
-
-    snprintf(storage_path, sizeof(storage_path) - 1, "/tmp/input-chunk-test-%s", target);
 
     /* create chunks in /tmp folder */
     ret = flb_service_set(ctx,
@@ -258,6 +268,13 @@ void flb_test_input_chunk_dropping_chunks()
     struct mk_list *head;
     struct flb_input_chunk *ic;
     struct flb_task *task;
+    char *storage_path;
+
+    storage_path = flb_test_tmpdir_cat("/input-chunk-test/");
+    TEST_CHECK(storage_path != NULL);
+    if (!storage_path) {
+        return;
+    }
 
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
@@ -265,7 +282,7 @@ void flb_test_input_chunk_dropping_chunks()
     /* create chunks in /tmp folder */
     ret = flb_service_set(ctx,
                           "flush", "2", "grace", "1",
-                          "storage.path", "/tmp/input-chunk-test/",
+                          "storage.path", storage_path,
                           "Log_Level", "error",
                           NULL);
 
@@ -307,42 +324,7 @@ void flb_test_input_chunk_dropping_chunks()
     flb_time_msleep(2100);
     flb_stop(ctx);
     flb_destroy(ctx);
-}
-
-/*
- * When chunk is set to DOWN from memory, data_size is set to 0 and
- * cio_chunk_get_content_size(1) returns the data_size. fs_chunks_size
- * is used to track the size of chunks in filesystem so we need to call
- * cio_chunk_get_real_size to return the original size in the file system
- */
-static ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic)
-{
-    ssize_t meta_size;
-    ssize_t size;
-
-    size = cio_chunk_get_real_size(ic->chunk);
-
-    if (size != 0) {
-        return size;
-    }
-
-    // Real size is not synced to chunk yet
-    size = flb_input_chunk_get_size(ic);
-    if (size == 0) {
-        flb_debug("[input chunk] no data in the chunk %s",
-                  flb_input_chunk_get_name(ic));
-        return -1;
-    }
-
-    meta_size = cio_meta_size(ic->chunk);
-    size += meta_size
-        /* See https://github.com/edsiper/chunkio#file-layout for more details */
-         + 2    /* HEADER BYTES */
-         + 4    /* CRC32 */
-         + 16   /* PADDING */
-         + 2;   /* METADATA LENGTH BYTES */
-
-    return size;
+    flb_free(storage_path);
 }
 
 static int gen_buf(msgpack_sbuffer *mp_sbuf, char *buf, size_t buf_size)
@@ -358,6 +340,100 @@ static int gen_buf(msgpack_sbuffer *mp_sbuf, char *buf, size_t buf_size)
     msgpack_pack_str_body(&mp_pck, buf, buf_size);
     msgpack_unpacked_destroy(&result);
 
+    return 0;
+}
+
+static int build_grouped_log_payload(char **out_buf, size_t *out_size)
+{
+    int ret;
+    char *copied_buffer;
+    struct flb_time ts;
+    struct flb_log_event_encoder *encoder;
+
+    *out_buf = NULL;
+    *out_size = 0;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (encoder == NULL) {
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_group_init(encoder);
+    if (ret != 0) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_append_metadata_values(
+            encoder,
+            FLB_LOG_EVENT_STRING_VALUE("group", 5),
+            FLB_LOG_EVENT_CSTRING_VALUE("g1"));
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_append_body_values(
+            encoder,
+            FLB_LOG_EVENT_STRING_VALUE("resource", 8),
+            FLB_LOG_EVENT_CSTRING_VALUE("test"));
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_group_header_end(encoder);
+    if (ret != 0) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_begin_record(encoder);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    flb_time_set(&ts, 1700000000, 0);
+    ret = flb_log_event_encoder_set_timestamp(encoder, &ts);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_append_body_values(
+            encoder,
+            FLB_LOG_EVENT_STRING_VALUE("message", 7),
+            FLB_LOG_EVENT_CSTRING_VALUE("hello"));
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_commit_record(encoder);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_group_end(encoder);
+    if (ret != 0) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    copied_buffer = flb_malloc(encoder->output_length);
+    if (copied_buffer == NULL) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    memcpy(copied_buffer, encoder->output_buffer, encoder->output_length);
+
+    *out_buf = copied_buffer;
+    *out_size = encoder->output_length;
+
+    flb_log_event_encoder_destroy(encoder);
     return 0;
 }
 
@@ -378,6 +454,30 @@ static int log_cb(struct cio_ctx *data, int level, const char *file, int line,
     }
 
     return 0;
+}
+
+static int get_counter_value_1(struct cmt_counter *counter,
+                               char *label_value_0,
+                               double *value)
+{
+    char *labels[1];
+
+    labels[0] = label_value_0;
+
+    return cmt_counter_get_val(counter, 1, labels, value);
+}
+
+static int get_counter_value_2(struct cmt_counter *counter,
+                               char *label_value_0,
+                               char *label_value_1,
+                               double *value)
+{
+    char *labels[2];
+
+    labels[0] = label_value_0;
+    labels[1] = label_value_1;
+
+    return cmt_counter_get_val(counter, 2, labels, value);
 }
 
 /* This tests uses the subsystems of the engine directly
@@ -401,6 +501,13 @@ void flb_test_input_chunk_fs_chunks_size_real()
     char buf[262144];
     struct mk_event_loop *evl;
     struct cio_options opts = {0};
+    char *root_path;
+
+    root_path = flb_test_tmpdir_cat("/input-chunk-fs_chunks-size_real");
+    TEST_CHECK(root_path != NULL);
+    if (!root_path) {
+        return;
+    }
 
     flb_init_env();
     cfg = flb_config_init();
@@ -416,7 +523,7 @@ void flb_test_input_chunk_fs_chunks_size_real()
 
     cio_options_init(&opts);
 
-    opts.root_path = "/tmp/input-chunk-fs_chunks-size_real";
+    opts.root_path = root_path;
     opts.log_cb = log_cb;
     opts.log_level = CIO_LOG_DEBUG;
     opts.flags = CIO_OPEN;
@@ -491,6 +598,7 @@ void flb_test_input_chunk_fs_chunks_size_real()
     flb_input_exit_all(cfg);
     flb_output_exit(cfg);
     flb_config_exit(cfg);
+    flb_free(root_path);
 }
 
 /* This tests uses the subsystems of the engine directly
@@ -511,6 +619,13 @@ void flb_test_input_chunk_correct_total_records(void)
     char buf[262144];
     struct mk_event_loop *evl;
     struct cio_options opts = {0};
+    char *root_path;
+
+    root_path = flb_test_tmpdir_cat("/input-chunk-fs_chunks-size_real");
+    TEST_CHECK(root_path != NULL);
+    if (!root_path) {
+        return;
+    }
 
     flb_init_env();
     cfg = flb_config_init();
@@ -526,7 +641,7 @@ void flb_test_input_chunk_correct_total_records(void)
 
     cio_options_init(&opts);
 
-    opts.root_path = "/tmp/input-chunk-fs_chunks-size_real";
+    opts.root_path = root_path;
     opts.log_cb = log_cb;
     opts.log_level = CIO_LOG_DEBUG;
     opts.flags = CIO_OPEN;
@@ -577,6 +692,232 @@ void flb_test_input_chunk_correct_total_records(void)
     flb_input_exit_all(cfg);
     flb_output_exit(cfg);
     flb_config_exit(cfg);
+    flb_free(root_path);
+}
+
+void flb_test_input_chunk_grouped_auto_records(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    char *payload;
+    size_t payload_size;
+    flb_ctx_t *ctx;
+    struct flb_input_instance *i_ins;
+    struct mk_list *head;
+    struct flb_input_chunk *ic;
+
+    payload = NULL;
+    payload_size = 0;
+
+    ret = build_grouped_log_payload(&payload, &payload_size);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        return;
+    }
+
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) {
+        flb_free(payload);
+        return;
+    }
+
+    ret = flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    TEST_CHECK(ret == 0);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "null", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        flb_free(payload);
+        return;
+    }
+
+    i_ins = mk_list_entry_first(&ctx->config->inputs,
+                                struct flb_input_instance,
+                                _head);
+    TEST_CHECK(i_ins != NULL);
+    if (!i_ins) {
+        flb_stop(ctx);
+        flb_destroy(ctx);
+        flb_free(payload);
+        return;
+    }
+
+    ret = flb_input_chunk_append_raw(i_ins,
+                                     FLB_INPUT_LOGS,
+                                     0,
+                                     "test",
+                                     4,
+                                     payload,
+                                     payload_size);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(200);
+
+    ic = NULL;
+    mk_list_foreach(head, &i_ins->chunks) {
+        ic = mk_list_entry(head, struct flb_input_chunk, _head);
+        break;
+    }
+
+    TEST_CHECK(ic != NULL);
+    if (ic != NULL) {
+        TEST_CHECK(ic->total_records == 1);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    flb_free(payload);
+}
+
+void flb_test_input_chunk_grouped_release_space_drop_counters(void)
+{
+    int i;
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    int append_count;
+    char *payload;
+    size_t payload_size;
+    double output_dropped_records;
+    double router_dropped_records;
+    flb_ctx_t *ctx;
+    char *storage_path;
+    struct flb_input_instance *i_ins;
+    struct flb_output_instance *o_ins;
+
+    payload = NULL;
+    payload_size = 0;
+    output_dropped_records = 0.0;
+    router_dropped_records = 0.0;
+    append_count = 8;
+
+    storage_path = flb_test_tmpdir_cat("/input-chunk-grouped-release-space/");
+    TEST_CHECK(storage_path != NULL);
+    if (!storage_path) {
+        return;
+    }
+
+    ret = build_grouped_log_payload(&payload, &payload_size);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_free(storage_path);
+        return;
+    }
+
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) {
+        flb_free(payload);
+        flb_free(storage_path);
+        return;
+    }
+
+    ret = flb_service_set(ctx,
+                          "flush", "0.2",
+                          "grace", "1",
+                          "storage.path", storage_path,
+                          "Log_Level", "error",
+                          NULL);
+    TEST_CHECK(ret == 0);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd,
+                  "tag", "test",
+                  "storage.type", "filesystem",
+                  NULL);
+
+    out_ffd = flb_output(ctx, (char *) "http", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "Host", "127.0.0.1",
+                   "Port", "1",
+                   "retry_limit", "no_retries",
+                   "storage.total_limit_size", "1M",
+                   NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        flb_free(payload);
+        flb_free(storage_path);
+        return;
+    }
+
+    i_ins = mk_list_entry_first(&ctx->config->inputs,
+                                struct flb_input_instance,
+                                _head);
+    TEST_CHECK(i_ins != NULL);
+    if (!i_ins) {
+        flb_stop(ctx);
+        flb_destroy(ctx);
+        flb_free(payload);
+        flb_free(storage_path);
+        return;
+    }
+
+    o_ins = mk_list_entry_first(&ctx->config->outputs,
+                                struct flb_output_instance,
+                                _head);
+    TEST_CHECK(o_ins != NULL);
+    if (!o_ins) {
+        flb_stop(ctx);
+        flb_destroy(ctx);
+        flb_free(payload);
+        flb_free(storage_path);
+        return;
+    }
+
+    for (i = 0; i < append_count; i++) {
+        ret = flb_input_chunk_append_raw(i_ins,
+                                         FLB_INPUT_LOGS,
+                                         0,
+                                         "test",
+                                         4,
+                                         payload,
+                                         payload_size);
+        TEST_CHECK(ret == 0);
+        flb_time_msleep(250);
+    }
+
+    flb_time_msleep(1500);
+
+    ret = get_counter_value_1(o_ins->cmt_dropped_records,
+                              (char *) flb_output_name(o_ins),
+                              &output_dropped_records);
+    TEST_CHECK(ret == 0);
+
+    ret = get_counter_value_2(ctx->config->router->logs_drop_records_total,
+                              (char *) flb_input_name(i_ins),
+                              (char *) flb_output_name(o_ins),
+                              &router_dropped_records);
+    TEST_CHECK(ret == 0);
+
+    /*
+     * Each appended grouped payload contains one logical log record.
+     * Dropped record counters must never exceed ingested logical records.
+     */
+    TEST_CHECK(output_dropped_records <= append_count);
+    TEST_CHECK(router_dropped_records <= append_count);
+    TEST_CHECK(output_dropped_records == router_dropped_records);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    flb_free(payload);
+    flb_free(storage_path);
 }
 
 
@@ -587,5 +928,8 @@ TEST_LIST = {
     {"input_chunk_dropping_chunks",    flb_test_input_chunk_dropping_chunks},
     {"input_chunk_fs_chunk_size_real", flb_test_input_chunk_fs_chunks_size_real},
     {"input_chunk_correct_total_records", flb_test_input_chunk_correct_total_records},
+    {"input_chunk_grouped_auto_records", flb_test_input_chunk_grouped_auto_records},
+    {"input_chunk_grouped_release_space_drop_counters",
+     flb_test_input_chunk_grouped_release_space_drop_counters},
     {NULL, NULL}
 };

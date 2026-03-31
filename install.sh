@@ -73,7 +73,7 @@ cat /etc/yum.repos.d/fluent-bit.repo
 $INSTALL_CMD_PREFIX yum -y $YUM_PARAMETERS install $INSTALL_PACKAGE_NAME$YUM_VERSION
 SCRIPT
     ;;
-    centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora|rocky|almalinux)
+    centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora)
         # We need variable expansion and non-expansion on the URL line to pick up the base URL.
         # Therefore we combine things with sed to handle it.
         $SUDO sh <<SCRIPT
@@ -93,13 +93,50 @@ cat /etc/yum.repos.d/fluent-bit.repo
 $INSTALL_CMD_PREFIX yum -y $YUM_PARAMETERS install $INSTALL_PACKAGE_NAME$YUM_VERSION
 SCRIPT
     ;;
+    # For Rocky and AlmaLinux, we provide new repos now CentOS no longer tracks downstream.
+    almalinux)
+        $SUDO sh <<SCRIPT
+rpm --import $RELEASE_KEY
+cat << EOF > /etc/yum.repos.d/fluent-bit.repo
+[fluent-bit]
+name = Fluent Bit
+# Legacy server style
+baseurl = $RELEASE_URL/$OS/VERSION_SUBSTR
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=$RELEASE_KEY
+enabled=1
+EOF
+sed -i 's|VERSION_SUBSTR|\$releasever/|g' /etc/yum.repos.d/fluent-bit.repo
+cat /etc/yum.repos.d/fluent-bit.repo
+$INSTALL_CMD_PREFIX yum -y $YUM_PARAMETERS install $INSTALL_PACKAGE_NAME$YUM_VERSION
+SCRIPT
+    ;;
+    rocky|rockylinux)
+        $SUDO sh <<SCRIPT
+rpm --import $RELEASE_KEY
+cat << EOF > /etc/yum.repos.d/fluent-bit.repo
+[fluent-bit]
+name = Fluent Bit
+# Legacy server style
+baseurl = $RELEASE_URL/rockylinux/VERSION_SUBSTR
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=$RELEASE_KEY
+enabled=1
+EOF
+sed -i 's|VERSION_SUBSTR|\$releasever/|g' /etc/yum.repos.d/fluent-bit.repo
+cat /etc/yum.repos.d/fluent-bit.repo
+$INSTALL_CMD_PREFIX yum -y $YUM_PARAMETERS install $INSTALL_PACKAGE_NAME$YUM_VERSION
+SCRIPT
+    ;;
     ubuntu|debian)
         # Remember apt-key add is deprecated
         # https://wiki.debian.org/DebianRepository/UseThirdParty#OpenPGP_Key_distribution
         $SUDO sh <<SCRIPT
 export DEBIAN_FRONTEND=noninteractive
 mkdir -p /usr/share/keyrings/
-curl $RELEASE_KEY | gpg --dearmor > /usr/share/keyrings/fluentbit-keyring.gpg
+curl -L $RELEASE_KEY | gpg --dearmor > /usr/share/keyrings/fluentbit-keyring.gpg
 cat > /etc/apt/sources.list.d/fluent-bit.list <<EOF
 deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] $RELEASE_URL/${OS}/${CODENAME} ${CODENAME} main
 EOF

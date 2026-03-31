@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -211,55 +211,57 @@ struct flb_chronicle *flb_chronicle_conf_create(struct flb_output_instance *ins,
         }
     }
 
-    if (ctx->credentials_file) {
-        ret = flb_chronicle_read_credentials_file(ctx,
-                                                 ctx->credentials_file,
-                                                 ctx->oauth_credentials);
-        if (ret != 0) {
-            flb_chronicle_conf_destroy(ctx);
-            return NULL;
+    if (ins->test_mode == FLB_FALSE) {
+        if (ctx->credentials_file) {
+            ret = flb_chronicle_read_credentials_file(ctx,
+                                                      ctx->credentials_file,
+                                                      ctx->oauth_credentials);
+            if (ret != 0) {
+                flb_chronicle_conf_destroy(ctx);
+                return NULL;
+            }
         }
-    }
-    else if (!ctx->credentials_file) {
-        /*
-         * If no credentials file has been defined, do manual lookup of the
-         * client email and the private key.
-         */
+        else if (!ctx->credentials_file) {
+            /*
+             * If no credentials file has been defined, do manual lookup of the
+             * client email and the private key.
+             */
 
-        /* Service Account Email */
-        tmp = flb_output_get_property("service_account_email", ins);
-        if (tmp) {
-            creds->client_email = flb_sds_create(tmp);
-        }
-        else {
-            tmp = getenv("SERVICE_ACCOUNT_EMAIL");
+            /* Service Account Email */
+            tmp = flb_output_get_property("service_account_email", ins);
             if (tmp) {
                 creds->client_email = flb_sds_create(tmp);
             }
-        }
+            else {
+                tmp = getenv("SERVICE_ACCOUNT_EMAIL");
+                if (tmp) {
+                    creds->client_email = flb_sds_create(tmp);
+                }
+            }
 
-        /* Service Account Secret */
-        tmp = flb_output_get_property("service_account_secret", ins);
-        if (tmp) {
-            creds->private_key = flb_sds_create(tmp);
-        }
-        else {
-            tmp = getenv("SERVICE_ACCOUNT_SECRET");
+            /* Service Account Secret */
+            tmp = flb_output_get_property("service_account_secret", ins);
             if (tmp) {
                 creds->private_key = flb_sds_create(tmp);
             }
-        }
+            else {
+                tmp = getenv("SERVICE_ACCOUNT_SECRET");
+                if (tmp) {
+                    creds->private_key = flb_sds_create(tmp);
+                }
+            }
 
-        if (!creds->client_email) {
-            flb_plg_error(ctx->ins, "service_account_email/client_email is not defined");
-            flb_chronicle_conf_destroy(ctx);
-            return NULL;
-        }
+            if (!creds->client_email) {
+                flb_plg_error(ctx->ins, "service_account_email/client_email is not defined");
+                flb_chronicle_conf_destroy(ctx);
+                return NULL;
+            }
 
-        if (!creds->private_key) {
-            flb_plg_error(ctx->ins, "service_account_secret/private_key is not defined");
-            flb_chronicle_conf_destroy(ctx);
-            return NULL;
+            if (!creds->private_key) {
+                flb_plg_error(ctx->ins, "service_account_secret/private_key is not defined");
+                flb_chronicle_conf_destroy(ctx);
+                return NULL;
+            }
         }
     }
 

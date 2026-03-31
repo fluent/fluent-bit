@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2025 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -59,6 +59,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_reload.h>
 #include <fluent-bit/flb_config_format.h>
+#include <fluent-bit/flb_supervisor.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -73,6 +74,7 @@ flb_ctx_t *ctx;
 struct flb_config *config;
 volatile sig_atomic_t exit_signal = 0;
 volatile sig_atomic_t flb_bin_restarting = FLB_RELOAD_IDLE;
+volatile sig_atomic_t dump_requested = 0;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
 struct flb_stacktrace flb_st;
@@ -88,6 +90,8 @@ struct flb_stacktrace flb_st;
 #define FLB_LONG_TRACE_OUTPUT_PROPERTY (1024 + 4)
 
 #endif
+
+#define FLB_LONG_SUPERVISOR            (1024 + 5)
 
 #define FLB_HELP_TEXT    0
 #define FLB_HELP_JSON    1
@@ -125,6 +129,9 @@ static void flb_help(int rc, struct flb_config *config)
     print_opt("-c  --config=FILE", "specify an optional configuration file");
 #ifdef FLB_HAVE_FORK
     print_opt("-d, --daemon", "run Fluent Bit in background mode");
+#endif
+#ifndef FLB_SYSTEM_WINDOWS
+    print_opt("    --supervisor", "run under a supervising parent process");
 #endif
     print_opt("-D, --dry-run", "dry run");
     print_opt_i("-f, --flush=SECONDS", "flush timeout in seconds",
@@ -376,7 +383,8 @@ static void help_format_json(void *help_buf, size_t help_size)
 {
     flb_sds_t json;
 
-    json = flb_msgpack_raw_to_json_sds(help_buf, help_size);
+    /* Keep backward compatibility to format help */
+    json = flb_msgpack_raw_to_json_sds(help_buf, help_size, FLB_TRUE);
     printf("%s\n", json);
     flb_sds_destroy(json);
 }
@@ -629,7 +637,7 @@ static void flb_signal_handler(int signal)
         abort();
 #ifndef FLB_SYSTEM_WINDOWS
     case SIGCONT:
-        flb_dump(ctx->config);
+        dump_requested = 1;
         break;
 #ifndef FLB_HAVE_STATIC_CONF
     case SIGHUP:
@@ -905,8 +913,8 @@ static int parse_trace_pipeline(flb_ctx_t *ctx, const char *pipeline, char **tra
     struct flb_split_entry *part;
     char *key;
     char *value;
-    const char *propname;
-    const char *propval;
+    char *propname;
+    char *propval;
 
 
     parts = flb_utils_split(pipeline, (int)' ', 0);
@@ -982,7 +990,7 @@ static int parse_trace_pipeline(flb_ctx_t *ctx, const char *pipeline, char **tra
 }
 #endif
 
-int flb_main(int argc, char **argv)
+static int flb_main_run(int argc, char **argv)
 {
     int opt;
     int ret;
@@ -1001,7 +1009,8 @@ int flb_main(int argc, char **argv)
     struct flb_cf_section *s;
     struct flb_cf_section *section;
     struct flb_cf *cf_opts;
-    struct flb_cf_group *group;
+    struct flb_cf_group *group = NULL;
+    int supervisor_reload_notified = FLB_FALSE;
 
     prog_name = argv[0];
 
@@ -1035,6 +1044,9 @@ int flb_main(int argc, char **argv)
         { "dry-run",         no_argument      , NULL, 'D' },
         { "flush",           required_argument, NULL, 'f' },
         { "http",            no_argument      , NULL, 'H' },
+#ifndef FLB_SYSTEM_WINDOWS
+        { "supervisor",      no_argument      , NULL, FLB_LONG_SUPERVISOR },
+#endif
         { "log_file",        required_argument, NULL, 'l' },
         { "port",            required_argument, NULL, 'P' },
         { "custom",          required_argument, NULL, 'C' },
@@ -1067,6 +1079,9 @@ int flb_main(int argc, char **argv)
         { "http_port",       required_argument, NULL, 'P' },
 #endif
         { "enable-hot-reload",     no_argument, NULL, 'Y' },
+#ifdef FLB_SYSTEM_WINDOWS
+        { "windows_maxstdio",      required_argument, NULL, 'M' },
+#endif
 #ifdef FLB_HAVE_CHUNK_TRACE
         { "enable-chunk-trace",    no_argument, NULL, 'Z' },
         { "trace",                 required_argument, NULL, FLB_LONG_TRACE },
@@ -1087,6 +1102,12 @@ int flb_main(int argc, char **argv)
     /* Create Fluent Bit context */
     ctx = flb_create();
     if (!ctx) {
+        flb_cf_destroy(cf_opts);
+#ifdef FLB_HAVE_CHUNK_TRACE
+        if (trace_output) {
+            flb_free(trace_output);
+        }
+#endif
         exit(EXIT_FAILURE);
     }
     config = ctx->config;
@@ -1104,7 +1125,7 @@ int flb_main(int argc, char **argv)
 
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
-                              "b:c:dDf:C:i:m:o:R:r:F:p:e:"
+                              "b:c:dDf:C:i:m:M:o:R:r:F:p:e:"
                               "t:T:l:vw:qVhJL:HP:s:SWYZ",
                               long_opts, NULL)) != -1) {
 
@@ -1159,6 +1180,12 @@ int flb_main(int argc, char **argv)
                 flb_cf_section_property_add(cf_opts, s->properties, "match", 0, optarg, 0);
             }
             break;
+#ifdef FLB_SYSTEM_WINDOWS
+        case 'M':
+            flb_cf_section_property_add(cf_opts, service->properties,
+                                        "windows.maxstdio", 0, optarg, 0);
+            break;
+#endif
         case 'o':
             s = flb_cf_section_create(cf_opts, "output", 0);
             if (!s) {
@@ -1304,6 +1331,9 @@ int flb_main(int argc, char **argv)
             set_trace_property(trace_props, optarg);
             break;
 #endif /* FLB_HAVE_CHUNK_TRACE */
+        case FLB_LONG_SUPERVISOR:
+            /* supervisor flag is handled before configuration parsing */
+            break;
         default:
             flb_help(EXIT_FAILURE, config);
         }
@@ -1391,14 +1421,33 @@ int flb_main(int argc, char **argv)
 #endif
 
 #ifdef FLB_SYSTEM_WINDOWS
+    /* Validate specified maxstdio */
+    if (config->win_maxstdio >= 512 && config->win_maxstdio <= 2048) {
+        _setmaxstdio(config->win_maxstdio);
+    }
+    else {
+        fprintf(stderr,
+                "windows.maxstdio is invalid. From 512 to 2048 is vaild but got %d\n",
+                config->win_maxstdio);
+        flb_free(cfg_file);
+        flb_cf_destroy(cf_opts);
+        exit(EXIT_FAILURE);
+    }
     win32_started();
 #endif
 
     if (config->dry_run == FLB_TRUE) {
-        fprintf(stderr, "configuration test is successful\n");
+        ret = flb_reload_property_check_all(config);
+
+        /* At this point config test is done, so clean up after ourselves */
         flb_init_env();
         flb_cf_destroy(cf_opts);
         flb_destroy(ctx);
+
+        if (ret != 0) {
+            exit(EXIT_FAILURE);
+        }
+        fprintf(stderr, "configuration test is successful\n");
         exit(EXIT_SUCCESS);
     }
 
@@ -1418,6 +1467,11 @@ int flb_main(int argc, char **argv)
      * will be different. Use flb_context_get() to get the current context.
      */
     ctx = flb_context_get();
+
+    if (ctx != NULL && ctx->config != NULL) {
+        flb_supervisor_child_update_grace(ctx->config->grace,
+                                          ctx->config->grace_input);
+    }
 
 #ifdef FLB_HAVE_CHUNK_TRACE
     if (trace_input != NULL) {
@@ -1445,16 +1499,40 @@ int flb_main(int argc, char **argv)
 #ifdef FLB_SYSTEM_WINDOWS
         flb_console_handler_set_ctx(ctx, cf_opts);
 #endif
+        if (dump_requested &&
+            ctx != NULL && ctx->config != NULL) {
+            dump_requested = 0;
+            flb_dump(ctx->config);
+        }
+
         if (flb_bin_restarting == FLB_RELOAD_IN_PROGRESS) {
+            if (supervisor_reload_notified == FLB_FALSE &&
+                ctx != NULL && ctx->config != NULL) {
+                flb_supervisor_child_signal_shutdown(ctx->config->grace,
+                                                     ctx->config->grace_input);
+                supervisor_reload_notified = FLB_TRUE;
+            }
+
             /* reload by using same config files/path */
             ret = flb_reload(ctx, cf_opts);
             if (ret == 0) {
                 ctx = flb_context_get();
                 flb_bin_restarting = FLB_RELOAD_IDLE;
+                supervisor_reload_notified = FLB_FALSE;
+                if (ctx != NULL && ctx->config != NULL) {
+                    flb_supervisor_child_update_grace(ctx->config->grace,
+                                                      ctx->config->grace_input);
+                }
             }
             else {
                 flb_bin_restarting = ret;
+                if (ret != FLB_RELOAD_IN_PROGRESS) {
+                    supervisor_reload_notified = FLB_FALSE;
+                }
             }
+        }
+        else {
+            supervisor_reload_notified = FLB_FALSE;
         }
 
         if (flb_bin_restarting == FLB_RELOAD_HALTED) {
@@ -1499,6 +1577,11 @@ int flb_main(int argc, char **argv)
      }
 
     return ret;
+}
+
+int flb_main(int argc, char **argv)
+{
+    return flb_supervisor_run(argc, argv, flb_main_run);
 }
 
 int main(int argc, char **argv)

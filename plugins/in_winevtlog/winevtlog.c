@@ -30,8 +30,34 @@
 static char* convert_wstr(wchar_t *wstr, UINT codePage);
 static wchar_t* convert_str(char *str);
 
-struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_existing_events,
-                                              EVT_HANDLE stored_bookmark, const char *query)
+static EVT_HANDLE
+create_remote_handle(struct winevtlog_session *session, DWORD *error_code)
+{
+    EVT_HANDLE remote = NULL;
+    EVT_RPC_LOGIN credentials;
+
+    RtlZeroMemory(&credentials, sizeof(EVT_RPC_LOGIN));
+
+    credentials.Server = session->server;
+    credentials.Domain = session->domain;
+    credentials.User = session->username;
+    credentials.Password = session->password;
+    credentials.Flags = session->flags;
+
+    remote = EvtOpenSession(EvtRpcLogin, &credentials, 0, 0);
+    if (!remote) {
+        *error_code = GetLastError();
+        return remote;
+    }
+
+    SecureZeroMemory(&credentials, sizeof(EVT_RPC_LOGIN));
+
+    return remote;
+}
+
+struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevtlog_config *ctx,
+                                              EVT_HANDLE stored_bookmark, const char *query,
+                                              struct winevtlog_session *session)
 {
     struct winevtlog_channel *ch;
     EVT_HANDLE bookmark = NULL;
@@ -40,7 +66,9 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
     DWORD flags = 0L;
     PWSTR wide_channel = NULL;
     PWSTR wide_query = NULL;
+    EVT_HANDLE remote_handle = NULL;
     void *buf;
+    DWORD err = ERROR_SUCCESS;
 
     ch = flb_calloc(1, sizeof(struct winevtlog_channel));
     if (ch == NULL) {
@@ -55,36 +83,115 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
         return NULL;
     }
     ch->query = NULL;
+    ch->remote = NULL;
 
     signal_event = CreateEvent(NULL, TRUE, TRUE, NULL);
 
     // channel : To wide char
     len = MultiByteToWideChar(CP_UTF8, 0, channel, -1, NULL, 0);
-    wide_channel = flb_malloc(sizeof(PWSTR) * len);
-    MultiByteToWideChar(CP_UTF8, 0, channel, -1, wide_channel, len);
+    wide_channel = flb_malloc(sizeof(WCHAR) * len);
+    if (wide_channel == NULL) {
+        if (signal_event) {
+            CloseHandle(signal_event);
+        }
+        flb_free(ch->name);
+        if (ch->query) {
+            flb_free(ch->query);
+        }
+        flb_free(ch);
+        return NULL;
+    }
+    if (0 == MultiByteToWideChar(CP_UTF8, 0, channel, -1, wide_channel, len)) {
+        if (signal_event) {
+            CloseHandle(signal_event);
+        }
+        flb_free(wide_channel);
+        flb_free(ch->name);
+        if (ch->query) {
+            flb_free(ch->query);
+        }
+        flb_free(ch);
+        return NULL;
+    }
     if (query != NULL) {
     // query : To wide char
         len = MultiByteToWideChar(CP_UTF8, 0, query, -1, NULL, 0);
-        wide_query = flb_malloc(sizeof(PWSTR) * len);
-        MultiByteToWideChar(CP_UTF8, 0, query, -1, wide_query, len);
+        wide_query = flb_malloc(sizeof(WCHAR) * len);
+       if (wide_query == NULL) {
+            if (signal_event) {
+                CloseHandle(signal_event);
+            }
+            flb_free(wide_channel);
+            flb_free(ch->name);
+            if (ch->query) {
+                flb_free(ch->query);
+            }
+            flb_free(ch);
+            return NULL;
+        }
+        if (0 == MultiByteToWideChar(CP_UTF8, 0, query, -1, wide_query, len)) {
+            if (signal_event) {
+                CloseHandle(signal_event);
+            }
+            flb_free(wide_query);
+            flb_free(wide_channel);
+            flb_free(ch->name);
+            if (ch->query) {
+                flb_free(ch->query);
+            }
+            flb_free(ch);
+            return NULL;
+        }
         ch->query = flb_strdup(query);
     }
 
     if (stored_bookmark) {
         flags |= EvtSubscribeStartAfterBookmark;
-    } else if (read_existing_events) {
+    } else if (ctx->read_existing_events) {
         flags |= EvtSubscribeStartAtOldestRecord;
     } else {
         flags |= EvtSubscribeToFutureEvents;
     }
 
+    if (session != NULL) {
+        remote_handle = create_remote_handle(session, &err);
+        if (err != ERROR_SUCCESS) {
+            flb_plg_error(ctx->ins, "cannot create remote handle '%s' in %ls (%i)",
+                      channel, session->server, err);
+            flb_free(ch->name);
+            if (ch->query != NULL) {
+                flb_free(ch->query);
+            }
+            flb_free(ch);
+            return NULL;
+        }
+
+        flb_plg_debug(ctx->ins, "created a remote handle for '%s' in %ls",
+                  channel, session->server);
+        ch->session = session;
+        ch->remote = remote_handle;
+    }
+
     /* The wide_query parameter can handle NULL as `*` for retrieving all events.
      * ref. https://learn.microsoft.com/en-us/windows/win32/api/winevt/nf-winevt-evtsubscribe
      */
-    ch->subscription = EvtSubscribe(NULL, signal_event, wide_channel, wide_query,
+    ch->subscription = EvtSubscribe(remote_handle, signal_event, wide_channel, wide_query,
                                     stored_bookmark, NULL, NULL, flags);
+    err = GetLastError();
     if (!ch->subscription) {
-        flb_error("[in_winevtlog] cannot subscribe '%s' (%i)", channel, GetLastError());
+        flb_plg_error(ctx->ins, "cannot subscribe '%s' (%i)", channel, err);
+        if (signal_event) {
+            CloseHandle(signal_event);
+        }
+        if (ch->remote) {
+            EvtClose(ch->remote);
+        }
+        if (wide_channel) {
+            flb_free(wide_channel);
+        }
+        if (wide_query) {
+            flb_free(wide_query);
+        }
         flb_free(ch->name);
         if (ch->query != NULL) {
             flb_free(ch->query);
@@ -93,6 +200,12 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
         return NULL;
     }
     ch->signal_event = signal_event;
+    ch->cancelled_by_us = FALSE;
+    ch->reconnect_needed = FALSE;
+    ch->last_error = 0;
+    ch->retry_attempts = 0;
+    ch->next_retry_deadline = 0;
+    ch->prng_state = GetTickCount64() ^ (ULONGLONG)(uintptr_t)ch;
 
     if (stored_bookmark) {
         ch->bookmark = stored_bookmark;
@@ -106,10 +219,13 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
             if (ch->subscription) {
                 EvtClose(ch->subscription);
             }
+            if (ch->remote) {
+                EvtClose(ch->remote);
+            }
             if (signal_event) {
                 CloseHandle(signal_event);
             }
-            flb_error("[in_winevtlog] cannot subscribe '%s' (%i)", channel, GetLastError());
+            flb_plg_error(ctx->ins, "cannot subscribe '%s' (%i)", channel, GetLastError());
             flb_free(wide_channel);
             flb_free(ch->name);
             if (ch->query != NULL) {
@@ -130,7 +246,14 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
 
 BOOL cancel_subscription(struct winevtlog_channel *ch)
 {
+    ch->cancelled_by_us = TRUE;
     return EvtCancel(ch->subscription);
+}
+
+void winevtlog_request_cancel(struct winevtlog_channel *ch)
+{
+    ch->cancelled_by_us = TRUE;
+    EvtCancel(ch->subscription);
 }
 
 static void close_handles(struct winevtlog_channel *ch)
@@ -140,6 +263,10 @@ static void close_handles(struct winevtlog_channel *ch)
     if (ch->subscription) {
         EvtClose(ch->subscription);
         ch->subscription = NULL;
+    }
+    if (ch->remote) {
+        EvtClose(ch->remote);
+        ch->remote = NULL;
     }
     if (ch->signal_event) {
         CloseHandle(ch->signal_event);
@@ -391,7 +518,7 @@ buffer_error:
     return message;
 }
 
-PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_size)
+PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_size, HANDLE remote)
 {
     PEVT_VARIANT values = NULL;
     DWORD buffer_size = 0;
@@ -438,7 +565,7 @@ PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_si
         /* Metadata can be NULL because some of the events do not have an
          * associated publisher metadata. */
         metadata = EvtOpenPublisherMetadata(
-                NULL, // TODO: Remote handle
+                remote,
                 values[0].StringVal,
                 NULL,
                 MAKELCID(langID, SORT_DEFAULT),
@@ -546,10 +673,21 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
 
     if (!has_next) {
         status = GetLastError();
-        if (ERROR_CANCELLED == status) {
+        if (status == ERROR_CANCELLED) {
+            if (ch->cancelled_by_us) {
+                /* Consume this flag and return early */
+                ch->cancelled_by_us = FALSE;
+                return FLB_FALSE;
+            }
+            ch->reconnect_needed = TRUE;
+            ch->last_error = status;
+            flb_warn("[in_winevtlog] subscription cancelled unexpectedly (err=%lu), will reconnect", status);
             return FLB_FALSE;
         }
-        if (ERROR_NO_MORE_ITEMS != status) {
+        if (status != ERROR_NO_MORE_ITEMS) {
+            ch->reconnect_needed = TRUE;
+            ch->last_error = status;
+            flb_warn("[in_winevtlog] EvtNext failed (err=%lu), will reconnect", status);
             return FLB_FALSE;
         }
 
@@ -567,6 +705,188 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
     }
 
     return FLB_FALSE;
+}
+
+static const struct winevtlog_backoff WINEVTLOG_BACKOFF_DEFAULTS = {
+    500,     /* base_ms */
+    30000,   /* max_ms  */
+    2000,    /* multiplier_x1000 == x2.0 */
+    20,      /* jitter_pct */
+    8        /* max_retries */
+};
+
+static inline void backoff_effective(struct winevtlog_backoff *dst,
+                                     const struct winevtlog_backoff *src)
+{
+    if (src) {
+        *dst = *src;
+    }
+    else {
+        *dst = WINEVTLOG_BACKOFF_DEFAULTS;
+    }
+}
+
+static inline DWORD prng16(ULONGLONG *state)
+{
+    *state = (*state * 6364136223846793005ULL + 1ULL);
+    return (DWORD)((*state >> 33) & 0xFFFF);
+}
+
+static DWORD calc_backoff_ms(struct winevtlog_channel *ch, const struct winevtlog_backoff *cfg, DWORD attempt)
+{
+    DWORD i = 0;
+    DWORD ms = 0;
+    LONG span = 0;
+    LONG delta = 0;
+    LONG with_jitter = 0;
+    DWORD jitter = 0;
+    double mult = (double)cfg->multiplier_x1000 / 1000.0;
+    double t = (double)cfg->base_ms;
+
+    for (i = 0; i < attempt; i++) {
+        t *= mult;
+        if (t >= (double)cfg->max_ms) { t = (double)cfg->max_ms; break; }
+    }
+    ms = (DWORD)((t > (double)cfg->max_ms) ? cfg->max_ms : t);
+    /* ±jitter% (clamped 0..100) */
+    jitter = cfg->jitter_pct > 100 ? 100 : cfg->jitter_pct;
+    span = (LONG)((ms * jitter) / 100);
+    delta = (LONG)(prng16(&ch->prng_state) % (2 * span + 1)) - span;
+    with_jitter = (LONG)ms + delta;
+    if (with_jitter < 0) {
+        with_jitter = 0;
+    }
+    return (DWORD)with_jitter;
+}
+
+void winevtlog_schedule_retry(struct winevtlog_channel *ch, struct winevtlog_config *ctx)
+{
+    struct winevtlog_backoff cfg;
+    DWORD delay = 0;
+    backoff_effective(&cfg, ctx ? &ctx->backoff : NULL);
+    delay = calc_backoff_ms(ch, &cfg, ch->retry_attempts);
+    ch->next_retry_deadline = GetTickCount64() + (ULONGLONG)delay;
+}
+
+int winevtlog_try_reconnect(struct winevtlog_channel *ch, struct winevtlog_config *ctx)
+{
+    HANDLE   new_signal = NULL;
+    EVT_HANDLE new_remote = NULL;
+    EVT_HANDLE new_sub = NULL;
+    DWORD flags = 0;
+    DWORD err = 0;
+    PWSTR wide_channel = NULL;
+    PWSTR wide_query   = NULL;
+    DWORD len;
+
+    len = MultiByteToWideChar(CP_UTF8, 0, ch->name, -1, NULL, 0);
+    if (len == 0) {
+        return -1;
+    }
+    wide_channel = flb_malloc(sizeof(WCHAR) * len);
+    if (!wide_channel) {
+        return -1;
+    }
+    MultiByteToWideChar(CP_UTF8, 0, ch->name, -1, wide_channel, len);
+
+    if (ch->query) {
+        len = MultiByteToWideChar(CP_UTF8, 0, ch->query, -1, NULL, 0);
+        if (len == 0) {
+            flb_free(wide_channel);
+            return -1;
+        }
+        wide_query = flb_malloc(sizeof(WCHAR) * len);
+        if (!wide_query) {
+            flb_free(wide_channel);
+            return -1;
+        }
+        MultiByteToWideChar(CP_UTF8, 0, ch->query, -1, wide_query, len);
+    }
+
+    new_signal = CreateEvent(NULL, TRUE, TRUE, NULL);
+    if (!new_signal) {
+        flb_free(wide_channel);
+        if (wide_query) {
+            flb_free(wide_query);
+        }
+        return -1;
+    }
+
+    if (ch->session) {
+        new_remote = create_remote_handle(ch->session, &err);
+        if (err != ERROR_SUCCESS || !new_remote) {
+            flb_plg_error(ctx->ins, "reconnect: cannot create remote handle '%s' in %ls (err=%lu)",
+                          ch->name, ch->session->server, err);
+            CloseHandle(new_signal);
+            flb_free(wide_channel);
+            if (wide_query) {
+                flb_free(wide_query);
+            }
+            return -1;
+        }
+    }
+
+    if (ch->bookmark) {
+        flags = EvtSubscribeStartAfterBookmark;
+    }
+    else if (ctx->read_existing_events) {
+        flags = EvtSubscribeStartAtOldestRecord;
+    }
+    else {
+        flags = EvtSubscribeToFutureEvents;
+    }
+
+    new_sub = EvtSubscribe(new_remote, new_signal, wide_channel, wide_query,
+                           ch->bookmark, NULL, NULL, flags);
+    if (!new_sub) {
+        DWORD sub_err = GetLastError();
+        if (sub_err == ERROR_EVT_QUERY_RESULT_STALE) {
+            flb_plg_warn(ctx->ins, "reconnect: bookmark stale on '%s' (err=%lu), falling back to latest",
+                         ch->name, sub_err);
+            flags = ctx->read_existing_events ? EvtSubscribeStartAtOldestRecord
+                                              : EvtSubscribeToFutureEvents;
+            new_sub = EvtSubscribe(new_remote, new_signal, wide_channel, wide_query,
+                                   NULL, NULL, NULL, flags);
+        }
+    }
+
+    if (!new_sub) {
+        DWORD sub_err = GetLastError();
+        flb_plg_error(ctx->ins, "reconnect: EvtSubscribe failed on '%s' (err=%lu)", ch->name, sub_err);
+        if (new_remote) EvtClose(new_remote);
+        CloseHandle(new_signal);
+        flb_free(wide_channel);
+        if (wide_query) {
+            flb_free(wide_query);
+        }
+        return -1;
+    }
+
+    if (ch->subscription) {
+        EvtClose(ch->subscription);
+    }
+    if (ch->remote) {
+        EvtClose(ch->remote);
+    }
+    if (ch->signal_event) {
+        CloseHandle(ch->signal_event);
+    }
+
+    ch->subscription    = new_sub;
+    ch->remote          = new_remote;
+    ch->signal_event    = new_signal;
+    ch->reconnect_needed  = FALSE;
+    ch->retry_attempts    = 0;
+    ch->next_retry_deadline = 0;
+    ch->last_error        = 0;
+    ch->count             = 0;
+
+    flb_plg_debug(ctx->ins, "reconnected subscription for '%s'", ch->name);
+    flb_free(wide_channel);
+    if (wide_query) {
+        flb_free(wide_query);
+    }
+    return 0;
 }
 
 /*
@@ -587,39 +907,61 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
     PEVT_VARIANT string_inserts = NULL;
     UINT count_inserts = 0;
     DWORD i = 0;
+    int rc = 0;
 
     while (winevtlog_next(ch, hit_threshold)) {
         for (i = 0; i < ch->count; i++) {
             if (ctx->render_event_as_xml) {
                 system_xml = render_event(ch->events[i], EvtRenderEventXml, &system_size);
-                message = get_description(ch->events[i], LANG_NEUTRAL, &message_size);
+                message = get_description(ch->events[i], LANG_NEUTRAL, &message_size, ch->remote);
                 get_string_inserts(ch->events[i], &string_inserts, &count_inserts, &string_inserts_size);
                 if (system_xml) {
                     /* Caluculate total allocated size: system + message + string_inserts */
                     read_size += (system_size + message_size + string_inserts_size);
                     winevtlog_pack_xml_event(system_xml, message, string_inserts,
                                              count_inserts, ch, ctx);
+                }
 
-                    flb_free(string_inserts);
-                    flb_free(system_xml);
-                    if (message)
-                        flb_free(message);
+                flb_free(string_inserts);
+                flb_free(system_xml);
+                if (message) {
+                    flb_free(message);
+                }
+            }
+            else if (ctx->render_event_as_text) {
+                rendered_system = NULL;
+                render_system_event(ch->events[i], &rendered_system, &system_size);
+                message = get_description(ch->events[i], LANG_NEUTRAL, &message_size, ch->remote);
+                get_string_inserts(ch->events[i], &string_inserts, &count_inserts, &string_inserts_size);
+                if (rendered_system) {
+                    /* Caluculate total allocated size: system + message + string_inserts */
+                    read_size += (system_size + message_size + string_inserts_size);
+                    winevtlog_pack_text_event(rendered_system, message, string_inserts,
+                                              count_inserts, ch, ctx);
+
+                }
+
+                flb_free(string_inserts);
+                flb_free(rendered_system);
+                if (message) {
+                    flb_free(message);
                 }
             }
             else {
                 render_system_event(ch->events[i], &rendered_system, &system_size);
-                message = get_description(ch->events[i], LANG_NEUTRAL, &message_size);
+                message = get_description(ch->events[i], LANG_NEUTRAL, &message_size, ch->remote);
                 get_string_inserts(ch->events[i], &string_inserts, &count_inserts, &string_inserts_size);
                 if (rendered_system) {
                     /* Caluculate total allocated size: system + message + string_inserts */
                     read_size += (system_size + message_size + string_inserts_size);
                     winevtlog_pack_event(rendered_system, message, string_inserts,
                                          count_inserts, ch, ctx);
+                }
 
-                    flb_free(string_inserts);
-                    flb_free(rendered_system);
-                    if (message)
-                        flb_free(message);
+                flb_free(string_inserts);
+                flb_free(rendered_system);
+                if (message) {
+                    flb_free(message);
                 }
             }
         }
@@ -641,6 +983,27 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
 
     *read = read_size;
 
+    if (ch->reconnect_needed) {
+        ULONGLONG now = GetTickCount64();
+        if (ch->next_retry_deadline == 0 || now >= ch->next_retry_deadline) {
+            int rc = winevtlog_try_reconnect(ch, ctx);
+            if (rc != 0) {
+                struct winevtlog_backoff eff;
+                backoff_effective(&eff, ctx ? &ctx->backoff : NULL);
+                if (ch->retry_attempts < eff.max_retries) {
+                    ch->retry_attempts++;
+                    winevtlog_schedule_retry(ch, ctx);
+                    flb_plg_warn(ctx->ins, "reconnect attempt %lu failed for '%s' (err=%lu), next at +%lums",
+                                 (unsigned long)ch->retry_attempts, ch->name, ch->last_error,
+                                 (unsigned long)(ch->next_retry_deadline - now));
+                }
+                else {
+                    flb_plg_error(ctx->ins, "reconnect exhausted for '%s' (last err=%lu)", ch->name, ch->last_error);
+                    ch->reconnect_needed = FALSE;
+                }
+            }
+        }
+    }
     return 0;
 }
 
@@ -674,7 +1037,8 @@ struct mk_list *winevtlog_open_all(const char *channels, struct winevtlog_config
 
     channel = strtok_s(tmp , ",", &state);
     while (channel) {
-        ch = winevtlog_subscribe(channel, ctx->read_existing_events, NULL, ctx->event_query);
+        ch = winevtlog_subscribe(channel, ctx, NULL, ctx->event_query,
+                                 ctx->session);
         if (ch) {
             mk_list_add(&ch->_head, list);
         }
@@ -739,7 +1103,7 @@ static wchar_t* convert_str(char *str)
         return NULL;
     }
 
-    buf = flb_malloc(sizeof(PWSTR) * size);
+    buf = flb_malloc(sizeof(WCHAR) * size);
     if (buf == NULL) {
         flb_errno();
         return NULL;
@@ -780,7 +1144,7 @@ static char* convert_wstr(wchar_t *wstr, UINT codePage)
 /*
  * Load the bookmark from SQLite DB.
  */
-int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db)
+int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct winevtlog_config *ctx, struct flb_sqldb *db)
 {
     int ret;
     char query[1024];
@@ -809,21 +1173,25 @@ int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db)
             bookmark = EvtCreateBookmark(bookmark_xml);
             if (bookmark) {
                 /* re-create subscription handles */
-                re_ch = winevtlog_subscribe(ch->name, FLB_FALSE, bookmark, ch->query);
+                if (ctx) {
+                    ctx->read_existing_events = FLB_FALSE;
+                }
+                re_ch = winevtlog_subscribe(ch->name, ctx, bookmark, ch->query, ch->session);
                 if (re_ch != NULL) {
                     close_handles(ch);
 
                     ch->bookmark = re_ch->bookmark;
                     ch->subscription = re_ch->subscription;
                     ch->signal_event = re_ch->signal_event;
+                    ch->session = re_ch->session;
                 }
                 else {
-                    flb_error("Failed to subscribe with bookmark XML: %s\n", record.bookmark_xml);
+                    flb_plg_error(ctx->ins, "Failed to subscribe with bookmark XML: %s\n", record.bookmark_xml);
                     ch->bookmark = EvtCreateBookmark(NULL);
                 }
             }
             else {
-                flb_error("Failed to load bookmark XML with %d\n", GetLastError());
+                flb_plg_error(ctx->ins, "Failed to load bookmark XML with %d\n", GetLastError());
                 ch->bookmark = EvtCreateBookmark(NULL);
             }
         }
@@ -837,7 +1205,7 @@ int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db)
 /*
  * Save the bookmark into SQLite DB.
  */
-int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct flb_sqldb *db)
+int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct winevtlog_config *ctx, struct flb_sqldb *db)
 {
     int ret;
     char query[1024];
@@ -847,14 +1215,14 @@ int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct flb_sqldb *db)
 
     wide_bookmark_xml = render_event(ch->bookmark, EvtRenderBookmark, &used_size);
     if (wide_bookmark_xml == NULL) {
-        flb_error("failed to render bookmark with %d", GetLastError());
+        flb_plg_error(ctx->ins, "failed to render bookmark with %d", GetLastError());
         flb_free(wide_bookmark_xml);
 
         return -1;
     }
     bookmark_xml = convert_wstr(wide_bookmark_xml, CP_UTF8);
     if (bookmark_xml == NULL) {
-        flb_error("failed to convert Wider string with %d", GetLastError());
+        flb_plg_error(ctx->ins, "failed to convert Wider string with %d", GetLastError());
         flb_free(wide_bookmark_xml);
         flb_free(bookmark_xml);
 
@@ -866,7 +1234,7 @@ int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct flb_sqldb *db)
 
     ret = flb_sqldb_query(db, query, NULL, NULL);
     if (ret == FLB_ERROR) {
-        flb_error("failed to save db with %d", GetLastError());
+        flb_plg_error(ctx->ins, "failed to save db with %d", GetLastError());
         flb_free(wide_bookmark_xml);
         flb_free(bookmark_xml);
 

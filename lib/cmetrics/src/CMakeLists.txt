@@ -1,4 +1,4 @@
-if (CMT_BUILD_PROMETHEUS_DECODER)
+if (CMT_BUILD_PROMETHEUS_TEXT_DECODER)
     flex_target(cmt_decode_prometheus_lexer cmt_decode_prometheus.l
         "${FLEX_BISON_GENERATED_DIR}/cmt_decode_prometheus_lexer.c"
         DEFINES_FILE "${FLEX_BISON_GENERATED_DIR}/cmt_decode_prometheus_lexer.h"
@@ -14,6 +14,7 @@ set(src
   cmt_untyped.c
   cmt_summary.c
   cmt_histogram.c
+  cmt_exp_histogram.c
   cmt_metric.c
   cmt_metric_histogram.c
   cmt_map.c
@@ -28,7 +29,6 @@ set(src
   cmt_decode_opentelemetry.c
   cmt_encode_prometheus.c
   cmt_encode_prometheus_remote_write.c
-  cmt_decode_prometheus_remote_write.c
   cmt_encode_splunk_hec.c
   cmt_encode_cloudwatch_emf.c
   cmt_encode_text.c
@@ -37,11 +37,15 @@ set(src
   cmt_decode_msgpack.c
   cmt_decode_statsd.c
   cmt_mpack_utils.c
-
-  # Prometheus related protobuf files
-  external/remote.pb-c.c
-  external/types.pb-c.c
   )
+
+# Add Prometheus remote write decoder (always available, only needs protobuf)
+set(src ${src}
+    cmt_decode_prometheus_remote_write.c
+    # Prometheus related protobuf files
+    external/remote.pb-c.c
+    external/types.pb-c.c
+    )
 
 
 if (MSVC)
@@ -63,7 +67,7 @@ set(src
   ${PLATFORM_SPECIFIC_ATOMIC_MODULE}
   )
 
-if (CMT_BUILD_PROMETHEUS_DECODER)
+if (CMT_BUILD_PROMETHEUS_TEXT_DECODER)
     set(src ${src}
         ${FLEX_cmt_decode_prometheus_lexer_OUTPUTS}
         ${BISON_cmt_decode_prometheus_parser_OUTPUTS}
@@ -73,6 +77,9 @@ endif()
 # Static Library
 add_library(cmetrics-static STATIC ${src})
 target_link_libraries(cmetrics-static mpack-static cfl-static fluent-otel-proto)
+if(NOT MSVC)
+  target_link_libraries(cmetrics-static m)
+endif()
 
 # Install Library
 if(MSVC)

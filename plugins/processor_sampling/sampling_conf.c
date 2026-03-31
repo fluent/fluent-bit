@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2025 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -235,14 +235,14 @@ void sampling_config_destroy(struct flb_config *config, struct sampling *ctx)
         return;
     }
 
-    if (ctx->sampling_conditions) {
-        sampling_conditions_destroy(ctx->sampling_conditions);
-    }
-
     if (ctx->plugin) {
         if (ctx->plugin->cb_exit) {
             ctx->plugin->cb_exit(config, ctx->plugin_context);
         }
+    }
+
+    if (ctx->sampling_conditions) {
+        sampling_conditions_destroy(ctx->sampling_conditions);
     }
 
     flb_kv_release(&ctx->plugin_settings_properties);

@@ -8,11 +8,16 @@ on:
     types:
       - labeled
 
+permissions:
+  contents: read
+
 jobs:
 
   pr-perf-test-run:
     # We only need to test this once as the rest are chained from it.
-    if: contains(github.event.pull_request.labels.*.name, 'ok-to-performance-test')
+    if: contains(github.event.pull_request.labels.*.name, 'ok-to-performance-test') && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
     uses: fluent/fluent-bit-ci/.github/workflows/call-run-performance-test.yaml@main
     with:
       vm-name: fb-perf-test-pr-${{ github.event.number }}
@@ -30,9 +35,10 @@ jobs:
     needs:
       - pr-perf-test-run
     permissions:
+      contents: read
       pull-requests: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
 
       - name: Upload plots to CML
         run: |
@@ -59,7 +65,7 @@ jobs:
         shell: bash
         working-directory: output
 
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@v8
         if: github.event_name == 'pull_request'
         env:
           REPORT: "Plots\n${{ steps.report.outputs.report }}"
@@ -86,10 +92,12 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - pr-perf-test-run
+    if: needs.pr-perf-test-run.result == 'success'
     permissions:
+      contents: read
       pull-requests: write
     steps:
-      - uses: actions-ecosystem/action-add-labels@v1
+      - uses: actions-ecosystem/action-add-labels@18f1af5e3544586314bbe15c0273249c770b2daf
         name: Label the PR
         with:
           labels: ci/performance-test-ok

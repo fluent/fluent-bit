@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -165,6 +165,33 @@ void otlp_kvarray_destroy(Opentelemetry__Proto__Common__V1__KeyValue **kvarray, 
 
         flb_free(kvarray);
     }
+}
+
+int otlp_kvarray_append(Opentelemetry__Proto__Common__V1__KeyValue ***base,
+                        size_t *base_count,
+                        Opentelemetry__Proto__Common__V1__KeyValue **extra,
+                        size_t extra_count)
+{
+    size_t new_count;
+    Opentelemetry__Proto__Common__V1__KeyValue **tmp;
+
+    if (extra == NULL || extra_count == 0) {
+        return 0;
+    }
+
+    new_count = *base_count + extra_count;
+    tmp = flb_realloc(*base, new_count * sizeof(Opentelemetry__Proto__Common__V1__KeyValue *));
+    if (!tmp) {
+        return -1;
+    }
+
+    *base = tmp;
+    memcpy(*base + *base_count, extra,
+           extra_count * sizeof(Opentelemetry__Proto__Common__V1__KeyValue *));
+    *base_count = new_count;
+    flb_free(extra);
+
+    return 0;
 }
 
 void otlp_kvpair_destroy(Opentelemetry__Proto__Common__V1__KeyValue *kvpair)

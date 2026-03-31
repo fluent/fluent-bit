@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -130,6 +130,19 @@ struct flb_processor {
 
     flb_pipefd_t notification_channel;
 
+    /*
+     * Processor chain accounting metrics
+     * ----------------------------------
+     * These counters are registered in the owner context metrics (input/output)
+     * and updated per processor unit execution.
+     */
+    struct cmt_counter *cmt_invocations;
+    struct cmt_counter *cmt_errors;
+    struct cmt_counter *cmt_items_in;
+    struct cmt_counter *cmt_items_out;
+    struct cmt_counter *cmt_items_drop;
+    struct cmt_counter *cmt_items_add;
+
     /* Fluent Bit context */
     struct flb_config *config;
 };
@@ -232,6 +245,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
                                                      char *unit_name);
 void flb_processor_unit_destroy(struct flb_processor_unit *pu);
 int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k, struct cfl_variant *v);
+int flb_processor_unit_set_property_str(struct flb_processor_unit *pu, const char *k, const char *v);
 
 int flb_processors_load_from_config_format_group(struct flb_processor *proc, struct flb_cf_group *g);
 

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -45,29 +45,297 @@ int flb_mp_count(const void *data, size_t bytes)
     return flb_mp_count_remaining(data, bytes, NULL);
 }
 
+/* Return the number of log events excluding group markers */
+int flb_mp_count_log_records(const void *data, size_t bytes)
+{
+    int count;
+    int ret;
+    struct flb_log_event log_event;
+    struct flb_log_event_decoder decoder;
+
+    count = 0;
+
+    ret = flb_log_event_decoder_init(&decoder, (char *) data, bytes);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        return 0;
+    }
+
+    while ((ret = flb_log_event_decoder_next(&decoder,
+                                             &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        count++;
+    }
+
+    flb_log_event_decoder_destroy(&decoder);
+
+    return count;
+}
+
+struct flb_mp_record_span {
+    const char *base;
+    size_t length;
+    int type;
+    int keep;
+};
+
+int flb_mp_normalize_log_buffer_groups_msgpack(const void *in_buf, size_t in_size,
+                                               char **out_buf, size_t *out_size)
+{
+    int i;
+    int ret;
+    int entry_count;
+    int stack_count;
+    int *group_stack;
+    int *group_has_content;
+    struct flb_log_event log_event;
+    struct flb_log_event_decoder decoder;
+    struct flb_mp_record_span *entries;
+    msgpack_sbuffer mp_sbuf;
+
+    *out_buf = NULL;
+    *out_size = 0;
+
+    entry_count = flb_mp_count(in_buf, in_size);
+    if (entry_count <= 0) {
+        return 0;
+    }
+
+    entries = flb_calloc(entry_count, sizeof(struct flb_mp_record_span));
+    if (entries == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    group_stack = flb_calloc(entry_count, sizeof(int));
+    if (group_stack == NULL) {
+        flb_errno();
+        flb_free(entries);
+        return -1;
+    }
+
+    group_has_content = flb_calloc(entry_count, sizeof(int));
+    if (group_has_content == NULL) {
+        flb_errno();
+        flb_free(group_stack);
+        flb_free(entries);
+        return -1;
+    }
+
+    ret = flb_log_event_decoder_init(&decoder, (char *) in_buf, in_size);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_free(group_has_content);
+        flb_free(group_stack);
+        flb_free(entries);
+        return -1;
+    }
+
+    ret = flb_log_event_decoder_read_groups(&decoder, FLB_TRUE);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_log_event_decoder_destroy(&decoder);
+        flb_free(group_has_content);
+        flb_free(group_stack);
+        flb_free(entries);
+        return -1;
+    }
+
+    i = 0;
+    while (i < entry_count &&
+           (ret = flb_log_event_decoder_next(&decoder, &log_event)) ==
+           FLB_EVENT_DECODER_SUCCESS) {
+        entries[i].base = decoder.record_base;
+        entries[i].length = decoder.record_length;
+        entries[i].keep = FLB_TRUE;
+
+        ret = flb_log_event_decoder_get_record_type(&log_event,
+                                                    &entries[i].type);
+        if (ret != FLB_EVENT_DECODER_SUCCESS) {
+            entries[i].type = FLB_LOG_EVENT_NORMAL;
+        }
+
+        i++;
+    }
+
+    flb_log_event_decoder_destroy(&decoder);
+
+    entry_count = i;
+    if (entry_count == 0) {
+        flb_free(group_has_content);
+        flb_free(group_stack);
+        flb_free(entries);
+        return 0;
+    }
+
+    stack_count = 0;
+
+    for (i = 0; i < entry_count; i++) {
+        if (entries[i].type == FLB_LOG_EVENT_GROUP_START) {
+            group_stack[stack_count] = i;
+            group_has_content[stack_count] = FLB_FALSE;
+            stack_count++;
+            continue;
+        }
+
+        if (entries[i].type == FLB_LOG_EVENT_GROUP_END) {
+            if (stack_count == 0) {
+                entries[i].keep = FLB_FALSE;
+                continue;
+            }
+
+            stack_count--;
+
+            if (group_has_content[stack_count] == FLB_FALSE) {
+                entries[group_stack[stack_count]].keep = FLB_FALSE;
+                entries[i].keep = FLB_FALSE;
+            }
+            else if (stack_count > 0) {
+                group_has_content[stack_count - 1] = FLB_TRUE;
+            }
+
+            continue;
+        }
+
+        if (stack_count > 0) {
+            group_has_content[stack_count - 1] = FLB_TRUE;
+        }
+    }
+
+    while (stack_count > 0) {
+        stack_count--;
+        entries[group_stack[stack_count]].keep = FLB_FALSE;
+    }
+
+    msgpack_sbuffer_init(&mp_sbuf);
+
+    for (i = 0; i < entry_count; i++) {
+        if (entries[i].keep != FLB_TRUE) {
+            continue;
+        }
+
+        msgpack_sbuffer_write(&mp_sbuf, entries[i].base, entries[i].length);
+    }
+
+    if (mp_sbuf.size > 0) {
+        *out_buf = mp_sbuf.data;
+        *out_size = mp_sbuf.size;
+    }
+    else {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+    }
+
+    flb_free(group_has_content);
+    flb_free(group_stack);
+    flb_free(entries);
+
+    return 0;
+}
+
+int flb_mp_normalize_log_buffer_groups(const void *in_buf, size_t in_size,
+                                       char **out_buf, size_t *out_size)
+{
+    int ret;
+    char *encoded_buf;
+    size_t encoded_size;
+    struct flb_log_event_decoder *log_decoder;
+    struct flb_log_event_encoder *log_encoder;
+    struct flb_mp_chunk_cobj *chunk_cobj;
+    struct flb_mp_chunk_record *record;
+
+    *out_buf = NULL;
+    *out_size = 0;
+
+    log_decoder = flb_log_event_decoder_create((char *) in_buf, in_size);
+    if (log_decoder == NULL) {
+        return -1;
+    }
+
+    ret = flb_log_event_decoder_read_groups(log_decoder, FLB_TRUE);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_log_event_decoder_destroy(log_decoder);
+        return -1;
+    }
+
+    log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (log_encoder == NULL) {
+        flb_log_event_decoder_destroy(log_decoder);
+        return -1;
+    }
+
+    chunk_cobj = flb_mp_chunk_cobj_create(log_encoder, log_decoder);
+    if (chunk_cobj == NULL) {
+        flb_log_event_encoder_destroy(log_encoder);
+        flb_log_event_decoder_destroy(log_decoder);
+        return -1;
+    }
+
+    while ((ret = flb_mp_chunk_cobj_record_next(chunk_cobj, &record)) ==
+           FLB_MP_CHUNK_RECORD_OK) {
+        (void) record;
+    }
+
+    if (ret != FLB_MP_CHUNK_RECORD_EOF) {
+        flb_mp_chunk_cobj_destroy(chunk_cobj);
+        flb_log_event_encoder_destroy(log_encoder);
+        flb_log_event_decoder_destroy(log_decoder);
+        return -1;
+    }
+
+    ret = flb_mp_chunk_cobj_normalize_groups(chunk_cobj);
+    if (ret != 0) {
+        flb_mp_chunk_cobj_destroy(chunk_cobj);
+        flb_log_event_encoder_destroy(log_encoder);
+        flb_log_event_decoder_destroy(log_decoder);
+        return -1;
+    }
+
+    if (cfl_list_size(&chunk_cobj->records) == 0) {
+        flb_mp_chunk_cobj_destroy(chunk_cobj);
+        flb_log_event_encoder_destroy(log_encoder);
+        flb_log_event_decoder_destroy(log_decoder);
+        return 0;
+    }
+
+    ret = flb_mp_chunk_cobj_encode(chunk_cobj, &encoded_buf, &encoded_size);
+    if (ret != 0) {
+        flb_mp_chunk_cobj_destroy(chunk_cobj);
+        flb_log_event_encoder_destroy(log_encoder);
+        flb_log_event_decoder_destroy(log_decoder);
+        return -1;
+    }
+
+    *out_buf = encoded_buf;
+    *out_size = encoded_size;
+
+    flb_mp_chunk_cobj_destroy(chunk_cobj);
+    flb_log_event_encoder_destroy(log_encoder);
+    flb_log_event_decoder_destroy(log_decoder);
+
+    return 0;
+}
+
 int flb_mp_count_remaining(const void *data, size_t bytes, size_t *remaining_bytes)
 {
-    size_t remaining;
+    size_t remaining = 0;
     int count = 0;
     mpack_reader_t reader;
 
-    mpack_reader_init_data(&reader, (const char *) data, bytes);
-    for (;;) {
-        remaining = mpack_reader_remaining(&reader, NULL);
-        if (!remaining) {
-            break;
+    if (data) {
+        mpack_reader_init_data(&reader, (const char *) data, bytes);
+        for (;;) {
+            remaining = mpack_reader_remaining(&reader, NULL);
+            if (!remaining) {
+                break;
+            }
+            mpack_discard(&reader);
+            if (mpack_reader_error(&reader)) {
+                break;
+            }
+            count++;
         }
-        mpack_discard(&reader);
-        if (mpack_reader_error(&reader)) {
-            break;
-        }
-        count++;
+        mpack_reader_destroy(&reader);
     }
 
     if (remaining_bytes) {
         *remaining_bytes = remaining;
     }
-    mpack_reader_destroy(&reader);
     return count;
 }
 
@@ -191,7 +459,14 @@ int flb_mp_validate_log_chunk(const void *data, size_t bytes,
 
         if (ts.type != MSGPACK_OBJECT_POSITIVE_INTEGER &&
             ts.type != MSGPACK_OBJECT_FLOAT &&
-            ts.type != MSGPACK_OBJECT_EXT) {
+            ts.type != MSGPACK_OBJECT_EXT &&
+            ts.type != MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+            goto error;
+        }
+
+        if (ts.type == MSGPACK_OBJECT_NEGATIVE_INTEGER &&
+            ts.via.i64 != FLB_LOG_EVENT_GROUP_START &&
+            ts.via.i64 != FLB_LOG_EVENT_GROUP_END) {
             goto error;
         }
 
@@ -1054,6 +1329,10 @@ struct flb_mp_chunk_record *flb_mp_chunk_record_create(struct flb_mp_chunk_cobj 
         return NULL;
     }
     record->modified = FLB_FALSE;
+    record->cobj_group_metadata = NULL;
+    record->cobj_group_attributes = NULL;
+    record->owns_group_metadata = FLB_FALSE;
+    record->owns_group_attributes = FLB_FALSE;
 
     return record;
 }
@@ -1076,6 +1355,8 @@ struct flb_mp_chunk_cobj *flb_mp_chunk_cobj_create(struct flb_log_event_encoder 
     chunk_cobj->log_encoder = log_encoder;
     chunk_cobj->log_decoder = log_decoder;
     chunk_cobj->condition   = NULL;
+    chunk_cobj->active_group_metadata = NULL;
+    chunk_cobj->active_group_attributes = NULL;
 
     return chunk_cobj;
 }
@@ -1100,6 +1381,7 @@ static int generate_empty_msgpack_map(char **out_buf, size_t *out_size)
 int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size)
 {
     int ret;
+    int record_type;
     char *mp_buf;
     size_t mp_size;
     struct cfl_list *head;
@@ -1123,6 +1405,21 @@ int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_bu
             return -1;
         }
 
+        /* Determine record type from timestamp */
+        if (record->event.timestamp.tm.tv_sec >= 0) {
+            record_type = FLB_LOG_EVENT_NORMAL;
+        }
+        else if (record->event.timestamp.tm.tv_sec == FLB_LOG_EVENT_GROUP_START) {
+            record_type = FLB_LOG_EVENT_GROUP_START;
+        }
+        else if (record->event.timestamp.tm.tv_sec == FLB_LOG_EVENT_GROUP_END) {
+            record_type = FLB_LOG_EVENT_GROUP_END;
+        }
+        else {
+            record_type = FLB_LOG_EVENT_NORMAL;
+        }
+
+
         if (record->cobj_metadata) {
             ret = flb_mp_cfl_to_msgpack(record->cobj_metadata, &mp_buf, &mp_size);
             if (ret == -1) {
@@ -1143,7 +1440,14 @@ int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_bu
         }
         flb_free(mp_buf);
 
-        if (record->cobj_record) {
+        /* For group start records, use group attributes as body if available */
+        if (record_type == FLB_LOG_EVENT_GROUP_START && record->cobj_group_attributes) {
+            ret = flb_mp_cfl_to_msgpack(record->cobj_group_attributes, &mp_buf, &mp_size);
+            if (ret == -1) {
+                return -1;
+            }
+        }
+        else if (record->cobj_record) {
             ret = flb_mp_cfl_to_msgpack(record->cobj_record, &mp_buf, &mp_size);
             if (ret == -1) {
                 return -1;
@@ -1177,6 +1481,169 @@ int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_bu
     return 0;
 }
 
+int flb_mp_chunk_cobj_count_log_records(struct flb_mp_chunk_cobj *chunk_cobj)
+{
+    int count;
+    int record_type;
+    int ret;
+    struct cfl_list *head;
+    struct flb_mp_chunk_record *record;
+
+    if (chunk_cobj == NULL) {
+        return 0;
+    }
+
+    count = 0;
+
+    cfl_list_foreach(head, &chunk_cobj->records) {
+        record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
+
+        ret = flb_log_event_decoder_get_record_type(&record->event, &record_type);
+        if (ret != FLB_EVENT_DECODER_SUCCESS) {
+            continue;
+        }
+
+        if (record_type == FLB_LOG_EVENT_NORMAL) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static int cobj_remove_list_add(struct flb_mp_chunk_record **remove_list,
+                                size_t remove_list_size,
+                                size_t *remove_list_count,
+                                struct flb_mp_chunk_record *record)
+{
+    size_t index;
+
+    if (record == NULL) {
+        return -1;
+    }
+
+    for (index = 0; index < *remove_list_count; index++) {
+        if (remove_list[index] == record) {
+            return 0;
+        }
+    }
+
+    if (*remove_list_count >= remove_list_size) {
+        return -1;
+    }
+
+    remove_list[*remove_list_count] = record;
+    (*remove_list_count)++;
+
+    return 0;
+}
+
+int flb_mp_chunk_cobj_normalize_groups(struct flb_mp_chunk_cobj *chunk_cobj)
+{
+    int ret;
+    int record_type;
+    size_t index;
+    size_t stack_size;
+    size_t stack_count;
+    size_t remove_count;
+    struct cfl_list *head;
+    struct flb_mp_chunk_record *record;
+    struct flb_mp_chunk_record **remove_list;
+    struct flb_mp_chunk_record **group_start_stack;
+    int *group_has_content;
+
+    if (chunk_cobj == NULL) {
+        return -1;
+    }
+
+    stack_size = cfl_list_size(&chunk_cobj->records);
+    if (stack_size == 0) {
+        return 0;
+    }
+
+    remove_list = flb_calloc(stack_size, sizeof(struct flb_mp_chunk_record *));
+    if (remove_list == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    group_start_stack = flb_calloc(stack_size, sizeof(struct flb_mp_chunk_record *));
+    if (group_start_stack == NULL) {
+        flb_errno();
+        flb_free(remove_list);
+        return -1;
+    }
+
+    group_has_content = flb_calloc(stack_size, sizeof(int));
+    if (group_has_content == NULL) {
+        flb_errno();
+        flb_free(group_start_stack);
+        flb_free(remove_list);
+        return -1;
+    }
+
+    stack_count = 0;
+    remove_count = 0;
+
+    cfl_list_foreach(head, &chunk_cobj->records) {
+        record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
+
+        ret = flb_log_event_decoder_get_record_type(&record->event, &record_type);
+        if (ret != FLB_EVENT_DECODER_SUCCESS) {
+            continue;
+        }
+
+        if (record_type == FLB_LOG_EVENT_GROUP_START) {
+            if (stack_count < stack_size) {
+                group_start_stack[stack_count] = record;
+                group_has_content[stack_count] = FLB_FALSE;
+                stack_count++;
+            }
+            continue;
+        }
+
+        if (record_type == FLB_LOG_EVENT_GROUP_END) {
+            if (stack_count == 0) {
+                cobj_remove_list_add(remove_list, stack_size, &remove_count, record);
+                continue;
+            }
+
+            stack_count--;
+
+            if (group_has_content[stack_count] == FLB_FALSE) {
+                cobj_remove_list_add(remove_list, stack_size, &remove_count,
+                                     group_start_stack[stack_count]);
+                cobj_remove_list_add(remove_list, stack_size, &remove_count, record);
+            }
+            else if (stack_count > 0) {
+                group_has_content[stack_count - 1] = FLB_TRUE;
+            }
+
+            continue;
+        }
+
+        for (index = 0; index < stack_count; index++) {
+            group_has_content[index] = FLB_TRUE;
+        }
+    }
+
+    while (stack_count > 0) {
+        stack_count--;
+        cobj_remove_list_add(remove_list, stack_size, &remove_count,
+                             group_start_stack[stack_count]);
+    }
+
+    for (index = 0; index < remove_count; index++) {
+        flb_mp_chunk_cobj_record_destroy(chunk_cobj, remove_list[index]);
+    }
+
+    flb_free(group_has_content);
+    flb_free(group_start_stack);
+    flb_free(remove_list);
+
+    return 0;
+}
+
 int flb_mp_chunk_cobj_destroy(struct flb_mp_chunk_cobj *chunk_cobj)
 {
     struct cfl_list *tmp;
@@ -1195,6 +1662,14 @@ int flb_mp_chunk_cobj_destroy(struct flb_mp_chunk_cobj *chunk_cobj)
         if (record->cobj_record) {
             cfl_object_destroy(record->cobj_record);
         }
+        if (record->owns_group_metadata && record->cobj_group_metadata &&
+            record->cobj_group_metadata != record->cobj_metadata) {
+            cfl_object_destroy(record->cobj_group_metadata);
+        }
+        if (record->owns_group_attributes && record->cobj_group_attributes &&
+            record->cobj_group_attributes != record->cobj_record) {
+            cfl_object_destroy(record->cobj_group_attributes);
+        }
         cfl_list_del(&record->_head);
         flb_free(record);
     }
@@ -1208,6 +1683,7 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
 {
     int ret = FLB_MP_CHUNK_RECORD_EOF;
     size_t bytes;
+    int record_type = FLB_LOG_EVENT_NORMAL;
     struct flb_mp_chunk_record *record = NULL;
     struct flb_condition *condition = NULL;
 
@@ -1244,6 +1720,82 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
             cfl_object_destroy(record->cobj_metadata);
             flb_free(record);
             return -1;
+        }
+
+        ret = flb_log_event_decoder_get_record_type(&record->event, &record_type);
+        if (ret != FLB_EVENT_DECODER_SUCCESS) {
+            cfl_object_destroy(record->cobj_record);
+            cfl_object_destroy(record->cobj_metadata);
+            flb_free(record);
+            return FLB_MP_CHUNK_RECORD_ERROR;
+        }
+
+        record->owns_group_metadata = FLB_FALSE;
+        record->owns_group_attributes = FLB_FALSE;
+
+        if (record_type == FLB_LOG_EVENT_GROUP_START) {
+            if (record->cobj_metadata) {
+                record->cobj_group_metadata = record->cobj_metadata;
+                record->owns_group_metadata = FLB_TRUE;
+            }
+            if (record->cobj_record) {
+                record->cobj_group_attributes = record->cobj_record;
+                record->owns_group_attributes = FLB_TRUE;
+            }
+
+            chunk_cobj->active_group_metadata = record->cobj_group_metadata;
+            chunk_cobj->active_group_attributes = record->cobj_group_attributes;
+        }
+        else if (record_type == FLB_LOG_EVENT_GROUP_END) {
+            record->cobj_group_metadata = chunk_cobj->active_group_metadata;
+            record->cobj_group_attributes = chunk_cobj->active_group_attributes;
+
+            chunk_cobj->active_group_metadata = NULL;
+            chunk_cobj->active_group_attributes = NULL;
+        }
+        else {
+            record->cobj_group_metadata = chunk_cobj->active_group_metadata;
+            record->cobj_group_attributes = chunk_cobj->active_group_attributes;
+        }
+
+        if (!record->cobj_group_metadata &&
+            record->event.group_metadata &&
+            (record->event.group_metadata->type == MSGPACK_OBJECT_MAP ||
+             record->event.group_metadata->type == MSGPACK_OBJECT_ARRAY)) {
+            record->cobj_group_metadata = flb_mp_object_to_cfl(record->event.group_metadata);
+            if (!record->cobj_group_metadata) {
+                if (record->owns_group_attributes && record->cobj_group_attributes) {
+                    cfl_object_destroy(record->cobj_group_attributes);
+                }
+                cfl_object_destroy(record->cobj_record);
+                cfl_object_destroy(record->cobj_metadata);
+                flb_free(record);
+                return FLB_MP_CHUNK_RECORD_ERROR;
+            }
+            record->owns_group_metadata = FLB_TRUE;
+            if (!chunk_cobj->active_group_metadata) {
+                chunk_cobj->active_group_metadata = record->cobj_group_metadata;
+            }
+        }
+
+        if (!record->cobj_group_attributes &&
+            record->event.group_attributes &&
+            (record->event.group_attributes->type == MSGPACK_OBJECT_MAP ||
+             record->event.group_attributes->type == MSGPACK_OBJECT_ARRAY)) {
+            record->cobj_group_attributes = flb_mp_object_to_cfl(record->event.group_attributes);
+            if (!record->cobj_group_attributes) {
+                if (record->owns_group_metadata && record->cobj_group_metadata) {
+                    cfl_object_destroy(record->cobj_group_metadata);
+                }
+                cfl_object_destroy(record->cobj_record);
+                cfl_object_destroy(record->cobj_metadata);
+                flb_free(record);
+                return FLB_MP_CHUNK_RECORD_ERROR;
+            }
+            record->owns_group_attributes = FLB_TRUE;
+            if (!chunk_cobj->active_group_attributes) {
+                chunk_cobj->active_group_attributes = record->cobj_group_attributes;
+            }
         }
 
         cfl_list_add(&record->_head, &chunk_cobj->records);
@@ -1339,11 +1891,28 @@ int flb_mp_chunk_cobj_record_destroy(struct flb_mp_chunk_cobj *chunk_cobj,
         }
     }
 
+    if (chunk_cobj && record->owns_group_metadata &&
+        chunk_cobj->active_group_metadata == record->cobj_group_metadata) {
+        chunk_cobj->active_group_metadata = NULL;
+    }
+    if (chunk_cobj && record->owns_group_attributes &&
+        chunk_cobj->active_group_attributes == record->cobj_group_attributes) {
+        chunk_cobj->active_group_attributes = NULL;
+    }
+
     if (record->cobj_metadata) {
         cfl_object_destroy(record->cobj_metadata);
     }
     if (record->cobj_record) {
         cfl_object_destroy(record->cobj_record);
+    }
+    if (record->owns_group_metadata && record->cobj_group_metadata &&
+        record->cobj_group_metadata != record->cobj_metadata) {
+        cfl_object_destroy(record->cobj_group_metadata);
+    }
+    if (record->owns_group_attributes && record->cobj_group_attributes &&
+        record->cobj_group_attributes != record->cobj_record) {
+        cfl_object_destroy(record->cobj_group_attributes);
     }
 
     cfl_list_del(&record->_head);

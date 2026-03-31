@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -49,6 +49,7 @@ struct flb_dummy {
 
     int fixed_timestamp;
     int flush_on_startup;
+    int test_hang_on_exit;  /* TEST ONLY: Used for hot reload watchdog testing */
 
     char *ref_metadata_msgpack;
     size_t ref_metadata_msgpack_size;

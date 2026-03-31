@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -89,7 +89,7 @@ struct flb_docker;
 
 struct cgroup_api {
     int cgroup_version;
-    struct mk_list* (*get_active_docker_ids) ();
+    struct mk_list* (*get_active_docker_ids) (struct flb_docker *);
     char*           (*get_container_name) (struct flb_docker *, char *);
     cpu_snapshot*   (*get_cpu_snapshot)   (struct flb_docker *, char *);
     mem_snapshot*   (*get_mem_snapshot)   (struct flb_docker *, char *);
@@ -119,4 +119,6 @@ struct flb_docker {
 int in_docker_collect(struct flb_input_instance *i_ins,
                       struct flb_config *config, void *in_context);
 docker_info *in_docker_init_docker_info(char *id);
+char *docker_extract_name(const char *line, const char *start);
+
 #endif

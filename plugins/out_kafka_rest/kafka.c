@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -94,7 +94,8 @@ static struct flb_config_map config_map[] = {
 static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
                                    const char *tag, int tag_len,
                                    size_t *out_size,
-                                   struct flb_kafka_rest *ctx)
+                                   struct flb_kafka_rest *ctx,
+                                   struct flb_config *config)
 {
     int i;
     int len;
@@ -127,7 +128,7 @@ static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /* Count number of entries */
-    arr_size = flb_mp_count(data, bytes);
+    arr_size = flb_mp_count_log_records(data, bytes);
 
     /* Root map */
     msgpack_pack_map(&mp_pck, 1);
@@ -211,7 +212,8 @@ static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
     flb_log_event_decoder_destroy(&log_decoder);
 
     /* Convert to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                          config->json_escape_unicode);
     msgpack_sbuffer_destroy(&mp_sbuf);
     if (!out_buf) {
         return NULL;
@@ -268,7 +270,7 @@ static void cb_kafka_flush(struct flb_event_chunk *event_chunk,
     /* Convert format */
     js = kafka_rest_format(event_chunk->data, event_chunk->size,
                            event_chunk->tag, flb_sds_len(event_chunk->tag),
-                           &js_size, ctx);
+                           &js_size, ctx, config);
     if (!js) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);

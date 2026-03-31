@@ -589,6 +589,159 @@ void flb_test_in_tail_dockermode_firstline_detection()
             NULL);
 }
 
+void do_test_generic_enctype(char *system, const char *target, const char *enc, int tExpected, int nExpected, ...)
+{
+    int64_t ret;
+    flb_ctx_t    *ctx    = NULL;
+    int in_ffd;
+    int out_ffd;
+    va_list va;
+    char *key;
+    char *value;
+    char path[PATH_MAX];
+    struct tail_test_result result = {0};
+
+    result.nMatched = 0;
+    result.target = target;
+
+    struct flb_lib_out_cb cb;
+    cb.cb   = cb_check_result;
+    cb.data = &result;
+
+    /* initialize */
+    set_result(0);
+
+    ctx = flb_create();
+
+    ret = flb_service_set(ctx,
+                          "Log_Level", "error",
+                          "Parsers_File", DPATH "/parsers.conf",
+                          NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
+
+    in_ffd = flb_input(ctx, (char *) system, NULL);
+    TEST_CHECK(in_ffd >= 0);
+    TEST_CHECK(flb_input_set(ctx, in_ffd, "tag", "test", NULL) == 0);
+
+    /* Compose path based on target */
+    snprintf(path, sizeof(path) - 1, DPATH "/log/%s.log", target);
+    TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
+
+    TEST_CHECK(flb_input_set(ctx, in_ffd,
+                             "path"          , path,
+                             "generic.encoding", enc,
+                             "read_from_head", "true",
+                             NULL) == 0);
+
+    va_start(va, nExpected);
+    while ((key = va_arg(va, char *))) {
+        value = va_arg(va, char *);
+        TEST_CHECK(value != NULL);
+        TEST_CHECK(flb_input_set(ctx, in_ffd, key, value, NULL) == 0);
+    }
+    va_end(va);
+
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    TEST_CHECK(flb_output_set(ctx, out_ffd,
+                              "match", "test",
+                              "format", "json",
+                              NULL) == 0);
+
+    TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
+                                    "Grace", "1",
+                                    NULL) == 0);
+
+    /* Start test */
+    /* Start the engine */
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret == 0, "starting engine");
+
+    /* Poll for up to 5 seconds or until we got a match */
+    for (ret = 0; ret < tExpected && result.nMatched < nExpected; ret++) {
+        usleep(1000);
+    }
+
+    /* Wait until matching nExpected results */
+    wait_with_timeout(5000, &result, nExpected);
+
+    TEST_CHECK(result.nMatched == nExpected);
+    TEST_MSG("result.nMatched: %i\nnExpected: %i", result.nMatched, nExpected);
+
+    ret = flb_stop(ctx);
+    TEST_CHECK_(ret == 0, "stopping engine");
+
+    if (ctx) {
+        flb_destroy(ctx);
+    }
+}
+
+void flb_test_in_tail_generic_enc_big5()
+{
+    do_test_generic_enctype("tail", "generic_enc_big5", "BIG5",
+                            20000, 10, NULL);
+}
+
+void flb_test_in_tail_generic_enc_gb18030()
+{
+    do_test_generic_enctype("tail", "generic_enc_gb18030", "GB18030",
+                            20000, 12, NULL);
+}
+
+void flb_test_in_tail_generic_enc_gbk()
+{
+    do_test_generic_enctype("tail", "generic_enc_gbk", "GBK",
+                            20000, 11, NULL);
+}
+
+void flb_test_in_tail_generic_enc_sjis()
+{
+    do_test_generic_enctype("tail", "generic_enc_sjis", "ShiftJIS",
+                            20000, 11, NULL);
+}
+
+void flb_test_in_tail_generic_enc_win1250()
+{
+    do_test_generic_enctype("tail", "generic_enc_win1250", "WIN1250",
+                            20000, 6, NULL);
+}
+
+void flb_test_in_tail_generic_enc_win1251()
+{
+    do_test_generic_enctype("tail", "generic_enc_win1251", "WIN1251",
+                            20000, 9, NULL);
+}
+
+void flb_test_in_tail_generic_enc_win1252()
+{
+    do_test_generic_enctype("tail", "generic_enc_win1252", "WIN1252",
+                            20000, 14, NULL);
+}
+
+void flb_test_in_tail_generic_enc_win1253()
+{
+    do_test_generic_enctype("tail", "generic_enc_win1253", "WIN1253",
+                            20000, 8, NULL);
+}
+
+void flb_test_in_tail_generic_enc_win1254()
+{
+    do_test_generic_enctype("tail", "generic_enc_win1254", "WIN1254",
+                            20000, 13, NULL);
+}
+
+void flb_test_in_tail_generic_enc_win1255()
+{
+    do_test_generic_enctype("tail", "generic_enc_win1255", "WIN1255",
+                            20000, 8, NULL);
+}
+
+void flb_test_in_tail_generic_enc_win1256()
+{
+    do_test_generic_enctype("tail", "generic_enc_win1256", "WIN1256",
+                            20000, 8, NULL);
+}
+
 #ifdef FLB_HAVE_UNICODE_ENCODER
 void do_test_unicode(char *system, const char *target, int nExpected, ...)
 {
@@ -827,6 +980,236 @@ void flb_test_in_tail_skip_long_lines()
     TEST_MSG("result.nNotMatched: %i\nnExpectedNotMatched: %i", result.nNotMatched, nExpectedNotMatched);
     TEST_CHECK(result.nLines == nExpectedLines);
     TEST_MSG("result.nLines: %i\nnExpectedLines: %i", result.nLines, nExpectedLines);
+
+    ret = flb_stop(ctx);
+    TEST_CHECK_(ret == 0, "stopping engine");
+
+    if (ctx) {
+        flb_destroy(ctx);
+    }
+
+    unlink(path);
+}
+
+static int write_long_ascii_line(int fd, size_t total_bytes)
+{
+    const char *chunk = "0123456789abcdef0123456789abcdef"; /* 32 bytes */
+    size_t chunk_len = strlen(chunk);
+    size_t written = 0;
+    ssize_t ret;
+    size_t rest = 0;
+
+    while (written + chunk_len <= total_bytes) {
+        ret = write(fd, chunk, chunk_len);
+        if (ret < 0) {
+            flb_errno();
+            return -1;
+        }
+        written += (size_t) ret;
+    }
+    if (written < total_bytes) {
+        rest = total_bytes - written;
+        ret = write(fd, chunk, rest);
+        if (ret < 0) {
+            flb_errno();
+            return -1;
+        }
+        written += (size_t) ret;
+    }
+    if (write(fd, "\n", 1) != 1) {
+        flb_errno();
+        return -1;
+    }
+    return 0;
+}
+
+static int write_long_utf8_line(int fd, size_t total_bytes)
+{
+    const char *u8_aa = "あ";
+    size_t u8_len = strlen(u8_aa); /* 3 */
+    size_t written = 0;
+    ssize_t ret;
+    const char *ascii = "XYZ";
+    size_t rest = 0;
+
+    while (written + u8_len <= total_bytes) {
+        ret = write(fd, u8_aa, u8_len);
+        if (ret < 0) {
+            flb_errno();
+            return -1;
+        }
+        written += (size_t) ret;
+    }
+
+    if (written < total_bytes) {
+        rest = total_bytes - written;
+        if (rest > strlen(ascii)) {
+            rest = strlen(ascii);
+        }
+        ret = write(fd, ascii, rest);
+        if (ret < 0) {
+            flb_errno();
+            return -1;
+        }
+        written += (size_t) ret;
+    }
+    if (write(fd, "\n", 1) != 1) {
+        flb_errno();
+        return -1;
+    }
+    return 0;
+}
+
+void flb_test_in_tail_truncate_long_lines()
+{
+    int64_t ret;
+    flb_ctx_t    *ctx = NULL;
+    int in_ffd, out_ffd;
+    char path[PATH_MAX];
+    struct tail_test_result result = {0};
+    int fd;
+
+    const char *target = "truncate_long_lines_basic";
+    int nExpected = 3;              /* before + truncated long line + after */
+    int nExpectedNotMatched = 0;    /* unused */
+    int nExpectedLines = 0;         /* unused */
+
+    struct flb_lib_out_cb cb;
+    int unused = 0;
+    int num = 0;
+
+    cb.cb   = cb_count_msgpack;
+    cb.data = &unused;
+
+    clear_output_num();
+
+    ctx = flb_create();
+    TEST_CHECK_(ctx != NULL, "flb_create failed");
+
+    TEST_CHECK_(flb_service_set(ctx, "Log_Level", "error", NULL) == 0,
+                "setting service options");
+
+    in_ffd = flb_input(ctx, "tail", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    TEST_CHECK(flb_input_set(ctx, in_ffd, "tag", "test", NULL) == 0);
+
+    snprintf(path, sizeof(path) - 1, DPATH "/log/%s.log", target);
+    fd = creat(path, S_IRWXU | S_IRGRP);
+    TEST_CHECK(fd >= 0);
+
+    write(fd, "before_long_line\n", strlen("before_long_line\n"));
+
+    TEST_CHECK(write_long_ascii_line(fd, 10 * 1024) == 0);
+
+    write(fd, "after_long_line\n", strlen("after_long_line\n"));
+    close(fd);
+
+    TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
+
+    TEST_CHECK(flb_input_set(ctx, in_ffd,
+                             "path", path,
+                             "read_from_head", "true",
+                             "truncate_long_lines", "on",
+                             "skip_long_lines", "off",
+                             "Buffer_Chunk_Size", "1k",
+                             "Buffer_Max_Size",   "4k",
+                             NULL) == 0);
+
+    out_ffd = flb_output(ctx, "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    TEST_CHECK(flb_output_set(ctx, out_ffd,
+                              "match", "test",
+                              NULL) == 0);
+
+    TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
+                                    "Grace", "1",
+                                    NULL) == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret == 0, "starting engine");
+
+    wait_num_with_timeout(5000, &num);
+
+    num = get_output_num();
+    TEST_CHECK(num == nExpected);
+    TEST_MSG("output count (truncate basic): got=%d expected=%d", num, nExpected);
+
+    ret = flb_stop(ctx);
+    TEST_CHECK_(ret == 0, "stopping engine");
+
+    if (ctx) {
+        flb_destroy(ctx);
+    }
+
+    unlink(path);
+}
+
+void flb_test_in_tail_truncate_long_lines_utf8()
+{
+    int64_t ret;
+    flb_ctx_t    *ctx = NULL;
+    int in_ffd, out_ffd;
+    char path[PATH_MAX];
+    int fd;
+
+    const char *target = "truncate_long_lines_utf8";
+    int nExpected = 1;
+
+    struct flb_lib_out_cb cb;
+    int unused = 0;
+    int num = 0;
+
+    cb.cb   = cb_count_msgpack;
+    cb.data = &unused;
+
+    clear_output_num();
+
+    ctx = flb_create();
+    TEST_CHECK_(ctx != NULL, "flb_create failed");
+
+    TEST_CHECK_(flb_service_set(ctx, "Log_Level", "error", NULL) == 0,
+                "setting service options");
+
+    in_ffd = flb_input(ctx, "tail", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    TEST_CHECK(flb_input_set(ctx, in_ffd, "tag", "test", NULL) == 0);
+
+    snprintf(path, sizeof(path) - 1, DPATH "/log/%s.log", target);
+    fd = creat(path, S_IRWXU | S_IRGRP);
+    TEST_CHECK(fd >= 0);
+
+    TEST_CHECK(write_long_utf8_line(fd, 10 * 1024) == 0);
+    close(fd);
+
+    TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
+
+    TEST_CHECK(flb_input_set(ctx, in_ffd,
+                             "path", path,
+                             "read_from_head", "true",
+                             "truncate_long_lines", "on",
+                             "skip_long_lines", "off",
+                             "Buffer_Chunk_Size", "1k",
+                             "Buffer_Max_Size",   "4k",
+                             NULL) == 0);
+
+    out_ffd = flb_output(ctx, "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    TEST_CHECK(flb_output_set(ctx, out_ffd,
+                              "match", "test",
+                              NULL) == 0);
+
+    TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
+                                    "Grace", "1",
+                                    NULL) == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret == 0, "starting engine");
+
+    wait_num_with_timeout(5000, &num);
+
+    num = get_output_num();
+    TEST_CHECK(num == nExpected);
+    TEST_MSG("output count (truncate utf8): got=%d expected=%d", num, nExpected);
 
     ret = flb_stop(ctx);
     TEST_CHECK_(ret == 0, "stopping engine");
@@ -1228,6 +1611,91 @@ void flb_test_offset_key()
 
     /* waiting to flush */
     flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0))  {
+        TEST_MSG("no outputs");
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
+void flb_test_multiline_offset_key()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"multiline_offset.log"};
+    char *offset_key = "OffsetKey";
+    char *msg_before_tail = "[2025-06-16 20:42:22,291] INFO - aaaaaaaaaaa";
+    char *msg_before_tail2 = "[2025-06-16 20:42:22,500] Error";
+    char *msg_final = "[2025-06-16 20:45:29,234] Fatal";
+    char expected_msg[1024] = {0};
+    int ret;
+    int num;
+
+    char *expected_strs[] = {msg_final, &expected_msg[0]};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_json_str_list;
+    cb_data.data = &expected;
+
+    // multiline offset is at the end of the message
+    ret = snprintf(&expected_msg[0], sizeof(expected_msg), "\"%s\":%ld", offset_key, strlen(msg_before_tail)+strlen(NEW_LINE)+strlen(msg_before_tail2)+strlen(NEW_LINE)+strlen(msg_final)+strlen(NEW_LINE));
+    if(!TEST_CHECK(ret >= 0)) {
+        TEST_MSG("snprintf failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_service_set(ctx->flb, "Parsers_File", DPATH "/parsers_multiline.conf", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_set(ctx->flb, ctx->o_ffd,
+                        "path", file[0],
+                        "offset_key", offset_key,
+                        "multiline.parser", "multiline-regex",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = write_msg(ctx, msg_before_tail, strlen(msg_before_tail));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    ret = write_msg(ctx, msg_before_tail2, strlen(msg_before_tail2));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ret = write_msg(ctx, msg_final, strlen(msg_final));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    /* wait up to 5s for at least one output */
+    wait_num_with_timeout(5000, &num);
 
     num = get_output_num();
     if (!TEST_CHECK(num > 0))  {
@@ -2188,10 +2656,13 @@ TEST_LIST = {
     {"issue_3943", flb_test_in_tail_issue_3943},
     /* Properties */
     {"skip_long_lines", flb_test_in_tail_skip_long_lines},
+    {"truncate_long_lines",          flb_test_in_tail_truncate_long_lines},
+    {"truncate_long_lines_utf8",     flb_test_in_tail_truncate_long_lines_utf8},
     {"path_comma", flb_test_path_comma},
     {"path_key", flb_test_path_key},
     {"exclude_path", flb_test_exclude_path},
     {"offset_key", flb_test_offset_key},
+    {"multiline_offset_key", flb_test_multiline_offset_key},
     {"skip_empty_lines", flb_test_skip_empty_lines},
     {"skip_empty_lines_crlf", flb_test_skip_empty_lines_crlf},
     {"ignore_older", flb_test_ignore_older},
@@ -2227,6 +2698,17 @@ TEST_LIST = {
     {"in_tail_dockermode_splitted_multiple_lines",  flb_test_in_tail_dockermode_splitted_multiple_lines},
     {"in_tail_dockermode_firstline_detection",      flb_test_in_tail_dockermode_firstline_detection},
     {"in_tail_multiline_json_and_regex",            flb_test_in_tail_multiline_json_and_regex},
+    {"in_tail_generic_enc_big5",                    flb_test_in_tail_generic_enc_big5},
+    {"in_tail_generic_enc_gb18030",                 flb_test_in_tail_generic_enc_gb18030},
+    {"in_tail_generic_enc_gbk",                     flb_test_in_tail_generic_enc_gbk},
+    {"in_tail_generic_enc_sjis",                    flb_test_in_tail_generic_enc_sjis},
+    {"in_tail_generic_enc_win1250",                 flb_test_in_tail_generic_enc_win1250},
+    {"in_tail_generic_enc_win1251",                 flb_test_in_tail_generic_enc_win1251},
+    {"in_tail_generic_enc_win1252",                 flb_test_in_tail_generic_enc_win1252},
+    {"in_tail_generic_enc_win1253",                 flb_test_in_tail_generic_enc_win1253},
+    {"in_tail_generic_enc_win1254",                 flb_test_in_tail_generic_enc_win1254},
+    {"in_tail_generic_enc_win1255",                 flb_test_in_tail_generic_enc_win1255},
+    {"in_tail_generic_enc_win1256",                 flb_test_in_tail_generic_enc_win1256},
 #endif
     {NULL, NULL}
 };

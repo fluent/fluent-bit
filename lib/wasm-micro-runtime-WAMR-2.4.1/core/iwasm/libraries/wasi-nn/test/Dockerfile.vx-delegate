@@ -1,0 +1,125 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+FROM ubuntu:20.04 AS base
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y \
+    cmake build-essential git curl libssl-dev python3 --no-install-recommends \
+    && apt-get clean -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y wget ca-certificates --no-install-recommends \
+    && apt-get clean -y \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir /usr/local/share/ca-certificates/cacert.org \
+    && wget -qP /usr/local/share/ca-certificates/cacert.org http://www.cacert.org/certs/root.crt http://www.cacert.org/certs/class3.crt \
+    && update-ca-certificates \
+    && git config --global http.sslCAinfo /etc/ssl/certs/ca-certificates.crt
+
+# need a newer cmake
+RUN apt-get purge -y cmake
+
+ARG CMAKE_VER=3.27.0
+RUN wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VER}/cmake-${CMAKE_VER}-Linux-x86_64.sh \
+  -q -O /tmp/cmake-install.sh \
+  && chmod u+x /tmp/cmake-install.sh \
+  && mkdir /opt/cmake-${CMAKE_VER} \
+  && /tmp/cmake-install.sh --skip-license --prefix=/opt/cmake-${CMAKE_VER} \
+  && rm /tmp/cmake-install.sh \
+  && ln -s /opt/cmake-${CMAKE_VER}/bin/* /usr/local/bin
+
+# Build TensorFlow Lite VX delegate default built for x86-64 simulator
+WORKDIR /tmp
+RUN git clone https://github.com/VeriSilicon/TIM-VX.git tim-vx \
+    && git clone https://github.com/VeriSilicon/tflite-vx-delegate.git \
+    && git clone https://github.com/tensorflow/tensorflow.git --branch v2.12.0 
+
+WORKDIR /tmp/tensorflow
+RUN git cherry-pick -n 5115fa96d7c5b41451674892317be43e30b7c389
+
+
+# Build TIM-VX
+WORKDIR /tmp/tim-vx/host_build
+RUN cmake -DCMAKE_INSTALL_PREFIX=/usr/local  ../ \
+    && make -j "$(grep -c ^processor /proc/cpuinfo)" \
+    && make install
+
+WORKDIR /tmp/tim-vx
+#RUN mkdir -p prebuilt-sdk/x86_64_linux/lib/include 
+#RUN cp prebuilt-sdk/x86_64_linux/include/CL prebuilt-sdk/x86_64_linux/lib/include -fr
+
+
+# Build TensorFlow Lite
+WORKDIR /tmp/tensorflow/build
+RUN cmake \
+    -DBUILD_SHARED_LIBS=ON=on \
+    -DTFLITE_ENABLE_RUY=on \
+    -DTFLITE_ENABLE_NNAPI=off \
+    -DTFLITE_ENABLE_XNNPACK=on \
+    -DTFLITE_ENABLE_EXTERNAL_DELEGATE=on \
+    ../tensorflow/lite/
+RUN make -j "$(grep -c ^processor /proc/cpuinfo)" \
+    && make install \
+    && cp --no-preserve=ownership -d lib*.so* /usr/local/lib \ 
+    && cp -r --no-preserve=ownership -d flatbuffers/include/flatbuffers /usr/local/include
+# install header files
+RUN install -d /usr/local/include/tensorflow/lite 
+WORKDIR /tmp/tensorflow/tensorflow/lite 
+# hadolint ignore=SC2046
+RUN cp --parents \
+    $(find . -name "*.h*") \
+    /usr/local/include/tensorflow/lite
+# install version.h from core
+RUN install -d /usr/local/include/tensorflow/core/public && \
+    cp /tmp/tensorflow/tensorflow/core/public/version.h /usr/local/include/tensorflow/core/public
+
+
+# Build Vx Delegate default built for x86-64 simulator
+WORKDIR /tmp/tflite-vx-delegate/build
+RUN cmake \
+    -DBUILD_SHARED_LIBS=ON \
+    -DFETCHCONTENT_SOURCE_DIR_TENSORFLOW=/tmp/tensorflow \
+    -DTFLITE_LIB_LOC=/usr/local/lib/libtensorflow-lite.so \
+    -DTIM_VX_INSTALL=/usr/local \
+    -DCMAKE_INSTALL_PREFIX=/usr/  \
+    ../
+RUN make vx_delegate -j "$(grep -c ^processor /proc/cpuinfo)" \
+    && make install \
+    && cp --no-preserve=ownership -d lib*.so* /usr/lib
+# install header files
+RUN install -d /usr/local/include/tensorflow-lite-vx-delegate
+WORKDIR /tmp/tflite-vx-delegate/
+# hadolint ignore=SC2046
+RUN cp --parents \
+    $(find . -name "*.h*") \
+    /usr/local/include/tensorflow-lite-vx-delegate
+
+ENV VIVANTE_SDK_DIR=/tmp/tim-vx/prebuilt-sdk/x86_64_linux/
+ENV VSIMULATOR_CONFIG=czl
+
+# Build WASI-NN
+WORKDIR /home/wamr
+
+COPY . .
+
+WORKDIR /home/wamr/product-mini/platforms/linux
+
+RUN rm -rf build \
+  && cmake -S . -B build\
+    -DCMAKE_LIBRARY_PATH="/usr/local/lib/" \
+    -DCMAKE_INCLUDE_PATH="/usr/local/include/" \
+    -DWAMR_BUILD_WASI_NN=1 \
+    -DWAMR_BUILD_WASI_NN_TFLITE=1\
+    -DWAMR_BUILD_WASI_NN_ENABLE_EXT=1 \
+    -DWASI_NN_EXT_DELEGATE_PATH="/usr/lib/libvx_delegate.so" \
+  && cmake --build build -j "$(grep -c ^processor /proc/cpuinfo)"
+
+RUN cp /home/wamr/product-mini/platforms/linux/build/iwasm /run/iwasm \
+  && cp /home/wamr/product-mini/platforms/linux/build/lib*.so /usr/lib
+
+ENTRYPOINT [ "/run/iwasm" ]

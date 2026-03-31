@@ -204,7 +204,7 @@ endmacro()
 macro(FLB_PLUGIN name src deps)
   add_library(flb-plugin-${name} STATIC ${src})
   add_sanitizers(flb-plugin-${name})
-  target_link_libraries(flb-plugin-${name} fluent-bit-static msgpack-c-static ${deps})
+  target_link_libraries(flb-plugin-${name} fluent-bit-static ${MSGPACK_LIBRARIES} ${deps})
 endmacro()
 
 # FLB_ZIG_PLUGIN: used by zig plugins to standardize the process
@@ -262,6 +262,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_podman_metrics")
   REGISTER_IN_PLUGIN("in_process_exporter_metrics")
   REGISTER_IN_PLUGIN("in_ebpf")
+  REGISTER_IN_PLUGIN("in_gpu_metrics")
 endif()
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux" OR ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
@@ -275,7 +276,9 @@ if(FLB_KAFKA)
 endif()
 
 REGISTER_IN_PLUGIN("in_fluentbit_metrics")
+REGISTER_IN_PLUGIN("in_fluentbit_logs")
 REGISTER_IN_PLUGIN("in_prometheus_scrape")
+REGISTER_IN_PLUGIN("in_prometheus_textfile")
 REGISTER_IN_PLUGIN("in_emitter")
 REGISTER_IN_PLUGIN("in_tail")
 REGISTER_IN_PLUGIN("in_dummy")
@@ -342,11 +345,15 @@ REGISTER_IN_PLUGIN("in_random")
 # PROCESSORS
 # ==========
 REGISTER_PROCESSOR_PLUGIN("processor_content_modifier")
+REGISTER_PROCESSOR_PLUGIN("processor_cumulative_to_delta")
 REGISTER_PROCESSOR_PLUGIN("processor_labels")
 REGISTER_PROCESSOR_PLUGIN("processor_metrics_selector")
 REGISTER_PROCESSOR_PLUGIN("processor_opentelemetry_envelope")
 REGISTER_PROCESSOR_PLUGIN("processor_sampling")
 REGISTER_PROCESSOR_PLUGIN("processor_sql")
+if (FLB_RIPSER)
+  REGISTER_PROCESSOR_PLUGIN("processor_tda")
+endif()
 
 # OUTPUTS
 # =======

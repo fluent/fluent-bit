@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,10 +20,11 @@
 #ifndef FLB_MACROS_H
 #define FLB_MACROS_H
 
+#include <stdbool.h>
 #include <monkey/mk_core.h>
 
-#define FLB_FALSE  0
-#define FLB_TRUE   !FLB_FALSE
+#define FLB_FALSE  false
+#define FLB_TRUE   true
 
 /* Return values */
 #define FLB_ERROR   0

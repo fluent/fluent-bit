@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/http_server/flb_hs_utils.h>
 
 #define FLB_UPTIME_ONEDAY  86400
 #define FLB_UPTIME_ONEHOUR  3600
@@ -64,15 +65,18 @@ static void uptime_hr(time_t uptime, msgpack_packer *mp_pck)
 }
 
 /* API: List all built-in plugins */
-static void cb_uptime(mk_request_t *request, void *data)
+static int cb_uptime(struct flb_hs *hs,
+                     struct flb_http_request *request,
+                     struct flb_http_response *response)
 {
     flb_sds_t out_buf;
     size_t out_size;
     time_t uptime;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
-    struct flb_hs *hs = data;
     struct flb_config *config = hs->config;
+
+    (void) request;
 
     /* initialize buffers */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -88,24 +92,24 @@ static void cb_uptime(mk_request_t *request, void *data)
     uptime_hr(uptime, &mp_pck);
 
     /* Export to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     msgpack_sbuffer_destroy(&mp_sbuf);
     if (!out_buf) {
-        return;
+        flb_http_response_set_status(response, 500);
+        return flb_http_response_commit(response);
     }
     out_size = flb_sds_len(out_buf);
 
-    mk_http_status(request, 200);
-    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_JSON);
-    mk_http_send(request, out_buf, out_size, NULL);
-    mk_http_done(request);
+    flb_hs_response_set_payload(response, 200, FLB_HS_CONTENT_TYPE_JSON,
+                                out_buf, out_size);
 
     flb_sds_destroy(out_buf);
+    return 0;
 }
 
 /* Perform registration */
 int api_v1_uptime(struct flb_hs *hs)
 {
-    mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/uptime", cb_uptime, hs);
-    return 0;
+    return flb_hs_register_endpoint(hs, "/api/v1/uptime",
+                                    FLB_HS_ROUTE_EXACT, cb_uptime);
 }

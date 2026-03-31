@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -36,6 +36,8 @@ struct flb_kv *flb_kv_item_create_len(struct mk_list *list,
                                       char *v_buf, size_t v_len);
 struct flb_kv *flb_kv_item_create(struct mk_list *list,
                                   char *k_buf, char *v_buf);
+struct flb_kv *flb_kv_item_set(struct mk_list *list,
+                               char *k_buf, char *v_buf);
 void flb_kv_item_destroy(struct flb_kv *kv);
 void flb_kv_release(struct mk_list *list);
 const char *flb_kv_get_key_value(const char *key, struct mk_list *list);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 
 #include <msgpack.h>
@@ -125,7 +126,7 @@ static int datadog_format(struct flb_config *config,
         event_chunk = flush_ctx;
         array_size = event_chunk->total_events;
     } else {
-        array_size = flb_mp_count(data, bytes);
+        array_size = flb_mp_count_log_records(data, bytes);
     }
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
@@ -325,7 +326,8 @@ static int datadog_format(struct flb_config *config,
     }
 
     /* Convert from msgpack to JSON */
-    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                          config->json_escape_unicode);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (!out_buf) {

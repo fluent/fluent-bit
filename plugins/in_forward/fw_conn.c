@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,20 +28,17 @@
 #include "fw_prot.h"
 #include "fw_conn.h"
 
-/* Callback invoked every time an event is triggered for a connection */
-int fw_conn_event(void *data)
+static int fw_conn_event_internal(struct flb_connection *connection)
 {
     int ret;
-    int bytes;
-    int available;
-    int size;
+    ssize_t bytes;
+    size_t read_bytes;
+    size_t available;
+    size_t size;
     char *tmp;
     struct fw_conn *conn;
     struct mk_event *event;
     struct flb_in_fw_config *ctx;
-    struct flb_connection *connection;
-
-    connection = (struct flb_connection *) data;
 
     conn = connection->user_data;
 
@@ -70,7 +67,7 @@ int fw_conn_event(void *data)
         available = (conn->buf_size - conn->buf_len);
         if (available < 1) {
             if (conn->buf_size >= ctx->buffer_max_size) {
-                flb_plg_warn(ctx->ins, "fd=%i incoming data exceed limit (%lu bytes)",
+                flb_plg_warn(ctx->ins, "fd=%i incoming data exceed limit (%zu bytes)",
                              event->fd, (ctx->buffer_max_size));
                 fw_conn_del(conn);
                 return -1;
@@ -88,7 +85,7 @@ int fw_conn_event(void *data)
                 flb_errno();
                 return -1;
             }
-            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %i",
+            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %zu -> %zu",
                           event->fd, conn->buf_size, size);
 
             conn->buf = tmp;
@@ -101,9 +98,10 @@ int fw_conn_event(void *data)
                                 available);
 
         if (bytes > 0) {
-            flb_plg_trace(ctx->ins, "read()=%i pre_len=%i now_len=%i",
-                          bytes, conn->buf_len, conn->buf_len + bytes);
-            conn->buf_len += bytes;
+            read_bytes = (size_t) bytes;
+            flb_plg_trace(ctx->ins, "read()=%zd pre_len=%zu now_len=%zu",
+                          bytes, conn->buf_len, conn->buf_len + read_bytes);
+            conn->buf_len += read_bytes;
 
             ret = fw_prot_process(ctx->ins, conn);
             if (ret == -1) {
@@ -127,6 +125,37 @@ int fw_conn_event(void *data)
     return 0;
 }
 
+/* Callback invoked every time an event is triggered for a connection */
+int fw_conn_event(void *data)
+{
+    struct flb_in_fw_config *ctx;
+    struct fw_conn          *conn;
+    int                      result;
+    struct flb_connection   *connection;
+    int                      state_backup;
+
+    connection = (struct flb_connection *) data;
+
+    conn = connection->user_data;
+
+    ctx = conn->ctx;
+
+    state_backup = ctx->state;
+
+    ctx->state = FW_INSTANCE_STATE_PROCESSING_PACKET;
+
+    result = fw_conn_event_internal(connection);
+
+    if (ctx->state == FW_INSTANCE_STATE_PROCESSING_PACKET) {
+        ctx->state = state_backup;
+    }
+    else if (ctx->state == FW_INSTANCE_STATE_PAUSED) {
+        fw_conn_del_all(ctx);
+    }
+
+    return result;
+}
+
 /* Create a new Forward request instance */
 struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_config *ctx)
 {
@@ -134,7 +163,7 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     int             ret;
     struct flb_in_fw_helo *helo = NULL;
 
-    conn = flb_malloc(sizeof(struct fw_conn));
+    conn = flb_calloc(1, sizeof(struct fw_conn));
     if (!conn) {
         flb_errno();
 
@@ -142,9 +171,20 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     }
 
     conn->handshake_status = FW_HANDSHAKE_ESTABLISHED;
-    if (ctx->shared_key != NULL) {
+    /*
+     * Always force the secure-forward handshake when:
+     *  - a shared key is configured, or
+     *  - empty_shared_key is enabled (empty string shared key), or
+     *  - user authentication is configured (users > 0).
+     *
+     * This closes the gap where "users-only" previously skipped authentication entirely.
+     */
+    conn->handshake_status = FW_HANDSHAKE_ESTABLISHED; /* default */
+    if (ctx->shared_key != NULL ||
+        ctx->empty_shared_key == FLB_TRUE ||
+        mk_list_size(&ctx->users) > 0) {
         conn->handshake_status = FW_HANDSHAKE_HELO;
-        helo = flb_malloc(sizeof(struct flb_in_fw_helo));
+        helo = flb_calloc(1, sizeof(struct flb_in_fw_helo));
         if (!helo) {
             flb_errno();
             flb_free(conn);
@@ -180,12 +220,17 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     conn->buf = flb_malloc(ctx->buffer_chunk_size);
     if (!conn->buf) {
         flb_errno();
+        if (conn->helo != NULL) {
+            flb_free(conn->helo);
+        }
         flb_free(conn);
-
         return NULL;
     }
     conn->buf_size = ctx->buffer_chunk_size;
     conn->in       = ctx->ins;
+
+    conn->compression_type = FLB_COMPRESSION_ALGORITHM_NONE;
+    conn->d_ctx = NULL;
 
     /* Register instance into the event loop */
     ret = mk_event_add(flb_engine_evl_get(),
@@ -195,15 +240,15 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
                        &connection->event);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not register new connection");
-
+        if (conn->helo != NULL) {
+            flb_free(conn->helo);
+        }
         flb_free(conn->buf);
         flb_free(conn);
-
         return NULL;
     }
 
     mk_list_add(&conn->_head, &ctx->connections);
-
     return conn;
 }
 
@@ -216,6 +261,11 @@ int fw_conn_del(struct fw_conn *conn)
 
     /* Release resources */
     mk_list_del(&conn->_head);
+
+    /* Release decompression context if it exists */
+    if (conn->d_ctx) {
+        flb_decompression_context_destroy(conn->d_ctx);
+    }
 
     if (conn->helo != NULL) {
         if (conn->helo->nonce != NULL) {

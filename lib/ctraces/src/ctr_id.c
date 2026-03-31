@@ -148,6 +148,7 @@ cfl_sds_t ctr_id_to_lower_base16(struct ctrace_id *cid)
     }
 
     out[i * 2] = 0;
+    cfl_sds_set_len(out, len * 2);
 
     return out;
 }

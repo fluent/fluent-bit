@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,8 +27,11 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_task_map.h>
+#include <cfl/cfl.h>
 
 #include <monkey/mk_core.h>
+
+struct flb_router;
 
 #define FLB_CONFIG_FLUSH_SECS   1
 #define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
@@ -67,9 +70,10 @@ struct flb_config {
      * shutdown when all remaining tasks are flushed
      */
     int grace;
-    int grace_count;          /* Count of grace shutdown tries  */
-    flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
-    int convert_nan_to_null;  /* convert null to nan ?          */
+    int grace_count;          /* Count of grace shutdown tries              */
+    int grace_input;          /* Shutdown grace to keep inputs ingesting    */
+    flb_pipefd_t flush_fd;    /* Timer FD associated to flush               */
+    int convert_nan_to_null;  /* Convert null to nan ?                      */
 
     int daemon;               /* Run as a daemon ?              */
     flb_pipefd_t shutdown_fd; /* Shutdown FD, 5 seconds         */
@@ -144,6 +148,7 @@ struct flb_config {
 
     /* Multiline core parser definitions */
     struct mk_list multiline_parsers;
+    char *multiline_buffer_limit; /* limit for multiline concatenated data */
 
     /* Outputs instances */
     struct mk_list outputs;             /* list of output plugins   */
@@ -243,8 +248,16 @@ struct flb_config {
     int   storage_max_chunks_up;    /* max number of chunks 'up' in memory */
     int   storage_del_bad_chunks;   /* delete irrecoverable chunks */
     char *storage_bl_mem_limit;     /* storage backlog memory limit */
+    int   storage_bl_flush_on_shutdown; /* enable/disable backlog chunks flush on shutdown */
     struct flb_storage_metrics *storage_metrics_ctx; /* storage metrics context */
     int   storage_trim_files;       /* enable/disable file trimming */
+    char *storage_type;             /* global storage type */
+    int   storage_inherit;          /* apply storage type to inputs */
+
+    /* DLQ for non-retriable output failures */
+    int   storage_keep_rejected;     /* 0/1 */
+    char *storage_rejected_path;     /* relative to storage_path, default "rejected" */
+    void *storage_rejected_stream;  /* NULL until first use */
 
     /* Embedded SQL Database support (SQLite3) */
 #ifdef FLB_HAVE_SQLDB
@@ -282,11 +295,16 @@ struct flb_config {
     unsigned int hot_reloaded_count;
     int shutdown_by_hot_reloading;
     int hot_reloading;
+    int hot_reload_succeeded;
+    
+    int hot_reload_watchdog_timeout_seconds;
 
     /* Routing */
-    size_t route_mask_size;
-    size_t route_mask_slots;
-    uint64_t *route_empty_mask;
+    struct flb_router *router;
+#ifdef FLB_SYSTEM_WINDOWS
+    /* maxstdio (Windows) */
+    int win_maxstdio;
+#endif
 
     /* Co-routines */
     unsigned int coro_stack_size;
@@ -310,7 +328,12 @@ struct flb_config {
     struct flb_task_map *task_map;
     size_t task_map_size;
 
+    int json_escape_unicode;
+
     int dry_run;
+
+    /* New Router Configuration */
+    struct cfl_list input_routes;
 };
 
 #define FLB_CONFIG_LOG_LEVEL(c) (c->log->level)
@@ -372,6 +395,10 @@ enum conf_type {
 
 #define FLB_CONF_STR_HOT_RELOAD        "Hot_Reload"
 #define FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY  "Hot_Reload.Ensure_Thread_Safety"
+#define FLB_CONF_STR_HOT_RELOAD_TIMEOUT "Hot_Reload.Timeout"
+
+/* Set up maxstdio (Windows) */
+#define FLB_CONF_STR_WINDOWS_MAX_STDIO "windows.maxstdio"
 
 /* DNS */
 #define FLB_CONF_DNS_MODE              "dns.mode"
@@ -385,16 +412,29 @@ enum conf_type {
 #define FLB_CONF_STORAGE_METRICS       "storage.metrics"
 #define FLB_CONF_STORAGE_CHECKSUM      "storage.checksum"
 #define FLB_CONF_STORAGE_BL_MEM_LIMIT  "storage.backlog.mem_limit"
+#define FLB_CONF_STORAGE_BL_FLUSH_ON_SHUTDOWN \
+                                       "storage.backlog.flush_on_shutdown" 
 #define FLB_CONF_STORAGE_MAX_CHUNKS_UP "storage.max_chunks_up"
 #define FLB_CONF_STORAGE_DELETE_IRRECOVERABLE_CHUNKS \
                                        "storage.delete_irrecoverable_chunks"
 #define FLB_CONF_STORAGE_TRIM_FILES    "storage.trim_files"
+#define FLB_CONF_STORAGE_TYPE          "storage.type"
+#define FLB_CONF_STORAGE_INHERIT       "storage.inherit"
+/* Storage DLQ */
+#define FLB_CONF_STORAGE_KEEP_REJECTED "storage.keep.rejected"
+#define FLB_CONF_STORAGE_REJECTED_PATH "storage.rejected.path"
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
 
+/* Multiline */
+#define FLB_CONF_STR_MULTILINE_BUFFER_LIMIT "multiline_buffer_limit"
+
 /* Scheduler */
 #define FLB_CONF_STR_SCHED_CAP        "scheduler.cap"
 #define FLB_CONF_STR_SCHED_BASE       "scheduler.base"
+
+/* json escape */
+#define FLB_CONF_UNICODE_STR_JSON_ESCAPE "json.escape_unicode"
 
 #endif

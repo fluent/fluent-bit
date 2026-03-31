@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -51,6 +51,15 @@
 
 /* Default multiline buffer size: 4Kb */
 #define FLB_ML_BUF_SIZE         1024*4
+
+/* Default limit for concatenated multiline messages: 2MB */
+#define FLB_ML_BUFFER_LIMIT_DEFAULT_STR "2MB"
+#define FLB_ML_BUFFER_LIMIT_DEFAULT     (1024 * 1024 * 2)
+
+/* Return codes */
+#define FLB_MULTILINE_OK         0
+#define FLB_MULTILINE_PROCESSED  1 /* Reserved */
+#define FLB_MULTILINE_TRUNCATED  2
 
 /* Maximum number of groups per stream */
 #define FLB_ML_MAX_GROUPS       6
@@ -103,9 +112,17 @@ struct flb_ml_stream_group {
     msgpack_sbuffer mp_md_sbuf; /* temporary msgpack buffer              */
     msgpack_packer mp_md_pck;   /* temporary msgpack packer              */
 
+    /* Metadata snapshots (deep-copied) to avoid msgpack pack/unpack churn */
+    struct mk_list metadata_objects;          /* list of deep-copied msgpack_object maps */
+    int            metadata_objects_initialized;
+
     msgpack_sbuffer mp_sbuf;    /* temporary msgpack buffer              */
     msgpack_packer mp_pck;      /* temporary msgpack packer              */
     struct flb_time mp_time;    /* multiline time parsed from first line */
+    int truncated;              /* was the buffer truncated?         */
+
+    /* parent stream reference */
+    struct flb_ml_stream *stream;
 
     struct mk_list _head;
 };
@@ -275,6 +292,9 @@ struct flb_ml {
     struct flb_log_event_encoder log_event_encoder;
     struct flb_log_event_decoder log_event_decoder;
     struct flb_config *config;             /* Fluent Bit context */
+
+    /* Limit for concatenated multiline messages */
+    size_t buffer_limit;
 };
 
 struct flb_ml *flb_ml_create(struct flb_config *ctx, char *name);
@@ -353,6 +373,10 @@ int flb_ml_type_lookup(char *str);
 int flb_ml_flush_stdout(struct flb_ml_parser *parser,
                         struct flb_ml_stream *mst,
                         void *data, char *buf_data, size_t buf_size);
+
+int flb_ml_stream_group_add_metadata(struct flb_ml_stream_group *group,
+                                     msgpack_object *metadata);
+void flb_ml_stream_group_purge_metadata(struct flb_ml_stream_group *group);
 
 #include "flb_ml_mode.h"
 
