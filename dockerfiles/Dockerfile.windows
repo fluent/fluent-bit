@@ -58,7 +58,8 @@ RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
       '--add Microsoft.VisualStudio.Component.VC.CoreBuildTools', `
       '--add Microsoft.VisualStudio.Component.VC.MSVC.143', `
       '--add Microsoft.VisualStudio.Component.Windows10SDK.19041' `
-      -NoNewWindow -Wait; `
+      -NoNewWindow -Wait -PassThru; `
+    Write-Host \"Visual Studio Build Tools installer exit code: $($p.ExitCode)\"; `
     if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { `
       throw \"Visual Studio Build Tools installer failed with exit code $($p.ExitCode)\" `
     }; `
