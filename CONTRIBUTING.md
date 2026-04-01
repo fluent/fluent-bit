@@ -25,7 +25,8 @@ You have to pay attention to the code indentation, tabs are 4 spaces, spaces on 
 
 #### Line Length
 
-Fluent Bit source code lines length should not exceed 90 characters.
+Fluent Bit source code should target 100 characters per line, with 120
+characters as the maximum allowed line length.
 
 #### Braces usage on conditionals, loops and functions:
 
