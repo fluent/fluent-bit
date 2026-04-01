@@ -35,6 +35,12 @@
 
 typedef char *flb_sds_t;
 
+struct flb_sds_view {
+    const char *buf;
+    size_t len;
+};
+typedef struct flb_sds_view flb_sds_view_t;
+
 #pragma pack(push, 1)
 struct flb_sds {
     uint64_t len;        /* used */
@@ -95,8 +101,33 @@ static inline int flb_sds_casecmp(flb_sds_t s, const char *str, int len)
     return strncasecmp(s, str, len);
 }
 
+static inline flb_sds_view_t flb_sds_view_create(const char *str, size_t len)
+{
+    flb_sds_view_t view;
+
+    view.buf = str;
+    view.len = len;
+
+    return view;
+}
+
+static inline flb_sds_view_t flb_sds_view_create_from_sds(flb_sds_t s)
+{
+    return flb_sds_view_create(s, flb_sds_len(s));
+}
+
+static inline int flb_sds_view_is_empty(flb_sds_view_t view)
+{
+    if (view.len == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 flb_sds_t flb_sds_create(const char *str);
 flb_sds_t flb_sds_create_len(const char *str, int len);
+flb_sds_t flb_sds_create_from_view(flb_sds_view_t view);
 flb_sds_t flb_sds_create_size(size_t size);
 int flb_sds_trim(flb_sds_t s);
 flb_sds_t flb_sds_cat(flb_sds_t s, const char *str, int len);
