@@ -142,6 +142,7 @@ static int in_ebpf_collect(struct flb_input_instance *ins, struct flb_config *co
 }
 
 static int in_ebpf_init(struct flb_input_instance *ins, struct flb_config *config, void *data) {
+    int i;
     struct flb_in_ebpf_context *ctx;
     struct mk_list *head;
     struct flb_kv *kv;
@@ -175,6 +176,14 @@ static int in_ebpf_init(struct flb_input_instance *ins, struct flb_config *confi
             flb_plg_debug(ctx->ins, "processing trace: %s", trace_name);
             if (trace_setup(ctx, trace_name) != 0) {
                 flb_plg_error(ctx->ins, "failed to configure trace: %s", trace_name);
+                for (i = 0; i < ctx->trace_count; i++) {
+                    ring_buffer__free(ctx->traces[i].rb);
+                    if (ctx->traces[i].skel_destroy) {
+                        ctx->traces[i].skel_destroy(ctx->traces[i].skel);
+                    }
+                }
+                flb_log_event_encoder_destroy(ctx->log_encoder);
+                flb_free(ctx->traces);
                 flb_free(ctx);
                 return -1;
             }
