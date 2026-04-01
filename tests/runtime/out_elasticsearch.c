@@ -2,9 +2,14 @@
 
 #include <fluent-bit.h>
 #include "flb_tests_runtime.h"
+#include "../include/flb_tests_tmpdir.h"
+#include <stdio.h>
+#include <stdarg.h>
+#include <unistd.h>
 
 /* Test data */
 #include "data/es/json_es.h" /* JSON_ES */
+#include "../../plugins/out_es/es.h"
 
 
 static void cb_check_http_api_key(void *ctx, int ffd,
@@ -96,6 +101,29 @@ static void cb_check_index_type(void *ctx, int ffd,
 
     p = strstr(out_js, index_line);
     TEST_CHECK(p != NULL);
+
+    flb_free(res_data);
+}
+
+static void cb_check_node_index_type(void *ctx, int ffd,
+                                     int res_ret, void *res_data, size_t res_size,
+                                     void *data)
+{
+    char *index_match;
+    char *type_match;
+    char *out_js = res_data;
+    char *index_line = "\"_index\":\"another_index_test\"";
+    char *type_line = "\"_type\":\"another_type_test\"";
+
+    index_match = strstr(out_js, index_line);
+    if (!TEST_CHECK(index_match != NULL)) {
+        TEST_MSG("Got: %s", out_js);
+    }
+
+    type_match = strstr(out_js, type_line);
+    if (!TEST_CHECK(type_match != NULL)) {
+        TEST_MSG("Got: %s", out_js);
+    }
 
     flb_free(res_data);
 }
@@ -1058,6 +1086,402 @@ void flb_test_response_partially_success()
     flb_destroy(ctx);
 }
 
+static int create_upstream_file_va(char *path, size_t size,
+                                   const char *first_property,
+                                   va_list args)
+{
+#ifndef _WIN32
+    int fd;
+#else
+    FILE *fp;
+#endif
+    char *tmp_path;
+    size_t content_len;
+    const char *property;
+    const char *value;
+    size_t written;
+    int ret;
+    flb_sds_t content = NULL;
+    flb_sds_t tmp_content = NULL;
+    const char *base_content =
+        "[UPSTREAM]\n"
+        "    name es_cluster\n"
+        "\n"
+        "[NODE]\n"
+        "    name es_node_1\n"
+        "    host 127.0.0.1\n"
+        "    port 9200\n";
+
+    content = flb_sds_create(base_content);
+    if (content == NULL) {
+        return -1;
+    }
+
+    property = first_property;
+    while (property != NULL) {
+        value = va_arg(args, const char *);
+        if (value == NULL) {
+            flb_sds_destroy(content);
+            return -1;
+        }
+
+        tmp_content = flb_sds_printf(&content, "    %s %s\n", property, value);
+        if (tmp_content == NULL) {
+            if (content != NULL) {
+                flb_sds_destroy(content);
+            }
+            return -1;
+        }
+        content = tmp_content;
+
+        property = va_arg(args, const char *);
+    }
+
+    tmp_path = flb_test_tmpdir_cat("/flb-es-upstream-XXXXXX");
+    if (tmp_path == NULL) {
+        flb_sds_destroy(content);
+        return -1;
+    }
+
+    if (strlen(tmp_path) + 1 > size) {
+        flb_free(tmp_path);
+        flb_sds_destroy(content);
+        return -1;
+    }
+
+    strncpy(path, tmp_path, size);
+    flb_free(tmp_path);
+
+#ifndef _WIN32
+    fd = mkstemp(path);
+    if (fd == -1) {
+        flb_sds_destroy(content);
+        return -1;
+    }
+
+    content_len = flb_sds_len(content);
+    ret = write(fd, content, content_len);
+    close(fd);
+    flb_sds_destroy(content);
+    if (ret != (int) content_len) {
+        unlink(path);
+        return -1;
+    }
+#else
+    if (_mktemp_s(path, size) != 0) {
+        flb_sds_destroy(content);
+        return -1;
+    }
+
+    fp = fopen(path, "wb");
+    if (fp == NULL) {
+        flb_sds_destroy(content);
+        return -1;
+    }
+
+    content_len = flb_sds_len(content);
+    written = fwrite(content, 1, content_len, fp);
+    ret = fclose(fp);
+    flb_sds_destroy(content);
+    if (written != content_len || ret != 0) {
+        unlink(path);
+        return -1;
+    }
+#endif
+
+    return 0;
+}
+
+static int create_upstream_file(char *path, size_t size,
+                                const char *first_property, ...)
+{
+    int ret;
+    va_list args;
+
+    va_start(args, first_property);
+    ret = create_upstream_file_va(path, size, first_property, args);
+    va_end(args);
+
+    return ret;
+}
+
+static flb_ctx_t *create_upstream_test_ctx(char *upstream_file,
+                                           size_t upstream_file_size,
+                                           int *in_ffd,
+                                           int *out_ffd,
+                                           const char *first_property, ...)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    va_list args;
+
+    va_start(args, first_property);
+    ret = create_upstream_file_va(upstream_file, upstream_file_size,
+                                  first_property, args);
+    va_end(args);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        return NULL;
+    }
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    *in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, *in_ffd, "tag", "test", NULL);
+
+    *out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, *out_ffd,
+                   "match", "test",
+                   "upstream", upstream_file,
+                   NULL);
+
+    return ctx;
+}
+
+static void *cb_upstream_flush_ctx(struct flb_config *config,
+                                   struct flb_input_instance *ins,
+                                   void *plugin_context,
+                                   void *flush_ctx)
+{
+    struct flb_elasticsearch *ctx = plugin_context;
+
+    (void) config;
+    (void) ins;
+    (void) flush_ctx;
+
+    if (ctx->ha_mode != FLB_TRUE || ctx->ha == NULL) {
+        return NULL;
+    }
+
+    return flb_upstream_ha_node_get(ctx->ha);
+}
+
+void flb_test_upstream_write_operation()
+{
+    int ret;
+    int size = sizeof(JSON_ES) - 1;
+    int in_ffd;
+    int out_ffd;
+    char upstream_file[256];
+    flb_ctx_t *ctx;
+
+    ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
+                                   &in_ffd, &out_ffd,
+                                   "write_operation", "index", NULL);
+    if (!ctx) {
+        return;
+    }
+    (void) in_ffd;
+
+    flb_output_set(ctx, out_ffd,
+                   "write_operation", "index",
+                   NULL);
+
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_write_op_index,
+                                                NULL, NULL,
+                                                cb_upstream_flush_ctx);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    unlink(upstream_file);
+}
+
+void flb_test_upstream_null_index()
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    char upstream_file[256];
+    flb_ctx_t *ctx;
+
+    ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
+                                   &in_ffd, &out_ffd,
+                                   "generate_id", "off", NULL);
+    if (!ctx) {
+        return;
+    }
+
+    flb_output_set(ctx, out_ffd,
+                   "index", "",
+                   "type", "type_test",
+                   NULL);
+
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_index_type,
+                                                NULL, NULL,
+                                                cb_upstream_flush_ctx);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == -1);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    unlink(upstream_file);
+}
+
+void flb_test_upstream_index_type()
+{
+    int ret;
+    int size = sizeof(JSON_ES) - 1;
+    int in_ffd;
+    int out_ffd;
+    char upstream_file[256];
+    flb_ctx_t *ctx;
+
+    ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
+                                   &in_ffd, &out_ffd,
+                                   "index", "another_index_test",
+                                   "type", "another_type_test", NULL);
+    if (!ctx) {
+        return;
+    }
+
+    flb_output_set(ctx, out_ffd,
+                   "index", "index_test",
+                   "type", "type_test",
+                   NULL);
+
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_node_index_type,
+                                                NULL, NULL,
+                                                cb_upstream_flush_ctx);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    unlink(upstream_file);
+}
+
+void flb_test_upstream_logstash_format()
+{
+    int ret;
+    int size = sizeof(JSON_ES) - 1;
+    int in_ffd;
+    int out_ffd;
+    char upstream_file[256];
+    flb_ctx_t *ctx;
+
+    ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
+                                   &in_ffd, &out_ffd,
+                                   "logstash_format", "on",
+                                   "logstash_prefix", "prefix",
+                                   "logstash_prefix_separator", "SEP",
+                                   "logstash_dateformat", "%Y-%m-%d",
+                                   NULL);
+    if (!ctx) {
+        return;
+    }
+
+    flb_output_set(ctx, out_ffd,
+                   "logstash_format", "off",
+                   "logstash_prefix", "logstash",
+                   "logstash_prefix_separator", "-",
+                   "logstash_dateformat", "%Y.%m.%d",
+                   NULL);
+
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_logstash_prefix_separator,
+                                                NULL, NULL,
+                                                cb_upstream_flush_ctx);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    unlink(upstream_file);
+}
+
+void flb_test_upstream_replace_dots()
+{
+    int ret;
+    int size = sizeof(JSON_DOTS) - 1;
+    int in_ffd;
+    int out_ffd;
+    char upstream_file[256];
+    flb_ctx_t *ctx;
+
+    ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
+                                   &in_ffd, &out_ffd,
+                                   "replace_dots", "on", NULL);
+    if (!ctx) {
+        return;
+    }
+
+    flb_output_set(ctx, out_ffd,
+                   "replace_dots", "off",
+                   NULL);
+
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_replace_dots,
+                                                NULL, NULL,
+                                                cb_upstream_flush_ctx);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    flb_lib_push(ctx, in_ffd, (char *) JSON_DOTS, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    unlink(upstream_file);
+}
+
+void flb_test_upstream_id_key()
+{
+    int ret;
+    int size = sizeof(JSON_ES) - 1;
+    int in_ffd;
+    int out_ffd;
+    char upstream_file[256];
+    flb_ctx_t *ctx;
+
+    ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
+                                   &in_ffd, &out_ffd,
+                                   "id_key", "key_2", NULL);
+    if (!ctx) {
+        return;
+    }
+
+    flb_output_set(ctx, out_ffd,
+                   "id_key", "key_2",
+                   NULL);
+
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_id_key,
+                                                NULL, NULL,
+                                                cb_upstream_flush_ctx);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    unlink(upstream_file);
+}
+
 /* Test list */
 TEST_LIST = {
     {"long_index"            , flb_test_long_index },
@@ -1077,5 +1501,11 @@ TEST_LIST = {
     {"response_success"      , flb_test_response_success },
     {"response_successes", flb_test_response_successes },
     {"response_partially_success" , flb_test_response_partially_success },
+    {"upstream_write_operation"  , flb_test_upstream_write_operation },
+    {"upstream_null_index"       , flb_test_upstream_null_index },
+    {"upstream_index_type"       , flb_test_upstream_index_type },
+    {"upstream_logstash_format"  , flb_test_upstream_logstash_format },
+    {"upstream_replace_dots"     , flb_test_upstream_replace_dots },
+    {"upstream_id_key"           , flb_test_upstream_id_key },
     {NULL, NULL}
 };
