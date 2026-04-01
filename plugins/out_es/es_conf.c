@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_upstream_ha.h>
 
 #include "es.h"
 #include "es_conf.h"
@@ -245,21 +246,35 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         }
     }
 
-    /* Prepare an upstream handler */
-    upstream = flb_upstream_create(config,
-                                   ins->host.name,
-                                   ins->host.port,
-                                   io_flags,
-                                   ins->tls);
-    if (!upstream) {
-        flb_plg_error(ctx->ins, "cannot create Upstream context");
-        flb_es_conf_destroy(ctx);
-        return NULL;
-    }
-    ctx->u = upstream;
+    tmp = flb_output_get_property("upstream", ins);
+    if (tmp != NULL) {
+        ctx->ha_mode = FLB_TRUE;
+        ctx->ha = flb_upstream_ha_from_file(tmp, config);
+        if (ctx->ha == NULL) {
+            flb_plg_error(ctx->ins, "cannot load Upstream file");
+            flb_es_conf_destroy(ctx);
+            return NULL;
+        }
 
-    /* Set instance flags into upstream */
-    flb_output_upstream_set(ctx->u, ins);
+        flb_output_upstream_ha_set(ctx->ha, ins);
+    }
+    else {
+        /* Prepare an upstream handler */
+        upstream = flb_upstream_create(config,
+                                       ins->host.name,
+                                       ins->host.port,
+                                       io_flags,
+                                       ins->tls);
+        if (!upstream) {
+            flb_plg_error(ctx->ins, "cannot create Upstream context");
+            flb_es_conf_destroy(ctx);
+            return NULL;
+        }
+        ctx->u = upstream;
+
+        /* Set instance flags into upstream */
+        flb_output_upstream_set(ctx->u, ins);
+    }
 
     /* Set manual Index and Type */
     if (f_index) {
@@ -491,7 +506,10 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
         return 0;
     }
 
-    if (ctx->u) {
+    if (ctx->ha_mode == FLB_TRUE && ctx->ha != NULL) {
+        flb_upstream_ha_destroy(ctx->ha);
+    }
+    else if (ctx->u) {
         flb_upstream_destroy(ctx->u);
     }
     if (ctx->ra_id_key) {

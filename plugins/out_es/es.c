@@ -46,6 +46,66 @@ static int es_pack_array_content(msgpack_packer *tmp_pck,
                                  msgpack_object array,
                                  struct flb_elasticsearch *ctx);
 
+static flb_sds_view_t es_get_property_view(const char *property,
+                                           struct flb_upstream_node *node,
+                                           struct flb_elasticsearch *ctx)
+{
+    const char *value;
+
+    if (node != NULL) {
+        value = flb_upstream_node_get_property(property, node);
+        if (value != NULL) {
+            return flb_sds_view_create(value, strlen(value));
+        }
+    }
+
+    value = flb_output_get_property(property, ctx->ins);
+    if (value != NULL) {
+        return flb_sds_view_create(value, strlen(value));
+    }
+
+    return flb_sds_view_create(NULL, 0);
+}
+
+static flb_sds_t es_compose_bulk_uri(struct flb_elasticsearch *ctx,
+                                     struct flb_upstream_node *node)
+{
+    flb_sds_view_t path;
+    flb_sds_view_t pipeline;
+    flb_sds_t uri;
+
+    path = es_get_property_view("path", node, ctx);
+    pipeline = es_get_property_view("pipeline", node, ctx);
+
+    if (flb_sds_view_is_empty(path)) {
+        path = flb_sds_view_create("", 0);
+    }
+
+    if (!flb_sds_view_is_empty(pipeline)) {
+        uri = flb_sds_create_size(path.len + pipeline.len + 19);
+        if (uri == NULL) {
+            flb_errno();
+            return NULL;
+        }
+
+        uri = flb_sds_printf(&uri, "%.*s/_bulk/?pipeline=%.*s",
+                             (int) path.len, path.buf,
+                             (int) pipeline.len, pipeline.buf);
+    }
+    else {
+        uri = flb_sds_create_size(path.len + 8);
+        if (uri == NULL) {
+            flb_errno();
+            return NULL;
+        }
+
+        uri = flb_sds_printf(&uri, "%.*s/_bulk",
+                             (int) path.len, path.buf);
+    }
+
+    return uri;
+}
+
 #ifdef FLB_HAVE_AWS
 static flb_sds_t add_aws_auth(struct flb_http_client *c,
                               struct flb_elasticsearch *ctx)
@@ -822,13 +882,31 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     size_t b_sent;
     struct flb_elasticsearch *ctx = out_context;
     struct flb_connection *u_conn;
-    struct flb_http_client *c;
+    struct flb_http_client *c = NULL;
+    struct flb_upstream *upstream;
+    struct flb_upstream_node *node = NULL;
     flb_sds_t signature = NULL;
+    flb_sds_t uri = NULL;
     int compressed = FLB_FALSE;
     flb_sds_t header_line = NULL;
+    flb_sds_view_t http_user;
+    flb_sds_view_t http_passwd;
+    flb_sds_view_t http_api_key;
+
+    if (ctx->ha_mode == FLB_TRUE) {
+        node = flb_upstream_ha_node_get(ctx->ha);
+        if (node == NULL) {
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        upstream = node->u;
+    }
+    else {
+        upstream = ctx->u;
+    }
 
     /* Get upstream connection */
-    u_conn = flb_upstream_conn_get(ctx->u);
+    u_conn = flb_upstream_conn_get(upstream);
     if (!u_conn) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -872,7 +950,12 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Compose HTTP Client request */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
+    uri = es_compose_bulk_uri(ctx, node);
+    if (uri == NULL) {
+        goto retry;
+    }
+
+    c = flb_http_client(u_conn, FLB_HTTP_POST, uri,
                         pack, pack_size, NULL, 0, NULL, 0);
 
     flb_http_buffer_size(c, ctx->buffer_size);
@@ -883,20 +966,26 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
 
     flb_http_add_header(c, "Content-Type", 12, "application/x-ndjson", 20);
 
-    if (ctx->http_user && ctx->http_passwd) {
-        flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    http_user = es_get_property_view("http_user", node, ctx);
+    http_passwd = es_get_property_view("http_passwd", node, ctx);
+    http_api_key = es_get_property_view("http_api_key", node, ctx);
+
+    if (!flb_sds_view_is_empty(http_user) && !flb_sds_view_is_empty(http_passwd)) {
+        flb_http_basic_auth(c, (char *) http_user.buf, (char *) http_passwd.buf);
     }
     else if (ctx->cloud_user && ctx->cloud_passwd) {
         flb_http_basic_auth(c, ctx->cloud_user, ctx->cloud_passwd);
     }
-    else if (ctx->http_api_key) {
+    else if (!flb_sds_view_is_empty(http_api_key)) {
         /* 7 for ApiKey + space */
-        header_line = flb_sds_create_size(strlen(ctx->http_api_key)+7);
+        header_line = flb_sds_create_size(http_api_key.len + 7);
         if (header_line == NULL) {
             flb_plg_error(ctx->ins, "failed to format API key auth header");
             goto retry;
         }
-        header_line = flb_sds_printf(&header_line, "ApiKey %s", ctx->http_api_key);
+        header_line = flb_sds_printf(&header_line, "ApiKey %.*s",
+                                     (int) http_api_key.len,
+                                     http_api_key.buf);
 
         if (flb_http_add_header(c,
                                 FLB_HTTP_HEADER_AUTH, strlen(FLB_HTTP_HEADER_AUTH),
@@ -931,20 +1020,20 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
 
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
-        flb_plg_warn(ctx->ins, "http_do=%i URI=%s", ret, ctx->uri);
+        flb_plg_warn(ctx->ins, "http_do=%i URI=%s", ret, uri);
         goto retry;
     }
     else {
         /* The request was issued successfully, validate the 'error' field */
-        flb_plg_debug(ctx->ins, "HTTP Status=%i URI=%s", c->resp.status, ctx->uri);
+        flb_plg_debug(ctx->ins, "HTTP Status=%i URI=%s", c->resp.status, uri);
         if (c->resp.status != 200 && c->resp.status != 201) {
             if (c->resp.payload_size > 0) {
                 flb_plg_error(ctx->ins, "HTTP status=%i URI=%s, response:\n%s\n",
-                              c->resp.status, ctx->uri, c->resp.payload);
+                              c->resp.status, uri, c->resp.payload);
             }
             else {
                 flb_plg_error(ctx->ins, "HTTP status=%i URI=%s",
-                              c->resp.status, ctx->uri);
+                              c->resp.status, uri);
             }
             goto retry;
         }
@@ -998,6 +1087,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     if (signature) {
         flb_sds_destroy(signature);
     }
+    flb_sds_destroy(uri);
     FLB_OUTPUT_RETURN(FLB_OK);
 
     /* Issue a retry */
@@ -1009,6 +1099,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         flb_free(out_buf);
     }
 
+    flb_sds_destroy(uri);
     flb_upstream_conn_release(u_conn);
     FLB_OUTPUT_RETURN(FLB_RETRY);
 }
@@ -1145,6 +1236,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "cloud_auth", NULL,
      0, FLB_FALSE, 0,
      "Elastic cloud authentication credentials"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "upstream", NULL,
+     0, FLB_FALSE, 0,
+     "Path to an upstream configuration file to define multiple backend nodes"
     },
 
     /* AWS Authentication */

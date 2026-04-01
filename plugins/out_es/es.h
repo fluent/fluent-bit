@@ -20,6 +20,8 @@
 #ifndef FLB_OUT_ES_H
 #define FLB_OUT_ES_H
 
+#include <fluent-bit/flb_upstream_ha.h>
+
 #define FLB_ES_DEFAULT_HOST       "127.0.0.1"
 #define FLB_ES_DEFAULT_PORT       92000
 #define FLB_ES_DEFAULT_INDEX      "fluent-bit"
@@ -142,6 +144,8 @@ struct flb_elasticsearch {
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
+    int ha_mode;
+    struct flb_upstream_ha *ha;
 
     /* Plugin output instance reference */
     struct flb_output_instance *ins;
