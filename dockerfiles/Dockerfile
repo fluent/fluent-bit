@@ -58,6 +58,16 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        lsb-release \ 
+        wget \
+    &&   wget https://packages.apache.org/artifactory/arrow/$(lsb_release --id --short | tr 'A-Z' 'a-z')/apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb \
+    && apt-get install -y -V ./apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb \
+    && rm -rf ./apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb \
+    && apt-get update && apt-get install -y -V libarrow-glib-dev libparquet-glib-dev 
+
+
 # Must be run from root of repo
 WORKDIR /src/fluent-bit/
 COPY . ./
@@ -93,6 +103,7 @@ RUN [ -n "${WAMR_BUILD_TARGET:-}" ] && EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DW
     -DFLB_LOG_NO_CONTROL_CHARS=On \
     -DFLB_CHUNK_TRACE="$FLB_CHUNK_TRACE" \
     -DFLB_JEMALLOC_OPTIONS="$FLB_JEMALLOC_OPTIONS" \
+    -DFLB_ARROW=On \
     $EXTRA_CMAKE_FLAGS \
     ..
 
