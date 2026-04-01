@@ -24,7 +24,9 @@
 #include "traces/traces.h"
 
 int trace_register(struct flb_in_ebpf_context *ctx, const char *name,
-                   struct bpf_object *obj, trace_event_handler_t handler) {
+                   void *skel, struct bpf_object *obj,
+                   trace_skel_destroy_func_t skel_destroy,
+                   trace_event_handler_t handler) {
     struct trace_context *trace;
     struct bpf_map *map, *events_map;
     int map_fd;
@@ -38,7 +40,9 @@ int trace_register(struct flb_in_ebpf_context *ctx, const char *name,
 
     trace = &ctx->traces[ctx->trace_count];
     trace->name = name;
+    trace->skel = skel;
     trace->obj = obj;
+    trace->skel_destroy = skel_destroy;
     trace->handler = handler;
 
     bpf_object__for_each_map(map, obj) {
@@ -102,7 +106,8 @@ int trace_setup(struct flb_in_ebpf_context *ctx, const char *trace_name) {
             return -1;
         }
 
-        if (trace_register(ctx, trace_name, obj, reg->handler) != 0) {
+        if (trace_register(ctx, trace_name, skel, obj,
+                           reg->skel_destroy, reg->handler) != 0) {
             flb_plg_error(ctx->ins, "failed to register trace handler for: %s", trace_name);
             reg->skel_destroy(skel);
             return -1;
@@ -185,7 +190,9 @@ static int in_ebpf_init(struct flb_input_instance *ins, struct flb_config *confi
         flb_plg_error(ctx->ins, "failed to set up collector");
         for (int i = 0; i < ctx->trace_count; i++) {
             ring_buffer__free(ctx->traces[i].rb);
-            bpf_object__close(ctx->traces[i].obj);
+            if (ctx->traces[i].skel_destroy) {
+                ctx->traces[i].skel_destroy(ctx->traces[i].skel);
+            }
         }
         flb_log_event_encoder_destroy(ctx->log_encoder);
         flb_free(ctx);
@@ -217,7 +224,9 @@ static int in_ebpf_exit(void *in_context, struct flb_config *config) {
 
     for (int i = 0; i < ctx->trace_count; i++) {
         ring_buffer__free(ctx->traces[i].rb);
-        bpf_object__close(ctx->traces[i].obj);
+        if (ctx->traces[i].skel_destroy) {
+            ctx->traces[i].skel_destroy(ctx->traces[i].skel);
+        }
     }
 
     if (ctx->log_encoder) {

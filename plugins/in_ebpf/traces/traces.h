@@ -28,7 +28,9 @@ typedef int (*trace_event_handler_t)(void *ctx, void *data, size_t data_sz);
 struct trace_context {
     const char *name;
     struct ring_buffer *rb;
+    void *skel;
     struct bpf_object *obj;
+    trace_skel_destroy_func_t skel_destroy;
     trace_event_handler_t handler;
 };
 
