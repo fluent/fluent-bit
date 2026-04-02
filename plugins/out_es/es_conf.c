@@ -248,13 +248,20 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("upstream", ins);
     if (tmp != NULL) {
-        ctx->ha_mode = FLB_TRUE;
         ctx->ha = flb_upstream_ha_from_file(tmp, config);
         if (ctx->ha == NULL) {
             flb_plg_error(ctx->ins, "cannot load Upstream file");
             flb_es_conf_destroy(ctx);
             return NULL;
         }
+
+        if (mk_list_is_empty(&ctx->ha->nodes) == 0) {
+            flb_plg_error(ctx->ins, "upstream file does not define any nodes");
+            flb_es_conf_destroy(ctx);
+            return NULL;
+        }
+
+        ctx->ha_mode = FLB_TRUE;
 
         flb_output_upstream_ha_set(ctx->ha, ins);
     }

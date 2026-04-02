@@ -88,7 +88,7 @@ static flb_sds_t es_compose_bulk_uri(struct flb_elasticsearch *ctx,
             return NULL;
         }
 
-        uri = flb_sds_printf(&uri, "%.*s/_bulk/?pipeline=%.*s",
+        uri = flb_sds_printf(&uri, "%.*s/_bulk?pipeline=%.*s",
                              (int) path.len, path.buf,
                              (int) pipeline.len, pipeline.buf);
     }
@@ -889,6 +889,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t uri = NULL;
     int compressed = FLB_FALSE;
     flb_sds_t header_line = NULL;
+    flb_sds_t tmp_sds = NULL;
     flb_sds_view_t http_user;
     flb_sds_view_t http_passwd;
     flb_sds_view_t http_api_key;
@@ -970,7 +971,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     http_passwd = es_get_property_view("http_passwd", node, ctx);
     http_api_key = es_get_property_view("http_api_key", node, ctx);
 
-    if (!flb_sds_view_is_empty(http_user) && !flb_sds_view_is_empty(http_passwd)) {
+    if (http_user.buf != NULL && http_passwd.buf != NULL) {
         flb_http_basic_auth(c, (char *) http_user.buf, (char *) http_passwd.buf);
     }
     else if (ctx->cloud_user && ctx->cloud_passwd) {
@@ -983,9 +984,15 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
             flb_plg_error(ctx->ins, "failed to format API key auth header");
             goto retry;
         }
-        header_line = flb_sds_printf(&header_line, "ApiKey %.*s",
-                                     (int) http_api_key.len,
-                                     http_api_key.buf);
+        tmp_sds = flb_sds_printf(&header_line, "ApiKey %.*s",
+                                 (int) http_api_key.len,
+                                 http_api_key.buf);
+        if (tmp_sds == NULL) {
+            flb_plg_error(ctx->ins, "failed to format API key auth header");
+            flb_sds_destroy(header_line);
+            goto retry;
+        }
+        header_line = tmp_sds;
 
         if (flb_http_add_header(c,
                                 FLB_HTTP_HEADER_AUTH, strlen(FLB_HTTP_HEADER_AUTH),
@@ -1094,7 +1101,9 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
  retry:
     flb_http_client_destroy(c);
     flb_free(pack);
-
+    if (signature != NULL) {
+        flb_sds_destroy(signature);
+    }
     if (out_buf != pack) {
         flb_free(out_buf);
     }
