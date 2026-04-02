@@ -35,6 +35,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin.h>
+#include <fluent-bit/flb_plugin_alias.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_output_thread.h>
@@ -137,12 +138,9 @@ static int check_protocol(const char *prot, const char *output)
         len = strlen(output);
     }
 
-    if (strlen(prot) != len) {
-        return 0;
-    }
-
     /* Output plugin match */
-    if (strncasecmp(prot, output, len) == 0) {
+    if (strlen(prot) == (size_t) len &&
+        strncasecmp(prot, output, len) == 0) {
         return 1;
     }
 
@@ -676,17 +674,24 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 {
     int ret = -1;
     int flags = 0;
+    size_t output_name_length;
+    const char *alias_target;
+    const char *output_name;
+    const char *separator;
     struct mk_list *head;
-    struct flb_output_plugin *plugin;
+    struct flb_output_plugin *plugin = NULL;
     struct flb_output_instance *instance = NULL;
 
     if (!output) {
         return NULL;
     }
 
+    output_name = output;
+
+    /* Prefer an exact registered plugin name over an alias with the same name. */
     mk_list_foreach(head, &config->out_plugins) {
         plugin = mk_list_entry(head, struct flb_output_plugin, _head);
-        if (!check_protocol(plugin->name, output)) {
+        if (!check_protocol(plugin->name, output_name)) {
             plugin = NULL;
             continue;
         }
@@ -695,6 +700,34 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
             return NULL;
         }
         break;
+    }
+
+    if (plugin == NULL) {
+        separator = strstr(output, "://");
+        if (separator != NULL && separator != output) {
+            output_name_length = separator - output;
+        }
+        else {
+            output_name_length = strlen(output);
+        }
+        alias_target = flb_plugin_alias_get(FLB_PLUGIN_OUTPUT, output,
+                                            output_name_length);
+        if (alias_target != NULL) {
+            output_name = alias_target;
+
+            mk_list_foreach(head, &config->out_plugins) {
+                plugin = mk_list_entry(head, struct flb_output_plugin, _head);
+                if (!check_protocol(plugin->name, output_name)) {
+                    plugin = NULL;
+                    continue;
+                }
+
+                if (public_only && plugin->flags & FLB_OUTPUT_PRIVATE) {
+                    return NULL;
+                }
+                break;
+            }
+        }
     }
 
     if (!plugin) {
@@ -819,10 +852,24 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 #endif
 
     if (plugin->flags & FLB_OUTPUT_NET) {
-        ret = flb_net_host_set(plugin->name, &instance->host, output);
+        if (strstr(output, "://") != NULL) {
+            ret = flb_net_host_set(plugin->name, &instance->host, output);
+        }
+        else {
+            ret = flb_net_host_set(plugin->name, &instance->host, output_name);
+        }
+
         if (ret != 0) {
-            if (instance->flags & FLB_OUTPUT_SYNCHRONOUS) {
+            if ((instance->flags & FLB_OUTPUT_SYNCHRONOUS) &&
+                 instance->singleplex_queue != NULL) {
                 flb_task_queue_destroy(instance->singleplex_queue);
+            }
+            if (instance->callback != NULL) {
+                flb_callback_destroy(instance->callback);
+            }
+            if (plugin->type != FLB_OUTPUT_PLUGIN_CORE &&
+                instance->context != NULL) {
+                flb_free(instance->context);
             }
             flb_free(instance->http_server_config);
             flb_free(instance);
