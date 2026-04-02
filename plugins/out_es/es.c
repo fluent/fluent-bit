@@ -974,9 +974,6 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     if (http_user.buf != NULL && http_passwd.buf != NULL) {
         flb_http_basic_auth(c, (char *) http_user.buf, (char *) http_passwd.buf);
     }
-    else if (ctx->cloud_user && ctx->cloud_passwd) {
-        flb_http_basic_auth(c, ctx->cloud_user, ctx->cloud_passwd);
-    }
     else if (!flb_sds_view_is_empty(http_api_key)) {
         /* 7 for ApiKey + space */
         header_line = flb_sds_create_size(http_api_key.len + 7);
@@ -1003,6 +1000,9 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         }
 
         flb_sds_destroy(header_line);
+    }
+    else if (ctx->cloud_user && ctx->cloud_passwd) {
+        flb_http_basic_auth(c, ctx->cloud_user, ctx->cloud_passwd);
     }
 
 #ifdef FLB_HAVE_AWS
