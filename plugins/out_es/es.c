@@ -1088,7 +1088,9 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Cleanup */
-    flb_http_client_destroy(c);
+    if (c != NULL) {
+        flb_http_client_destroy(c);
+    }
     flb_free(pack);
     flb_upstream_conn_release(u_conn);
     if (signature) {
@@ -1099,7 +1101,9 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
 
     /* Issue a retry */
  retry:
-    flb_http_client_destroy(c);
+    if (c != NULL) {
+        flb_http_client_destroy(c);
+    }
     flb_free(pack);
     if (signature != NULL) {
         flb_sds_destroy(signature);
