@@ -35,6 +35,7 @@ void flb_test_s3_multipart_success(void)
     flb_output_set(ctx, out_ffd,"match", "*", NULL);
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -46,6 +47,7 @@ void flb_test_s3_multipart_success(void)
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
 }
 
 void flb_test_s3_putobject_success(void)
@@ -71,6 +73,7 @@ void flb_test_s3_putobject_success(void)
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -82,6 +85,7 @@ void flb_test_s3_putobject_success(void)
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
 }
 
 void flb_test_s3_putobject_error(void)
@@ -108,6 +112,7 @@ void flb_test_s3_putobject_error(void)
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -119,6 +124,7 @@ void flb_test_s3_putobject_error(void)
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
     unsetenv("TEST_PUT_OBJECT_ERROR");
 
 }
@@ -145,6 +151,7 @@ void flb_test_s3_create_upload_error(void)
     flb_output_set(ctx, out_ffd,"match", "*", NULL);
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -155,6 +162,7 @@ void flb_test_s3_create_upload_error(void)
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
     unsetenv("TEST_CREATE_MULTIPART_UPLOAD_ERROR");
 }
 
@@ -180,6 +188,7 @@ void flb_test_s3_upload_part_error(void)
     flb_output_set(ctx, out_ffd,"match", "*", NULL);
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -190,6 +199,7 @@ void flb_test_s3_upload_part_error(void)
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
     unsetenv("TEST_UPLOAD_PART_ERROR");
 }
 
@@ -215,6 +225,7 @@ void flb_test_s3_complete_upload_error(void)
     flb_output_set(ctx, out_ffd,"match", "*", NULL);
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -225,6 +236,7 @@ void flb_test_s3_complete_upload_error(void)
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
     unsetenv("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR");
 }
 
@@ -250,6 +262,7 @@ void flb_test_s3_compression_gzip(void)
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"compression", "gzip", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -260,6 +273,7 @@ void flb_test_s3_compression_gzip(void)
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
 }
 
 void flb_test_s3_compression_gzip_putobject(void)
@@ -286,6 +300,7 @@ void flb_test_s3_compression_gzip_putobject(void)
     flb_output_set(ctx, out_ffd,"compression", "gzip", NULL);
     flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -296,6 +311,7 @@ void flb_test_s3_compression_gzip_putobject(void)
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
 }
 
 void flb_test_s3_compression_zstd(void)
@@ -320,6 +336,7 @@ void flb_test_s3_compression_zstd(void)
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"compression", "zstd", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -330,6 +347,7 @@ void flb_test_s3_compression_zstd(void)
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
 }
 
 void flb_test_s3_compression_zstd_putobject(void)
@@ -356,6 +374,7 @@ void flb_test_s3_compression_zstd_putobject(void)
     flb_output_set(ctx, out_ffd,"compression", "zstd", NULL);
     flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -366,6 +385,7 @@ void flb_test_s3_compression_zstd_putobject(void)
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
 }
 
 void flb_test_s3_compression_snappy(void)
@@ -390,6 +410,7 @@ void flb_test_s3_compression_snappy(void)
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"compression", "snappy", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -400,6 +421,7 @@ void flb_test_s3_compression_snappy(void)
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
 }
 
 void flb_test_s3_compression_snappy_putobject(void)
@@ -426,6 +448,7 @@ void flb_test_s3_compression_snappy_putobject(void)
     flb_output_set(ctx, out_ffd,"compression", "snappy", NULL);
     flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -436,14 +459,84 @@ void flb_test_s3_compression_snappy_putobject(void)
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
 }
 
+
+/*
+ * Test that retry_limit=1 allows 1 initial attempt + 1 retry = 2 total PutObject calls.
+ */
+void flb_test_s3_putobject_retry_limit_semantics(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    char *call_count_str;
+    int call_count;
+
+    /* Use mocks without flush bypass so the plugin's internal retry runs */
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "use_put_object", "true", NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", "/tmp/flb-s3-test-retry", NULL);
+    flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Reset counter after startup so we only count test-driven attempts */
+    unsetenv("TEST_PutObject_CALL_COUNT");
+
+    /*
+     * Push 1 chunk then wait for upload_timeout (6s) + 2 timer ticks (1s each).
+     * Chunk must age past upload_timeout before cb_s3_upload will attempt it.
+     * Tick after ~6s: PutObject attempt 1 fails (failures=1)
+     * Tick after ~7s: failures(1) not > retry_limit(1), attempt 2 fails (failures=2)
+     * Next tick: failures(2) > retry_limit(1), chunk discarded
+     */
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+    sleep(10);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    call_count_str = getenv("TEST_PutObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+
+    /*
+     * retry_limit=1: 1 initial attempt + 1 retry = 2 PutObject calls.
+     * Shutdown put_all_chunks adds 0 more since chunk was already discarded.
+     */
+    TEST_CHECK_(call_count == 2,
+                "Expected 2 PutObject calls (1 attempt + 1 retry), got %d",
+                call_count);
+
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_PUT_OBJECT_ERROR");
+    unsetenv("TEST_PutObject_CALL_COUNT");
+}
 
 /* Test list */
 TEST_LIST = {
     {"multipart_success", flb_test_s3_multipart_success },
     {"putobject_success", flb_test_s3_putobject_success },
     {"putobject_error", flb_test_s3_putobject_error },
+    {"putobject_retry_limit_semantics", flb_test_s3_putobject_retry_limit_semantics },
     {"create_upload_error", flb_test_s3_create_upload_error },
     {"upload_part_error", flb_test_s3_upload_part_error },
     {"complete_upload_error", flb_test_s3_complete_upload_error },
