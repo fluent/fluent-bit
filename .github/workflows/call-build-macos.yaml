@@ -108,7 +108,7 @@ jobs:
       - name: Upload build packages
         uses: actions/upload-artifact@v7
         with:
-          name: macos-packages on ${{ matrix.config.runner }}
+          name: macos-packages-${{ matrix.config.runner }}
           path: |
             build/fluent-bit-*-apple*
             build/fluent-bit-*-intel*
@@ -124,13 +124,6 @@ jobs:
       - call-build-macos-package
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-          - name: "Apple Silicon macOS package"
-            os: macos-14
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -138,11 +131,16 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Download all artefacts
-        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
-          name: macos-packages on ${{ matrix.config.os }}
+          pattern: macos-packages-*
+          merge-multiple: true
           path: artifacts/
+
+      - name: Validate downloaded artifacts
+        run: |
+          ls -lR artifacts/
+        shell: bash
 
       - name: Push MacOS packages to S3
         if: inputs.environment == 'staging'
