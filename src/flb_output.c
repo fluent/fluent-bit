@@ -35,6 +35,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin.h>
+#include <fluent-bit/flb_plugin_alias.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_output_thread.h>
@@ -128,6 +129,7 @@ static int check_protocol(const char *prot, const char *output)
 {
     int len;
     char *p;
+    const char *alias_target;
 
     p = strstr(output, "://");
     if (p && p != output) {
@@ -137,12 +139,16 @@ static int check_protocol(const char *prot, const char *output)
         len = strlen(output);
     }
 
-    if (strlen(prot) != len) {
-        return 0;
+    /* Output plugin match */
+    if (strlen(prot) == (size_t) len &&
+        strncasecmp(prot, output, len) == 0) {
+        return 1;
     }
 
-    /* Output plugin match */
-    if (strncasecmp(prot, output, len) == 0) {
+    alias_target = flb_plugin_alias_get(FLB_PLUGIN_OUTPUT, output, len);
+    if (alias_target != NULL &&
+        strlen(alias_target) == strlen(prot) &&
+        strcasecmp(prot, alias_target) == 0) {
         return 1;
     }
 
@@ -676,6 +682,8 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 {
     int ret = -1;
     int flags = 0;
+    const char *output_name;
+    char *output_uri;
     struct mk_list *head;
     struct flb_output_plugin *plugin;
     struct flb_output_instance *instance = NULL;
@@ -684,9 +692,12 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         return NULL;
     }
 
+    output_name = output;
+    output_uri = NULL;
+
     mk_list_foreach(head, &config->out_plugins) {
         plugin = mk_list_entry(head, struct flb_output_plugin, _head);
-        if (!check_protocol(plugin->name, output)) {
+        if (!check_protocol(plugin->name, output_name)) {
             plugin = NULL;
             continue;
         }
@@ -818,7 +829,24 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 #endif
 
     if (plugin->flags & FLB_OUTPUT_NET) {
-        ret = flb_net_host_set(plugin->name, &instance->host, output);
+        output_uri = flb_plugin_alias_rewrite(FLB_PLUGIN_OUTPUT, output_name);
+        if (output_uri == FLB_PLUGIN_ALIAS_ERR) {
+            if (instance->flags & FLB_OUTPUT_SYNCHRONOUS) {
+                flb_task_queue_destroy(instance->singleplex_queue);
+            }
+            flb_free(instance->http_server_config);
+            flb_free(instance);
+            return NULL;
+        }
+        else if (output_uri != NULL) {
+            output_name = output_uri;
+        }
+
+        ret = flb_net_host_set(plugin->name, &instance->host, output_name);
+        if (output_uri != NULL) {
+            flb_free(output_uri);
+        }
+
         if (ret != 0) {
             if (instance->flags & FLB_OUTPUT_SYNCHRONOUS) {
                 flb_task_queue_destroy(instance->singleplex_queue);

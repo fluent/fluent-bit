@@ -161,6 +161,7 @@ int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const c
     int len;
     int olen;
     const char *s, *e, *u;
+    const char *separator;
 
     memset(host, '\0', sizeof(struct flb_net_host));
 
@@ -174,7 +175,16 @@ int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const c
         return -1;
     }
 
-    s = address + len;
+    separator = strchr(address, ':');
+    if (separator != NULL &&
+        separator != address &&
+        separator[1] == '/' &&
+        separator[2] == '/') {
+        s = separator + 3;
+    }
+    else {
+        s = address + len;
+    }
     if (*s == '[') {
         /* IPv6 address (RFC 3986) */
         e = strchr(++s, ']');
