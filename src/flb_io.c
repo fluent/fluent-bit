@@ -46,6 +46,11 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <assert.h>
+#include <string.h>
+#include <errno.h>
+#ifndef FLB_SYSTEM_WINDOWS
+#include <unistd.h>
+#endif
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
@@ -62,6 +67,36 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_http_client.h>
+
+
+static int flb_io_get_iov_max()
+{
+    long limit;
+
+#ifdef IOV_MAX
+    limit = IOV_MAX;
+#else
+    limit = -1;
+#endif
+
+#ifdef _SC_IOV_MAX
+    {
+        long sys_limit;
+
+        sys_limit = sysconf(_SC_IOV_MAX);
+
+        if (sys_limit > 0) {
+            limit = sys_limit;
+        }
+    }
+#endif
+
+    if (limit <= 0 || limit > INT_MAX) {
+        limit = 1024;
+    }
+
+    return (int) limit;
+}
 
 int flb_io_net_accept(struct flb_connection *connection,
                        struct flb_coro *coro)
@@ -662,6 +697,77 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
     }
 
     return ret;
+}
+
+
+int flb_io_net_writev(struct flb_connection *connection,
+                      const struct flb_iovec *iov,
+                      int iovcnt,
+                      size_t *out_len)
+{
+    int    result;
+    int    index;
+    size_t total;
+    size_t total_length;
+    char  *temporary_buffer;
+
+    if (iov == NULL || iovcnt <= 0 || out_len == NULL) {
+        errno = EINVAL;
+
+        return -1;
+    }
+
+    if (iovcnt > flb_io_get_iov_max()) {
+        errno = EINVAL;
+
+        return -1;
+    }
+
+    total_length = 0;
+
+    for (index = 0 ; index < iovcnt ; index++) {
+        /* Overflow guard */
+        if (iov[index].iov_len > SIZE_MAX - total_length) {
+            errno = EOVERFLOW;
+            return -1;
+        }
+
+        if (iov[index].iov_len > 0 && iov[index].iov_base == NULL) {
+            errno = EINVAL;
+            return -1;
+        }
+
+        total_length += iov[index].iov_len;
+    }
+
+    if (total_length == 0) {
+        *out_len = 0;
+
+        return 0;
+    }
+
+    temporary_buffer = flb_malloc(total_length);
+
+    if (temporary_buffer == NULL) {
+        flb_errno();
+
+        return -1;
+    }
+
+    total = 0;
+
+    for (index = 0 ; index < iovcnt ; index++) {
+        if (iov[index].iov_len > 0) {
+            memcpy(&temporary_buffer[total], iov[index].iov_base, iov[index].iov_len);
+        }
+        total += iov[index].iov_len;
+    }
+
+    result = flb_io_net_write(connection, temporary_buffer, total_length, out_len);
+
+    flb_free(temporary_buffer);
+
+    return result;
 }
 
 /* Write data to fd. For unix socket. */
