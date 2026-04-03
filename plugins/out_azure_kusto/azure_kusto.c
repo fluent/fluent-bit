@@ -445,6 +445,7 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
     struct azure_kusto_file *chunk;
     struct mk_list *tmp;
     struct mk_list *head;
+    struct mk_list *f_tmp;
     struct mk_list *f_head;
     struct mk_list *f_tmp;
     struct flb_fstore_file *fsf;
