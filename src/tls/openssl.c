@@ -29,6 +29,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/opensslv.h>
+#include <openssl/engine.h>
 #include <openssl/x509v3.h>
 
 #ifdef FLB_SYSTEM_MACOS
@@ -906,24 +907,70 @@ static void *tls_context_create(int verify,
         ret = SSL_CTX_use_certificate_chain_file(ssl_ctx, crt_file);
         if (ret != 1) {
             ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
-            flb_error("[tls] crt_file '%s' %lu: %s",
-                      crt_file, ERR_get_error(), err_buf);
+            flb_error("[tls] crt_file '%s' error: %s",
+                      crt_file, err_buf);
             goto error;
         }
     }
 
     /* key_file */
     if (key_file) {
-        if (key_passwd) {
-            SSL_CTX_set_default_passwd_cb_userdata(ssl_ctx,
-                                                   (void *) key_passwd);
+        if (strncmp(key_file, "pkcs11:", 7) == 0) {
+#ifdef OPENSSL_NO_ENGINE
+            flb_error("[tls] key_file 'pkcs11:<REDACTED>': requires OpenSSL ENGINE support");
+            goto error;
+#else
+            /* PKCS#11 URI detected */
+            if (!key_passwd || strlen(key_passwd) == 0) {
+                flb_warn("[tls] PKCS#11 URI may fail without a PIN/password (tls_key_passwd)");
+            }
+            ENGINE *e = ENGINE_by_id("pkcs11");
+            if (!e) {
+                ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] failed to load pkcs11 engine: %s", err_buf);
+                goto error;
+            }
+            if (!ENGINE_init(e)) {
+                ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] failed to initialize pkcs11 engine: %s", err_buf);
+                ENGINE_free(e);
+                goto error;
+            }
+            EVP_PKEY *pkey = ENGINE_load_private_key(e, key_file, NULL, (void *)key_passwd);
+            if (!pkey) {
+                ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] failed to load private key from pkcs11 uri '%s': %s", key_file, err_buf);
+                ENGINE_finish(e);
+                ENGINE_free(e);
+                goto error;
+            }
+            if (SSL_CTX_use_PrivateKey(ssl_ctx, pkey) != 1) {
+                ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] failed to use pkcs11 private key '%s': %s", key_file, err_buf);
+                EVP_PKEY_free(pkey);
+                ENGINE_finish(e);
+                ENGINE_free(e);
+                goto error;
+            }
+            EVP_PKEY_free(pkey);
+            ENGINE_finish(e);
+            ENGINE_free(e);
+#endif
         }
-        ret = SSL_CTX_use_PrivateKey_file(ssl_ctx, key_file,
-                                          SSL_FILETYPE_PEM);
-        if (ret != 1) {
-            ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
-            flb_error("[tls] key_file '%s' %lu: %s",
-                      key_file, ERR_get_error(), err_buf);
+        else
+        {
+            if (key_passwd) {
+                SSL_CTX_set_default_passwd_cb_userdata(ssl_ctx,
+                                                    (void *) key_passwd);
+            }
+            ret = SSL_CTX_use_PrivateKey_file(ssl_ctx, key_file,
+                                            SSL_FILETYPE_PEM);
+            if (ret != 1) {
+                ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] key_file '%s' %lu: %s",
+                        key_file, ERR_get_error(), err_buf);
+                goto error;
+            }
         }
 
         /* Make sure the key and certificate file match */
