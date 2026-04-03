@@ -134,6 +134,9 @@ static int read_credentials_file(const char *cred_file, struct flb_stackdriver *
             ctx->creds->type = flb_sds_create_len(val, val_len);
         }
         else if (key_cmp(key, key_len, "project_id") == 0) {
+            if (ctx->project_id) {
+                flb_sds_destroy(ctx->project_id);
+            }
             ctx->project_id = flb_sds_create_len(val, val_len);
         }
         else if (key_cmp(key, key_len, "private_key_id") == 0) {

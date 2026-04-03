@@ -1130,6 +1130,9 @@ static int pack_resource_labels(struct flb_stackdriver *ctx,
                 } else {
                     flb_plg_warn(ctx->ins, "failed to find a corresponding entry for "
                         "resource label entry [%s=%s]", label_kv->key, label_kv->val);
+                    if (rval) {
+                        flb_ra_key_value_destroy(rval);
+                    }
                 }
                 flb_ra_destroy(ra);
             } else {
@@ -2475,6 +2478,8 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             if (log_name_extracted == FLB_TRUE) {
                 flb_sds_destroy(log_name);
             }
+
+            destroy_http_request(&http_request);
 
             flb_log_event_decoder_destroy(&log_decoder);
             msgpack_sbuffer_destroy(&mp_sbuf);
