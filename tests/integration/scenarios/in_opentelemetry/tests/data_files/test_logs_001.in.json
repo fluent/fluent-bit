@@ -1,0 +1,128 @@
+{
+    "resource_logs": [
+        {
+            "resource": {
+                "attributes": [
+                    {
+                        "key": "service.name",
+                        "value": {
+                            "string_value": "example-service"
+                        }
+                    }
+                ]
+            },
+            "scope_logs": [
+                {
+                    "scope": {
+                        "name": "example-scope",
+                        "version": "1.0.0"
+                    },
+                    "log_records": [
+                        {
+                            "time_unix_nano": "1650917400000000000",
+                            "severity_number": 9,
+                            "severity_text": "INFO",
+                            "body": {
+                                "string_value": "This is an example log message."
+                            },
+                            "attributes": [
+                                {
+                                    "key": "example_key",
+                                    "value": {
+                                        "string_value": "example_value"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "scope": {
+                        "name": "example-scope",
+                        "version": "2.0.0"
+                    },
+                    "log_records": [
+                        {
+                            "time_unix_nano": "1650917400000000000",
+                            "severity_number": 9,
+                            "severity_text": "INFO",
+                            "body": {
+                                "string_value": "This is another example log message."
+                            },
+                            "attributes": [
+                                {
+                                    "key": "example_key",
+                                    "value": {
+                                        "string_value": "example_value"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "resource": {
+                "attributes": [
+                    {
+                        "key": "service.name",
+                        "value": {
+                            "string_value": "example-service"
+                        }
+                    }
+                ]
+            },
+            "scope_logs": [
+                {
+                    "scope": {
+                        "name": "example-scope",
+                        "version": "1.0.0"
+                    },
+                    "log_records": [
+                        {
+                            "time_unix_nano": "1650917400000000000",
+                            "severity_number": 9,
+                            "severity_text": "INFO",
+                            "body": {
+                                "string_value": "This is an example log message."
+                            },
+                            "attributes": [
+                                {
+                                    "key": "example_key",
+                                    "value": {
+                                        "string_value": "example_value"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "scope": {
+                        "name": "example-scope",
+                        "version": "2.0.0"
+                    },
+                    "log_records": [
+                        {
+                            "time_unix_nano": "1650917400000000000",
+                            "severity_number": 9,
+                            "severity_text": "INFO",
+                            "body": {
+                                "string_value": "This is another example log message."
+                            },
+                            "attributes": [
+                                {
+                                    "key": "example_key",
+                                    "value": {
+                                        "string_value": "example_value"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
