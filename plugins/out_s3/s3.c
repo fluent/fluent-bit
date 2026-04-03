@@ -259,6 +259,25 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     return 0;
 };
 
+/*
+ * Track mock API call counts via env vars (e.g. TEST_PutObject_CALL_COUNT)
+ * so tests can assert the exact number of S3 API attempts.
+ */
+static void mock_s3_call_increment_counter(char *api)
+{
+    char env_var[64];
+    char *val;
+    int count;
+    char buf[16];
+
+    snprintf(env_var, sizeof(env_var), "TEST_%s_CALL_COUNT", api);
+    val = getenv(env_var);
+    count = val ? atoi(val) : 0;
+    count++;
+    snprintf(buf, sizeof(buf), "%d", count);
+    setenv(env_var, buf, 1);
+}
+
 struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
 {
     /* create an http client so that we can set the response */
@@ -266,6 +285,8 @@ struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
     char *error = mock_error_response(error_env_var);
     char *resp;
     int len;
+
+    mock_s3_call_increment_counter(api);
 
     c = flb_calloc(1, sizeof(struct flb_http_client));
     if (!c) {
@@ -1016,11 +1037,13 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     ctx->timer_created = FLB_FALSE;
     ctx->timer_ms = (int) (ctx->upload_timeout / 6) * 1000;
-    if (ctx->timer_ms > UPLOAD_TIMER_MAX_WAIT) {
-        ctx->timer_ms = UPLOAD_TIMER_MAX_WAIT;
-    }
-    else if (ctx->timer_ms < UPLOAD_TIMER_MIN_WAIT) {
-        ctx->timer_ms = UPLOAD_TIMER_MIN_WAIT;
+    if (s3_plugin_under_test() == FLB_FALSE) {
+        if (ctx->timer_ms > UPLOAD_TIMER_MAX_WAIT) {
+            ctx->timer_ms = UPLOAD_TIMER_MAX_WAIT;
+        }
+        else if (ctx->timer_ms < UPLOAD_TIMER_MIN_WAIT) {
+            ctx->timer_ms = UPLOAD_TIMER_MIN_WAIT;
+        }
     }
 
     /*
@@ -1384,7 +1407,7 @@ static int put_all_chunks(struct flb_s3 *ctx)
                 continue;
             }
 
-            if (chunk->failures >= ctx->ins->retry_limit) {
+            if (chunk->failures > ctx->ins->retry_limit) {
                 flb_plg_warn(ctx->ins,
                              "Chunk for tag %s failed to send %d/%d times, will not retry",
                              (char *) fsf->meta_buf, chunk->failures, ctx->ins->retry_limit);
@@ -1672,7 +1695,7 @@ static struct multipart_upload *get_upload(struct flb_s3 *ctx,
         if (tmp_upload->upload_state == MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS) {
             continue;
         }
-        if (tmp_upload->upload_errors >= ctx->ins->retry_limit) {
+        if (tmp_upload->upload_errors > ctx->ins->retry_limit) {
             tmp_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
             flb_plg_error(ctx->ins, "Upload for %s has reached max upload errors",
                           tmp_upload->s3_key);
@@ -3319,7 +3342,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
         if (ret != FLB_OK) {
             flb_plg_error(ctx->ins, "Could not send chunk with tag %s",
                           (char *) fsf->meta_buf);
-            if(chunk->failures >= ctx->ins->retry_limit){
+            if(chunk->failures > ctx->ins->retry_limit){
                 flb_plg_warn(ctx->ins,
                              "Chunk for tag %s failed to send %d/%d times, will not retry",
                              (char *) fsf->meta_buf, chunk->failures, ctx->ins->retry_limit);
@@ -3334,7 +3357,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
         m_upload = mk_list_entry(head, struct multipart_upload, _head);
         complete = FLB_FALSE;
 
-        if (m_upload->complete_errors >= ctx->ins->retry_limit) {
+        if (m_upload->complete_errors > ctx->ins->retry_limit) {
             flb_plg_error(ctx->ins,
                           "Upload for %s has reached max completion errors, "
                           "plugin will give up", m_upload->s3_key);
@@ -3526,31 +3549,6 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     flb_free(val_buf);
 
     return out_buf;
-}
-
-static void unit_test_flush(void *out_context, struct s3_file *upload_file,
-                            const char *tag, int tag_len, flb_sds_t chunk,
-                            int chunk_size, struct multipart_upload *m_upload_file,
-                            time_t file_first_log_time)
-{
-    int ret;
-    char *buffer;
-    size_t buffer_size;
-    struct flb_s3 *ctx = out_context;
-
-    s3_store_buffer_put(ctx, upload_file, tag, tag_len,
-                        chunk, (size_t) chunk_size, file_first_log_time);
-    ret = construct_request_buffer(ctx, chunk, upload_file, &buffer, &buffer_size);
-    if (ret < 0) {
-        flb_plg_error(ctx->ins, "Could not construct request buffer for %s",
-                      upload_file->file_path);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
-    ret = upload_data(ctx, upload_file, m_upload_file, buffer, buffer_size, tag, tag_len);
-    flb_free(buffer);
-
-    FLB_OUTPUT_RETURN(ret);
 }
 
 static void flush_init(void *out_context)
@@ -3838,16 +3836,8 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
         file_first_log_time = time(NULL);
     }
 
-    /* Specific to unit tests, will not get called normally */
-    if (s3_plugin_under_test() == FLB_TRUE) {
-        unit_test_flush(ctx, upload_file,
-                        event_chunk->tag, flb_sds_len(event_chunk->tag),
-                        chunk, chunk_size,
-                        m_upload_file, file_first_log_time);
-    }
-
     /* Discard upload_file if it has failed to upload retry_limit times */
-    if (upload_file != NULL && upload_file->failures >= ctx->ins->retry_limit) {
+    if (upload_file != NULL && upload_file->failures > ctx->ins->retry_limit) {
         flb_plg_warn(ctx->ins, "File with tag %s failed to send %d/%d times, will not retry",
                      event_chunk->tag, upload_file->failures, ctx->ins->retry_limit);
         s3_store_file_inactive(ctx, upload_file);
