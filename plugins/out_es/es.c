@@ -378,8 +378,10 @@ static int elasticsearch_format(struct flb_config *config,
     uint16_t hash[8];
     int es_index_custom_len;
     struct flb_elasticsearch *ctx = plugin_context;
+    struct flb_upstream_node *node = flush_ctx;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
+    flb_sds_view_t index;
 
     j_index = flb_sds_create_size(ES_BULK_HEADER);
     if (j_index == NULL) {
@@ -411,6 +413,11 @@ static int elasticsearch_format(struct flb_config *config,
         logstash_index[sizeof(logstash_index) - 1] = '\0';
     }
 
+    index = es_get_property_view("index", node, ctx);
+    if (flb_sds_view_is_empty(index) && ctx->index != NULL) {
+        index = flb_sds_view_create(ctx->index, strlen(ctx->index));
+    }
+
     /*
      * If logstash format and id generation are disabled, pre-generate
      * the index line for all records.
@@ -422,7 +429,7 @@ static int elasticsearch_format(struct flb_config *config,
         flb_time_get(&tms);
         gmtime_r(&tms.tm.tv_sec, &tm);
         strftime(index_formatted, sizeof(index_formatted) - 1,
-                 ctx->index, &tm);
+                 index.buf, &tm);
         es_index = index_formatted;
         if (ctx->suppress_type_name) {
             index_len = flb_sds_snprintf(&j_index,
@@ -514,7 +521,7 @@ static int elasticsearch_format(struct flb_config *config,
         msgpack_pack_str(&tmp_pck, s);
         msgpack_pack_str_body(&tmp_pck, time_formatted, s);
 
-        es_index = ctx->index;
+        es_index = (char *) index.buf;
         if (ctx->logstash_format == FLB_TRUE) {
             ret = compose_index_header(ctx, es_index_custom_len,
                                        &logstash_index[0], sizeof(logstash_index),
@@ -547,7 +554,7 @@ static int elasticsearch_format(struct flb_config *config,
         else if (ctx->current_time_index == FLB_TRUE) {
             /* Make sure we handle index time format for index */
             strftime(index_formatted, sizeof(index_formatted) - 1,
-                     ctx->index, &tm);
+                     index.buf, &tm);
             es_index = index_formatted;
         }
 
@@ -914,7 +921,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
 
     /* Convert format */
     ret = elasticsearch_format(config, ins,
-                               ctx, NULL,
+                               ctx, node,
                                event_chunk->type,
                                event_chunk->tag, flb_sds_len(event_chunk->tag),
                                event_chunk->data, event_chunk->size,
