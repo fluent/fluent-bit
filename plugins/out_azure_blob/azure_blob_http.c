@@ -24,9 +24,104 @@
 #include <fluent-bit/flb_hmac.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_oauth2.h>
 
 #include "azure_blob.h"
 #include "azure_blob_uri.h"
+
+#ifdef FLB_HAVE_TLS
+/* Helper function to get OAuth token for blob storage access */
+static flb_sds_t get_azure_blob_token(struct flb_azure_blob *ctx)
+{
+    int ret = 0;
+    flb_sds_t output = NULL;
+    char *token = NULL;
+
+    if (pthread_mutex_lock(&ctx->token_mutex)) {
+        flb_plg_error(ctx->ins, "error locking token mutex");
+        return NULL;
+    }
+
+    /* Check if token needs refresh */
+    if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
+        switch (ctx->atype) {
+            case FLB_AZURE_AUTH_WORKLOAD_IDENTITY:
+                ret = flb_azure_workload_identity_token_get(ctx->o,
+                                                           ctx->workload_identity_token_file,
+                                                           ctx->client_id,
+                                                           ctx->tenant_id,
+                                                           FLB_AZURE_BLOB_RESOURCE "/.default");
+                break;
+
+            case FLB_AZURE_AUTH_MANAGED_IDENTITY_SYSTEM:
+            case FLB_AZURE_AUTH_MANAGED_IDENTITY_USER:
+                token = flb_azure_msi_token_get(ctx->o);
+                if (!token) {
+                    ret = -1;
+                }
+                break;
+
+            case FLB_AZURE_AUTH_SERVICE_PRINCIPAL:
+                /* Clear any previous oauth2 payload content */
+                flb_oauth2_payload_clear(ctx->o);
+
+                ret = flb_oauth2_payload_append(ctx->o, "grant_type", 10, "client_credentials", 18);
+                if (ret == -1) {
+                    flb_plg_error(ctx->ins, "error appending oauth2 params");
+                    pthread_mutex_unlock(&ctx->token_mutex);
+                    return NULL;
+                }
+
+                ret = flb_oauth2_payload_append(ctx->o, "scope", 5, 
+                                               FLB_AZURE_BLOB_RESOURCE "/.default", 
+                                               sizeof(FLB_AZURE_BLOB_RESOURCE "/.default") - 1);
+                if (ret == -1) {
+                    flb_plg_error(ctx->ins, "error appending oauth2 params");
+                    pthread_mutex_unlock(&ctx->token_mutex);
+                    return NULL;
+                }
+
+                ret = flb_oauth2_payload_append(ctx->o, "client_id", 9, ctx->client_id, -1);
+                if (ret == -1) {
+                    flb_plg_error(ctx->ins, "error appending oauth2 params");
+                    pthread_mutex_unlock(&ctx->token_mutex);
+                    return NULL;
+                }
+
+                ret = flb_oauth2_payload_append(ctx->o, "client_secret", 13, ctx->client_secret, -1);
+                if (ret == -1) {
+                    flb_plg_error(ctx->ins, "error appending oauth2 params");
+                    pthread_mutex_unlock(&ctx->token_mutex);
+                    return NULL;
+                }
+
+                /* Retrieve access token */
+                token = flb_oauth2_token_get(ctx->o);
+                if (!token) {
+                    ret = -1;
+                }
+                break;
+
+            default:
+                ret = -1;
+                break;
+        }
+    }
+
+    /* Create output string with token type and access token */
+    if (ret == 0 && ctx->o->access_token) {
+        output = flb_sds_create_size(flb_sds_len(ctx->o->token_type) +
+                                     flb_sds_len(ctx->o->access_token) + 2);
+        if (output) {
+            flb_sds_snprintf(&output, flb_sds_alloc(output), "%s %s",
+                           ctx->o->token_type, ctx->o->access_token);
+        }
+    }
+
+    pthread_mutex_unlock(&ctx->token_mutex);
+    return output;
+}
+#endif
 
 static int hmac_sha256_sign(unsigned char out[32],
                             unsigned char *key, size_t key_len,
@@ -358,7 +453,9 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
     /* Azure header: x-ms-version */
     flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
 
-    if (ctx->atype == AZURE_BLOB_AUTH_KEY) {
+    /* Authorization header based on auth type */
+    if (ctx->atype == FLB_AZURE_AUTH_KEY) {
+        /* Use shared key authentication */
         can_req = azb_http_canonical_request(ctx, c, content_length, content_type,
                                              content_encoding);
 
@@ -374,6 +471,27 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
         flb_sds_destroy(can_req);
         flb_sds_destroy(auth);
     }
+#ifdef FLB_HAVE_TLS
+    else if (ctx->atype == FLB_AZURE_AUTH_SERVICE_PRINCIPAL ||
+             ctx->atype == FLB_AZURE_AUTH_MANAGED_IDENTITY_SYSTEM ||
+             ctx->atype == FLB_AZURE_AUTH_MANAGED_IDENTITY_USER ||
+             ctx->atype == FLB_AZURE_AUTH_WORKLOAD_IDENTITY) {
+        /* Use OAuth2 bearer token authentication */
+        auth = get_azure_blob_token(ctx);
+        if (!auth) {
+            flb_plg_error(ctx->ins, "failed to get OAuth token");
+            return -1;
+        }
+
+        /* Azure header: authorization (Bearer token) */
+        flb_http_add_header(c, "Authorization", 13, auth, flb_sds_len(auth));
+
+        /* Release buffer */
+        flb_sds_destroy(auth);
+    }
+#endif
+    /* Note: FLB_AZURE_AUTH_SAS does not use Authorization header, 
+     * SAS token is appended to URI instead */
 
     /* Set callback context to the HTTP client context */
     flb_http_set_callback_context(c, ctx->ins->callback);
