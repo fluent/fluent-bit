@@ -2,6 +2,7 @@
 
 #include <fluent-bit.h>
 #include "flb_tests_runtime.h"
+#include "../include/flb_tests_tmpdir.h"
 #include <stdio.h>
 #include <unistd.h>
 
@@ -1062,7 +1063,14 @@ void flb_test_response_partially_success()
 
 static int create_upstream_file(char *path, size_t size)
 {
+#ifndef _WIN32
     int fd;
+#else
+    FILE *fp;
+#endif
+    char *tmp_path;
+    size_t content_len;
+    size_t written;
     int ret;
     const char *content =
         "[UPSTREAM]\n"
@@ -1073,18 +1081,50 @@ static int create_upstream_file(char *path, size_t size)
         "    host 127.0.0.1\n"
         "    port 9200\n";
 
-    snprintf(path, size, "/tmp/flb-es-upstream-XXXXXX");
+    tmp_path = flb_test_tmpdir_cat("/flb-es-upstream-XXXXXX");
+    if (tmp_path == NULL) {
+        return -1;
+    }
+
+    if (strlen(tmp_path) + 1 > size) {
+        flb_free(tmp_path);
+        return -1;
+    }
+
+    strncpy(path, tmp_path, size);
+    flb_free(tmp_path);
+
+#ifndef _WIN32
     fd = mkstemp(path);
     if (fd == -1) {
         return -1;
     }
 
-    ret = write(fd, content, strlen(content));
+    content_len = strlen(content);
+    ret = write(fd, content, content_len);
     close(fd);
-    if (ret <= 0) {
+    if (ret != (int) content_len) {
         unlink(path);
         return -1;
     }
+#else
+    if (_mktemp_s(path, size) != 0) {
+        return -1;
+    }
+
+    fp = fopen(path, "wb");
+    if (fp == NULL) {
+        return -1;
+    }
+
+    content_len = strlen(content);
+    written = fwrite(content, 1, content_len, fp);
+    ret = fclose(fp);
+    if (written != content_len || ret != 0) {
+        unlink(path);
+        return -1;
+    }
+#endif
 
     return 0;
 }
