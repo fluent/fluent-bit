@@ -13,6 +13,9 @@ enum event_type {
     EVENT_TYPE_MEM,   // For memory operations
     EVENT_TYPE_BIND,  // Added event type for bind operations
     EVENT_TYPE_VFS,
+    EVENT_TYPE_LISTEN,
+    EVENT_TYPE_ACCEPT,
+    EVENT_TYPE_CONNECT,
 };
 
 enum vfs_op {
@@ -35,40 +38,35 @@ enum memop {
     MEMOP_PVALLOC,
 };
 
-/* Common fields for all events */
 struct event_common {
-    __u64 timestamp_raw;           // Event timestamp in nanoseconds
-    __u32 pid;                     // Process ID
-    __u32 tid;                     // Thread ID
-    __u32 uid;                     // User ID
-    __u32 gid;                     // Group ID
-    __u64 mntns_id;                // Mount namespace ID
-    char comm[TASK_COMM_LEN];      // Command name (process name)
+    __u64 timestamp_raw;
+    __u32 pid;
+    __u32 tid;
+    __u32 uid;
+    __u32 gid;
+    __u64 mntns_id;
+    char comm[TASK_COMM_LEN];
 };
 
-/* Specific fields for execve events */
 struct execve_event {
-    __u32 tpid;                    // Target Process ID (for execve)
-    char filename[PATH_MAX];       // Filename being executed
-    char argv[256];                // Arguments (simplified for example)
-    __u32 argc;                    // Argument count
+    __u32 tpid;
+    char filename[PATH_MAX];
+    char argv[256];
+    __u32 argc;
 };
 
-/* Specific fields for signal events */
 struct signal_event {
-    __u32 tpid;                    // Target Process ID (for signal)
-    int sig_raw;                   // Signal number
-    int error_raw;                 // Error code (for failed syscalls)
+    __u32 tpid;
+    int sig_raw;
+    int error_raw;
 };
 
-/* Specific fields for memory operations */
 struct mem_event {
-    enum memop operation;          // Memory operation type (malloc, free, etc.)
-    __u64 addr;                    // Address of the operation
-    __u64 size;                    // Size of the memory operation (for malloc)
+    enum memop operation;
+    __u64 addr;
+    __u64 size;
 };
 
-/* Specific fields for bind events */
 struct bind_event {
     struct {
         __u16 port;
@@ -93,17 +91,48 @@ struct vfs_event {
     int error_raw;
 };
 
-/* The main event structure */
+struct tcp_addr {
+    __u16 port;
+    __u8 version;
+    __u8 proto_raw;
+    union {
+        __u32 v4;
+        __u32 v6[4];
+    } addr_raw;
+};
+
+struct listen_event {
+    int fd;
+    int backlog;
+    int error_raw;
+};
+
+struct accept_event {
+    int fd;
+    int new_fd;
+    struct tcp_addr peer;
+    int error_raw;
+};
+
+struct connect_event {
+    int fd;
+    struct tcp_addr remote;
+    int error_raw;
+};
+
 struct event {
     enum event_type type;           // Type of event (execve, signal, mem, bind)
     struct event_common common;     // Common fields for all events
     union {
         struct execve_event execve;
         struct signal_event signal;
-        struct mem_event mem;       // Memory event details
-        struct bind_event bind;     // Bind event details
-        struct vfs_event vfs;       // VFS event details
-    } details;                      // Event-specific details
+        struct mem_event mem;
+        struct bind_event bind;
+        struct vfs_event vfs;
+        struct listen_event listen;
+        struct accept_event accept;
+        struct connect_event connect;
+    } details;
 };
 
 #endif // TRACE_EVENTS_H
