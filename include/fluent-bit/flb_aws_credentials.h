@@ -34,6 +34,20 @@
 /* 5 second timeout for credential related http requests */
 #define FLB_AWS_CREDENTIAL_NET_TIMEOUT 5
 
+/* IoT Credentials Environment Variables */
+#define AWS_IOT_KEY_FILE               "AWS_IOT_KEY_FILE"
+#define AWS_IOT_CERT_FILE              "AWS_IOT_CERT_FILE"
+#define AWS_IOT_CA_CERT_FILE           "AWS_IOT_CA_CERT_FILE"
+#define AWS_IOT_CREDENTIALS_ENDPOINT   "AWS_IOT_CREDENTIALS_ENDPOINT"
+#define AWS_IOT_THING_NAME             "AWS_IOT_THING_NAME"
+#define AWS_IOT_ROLE_ALIAS             "AWS_IOT_ROLE_ALIAS"
+
+/* Greengrass V2 Config File - fallback source for IoT configuration */
+#define AWS_IOT_GREENGRASS_V2_CONFIG   "AWS_IOT_GREENGRASS_V2_CONFIG_PATH"
+
+/* Greengrass V2 Component Environment Variable - fallback for CA cert */
+#define AWS_GG_ROOT_CA_PATH            "AWS_GG_ROOT_CA_PATH"
+
 /*
  * A structure that wraps the sensitive data needed to sign an AWS request
  */
@@ -225,6 +239,11 @@ struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
                                                  flb_aws_client_generator
                                                  *generator);
 
+/*
+ * IoT Provider
+ */
+struct flb_aws_provider *flb_iot_provider_create(struct flb_config *config,
+                                                 struct flb_aws_client_generator *generator);
 
 /*
  * STS Assume Role Provider.
