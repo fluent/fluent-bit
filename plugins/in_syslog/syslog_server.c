@@ -164,12 +164,12 @@ static int syslog_server_net_create(struct flb_syslog *ctx)
                                             &ctx->ins->net_setup);
 
     if (ctx->downstream != NULL) {
-        flb_info("[in_syslog] %s server binding %s:%s",
+        flb_info("[in_syslog] %s server binding %s port %s",
                  ((ctx->mode == FLB_SYSLOG_TCP) ? "TCP" : "UDP"),
                  ctx->listen, ctx->port);
     }
     else {
-        flb_error("[in_syslog] could not bind address %s:%s. Aborting",
+        flb_error("[in_syslog] could not bind address %s port %s. Aborting",
                   ctx->listen, ctx->port);
 
         return -1;
