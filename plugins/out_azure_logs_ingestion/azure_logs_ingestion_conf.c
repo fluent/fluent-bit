@@ -61,7 +61,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
         return NULL;
     }
     /* config: 'tenant_id' */
-    if (!ctx->tenant_id) {
+    if (!ctx->tenant_id && !ctx->auth_url_override) {
         flb_plg_error(ins, "property 'tenant_id' is not defined");
         flb_az_li_ctx_destroy(ctx);
         return NULL;
@@ -91,16 +91,26 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    /* Allocate and set auth url */
-    ctx->auth_url = flb_sds_create_size(sizeof(FLB_AZ_LI_AUTH_URL_TMPLT) - 1 +
-                                        flb_sds_len(ctx->tenant_id));
-    if (!ctx->auth_url) {
-        flb_errno();
-        flb_az_li_ctx_destroy(ctx);
-        return NULL;
+    if (ctx->auth_url_override) {
+        ctx->auth_url = flb_sds_create(ctx->auth_url_override);
+        if (!ctx->auth_url) {
+            flb_errno();
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
     }
-    flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
-                    FLB_AZ_LI_AUTH_URL_TMPLT, ctx->tenant_id);
+    else {
+        /* Allocate and set auth url */
+        ctx->auth_url = flb_sds_create_size(sizeof(FLB_AZ_LI_AUTH_URL_TMPLT) - 1 +
+                                            flb_sds_len(ctx->tenant_id));
+        if (!ctx->auth_url) {
+            flb_errno();
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+        flb_sds_snprintf(&ctx->auth_url, flb_sds_alloc(ctx->auth_url),
+                        FLB_AZ_LI_AUTH_URL_TMPLT, ctx->tenant_id);
+    }
 
     /* Allocate and set dce full url */
     ctx->dce_u_url = flb_sds_create_size(sizeof(FLB_AZ_LI_DCE_URL_TMPLT) - 1 +
