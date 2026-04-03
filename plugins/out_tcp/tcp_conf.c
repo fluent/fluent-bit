@@ -97,6 +97,12 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins, "unrecognized 'format' option '%s'. "
                           "Using 'msgpack'", tmp);
         }
+        else if (ret == FLB_PACK_JSON_FORMAT_OTLP ||
+                 ret == FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
+            flb_plg_error(ctx->ins,
+                          "format '%s' is not supported by out_tcp",
+                          tmp);
+        }
         else {
             ctx->out_format = ret;
         }

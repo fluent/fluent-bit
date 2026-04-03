@@ -910,3 +910,68 @@ def test_valid_commit_multiline_subject_ignored():
     )
     ok, _ = validate_commit(commit)
     assert ok is True
+
+
+class FakeDiff:
+    def __init__(self, path, patch):
+        self.b_path = path
+        self.diff = patch.encode()
+
+
+class FakeStats:
+    def __init__(self, files):
+        self.files = {f: {} for f in files}
+
+
+class FakeCommit:
+    def __init__(self, message, diffs):
+        self.message = message
+        self._diffs = diffs
+        self.parents = [object()]
+
+        file_paths = [d.b_path for d in diffs]
+        self.stats = FakeStats(file_paths)
+
+    def diff(self, parent, create_patch=True):
+        return self._diffs
+
+
+def make_fake_commit(message, changes):
+    """
+    changes: list of (path, patch)
+    """
+    diffs = [FakeDiff(path, patch) for path, patch in changes]
+    return FakeCommit(message, diffs)
+
+def test_release_with_version_bump():
+    commit = make_fake_commit(
+        "release: update to 5.0.2\n\nSigned-off-by: User",
+        [
+            ("CMakeLists.txt", """
+-set(FLB_VERSION_PATCH  0)
++set(FLB_VERSION_PATCH  2)
+"""),
+            ("dockerfiles/Dockerfile", """
+-FROM fluent-bit:5.0.0
++FROM fluent-bit:5.0.2
+""")
+        ]
+    )
+
+    ok, msg = validate_commit(commit)
+    assert ok is True, msg
+
+def test_release_rejected_when_cmakelists_has_non_version_change():
+    commit = make_fake_commit(
+        "release: update to 5.0.2\n\nSigned-off-by: User",
+        [
+            ("CMakeLists.txt", """
+-set(FLB_VERSION_PATCH  0)
++set(FLB_VERSION_PATCH  2)
++set(SOME_FLAG ON)
+""")
+        ]
+    )
+
+    ok, _ = validate_commit(commit)
+    assert ok is False

@@ -215,22 +215,34 @@ static inline flb_vector8 flb_vector8_ssub(const flb_vector8 v1, const flb_vecto
 /*
  * Return a vector with all bits set in each lane where the corresponding
  * lanes in the inputs are equal.
+ * For CI or dockerized riscv64 environment, it doesn't have SIMD extension.
+ * So, we need to define the fallback.
  */
-#ifndef FLB_SIMD_NONE
 static inline flb_vector8 flb_vector8_eq(const flb_vector8 v1, const flb_vector8 v2)
 {
-#ifdef FLB_SIMD_SSE2
-	return _mm_cmpeq_epi8(v1, v2);
+#if defined(FLB_SIMD_SSE2)
+    return _mm_cmpeq_epi8(v1, v2);
 #elif defined(FLB_SIMD_NEON)
-	return vceqq_u8(v1, v2);
+    return vceqq_u8(v1, v2);
 #elif defined(FLB_SIMD_RVV)
-	vbool8_t ret = __riscv_vmseq_vv_u8m1_b8(v1, v2, RVV_VEC8_INST_LEN);
-	return __riscv_vmerge_vvm_u8m1(__riscv_vmv_v_x_u8m1(0, RVV_VEC8_INST_LEN),
-								   __riscv_vmv_v_x_u8m1(UINT8_MAX, RVV_VEC8_INST_LEN),
-								   ret, RVV_VEC8_INST_LEN);
+    vbool8_t ret = __riscv_vmseq_vv_u8m1_b8(v1, v2, RVV_VEC8_INST_LEN);
+    return __riscv_vmerge_vvm_u8m1(__riscv_vmv_v_x_u8m1(0, RVV_VEC8_INST_LEN),
+                                   __riscv_vmv_v_x_u8m1(UINT8_MAX, RVV_VEC8_INST_LEN),
+                                   ret, RVV_VEC8_INST_LEN);
+#else
+    flb_vector8 result = 0;
+    size_t i;
+    const uint8_t *p1 = (const uint8_t *) &v1;
+    const uint8_t *p2 = (const uint8_t *) &v2;
+    uint8_t *out = (uint8_t *) &result;
+
+    for (i = 0; i < sizeof(flb_vector8); i++) {
+        out[i] = (p1[i] == p2[i]) ? UINT8_MAX : 0;
+    }
+
+    return result;
 #endif
 }
-#endif /* ! FLB_SIMD_NONE */
 
 #ifndef FLB_SIMD_NONE
 static inline flb_vector32 flb_vector32_eq(const flb_vector32 v1, const flb_vector32 v2)

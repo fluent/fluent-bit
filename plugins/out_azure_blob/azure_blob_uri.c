@@ -113,7 +113,10 @@ flb_sds_t azb_uri_container(struct flb_azure_blob *ctx)
         return NULL;
     }
 
-    flb_sds_printf(&uri, "%s%s", ctx->base_uri, ctx->container_name);
+    if (flb_sds_printf(&uri, "%s%s", ctx->base_uri, ctx->container_name) == NULL) {
+        flb_sds_destroy(uri);
+        return NULL;
+    }
     return uri;
 }
 
@@ -127,31 +130,73 @@ flb_sds_t azb_uri_ensure_or_create_container(struct flb_azure_blob *ctx)
     }
 
     flb_sds_printf(&uri, "?restype=container");
+    if (uri == NULL) {
+        return NULL;
+    }
+
     if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
-        flb_sds_printf(&uri, "&%s", ctx->sas_token);
+        if (flb_sds_printf(&uri, "&%s", ctx->sas_token) == NULL) {
+            flb_sds_destroy(uri);
+            return NULL;
+        }
     }
 
     return uri;
 }
 
-flb_sds_t azb_uri_create_blob(struct flb_azure_blob *ctx, char *tag)
+const char *azb_effective_path(struct flb_azure_blob *ctx,
+                               const char *path_prefix)
+{
+    if (!ctx) {
+        return path_prefix;
+    }
+
+    if (ctx->path_templating_enabled == FLB_TRUE) {
+        if (path_prefix == NULL) {
+            return ctx->path;
+        }
+        return azb_commit_prefix_with_fallback(ctx, path_prefix);
+    }
+
+    if (path_prefix && path_prefix[0] != '\0') {
+        return path_prefix;
+    }
+
+    return ctx->path;
+}
+
+flb_sds_t azb_uri_create_blob(struct flb_azure_blob *ctx,
+                              const char *path_prefix,
+                              const char *tag)
 {
     flb_sds_t uri;
+    const char *effective_path;
 
     uri = azb_uri_container(ctx);
     if (!uri) {
         return NULL;
     }
 
-    if (ctx->path) {
-        flb_sds_printf(&uri, "/%s/%s", ctx->path, tag);
+    effective_path = azb_effective_path(ctx, path_prefix);
+
+    if (effective_path && effective_path[0] != '\0') {
+        if (flb_sds_printf(&uri, "/%s/%s", effective_path, tag) == NULL) {
+            flb_sds_destroy(uri);
+            return NULL;
+        }
     }
     else {
-        flb_sds_printf(&uri, "/%s", tag);
+        if (flb_sds_printf(&uri, "/%s", tag) == NULL) {
+            flb_sds_destroy(uri);
+            return NULL;
+        }
     }
 
     if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
-        flb_sds_printf(&uri, "?%s", ctx->sas_token);
+        if (flb_sds_printf(&uri, "?%s", ctx->sas_token) == NULL) {
+            flb_sds_destroy(uri);
+            return NULL;
+        }
     }
 
     return uri;

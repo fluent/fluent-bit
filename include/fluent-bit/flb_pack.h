@@ -27,8 +27,6 @@
 #include <fluent-bit/flb_config.h>
 
 #include <msgpack.h>
-#include <yyjson.h>
-
 /* JSON types */
 #define FLB_PACK_JSON_UNDEFINED     JSMN_UNDEFINED
 #define FLB_PACK_JSON_OBJECT        JSMN_OBJECT
@@ -60,6 +58,8 @@
 #define FLB_PACK_JSON_FORMAT_JSON        1
 #define FLB_PACK_JSON_FORMAT_STREAM      2
 #define FLB_PACK_JSON_FORMAT_LINES       3
+#define FLB_PACK_JSON_FORMAT_OTLP        4
+#define FLB_PACK_JSON_FORMAT_OTLP_PRETTY 5
 
 struct flb_pack_state {
     int multiple;         /* support multiple jsons? */
@@ -81,11 +81,13 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
                   int *root_type, size_t *consumed);
 int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
                        int *root_type, int *out_records, size_t *consumed);
+#ifdef FLB_HAVE_YYJSON
 int flb_pack_json_yyjson(const char *js, size_t len, char **buffer, size_t *size,
                          int *root_type, size_t *consumed);
 int flb_pack_json_recs_yyjson(const char *js, size_t len, char **buffer,
                               size_t *size, int *root_type, int *out_records,
                               size_t *consumed);
+#endif
 
 int flb_pack_state_init(struct flb_pack_state *s);
 void flb_pack_state_reset(struct flb_pack_state *s);
@@ -111,8 +113,8 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size, int es
 
 int flb_pack_time_now(msgpack_packer *pck);
 int flb_msgpack_expand_map(char *map_data, size_t map_size,
-                           msgpack_object_kv **obj_arr, int obj_arr_len,
-                           char** out_buf, int* out_size);
+                           msgpack_object_kv **obj_arr, size_t obj_arr_len,
+                           char** out_buf, size_t *out_size);
 
 struct flb_gelf_fields {
     flb_sds_t timestamp_key;

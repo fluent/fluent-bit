@@ -446,10 +446,12 @@ struct flb_input_instance {
     struct flb_hash_table *ht_metric_chunks;
     struct flb_hash_table *ht_trace_chunks;
     struct flb_hash_table *ht_profile_chunks;
+    pthread_mutex_t metrics_chunk_lock;
 
     /* TLS settings */
     int use_tls;                         /* bool, try to use TLS for I/O */
     int tls_verify;                      /* Verify certs (default: true) */
+    int tls_verify_client;               /* Verify client certs (default: false) */
     int tls_verify_hostname;             /* Verify hostname (default: false) */
     int tls_debug;                       /* mbedtls debug level          */
     char *tls_vhost;                     /* Virtual hostname for SNI     */

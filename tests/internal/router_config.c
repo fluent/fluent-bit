@@ -1244,6 +1244,53 @@ void test_router_apply_config_missing_output()
     flb_sds_destroy(route_output.name);
 }
 
+void test_router_apply_config_rejects_incompatible_output_signal()
+{
+    struct flb_config config;
+    struct flb_input_instance input;
+    struct flb_output_instance output;
+    struct flb_input_routes input_routes;
+    struct flb_route route;
+    struct flb_route_output route_output;
+    struct flb_input_plugin input_plugin;
+    struct flb_output_plugin output_plugin;
+
+    setup_test_instances(&config, &input, &input_plugin, "dummy", "dummy",
+                         &output, &output_plugin, "printme", "stdout");
+
+    memset(&input_routes, 0, sizeof(input_routes));
+    cfl_list_init(&input_routes._head);
+    cfl_list_init(&input_routes.routes);
+    input_routes.input_name = flb_sds_create("dummy");
+    input_routes.plugin_name = flb_sds_create("dummy");
+    input_routes.has_alias = FLB_FALSE;
+    cfl_list_add(&input_routes._head, &config.input_routes);
+
+    memset(&route, 0, sizeof(route));
+    cfl_list_init(&route._head);
+    cfl_list_init(&route.outputs);
+    route.name = flb_sds_create("metrics_only");
+    route.signals = FLB_ROUTER_SIGNAL_METRICS;
+    cfl_list_add(&route._head, &input_routes.routes);
+
+    memset(&route_output, 0, sizeof(route_output));
+    cfl_list_init(&route_output._head);
+    route_output.name = flb_sds_create("printme");
+    cfl_list_add(&route_output._head, &route.outputs);
+
+    TEST_CHECK(flb_router_apply_config(&config) == 0);
+    TEST_CHECK(cfl_list_is_empty(&input.routes_direct));
+
+    flb_router_exit(&config);
+
+    flb_sds_destroy(input.alias);
+    flb_sds_destroy(output.alias);
+    flb_sds_destroy(input_routes.input_name);
+    flb_sds_destroy(input_routes.plugin_name);
+    flb_sds_destroy(route.name);
+    flb_sds_destroy(route_output.name);
+}
+
 void test_router_apply_config_uses_input_alias()
 {
     struct flb_config config;
@@ -2339,6 +2386,7 @@ TEST_LIST = {
     { "parse_contexts_file", test_router_config_parse_file_contexts },
     { "apply_config_success", test_router_apply_config_success },
     { "apply_config_missing_output", test_router_apply_config_missing_output },
+    { "apply_config_rejects_incompatible_output_signal", test_router_apply_config_rejects_incompatible_output_signal },
     { "apply_config_uses_input_alias", test_router_apply_config_uses_input_alias },
     { "apply_config_distinct_instances_without_alias", test_router_apply_config_distinct_instances_without_alias },
     { "route_default_precedence", test_router_route_default_precedence },
