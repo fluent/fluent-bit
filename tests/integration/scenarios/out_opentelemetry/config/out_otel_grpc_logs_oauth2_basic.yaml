@@ -1,0 +1,28 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      samples: 1
+      dummy: |
+        {
+          "message": "hello via grpc oauth2 basic"
+        }
+
+  outputs:
+    - name: opentelemetry
+      match: "*"
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      http2: on
+      grpc: on
+      grpc_logs_uri: /custom.logs.v1.Logs/Push
+      oauth2.enable: true
+      oauth2.token_url: http://127.0.0.1:${TEST_SUITE_OAUTH_PORT}/oauth/token
+      oauth2.client_id: client1
+      oauth2.client_secret: secret1
+      oauth2.scope: logs.write

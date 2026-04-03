@@ -1,0 +1,47 @@
+{
+  "resource_metrics": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.instance.id",
+            "value": {
+              "string_value": "instance-1"
+            }
+          }
+        ]
+      },
+      "scope_metrics": [
+        {
+          "scope": {
+            "name": "metrics-scope",
+            "version": "1.0.0"
+          },
+          "metrics": [
+            {
+              "name": "requests_total",
+              "sum": {
+                "aggregation_temporality": 2,
+                "is_monotonic": true,
+                "data_points": [
+                  {
+                    "attributes": [
+                      {
+                        "key": "service.name",
+                        "value": {
+                          "string_value": "checkout"
+                        }
+                      }
+                    ],
+                    "time_unix_nano": "1650917400000000000",
+                    "as_int": "42"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
