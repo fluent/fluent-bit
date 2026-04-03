@@ -64,6 +64,7 @@
 /plugins/out_es          @pettitwesley @edsiper
 /plugins/out_pgsql       @sxd
 /plugins/out_stackdriver @braydonk @jefferbrecht @jeffluoo
+/plugins/out_oracle_log_analytics @hisatti77 @santhoshkvuda @palukuri @rghouzra
 
 # AWS Plugins
 /plugins/out_s3               @fluent/aws-fluent-bit-maintainers
