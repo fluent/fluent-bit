@@ -581,7 +581,8 @@ struct flb_libco_in_params {
 };
 
 extern pthread_key_t libco_in_param_key;
-extern struct flb_libco_in_params libco_in_param;
+extern pthread_once_t libco_in_param_key_once;
+void libco_in_param_key_init_func(void);
 void flb_input_coro_prepare_destroy(struct flb_input_coro *input_coro);
 
 static FLB_INLINE void input_params_set(struct flb_coro *coro,
@@ -616,14 +617,8 @@ static FLB_INLINE void input_pre_cb_collect(void)
     struct flb_libco_in_params *params;
 
     params = pthread_getspecific(libco_in_param_key);
-    if (params == NULL) {
-        params = flb_calloc(1, sizeof(struct flb_libco_in_params));
-        if (params == NULL) {
-            flb_errno();
-            return;
-        }
-        pthread_setspecific(libco_in_param_key, params);
-    }
+    flb_bug(params == NULL);
+
     coll = params->coll;
     config = params->config;
     coro = params->coro;
@@ -635,13 +630,6 @@ static FLB_INLINE void input_pre_cb_collect(void)
 static FLB_INLINE void flb_input_coro_resume(struct flb_input_coro *input_coro)
 {
     flb_coro_resume(input_coro->coro);
-}
-
-static void libco_in_param_key_destroy(void *data)
-{
-    struct flb_libco_inparams *params = (struct flb_libco_inparams*)data;
-
-    flb_free(params);
 }
 
 static FLB_INLINE
@@ -657,7 +645,7 @@ struct flb_input_coro *flb_input_coro_collect(struct flb_input_collector *coll,
         return NULL;
     }
 
-    pthread_key_create(&libco_in_param_key, libco_in_param_key_destroy);
+    pthread_once(&libco_in_param_key_once, libco_in_param_key_init_func);
 
     coro = input_coro->coro;
     if (!coro) {
