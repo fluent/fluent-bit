@@ -400,6 +400,11 @@ static struct flb_config_map config_map[] = {
      "Set the client secret of the AAD application"
     },
     {
+     FLB_CONFIG_MAP_STR, "auth_url", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_az_li, auth_url_override),
+     "[Optional] Override the OAuth2 token endpoint."
+    },
+    {
      FLB_CONFIG_MAP_STR, "dce_url", (char *)NULL,
      0, FLB_TRUE, offsetof(struct flb_az_li, dce_url),
      "Data Collection Endpoint(DCE) URI (e.g. "
