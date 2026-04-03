@@ -487,6 +487,26 @@ static struct flb_oauth2 *create_oauth_ctx(struct flb_config *config,
     return ctx;
 }
 
+static struct flb_oauth2 *create_legacy_oauth_ctx(struct flb_config *config,
+                                                  struct oauth2_mock_server *server)
+{
+    flb_sds_t token_url;
+    struct flb_oauth2 *ctx;
+
+    token_url = flb_sds_create_size(64);
+    TEST_CHECK(token_url != NULL);
+    if (!token_url) {
+        return NULL;
+    }
+
+    flb_sds_printf(&token_url, "http://127.0.0.1:%d/token", server->port);
+
+    ctx = flb_oauth2_create(config, token_url, 300);
+    flb_sds_destroy(token_url);
+
+    return ctx;
+}
+
 static int write_text_file(const char *path, const char *content)
 {
     FILE *fp;
@@ -948,6 +968,57 @@ void test_caching_and_refresh(void)
     flb_config_exit(config);
 }
 
+void test_legacy_create_manual_payload_flow(void)
+{
+    int ret;
+    char *token;
+    struct flb_config *config;
+    struct flb_oauth2 *ctx;
+    struct oauth2_mock_server server;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+
+    ret = oauth2_mock_server_start(&server, 3600, 0);
+    TEST_CHECK(ret == 0);
+
+    ctx = create_legacy_oauth_ctx(config, &server);
+    TEST_CHECK(ctx != NULL);
+
+#ifdef FLB_SYSTEM_MACOS
+    ret = oauth2_mock_server_wait_ready(&server);
+    TEST_CHECK(ret == 0);
+#endif
+
+    flb_oauth2_payload_clear(ctx);
+
+    ret = flb_oauth2_payload_append(ctx, "grant_type", -1,
+                                    "client_credentials", -1);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_oauth2_payload_append(ctx, "client_id", -1, "legacy-id", -1);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_oauth2_payload_append(ctx, "client_secret", -1,
+                                    "legacy-secret", -1);
+    TEST_CHECK(ret == 0);
+
+    token = flb_oauth2_token_get(ctx);
+    TEST_CHECK(token != NULL);
+    TEST_CHECK(server.token_requests == 1);
+    TEST_CHECK(strcmp(token, "mock-token-1") == 0);
+    TEST_CHECK(strstr(server.latest_token_request,
+                      "grant_type=client_credentials") != NULL);
+    TEST_CHECK(strstr(server.latest_token_request,
+                      "client_id=legacy-id") != NULL);
+    TEST_CHECK(strstr(server.latest_token_request,
+                      "client_secret=legacy-secret") != NULL);
+
+    flb_oauth2_destroy(ctx);
+    oauth2_mock_server_stop(&server);
+    flb_config_exit(config);
+}
+
 void test_private_key_jwt_body(void)
 {
     int ret;
@@ -1078,6 +1149,7 @@ TEST_LIST = {
      test_parse_rejects_missing_required_fields},
     {"parse_rejects_invalid_expires_in", test_parse_rejects_invalid_expires_in},
     {"caching_and_refresh", test_caching_and_refresh},
+    {"legacy_create_manual_payload_flow", test_legacy_create_manual_payload_flow},
     {"private_key_jwt_body", test_private_key_jwt_body},
     {"private_key_jwt_x5t_header", test_private_key_jwt_x5t_header},
     {0}
