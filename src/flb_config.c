@@ -55,6 +55,38 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_DOUBLE,
      offsetof(struct flb_config, flush)},
 
+    {FLB_CONF_STR_FLUSH_ADAPTIVE,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, flush_adaptive)},
+
+    {FLB_CONF_STR_FLUSH_ADAPTIVE_MIN,
+     FLB_CONF_TYPE_DOUBLE,
+     offsetof(struct flb_config, flush_adaptive_min_interval)},
+
+    {FLB_CONF_STR_FLUSH_ADAPTIVE_MAX,
+     FLB_CONF_TYPE_DOUBLE,
+     offsetof(struct flb_config, flush_adaptive_max_interval)},
+
+    {FLB_CONF_STR_FLUSH_ADAPTIVE_LOW,
+     FLB_CONF_TYPE_DOUBLE,
+     offsetof(struct flb_config, flush_adaptive_low_pressure)},
+
+    {FLB_CONF_STR_FLUSH_ADAPTIVE_MEDIUM,
+     FLB_CONF_TYPE_DOUBLE,
+     offsetof(struct flb_config, flush_adaptive_medium_pressure)},
+
+    {FLB_CONF_STR_FLUSH_ADAPTIVE_HIGH,
+     FLB_CONF_TYPE_DOUBLE,
+     offsetof(struct flb_config, flush_adaptive_high_pressure)},
+
+    {FLB_CONF_STR_FLUSH_ADAPTIVE_UP_STEPS,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, flush_adaptive_up_steps)},
+
+    {FLB_CONF_STR_FLUSH_ADAPTIVE_DOWN_STEPS,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, flush_adaptive_down_steps)},
+
     {FLB_CONF_STR_GRACE,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, grace)},
@@ -270,6 +302,18 @@ struct flb_config *flb_config_init()
 
     /* Flush */
     config->flush        = FLB_CONFIG_FLUSH_SECS;
+    config->flush_adaptive = FLB_FALSE;
+    config->flush_adaptive_min_interval = 0.5;
+    config->flush_adaptive_max_interval = 2.0;
+    config->flush_adaptive_low_pressure = 25.0;
+    config->flush_adaptive_medium_pressure = 50.0;
+    config->flush_adaptive_high_pressure = 75.0;
+    config->flush_adaptive_up_steps = 2;
+    config->flush_adaptive_down_steps = 3;
+    config->flush_adaptive_level = 1;
+    config->flush_adaptive_hits = 0;
+    config->flush_adaptive_direction = 0;
+    config->flush_adaptive_current_interval = FLB_CONFIG_FLUSH_SECS;
     config->daemon       = FLB_FALSE;
     config->init_time    = time(NULL);
     config->kernel       = flb_kernel_info();
