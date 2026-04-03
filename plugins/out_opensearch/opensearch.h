@@ -55,6 +55,15 @@
 #define FLB_OS_COMPRESSION_NONE 0
 #define FLB_OS_COMPRESSION_GZIP 1
 
+#define FLB_OS_STATUS_SUCCESS          (1 << 0)
+#define FLB_OS_STATUS_INCOMPLETE       (1 << 1)
+#define FLB_OS_STATUS_ERROR_UNPACK     (1 << 2)
+#define FLB_OS_STATUS_BAD_TYPE         (1 << 3)
+#define FLB_OS_STATUS_INVALID_ARGUMENT (1 << 4)
+#define FLB_OS_STATUS_BAD_RESPONSE     (1 << 5)
+#define FLB_OS_STATUS_DUPLICATES       (1 << 6)
+#define FLB_OS_STATUS_ERROR            (1 << 7)
+
 struct flb_opensearch {
     /* OpenSearch index (database) and type (table) */
     flb_sds_t index;
