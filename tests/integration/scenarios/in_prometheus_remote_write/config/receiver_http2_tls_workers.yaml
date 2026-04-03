@@ -1,0 +1,25 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: prometheus_remote_write
+      listen: 127.0.0.1
+      port: ${PROM_RW_RECEIVER_PORT}
+      uri: /write
+      http2: on
+      successful_response_code: 201
+      tls: on
+      tls.verify: no
+      tls.vhost: localhost
+      tls.crt_file: ${CERTIFICATE_TEST}
+      tls.key_file: ${PRIVATE_KEY_TEST}
+      http_server.workers: 4
+
+  outputs:
+    - name: stdout
+      match: "*"

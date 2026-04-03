@@ -1,0 +1,26 @@
+service:
+  flush: 1
+  grace: 3
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: opentelemetry
+      listen: 127.0.0.1
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+
+  outputs:
+    - name: s3
+      match: "*"
+      bucket: test-bucket
+      region: us-east-1
+      endpoint: http://127.0.0.1:${TEST_SUITE_HTTP_PORT}
+      use_put_object: true
+      total_file_size: 1M
+      upload_timeout: 2s
+      s3_key_format: /payloads/$TAG/$UUID
+      format: otlp_json
+      content_type: application/json
+      store_dir: /tmp/fluent-bit-test-suite-s3-otlp-json

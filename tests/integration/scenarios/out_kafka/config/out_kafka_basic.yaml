@@ -1,0 +1,22 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: out_kafka
+      dummy: '{"message":"hello from out_kafka","source":"dummy"}'
+      samples: 1
+
+  outputs:
+    - name: kafka
+      match: out_kafka
+      brokers: 127.0.0.1:${TEST_SUITE_KAFKA_PORT}
+      topics: test
+      format: json
+      queue_full_retries: 1
+      rdkafka.api.version.request: false
+      rdkafka.broker.version.fallback: 0.8.2.0
