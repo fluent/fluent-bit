@@ -8,6 +8,10 @@
   when the affected area is known, because the full enabled suite can be slow.
 - Run a focused integration test with
   `ctest --test-dir build -R flb-it-opentelemetry --output-on-failure`
+- Run the in-tree Python integration suite with:
+  `cd tests/integration && ./setup-venv.sh && ./run_tests.py`
+- List available Python integration scenarios with:
+  `cd tests/integration && ./run_tests.py --list`
 - Run locally with `./build/bin/fluent-bit -c conf/fluent-bit.conf`
 
 ## Project Structure & Module Organization
@@ -18,6 +22,9 @@ Fluent Bit is a C/C++ monorepo built with CMake.
 - `plugins/`: input/filter/processor/output plugins (`in_*`, `filter_*`, `processor_*`, `out_*`).
 - `lib/`: bundled libraries (e.g., `cprofiles`, `ctraces`, `cmetrics`, `chunkio`).
 - `tests/`: integration/runtime tests and fixtures.
+- `tests/integration/`: in-tree Python integration test suite for end-to-end
+  plugin and protocol validation; introduced from the original
+  `github.com/fluent/fluent-bit-test-suite` project.
 - `conf/`: sample configurations for local validation.
 
 Keep changes scoped: plugin logic in its plugin directory, shared behavior in `src/` or `lib/`.
@@ -27,6 +34,14 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 - `cmake --build build -j8`: compile Fluent Bit and tests.
 - `ctest --test-dir build --output-on-failure`: run enabled tests.
 - `ctest --test-dir build -R flb-it-opentelemetry --output-on-failure`: run a focused integration test.
+- `cd tests/integration && ./setup-venv.sh`: create the local virtualenv for
+  the Python integration suite.
+- `cd tests/integration && ./run_tests.py --list`: list available Python
+  integration scenarios.
+- `cd tests/integration && ./run_tests.py`: run the full Python integration
+  suite against `build/bin/fluent-bit`.
+- `cd tests/integration && FLUENT_BIT_BINARY=/path/to/fluent-bit ./run_tests.py`:
+  run the Python integration suite against a specific binary.
 - `./build/bin/fluent-bit -c conf/fluent-bit.conf`: run locally with a config.
 
 ## Coding Style & Naming Conventions
@@ -48,9 +63,17 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 - Add or update tests for behavior changes, especially protocol parsing and encoder/decoder paths.
 - Prefer targeted tests close to the changed module (`tests/internal`, plugin runtime tests).
 - Prefer focused `ctest -R ...` runs or specific test binaries when the touched area is known.
+- Use `tests/integration` when validating end-to-end plugin behavior, network
+  protocols, downstream request generation, or local fake-server interactions
+  that are awkward to cover in `ctest` binaries alone.
+- The Python integration suite is not part of the default CMake `ctest` targets;
+  run it explicitly from `tests/integration`.
 - Run broader test coverage when changing shared lifecycle, routing, storage, or accounting code.
 - Validate both success and failure paths (invalid payloads, boundary sizes, null/missing fields).
 - You can also run specific binaries from `build/bin` (e.g., `./bin/flb-it-opentelemetry`).
+- Keep generated integration artifacts out of git. Do not commit
+  `.venv/`, `.pytest_cache/`, `results/`, or `__pycache__/` under
+  `tests/integration`.
 
 ## Commit & Pull Request Guidelines
 - Prefix commit subjects with the component/plugin name in lowercase, e.g.:
