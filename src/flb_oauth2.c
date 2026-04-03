@@ -1201,6 +1201,7 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     (void) expire_sec;
 
     oauth2_apply_defaults(&cfg);
+    cfg.enabled = FLB_TRUE;
     cfg.token_url = flb_sds_create(auth_url);
     cfg.refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
 
