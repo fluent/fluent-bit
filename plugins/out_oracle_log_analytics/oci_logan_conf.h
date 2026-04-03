@@ -27,8 +27,12 @@
 
 #include "oci_logan.h"
 
-struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance *ins,
-                                          struct flb_config *config);
+struct flb_oci_logan *flb_oci_logan_conf_create(struct flb_output_instance
+                                                *ins,
+                                                struct flb_config *config);
 int flb_oci_logan_conf_destroy(struct flb_oci_logan *ctx);
 
+flb_sds_t create_federation_payload(struct flb_oci_logan *ctx);
+flb_sds_t sign_and_send_federation_request(struct flb_oci_logan *ctx,
+                                           flb_sds_t payload);
 #endif
