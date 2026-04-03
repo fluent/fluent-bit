@@ -136,6 +136,10 @@ static int tail_fs_check(struct flb_input_instance *ins,
                          file->name, size_delta);
             file->offset = offset;
             file->buf_len = 0;
+            file->anchor_offset = offset;
+            file->skip_bytes = 0;
+            file->exclude_bytes = 0;
+            file->skipping_mode = FLB_FALSE;
             memcpy(&fst->st, &st, sizeof(struct stat));
 
 #ifdef FLB_HAVE_SQLDB
