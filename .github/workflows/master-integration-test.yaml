@@ -29,6 +29,7 @@ jobs:
     needs: master-integration-test-build
     permissions:
       contents: read
+      packages: write
     uses: ./.github/workflows/call-run-integration-test.yaml
     with:
       image_name: ghcr.io/${{ github.repository }}/master
