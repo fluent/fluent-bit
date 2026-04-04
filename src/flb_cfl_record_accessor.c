@@ -575,13 +575,16 @@ static int cfl_to_json(struct cfl_variant *var, flb_sds_t buf)
         loop = cfl_array_size(array);
 
         flb_sds_cat_safe(&buf, "[", 1);
-        if (loop != 0) {
-            for (i = 0; i < loop - 1; i++) {
-                cfl_to_json(array->entries[i], buf);
+        for (i = 0; i < loop; i++) {
+            ret = cfl_to_json(array->entries[i], buf);
+            if (ret == -1) {
+                return -1;
+            }
+
+            if (i + 1 < loop) {
                 flb_sds_cat_safe(&buf, ",", 1);
             }
         }
-        cfl_to_json(array->entries[loop-1], buf);
         flb_sds_cat_safe(&buf, "]", 1);
         break;
     }
@@ -604,9 +607,13 @@ static int cfl_to_json(struct cfl_variant *var, flb_sds_t buf)
             if (ret == -1) {
                 return -1;
             }
-            break;
+
+            if (head->next != &kvlist->list) {
+                flb_sds_cat_safe(&buf, ",", 1);
+            }
         }
         flb_sds_cat_safe(&buf, "}", 1);
+        break;
     }
 
     return 0;
@@ -617,9 +624,9 @@ static flb_sds_t cfl_ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf
 {
     int ret;
     int len;
-    char *js;
     char str[32];
     flb_sds_t tmp = NULL;
+    flb_sds_t js = NULL;
     struct flb_cfl_ra_value *crv;
 
     /* Lookup key or subkey value */
@@ -644,10 +651,13 @@ static flb_sds_t cfl_ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf
             js = flb_sds_create_size(1024);
             /* Convert cfl_variant to JSON string */
             ret = cfl_to_json(&crv->v, js);
-            if (ret == -1) {
+            if (ret == 0) {
                 len = strlen(js);
                 tmp = flb_sds_cat(buf, js, len);
-                flb_free(js);
+                flb_sds_destroy(js);
+            }
+            else {
+                flb_sds_destroy(js);
             }
         }
         else if (crv->v.type == CFL_VARIANT_BOOL) {
@@ -808,7 +818,7 @@ int flb_cfl_ra_strcmp(struct flb_cfl_record_accessor *ra, struct cfl_variant var
 
     rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
     return flb_cfl_ra_key_strcmp(rp->key->name, var, rp->key->subkeys,
-                                 rp->key->name, flb_sds_len(rp->key->name));
+                                 str, len);
 }
 
 /*
