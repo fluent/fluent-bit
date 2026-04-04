@@ -47,6 +47,20 @@
 #define FLB_ES_STATUS_DUPLICATES       (1 << 6)
 #define FLB_ES_STATUS_ERROR            (1 << 7)
 
+struct flb_es_node_ctx {
+    struct flb_record_accessor *ra_id_key;
+    struct flb_record_accessor *ra_prefix_key;
+#ifdef FLB_HAVE_AWS
+    struct flb_aws_provider *aws_provider;
+    struct flb_aws_provider *base_aws_provider;
+    struct flb_tls *aws_tls;
+    struct flb_tls *aws_sts_tls;
+    char *aws_region;
+    char *aws_service_name;
+    int has_aws_auth;
+#endif
+};
+
 struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
     char *index;

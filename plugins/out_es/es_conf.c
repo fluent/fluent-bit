@@ -30,6 +30,268 @@
 #include "es.h"
 #include "es_conf.h"
 
+static void flb_es_node_ctx_destroy(struct flb_es_node_ctx *node_ctx)
+{
+    if (node_ctx == NULL) {
+        return;
+    }
+
+    if (node_ctx->ra_id_key != NULL) {
+        flb_ra_destroy(node_ctx->ra_id_key);
+    }
+
+    if (node_ctx->ra_prefix_key != NULL) {
+        flb_ra_destroy(node_ctx->ra_prefix_key);
+    }
+
+#ifdef FLB_HAVE_AWS
+    if (node_ctx->base_aws_provider != NULL) {
+        flb_aws_provider_destroy(node_ctx->base_aws_provider);
+    }
+
+    if (node_ctx->aws_provider != NULL) {
+        flb_aws_provider_destroy(node_ctx->aws_provider);
+    }
+
+    if (node_ctx->aws_tls != NULL) {
+        flb_tls_destroy(node_ctx->aws_tls);
+    }
+
+    if (node_ctx->aws_sts_tls != NULL) {
+        flb_tls_destroy(node_ctx->aws_sts_tls);
+    }
+#endif
+
+    flb_free(node_ctx);
+}
+
+#ifdef FLB_HAVE_AWS
+static int flb_es_node_ctx_aws_init(struct flb_es_node_ctx *node_ctx,
+                                    struct flb_upstream_node *node,
+                                    struct flb_elasticsearch *ctx,
+                                    struct flb_output_instance *ins,
+                                    struct flb_config *config)
+{
+    const char *tmp;
+    const char *node_region;
+    const char *node_sts_endpoint;
+    const char *node_role_arn;
+    const char *node_external_id;
+    const char *node_profile;
+    const char *node_service_name;
+    char *aws_session_name;
+    struct flb_aws_provider *provider;
+
+    tmp = flb_upstream_node_get_property("aws_auth", node);
+    if (tmp != NULL) {
+        node_ctx->has_aws_auth = flb_utils_bool(tmp);
+        if (node_ctx->has_aws_auth == -1) {
+            node_ctx->has_aws_auth = ctx->has_aws_auth;
+        }
+    }
+    else {
+        node_ctx->has_aws_auth = ctx->has_aws_auth;
+    }
+
+    if (node_ctx->has_aws_auth != FLB_TRUE) {
+        return 0;
+    }
+
+    node_region = flb_upstream_node_get_property("aws_region", node);
+    if (node_region == NULL) {
+        node_region = ctx->aws_region;
+    }
+    if (node_region == NULL) {
+        flb_plg_error(ctx->ins,
+                      "aws_auth enabled but aws_region not set for node '%s'",
+                      node->name);
+        return -1;
+    }
+    node_ctx->aws_region = (char *) node_region;
+
+    node_service_name = flb_upstream_node_get_property("aws_service_name", node);
+    if (node_service_name == NULL) {
+        node_service_name = ctx->aws_service_name;
+    }
+    node_ctx->aws_service_name = (char *) node_service_name;
+
+    node_sts_endpoint = flb_upstream_node_get_property("aws_sts_endpoint", node);
+    if (node_sts_endpoint == NULL) {
+        node_sts_endpoint = ctx->aws_sts_endpoint;
+    }
+
+    node_profile = flb_upstream_node_get_property("aws_profile", node);
+    if (node_profile == NULL) {
+        node_profile = ctx->aws_profile;
+    }
+
+    node_role_arn = flb_upstream_node_get_property("aws_role_arn", node);
+    node_external_id = flb_upstream_node_get_property("aws_external_id", node);
+
+    node_ctx->aws_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                       FLB_TRUE,
+                                       ins->tls_debug,
+                                       ins->tls_vhost,
+                                       ins->tls_ca_path,
+                                       ins->tls_ca_file,
+                                       ins->tls_crt_file,
+                                       ins->tls_key_file,
+                                       ins->tls_key_passwd);
+    if (node_ctx->aws_tls == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    provider = flb_standard_chain_provider_create(config,
+                                                  node_ctx->aws_tls,
+                                                  node_ctx->aws_region,
+                                                  (char *) node_sts_endpoint,
+                                                  NULL,
+                                                  flb_aws_client_generator(),
+                                                  (char *) node_profile);
+    if (provider == NULL) {
+        flb_plg_error(ctx->ins,
+                      "failed to create AWS Credential Provider for node '%s'",
+                      node->name);
+        return -1;
+    }
+    node_ctx->aws_provider = provider;
+
+    if (node_role_arn != NULL) {
+        node_ctx->base_aws_provider = node_ctx->aws_provider;
+
+        aws_session_name = flb_sts_session_name();
+        if (aws_session_name == NULL) {
+            flb_plg_error(ctx->ins,
+                          "failed to create aws session name for node '%s'",
+                          node->name);
+            return -1;
+        }
+
+        node_ctx->aws_sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                               FLB_TRUE,
+                                               ins->tls_debug,
+                                               ins->tls_vhost,
+                                               ins->tls_ca_path,
+                                               ins->tls_ca_file,
+                                               ins->tls_crt_file,
+                                               ins->tls_key_file,
+                                               ins->tls_key_passwd);
+        if (node_ctx->aws_sts_tls == NULL) {
+            flb_free(aws_session_name);
+            flb_errno();
+            return -1;
+        }
+
+        provider = flb_sts_provider_create(config,
+                                           node_ctx->aws_sts_tls,
+                                           node_ctx->base_aws_provider,
+                                           (char *) node_external_id,
+                                           (char *) node_role_arn,
+                                           aws_session_name,
+                                           node_ctx->aws_region,
+                                           (char *) node_sts_endpoint,
+                                           NULL,
+                                           flb_aws_client_generator());
+        flb_free(aws_session_name);
+        if (provider == NULL) {
+            flb_plg_error(ctx->ins,
+                          "failed to create AWS STS Credential Provider for node '%s'",
+                          node->name);
+            return -1;
+        }
+
+        node_ctx->aws_provider = provider;
+    }
+
+    node_ctx->aws_provider->provider_vtable->sync(node_ctx->aws_provider);
+    node_ctx->aws_provider->provider_vtable->init(node_ctx->aws_provider);
+    node_ctx->aws_provider->provider_vtable->async(node_ctx->aws_provider);
+    node_ctx->aws_provider->provider_vtable->upstream_set(node_ctx->aws_provider,
+                                                          ctx->ins);
+
+    return 0;
+}
+#endif
+
+static int flb_es_node_ctx_create(struct flb_elasticsearch *ctx,
+                                  struct flb_output_instance *ins,
+                                  struct flb_config *config)
+{
+    int len;
+    const char *tmp;
+    int ret;
+    char *buf;
+    struct mk_list *head;
+    struct flb_upstream_node *node;
+    struct flb_es_node_ctx *node_ctx;
+
+    mk_list_foreach(head, &ctx->ha->nodes) {
+        node = mk_list_entry(head, struct flb_upstream_node, _head);
+
+        node_ctx = flb_calloc(1, sizeof(struct flb_es_node_ctx));
+        if (node_ctx == NULL) {
+            flb_errno();
+            return -1;
+        }
+
+        tmp = flb_upstream_node_get_property("id_key", node);
+        if (tmp != NULL) {
+            node_ctx->ra_id_key = flb_ra_create((char *) tmp, FLB_FALSE);
+            if (node_ctx->ra_id_key == NULL) {
+                flb_plg_error(ctx->ins,
+                              "could not create node id_key record accessor for '%s'",
+                              node->name);
+                flb_es_node_ctx_destroy(node_ctx);
+                return -1;
+            }
+        }
+
+        tmp = flb_upstream_node_get_property("logstash_prefix_key", node);
+        if (tmp != NULL) {
+            if (tmp[0] != '$') {
+                len = strlen(tmp);
+                buf = flb_malloc(len + 2);
+                if (buf == NULL) {
+                    flb_errno();
+                    flb_es_node_ctx_destroy(node_ctx);
+                    return -1;
+                }
+
+                buf[0] = '$';
+                memcpy(buf + 1, tmp, len);
+                buf[len + 1] = '\0';
+
+                node_ctx->ra_prefix_key = flb_ra_create(buf, FLB_TRUE);
+                flb_free(buf);
+            }
+            else {
+                node_ctx->ra_prefix_key = flb_ra_create((char *) tmp, FLB_TRUE);
+            }
+
+            if (node_ctx->ra_prefix_key == NULL) {
+                flb_plg_error(ctx->ins,
+                              "invalid node logstash_prefix_key pattern '%s'",
+                              tmp);
+                flb_es_node_ctx_destroy(node_ctx);
+                return -1;
+            }
+        }
+
+#ifdef FLB_HAVE_AWS
+        ret = flb_es_node_ctx_aws_init(node_ctx, node, ctx, ins, config);
+        if (ret != 0) {
+            flb_es_node_ctx_destroy(node_ctx);
+            return -1;
+        }
+#endif
+
+        flb_upstream_node_set_data(node_ctx, node);
+    }
+
+    return 0;
+}
+
 /*
  * extract_cloud_host extracts the public hostname
  * of a deployment from a Cloud ID string.
@@ -264,6 +526,12 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         ctx->ha_mode = FLB_TRUE;
 
         flb_output_upstream_ha_set(ctx->ha, ins);
+
+        ret = flb_es_node_ctx_create(ctx, ins, config);
+        if (ret != 0) {
+            flb_es_conf_destroy(ctx);
+            return NULL;
+        }
     }
     else {
         /* Prepare an upstream handler */
@@ -509,11 +777,24 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
 
 int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
 {
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_upstream_node *node;
+    struct flb_es_node_ctx *node_ctx;
+
     if (!ctx) {
         return 0;
     }
 
     if (ctx->ha_mode == FLB_TRUE && ctx->ha != NULL) {
+        mk_list_foreach_safe(head, tmp, &ctx->ha->nodes) {
+            node = mk_list_entry(head, struct flb_upstream_node, _head);
+            node_ctx = flb_upstream_node_get_data(node);
+            if (node_ctx != NULL) {
+                flb_es_node_ctx_destroy(node_ctx);
+                flb_upstream_node_set_data(NULL, node);
+            }
+        }
         flb_upstream_ha_destroy(ctx->ha);
     }
     else if (ctx->u) {

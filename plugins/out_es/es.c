@@ -44,7 +44,7 @@ struct flb_output_plugin out_es_plugin;
 
 static int es_pack_array_content(msgpack_packer *tmp_pck,
                                  msgpack_object array,
-                                 struct flb_elasticsearch *ctx);
+                                 int replace_dots);
 
 static flb_sds_view_t es_get_property_view(const char *property,
                                            struct flb_upstream_node *node,
@@ -65,6 +65,94 @@ static flb_sds_view_t es_get_property_view(const char *property,
     }
 
     return flb_sds_view_create(NULL, 0);
+}
+
+static int es_get_property_bool(const char *property,
+                                struct flb_upstream_node *node,
+                                int base_val)
+{
+    const char *value;
+    int ret;
+
+    if (node != NULL) {
+        value = flb_upstream_node_get_property(property, node);
+        if (value != NULL) {
+            ret = flb_utils_bool(value);
+            if (ret != -1) {
+                return ret;
+            }
+        }
+    }
+
+    return base_val;
+}
+
+static size_t es_get_property_size(const char *property,
+                                   struct flb_upstream_node *node,
+                                   size_t base_val)
+{
+    const char *value;
+    int64_t ret;
+
+    if (node != NULL) {
+        value = flb_upstream_node_get_property(property, node);
+        if (value != NULL) {
+            ret = flb_utils_size_to_bytes(value);
+            if (ret >= 0) {
+                return (size_t) ret;
+            }
+            if (ret == -1) {
+                return 0;
+            }
+        }
+    }
+
+    return base_val;
+}
+
+static int es_get_property_compress(struct flb_upstream_node *node,
+                                    int base_val)
+{
+    const char *value;
+
+    if (node != NULL) {
+        value = flb_upstream_node_get_property("compress", node);
+        if (value != NULL) {
+            if (strcasecmp(value, "gzip") == 0) {
+                return FLB_TRUE;
+            }
+            return FLB_FALSE;
+        }
+    }
+
+    return base_val;
+}
+
+static const char *es_get_action_from_write_operation(flb_sds_view_t write_operation,
+                                                      const char *base_action)
+{
+    if (flb_sds_view_is_empty(write_operation)) {
+        return base_action;
+    }
+
+    if (flb_sds_casecmp(write_operation.buf, FLB_ES_WRITE_OP_INDEX,
+                        write_operation.len) == 0) {
+        return FLB_ES_WRITE_OP_INDEX;
+    }
+
+    if (flb_sds_casecmp(write_operation.buf, FLB_ES_WRITE_OP_CREATE,
+                        write_operation.len) == 0) {
+        return FLB_ES_WRITE_OP_CREATE;
+    }
+
+    if (flb_sds_casecmp(write_operation.buf, FLB_ES_WRITE_OP_UPDATE,
+                        write_operation.len) == 0 ||
+        flb_sds_casecmp(write_operation.buf, FLB_ES_WRITE_OP_UPSERT,
+                        write_operation.len) == 0) {
+        return FLB_ES_WRITE_OP_UPDATE;
+    }
+
+    return base_action;
 }
 
 static flb_sds_t es_compose_bulk_uri(struct flb_elasticsearch *ctx,
@@ -108,7 +196,10 @@ static flb_sds_t es_compose_bulk_uri(struct flb_elasticsearch *ctx,
 
 #ifdef FLB_HAVE_AWS
 static flb_sds_t add_aws_auth(struct flb_http_client *c,
-                              struct flb_elasticsearch *ctx)
+                              struct flb_elasticsearch *ctx,
+                              struct flb_aws_provider *provider,
+                              const char *region,
+                              const char *service_name)
 {
     flb_sds_t signature = NULL;
     int ret;
@@ -126,9 +217,9 @@ static flb_sds_t add_aws_auth(struct flb_http_client *c,
     flb_http_add_header(c, "User-Agent", 10, "aws-fluent-bit-plugin", 21);
 
     signature = flb_signv4_do(c, FLB_TRUE, FLB_TRUE, time(NULL),
-                              ctx->aws_region, ctx->aws_service_name,
+                              region, service_name,
                               S3_MODE_SIGNED_PAYLOAD, ctx->aws_unsigned_headers,
-                              ctx->aws_provider);
+                              provider);
     if (!signature) {
         flb_plg_error(ctx->ins, "could not sign request with sigv4");
         return NULL;
@@ -139,7 +230,7 @@ static flb_sds_t add_aws_auth(struct flb_http_client *c,
 
 static int es_pack_map_content(msgpack_packer *tmp_pck,
                                msgpack_object map,
-                               struct flb_elasticsearch *ctx)
+                               int replace_dots)
 {
     int i;
     char *ptr_key = NULL;
@@ -188,7 +279,7 @@ static int es_pack_map_content(msgpack_packer *tmp_pck,
          *
          *   https://goo.gl/R5NMTr
          */
-        if (ctx->replace_dots == FLB_TRUE) {
+        if (replace_dots == FLB_TRUE) {
             char *p   = ptr_key;
             char *end = ptr_key + key_size;
             while (p != end) {
@@ -213,7 +304,7 @@ static int es_pack_map_content(msgpack_packer *tmp_pck,
          */
         if (v->type == MSGPACK_OBJECT_MAP) {
             msgpack_pack_map(tmp_pck, v->via.map.size);
-            es_pack_map_content(tmp_pck, *v, ctx);
+            es_pack_map_content(tmp_pck, *v, replace_dots);
         }
         /*
          * The value can be any data type, if it's an array we need to
@@ -221,7 +312,7 @@ static int es_pack_map_content(msgpack_packer *tmp_pck,
          */
         else if (v->type == MSGPACK_OBJECT_ARRAY) {
           msgpack_pack_array(tmp_pck, v->via.array.size);
-          es_pack_array_content(tmp_pck, *v, ctx);
+          es_pack_array_content(tmp_pck, *v, replace_dots);
         }
         else {
             msgpack_pack_object(tmp_pck, *v);
@@ -236,7 +327,7 @@ static int es_pack_map_content(msgpack_packer *tmp_pck,
   */
 static int es_pack_array_content(msgpack_packer *tmp_pck,
                                  msgpack_object array,
-                                 struct flb_elasticsearch *ctx)
+                                 int replace_dots)
 {
     int i;
     msgpack_object *e;
@@ -246,12 +337,12 @@ static int es_pack_array_content(msgpack_packer *tmp_pck,
         if (e->type == MSGPACK_OBJECT_MAP)
         {
             msgpack_pack_map(tmp_pck, e->via.map.size);
-            es_pack_map_content(tmp_pck, *e, ctx);
+            es_pack_map_content(tmp_pck, *e, replace_dots);
         }
         else if (e->type == MSGPACK_OBJECT_ARRAY)
         {
             msgpack_pack_array(tmp_pck, e->via.array.size);
-            es_pack_array_content(tmp_pck, *e, ctx);
+            es_pack_array_content(tmp_pck, *e, replace_dots);
         }
         else
         {
@@ -267,19 +358,21 @@ static int es_pack_array_content(msgpack_packer *tmp_pck,
  * If it failed, return NULL.
 */
 static flb_sds_t es_get_id_value(struct flb_elasticsearch *ctx,
+                                struct flb_record_accessor *ra_id_key,
+                                flb_sds_view_t id_key_name,
                                 msgpack_object *map)
 {
     struct flb_ra_value *rval = NULL;
     flb_sds_t tmp_str;
-    rval = flb_ra_get_value_object(ctx->ra_id_key, *map);
+    rval = flb_ra_get_value_object(ra_id_key, *map);
     if (rval == NULL) {
-        flb_plg_warn(ctx->ins, "the value of %s is missing",
-                     ctx->id_key);
+        flb_plg_warn(ctx->ins, "the value of %.*s is missing",
+                     (int) id_key_name.len, id_key_name.buf);
         return NULL;
     }
     else if(rval->o.type != MSGPACK_OBJECT_STR) {
-        flb_plg_warn(ctx->ins, "the value of %s is not string",
-                     ctx->id_key);
+        flb_plg_warn(ctx->ins, "the value of %.*s is not string",
+                     (int) id_key_name.len, id_key_name.buf);
         flb_ra_key_value_destroy(rval);
         return NULL;
     }
@@ -377,11 +470,25 @@ static int elasticsearch_format(struct flb_config *config,
     msgpack_packer tmp_pck;
     uint16_t hash[8];
     int es_index_custom_len;
+    int logstash_format;
+    int suppress_type_name;
+    int replace_dots;
+    int current_time_index;
+    int generate_id;
+    int write_op_update;
+    int write_op_upsert;
     struct flb_elasticsearch *ctx = plugin_context;
     struct flb_upstream_node *node = flush_ctx;
+    struct flb_es_node_ctx *node_ctx;
+    struct flb_record_accessor *ra_prefix_key;
+    struct flb_record_accessor *ra_id_key;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
     flb_sds_view_t index;
+    flb_sds_view_t id_key_name;
+    flb_sds_view_t write_operation;
+    const char *es_action;
+    flb_sds_t v;
 
     j_index = flb_sds_create_size(ES_BULK_HEADER);
     if (j_index == NULL) {
@@ -407,8 +514,59 @@ static int elasticsearch_format(struct flb_config *config,
         return -1;
     }
 
+    node_ctx = NULL;
+    if (node != NULL) {
+        node_ctx = flb_upstream_node_get_data(node);
+    }
+
+    logstash_format = es_get_property_bool("logstash_format", node,
+                                           ctx->logstash_format);
+    suppress_type_name = es_get_property_bool("suppress_type_name", node,
+                                              ctx->suppress_type_name);
+    replace_dots = es_get_property_bool("replace_dots", node, ctx->replace_dots);
+    current_time_index = es_get_property_bool("current_time_index", node,
+                                              ctx->current_time_index);
+    generate_id = es_get_property_bool("generate_id", node, ctx->generate_id);
+
+    write_operation = es_get_property_view("write_operation", node, ctx);
+    es_action = es_get_action_from_write_operation(write_operation, ctx->es_action);
+
+    write_op_update = FLB_FALSE;
+    write_op_upsert = FLB_FALSE;
+    if (!flb_sds_view_is_empty(write_operation)) {
+        if (flb_sds_casecmp(write_operation.buf, FLB_ES_WRITE_OP_UPDATE,
+                            write_operation.len) == 0) {
+            write_op_update = FLB_TRUE;
+        }
+        else if (flb_sds_casecmp(write_operation.buf, FLB_ES_WRITE_OP_UPSERT,
+                                 write_operation.len) == 0) {
+            write_op_upsert = FLB_TRUE;
+        }
+    }
+    else if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_UPDATE) == 0) {
+        write_op_update = FLB_TRUE;
+    }
+    else if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_UPSERT) == 0) {
+        write_op_upsert = FLB_TRUE;
+    }
+
+    ra_prefix_key = ctx->ra_prefix_key;
+    if (node_ctx != NULL && node_ctx->ra_prefix_key != NULL) {
+        ra_prefix_key = node_ctx->ra_prefix_key;
+    }
+
+    ra_id_key = ctx->ra_id_key;
+    if (node_ctx != NULL && node_ctx->ra_id_key != NULL) {
+        ra_id_key = node_ctx->ra_id_key;
+    }
+
+    id_key_name = es_get_property_view("id_key", node, ctx);
+    if (flb_sds_view_is_empty(id_key_name) && ctx->id_key != NULL) {
+        id_key_name = flb_sds_view_create(ctx->id_key, flb_sds_len(ctx->id_key));
+    }
+
     /* Copy logstash prefix if logstash format is enabled */
-    if (ctx->logstash_format == FLB_TRUE) {
+    if (logstash_format == FLB_TRUE) {
         strncpy(logstash_index, ctx->logstash_prefix, sizeof(logstash_index));
         logstash_index[sizeof(logstash_index) - 1] = '\0';
     }
@@ -425,24 +583,24 @@ static int elasticsearch_format(struct flb_config *config,
      * The header stored in 'j_index' will be used for the all records on
      * this payload.
      */
-    if (ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
+    if (logstash_format == FLB_FALSE && generate_id == FLB_FALSE) {
         flb_time_get(&tms);
         gmtime_r(&tms.tm.tv_sec, &tm);
         strftime(index_formatted, sizeof(index_formatted) - 1,
                  index.buf, &tm);
         es_index = index_formatted;
-        if (ctx->suppress_type_name) {
+        if (suppress_type_name == FLB_TRUE) {
             index_len = flb_sds_snprintf(&j_index,
                                          flb_sds_alloc(j_index),
                                          ES_BULK_INDEX_FMT_WITHOUT_TYPE,
-                                         ctx->es_action,
+                                         es_action,
                                          es_index);
         }
         else {
             index_len = flb_sds_snprintf(&j_index,
                                          flb_sds_alloc(j_index),
                                          ES_BULK_INDEX_FMT,
-                                         ctx->es_action,
+                                         es_action,
                                          es_index, ctx->type);
         }
     }
@@ -453,7 +611,7 @@ static int elasticsearch_format(struct flb_config *config,
      * in order to prevent generating millions of indexes
      * we can set to always use current time for index generation
      */
-    if (ctx->current_time_index == FLB_TRUE) {
+    if (current_time_index == FLB_TRUE) {
         flb_time_get(&tms);
     }
 
@@ -463,7 +621,7 @@ static int elasticsearch_format(struct flb_config *config,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
 
         /* Only pop time from record if current_time_index is disabled */
-        if (ctx->current_time_index == FLB_FALSE) {
+        if (current_time_index == FLB_FALSE) {
             flb_time_copy(&tms, &log_event.timestamp);
         }
 
@@ -471,10 +629,9 @@ static int elasticsearch_format(struct flb_config *config,
         map_size = map.via.map.size;
 
         es_index_custom_len = 0;
-        if (ctx->logstash_prefix_key) {
-            flb_sds_t v = flb_ra_translate(ctx->ra_prefix_key,
-                                           (char *) tag, tag_len,
-                                           map, NULL);
+        if (ra_prefix_key != NULL) {
+            v = flb_ra_translate(ra_prefix_key, (char *) tag, tag_len,
+                                 map, NULL);
             if (v) {
                 len = flb_sds_len(v);
                 if (len > 128) {
@@ -522,7 +679,7 @@ static int elasticsearch_format(struct flb_config *config,
         msgpack_pack_str_body(&tmp_pck, time_formatted, s);
 
         es_index = (char *) index.buf;
-        if (ctx->logstash_format == FLB_TRUE) {
+        if (logstash_format == FLB_TRUE) {
             ret = compose_index_header(ctx, es_index_custom_len,
                                        &logstash_index[0], sizeof(logstash_index),
                                        ctx->logstash_prefix_separator, &tm);
@@ -534,24 +691,24 @@ static int elasticsearch_format(struct flb_config *config,
             }
 
             es_index = logstash_index;
-            if (ctx->generate_id == FLB_FALSE) {
-                if (ctx->suppress_type_name) {
+            if (generate_id == FLB_FALSE) {
+                if (suppress_type_name == FLB_TRUE) {
                     index_len = flb_sds_snprintf(&j_index,
                                                  flb_sds_alloc(j_index),
                                                  ES_BULK_INDEX_FMT_WITHOUT_TYPE,
-                                                 ctx->es_action,
+                                                 es_action,
                                                  es_index);
                 }
                 else {
                     index_len = flb_sds_snprintf(&j_index,
                                                  flb_sds_alloc(j_index),
                                                  ES_BULK_INDEX_FMT,
-                                                 ctx->es_action,
+                                                 es_action,
                                                  es_index, ctx->type);
                 }
             }
         }
-        else if (ctx->current_time_index == FLB_TRUE) {
+        else if (current_time_index == FLB_TRUE) {
             /* Make sure we handle index time format for index */
             strftime(index_formatted, sizeof(index_formatted) - 1,
                      index.buf, &tm);
@@ -573,7 +730,7 @@ static int elasticsearch_format(struct flb_config *config,
          * Elasticsearch have a restriction that key names cannot contain
          * a dot; if some dot is found, it's replaced with an underscore.
          */
-        ret = es_pack_map_content(&tmp_pck, map, ctx);
+        ret = es_pack_map_content(&tmp_pck, map, replace_dots);
         if (ret == -1) {
             flb_log_event_decoder_destroy(&log_decoder);
             msgpack_sbuffer_destroy(&tmp_sbuf);
@@ -582,42 +739,42 @@ static int elasticsearch_format(struct flb_config *config,
             return -1;
         }
 
-        if (ctx->generate_id == FLB_TRUE) {
+        if (generate_id == FLB_TRUE) {
             MurmurHash3_x64_128(tmp_sbuf.data, tmp_sbuf.size, 42, hash);
             snprintf(es_uuid, sizeof(es_uuid),
                      "%04x%04x-%04x-%04x-%04x-%04x%04x%04x",
                      hash[0], hash[1], hash[2], hash[3],
                      hash[4], hash[5], hash[6], hash[7]);
-            if (ctx->suppress_type_name) {
+            if (suppress_type_name == FLB_TRUE) {
                 index_len = flb_sds_snprintf(&j_index,
                                              flb_sds_alloc(j_index),
                                              ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE,
-                                             ctx->es_action,
+                                             es_action,
                                              es_index,  es_uuid);
             }
             else {
                 index_len = flb_sds_snprintf(&j_index,
                                              flb_sds_alloc(j_index),
                                              ES_BULK_INDEX_FMT_ID,
-                                             ctx->es_action,
+                                             es_action,
                                              es_index, ctx->type, es_uuid);
             }
         }
-        if (ctx->ra_id_key) {
-            id_key_str = es_get_id_value(ctx ,&map);
+        if (ra_id_key != NULL) {
+            id_key_str = es_get_id_value(ctx, ra_id_key, id_key_name, &map);
             if (id_key_str) {
-                if (ctx->suppress_type_name) {
+                if (suppress_type_name == FLB_TRUE) {
                     index_len = flb_sds_snprintf(&j_index,
                                                  flb_sds_alloc(j_index),
                                                  ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE,
-                                                 ctx->es_action,
+                                                 es_action,
                                                  es_index,  id_key_str);
                 }
                 else {
                     index_len = flb_sds_snprintf(&j_index,
                                                  flb_sds_alloc(j_index),
                                                  ES_BULK_INDEX_FMT_ID,
-                                                 ctx->es_action,
+                                                 es_action,
                                                  es_index, ctx->type, id_key_str);
                 }
                 flb_sds_destroy(id_key_str);
@@ -637,13 +794,13 @@ static int elasticsearch_format(struct flb_config *config,
         }
 
         out_buf_len = flb_sds_len(out_buf);
-        if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_UPDATE) == 0) {
+        if (write_op_update == FLB_TRUE) {
             tmp_buf = out_buf;
             out_buf = flb_sds_create_len(NULL, out_buf_len = out_buf_len + sizeof(ES_BULK_UPDATE_OP_BODY) - 2);
             out_buf_len = snprintf(out_buf, out_buf_len, ES_BULK_UPDATE_OP_BODY, tmp_buf);
             flb_sds_destroy(tmp_buf);
         }
-        else if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_UPSERT) == 0) {
+        else if (write_op_upsert == FLB_TRUE) {
             tmp_buf = out_buf;
             out_buf = flb_sds_create_len(NULL, out_buf_len = out_buf_len + sizeof(ES_BULK_UPSERT_OP_BODY) - 2);
             out_buf_len = snprintf(out_buf, out_buf_len, ES_BULK_UPSERT_OP_BODY, tmp_buf);
@@ -892,15 +1049,25 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     struct flb_http_client *c = NULL;
     struct flb_upstream *upstream;
     struct flb_upstream_node *node = NULL;
+    struct flb_es_node_ctx *node_ctx;
     flb_sds_t signature = NULL;
     flb_sds_t uri = NULL;
     int compressed = FLB_FALSE;
+    int compress_gzip;
+    size_t buffer_size;
     flb_sds_t header_line = NULL;
     flb_sds_t tmp_sds = NULL;
     flb_sds_view_t http_user;
     flb_sds_view_t http_passwd;
     flb_sds_view_t http_api_key;
+#ifdef FLB_HAVE_AWS
+    struct flb_aws_provider *aws_provider;
+    const char *aws_region;
+    const char *aws_service_name;
+    int has_aws_auth;
+#endif
 
+    node_ctx = NULL;
     if (ctx->ha_mode == FLB_TRUE) {
         node = flb_upstream_ha_node_get(ctx->ha);
         if (node == NULL) {
@@ -908,10 +1075,14 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         }
 
         upstream = node->u;
+        node_ctx = flb_upstream_node_get_data(node);
     }
     else {
         upstream = ctx->u;
     }
+
+    compress_gzip = es_get_property_compress(node, ctx->compress_gzip);
+    buffer_size = es_get_property_size("buffer_size", node, ctx->buffer_size);
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(upstream);
@@ -935,7 +1106,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     pack_size = out_size;
 
     /* Should we compress the payload ? */
-    if (ctx->compress_gzip == FLB_TRUE) {
+    if (compress_gzip == FLB_TRUE) {
         ret = flb_gzip_compress((void *) pack, pack_size,
                                 &out_buf, &out_size);
         if (ret == -1) {
@@ -966,7 +1137,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     c = flb_http_client(u_conn, FLB_HTTP_POST, uri,
                         pack, pack_size, NULL, 0, NULL, 0);
 
-    flb_http_buffer_size(c, ctx->buffer_size);
+    flb_http_buffer_size(c, buffer_size);
 
 #ifndef FLB_HAVE_AWS
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
@@ -1013,8 +1184,22 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     }
 
 #ifdef FLB_HAVE_AWS
-    if (ctx->has_aws_auth == FLB_TRUE) {
-        signature = add_aws_auth(c, ctx);
+    has_aws_auth = es_get_property_bool("aws_auth", node, ctx->has_aws_auth);
+    aws_provider = ctx->aws_provider;
+    aws_region = ctx->aws_region;
+    aws_service_name = ctx->aws_service_name;
+
+    if (node_ctx != NULL && node_ctx->has_aws_auth == FLB_TRUE &&
+        node_ctx->aws_provider != NULL) {
+        aws_provider = node_ctx->aws_provider;
+        aws_region = node_ctx->aws_region;
+        aws_service_name = node_ctx->aws_service_name;
+        has_aws_auth = FLB_TRUE;
+    }
+
+    if (has_aws_auth == FLB_TRUE) {
+        signature = add_aws_auth(c, ctx, aws_provider, aws_region,
+                                 aws_service_name);
         if (!signature) {
             goto retry;
         }
