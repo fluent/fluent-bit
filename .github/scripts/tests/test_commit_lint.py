@@ -149,6 +149,30 @@ def test_valid_commit_single_prefix():
     ok, _ = validate_commit(commit)
     assert ok is True
 
+def test_valid_commit_internal_tests_prefix():
+    """
+    Test that tests/internal commits accept the documented tests: internal: prefix.
+    """
+    commit = make_commit(
+        "tests: internal: add root-key coverage\n\nSigned-off-by: User",
+        ["tests/internal/cfl_record_accessor.c"]
+    )
+    ok, _ = validate_commit(commit)
+    assert ok is True
+
+
+def test_valid_commit_runtime_tests_prefix():
+    """
+    Test that tests/runtime commits accept the documented tests: runtime: prefix.
+    """
+    commit = make_commit(
+        "tests: runtime: add router coverage\n\nSigned-off-by: User",
+        ["tests/runtime/filter.c"]
+    )
+    ok, _ = validate_commit(commit)
+    assert ok is True
+
+
 
 def test_valid_commit_multiple_signoffs_allowed():
     """
