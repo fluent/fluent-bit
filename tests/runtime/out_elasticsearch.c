@@ -1164,7 +1164,7 @@ void flb_test_upstream_write_operation()
     int size = sizeof(JSON_ES) - 1;
     int in_ffd;
     int out_ffd;
-    char upstream_file[64];
+    char upstream_file[256];
     flb_ctx_t *ctx;
 
     ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
@@ -1199,7 +1199,7 @@ void flb_test_upstream_null_index()
     int ret;
     int in_ffd;
     int out_ffd;
-    char upstream_file[64];
+    char upstream_file[256];
     flb_ctx_t *ctx;
 
     ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
@@ -1232,7 +1232,7 @@ void flb_test_upstream_index_type()
     int size = sizeof(JSON_ES) - 1;
     int in_ffd;
     int out_ffd;
-    char upstream_file[64];
+    char upstream_file[256];
     flb_ctx_t *ctx;
 
     ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
@@ -1267,7 +1267,7 @@ void flb_test_upstream_logstash_format()
     int size = sizeof(JSON_ES) - 1;
     int in_ffd;
     int out_ffd;
-    char upstream_file[64];
+    char upstream_file[256];
     flb_ctx_t *ctx;
 
     ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
@@ -1303,7 +1303,7 @@ void flb_test_upstream_replace_dots()
     int size = sizeof(JSON_DOTS) - 1;
     int in_ffd;
     int out_ffd;
-    char upstream_file[64];
+    char upstream_file[256];
     flb_ctx_t *ctx;
 
     ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
@@ -1337,7 +1337,7 @@ void flb_test_upstream_id_key()
     int size = sizeof(JSON_ES) - 1;
     int in_ffd;
     int out_ffd;
-    char upstream_file[64];
+    char upstream_file[256];
     flb_ctx_t *ctx;
 
     ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
