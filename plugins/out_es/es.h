@@ -20,6 +20,8 @@
 #ifndef FLB_OUT_ES_H
 #define FLB_OUT_ES_H
 
+#include <fluent-bit/flb_upstream_ha.h>
+
 #define FLB_ES_DEFAULT_HOST       "127.0.0.1"
 #define FLB_ES_DEFAULT_PORT       92000
 #define FLB_ES_DEFAULT_INDEX      "fluent-bit"
@@ -44,6 +46,20 @@
 #define FLB_ES_STATUS_BAD_RESPONSE     (1 << 5)
 #define FLB_ES_STATUS_DUPLICATES       (1 << 6)
 #define FLB_ES_STATUS_ERROR            (1 << 7)
+
+struct flb_es_node_ctx {
+    struct flb_record_accessor *ra_id_key;
+    struct flb_record_accessor *ra_prefix_key;
+#ifdef FLB_HAVE_AWS
+    struct flb_aws_provider *aws_provider;
+    struct flb_aws_provider *base_aws_provider;
+    struct flb_tls *aws_tls;
+    struct flb_tls *aws_sts_tls;
+    char *aws_region;
+    char *aws_service_name;
+    int has_aws_auth;
+#endif
+};
 
 struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
@@ -142,6 +158,8 @@ struct flb_elasticsearch {
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
+    int ha_mode;
+    struct flb_upstream_ha *ha;
 
     /* Plugin output instance reference */
     struct flb_output_instance *ins;

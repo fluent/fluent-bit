@@ -89,6 +89,11 @@ flb_sds_t flb_sds_create(const char *str)
     return flb_sds_create_len(str, len);
 }
 
+flb_sds_t flb_sds_create_from_view(flb_sds_view_t view)
+{
+    return flb_sds_create_len(view.buf, view.len);
+}
+
 flb_sds_t flb_sds_create_size(size_t size)
 {
     return sds_alloc(size);
