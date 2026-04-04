@@ -355,6 +355,7 @@ struct flb_output_instance {
 
     /* Plugin properties */
     int retry_limit;                     /* max of retries allowed       */
+    int retry_limit_is_set;              /* explicitly set by user?      */
     int use_tls;                         /* bool, try to use TLS for I/O */
     char *match;                         /* match rule for tag/routing   */
 #ifdef FLB_HAVE_REGEX

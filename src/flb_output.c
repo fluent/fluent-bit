@@ -778,6 +778,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->match_regex = NULL;
 #endif
     instance->retry_limit = 1;
+    instance->retry_limit_is_set = FLB_FALSE;
     instance->host.name   = NULL;
     instance->host.address = NULL;
     instance->net_config_map = NULL;
@@ -940,6 +941,7 @@ int flb_output_set_property(struct flb_output_instance *ins,
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("retry_limit", k, len) == 0) {
+        ins->retry_limit_is_set = FLB_TRUE;
         if (tmp) {
             if (strcasecmp(tmp, "no_limits") == 0 ||
                 strcasecmp(tmp, "false") == 0 ||
