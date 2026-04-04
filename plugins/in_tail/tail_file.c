@@ -1698,15 +1698,6 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         file_buffer_capacity = (file->buf_size - file->buf_len) - 1;
     }
 
-    #ifdef __linux__
-    if (ctx->file_cache_advise) {
-        if (posix_fadvise(file->fd, 0, 0, POSIX_FADV_DONTNEED) == -1) {
-            flb_errno();
-            flb_plg_error(ctx->ins, "error during posix_fadvise");
-        }
-    }
-    #endif
-
     read_size = file_buffer_capacity;
 
     if (file->decompression_context != NULL) {
@@ -1821,6 +1812,15 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         consume_bytes(file->buf_data, processed_bytes, file->buf_len);
         file->buf_len -= processed_bytes;
         file->buf_data[file->buf_len] = '\0';
+
+#ifdef __linux__
+        /* Evict only the already-processed byte range from the page cache
+         * so that kernel readahead for upcoming reads is preserved. */
+        if (ctx->file_cache_advise && file->stream_offset > 0) {
+            posix_fadvise(file->fd, 0, file->stream_offset,
+                          POSIX_FADV_DONTNEED);
+        }
+#endif
 
 #ifdef FLB_HAVE_SQLDB
         if (file->config->db) {
