@@ -47,10 +47,7 @@ RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
       \"--channelUri ${msvs_build_tools_channel}\", `
       \"--installChannelUri ${msvs_build_tools_channel}\", `
       '--add Microsoft.VisualStudio.Workload.VCTools', `
-      '--add Microsoft.VisualStudio.Workload.MSBuildTools', `
       '--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64', `
-      '--add Microsoft.VisualStudio.Component.VC.CoreBuildTools', `
-      '--add Microsoft.VisualStudio.Component.VC.MSVC.143', `
       '--add Microsoft.VisualStudio.Component.Windows10SDK.19041' `
       -NoNewWindow -Wait -PassThru; `
     if (${p}.ExitCode -ne 0 -and ${p}.ExitCode -ne 3010) { `
