@@ -402,14 +402,14 @@ int flb_cfl_ra_key_regex_match(flb_sds_t ckey, struct cfl_variant vobj,
     if (result) {
         /* Regex + capture mode */
         return flb_regex_do(regex,
-                            (char *) out_val->data.as_string,
-                            cfl_sds_len(out_val->data.as_string),
+                            (char *) val->data.as_string,
+                            cfl_sds_len(val->data.as_string),
                             result);
     }
     else {
         /* No capture */
-        return flb_regex_match(regex, (unsigned char *) out_val->data.as_string,
-                               cfl_sds_len(out_val->data.as_string));
+        return flb_regex_match(regex, (unsigned char *) val->data.as_string,
+                               cfl_sds_len(val->data.as_string));
     }
 
     return -1;
