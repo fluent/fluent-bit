@@ -28,6 +28,7 @@ RUN apt-get update && \
     software-properties-common libyaml-dev apt-transport-https  \
     pkg-config libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.0 \
     libcurl4-openssl-dev zlib1g-dev \
+    librabbitmq-dev \
     tar gzip && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
     gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
@@ -58,6 +59,7 @@ RUN apt-get update && \
     libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libcurl4-openssl-dev \
     software-properties-common libyaml-dev apt-transport-https pkg-config zlib1g-dev \
+    librabbitmq-dev \
     tar gzip && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
     gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
@@ -92,6 +94,7 @@ RUN apt-get update && \
     libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libcurl4-openssl-dev \
     software-properties-common libyaml-dev apt-transport-https pkg-config zlib1g-dev \
+    librabbitmq-dev \
     tar gzip && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
     gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
@@ -122,6 +125,7 @@ RUN apt-get update && \
     libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libcurl4-openssl-dev \
     libyaml-dev pkg-config zlib1g-dev \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -148,6 +152,7 @@ RUN apt-get update && \
     libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libcurl4-openssl-dev \
     libyaml-dev pkg-config zlib1g-dev \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -172,6 +177,7 @@ RUN apt-get update && \
     libpq-dev postgresql-server-dev-all libpq5 \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
     libyaml-dev pkg-config zlib1g-dev \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -198,6 +204,7 @@ RUN apt-get update && \
     libpq-dev postgresql-server-dev-all libpq5 \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
     libyaml-dev pkg-config zlib1g-dev \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -222,6 +229,7 @@ RUN apt-get update && \
     libpq-dev postgresql-server-dev-all libpq5 \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
     libyaml-dev pkg-config zlib1g-dev \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -248,6 +256,7 @@ RUN apt-get update && \
     libpq-dev postgresql-server-dev-all libpq5 \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
     libyaml-dev pkg-config zlib1g-dev \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -282,6 +291,7 @@ ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
 ARG FLB_JEMALLOC=On
 ARG FLB_CHUNK_TRACE=On
+ARG FLB_IN_AMQP=On
 
 ENV CFLAGS=$CFLAGS
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
@@ -296,6 +306,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
+    -DFLB_IN_AMQP="${FLB_IN_AMQP}" \
     ../
 
 VOLUME [ "/output" ]
