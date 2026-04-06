@@ -61,6 +61,12 @@ int cb_null_init(struct flb_output_instance *ins, struct flb_config *config,
             flb_plg_error(ctx->ins, "unrecognized 'format' option. "
                           "Using 'msgpack'");
         }
+        else if (ret == FLB_PACK_JSON_FORMAT_OTLP ||
+                 ret == FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
+            flb_plg_error(ctx->ins,
+                          "format '%s' is not supported by out_null",
+                          tmp);
+        }
         else {
             ctx->out_format = ret;
         }

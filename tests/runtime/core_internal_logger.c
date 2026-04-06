@@ -100,7 +100,7 @@ int assert_internal_log_metrics(struct http_client_ctx *http_ctx, int fail_test)
         return -1;
     }
 
-    TEST_MSG(http_client->resp.payload);
+    TEST_MSG("%s", http_client->resp.payload);
     if (!TEST_CHECK(http_client->resp.status == 200)) {
         TEST_MSG("http response code error. expect: 200, got: %d\n",
                  http_client->resp.status);
@@ -123,7 +123,8 @@ int assert_internal_log_metrics(struct http_client_ctx *http_ctx, int fail_test)
         return -1;
     }
     if (!TEST_CHECK(flb_regex_match(
-            regex, http_client->resp.payload, http_client->resp.payload_size))) {
+            regex, (unsigned char *) http_client->resp.payload,
+            http_client->resp.payload_size))) {
         TEST_MSG("response payload: %s\n", http_client->resp.payload);
     }
 
@@ -142,9 +143,6 @@ static void test_internal_log_metrics()
     flb_ctx_t *ctx;
     int ret;
     struct http_client_ctx *http_ctx;
-    struct flb_http_client *http_client;
-    size_t b_sent;
-    struct flb_regex *regex;
     int i;
     int attempt_count = 30;
 

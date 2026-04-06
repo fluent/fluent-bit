@@ -52,7 +52,7 @@ void   opentelemetry__proto__resource__v1__resource__free_unpacked
   assert(message->base.descriptor == &opentelemetry__proto__resource__v1__resource__descriptor);
   protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
 }
-static const ProtobufCFieldDescriptor opentelemetry__proto__resource__v1__resource__field_descriptors[2] =
+static const ProtobufCFieldDescriptor opentelemetry__proto__resource__v1__resource__field_descriptors[3] =
 {
   {
     "attributes",
@@ -78,15 +78,28 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__resource__v1__resour
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "entity_refs",
+    3,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_MESSAGE,
+    offsetof(Opentelemetry__Proto__Resource__V1__Resource, n_entity_refs),
+    offsetof(Opentelemetry__Proto__Resource__V1__Resource, entity_refs),
+    &opentelemetry__proto__common__v1__entity_ref__descriptor,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned opentelemetry__proto__resource__v1__resource__field_indices_by_name[] = {
   0,   /* field[0] = attributes */
   1,   /* field[1] = dropped_attributes_count */
+  2,   /* field[2] = entity_refs */
 };
 static const ProtobufCIntRange opentelemetry__proto__resource__v1__resource__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 2 }
+  { 0, 3 }
 };
 const ProtobufCMessageDescriptor opentelemetry__proto__resource__v1__resource__descriptor =
 {
@@ -96,7 +109,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__resource__v1__resource__d
   "Opentelemetry__Proto__Resource__V1__Resource",
   "opentelemetry.proto.resource.v1",
   sizeof(Opentelemetry__Proto__Resource__V1__Resource),
-  2,
+  3,
   opentelemetry__proto__resource__v1__resource__field_descriptors,
   opentelemetry__proto__resource__v1__resource__field_indices_by_name,
   1,  opentelemetry__proto__resource__v1__resource__number_ranges,

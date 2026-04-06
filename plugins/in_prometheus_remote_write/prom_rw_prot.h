@@ -22,17 +22,6 @@
 
 #include <fluent-bit/flb_http_common.h>
 
-int prom_rw_prot_handle(struct flb_prom_remote_write *ctx,
-                        struct prom_remote_write_conn *conn,
-                        struct mk_http_session *session,
-                        struct mk_http_request *request);
-
-int prom_rw_prot_handle_error(struct flb_prom_remote_write *ctx,
-                              struct prom_remote_write_conn *conn,
-                              struct mk_http_session *session,
-                              struct mk_http_request *request);
-
-
 int prom_rw_prot_handle_ng(struct flb_http_request *request,
                            struct flb_http_response *response);
 

@@ -311,6 +311,31 @@ def test_error_multiple_prefixes_inferred_from_files():
     assert "does not match files changed" in msg
 
 
+def test_valid_http_server_umbrella_prefix():
+    """
+    Commits touching only the HTTP server interface boundary may use http_server:.
+    """
+    commit = make_commit(
+        "http_server: unify listener startup\n\nSigned-off-by: User",
+        ["src/http_server/flb_hs.c", "src/flb_http_common.c"]
+    )
+    ok, _ = validate_commit(commit)
+    assert ok is True
+
+
+def test_error_http_server_umbrella_with_unrelated_component():
+    """
+    http_server: must not cover unrelated core files outside the HTTP interface.
+    """
+    commit = make_commit(
+        "http_server: adjust startup\n\nSigned-off-by: User",
+        ["src/http_server/flb_hs.c", "src/flb_input.c"]
+    )
+    ok, msg = validate_commit(commit)
+    assert ok is False
+    assert "does not match files changed" in msg
+
+
 
 # -----------------------------------------------------------
 # Edge Cases
@@ -611,11 +636,29 @@ def test_valid_test_file_changes():
     Generic prefixes like "tests:" are acceptable for test-related changes.
     """
     commit = make_commit(
-        "tests: add unit test\n\nSigned-off-by: User",
+        "tests: test_router: add unit test\n\nSigned-off-by: User",
         ["tests/unit/test_router.c"]
     )
     ok, _ = validate_commit(commit)
     assert ok is True
+
+
+def test_invalid_test_file_changes_without_umbrella_prefix():
+    """
+    Test that test file changes are disallowed without tests umbrella under tests components.
+
+
+    Test files (in tests/ directory) basically allows tests umbrella prefix.
+    Without "tests:" umbrella prefix are not acceptable for test-related changes.
+    """
+    commit = make_commit(
+        "test_router: add unit test\n\nSigned-off-by: User",
+        ["tests/internal/test_router.c"]
+    )
+    ok, msg = validate_commit(commit)
+    assert ok is False
+    assert "Expected one of: test_router:, tests:" in msg
+
 
 def test_valid_build_file_changes():
     """
@@ -867,3 +910,68 @@ def test_valid_commit_multiline_subject_ignored():
     )
     ok, _ = validate_commit(commit)
     assert ok is True
+
+
+class FakeDiff:
+    def __init__(self, path, patch):
+        self.b_path = path
+        self.diff = patch.encode()
+
+
+class FakeStats:
+    def __init__(self, files):
+        self.files = {f: {} for f in files}
+
+
+class FakeCommit:
+    def __init__(self, message, diffs):
+        self.message = message
+        self._diffs = diffs
+        self.parents = [object()]
+
+        file_paths = [d.b_path for d in diffs]
+        self.stats = FakeStats(file_paths)
+
+    def diff(self, parent, create_patch=True):
+        return self._diffs
+
+
+def make_fake_commit(message, changes):
+    """
+    changes: list of (path, patch)
+    """
+    diffs = [FakeDiff(path, patch) for path, patch in changes]
+    return FakeCommit(message, diffs)
+
+def test_release_with_version_bump():
+    commit = make_fake_commit(
+        "release: update to 5.0.2\n\nSigned-off-by: User",
+        [
+            ("CMakeLists.txt", """
+-set(FLB_VERSION_PATCH  0)
++set(FLB_VERSION_PATCH  2)
+"""),
+            ("dockerfiles/Dockerfile", """
+-FROM fluent-bit:5.0.0
++FROM fluent-bit:5.0.2
+""")
+        ]
+    )
+
+    ok, msg = validate_commit(commit)
+    assert ok is True, msg
+
+def test_release_rejected_when_cmakelists_has_non_version_change():
+    commit = make_fake_commit(
+        "release: update to 5.0.2\n\nSigned-off-by: User",
+        [
+            ("CMakeLists.txt", """
+-set(FLB_VERSION_PATCH  0)
++set(FLB_VERSION_PATCH  2)
++set(SOME_FLAG ON)
+""")
+        ]
+    )
+
+    ok, _ = validate_commit(commit)
+    assert ok is False

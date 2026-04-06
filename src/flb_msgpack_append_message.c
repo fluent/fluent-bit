@@ -30,7 +30,7 @@ int flb_msgpack_append_message_to_record(char **result_buffer,
 {
     int                result = FLB_MAP_NOT_MODIFIED;
     char              *modified_data_buffer;
-    int                modified_data_size;
+    size_t             modified_data_size;
     msgpack_object_kv *new_map_entries[1];
     msgpack_object_kv  message_entry;
     *result_buffer = NULL;

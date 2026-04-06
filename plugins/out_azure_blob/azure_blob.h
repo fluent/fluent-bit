@@ -24,17 +24,20 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_sqldb.h>
+#include <fluent-bit/flb_time.h>
 
 /* Content-Type */
 #define AZURE_BLOB_CT          "Content-Type"
 #define AZURE_BLOB_CT_NONE     0
 #define AZURE_BLOB_CT_JSON     1 /* application/json */
 #define AZURE_BLOB_CT_GZIP     2 /* application/gzip */
+#define AZURE_BLOB_CT_ZSTD     3 /* application/zstd */
 
 /* Content-Encoding */
 #define AZURE_BLOB_CE          "Content-Encoding"
 #define AZURE_BLOB_CE_NONE     0
 #define AZURE_BLOB_CE_GZIP     1 /* gzip */
+#define AZURE_BLOB_CE_ZSTD     2 /* zstd */
 
 /* service endpoint */
 #define AZURE_ENDPOINT_PREFIX  ".blob.core.windows.net"
@@ -54,7 +57,7 @@
 struct flb_azure_blob {
     int auto_create_container;
     int emulator_mode;
-    int compress_gzip;
+    int compression;
     int compress_blob;
     flb_sds_t account_name;
     flb_sds_t container_name;
@@ -62,6 +65,7 @@ struct flb_azure_blob {
     flb_sds_t shared_key;
     flb_sds_t endpoint;
     flb_sds_t path;
+    int path_templating_enabled;
     flb_sds_t date_key;
     flb_sds_t auth_type;
     flb_sds_t sas_token;
@@ -165,5 +169,18 @@ struct flb_azure_blob {
     struct flb_output_instance *ins;
     struct flb_config *config;
 };
+
+int azb_select_compression_strategy(struct flb_azure_blob *ctx,
+                                    int *compression_algorithm,
+                                    int *prefer_blob_compression);
+
+int azb_resolve_path(struct flb_azure_blob *ctx,
+                     const char *tag,
+                     int tag_len,
+                     const struct flb_time *timestamp,
+                     flb_sds_t *out_path);
+
+const char *azb_commit_prefix_with_fallback(struct flb_azure_blob *ctx,
+                                            const char *db_prefix);
 
 #endif

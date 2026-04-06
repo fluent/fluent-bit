@@ -33,7 +33,8 @@
 
 enum flb_oauth2_auth_method {
     FLB_OAUTH2_AUTH_METHOD_BASIC = 0,
-    FLB_OAUTH2_AUTH_METHOD_POST  = 1
+    FLB_OAUTH2_AUTH_METHOD_POST  = 1,
+    FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT = 2
 };
 
 struct flb_oauth2_config {
@@ -43,9 +44,15 @@ struct flb_oauth2_config {
     flb_sds_t client_secret;
     flb_sds_t scope;
     flb_sds_t audience;
+    flb_sds_t resource;
+    flb_sds_t jwt_key_file;
+    flb_sds_t jwt_cert_file;
+    flb_sds_t jwt_aud;
+    flb_sds_t jwt_header;
 
     enum flb_oauth2_auth_method auth_method;
 
+    int jwt_ttl;
     int refresh_skew;
     int timeout;
     int connect_timeout;

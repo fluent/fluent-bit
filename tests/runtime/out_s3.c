@@ -228,6 +228,216 @@ void flb_test_s3_complete_upload_error(void)
     unsetenv("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR");
 }
 
+void flb_test_s3_compression_gzip(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx,in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,"match", "*", NULL);
+    flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd,"compression", "gzip", NULL);
+    flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_s3_compression_gzip_putobject(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx,in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,"match", "*", NULL);
+    flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd,"compression", "gzip", NULL);
+    flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
+    flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_s3_compression_zstd(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx,in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,"match", "*", NULL);
+    flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd,"compression", "zstd", NULL);
+    flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_s3_compression_zstd_putobject(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx,in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,"match", "*", NULL);
+    flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd,"compression", "zstd", NULL);
+    flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
+    flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_s3_compression_snappy(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx,in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,"match", "*", NULL);
+    flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd,"compression", "snappy", NULL);
+    flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_s3_compression_snappy_putobject(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* mocks calls- signals that we are in test mode */
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx,in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,"match", "*", NULL);
+    flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd,"compression", "snappy", NULL);
+    flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
+    flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 
 /* Test list */
 TEST_LIST = {
@@ -237,5 +447,11 @@ TEST_LIST = {
     {"create_upload_error", flb_test_s3_create_upload_error },
     {"upload_part_error", flb_test_s3_upload_part_error },
     {"complete_upload_error", flb_test_s3_complete_upload_error },
+    {"compression_gzip", flb_test_s3_compression_gzip },
+    {"compression_gzip_putobject", flb_test_s3_compression_gzip_putobject },
+    {"compression_zstd", flb_test_s3_compression_zstd },
+    {"compression_zstd_putobject", flb_test_s3_compression_zstd_putobject },
+    {"compression_snappy", flb_test_s3_compression_snappy },
+    {"compression_snappy_putobject", flb_test_s3_compression_snappy_putobject },
     {NULL, NULL}
 };

@@ -28,158 +28,19 @@
 #include "metrics.h"
 
 #include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/http_server/flb_hs.h>
+#include <fluent-bit/http_server/flb_hs_utils.h>
 #include <msgpack.h>
 
 #define null_check(x) do { if (!x) { goto error; } else {sds = x;} } while (0)
 
-pthread_key_t hs_metrics_key;
-
-static struct mk_list *hs_metrics_key_create()
-{
-    struct mk_list *metrics_list = NULL;
-
-    metrics_list = flb_malloc(sizeof(struct mk_list));
-    if (metrics_list == NULL) {
-        flb_errno();
-        return NULL;
-    }
-    mk_list_init(metrics_list);
-    pthread_setspecific(hs_metrics_key, metrics_list);
-
-    return metrics_list;
-}
-
-static void hs_metrics_key_destroy(void *data)
-{
-    struct mk_list *metrics_list = (struct mk_list*)data;
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct flb_hs_buf *entry;
-
-    if (metrics_list == NULL) {
-        return;
-    }
-    mk_list_foreach_safe(head, tmp, metrics_list) {
-        entry = mk_list_entry(head, struct flb_hs_buf, _head);
-        if (entry != NULL) {
-            if (entry->raw_data != NULL) {
-                flb_free(entry->raw_data);
-                entry->raw_data = NULL;
-            }
-            if (entry->data) {
-                flb_sds_destroy(entry->data);
-                entry->data = NULL;
-            }
-            mk_list_del(&entry->_head);
-            flb_free(entry);
-        }
-    }
-
-    flb_free(metrics_list);
-}
-
 /* Return the newest metrics buffer */
-static struct flb_hs_buf *metrics_get_latest()
+static struct flb_hs_buf *metrics_get_latest(struct flb_hs *hs)
 {
-    struct flb_hs_buf *buf;
-    struct mk_list *metrics_list;
-
-    metrics_list = pthread_getspecific(hs_metrics_key);
-    if (!metrics_list) {
+    if (hs->metrics.data == NULL || hs->metrics.raw_data == NULL) {
         return NULL;
     }
-
-    if (mk_list_size(metrics_list) == 0) {
-        return NULL;
-    }
-
-    buf = mk_list_entry_last(metrics_list, struct flb_hs_buf, _head);
-    return buf;
-}
-
-/* Delete unused metrics, note that we only care about the latest node */
-static int cleanup_metrics()
-{
-    int c = 0;
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct mk_list *metrics_list;
-    struct flb_hs_buf *last;
-    struct flb_hs_buf *entry;
-
-    metrics_list = pthread_getspecific(hs_metrics_key);
-    if (!metrics_list) {
-        return -1;
-    }
-
-    last = metrics_get_latest();
-    if (!last) {
-        return -1;
-    }
-
-    mk_list_foreach_safe(head, tmp, metrics_list) {
-        entry = mk_list_entry(head, struct flb_hs_buf, _head);
-        if (entry != last && entry->users == 0) {
-            mk_list_del(&entry->_head);
-            flb_sds_destroy(entry->data);
-            flb_free(entry->raw_data);
-            flb_free(entry);
-            c++;
-        }
-    }
-
-    return c;
-}
-
-/*
- * Callback invoked every time some metrics are received through a
- * message queue channel. This function runs in a Monkey HTTP thread
- * worker and it purpose is to take the metrics data and store it
- * somewhere so then it can be available by the end-points upon
- * HTTP client requests.
- */
-static void cb_mq_metrics(mk_mq_t *queue, void *data, size_t size)
-{
-    flb_sds_t out_data;
-    struct flb_hs_buf *buf;
-    struct mk_list *metrics_list = NULL;
-
-    metrics_list = pthread_getspecific(hs_metrics_key);
-    if (!metrics_list) {
-        metrics_list = hs_metrics_key_create();
-        if (metrics_list == NULL) {
-            return;
-        }
-    }
-
-    /* Convert msgpack to JSON */
-    out_data = flb_msgpack_raw_to_json_sds(data, size, FLB_TRUE);
-    if (!out_data) {
-        return;
-    }
-
-    buf = flb_malloc(sizeof(struct flb_hs_buf));
-    if (!buf) {
-        flb_errno();
-        flb_sds_destroy(out_data);
-        return;
-    }
-    buf->users = 0;
-    buf->data = out_data;
-
-    buf->raw_data = flb_malloc(size);
-    if (!buf->raw_data) {
-        flb_errno();
-        flb_sds_destroy(out_data);
-        flb_free(buf);
-        return;
-    }
-    memcpy(buf->raw_data, data, size);
-    buf->raw_size = size;
-
-    mk_list_add(&buf->_head, metrics_list);
-
-    cleanup_metrics();
+    return &hs->metrics;
 }
 
 int string_cmp(const void* a_arg, const void* b_arg) {
@@ -260,7 +121,9 @@ flb_sds_t metrics_help_txt(char *metric_name, flb_sds_t *metric_helptxt)
 }
 
 /* API: expose metrics in Prometheus format /api/v1/metrics/prometheus */
-void cb_metrics_prometheus(mk_request_t *request, void *data)
+static int cb_metrics_prometheus(struct flb_hs *hs,
+                                 struct flb_http_request *request,
+                                 struct flb_http_response *response)
 {
     int i;
     int j;
@@ -286,14 +149,14 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     char start_time_str[64];
     char* *metrics_arr;
     struct flb_time tp;
-    struct flb_hs *hs = data;
     struct flb_config *config = hs->config;
 
-    buf = metrics_get_latest();
+    (void) request;
+
+    buf = metrics_get_latest(hs);
     if (!buf) {
-        mk_http_status(request, 404);
-        mk_http_done(request);
-        return;
+        flb_http_response_set_status(response, 404);
+        return flb_http_response_commit(response);
     }
 
     /* ref count */
@@ -302,20 +165,20 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     /* Compose outgoing buffer string */
     sds = flb_sds_create_size(1024);
     if (!sds) {
-        mk_http_status(request, 500);
-        mk_http_done(request);
-        buf->users--;
-        return;
+        flb_http_response_set_status(response, 500);
+        flb_http_response_commit(response);
+        flb_hs_buf_release(buf, NULL);
+        return 0;
     }
 
     /* length of HELP text */
     metric_helptxt = flb_sds_create_size(128);
     if (!metric_helptxt) {
         flb_sds_destroy(sds);
-        mk_http_status(request, 500);
-        mk_http_done(request);
-        buf->users--;
-        return;
+        flb_http_response_set_status(response, 500);
+        flb_http_response_commit(response);
+        flb_hs_buf_release(buf, NULL);
+        return 0;
     }
     metric_helptxt_head = FLB_SDS_HEADER(metric_helptxt);
 
@@ -343,14 +206,14 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     if (!metrics_arr) {
         flb_errno();
 
-        mk_http_status(request, 500);
-        mk_http_done(request);
-        buf->users--;
+        flb_hs_buf_release(buf, NULL);
+        flb_http_response_set_status(response, 500);
+        flb_http_response_commit(response);
 
         flb_sds_destroy(sds);
         flb_sds_destroy(metric_helptxt);
         msgpack_unpacked_destroy(&result);
-        return;
+        return 0;
     }
 
     flb_time_get(&tp);
@@ -509,11 +372,11 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
 #endif
 
     msgpack_unpacked_destroy(&result);
-    buf->users--;
+    flb_hs_buf_release(buf, NULL);
 
-    mk_http_status(request, 200);
-    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_PROMETHEUS);
-    mk_http_send(request, sds, flb_sds_len(sds), NULL);
+    flb_hs_response_set_payload(response, 200,
+                                FLB_HS_CONTENT_TYPE_PROMETHEUS,
+                                sds, flb_sds_len(sds));
     for (i = 0; i < num_metrics; i++) {
       flb_sds_destroy(metrics_arr[i]);
     }
@@ -521,13 +384,12 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     flb_sds_destroy(sds);
     flb_sds_destroy(metric_helptxt);
 
-    mk_http_done(request);
-    return;
+    return 0;
 
 error:
-    mk_http_status(request, 500);
-    mk_http_done(request);
-    buf->users--;
+    flb_http_response_set_status(response, 500);
+    flb_http_response_commit(response);
+    flb_hs_buf_release(buf, NULL);
 
     for (i = 0; i < index; i++) {
       flb_sds_destroy(metrics_arr[i]);
@@ -536,44 +398,45 @@ error:
     flb_sds_destroy(sds);
     flb_sds_destroy(metric_helptxt);
     msgpack_unpacked_destroy(&result);
+    return 0;
 }
 
 /* API: expose built-in metrics /api/v1/metrics */
-static void cb_metrics(mk_request_t *request, void *data)
+static int cb_metrics(struct flb_hs *hs,
+                      struct flb_http_request *request,
+                      struct flb_http_response *response)
 {
     struct flb_hs_buf *buf;
 
-    buf = metrics_get_latest();
+    (void) request;
+
+    buf = metrics_get_latest(hs);
     if (!buf) {
-        mk_http_status(request, 404);
-        mk_http_done(request);
-        return;
+        flb_http_response_set_status(response, 404);
+        return flb_http_response_commit(response);
     }
 
     buf->users++;
 
-    mk_http_status(request, 200);
-    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_JSON);
-    mk_http_send(request, buf->data, flb_sds_len(buf->data), NULL);
-    mk_http_done(request);
+    flb_hs_response_set_payload(response, 200,
+                                FLB_HS_CONTENT_TYPE_JSON,
+                                buf->data, flb_sds_len(buf->data));
 
-    buf->users--;
+    flb_hs_buf_release(buf, NULL);
+    return 0;
 }
 
 /* Perform registration */
 int api_v1_metrics(struct flb_hs *hs)
 {
+    int ret;
 
-    pthread_key_create(&hs_metrics_key, hs_metrics_key_destroy);
+    ret = flb_hs_register_endpoint(hs, "/api/v1/metrics/prometheus",
+                                   FLB_HS_ROUTE_EXACT, cb_metrics_prometheus);
+    if (ret != 0) {
+        return ret;
+    }
 
-    /* Create a message queue */
-    hs->qid_metrics = mk_mq_create(hs->ctx, "/metrics",
-                                   cb_mq_metrics, NULL);
-
-    /* HTTP end-points */
-    mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/metrics/prometheus",
-                     cb_metrics_prometheus, hs);
-    mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/metrics", cb_metrics, hs);
-
-    return 0;
+    return flb_hs_register_endpoint(hs, "/api/v1/metrics",
+                                    FLB_HS_ROUTE_EXACT, cb_metrics);
 }

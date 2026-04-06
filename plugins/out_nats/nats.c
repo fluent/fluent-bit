@@ -106,7 +106,7 @@ static int msgpack_to_json(struct flb_out_nats_config *ctx,
         return -1;
     }
 
-    array_size = flb_mp_count(data, bytes);
+    array_size = flb_mp_count_log_records(data, bytes);
 
     /* Convert MsgPack to JSON */
     msgpack_sbuffer_init(&mp_sbuf);

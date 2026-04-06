@@ -117,7 +117,12 @@ if (FLUENT_PROTO_REGENERATE)
 		set(proto_file "${OTEL_PROTO_DIR}/opentelemetry/proto/profiles/v1development/profiles.proto")
 		execute_process(COMMAND ${PROTOC_BIN} ${PROTOC_ARG_OUT} ${PROTOC_ARG_PATH} ${proto_file})
 
+		message(STATUS "processing profiles_service.proto")
+		set(proto_file "${OTEL_PROTO_DIR}/opentelemetry/proto/collector/profiles/v1development/profiles_service.proto")
+		execute_process(COMMAND ${PROTOC_BIN} ${PROTOC_ARG_OUT} ${PROTOC_ARG_PATH} ${proto_file})
+
 		include_directories(${PROJECT_BINARY_DIR}/opentelemetry/proto/profiles/v1development/)
+		include_directories(${PROJECT_BINARY_DIR}/opentelemetry/proto/collector/profiles/v1development/)
 		FLUENT_OTEL_DEFINITION(FLUENT_OTEL_HAVE_PROFILES)
 	endif()
 

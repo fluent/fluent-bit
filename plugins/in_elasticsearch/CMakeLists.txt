@@ -5,7 +5,6 @@ endif()
 set(src
   in_elasticsearch.c
   in_elasticsearch_config.c
-  in_elasticsearch_bulk_conn.c
   in_elasticsearch_bulk_prot.c
   )
 

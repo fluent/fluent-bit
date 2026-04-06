@@ -282,17 +282,9 @@ flb_sds_t flb_sds_copy(flb_sds_t s, const char *str, int len)
 
 flb_sds_t flb_sds_cat_utf8(flb_sds_t *sds, const char *str, int str_len)
 {
-    static const char int2hex[] = "0123456789abcdef";
-    int i;
-    int b;
     int ret;
-    int hex_bytes;
     int offset;
     size_t size;
-    uint32_t cp;
-    uint32_t state = 0;
-    unsigned char c;
-    const uint8_t *p;
     struct flb_sds *head;
     flb_sds_t tmp;
     flb_sds_t s;

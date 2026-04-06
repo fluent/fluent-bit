@@ -480,6 +480,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     size_t len;
     int lines = 0;
     int ret;
+    int data_len;
     size_t processed_bytes = 0;
     char *data;
     char *end;
@@ -532,7 +533,9 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             end  = data + decoded_len;
         }
         else if (ret == FLB_UNICODE_CONVERT_NOP) {
-            flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'", end - data, data);
+            data_len = (int) (end - data);
+            flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'",
+                          data_len, data);
             /* Skip the UTF-8 BOM */
             if (file->buf_len >= 3 &&
                 data[0] == '\xEF' &&
@@ -543,7 +546,8 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             }
         }
         else {
-            flb_plg_error(ctx->ins, "encoding failed '%.*s'", end - data, data);
+            data_len = (int) (end - data);
+            flb_plg_error(ctx->ins, "encoding failed '%.*s'", data_len, data);
         }
     }
 #endif
@@ -559,7 +563,9 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             end  = data + (size_t) ret;
         }
         else {
-            flb_plg_error(ctx->ins, "encoding failed '%.*s' with status %d", end - data, data, ret);
+            data_len = (int) (end - data);
+            flb_plg_error(ctx->ins, "encoding failed '%.*s' with status %d",
+                          data_len, data, ret);
         }
     }
 
@@ -1642,6 +1648,18 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                           "lines are too long. Skipping file.", file->name);
                 return FLB_TAIL_ERROR;
             }
+
+#ifdef FLB_HAVE_METRICS
+            if (file->skip_next == FLB_FALSE) {
+                cmt_counter_inc(ctx->cmt_long_line_skipped,
+                                cfl_time_now(), 1,
+                                (char *[]) { (char *) flb_input_name(ctx->ins) });
+
+                /* Old API */
+                flb_metrics_sum(FLB_TAIL_METRIC_L_SKIPPED, 1, ctx->ins->metrics);
+
+            }
+#endif
 
             /* Warn the user */
             if (file->skip_warn == FLB_FALSE) {

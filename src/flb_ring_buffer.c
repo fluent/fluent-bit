@@ -52,11 +52,13 @@ struct flb_ring_buffer *flb_ring_buffer_create(uint64_t size)
         return NULL;
     }
     rb->data_size = size;
+    pthread_mutex_init(&rb->lock, NULL);
 
     /* lwrb context */
     lwrb = flb_malloc(sizeof(lwrb_t));
     if (!lwrb) {
         flb_errno();
+        pthread_mutex_destroy(&rb->lock);
         flb_free(rb);
         return NULL;
     }
@@ -67,6 +69,7 @@ struct flb_ring_buffer *flb_ring_buffer_create(uint64_t size)
     data_buf = flb_calloc(1, data_size);
     if (!data_buf) {
         flb_errno();
+        pthread_mutex_destroy(&rb->lock);
         flb_free(rb);
         flb_free(lwrb);
         return NULL;
@@ -82,6 +85,7 @@ struct flb_ring_buffer *flb_ring_buffer_create(uint64_t size)
 void flb_ring_buffer_destroy(struct flb_ring_buffer *rb)
 {
     flb_ring_buffer_remove_event_loop(rb);
+    pthread_mutex_destroy(&rb->lock);
 
     if (rb->data_buf) {
         flb_free(rb->data_buf);
@@ -98,7 +102,15 @@ int flb_ring_buffer_add_event_loop(struct flb_ring_buffer *rb, void *evl, uint8_
 {
     int result;
 
+    pthread_mutex_lock(&rb->lock);
+
+    if (rb->event_loop != NULL) {
+        pthread_mutex_unlock(&rb->lock);
+        return 0;
+    }
+
     if (window_size == 0) {
+        pthread_mutex_unlock(&rb->lock);
         return -1;
     }
     else if (window_size > 100) {
@@ -110,6 +122,7 @@ int flb_ring_buffer_add_event_loop(struct flb_ring_buffer *rb, void *evl, uint8_
     result = flb_pipe_create(rb->signal_channels);
 
     if (result) {
+        pthread_mutex_unlock(&rb->lock);
         return -2;
     }
 
@@ -120,6 +133,7 @@ int flb_ring_buffer_add_event_loop(struct flb_ring_buffer *rb, void *evl, uint8_
 
     if (rb->signal_event == NULL) {
         flb_pipe_destroy(rb->signal_channels);
+        pthread_mutex_unlock(&rb->lock);
 
         return -2;
     }
@@ -137,17 +151,21 @@ int flb_ring_buffer_add_event_loop(struct flb_ring_buffer *rb, void *evl, uint8_
         flb_free(rb->signal_event);
 
         rb->signal_event = NULL;
+        pthread_mutex_unlock(&rb->lock);
 
         return -3;
     }
 
     rb->event_loop = evl;
+    pthread_mutex_unlock(&rb->lock);
 
     return 0;
 }
 
 static void flb_ring_buffer_remove_event_loop(struct flb_ring_buffer *rb)
 {
+    pthread_mutex_lock(&rb->lock);
+
     if (rb->event_loop != NULL) {
         mk_event_del(rb->event_loop, rb->signal_event);
         flb_pipe_destroy(rb->signal_channels);
@@ -157,6 +175,8 @@ static void flb_ring_buffer_remove_event_loop(struct flb_ring_buffer *rb)
         rb->data_window = 0;
         rb->event_loop = NULL;
     }
+
+    pthread_mutex_unlock(&rb->lock);
 }
 
 int flb_ring_buffer_write(struct flb_ring_buffer *rb, void *ptr, size_t size)
@@ -164,27 +184,39 @@ int flb_ring_buffer_write(struct flb_ring_buffer *rb, void *ptr, size_t size)
     size_t used_size;
     size_t ret;
     size_t av;
+    int should_signal;
 
     /* make sure there is enough space available */
+    pthread_mutex_lock(&rb->lock);
+
     av = lwrb_get_free(rb->ctx);
     if (av < size) {
+        pthread_mutex_unlock(&rb->lock);
         return -1;
     }
 
     /* write the content */
     ret = lwrb_write(rb->ctx, ptr, size);
     if (ret == 0) {
+        pthread_mutex_unlock(&rb->lock);
         return -1;
     }
 
-    if (!rb->flush_pending) {
+    should_signal = FLB_FALSE;
+
+    if (!rb->flush_pending && rb->event_loop != NULL) {
         used_size = rb->data_size - (av - size);
 
         if (used_size >= rb->data_window) {
             rb->flush_pending = FLB_TRUE;
-
-            flb_pipe_write_all(rb->signal_channels[1], ".", 1);
+            should_signal = FLB_TRUE;
         }
+    }
+
+    pthread_mutex_unlock(&rb->lock);
+
+    if (should_signal == FLB_TRUE && rb->event_loop != NULL) {
+        flb_pipe_write_all(rb->signal_channels[1], ".", 1);
     }
 
     return 0;
@@ -194,7 +226,10 @@ int flb_ring_buffer_read(struct flb_ring_buffer *rb, void *ptr, size_t size)
 {
     size_t ret;
 
+    pthread_mutex_lock(&rb->lock);
     ret = lwrb_read(rb->ctx, ptr, size);
+    pthread_mutex_unlock(&rb->lock);
+
     if (ret == 0) {
         return -1;
     }
@@ -202,4 +237,19 @@ int flb_ring_buffer_read(struct flb_ring_buffer *rb, void *ptr, size_t size)
     return 0;
 }
 
+void flb_ring_buffer_mark_flushed(struct flb_ring_buffer *rb)
+{
+    size_t pending_bytes;
 
+    if (rb == NULL) {
+        return;
+    }
+
+    pthread_mutex_lock(&rb->lock);
+    pending_bytes = lwrb_get_full(rb->ctx);
+
+    if (pending_bytes == 0 || pending_bytes < rb->data_window) {
+        rb->flush_pending = FLB_FALSE;
+    }
+    pthread_mutex_unlock(&rb->lock);
+}

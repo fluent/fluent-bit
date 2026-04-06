@@ -65,6 +65,10 @@ uint64_t cmt_summary_get_count_value(struct cmt_metric *metric);
 
 void cmt_summary_quantile_set(struct cmt_metric *metric, uint64_t timestamp,
                               int quantile_id, double val);
+void cmt_summary_sum_set(struct cmt_metric *metric, uint64_t timestamp,
+                         double val);
+void cmt_summary_count_set(struct cmt_metric *metric, uint64_t timestamp,
+                           uint64_t count);
 
 
 #endif

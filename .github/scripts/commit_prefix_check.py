@@ -16,11 +16,12 @@ import os
 import re
 import sys
 from git import Repo
+from git.exc import GitCommandError
 
 repo = Repo(".")
 
 # Regex patterns
-PREFIX_RE = re.compile(r"^[a-z0-9_]+:", re.IGNORECASE)
+PREFIX_RE = re.compile(r"^((?:[a-z0-9_]+:\s+)+)\S", re.IGNORECASE)
 SIGNED_OFF_RE = re.compile(r"Signed-off-by:", re.IGNORECASE)
 FENCED_BLOCK_RE = re.compile(
     r"""
@@ -31,6 +32,15 @@ FENCED_BLOCK_RE = re.compile(
     """,
     re.DOTALL | re.VERBOSE,
 )
+
+
+def extract_subject_prefix(line: str):
+    match = PREFIX_RE.match(line)
+
+    if not match:
+        return None
+
+    return match.group(1).rstrip()
 
 def strip_fenced_code_blocks(text: str) -> str:
     """
@@ -66,15 +76,31 @@ def infer_prefix_from_paths(paths):
         if p.startswith("lib/"):
             component_prefixes.add("lib:")
 
-        # ----- tests/ → tests: -----
+        # ----- tests/<category>/<file>.c → <file>: (strip flb_) -----
         if p.startswith("tests/"):
-            component_prefixes.add("tests:")
+            parts = p.split("/")
+            if len(parts) >= 3:
+                filename = os.path.basename(p)
+                name, _ = os.path.splitext(filename)
+                if name.startswith("flb_"):
+                    name = name[4:]
+                if name:
+                    component_prefixes.add(f"{name}:")
+                    component_prefixes.add("tests:")
+                    if p.startswith("tests/integration/"):
+                        component_prefixes.add("tests: integration:")
+            else:
+                component_prefixes.add("tests:")
 
         # ----- plugins/<name>/ → <name>: -----
         if p.startswith("plugins/"):
             parts = p.split("/")
             if len(parts) > 1:
                 component_prefixes.add(f"{parts[1]}:")
+
+        # ----- benchmarks/ → benchmarks: -----
+        if p.startswith("benchmarks/"):
+            component_prefixes.add("benchmarks:")
 
         # ----- src/ → flb_xxx.* → xxx: OR src/<dir>/ → <dir>: -----
         # ----- src/ handling -----
@@ -111,6 +137,18 @@ def infer_prefix_from_paths(paths):
     build_optional = len(component_prefixes) > 0
 
     return prefixes, build_optional
+
+
+def is_http_server_interface_path(path):
+    p = path.replace(os.sep, "/")
+
+    return (
+        p.startswith("src/http_server/")
+        or p == "src/flb_http_common.c"
+        or p.startswith("include/fluent-bit/http_server/")
+        or p == "include/fluent-bit/flb_http_common.h"
+        or p == "HTTP_SERVER_API.md"
+    )
 
 
 # ------------------------------------------------
@@ -151,6 +189,47 @@ def detect_bad_squash(body):
 # Validate commit based on expected behavior and test rules
 # ------------------------------------------------
 def validate_commit(commit):
+    VERSION_PATTERN = re.compile(
+        r"set\(FLB_VERSION_(MAJOR|MINOR|PATCH)\s+\d+\)"
+    )
+
+    def is_version_bump(commit):
+        if not commit.parents:
+            return False
+
+        diffs = commit.diff(commit.parents[0], create_patch=True)
+        found_version_change = False
+        saw_cmakelists = False
+
+        for d in diffs:
+            path = (d.b_path or "").replace("\\", "/")
+
+            if not path.endswith("CMakeLists.txt"):
+                continue
+
+            saw_cmakelists = True
+            patch = d.diff.decode(errors="ignore")
+
+            for line in patch.splitlines():
+                stripped = line.lstrip()
+
+                if not stripped:
+                    continue
+
+                if stripped.startswith(("diff --git ", "index ", "@@ ", "+++ ", "--- ")):
+                    continue
+
+                if not stripped.startswith(("+", "-")):
+                    continue
+
+                if VERSION_PATTERN.search(stripped):
+                    found_version_change = True
+                    continue
+
+                return False
+
+        return saw_cmakelists and found_version_change
+
     msg = commit.message.strip()
     first_line, *rest = msg.split("\n")
     body = "\n".join(rest)
@@ -158,11 +237,9 @@ def validate_commit(commit):
     body = strip_fenced_code_blocks(body)
 
     # Subject must start with a prefix
-    subject_prefix_match = PREFIX_RE.match(first_line)
-    if not subject_prefix_match:
+    subject_prefix = extract_subject_prefix(first_line)
+    if not subject_prefix:
         return False, f"Missing prefix in commit subject: '{first_line}'"
-
-    subject_prefix = subject_prefix_match.group()
 
     # Run squash detection (but ignore multi-signoff errors)
     bad_squash, reason = detect_bad_squash(body)
@@ -189,7 +266,23 @@ def validate_commit(commit):
         return False, "Missing Signed-off-by line"
 
     # Determine expected prefixes + build option flag
-    files = commit.stats.files.keys()
+    try:
+        files = commit.stats.files.keys()
+    except GitCommandError as e:
+        return False, (
+            f"Could not inspect files changed by commit {commit.hexsha[:10]}: {e}\n"
+            "The repository checkout is likely missing commit parent history. "
+            "Use a full-depth checkout for commit-prefix validation."
+        )
+
+    # -------------------------------
+    # release special rule
+    # -------------------------------
+    if is_version_bump(commit):
+        if not first_line.startswith("release:"):
+            return False, "Version bump must use release: prefix"
+        return True, ""
+
     expected, build_optional = infer_prefix_from_paths(files)
 
     # When no prefix can be inferred (docs/tools), allow anything
@@ -229,25 +322,53 @@ def validate_commit(commit):
     }
 
     # Prefixes that are allowed to cover multiple subcomponents
-    umbrella_prefixes = {"lib:"}
+    umbrella_prefixes = {"lib:", "tests:", "tests: integration:", "http_server:"}
 
     # If more than one non-build prefix is inferred AND the subject is not an umbrella
     # prefix, check if the subject prefix is in the expected list. If it is, allow it
     # (because the corresponding file exists). Only reject if it's not in the expected list
     # or if it's an umbrella prefix that doesn't match.
     if len(non_build_prefixes) > 1:
-        # Only umbrella prefixes are allowed to cover multiple components
         if subj_lower in umbrella_prefixes:
-            # Ensure all changed paths are within the umbrella domain
             norm_paths = [p.replace(os.sep, "/") for p in files]
-            if not all(p.startswith("lib/") for p in norm_paths):
-                expected_list = sorted(expected)
-                expected_str = ", ".join(expected_list)
-                return False, (
-                    f"Subject prefix '{subject_prefix}' does not match files changed.\n"
-                    f"Expected one of: {expected_str}"
-                )
-        elif subj_lower not in umbrella_prefixes:
+
+            if subj_lower == "lib:":
+                if not all(p.startswith("lib/") for p in norm_paths):
+                    expected_list = sorted(expected)
+                    expected_str = ", ".join(expected_list)
+                    return False, (
+                        f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+                        f"Expected one of: {expected_str}"
+                    )
+
+            elif subj_lower == "tests:":
+                if not all(p.startswith("tests/") for p in norm_paths):
+                    expected_list = sorted(expected)
+                    expected_str = ", ".join(expected_list)
+                    return False, (
+                        f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+                        f"Expected one of: {expected_str}"
+                    )
+
+            elif subj_lower == "tests: integration:":
+                if not all(p.startswith("tests/integration/") for p in norm_paths):
+                    expected_list = sorted(expected)
+                    expected_str = ", ".join(expected_list)
+                    return False, (
+                        f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+                        f"Expected one of: {expected_str}"
+                    )
+
+            elif subj_lower == "http_server:":
+                if not all(is_http_server_interface_path(p) for p in norm_paths):
+                    expected_list = sorted(expected)
+                    expected_str = ", ".join(expected_list)
+                    return False, (
+                        f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+                        f"Expected one of: {expected_str}"
+                    )
+
+        else:
             expected_list = sorted(expected)
             expected_str = ", ".join(expected_list)
             return False, (

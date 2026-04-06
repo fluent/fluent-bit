@@ -25,6 +25,7 @@
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_encode_msgpack.h>
 #include <cmetrics/cmt_decode_msgpack.h>
 #include <cmetrics/cmt_encode_prometheus_remote_write.h>
@@ -208,6 +209,71 @@ void test_cmt_to_msgpack()
     cmt_decode_msgpack_destroy(cmt2);
     cmt_encode_msgpack_destroy(mp1_buf);
     cmt_encode_msgpack_destroy(mp2_buf);
+}
+
+void test_cmt_msgpack_metric_unit_roundtrip()
+{
+    int ret;
+    size_t offset;
+    char *mp_buf;
+    size_t mp_size;
+    struct cmt *cmt1;
+    struct cmt *cmt2;
+    struct cmt_counter *counter;
+
+    cmt_initialize();
+
+    offset = 0;
+    mp_buf = NULL;
+    mp_size = 0;
+    cmt1 = generate_simple_encoder_test_data();
+    TEST_CHECK(cmt1 != NULL);
+    if (cmt1 == NULL) {
+        return;
+    }
+
+    counter = cfl_list_entry_first(&cmt1->counters, struct cmt_counter, _head);
+    TEST_CHECK(counter != NULL);
+    if (counter == NULL) {
+        cmt_destroy(cmt1);
+        return;
+    }
+
+    counter->map->unit = cfl_sds_create("seconds");
+    TEST_CHECK(counter->map->unit != NULL);
+    if (counter->map->unit == NULL) {
+        cmt_destroy(cmt1);
+        return;
+    }
+
+    ret = cmt_encode_msgpack_create(cmt1, &mp_buf, &mp_size);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        cmt_destroy(cmt1);
+        return;
+    }
+
+    cmt2 = NULL;
+    ret = cmt_decode_msgpack_create(&cmt2, mp_buf, mp_size, &offset);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(cmt2 != NULL);
+    if (ret == 0 && cmt2 != NULL) {
+        counter = cfl_list_entry_first(&cmt2->counters, struct cmt_counter, _head);
+        TEST_CHECK(counter != NULL);
+        if (counter != NULL) {
+            TEST_CHECK(counter->map != NULL);
+            if (counter->map != NULL) {
+                TEST_CHECK(counter->map->unit != NULL);
+                if (counter->map->unit != NULL) {
+                    TEST_CHECK(strcmp(counter->map->unit, "seconds") == 0);
+                }
+            }
+        }
+    }
+
+    cmt_destroy(cmt1);
+    cmt_decode_msgpack_destroy(cmt2);
+    cmt_encode_msgpack_destroy(mp_buf);
 }
 
 /*
@@ -540,10 +606,10 @@ curl -v 'http://localhost:9090/receive' -H 'Content-Type: application/x-protobuf
 --data-binary '@prometheus_remote_write_payload.snp'\n\n");
 
     sample_file = fopen("prometheus_remote_write_payload.bin", "wb+");
-
-    fwrite(payload, 1, cfl_sds_len(payload), sample_file);
-
-    fclose(sample_file);
+    if (sample_file != NULL) {
+        fwrite(payload, 1, cfl_sds_len(payload), sample_file);
+        fclose(sample_file);
+    }
 
     cmt_encode_prometheus_remote_write_destroy(payload);
 
@@ -604,12 +670,12 @@ curl -v 'http://localhost:9090/v1/metrics' -H 'Content-Type: application/x-proto
 --data-binary '@opentelemetry_payload.bin'\n\n");
 
     sample_file = fopen("opentelemetry_payload.bin", "wb+");
+    if (sample_file != NULL) {
+        fwrite(payload, 1, cfl_sds_len(payload), sample_file);
+        fclose(sample_file);
+    }
 
-    fwrite(payload, 1, cfl_sds_len(payload), sample_file);
-
-    fclose(sample_file);
-
-    cmt_encode_prometheus_remote_write_destroy(payload);
+    cmt_encode_opentelemetry_destroy(payload);
 
     cmt_destroy(cmt);
 }
@@ -644,10 +710,10 @@ we need to encode it as JSON and to send AWS Cloudwatch with out_cloudwatch plug
 fluent-bit\n\n");
 
     sample_file = fopen("cloudwatch_emf_payload.bin", "wb+");
-
-    fwrite(mp_buf, 1, mp_size, sample_file);
-
-    fclose(sample_file);
+    if (sample_file != NULL) {
+        fwrite(mp_buf, 1, mp_size, sample_file);
+        fclose(sample_file);
+    }
 
     cmt_encode_cloudwatch_emf_destroy(mp_buf);
 
@@ -1008,7 +1074,7 @@ void test_splunk_hec_histogram()
         "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":5.0,\"le\":\"5.0\",\"metric_type\":\"Histogram\"}}"
         "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":10.0,\"le\":\"10.0\",\"metric_type\":\"Histogram\"}}"
         "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":10.0,\"le\":\"+Inf\",\"metric_type\":\"Histogram\"}}"
-        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_sum\":45.0,\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_sum\":45.9,\"metric_type\":\"Histogram\"}}"
         "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_count\":10.0,\"metric_type\":\"Histogram\"}}";
     char *out2 =
         "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":1.0,\"le\":\"0.005\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
@@ -1023,7 +1089,7 @@ void test_splunk_hec_histogram()
         "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":5.0,\"le\":\"5.0\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
         "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":10.0,\"le\":\"10.0\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
         "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_bucket\":10.0,\"le\":\"+Inf\",\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
-        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_sum\":45.0,\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
+        "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_sum\":45.9,\"static\":\"test\",\"metric_type\":\"Histogram\"}}"
         "{\"host\":\"localhost\",\"time\":1435658235.000000123,\"event\":\"metric\",\"index\":\"fluent-bit-metrics\",\"source\":\"fluent-bit-cmetrics\",\"sourcetype\":\"cmetrics\",\"fields\":{\"metric_name:network.load_count\":10.0,\"static\":\"test\",\"metric_type\":\"Histogram\"}}";
 
     cmt_initialize();
@@ -1171,6 +1237,7 @@ TEST_LIST = {
     {"cmt_msgpack_stability",          test_cmt_to_msgpack_stability},
     {"cmt_msgpack_integrity",          test_cmt_to_msgpack_integrity},
     {"cmt_msgpack_labels",             test_cmt_to_msgpack_labels},
+    {"cmt_msgpack_metric_unit_roundtrip", test_cmt_msgpack_metric_unit_roundtrip},
     {"cmt_msgpack",                    test_cmt_to_msgpack},
     {"opentelemetry",                  test_opentelemetry},
     {"cloudwatch_emf",                 test_cloudwatch_emf},

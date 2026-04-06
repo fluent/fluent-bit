@@ -26,12 +26,13 @@ static void mock_server_cb_empty_token(mk_request_t *request, void *data)
         mk_http_status(request, 200);
         mk_http_header(request, "Content-Type", sizeof("Content-Type") - 1,
                        "application/json", sizeof("application/json") - 1);
-        mk_http_send(request, response, response_len, NULL); // Use response_len
+        mk_http_send(request, (char *) response, response_len, NULL);
     } else {
         mk_http_status(request, 500);
         mk_http_header(request, "Content-Type", sizeof("Content-Type") - 1,
                        "text/plain", sizeof("text/plain") - 1);
-        mk_http_send(request, "Internal Server Error", sizeof("Internal Server Error") - 1, NULL);
+        mk_http_send(request, (char *) "Internal Server Error",
+                     sizeof("Internal Server Error") - 1, NULL);
     }
     mk_http_done(request);
 }
@@ -42,7 +43,8 @@ static void mock_server_cb(mk_request_t *request, void *data)
     mk_http_status(request, 500);
     mk_http_header(request, "Content-Type", sizeof("Content-Type") - 1,
                     "text/plain", sizeof("text/plain") - 1);
-    mk_http_send(request, "Internal Server Error", sizeof("Internal Server Error") - 1, NULL);
+    mk_http_send(request, (char *) "Internal Server Error",
+                 sizeof("Internal Server Error") - 1, NULL);
     mk_http_done(request);
 }
 

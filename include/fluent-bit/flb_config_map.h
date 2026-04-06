@@ -26,6 +26,8 @@
 #include <monkey/mk_core.h>
 #include <cfl/cfl.h>
 
+struct flb_config;
+
 /* Configuration types */
 #define FLB_CONFIG_MAP_STR         0    /* string */
 #define FLB_CONFIG_MAP_STR_PREFIX  1    /* string that starts with  */

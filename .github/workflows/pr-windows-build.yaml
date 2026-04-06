@@ -22,15 +22,20 @@ on:
       - '**.h'
       - '**.c'
       - '**.windows'
-      - './conf/**'
-      - './cmake/**'
+      - 'conf/**'
+      - 'cmake/**'
     types:
       - opened
       - reopened
       - synchronize
 
+permissions:
+  contents: read
+
 jobs:
   pr-windows-build:
+    permissions:
+      contents: read
     uses: ./.github/workflows/call-build-windows.yaml
     with:
       version: ${{ github.sha }}
@@ -42,6 +47,8 @@ jobs:
   run-windows-unit-tests:
     needs:
       - pr-windows-build
+    permissions:
+      contents: read
     uses: ./.github/workflows/call-windows-unit-tests.yaml
     with:
       version: ${{ github.sha }}

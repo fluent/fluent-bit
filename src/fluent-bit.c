@@ -913,8 +913,8 @@ static int parse_trace_pipeline(flb_ctx_t *ctx, const char *pipeline, char **tra
     struct flb_split_entry *part;
     char *key;
     char *value;
-    const char *propname;
-    const char *propval;
+    char *propname;
+    char *propval;
 
 
     parts = flb_utils_split(pipeline, (int)' ', 0);
@@ -1009,7 +1009,7 @@ static int flb_main_run(int argc, char **argv)
     struct flb_cf_section *s;
     struct flb_cf_section *section;
     struct flb_cf *cf_opts;
-    struct flb_cf_group *group;
+    struct flb_cf_group *group = NULL;
     int supervisor_reload_notified = FLB_FALSE;
 
     prog_name = argv[0];
@@ -1437,10 +1437,17 @@ static int flb_main_run(int argc, char **argv)
 #endif
 
     if (config->dry_run == FLB_TRUE) {
-        fprintf(stderr, "configuration test is successful\n");
+        ret = flb_reload_property_check_all(config);
+
+        /* At this point config test is done, so clean up after ourselves */
         flb_init_env();
         flb_cf_destroy(cf_opts);
         flb_destroy(ctx);
+
+        if (ret != 0) {
+            exit(EXIT_FAILURE);
+        }
+        fprintf(stderr, "configuration test is successful\n");
         exit(EXIT_SUCCESS);
     }
 

@@ -252,7 +252,7 @@ static int sw_format(struct flb_output_sw* ctx, const void *data, size_t bytes,
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
 
-    chunk_size = flb_mp_count(data, bytes);
+    chunk_size = flb_mp_count_log_records(data, bytes);
     flb_plg_debug(ctx->ins, "%i messages flushed", chunk_size);
 
     msgpack_pack_array(&pk, chunk_size);

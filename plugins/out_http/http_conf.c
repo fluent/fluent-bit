@@ -338,6 +338,10 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
             else if (strcasecmp(tmp, "post") == 0) {
                 ctx->oauth2_config.auth_method = FLB_OAUTH2_AUTH_METHOD_POST;
             }
+            else if (strcasecmp(tmp, "private_key_jwt") == 0) {
+                ctx->oauth2_config.auth_method =
+                    FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT;
+            }
             else {
                 flb_plg_error(ctx->ins, "invalid oauth2.auth_method '%s'", tmp);
                 flb_http_conf_destroy(ctx);
@@ -345,10 +349,24 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
             }
         }
 
-        if (!ctx->oauth2_config.token_url ||
-            !ctx->oauth2_config.client_id ||
-            !ctx->oauth2_config.client_secret) {
-            flb_plg_error(ctx->ins, "oauth2 requires token_url, client_id and client_secret");
+        if (!ctx->oauth2_config.token_url || !ctx->oauth2_config.client_id) {
+            flb_plg_error(ctx->ins, "oauth2 requires token_url and client_id");
+            flb_http_conf_destroy(ctx);
+            return NULL;
+        }
+
+        if (ctx->oauth2_config.auth_method == FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT) {
+            if (!ctx->oauth2_config.jwt_key_file ||
+                !ctx->oauth2_config.jwt_cert_file) {
+                flb_plg_error(ctx->ins, "oauth2 private_key_jwt requires "
+                              "jwt_key_file and "
+                              "jwt_cert_file");
+                flb_http_conf_destroy(ctx);
+                return NULL;
+            }
+        }
+        else if (!ctx->oauth2_config.client_secret) {
+            flb_plg_error(ctx->ins, "oauth2 basic/post require client_secret");
             flb_http_conf_destroy(ctx);
             return NULL;
         }

@@ -33,6 +33,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/aws/flb_aws_compress.h>
 
 #include <monkey/mk_core.h>
 #include <msgpack.h>
@@ -144,6 +145,19 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("log_key", ins);
     if (tmp) {
         ctx->log_key = tmp;
+    }
+
+    tmp = flb_output_get_property("compression", ins);
+    if (tmp) {
+        ret = flb_aws_compression_get_type(tmp);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
+            goto error;
+        }
+        ctx->compression = ret;
+    }
+    else {
+        ctx->compression = FLB_AWS_COMPRESS_NONE;
     }
 
     tmp = flb_output_get_property("region", ins);
@@ -520,6 +534,14 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kinesis, simple_aggregation),
      "Enable simple aggregation to combine multiple records into single API calls. "
      "This reduces the number of requests and can improve throughput."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "compression", NULL,
+     0, FLB_FALSE, 0,
+    "Compression type for Kinesis records. Each log record is individually compressed "
+    "and sent to Kinesis Data Streams. Supported values: 'gzip', 'zstd', 'snappy'. "
+    "Defaults to no compression."
     },
 
     /* EOF */

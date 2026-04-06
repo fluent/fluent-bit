@@ -81,6 +81,10 @@ struct flb_out_ws *flb_ws_conf_create(struct flb_output_instance *ins,
         if (ret == -1) {
             flb_error("[out_ws] unrecognized 'format' option '%s'. Using 'msgpack'", tmp);
         }
+        else if (ret == FLB_PACK_JSON_FORMAT_OTLP ||
+                 ret == FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
+            flb_error("[out_ws] format '%s' is not supported", tmp);
+        }
         else {
             ctx->out_format = ret;
         }

@@ -1,0 +1,25 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      samples: 1
+      dummy: |
+        {
+          "message": "message-key body",
+          "severity_text_key": "ERROR",
+          "severity_number_key": 17
+        }
+
+  outputs:
+    - name: opentelemetry
+      match: "*"
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      logs_body_key: $message
+      logs_severity_text_message_key: $severity_text_key
+      logs_severity_number_message_key: $severity_number_key

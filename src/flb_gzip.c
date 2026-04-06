@@ -1007,9 +1007,20 @@ void *flb_gzip_decompression_context_create()
 
 void flb_gzip_decompression_context_destroy(void *context)
 {
-    if (context != NULL) {
-        flb_free(context);
+    struct flb_gzip_decompression_context *inner_context;
+
+    if (context == NULL) {
+        return;
     }
+
+    inner_context = (struct flb_gzip_decompression_context *) context;
+
+    if (inner_context->miniz_stream.state != NULL) {
+        mz_inflateEnd(&inner_context->miniz_stream);
+        memset(&inner_context->miniz_stream, 0, sizeof(mz_stream));
+    }
+
+    flb_free(inner_context);
 }
 
 int flb_is_http_session_gzip_compressed(struct mk_http_session *session)
