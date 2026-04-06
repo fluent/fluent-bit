@@ -154,7 +154,7 @@ rpm --import $RELEASE_KEY
 cat << EOF > /etc/zypp/repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
-baseurl = $RELEASE_URL/opensuse/leap/\$releaserver
+baseurl = $RELEASE_URL/opensuse/leap/VERSION_SUBSTR
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$RELEASE_KEY
@@ -162,6 +162,7 @@ enabled=1
 type=rpm-md
 autorefresh=1
 EOF
+sed -i 's|VERSION_SUBSTR|\$releaserver|g' /etc/zypp/repos.d/fluent-bit.repo
 cat /etc/zypp/repos.d/fluent-bit.repo
 zypper --non-interactive --gpg-auto-import-keys refresh
 $INSTALL_CMD_PREFIX zypper --non-interactive --gpg-auto-import-keys $ZYPPER_PARAMETERS install $INSTALL_PACKAGE_NAME$ZYPPER_VERSION
@@ -173,7 +174,7 @@ rpm --import $RELEASE_KEY
 cat << EOF > /etc/zypp/repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
-baseurl = $RELEASE_URL/sles/\$releasever
+baseurl = $RELEASE_URL/sles/VERSION_SUBSTR
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$RELEASE_KEY
@@ -181,6 +182,7 @@ enabled=1
 type=rpm-md
 autorefresh=1
 EOF
+sed -i 's|VERSION_SUBSTR|\$releasever|g' /etc/zypp/repos.d/fluent-bit.repo
 cat /etc/zypp/repos.d/fluent-bit.repo
 zypper --non-interactive --gpg-auto-import-keys refresh
 $INSTALL_CMD_PREFIX zypper --non-interactive --gpg-auto-import-keys $ZYPPER_PARAMETERS install $INSTALL_PACKAGE_NAME$ZYPPER_VERSION
