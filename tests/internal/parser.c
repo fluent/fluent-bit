@@ -517,12 +517,84 @@ void test_mysql_unquoted()
 
 }
 
+void test_parser_time_system_timezone_midnight()
+{
+    int ret;
+    time_t now;
+    time_t epoch;
+    struct tm now_tm;
+    struct tm expected_tm;
+    struct flb_tm tm;
+    double ns;
+    char *orig_tz;
+    struct flb_parser *parser;
+    struct flb_config *config;
+
+    orig_tz = getenv("TZ");
+    if (orig_tz != NULL) {
+        orig_tz = flb_strdup(orig_tz);
+    }
+
+    setenv("TZ", "Europe/Stockholm", 1);
+    tzset();
+
+    memset(&now_tm, 0, sizeof(struct tm));
+    now_tm.tm_year = 2025 - 1900;
+    now_tm.tm_mon = 3;
+    now_tm.tm_mday = 15;
+    now_tm.tm_hour = 0;
+    now_tm.tm_min = 30;
+    now_tm.tm_sec = 0;
+    now_tm.tm_isdst = -1;
+    now = mktime(&now_tm);
+    TEST_CHECK(now != (time_t) -1);
+
+    config = flb_config_init();
+    parser = flb_parser_create("time_only_tz", "regex", "^(?<time>.*)$",
+                               FLB_FALSE, "%H:%M:%S", "time",
+                               NULL, FLB_FALSE, FLB_TRUE, FLB_TRUE,
+                               FLB_FALSE, NULL, 0, NULL, config);
+    TEST_CHECK(parser != NULL);
+
+    memset(&tm, 0, sizeof(struct flb_tm));
+    ret = flb_parser_time_lookup("00:01:00", strlen("00:01:00"), now,
+                                 parser, &tm, &ns);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(ns == 0);
+
+    memset(&expected_tm, 0, sizeof(struct tm));
+    expected_tm.tm_year = 2025 - 1900;
+    expected_tm.tm_mon = 3;
+    expected_tm.tm_mday = 15;
+    expected_tm.tm_hour = 0;
+    expected_tm.tm_min = 1;
+    expected_tm.tm_sec = 0;
+    expected_tm.tm_isdst = -1;
+    epoch = mktime(&expected_tm);
+    TEST_CHECK(epoch != (time_t) -1);
+    TEST_CHECK(epoch == flb_parser_tm2time(&tm, FLB_TRUE));
+
+    if (orig_tz != NULL) {
+        setenv("TZ", orig_tz, 1);
+        flb_free(orig_tz);
+    }
+    else {
+        unsetenv("TZ");
+    }
+    tzset();
+
+    flb_parser_destroy(parser);
+    flb_parser_exit(config);
+    flb_config_exit(config);
+}
+
 
 TEST_LIST = {
     { "tzone_offset", test_parser_tzone_offset},
     { "time_lookup", test_parser_time_lookup},
     { "json_time_lookup", test_json_parser_time_lookup},
     { "regex_time_lookup", test_regex_parser_time_lookup},
+    { "time_system_timezone_midnight", test_parser_time_system_timezone_midnight},
     { "mysql_unquoted" , test_mysql_unquoted },
     { 0 }
 };
