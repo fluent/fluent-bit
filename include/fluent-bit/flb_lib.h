@@ -23,6 +23,8 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 
+struct flb_input_instance;
+
 /* Lib engine status */
 #define FLB_LIB_ERROR     -1
 #define FLB_LIB_NONE       0
@@ -70,6 +72,16 @@ FLB_EXPORT int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
                                                          void *, size_t, void *),
                                    void *out_callback_data,
                                    void *test_ctx);
+FLB_EXPORT int flb_output_set_test_with_ctx_callback(
+                                   flb_ctx_t *ctx, int ffd, char *test_name,
+                                   void (*out_callback) (void *, int, int,
+                                                         void *, size_t, void *),
+                                   void *out_callback_data,
+                                   void *test_ctx,
+                                   void *(*test_ctx_callback) (
+                                           struct flb_config *,
+                                           struct flb_input_instance *,
+                                           void *, void *));
 FLB_EXPORT int flb_output_set_callback(flb_ctx_t *ctx, int ffd, char *name,
                                        void (*cb)(char *, void *, void *));
 FLB_EXPORT int flb_output_set_http_test(flb_ctx_t *ctx, int ffd, char *test_name,
