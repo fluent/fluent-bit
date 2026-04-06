@@ -162,7 +162,7 @@ enabled=1
 type=rpm-md
 autorefresh=1
 EOF
-sed -i 's|VERSION_SUBSTR|\$releaserver|g' /etc/zypp/repos.d/fluent-bit.repo
+sed -i 's|VERSION_SUBSTR|\$releasever|g' /etc/zypp/repos.d/fluent-bit.repo
 cat /etc/zypp/repos.d/fluent-bit.repo
 zypper --non-interactive --gpg-auto-import-keys refresh
 $INSTALL_CMD_PREFIX zypper --non-interactive --gpg-auto-import-keys $ZYPPER_PARAMETERS install $INSTALL_PACKAGE_NAME$ZYPPER_VERSION
