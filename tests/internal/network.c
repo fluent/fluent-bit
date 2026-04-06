@@ -13,6 +13,7 @@
 
 #define TEST_HOSTv4           "127.0.0.1"
 #define TEST_HOSTv6           "::1"
+#define TEST_HOSTv6_BRACKETED "[::1]"
 #define TEST_PORT             "41322"
 
 #define TEST_EV_CLIENT        MK_EVENT_NOTIFICATION
@@ -159,8 +160,30 @@ void test_ipv6_client_server()
     test_client_server(FLB_TRUE);
 }
 
+void test_ipv6_bracketed_listen()
+{
+    flb_sockfd_t fd_server;
+
+    errno = 0;
+    fd_server = flb_net_server(TEST_PORT, TEST_HOSTv6_BRACKETED,
+                               FLB_NETWORK_DEFAULT_BACKLOG_SIZE,
+                               FLB_FALSE);
+
+    if (fd_server == -1 && errno == EAFNOSUPPORT) {
+        TEST_MSG("This protocol is not supported in this platform");
+        return;
+    }
+
+    TEST_CHECK(fd_server != -1);
+
+    if (fd_server != -1) {
+        flb_socket_close(fd_server);
+    }
+}
+
 TEST_LIST = {
     { "ipv4_client_server", test_ipv4_client_server},
     { "ipv6_client_server", test_ipv6_client_server},
+    { "ipv6_bracketed_listen", test_ipv6_bracketed_listen},
     { 0 }
 };
