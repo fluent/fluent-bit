@@ -2046,6 +2046,15 @@ int flb_processor_instance_set_property(struct flb_processor_instance *ins,
         ins->log_level = ret;
     }
     else {
+        if (v->type == CFL_VARIANT_STRING &&
+            flb_config_map_property_has_dynamic_env(ins->p->config_map, k) == FLB_TRUE) {
+            flb_sds_destroy(tmp);
+            tmp = flb_sds_create(v->data.as_string);
+            if (!tmp) {
+                return -1;
+            }
+        }
+
         /*
          * Create the property, we don't pass the value since we will
          * map it directly to avoid an extra memory allocation.
