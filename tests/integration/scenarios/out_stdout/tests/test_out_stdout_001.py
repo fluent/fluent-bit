@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 
 import requests
 from google.protobuf import json_format
@@ -13,9 +14,12 @@ from utils.test_service import FluentBitTestService
 
 class Service:
     def __init__(self, config_file):
-        self.config_file = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "../config", config_file)
-        )
+        if os.path.isabs(config_file):
+            self.config_file = config_file
+        else:
+            self.config_file = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "../config", config_file)
+            )
         self.service = FluentBitTestService(self.config_file)
 
     def start(self):
