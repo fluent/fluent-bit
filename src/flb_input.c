@@ -923,6 +923,16 @@ int flb_input_set_property(struct flb_input_instance *ins,
          * Create the property, we don't pass the value since we will
          * map it directly to avoid an extra memory allocation.
          */
+        if (flb_config_map_property_has_dynamic_env(ins->p->config_map, k) == FLB_TRUE) {
+            if (tmp) {
+                flb_sds_destroy(tmp);
+            }
+            tmp = flb_sds_create(v);
+            if (!tmp) {
+                return -1;
+            }
+        }
+
         kv = flb_kv_item_create(&ins->properties, (char *) k, NULL);
         if (!kv) {
             if (tmp) {
