@@ -80,11 +80,12 @@ struct mk_list *flb_http_server_get_config_map(struct flb_config *config)
     return flb_config_map_create(config, flb_http_server_config_map);
 }
 
-int flb_http_server_config_map_set(struct mk_list *properties,
+int flb_http_server_config_map_set(struct flb_config *config,
+                                   struct mk_list *properties,
                                    struct mk_list *config_map,
                                    struct flb_http_server_config *context)
 {
-    return flb_config_map_set(properties, config_map, context);
+    return flb_config_map_set(config, properties, config_map, context);
 }
 
 int flb_http_server_property_is_allowed(const char *property_name)
