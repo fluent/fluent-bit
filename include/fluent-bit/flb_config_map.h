@@ -20,6 +20,7 @@
 #ifndef FLB_CONFIG_MAP_H
 #define FLB_CONFIG_MAP_H
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_sds.h>
@@ -65,6 +66,12 @@ struct flb_config_map_val {
         struct mk_list *list;         /* FLB_CONFIG_MAP_CLIST and FLB_CONFIG_MAP_SLIST */
         struct cfl_variant *variant;  /* FLB_CONFIG_MAP_VARIANT */
     } val;
+    /*
+     * For entries marked with FLB_CONFIG_MAP_DYNAMIC_ENV we store the raw
+     * template (with ${VAR} placeholders) separately so callers can perform
+     * environment variable translation at runtime.
+     */
+    flb_sds_t raw;                    /* raw template for dynamic env vars */
     struct mk_list *mult;
     struct mk_list _head;             /* Link to list if this entry is a 'multiple' entry */
 };
@@ -113,10 +120,28 @@ void flb_config_map_destroy(struct mk_list *list);
 int flb_config_map_expected_values(int type);
 int flb_config_map_set(struct flb_config *config, struct mk_list *properties, struct mk_list *map, void *context);
 
+/* Lookup helpers for dynamic environment variables */
+struct flb_config_map *flb_config_map_find(struct mk_list *map, const char *name);
+const char *flb_config_map_get_raw(struct flb_config_map *map);
+flb_sds_t flb_config_map_translate_dynamic(struct flb_config *config, struct flb_config_map *map);
+
 /* Helper function to check if a config map entry has dynamic environment resolution */
 static inline int flb_config_map_has_dynamic_env(struct flb_config_map *map)
 {
     return (map->flags & FLB_CONFIG_MAP_DYNAMIC_ENV) != 0;
+}
+
+static inline int flb_config_map_property_has_dynamic_env(struct flb_config_map *map,
+                                                          const char *name)
+{
+    while (map && map->name) {
+        if (strcasecmp(map->name, name) == 0) {
+            return flb_config_map_has_dynamic_env(map);
+        }
+        map++;
+    }
+
+    return FLB_FALSE;
 }
 
 #endif
