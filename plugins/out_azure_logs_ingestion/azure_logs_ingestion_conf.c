@@ -26,6 +26,60 @@
 #include "azure_logs_ingestion.h"
 #include "azure_logs_ingestion_conf.h"
 
+static int validate_auth_url_override(struct flb_output_instance *ins,
+                                      flb_sds_t auth_url_override)
+{
+    int ret;
+    int result;
+    char *protocol = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *uri = NULL;
+
+    result = -1;
+
+    ret = flb_utils_url_split(auth_url_override, &protocol, &host, &port, &uri);
+    if (ret == -1 || protocol == NULL || host == NULL) {
+        flb_plg_error(ins, "property 'auth_url' has an invalid URL");
+        goto cleanup;
+    }
+
+    if (strcasecmp(protocol, "https") == 0) {
+        result = 0;
+        goto cleanup;
+    }
+
+    if (strcasecmp(protocol, "http") != 0) {
+        flb_plg_error(ins, "property 'auth_url' must use http or https");
+        goto cleanup;
+    }
+
+    if (strcmp(host, "localhost") == 0 || strcmp(host, "127.0.0.1") == 0) {
+        result = 0;
+        goto cleanup;
+    }
+
+    flb_plg_error(ins,
+                  "property 'auth_url' must use https or an explicit loopback "
+                  "http endpoint");
+
+cleanup:
+    if (protocol != NULL) {
+        flb_free(protocol);
+    }
+    if (host != NULL) {
+        flb_free(host);
+    }
+    if (port != NULL) {
+        flb_free(port);
+    }
+    if (uri != NULL) {
+        flb_free(uri);
+    }
+
+    return result;
+}
+
 struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
                                         struct flb_config *config)
 {
@@ -92,6 +146,12 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     }
 
     if (ctx->auth_url_override) {
+        ret = validate_auth_url_override(ins, ctx->auth_url_override);
+        if (ret == -1) {
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+
         ctx->auth_url = flb_sds_create(ctx->auth_url_override);
         if (!ctx->auth_url) {
             flb_errno();
