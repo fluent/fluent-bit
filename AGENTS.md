@@ -90,11 +90,52 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 - Follow observed local history style:
   - component/plugin: `component: short imperative description`
   - internal tests: `tests: internal: short imperative description`
-  - runtime tests: `tests: runtime: short imperative description`
+  - integration tests under `tests/integration/`:
+    `tests: integration: short imperative description`
+  - runtime tests/binaries outside `tests/integration/`:
+    `tests: runtime: short imperative description`
+- The repository commit-prefix linter in
+  `.github/scripts/commit_prefix_check.py` is authoritative. When its inferred
+  prefix set is narrower than a hand-written nested subject, follow the linter.
+  Examples from current repo history:
+  - `include/fluent-bit/config_format/flb_cf.h` +
+    `src/config_format/flb_cf_yaml.c` => `config_format:`
+  - `tests/internal/env.c` => `env:` or `tests:`
+  - `tests/internal/fuzzers/config_map_fuzzer.c` => `config_map_fuzzer:` or `tests:`
+  - `tests/internal/config_map.c` => `config_map:` or `tests:`
+- Agents must follow this same style when proposing commit subjects or
+  `git commit` commands; do not invent ad hoc prefixes such as `environment:`
+  when the touched files map to an existing component or test area prefix.
+- When suggesting commit commands, include DCO signing by default with
+  `git commit -s` unless the user explicitly asks otherwise.
 - Keep one interface per commit. If an interface touches both `.c` and `.h`,
   commit them together in the same commit.
+- Do not bundle different interfaces into one commit just because they support
+  the same feature. Core config-map changes, input/output/filter/custom/
+  processor plumbing, plugin changes, tests, and documentation must be split
+  into separate commits unless they are the same interface.
 - Do not mix unrelated interfaces in one commit.
+- Do not include `AGENTS.md` or other documentation updates in a code commit
+  unless the user explicitly asks for a docs+code combined commit.
 - Prefer concise one-line subjects unless extra context is required.
+- Detect and avoid bad squash commits. Do not place YAML examples, config lines,
+  or multiple subject-like prefix lines in the commit body unless they are
+  fenced code blocks.
+
+## Commit Lint Workflow
+- When the user asks for git commit commands, provide commands that also verify
+  commit-prefix lint before push or PR submission.
+- Run the same checker used in CI:
+  `python .github/scripts/commit_prefix_check.py`
+- The checker requires `gitpython`. If `python -c 'import git'` fails, install
+  it before running the linter:
+  `python3 -m pip install gitpython`
+- For pull-request-style validation, use full history and fetch the base branch
+  first, matching CI behavior:
+  `git fetch --all --prune`
+  `git fetch origin <base-branch>:origin/<base-branch>`
+- When giving commit-command sequences to the user, include a final lint step
+  and mention the `gitpython` install step if it may be missing locally.
 
 ## Agent Action Limits
 - Do not open issues, pull requests, or remote branches unless the user explicitly asks.
