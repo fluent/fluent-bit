@@ -106,6 +106,8 @@ static struct mk_list *parse_string_map_to_list(struct flb_config_map *map, char
     return list;
 }
 
+static void destroy_map_val(int type, struct flb_config_map_val *value);
+
 static int translate_default_value(struct flb_config *config,
                                    struct flb_config_map *map,
                                    char *val)
@@ -208,6 +210,7 @@ static int translate_default_value(struct flb_config *config,
 
  error:
     if (map->flags & FLB_CONFIG_MAP_MULT) {
+        destroy_map_val(map->type, entry);
         flb_free(entry);
     }
     return -1;
@@ -729,7 +732,7 @@ int flb_config_map_set(struct flb_config *config, struct mk_list *properties, st
 
         }
 
-        if (!m) {
+        if (!m || m->set_property == FLB_FALSE) {
             continue;
         }
 
