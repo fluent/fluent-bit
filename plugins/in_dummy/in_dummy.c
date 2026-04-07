@@ -69,6 +69,9 @@ static void generate_timestamp(struct flb_dummy *ctx,
     }
 }
 
+/* Fetch a raw template string from the configuration file without
+ * performing environment variable expansion. This is required for
+ * dynamic environment variables that may refresh at runtime. */
 static int generate_event(struct flb_dummy *ctx)
 {
     size_t           chunk_offset;
@@ -81,9 +84,7 @@ static int generate_event(struct flb_dummy *ctx)
     flb_sds_t        resolved_body;
     flb_sds_t        resolved_metadata;
     char            *body_msgpack = NULL;
-    const char      *body_template;
     char            *metadata_msgpack = NULL;
-    const char      *metadata_template;
     size_t           body_msgpack_size = 0;
     size_t           metadata_msgpack_size = 0;
     int              root_type;
@@ -94,63 +95,47 @@ static int generate_event(struct flb_dummy *ctx)
 
     generate_timestamp(ctx, &timestamp);
 
-    /* Get the raw template from the property (should be raw when FLB_CONFIG_MAP_DYNAMIC_ENV is set) */
-    body_template = flb_input_get_property("dummy", ctx->ins);
-    metadata_template = flb_input_get_property("metadata", ctx->ins);
+    body_msgpack = ctx->ref_body_msgpack;
+    body_msgpack_size = ctx->ref_body_msgpack_size;
+    metadata_msgpack = ctx->ref_metadata_msgpack;
+    metadata_msgpack_size = ctx->ref_metadata_msgpack_size;
 
-    if (!body_template) {
-        body_template = DEFAULT_DUMMY_MESSAGE;
-    }
-    if (!metadata_template) {
-        metadata_template = DEFAULT_DUMMY_METADATA;
-    }
-
-    /* Always try to resolve environment variables for dynamic content */
-    resolved_body = flb_env_var_translate(ctx->ins->config->env, body_template);
-    if (!resolved_body) {
-        resolved_body = flb_sds_create(body_template);
-    }
-
-
-    /* Always try to resolve environment variables for dynamic content */
-    resolved_metadata = flb_env_var_translate(ctx->ins->config->env, metadata_template);
-    if (!resolved_metadata) {
-        resolved_metadata = flb_sds_create(metadata_template);
-    }
-
-    /* Parse the resolved JSON strings */
-    if (resolved_body) {
+    resolved_body = flb_config_map_translate_dynamic(ctx->ins->config, ctx->cm_body);
+    if (resolved_body && flb_sds_len(resolved_body) > 0) {
         result = flb_pack_json(resolved_body,
-                              flb_sds_len(resolved_body),
-                              &body_msgpack,
-                              &body_msgpack_size,
-                              &root_type,
-                              NULL);
-    }
-    else {
-        result = 0; /* Using cached msgpack */
+                               flb_sds_len(resolved_body),
+                               &body_msgpack,
+                               &body_msgpack_size,
+                               &root_type,
+                               NULL);
+        if (result != 0) {
+            flb_plg_warn(ctx->ins, "failed to parse JSON template, using cached body");
+            if (body_msgpack && body_msgpack != ctx->ref_body_msgpack) {
+                flb_free(body_msgpack);
+            }
+            body_msgpack = ctx->ref_body_msgpack;
+            body_msgpack_size = ctx->ref_body_msgpack_size;
+            result = 0;
+        }
     }
 
-    if (result == 0 && resolved_metadata) {
+    resolved_metadata = flb_config_map_translate_dynamic(ctx->ins->config, ctx->cm_metadata);
+    if (resolved_metadata && flb_sds_len(resolved_metadata) > 0) {
         result = flb_pack_json(resolved_metadata,
-                              flb_sds_len(resolved_metadata),
-                              &metadata_msgpack,
-                              &metadata_msgpack_size,
-                              &root_type,
-                              NULL);
-    }
-
-    if (result != 0) {
-        flb_plg_error(ctx->ins, "failed to parse JSON template");
-        flb_sds_destroy(resolved_body);
-        flb_sds_destroy(resolved_metadata);
-        if (body_msgpack) {
-            flb_free(body_msgpack);
+                               flb_sds_len(resolved_metadata),
+                               &metadata_msgpack,
+                               &metadata_msgpack_size,
+                               &root_type,
+                               NULL);
+        if (result != 0) {
+            flb_plg_warn(ctx->ins, "failed to parse JSON template, using cached metadata");
+            if (metadata_msgpack && metadata_msgpack != ctx->ref_metadata_msgpack) {
+                flb_free(metadata_msgpack);
+            }
+            metadata_msgpack = ctx->ref_metadata_msgpack;
+            metadata_msgpack_size = ctx->ref_metadata_msgpack_size;
+            result = 0;
         }
-        if (metadata_msgpack) {
-            flb_free(metadata_msgpack);
-        }
-        return -1;
     }
 
     msgpack_unpacked_init(&object);
@@ -271,13 +256,6 @@ static int config_destroy(struct flb_dummy *ctx)
         flb_free(ctx->ref_metadata_msgpack);
     }
 
-    if (ctx->body_template != NULL) {
-        flb_free(ctx->body_template);
-    }
-
-    if (ctx->metadata_template != NULL) {
-        flb_free(ctx->metadata_template);
-    }
 
 
     if (ctx->encoder != NULL) {
@@ -296,13 +274,10 @@ static int configure(struct flb_dummy *ctx,
 {
     int ret = -1;
     int root_type;
-    const char *msg;
     flb_sds_t resolved_msg = NULL;
 
     ctx->ref_metadata_msgpack = NULL;
     ctx->ref_body_msgpack = NULL;
-    ctx->body_template = NULL;
-    ctx->metadata_template = NULL;
     ctx->dummy_timestamp_set = FLB_FALSE;
 
     ret = flb_input_config_map_set(in, (void *) ctx);
@@ -350,20 +325,12 @@ static int configure(struct flb_dummy *ctx,
 
     flb_time_get(&ctx->base_timestamp);
 
-    /* Store the original body template for dynamic re-parsing */
-    msg = flb_input_get_property("dummy", in);
-    if (msg == NULL) {
-        msg = DEFAULT_DUMMY_MESSAGE;
-    }
-    ctx->body_template = flb_strdup(msg);
-    if (!ctx->body_template) {
-        flb_errno();
-        flb_plg_error(ctx->ins, "failed to duplicate body template");
-        return -1;
-    }
+    /* Locate config map entries for templates */
+    ctx->cm_body = flb_config_map_find(in->config_map, "dummy");
+    ctx->cm_metadata = flb_config_map_find(in->config_map, "metadata");
 
-    /* Validate the template by parsing it once (with environment variables resolved) */
-    resolved_msg = flb_env_var_translate(in->config->env, msg);
+    /* Validate the body template by parsing it once */
+    resolved_msg = flb_config_map_translate_dynamic(in->config, ctx->cm_body);
     if (!resolved_msg || flb_sds_len(resolved_msg) == 0) {
         if (resolved_msg) {
             flb_sds_destroy(resolved_msg);
@@ -401,20 +368,8 @@ static int configure(struct flb_dummy *ctx,
 
     flb_sds_destroy(resolved_msg);
 
-    /* Store the original metadata template for dynamic re-parsing */
-    msg = flb_input_get_property("metadata", in);
-    if (msg == NULL) {
-        msg = DEFAULT_DUMMY_METADATA;
-    }
-    ctx->metadata_template = flb_strdup(msg);
-    if (!ctx->metadata_template) {
-        flb_errno();
-        flb_plg_error(ctx->ins, "failed to duplicate metadata template");
-        return -1;
-    }
-
-    /* Validate the template by parsing it once (with environment variables resolved) */
-    resolved_msg = flb_env_var_translate(in->config->env, msg);
+    /* Validate the metadata template by parsing it once */
+    resolved_msg = flb_config_map_translate_dynamic(in->config, ctx->cm_metadata);
     if (!resolved_msg || flb_sds_len(resolved_msg) == 0) {
         if (resolved_msg) {
             flb_sds_destroy(resolved_msg);
