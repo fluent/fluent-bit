@@ -541,6 +541,18 @@ struct flb_cf_env_var *flb_cf_env_var_add(struct flb_cf *cf,
     return ev;
 }
 
+struct flb_cf_env_var *flb_cf_env_property_add(struct flb_cf *cf,
+                                               char *name, size_t name_len,
+                                               char *value, size_t value_len,
+                                               char *uri, size_t uri_len,
+                                               int refresh_interval)
+{
+    return flb_cf_env_var_add(cf, name, name_len,
+                              value, value_len,
+                              uri, uri_len,
+                              refresh_interval);
+}
+
 static struct flb_kv *meta_property_add(struct flb_cf *cf,
                                         char *k_buf, size_t k_len,
                                         char *v_buf, size_t v_len)
@@ -1002,4 +1014,3 @@ struct flb_cf *flb_cf_create_from_file(struct flb_cf *cf, char *file)
 
     return cf;
  }
-
