@@ -155,6 +155,13 @@ struct flb_cf_env_var *flb_cf_env_var_add(struct flb_cf *cf,
                                           char *uri, size_t uri_len,
                                           int refresh_interval);
 
+/* Deprecated compatibility entry point, use flb_cf_env_var_add() instead. */
+struct flb_cf_env_var *flb_cf_env_property_add(struct flb_cf *cf,
+                                               char *name, size_t name_len,
+                                               char *value, size_t value_len,
+                                               char *uri, size_t uri_len,
+                                               int refresh_interval);
+
 
 /* metas */
 struct flb_kv *flb_cf_meta_property_add(struct flb_cf *cf, char *meta, int len);
