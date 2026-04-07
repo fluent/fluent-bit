@@ -1369,7 +1369,8 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
 
     /* HTTP server properties */
     if (ins->http_server_config_map && ins->http_server_config) {
-        ret = flb_config_map_set(&ins->http_server_properties,
+        ret = flb_config_map_set(ins->config,
+                                 &ins->http_server_properties,
                                  ins->http_server_config_map,
                                  ins->http_server_config);
         if (ret == -1) {
