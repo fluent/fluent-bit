@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config_map.h>
+#include <string.h>
 #include <cfl/cfl.h>
 
 static int check_list_size(struct mk_list *list, int type)
@@ -105,7 +106,9 @@ static struct mk_list *parse_string_map_to_list(struct flb_config_map *map, char
     return list;
 }
 
-static int translate_default_value(struct flb_config_map *map, char *val)
+static int translate_default_value(struct flb_config *config,
+                                   struct flb_config_map *map,
+                                   char *val)
 {
     int ret;
     struct flb_config_map_val *entry = NULL;
@@ -129,12 +132,27 @@ static int translate_default_value(struct flb_config_map *map, char *val)
 
     /* Based on specific data types, populate 'value' */
     if (map->type == FLB_CONFIG_MAP_STR) {
-        /* Duplicate string as a flb_sds_t */
-        entry->val.str = flb_sds_create(val);
-
-        /* Validate new memory allocation */
-        if (!entry->val.str) {
+        /* Store raw template */
+        entry->raw = flb_sds_create(val);
+        if (!entry->raw) {
             goto error;
+        }
+
+        /* Resolve environment variables for initial value */
+        if (map->flags & FLB_CONFIG_MAP_DYNAMIC_ENV) {
+            entry->val.str = flb_env_var_translate(config->env, val);
+            if (!entry->val.str) {
+                entry->val.str = flb_sds_create(val);
+                if (!entry->val.str) {
+                    goto error;
+                }
+            }
+        }
+        else {
+            entry->val.str = flb_sds_create(val);
+            if (!entry->val.str) {
+                goto error;
+            }
         }
     }
     else if (map->type == FLB_CONFIG_MAP_STR_PREFIX) {
@@ -356,7 +374,7 @@ struct mk_list *flb_config_map_create(struct flb_config *config,
         }
 
         /* Assign value based on data type and multiple mode if set */
-        ret = translate_default_value(new, new->def_value);
+        ret = translate_default_value(config, new, new->def_value);
         if (ret == -1) {
             flb_config_map_destroy(list);
             return NULL;
@@ -369,8 +387,13 @@ struct mk_list *flb_config_map_create(struct flb_config *config,
 
 static void destroy_map_val(int type, struct flb_config_map_val *value)
 {
-    if (type == FLB_CONFIG_MAP_STR && value->val.str) {
-        flb_sds_destroy(value->val.str);
+    if (type == FLB_CONFIG_MAP_STR) {
+        if (value->val.str) {
+            flb_sds_destroy(value->val.str);
+        }
+        if (value->raw) {
+            flb_sds_destroy(value->raw);
+        }
     }
     else if ((type >= FLB_CONFIG_MAP_CLIST &&
               type <= FLB_CONFIG_MAP_SLIST_4) &&
@@ -706,7 +729,7 @@ int flb_config_map_set(struct flb_config *config, struct mk_list *properties, st
 
         }
 
-        if (!m || m->set_property == FLB_FALSE) {
+        if (!m) {
             continue;
         }
 
@@ -794,55 +817,82 @@ int flb_config_map_set(struct flb_config *config, struct mk_list *properties, st
             *m_list = m->value.mult;
         }
         else if (map != NULL) {
-            /* Direct write to user context */
+            /* Single value entry: store value and optionally write to context */
             if (m->type == FLB_CONFIG_MAP_STR) {
-                m_str = (char **) (base + m->offset);
-                if (m->flags & FLB_CONFIG_MAP_DYNAMIC_ENV) {
-                    /* For dynamic env vars, store the raw template */
-                    *m_str = flb_sds_create(kv->val);
+                resolved = flb_env_var_translate(config->env, kv->val);
+                if (!resolved) {
+                    resolved = flb_sds_create(kv->val);
+                    if (!resolved) {
+                        return -1;
+                    }
                 }
-                else {
-                    /* For static env vars, resolve them now */
-                    resolved = flb_env_var_translate(config->env, kv->val);
-                    if (resolved) {
-                        *m_str = resolved;
+                if (m->value.val.str) {
+                    flb_sds_destroy(m->value.val.str);
+                }
+                m->value.val.str = resolved;
+
+                if (m->flags & FLB_CONFIG_MAP_DYNAMIC_ENV) {
+                    if (m->value.raw) {
+                        flb_sds_destroy(m->value.raw);
                     }
-                     else {
-                        *m_str = flb_sds_create(kv->val);
+                    m->value.raw = flb_sds_create(kv->val);
+                    if (!m->value.raw) {
+                        return -1;
                     }
+                }
+
+                if (m->set_property == FLB_TRUE) {
+                    m_str = (char **) (base + m->offset);
+                    *m_str = m->value.val.str;
                 }
             }
             else if (m->type == FLB_CONFIG_MAP_INT) {
-                m_i_num = (int *) (base + m->offset);
-                *m_i_num = atoi(kv->val);
+                ret = atoi(kv->val);
+                m->value.val.i_num = ret;
+                if (m->set_property == FLB_TRUE) {
+                    m_i_num = (int *) (base + m->offset);
+                    *m_i_num = ret;
+                }
             }
             else if (m->type == FLB_CONFIG_MAP_DOUBLE) {
-                m_d_num = (double *) (base + m->offset);
-                *m_d_num = atof(kv->val);
+                m->value.val.d_num = atof(kv->val);
+                if (m->set_property == FLB_TRUE) {
+                    m_d_num = (double *) (base + m->offset);
+                    *m_d_num = m->value.val.d_num;
+                }
             }
             else if (m->type == FLB_CONFIG_MAP_BOOL) {
-                m_bool = (int *) (base + m->offset);
                 ret = flb_utils_bool(kv->val);
                 if (ret == -1) {
-                    flb_error("[config map] invalid value for boolean property '%s=%s'",
-                              m->name, kv->val);
+                    flb_error("[config map] invalid value for boolean property '%s=%s'", m->name, kv->val);
                     return -1;
                 }
-                *m_bool = ret;
+                m->value.val.boolean = ret;
+                if (m->set_property == FLB_TRUE) {
+                    m_bool = (int *) (base + m->offset);
+                    *m_bool = ret;
+                }
             }
             else if (m->type == FLB_CONFIG_MAP_SIZE) {
-                m_s_num = (size_t *) (base + m->offset);
-                *m_s_num = flb_utils_size_to_bytes(kv->val);
+                m->value.val.s_num = flb_utils_size_to_bytes(kv->val);
+                if (m->set_property == FLB_TRUE) {
+                    m_s_num = (size_t *) (base + m->offset);
+                    *m_s_num = m->value.val.s_num;
+                }
             }
             else if (m->type == FLB_CONFIG_MAP_TIME) {
-                m_i_num = (int *) (base + m->offset);
-                *m_i_num = flb_utils_time_to_seconds(kv->val);
+                m->value.val.i_num = flb_utils_time_to_seconds(kv->val);
+                if (m->set_property == FLB_TRUE) {
+                    m_i_num = (int *) (base + m->offset);
+                    *m_i_num = m->value.val.i_num;
+                }
             }
             else if (m->type == FLB_CONFIG_MAP_VARIANT) {
-                m_variant = (struct cfl_variant **) (base + m->offset);
-                *m_variant = (struct cfl_variant *)kv->val;
-                /* Ownership of the object belongs to the config section, set it
-                 * to NULL to prevent flb_kv_item_destroy to attempt freeing it */
+                m->value.val.variant = (struct cfl_variant *) kv->val;
+                if (m->set_property == FLB_TRUE) {
+                    m_variant = (struct cfl_variant **) (base + m->offset);
+                    *m_variant = (struct cfl_variant *) kv->val;
+                }
                 kv->val = NULL;
             }
             else if (m->type >= FLB_CONFIG_MAP_CLIST ||
@@ -850,20 +900,85 @@ int flb_config_map_set(struct flb_config *config, struct mk_list *properties, st
                 list = parse_string_map_to_list(m, kv->val);
                 if (!list) {
                     flb_error("[config map] cannot parse list of values '%s'", kv->val);
-                    flb_free(entry);
                     return -1;
                 }
-
                 if (m->value.val.list) {
                     destroy_map_val(m->type, &m->value);
                 }
-
                 m->value.val.list = list;
-                m_list = (struct mk_list **) (base + m->offset);
-                *m_list = m->value.val.list;
+                if (m->set_property == FLB_TRUE) {
+                    m_list = (struct mk_list **) (base + m->offset);
+                    *m_list = m->value.val.list;
+                }
             }
         }
     }
 
     return 0;
+}
+
+/* Retrieve a map entry by name */
+struct flb_config_map *flb_config_map_find(struct mk_list *map, const char *name)
+{
+    struct mk_list *head;
+    struct flb_config_map *m;
+
+    mk_list_foreach(head, map) {
+        m = mk_list_entry(head, struct flb_config_map, _head);
+        if (strcasecmp(m->name, name) == 0) {
+            return m;
+        }
+    }
+
+    return NULL;
+}
+
+/* Return the raw template for a given map entry */
+const char *flb_config_map_get_raw(struct flb_config_map *map)
+{
+    struct flb_config_map_val *entry;
+
+    if (!map) {
+        return NULL;
+    }
+
+    if (map->flags & FLB_CONFIG_MAP_MULT) {
+        if (!map->value.mult || mk_list_is_empty(map->value.mult)) {
+            return NULL;
+        }
+        entry = mk_list_entry(map->value.mult->next, struct flb_config_map_val, _head);
+        if (entry->raw) {
+            return entry->raw;
+        }
+        if (entry->val.str) {
+            return entry->val.str;
+        }
+        return NULL;
+    }
+
+    if (map->value.raw) {
+        return map->value.raw;
+    }
+    if (map->def_value) {
+        return map->def_value;
+    }
+
+    return map->value.val.str;
+}
+
+/* Translate a dynamic entry using the current environment */
+flb_sds_t flb_config_map_translate_dynamic(struct flb_config *config, struct flb_config_map *map)
+{
+    const char *raw;
+
+    if (!map) {
+        return NULL;
+    }
+
+    raw = flb_config_map_get_raw(map);
+    if (!raw) {
+        return NULL;
+    }
+
+    return flb_env_var_translate(config->env, raw);
 }
