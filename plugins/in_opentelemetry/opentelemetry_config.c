@@ -46,7 +46,8 @@ struct flb_opentelemetry *opentelemetry_config_create(struct flb_input_instance 
     }
 
     if (ins->oauth2_jwt_config_map && mk_list_size(&ins->oauth2_jwt_properties) > 0) {
-        ret = flb_config_map_set(&ins->oauth2_jwt_properties,
+        ret = flb_config_map_set(ins->config,
+                                 &ins->oauth2_jwt_properties,
                                  ins->oauth2_jwt_config_map,
                                  &ctx->oauth2_cfg);
         if (ret == -1) {
