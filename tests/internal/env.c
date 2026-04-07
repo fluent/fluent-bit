@@ -19,11 +19,11 @@
  */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_sds.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include "flb_tests_internal.h"
