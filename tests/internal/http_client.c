@@ -638,6 +638,375 @@ void test_https_ipv6_zone_id_non_standard_port_host_header()
     test_tls_host_header_format("fe80::1%eth0", 8443, "[fe80::1]:8443");
 }
 
+static void append_response_fragment(struct flb_http_client *c,
+                                     const char *fragment)
+{
+    size_t length;
+
+    length = strlen(fragment);
+    memcpy(c->resp.data + c->resp.data_len, fragment, length);
+    c->resp.data_len += length;
+    c->resp.data[c->resp.data_len] = '\0';
+}
+
+void test_http_response_header_lookup()
+{
+    int ret;
+    flb_sds_t value;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", 80, NULL, FLB_HTTP_11);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    append_response_fragment(c,
+                             "HTTP/1.1 204 No Content\r\n"
+                             "X-Trace: abc123\r\n"
+                             "\r\n");
+
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_OK);
+
+    value = flb_http_get_response_header(c, "X-Trace", 7);
+    TEST_CHECK(value != NULL);
+    if (value != NULL) {
+        TEST_CHECK(strcmp(value, "abc123") == 0);
+        flb_sds_destroy(value);
+    }
+
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
+void test_http_response_chunked_trailers()
+{
+    int ret;
+    flb_sds_t value;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", 80, NULL, FLB_HTTP_11);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    append_response_fragment(c,
+                             "HTTP/1.1 200 OK\r\n"
+                             "Transfer-Encoding: chunked\r\n"
+                             "Trailer: Expires, X-Trace\r\n"
+                             "\r\n"
+                             "4;foo=bar\r\n"
+                             "Wiki\r\n"
+                             "5\r\n"
+                             "pedia\r\n"
+                             "0;done=yes\r\n"
+                             "Expires: tomorrow\r\n"
+                             "X-Trace: abc\r\n"
+                             "\r\n");
+
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_OK);
+    TEST_CHECK(c->resp.payload_size == strlen("Wikipedia"));
+    TEST_CHECK(strncmp(c->resp.payload, "Wikipedia", strlen("Wikipedia")) == 0);
+
+    value = flb_http_get_response_header(c, "Transfer-Encoding", 17);
+    TEST_CHECK(value != NULL);
+    if (value != NULL) {
+        TEST_CHECK(strcmp(value, "chunked") == 0);
+        flb_sds_destroy(value);
+    }
+
+    value = flb_http_get_response_header(c, "Expires", 7);
+    TEST_CHECK(value != NULL);
+    if (value != NULL) {
+        TEST_CHECK(strcmp(value, "tomorrow") == 0);
+        flb_sds_destroy(value);
+    }
+
+    value = flb_http_get_response_header(c, "X-Trace", 7);
+    TEST_CHECK(value != NULL);
+    if (value != NULL) {
+        TEST_CHECK(strcmp(value, "abc") == 0);
+        flb_sds_destroy(value);
+    }
+
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
+void test_http_response_chunked_incremental()
+{
+    int ret;
+    flb_sds_t value;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", 80, NULL, FLB_HTTP_11);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    append_response_fragment(c,
+                             "HTTP/1.1 200 OK\r\n"
+                             "Transfer-Encoding: chunked\r\n"
+                             "\r\n"
+                             "4\r\n"
+                             "Wi");
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_MORE);
+
+    append_response_fragment(c, "ki\r\n5\r\npedia\r\n");
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_CHUNK_AVAILABLE);
+    TEST_CHECK(c->resp.payload_size == strlen("Wikipedia"));
+    TEST_CHECK(strncmp(c->resp.payload, "Wikipedia", strlen("Wikipedia")) == 0);
+
+    append_response_fragment(c, "0\r\n");
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_MORE);
+
+    append_response_fragment(c, "X-Trace: stream\r\n\r\n");
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_OK);
+
+    value = flb_http_get_response_header(c, "X-Trace", 7);
+    TEST_CHECK(value != NULL);
+    if (value != NULL) {
+        TEST_CHECK(strcmp(value, "stream") == 0);
+        flb_sds_destroy(value);
+    }
+
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
+void test_http_response_chunked_invalid_trailer()
+{
+    int ret;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", 80, NULL, FLB_HTTP_11);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    append_response_fragment(c,
+                             "HTTP/1.1 200 OK\r\n"
+                             "Transfer-Encoding: chunked\r\n"
+                             "\r\n"
+                             "4\r\n"
+                             "Wiki\r\n"
+                             "0\r\n"
+                             "Broken-Trailer\r\n"
+                             "\r\n");
+
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_ERROR);
+
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
+void test_http_response_chunked_empty_terminal_split()
+{
+    int ret;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", 80, NULL, FLB_HTTP_11);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    append_response_fragment(c,
+                             "HTTP/1.1 200 OK\r\n"
+                             "Transfer-Encoding: chunked\r\n"
+                             "\r\n"
+                             "4\r\n"
+                             "Wiki\r\n"
+                             "0\r\n");
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_MORE || ret == FLB_HTTP_CHUNK_AVAILABLE);
+
+    append_response_fragment(c, "\r\n");
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_OK);
+    TEST_CHECK(c->resp.payload_size == strlen("Wiki"));
+    TEST_CHECK(strncmp(c->resp.payload, "Wiki", strlen("Wiki")) == 0);
+
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
+void test_http_response_chunked_uppercase_hex_whitespace()
+{
+    int ret;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", 80, NULL, FLB_HTTP_11);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    append_response_fragment(c,
+                             "HTTP/1.1 200 OK\r\n"
+                             "Transfer-Encoding: chunked\r\n"
+                             "\r\n"
+                             "  A ;foo=bar\r\n"
+                             "0123456789\r\n"
+                             "0\r\n\r\n");
+
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_OK);
+    TEST_CHECK(c->resp.payload_size == strlen("0123456789"));
+    TEST_CHECK(strncmp(c->resp.payload, "0123456789", strlen("0123456789")) == 0);
+
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
+void test_http_response_chunked_multi_stage_trailers()
+{
+    int ret;
+    flb_sds_t value;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", 80, NULL, FLB_HTTP_11);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    append_response_fragment(c,
+                             "HTTP/1.1 200 OK\r\n"
+                             "Transfer-Encoding: chunked\r\n"
+                             "\r\n"
+                             "4\r\n"
+                             "Wiki\r\n"
+                             "0\r\n"
+                             "X-One: 1\r\n");
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_MORE);
+
+    append_response_fragment(c, "X-Two: 2\r\n");
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_MORE);
+
+    append_response_fragment(c, "\r\n");
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_OK);
+
+    value = flb_http_get_response_header(c, "X-One", 5);
+    TEST_CHECK(value != NULL);
+    if (value != NULL) {
+        TEST_CHECK(strcmp(value, "1") == 0);
+        flb_sds_destroy(value);
+    }
+
+    value = flb_http_get_response_header(c, "X-Two", 5);
+    TEST_CHECK(value != NULL);
+    if (value != NULL) {
+        TEST_CHECK(strcmp(value, "2") == 0);
+        flb_sds_destroy(value);
+    }
+
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
+void test_http_timeout_setters_clamp_io_timeout()
+{
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    ctx->u->base.net.io_timeout = 10;
+
+    c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", 80, NULL, FLB_HTTP_11);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(flb_http_set_response_timeout(c, 5) == 0);
+    TEST_CHECK(ctx->u->base.net.io_timeout == 5);
+
+    TEST_CHECK(flb_http_set_read_idle_timeout(c, 3) == 0);
+    TEST_CHECK(ctx->u->base.net.io_timeout == 3);
+
+    TEST_CHECK(flb_http_set_response_timeout(c, 8) == 0);
+    TEST_CHECK(ctx->u->base.net.io_timeout == 3);
+
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     { "http_buffer_increase"  , test_http_buffer_increase},
     { "add_get_header"        , test_http_add_get_header},
@@ -661,5 +1030,13 @@ TEST_LIST = {
     { "https_ipv6_non_standard_port_host_header", test_https_ipv6_non_standard_port_host_header},
     { "https_ipv6_zone_id_default_port_host_header", test_https_ipv6_zone_id_default_port_host_header},
     { "https_ipv6_zone_id_non_standard_port_host_header", test_https_ipv6_zone_id_non_standard_port_host_header},
+    { "response_header_lookup", test_http_response_header_lookup},
+    { "response_chunked_trailers", test_http_response_chunked_trailers},
+    { "response_chunked_incremental", test_http_response_chunked_incremental},
+    { "response_chunked_invalid_trailer", test_http_response_chunked_invalid_trailer},
+    { "response_chunked_empty_terminal_split", test_http_response_chunked_empty_terminal_split},
+    { "response_chunked_uppercase_hex_whitespace", test_http_response_chunked_uppercase_hex_whitespace},
+    { "response_chunked_multi_stage_trailers", test_http_response_chunked_multi_stage_trailers},
+    { "timeout_setters_clamp_io_timeout", test_http_timeout_setters_clamp_io_timeout},
     { 0 }
 };
