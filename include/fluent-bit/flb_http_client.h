@@ -116,8 +116,11 @@ struct flb_http_client_response {
     int content_length;        /* Content length set by headers */
     int chunked_encoding;      /* Chunked transfer encoding ?   */
     int connection_close;      /* connection: close ?           */
+    int chunked_trailer_pending; /* terminal chunk parsed        */
     char *chunk_processed_end; /* Position to mark last chunk   */
     char *headers_end;         /* Headers end (\r\n\r\n)        */
+    char *trailer_buf;         /* Raw trailer header block      */
+    size_t trailer_size;       /* Trailer block length          */
 
     /* Payload: body response: reference to 'data' */
     char *payload;
@@ -374,6 +377,11 @@ int flb_http_add_header(struct flb_http_client *c,
                         const char *val, size_t val_len);
 flb_sds_t flb_http_get_header(struct flb_http_client *c,
                               const char *key, size_t key_len);
+
+flb_sds_t flb_http_get_response_header(struct flb_http_client *c,
+                                       const char *key, size_t key_len);
+
+int flb_http_client_process_response_buffer(struct flb_http_client *c);
 int flb_http_basic_auth(struct flb_http_client *c,
                         const char *user, const char *passwd);
 int flb_http_proxy_auth(struct flb_http_client *c,
