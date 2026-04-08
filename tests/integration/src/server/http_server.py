@@ -40,9 +40,19 @@ response_config = {
     "body": {"status": "received"},
     "content_type": "application/json",
     "delay_seconds": 0,
+    "stream_fragments": None,
+    "fragment_delay_seconds": 0,
+    "hang_before_response": False,
+    "hang_after_fragment_index": None,
 }
 oauth_token_response = {
     "status_code": 200,
+    "content_type": "application/json",
+    "delay_seconds": 0,
+    "hang_before_response": False,
+    "stream_fragments": None,
+    "fragment_delay_seconds": 0,
+    "hang_after_fragment_index": None,
     "body": {
         "access_token": "oauth-access-token",
         "token_type": "Bearer",
@@ -52,9 +62,26 @@ oauth_token_response = {
 logger = logging.getLogger(__name__)
 server_thread = None
 server_instances = []
+shutdown_event = threading.Event()
+
+
+def _sleep_interruptible(seconds):
+    if seconds <= 0:
+        return
+
+    deadline = time.time() + seconds
+
+    while time.time() < deadline:
+        if shutdown_event.wait(timeout=min(0.1, deadline - time.time())):
+            break
+
+
+def _wait_for_shutdown():
+    shutdown_event.wait(timeout=30)
 
 
 def reset_http_server_state():
+    shutdown_event.clear()
     data_storage["payloads"] = []
     data_storage["requests"] = []
     server_instances.clear()
@@ -64,11 +91,21 @@ def reset_http_server_state():
             "body": {"status": "received"},
             "content_type": "application/json",
             "delay_seconds": 0,
+            "stream_fragments": None,
+            "fragment_delay_seconds": 0,
+            "hang_before_response": False,
+            "hang_after_fragment_index": None,
         }
     )
     oauth_token_response.update(
         {
             "status_code": 200,
+            "content_type": "application/json",
+            "delay_seconds": 0,
+            "hang_before_response": False,
+            "stream_fragments": None,
+            "fragment_delay_seconds": 0,
+            "hang_after_fragment_index": None,
             "body": {
                 "access_token": "oauth-access-token",
                 "token_type": "Bearer",
@@ -78,7 +115,11 @@ def reset_http_server_state():
     )
 
 
-def configure_http_response(*, status_code=None, body=None, content_type=None, delay_seconds=None):
+def configure_http_response(*, status_code=None, body=None, content_type=None,
+                            delay_seconds=None, stream_fragments=None,
+                            fragment_delay_seconds=None,
+                            hang_before_response=None,
+                            hang_after_fragment_index=None):
     if status_code is not None:
         response_config["status_code"] = status_code
     if body is not None:
@@ -87,18 +128,80 @@ def configure_http_response(*, status_code=None, body=None, content_type=None, d
         response_config["content_type"] = content_type
     if delay_seconds is not None:
         response_config["delay_seconds"] = delay_seconds
+    if stream_fragments is not None:
+        response_config["stream_fragments"] = list(stream_fragments)
+    if fragment_delay_seconds is not None:
+        response_config["fragment_delay_seconds"] = fragment_delay_seconds
+    if hang_before_response is not None:
+        response_config["hang_before_response"] = hang_before_response
+    if hang_after_fragment_index is not None:
+        response_config["hang_after_fragment_index"] = hang_after_fragment_index
 
 
-def configure_oauth_token_response(*, status_code=None, body=None):
+def configure_oauth_token_response(*, status_code=None, body=None,
+                                   content_type=None,
+                                   delay_seconds=None,
+                                   hang_before_response=None,
+                                   stream_fragments=None,
+                                   fragment_delay_seconds=None,
+                                   hang_after_fragment_index=None):
     if status_code is not None:
         oauth_token_response["status_code"] = status_code
     if body is not None:
         oauth_token_response["body"] = body
+    if content_type is not None:
+        oauth_token_response["content_type"] = content_type
+    if delay_seconds is not None:
+        oauth_token_response["delay_seconds"] = delay_seconds
+    if hang_before_response is not None:
+        oauth_token_response["hang_before_response"] = hang_before_response
+    if stream_fragments is not None:
+        oauth_token_response["stream_fragments"] = list(stream_fragments)
+    if fragment_delay_seconds is not None:
+        oauth_token_response["fragment_delay_seconds"] = fragment_delay_seconds
+    if hang_after_fragment_index is not None:
+        oauth_token_response["hang_after_fragment_index"] = hang_after_fragment_index
+
+
+def _stream_fragments(config):
+    hang_after_fragment_index = config["hang_after_fragment_index"]
+
+    for fragment in config["stream_fragments"]:
+        if isinstance(fragment, str):
+            fragment = fragment.encode("utf-8")
+
+        yield fragment
+
+        if hang_after_fragment_index == 0:
+            _wait_for_shutdown()
+            return
+
+        if hang_after_fragment_index is not None:
+            hang_after_fragment_index -= 1
+
+        if config["fragment_delay_seconds"]:
+            _sleep_interruptible(config["fragment_delay_seconds"])
+
+
+def _build_streaming_response(config):
+    return Response(
+        _stream_fragments(config),
+        status=config["status_code"],
+        content_type=config["content_type"],
+        direct_passthrough=True,
+    )
 
 
 def _build_response():
     if response_config["delay_seconds"]:
-        time.sleep(response_config["delay_seconds"])
+        _sleep_interruptible(response_config["delay_seconds"])
+
+    if response_config["hang_before_response"]:
+        _wait_for_shutdown()
+        return Response(status=503)
+
+    if response_config["stream_fragments"] is not None:
+        return _build_streaming_response(response_config)
 
     body = response_config["body"]
     if isinstance(body, (dict, list)):
@@ -174,6 +277,13 @@ def jwks():
 @app.route('/oauth/token', methods=['POST'])
 def oauth_token():
     _record_request()
+    if oauth_token_response["delay_seconds"]:
+        _sleep_interruptible(oauth_token_response["delay_seconds"])
+    if oauth_token_response["hang_before_response"]:
+        _wait_for_shutdown()
+        return Response(status=503)
+    if oauth_token_response["stream_fragments"] is not None:
+        return _build_streaming_response(oauth_token_response)
     return jsonify(oauth_token_response["body"]), oauth_token_response["status_code"]
 
 
@@ -185,6 +295,7 @@ def ping():
 @app.route('/shutdown', methods=['POST'])
 def shutdown():
     logger.info("HTTP server shutdown requested")
+    shutdown_event.set()
     for server_instance in list(server_instances):
         threading.Thread(target=server_instance.shutdown, daemon=True).start()
     return jsonify({"status": "shutting down"}), 200
@@ -195,7 +306,9 @@ def run_server(port=60000, *, use_tls=False, tls_crt_file=None, tls_key_file=Non
     if use_tls:
         ssl_context = (tls_crt_file, tls_key_file)
 
-    server_instance = make_server("0.0.0.0", port, app, ssl_context=ssl_context)
+    server_instance = make_server("0.0.0.0", port, app,
+                                  threaded=True,
+                                  ssl_context=ssl_context)
     server_instances.append(server_instance)
     server_instance.serve_forever()
 
