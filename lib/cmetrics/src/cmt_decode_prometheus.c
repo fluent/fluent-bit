@@ -441,8 +441,10 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
 {
     int ret = 0;
     int i;
+    int has_le = CMT_FALSE;
     size_t bucket_count;
     size_t bucket_index;
+    size_t label_count = 0;
     double *buckets = NULL;
     uint64_t *bucket_defaults = NULL;
     double sum = 0;
@@ -488,14 +490,30 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
                 "failed to allocate buckets");
         goto end;
     }
-    labels_without_le = calloc(context->metric.label_count - 1, sizeof(*labels_without_le));
+    for (i = 0; i < context->metric.label_count; i++) {
+        if (!strcmp(context->metric.labels[i], "le")) {
+            has_le = CMT_TRUE;
+        }
+        else {
+            label_count++;
+        }
+    }
+
+    if (!has_le) {
+        ret = report_error(context,
+                CMT_DECODE_PROMETHEUS_SYNTAX_ERROR,
+                "missing histogram bucket \"le\" label");
+        goto end;
+    }
+
+    labels_without_le = calloc(label_count, sizeof(*labels_without_le));
     if (!labels_without_le) {
         ret = report_error(context,
                 CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
                 "failed to allocate labels_without_le");
         goto end;
     }
-    values_without_le = calloc(context->metric.label_count - 1, sizeof(*labels_without_le));
+    values_without_le = calloc(label_count, sizeof(*values_without_le));
     if (!values_without_le) {
         ret = report_error(context,
                 CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
@@ -524,6 +542,12 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
                 if (bucket_index == bucket_count) {
                     /* probably last bucket, which has "Inf" */
                     break;
+                }
+                if (!sample->label_values[le_label_index]) {
+                    ret = report_error(context,
+                            CMT_DECODE_PROMETHEUS_SYNTAX_ERROR,
+                            "missing histogram bucket \"le\" value");
+                    goto end;
                 }
                 if (parse_double(sample->label_values[le_label_index],
                             buckets + bucket_index)) {

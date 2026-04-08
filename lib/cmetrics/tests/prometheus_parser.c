@@ -692,6 +692,26 @@ void test_histogram_labels()
     cmt_decode_prometheus_destroy(cmt);
 }
 
+void test_histogram_missing_le_label()
+{
+    int status;
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+
+    cmt = NULL;
+    memset(&opts, 0, sizeof(opts));
+
+    status = cmt_decode_prometheus_create(&cmt,
+            "# HELP test_histogram A histogram missing the le label.\n"
+            "# TYPE test_histogram histogram\n"
+            "test_histogram_bucket{foo=\"bar\"} 1\n"
+            "test_histogram_bucket{foo=\"baz\"} 2\n"
+            "test_histogram_sum 3.5\n"
+            "test_histogram_count 2\n", 0, &opts);
+
+    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_SYNTAX_ERROR);
+}
+
 void test_summary()
 {
     int status;
@@ -1712,6 +1732,7 @@ TEST_LIST = {
     {"issue_71", test_issue_71},
     {"histogram", test_histogram},
     {"histogram_labels", test_histogram_labels},
+    {"histogram_missing_le_label", test_histogram_missing_le_label},
     {"summary", test_summary},
     {"null_labels", test_null_labels},
     {"issue_fluent_bit_5541", test_issue_fluent_bit_5541},
