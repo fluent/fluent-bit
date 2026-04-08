@@ -92,7 +92,7 @@ void test_file_env_var_basic()
 {
     struct flb_env *env;
     flb_sds_t buf = NULL;
-    char *test_file = "/tmp/flb_test_secret.txt";
+    char *test_file = "flb_test_secret.txt";
     char *test_content = "secret_value_123";
     char *template = "${SECRET}";
     int fd;
@@ -121,7 +121,7 @@ void test_file_env_var_basic()
     }
 
     /* Set file-based environment variable */
-    ret = flb_env_set_extended(env, "SECRET", NULL, "file:///tmp/flb_test_secret.txt", 0);
+    ret = flb_env_set_extended(env, "SECRET", NULL, "file://flb_test_secret.txt", 0);
     if (!TEST_CHECK(ret >= 0)) {
         TEST_MSG("flb_env_set_extended failed");
         flb_env_destroy(env);
@@ -152,7 +152,7 @@ void test_file_env_var_refresh()
 {
     struct flb_env *env;
     flb_sds_t buf = NULL;
-    char *test_file = "/tmp/flb_test_refresh.txt";
+    char *test_file = "flb_test_refresh.txt";
     char *initial_content = "initial_value";
     char *updated_content = "updated_value";
     char *template = "${REFRESH_VAR}";
@@ -182,7 +182,7 @@ void test_file_env_var_refresh()
     }
 
     /* Set file-based environment variable with 1 second refresh interval */
-    ret = flb_env_set_extended(env, "REFRESH_VAR", NULL, "file:///tmp/flb_test_refresh.txt", 1);
+    ret = flb_env_set_extended(env, "REFRESH_VAR", NULL, "file://flb_test_refresh.txt", 1);
     if (!TEST_CHECK(ret >= 0)) {
         TEST_MSG("flb_env_set_extended failed");
         flb_env_destroy(env);
@@ -247,9 +247,9 @@ void test_file_env_var_uri()
 {
     struct flb_env *env;
     flb_sds_t buf = NULL;
-    char *test_file = "/tmp/flb_test_uri.txt";
+    char *test_file = "flb_test_uri.txt";
     char *test_content = "uri_value_456";
-    char *file_uri = "file:///tmp/flb_test_uri.txt";
+    char *file_uri = "file://flb_test_uri.txt";
     char *template = "${URI_VAR}";
     int fd;
     int ret;
@@ -308,7 +308,7 @@ void test_mixed_env_vars()
 {
     struct flb_env *env;
     flb_sds_t buf = NULL;
-    char *test_file = "/tmp/flb_test_mixed.txt";
+    char *test_file = "flb_test_mixed.txt";
     char *file_content = "dynamic_value";
     char *template = "Static: ${STATIC_VAR}, Dynamic: ${DYNAMIC_VAR}";
     char *expected = "Static: static_value, Dynamic: dynamic_value";
@@ -347,7 +347,7 @@ void test_mixed_env_vars()
     }
 
     /* Set dynamic environment variable */
-    ret = flb_env_set_extended(env, "DYNAMIC_VAR", NULL, "file:///tmp/flb_test_mixed.txt", 0);
+    ret = flb_env_set_extended(env, "DYNAMIC_VAR", NULL, "file://flb_test_mixed.txt", 0);
     if (!TEST_CHECK(ret >= 0)) {
         TEST_MSG("flb_env_set_extended failed for dynamic variable");
         flb_env_destroy(env);
@@ -378,7 +378,6 @@ void test_file_env_var_missing()
 {
     struct flb_env *env;
     flb_sds_t buf = NULL;
-    char *missing_file = "/tmp/flb_nonexistent_file.txt";
     char *template = "${MISSING_VAR}";
     int ret;
 
@@ -390,7 +389,7 @@ void test_file_env_var_missing()
     }
 
     /* Set file-based environment variable with missing file */
-    ret = flb_env_set_extended(env, "MISSING_VAR", NULL, "file:///tmp/flb_nonexistent_file.txt", 0);
+    ret = flb_env_set_extended(env, "MISSING_VAR", NULL, "file://flb_nonexistent_file.txt", 0);
     if (!TEST_CHECK(ret == -1)) {
         TEST_MSG("flb_env_set_extended failed");
         flb_env_destroy(env);
