@@ -31,6 +31,7 @@
  */
 
 #define _GNU_SOURCE
+#include <errno.h>
 #include <string.h>
 
 #ifdef FLB_SYSTEM_WINDOWS
@@ -280,130 +281,298 @@ static inline void http_client_response_reset(struct flb_http_client *c)
     c->resp.content_length = -1;
     c->resp.chunked_encoding = FLB_FALSE;
     c->resp.connection_close = -1;
+    c->resp.chunked_trailer_pending = FLB_FALSE;
     c->resp.headers_end = NULL;
     c->resp.payload = NULL;
     c->resp.payload_size = 0;
     c->resp.chunk_processed_end = NULL;
+    if (c->resp.trailer_buf != NULL) {
+        flb_free(c->resp.trailer_buf);
+        c->resp.trailer_buf = NULL;
+    }
+    c->resp.trailer_size = 0;
+}
+
+static char *chunked_line_end(char *buf, size_t length)
+{
+    size_t index;
+
+    if (length < 2) {
+        return NULL;
+    }
+
+    for (index = 0; index + 1 < length; index++) {
+        if (buf[index] == '\r' && buf[index + 1] == '\n') {
+            return &buf[index];
+        }
+    }
+
+    return NULL;
+}
+
+static int chunked_trailer_store(struct flb_http_client *c,
+                                 const char *buf, size_t size)
+{
+    if (c->resp.trailer_buf != NULL) {
+        flb_free(c->resp.trailer_buf);
+        c->resp.trailer_buf = NULL;
+        c->resp.trailer_size = 0;
+    }
+
+    if (size == 0) {
+        return 0;
+    }
+
+    c->resp.trailer_buf = flb_malloc(size + 1);
+    if (c->resp.trailer_buf == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    memcpy(c->resp.trailer_buf, buf, size);
+    c->resp.trailer_buf[size] = '\0';
+    c->resp.trailer_size = size;
+
+    return 0;
+}
+
+static int chunked_trailer_block_size(char *buf, size_t length,
+                                      size_t *out_size,
+                                      size_t *out_trailer_size)
+{
+    char   *line;
+    char   *cursor;
+    size_t  line_length;
+    size_t  trailer_length;
+
+    cursor = buf;
+    trailer_length = 0;
+
+    while (1) {
+        line = chunked_line_end(cursor, length - (cursor - buf));
+        if (line == NULL) {
+            return FLB_HTTP_MORE;
+        }
+
+        line_length = line - cursor;
+
+        if (line_length == 0) {
+            *out_size = (line + 2) - buf;
+            *out_trailer_size = trailer_length;
+            return FLB_HTTP_OK;
+        }
+
+        if (memchr(cursor, ':', line_length) == NULL) {
+            return FLB_HTTP_ERROR;
+        }
+
+        trailer_length += line_length + 2;
+        cursor = line + 2;
+    }
+}
+
+static int chunked_data_size(char *buf, size_t length,
+                             size_t *out_size)
+{
+    char   *cursor;
+    char   *line_end;
+    size_t  digit_count;
+    size_t  line_length;
+    size_t  total_size;
+    size_t  value;
+
+    line_end = chunked_line_end(buf, length);
+    if (line_end == NULL) {
+        return FLB_HTTP_MORE;
+    }
+
+    line_length = line_end - buf;
+    if (line_length == 0) {
+        return FLB_HTTP_ERROR;
+    }
+
+    cursor = buf;
+    while (line_length > 0 && (*cursor == ' ' || *cursor == '\t')) {
+        cursor++;
+        line_length--;
+    }
+
+    errno = 0;
+    digit_count = 0;
+    value = 0;
+
+    while (digit_count < line_length) {
+        if (*cursor >= '0' && *cursor <= '9') {
+            value = (value * 16) + (*cursor - '0');
+        }
+        else if (*cursor >= 'a' && *cursor <= 'f') {
+            value = (value * 16) + (*cursor - 'a') + 10;
+        }
+        else if (*cursor >= 'A' && *cursor <= 'F') {
+            value = (value * 16) + (*cursor - 'A') + 10;
+        }
+        else {
+            break;
+        }
+
+        digit_count++;
+        cursor++;
+    }
+
+    if (digit_count == 0) {
+        return FLB_HTTP_ERROR;
+    }
+
+    while (digit_count < line_length && (*cursor == ' ' || *cursor == '\t')) {
+        digit_count++;
+        cursor++;
+    }
+
+    if (digit_count < line_length && *cursor == ';') {
+        cursor++;
+        digit_count++;
+    }
+
+    while (digit_count < line_length) {
+        if (*cursor == '\0') {
+            return FLB_HTTP_ERROR;
+        }
+
+        digit_count++;
+        cursor++;
+    }
+
+    total_size = (line_end + 2) - buf;
+    if (value == 0) {
+        *out_size = total_size;
+        return FLB_HTTP_OK;
+    }
+
+    total_size += value + 2;
+
+    if (length < total_size) {
+        return FLB_HTTP_MORE;
+    }
+
+    if (line_end[2 + value] != '\r' || line_end[3 + value] != '\n') {
+        return FLB_HTTP_ERROR;
+    }
+
+    *out_size = total_size;
+
+    return FLB_HTTP_OK;
+}
+
+static flb_sds_t raw_header_lookup(const char *buf, size_t len,
+                                   const char *key, size_t key_len)
+{
+    const char *line_end;
+    const char *cursor;
+    const char *value;
+    size_t      line_len;
+
+    cursor = buf;
+
+    while ((size_t) (cursor - buf) < len) {
+        line_end = memmem(cursor, len - (cursor - buf), "\r\n", 2);
+        if (line_end == NULL) {
+            break;
+        }
+
+        line_len = line_end - cursor;
+        if (line_len == 0) {
+            break;
+        }
+
+        if (line_len > key_len &&
+            cursor[key_len] == ':' &&
+            strncasecmp(cursor, key, key_len) == 0) {
+            value = cursor + key_len + 1;
+
+            while (value < line_end && (*value == ' ' || *value == '\t')) {
+                value++;
+            }
+
+            return flb_sds_create_len(value, line_end - value);
+        }
+
+        cursor = line_end + 2;
+    }
+
+    return NULL;
 }
 
 static int process_chunked_data(struct flb_http_client *c)
 {
-    long len;
-    long drop;
-    long val;
-    char *p;
-    char tmp[32];
-    int found_full_chunk = FLB_FALSE;
-    struct flb_http_client_response *r = &c->resp;
+    char   *cursor;
+    char   *payload_end;
+    long    available;
+    size_t  chunk_data_size;
+    size_t  chunk_header_size;
+    size_t  chunk_size_line_length;
+    size_t  trailer_bytes;
+    size_t  trailer_raw_size;
+    int     found_full_chunk;
+    int     ret;
+    struct flb_http_client_response *r;
 
+    r = &c->resp;
+    found_full_chunk = FLB_FALSE;
 
- chunk_start:
-    p = strstr(r->chunk_processed_end, "\r\n");
-    if (!p) {
-        return FLB_HTTP_MORE;
-    }
-
-    /* Hexa string length */
-    len = (p - r->chunk_processed_end);
-    if ((len > sizeof(tmp) - 1) || len == 0) {
-        return FLB_HTTP_ERROR;
-    }
-    p += 2;
-
-    /* Copy hexa string to temporary buffer */
-    memcpy(tmp, r->chunk_processed_end, len);
-    tmp[len] = '\0';
-
-    /* Convert hexa string to decimal */
-    errno = 0;
-    val = strtol(tmp, NULL, 16);
-    if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN))
-        || (errno != 0 && val == 0)) {
-        flb_errno();
-        return FLB_HTTP_ERROR;
-    }
-    if (val < 0) {
-        return FLB_HTTP_ERROR;
-    }
-    /*
-     * 'val' contains the expected number of bytes, check current lengths
-     * and do buffer adjustments.
-     *
-     * we do val + 2 because the chunk always ends with \r\n
-     */
-    val += 2;
-
-    /* Number of bytes after the Chunk header */
-    len = r->data_len - (p - r->data);
-    if (len < val) {
-        return FLB_HTTP_MORE;
-    }
-
-    /* From the current chunk we expect it ends with \r\n */
-    if (p[val -2] != '\r' || p[val - 1] != '\n') {
-        return FLB_HTTP_ERROR;
-    }
-
-    /*
-     * At this point we are just fine, the chunk is valid, next steps:
-     *
-     * 1. check possible last chunk
-     * 2. drop chunk header from the buffer
-     * 3. remove chunk ending \r\n
-     */
-
-    found_full_chunk = FLB_TRUE;
-    /* 1. Validate ending chunk */
-    if (val - 2 == 0) {
-        /*
-         * For an ending chunk we expect:
-         *
-         * 0\r\n
-         * \r\n
-         *
-         * so at least we need 5 bytes in the buffer
-         */
-        len = r->data_len - (r->chunk_processed_end - r->data);
-        if (len < 5) {
-            return FLB_HTTP_MORE;
+    while (1) {
+        cursor = r->chunk_processed_end;
+        available = r->data_len - (cursor - r->data);
+        if (available <= 0) {
+            break;
         }
 
-        if (r->chunk_processed_end[3] != '\r' ||
-            r->chunk_processed_end[4] != '\n') {
-            return FLB_HTTP_ERROR;
+        if (r->chunked_trailer_pending == FLB_TRUE) {
+            ret = chunked_trailer_block_size(cursor, available,
+                                             &trailer_bytes,
+                                             &trailer_raw_size);
+            if (ret != FLB_HTTP_OK) {
+                return ret;
+            }
+
+            if (chunked_trailer_store(c, cursor, trailer_raw_size) != 0) {
+                return FLB_HTTP_ERROR;
+            }
+
+            consume_bytes(cursor, trailer_bytes, available);
+            r->data_len -= trailer_bytes;
+            r->data[r->data_len] = '\0';
+            r->payload_size = r->data_len - (r->headers_end - r->data);
+            r->chunked_trailer_pending = FLB_FALSE;
+
+            return FLB_HTTP_OK;
         }
-    }
 
-    /* 2. Drop chunk header */
-    drop = (p - r->chunk_processed_end);
-    len =  r->data_len - (r->chunk_processed_end - r->data);
-    consume_bytes(r->chunk_processed_end, drop, len);
-    r->data_len -= drop;
-    r->data[r->data_len] = '\0';
+        ret = chunked_data_size(cursor, available, &chunk_header_size);
+        if (ret != FLB_HTTP_OK) {
+            return ret;
+        }
 
-    /* 3. Remove chunk ending \r\n */
-    drop = 2;
-    r->chunk_processed_end += labs(val - 2);
-    len = r->data_len - (r->chunk_processed_end - r->data);
-    consume_bytes(r->chunk_processed_end, drop, len);
-    r->data_len -= drop;
+        payload_end = chunked_line_end(cursor, available) + 2;
+        chunk_size_line_length = payload_end - cursor;
 
-    /* Always append a NULL byte */
-    r->data[r->data_len] = '\0';
+        consume_bytes(cursor, payload_end - cursor, available);
+        r->data_len -= (payload_end - cursor);
+        r->data[r->data_len] = '\0';
 
-    /* Always update payload size after full chunk */
-    r->payload_size = r->data_len - (r->headers_end - r->data);
+        available = r->data_len - (cursor - r->data);
+        if (chunk_header_size == chunk_size_line_length) {
+            r->chunked_trailer_pending = FLB_TRUE;
+            continue;
+        }
 
-    /* Is this the last chunk ? */
-    if ((val - 2 == 0)) {
-        /* Update payload size */
-        return FLB_HTTP_OK;
-    }
+        chunk_data_size = chunk_header_size - chunk_size_line_length - 2;
 
-    /* If we have some remaining bytes, start over */
-    len = r->data_len - (r->chunk_processed_end - r->data);
-    if (len > 0) {
-        goto chunk_start;
+        consume_bytes(cursor + chunk_data_size, 2, available - chunk_data_size);
+        r->data_len -= 2;
+        r->data[r->data_len] = '\0';
+        r->chunk_processed_end = cursor + chunk_data_size;
+        r->payload_size = r->data_len - (r->headers_end - r->data);
+        found_full_chunk = FLB_TRUE;
     }
 
     if (found_full_chunk == FLB_TRUE) {
@@ -1089,6 +1258,39 @@ flb_sds_t flb_http_get_header(struct flb_http_client *c,
     return NULL;
 }
 
+flb_sds_t flb_http_get_response_header(struct flb_http_client *c,
+                                       const char *key, size_t key_len)
+{
+    flb_sds_t value;
+    size_t    header_size;
+
+    if (c == NULL || c->resp.data == NULL || c->resp.headers_end == NULL) {
+        return NULL;
+    }
+
+    header_size = c->resp.headers_end - c->resp.data;
+    value = raw_header_lookup(c->resp.data, header_size, key, key_len);
+    if (value != NULL) {
+        return value;
+    }
+
+    if (c->resp.trailer_buf == NULL || c->resp.trailer_size == 0) {
+        return NULL;
+    }
+
+    return raw_header_lookup(c->resp.trailer_buf, c->resp.trailer_size,
+                             key, key_len);
+}
+
+int flb_http_client_process_response_buffer(struct flb_http_client *c)
+{
+    if (c == NULL) {
+        return FLB_HTTP_ERROR;
+    }
+
+    return process_data(c);
+}
+
 static int http_header_push(struct flb_http_client *c, struct flb_kv *header)
 {
     char *tmp;
@@ -1224,15 +1426,41 @@ int flb_http_set_content_encoding_snappy(struct flb_http_client *c)
     return ret;
 }
 
+static void http_client_clamp_connection_io_timeout(struct flb_http_client *c,
+                                                    int timeout)
+{
+    struct flb_net_setup *net_setup;
+
+    if (c == NULL || c->u_conn == NULL || timeout <= 0) {
+        return;
+    }
+
+    net_setup = c->u_conn->net;
+
+    if (net_setup == NULL && c->u_conn->upstream != NULL) {
+        net_setup = &c->u_conn->upstream->base.net;
+    }
+
+    if (net_setup == NULL) {
+        return;
+    }
+
+    if (net_setup->io_timeout <= 0 || net_setup->io_timeout > timeout) {
+        net_setup->io_timeout = timeout;
+    }
+}
+
 int flb_http_set_read_idle_timeout(struct flb_http_client *c, int timeout)
 {
     c->read_idle_timeout = timeout;
+    http_client_clamp_connection_io_timeout(c, timeout);
     return 0;
 }
 
 int flb_http_set_response_timeout(struct flb_http_client *c, int timeout)
 {
     c->response_timeout = timeout;
+    http_client_clamp_connection_io_timeout(c, timeout);
     return 0;
 }
 
@@ -1527,6 +1755,32 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     return FLB_HTTP_MORE;
 }
 
+static int http_client_response_timeout_reached(struct flb_http_client *c,
+                                                time_t now)
+{
+    if (c->response_timeout > 0 && (now - c->ts_start) >= c->response_timeout) {
+        flb_error("[http_client] response timeout reached (elapsed=%lds, limit=%ds)",
+                  (long) (now - c->ts_start), c->response_timeout);
+        flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static int http_client_read_idle_timeout_reached(struct flb_http_client *c,
+                                                 time_t now)
+{
+    if (c->read_idle_timeout > 0 && (now - c->last_read_ts) >= c->read_idle_timeout) {
+        flb_error("[http_client] read idle timeout reached (idle=%lds, limit=%ds)",
+                  (long) (now - c->last_read_ts), c->read_idle_timeout);
+        flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
 {
     /* returns
@@ -1589,17 +1843,11 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
         }
         now = time(NULL);
 
-        if (c->response_timeout > 0 && (now - c->ts_start) > c->response_timeout) {
-            flb_error("[http_client] response timeout reached (elapsed=%lds, limit=%ds)",
-                      (long)(now - c->ts_start), c->response_timeout);
-            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+        if (http_client_response_timeout_reached(c, now) == FLB_TRUE) {
             return FLB_HTTP_ERROR;
         }
 
-        if (c->read_idle_timeout > 0 &&  (now - c->last_read_ts) > c->read_idle_timeout) {
-            flb_error("[http_client] read idle timeout reached (idle=%lds, limit=%ds)",
-                      (long)(now - c->last_read_ts), c->read_idle_timeout);
-            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+        if (http_client_read_idle_timeout_reached(c, now) == FLB_TRUE) {
             return FLB_HTTP_ERROR;
         }
 
@@ -1607,8 +1855,27 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
                                   c->resp.data + c->resp.data_len,
                                   available);
         if (r_bytes <= 0) {
+            now = time(NULL);
+
             if (c->flags & FLB_HTTP_10) {
                 return FLB_HTTP_OK;
+            }
+
+            if (http_client_response_timeout_reached(c, now) == FLB_TRUE) {
+                return FLB_HTTP_ERROR;
+            }
+
+            if (http_client_read_idle_timeout_reached(c, now) == FLB_TRUE) {
+                return FLB_HTTP_ERROR;
+            }
+
+            if (c->u_conn != NULL && c->u_conn->net_error == ETIMEDOUT) {
+                flb_error("[http_client] upstream I/O timeout reached while "
+                          "waiting for response from %s:%i",
+                          c->u_conn->upstream->tcp_host,
+                          c->u_conn->upstream->tcp_port);
+                flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+                return FLB_HTTP_ERROR;
             }
         }
 
@@ -1822,6 +2089,7 @@ void flb_http_client_destroy(struct flb_http_client *c)
 {
     http_headers_destroy(c);
     flb_free(c->resp.data);
+    flb_free(c->resp.trailer_buf);
     flb_free(c->header_buf);
     flb_free((void *)c->proxy.host);
     flb_free(c);
