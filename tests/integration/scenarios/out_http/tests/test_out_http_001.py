@@ -16,12 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 class Service:
-    def __init__(self, config_file):
+    def __init__(self, config_file, *, response_setup=None, use_tls=False):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
         test_path = os.path.dirname(os.path.abspath(__file__))
         cert_dir = os.path.abspath(os.path.join(test_path, "../../in_splunk/certificate"))
         self.tls_crt_file = os.path.join(cert_dir, "certificate.pem")
         self.tls_key_file = os.path.join(cert_dir, "private_key.pem")
+        self.response_setup = response_setup
+        self.use_tls = use_tls
         self.service = FluentBitTestService(
             self.config_file,
             data_storage=data_storage,
@@ -35,16 +37,53 @@ class Service:
         )
 
     def _start_receiver(self, service):
-        http_server_run(service.test_suite_http_port)
-        self.service.wait_for_http_endpoint(
-            f"http://127.0.0.1:{service.test_suite_http_port}/ping",
-            timeout=10,
-            interval=0.5,
+        http_server_run(
+            service.test_suite_http_port,
+            use_tls=self.use_tls,
+            tls_crt_file=self.tls_crt_file,
+            tls_key_file=self.tls_key_file,
         )
+        if self.response_setup is not None:
+            self.response_setup()
+
+        if self.use_tls:
+            def _https_ready():
+                try:
+                    response = requests.get(
+                        f"https://localhost:{service.test_suite_http_port}/ping",
+                        timeout=1,
+                        verify=self.tls_crt_file,
+                    )
+                    return response.status_code == 200
+                except requests.RequestException:
+                    return False
+
+            self.service.wait_for_condition(
+                _https_ready,
+                timeout=10,
+                interval=0.5,
+                description="HTTPS out_http receiver readiness",
+            )
+        else:
+            self.service.wait_for_http_endpoint(
+                f"http://127.0.0.1:{service.test_suite_http_port}/ping",
+                timeout=10,
+                interval=0.5,
+            )
 
     def _stop_receiver(self, service):
         try:
-            requests.post(f"http://127.0.0.1:{service.test_suite_http_port}/shutdown", timeout=2)
+            if self.use_tls:
+                requests.post(
+                    f"https://localhost:{service.test_suite_http_port}/shutdown",
+                    timeout=2,
+                    verify=self.tls_crt_file,
+                )
+            else:
+                requests.post(
+                    f"http://127.0.0.1:{service.test_suite_http_port}/shutdown",
+                    timeout=2,
+                )
         except requests.RequestException:
             pass
 
@@ -63,6 +102,26 @@ class Service:
             timeout=timeout,
             interval=0.5,
             description=f"{minimum_count} outbound HTTP requests",
+        )
+
+    def wait_for_log_message(self, pattern, timeout=10):
+        def _read_log():
+            if not os.path.exists(self.flb.log_file):
+                return None
+
+            with open(self.flb.log_file, encoding="utf-8", errors="replace") as log_file:
+                contents = log_file.read()
+
+            if pattern in contents:
+                return contents
+
+            return None
+
+        return self.service.wait_for_condition(
+            _read_log,
+            timeout=timeout,
+            interval=0.25,
+            description=f"log message '{pattern}'",
         )
 
 
@@ -138,3 +197,87 @@ def test_out_http_oauth2_private_key_jwt_adds_bearer_token():
     assert "client_assertion=" in token_request["raw_data"]
     assert "client_id=client1" in token_request["raw_data"]
     assert data_request["headers"].get("Authorization") == "Bearer oauth-access-token"
+
+
+def test_out_http_oauth2_timeout_retries_hung_token_endpoint():
+    service = Service(
+        "out_http_oauth2_timeout.yaml",
+        response_setup=lambda: configure_oauth_token_response(
+            hang_before_response=True,
+        ),
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=15)
+    log_text = service.wait_for_log_message("response timeout reached", timeout=15)
+    service.stop()
+
+    token_requests = [request for request in requests_seen if request["path"] == "/oauth/token"]
+    data_requests = [request for request in requests_seen if request["path"] == "/data"]
+
+    assert len(token_requests) >= 2
+    assert len(data_requests) == 0
+    assert "response timeout reached" in log_text
+
+
+def test_out_http_oauth2_read_idle_timeout_retries_partial_token_response():
+    service = Service(
+        "out_http_oauth2_timeout.yaml",
+        response_setup=lambda: configure_oauth_token_response(
+            stream_fragments=[
+                '{"access_token":"partial',
+            ],
+            hang_after_fragment_index=0,
+        ),
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=15)
+    log_text = service.wait_for_log_message("response timeout reached", timeout=15)
+    service.stop()
+
+    token_requests = [request for request in requests_seen if request["path"] == "/oauth/token"]
+    data_requests = [request for request in requests_seen if request["path"] == "/data"]
+
+    assert len(token_requests) >= 2
+    assert len(data_requests) == 0
+    assert "response timeout reached" in log_text
+
+
+def test_out_http_tls_response_timeout_retries_hung_server():
+    service = Service(
+        "out_http_tls_response_timeout.yaml",
+        response_setup=lambda: configure_http_response(
+            hang_before_response=True,
+        ),
+        use_tls=True,
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=15)
+    log_text = service.wait_for_log_message("response timeout reached", timeout=15)
+    service.stop()
+
+    assert len(requests_seen) >= 2
+    assert "response timeout reached" in log_text
+
+
+def test_out_http_tls_read_idle_timeout_retries_partial_response():
+    service = Service(
+        "out_http_tls_read_idle_timeout.yaml",
+        response_setup=lambda: configure_http_response(
+            stream_fragments=[
+                '{"status":"par',
+            ],
+            hang_after_fragment_index=0,
+        ),
+        use_tls=True,
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=15)
+    log_text = service.wait_for_log_message("read idle timeout reached", timeout=15)
+    service.stop()
+
+    assert len(requests_seen) >= 2
+    assert "read idle timeout reached" in log_text
