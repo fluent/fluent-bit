@@ -350,11 +350,6 @@ struct mk_list *flb_config_map_create(struct flb_config *config,
         new->desc = m->desc;
         mk_list_add(&new->_head, list);
 
-        if (new->set_property == FLB_FALSE) {
-            m++;
-            continue;
-        }
-
         /* If this is a multiple type of entries, initialize the main list */
         if (new->flags & FLB_CONFIG_MAP_MULT) {
             tmp = flb_malloc(sizeof(struct mk_list));
@@ -732,7 +727,7 @@ int flb_config_map_set(struct flb_config *config, struct mk_list *properties, st
 
         }
 
-        if (!m || m->set_property == FLB_FALSE) {
+        if (!m) {
             continue;
         }
 
@@ -748,18 +743,26 @@ int flb_config_map_set(struct flb_config *config, struct mk_list *properties, st
             /* Populate value */
             if (m->type == FLB_CONFIG_MAP_STR) {
                 if (m->flags & FLB_CONFIG_MAP_DYNAMIC_ENV) {
-                    /* For dynamic env vars, store the raw template */
-                    entry->val.str = flb_sds_create(kv->val);
+                    entry->raw = flb_sds_create(kv->val);
+                    if (!entry->raw) {
+                        flb_free(entry);
+                        return -1;
+                    }
+                }
+
+                /* Store the effective value for validation and non-dynamic use. */
+                resolved = flb_env_var_translate(config->env, kv->val);
+                if (resolved) {
+                    entry->val.str = resolved;
                 }
                 else {
-                    /* For static env vars, resolve them now */
-                    resolved = flb_env_var_translate(config->env, kv->val);
-                    if (resolved) {
-                        entry->val.str = resolved;
-                    }
-                    else {
-                        entry->val.str = flb_sds_create(kv->val);
-                    }
+                    entry->val.str = flb_sds_create(kv->val);
+                }
+
+                if (!entry->val.str) {
+                    destroy_map_val(m->type, entry);
+                    flb_free(entry);
+                    return -1;
                 }
             }
             else if (m->type == FLB_CONFIG_MAP_INT) {
@@ -816,8 +819,10 @@ int flb_config_map_set(struct flb_config *config, struct mk_list *properties, st
             mk_list_add(&entry->_head, m->value.mult);
 
             /* Override user context */
-            m_list = (struct mk_list **) (base + m->offset);
-            *m_list = m->value.mult;
+            if (m->set_property == FLB_TRUE) {
+                m_list = (struct mk_list **) (base + m->offset);
+                *m_list = m->value.mult;
+            }
         }
         else if (map != NULL) {
             /* Single value entry: store value and optionally write to context */
