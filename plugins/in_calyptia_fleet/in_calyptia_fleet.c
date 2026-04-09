@@ -1028,6 +1028,7 @@ static struct flb_http_client *fleet_http_do(struct flb_in_calyptia_fleet_config
         goto http_do_error;
     }
 
+    flb_http_client_detach_connection(client);
     flb_upstream_conn_release(u_conn);
     return client;
 
