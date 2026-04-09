@@ -1011,17 +1011,18 @@ static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
         flb_free(payload_buf);
     }
 
-    flb_upstream_conn_release(u_conn);
-
     /* Validate HTTP status */
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error sending append_blob for %s", ref_name);
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_RETRY;
     }
 
     if (c->resp.status == 201) {
         flb_plg_info(ctx->ins, "content uploaded successfully: %s", ref_name);
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_OK;
     }
     else if (c->resp.status == 404) {
@@ -1033,6 +1034,7 @@ static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
 
         flb_plg_info(ctx->ins, "blob not found: %s", c->uri);
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return CREATE_BLOB;
     }
     else if (c->resp.payload_size > 0) {
@@ -1040,6 +1042,7 @@ static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
                       c->resp.status, c->resp.payload);
         if (strstr(c->resp.payload, "must be 0 for Create Append")) {
             flb_http_client_destroy(c);
+            flb_upstream_conn_release(u_conn);
             return CREATE_BLOB;
         }
     }
@@ -1048,6 +1051,7 @@ static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
                       ref_name, c->resp.status);
     }
     flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
 
     return FLB_RETRY;
 }
