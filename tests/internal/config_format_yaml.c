@@ -32,6 +32,8 @@
 #define FLB_004 FLB_TESTS_CONF_PATH "/stream_processor.yaml"
 #define FLB_005 FLB_TESTS_CONF_PATH "/plugins.yaml"
 #define FLB_006 FLB_TESTS_CONF_PATH "/upstream.yaml"
+#define FLB_008 FLB_TESTS_CONF_PATH "/other_with_nested_map.yaml"
+#define FLB_009 FLB_TESTS_CONF_PATH "/ignorable.yaml"
 
 #define FLB_000_WIN FLB_TESTS_CONF_PATH "\\fluent-bit-windows.yaml"
 #define FLB_BROKEN_PLUGIN_VARIANT FLB_TESTS_CONF_PATH "/broken_plugin_variant.yaml"
@@ -364,8 +366,12 @@ static void test_processors()
     struct cfl_variant *v;
     struct cfl_variant *logs;
     struct cfl_variant *record_modifier_filter;
+    struct cfl_variant *second_processor;
     struct cfl_variant *records;
     struct cfl_variant *record;
+    struct cfl_variant *sampling_type;
+    struct cfl_variant *sampling_settings;
+    struct cfl_variant *sampling_percentage;
     int idx = 0;
 
     cf = flb_cf_yaml_create(NULL, FLB_002, NULL, 0);
@@ -432,7 +438,7 @@ static void test_processors()
 
         TEST_CHECK(logs->type == CFL_VARIANT_ARRAY);
         if (logs->type == CFL_VARIANT_ARRAY) {
-            TEST_CHECK(logs->data.as_array->entry_count == 1);
+            TEST_CHECK(logs->data.as_array->entry_count == 2);
 
             record_modifier_filter = cfl_array_fetch_by_index(logs->data.as_array, 0);
             TEST_CHECK(record_modifier_filter != NULL);
@@ -459,6 +465,34 @@ static void test_processors()
                     case 1:
                         TEST_CHECK(strcmp(record->data.as_string, "powered_by calyptia") == 0);
                         break;
+                    }
+                }
+            }
+
+            second_processor = cfl_array_fetch_by_index(logs->data.as_array, 1);
+            TEST_CHECK(second_processor != NULL);
+            TEST_CHECK(second_processor->type == CFL_VARIANT_KVLIST);
+
+            if (second_processor != NULL && second_processor->type == CFL_VARIANT_KVLIST) {
+                sampling_type = cfl_kvlist_fetch(second_processor->data.as_kvlist, "type");
+                TEST_CHECK(sampling_type != NULL);
+                TEST_CHECK(sampling_type->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strcmp(sampling_type->data.as_string, "probabilistic") == 0);
+
+                sampling_settings = cfl_kvlist_fetch(second_processor->data.as_kvlist,
+                                                     "sampling_settings");
+                TEST_CHECK(sampling_settings != NULL);
+                TEST_CHECK(sampling_settings->type == CFL_VARIANT_KVLIST);
+
+                if (sampling_settings != NULL &&
+                    sampling_settings->type == CFL_VARIANT_KVLIST) {
+                    sampling_percentage = cfl_kvlist_fetch(sampling_settings->data.as_kvlist,
+                                                           "sampling_percentage");
+                    TEST_CHECK(sampling_percentage != NULL);
+                    TEST_CHECK(sampling_percentage->type == CFL_VARIANT_UINT);
+                    if (sampling_percentage != NULL &&
+                        sampling_percentage->type == CFL_VARIANT_UINT) {
+                        TEST_CHECK(sampling_percentage->data.as_uint64 == 25);
                     }
                 }
             }
@@ -835,6 +869,51 @@ static void test_upstream_servers()
     flb_cf_destroy(cf);
 }
 
+static void test_ignorable_section()
+{
+    struct flb_cf *cf;
+    struct flb_cf_section *s;
+    struct cfl_variant *v;
+    struct cfl_variant *nested;
+
+    cf = flb_cf_yaml_create(NULL, FLB_009, NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+
+    s = flb_cf_section_get_by_name(cf, "ignorable");
+    TEST_CHECK(s != NULL);
+
+    v = flb_cf_section_property_get(cf, s, "record_metadata");
+    TEST_CHECK(v != NULL);
+    TEST_CHECK(v->type == CFL_VARIANT_KVLIST);
+
+    if (v != NULL && v->type == CFL_VARIANT_KVLIST) {
+        nested = cfl_kvlist_fetch(v->data.as_kvlist, "enabled");
+        TEST_CHECK(nested != NULL);
+        TEST_CHECK(nested->type == CFL_VARIANT_BOOL);
+        TEST_CHECK(nested->data.as_bool == CFL_TRUE);
+    }
+
+    v = flb_cf_section_property_get(cf, s, "otlp");
+    TEST_CHECK(v != NULL);
+    TEST_CHECK(v->type == CFL_VARIANT_KVLIST);
+
+    flb_cf_destroy(cf);
+}
+
+static void test_other_nested_map_rejected()
+{
+    struct flb_cf *cf;
+
+    cf = flb_cf_yaml_create(NULL, FLB_008, NULL, 0);
+    TEST_CHECK(cf == NULL);
+    if (cf != NULL) {
+        flb_cf_destroy(cf);
+    }
+}
+
 static void test_invalid_property()
 {
     char* test_cases[] = {
@@ -876,6 +955,8 @@ TEST_LIST = {
     { "stream_processor", test_stream_processor},
     { "plugins", test_plugins},
     { "upstream_servers", test_upstream_servers},
+    { "ignorable_section", test_ignorable_section},
+    { "other_nested_map_rejected", test_other_nested_map_rejected},
     { "invalid_input_property", test_invalid_property},
     { 0 }
 };
