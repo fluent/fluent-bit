@@ -54,6 +54,47 @@ ssize_t flb_tail_scan_fetch_ignored_file_size(struct flb_tail_config *ctx, const
     return result;
 }
 
+void flb_tail_scan_register_aged_out_inode(struct flb_tail_config *ctx,
+                                           const char *path,
+                                           size_t path_length,
+                                           uint64_t inode)
+{
+    flb_hash_table_add(ctx->aged_out_file_inodes,
+                       path, path_length,
+                       &inode, sizeof(inode));
+}
+
+void flb_tail_scan_unregister_aged_out_inode(struct flb_tail_config *ctx,
+                                             const char *path,
+                                             size_t path_length)
+{
+    flb_hash_table_del(ctx->aged_out_file_inodes, path);
+}
+
+int flb_tail_scan_fetch_aged_out_inode(struct flb_tail_config *ctx,
+                                       const char *path,
+                                       size_t path_length,
+                                       uint64_t *inode)
+{
+    int result;
+    void *value;
+    size_t value_size;
+
+    result = flb_hash_table_get(ctx->aged_out_file_inodes,
+                                path, path_length,
+                                &value, &value_size);
+    if (result == -1) {
+        return -1;
+    }
+
+    if (value == NULL || value_size != sizeof(*inode)) {
+        return -1;
+    }
+
+    *inode = *((uint64_t *) value);
+    return 0;
+}
+
 int flb_tail_scan(struct mk_list *path_list, struct flb_tail_config *ctx)
 {
     int ret;
