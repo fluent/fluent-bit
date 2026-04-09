@@ -63,6 +63,7 @@ logger = logging.getLogger(__name__)
 server_thread = None
 server_instances = []
 shutdown_event = threading.Event()
+UNSET = object()
 
 
 def _sleep_interruptible(seconds):
@@ -115,51 +116,51 @@ def reset_http_server_state():
     )
 
 
-def configure_http_response(*, status_code=None, body=None, content_type=None,
-                            delay_seconds=None, stream_fragments=None,
-                            fragment_delay_seconds=None,
-                            hang_before_response=None,
-                            hang_after_fragment_index=None):
-    if status_code is not None:
+def configure_http_response(*, status_code=UNSET, body=UNSET, content_type=UNSET,
+                            delay_seconds=UNSET, stream_fragments=UNSET,
+                            fragment_delay_seconds=UNSET,
+                            hang_before_response=UNSET,
+                            hang_after_fragment_index=UNSET):
+    if status_code is not UNSET:
         response_config["status_code"] = status_code
-    if body is not None:
+    if body is not UNSET:
         response_config["body"] = body
-    if content_type is not None:
+    if content_type is not UNSET:
         response_config["content_type"] = content_type
-    if delay_seconds is not None:
+    if delay_seconds is not UNSET:
         response_config["delay_seconds"] = delay_seconds
-    if stream_fragments is not None:
-        response_config["stream_fragments"] = list(stream_fragments)
-    if fragment_delay_seconds is not None:
+    if stream_fragments is not UNSET:
+        response_config["stream_fragments"] = None if stream_fragments is None else list(stream_fragments)
+    if fragment_delay_seconds is not UNSET:
         response_config["fragment_delay_seconds"] = fragment_delay_seconds
-    if hang_before_response is not None:
+    if hang_before_response is not UNSET:
         response_config["hang_before_response"] = hang_before_response
-    if hang_after_fragment_index is not None:
+    if hang_after_fragment_index is not UNSET:
         response_config["hang_after_fragment_index"] = hang_after_fragment_index
 
 
-def configure_oauth_token_response(*, status_code=None, body=None,
-                                   content_type=None,
-                                   delay_seconds=None,
-                                   hang_before_response=None,
-                                   stream_fragments=None,
-                                   fragment_delay_seconds=None,
-                                   hang_after_fragment_index=None):
-    if status_code is not None:
+def configure_oauth_token_response(*, status_code=UNSET, body=UNSET,
+                                   content_type=UNSET,
+                                   delay_seconds=UNSET,
+                                   hang_before_response=UNSET,
+                                   stream_fragments=UNSET,
+                                   fragment_delay_seconds=UNSET,
+                                   hang_after_fragment_index=UNSET):
+    if status_code is not UNSET:
         oauth_token_response["status_code"] = status_code
-    if body is not None:
+    if body is not UNSET:
         oauth_token_response["body"] = body
-    if content_type is not None:
+    if content_type is not UNSET:
         oauth_token_response["content_type"] = content_type
-    if delay_seconds is not None:
+    if delay_seconds is not UNSET:
         oauth_token_response["delay_seconds"] = delay_seconds
-    if hang_before_response is not None:
+    if hang_before_response is not UNSET:
         oauth_token_response["hang_before_response"] = hang_before_response
-    if stream_fragments is not None:
-        oauth_token_response["stream_fragments"] = list(stream_fragments)
-    if fragment_delay_seconds is not None:
+    if stream_fragments is not UNSET:
+        oauth_token_response["stream_fragments"] = None if stream_fragments is None else list(stream_fragments)
+    if fragment_delay_seconds is not UNSET:
         oauth_token_response["fragment_delay_seconds"] = fragment_delay_seconds
-    if hang_after_fragment_index is not None:
+    if hang_after_fragment_index is not UNSET:
         oauth_token_response["hang_after_fragment_index"] = hang_after_fragment_index
 
 
@@ -284,7 +285,26 @@ def oauth_token():
         return Response(status=503)
     if oauth_token_response["stream_fragments"] is not None:
         return _build_streaming_response(oauth_token_response)
-    return jsonify(oauth_token_response["body"]), oauth_token_response["status_code"]
+
+    body = oauth_token_response["body"]
+    content_type = oauth_token_response.get("content_type")
+    normalized_content_type = None
+
+    if content_type is not None:
+        normalized_content_type = content_type.split(";", 1)[0].strip().lower()
+
+    if isinstance(body, (dict, list)) and (
+        normalized_content_type is None or
+        normalized_content_type == "application/json" or
+        normalized_content_type.endswith("+json")
+    ):
+        return jsonify(body), oauth_token_response["status_code"]
+
+    return Response(
+        body,
+        status=oauth_token_response["status_code"],
+        content_type=content_type,
+    )
 
 
 @app.route('/ping', methods=['GET'])
