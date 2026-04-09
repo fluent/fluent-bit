@@ -21,6 +21,7 @@
 #include <sys/stat.h>
 #include <glob.h>
 #include <fnmatch.h>
+#include <errno.h>
 
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_input_plugin.h>
@@ -133,14 +134,27 @@ static int tail_is_excluded(char *path, struct flb_tail_config *ctx)
     return FLB_FALSE;
 }
 
+static int glob_errfunc(const char *epath, int eerrno)
+{
+    (void) epath;
+
+    switch (eerrno) {
+    case EACCES:
+    case ENOENT:
+    case EPERM:
+        return 0;
+    default:
+        return 1;
+    }
+}
+
 static inline int do_glob(const char *pattern, int flags,
-                          void *not_used, glob_t *pglob)
+                          int (*errfunc)(const char *, int), glob_t *pglob)
 {
     int ret;
     int new_flags;
     char *tmp = NULL;
     int tmp_needs_free = FLB_FALSE;
-    (void) not_used;
 
     /* Save current values */
     new_flags = flags;
@@ -171,7 +185,7 @@ static inline int do_glob(const char *pattern, int flags,
     }
 
     /* invoke glob with new parameters */
-    ret = glob(pattern, new_flags, NULL, pglob);
+    ret = glob(pattern, new_flags, errfunc, pglob);
 
     /* remove temporary buffer, if allocated by expand_tilde above.
      * Note that this buffer is only used for libc implementations
@@ -195,6 +209,7 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
     int64_t mtime;
     struct stat st;
     ssize_t ignored_file_size;
+    int (*errfunc)(const char *, int) = NULL;
 
     ignored_file_size = -1;
 
@@ -203,8 +218,18 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
     /* Safe reset for globfree() */
     globbuf.gl_pathv = NULL;
 
-    /* Scan the given path */
-    ret = do_glob(path, GLOB_TILDE | GLOB_ERR, NULL, &globbuf);
+    if (ctx->skip_permission_errors) {
+        errfunc = glob_errfunc;
+    }
+
+    /* Scan the given path with error checking enabled. */
+    ret = do_glob(path, GLOB_TILDE | GLOB_ERR, errfunc, &globbuf);
+    if (ret == GLOB_ABORTED && ctx->skip_permission_errors) {
+        flb_plg_warn(ctx->ins, "read error, check permissions: %s", path);
+        globfree(&globbuf);
+        ret = do_glob(path, GLOB_TILDE, NULL, &globbuf);
+    }
+
     if (ret != 0) {
         switch (ret) {
         case GLOB_NOSPACE:
