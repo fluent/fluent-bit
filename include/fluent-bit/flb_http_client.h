@@ -220,6 +220,8 @@ struct flb_test_http_response {
 struct flb_http_client {
     /* Upstream connection */
     struct flb_connection *u_conn;
+    struct flb_net_setup request_net_setup;
+    struct flb_net_setup *original_net_setup;
 
     /* Request data */
     int method;

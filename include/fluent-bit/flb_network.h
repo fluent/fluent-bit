@@ -144,6 +144,7 @@ int flb_net_socket_reset(flb_sockfd_t fd);
 int flb_net_socket_tcp_nodelay(flb_sockfd_t fd);
 int flb_net_socket_blocking(flb_sockfd_t fd);
 int flb_net_socket_nonblocking(flb_sockfd_t fd);
+int flb_net_socket_set_rcvtimeout(flb_sockfd_t fd, int timeout_in_seconds);
 int flb_net_socket_rcv_buffer(flb_sockfd_t fd, int rcvbuf);
 int flb_net_socket_tcp_fastopen(flb_sockfd_t sockfd);
 int flb_net_socket_tcp_keepalive(flb_sockfd_t fd, struct flb_net_setup *net);

@@ -49,6 +49,7 @@
 #include <fluent-bit/flb_http_common.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_http_client_debug.h>
+#include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/tls/flb_tls.h>
@@ -376,6 +377,8 @@ static int chunked_data_size(char *buf, size_t length,
 {
     char   *cursor;
     char   *line_end;
+    int     extension_started;
+    size_t  digit;
     size_t  digit_count;
     size_t  line_length;
     size_t  total_size;
@@ -399,22 +402,28 @@ static int chunked_data_size(char *buf, size_t length,
 
     errno = 0;
     digit_count = 0;
+    extension_started = FLB_FALSE;
     value = 0;
 
     while (digit_count < line_length) {
         if (*cursor >= '0' && *cursor <= '9') {
-            value = (value * 16) + (*cursor - '0');
+            digit = *cursor - '0';
         }
         else if (*cursor >= 'a' && *cursor <= 'f') {
-            value = (value * 16) + (*cursor - 'a') + 10;
+            digit = (*cursor - 'a') + 10;
         }
         else if (*cursor >= 'A' && *cursor <= 'F') {
-            value = (value * 16) + (*cursor - 'A') + 10;
+            digit = (*cursor - 'A') + 10;
         }
         else {
             break;
         }
 
+        if (value > ((SIZE_MAX - digit) / 16)) {
+            return FLB_HTTP_ERROR;
+        }
+
+        value = (value * 16) + digit;
         digit_count++;
         cursor++;
     }
@@ -431,10 +440,23 @@ static int chunked_data_size(char *buf, size_t length,
     if (digit_count < line_length && *cursor == ';') {
         cursor++;
         digit_count++;
+        extension_started = FLB_TRUE;
     }
 
     while (digit_count < line_length) {
-        if (*cursor == '\0') {
+        if (extension_started == FLB_FALSE) {
+            if (*cursor != ' ' && *cursor != '\t') {
+                return FLB_HTTP_ERROR;
+            }
+        }
+        else if (*cursor != ' ' && *cursor != '\t' && *cursor != ';' &&
+                 *cursor != '=' && *cursor != '"' && *cursor != '\\' &&
+                 *cursor != '/' && *cursor != ',' && *cursor != '_' &&
+                 *cursor != '-' && *cursor != '.' && *cursor != ':' &&
+                 *cursor != '(' && *cursor != ')' &&
+                 !(*cursor >= '0' && *cursor <= '9') &&
+                 !(*cursor >= 'a' && *cursor <= 'z') &&
+                 !(*cursor >= 'A' && *cursor <= 'Z')) {
             return FLB_HTTP_ERROR;
         }
 
@@ -448,9 +470,17 @@ static int chunked_data_size(char *buf, size_t length,
         return FLB_HTTP_OK;
     }
 
+    if (value > (SIZE_MAX - total_size - 2)) {
+        return FLB_HTTP_ERROR;
+    }
+
     total_size += value + 2;
 
     if (length < total_size) {
+        return FLB_HTTP_MORE;
+    }
+
+    if (value > (length - ((line_end + 2) - buf) - 2)) {
         return FLB_HTTP_MORE;
     }
 
@@ -470,11 +500,23 @@ static flb_sds_t raw_header_lookup(const char *buf, size_t len,
     const char *cursor;
     const char *value;
     size_t      line_len;
+    size_t      offset;
 
     cursor = buf;
+    offset = 0;
 
-    while ((size_t) (cursor - buf) < len) {
-        line_end = memmem(cursor, len - (cursor - buf), "\r\n", 2);
+    while (offset + 1 < len) {
+        line_end = NULL;
+
+        while (offset + 1 < len) {
+            if (buf[offset] == '\r' && buf[offset + 1] == '\n') {
+                line_end = &buf[offset];
+                break;
+            }
+
+            offset++;
+        }
+
         if (line_end == NULL) {
             break;
         }
@@ -497,6 +539,7 @@ static flb_sds_t raw_header_lookup(const char *buf, size_t len,
         }
 
         cursor = line_end + 2;
+        offset = cursor - buf;
     }
 
     return NULL;
@@ -531,6 +574,9 @@ static int process_chunked_data(struct flb_http_client *c)
                                              &trailer_bytes,
                                              &trailer_raw_size);
             if (ret != FLB_HTTP_OK) {
+                if (found_full_chunk == FLB_TRUE && ret == FLB_HTTP_MORE) {
+                    return FLB_HTTP_CHUNK_AVAILABLE;
+                }
                 return ret;
             }
 
@@ -549,6 +595,9 @@ static int process_chunked_data(struct flb_http_client *c)
 
         ret = chunked_data_size(cursor, available, &chunk_header_size);
         if (ret != FLB_HTTP_OK) {
+            if (found_full_chunk == FLB_TRUE && ret == FLB_HTTP_MORE) {
+                return FLB_HTTP_CHUNK_AVAILABLE;
+            }
             return ret;
         }
 
@@ -562,6 +611,9 @@ static int process_chunked_data(struct flb_http_client *c)
         available = r->data_len - (cursor - r->data);
         if (chunk_header_size == chunk_size_line_length) {
             r->chunked_trailer_pending = FLB_TRUE;
+            if (r->chunk_processed_end != NULL) {
+                r->payload_size = r->chunk_processed_end - r->headers_end;
+            }
             continue;
         }
 
@@ -872,10 +924,10 @@ static int add_host_and_content_length(struct flb_http_client *c)
 }
 
 struct flb_http_client *create_http_client(struct flb_connection *u_conn,
-                                        int method, const char *uri,
-                                        const char *body, size_t body_len,
-                                        const char *host, int port,
-                                        const char *proxy, int flags)
+                                           int method, const char *uri,
+                                           const char *body, size_t body_len,
+                                           const char *host, int port,
+                                           const char *proxy, int flags)
 {
     int ret;
     char *p;
@@ -965,6 +1017,17 @@ struct flb_http_client *create_http_client(struct flb_connection *u_conn,
     }
 
     c->u_conn      = u_conn;
+    c->original_net_setup = u_conn->net;
+    if (u_conn->net != NULL) {
+        c->request_net_setup = *u_conn->net;
+    }
+    else if (u_conn->upstream != NULL) {
+        c->request_net_setup = u_conn->upstream->base.net;
+        c->original_net_setup = &u_conn->upstream->base.net;
+    }
+    if (c->original_net_setup != NULL) {
+        c->u_conn->net = &c->request_net_setup;
+    }
     c->method      = method;
     c->uri         = uri;
     c->host        = host;
@@ -1426,41 +1489,129 @@ int flb_http_set_content_encoding_snappy(struct flb_http_client *c)
     return ret;
 }
 
-static void http_client_clamp_connection_io_timeout(struct flb_http_client *c,
-                                                    int timeout)
+static int http_client_clamp_connection_io_timeout(struct flb_http_client *c,
+                                                   int timeout)
 {
     struct flb_net_setup *net_setup;
 
     if (c == NULL || c->u_conn == NULL || timeout <= 0) {
+        return timeout;
+    }
+
+    net_setup = c->original_net_setup;
+    if (net_setup == NULL) {
+        net_setup = c->u_conn->net;
+    }
+
+    if (net_setup == NULL) {
+        return timeout;
+    }
+
+    if (net_setup->io_timeout > 0 && net_setup->io_timeout < timeout) {
+        return net_setup->io_timeout;
+    }
+
+    return timeout;
+}
+
+static void http_client_update_connection_io_timeout(struct flb_http_client *c)
+{
+    struct flb_net_setup *net_setup;
+    int effective_timeout;
+
+    if (c == NULL || c->u_conn == NULL) {
         return;
     }
 
-    net_setup = c->u_conn->net;
-
+    net_setup = c->original_net_setup;
+    if (net_setup == NULL) {
+        net_setup = c->u_conn->net;
+    }
     if (net_setup == NULL && c->u_conn->upstream != NULL) {
         net_setup = &c->u_conn->upstream->base.net;
     }
-
     if (net_setup == NULL) {
         return;
     }
 
-    if (net_setup->io_timeout <= 0 || net_setup->io_timeout > timeout) {
-        net_setup->io_timeout = timeout;
+    effective_timeout = net_setup->io_timeout;
+
+    if (c->response_timeout > 0) {
+        effective_timeout = http_client_clamp_connection_io_timeout(c,
+                                                                    c->response_timeout);
+    }
+
+    if (c->read_idle_timeout > 0) {
+        if (effective_timeout > 0) {
+            effective_timeout = http_client_clamp_connection_io_timeout(c,
+                                                                        c->read_idle_timeout < effective_timeout ?
+                                                                        c->read_idle_timeout :
+                                                                        effective_timeout);
+        }
+        else {
+            effective_timeout = http_client_clamp_connection_io_timeout(c,
+                                                                        c->read_idle_timeout);
+        }
+    }
+
+    c->request_net_setup.io_timeout = effective_timeout;
+
+    if (c->u_conn->fd > 0) {
+        flb_net_socket_set_rcvtimeout(c->u_conn->fd,
+                                      c->request_net_setup.io_timeout);
+    }
+}
+
+static void http_client_bind_connection(struct flb_http_client *c,
+                                        struct flb_connection *u_conn)
+{
+    c->u_conn = u_conn;
+    c->original_net_setup = NULL;
+
+    if (u_conn == NULL) {
+        return;
+    }
+
+    c->original_net_setup = u_conn->net;
+
+    if (c->original_net_setup == NULL && u_conn->upstream != NULL) {
+        c->original_net_setup = &u_conn->upstream->base.net;
+    }
+
+    if (c->original_net_setup != NULL) {
+        c->request_net_setup = *c->original_net_setup;
+        c->u_conn->net = &c->request_net_setup;
+        http_client_update_connection_io_timeout(c);
+    }
+}
+
+static void http_client_unbind_connection(struct flb_http_client *c)
+{
+    if (c == NULL || c->u_conn == NULL) {
+        return;
+    }
+
+    if (c->original_net_setup != NULL && c->u_conn->net == &c->request_net_setup) {
+        c->u_conn->net = c->original_net_setup;
+
+        if (c->u_conn->fd > 0) {
+            flb_net_socket_set_rcvtimeout(c->u_conn->fd,
+                                          c->original_net_setup->io_timeout);
+        }
     }
 }
 
 int flb_http_set_read_idle_timeout(struct flb_http_client *c, int timeout)
 {
     c->read_idle_timeout = timeout;
-    http_client_clamp_connection_io_timeout(c, timeout);
+    http_client_update_connection_io_timeout(c);
     return 0;
 }
 
 int flb_http_set_response_timeout(struct flb_http_client *c, int timeout)
 {
     c->response_timeout = timeout;
-    http_client_clamp_connection_io_timeout(c, timeout);
+    http_client_update_connection_io_timeout(c);
     return 0;
 }
 
@@ -2007,8 +2158,9 @@ int flb_http_do_with_oauth2(struct flb_http_client *c, size_t *bytes,
         /* If connection was closed, get a new one */
         if (c->resp.connection_close == FLB_TRUE && c->u_conn) {
             u = c->u_conn->upstream;
+            http_client_unbind_connection(c);
             flb_upstream_conn_release(c->u_conn);
-            c->u_conn = flb_upstream_conn_get(u);
+            http_client_bind_connection(c, flb_upstream_conn_get(u));
             if (!c->u_conn) {
                 return -1;
             }
@@ -2087,6 +2239,7 @@ int flb_http_client_proxy_connect(struct flb_connection *u_conn)
 
 void flb_http_client_destroy(struct flb_http_client *c)
 {
+    http_client_unbind_connection(c);
     http_headers_destroy(c);
     flb_free(c->resp.data);
     flb_free(c->resp.trailer_buf);
