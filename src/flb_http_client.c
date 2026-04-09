@@ -1599,6 +1599,14 @@ static void http_client_unbind_connection(struct flb_http_client *c)
                                           c->original_net_setup->io_timeout);
         }
     }
+
+    c->u_conn = NULL;
+    c->original_net_setup = NULL;
+}
+
+void flb_http_client_detach_connection(struct flb_http_client *c)
+{
+    http_client_unbind_connection(c);
 }
 
 int flb_http_set_read_idle_timeout(struct flb_http_client *c, int timeout)
@@ -2127,6 +2135,7 @@ int flb_http_do_with_oauth2(struct flb_http_client *c, size_t *bytes,
 {
     int ret;
     flb_sds_t token = NULL;
+    struct flb_connection *old_conn;
     struct flb_upstream *u;
 
     if (!oauth2 || oauth2->cfg.enabled == FLB_FALSE) {
@@ -2158,8 +2167,9 @@ int flb_http_do_with_oauth2(struct flb_http_client *c, size_t *bytes,
         /* If connection was closed, get a new one */
         if (c->resp.connection_close == FLB_TRUE && c->u_conn) {
             u = c->u_conn->upstream;
+            old_conn = c->u_conn;
             http_client_unbind_connection(c);
-            flb_upstream_conn_release(c->u_conn);
+            flb_upstream_conn_release(old_conn);
             http_client_bind_connection(c, flb_upstream_conn_get(u));
             if (!c->u_conn) {
                 return -1;

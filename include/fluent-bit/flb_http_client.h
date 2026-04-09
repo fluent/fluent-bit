@@ -415,6 +415,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes);
 int flb_http_do_with_oauth2(struct flb_http_client *c, size_t *bytes,
                             struct flb_oauth2 *oauth2);
 int flb_http_client_proxy_connect(struct flb_connection *u_conn);
+void flb_http_client_detach_connection(struct flb_http_client *c);
 void flb_http_client_destroy(struct flb_http_client *c);
 int flb_http_buffer_size(struct flb_http_client *c, size_t size);
 size_t flb_http_buffer_available(struct flb_http_client *c);
