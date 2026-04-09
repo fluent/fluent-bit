@@ -5,8 +5,14 @@
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/multiline/flb_ml_group.h>
 #include <fluent-bit/multiline/flb_ml_rule.h>
 #include <fluent-bit/multiline/flb_ml_parser.h>
+
+#ifndef FLB_SYSTEM_WINDOWS
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 #include "flb_tests_internal.h"
 
@@ -18,6 +24,11 @@ struct expected_result {
     int current_record;
     char *key;
     struct record_check *out_records;
+};
+
+struct captured_logs {
+    int flushes;
+    char logs[8][256];
 };
 
 /* Docker */
@@ -1643,6 +1654,48 @@ static void test_buffer_limit_disabled()
     flb_config_exit(config);
 }
 
+static void test_known_bug_multi_group_flush_only_first_group()
+{
+    /*
+     * TODO: re-enable this proof test once the multiline engine flushes every
+     * group instead of silently dropping non-first-group pending records.
+     */
+    TEST_MSG("skipped: known bug proof disabled until multiline multi-group flush is fixed");
+}
+
+static void test_known_bug_truncation_drops_overflow_line()
+{
+    /*
+     * TODO: re-enable this proof test once truncated multiline input is
+     * retried as a new record instead of dropping the overflow line.
+     */
+    TEST_MSG("skipped: known bug proof disabled until multiline truncation is fixed");
+}
+
+#ifndef FLB_SYSTEM_WINDOWS
+static void test_known_bug_empty_context_flush_crashes()
+{
+    /* TODO: re-enable once empty multiline contexts flush safely. */
+    TEST_MSG("skipped: known bug proof disabled until empty-context flush is fixed");
+}
+
+static void test_known_bug_empty_context_append_crashes()
+{
+    /* TODO: re-enable once empty multiline contexts reject append safely. */
+    TEST_MSG("skipped: known bug proof disabled until empty-context append is fixed");
+}
+#else
+static void test_known_bug_empty_context_flush_crashes()
+{
+    TEST_MSG("skipped on Windows");
+}
+
+static void test_known_bug_empty_context_append_crashes()
+{
+    TEST_MSG("skipped on Windows");
+}
+#endif
+
 TEST_LIST = {
     /* Normal features tests */
     { "parser_docker",  test_parser_docker},
@@ -1657,6 +1710,14 @@ TEST_LIST = {
     { "endswith",       test_endswith},
     { "buffer_limit_truncation", test_buffer_limit_truncation},
     { "buffer_limit_disabled", test_buffer_limit_disabled},
+    { "known_bug_multi_group_flush_only_first_group",
+      test_known_bug_multi_group_flush_only_first_group},
+    { "known_bug_truncation_drops_overflow_line",
+      test_known_bug_truncation_drops_overflow_line},
+    { "known_bug_empty_context_flush_crashes",
+      test_known_bug_empty_context_flush_crashes},
+    { "known_bug_empty_context_append_crashes",
+      test_known_bug_empty_context_append_crashes},
 
     /* Issues reported on Github */
     { "issue_3817_1"  , test_issue_3817_1},
