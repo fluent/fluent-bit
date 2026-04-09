@@ -598,8 +598,10 @@ int mk_sched_check_timeouts(struct mk_sched_worker *sched,
             MK_TRACE("Scheduler, closing fd %i due TIMEOUT",
                      conn->event.fd);
             MK_LT_SCHED(conn->event.fd, "TIMEOUT_CONN_PENDING");
-            conn->protocol->cb_close(conn, sched, MK_SCHED_CONN_TIMEOUT,
-                                     server);
+            if (conn->protocol->cb_close) {
+                conn->protocol->cb_close(conn, sched, MK_SCHED_CONN_TIMEOUT,
+                                         server);
+            }
             mk_sched_drop_connection(conn, sched, server);
         }
     }
@@ -749,7 +751,7 @@ int mk_sched_event_close(struct mk_sched_conn *conn,
     MK_TRACE("[FD %i] Connection Handler, closed", conn->event.fd);
     mk_event_del(sched->loop, &conn->event);
 
-    if (type != MK_EP_SOCKET_DONE) {
+    if (type != MK_EP_SOCKET_DONE && conn->protocol->cb_close) {
         conn->protocol->cb_close(conn, sched, type, server);
     }
     /*
