@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import time
 
 import requests
 
@@ -9,10 +10,38 @@ from server.http_server import (
     configure_oauth_token_response,
     data_storage,
     http_server_run,
+    server_instances,
 )
 from utils.test_service import FluentBitTestService
 
 logger = logging.getLogger(__name__)
+
+def _wait_for_http_server(port, timeout=5):
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        try:
+            response = requests.get(f"http://127.0.0.1:{port}/ping", timeout=1)
+            if response.status_code == 200:
+                return
+        except requests.RequestException:
+            pass
+
+        time.sleep(0.1)
+
+    raise TimeoutError(f"Timed out waiting for HTTP server on port {port}")
+
+
+def _wait_for_http_server_port(timeout=5):
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        if server_instances:
+            return server_instances[-1].server_port
+
+        time.sleep(0.1)
+
+    raise TimeoutError("Timed out waiting for HTTP server port assignment")
 
 
 class Service:
@@ -281,3 +310,93 @@ def test_out_http_tls_read_idle_timeout_retries_partial_response():
 
     assert len(requests_seen) >= 2
     assert "read idle timeout reached" in log_text
+
+
+def test_http_server_configure_helpers_allow_clearing_nullable_fields():
+    http_server_run(0, reset_state=True)
+    port = _wait_for_http_server_port()
+    _wait_for_http_server(port)
+
+    try:
+        configure_http_response(
+            stream_fragments=["part"],
+            hang_after_fragment_index=0,
+        )
+        configure_http_response(
+            stream_fragments=None,
+            hang_after_fragment_index=None,
+        )
+
+        response = requests.post(
+            f"http://127.0.0.1:{port}/data",
+            json={"test": "clear"},
+            timeout=5,
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "received"}
+    finally:
+        try:
+            requests.post(f"http://127.0.0.1:{port}/shutdown", timeout=2)
+        except requests.RequestException:
+            pass
+
+
+def test_http_server_oauth_token_honors_explicit_content_type_and_raw_body():
+    http_server_run(0, reset_state=True)
+    port = _wait_for_http_server_port()
+    _wait_for_http_server(port)
+
+    try:
+        configure_oauth_token_response(
+            stream_fragments=["partial-token"],
+            hang_after_fragment_index=0,
+        )
+        configure_oauth_token_response(
+            body="not-json",
+            content_type="text/plain",
+            stream_fragments=None,
+            hang_after_fragment_index=None,
+        )
+
+        response = requests.post(
+            f"http://127.0.0.1:{port}/oauth/token",
+            data="grant_type=client_credentials",
+            timeout=5,
+        )
+
+        assert response.status_code == 200
+        assert response.text == "not-json"
+        assert response.headers["Content-Type"].startswith("text/plain")
+    finally:
+        try:
+            requests.post(f"http://127.0.0.1:{port}/shutdown", timeout=2)
+        except requests.RequestException:
+            pass
+
+
+def test_http_server_oauth_token_honors_explicit_json_content_type():
+    http_server_run(0, reset_state=True)
+    port = _wait_for_http_server_port()
+    _wait_for_http_server(port)
+
+    try:
+        configure_oauth_token_response(
+            body={"access_token": "json-token", "token_type": "Bearer"},
+            content_type="application/json; charset=utf-8",
+        )
+
+        response = requests.post(
+            f"http://127.0.0.1:{port}/oauth/token",
+            data="grant_type=client_credentials",
+            timeout=5,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["access_token"] == "json-token"
+        assert "application/json" in response.headers["Content-Type"]
+    finally:
+        try:
+            requests.post(f"http://127.0.0.1:{port}/shutdown", timeout=2)
+        except requests.RequestException:
+            pass
