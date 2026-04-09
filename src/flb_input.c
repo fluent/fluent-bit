@@ -44,6 +44,7 @@
 #include <fluent-bit/flb_ring_buffer.h>
 #include <fluent-bit/flb_processor.h>
 #include <fluent-bit/flb_oauth2_jwt.h>
+#include <fluent-bit/flb_task.h>
 
 /* input plugin macro helpers */
 #include <fluent-bit/flb_input_plugin.h>
@@ -119,6 +120,7 @@ static int flb_input_ingress_primitives_init(struct flb_input_instance *ins)
 #define FLB_INPUT_RING_BUFFER_CAPACITY 1024
 #define FLB_INPUT_RING_BUFFER_SIZE   (sizeof(void *) * FLB_INPUT_RING_BUFFER_CAPACITY)
 #define FLB_INPUT_RING_BUFFER_WINDOW (5)
+#define FLB_INPUT_RATE_WINDOW_DEFAULT "1s"
 
 /* config map to register options available for all input plugins */
 struct flb_config_map input_global_properties[] = {
@@ -184,6 +186,37 @@ struct flb_config_map input_global_properties[] = {
         FLB_CONFIG_MAP_INT, "thread.ring_buffer.window", STR(FLB_INPUT_RING_BUFFER_WINDOW),
         0, FLB_FALSE, 0,
         "Set custom ring buffer window percentage for threaded inputs"
+    },
+    {
+        FLB_CONFIG_MAP_TIME, "rate_window", FLB_INPUT_RATE_WINDOW_DEFAULT,
+        0, FLB_FALSE, 0,
+        "Set input rate window using a time unit (for example: 1s, 1m, 1h). "
+        "The computed rate is always published in per-second units."
+    },
+    {
+        FLB_CONFIG_MAP_BOOL, "rate_gate", "false",
+        0, FLB_FALSE, 0,
+        "Enable input rate gate control."
+    },
+    {
+        FLB_CONFIG_MAP_SIZE, "rate_gate.max_bytes", "0",
+        0, FLB_FALSE, 0,
+        "Maximum input byte rate per second before pausing ingestion."
+    },
+    {
+        FLB_CONFIG_MAP_INT, "rate_gate.max_records", "0",
+        0, FLB_FALSE, 0,
+        "Maximum input record rate per second before pausing ingestion."
+    },
+    {
+        FLB_CONFIG_MAP_BOOL, "rate_gate.backpressure", "true",
+        0, FLB_FALSE, 0,
+        "Apply retry and busy chunk pressure when computing effective limits."
+    },
+    {
+        FLB_CONFIG_MAP_DOUBLE, "rate_gate.resume_ratio", "0.80",
+        0, FLB_FALSE, 0,
+        "Hysteresis threshold used for resuming input rate gate."
     },
 
     {0}
@@ -568,6 +601,15 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->mem_buf_status = FLB_INPUT_RUNNING;
         instance->mem_buf_limit = 0;
         instance->mem_chunks_size = 0;
+        instance->rate_window_size = FLB_NSEC_IN_SEC;
+        instance->rate_gate_enabled = FLB_FALSE;
+        instance->rate_gate_status = FLB_INPUT_RUNNING;
+        instance->rate_gate_use_backpressure = FLB_TRUE;
+        instance->rate_gate_resume_ratio = 0.80;
+        instance->rate_gate_max_bytes = 0;
+        instance->rate_gate_max_records = 0;
+        instance->rate_gate_busy_chunks = 0;
+        instance->rate_gate_retry_attempts = 0;
         instance->storage_buf_status = FLB_INPUT_RUNNING;
         mk_list_add(&instance->_head, &config->inputs);
 
@@ -693,9 +735,12 @@ int flb_input_set_property(struct flb_input_instance *ins,
 {
     int len;
     int ret;
+    int seconds;
     int enabled;
     ssize_t limit;
     flb_sds_t tmp = NULL;
+    char *end;
+    long parsed;
     struct flb_kv *kv;
 
     len = strlen(k);
@@ -909,6 +954,60 @@ int flb_input_set_property(struct flb_input_instance *ins,
             return -1;
         }
         ins->ring_buffer_window = (uint8_t) ret;
+    }
+    else if (prop_key_check("rate_window", k, len) == 0 && tmp) {
+        seconds = flb_utils_time_to_seconds(tmp);
+        flb_sds_destroy(tmp);
+        if (seconds <= 0) {
+            flb_error("[input] invalid rate_window value");
+            return -1;
+        }
+        ins->rate_window_size = ((uint64_t) seconds) * FLB_NSEC_IN_SEC;
+    }
+    else if (prop_key_check("rate_gate", k, len) == 0 && tmp) {
+        ret = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+        ins->rate_gate_enabled = ret;
+    }
+    else if (prop_key_check("rate_gate.max_bytes", k, len) == 0 && tmp) {
+        limit = flb_utils_size_to_bytes(tmp);
+        flb_sds_destroy(tmp);
+        if (limit < 0) {
+            return -1;
+        }
+        ins->rate_gate_max_bytes = (size_t) limit;
+    }
+    else if (prop_key_check("rate_gate.max_records", k, len) == 0 && tmp) {
+        end = NULL;
+        parsed = strtol(tmp, &end, 10);
+        flb_sds_destroy(tmp);
+
+        if (end == tmp || *end != '\0' || parsed < 0) {
+            return -1;
+        }
+
+        ins->rate_gate_max_records = (size_t) parsed;
+    }
+    else if (prop_key_check("rate_gate.backpressure", k, len) == 0 && tmp) {
+        ret = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+        ins->rate_gate_use_backpressure = ret;
+    }
+    else if (prop_key_check("rate_gate.resume_ratio", k, len) == 0 && tmp) {
+        ins->rate_gate_resume_ratio = atof(tmp);
+        flb_sds_destroy(tmp);
+
+        if (ins->rate_gate_resume_ratio <= 0.0 ||
+            ins->rate_gate_resume_ratio >= 1.0) {
+            flb_error("[input] rate_gate.resume_ratio must be between 0 and 1");
+            return -1;
+        }
     }
     else if (prop_key_check("storage.pause_on_chunks_overlimit", k, len) == 0 && tmp) {
         ret = flb_utils_bool(tmp);
@@ -1428,6 +1527,44 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                            "Number of input records.",
                            1, (char *[]) {"name"});
     cmt_counter_set(ins->cmt_records, ts, 0, 1, (char *[]) {name});
+
+    /* fluentbit_input_rate_bytes */
+    ins->cmt_rate_bytes = \
+        cmt_gauge_create(ins->cmt,
+                         "fluentbit", "input", "rate_bytes",
+                         "Current input bytes per second.",
+                         1, (char *[]) {"name"});
+    cmt_gauge_set(ins->cmt_rate_bytes, ts, 0, 1, (char *[]) {name});
+
+    /* fluentbit_input_rate_records */
+    ins->cmt_rate_records = \
+        cmt_gauge_create(ins->cmt,
+                         "fluentbit", "input", "rate_records",
+                         "Current input records per second.",
+                         1, (char *[]) {"name"});
+    cmt_gauge_set(ins->cmt_rate_records, ts, 0, 1, (char *[]) {name});
+
+    /* fluentbit_input_rate_gate_limited */
+    ins->cmt_rate_gate_limited = \
+        cmt_gauge_create(ins->cmt,
+                         "fluentbit", "input", "rate_gate_limited",
+                         "Is the input rate gate currently limiting ingestion?",
+                         1, (char *[]) {"name"});
+    cmt_gauge_set(ins->cmt_rate_gate_limited, ts, 0, 1, (char *[]) {name});
+
+    ins->cmt_rate_gate_busy_chunks = \
+        cmt_gauge_create(ins->cmt,
+                         "fluentbit", "input", "rate_gate_busy_chunks",
+                         "Busy chunks considered by the input rate gate.",
+                         1, (char *[]) {"name"});
+    cmt_gauge_set(ins->cmt_rate_gate_busy_chunks, ts, 0, 1, (char *[]) {name});
+
+    ins->cmt_rate_gate_retry_attempts = \
+        cmt_gauge_create(ins->cmt,
+                         "fluentbit", "input", "rate_gate_retry_attempts",
+                         "Retry attempts considered by the input rate gate.",
+                         1, (char *[]) {"name"});
+    cmt_gauge_set(ins->cmt_rate_gate_retry_attempts, ts, 0, 1, (char *[]) {name});
 
     /* fluentbit_input_ingestion_paused */
     ins->cmt_ingestion_paused = \
@@ -2132,6 +2269,367 @@ int flb_input_collector_start(int coll_id, struct flb_input_instance *in)
     return -1;
 }
 
+static void flb_input_rate_gate_effective_limit(struct flb_input_instance *ins,
+                                                double max_limit,
+                                                int for_resume,
+                                                double *effective_limit)
+{
+    size_t pressure;
+    double limit;
+
+    limit = max_limit;
+    pressure = 0;
+    if (ins->rate_gate_use_backpressure == FLB_TRUE) {
+        pressure = ins->rate_gate_busy_chunks + ins->rate_gate_retry_attempts;
+    }
+
+    if (pressure > 0 && limit > 0.0) {
+        limit = limit / (double) (1 + pressure);
+    }
+
+    if (for_resume == FLB_TRUE) {
+        limit *= ins->rate_gate_resume_ratio;
+    }
+
+    if (limit < 1.0) {
+        limit = 1.0;
+    }
+
+    *effective_limit = limit;
+}
+
+static int flb_input_rate_gate_is_limited(struct flb_input_instance *ins)
+{
+    double current_window_bytes_rate;
+    double current_window_records_rate;
+    double effective_max_bytes;
+    double effective_max_records;
+    double window_seconds;
+    uint64_t window_size;
+
+    if (ins == NULL || ins->rate_gate_enabled != FLB_TRUE) {
+        return FLB_FALSE;
+    }
+
+    /* * 1. Record-based limit check
+     */
+    flb_input_rate_gate_effective_limit(ins,
+                                        (double) ins->rate_gate_max_records,
+                                        FLB_FALSE,
+                                        &effective_max_records);
+
+    if (ins->rate_gate_max_records > 0) {
+        window_size = ins->rate_window_size;
+        if (window_size == 0) {
+            window_seconds = 1.0;
+        }
+        else {
+            window_seconds = (double) window_size / (double) FLB_NSEC_IN_SEC;
+            if (window_seconds <= 0.0) {
+                window_seconds = 1.0;
+            }
+        }
+        current_window_records_rate = (double) ins->rate_window_records /
+                                      window_seconds;
+
+        /* Check the last calculated rate from the previous window */
+        if (ins->rate_records > effective_max_records) {
+            return FLB_TRUE;
+        }
+        /* * ALSO check the current accumulated count in the ongoing window.
+         * This ensures the gate triggers even before the first window expires.
+         */
+        if (current_window_records_rate > effective_max_records) {
+            return FLB_TRUE;
+        }
+    }
+
+    /* * 2. Byte-based limit check
+     */
+    flb_input_rate_gate_effective_limit(ins,
+                                        (double) ins->rate_gate_max_bytes,
+                                        FLB_FALSE,
+                                        &effective_max_bytes);
+
+    if (ins->rate_gate_max_bytes > 0) {
+        window_size = ins->rate_window_size;
+        if (window_size == 0) {
+            window_seconds = 1.0;
+        }
+        else {
+            window_seconds = (double) window_size / (double) FLB_NSEC_IN_SEC;
+            if (window_seconds <= 0.0) {
+                window_seconds = 1.0;
+            }
+        }
+        current_window_bytes_rate = (double) ins->rate_window_bytes /
+                                    window_seconds;
+
+        /* Check the last calculated rate from the previous window */
+        if (ins->rate_bytes > effective_max_bytes) {
+            return FLB_TRUE;
+        }
+        /* Check the current accumulated bytes in the ongoing window */
+        if (current_window_bytes_rate > effective_max_bytes) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static int flb_input_rate_gate_can_resume(struct flb_input_instance *ins)
+{
+    double current_window_bytes_rate;
+    double current_window_records_rate;
+    double resume_max_bytes;
+    double resume_max_records;
+    double window_seconds;
+    uint64_t window_size;
+
+    if (ins == NULL || ins->rate_gate_enabled != FLB_TRUE) {
+        return FLB_FALSE;
+    }
+
+    flb_input_rate_gate_effective_limit(ins,
+                                        (double) ins->rate_gate_max_records,
+                                        FLB_TRUE,
+                                        &resume_max_records);
+    if (ins->rate_gate_max_records > 0) {
+        window_size = ins->rate_window_size;
+        if (window_size == 0) {
+            window_seconds = 1.0;
+        }
+        else {
+            window_seconds = (double) window_size / (double) FLB_NSEC_IN_SEC;
+            if (window_seconds <= 0.0) {
+                window_seconds = 1.0;
+            }
+        }
+        current_window_records_rate = (double) ins->rate_window_records /
+                                      window_seconds;
+
+        if (ins->rate_records > resume_max_records) {
+            return FLB_FALSE;
+        }
+        if (current_window_records_rate > resume_max_records) {
+            return FLB_FALSE;
+        }
+    }
+
+    flb_input_rate_gate_effective_limit(ins,
+                                        (double) ins->rate_gate_max_bytes,
+                                        FLB_TRUE,
+                                        &resume_max_bytes);
+    if (ins->rate_gate_max_bytes > 0) {
+        window_size = ins->rate_window_size;
+        if (window_size == 0) {
+            window_seconds = 1.0;
+        }
+        else {
+            window_seconds = (double) window_size / (double) FLB_NSEC_IN_SEC;
+            if (window_seconds <= 0.0) {
+                window_seconds = 1.0;
+            }
+        }
+        current_window_bytes_rate = (double) ins->rate_window_bytes /
+                                    window_seconds;
+
+        if (ins->rate_bytes > resume_max_bytes) {
+            return FLB_FALSE;
+        }
+        if (current_window_bytes_rate > resume_max_bytes) {
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
+static void flb_input_rate_gate_collect_backpressure(struct flb_input_instance *ins)
+{
+    struct mk_list *head;
+    struct mk_list *retry_head;
+    struct flb_input_chunk *ic;
+    struct flb_task *task;
+    struct flb_task_retry *retry;
+
+    if (ins == NULL) {
+        return;
+    }
+
+    ins->rate_gate_busy_chunks = 0;
+    ins->rate_gate_retry_attempts = 0;
+
+    if (ins->rate_gate_use_backpressure != FLB_TRUE) {
+        return;
+    }
+
+    mk_list_foreach(head, &ins->chunks) {
+        ic = mk_list_entry(head, struct flb_input_chunk, _head);
+        if (ic->busy == FLB_TRUE) {
+            ins->rate_gate_busy_chunks++;
+        }
+    }
+
+    mk_list_foreach(head, &ins->tasks) {
+        task = mk_list_entry(head, struct flb_task, _head);
+        mk_list_foreach(retry_head, &task->retries) {
+            retry = mk_list_entry(retry_head, struct flb_task_retry, _head);
+            ins->rate_gate_retry_attempts += retry->attempts;
+        }
+    }
+}
+
+int flb_input_rate_gate_protect(struct flb_input_instance *ins)
+{
+    uint64_t ts;
+    char *name;
+
+    if (ins == NULL || ins->rate_gate_enabled != FLB_TRUE) {
+        return FLB_FALSE;
+    }
+
+    ts = cfl_time_now();
+    flb_input_rate_update(ins, ts, 0, 0);
+    flb_input_rate_gate_collect_backpressure(ins);
+
+    if (flb_input_rate_gate_is_limited(ins) == FLB_FALSE) {
+        return FLB_FALSE;
+    }
+
+    if (ins->rate_gate_status != FLB_INPUT_PAUSED) {
+        flb_warn("[input] %s paused (rate gate limit exceeded)",
+                 flb_input_name(ins));
+        flb_input_pause(ins);
+        ins->rate_gate_status = FLB_INPUT_PAUSED;
+    }
+
+    name = (char *) flb_input_name(ins);
+    if (ins->cmt_rate_gate_limited != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_limited, ts, 1, 1, (char *[]) {name});
+    }
+    if (ins->cmt_rate_gate_busy_chunks != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_busy_chunks, ts,
+                      (double) ins->rate_gate_busy_chunks, 1, (char *[]) {name});
+    }
+    if (ins->cmt_rate_gate_retry_attempts != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_retry_attempts, ts,
+                      (double) ins->rate_gate_retry_attempts, 1, (char *[]) {name});
+    }
+
+    return FLB_TRUE;
+}
+
+void flb_input_rate_gate_maybe_resume(struct flb_input_instance *ins)
+{
+    int can_resume;
+    uint64_t ts;
+    char *name;
+
+    if (ins == NULL || ins->rate_gate_enabled != FLB_TRUE) {
+        return;
+    }
+
+    if (ins->rate_gate_status != FLB_INPUT_PAUSED) {
+        return;
+    }
+
+    ts = cfl_time_now();
+    flb_input_rate_update(ins, ts, 0, 0);
+    flb_input_rate_gate_collect_backpressure(ins);
+    can_resume = flb_input_rate_gate_can_resume(ins);
+
+    if (can_resume == FLB_TRUE &&
+        ins->mem_buf_status == FLB_INPUT_RUNNING &&
+        ins->storage_buf_status == FLB_INPUT_RUNNING &&
+        ins->config->is_running == FLB_TRUE &&
+        ins->config->is_ingestion_active == FLB_TRUE) {
+        if (ins->p->cb_resume) {
+            flb_input_resume(ins);
+            flb_info("[input] %s resume (rate gate)",
+                     flb_input_name(ins));
+        }
+        ins->rate_gate_status = FLB_INPUT_RUNNING;
+    }
+
+    name = (char *) flb_input_name(ins);
+    if (ins->cmt_rate_gate_limited != NULL &&
+        ins->rate_gate_status == FLB_INPUT_RUNNING) {
+        cmt_gauge_set(ins->cmt_rate_gate_limited, ts, 0, 1, (char *[]) {name});
+    }
+    else if (ins->cmt_rate_gate_limited != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_limited, ts, 1, 1, (char *[]) {name});
+    }
+    if (ins->cmt_rate_gate_busy_chunks != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_busy_chunks, ts,
+                      (double) ins->rate_gate_busy_chunks, 1, (char *[]) {name});
+    }
+    if (ins->cmt_rate_gate_retry_attempts != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_retry_attempts, ts,
+                      (double) ins->rate_gate_retry_attempts, 1, (char *[]) {name});
+    }
+}
+
+void flb_input_rate_update(struct flb_input_instance *ins,
+                           uint64_t timestamp,
+                           size_t records,
+                           size_t bytes)
+{
+    double elapsed_seconds;
+    char *name;
+    uint64_t rate_window_size;
+
+    if (ins == NULL) {
+        return;
+    }
+
+    if (timestamp == 0) {
+        timestamp = cfl_time_now();
+    }
+
+    if (ins->rate_window_start == 0) {
+        ins->rate_window_start = timestamp;
+    }
+
+    rate_window_size = ins->rate_window_size;
+    if (rate_window_size == 0) {
+        rate_window_size = FLB_NSEC_IN_SEC;
+    }
+
+    ins->rate_window_records += records;
+    ins->rate_window_bytes += bytes;
+
+    if (timestamp < ins->rate_window_start ||
+        (timestamp - ins->rate_window_start) < rate_window_size) {
+        return;
+    }
+
+    elapsed_seconds = (double) (timestamp - ins->rate_window_start) /
+                      (double) FLB_NSEC_IN_SEC;
+    if (elapsed_seconds <= 0.0) {
+        return;
+    }
+
+    ins->rate_records = (double) ins->rate_window_records / elapsed_seconds;
+    ins->rate_bytes = (double) ins->rate_window_bytes / elapsed_seconds;
+
+    name = (char *) flb_input_name(ins);
+    if (ins->cmt_rate_records != NULL) {
+        cmt_gauge_set(ins->cmt_rate_records, timestamp, ins->rate_records,
+                      1, (char *[]) {name});
+    }
+
+    if (ins->cmt_rate_bytes != NULL) {
+        cmt_gauge_set(ins->cmt_rate_bytes, timestamp, ins->rate_bytes,
+                      1, (char *[]) {name});
+    }
+
+    ins->rate_window_start = timestamp;
+    ins->rate_window_records = 0;
+    ins->rate_window_bytes = 0;
+}
+
 /* start collectors for main thread, no threaded plugins */
 int flb_input_collectors_signal_start(struct flb_input_instance *ins)
 {
@@ -2300,7 +2798,7 @@ int flb_input_pause(struct flb_input_instance *ins)
 
 int flb_input_resume(struct flb_input_instance *ins)
 {
-    if (ins->p->cb_resume) {
+    if (ins->p->cb_resume && ins->context) {
         if (flb_input_is_threaded(ins)) {
             /* signal the thread event loop about the 'resume' operation */
             flb_input_thread_instance_resume(ins);
