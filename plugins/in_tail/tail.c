@@ -340,14 +340,7 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
 int in_tail_collect_event(void *file, struct flb_config *config)
 {
     int ret;
-    struct stat st;
     struct flb_tail_file *f = file;
-
-    ret = fstat(f->fd, &st);
-    if (ret == -1) {
-        flb_tail_file_remove(f);
-        return 0;
-    }
 
     ret = flb_tail_file_chunk(f);
     switch (ret) {
