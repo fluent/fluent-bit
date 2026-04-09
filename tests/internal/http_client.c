@@ -946,7 +946,7 @@ void test_http_response_chunked_multi_stage_trailers()
                              "0\r\n"
                              "X-One: 1\r\n");
     ret = flb_http_client_process_response_buffer(c);
-    TEST_CHECK(ret == FLB_HTTP_MORE);
+    TEST_CHECK(ret == FLB_HTTP_CHUNK_AVAILABLE);
 
     append_response_fragment(c, "X-Two: 2\r\n");
     ret = flb_http_client_process_response_buffer(c);
@@ -974,7 +974,110 @@ void test_http_response_chunked_multi_stage_trailers()
     test_ctx_destroy(ctx);
 }
 
-void test_http_timeout_setters_clamp_io_timeout()
+void test_http_response_chunked_partial_trailer_preserves_chunk_available()
+{
+    int ret;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", 80, NULL, FLB_HTTP_11);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    append_response_fragment(c,
+                             "HTTP/1.1 200 OK\r\n"
+                             "Transfer-Encoding: chunked\r\n"
+                             "\r\n"
+                             "4\r\n"
+                             "Wiki\r\n"
+                             "0\r\n"
+                             "X-Trace: partial");
+
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_CHUNK_AVAILABLE);
+    TEST_CHECK(c->resp.payload_size == strlen("Wiki"));
+    TEST_CHECK(strncmp(c->resp.payload, "Wiki", strlen("Wiki")) == 0);
+
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
+void test_http_response_chunked_invalid_size_suffix()
+{
+    int ret;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", 80, NULL, FLB_HTTP_11);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    append_response_fragment(c,
+                             "HTTP/1.1 200 OK\r\n"
+                             "Transfer-Encoding: chunked\r\n"
+                             "\r\n"
+                             "1g\r\n"
+                             "A\r\n"
+                             "0\r\n\r\n");
+
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_ERROR);
+
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
+void test_http_response_chunked_oversized_length()
+{
+    int ret;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", 80, NULL, FLB_HTTP_11);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    append_response_fragment(c,
+                             "HTTP/1.1 200 OK\r\n"
+                             "Transfer-Encoding: chunked\r\n"
+                             "\r\n"
+                             "ffffffffffffffffffffffffffffffff\r\n");
+
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_ERROR);
+
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
+void test_http_timeout_setters_preserve_upstream_io_timeout()
 {
     struct test_ctx *ctx;
     struct flb_http_client *c;
@@ -995,13 +1098,16 @@ void test_http_timeout_setters_clamp_io_timeout()
     }
 
     TEST_CHECK(flb_http_set_response_timeout(c, 5) == 0);
-    TEST_CHECK(ctx->u->base.net.io_timeout == 5);
+    TEST_CHECK(ctx->u->base.net.io_timeout == 10);
+    TEST_CHECK(c->u_conn->net->io_timeout == 5);
 
     TEST_CHECK(flb_http_set_read_idle_timeout(c, 3) == 0);
-    TEST_CHECK(ctx->u->base.net.io_timeout == 3);
+    TEST_CHECK(ctx->u->base.net.io_timeout == 10);
+    TEST_CHECK(c->u_conn->net->io_timeout == 3);
 
     TEST_CHECK(flb_http_set_response_timeout(c, 8) == 0);
-    TEST_CHECK(ctx->u->base.net.io_timeout == 3);
+    TEST_CHECK(ctx->u->base.net.io_timeout == 10);
+    TEST_CHECK(c->u_conn->net->io_timeout == 3);
 
     flb_http_client_destroy(c);
     test_ctx_destroy(ctx);
@@ -1037,6 +1143,9 @@ TEST_LIST = {
     { "response_chunked_empty_terminal_split", test_http_response_chunked_empty_terminal_split},
     { "response_chunked_uppercase_hex_whitespace", test_http_response_chunked_uppercase_hex_whitespace},
     { "response_chunked_multi_stage_trailers", test_http_response_chunked_multi_stage_trailers},
-    { "timeout_setters_clamp_io_timeout", test_http_timeout_setters_clamp_io_timeout},
+    { "response_chunked_partial_trailer_preserves_chunk_available", test_http_response_chunked_partial_trailer_preserves_chunk_available},
+    { "response_chunked_invalid_size_suffix", test_http_response_chunked_invalid_size_suffix},
+    { "response_chunked_oversized_length", test_http_response_chunked_oversized_length},
+    { "timeout_setters_preserve_upstream_io_timeout", test_http_timeout_setters_preserve_upstream_io_timeout},
     { 0 }
 };
