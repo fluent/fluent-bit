@@ -85,9 +85,10 @@ static int flb_ws_handshake(struct flb_connection *u_conn,
             flb_debug("[output_ws] Websocket Server Response\n%s",
                 c->resp.payload);
         }
+        flb_debug("[out_ws] Http Get Operation ret = %i, http resp = %i",
+                  ret, c->resp.status);
         flb_http_client_destroy(c);
         flb_upstream_conn_release(u_conn);
-        flb_debug("[out_ws] Http Get Operation ret = %i, http resp = %i", ret, c->resp.status);
         return -1;
     }
     flb_http_client_destroy(c);
