@@ -544,19 +544,23 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         c = NULL;
     }
 
+    if (c != NULL) {
+        flb_http_client_detach_connection(c);
+    }
+
     flb_upstream_conn_release(u_conn);
     flb_sds_destroy(signature);
     return c;
 
 error:
-    if (u_conn) {
-        flb_upstream_conn_release(u_conn);
-    }
     if (signature) {
         flb_sds_destroy(signature);
     }
     if (c) {
         flb_http_client_destroy(c);
+    }
+    if (u_conn) {
+        flb_upstream_conn_release(u_conn);
     }
     return NULL;
 }
