@@ -65,6 +65,7 @@ enum section {
     SECTION_STREAM_PROCESSOR,
     SECTION_PLUGINS,
     SECTION_UPSTREAM_SERVERS,
+    SECTION_IGNORABLE,
     SECTION_OTHER,
 };
 
@@ -84,6 +85,7 @@ static char *section_names[] = {
     "stream_processor",
     "plugins",
     "upstream_servers",
+    "ignorable",
     "other"
 };
 
@@ -123,6 +125,7 @@ enum state {
 
     STATE_SERVICE,         /* 'service' section */
     STATE_INCLUDE,         /* 'includes' section */
+    STATE_IGNORABLE,       /* 'ignorable' section */
     STATE_OTHER,           /* any other unknown section */
 
     STATE_CUSTOM,          /* custom plugins */
@@ -272,6 +275,8 @@ static char *state_str(enum state val)
         return "service";
     case STATE_INCLUDE:
         return "include";
+    case STATE_IGNORABLE:
+        return "ignorable";
     case STATE_OTHER:
         return "other";
     case STATE_CUSTOM:
@@ -1778,9 +1783,22 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                     return YAML_FAILURE;
                 }
             }
+            else if (strcasecmp(value, "ignorable") == 0) {
+                state = state_push_section(ctx, STATE_IGNORABLE, SECTION_IGNORABLE);
+
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+
+                if (state_create_section(conf, state, value) == -1) {
+                    flb_error("unable to allocate section: %s", value);
+                    return YAML_FAILURE;
+                }
+            }
             else {
                 /* any other main section definition (e.g: similar to STATE_SERVICE) */
-                state = state_push(ctx, STATE_OTHER);
+                state = state_push_section(ctx, STATE_OTHER, SECTION_OTHER);
 
                 if (state == NULL) {
                     flb_error("unable to allocate state");
@@ -1818,6 +1836,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
     /* service or others */
     case STATE_ENV:
     case STATE_SERVICE:
+    case STATE_IGNORABLE:
     case STATE_OTHER:
         switch(event->type) {
         case YAML_MAPPING_START_EVENT:
@@ -1876,6 +1895,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             switch (state->state) {
             case STATE_SERVICE:
             case STATE_ENV:
+            case STATE_IGNORABLE:
             case STATE_OTHER:
                 break;
             default:
@@ -1898,6 +1918,23 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
     case STATE_SECTION_VAL:
         switch(event->type) {
+        case YAML_MAPPING_START_EVENT:
+        case YAML_SEQUENCE_START_EVENT:
+            if (state->section == SECTION_ENV) {
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+            if (state->section != SECTION_IGNORABLE) {
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+
+            state = state_push_variant(ctx, state, event->type == YAML_MAPPING_START_EVENT);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            break;
         case YAML_SCALAR_EVENT:
             value = (char *) event->data.scalar.value;
 
@@ -1910,6 +1947,23 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
                 if (keyval == NULL) {
                     flb_error("unable to add key value");
+                    return YAML_FAILURE;
+                }
+            }
+            else if (state->section == SECTION_IGNORABLE) {
+                variant = state_variant_parse_scalar(event);
+                if (variant == NULL) {
+                    flb_error("unable to allocate memory for variant");
+                    return YAML_FAILURE;
+                }
+
+                if (flb_cf_section_property_add_variant(conf,
+                                                        state->cf_section->properties,
+                                                        state->key,
+                                                        flb_sds_len(state->key),
+                                                        variant) == NULL) {
+                    cfl_variant_destroy(variant);
+                    flb_error("unable to insert variant");
                     return YAML_FAILURE;
                 }
             }
@@ -2367,6 +2421,34 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 }
 
                 state = state_pop(ctx);
+
+                break;
+            }
+            else if (state->state == STATE_SECTION_VAL) {
+                if (state->section == SECTION_ENV) {
+                    flb_error("invalid type for env entry");
+                    return YAML_FAILURE;
+                }
+                if (state->section != SECTION_IGNORABLE) {
+                    flb_error("variant values are only valid in ignorable sections");
+                    return YAML_FAILURE;
+                }
+
+                if (flb_cf_section_property_add_variant(conf,
+                                                        state->cf_section->properties,
+                                                        state->key,
+                                                        flb_sds_len(state->key),
+                                                        variant) == NULL) {
+                    cfl_variant_destroy(variant);
+                    flb_error("unable to insert variant");
+                    return YAML_FAILURE;
+                }
+
+                state = state_pop(ctx);
+                if (state == NULL) {
+                    flb_error("no state left");
+                    return YAML_FAILURE;
+                }
 
                 break;
             }
