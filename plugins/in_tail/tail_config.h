@@ -182,6 +182,7 @@ struct flb_tail_config {
     struct flb_hash_table *event_hash;
 
     struct flb_hash_table *ignored_file_sizes;
+    struct flb_hash_table *aged_out_file_inodes;
 
     struct flb_config *config;
 };
