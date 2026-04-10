@@ -70,6 +70,7 @@ static int cb_check_output_processor_counters(void *record, size_t size, void *d
     size_t off = 0;
     struct cmt *cmt;
     cfl_sds_t text;
+    double input_records;
     double proc_records;
     double dropped_records;
 
@@ -89,6 +90,9 @@ static int cb_check_output_processor_counters(void *record, size_t size, void *d
 
     text = cmt_encode_text_create(cmt);
     if (text != NULL) {
+        input_records = find_metric_value(text,
+                                          "fluentbit_input_records_total",
+                                          "dummy.0");
         proc_records = find_metric_value(text,
                                          "fluentbit_output_proc_records_total",
                                          "stdout.0");
@@ -96,7 +100,9 @@ static int cb_check_output_processor_counters(void *record, size_t size, void *d
                                             "fluentbit_output_dropped_records_total",
                                             "stdout.0");
 
-        if (proc_records == 0.0 && dropped_records > 0.0) {
+        if (input_records > 0.0 &&
+            proc_records == 0.0 &&
+            dropped_records == 0.0) {
             set_metrics_condition_met(FLB_TRUE);
         }
 
