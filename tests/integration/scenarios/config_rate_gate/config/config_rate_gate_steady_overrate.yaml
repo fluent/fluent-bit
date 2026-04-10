@@ -1,0 +1,21 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: rate_gate.steady
+      dummy: '{"message":"steady overrate"}'
+      rate: 400
+      rate_gate: true
+      rate_gate.max_bytes: 0
+      rate_gate.max_records: 20
+      rate_window: 1s
+      rate_gate.backpressure: true
+
+  outputs:
+    - name: stdout
+      match: "*"
