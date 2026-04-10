@@ -309,6 +309,13 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         return NULL;
     }
 
+    ctx->aged_out_file_inodes = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 1000, 0);
+    if (ctx->aged_out_file_inodes == NULL) {
+        flb_plg_error(ctx->ins, "could not create aged out file inode hash table");
+        flb_tail_config_destroy(ctx);
+        return NULL;
+    }
+
 #ifdef FLB_HAVE_SQLDB
     ctx->db = NULL;
 #endif
@@ -570,6 +577,10 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
 
     if (config->ignored_file_sizes != NULL) {
         flb_hash_table_destroy(config->ignored_file_sizes);
+    }
+
+    if (config->aged_out_file_inodes != NULL) {
+        flb_hash_table_destroy(config->aged_out_file_inodes);
     }
 
     flb_free(config);

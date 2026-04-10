@@ -443,6 +443,158 @@ void flb_test_kinesis_aggregation_many_records(void)
     flb_destroy(ctx);
 }
 
+void flb_test_kinesis_compression_gzip(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    const char *record1 = "[1, {\"message\":\"gzip_test1\"}]";
+    const char *record2 = "[1, {\"message\":\"gzip_test2\"}]";
+
+    setenv("FLB_KINESIS_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "kinesis_streams", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "stream", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "compression", "gzip", NULL);
+    flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Push records with GZIP compression */
+    flb_lib_push(ctx, in_ffd, (char *) record1, strlen(record1));
+    flb_lib_push(ctx, in_ffd, (char *) record2, strlen(record2));
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_kinesis_compression_zstd(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    const char *record1 = "[1, {\"message\":\"zstd_test1\"}]";
+    const char *record2 = "[1, {\"message\":\"zstd_test2\"}]";
+
+    setenv("FLB_KINESIS_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "kinesis_streams", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "stream", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "compression", "zstd", NULL);
+    flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Push records with ZSTD compression */
+    flb_lib_push(ctx, in_ffd, (char *) record1, strlen(record1));
+    flb_lib_push(ctx, in_ffd, (char *) record2, strlen(record2));
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_kinesis_compression_snappy(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    const char *record1 = "[1, {\"message\":\"snappy_test1\"}]";
+    const char *record2 = "[1, {\"message\":\"snappy_test2\"}]";
+
+    setenv("FLB_KINESIS_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "kinesis_streams", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "stream", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "compression", "snappy", NULL);
+    flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Push records with Snappy compression */
+    flb_lib_push(ctx, in_ffd, (char *) record1, strlen(record1));
+    flb_lib_push(ctx, in_ffd, (char *) record2, strlen(record2));
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_kinesis_compression_snappy_with_aggregation(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int i;
+    char record[100];
+
+    setenv("FLB_KINESIS_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "kinesis_streams", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "stream", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "simple_aggregation", "On", NULL);
+    flb_output_set(ctx, out_ffd, "compression", "snappy", NULL);
+    flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Push many records with Snappy compression and aggregation */
+    for (i = 0; i < 20; i++) {
+        ret = snprintf(record, sizeof(record), "[1, {\"id\":%d,\"msg\":\"snappy_agg\"}]", i);
+        TEST_CHECK(ret < sizeof(record));
+        flb_lib_push(ctx, in_ffd, record, strlen(record));
+    }
+
+    sleep(3);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"success", flb_test_firehose_success },
@@ -457,5 +609,9 @@ TEST_LIST = {
     {"aggregation_with_time_key", flb_test_kinesis_aggregation_with_time_key },
     {"aggregation_with_log_key", flb_test_kinesis_aggregation_with_log_key },
     {"aggregation_many_records", flb_test_kinesis_aggregation_many_records },
+    {"compression_gzip", flb_test_kinesis_compression_gzip },
+    {"compression_zstd", flb_test_kinesis_compression_zstd },
+    {"compression_snappy", flb_test_kinesis_compression_snappy },
+    {"compression_snappy_with_aggregation", flb_test_kinesis_compression_snappy_with_aggregation },
     {NULL, NULL}
 };

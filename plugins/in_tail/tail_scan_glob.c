@@ -195,6 +195,7 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
     int64_t mtime;
     struct stat st;
     ssize_t ignored_file_size;
+    uint64_t aged_out_inode;
 
     ignored_file_size = -1;
 
@@ -241,6 +242,24 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
             if (tail_is_excluded(globbuf.gl_pathv[i], ctx) == FLB_TRUE) {
                 flb_plg_debug(ctx->ins, "excluded=%s", globbuf.gl_pathv[i]);
                 continue;
+            }
+
+            if (ctx->ignore_active_older_files &&
+                flb_tail_scan_fetch_aged_out_inode(ctx,
+                                                   globbuf.gl_pathv[i],
+                                                   strlen(globbuf.gl_pathv[i]),
+                                                   &aged_out_inode) == 0) {
+                if (aged_out_inode == (uint64_t) st.st_ino) {
+                    flb_plg_debug(ctx->ins,
+                                  "excluded=%s (ignore_active_older_files)",
+                                  globbuf.gl_pathv[i]);
+                    continue;
+                }
+
+                flb_tail_scan_unregister_aged_out_inode(
+                    ctx,
+                    globbuf.gl_pathv[i],
+                    strlen(globbuf.gl_pathv[i]));
             }
 
             if (ctx->ignore_older > 0) {

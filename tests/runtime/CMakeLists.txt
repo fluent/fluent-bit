@@ -194,6 +194,13 @@ if(FLB_IN_LIB AND FLB_OUT_LIB)
   endif ()
   FLB_RT_TEST(FLB_FILTER_ECS       "filter_ecs.c")
   FLB_RT_TEST(FLB_FILTER_LOG_TO_METRICS       "filter_log_to_metrics.c")
+  if(FLB_IN_LIB)
+    FLB_RT_TEST(FLB_FILTER_GREP "filter_counter_semantics.c")
+  endif()
+endif()
+
+if(FLB_IN_LIB AND FLB_FILTER_GREP AND FLB_OUT_NULL AND FLB_OUT_HTTP)
+  FLB_RT_TEST(FLB_IN_LIB "counter_parity_e2e.c")
 endif()
 
 
@@ -204,6 +211,7 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_LIB              "core_routes.c")
   FLB_RT_TEST(FLB_OUT_LIB              "config_map_opts.c")
   FLB_RT_TEST(FLB_OUT_COUNTER          "out_counter.c")
+  FLB_RT_TEST(FLB_OUT_AZURE_BLOB       "out_azure_blob_compression.c")
   FLB_RT_TEST(FLB_OUT_AZURE_KUSTO      "out_azure_kusto.c")
   FLB_RT_TEST(FLB_OUT_DATADOG          "out_datadog.c")
   FLB_RT_TEST(FLB_OUT_SKYWALKING       "out_skywalking.c")
@@ -231,6 +239,11 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_CLOUDWATCH_LOGS   "out_cloudwatch.c")
   FLB_RT_TEST(FLB_OUT_KINESIS_FIREHOSE  "out_firehose.c")
   FLB_RT_TEST(FLB_OUT_KINESIS_STREAMS   "out_kinesis.c")
+  if(FLB_OUT_FORWARD AND FLB_OUT_LOKI)
+    if (FLB_RECORD_ACCESSOR AND FLB_OUT_STACKDRIVER)
+      FLB_RT_TEST(FLB_OUT_LIB "group_counter_semantics.c")
+    endif()
+  endif()
     # These plugins work only on Linux
   if(NOT FLB_SYSTEM_WINDOWS)
     FLB_RT_TEST(FLB_OUT_FILE              "out_file.c")
@@ -301,3 +314,26 @@ foreach(source_file ${CHECK_PROGRAMS})
     set_property(TARGET ${source_file_we} APPEND_STRING PROPERTY COMPILE_FLAGS "-D${o_source_file_we}")
   endif()
 endforeach()
+
+function(flb_runtime_lock_tests resource_name)
+  foreach(test_name ${ARGN})
+    if (TEST ${test_name})
+      set_property(TEST ${test_name} APPEND PROPERTY RESOURCE_LOCK "${resource_name}")
+    endif()
+  endforeach()
+endfunction()
+
+# Most runtime tests can run concurrently under `ctest -j`.
+# Only serialize executables that bind the same well-known port.
+flb_runtime_lock_tests("runtime-port-2020"
+  flb-rt-core_internal_logger
+  flb-rt-filter_wasm)
+
+flb_runtime_lock_tests("runtime-port-4318"
+  flb-rt-in_opentelemetry
+  flb-rt-in_opentelemetry_routing
+  flb-rt-processor_cumulative_to_delta)
+
+flb_runtime_lock_tests("runtime-port-5170"
+  flb-rt-in_tcp
+  flb-rt-out_tcp)

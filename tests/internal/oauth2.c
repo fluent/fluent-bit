@@ -762,23 +762,142 @@ static struct flb_oauth2 *create_private_key_jwt_ctx(struct flb_config *config,
     return ctx;
 }
 
-void test_parse_defaults(void)
+static void destroy_parse_ctx(struct flb_oauth2 *ctx)
+{
+    flb_sds_destroy(ctx->access_token);
+    flb_sds_destroy(ctx->token_type);
+}
+
+static void populate_parse_ctx(struct flb_oauth2 *ctx,
+                               const char *access_token,
+                               const char *token_type,
+                               uint64_t expires_in)
+{
+    ctx->access_token = flb_sds_create(access_token);
+    ctx->token_type = flb_sds_create(token_type);
+    ctx->expires_in = expires_in;
+}
+
+void test_parse_refreshes_token_transactionally(void)
 {
     int ret;
-    struct flb_oauth2 ctx;
-    const char *payload = "{\"access_token\":\"abc\"}";
+    struct flb_oauth2 ctx = {0};
+    const char *payload = "{\"access_token\":\"new-token\","
+                          "\"token_type\":\"Bearer\","
+                          "\"expires_in\":3600}";
 
-    memset(&ctx, 0, sizeof(ctx));
+    populate_parse_ctx(&ctx, "old-token", "OldBearer", 1200);
     ctx.refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
 
     ret = flb_oauth2_parse_json_response(payload, strlen(payload), &ctx);
-    TEST_CHECK(ret == 0);
-    TEST_CHECK(ctx.access_token != NULL);
-    TEST_CHECK(strcmp(ctx.token_type, "Bearer") == 0);
-    TEST_CHECK(ctx.expires_in == FLB_OAUTH2_DEFAULT_EXPIRES);
 
-    flb_sds_destroy(ctx.access_token);
-    flb_sds_destroy(ctx.token_type);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(strcmp(ctx.access_token, "new-token") == 0);
+    TEST_CHECK(strcmp(ctx.token_type, "Bearer") == 0);
+    TEST_CHECK(ctx.expires_in == 3240);
+
+    destroy_parse_ctx(&ctx);
+}
+
+void test_parse_accepts_quoted_expires_in(void)
+{
+    int ret;
+    struct flb_oauth2 ctx = {0};
+    const char *payload = "{\"access_token\":\"quoted-token\","
+                          "\"token_type\":\"Bearer\","
+                          "\"expires_in\":\"3600\"}";
+
+    ctx.refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
+    ret = flb_oauth2_parse_json_response(payload, strlen(payload), &ctx);
+
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(strcmp(ctx.access_token, "quoted-token") == 0);
+    TEST_CHECK(strcmp(ctx.token_type, "Bearer") == 0);
+    TEST_CHECK(ctx.expires_in == 3240);
+
+    destroy_parse_ctx(&ctx);
+}
+
+void test_parse_duplicate_keys_last_wins(void)
+{
+    int ret;
+    struct flb_oauth2 ctx = {0};
+    const char *payload = "{\"access_token\":\"first\","
+                          "\"token_type\":\"Bearer\","
+                          "\"expires_in\":3600,"
+                          "\"access_token\":\"second\"}";
+
+    ctx.refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
+    ret = flb_oauth2_parse_json_response(payload, strlen(payload), &ctx);
+
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(strcmp(ctx.access_token, "second") == 0);
+    TEST_CHECK(strcmp(ctx.token_type, "Bearer") == 0);
+    TEST_CHECK(ctx.expires_in == 3240);
+
+    destroy_parse_ctx(&ctx);
+}
+
+void test_parse_rejects_missing_required_fields(void)
+{
+    int index;
+    int ret;
+    struct flb_oauth2 ctx;
+    const char *payloads[] = {
+        "{\"token_type\":\"Bearer\",\"expires_in\":3600}",
+        "{\"access_token\":\"new-token\",\"expires_in\":3600}",
+        "{\"access_token\":\"new-token\",\"token_type\":\"Bearer\"}",
+        "{\"error\":\"invalid_request\"}"
+    };
+
+    for (index = 0; index < 4; index++) {
+        memset(&ctx, 0, sizeof(ctx));
+        populate_parse_ctx(&ctx, "old-token", "OldBearer", 1200);
+        ctx.refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
+
+        ret = flb_oauth2_parse_json_response(payloads[index],
+                                             strlen(payloads[index]),
+                                             &ctx);
+
+        TEST_CHECK(ret == -1);
+        TEST_CHECK(strcmp(ctx.access_token, "old-token") == 0);
+        TEST_CHECK(strcmp(ctx.token_type, "OldBearer") == 0);
+        TEST_CHECK(ctx.expires_in == 1200);
+
+        destroy_parse_ctx(&ctx);
+    }
+}
+
+void test_parse_rejects_invalid_expires_in(void)
+{
+    int index;
+    int ret;
+    struct flb_oauth2 ctx;
+    const char *payloads[] = {
+        "{\"access_token\":\"t\",\"token_type\":\"Bearer\",\"expires_in\":\"\"}",
+        "{\"access_token\":\"t\",\"token_type\":\"Bearer\",\"expires_in\":-1}",
+        "{\"access_token\":\"t\",\"token_type\":\"Bearer\",\"expires_in\":\"3600x\"}",
+        "{\"access_token\":\"t\",\"token_type\":\"Bearer\",\"expires_in\":0}",
+        "{\"access_token\":\"t\",\"token_type\":\"Bearer\",\"expires_in\":50}",
+        "{\"access_token\":\"t\",\"token_type\":\"Bearer\",\"expires_in\":66}"
+    };
+
+    for (index = 0; index < 6; index++) {
+        memset(&ctx, 0, sizeof(ctx));
+        populate_parse_ctx(&ctx, "old-token", "OldBearer", 1200);
+        ctx.refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
+
+        ret = flb_oauth2_parse_json_response(payloads[index],
+                                             strlen(payloads[index]),
+                                             &ctx);
+
+        TEST_CHECK(ret == -1);
+        TEST_CHECK(strcmp(ctx.access_token, "old-token") == 0);
+        TEST_CHECK(strcmp(ctx.token_type, "OldBearer") == 0);
+        TEST_CHECK(ctx.expires_in == 1200);
+
+        destroy_parse_ctx(&ctx);
+    }
 }
 
 void test_caching_and_refresh(void)
@@ -792,10 +911,10 @@ void test_caching_and_refresh(void)
     config = flb_config_init();
     TEST_CHECK(config != NULL);
 
-    ret = oauth2_mock_server_start(&server, 2, 0);
+    ret = oauth2_mock_server_start(&server, 65, 0);
     TEST_CHECK(ret == 0);
 
-    ctx = create_oauth_ctx(config, &server, 1);
+    ctx = create_oauth_ctx(config, &server, 58);
     TEST_CHECK(ctx != NULL);
 
 #ifdef FLB_SYSTEM_MACOS
@@ -846,7 +965,7 @@ void test_private_key_jwt_body(void)
                                            cert_path, sizeof(cert_path));
     TEST_CHECK(ret == 0);
 
-    ret = oauth2_mock_server_start(&server, 30, 0);
+    ret = oauth2_mock_server_start(&server, 3600, 0);
     TEST_CHECK(ret == 0);
 
     ctx = create_private_key_jwt_ctx(config, &server, key_path, cert_path, "kid");
@@ -901,7 +1020,7 @@ void test_private_key_jwt_x5t_header(void)
                                            cert_path, sizeof(cert_path));
     TEST_CHECK(ret == 0);
 
-    ret = oauth2_mock_server_start(&server, 30, 0);
+    ret = oauth2_mock_server_start(&server, 3600, 0);
     TEST_CHECK(ret == 0);
 
     ctx = create_private_key_jwt_ctx(config, &server, key_path, cert_path, "x5t");
@@ -951,7 +1070,13 @@ void test_private_key_jwt_x5t_header(void)
 }
 
 TEST_LIST = {
-    {"parse_defaults", test_parse_defaults},
+    {"parse_refreshes_token_transactionally",
+     test_parse_refreshes_token_transactionally},
+    {"parse_accepts_quoted_expires_in", test_parse_accepts_quoted_expires_in},
+    {"parse_duplicate_keys_last_wins", test_parse_duplicate_keys_last_wins},
+    {"parse_rejects_missing_required_fields",
+     test_parse_rejects_missing_required_fields},
+    {"parse_rejects_invalid_expires_in", test_parse_rejects_invalid_expires_in},
     {"caching_and_refresh", test_caching_and_refresh},
     {"private_key_jwt_body", test_private_key_jwt_body},
     {"private_key_jwt_x5t_header", test_private_key_jwt_x5t_header},

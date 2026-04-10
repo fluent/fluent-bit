@@ -131,9 +131,21 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         else if (strcasecmp(ctx->format_str, "raw") == 0) {
             ctx->format = FLB_KAFKA_FMT_RAW;
         }
+        else if (strcasecmp(ctx->format_str, "otlp_json") == 0) {
+            ctx->format = FLB_KAFKA_FMT_OTLP_JSON;
+        }
+        else if (strcasecmp(ctx->format_str, "otlp_proto") == 0) {
+            ctx->format = FLB_KAFKA_FMT_OTLP_PROTO;
+        }
     }
     else {
         ctx->format = FLB_KAFKA_FMT_JSON;
+    }
+
+    ins->event_type = FLB_OUTPUT_LOGS;
+    if (ctx->format == FLB_KAFKA_FMT_OTLP_JSON ||
+        ctx->format == FLB_KAFKA_FMT_OTLP_PROTO) {
+        ins->event_type |= FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES;
     }
 
     /* Config: Message_Key */

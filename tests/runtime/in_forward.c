@@ -67,6 +67,14 @@ static void clear_output_num()
     set_output_num(0);
 }
 
+static int cb_count_only(void *record, size_t size, void *data)
+{
+    int n = get_output_num();
+    set_output_num(n + 1);
+    flb_free(record);
+    return 0;
+}
+
 static int create_simple_json(char **out_buf, size_t *size)
 {
     int root_type;
@@ -422,7 +430,7 @@ void flb_test_unix_path()
     TEST_CHECK(ret == 0);
 
     /* waiting to create socket */
-    flb_time_msleep(200); 
+    flb_time_msleep(200);
 
     memset(&sun, 0, sizeof(sun));
     fd = socket(AF_LOCAL, SOCK_STREAM, 0);
@@ -507,7 +515,7 @@ void flb_test_unix_perm()
     TEST_CHECK(ret == 0);
 
     /* waiting to create socket */
-    flb_time_msleep(200); 
+    flb_time_msleep(200);
 
     memset(&sun, 0, sizeof(sun));
     fd = socket(AF_LOCAL, SOCK_STREAM, 0);
@@ -724,6 +732,122 @@ static int create_simple_json_zstd(msgpack_sbuffer *sbuf)
     return 0;
 }
 
+/*
+ * Creates an uncompressed PackedForward frame with a payload large enough to
+ * exercise input size boundary checks.
+ *
+ * Final structure: [tag, packed_entries, {}]
+ */
+static int create_large_packedforward(msgpack_sbuffer *sbuf,
+                                      size_t entry_count,
+                                      size_t message_len)
+{
+    size_t index;
+    msgpack_packer pck;
+    msgpack_sbuffer entries;
+    char *message;
+
+    message = flb_malloc(message_len);
+    if (!TEST_CHECK(message != NULL)) {
+        flb_errno();
+        return -1;
+    }
+
+    for (index = 0; index < message_len; index++) {
+        message[index] = (char) ('a' + (index % 26));
+    }
+
+    msgpack_sbuffer_init(&entries);
+    msgpack_packer_init(&pck, &entries, msgpack_sbuffer_write);
+
+    for (index = 0; index < entry_count; index++) {
+        msgpack_pack_array(&pck, 2);
+        msgpack_pack_uint64(&pck, 1234567890 + index);
+        msgpack_pack_map(&pck, 1);
+        msgpack_pack_str_with_body(&pck, "test", 4);
+        msgpack_pack_str_with_body(&pck, message, message_len);
+    }
+
+    msgpack_packer_init(&pck, sbuf, msgpack_sbuffer_write);
+    msgpack_pack_array(&pck, 3);
+    msgpack_pack_str_with_body(&pck, "test", 4);
+    msgpack_pack_bin_with_body(&pck, entries.data, entries.size);
+    msgpack_pack_map(&pck, 0);
+
+    msgpack_sbuffer_destroy(&entries);
+    flb_free(message);
+
+    return 0;
+}
+
+/*
+ * Creates a compressed PackedForward frame where compressed input can be much
+ * smaller than decompressed output.
+ *
+ * Final structure: [tag, gzip(entries), {"compressed":"gzip","size":N}]
+ */
+static int create_large_compressed_packedforward(msgpack_sbuffer *sbuf,
+                                                 size_t entry_count,
+                                                 size_t message_len)
+{
+    int ret;
+    msgpack_sbuffer entries;
+    msgpack_packer pck;
+    char *compressed_buf;
+    size_t compressed_size;
+
+    msgpack_sbuffer_init(&entries);
+    ret = create_large_packedforward(&entries, entry_count, message_len);
+    if (!TEST_CHECK(ret == 0)) {
+        msgpack_sbuffer_destroy(&entries);
+        return -1;
+    }
+
+    /* extract only packed entries from [tag, entries, {}] */
+    {
+        msgpack_unpacked result;
+        size_t off;
+        msgpack_object root;
+        msgpack_object payload;
+
+        msgpack_unpacked_init(&result);
+        off = 0;
+        ret = msgpack_unpack_next(&result, entries.data, entries.size, &off);
+        if (!TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS)) {
+            msgpack_unpacked_destroy(&result);
+            msgpack_sbuffer_destroy(&entries);
+            return -1;
+        }
+
+        root = result.data;
+        payload = root.via.array.ptr[1];
+        ret = flb_gzip_compress(payload.via.bin.ptr, payload.via.bin.size,
+                                (void **) &compressed_buf, &compressed_size);
+
+        msgpack_unpacked_destroy(&result);
+    }
+
+    if (!TEST_CHECK(ret == 0)) {
+        msgpack_sbuffer_destroy(&entries);
+        return -1;
+    }
+
+    msgpack_packer_init(&pck, sbuf, msgpack_sbuffer_write);
+    msgpack_pack_array(&pck, 3);
+    msgpack_pack_str_with_body(&pck, "test", 4);
+    msgpack_pack_bin_with_body(&pck, compressed_buf, compressed_size);
+    msgpack_pack_map(&pck, 2);
+    msgpack_pack_str_with_body(&pck, "compressed", 10);
+    msgpack_pack_str_with_body(&pck, "gzip", 4);
+    msgpack_pack_str_with_body(&pck, "size", 4);
+    msgpack_pack_uint64(&pck, entries.size);
+
+    flb_free(compressed_buf);
+    msgpack_sbuffer_destroy(&entries);
+
+    return 0;
+}
+
 void flb_test_forward_zstd()
 {
     struct flb_lib_out_cb cb_data;
@@ -784,12 +908,140 @@ void flb_test_forward_zstd()
     test_ctx_destroy(ctx);
 }
 
-static int cb_count_only(void *record, size_t size, void *data)
+void flb_test_forward_packedforward_payload_exceeds_limit()
 {
-    int n = get_output_num();
-    set_output_num(n + 1);
-    flb_free(record);
-    return 0;
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int ret;
+    int num;
+    ssize_t w_size;
+    msgpack_sbuffer sbuf;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_only;
+    cb_data.data = NULL;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "buffer_chunk_size", "1K",
+                        "buffer_max_size", "1K",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "test",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    fd = connect_tcp(NULL, -1);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    msgpack_sbuffer_init(&sbuf);
+    ret = create_large_packedforward(&sbuf, 16, 128);
+    TEST_CHECK(ret == 0);
+
+    w_size = send(fd, sbuf.data, sbuf.size, 0);
+    if (!TEST_CHECK(w_size == (ssize_t) sbuf.size)) {
+        TEST_MSG("failed to send, errno=%d", errno);
+        flb_socket_close(fd);
+        msgpack_sbuffer_destroy(&sbuf);
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    msgpack_sbuffer_destroy(&sbuf);
+
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 0)) {
+        TEST_MSG("expected oversized PackedForward payload to be rejected");
+    }
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_forward_decompressed_payload_exceeds_limit()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int ret;
+    int num;
+    ssize_t w_size;
+    msgpack_sbuffer sbuf;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_only;
+    cb_data.data = NULL;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "buffer_chunk_size", "512",
+                        "buffer_max_size", "1K",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "test",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    fd = connect_tcp(NULL, -1);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    msgpack_sbuffer_init(&sbuf);
+    ret = create_large_compressed_packedforward(&sbuf, 32, 128);
+    TEST_CHECK(ret == 0);
+
+    w_size = send(fd, sbuf.data, sbuf.size, 0);
+    if (!TEST_CHECK(w_size == (ssize_t) sbuf.size)) {
+        TEST_MSG("failed to send, errno=%d", errno);
+        flb_socket_close(fd);
+        msgpack_sbuffer_destroy(&sbuf);
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    msgpack_sbuffer_destroy(&sbuf);
+
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 0)) {
+        TEST_MSG("expected oversized decompressed payload to be rejected");
+    }
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
 }
 
 void flb_test_threaded_forward_issue_10946()
@@ -1049,6 +1301,8 @@ TEST_LIST = {
 #endif
     {"forward_gzip", flb_test_forward_gzip},
     {"forward_zstd", flb_test_forward_zstd},
+    {"forward_packedforward_payload_exceeds_limit", flb_test_forward_packedforward_payload_exceeds_limit},
+    {"forward_decompressed_payload_exceeds_limit", flb_test_forward_decompressed_payload_exceeds_limit},
     {"issue_10946", flb_test_threaded_forward_issue_10946},
     {"fw_auth_users_only_fail_start", flb_test_fw_auth_users_only_fail_start},
     {"fw_auth_empty_shared_key_plus_users_start_ok", flb_test_fw_auth_empty_shared_key_plus_users_start_ok},

@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_callback.h>
+#include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_upstream.h>
@@ -339,7 +340,7 @@ int flb_input_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc)
     struct flb_input_instance *i_ins;
 
     i_ins = in_instance_get(ctx, ffd);
-    if (!i_ins) {
+    if (!i_ins || proc == NULL) {
         return -1;
     }
 
@@ -347,6 +348,8 @@ int flb_input_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc)
         flb_processor_destroy(i_ins->processor);
     }
 
+    proc->data = i_ins;
+    proc->source_plugin_type = FLB_PLUGIN_INPUT;
     i_ins->processor = proc;
 
     return 0;
@@ -555,7 +558,7 @@ int flb_output_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc
     struct flb_output_instance *o_ins;
 
     o_ins = out_instance_get(ctx, ffd);
-    if (!o_ins) {
+    if (!o_ins || proc == NULL) {
         return -1;
     }
 
@@ -563,6 +566,8 @@ int flb_output_set_processor(flb_ctx_t *ctx, int ffd, struct flb_processor *proc
         flb_processor_destroy(o_ins->processor);
     }
 
+    proc->data = o_ins;
+    proc->source_plugin_type = FLB_PLUGIN_OUTPUT;
     o_ins->processor = proc;
 
     return 0;

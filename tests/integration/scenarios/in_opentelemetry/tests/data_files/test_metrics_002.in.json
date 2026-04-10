@@ -1,0 +1,75 @@
+{
+  "resource_metrics": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "string_value": "payments"
+            }
+          }
+        ]
+      },
+      "scope_metrics": [
+        {
+          "scope": {
+            "name": "metrics-advanced-scope",
+            "version": "2.0.0"
+          },
+          "metrics": [
+            {
+              "name": "request.duration",
+              "unit": "ms",
+              "histogram": {
+                "aggregation_temporality": 1,
+                "data_points": [
+                  {
+                    "attributes": [
+                      {
+                        "key": "http.route",
+                        "value": {
+                          "string_value": "/checkout"
+                        }
+                      }
+                    ],
+                    "time_unix_nano": "1650917402000000000",
+                    "count": "3",
+                    "sum": 245.0,
+                    "bucket_counts": [
+                      "1",
+                      "2"
+                    ],
+                    "explicit_bounds": [
+                      100.0
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "cpu.usage",
+              "unit": "1",
+              "gauge": {
+                "data_points": [
+                  {
+                    "attributes": [
+                      {
+                        "key": "host.name",
+                        "value": {
+                          "string_value": "node-a"
+                        }
+                      }
+                    ],
+                    "time_unix_nano": "1650917403000000000",
+                    "as_double": 0.82
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

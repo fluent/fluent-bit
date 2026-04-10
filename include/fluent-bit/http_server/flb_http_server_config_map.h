@@ -31,7 +31,8 @@ struct mk_list *flb_http_server_get_config_map(struct flb_config *config);
 
 int flb_http_server_property_is_allowed(const char *property_name);
 
-int flb_http_server_config_map_set(struct mk_list *properties,
+int flb_http_server_config_map_set(struct flb_config *config,
+                                   struct mk_list *properties,
                                    struct mk_list *config_map,
                                    struct flb_http_server_config *context);
 

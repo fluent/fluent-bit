@@ -70,7 +70,9 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
 
     /* Apply OAuth2 config map properties if any */
     if (ins->oauth2_config_map && mk_list_size(&ins->oauth2_properties) > 0) {
-        ret = flb_config_map_set(&ins->oauth2_properties, ins->oauth2_config_map,
+        ret = flb_config_map_set(ins->config,
+                                 &ins->oauth2_properties,
+                                 ins->oauth2_config_map,
                                  &ctx->oauth2_config);
         if (ret == -1) {
             flb_free(ctx);

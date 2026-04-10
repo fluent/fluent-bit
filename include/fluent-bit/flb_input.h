@@ -446,10 +446,12 @@ struct flb_input_instance {
     struct flb_hash_table *ht_metric_chunks;
     struct flb_hash_table *ht_trace_chunks;
     struct flb_hash_table *ht_profile_chunks;
+    pthread_mutex_t metrics_chunk_lock;
 
     /* TLS settings */
     int use_tls;                         /* bool, try to use TLS for I/O */
     int tls_verify;                      /* Verify certs (default: true) */
+    int tls_verify_client;               /* Verify client certs (default: false) */
     int tls_verify_hostname;             /* Verify hostname (default: false) */
     int tls_debug;                       /* mbedtls debug level          */
     char *tls_vhost;                     /* Virtual hostname for SNI     */
@@ -747,7 +749,7 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
 
     /* Process normal properties */
     if (ins->config_map) {
-        ret = flb_config_map_set(&ins->properties, ins->config_map, context);
+        ret = flb_config_map_set(ins->config, &ins->properties, ins->config_map, context);
 
         if (ret == -1) {
             return -1;
@@ -756,7 +758,7 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
 
     /* Net properties */
     if (ins->net_config_map) {
-        ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
+        ret = flb_config_map_set(ins->config, &ins->net_properties, ins->net_config_map,
                                  &ins->net_setup);
         if (ret == -1) {
             return -1;
@@ -765,7 +767,8 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
 
     /* HTTP server properties */
     if (ins->http_server_config_map && ins->http_server_config) {
-        ret = flb_config_map_set(&ins->http_server_properties,
+        ret = flb_config_map_set(ins->config,
+                                 &ins->http_server_properties,
                                  ins->http_server_config_map,
                                  ins->http_server_config);
         if (ret == -1) {

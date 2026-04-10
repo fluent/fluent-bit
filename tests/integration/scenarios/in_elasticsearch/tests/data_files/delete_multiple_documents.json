@@ -1,0 +1,2 @@
+{ "update": { "_index": "new_index", "_id": "2" } }
+{ "doc": { "title": "Updated Title", "description": "Updated description." } }

@@ -71,6 +71,9 @@ static struct cfl_variant *clone_variant(Opentelemetry__Proto__Common__V1__AnyVa
     if (source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
         result_instance = cfl_variant_create_from_string(source->string_value);
     }
+    else if (source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX) {
+        result_instance = cfl_variant_create_from_string("");
+    }
     else if (source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BOOL_VALUE) {
         result_instance = cfl_variant_create_from_bool(source->bool_value);
     }
@@ -154,6 +157,11 @@ static int clone_array_entry(struct cfl_array *target,
     struct cfl_variant *new_child_instance;
     int                 result;
 
+    if (source != NULL &&
+        source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX) {
+        return CMT_DECODE_OPENTELEMETRY_SUCCESS;
+    }
+
     new_child_instance = clone_variant(source);
     if (new_child_instance == NULL) {
         return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
@@ -183,7 +191,7 @@ static int clone_kvlist(struct cfl_kvlist *target,
         result = clone_kvlist_entry(target, source->values[index]);
     }
 
-    return 0;
+    return result;
 }
 
 static int clone_kvlist_entry(struct cfl_kvlist *target,
@@ -191,6 +199,15 @@ static int clone_kvlist_entry(struct cfl_kvlist *target,
 {
     struct cfl_variant *new_child_instance;
     int                 result;
+
+    if (source == NULL) {
+        return CMT_DECODE_OPENTELEMETRY_SUCCESS;
+    }
+
+    if (source->value != NULL &&
+        source->value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX) {
+        return CMT_DECODE_OPENTELEMETRY_SUCCESS;
+    }
 
     new_child_instance = clone_variant(source->value);
 
@@ -624,6 +641,10 @@ static int decode_data_point_labels(struct cmt *cmt,
 
             if (attribute->value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE) {
                 result = append_new_metric_label_value(metric, attribute->value->string_value, 0);
+            }
+            else if (attribute->value->value_case ==
+                     OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX) {
+                result = append_new_metric_label_value(metric, "", 0);
             }
             else if (attribute->value->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BYTES_VALUE) {
                 result = append_new_metric_label_value(metric,

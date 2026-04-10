@@ -38,7 +38,11 @@ static int flb_pack_json_ext_internal(const char *json, size_t len,
     struct flb_pack_state *state = NULL;
 
     if (!opts) {
+#ifdef FLB_HAVE_YYJSON
         backend = FLB_PACK_JSON_BACKEND_YYJSON;
+#else
+        backend = FLB_PACK_JSON_BACKEND_JSMN;
+#endif
     }
     else {
         backend = opts->backend;
@@ -77,6 +81,7 @@ static int flb_pack_json_ext_internal(const char *json, size_t len,
                                     out_root_type, NULL);
     }
     else if (backend == FLB_PACK_JSON_BACKEND_YYJSON) {
+#ifdef FLB_HAVE_YYJSON
         if (require_records) {
             return flb_pack_json_recs_yyjson(json, len, out_buf, out_size,
                                              out_root_type, out_records,
@@ -85,6 +90,9 @@ static int flb_pack_json_ext_internal(const char *json, size_t len,
 
         return flb_pack_json_yyjson(json, len, out_buf, out_size,
                                     out_root_type, NULL);
+#else
+        return -1;
+#endif
     }
 
     /* unknown backend */

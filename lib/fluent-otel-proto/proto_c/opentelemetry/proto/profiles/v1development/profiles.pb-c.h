@@ -251,11 +251,16 @@ struct  Opentelemetry__Proto__Profiles__V1development__Profile
   size_t n_samples;
   Opentelemetry__Proto__Profiles__V1development__Sample **samples;
   /*
-   * Time of collection (UTC) represented as nanoseconds past the epoch.
+   * Time of collection. Value is UNIX Epoch time in nanoseconds since 00:00:00
+   * UTC on 1 January 1970.
    */
   uint64_t time_unix_nano;
   /*
-   * Duration of the profile, if a duration makes sense.
+   * Duration of the profile. For instant profiles like live heap snapshot, the
+   * duration can be zero but it may be preferable to set time_unix_nano to the
+   * process start time and duration_nano to the relative time when the profile
+   * was gathered. This ensures Sample.timestamps_unix_nano values such as
+   * allocation timestamp fall into the profile time range.
    */
   uint64_t duration_nano;
   /*
@@ -366,7 +371,10 @@ struct  Opentelemetry__Proto__Profiles__V1development__ValueType
  * A Sample MUST have have at least one values or timestamps_unix_nano entry. If
  * both fields are populated, they MUST contain the same number of elements, and
  * the elements at the same index MUST refer to the same event.
- * Examples of different ways of representing a sample with the total value of 10:
+ * For the purposes of efficiently representing aggregated data observations, a Sample is regarded
+ * as having a shared identity and an associated collection of per-observation data points.
+ * Samples having the same identity SHOULD be combined by inserting timestamps and values to the data arrays.
+ * Examples of different ways ('shapes') of representing a sample with the total value of 10:
  * Report of a stacktrace at 10 timestamps (consumers must assume the value is 1 for each point):
  *    values: []
  *    timestamps_unix_nano: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -376,6 +384,8 @@ struct  Opentelemetry__Proto__Profiles__V1development__ValueType
  * Report of a stacktrace at 4 timestamps where each point records a specific value:
  *    values: [2, 2, 3, 3]
  *    timestamps_unix_nano: [1, 2, 3, 4]
+ * All Samples for a Profile SHOULD have the same shape, i.e. all data observation series should consistently
+ * adopt the same data recording style.
  */
 struct  Opentelemetry__Proto__Profiles__V1development__Sample
 {
@@ -384,11 +394,6 @@ struct  Opentelemetry__Proto__Profiles__V1development__Sample
    * Reference to stack in ProfilesDictionary.stack_table.
    */
   int32_t stack_index;
-  /*
-   * The type and unit of each value is defined by Profile.sample_type.
-   */
-  size_t n_values;
-  int64_t *values;
   /*
    * References to attributes in ProfilesDictionary.attribute_table. [optional]
    */
@@ -400,15 +405,22 @@ struct  Opentelemetry__Proto__Profiles__V1development__Sample
    */
   int32_t link_index;
   /*
-   * Timestamps associated with Sample represented in nanoseconds. These
-   * timestamps should fall within the Profile's time range.
+   * The type and unit of each value is defined by Profile.sample_type.
+   */
+  size_t n_values;
+  int64_t *values;
+  /*
+   * Timestamps associated with Sample. Value is UNIX Epoch time in nanoseconds
+   * since 00:00:00 UTC on 1 January 1970. The timestamps should fall within the
+   * [Profile.time_unix_nano, Profile.time_unix_nano + Profile.duration_nano)
+   * time range.
    */
   size_t n_timestamps_unix_nano;
   uint64_t *timestamps_unix_nano;
 };
 #define OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__SAMPLE__INIT \
  { PROTOBUF_C_MESSAGE_INIT (&opentelemetry__proto__profiles__v1development__sample__descriptor) \
-, 0, 0,NULL, 0,NULL, 0, 0,NULL }
+, 0, 0,NULL, 0, 0,NULL, 0,NULL }
 
 
 /*

@@ -1,8 +1,8 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <math.h>
-#include <unistd.h>
 
+#include <fluent-bit/flb_compat.h>
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_decode_opentelemetry.h>

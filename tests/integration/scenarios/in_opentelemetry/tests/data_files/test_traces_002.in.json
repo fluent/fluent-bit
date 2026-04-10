@@ -1,0 +1,65 @@
+{
+  "resource_spans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "string_value": "checkout"
+            }
+          }
+        ]
+      },
+      "scope_spans": [
+        {
+          "scope": {
+            "name": "trace-advanced-scope",
+            "version": "2.0.0"
+          },
+          "spans": [
+            {
+              "trace_id": "5b8efff798038103d269b633813fc60c",
+              "span_id": "1111111111111111",
+              "name": "parent-span",
+              "kind": 2,
+              "start_time_unix_nano": "1650917400000000000",
+              "end_time_unix_nano": "1650917401000000000",
+              "events": [
+                {
+                  "time_unix_nano": "1650917400500000000",
+                  "name": "cache.miss"
+                }
+              ],
+              "status": {
+                "code": 1,
+                "message": "ok"
+              }
+            },
+            {
+              "trace_id": "5b8efff798038103d269b633813fc60c",
+              "span_id": "2222222222222222",
+              "parent_span_id": "1111111111111111",
+              "name": "child-span",
+              "kind": 3,
+              "start_time_unix_nano": "1650917400100000000",
+              "end_time_unix_nano": "1650917400900000000",
+              "attributes": [
+                {
+                  "key": "db.system",
+                  "value": {
+                    "string_value": "postgresql"
+                  }
+                }
+              ],
+              "status": {
+                "code": 2,
+                "message": "db timeout"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

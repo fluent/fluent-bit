@@ -395,8 +395,8 @@ static int oauth2_jwt_parse_header(const char *json, size_t json_len,
     const char *val_str;
 
     /* Convert JSON to msgpack */
-    ret = flb_pack_json_yyjson(json, json_len, &mp_buf, &mp_size,
-                               &root_type, NULL);
+    ret = flb_pack_json(json, json_len, &mp_buf, &mp_size,
+                        &root_type, NULL);
     if (ret != 0 || root_type != JSMN_OBJECT) {
         if (mp_buf) {
             flb_free(mp_buf);
@@ -477,8 +477,8 @@ static int oauth2_jwt_parse_payload(const char *json, size_t json_len,
     msgpack_object *first;
 
     /* Convert JSON to msgpack */
-    ret = flb_pack_json_yyjson(json, json_len, &mp_buf, &mp_size,
-                               &root_type, NULL);
+    ret = flb_pack_json(json, json_len, &mp_buf, &mp_size,
+                        &root_type, NULL);
     if (ret != 0 || root_type != JSMN_OBJECT) {
         if (mp_buf) {
             flb_free(mp_buf);
@@ -849,9 +849,9 @@ static int oauth2_jwks_parse_json(flb_sds_t jwks_json, struct flb_oauth2_jwks_ca
     struct flb_oauth2_jwks_key *jwks_key;
 
     /* Convert JSON to msgpack */
-    ret = flb_pack_json_yyjson(jwks_json, flb_sds_len(jwks_json),
-                                &mp_buf, &mp_size,
-                                &root_type, NULL);
+    ret = flb_pack_json(jwks_json, flb_sds_len(jwks_json),
+                        &mp_buf, &mp_size,
+                        &root_type, NULL);
     if (ret != 0 || root_type != JSMN_OBJECT) {
         if (mp_buf) {
             flb_free(mp_buf);
@@ -1167,8 +1167,8 @@ static int oauth2_jwt_check_audience(const char *json, size_t json_len,
     }
 
     /* Convert JSON to msgpack */
-    ret = flb_pack_json_yyjson(json, json_len, &mp_buf, &mp_size,
-                               &root_type, NULL);
+    ret = flb_pack_json(json, json_len, &mp_buf, &mp_size,
+                        &root_type, NULL);
     if (ret != 0 || root_type != JSMN_OBJECT) {
         if (mp_buf) {
             flb_free(mp_buf);

@@ -755,6 +755,116 @@ static void test_http_validator_invalid_port()
     flb_free(config);
 }
 
+static void test_http_validator_greengrass_valid()
+{
+    struct flb_aws_provider *provider;
+    struct flb_aws_credentials *creds;
+    struct flb_config *config;
+
+    /* Test valid Greengrass URL with localhost and correct path */
+    setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://localhost:8080/2016-11-01/credentialprovider/", 1);
+    setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "greengrass-token", 1);
+
+    setup_test(FLB_AWS_CLIENT_MOCK(
+        response(
+            expect(URI, "/2016-11-01/credentialprovider/"),
+            expect(METHOD, FLB_HTTP_GET),
+            expect(HEADER, "Authorization", "greengrass-token"),
+            set(STATUS, 200),
+            set(PAYLOAD, "{\n  \"Code\" : \"Success\",\n  \"LastUpdated\" : \"2021-09-16T18:29:09Z\",\n"
+                "  \"Type\" : \"AWS-HMAC\",\n  \"AccessKeyId\" : \"GREENGRASSACCESSKEY\",\n  \"SecretAccessKey\""
+                " : \"GREENGRASSSECRETKEY\",\n  \"Token\" : \"GREENGRASSTOKEN\",\n"
+                "  \"Expiration\" : \"3021-09-17T00:41:00Z\"\n}"),
+            set(PAYLOAD_SIZE, 257)
+        )
+    ), &provider, &config);
+
+    flb_time_msleep(1000);
+
+    /* Should successfully get credentials */
+    creds = provider->provider_vtable->get_credentials(provider);
+    TEST_ASSERT(creds != NULL);
+    TEST_CHECK(strcmp("GREENGRASSACCESSKEY", creds->access_key_id) == 0);
+    TEST_CHECK(strcmp("GREENGRASSSECRETKEY", creds->secret_access_key) == 0);
+    TEST_CHECK(strcmp("GREENGRASSTOKEN", creds->session_token) == 0);
+
+    flb_aws_credentials_destroy(creds);
+
+    /* Check we have exhausted our response list */
+    TEST_CHECK(flb_aws_client_mock_generator_count_unused_requests() == 0);
+
+    cleanup_test(provider, config);
+}
+
+static void test_http_validator_greengrass_invalid_host()
+{
+    struct flb_aws_provider *provider;
+    struct flb_config *config;
+
+    /* Test invalid Greengrass URL - correct path but wrong host */
+    setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://example.com:8080/2016-11-01/credentialprovider/", 1);
+    setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "greengrass-token", 1);
+
+    flb_aws_client_mock_configure_generator(NULL);
+
+    config = flb_calloc(1, sizeof(struct flb_config));
+    TEST_ASSERT(config != NULL);
+    mk_list_init(&config->upstreams);
+
+    /* provider creation will fail because host is not localhost */
+    provider = flb_http_provider_create(config, flb_aws_client_get_mock_generator());
+    TEST_ASSERT(provider == NULL);
+
+    flb_aws_client_mock_destroy_generator();
+    flb_free(config);
+}
+
+static void test_http_validator_greengrass_invalid_path()
+{
+    struct flb_aws_provider *provider;
+    struct flb_config *config;
+
+    /* Test invalid Greengrass URL - localhost but wrong path */
+    setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://localhost:8080/invalid/path", 1);
+    setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "greengrass-token", 1);
+
+    flb_aws_client_mock_configure_generator(NULL);
+
+    config = flb_calloc(1, sizeof(struct flb_config));
+    TEST_ASSERT(config != NULL);
+    mk_list_init(&config->upstreams);
+
+    /* provider creation will fail because path doesn't match Greengrass pattern */
+    provider = flb_http_provider_create(config, flb_aws_client_get_mock_generator());
+    TEST_ASSERT(provider == NULL);
+
+    flb_aws_client_mock_destroy_generator();
+    flb_free(config);
+}
+
+static void test_http_validator_greengrass_invalid_path_prefix()
+{
+    struct flb_aws_provider *provider;
+    struct flb_config *config;
+
+    /* Test invalid Greengrass URL - localhost but path has Greengrass pattern in middle, not at start */
+    setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://localhost:8080/prefix/2016-11-01/credentialprovider/", 1);
+    setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "greengrass-token", 1);
+
+    flb_aws_client_mock_configure_generator(NULL);
+
+    config = flb_calloc(1, sizeof(struct flb_config));
+    TEST_ASSERT(config != NULL);
+    mk_list_init(&config->upstreams);
+
+    /* provider creation will fail because path doesn't start with Greengrass pattern */
+    provider = flb_http_provider_create(config, flb_aws_client_get_mock_generator());
+    TEST_ASSERT(provider == NULL);
+
+    flb_aws_client_mock_destroy_generator();
+    flb_free(config);
+}
+
 TEST_LIST = {
     { "test_http_provider", test_http_provider},
     { "test_http_provider_error_case", test_http_provider_error_case},
@@ -766,5 +876,9 @@ TEST_LIST = {
     { "test_http_provider_server_failure", test_http_provider_server_failure},
     { "test_http_validator_invalid_host", test_http_validator_invalid_host},
     { "test_http_validator_invalid_port", test_http_validator_invalid_port},
+    { "test_http_validator_greengrass_valid", test_http_validator_greengrass_valid},
+    { "test_http_validator_greengrass_invalid_host", test_http_validator_greengrass_invalid_host},
+    { "test_http_validator_greengrass_invalid_path", test_http_validator_greengrass_invalid_path},
+    { "test_http_validator_greengrass_invalid_path_prefix", test_http_validator_greengrass_invalid_path_prefix},
     { 0 }
 };

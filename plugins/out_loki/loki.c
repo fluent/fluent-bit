@@ -2244,7 +2244,7 @@ static int cb_loki_format_test(struct flb_config *config,
     dynamic_tenant_id = NULL;
 
     /* Count number of records */
-    total_records = flb_mp_count(data, bytes);
+    total_records = flb_mp_count_log_records(data, bytes);
 
     payload = loki_compose_payload(ctx, total_records,
                                    (char *) tag, tag_len, data, bytes,

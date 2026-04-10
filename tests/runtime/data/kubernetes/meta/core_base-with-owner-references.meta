@@ -20,7 +20,7 @@
                 "uid": "a0a2ee0a-08da-5a7f-ac1a-c0a4255f82f2",
                 "controller": true,
                 "blockOwnerDeletion": true
-            },
+            }
         ],
         "name": "base",
         "namespace": "core",

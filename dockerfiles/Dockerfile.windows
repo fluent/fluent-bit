@@ -52,7 +52,13 @@ RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
       '--add Microsoft.VisualStudio.Component.VC.CoreBuildTools', `
       '--add Microsoft.VisualStudio.Component.VC.MSVC.143', `
       '--add Microsoft.VisualStudio.Component.Windows10SDK.19041' `
-      -NoNewWindow -Wait; `
+      -NoNewWindow -Wait -PassThru; `
+    if (${p}.ExitCode -ne 0 -and ${p}.ExitCode -ne 3010) { `
+      throw \"Visual Studio Build Tools installer failed with exit code $(${p}.ExitCode)\" `
+    }; `
+    if (-not (Test-Path \"${env:MSVS_HOME}\VC\Auxiliary\Build\vcvars64.bat\")) { `
+      throw \"Visual Studio Build Tools installation is incomplete: ${env:MSVS_HOME}\VC\Auxiliary\Build\vcvars64.bat not found\" `
+    }; `
     Remove-Item -Force \"${msvs_build_tools_dist}\"; `
     Remove-Item -Path \"${msvs_build_tools_channel}\" -Force;
 

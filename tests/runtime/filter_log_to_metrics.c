@@ -129,18 +129,69 @@ TEST_LIST = {
 
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 int data_size = 0;
-bool new_data = false;
 char output[32768];
 
+static int buffer_contains(const char *buffer, size_t buffer_size,
+                           const char *needle)
+{
+    size_t offset;
+    size_t needle_length;
+
+    needle_length = strlen(needle);
+
+    if (needle_length == 0) {
+        return FLB_TRUE;
+    }
+
+    if (buffer_size < needle_length) {
+        return FLB_FALSE;
+    }
+
+    for (offset = 0; offset + needle_length <= buffer_size; offset++) {
+        if (memcmp(buffer + offset, needle, needle_length) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static void snapshot_output(char *out_result, size_t *out_size)
+{
+    pthread_mutex_lock(&result_mutex);
+    memcpy(out_result, output, data_size);
+    out_result[data_size] = '\0';
+    *out_size = (size_t) data_size;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static void reset_output_state(void)
+{
+    pthread_mutex_lock(&result_mutex);
+    output[0] = '\0';
+    data_size = 0;
+    pthread_mutex_unlock(&result_mutex);
+}
 
 int callback_test(void* data, size_t size, void* cb_data)
 {
+    size_t available;
+    size_t copy_size;
+
     if (size > 0) {
-        new_data = true;
         flb_debug("[test_filter_log_to_metrics] received message: %s", (char*)data);
         pthread_mutex_lock(&result_mutex);
-            strncat(output, data, size);
-            data_size = size;
+            available = sizeof(output) - (size_t) data_size - 1;
+            copy_size = available;
+            if (copy_size > size) {
+                copy_size = size;
+            }
+
+            if (copy_size > 0) {
+                memcpy(output + data_size, data, copy_size);
+                data_size += copy_size;
+                output[data_size] = '\0';
+            }
         pthread_mutex_unlock(&result_mutex);
     }
     flb_free(data);
@@ -160,17 +211,12 @@ void wait_with_timeout(uint32_t timeout_ms, char *out_result)
     struct flb_time end_time;
     struct flb_time diff_time;
     uint64_t elapsed_time_flb = 0;
+
+    (void) out_result;
+
     flb_time_get(&start_time);
 
     while (true) {
-        if(new_data){
-            pthread_mutex_lock(&result_mutex);
-            new_data = false;
-            strcat(out_result, output);
-            pthread_mutex_unlock(&result_mutex);
-
-        }
-
         flb_time_msleep(100);
         flb_time_get(&end_time);
         flb_time_diff(&end_time, &start_time, &diff_time);
@@ -191,17 +237,20 @@ void flb_test_log_to_metrics_counter_k8s(void)
     int in_ffd;
     int filter_ffd;
     int out_ffd;
-    char *result = NULL;
+    int result;
     struct flb_lib_out_cb cb_data;
     char *input = JSON_MSG1;
     char finalString[32768] = "";
+    size_t finalSize = 0;
 
     const char *expected = "\"value\":5.0,\"labels\":[\"k8s-dummy\","
                            "\"testpod\",\"mycontainer\",\"abc123\","
                            "\"def456\",\"red\",\"right\"]";
-    const char *expected2 = "{\"ns\":\"log_metric\",\"ss\":\"counter\","
-                            "\"name\":\"test\",\"desc\":\"Counts messages\"}";
+    const char *expected2 = "\"opts\":{\"ns\":\"log_metric\",\"ss\":\"counter\","
+                            "\"name\":\"test\",\"desc\":\"Counts messages\","
+                            "\"unit\":\"\"}";
 
+    reset_output_state();
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
                     "error", NULL);
@@ -241,13 +290,16 @@ void flb_test_log_to_metrics_counter_k8s(void)
         flb_lib_push(ctx, in_ffd, input, strlen(input));
     }
     wait_with_timeout(2000, finalString);
-    result = strstr(finalString, expected);
-    if (!TEST_CHECK(result != NULL)) {
-        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected, finalString);
+    snapshot_output(finalString, &finalSize);
+    result = buffer_contains(finalString, finalSize, expected);
+    if (!TEST_CHECK(result == FLB_TRUE)) {
+        TEST_MSG("expected substring:\n%s\ngot (%lu bytes):\n%.*s\n",
+                 expected, (unsigned long) finalSize, (int) finalSize, finalString);
     }
-    result = strstr(finalString, expected2);
-    if (!TEST_CHECK(result != NULL)) {
-        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected, finalString);
+    result = buffer_contains(finalString, finalSize, expected2);
+    if (!TEST_CHECK(result == FLB_TRUE)) {
+        TEST_MSG("expected substring:\n%s\ngot (%lu bytes):\n%.*s\n",
+                 expected2, (unsigned long) finalSize, (int) finalSize, finalString);
     }
 
     filter_test_destroy(ctx);
@@ -262,14 +314,17 @@ void flb_test_log_to_metrics_counter(void)
     int in_ffd;
     int filter_ffd;
     int out_ffd;
-    char *result = NULL;
+    int result;
     struct flb_lib_out_cb cb_data;
     char *input = JSON_MSG1;
     char finalString[32768] = "";
+    size_t finalSize = 0;
     const char *expected = "\"value\":5.0,\"labels\":[\"red\",\"right\"]";
-    const char *expected2 = "{\"ns\":\"myns\",\"ss\":\"subsystem\","
-                            "\"name\":\"test\",\"desc\":\"Counts messages\"}";
+    const char *expected2 = "\"opts\":{\"ns\":\"myns\",\"ss\":\"subsystem\","
+                            "\"name\":\"test\",\"desc\":\"Counts messages\","
+                            "\"unit\":\"\"}";
 
+    reset_output_state();
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
                     "error", NULL);
@@ -309,13 +364,16 @@ void flb_test_log_to_metrics_counter(void)
         flb_lib_push(ctx, in_ffd, input, strlen(input));
     }
     wait_with_timeout(2000, finalString);
-    result = strstr(finalString, expected);
-    if (!TEST_CHECK(result != NULL)) {
-        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected, finalString);
+    snapshot_output(finalString, &finalSize);
+    result = buffer_contains(finalString, finalSize, expected);
+    if (!TEST_CHECK(result == FLB_TRUE)) {
+        TEST_MSG("expected substring:\n%s\ngot (%lu bytes):\n%.*s\n",
+                 expected, (unsigned long) finalSize, (int) finalSize, finalString);
     }
-    result = strstr(finalString, expected2);
-    if (!TEST_CHECK(result != NULL)) {
-        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected, finalString);
+    result = buffer_contains(finalString, finalSize, expected2);
+    if (!TEST_CHECK(result == FLB_TRUE)) {
+        TEST_MSG("expected substring:\n%s\ngot (%lu bytes):\n%.*s\n",
+                 expected2, (unsigned long) finalSize, (int) finalSize, finalString);
     }
     filter_test_destroy(ctx);
 
@@ -329,11 +387,12 @@ void flb_test_log_to_metrics_counter_k8s_two_tuples(void)
     int in_ffd;
     int filter_ffd;
     int out_ffd;
-    char *result = NULL;
+    int result;
     struct flb_lib_out_cb cb_data;
     char *input1 = JSON_MSG1;
     char *input2 = JSON_MSG2;
     char finalString[32768] = "";
+    size_t finalSize = 0;
     const char *expected1 = "\"value\":5.0,\"labels\":[\"k8s-dummy\","
                            "\"testpod\",\"mycontainer\",\"abc123\","
                            "\"def456\",\"red\",\"right\"]";
@@ -342,6 +401,7 @@ void flb_test_log_to_metrics_counter_k8s_two_tuples(void)
                            "\"def456\",\"red\",\"left\"]";
 
 
+    reset_output_state();
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
                     "error", NULL);
@@ -384,14 +444,17 @@ void flb_test_log_to_metrics_counter_k8s_two_tuples(void)
         flb_lib_push(ctx, in_ffd, input2, strlen(input2));
     }
     wait_with_timeout(2000, finalString);
-    result = strstr(finalString, expected1);
-    if (!TEST_CHECK(result != NULL)) {
-        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected1, finalString);
+    snapshot_output(finalString, &finalSize);
+    result = buffer_contains(finalString, finalSize, expected1);
+    if (!TEST_CHECK(result == FLB_TRUE)) {
+        TEST_MSG("expected substring:\n%s\ngot (%lu bytes):\n%.*s\n",
+                 expected1, (unsigned long) finalSize, (int) finalSize, finalString);
     }
 
-    result = strstr(finalString, expected2);
-    if (!TEST_CHECK(result != NULL)) {
-        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected2, finalString);
+    result = buffer_contains(finalString, finalSize, expected2);
+    if (!TEST_CHECK(result == FLB_TRUE)) {
+        TEST_MSG("expected substring:\n%s\ngot (%lu bytes):\n%.*s\n",
+                 expected2, (unsigned long) finalSize, (int) finalSize, finalString);
     }
 
     filter_test_destroy(ctx);
@@ -405,12 +468,14 @@ void flb_test_log_to_metrics_gauge(void)
     int in_ffd;
     int filter_ffd;
     int out_ffd;
-    char *result = NULL;
+    int result;
     struct flb_lib_out_cb cb_data;
     char *input = JSON_MSG1;
     char finalString[32768] = "";
+    size_t finalSize = 0;
     const char *expected = "\"value\":20.0,\"labels\":[\"red\",\"right\"]";
 
+    reset_output_state();
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
                     "error", NULL);
@@ -450,9 +515,11 @@ void flb_test_log_to_metrics_gauge(void)
     flb_lib_push(ctx, in_ffd, input, strlen(input));
 
     wait_with_timeout(2000, finalString);
-    result = strstr(finalString, expected);
-    if (!TEST_CHECK(result != NULL)) {
-        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected, finalString);
+    snapshot_output(finalString, &finalSize);
+    result = buffer_contains(finalString, finalSize, expected);
+    if (!TEST_CHECK(result == FLB_TRUE)) {
+        TEST_MSG("expected substring:\n%s\ngot (%lu bytes):\n%.*s\n",
+                 expected, (unsigned long) finalSize, (int) finalSize, finalString);
     }
 
     filter_test_destroy(ctx);
@@ -468,14 +535,16 @@ void flb_test_log_to_metrics_histogram(void)
     int in_ffd;
     int filter_ffd;
     int out_ffd;
-    char *result = NULL;
+    int result;
     struct flb_lib_out_cb cb_data;
     char *input = JSON_MSG1;
     char finalString[32768] = "";
+    size_t finalSize = 0;
     const char *expected = "\"histogram\":{\"buckets\":" \
                            "[0,0,0,0,0,0,0,0,0,0,0,5],\"" \
                            "sum\":100.0,\"count\":5},\"" \
                            "labels\":[\"red\",\"right\"]";
+    reset_output_state();
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
                     "error", NULL);
@@ -517,9 +586,11 @@ void flb_test_log_to_metrics_histogram(void)
     }
 
     wait_with_timeout(2000, finalString);
-    result = strstr(finalString, expected);
-    if (!TEST_CHECK(result != NULL)) {
-        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected, finalString);
+    snapshot_output(finalString, &finalSize);
+    result = buffer_contains(finalString, finalSize, expected);
+    if (!TEST_CHECK(result == FLB_TRUE)) {
+        TEST_MSG("expected substring:\n%s\ngot (%lu bytes):\n%.*s\n",
+                 expected, (unsigned long) finalSize, (int) finalSize, finalString);
     }
     filter_test_destroy(ctx);
 
@@ -533,14 +604,16 @@ void flb_test_log_to_metrics_reg(void)
     int in_ffd;
     int filter_ffd;
     int out_ffd;
-    char *result = NULL;
+    int result;
     struct flb_lib_out_cb cb_data;
     char *input1 = JSON_MSG1;
     char *input2 = JSON_MSG3;
     char finalString[32768] = "";
+    size_t finalSize = 0;
     const char *expected = "\"value\":3.0,\"labels\":[\"red\",\"left\"]";
 
 
+    reset_output_state();
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
                     "error", NULL);
@@ -583,9 +656,11 @@ void flb_test_log_to_metrics_reg(void)
         flb_lib_push(ctx, in_ffd, input2, strlen(input2));
     }
     wait_with_timeout(2000, finalString);
-    result = strstr(finalString, expected);
-    if (!TEST_CHECK(result != NULL)) {
-        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected, finalString);
+    snapshot_output(finalString, &finalSize);
+    result = buffer_contains(finalString, finalSize, expected);
+    if (!TEST_CHECK(result == FLB_TRUE)) {
+        TEST_MSG("expected substring:\n%s\ngot (%lu bytes):\n%.*s\n",
+                 expected, (unsigned long) finalSize, (int) finalSize, finalString);
     }
 
     filter_test_destroy(ctx);
@@ -600,13 +675,15 @@ void flb_test_log_to_metrics_empty_label_keys_regex(void)
     int in_ffd;
     int filter_ffd;
     int out_ffd;
-    char *result = NULL;
+    int result;
     struct flb_lib_out_cb cb_data;
     char *input = JSON_MSG3;
     char finalString[32768] = "";
+    size_t finalSize = 0;
     const char *expected = "\"value\":3.0,";
 
 
+    reset_output_state();
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
                     "error", NULL);
@@ -646,9 +723,11 @@ void flb_test_log_to_metrics_empty_label_keys_regex(void)
         flb_lib_push(ctx, in_ffd, input, strlen(input));
     }
     wait_with_timeout(2000, finalString);
-    result = strstr(finalString, expected);
-    if (!TEST_CHECK(result != NULL)) {
-        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected, finalString);
+    snapshot_output(finalString, &finalSize);
+    result = buffer_contains(finalString, finalSize, expected);
+    if (!TEST_CHECK(result == FLB_TRUE)) {
+        TEST_MSG("expected substring:\n%s\ngot (%lu bytes):\n%.*s\n",
+                 expected, (unsigned long) finalSize, (int) finalSize, finalString);
     }
 
     filter_test_destroy(ctx);
@@ -662,13 +741,15 @@ void flb_test_log_to_metrics_label(void)
     int in_ffd;
     int filter_ffd;
     int out_ffd;
-    char *result = NULL;
+    int result;
     struct flb_lib_out_cb cb_data;
     char *input = JSON_MSG1;
     char finalString[32768] = "";
+    size_t finalSize = 0;
     const char *expected_label_name = ",\"labels\":[\"pod_name\"],";
     const char *expected_label_value = "\"value\":2.0,\"labels\":[\"testpod\"]";
 
+    reset_output_state();
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0.200000000", "Grace", "1", "Log_Level",
                     "error", NULL);
@@ -706,13 +787,16 @@ void flb_test_log_to_metrics_label(void)
         flb_lib_push(ctx, in_ffd, input, strlen(input));
     }
     wait_with_timeout(2000, finalString);
-    result = strstr(finalString, expected_label_name);
-    if (!TEST_CHECK(result != NULL)) {
-        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected_label_name, finalString);
+    snapshot_output(finalString, &finalSize);
+    result = buffer_contains(finalString, finalSize, expected_label_name);
+    if (!TEST_CHECK(result == FLB_TRUE)) {
+        TEST_MSG("expected substring:\n%s\ngot (%lu bytes):\n%.*s\n",
+                 expected_label_name, (unsigned long) finalSize, (int) finalSize, finalString);
     }
-    result = strstr(finalString, expected_label_value);
-    if (!TEST_CHECK(result != NULL)) {
-        TEST_MSG("expected substring:\n%s\ngot:\n%s\n", expected_label_value, finalString);
+    result = buffer_contains(finalString, finalSize, expected_label_value);
+    if (!TEST_CHECK(result == FLB_TRUE)) {
+        TEST_MSG("expected substring:\n%s\ngot (%lu bytes):\n%.*s\n",
+                 expected_label_value, (unsigned long) finalSize, (int) finalSize, finalString);
     }
     filter_test_destroy(ctx);
 }

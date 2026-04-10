@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 
 #include <msgpack.h>
@@ -125,7 +126,7 @@ static int datadog_format(struct flb_config *config,
         event_chunk = flush_ctx;
         array_size = event_chunk->total_events;
     } else {
-        array_size = flb_mp_count(data, bytes);
+        array_size = flb_mp_count_log_records(data, bytes);
     }
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);

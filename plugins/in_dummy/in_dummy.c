@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_log_event.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_env.h>
 
 #include "in_dummy.h"
 
@@ -68,6 +69,9 @@ static void generate_timestamp(struct flb_dummy *ctx,
     }
 }
 
+/* Fetch a raw template string from the configuration file without
+ * performing environment variable expansion. This is required for
+ * dynamic environment variables that may refresh at runtime. */
 static int generate_event(struct flb_dummy *ctx)
 {
     size_t           chunk_offset;
@@ -77,6 +81,13 @@ static int generate_event(struct flb_dummy *ctx)
     struct flb_time  timestamp;
     msgpack_unpacked object;
     int              result;
+    flb_sds_t        resolved_body;
+    flb_sds_t        resolved_metadata;
+    char            *body_msgpack = NULL;
+    char            *metadata_msgpack = NULL;
+    size_t           body_msgpack_size = 0;
+    size_t           metadata_msgpack_size = 0;
+    int              root_type;
 
     result = FLB_EVENT_ENCODER_SUCCESS;
     body_start = 0;
@@ -84,14 +95,57 @@ static int generate_event(struct flb_dummy *ctx)
 
     generate_timestamp(ctx, &timestamp);
 
+    body_msgpack = ctx->ref_body_msgpack;
+    body_msgpack_size = ctx->ref_body_msgpack_size;
+    metadata_msgpack = ctx->ref_metadata_msgpack;
+    metadata_msgpack_size = ctx->ref_metadata_msgpack_size;
+
+    resolved_body = flb_config_map_translate_dynamic(ctx->ins->config, ctx->cm_body);
+    if (resolved_body && flb_sds_len(resolved_body) > 0) {
+        result = flb_pack_json(resolved_body,
+                               flb_sds_len(resolved_body),
+                               &body_msgpack,
+                               &body_msgpack_size,
+                               &root_type,
+                               NULL);
+        if (result != 0) {
+            flb_plg_warn(ctx->ins, "failed to parse JSON template, using cached body");
+            if (body_msgpack && body_msgpack != ctx->ref_body_msgpack) {
+                flb_free(body_msgpack);
+            }
+            body_msgpack = ctx->ref_body_msgpack;
+            body_msgpack_size = ctx->ref_body_msgpack_size;
+            result = 0;
+        }
+    }
+
+    resolved_metadata = flb_config_map_translate_dynamic(ctx->ins->config, ctx->cm_metadata);
+    if (resolved_metadata && flb_sds_len(resolved_metadata) > 0) {
+        result = flb_pack_json(resolved_metadata,
+                               flb_sds_len(resolved_metadata),
+                               &metadata_msgpack,
+                               &metadata_msgpack_size,
+                               &root_type,
+                               NULL);
+        if (result != 0) {
+            flb_plg_warn(ctx->ins, "failed to parse JSON template, using cached metadata");
+            if (metadata_msgpack && metadata_msgpack != ctx->ref_metadata_msgpack) {
+                flb_free(metadata_msgpack);
+            }
+            metadata_msgpack = ctx->ref_metadata_msgpack;
+            metadata_msgpack_size = ctx->ref_metadata_msgpack_size;
+            result = 0;
+        }
+    }
+
     msgpack_unpacked_init(&object);
 
     while (result == FLB_EVENT_ENCODER_SUCCESS &&
            msgpack_unpack_next(&object,
-                               ctx->ref_body_msgpack,
-                               ctx->ref_body_msgpack_size,
+                               body_msgpack,
+                               body_msgpack_size,
                                &chunk_offset) == MSGPACK_UNPACK_SUCCESS) {
-        body_buffer = &ctx->ref_body_msgpack[body_start];
+        body_buffer = &body_msgpack[body_start];
         body_length = chunk_offset - body_start;
 
         if (object.data.type == MSGPACK_OBJECT_MAP) {
@@ -101,8 +155,8 @@ static int generate_event(struct flb_dummy *ctx)
 
             result = flb_log_event_encoder_set_metadata_from_raw_msgpack(
                         ctx->encoder,
-                        ctx->ref_metadata_msgpack,
-                        ctx->ref_metadata_msgpack_size);
+                        metadata_msgpack,
+                        metadata_msgpack_size);
 
             if (result == FLB_EVENT_ENCODER_SUCCESS) {
                 result = flb_log_event_encoder_set_body_from_raw_msgpack(
@@ -120,6 +174,21 @@ static int generate_event(struct flb_dummy *ctx)
     }
 
     msgpack_unpacked_destroy(&object);
+
+    /* Clean up */
+    if (resolved_body) {
+        flb_sds_destroy(resolved_body);
+    }
+    if (resolved_metadata) {
+        flb_sds_destroy(resolved_metadata);
+    }
+    /* Only free msgpack if we allocated it (not using cached) */
+    if (body_msgpack && body_msgpack != ctx->ref_body_msgpack) {
+        flb_free(body_msgpack);
+    }
+    if (metadata_msgpack && metadata_msgpack != ctx->ref_metadata_msgpack) {
+        flb_free(metadata_msgpack);
+    }
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
         result = 0;
@@ -187,6 +256,8 @@ static int config_destroy(struct flb_dummy *ctx)
         flb_free(ctx->ref_metadata_msgpack);
     }
 
+
+
     if (ctx->encoder != NULL) {
         flb_log_event_encoder_destroy(ctx->encoder);
     }
@@ -201,9 +272,9 @@ static int configure(struct flb_dummy *ctx,
                      struct flb_input_instance *in,
                      struct timespec *tm)
 {
-    const char *msg;
-    int root_type;
     int ret = -1;
+    int root_type;
+    flb_sds_t resolved_msg = NULL;
 
     ctx->ref_metadata_msgpack = NULL;
     ctx->ref_body_msgpack = NULL;
@@ -229,7 +300,8 @@ static int configure(struct flb_dummy *ctx,
         /* Set using interval settings. */
         tm->tv_sec  = ctx->interval_sec;
         tm->tv_nsec = ctx->interval_nsec;
-    } else {
+    }
+    else {
         if (ctx->rate > 1) {
             /* Set using rate settings. */
             tm->tv_sec = 0;
@@ -253,14 +325,26 @@ static int configure(struct flb_dummy *ctx,
 
     flb_time_get(&ctx->base_timestamp);
 
-    /* handle it explicitly since we need to validate it is valid JSON */
-    msg = flb_input_get_property("dummy", in);
-    if (msg == NULL) {
-        msg = DEFAULT_DUMMY_MESSAGE;
+    /* Locate config map entries for templates */
+    ctx->cm_body = flb_config_map_find(in->config_map, "dummy");
+    ctx->cm_metadata = flb_config_map_find(in->config_map, "metadata");
+
+    /* Validate the body template by parsing it once */
+    resolved_msg = flb_config_map_translate_dynamic(in->config, ctx->cm_body);
+    if (!resolved_msg || flb_sds_len(resolved_msg) == 0) {
+        if (resolved_msg) {
+            flb_sds_destroy(resolved_msg);
+        }
+        flb_plg_warn(ctx->ins, "environment variable resolution failed for dummy message, using default");
+        resolved_msg = flb_sds_create(DEFAULT_DUMMY_MESSAGE);
+        if (!resolved_msg) {
+            flb_plg_error(ctx->ins, "failed to create default body template");
+            return -1;
+        }
     }
 
-    ret = flb_pack_json(msg,
-                        strlen(msg),
+    ret = flb_pack_json(resolved_msg,
+                        flb_sds_len(resolved_msg),
                         &ctx->ref_body_msgpack,
                         &ctx->ref_body_msgpack_size,
                         &root_type,
@@ -277,19 +361,25 @@ static int configure(struct flb_dummy *ctx,
                             NULL);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "unexpected error");
+            flb_sds_destroy(resolved_msg);
             return -1;
         }
     }
 
-    /* handle it explicitly since we need to validate it is valid JSON */
-    msg = flb_input_get_property("metadata", in);
+    flb_sds_destroy(resolved_msg);
 
-    if (msg == NULL) {
-        msg = DEFAULT_DUMMY_METADATA;
+    /* Validate the metadata template by parsing it once */
+    resolved_msg = flb_config_map_translate_dynamic(in->config, ctx->cm_metadata);
+    if (!resolved_msg || flb_sds_len(resolved_msg) == 0) {
+        if (resolved_msg) {
+            flb_sds_destroy(resolved_msg);
+        }
+        flb_plg_warn(ctx->ins, "environment variable resolution failed for metadata, using default");
+        resolved_msg = flb_sds_create(DEFAULT_DUMMY_METADATA);
     }
 
-    ret = flb_pack_json(msg,
-                        strlen(msg),
+    ret = flb_pack_json(resolved_msg,
+                        flb_sds_len(resolved_msg),
                         &ctx->ref_metadata_msgpack,
                         &ctx->ref_metadata_msgpack_size,
                         &root_type,
@@ -307,9 +397,12 @@ static int configure(struct flb_dummy *ctx,
 
         if (ret != 0) {
             flb_plg_error(ctx->ins, "unexpected error");
+            flb_sds_destroy(resolved_msg);
             return -1;
         }
     }
+
+    flb_sds_destroy(resolved_msg);
 
     return 0;
 }
@@ -328,6 +421,7 @@ static int in_dummy_init(struct flb_input_instance *in,
     /* Allocate space for the configuration */
     ctx = flb_malloc(sizeof(struct flb_dummy));
     if (ctx == NULL) {
+        flb_errno();
         return -1;
     }
     ctx->ins = in;
@@ -343,7 +437,6 @@ static int in_dummy_init(struct flb_input_instance *in,
     }
 
     ctx->encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
-
     if (ctx->encoder == NULL) {
         flb_plg_error(in, "could not initialize event encoder");
         config_destroy(ctx);
@@ -414,13 +507,15 @@ static struct flb_config_map config_map[] = {
    },
    {
     FLB_CONFIG_MAP_STR, "dummy", DEFAULT_DUMMY_MESSAGE,
-    0, FLB_FALSE, 0,
+    FLB_CONFIG_MAP_DYNAMIC_ENV, FLB_FALSE, 0,
     "set the sample record to be generated. It should be a JSON object."
+    "Environment variables are resolved dynamically."
    },
    {
     FLB_CONFIG_MAP_STR, "metadata", DEFAULT_DUMMY_METADATA,
-    0, FLB_FALSE, 0,
+    FLB_CONFIG_MAP_DYNAMIC_ENV, FLB_FALSE, 0,
     "set the sample metadata to be generated. It should be a JSON object."
+    "Environment variables are resolved dynamically."
    },
    {
     FLB_CONFIG_MAP_INT, "rate", DEFAULT_RATE,
