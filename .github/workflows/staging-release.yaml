@@ -38,6 +38,11 @@ jobs:
     permissions:
       contents: read
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
     - name: Get the version on staging
       run: |
         curl --fail -LO "$AWS_URL/latest-version.txt"
@@ -49,6 +54,58 @@ jobs:
       shell: bash
       env:
         AWS_URL: https://${{ secrets.AWS_S3_BUCKET_STAGING }}.s3.amazonaws.com
+        RELEASE_VERSION: ${{ github.event.inputs.version }}
+
+    - name: Verify version is newer than latest release on target branch
+      run: |
+        set -euo pipefail
+
+        if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "Release version must be in x.y.z format, got: $RELEASE_VERSION"
+          exit 1
+        fi
+
+        RELEASE_MAJOR="${RELEASE_VERSION%%.*}"
+        RELEASE_MINOR="${RELEASE_VERSION#*.}"
+        RELEASE_MINOR="${RELEASE_MINOR%%.*}"
+        RELEASE_MM="${RELEASE_MAJOR}.${RELEASE_MINOR}"
+
+        TARGET_BRANCH="$RELEASE_MM"
+        if [[ "$RELEASE_MM" == "4.2" ]] || (( RELEASE_MAJOR >= 5 )); then
+          TARGET_BRANCH="master"
+        fi
+
+        echo "Using target branch: $TARGET_BRANCH"
+
+        git fetch origin "$TARGET_BRANCH" --tags
+
+        BRANCH_TAGS=$(git tag --merged "origin/$TARGET_BRANCH" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+
+        if [[ -z "$BRANCH_TAGS" ]]; then
+          echo "No prior release tags found on origin/$TARGET_BRANCH. Continuing."
+          exit 0
+        fi
+
+        LATEST_TAG=$(printf '%s\n' "$BRANCH_TAGS" | sed 's/^v//' | sort -V | tail -n 1)
+        echo "Latest release tag on origin/$TARGET_BRANCH: v$LATEST_TAG"
+
+        if [[ "$TARGET_BRANCH" != "master" ]]; then
+          LATEST_MM="${LATEST_TAG%.*}"
+          if [[ "$LATEST_MM" != "$RELEASE_MM" ]]; then
+            echo "Latest branch tag stream mismatch on $TARGET_BRANCH: $LATEST_MM"
+            exit 1
+          fi
+        fi
+
+        if [[ "$(printf '%s\n%s\n' "$LATEST_TAG" "$RELEASE_VERSION" | sort -V | tail -n 1)" != "$RELEASE_VERSION" ]] ||
+           [[ "$LATEST_TAG" == "$RELEASE_VERSION" ]]; then
+          echo "Release version must be greater than latest branch release: $RELEASE_VERSION <= $LATEST_TAG"
+          exit 1
+        fi
+
+        echo "Release version validated: $RELEASE_VERSION > $LATEST_TAG on $TARGET_BRANCH"
+      shell: bash
+      env:
         RELEASE_VERSION: ${{ github.event.inputs.version }}
 
     # Get the major version, i.e. 1.9.3 --> 1.9, or just return the passed in version.
@@ -63,9 +120,6 @@ jobs:
       shell: bash
       env:
         RELEASE_VERSION: ${{ github.event.inputs.version }}
-
-    - name: Checkout repository
-      uses: actions/checkout@v6
 
   staging-release-generate-package-matrix:
     name: Get package matrix
