@@ -1,0 +1,23 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: rate_gate.burst
+      dummy: '{"message":"burst and recovery"}'
+      copies: 50
+      rate: 50
+      rate_gate: true
+      rate_gate.max_bytes: 1024
+      rate_gate.max_records: 25
+      rate_window: 1s
+      rate_gate.backpressure: true
+      rate_gate.resume_ratio: 0.70
+
+  outputs:
+    - name: stdout
+      match: "*"

@@ -1,0 +1,27 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  storage.path: /tmp/fluent-bit-rate-gate-storage
+  storage.sync: normal
+  storage.checksum: off
+  storage.backlog.mem_limit: 4M
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: rate_gate.filesystem
+      dummy: '{"message":"filesystem path"}'
+      copies: 30
+      rate: 120
+      storage.type: filesystem
+      rate_gate: true
+      rate_gate.max_bytes: 1024
+      rate_gate.max_records: 20
+      rate_window: 1s
+      rate_gate.backpressure: true
+
+  outputs:
+    - name: stdout
+      match: "*"
