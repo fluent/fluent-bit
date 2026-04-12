@@ -10,9 +10,29 @@ import tempfile
 import uuid
 from pathlib import Path
 
+import opentelemetry
+import opentelemetry.proto
+import opentelemetry.proto.collector
 import pytest
 import requests
+
+VENDORED_OTEL_PROTO_ROOT = Path(__file__).resolve().parents[3] / "vendor"
+VENDORED_OTEL_PACKAGE_ROOT = VENDORED_OTEL_PROTO_ROOT / "opentelemetry"
+VENDORED_OTEL_PROTO_PACKAGE_ROOT = VENDORED_OTEL_PACKAGE_ROOT / "proto"
+VENDORED_OTEL_COLLECTOR_PACKAGE_ROOT = VENDORED_OTEL_PROTO_PACKAGE_ROOT / "collector"
+
+if str(VENDORED_OTEL_PACKAGE_ROOT) not in opentelemetry.__path__:
+    opentelemetry.__path__.append(str(VENDORED_OTEL_PACKAGE_ROOT))
+
+if str(VENDORED_OTEL_PROTO_PACKAGE_ROOT) not in opentelemetry.proto.__path__:
+    opentelemetry.proto.__path__.append(str(VENDORED_OTEL_PROTO_PACKAGE_ROOT))
+
+if str(VENDORED_OTEL_COLLECTOR_PACKAGE_ROOT) not in opentelemetry.proto.collector.__path__:
+    opentelemetry.proto.collector.__path__.append(str(VENDORED_OTEL_COLLECTOR_PACKAGE_ROOT))
+
 from google.protobuf import json_format
+from opentelemetry.proto.collector.profiles.v1development.profiles_service_pb2 import ExportProfilesServiceRequest
+from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 
@@ -133,10 +153,11 @@ class StorageLimitService(Service):
 
 
 class ForwardReceiverService:
-    def __init__(self, config_file):
+    def __init__(self, config_file, *, extra_env=None):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
         self.service = FluentBitTestService(
             self.config_file,
+            extra_env=extra_env or {},
             pre_start=self._start_receiver,
             post_stop=self._stop_receiver,
         )
@@ -174,20 +195,74 @@ class ForwardReceiverService:
         return response
 
     def send_json_as_otel_protobuf(self, json_input, signal_type):
-        base_path = os.path.abspath(
-            os.path.join(
-                os.path.dirname(__file__),
-                "../../in_opentelemetry/tests/data_files",
-            )
-        )
-        json_payload_dict = read_json_file(os.path.join(base_path, json_input))
         request_map = {
+            "logs": (ExportLogsServiceRequest(), "/v1/logs"),
             "metrics": (ExportMetricsServiceRequest(), "/v1/metrics"),
+            "profiles": (build_minimal_otel_profiles_request(), "/opentelemetry.proto.collector.profiles.v1development.ProfilesService/Export"),
             "traces": (ExportTraceServiceRequest(), "/v1/traces"),
         }
         request_message, endpoint = request_map[signal_type]
-        protobuf_payload = json_format.Parse(json.dumps(json_payload_dict), request_message)
+        if signal_type == "profiles":
+            protobuf_payload = request_message
+        else:
+            base_path = os.path.abspath(
+                os.path.join(
+                    os.path.dirname(__file__),
+                    "../../in_opentelemetry/tests/data_files",
+                )
+            )
+            json_payload_dict = read_json_file(os.path.join(base_path, json_input))
+            protobuf_payload = json_format.Parse(json.dumps(json_payload_dict), request_message)
         return self.send_request(endpoint, protobuf_payload)
+
+
+def build_minimal_otel_profiles_request():
+    request = ExportProfilesServiceRequest()
+    request.dictionary.string_table.append("")
+
+    resource_profile = request.resource_profiles.add()
+    scope_profile = resource_profile.scope_profiles.add()
+    profile = scope_profile.profiles.add()
+    profile.time_unix_nano = 1000
+    profile.duration_nano = 100
+
+    return request
+
+
+def _assert_forward_profiles_as_log_message(message, *, expected_tag):
+    _assert_forward_signal_message(message, expected_tag=expected_tag, expected_signal=0)
+    profile_text = message["records"][0]["body"]["Profile"]
+
+    assert "Profiles :" in profile_text
+    assert "Time nanos : 1000" in profile_text
+    assert "Duration nanos : 100" in profile_text
+
+
+def _collect_forward_log_bodies(message):
+    bodies = []
+
+    for record in message["records"]:
+        body = record.get("body")
+        if isinstance(body, dict):
+            if "log" in body and isinstance(body["log"], str):
+                bodies.append(body["log"])
+            elif "message" in body and isinstance(body["message"], str):
+                bodies.append(body["message"])
+
+    return bodies
+
+
+def _assert_forward_signal_message(message, *, expected_tag, expected_signal):
+    if expected_signal == 0:
+        assert message["mode"] == "forward"
+        assert message["options"]["size"] >= 1
+    else:
+        assert message["mode"] == "packed_forward"
+        assert "size" not in message["options"]
+    assert message["tag"] == expected_tag
+    assert message["options"]["fluent_signal"] == expected_signal
+    assert message["options"]["chunk"]
+    assert len(message["records"]) >= 1
 
 
 def _pack_uint(value):
@@ -831,6 +906,24 @@ def test_in_forward_e2e_forward_receiver_gzip_preserves_metadata_and_signal_opti
     assert record["metadata"]["scope"] == "gzip"
 
 
+def test_out_forward_logs_signal_e2e_with_forward_receiver():
+    service = ForwardReceiverService("in_opentelemetry_to_forward_receiver.yaml")
+    service.start()
+
+    try:
+        service.send_json_as_otel_protobuf("test_logs_001.in.json", "logs")
+        messages = service.wait_for_forward_messages(1)
+    finally:
+        service.stop()
+
+    message = messages[0]
+    log_bodies = _collect_forward_log_bodies(message)
+
+    _assert_forward_signal_message(message, expected_tag="v1_logs", expected_signal=0)
+    assert "This is an example log message." in log_bodies
+    assert "This is another example log message." in log_bodies
+
+
 def test_out_forward_metrics_signal_e2e_with_forward_receiver():
     service = ForwardReceiverService("in_opentelemetry_to_forward_receiver.yaml")
     service.start()
@@ -844,12 +937,7 @@ def test_out_forward_metrics_signal_e2e_with_forward_receiver():
     message = messages[0]
     record_payload = message["records"][0]["raw"]
 
-    assert message["mode"] == "packed_forward"
-    assert message["tag"] == "v1_metrics"
-    assert message["options"]["fluent_signal"] == 1
-    assert message["options"]["chunk"]
-    assert "size" not in message["options"]
-    assert len(message["records"]) >= 1
+    _assert_forward_signal_message(message, expected_tag="v1_metrics", expected_signal=1)
     assert record_payload["meta"]["external"]["scope"]["metadata"]["name"] == "metrics-scope"
     assert record_payload["metrics"][0]["meta"]["opts"]["name"] == "requests_total"
     assert record_payload["metrics"][0]["values"][0]["labels"] == ["checkout"]
@@ -869,17 +957,123 @@ def test_out_forward_traces_signal_e2e_with_forward_receiver():
     message = messages[0]
     record_payload = message["records"][0]["raw"]
 
-    assert message["mode"] == "packed_forward"
-    assert message["tag"] == "v1_traces"
-    assert message["options"]["fluent_signal"] == 2
-    assert message["options"]["chunk"]
-    assert "size" not in message["options"]
-    assert len(message["records"]) >= 1
+    _assert_forward_signal_message(message, expected_tag="v1_traces", expected_signal=2)
     span = record_payload["resourceSpans"][0]["scope_spans"][0]["spans"][0]
     assert record_payload["resourceSpans"][0]["scope_spans"][0]["scope"]["name"] == "trace-scope"
     assert record_payload["resourceSpans"][0]["resource"]["attributes"]["service.name"] == "checkout"
     assert span["name"] == "checkout-span"
     assert span["attributes"]["http.method"] == "GET"
+
+
+@pytest.mark.parametrize(
+    "signal_type,json_input,expected_signal",
+    [
+        ("logs", "test_logs_001.in.json", 0),
+        ("metrics", "test_metrics_001.in.json", 1),
+        ("traces", "test_traces_001.in.json", 2),
+    ],
+)
+def test_in_opentelemetry_explicit_tag_routes_all_signals_to_forward_receiver(signal_type, json_input, expected_signal):
+    service = ForwardReceiverService(
+        "in_opentelemetry_to_forward_receiver_custom_tag.yaml",
+        extra_env={
+            "OTEL_INPUT_TAG": "otel_custom",
+            "OTEL_OUTPUT_MATCH": "otel_custom",
+            "OTEL_TAG_FROM_URI": "true",
+        },
+    )
+    service.start()
+
+    try:
+        service.send_json_as_otel_protobuf(json_input, signal_type)
+        messages = service.wait_for_forward_messages(1)
+    finally:
+        service.stop()
+
+    message = messages[0]
+
+    _assert_forward_signal_message(message, expected_tag="otel_custom", expected_signal=expected_signal)
+
+
+@pytest.mark.parametrize(
+    "signal_type,json_input,expected_signal",
+    [
+        ("logs", "test_logs_001.in.json", 0),
+        ("metrics", "test_metrics_001.in.json", 1),
+        ("traces", "test_traces_001.in.json", 2),
+    ],
+)
+def test_in_opentelemetry_tag_from_uri_false_routes_all_signals_to_forward_receiver(signal_type, json_input, expected_signal):
+    service = ForwardReceiverService(
+        "in_opentelemetry_to_forward_receiver_custom_tag.yaml",
+        extra_env={
+            "OTEL_INPUT_TAG": "otel_custom",
+            "OTEL_OUTPUT_MATCH": "otel_custom",
+            "OTEL_TAG_FROM_URI": "false",
+        },
+    )
+    service.start()
+
+    try:
+        service.send_json_as_otel_protobuf(json_input, signal_type)
+        messages = service.wait_for_forward_messages(1)
+    finally:
+        service.stop()
+
+    message = messages[0]
+
+    _assert_forward_signal_message(message, expected_tag="otel_custom", expected_signal=expected_signal)
+
+
+@pytest.mark.parametrize("tag_from_uri_setting", ["true", "false"])
+def test_in_opentelemetry_profiles_as_log_routes_with_explicit_tag(tag_from_uri_setting):
+    service = ForwardReceiverService(
+        "in_opentelemetry_to_forward_receiver_profiles_as_log.yaml",
+        extra_env={
+            "OTEL_INPUT_TAG": "otel_custom",
+            "OTEL_OUTPUT_MATCH": "otel_custom",
+            "OTEL_TAG_FROM_URI": tag_from_uri_setting,
+        },
+    )
+    service.start()
+
+    try:
+        service.send_json_as_otel_protobuf(None, "profiles")
+        messages = service.wait_for_forward_messages(1)
+    finally:
+        service.stop()
+
+    message = messages[0]
+
+    _assert_forward_profiles_as_log_message(message, expected_tag="otel_custom")
+
+
+@pytest.mark.parametrize(
+    "signal_type,json_input,config_file",
+    [
+        ("logs", "test_logs_001.in.json", "in_opentelemetry_to_forward_receiver_custom_tag.yaml"),
+        ("metrics", "test_metrics_001.in.json", "in_opentelemetry_to_forward_receiver_custom_tag.yaml"),
+        ("traces", "test_traces_001.in.json", "in_opentelemetry_to_forward_receiver_custom_tag.yaml"),
+        ("profiles", None, "in_opentelemetry_to_forward_receiver_profiles_as_log.yaml"),
+    ],
+)
+def test_in_opentelemetry_non_matching_route_drops_all_signals(signal_type, json_input, config_file):
+    service = ForwardReceiverService(
+        config_file,
+        extra_env={
+            "OTEL_INPUT_TAG": "otel_custom",
+            "OTEL_OUTPUT_MATCH": "no_match",
+            "OTEL_TAG_FROM_URI": "false",
+        },
+    )
+    service.start()
+
+    try:
+        service.send_json_as_otel_protobuf(json_input, signal_type)
+        with pytest.raises(TimeoutError):
+            service.wait_for_forward_messages(1, timeout=2)
+    finally:
+        service.stop()
 
 
 def test_in_forward_storage_limit_single_output_prefers_actual_chunk_deletion():
