@@ -11,10 +11,12 @@ pipeline:
       http2: off
       tls: off
       profiles_support: true
+      tag: ${OTEL_INPUT_TAG}
+      tag_from_uri: ${OTEL_TAG_FROM_URI}
 
   outputs:
     - name: forward
-      match: '*'
+      match: ${OTEL_OUTPUT_MATCH}
       host: 127.0.0.1
       port: ${FORWARD_RECEIVER_PORT}
       send_options: true
