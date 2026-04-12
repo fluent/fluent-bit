@@ -21,6 +21,12 @@
 #define FLB_IN_OPENTELEMETRY_PROT
 
 #include <fluent-bit/flb_http_common.h>
+#include <fluent-bit/flb_sds.h>
+
+#include "opentelemetry.h"
+
+flb_sds_t opentelemetry_prot_create_request_tag(struct flb_opentelemetry *context,
+                                                flb_sds_t uri_tag);
 
 int opentelemetry_prot_handle_ng(struct flb_http_request *request,
                                  struct flb_http_response *response);

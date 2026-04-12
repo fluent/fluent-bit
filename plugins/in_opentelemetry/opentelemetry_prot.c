@@ -42,8 +42,23 @@
 #include "opentelemetry_utils.h"
 #include "opentelemetry_logs.h"
 #include "opentelemetry_traces.h"
+#include "opentelemetry_prot.h"
 
 #define HTTP_CONTENT_JSON  0
+
+flb_sds_t opentelemetry_prot_create_request_tag(struct flb_opentelemetry *context,
+                                                flb_sds_t uri_tag)
+{
+    if (context->ins->tag_default == FLB_FALSE) {
+        return flb_sds_create(context->ins->tag);
+    }
+
+    if (context->tag_from_uri == FLB_TRUE) {
+        return flb_sds_create(uri_tag);
+    }
+
+    return flb_sds_create(context->ins->tag);
+}
 
 static int is_profiles_export_path(const char *path)
 {
@@ -989,11 +1004,16 @@ next_grpc_message:
         strcmp(request->path, "/opentelemetry.proto.collector.metric.v1.MetricService/Export") == 0 ||
         strcmp(request->path, "/opentelemetry.proto.collector.metrics.v1.MetricsService/Export") == 0) {
         payload_type = 'M';
-        if (context->tag_from_uri == FLB_TRUE) {
-            tag = flb_sds_create("v1_metrics");
-        }
-        else {
-            tag = flb_sds_create(context->ins->tag);
+        tag = opentelemetry_prot_create_request_tag(context, "v1_metrics");
+        if (tag == NULL) {
+            ret = -1;
+            if (grpc_request == FLB_TRUE) {
+                send_grpc_error_response_ng(response, 13, "internal error");
+            }
+            else {
+                send_response_ng(response, 500, "internal error: cannot allocate request tag\n");
+            }
+            goto cleanup;
         }
 
         ret = process_payload_metrics_ng(context, tag, request,
@@ -1003,11 +1023,16 @@ next_grpc_message:
              strcmp(request->path, "/opentelemetry.proto.collector.trace.v1.TraceService/Export") == 0 ||
              strcmp(request->path, "/opentelemetry.proto.collector.traces.v1.TracesService/Export") == 0) {
         payload_type = 'T';
-        if (context->tag_from_uri == FLB_TRUE) {
-            tag = flb_sds_create("v1_traces");
-        }
-        else {
-            tag = flb_sds_create(context->ins->tag);
+        tag = opentelemetry_prot_create_request_tag(context, "v1_traces");
+        if (tag == NULL) {
+            ret = -1;
+            if (grpc_request == FLB_TRUE) {
+                send_grpc_error_response_ng(response, 13, "internal error");
+            }
+            else {
+                send_response_ng(response, 500, "internal error: cannot allocate request tag\n");
+            }
+            goto cleanup;
         }
 
         ret = opentelemetry_process_traces(context, request->content_type,
@@ -1018,11 +1043,16 @@ next_grpc_message:
              strcmp(request->path, "/opentelemetry.proto.collector.log.v1.LogService/Export") == 0 ||
              strcmp(request->path, "/opentelemetry.proto.collector.logs.v1.LogsService/Export") == 0) {
         payload_type = 'L';
-        if (context->tag_from_uri == FLB_TRUE) {
-            tag = flb_sds_create("v1_logs");
-        }
-        else {
-            tag = flb_sds_create(context->ins->tag);
+        tag = opentelemetry_prot_create_request_tag(context, "v1_logs");
+        if (tag == NULL) {
+            ret = -1;
+            if (grpc_request == FLB_TRUE) {
+                send_grpc_error_response_ng(response, 13, "internal error");
+            }
+            else {
+                send_response_ng(response, 500, "internal error: cannot allocate request tag\n");
+            }
+            goto cleanup;
         }
 
         ret = opentelemetry_process_logs(context, request->content_type, tag, flb_sds_len(tag),
@@ -1031,15 +1061,21 @@ next_grpc_message:
     else if (context->profile_support_enabled &&
              is_profiles_export_path(request->path) == FLB_TRUE) {
         payload_type = 'P';
-        if (context->tag_from_uri == FLB_TRUE) {
-            tag = flb_sds_create("v1development_profiles");
-        }
-        else {
-            tag = flb_sds_create(context->ins->tag);
+        tag = opentelemetry_prot_create_request_tag(context, "v1development_profiles");
+        if (tag == NULL) {
+            ret = -1;
+            if (grpc_request == FLB_TRUE) {
+                send_grpc_error_response_ng(response, 13, "internal error");
+            }
+            else {
+                send_response_ng(response, 500, "internal error: cannot allocate request tag\n");
+            }
+            goto cleanup;
         }
         ret = process_payload_profiles_ng(context, tag, request, payload, payload_size);
     }
 
+cleanup:
     if (grpc_request) {
         /* check if we have uncompressed a gRPC message, if so, release it */
         if (grpc_uncompressed == FLB_TRUE) {
