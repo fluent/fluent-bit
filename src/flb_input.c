@@ -466,8 +466,8 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->ingress_queue_signal_pending = FLB_FALSE;
         instance->ingress_queue_pending_events = 0;
         instance->ingress_queue_pending_bytes = 0;
-        instance->ingress_queue_event_limit = 8192;
-        instance->ingress_queue_byte_limit = 256 * 1024 * 1024;
+        instance->ingress_queue_event_limit = FLB_HTTP_SERVER_INGRESS_QUEUE_EVENT_LIMIT;
+        instance->ingress_queue_byte_limit = FLB_HTTP_SERVER_INGRESS_QUEUE_BYTE_LIMIT;
 
         /* Plugin use networking */
         if (plugin->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) {
@@ -975,6 +975,8 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     struct mk_list *head;
     struct flb_input_collector *collector;
 
+    flb_input_ingress_destroy(ins);
+
     if (ins->alias) {
         flb_sds_destroy(ins->alias);
     }
@@ -1133,8 +1135,6 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     if (ins->ingress_queue_channels[1] > 0) {
         mk_event_closesocket(ins->ingress_queue_channels[1]);
     }
-
-    flb_input_ingress_destroy(ins);
 
     /* Collectors */
     mk_list_foreach_safe(head, tmp, &ins->collectors) {
@@ -1551,6 +1551,35 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                             "Number of ring buffer retry failures.",
                             1, (char *[]) {"name"});
     cmt_counter_set(ins->cmt_ring_buffer_retry_failures, ts, 0, 1, (char *[]) {name});
+
+    if ((p->flags & FLB_INPUT_HTTP_SERVER) != 0) {
+        /* fluentbit_input_http_server_ingress_queue_busy_total */
+        ins->cmt_ingress_queue_busy = \
+            cmt_counter_create(ins->cmt,
+                               "fluentbit", "input",
+                               "http_server_ingress_queue_busy_total",
+                               "Number of deferred HTTP server ingress queue busy events.",
+                               1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_ingress_queue_busy, ts, 0, 1, (char *[]) {name});
+
+        /* fluentbit_input_http_server_ingress_queue_pending_events */
+        ins->cmt_ingress_queue_pending_events = \
+            cmt_gauge_create(ins->cmt,
+                             "fluentbit", "input",
+                             "http_server_ingress_queue_pending_events",
+                             "Current number of deferred HTTP server ingress queue events.",
+                             1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_ingress_queue_pending_events, ts, 0, 1, (char *[]) {name});
+
+        /* fluentbit_input_http_server_ingress_queue_pending_bytes */
+        ins->cmt_ingress_queue_pending_bytes = \
+            cmt_gauge_create(ins->cmt,
+                             "fluentbit", "input",
+                             "http_server_ingress_queue_pending_bytes",
+                             "Current number of deferred HTTP server ingress queue bytes.",
+                             1, (char *[]) {"name"});
+        cmt_gauge_set(ins->cmt_ingress_queue_pending_bytes, ts, 0, 1, (char *[]) {name});
+    }
 
     /* OLD Metrics */
     ins->metrics = flb_metrics_create(name);

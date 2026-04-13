@@ -436,6 +436,9 @@ struct flb_input_instance {
     struct cmt_counter *cmt_ring_buffer_writes;
     struct cmt_counter *cmt_ring_buffer_retries;
     struct cmt_counter *cmt_ring_buffer_retry_failures;
+    struct cmt_counter *cmt_ingress_queue_busy;
+    struct cmt_gauge   *cmt_ingress_queue_pending_events;
+    struct cmt_gauge   *cmt_ingress_queue_pending_bytes;
 
     /*
      * Indexes for generated chunks: simple hash tables that keeps the latest
