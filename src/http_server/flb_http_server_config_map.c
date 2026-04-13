@@ -48,6 +48,16 @@ struct flb_config_map flb_http_server_config_map[] = {
      "Set the number of HTTP listener workers"
     },
     {
+     FLB_CONFIG_MAP_SIZE, "http_server.ingress_queue_event_limit", "8192",
+     0, FLB_TRUE, offsetof(struct flb_http_server_config, ingress_queue_event_limit),
+     "Set the maximum number of deferred ingress queue events. Applies only when http_server.workers > 1."
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "http_server.ingress_queue_byte_limit", "256M",
+     0, FLB_TRUE, offsetof(struct flb_http_server_config, ingress_queue_byte_limit),
+     "Set the maximum number of deferred ingress queue bytes. Applies only when http_server.workers > 1."
+    },
+    {
      FLB_CONFIG_MAP_BOOL, "http2", "true",
      0, FLB_TRUE, offsetof(struct flb_http_server_config, http2),
      "Compatibility alias for http_server.http2"
