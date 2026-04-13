@@ -1113,7 +1113,9 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         /* fluentbit_input_bytes_total */
         cmt_counter_add(in->cmt_bytes, ts, buf_size,
                         1, (char *[]) {(char *) flb_input_name(in)});
-        flb_input_rate_update(in, ts, ic->total_records, buf_size);
+        if (ic->fs_backlog != FLB_TRUE) {
+            flb_input_rate_update(in, ts, ic->total_records, buf_size);
+        }
 
         /* OLD metrics */
         flb_metrics_sum(FLB_METRIC_N_RECORDS, ic->total_records, in->metrics);
@@ -2444,6 +2446,9 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
     /* Register the total into the context variable */
     in->mem_chunks_size = total;
 
+    /* Re-evaluate rate gate status first to avoid pause-state deadlocks. */
+    flb_input_rate_gate_maybe_resume(in);
+
     /*
      * After the adjustments, validate if the plugin is overlimit or paused
      * and perform further adjustments.
@@ -2492,8 +2497,6 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
             flb_plg_info(in, "resume (rate gate limit cleared)");
         }
     }
-
-    flb_input_rate_gate_maybe_resume(in);
 
     return total;
 }
