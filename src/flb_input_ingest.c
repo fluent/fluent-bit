@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_ring_buffer.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/http_server/flb_http_server.h>
 
 #include <cprofiles/cprof_encode_msgpack.h>
 
@@ -157,6 +158,33 @@ static void flb_input_ingress_signal(struct flb_input_instance *ins)
     }
 }
 
+static void flb_input_ingress_update_metrics(struct flb_input_instance *ins)
+{
+    uint64_t ts;
+    char *name;
+
+    if (ins == NULL || ins->cmt == NULL) {
+        return;
+    }
+
+    ts = cfl_time_now();
+    name = (char *) flb_input_name(ins);
+
+    if (ins->cmt_ingress_queue_pending_events != NULL) {
+        cmt_gauge_set(ins->cmt_ingress_queue_pending_events,
+                      ts,
+                      ins->ingress_queue_pending_events,
+                      1, (char *[]) {name});
+    }
+
+    if (ins->cmt_ingress_queue_pending_bytes != NULL) {
+        cmt_gauge_set(ins->cmt_ingress_queue_pending_bytes,
+                      ts,
+                      ins->ingress_queue_pending_bytes,
+                      1, (char *[]) {name});
+    }
+}
+
 static int flb_input_ingress_enqueue(struct flb_input_instance *ins,
                                      struct flb_input_ingress_event *event)
 {
@@ -165,6 +193,8 @@ static int flb_input_ingress_enqueue(struct flb_input_instance *ins,
     int should_signal;
     int wait_result;
     struct timespec deadline;
+    struct cmt_counter *cmt_ingress_queue_busy;
+    flb_sds_t input_name;
 
     if (ins == NULL || event == NULL || ins->ingress_queue_enabled != FLB_TRUE) {
         flb_input_ingress_event_destroy(event);
@@ -210,7 +240,22 @@ static int flb_input_ingress_enqueue(struct flb_input_instance *ins,
                                              &ins->ingress_queue_lock,
                                              &deadline);
         if (wait_result == ETIMEDOUT) {
+            cmt_ingress_queue_busy = ins->cmt_ingress_queue_busy;
+            input_name = NULL;
+
+            if (cmt_ingress_queue_busy != NULL) {
+                input_name = flb_sds_create(flb_input_name(ins));
+            }
+
             pthread_mutex_unlock(&ins->ingress_queue_lock);
+
+            if (cmt_ingress_queue_busy != NULL && input_name != NULL) {
+                cmt_counter_add(cmt_ingress_queue_busy,
+                                cfl_time_now(),
+                                1,
+                                1, (char *[]) {input_name});
+                flb_sds_destroy(input_name);
+            }
 
             flb_input_ingress_event_destroy(event);
 
@@ -229,6 +274,7 @@ static int flb_input_ingress_enqueue(struct flb_input_instance *ins,
     mk_list_add(&event->_head, &ins->ingress_queue);
     ins->ingress_queue_pending_events++;
     ins->ingress_queue_pending_bytes += event_size;
+    flb_input_ingress_update_metrics(ins);
 
     if (ins->ingress_queue_signal_pending == FLB_FALSE) {
         ins->ingress_queue_signal_pending = FLB_TRUE;
@@ -331,6 +377,7 @@ static int flb_input_ingress_collector(struct flb_input_instance *ins,
         ins->ingress_queue_pending_events = 0;
         ins->ingress_queue_pending_bytes = 0;
         ins->ingress_queue_signal_pending = FLB_FALSE;
+        flb_input_ingress_update_metrics(ins);
 
         if (queue_was_full == FLB_TRUE) {
             pthread_cond_broadcast(&ins->ingress_queue_space_available);
@@ -409,8 +456,22 @@ int flb_input_ingress_enable(struct flb_input_instance *ins)
         return 0;
     }
 
+    if (ins->http_server_config != NULL) {
+        ins->ingress_queue_event_limit =
+            ins->http_server_config->ingress_queue_event_limit;
+
+        if (ins->http_server_config->ingress_queue_byte_limit > 0) {
+            ins->ingress_queue_byte_limit =
+                ins->http_server_config->ingress_queue_byte_limit;
+        }
+        else {
+            ins->ingress_queue_byte_limit = ins->mem_buf_limit;
+        }
+    }
+
     if (ins->mem_buf_limit > 0 &&
-        ins->mem_buf_limit < ins->ingress_queue_byte_limit) {
+        (ins->ingress_queue_byte_limit == 0 ||
+         ins->mem_buf_limit < ins->ingress_queue_byte_limit)) {
         ins->ingress_queue_byte_limit = ins->mem_buf_limit;
     }
 
@@ -459,6 +520,7 @@ void flb_input_ingress_destroy(struct flb_input_instance *ins)
     }
     ins->ingress_queue_pending_events = 0;
     ins->ingress_queue_pending_bytes = 0;
+    flb_input_ingress_update_metrics(ins);
     pthread_mutex_unlock(&ins->ingress_queue_lock);
 }
 
