@@ -869,6 +869,7 @@ static flb_sds_t add_flattened_attributes(flb_sds_t dest, const char *prefix,
                                           msgpack_object *obj, int *attr_count)
 {
     size_t i;
+    size_t j;
     msgpack_object_kv *kv;
     flb_sds_t key_name = NULL;
     
@@ -927,7 +928,7 @@ static flb_sds_t add_flattened_attributes(flb_sds_t dest, const char *prefix,
                     27, flatten_error);
                 
                 /* Simple array representation */
-                for (size_t j = 0; j < kv->val.via.array.size; j++) {
+                for (j = 0; j < kv->val.via.array.size; j++) {
                     if (j > 0) {
                         SDS_CAT_OR_GOTO(dest, ",", 1, flatten_error);
                     }
