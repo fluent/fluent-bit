@@ -62,6 +62,10 @@ IN_OPENTELEMETRY_WORKER_PROTOCOL_CONFIGS = {
     "http2_tls": "otlp_http2_tls_workers.yaml",
 }
 
+IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_CONFIG = "otlp_http1_cleartext_workers_tiny_ingress_queue.yaml"
+IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_CONFIG = \
+    "otlp_http1_cleartext_workers_tiny_ingress_queue_byte_limit.yaml"
+
 IN_OPENTELEMETRY_OAUTH2_PROTOCOL_CONFIGS = {
     "http1_cleartext": "otlp_http1_cleartext_oauth2.yaml",
     "http2_cleartext": "otlp_http2_cleartext_oauth2.yaml",
@@ -224,6 +228,28 @@ def read_stdout_otlp_json_text(service, root_key, timeout=10, interval=0.25):
         time.sleep(interval)
 
     raise TimeoutError(f"Timed out waiting for stdout OTLP JSON payload with root key {root_key}")
+
+
+def read_prometheus_metric_value(metrics_text, metric_name, input_name):
+    label = f'name="{input_name}"'
+
+    for line in metrics_text.splitlines():
+        if not line.startswith(metric_name):
+            continue
+
+        if "{" in line and label not in line:
+            continue
+
+        return float(line.rsplit(" ", 1)[-1])
+
+    raise AssertionError(f"Metric {metric_name} with {label} not found")
+
+
+def maybe_read_prometheus_metric_value(metrics_text, metric_name, input_name):
+    try:
+        return read_prometheus_metric_value(metrics_text, metric_name, input_name)
+    except AssertionError:
+        return None
 
 class Service:
     def __init__(self, config_file, *, use_auth_server=False):
@@ -398,6 +424,22 @@ class Service:
             timeout=timeout,
             interval=interval,
             description=f"{minimum_count} OTLP {signal_type} payloads",
+        )
+
+    def scrape_prometheus_metrics(self):
+        url = f"http://127.0.0.1:{self.flb.http_monitoring_port}/api/v2/metrics/prometheus"
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        return response.text
+
+    def wait_for_prometheus_metric(self, metric_name, timeout=10, interval=0.25):
+        return self.service.wait_for_condition(
+            lambda: (
+                metrics if metric_name in metrics else None
+            ) if (metrics := self.scrape_prometheus_metrics()) else None,
+            timeout=timeout,
+            interval=interval,
+            description=f"prometheus metric {metric_name}",
         )
 
     def stop(self):
@@ -925,3 +967,166 @@ def test_in_opentelemetry_http_workers_mixed_signal_matrix(case):
     assert "/v1/logs" in paths_seen
     assert "/v1/metrics" in paths_seen
     assert "/v1/traces" in paths_seen
+
+
+def test_in_opentelemetry_http_workers_export_ingress_queue_metrics():
+    service = Service(IN_OPENTELEMETRY_WORKER_PROTOCOL_CONFIGS["http1_cleartext"])
+    service.start()
+    service.wait_for_log_message("with 4 workers", timeout=10)
+
+    response = service.send_raw_request(
+        "/v1/logs",
+        service.build_otel_payload("test_logs_001.in.json", "logs"),
+    )
+    assert response.status_code == 201
+
+    service.wait_for_signal_count("logs", 1, timeout=10)
+
+    metrics_text = service.service.wait_for_condition(
+        lambda: (
+            metrics
+            if "fluentbit_input_http_server_ingress_queue_pending_events" in metrics
+            else None
+        ) if (metrics := service.scrape_prometheus_metrics()) else None,
+        timeout=10,
+        interval=0.25,
+        description="prometheus ingress queue metrics",
+    )
+
+    service.stop()
+
+    assert "fluentbit_input_http_server_ingress_queue_pending_events" in metrics_text
+    assert "fluentbit_input_http_server_ingress_queue_pending_bytes" in metrics_text
+    assert "fluentbit_input_http_server_ingress_queue_busy_total" in metrics_text
+
+    assert read_prometheus_metric_value(
+        metrics_text,
+        "fluentbit_input_http_server_ingress_queue_pending_events",
+        "opentelemetry.0",
+    ) == 0
+    assert read_prometheus_metric_value(
+        metrics_text,
+        "fluentbit_input_http_server_ingress_queue_pending_bytes",
+        "opentelemetry.0",
+    ) == 0
+    assert read_prometheus_metric_value(
+        metrics_text,
+        "fluentbit_input_http_server_ingress_queue_busy_total",
+        "opentelemetry.0",
+    ) == 0
+
+
+def test_in_opentelemetry_http_workers_respect_tiny_ingress_queue_limits():
+    service = Service(IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_CONFIG)
+    service.start()
+    service.wait_for_log_message("with 4 workers", timeout=10)
+    logs_before = len(data_storage["logs"])
+
+    response = service.send_raw_request(
+        "/v1/logs",
+        service.build_otel_payload("test_logs_001.in.json", "logs"),
+    )
+
+    metrics_text = service.service.wait_for_condition(
+        lambda: (
+            metrics if maybe_read_prometheus_metric_value(
+                metrics,
+                "fluentbit_input_http_server_ingress_queue_busy_total",
+                "opentelemetry.0",
+            ) is not None and maybe_read_prometheus_metric_value(
+                metrics,
+                "fluentbit_input_http_server_ingress_queue_busy_total",
+                "opentelemetry.0",
+            ) >= 1 else None
+        ) if (metrics := service.scrape_prometheus_metrics()) else None,
+        timeout=10,
+        interval=0.25,
+        description="ingress queue busy metric",
+    )
+
+    service.stop()
+
+    assert response.status_code == 503
+    assert "deferred ingress queue is full" in response.text
+    assert len(data_storage["logs"]) == logs_before
+    assert read_prometheus_metric_value(
+        metrics_text,
+        "fluentbit_input_http_server_ingress_queue_busy_total",
+        "opentelemetry.0",
+    ) >= 1
+    assert read_prometheus_metric_value(
+        metrics_text,
+        "fluentbit_input_http_server_ingress_queue_pending_events",
+        "opentelemetry.0",
+    ) == 0
+    assert read_prometheus_metric_value(
+        metrics_text,
+        "fluentbit_input_http_server_ingress_queue_pending_bytes",
+        "opentelemetry.0",
+    ) == 0
+
+
+def test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit():
+    service = Service(IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_CONFIG)
+    small_payload = service.build_otel_payload("test_logs_001.in.json", "logs")
+
+    small_request = ExportLogsServiceRequest()
+    small_request.ParseFromString(small_payload)
+
+    large_request = ExportLogsServiceRequest()
+    large_request.resource_logs.extend(small_request.resource_logs)
+    large_request.resource_logs.extend(small_request.resource_logs)
+
+    large_payload = large_request.SerializeToString()
+
+    assert len(small_payload) < len(large_payload)
+
+    service.start()
+    service.wait_for_log_message("with 4 workers", timeout=10)
+
+    logs_before = len(data_storage["logs"])
+
+    success_response = service.send_raw_request("/v1/logs", small_payload)
+    assert success_response.status_code == 201
+
+    service.wait_for_signal_count("logs", logs_before + 1, timeout=10)
+
+    failure_response = service.send_raw_request("/v1/logs", large_payload)
+    assert failure_response.status_code == 503
+    assert "deferred ingress queue is full" in failure_response.text
+
+    metrics_text = service.service.wait_for_condition(
+        lambda: (
+            metrics if maybe_read_prometheus_metric_value(
+                metrics,
+                "fluentbit_input_http_server_ingress_queue_busy_total",
+                "opentelemetry.0",
+            ) is not None and maybe_read_prometheus_metric_value(
+                metrics,
+                "fluentbit_input_http_server_ingress_queue_busy_total",
+                "opentelemetry.0",
+            ) >= 1 else None
+        ) if (metrics := service.scrape_prometheus_metrics()) else None,
+        timeout=10,
+        interval=0.25,
+        description="ingress queue byte-limit busy metric",
+    )
+
+    service.stop()
+
+    assert len(data_storage["logs"]) == logs_before + 1
+    assert read_prometheus_metric_value(
+        metrics_text,
+        "fluentbit_input_http_server_ingress_queue_busy_total",
+        "opentelemetry.0",
+    ) >= 1
+    assert read_prometheus_metric_value(
+        metrics_text,
+        "fluentbit_input_http_server_ingress_queue_pending_events",
+        "opentelemetry.0",
+    ) == 0
+    assert read_prometheus_metric_value(
+        metrics_text,
+        "fluentbit_input_http_server_ingress_queue_pending_bytes",
+        "opentelemetry.0",
+    ) == 0
