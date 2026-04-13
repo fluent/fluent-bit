@@ -71,6 +71,10 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 - Run broader test coverage when changing shared lifecycle, routing, storage, or accounting code.
 - Validate both success and failure paths (invalid payloads, boundary sizes, null/missing fields).
 - You can also run specific binaries from `build/bin` (e.g., `./bin/flb-it-opentelemetry`).
+- When changing code covered by `tests/integration`, agents must verify the
+  affected scenarios are valgrind-clean. Run the focused integration tests with
+  `tests/integration/run_tests.py --valgrind --valgrind-strict ...` and do not
+  stop at functional pass/fail if memory errors or leaks remain.
 - Keep generated integration artifacts out of git. Do not commit
   `.venv/`, `.pytest_cache/`, `results/`, or `__pycache__/` under
   `tests/integration`.
