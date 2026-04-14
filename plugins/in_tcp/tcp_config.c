@@ -67,6 +67,31 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *ins)
         }
     }
 
+    if (ctx->parser_name != NULL) {
+#ifdef FLB_HAVE_PARSER
+        ctx->parser = flb_parser_get(ctx->parser_name, ins->config);
+        if (ctx->parser == NULL) {
+            flb_plg_error(ctx->ins, "requested parser '%s' not found",
+                          ctx->parser_name);
+            flb_free(ctx);
+            return NULL;
+        }
+
+        if (ctx->format != FLB_TCP_FMT_NONE) {
+            flb_plg_warn(ctx->ins,
+                         "'parser' requires line-delimited payloads; "
+                         "switching format from '%s' to 'none'",
+                         ctx->format_name != NULL ? ctx->format_name : "json");
+            ctx->format = FLB_TCP_FMT_NONE;
+        }
+#else
+        flb_plg_error(ctx->ins,
+                      "'parser' option is not supported in this build");
+        flb_free(ctx);
+        return NULL;
+#endif
+    }
+
     /* String separator used to split records when using 'format none' */
     if (ctx->raw_separator) {
         len = strlen(ctx->raw_separator);

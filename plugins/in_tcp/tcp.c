@@ -187,6 +187,11 @@ static struct flb_config_map config_map[] = {
      "Set separator"
     },
     {
+     FLB_CONFIG_MAP_STR, "parser", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_tcp_config, parser_name),
+     "Optional parser for line-delimited records"
+    },
+    {
       FLB_CONFIG_MAP_STR, "chunk_size", (char *)NULL,
       0, FLB_TRUE, offsetof(struct flb_in_tcp_config, chunk_size_str),
       "Set the chunk size"
