@@ -14,6 +14,7 @@
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_http_client.h>
 
 #include <monkey/mk_core.h>
@@ -151,6 +152,7 @@ static void *chunked_server_thread(void *data)
 static struct runtime_http_client_ctx *runtime_http_client_ctx_create(int port)
 {
     struct runtime_http_client_ctx *ctx;
+    static int coro_initialized = FLB_FALSE;
 
     ctx = flb_calloc(1, sizeof(struct runtime_http_client_ctx));
     if (!TEST_CHECK(ctx != NULL)) {
@@ -166,6 +168,12 @@ static struct runtime_http_client_ctx *runtime_http_client_ctx_create(int port)
 
     flb_engine_evl_init();
     flb_engine_evl_set(ctx->evl);
+
+    if (coro_initialized == FLB_FALSE) {
+        flb_coro_init();
+        coro_initialized = FLB_TRUE;
+    }
+    flb_coro_thread_init();
 
     ctx->config = flb_config_init();
     if (!TEST_CHECK(ctx->config != NULL)) {
