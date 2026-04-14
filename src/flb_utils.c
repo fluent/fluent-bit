@@ -1833,7 +1833,7 @@ int flb_utils_url_split_sds(const flb_sds_t in_url, flb_sds_t *out_protocol,
 /*
  * flb_utils_proxy_url_split parses a proxy's information from a http_proxy URL.
  * The URL is in the form like `http://[username:password@]myproxy.com:8080`.
- * Note: currently only HTTP is supported.
+ * Note: currently only HTTP(s) is supported.
  */
 int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
                               char **out_username, char **out_password,
@@ -1869,9 +1869,9 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
             return -1;
         }
 
-        /* Only HTTP proxy is supported for now. */
-        if (strcmp(protocol, "http") != 0) {
-            flb_error("only HTTP proxy is supported.");
+        /* Only HTTP(s) proxy is supported for now. */
+        if (strcmp(protocol, "http") != 0 && strcmp(protocol, "https") != 0) {
+            flb_error("only HTTP(s) proxy is supported.");
             goto error;
         }
 
