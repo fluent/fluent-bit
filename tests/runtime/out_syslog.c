@@ -1608,6 +1608,36 @@ void flb_test_malformed_longer_sd_id_rfc5424()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_syslog_udp_with_tls()
+{
+    struct test_ctx *ctx;
+    int ret;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "mode", "udp",
+                         "tls", "on",
+                         "tls.verify", "no",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret != 0)) {
+        TEST_MSG("flb_start should fail when syslog mode is udp and TLS is enabled");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+
 TEST_LIST = {
     /* rfc3164 */
     /* procid_key, msgid_key, sd_key are not supported */
@@ -1639,6 +1669,6 @@ TEST_LIST = {
     {"format_msgid_preset_rfc5424", flb_test_msgid_preset_rfc5424},
     {"allow_longer_sd_id_rfc5424", flb_test_allow_longer_sd_id_rfc5424},
     {"malformed_longer_sd_id_rfc5424", flb_test_malformed_longer_sd_id_rfc5424},
+    {"udp_with_tls", flb_test_syslog_udp_with_tls},
     {NULL, NULL}
 };
-

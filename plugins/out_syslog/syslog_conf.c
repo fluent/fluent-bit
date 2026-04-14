@@ -109,6 +109,13 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         }
     }
 
+    if (ctx->parsed_mode == FLB_SYSLOG_UDP && ins->use_tls == FLB_TRUE) {
+        flb_plg_error(ctx->ins,
+                      "invalid configuration: mode 'udp' does not support TLS");
+        flb_syslog_config_destroy(ctx);
+        return NULL;
+    }
+
     /* syslog_format */
     tmp = flb_output_get_property("syslog_format", ins);
     if (tmp) {
