@@ -27,6 +27,9 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#ifdef FLB_HAVE_PARSER
+#include <fluent-bit/flb_parser.h>
+#endif
 #include <msgpack.h>
 
 struct udp_conn;
@@ -44,6 +47,12 @@ struct flb_in_udp_config {
     flb_sds_t raw_separator;           /* Unescaped string delimiterr */
     flb_sds_t separator;               /* String delimiter            */
     flb_sds_t source_address_key;      /* Source IP address           */
+    flb_sds_t parser_name;             /* Parser name                 */
+#ifdef FLB_HAVE_PARSER
+    struct flb_parser *parser;         /* Parser context              */
+#else
+    void *parser;
+#endif
     int collector_id;                  /* Listener collector id       */
     struct flb_downstream *downstream; /* Client manager              */
     struct udp_conn *dummy_conn;       /* Datagram dummy connection   */
