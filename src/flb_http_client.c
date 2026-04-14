@@ -1016,17 +1016,26 @@ struct flb_http_client *create_http_client(struct flb_connection *u_conn,
         return NULL;
     }
 
-    c->u_conn      = u_conn;
-    c->original_net_setup = u_conn->net;
-    if (u_conn->net != NULL) {
-        c->request_net_setup = *u_conn->net;
+    c->u_conn = u_conn;
+    if (u_conn) {
+        c->original_net_setup = u_conn->net;
+
+        if (u_conn->net != NULL) {
+            c->request_net_setup = *u_conn->net;
+        }
+        else if (u_conn->upstream != NULL) {
+            c->request_net_setup = u_conn->upstream->base.net;
+            c->original_net_setup = &u_conn->upstream->base.net;
+        }
+
+        if (c->original_net_setup != NULL) {
+            c->u_conn->net = &c->request_net_setup;
+        }
     }
-    else if (u_conn->upstream != NULL) {
-        c->request_net_setup = u_conn->upstream->base.net;
-        c->original_net_setup = &u_conn->upstream->base.net;
-    }
-    if (c->original_net_setup != NULL) {
-        c->u_conn->net = &c->request_net_setup;
+    else {
+        /* For dummy client */
+        c->original_net_setup = NULL;
+        memset(&c->request_net_setup, 0, sizeof(c->request_net_setup));
     }
     c->method      = method;
     c->uri         = uri;
