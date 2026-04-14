@@ -1047,7 +1047,8 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "mode", "udp",
      0, FLB_TRUE, offsetof(struct flb_syslog, mode),
      "Set the desired transport type, the available options are tcp and udp. If you need to "
-     "use a TLS secure channel, choose 'tcp' mode here and enable the 'tls' option separately."
+     "use a TLS secure channel, choose 'tcp' mode here and enable the 'tls' option separately. "
+     "DTLS over udp is not supported by this plugin."
     },
 
     {
