@@ -28,6 +28,7 @@
 #include <fcntl.h>
 #include "flb_tests_runtime.h"
 
+#define DPATH            FLB_TESTS_DATA_PATH "/data/common"
 #define DEFAULT_IO_TIMEOUT 10
 #define DEFAULT_HOST       "127.0.0.1"
 #define DEFAULT_PORT       5170
@@ -263,6 +264,7 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
                     "Flush", "0.200000000",
                     "Grace", "1",
                     "Log_Level", "error",
+                    "Parsers_File", DPATH "/parsers.conf",
                     NULL);
 
     /* Input */
@@ -672,6 +674,105 @@ void flb_test_format_none_separator()
     test_ctx_destroy(ctx);
 }
 
+#ifdef FLB_HAVE_PARSER
+void flb_test_format_none_with_parser()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int ret;
+    int num;
+    ssize_t w_size;
+    char *buf = "{\"test\":\"msg\"}\n";
+    size_t size = strlen(buf);
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "format", "none",
+                        "parser", "json",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    fd = connect_tcp(NULL, -1);
+    if (!TEST_CHECK(fd >= 0)) {
+        exit(EXIT_FAILURE);
+    }
+
+    w_size = send(fd, buf, size, 0);
+    if (!TEST_CHECK(w_size == size)) {
+        TEST_MSG("failed to send, errno=%d", errno);
+        flb_socket_close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    flb_time_msleep(1500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num > 0)) {
+        TEST_MSG("no outputs");
+    }
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_format_none_with_unknown_parser()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    int ret;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "format", "none",
+                        "parser", "nonexistent_parser",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret != 0)) {
+        TEST_MSG("flb_start unexpectedly succeeded with unknown parser");
+    }
+
+    test_ctx_destroy(ctx);
+}
+#endif
+
 /*
  * Ingest 64k records.
  * https://github.com/fluent/fluent-bit/issues/5336
@@ -841,8 +942,11 @@ TEST_LIST = {
     {"tcp_with_tls", flb_test_tcp_with_tls},
     {"format_none", flb_test_format_none},
     {"format_none_separator", flb_test_format_none_separator},
+#ifdef FLB_HAVE_PARSER
+    {"format_none_with_parser", flb_test_format_none_with_parser},
+    {"format_none_with_unknown_parser", flb_test_format_none_with_unknown_parser},
+#endif
     {"format_none_large_record", flb_test_format_none_large_record},
     {"65535_records_issue_5336", flb_test_issue_5336},
     {NULL, NULL}
 };
-
