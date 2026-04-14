@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -56,6 +56,10 @@ struct flb_dummy {
 
     char *ref_body_msgpack;
     size_t ref_body_msgpack_size;
+
+    /* Config map entries for dynamic templates */
+    struct flb_config_map *cm_body;
+    struct flb_config_map *cm_metadata;
 
     struct flb_log_event_encoder *encoder;
 

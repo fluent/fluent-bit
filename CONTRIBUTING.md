@@ -25,7 +25,8 @@ You have to pay attention to the code indentation, tabs are 4 spaces, spaces on 
 
 #### Line Length
 
-Fluent Bit source code lines length should not exceed 90 characters.
+Fluent Bit source code should target 100 characters per line, with 120
+characters as the maximum allowed line length.
 
 #### Braces usage on conditionals, loops and functions:
 
@@ -188,7 +189,7 @@ When you commit your local changes in your repository (before to push to Github)
 ```
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.

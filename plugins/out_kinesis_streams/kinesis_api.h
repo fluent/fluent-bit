@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@
 #define PUT_RECORDS_PAYLOAD_SIZE         5242880
 #define MAX_EVENTS_PER_PUT               500
 #define MAX_EVENT_SIZE                   1048556 /* 1048576 - 20 bytes for partition key */
+#define MAX_B64_EVENT_SIZE               1398076 /* ceil(1048556 / 3) * 4 */
 
 /* number of characters needed to 'start' a PutRecords payload */
 #define PUT_RECORDS_HEADER_LEN      30

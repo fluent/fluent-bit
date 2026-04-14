@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -708,6 +708,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                         }
 
                         route->status = FLB_TASK_ROUTE_INACTIVE;
+                        route->records = evc->total_events;
+                        route->bytes = evc->size;
                         route->out = stored_matches[stored_match_index];
                         mk_list_add(&route->_head, &task->routes);
                         direct_count++;
@@ -810,6 +812,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
             }
 
             route->status = FLB_TASK_ROUTE_INACTIVE;
+            route->records = evc->total_events;
+            route->bytes = evc->size;
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);
             direct_count++;
@@ -856,6 +860,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
             }
 
             route->status = FLB_TASK_ROUTE_INACTIVE;
+            route->records = evc->total_events;
+            route->bytes = evc->size;
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);
             count++;

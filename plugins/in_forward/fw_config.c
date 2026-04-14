@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -90,7 +90,7 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
     ret = flb_input_config_map_set(i_ins, (void *)config);
     if (ret == -1) {
         flb_plg_error(i_ins, "config map set error");
-        flb_free(config);
+        fw_config_destroy(config);
         return NULL;
     }
 
@@ -117,6 +117,7 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
     /* Shared Key */
     if (config->empty_shared_key) {
         if (fw_create_empty_shared_key(config, i_ins) == -1) {
+            fw_config_destroy(config);
             return NULL;
         }
     }

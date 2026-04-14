@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -309,6 +309,7 @@ int flb_reload_reconstruct_cf(struct flb_cf *src_cf, struct flb_cf *dest_cf)
 {
     struct mk_list *head;
     struct flb_cf_section *s;
+    struct flb_cf_env_var *ev;
     struct flb_kv *kv;
 
     mk_list_foreach(head, &src_cf->sections) {
@@ -320,10 +321,12 @@ int flb_reload_reconstruct_cf(struct flb_cf *src_cf, struct flb_cf *dest_cf)
 
     /* Copy and store env. (For yaml cf.) */
     mk_list_foreach(head, &src_cf->env) {
-        kv = mk_list_entry(head, struct flb_kv, _head);
-        if (!flb_cf_env_property_add(dest_cf,
-                                     kv->key, cfl_sds_len(kv->key),
-                                     kv->val, cfl_sds_len(kv->val))) {
+        ev = mk_list_entry(head, struct flb_cf_env_var, _head);
+        if (!flb_cf_env_var_add(dest_cf,
+                                ev->name, ev->name ? flb_sds_len(ev->name) : 0,
+                                ev->value, ev->value ? flb_sds_len(ev->value) : 0,
+                                ev->uri, ev->uri ? flb_sds_len(ev->uri) : 0,
+                                ev->refresh_interval)) {
             return -1;
         }
 
@@ -621,8 +624,12 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     ret = flb_start(new_ctx);
 
     if (ret != 0) {
+        /*
+         * 'ctx' and its config were already destroyed above, so do not
+         * dereference old_config here.
+         */
+        new_config->hot_reloading = FLB_FALSE;
         flb_destroy(new_ctx);
-        old_config->hot_reloading = FLB_FALSE;
 
         flb_error("[reload] loaded configuration contains error(s). Reloading is aborted");
         flb_reload_watchdog_cleanup(watchdog_ctx);

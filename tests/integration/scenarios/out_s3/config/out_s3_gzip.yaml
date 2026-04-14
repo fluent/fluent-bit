@@ -1,0 +1,27 @@
+service:
+  flush: 1
+  grace: 3
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: out_s3
+      dummy: '{"message":"hello gzip s3","source":"dummy"}'
+      samples: 1
+
+  outputs:
+    - name: s3
+      match: out_s3
+      bucket: test-bucket
+      region: us-east-1
+      endpoint: http://127.0.0.1:${TEST_SUITE_HTTP_PORT}
+      use_put_object: true
+      total_file_size: 1M
+      upload_timeout: 2s
+      s3_key_format: /payloads/$TAG/$UUID
+      content_type: application/x-ndjson
+      compression: gzip
+      store_dir: /tmp/fluent-bit-test-suite-s3-gzip

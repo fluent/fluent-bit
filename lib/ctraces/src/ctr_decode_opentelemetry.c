@@ -308,6 +308,11 @@ static int convert_any_value(struct opentelemetry_decode_value *ctr_val,
             result = convert_string_value(ctr_val, value_type, key, val->string_value);
             break;
 
+        case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX:
+            /* Profiling-only string dictionary reference: ignore in traces. */
+            result = 0;
+            break;
+
         case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BOOL_VALUE:
             result = convert_bool_value(ctr_val, value_type, key, val->bool_value);
             break;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -267,7 +267,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     break;
                 }
                 else {
-                    out_records = flb_mp_count(out_buf, out_size);
+                    out_records = flb_mp_count_log_records(out_buf, out_size);
 
 #ifdef FLB_HAVE_METRICS
                     if (out_records > in_records) {
@@ -331,6 +331,9 @@ int flb_filter_set_property(struct flb_filter_instance *ins,
     struct flb_kv *kv;
 
     len = strlen(k);
+    if (!v) {
+        return -1;
+    }
     tmp = flb_env_var_translate(ins->config->env, v);
     if (!tmp) {
         return -1;
@@ -371,6 +374,14 @@ int flb_filter_set_property(struct flb_filter_instance *ins,
          * Create the property, we don't pass the value since we will
          * map it directly to avoid an extra memory allocation.
          */
+        if (flb_config_map_property_has_dynamic_env(ins->p->config_map, k) == FLB_TRUE) {
+            flb_sds_destroy(tmp);
+            tmp = flb_sds_create(v);
+            if (!tmp) {
+                return -1;
+            }
+        }
+
         kv = flb_kv_item_create(&ins->properties, (char *) k, NULL);
         if (!kv) {
             if (tmp) {

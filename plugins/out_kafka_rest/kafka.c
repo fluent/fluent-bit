@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -128,7 +128,7 @@ static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /* Count number of entries */
-    arr_size = flb_mp_count(data, bytes);
+    arr_size = flb_mp_count_log_records(data, bytes);
 
     /* Root map */
     msgpack_pack_map(&mp_pck, 1);

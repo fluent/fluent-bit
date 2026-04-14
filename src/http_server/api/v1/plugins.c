@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,10 +24,13 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/http_server/flb_hs_utils.h>
 #include <msgpack.h>
 
 /* API: List all built-in plugins */
-static void cb_plugins(mk_request_t *request, void *data)
+static int cb_plugins(struct flb_hs *hs,
+                      struct flb_http_request *request,
+                      struct flb_http_response *response)
 {
     int len;
     flb_sds_t out_buf;
@@ -37,8 +40,9 @@ static void cb_plugins(mk_request_t *request, void *data)
     struct flb_input_plugin *in;
     struct flb_filter_plugin *filter;
     struct flb_output_plugin *out;
-    struct flb_hs *hs = data;
     struct flb_config *config = hs->config;
+
+    (void) request;
 
     /* initialize buffers */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -93,17 +97,19 @@ static void cb_plugins(mk_request_t *request, void *data)
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    mk_http_status(request, 200);
-    mk_http_send(request,
-                 out_buf, flb_sds_len(out_buf), NULL);
-    mk_http_done(request);
+    flb_hs_response_set_payload(response,
+                                200,
+                                FLB_HS_CONTENT_TYPE_JSON,
+                                out_buf,
+                                flb_sds_len(out_buf));
 
     flb_sds_destroy(out_buf);
+    return 0;
 }
 
 /* Perform registration */
 int api_v1_plugins(struct flb_hs *hs)
 {
-    mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/plugins", cb_plugins, hs);
-    return 0;
+    return flb_hs_register_endpoint(hs, "/api/v1/plugins",
+                                    FLB_HS_ROUTE_EXACT, cb_plugins);
 }

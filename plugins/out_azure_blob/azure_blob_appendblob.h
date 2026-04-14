@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,6 +23,8 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include "azure_blob.h"
 
-flb_sds_t azb_append_blob_uri(struct flb_azure_blob *ctx, char *tag);
+flb_sds_t azb_append_blob_uri(struct flb_azure_blob *ctx,
+                              const char *path_prefix,
+                              const char *tag);
 
 #endif

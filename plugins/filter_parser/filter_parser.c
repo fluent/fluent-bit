@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -340,7 +340,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
             if (out_buf != NULL && parse_ret >= 0) {
                 if (append_arr != NULL && append_arr_len > 0) {
                     char *new_buf = NULL;
-                    int new_size;
+                    size_t new_size;
                     size_t valid_kv_count = 0;
                     msgpack_object_kv **valid_kv = NULL;
 

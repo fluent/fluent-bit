@@ -1,14 +1,16 @@
 cmake_minimum_required(VERSION 3.12)
 project(fluent-bit C)
 
+include(CheckCCompilerFlag)
+
 # CMP0069 ensures that LTO is enabled for all compilers
 cmake_policy(SET CMP0069 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
-set(FLB_VERSION_MAJOR  4)
-set(FLB_VERSION_MINOR  2)
-set(FLB_VERSION_PATCH  1)
+set(FLB_VERSION_MAJOR  5)
+set(FLB_VERSION_MINOR  0)
+set(FLB_VERSION_PATCH  3)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -83,6 +85,14 @@ if (MSVC)
   add_compile_options(/MT)
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
+  if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Prevent the toolchain from emitting an executable stack on Linux targets,
+    # which triggers kernel warnings (e.g. "started with executable stack") and
+    # weakens security hardening. The linker flag is not supported on macOS.
+    add_compile_options(-Wa,--noexecstack)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,noexecstack")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,noexecstack")
+  endif()
   # The following flags are to enhance security, but it may impact performance,
   # we disable them by default.
   if (FLB_WASM_STACK_PROTECT)
@@ -143,6 +153,18 @@ if (NOT DEFINED FLB_USE_SIMDUTF)
   endif()
 endif()
 
+# another try for CXX
+if (NOT DEFINED FLB_USE_RIPSER)
+  check_language(CXX)
+  if(CMAKE_CXX_COMPILER)
+    message(STATUS "CXX compiler found, enable ripser.")
+    set(FLB_USE_RIPSER Yes)
+  else()
+    message(STATUS "CXX compiler not found, disable ripser.")
+    set(FLB_USE_RIPSER No)
+  endif()
+endif()
+
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
@@ -188,7 +210,8 @@ option(FLB_SIGNV4              "Enable AWS Signv4 support"    Yes)
 option(FLB_AWS                 "Enable AWS support"           Yes)
 option(FLB_STATIC_CONF         "Build binary using static configuration")
 option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"                    Yes)
-option(FLB_SIMD                "Enable SIMD support"                         No)
+set(FLB_SIMD "Auto" CACHE STRING "Enable SIMD support (On, Off, Auto)")
+set_property(CACHE FLB_SIMD PROPERTY STRINGS "On;Off;Auto")
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
 option(FLB_AVRO_ENCODER        "Build with Avro encoding support"            No)
 option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support"      No)
@@ -201,6 +224,7 @@ option(FLB_WASM_STACK_PROTECT  "Build with WASM runtime with strong stack protec
 option(FLB_ENFORCE_ALIGNMENT   "Enable limited platform specific aligned memory access" No)
 option(FLB_KAFKA               "Enable Kafka support"         Yes)
 option(FLB_ZIG                 "Enable zig integration"       Yes)
+option(FLB_RIPSER              "Enable Ripser support"        ${FLB_USE_RIPSER})
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS             "Enable metrics support"       Yes)
@@ -239,7 +263,64 @@ option(FLB_EVENT_LOOP_SELECT    "Enable select(2) event loop backend" No)
 option(FLB_EVENT_LOOP_LIBEVENT  "Enable libevent event loop backend"  No)
 
 # SIMD support
-if(FLB_SIMD)
+# ------------
+# FLB_SIMD is a tri-state cache variable:
+#   Auto : enable SIMD only when the target architecture/toolchain is known-good
+#   On   : require SIMD support and fail during configure otherwise
+#   Off  : disable SIMD explicitly
+string(TOUPPER "${FLB_SIMD}" FLB_SIMD_MODE)
+
+if(FLB_SIMD_MODE MATCHES "^(ON|YES|TRUE|1)$")
+  set(FLB_SIMD_MODE "ON")
+elseif(FLB_SIMD_MODE MATCHES "^(OFF|NO|FALSE|0)$")
+  set(FLB_SIMD_MODE "OFF")
+elseif(NOT FLB_SIMD_MODE STREQUAL "AUTO")
+  message(FATAL_ERROR "FLB_SIMD must be one of: On, Off, Auto")
+endif()
+
+set(FLB_SIMD_ENABLED No)
+set(FLB_SIMD_RISCV_C_FLAGS "")
+
+if(NOT FLB_SIMD_MODE STREQUAL "OFF")
+  set(FLB_SIMD_SUPPORTED_ARCH No)
+
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$" AND (CMAKE_SIZEOF_VOID_P GREATER 4))
+    set(FLB_SIMD_SUPPORTED_ARCH Yes)
+    set(FLB_SIMD_ENABLED Yes)
+  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64|AARCH64)$")
+    set(FLB_SIMD_SUPPORTED_ARCH Yes)
+    set(FLB_SIMD_ENABLED Yes)
+  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv64)")
+    set(FLB_SIMD_SUPPORTED_ARCH Yes)
+    check_c_compiler_flag("-march=rv64gcv_zba" FLB_SIMD_RISCV_COMPILER_FLAG)
+
+    if(FLB_SIMD_RISCV_COMPILER_FLAG)
+      set(FLB_SIMD_ENABLED Yes)
+      set(FLB_SIMD_RISCV_C_FLAGS "-march=rv64gcv_zba")
+    elseif(FLB_SIMD_MODE STREQUAL "ON")
+      message(FATAL_ERROR
+        "FLB_SIMD=On requires compiler support for -march=rv64gcv_zba on riscv64")
+    else()
+      message(WARNING
+        "FLB_SIMD=Auto disabled SIMD on riscv64 because the compiler does not "
+        "support -march=rv64gcv_zba")
+    endif()
+  endif()
+
+  if(NOT FLB_SIMD_SUPPORTED_ARCH)
+    if(FLB_SIMD_MODE STREQUAL "ON")
+      message(FATAL_ERROR
+        "FLB_SIMD=On is only supported on x86_64, aarch64/arm64, and "
+        "riscv64 with RVV compiler support")
+    else()
+      message(STATUS
+        "FLB_SIMD=Auto disabled SIMD on unsupported architecture: "
+        "${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+  endif()
+endif()
+
+if(FLB_SIMD_ENABLED)
   FLB_DEFINITION(FLB_HAVE_SIMD)
 endif()
 
@@ -593,29 +674,80 @@ add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
 # Zstd (zstd)
 if(FLB_PREFER_SYSTEM_LIB_ZSTD)
-  find_package(PkgConfig)
-  pkg_check_modules(LIBZSTD libzstd>=1.4.8)
+  find_package(ZSTD 1.4.8 QUIET)
+  if(ZSTD_FOUND)
+    set(LIBZSTD_FOUND TRUE)
+    # Use the target provided by find_package(ZSTD)
+    # Modern FindZSTD provides ZSTD::libzstd_static or ZSTD::libzstd_shared
+    if(TARGET ZSTD::libzstd_static)
+      set(LIBZSTD_LIBRARIES ZSTD::libzstd_static)
+    elseif(TARGET ZSTD::libzstd_shared)
+      set(LIBZSTD_LIBRARIES ZSTD::libzstd_shared)
+    elseif(TARGET ZSTD::ZSTD)
+      set(LIBZSTD_LIBRARIES ZSTD::ZSTD)
+    else()
+      # Fallback: create a wrapper if no target is provided
+      add_library(BUNDLED::ZSTD INTERFACE IMPORTED)
+      if(ZSTD_LIBRARIES)
+        set_property(TARGET BUNDLED::ZSTD PROPERTY
+          INTERFACE_LINK_LIBRARIES "${ZSTD_LIBRARIES}")
+      endif()
+      if(ZSTD_INCLUDE_DIRS)
+        set_property(TARGET BUNDLED::ZSTD PROPERTY
+          INTERFACE_INCLUDE_DIRECTORIES "${ZSTD_INCLUDE_DIRS}")
+      endif()
+      set(LIBZSTD_LIBRARIES BUNDLED::ZSTD)
+    endif()
+   else()
+    find_package(PkgConfig)
+    pkg_check_modules(LIBZSTD libzstd>=1.4.8)
+    if(LIBZSTD_FOUND)
+      include_directories(${LIBZSTD_INCLUDE_DIRS})
+      link_directories(${LIBZSTD_LIBRARY_DIRS})
+      add_library(BUNDLED::ZSTD INTERFACE IMPORTED)
+      set_property(TARGET BUNDLED::ZSTD PROPERTY
+        INTERFACE_LINK_LIBRARIES "${LIBZSTD_LIBRARIES}")
+      set(LIBZSTD_LIBRARIES BUNDLED::ZSTD)
+    endif()
+  endif()
 endif()
-if(LIBZSTD_FOUND)
-  include_directories(${LIBZSTD_INCLUDE_DIRS})
-  link_directories(${LIBZSTD_LIBRARY_DIRS})
-else()
+
+if(NOT LIBZSTD_FOUND)
   include(cmake/zstd.cmake)
+
+  if(NOT MSVC)
+    target_compile_options(libzstd_static PRIVATE -fvisibility=hidden)
+  endif()
+
+  set(LIBZSTD_LIBRARIES libzstd_static)
 endif()
 
 # ring buffer library
 add_subdirectory(${FLB_PATH_LIB_RING_BUFFER} EXCLUDE_FROM_ALL)
 
-# yyson
-add_subdirectory(${FLB_PATH_LIB_YYJSON} EXCLUDE_FROM_ALL)
+# yyjson
+option(FLB_YYJSON "Enable yyjson backend" ON)
+if(FLB_YYJSON)
+  add_subdirectory(${FLB_PATH_LIB_YYJSON} EXCLUDE_FROM_ALL)
+  FLB_DEFINITION(FLB_HAVE_YYJSON)
+
+  if (TARGET yyjson AND NOT FLB_COVERAGE AND
+      CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang|Intel")
+    # yyjson's O0 reader can exceed the default coroutine stack budget.
+    # Keep debug symbols, but force enough optimization to shrink the frame.
+    target_compile_options(yyjson PRIVATE
+      $<$<AND:$<COMPILE_LANGUAGE:C>,$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>>:-Og>
+    )
+  endif()
+endif()
 
 # Avro
 if(FLB_AVRO_ENCODER)
   # jansson
   option(JANSSON_BUILD_DOCS         OFF)
   option(JANSSON_EXAMPLES           OFF)
-  option(JANSSON_WITHOUT_TESTS       ON)
   option(JANSSON_BUILD_SHARED_LIBS  OFF)
+  set(JANSSON_WITHOUT_TESTS ON CACHE BOOL "" FORCE)
   add_subdirectory(${FLB_PATH_LIB_JANSSON})
 
   #avro
@@ -788,6 +920,14 @@ if(FLB_WASM)
   endif ()
 endif()
 
+# ripser
+if(FLB_RIPSER)
+  enable_language(CXX)
+  set (CMAKE_CXX_STANDARD 11)
+  add_subdirectory(${FLB_PATH_LIB_RIPSER} EXCLUDE_FROM_ALL)
+  FLB_DEFINITION(FLB_HAVE_RIPSER)
+endif()
+
 # Kafka support (library in general)
 if(FLB_KAFKA)
   if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
@@ -806,13 +946,15 @@ endif()
 
 # AWS MSK IAM detection (must come after Kafka section)
 if(FLB_AWS AND FLB_KAFKA)
-  # Check if Kafka SASL support was detected
-  if(DEFINED FLB_SASL_ENABLED AND FLB_SASL_ENABLED)
+  # Check if Kafka OAuth Bearer support was detected
+  # On Windows: uses SSPI (no Cyrus SASL needed, just SSL)
+  # On Linux/macOS: uses Cyrus SASL (libsasl2)
+  if(DEFINED FLB_KAFKA_MSK_IAM_ENABLED AND FLB_KAFKA_MSK_IAM_ENABLED)
     set(FLB_HAVE_AWS_MSK_IAM ON)  # Set CMake variable
     FLB_DEFINITION(FLB_HAVE_AWS_MSK_IAM)  # Set preprocessor definition
     message(STATUS "AWS MSK IAM authentication: ENABLED")
   else()
-    message(STATUS "AWS MSK IAM authentication: DISABLED (requires Kafka with libsasl2)")
+    message(STATUS "AWS MSK IAM authentication: DISABLED (requires Kafka with OAuth Bearer support)")
   endif()
 else()
   if(FLB_AWS AND NOT FLB_KAFKA)
@@ -1173,38 +1315,7 @@ endif()
 # LibBacktrace (friendly stacktrace support)
 # =========================================
 if(FLB_BACKTRACE)
-  if(FLB_PREFER_SYSTEM_LIB_BACKTRACE)
-    find_path(LIBBACKTRACE_INCLUDE_DIRS NAMES backtrace.h)
-    find_library(LIBBACKTRACE_LIBRARIES NAMES backtrace)
-  endif()
-  if(LIBBACKTRACE_INCLUDE_DIRS AND LIBBACKTRACE_LIBRARIES)
-    message(STATUS "libbacktrace found (${LIBBACKTRACE_LIBRARIES})")
-    include_directories(${LIBBACKTRACE_INCLUDE_DIRS})
-    link_directories(${LIBBACKTRACE_LIBRARY_DIRS})
-  else()
-    message(STATUS "libbacktrace not found, building ourselves")
-    if (CMAKE_OSX_SYSROOT)
-      # From macOS Mojave, /usr/include does not store C SDK headers.
-      # For libbacktrace building on macOS, we have to tell C headers where they are located.
-      set(DEPS_C_COMPILER "${CMAKE_C_COMPILER} -isysroot ${CMAKE_OSX_SYSROOT}")
-    else()
-      set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
-    endif()
-    set(FLB_LIBBACKTRACE_PATH "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
-    ExternalProject_Add(backtrace
-      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/
-      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-8602fda/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-      BUILD_COMMAND ${EXTERNAL_BUILD_TOOL}
-      BUILD_BYPRODUCTS ${FLB_LIBBACKTRACE_PATH}
-      INSTALL_COMMAND ${EXTERNAL_BUILD_TOOL} DESTDIR= install
-      )
-    add_library(libbacktrace STATIC IMPORTED GLOBAL)
-    set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION ${FLB_LIBBACKTRACE_PATH})
-    add_dependencies(libbacktrace backtrace)
-    include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
-    set(LIBBACKTRACE_LIBRARIES "libbacktrace")
-  endif()
-  FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
+  include(cmake/libbacktrace.cmake)
 endif()
 
 # Onigmo (Regex Engine) options

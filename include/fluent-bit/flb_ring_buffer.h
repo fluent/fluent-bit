@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,8 +21,10 @@
 #define FLB_RING_BUFFER_H
 
 #include <fluent-bit/flb_pipe.h>
+#include <fluent-bit/flb_pthread.h>
 
 struct flb_ring_buffer {
+    pthread_mutex_t lock;            /* protects backend context and signaling state */
     void *ctx;                        /* pointer to backend context */
     void *event_loop;                 /* event loop where this ring buffer emits flush request signals */
     int flush_pending;                /* flag meant to prevent flush request signal flood */
@@ -40,5 +42,6 @@ int flb_ring_buffer_add_event_loop(struct flb_ring_buffer *rb, void *evl, uint8_
 
 int flb_ring_buffer_write(struct flb_ring_buffer *rb, void *ptr, size_t size);
 int flb_ring_buffer_read(struct flb_ring_buffer *rb, void *ptr, size_t size);
+void flb_ring_buffer_mark_flushed(struct flb_ring_buffer *rb);
 
 #endif

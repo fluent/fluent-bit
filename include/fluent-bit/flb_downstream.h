@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -85,8 +85,10 @@ void flb_downstream_resume(struct flb_downstream *stream);
 int flb_downstream_conn_release(struct flb_connection *connection);
 
 int flb_downstream_conn_pending_destroy_list(struct mk_list *list);
+int flb_downstream_conn_pending_destroy(struct flb_downstream *stream);
 
 int flb_downstream_conn_timeouts(struct mk_list *list);
+int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream);
 
 int flb_downstream_is_async(struct flb_downstream *downstream);
 

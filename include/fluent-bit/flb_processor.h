@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -129,6 +129,19 @@ struct flb_processor {
     int source_plugin_type;
 
     flb_pipefd_t notification_channel;
+
+    /*
+     * Processor chain accounting metrics
+     * ----------------------------------
+     * These counters are registered in the owner context metrics (input/output)
+     * and updated per processor unit execution.
+     */
+    struct cmt_counter *cmt_invocations;
+    struct cmt_counter *cmt_errors;
+    struct cmt_counter *cmt_items_in;
+    struct cmt_counter *cmt_items_out;
+    struct cmt_counter *cmt_items_drop;
+    struct cmt_counter *cmt_items_add;
 
     /* Fluent Bit context */
     struct flb_config *config;
@@ -278,7 +291,7 @@ static inline int flb_processor_instance_config_map_set(
                     struct flb_processor_instance *ins,
                     void *context)
 {
-    return flb_config_map_set(&ins->properties, ins->config_map, context);
+    return flb_config_map_set(ins->config, &ins->properties, ins->config_map, context);
 }
 
 static inline

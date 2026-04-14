@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,6 +21,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <time.h>
+#ifndef FLB_SYSTEM_WINDOWS
+#include <unistd.h>
+#endif
 #ifdef FLB_SYSTEM_FREEBSD
 #include <sys/user.h>
 #include <libutil.h>
@@ -53,9 +56,117 @@
 
 #include <cfl/cfl.h>
 
+#define FLB_TAIL_DB_OFFSET_MARKER_SIZE 32
+
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
+}
+
+static int compute_offset_marker(struct flb_tail_file *file,
+                                 int64_t offset,
+                                 uint64_t *marker,
+                                 size_t *marker_size)
+{
+    off_t current;
+    off_t start;
+    ssize_t bytes;
+    size_t window;
+    char buf[FLB_TAIL_DB_OFFSET_MARKER_SIZE];
+
+    *marker = 0;
+    *marker_size = 0;
+
+    if (offset <= 0) {
+        return 0;
+    }
+
+    current = lseek(file->fd, 0, SEEK_CUR);
+    if (current == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    window = offset;
+    if (window > sizeof(buf)) {
+        window = sizeof(buf);
+    }
+
+    start = offset - window;
+    if (lseek(file->fd, start, SEEK_SET) == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    bytes = read(file->fd, buf, window);
+    if (bytes == -1) {
+        flb_errno();
+        lseek(file->fd, current, SEEK_SET);
+        return -1;
+    }
+
+    if (lseek(file->fd, current, SEEK_SET) == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    if (bytes != window) {
+        return -1;
+    }
+
+    *marker = cfl_hash_64bits(buf, window);
+    *marker_size = window;
+    return 0;
+}
+
+int flb_tail_file_update_offset_marker(struct flb_tail_file *file)
+{
+    int ret;
+    uint64_t marker;
+    size_t marker_size;
+    off_t db_offset;
+
+    db_offset = flb_tail_file_db_offset(file);
+
+    ret = compute_offset_marker(file, db_offset, &marker, &marker_size);
+    if (ret != 0) {
+        file->db_offset_marker = 0;
+        file->db_offset_marker_size = 0;
+        return -1;
+    }
+
+    file->db_offset_marker = marker;
+    file->db_offset_marker_size = marker_size;
+    return 0;
+}
+
+int flb_tail_file_offset_marker_matches(struct flb_tail_file *file)
+{
+    int ret;
+    uint64_t marker;
+    size_t marker_size;
+    off_t db_offset;
+
+    db_offset = flb_tail_file_db_offset(file);
+
+    if (db_offset <= 0 || file->db_offset_marker_size == 0) {
+        return FLB_TRUE;
+    }
+
+    ret = compute_offset_marker(file, db_offset, &marker, &marker_size);
+    if (ret != 0) {
+        return FLB_FALSE;
+    }
+
+    if (marker_size != file->db_offset_marker_size) {
+        return FLB_FALSE;
+    }
+
+    if (marker != file->db_offset_marker) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
 }
 
 static uint64_t stat_get_st_dev(struct stat *st)
@@ -480,6 +591,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     size_t len;
     int lines = 0;
     int ret;
+    int data_len;
     size_t processed_bytes = 0;
     char *data;
     char *end;
@@ -532,7 +644,9 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             end  = data + decoded_len;
         }
         else if (ret == FLB_UNICODE_CONVERT_NOP) {
-            flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'", end - data, data);
+            data_len = (int) (end - data);
+            flb_plg_debug(ctx->ins, "nothing to convert encoding '%.*s'",
+                          data_len, data);
             /* Skip the UTF-8 BOM */
             if (file->buf_len >= 3 &&
                 data[0] == '\xEF' &&
@@ -543,7 +657,8 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             }
         }
         else {
-            flb_plg_error(ctx->ins, "encoding failed '%.*s'", end - data, data);
+            data_len = (int) (end - data);
+            flb_plg_error(ctx->ins, "encoding failed '%.*s'", data_len, data);
         }
     }
 #endif
@@ -559,7 +674,9 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             end  = data + (size_t) ret;
         }
         else {
-            flb_plg_error(ctx->ins, "encoding failed '%.*s' with status %d", end - data, data, ret);
+            data_len = (int) (end - data);
+            flb_plg_error(ctx->ins, "encoding failed '%.*s' with status %d",
+                          data_len, data, ret);
         }
     }
 
@@ -1036,11 +1153,27 @@ static int set_file_position(struct flb_tail_config *ctx,
     if (ctx->db) {
         ret = flb_tail_db_file_set(file, ctx);
         if (ret == 0) {
+            if (file->offset > file->size ||
+                flb_tail_file_offset_marker_matches(file) != FLB_TRUE) {
+                /*
+                 * A persisted offset can become invalid after a stop + copytruncate
+                 * sequence or after inode reuse. Reset to the beginning of the
+                 * current inode instead of seeking into the middle of replacement
+                 * content.
+                 */
+                file->offset = 0;
+                file->stream_offset = 0;
+                flb_tail_db_file_offset(file, ctx);
+            }
+
             if (file->offset > 0) {
                 ret = lseek(file->fd, file->offset, SEEK_SET);
                 if (ret == -1) {
                     flb_errno();
                     return -1;
+                }
+                if (file->decompression_context == NULL) {
+                    file->stream_offset = ret;
                 }
             }
             else if (ctx->read_from_head == FLB_FALSE) {
@@ -1050,6 +1183,9 @@ static int set_file_position(struct flb_tail_config *ctx,
                     return -1;
                 }
                 file->offset = ret;
+                if (file->decompression_context == NULL) {
+                    file->stream_offset = ret;
+                }
                 flb_tail_db_file_offset(file, ctx);
             }
             return 0;
@@ -1276,6 +1412,8 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 #ifdef FLB_HAVE_SQLDB
     file->db_id     = 0;
 #endif
+    file->db_offset_marker = 0;
+    file->db_offset_marker_size = 0;
     file->skip_next = FLB_FALSE;
     file->skip_warn = FLB_FALSE;
 
@@ -1642,6 +1780,18 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                           "lines are too long. Skipping file.", file->name);
                 return FLB_TAIL_ERROR;
             }
+
+#ifdef FLB_HAVE_METRICS
+            if (file->skip_next == FLB_FALSE) {
+                cmt_counter_inc(ctx->cmt_long_line_skipped,
+                                cfl_time_now(), 1,
+                                (char *[]) { (char *) flb_input_name(ctx->ins) });
+
+                /* Old API */
+                flb_metrics_sum(FLB_TAIL_METRIC_L_SKIPPED, 1, ctx->ins->metrics);
+
+            }
+#endif
 
             /* Warn the user */
             if (file->skip_warn == FLB_FALSE) {
@@ -2183,6 +2333,10 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
             if ((ts - ctx->ignore_older) > mtime) {
                 flb_plg_debug(ctx->ins, "purge: monitored file (ignore older): %s",
                               file->name);
+                flb_tail_scan_register_aged_out_inode(ctx,
+                                                      file->name,
+                                                      strlen(file->name),
+                                                      file->inode);
                 flb_tail_file_remove(file);
                 return FLB_TRUE;
             }

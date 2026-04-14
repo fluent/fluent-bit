@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,17 +21,6 @@
 #define FLB_IN_PROM_RW_PROT
 
 #include <fluent-bit/flb_http_common.h>
-
-int prom_rw_prot_handle(struct flb_prom_remote_write *ctx,
-                        struct prom_remote_write_conn *conn,
-                        struct mk_http_session *session,
-                        struct mk_http_request *request);
-
-int prom_rw_prot_handle_error(struct flb_prom_remote_write *ctx,
-                              struct prom_remote_write_conn *conn,
-                              struct mk_http_session *session,
-                              struct mk_http_request *request);
-
 
 int prom_rw_prot_handle_ng(struct flb_http_request *request,
                            struct flb_http_response *response);

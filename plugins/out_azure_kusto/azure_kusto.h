@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -84,6 +84,15 @@ struct flb_azure_kusto_resources {
 
     /* used to reload resouces after some time */
     uint64_t load_time;
+
+    /* flag to prevent concurrent coroutines from reloading simultaneously */
+    int loading_in_progress;
+
+    /* Old resources pending cleanup - deferred destruction to avoid use-after-free
+     * when other threads may still be using them during high-volume operations */
+    struct flb_upstream_ha *old_blob_ha;
+    struct flb_upstream_ha *old_queue_ha;
+    flb_sds_t old_identity_token;
 };
 
 struct flb_azure_kusto {

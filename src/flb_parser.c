@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -1199,7 +1199,12 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
             time_now = now;
         }
 
-        gmtime_r(&time_now, &tmy);
+        if (parser->time_system_timezone == FLB_TRUE) {
+            localtime_r(&time_now, &tmy);
+        }
+        else {
+            gmtime_r(&time_now, &tmy);
+        }
 
         /* Make the timestamp default to today */
         tm->tm.tm_mon = tmy.tm_mon;

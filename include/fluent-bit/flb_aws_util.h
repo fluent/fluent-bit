@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -102,6 +102,11 @@ struct flb_aws_client {
 
     /* Send all log messages as debug; used in AWS Cred Providers on init */
     int debug_only;
+
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    /* Callbacks context */
+    struct flb_callback *http_cb_ctx;
+#endif
 };
 
 /* frees dynamic_headers */

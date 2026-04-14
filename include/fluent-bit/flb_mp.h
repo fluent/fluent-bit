@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,6 +27,11 @@
 #define FLB_MP_ARRAY      MSGPACK_OBJECT_ARRAY
 
 int flb_mp_count(const void *data, size_t bytes);
+int flb_mp_count_log_records(const void *data, size_t bytes);
+int flb_mp_normalize_log_buffer_groups_msgpack(const void *in_buf, size_t in_size,
+                                               char **out_buf, size_t *out_size);
+int flb_mp_normalize_log_buffer_groups(const void *in_buf, size_t in_size,
+                                       char **out_buf, size_t *out_size);
 int flb_mp_count_remaining(const void *data, size_t bytes, size_t *remaining_bytes);
 int flb_mp_validate_log_chunk(const void *data, size_t bytes,
                               int *out_records, size_t *processed_bytes);

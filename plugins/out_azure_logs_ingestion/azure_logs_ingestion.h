@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -57,6 +57,7 @@ struct flb_az_li {
     int compress_enabled;
 
     /* mangement auth */
+    flb_sds_t auth_url_override;
     flb_sds_t auth_url;
     struct flb_oauth2 *u_auth;
     /* mutex for acquiring tokens */

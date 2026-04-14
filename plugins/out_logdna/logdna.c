@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -156,7 +156,7 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
     }
 
     /* Count number of records */
-    total_lines = flb_mp_count(data, bytes);
+    total_lines = flb_mp_count_log_records(data, bytes);
 
     /* Initialize msgpack buffers */
     msgpack_sbuffer_init(&mp_sbuf);

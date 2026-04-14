@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -309,6 +309,13 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         return NULL;
     }
 
+    ctx->aged_out_file_inodes = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 1000, 0);
+    if (ctx->aged_out_file_inodes == NULL) {
+        flb_plg_error(ctx->ins, "could not create aged out file inode hash table");
+        flb_tail_config_destroy(ctx);
+        return NULL;
+    }
+
 #ifdef FLB_HAVE_SQLDB
     ctx->db = NULL;
 #endif
@@ -501,6 +508,13 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
                                "Total number of truncated occurences for long lines",
                                1, (char *[]) {"name"});
 
+    ctx->cmt_long_line_skipped =
+            cmt_counter_create(ins->cmt,
+                               "fluentbit", "input",
+                               "long_line_skipped_total",
+                               "Total number of skipped occurences for long lines",
+                               1, (char *[]) {"name"});
+
     /* OLD metrics */
     flb_metrics_add(FLB_TAIL_METRIC_F_OPENED,
                     "files_opened", ctx->ins->metrics);
@@ -512,6 +526,8 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
                     "multiline_truncated", ctx->ins->metrics);
     flb_metrics_add(FLB_TAIL_METRIC_L_TRUNCATED,
                     "long_line_truncated", ctx->ins->metrics);
+    flb_metrics_add(FLB_TAIL_METRIC_L_SKIPPED,
+                    "long_line_skipped", ctx->ins->metrics);
 #endif
 
     return ctx;
@@ -561,6 +577,10 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
 
     if (config->ignored_file_sizes != NULL) {
         flb_hash_table_destroy(config->ignored_file_sizes);
+    }
+
+    if (config->aged_out_file_inodes != NULL) {
+        flb_hash_table_destroy(config->aged_out_file_inodes);
     }
 
     flb_free(config);

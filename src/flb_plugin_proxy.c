@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -362,6 +362,14 @@ static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
     out->flags = def->flags;
     out->name  = flb_strdup(def->name);
 
+    /* If event_type is unset (0) then default to logs (this is the current behavior) */
+    if (def->event_type == 0) {
+        out->event_type = FLB_OUTPUT_LOGS;
+    }
+    else {
+        out->event_type = def->event_type;
+    }
+
     out->description = def->description;
     mk_list_add(&out->_head, &config->out_plugins);
 
@@ -396,6 +404,7 @@ static int flb_proxy_register_input(struct flb_plugin_proxy *proxy,
     in->flags = def->flags | FLB_INPUT_THREADED;
     in->name  = flb_strdup(def->name);
     in->description = def->description;
+
     mk_list_add(&in->_head, &config->in_plugins);
 
     /*
@@ -612,7 +621,7 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
         return NULL;
     }
 
-    proxy->def = flb_malloc(sizeof(struct flb_plugin_proxy_def));
+    proxy->def = flb_calloc(1, sizeof(struct flb_plugin_proxy_def));
     if (!proxy->def) {
         flb_errno();
         dlclose(handle);

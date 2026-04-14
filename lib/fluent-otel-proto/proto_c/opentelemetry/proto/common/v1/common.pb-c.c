@@ -232,12 +232,57 @@ void   opentelemetry__proto__common__v1__instrumentation_scope__free_unpacked
   assert(message->base.descriptor == &opentelemetry__proto__common__v1__instrumentation_scope__descriptor);
   protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
 }
-static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_value__field_descriptors[7] =
+void   opentelemetry__proto__common__v1__entity_ref__init
+                     (Opentelemetry__Proto__Common__V1__EntityRef         *message)
+{
+  static const Opentelemetry__Proto__Common__V1__EntityRef init_value = OPENTELEMETRY__PROTO__COMMON__V1__ENTITY_REF__INIT;
+  *message = init_value;
+}
+size_t opentelemetry__proto__common__v1__entity_ref__get_packed_size
+                     (const Opentelemetry__Proto__Common__V1__EntityRef *message)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__common__v1__entity_ref__descriptor);
+  return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
+}
+size_t opentelemetry__proto__common__v1__entity_ref__pack
+                     (const Opentelemetry__Proto__Common__V1__EntityRef *message,
+                      uint8_t       *out)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__common__v1__entity_ref__descriptor);
+  return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
+}
+size_t opentelemetry__proto__common__v1__entity_ref__pack_to_buffer
+                     (const Opentelemetry__Proto__Common__V1__EntityRef *message,
+                      ProtobufCBuffer *buffer)
+{
+  assert(message->base.descriptor == &opentelemetry__proto__common__v1__entity_ref__descriptor);
+  return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
+}
+Opentelemetry__Proto__Common__V1__EntityRef *
+       opentelemetry__proto__common__v1__entity_ref__unpack
+                     (ProtobufCAllocator  *allocator,
+                      size_t               len,
+                      const uint8_t       *data)
+{
+  return (Opentelemetry__Proto__Common__V1__EntityRef *)
+     protobuf_c_message_unpack (&opentelemetry__proto__common__v1__entity_ref__descriptor,
+                                allocator, len, data);
+}
+void   opentelemetry__proto__common__v1__entity_ref__free_unpacked
+                     (Opentelemetry__Proto__Common__V1__EntityRef *message,
+                      ProtobufCAllocator *allocator)
+{
+  if(!message)
+    return;
+  assert(message->base.descriptor == &opentelemetry__proto__common__v1__entity_ref__descriptor);
+  protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
+}
+static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_value__field_descriptors[8] =
 {
   {
     "string_value",
     1,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_STRING,
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, value_case),
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, string_value),
@@ -249,7 +294,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_valu
   {
     "bool_value",
     2,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_BOOL,
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, value_case),
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, bool_value),
@@ -261,7 +306,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_valu
   {
     "int_value",
     3,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_INT64,
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, value_case),
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, int_value),
@@ -273,7 +318,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_valu
   {
     "double_value",
     4,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_DOUBLE,
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, value_case),
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, double_value),
@@ -285,7 +330,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_valu
   {
     "array_value",
     5,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, value_case),
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, array_value),
@@ -297,7 +342,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_valu
   {
     "kvlist_value",
     6,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, value_case),
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, kvlist_value),
@@ -309,10 +354,22 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_valu
   {
     "bytes_value",
     7,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_BYTES,
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, value_case),
     offsetof(Opentelemetry__Proto__Common__V1__AnyValue, bytes_value),
+    NULL,
+    NULL,
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "string_value_strindex",
+    8,
+    PROTOBUF_C_LABEL_OPTIONAL,
+    PROTOBUF_C_TYPE_INT32,
+    offsetof(Opentelemetry__Proto__Common__V1__AnyValue, value_case),
+    offsetof(Opentelemetry__Proto__Common__V1__AnyValue, string_value_strindex),
     NULL,
     NULL,
     PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
@@ -327,11 +384,12 @@ static const unsigned opentelemetry__proto__common__v1__any_value__field_indices
   2,   /* field[2] = int_value */
   5,   /* field[5] = kvlist_value */
   0,   /* field[0] = string_value */
+  7,   /* field[7] = string_value_strindex */
 };
 static const ProtobufCIntRange opentelemetry__proto__common__v1__any_value__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 7 }
+  { 0, 8 }
 };
 const ProtobufCMessageDescriptor opentelemetry__proto__common__v1__any_value__descriptor =
 {
@@ -341,7 +399,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__common__v1__any_value__de
   "Opentelemetry__Proto__Common__V1__AnyValue",
   "opentelemetry.proto.common.v1",
   sizeof(Opentelemetry__Proto__Common__V1__AnyValue),
-  7,
+  8,
   opentelemetry__proto__common__v1__any_value__field_descriptors,
   opentelemetry__proto__common__v1__any_value__field_indices_by_name,
   1,  opentelemetry__proto__common__v1__any_value__number_ranges,
@@ -424,7 +482,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__common__v1__key_value_lis
   (ProtobufCMessageInit) opentelemetry__proto__common__v1__key_value_list__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__key_value__field_descriptors[2] =
+static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__key_value__field_descriptors[3] =
 {
   {
     "key",
@@ -441,7 +499,7 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__key_valu
   {
     "value",
     2,
-    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_MESSAGE,
     0,   /* quantifier_offset */
     offsetof(Opentelemetry__Proto__Common__V1__KeyValue, value),
@@ -450,15 +508,28 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__key_valu
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "key_strindex",
+    3,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Common__V1__KeyValue, key_strindex),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned opentelemetry__proto__common__v1__key_value__field_indices_by_name[] = {
   0,   /* field[0] = key */
+  2,   /* field[2] = key_strindex */
   1,   /* field[1] = value */
 };
 static const ProtobufCIntRange opentelemetry__proto__common__v1__key_value__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 2 }
+  { 0, 3 }
 };
 const ProtobufCMessageDescriptor opentelemetry__proto__common__v1__key_value__descriptor =
 {
@@ -468,7 +539,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__common__v1__key_value__de
   "Opentelemetry__Proto__Common__V1__KeyValue",
   "opentelemetry.proto.common.v1",
   sizeof(Opentelemetry__Proto__Common__V1__KeyValue),
-  2,
+  3,
   opentelemetry__proto__common__v1__key_value__field_descriptors,
   opentelemetry__proto__common__v1__key_value__field_indices_by_name,
   1,  opentelemetry__proto__common__v1__key_value__number_ranges,
@@ -550,5 +621,82 @@ const ProtobufCMessageDescriptor opentelemetry__proto__common__v1__instrumentati
   opentelemetry__proto__common__v1__instrumentation_scope__field_indices_by_name,
   1,  opentelemetry__proto__common__v1__instrumentation_scope__number_ranges,
   (ProtobufCMessageInit) opentelemetry__proto__common__v1__instrumentation_scope__init,
+  NULL,NULL,NULL    /* reserved[123] */
+};
+static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__entity_ref__field_descriptors[4] =
+{
+  {
+    "schema_url",
+    1,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_STRING,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Common__V1__EntityRef, schema_url),
+    NULL,
+    &protobuf_c_empty_string,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "type",
+    2,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_STRING,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Common__V1__EntityRef, type),
+    NULL,
+    &protobuf_c_empty_string,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "id_keys",
+    3,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_STRING,
+    offsetof(Opentelemetry__Proto__Common__V1__EntityRef, n_id_keys),
+    offsetof(Opentelemetry__Proto__Common__V1__EntityRef, id_keys),
+    NULL,
+    &protobuf_c_empty_string,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "description_keys",
+    4,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_STRING,
+    offsetof(Opentelemetry__Proto__Common__V1__EntityRef, n_description_keys),
+    offsetof(Opentelemetry__Proto__Common__V1__EntityRef, description_keys),
+    NULL,
+    &protobuf_c_empty_string,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+};
+static const unsigned opentelemetry__proto__common__v1__entity_ref__field_indices_by_name[] = {
+  3,   /* field[3] = description_keys */
+  2,   /* field[2] = id_keys */
+  0,   /* field[0] = schema_url */
+  1,   /* field[1] = type */
+};
+static const ProtobufCIntRange opentelemetry__proto__common__v1__entity_ref__number_ranges[1 + 1] =
+{
+  { 1, 0 },
+  { 0, 4 }
+};
+const ProtobufCMessageDescriptor opentelemetry__proto__common__v1__entity_ref__descriptor =
+{
+  PROTOBUF_C__MESSAGE_DESCRIPTOR_MAGIC,
+  "opentelemetry.proto.common.v1.EntityRef",
+  "EntityRef",
+  "Opentelemetry__Proto__Common__V1__EntityRef",
+  "opentelemetry.proto.common.v1",
+  sizeof(Opentelemetry__Proto__Common__V1__EntityRef),
+  4,
+  opentelemetry__proto__common__v1__entity_ref__field_descriptors,
+  opentelemetry__proto__common__v1__entity_ref__field_indices_by_name,
+  1,  opentelemetry__proto__common__v1__entity_ref__number_ranges,
+  (ProtobufCMessageInit) opentelemetry__proto__common__v1__entity_ref__init,
   NULL,NULL,NULL    /* reserved[123] */
 };

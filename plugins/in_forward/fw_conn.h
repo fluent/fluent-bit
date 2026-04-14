@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -46,8 +46,8 @@ struct fw_conn {
 
     /* Buffer */
     char *buf;                       /* Buffer data                       */
-    int  buf_len;                    /* Data length                       */
-    int  buf_size;                   /* Buffer size                       */
+    size_t buf_len;                  /* Data length                       */
+    size_t buf_size;                 /* Buffer size                       */
     size_t rest;                     /* Unpacking offset                  */
 
     /* Decompression context */

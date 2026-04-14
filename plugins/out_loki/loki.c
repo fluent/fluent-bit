@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -2244,7 +2244,7 @@ static int cb_loki_format_test(struct flb_config *config,
     dynamic_tenant_id = NULL;
 
     /* Count number of records */
-    total_records = flb_mp_count(data, bytes);
+    total_records = flb_mp_count_log_records(data, bytes);
 
     payload = loki_compose_payload(ctx, total_records,
                                    (char *) tag, tag_len, data, bytes,

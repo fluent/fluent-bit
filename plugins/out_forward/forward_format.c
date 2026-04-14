@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,6 +27,14 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 
 #include "forward.h"
+
+static inline int forward_event_type_is_non_log(int event_type)
+{
+    return event_type == FLB_EVENT_TYPE_METRICS ||
+           event_type == FLB_EVENT_TYPE_TRACES  ||
+           event_type == FLB_EVENT_TYPE_PROFILES ||
+           event_type == FLB_EVENT_TYPE_BLOBS;
+}
 
 void flb_forward_format_bin_to_hex(uint8_t *buf, size_t len, char *out)
 {
@@ -150,10 +158,9 @@ static int append_options(struct flb_forward *ctx,
         msgpack_pack_str_body(mp_pck, "gzip", 4);
     }
     else if (fc->compress == COMPRESS_GZIP &&
-             /* for metrics or traces, we're also able to send as
+             /* for non-log signals, we're also able to send as
               * gzipped payloads */
-             (event_type == FLB_EVENT_TYPE_METRICS ||
-              event_type == FLB_EVENT_TYPE_TRACES)) {
+             forward_event_type_is_non_log(event_type)) {
         flb_mp_map_header_append(&mh);
         msgpack_pack_str(mp_pck, 10);
         msgpack_pack_str_body(mp_pck, "compressed", 10);
@@ -161,7 +168,7 @@ static int append_options(struct flb_forward *ctx,
         msgpack_pack_str_body(mp_pck, "gzip", 4);
     }
 
-    /* event type (FLB_EVENT_TYPE_LOGS, FLB_EVENT_TYPE_METRICS, FLB_EVENT_TYPE_TRACES) */
+    /* event type (FLB_EVENT_TYPE_*) */
     flb_mp_map_header_append(&mh);
     msgpack_pack_str(mp_pck, 13);
     msgpack_pack_str_body(mp_pck, "fluent_signal", 13);
@@ -220,8 +227,6 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
                                            void **out_buf, size_t *out_size)
 {
     int entries = 0;
-    size_t pre = 0;
-    size_t off = 0;
     size_t record_size;
     char *chunk;
     char chunk_buf[33];
@@ -284,7 +289,7 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
         /* Pack records */
         msgpack_pack_object(&mp_pck, *log_event.body);
 
-        record_size = off - pre;
+        record_size = log_decoder.record_length;
 
         if (ff) {
             chunk = ff->checksum_hex;
@@ -294,11 +299,10 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
         }
 
         append_options(ctx, fc, FLB_EVENT_TYPE_LOGS, &mp_pck, 0,
-                       (char *) data + pre, record_size,
+                       (void *) log_decoder.record_base, record_size,
                        log_event.metadata,
                        chunk);
 
-        pre = off;
         entries++;
     }
 
@@ -423,7 +427,7 @@ static int flb_forward_format_forward_mode(struct flb_forward *ctx,
         chunk = chunk_buf;
     }
 
-    if (fc->send_options == FLB_TRUE || (event_type == FLB_EVENT_TYPE_METRICS || event_type == FLB_EVENT_TYPE_TRACES)) {
+    if (fc->send_options == FLB_TRUE || forward_event_type_is_non_log(event_type)) {
         if (event_type == FLB_EVENT_TYPE_LOGS) {
             entries = flb_mp_count(data, bytes);
         }
@@ -439,6 +443,7 @@ static int flb_forward_format_forward_mode(struct flb_forward *ctx,
                                                   &transcoded_length);
 
             if (result == 0) {
+                entries = flb_mp_count(transcoded_buffer, transcoded_length);
                 append_options(ctx, fc, event_type, &mp_pck, entries,
                                transcoded_buffer,
                                transcoded_length,
@@ -507,7 +512,7 @@ static int flb_forward_format_forward_compat_mode(struct flb_forward *ctx,
                                   NULL, tag, tag_len);
 
     /* Entries */
-    entries = flb_mp_count(data, bytes);
+    entries = flb_mp_count_log_records(data, bytes);
     msgpack_pack_array(&mp_pck, entries);
 
     while ((ret = flb_log_event_decoder_next(
@@ -572,11 +577,7 @@ int flb_forward_format(struct flb_config *config,
         return -1;
     }
 
-    if (event_type == FLB_EVENT_TYPE_METRICS) {
-        mode = MODE_FORWARD;
-        goto do_formatting;
-    }
-    else if (event_type == FLB_EVENT_TYPE_TRACES) {
+    if (forward_event_type_is_non_log(event_type)) {
         mode = MODE_FORWARD;
         goto do_formatting;
     }

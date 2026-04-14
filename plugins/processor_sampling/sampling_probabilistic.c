@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2025 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -50,7 +50,7 @@ static int cb_init(struct flb_config *config, struct sampling *ctx)
         return -1;
     }
 
-    ret = flb_config_map_set(&ctx->plugin_settings_properties, ctx->plugin_config_map, (void *) settings);
+    ret = flb_config_map_set(config, &ctx->plugin_settings_properties, ctx->plugin_config_map, (void *) settings);
     if (ret == -1) {
         flb_free(settings);
         return -1;

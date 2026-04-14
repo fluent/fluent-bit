@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -93,7 +93,7 @@ struct flb_custom_instance {
 static inline int flb_custom_config_map_set(struct flb_custom_instance *ins,
                                             void *context)
 {
-    return flb_config_map_set(&ins->properties, ins->config_map, context);
+    return flb_config_map_set(ins->config, &ins->properties, ins->config_map, context);
 }
 
 int flb_custom_set_property(struct flb_custom_instance *ins,

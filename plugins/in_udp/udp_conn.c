@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ static int append_message_to_record_data(char **result_buffer,
 {
     int                result = FLB_MAP_NOT_MODIFIED;
     char              *modified_data_buffer;
-    int                modified_data_size;
+    size_t             modified_data_size;
     msgpack_object_kv *new_map_entries[1];
     msgpack_object_kv  message_entry;
     *result_buffer = NULL;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@
 #ifdef FLB_SYSTEM_WINDOWS
 #define poll WSAPoll
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #else
 #include <sys/poll.h>
 #endif
@@ -1647,18 +1648,38 @@ flb_sockfd_t flb_net_server(const char *port, const char *listen_addr,
 {
     flb_sockfd_t fd = -1;
     int ret;
+    size_t listen_addr_len;
     struct addrinfo hints;
     struct addrinfo *res, *rp;
+    const char *normalized_listen_addr;
+    char *listen_addr_copy;
+
+    listen_addr_copy = NULL;
+    normalized_listen_addr = listen_addr;
+
+    if (listen_addr != NULL && listen_addr[0] == '[') {
+        listen_addr_len = strlen(listen_addr);
+
+        if (listen_addr_len >= 3 && listen_addr[listen_addr_len - 1] == ']') {
+            listen_addr_copy = flb_strndup(listen_addr + 1, listen_addr_len - 2);
+            if (listen_addr_copy != NULL) {
+                normalized_listen_addr = listen_addr_copy;
+            }
+        }
+    }
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
 
-    ret = getaddrinfo(listen_addr, port, &hints, &res);
+    ret = getaddrinfo(normalized_listen_addr, port, &hints, &res);
     if (ret != 0) {
         flb_warn("net_server: getaddrinfo(listen='%s:%s'): %s",
                  listen_addr, port, gai_strerror(ret));
+        if (listen_addr_copy != NULL) {
+            flb_free(listen_addr_copy);
+        }
         return -1;
     }
 
@@ -1686,6 +1707,10 @@ flb_sockfd_t flb_net_server(const char *port, const char *listen_addr,
     }
     freeaddrinfo(res);
 
+    if (listen_addr_copy != NULL) {
+        flb_free(listen_addr_copy);
+    }
+
     if (rp == NULL) {
         return -1;
     }
@@ -1697,18 +1722,38 @@ flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr, int s
 {
     flb_sockfd_t fd = -1;
     int ret;
+    size_t listen_addr_len;
     struct addrinfo hints;
     struct addrinfo *res, *rp;
+    const char *normalized_listen_addr;
+    char *listen_addr_copy;
+
+    listen_addr_copy = NULL;
+    normalized_listen_addr = listen_addr;
+
+    if (listen_addr != NULL && listen_addr[0] == '[') {
+        listen_addr_len = strlen(listen_addr);
+
+        if (listen_addr_len >= 3 && listen_addr[listen_addr_len - 1] == ']') {
+            listen_addr_copy = flb_strndup(listen_addr + 1, listen_addr_len - 2);
+            if (listen_addr_copy != NULL) {
+                normalized_listen_addr = listen_addr_copy;
+            }
+        }
+    }
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_flags = AI_PASSIVE;
 
-    ret = getaddrinfo(listen_addr, port, &hints, &res);
+    ret = getaddrinfo(normalized_listen_addr, port, &hints, &res);
     if (ret != 0) {
         flb_warn("net_server_udp: getaddrinfo(listen='%s:%s'): %s",
                  listen_addr, port, gai_strerror(ret));
+        if (listen_addr_copy != NULL) {
+            flb_free(listen_addr_copy);
+        }
         return -1;
     }
 
@@ -1732,6 +1777,10 @@ flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr, int s
         break;
     }
     freeaddrinfo(res);
+
+    if (listen_addr_copy != NULL) {
+        flb_free(listen_addr_copy);
+    }
 
     if (rp == NULL) {
         return -1;

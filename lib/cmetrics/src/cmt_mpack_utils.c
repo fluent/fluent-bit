@@ -47,6 +47,44 @@ int cmt_mpack_consume_double_tag(mpack_reader_t *reader, double *output_buffer)
     return CMT_MPACK_SUCCESS;
 }
 
+int cmt_mpack_consume_int_tag(mpack_reader_t *reader, int64_t *output_buffer)
+{
+    uint64_t unsigned_value;
+    mpack_tag_t tag;
+
+    if (NULL == output_buffer) {
+        return CMT_MPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    if (NULL == reader) {
+        return CMT_MPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    tag = mpack_read_tag(reader);
+
+    if (mpack_ok != mpack_reader_error(reader)) {
+        return CMT_MPACK_ENGINE_ERROR;
+    }
+
+    if (mpack_type_int == mpack_tag_type(&tag)) {
+        *output_buffer = mpack_tag_int_value(&tag);
+    }
+    else if (mpack_type_uint == mpack_tag_type(&tag)) {
+        unsigned_value = mpack_tag_uint_value(&tag);
+
+        if (unsigned_value > INT64_MAX) {
+            return CMT_MPACK_UNEXPECTED_DATA_TYPE_ERROR;
+        }
+
+        *output_buffer = (int64_t) unsigned_value;
+    }
+    else {
+        return CMT_MPACK_UNEXPECTED_DATA_TYPE_ERROR;
+    }
+
+    return CMT_MPACK_SUCCESS;
+}
+
 int cmt_mpack_consume_uint_tag(mpack_reader_t *reader, uint64_t *output_buffer)
 {
     mpack_tag_t tag;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,12 +20,28 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_http_server.h>
 
+#include "health.h"
 #include "metrics.h"
 #include "reload.h"
 
 int api_v2_registration(struct flb_hs *hs)
 {
-    api_v2_reload(hs);
-    api_v2_metrics(hs);
+    int ret;
+
+    ret = api_v2_reload(hs);
+    if (ret != 0) {
+        return ret;
+    }
+
+    ret = api_v2_metrics(hs);
+    if (ret != 0) {
+        return ret;
+    }
+
+    ret = api_v2_health(hs);
+    if (ret != 0) {
+        return ret;
+    }
+
     return 0;
 }

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_aws_credentials.h>
@@ -32,8 +33,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define AWS_SERVICE_ENDPOINT_FORMAT            "%s.%s.amazonaws.com"
-#define AWS_SERVICE_ENDPOINT_BASE_LEN          15
+#define AWS_SERVICE_ENDPOINT_FORMAT            "%s.%s%s"
+#define AWS_SERVICE_ENDPOINT_SUFFIX_COM        ".amazonaws.com"
+#define AWS_SERVICE_ENDPOINT_SUFFIX_COM_CN     ".amazonaws.com.cn"
+#define AWS_SERVICE_ENDPOINT_SUFFIX_EU         ".amazonaws.eu"
 
 #define TAG_PART_DESCRIPTOR "$TAG[%d]"
 #define TAG_DESCRIPTOR "$TAG"
@@ -70,29 +73,30 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    size_t dynamic_headers_len);
 
 /*
- * https://service.region.amazonaws.com(.cn)
+ * https://service.region.amazonaws.[com(.cn)|eu]
  */
 char *flb_aws_endpoint(char* service, char* region)
 {
     char *endpoint = NULL;
-    size_t len = AWS_SERVICE_ENDPOINT_BASE_LEN;
-    int is_cn = FLB_FALSE;
+    const char *domain_suffix = AWS_SERVICE_ENDPOINT_SUFFIX_COM;
+    size_t len;
     int bytes;
 
 
-    /* In the China regions, ".cn" is appended to the URL */
-    if (strcmp("cn-north-1", region) == 0) {
-        len += 3;
-        is_cn = FLB_TRUE;
+    /* China regions end with amazonaws.com.cn */
+    if (strcmp("cn-north-1", region) == 0 ||
+        strcmp("cn-northwest-1", region) == 0) {
+        domain_suffix = AWS_SERVICE_ENDPOINT_SUFFIX_COM_CN;
     }
-    if (strcmp("cn-northwest-1", region) == 0) {
-        len += 3;
-        is_cn = FLB_TRUE;
+    else if (strncmp(region, "eusc-", 5) == 0) {
+        domain_suffix = AWS_SERVICE_ENDPOINT_SUFFIX_EU;
     }
 
-    len += strlen(service);
+    len = strlen(service);
+    len += 1; /* dot between service and region */
     len += strlen(region);
-    len++; /* null byte */
+    len += strlen(domain_suffix);
+    len += 1; /* null byte */
 
     endpoint = flb_calloc(len, sizeof(char));
     if (!endpoint) {
@@ -100,16 +104,11 @@ char *flb_aws_endpoint(char* service, char* region)
         return NULL;
     }
 
-    bytes = snprintf(endpoint, len, AWS_SERVICE_ENDPOINT_FORMAT, service, region);
-    if (bytes < 0) {
+    bytes = snprintf(endpoint, len, AWS_SERVICE_ENDPOINT_FORMAT, service, region, domain_suffix);
+    if (bytes < 0 || bytes >= len) {
         flb_errno();
         flb_free(endpoint);
         return NULL;
-    }
-
-    if (is_cn) {
-        memcpy(endpoint + bytes, ".cn", 3);
-        endpoint[bytes + 3] = '\0';
     }
 
     return endpoint;
@@ -268,6 +267,14 @@ struct flb_aws_client *flb_aws_client_create()
     client->client_vtable = &client_vtable;
     client->retry_requests = FLB_FALSE;
     client->debug_only = FLB_FALSE;
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    client->http_cb_ctx = flb_callback_create("aws client");
+    if (!client->http_cb_ctx) {
+        flb_errno();
+        flb_free(client);
+        return NULL;
+    }
+#endif
     return client;
 }
 
@@ -291,6 +298,11 @@ void flb_aws_client_destroy(struct flb_aws_client *aws_client)
         if (aws_client->extra_user_agent) {
             flb_sds_destroy(aws_client->extra_user_agent);
         }
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+        if (aws_client->http_cb_ctx) {
+            flb_callback_destroy(aws_client->http_cb_ctx);
+        }
+#endif
         flb_free(aws_client);
     }
 }
@@ -385,6 +397,10 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         }
         goto error;
     }
+
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    flb_http_client_debug_enable(c, aws_client->http_cb_ctx);
+#endif
 
     /* Increase the maximum HTTP response buffer size to fit large responses from AWS services */
     ret = flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <inttypes.h>
 
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_network.h>
@@ -359,8 +360,8 @@ static bool check_event_is_filtered(struct k8s_events *ctx, msgpack_object *obj,
 
     /* check if this is an old event. */
     if (ctx->last_resource_version && resource_version <= ctx->last_resource_version) {
-        flb_plg_debug(ctx->ins, "skipping old object: %llu (< %llu)", resource_version,
-                        ctx->last_resource_version);
+        flb_plg_debug(ctx->ins, "skipping old object: %" PRIu64 " (< %" PRIu64 ")",
+                      resource_version, ctx->last_resource_version);
         flb_sds_destroy(uid);
         return FLB_TRUE;
     }
@@ -428,7 +429,7 @@ static int process_event_object(struct k8s_events *ctx, flb_sds_t action,
         ret = flb_log_event_encoder_commit_record(ctx->encoder);
     }
     else {
-        flb_plg_warn(ctx->ins, "unable to encode: %llu", resource_version);
+        flb_plg_warn(ctx->ins, "unable to encode: %" PRIu64, resource_version);
     }
 
     if (ctx->encoder->output_length > 0) {
@@ -600,7 +601,7 @@ static struct flb_http_client *make_event_watch_api_request(struct k8s_events *c
         flb_sds_printf(&url, K8S_EVENTS_KUBE_NAMESPACE_API_URI, ctx->namespace);
     }
 
-    flb_sds_printf(&url, "?watch=1&resourceVersion=%llu", max_resource_version);
+    flb_sds_printf(&url, "?watch=1&resourceVersion=%" PRIu64, max_resource_version);
     flb_plg_info(ctx->ins, "Requesting %s", url);
     c = flb_http_client(ctx->current_connection, FLB_HTTP_GET, url,
                         NULL, 0, ctx->api_host, ctx->api_port, NULL, 0);
@@ -717,14 +718,14 @@ static int k8s_events_sql_insert_event(struct k8s_events *ctx, msgpack_object *i
     if (ret != SQLITE_DONE) {
         sqlite3_clear_bindings(ctx->stmt_insert_kubernetes_event);
         sqlite3_reset(ctx->stmt_insert_kubernetes_event);
-        flb_plg_error(ctx->ins, "cannot execute insert kubernetes event %s inode=%llu",
+        flb_plg_error(ctx->ins, "cannot execute insert kubernetes event %s inode=%" PRIu64,
                       uid, resource_version);
         flb_sds_destroy(uid);
         return -1;
     }
 
     flb_plg_debug(ctx->ins,
-                  "inserted k8s event: uid=%s, resource_version=%llu, last=%llu",
+                  "inserted k8s event: uid=%s, resource_version=%" PRIu64 ", last=%" PRIu64,
                   uid, resource_version, flb_time_to_nanosec(&last));
     sqlite3_clear_bindings(ctx->stmt_insert_kubernetes_event);
     sqlite3_reset(ctx->stmt_insert_kubernetes_event);
@@ -850,7 +851,7 @@ static int check_and_init_stream(struct k8s_events *ctx)
     } while(continue_token != NULL);
 
     if (max_resource_version > ctx->last_resource_version) {
-        flb_plg_debug(ctx->ins, "set last resourceVersion=%llu", max_resource_version);
+        flb_plg_debug(ctx->ins, "set last resourceVersion=%" PRIu64, max_resource_version);
         ctx->last_resource_version = max_resource_version;
     }
 
@@ -1084,6 +1085,18 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "db.sync", "normal",
      0, FLB_FALSE, 0,
      "set a database sync method. values: extra, full, normal and off."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "db.locking", "false",
+     0, FLB_TRUE, offsetof(struct k8s_events, db_locking),
+     "set exclusive locking mode, increase performance but don't allow "
+     "external connections to the database file."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "db.journal_mode", "WAL",
+     0, FLB_TRUE, offsetof(struct k8s_events, db_journal_mode),
+     "set the journal mode for the database. values: DELETE, TRUNCATE, "
+     "PERSIST, MEMORY, WAL, OFF."
     },
 #endif
 

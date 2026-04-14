@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -89,8 +89,7 @@ static int cb_prom_init(struct flb_output_instance *ins,
     }
 
     /* HTTP Server context */
-    ctx->http = prom_http_server_create(ctx,
-                                        ins->host.name, ins->host.port, config);
+    ctx->http = prom_http_server_create(ctx, config);
     if (!ctx->http) {
         flb_plg_error(ctx->ins, "could not initialize HTTP server, aborting");
         return -1;
@@ -311,7 +310,7 @@ struct flb_output_plugin out_prometheus_exporter_plugin = {
     .cb_init     = cb_prom_init,
     .cb_flush    = cb_prom_flush,
     .cb_exit     = cb_prom_exit,
-    .flags       = FLB_OUTPUT_NET,
+    .flags       = FLB_OUTPUT_NET | FLB_OUTPUT_HTTP_SERVER,
     .event_type  = FLB_OUTPUT_METRICS,
     .config_map  = config_map,
 };

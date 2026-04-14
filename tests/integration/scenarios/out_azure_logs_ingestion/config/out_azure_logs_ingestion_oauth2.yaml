@@ -1,0 +1,28 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: azure_logs_ingestion
+      dummy: '{"message":"hello from azure logs ingestion","source":"dummy","level":"info"}'
+      samples: 1
+
+  outputs:
+    - name: azure_logs_ingestion
+      match: azure_logs_ingestion
+      tenant_id: suite-tenant
+      client_id: suite-client
+      client_secret: suite-secret
+      auth_url: http://127.0.0.1:${TEST_SUITE_OAUTH_PORT}/oauth/token
+      dce_url: https://localhost:${TEST_SUITE_HTTP_PORT}
+      dcr_id: dcr-suite
+      table_name: suite_CL
+      compress: on
+      tls.verify: on
+      tls.verify_hostname: on
+      tls.vhost: localhost
+      tls.ca_file: ${CERTIFICATE_TEST}

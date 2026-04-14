@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@
 
 #include <cfl/cfl.h>
 
+struct cfl_variant *cm_otel_get_or_create_attributes(struct cfl_kvlist *kvlist);
 struct cfl_variant *cm_otel_get_attributes(int telemetry_type, int context, struct cfl_kvlist *kvlist);
 struct cfl_variant *cm_otel_get_scope_metadata(int telemetry_type, struct cfl_kvlist *kvlist);
 

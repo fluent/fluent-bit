@@ -36,6 +36,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX=/opt/fluent-bit/ -DCMAKE_INSTALL_SYSCONFDIR=/et
     -DFLB_JEMALLOC=On \
     -DFLB_CHUNK_TRACE=On \
     -DFLB_OUT_PGSQL=On \
-    -DFLB_UNICODE_ENCODER=Off ../
+    -DFLB_UNICODE_ENCODER=Off \
+    -DFLB_RIPSER=Off ../
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"

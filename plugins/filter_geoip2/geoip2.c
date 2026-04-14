@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2024 The Fluent Bit Authors
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -240,7 +240,7 @@ static void add_geoip_fields(msgpack_object *map,
         pos = strstr(record->val, "}");
         memset(key, '\0', sizeof(key));
         strncpy(key, record->val + 2, pos - (record->val + 2));
-        split = flb_utils_split(key, '.', 2);
+        split = flb_utils_split(key, '.', 8);
         split_size = mk_list_size(split);
         path = flb_malloc(sizeof(char *) * (split_size + 1));
         i = 0;
