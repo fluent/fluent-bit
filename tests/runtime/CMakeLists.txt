@@ -171,10 +171,17 @@ if(FLB_IN_EBPF)
         "../../plugins/in_ebpf/traces/tcp/handler.c"
     )
 
+    add_ebpf_handler_test(
+        "exec"
+        "in_ebpf_exec_handler.c"
+        "../../plugins/in_ebpf/traces/exec/handler.c"
+    )
+
     add_dependencies(flb-rt-in_ebpf_bind_handler fluent-bit-static)
     add_dependencies(flb-rt-in_ebpf_signal_handler fluent-bit-static)
     add_dependencies(flb-rt-in_ebpf_malloc_handler fluent-bit-static)
     add_dependencies(flb-rt-in_ebpf_tcp_handler fluent-bit-static)
+    add_dependencies(flb-rt-in_ebpf_exec_handler fluent-bit-static)
 
 endif()
 
