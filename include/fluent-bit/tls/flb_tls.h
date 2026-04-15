@@ -46,6 +46,8 @@
 
 #define FLB_TLS_CLIENT_MODE 0
 #define FLB_TLS_SERVER_MODE 1
+#define FLB_TLS_CLIENT_MODE_DGRAM 2
+#define FLB_TLS_SERVER_MODE_DGRAM 3
 
 struct flb_tls;
 struct flb_connection;
