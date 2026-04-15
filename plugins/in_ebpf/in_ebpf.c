@@ -262,7 +262,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "Trace", NULL,
      FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
-     "Set the eBPF trace to enable (for example, bind, malloc, signal, vfs, tcp). Can be set multiple times"
+     "Set the eBPF trace to enable (for example, bind, exec, malloc, signal, vfs, tcp). Can be set multiple times"
     },
     /* EOF */
     {0}

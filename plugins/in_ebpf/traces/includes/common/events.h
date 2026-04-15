@@ -6,6 +6,8 @@
 
 #define TASK_COMM_LEN 16
 #define VFS_PATH_MAX 256
+#define EXECVE_ARG_MAX 3
+#define EXECVE_ARG_LEN 256
 
 enum event_type {
     EVENT_TYPE_EXECVE,
@@ -48,11 +50,19 @@ struct event_common {
     char comm[TASK_COMM_LEN];
 };
 
+enum execve_stage {
+    EXECVE_STAGE_ENTER = 0,
+    EXECVE_STAGE_EXIT = 1
+};
+
 struct execve_event {
-    __u32 tpid;
+    enum execve_stage stage;
+    __u32 ppid;
     char filename[PATH_MAX];
-    char argv[256];
+    char argv[EXECVE_ARG_MAX][EXECVE_ARG_LEN];
+    char argv_last[EXECVE_ARG_LEN];
     __u32 argc;
+    int error_raw;
 };
 
 struct signal_event {
