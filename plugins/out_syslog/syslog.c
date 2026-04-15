@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/tls/flb_tls.h>
 
 #include "syslog_conf.h"
 
@@ -100,6 +101,56 @@ static struct {
     { "local7",   6, 23 },
     { NULL,       0,-1  },
 };
+
+#ifdef FLB_HAVE_TLS
+static int syslog_configure_dtls_context(struct flb_output_instance *ins)
+{
+    int ret;
+
+    if (ins->tls != NULL) {
+        flb_tls_destroy(ins->tls);
+        ins->tls = NULL;
+    }
+
+    ins->tls = flb_tls_create(FLB_TLS_CLIENT_MODE_DGRAM,
+                              ins->tls_verify,
+                              ins->tls_debug,
+                              ins->tls_vhost,
+                              ins->tls_ca_path,
+                              ins->tls_ca_file,
+                              ins->tls_crt_file,
+                              ins->tls_key_file,
+                              ins->tls_key_passwd);
+    if (ins->tls == NULL) {
+        return -1;
+    }
+
+    if (ins->tls_verify_hostname == FLB_TRUE) {
+        ret = flb_tls_set_verify_hostname(ins->tls, ins->tls_verify_hostname);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    if (ins->tls_min_version != NULL || ins->tls_max_version != NULL) {
+        ret = flb_tls_set_minmax_proto(ins->tls,
+                                       ins->tls_min_version,
+                                       ins->tls_max_version);
+        if (ret != 0) {
+            return -1;
+        }
+    }
+
+    if (ins->tls_ciphers != NULL) {
+        ret = flb_tls_set_ciphers(ins->tls, ins->tls_ciphers);
+        if (ret != 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+#endif
 
 /* '"', '\' ']' */
 static char rfc5424_sp_value[256] = {
@@ -894,6 +945,7 @@ static void cb_syslog_flush(struct flb_event_chunk *event_chunk,
 static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *config,
                           void *data)
 {
+    int ret;
     int io_flags;
     struct flb_syslog *ctx = NULL;
 
@@ -926,9 +978,24 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
         }
     }
     else {
+#ifdef FLB_HAVE_TLS
+        if (ctx->parsed_mode == FLB_SYSLOG_DTLS) {
+            ret = syslog_configure_dtls_context(ins);
+            if (ret != 0) {
+                flb_plg_error(ins, "could not initialize DTLS context");
+                flb_syslog_config_destroy(ctx);
+                return -1;
+            }
+        }
+#endif
 
-        /* use TLS ? */
-        if (ins->use_tls == FLB_TRUE) {
+        if (ctx->parsed_mode == FLB_SYSLOG_UDP) {
+            io_flags = FLB_IO_UDP;
+        }
+        else if (ctx->parsed_mode == FLB_SYSLOG_DTLS) {
+            io_flags = FLB_IO_DTLS;
+        }
+        else if (ins->use_tls == FLB_TRUE) {
             io_flags = FLB_IO_TLS;
         }
         else {
@@ -940,17 +1007,16 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
         }
 
         ctx->u = flb_upstream_create(config, ins->host.name, ins->host.port,
-                                             io_flags, ins->tls);
+                                     io_flags, ins->tls);
         if (!(ctx->u)) {
             flb_syslog_config_destroy(ctx);
             return -1;
         }
         flb_output_upstream_set(ctx->u, ins);
+
+        /* Set the plugin context */
+        flb_output_set_context(ins, ctx);
     }
-
-    /* Set the plugin context */
-    flb_output_set_context(ins, ctx);
-
     flb_plg_info(ctx->ins, "setup done for %s:%i (TLS=%s)",
                  ins->host.name, ins->host.port,
                  ins->use_tls ? "on" : "off");
@@ -1046,9 +1112,8 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "mode", "udp",
      0, FLB_TRUE, offsetof(struct flb_syslog, mode),
-     "Set the desired transport type, the available options are tcp and udp. If you need to "
-     "use a TLS secure channel, choose 'tcp' mode here and enable the 'tls' option separately. "
-     "DTLS over udp is not supported by this plugin."
+     "Set the desired transport type, the available options are udp, tcp, tls and dtls. "
+     "Use tls=on together with mode=dtls."
     },
 
     {

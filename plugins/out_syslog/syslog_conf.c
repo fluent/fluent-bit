@@ -102,6 +102,9 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         else if (!strcasecmp(tmp, "udp")) {
             ctx->parsed_mode = FLB_SYSLOG_UDP;
         }
+        else if (!strcasecmp(tmp, "dtls")) {
+            ctx->parsed_mode = FLB_SYSLOG_DTLS;
+        }
         else {
             flb_plg_error(ctx->ins, "unknown syslog mode %s", tmp);
             flb_syslog_config_destroy(ctx);
@@ -111,8 +114,15 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
 
     if (ctx->parsed_mode == FLB_SYSLOG_UDP && ins->use_tls == FLB_TRUE) {
         flb_plg_error(ctx->ins,
-                      "invalid configuration: mode=udp with tls=on is unsupported "
-                      "(DTLS is not implemented)");
+                      "invalid configuration: mode=udp with tls=on is unsupported; "
+                      "use mode=dtls for secure datagram transport");
+        flb_syslog_config_destroy(ctx);
+        return NULL;
+    }
+
+    if (ctx->parsed_mode == FLB_SYSLOG_DTLS && ins->use_tls == FLB_FALSE) {
+        flb_plg_error(ctx->ins,
+                      "invalid configuration: mode=dtls requires tls=on");
         flb_syslog_config_destroy(ctx);
         return NULL;
     }
