@@ -97,11 +97,20 @@ static void compose_user_friendly_remote_host(struct flb_connection *connection)
                  connection->remote_port);
     }
     else if (connection_type == FLB_TRANSPORT_UDP) {
-        snprintf(connection->user_friendly_remote_host,
-                 sizeof(connection->user_friendly_remote_host),
-                 "udp://%s:%u",
-                 connection->remote_host,
-                 connection->remote_port);
+        if (flb_stream_get_flag_status(connection->stream, FLB_IO_DTLS)) {
+            snprintf(connection->user_friendly_remote_host,
+                     sizeof(connection->user_friendly_remote_host),
+                     "dtls://%s:%u",
+                     connection->remote_host,
+                     connection->remote_port);
+        }
+        else {
+            snprintf(connection->user_friendly_remote_host,
+                     sizeof(connection->user_friendly_remote_host),
+                     "udp://%s:%u",
+                     connection->remote_host,
+                     connection->remote_port);
+        }
     }
     else if (connection_type == FLB_TRANSPORT_UNIX_STREAM) {
         snprintf(connection->user_friendly_remote_host,
