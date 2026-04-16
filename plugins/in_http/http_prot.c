@@ -164,6 +164,43 @@ static void sanitize_tag(flb_sds_t tag)
     }
 }
 
+static flb_sds_t get_health_message(void)
+{
+    char time_str[128];
+    flb_sds_t message;
+    struct tm tm_time;
+    struct flb_time tm;
+
+    flb_time_get(&tm);
+    gmtime_r(&tm.tm.tv_sec, &tm_time);
+
+    snprintf(time_str,
+             sizeof(time_str),
+             "%04d-%02d-%02dT%02d:%02d:%02d.%09ldZ",
+             tm_time.tm_year + 1900,
+             tm_time.tm_mon + 1,
+             tm_time.tm_mday,
+             tm_time.tm_hour,
+             tm_time.tm_min,
+             tm_time.tm_sec,
+             tm.tm.tv_nsec);
+
+    message = flb_sds_create_size(256);
+    if (message == NULL) {
+        return NULL;
+    }
+
+    flb_sds_printf(&message,
+                   "{\n"
+                   "  \"status\": \"ok\",\n"
+                   "  \"message\": \"I can only show you the door. You're the one that has to walk through it.\",\n"
+                   "  \"timestamp\": \"%s\"\n"
+                   "}\n",
+                   time_str);
+
+    return message;
+}
+
 /* implements functionality to get tag from key in record */
 static flb_sds_t tag_key(struct flb_http *ctx, msgpack_object *map)
 {
@@ -509,6 +546,9 @@ static int send_response_ng(struct flb_http_response *response,
     else if (http_status == 400) {
         flb_http_response_set_message(response, "Bad Request");
     }
+    else if (http_status == 500) {
+        flb_http_response_set_message(response, "Internal Server Error");
+    }
     else if (http_status == 401) {
         flb_http_response_set_message(response, "Unauthorized");
     }
@@ -848,6 +888,7 @@ int http_prot_handle_ng(struct flb_http_request *request,
     int                             i;
     int                             ret;
     int                             len;
+    flb_sds_t                       health;
     flb_sds_t                       tag;
     const char                     *auth_header;
     size_t                          auth_len;
@@ -889,6 +930,23 @@ int http_prot_handle_ng(struct flb_http_request *request,
         flb_sds_destroy(tag);
         send_response_ng(response, 400, "error: missing host header\n");
         return -1;
+    }
+
+    if (ctx->enable_health_endpoint == FLB_TRUE &&
+        request->method == HTTP_METHOD_GET &&
+        strcmp(request->path, "/health") == 0) {
+        flb_sds_destroy(tag);
+
+        health = get_health_message();
+        if (health == NULL) {
+            send_response_ng(response, 500, "error: unable to compose health payload\n");
+            return -1;
+        }
+
+        send_response_ng(response, 200, health);
+        flb_sds_destroy(health);
+
+        return 0;
     }
 
     if (ctx->oauth2_ctx) {
