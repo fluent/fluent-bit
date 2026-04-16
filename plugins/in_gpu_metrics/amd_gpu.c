@@ -47,61 +47,6 @@ static flb_sds_t build_path(int card_id, const char *file)
     return path;
 }
 
-static int match_card_pattern(const char *pattern, int card_id)
-{
-    char *dup;
-    char *token;
-    char *saveptr;
-    int start;
-    int end;
-
-    if (!pattern || pattern[0] == '\0' || strcmp(pattern, "*") == 0) {
-        return FLB_TRUE;
-    }
-
-    dup = flb_strdup(pattern);
-    if (!dup) {
-        return FLB_FALSE;
-    }
-
-    token = strtok_r(dup, ",", &saveptr);
-    while (token) {
-        if (sscanf(token, "%d-%d", &start, &end) == 2) {
-            if (card_id >= start && card_id <= end) {
-                flb_free(dup);
-                return FLB_TRUE;
-            }
-        }
-        else {
-            if (card_id == atoi(token)) {
-                flb_free(dup);
-                return FLB_TRUE;
-            }
-        }
-        token = strtok_r(NULL, ",", &saveptr);
-    }
-    flb_free(dup);
-    return FLB_FALSE;
-}
-
-static int should_include_card(struct in_gpu_metrics *ctx, int card_id)
-{
-    flb_plg_info(ctx->ins, "should_include_card: card%d, exclude='%s', include='%s'",
-                 card_id, ctx->cards_exclude ? ctx->cards_exclude : "NULL",
-                 ctx->cards_include ? ctx->cards_include : "NULL");
-
-    if (ctx->cards_exclude && ctx->cards_exclude[0] != '\0' && match_card_pattern(ctx->cards_exclude, card_id)) {
-        flb_plg_info(ctx->ins, "Card%d excluded by exclude pattern", card_id);
-        return FLB_FALSE;
-    }
-    if (ctx->cards_include && ctx->cards_include[0] != '\0' && !match_card_pattern(ctx->cards_include, card_id)) {
-        flb_plg_info(ctx->ins, "Card%d excluded by include pattern", card_id);
-        return FLB_FALSE;
-    }
-    flb_plg_info(ctx->ins, "Card%d should be included", card_id);
-    return FLB_TRUE;
-}
-
 static void free_cards(struct in_gpu_metrics *ctx)
 {
     struct cfl_list *tmp;
@@ -260,7 +205,7 @@ int amd_gpu_detect_cards(struct in_gpu_metrics *ctx)
         }
 
         flb_plg_info(ctx->ins, "Checking if card%d should be included", id);
-        if (!should_include_card(ctx, id)) {
+        if (!gpu_should_include_card(ctx, id)) {
             flb_plg_info(ctx->ins, "Card%d excluded by filter", id);
             continue;
         }
