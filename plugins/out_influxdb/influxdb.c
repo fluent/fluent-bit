@@ -686,7 +686,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_BOOL, "tag_keys", NULL,
+     FLB_CONFIG_MAP_STR, "tag_keys", NULL,
      0, FLB_FALSE, 0,
      "Space separated list of keys that needs to be tagged."
     },
