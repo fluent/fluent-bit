@@ -25,6 +25,7 @@
 
 struct gpu_card {
     int id;
+    int backend_type;
     flb_sds_t hwmon_path;
     struct cfl_list _head;
 };
@@ -36,8 +37,10 @@ struct in_gpu_metrics {
     int scrape_interval;
     int enable_power;
     int enable_temperature;
+    int enable_nvml;
     int coll_fd;
     int cards_detected;
+    int nvml_initialized;
 
     struct cfl_list cards;
 
@@ -53,7 +56,11 @@ struct in_gpu_metrics {
 
     /* plugin instance */
     struct flb_input_instance *ins;
+    void *nvml_lib_handle;
 
 };
+
+#define GPU_BACKEND_AMD 1
+#define GPU_BACKEND_NVML 2
 
 #endif
