@@ -8,6 +8,7 @@ pipeline:
   inputs:
     - name: http
       port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      enable_health_endpoint: on
       oauth2.validate: true
       oauth2.issuer: issuer
       oauth2.jwks_url: http://127.0.0.1:${TEST_SUITE_HTTP_PORT}/jwks

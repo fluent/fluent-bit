@@ -8,6 +8,7 @@ pipeline:
   inputs:
     - name: http
       port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      enable_health_endpoint: on
       http2: off
       tls: on
       tls.crt_file: ${CERTIFICATE_TEST}
