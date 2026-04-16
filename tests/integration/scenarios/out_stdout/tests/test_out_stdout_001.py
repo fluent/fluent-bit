@@ -206,3 +206,31 @@ def test_out_stdout_traces_accepts_otlp_json_ingestion():
 
     assert "checkout-span" in log_text
     assert "trace-scope" in log_text
+
+
+def test_out_stdout_routes_without_alias_bind_to_third_input():
+    service = Service("out_stdout_routing_no_alias.yaml")
+    service.start()
+    service.wait_for_log_contains("[0] topic1:", timeout=10)
+    service.wait_for_log_contains("no matching route for input chunk", timeout=10)
+    log_text = service.wait_for_log_contains("tag 'firstdummy'", timeout=10)
+    service.stop()
+
+    assert "connected input 'dummy.2' route 'topic1' to output 'stdout1'" in log_text
+    assert "[0] topic1:" in log_text
+    assert "\"topic\"=>\"topic1\"" in log_text
+    assert "\"message\"=>\"custom dummy\"" in log_text
+    assert "no matching route for input chunk" in log_text
+    assert "tag 'firstdummy'" in log_text
+
+
+def test_out_stdout_routes_with_alias_bind_to_third_input():
+    service = Service("out_stdout_routing_with_alias.yaml")
+    service.start()
+    log_text = service.wait_for_log_contains("[0] topic1:", timeout=10)
+    service.stop()
+
+    assert "connected input 'routed_dummy' route 'topic1' to output 'stdout1'" in log_text
+    assert "[0] topic1:" in log_text
+    assert "\"topic\"=>\"topic1\"" in log_text
+    assert "\"message\"=>\"custom dummy\"" in log_text
