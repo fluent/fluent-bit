@@ -68,6 +68,19 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
   that are awkward to cover in `ctest` binaries alone.
 - The Python integration suite is not part of the default CMake `ctest` targets;
   run it explicitly from `tests/integration`.
+- Do not skip focused integration coverage for a touched component when that
+  component has a corresponding `tests/integration` scenario. Agents must run
+  the focused scenario(s) for the touched component before closing the task.
+- For touched components covered by `tests/integration`, agents must run the
+  focused scenario(s) twice:
+  - once normally to verify behavior;
+  - once with valgrind enabled to verify memory-safety behavior.
+- The default expectation for component verification is:
+  `./tests/integration/setup-venv.sh`
+  `cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On`
+  `cmake --build build -j8`
+  `tests/integration/.venv/bin/python -m pytest <focused-scenario> -q`
+  `VALGRIND=1 VALGRIND_STRICT=1 tests/integration/.venv/bin/python -m pytest <focused-scenario> -q`
 - Run broader test coverage when changing shared lifecycle, routing, storage, or accounting code.
 - Validate both success and failure paths (invalid payloads, boundary sizes, null/missing fields).
 - You can also run specific binaries from `build/bin` (e.g., `./bin/flb-it-opentelemetry`).
@@ -75,6 +88,15 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
   affected scenarios are valgrind-clean. Run the focused integration tests with
   `tests/integration/run_tests.py --valgrind --valgrind-strict ...` and do not
   stop at functional pass/fail if memory errors or leaks remain.
+- If a focused integration or valgrind run cannot be executed, agents must not
+  silently skip it. They must report the exact blocker in the final response
+  (for example: missing binary, missing Python environment, unsupported
+  scenario, missing dependency, or infrastructure failure).
+- Final task close-outs must include proof of verification:
+  - the exact focused integration command(s) run;
+  - whether valgrind was used;
+  - pass/fail status;
+  - any concrete blocker if a required run could not be completed.
 - Keep generated integration artifacts out of git. Do not commit
   `.venv/`, `.pytest_cache/`, `results/`, or `__pycache__/` under
   `tests/integration`.
@@ -129,17 +151,35 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 ## Commit Lint Workflow
 - When the user asks for git commit commands, provide commands that also verify
   commit-prefix lint before push or PR submission.
+- After creating a commit when the user asked for a commit, agents must run the
+  repo linter before closing the task and fix any bad commit subject
+  immediately.
+- Do not treat a local non-PR linter pass as sufficient before push. Outside
+  GitHub PR context, `.github/scripts/commit_prefix_check.py` validates only
+  `HEAD`, which can miss earlier commits in the branch.
 - Run the same checker used in CI:
   `python .github/scripts/commit_prefix_check.py`
 - The checker requires `gitpython`. If `python -c 'import git'` fails, install
   it before running the linter:
   `python3 -m pip install gitpython`
+- Do not assume a generic `docs:` prefix is acceptable. Check the touched file
+  prefixes from repo history and from `.github/scripts/commit_prefix_check.py`
+  path inference before choosing a commit subject. For example, changes only to
+  `AGENTS.md` must use `agents:`, not `docs:`.
 - For pull-request-style validation, use full history and fetch the base branch
   first, matching CI behavior:
   `git fetch --all --prune`
   `git fetch origin <base-branch>:origin/<base-branch>`
+- Before pushing a branch or opening/updating a PR, agents must lint the full
+  PR commit range against the base branch, not just the latest commit. Use the
+  CI-style environment when possible, for example:
+  `GITHUB_EVENT_NAME=pull_request GITHUB_BASE_REF=<base-branch> python .github/scripts/commit_prefix_check.py`
+- If a commit mixes component code and integration tests, do not assume a
+  local `HEAD`-only lint pass proves the earlier code commit is acceptable.
+  Validate the whole branch range before push/PR submission.
 - When giving commit-command sequences to the user, include a final lint step
-  and mention the `gitpython` install step if it may be missing locally.
+  that checks the PR range and mention the `gitpython` install step if it may
+  be missing locally.
 
 ## Agent Action Limits
 - Do not open issues, pull requests, or remote branches unless the user explicitly asks.
