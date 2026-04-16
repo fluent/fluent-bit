@@ -156,6 +156,10 @@ int nvml_gpu_detect_cards(struct in_gpu_metrics *ctx)
     }
 
     for (index = 0; index < count; index++) {
+        if (!gpu_should_include_card(ctx, (int) index)) {
+            continue;
+        }
+
         card = flb_calloc(1, sizeof(struct gpu_card));
         if (card == NULL) {
             flb_errno();

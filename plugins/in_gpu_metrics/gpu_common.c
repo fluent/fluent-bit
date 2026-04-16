@@ -22,7 +22,11 @@
 #include <string.h>
 #include <inttypes.h>
 
+#include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_mem.h>
+
 #include "gpu_common.h"
+#include "gpu_metrics.h"
 
 int gpu_read_uint64(const char *path, uint64_t *value)
 {
@@ -70,4 +74,58 @@ int gpu_read_line(const char *path, char *buf, size_t size)
     }
     fclose(fp);
     return 0;
+}
+
+static int match_card_pattern(const char *pattern, int card_id)
+{
+    char *dup;
+    char *token;
+    char *saveptr;
+    int start;
+    int end;
+
+    if (!pattern || pattern[0] == '\0' || strcmp(pattern, "*") == 0) {
+        return FLB_TRUE;
+    }
+
+    dup = flb_strdup(pattern);
+    if (!dup) {
+        return FLB_FALSE;
+    }
+
+    token = strtok_r(dup, ",", &saveptr);
+    while (token) {
+        if (sscanf(token, "%d-%d", &start, &end) == 2) {
+            if (card_id >= start && card_id <= end) {
+                flb_free(dup);
+                return FLB_TRUE;
+            }
+        }
+        else {
+            if (card_id == atoi(token)) {
+                flb_free(dup);
+                return FLB_TRUE;
+            }
+        }
+        token = strtok_r(NULL, ",", &saveptr);
+    }
+    flb_free(dup);
+    return FLB_FALSE;
+}
+
+int gpu_should_include_card(struct in_gpu_metrics *ctx, int card_id)
+{
+    if (ctx->cards_exclude && ctx->cards_exclude[0] != '\0' &&
+        match_card_pattern(ctx->cards_exclude, card_id)) {
+        flb_plg_info(ctx->ins, "card%d excluded by exclude pattern", card_id);
+        return FLB_FALSE;
+    }
+
+    if (ctx->cards_include && ctx->cards_include[0] != '\0' &&
+        !match_card_pattern(ctx->cards_include, card_id)) {
+        flb_plg_info(ctx->ins, "card%d excluded by include pattern", card_id);
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
 }
