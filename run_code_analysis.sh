@@ -14,7 +14,7 @@ FLB_CMAKE_OPTIONS=${FLB_CMAKE_OPTIONS:--DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off 
 ADDITIONAL_DEPS=${ADDITIONAL_DEPS:-libssl-dev libsasl2-dev pkg-config libsystemd-dev zlib1g-dev libpq-dev postgresql-server-dev-all flex bison libyaml-dev netcat}
 
 # From the Unit Tests script
-SKIP_TESTS=${SKIP_TESTS:-flb-it-network flb-it-fstore flb-rt-out_td flb-rt-out_forward flb-rt-in_disk flb-rt-in_proc}
+SKIP_TESTS=${SKIP_TESTS:-flb-it-network flb-it-fstore flb-rt-out_td flb-rt-in_disk flb-rt-in_proc}
 
 SKIP=""
 for skip in $SKIP_TESTS
