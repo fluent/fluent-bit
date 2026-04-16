@@ -141,6 +141,35 @@ def test_in_http_rejects_get_requests():
     assert result["status_code"] >= 400
 
 
+@pytest.mark.parametrize("case", PROTOCOL_CASES, ids=[case["id"] for case in PROTOCOL_CASES])
+def test_in_http_health_endpoint(case):
+    service = Service(IN_HTTP_PROTOCOL_CONFIGS[case["config_key"]])
+    service.start()
+
+    scheme = "https" if case["use_tls"] else "http"
+    result = run_curl_request(
+        f"{scheme}://localhost:{service.flb_listener_port}/health",
+        None,
+        method="GET",
+        http_mode=case["http_mode"],
+        ca_cert_path=service.tls_crt_file if case["use_tls"] else None,
+    )
+
+    service.stop()
+
+    assert data_storage["payloads"] == []
+
+    payload = json.loads(result["body"])
+
+    assert result["status_code"] == 200
+    assert result["http_version"] == case["expected_http_version"]
+    assert payload["status"] == "ok"
+    assert payload["message"] == (
+        "I can only show you the door. You're the one that has to walk through it."
+    )
+    assert payload["timestamp"].endswith("Z")
+
+
 def test_in_http_oauth2_requires_bearer_token():
     service = Service("in_http_oauth2.yaml")
     service.start()
@@ -155,6 +184,26 @@ def test_in_http_oauth2_requires_bearer_token():
     service.stop()
 
     assert result["status_code"] == 401
+    assert data_storage["payloads"] == []
+
+
+def test_in_http_oauth2_health_endpoint_does_not_require_token():
+    service = Service("in_http_oauth2.yaml")
+    service.start()
+
+    result = run_curl_request(
+        f"http://localhost:{service.flb_listener_port}/health",
+        None,
+        method="GET",
+        http_mode="http1.1",
+    )
+
+    service.stop()
+
+    payload = json.loads(result["body"])
+
+    assert result["status_code"] == 200
+    assert payload["status"] == "ok"
     assert data_storage["payloads"] == []
 
 
