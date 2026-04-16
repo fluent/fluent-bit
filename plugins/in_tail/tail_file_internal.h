@@ -43,6 +43,10 @@ struct flb_tail_file {
     int64_t size;
     int64_t offset;             /* this represents the raw file offset, not
                                    the input data offset (see stream_offset) */
+    int64_t anchor_offset;      /* compressed: file offset at member start */
+    uint64_t skip_bytes;        /* compressed: decompressed bytes to skip */
+    uint64_t exclude_bytes;     /* compressed: runtime countdown during skip */
+    int skipping_mode;          /* compressed: skipping previously read data */
     int64_t last_line;
     uint64_t  dev_id;
     uint64_t  inode;
