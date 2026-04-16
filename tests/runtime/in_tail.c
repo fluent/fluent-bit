@@ -40,9 +40,6 @@ Approach for this tests is basing on filter_kubernetes tests
 #include "../../plugins/in_tail/win32/interface.h"
 #endif
 #include <fluent-bit/flb_gzip.h>
-#ifdef FLB_HAVE_SQLDB
-#include <sqlite3.h>
-#endif
 #include "flb_tests_runtime.h"
 
 #ifdef _WIN32
@@ -419,7 +416,72 @@ static int append_gzip_file(const char *path, const char *data, size_t len)
 struct test_ctx {
     int count;
     int found_line2;
+    const char *expected_line;   /* line the current run must emit */
+    int found_expected;
+    uint64_t last_offset;        /* offset_key of the newest record */
+    int has_offset;
 };
+
+/*
+ * The output callback runs on the engine thread while the test thread polls
+ * and asserts, so every access to test_ctx goes through result_mutex.
+ */
+static void test_ctx_begin_run(struct test_ctx *ctx, const char *expected_line)
+{
+    pthread_mutex_lock(&result_mutex);
+    ctx->count = 0;
+    ctx->found_line2 = 0;
+    ctx->found_expected = 0;
+    ctx->expected_line = expected_line;
+    ctx->has_offset = 0;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static int test_ctx_get_count(struct test_ctx *ctx)
+{
+    int count;
+
+    pthread_mutex_lock(&result_mutex);
+    count = ctx->count;
+    pthread_mutex_unlock(&result_mutex);
+
+    return count;
+}
+
+static int test_ctx_get_found_line2(struct test_ctx *ctx)
+{
+    int found;
+
+    pthread_mutex_lock(&result_mutex);
+    found = ctx->found_line2;
+    pthread_mutex_unlock(&result_mutex);
+
+    return found;
+}
+
+static int test_ctx_get_found_expected(struct test_ctx *ctx)
+{
+    int found;
+
+    pthread_mutex_lock(&result_mutex);
+    found = ctx->found_expected;
+    pthread_mutex_unlock(&result_mutex);
+
+    return found;
+}
+
+/* Returns FLB_TRUE when an offset_key value was seen; stores it in 'out'. */
+static int test_ctx_get_offset(struct test_ctx *ctx, uint64_t *out)
+{
+    int has;
+
+    pthread_mutex_lock(&result_mutex);
+    has = ctx->has_offset;
+    *out = ctx->last_offset;
+    pthread_mutex_unlock(&result_mutex);
+
+    return has;
+}
 
 static int cb_check_gzip_resume(void *record, size_t size, void *data)
 {
@@ -430,15 +492,32 @@ static int cb_check_gzip_resume(void *record, size_t size, void *data)
     msgpack_object val;
     msgpack_object v;
     size_t off = 0;
+    size_t expected_len = 0;
+    const char *expected;
+    int is_line2;
+    int is_expected;
+    int has_record_offset;
+    uint64_t record_offset;
     int i;
+
+    pthread_mutex_lock(&result_mutex);
+    expected = ctx->expected_line;
+    pthread_mutex_unlock(&result_mutex);
+
+    if (expected != NULL) {
+        expected_len = strlen(expected);
+    }
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, record, size, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
         if (root.type == MSGPACK_OBJECT_ARRAY && root.via.array.size == 2) {
-            ctx->count++;
+            is_line2 = 0;
+            is_expected = 0;
+            has_record_offset = 0;
+            record_offset = 0;
 
-            /* Check content for "line2" */
+            /* Check content for "line2" and for this run's expected line */
             val = root.via.array.ptr[1]; /* map */
             if (val.type == MSGPACK_OBJECT_MAP) {
                 for (i = 0; i < val.via.map.size; i++) {
@@ -450,12 +529,39 @@ static int cb_check_gzip_resume(void *record, size_t size, void *data)
                         if (v.type == MSGPACK_OBJECT_STR) {
                             if (v.via.str.size >= 5 &&
                                 memcmp(v.via.str.ptr, "line2", 5) == 0) {
-                                ctx->found_line2 = 1;
+                                is_line2 = 1;
                             }
+                            if (expected != NULL &&
+                                v.via.str.size >= expected_len &&
+                                memcmp(v.via.str.ptr, expected, expected_len) == 0) {
+                                is_expected = 1;
+                            }
+                        }
+                    }
+                    else if (key.type == MSGPACK_OBJECT_STR &&
+                             key.via.str.size == 3 &&
+                             memcmp(key.via.str.ptr, "off", 3) == 0) {
+                        if (v.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                            record_offset = v.via.u64;
+                            has_record_offset = 1;
                         }
                     }
                 }
             }
+
+            pthread_mutex_lock(&result_mutex);
+            ctx->count++;
+            if (is_line2) {
+                ctx->found_line2 = 1;
+            }
+            if (is_expected) {
+                ctx->found_expected = 1;
+            }
+            if (has_record_offset) {
+                ctx->last_offset = record_offset;
+                ctx->has_offset = 1;
+            }
+            pthread_mutex_unlock(&result_mutex);
         }
     }
     msgpack_unpacked_destroy(&result);
@@ -464,49 +570,6 @@ static int cb_check_gzip_resume(void *record, size_t size, void *data)
     return 0;
 }
 
-#ifdef FLB_HAVE_SQLDB
-/*
- * Helper function to get current file offset from tail DB
- */
-static int64_t get_db_offset(const char *db_path, const char *file_name)
-{
-    sqlite3 *db;
-    sqlite3_stmt *stmt;
-    int rc;
-    int64_t offset = -1;
-    char like_pattern[256];
-    const char *query = "SELECT offset FROM in_tail_files WHERE name LIKE ? LIMIT 1;";
-
-    rc = sqlite3_open_v2(db_path, &db, SQLITE_OPEN_READONLY, NULL);
-    if (rc != SQLITE_OK) {
-        return -1;
-    }
-
-    /*
-     * Table name is 'in_tail_files'
-     * We need to find the offset for the specific file.
-     * Since the test uses a specific filename, we can query by name.
-     */
-    rc = sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
-        sqlite3_close(db);
-        return -1;
-    }
-
-    snprintf(like_pattern, sizeof(like_pattern), "%%%s%%", file_name);
-    sqlite3_bind_text(stmt, 1, like_pattern, -1, SQLITE_TRANSIENT);
-
-    rc = sqlite3_step(stmt);
-    if (rc == SQLITE_ROW) {
-        offset = sqlite3_column_int64(stmt, 0);
-    }
-
-    sqlite3_finalize(stmt);
-    sqlite3_close(db);
-
-    return offset;
-}
-#endif /* FLB_HAVE_SQLDB */
 
 int64_t result_time;
 struct tail_test_result {
@@ -552,18 +615,21 @@ void wait_with_timeout(uint32_t timeout_ms, struct tail_test_result *result, int
  * Wait until output count reaches expected value or timeout.
  * Returns the final count.
  */
-static int wait_for_count_with_timeout(int *count_ptr, int expected, uint32_t timeout_ms)
+static int wait_for_count_with_timeout(struct test_ctx *ctx, int expected,
+                                       uint32_t timeout_ms)
 {
     struct flb_time start_time;
     struct flb_time end_time;
     struct flb_time diff_time;
     uint64_t elapsed_time_flb = 0;
+    int count;
 
     flb_time_get(&start_time);
 
     while (1) {
-        if (*count_ptr >= expected) {
-            return *count_ptr;
+        count = test_ctx_get_count(ctx);
+        if (count >= expected) {
+            return count;
         }
 
         flb_time_msleep(50);
@@ -576,7 +642,7 @@ static int wait_for_count_with_timeout(int *count_ptr, int expected, uint32_t ti
         }
     }
 
-    return *count_ptr;
+    return test_ctx_get_count(ctx);
 }
 
 void wait_num_with_timeout(uint32_t timeout_ms, int *output_num)
@@ -3362,37 +3428,15 @@ void flb_test_db_offset_rewind_on_shutdown()
     }
 
     /*
-     * Wait for tail to READ the file into buffer (advancing the DB offset).
-     * Instead of sleeping, we poll the DB until the offset increases.
-     * The offset should advance by the length of msg_before_shutdown.
-     */
-    int64_t start_offset = -1;
-    int64_t current_offset = -1;
-    int attempts = 0;
-    
-    /* Get initial offset (should be after the first message) */
-    while (start_offset == -1 && attempts < 20) {
-        start_offset = get_db_offset(db, file[0]);
-        if (start_offset != -1) {
-            break;
-        }
-        flb_time_msleep(100);
-        attempts++;
-    }
-
-    if (!TEST_CHECK(start_offset >= 0)) {
-        TEST_MSG("failed to get initial db offset");
-        test_tail_ctx_destroy(ctx);
-        unlink(file[0]);
-        unlink(db);
-        exit(EXIT_FAILURE);
-    }
-
-    /*
      * Write message WITHOUT newline - this will remain in the tail buffer
      * as an incomplete line, which is the scenario we want to test.
      * The tail plugin processes complete lines (ending with \n), so
      * data without newline stays in buf_len until more data arrives.
+     *
+     * Note: flb_tail_file_db_offset() automatically persists the resumable
+     * offset (offset - buf_len) rather than the raw read position, so the
+     * DB offset will NOT advance past the initial message until the
+     * incomplete line is completed with a newline.
      */
     ret = write_raw(ctx, msg_before_shutdown, strlen(msg_before_shutdown), FLB_FALSE);
     if (!TEST_CHECK(ret > 0)) {
@@ -3402,25 +3446,8 @@ void flb_test_db_offset_rewind_on_shutdown()
         exit(EXIT_FAILURE);
     }
 
-    /* Poll loop */
-    attempts = 0;
-    while (attempts < 20) { /* Max 2 seconds wait */
-        current_offset = get_db_offset(db, file[0]);
-        if (current_offset > start_offset) {
-            break;
-        }
-        flb_time_msleep(100);
-        attempts++;
-    }
-
-    if (!TEST_CHECK(current_offset > start_offset)) {
-        TEST_MSG("DB offset did not advance. start=%ld current=%ld",
-                 start_offset, current_offset);
-        test_tail_ctx_destroy(ctx);
-        unlink(file[0]);
-        unlink(db);
-        exit(EXIT_FAILURE);
-    }
+    /* Wait for tail to read the incomplete line into its buffer */
+    flb_time_msleep(500);
 
     /* Close file descriptors before stopping */
     if (ctx->fds != NULL) {
@@ -3544,18 +3571,17 @@ void flb_test_db_gzip_resume_loss()
     TEST_CHECK(ret == 0);
 
     /* Wait for output count to reach 1 */
-    wait_for_count_with_timeout(&t_ctx.count, 1, 2000);
+    wait_for_count_with_timeout(&t_ctx, 1, 2000);
 
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    TEST_CHECK(t_ctx.count == 1); /* Only line1 */
+    TEST_CHECK(test_ctx_get_count(&t_ctx) == 1); /* Only line1 */
 
     /* 3. Restart Fluent Bit */
     TEST_CHECK(append_gzip_file(log_file, content2, strlen(content2)) == 0);
 
-    t_ctx.count = 0;
-    t_ctx.found_line2 = 0;
+    test_ctx_begin_run(&t_ctx, NULL);
 
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0.5", "Grace", "1", NULL);
@@ -3574,13 +3600,13 @@ void flb_test_db_gzip_resume_loss()
     TEST_CHECK(ret == 0);
 
     /* Wait for output count to reach 2 (line2 + line3) */
-    wait_for_count_with_timeout(&t_ctx.count, 2, 2000);
+    wait_for_count_with_timeout(&t_ctx, 2, 2000);
 
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    TEST_CHECK(t_ctx.found_line2 == 1);
-    TEST_CHECK(t_ctx.count == 2);
+    TEST_CHECK(test_ctx_get_found_line2(&t_ctx) == 1);
+    TEST_CHECK(test_ctx_get_count(&t_ctx) == 2);
 
     unlink(log_file);
     unlink(db_file);
@@ -3630,19 +3656,19 @@ void flb_test_db_gzip_inotify_append()
     TEST_CHECK(ret == 0);
 
     /* Wait for initial read */
-    wait_for_count_with_timeout(&t_ctx.count, 1, 2000);
-    TEST_CHECK(t_ctx.count == 1);
+    wait_for_count_with_timeout(&t_ctx, 1, 2000);
+    TEST_CHECK(test_ctx_get_count(&t_ctx) == 1);
 
     /* 3. Append to Gzip file while running (Simulate Inotify Event) */
     TEST_CHECK(append_gzip_file(log_file, content2, strlen(content2)) == 0);
 
     /* Wait for inotify/refresh and processing */
-    wait_for_count_with_timeout(&t_ctx.count, 2, 2000);
+    wait_for_count_with_timeout(&t_ctx, 2, 2000);
 
     /* 4. Verify total count */
-    TEST_CHECK(t_ctx.count == 2);
+    TEST_CHECK(test_ctx_get_count(&t_ctx) == 2);
     /* Verify line2 was actually processed */
-    TEST_CHECK(t_ctx.found_line2 == 1);
+    TEST_CHECK(test_ctx_get_found_line2(&t_ctx) == 1);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -3698,8 +3724,8 @@ void flb_test_db_gzip_rotation()
     TEST_CHECK(ret == 0);
 
     /* Wait for initial read */
-    wait_for_count_with_timeout(&t_ctx.count, 1, 2000);
-    TEST_CHECK(t_ctx.count == 1);
+    wait_for_count_with_timeout(&t_ctx, 1, 2000);
+    TEST_CHECK(test_ctx_get_count(&t_ctx) == 1);
 
     /* 3. Rotate file: Rename .gz -> .gz.1 */
     ret = rename(log_file, rot_file);
@@ -3709,7 +3735,7 @@ void flb_test_db_gzip_rotation()
     TEST_CHECK(create_gzip_file(log_file, content2, strlen(content2)) == 0);
 
     /* Wait for rotation detection and new file processing */
-    wait_for_count_with_timeout(&t_ctx.count, 2, 2000);
+    wait_for_count_with_timeout(&t_ctx, 2, 2000);
 
     /* 5. Append to BOTH files within rotate_wait window */
     /* 5a. Append to new file */
@@ -3719,10 +3745,10 @@ void flb_test_db_gzip_rotation()
     TEST_CHECK(append_gzip_file(rot_file, content4, strlen(content4)) == 0);
 
     /* Wait for processing */
-    wait_for_count_with_timeout(&t_ctx.count, 4, 2000);
+    wait_for_count_with_timeout(&t_ctx, 4, 2000);
 
     /* 6. Verify total count */
-    TEST_CHECK(t_ctx.count == 4);
+    TEST_CHECK(test_ctx_get_count(&t_ctx) == 4);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -3744,6 +3770,9 @@ void flb_test_db_gzip_multi_resume()
     const char *content1 = "line1\n";
     const char *content2 = "line2\n";
     const char *content3 = "line3\n";
+    uint64_t off1 = 0;
+    uint64_t off2 = 0;
+    uint64_t off3 = 0;
 
     cb.cb = cb_check_gzip_resume;
     cb.data = &t_ctx;
@@ -3754,6 +3783,8 @@ void flb_test_db_gzip_multi_resume()
     /* 1. Create file with Line1 */
     TEST_CHECK(create_gzip_file(log_file, content1, strlen(content1)) == 0);
 
+    test_ctx_begin_run(&t_ctx, "line1");
+
     /* 2. Start (Run 1) */
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0.5", "Grace", "1", NULL);
@@ -3763,18 +3794,21 @@ void flb_test_db_gzip_multi_resume()
                   "read_from_head", "true",
                   "db", db_file,
                   "db.sync", "full",
+                  "offset_key", "off",
                   NULL);
 
     out_ffd = flb_output(ctx, "lib", &cb);
     flb_output_set(ctx, out_ffd, "match", "*", NULL);
 
     flb_start(ctx);
-    wait_for_count_with_timeout(&t_ctx.count, 1, 2000);
+    wait_for_count_with_timeout(&t_ctx, 1, 2000);
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    TEST_CHECK(t_ctx.count == 1); /* Processed Line1 */
-    t_ctx.count = 0;
+    TEST_CHECK(test_ctx_get_count(&t_ctx) == 1); /* Processed Line1 */
+    TEST_CHECK(test_ctx_get_found_expected(&t_ctx) == 1);
+    TEST_CHECK(test_ctx_get_offset(&t_ctx, &off1) == FLB_TRUE);
+    test_ctx_begin_run(&t_ctx, "line2");
 
     /* 3. Restart (Run 2) -> Should SKIP Line1 and process Line2 */
     TEST_CHECK(append_gzip_file(log_file, content2, strlen(content2)) == 0);
@@ -3787,18 +3821,23 @@ void flb_test_db_gzip_multi_resume()
                   "read_from_head", "true",
                   "db", db_file,
                   "db.sync", "full",
+                  "offset_key", "off",
                   NULL);
 
     out_ffd = flb_output(ctx, "lib", &cb);
     flb_output_set(ctx, out_ffd, "match", "*", NULL);
 
     flb_start(ctx);
-    wait_for_count_with_timeout(&t_ctx.count, 1, 2000);
+    wait_for_count_with_timeout(&t_ctx, 1, 2000);
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    TEST_CHECK(t_ctx.count == 1); /* Should process ONLY line2 */
-    t_ctx.count = 0;
+    TEST_CHECK(test_ctx_get_count(&t_ctx) == 1); /* Should process ONLY line2 */
+    TEST_CHECK(test_ctx_get_found_expected(&t_ctx) == 1);
+    TEST_CHECK(test_ctx_get_offset(&t_ctx, &off2) == FLB_TRUE);
+    /* offset_key must keep growing across gzip members */
+    TEST_CHECK(off2 > off1);
+    test_ctx_begin_run(&t_ctx, "line3");
 
     /* 4. Restart (Run 3) -> Should SKIP Line1+Line2 and process Line3 */
     TEST_CHECK(append_gzip_file(log_file, content3, strlen(content3)) == 0);
@@ -3811,17 +3850,21 @@ void flb_test_db_gzip_multi_resume()
                   "read_from_head", "true",
                   "db", db_file,
                   "db.sync", "full",
+                  "offset_key", "off",
                   NULL);
 
     out_ffd = flb_output(ctx, "lib", &cb);
     flb_output_set(ctx, out_ffd, "match", "*", NULL);
 
     flb_start(ctx);
-    wait_for_count_with_timeout(&t_ctx.count, 1, 2000);
+    wait_for_count_with_timeout(&t_ctx, 1, 2000);
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    TEST_CHECK(t_ctx.count == 1);
+    TEST_CHECK(test_ctx_get_count(&t_ctx) == 1);
+    TEST_CHECK(test_ctx_get_found_expected(&t_ctx) == 1);
+    TEST_CHECK(test_ctx_get_offset(&t_ctx, &off3) == FLB_TRUE);
+    TEST_CHECK(off3 > off2);
 
     unlink(log_file);
     unlink(db_file);
