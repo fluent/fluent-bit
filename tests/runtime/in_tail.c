@@ -2948,37 +2948,15 @@ void flb_test_db_offset_rewind_on_shutdown()
     }
 
     /*
-     * Wait for tail to READ the file into buffer (advancing the DB offset).
-     * Instead of sleeping, we poll the DB until the offset increases.
-     * The offset should advance by the length of msg_before_shutdown.
-     */
-    int64_t start_offset = -1;
-    int64_t current_offset = -1;
-    int attempts = 0;
-    
-    /* Get initial offset (should be after the first message) */
-    while (start_offset == -1 && attempts < 20) {
-        start_offset = get_db_offset(db, file[0]);
-        if (start_offset != -1) {
-            break;
-        }
-        flb_time_msleep(100);
-        attempts++;
-    }
-
-    if (!TEST_CHECK(start_offset >= 0)) {
-        TEST_MSG("failed to get initial db offset");
-        test_tail_ctx_destroy(ctx);
-        unlink(file[0]);
-        unlink(db);
-        exit(EXIT_FAILURE);
-    }
-
-    /*
      * Write message WITHOUT newline - this will remain in the tail buffer
      * as an incomplete line, which is the scenario we want to test.
      * The tail plugin processes complete lines (ending with \n), so
      * data without newline stays in buf_len until more data arrives.
+     *
+     * Note: flb_tail_file_db_offset() automatically persists the resumable
+     * offset (offset - buf_len) rather than the raw read position, so the
+     * DB offset will NOT advance past the initial message until the
+     * incomplete line is completed with a newline.
      */
     ret = write_raw(ctx, msg_before_shutdown, strlen(msg_before_shutdown), FLB_FALSE);
     if (!TEST_CHECK(ret > 0)) {
@@ -2988,25 +2966,8 @@ void flb_test_db_offset_rewind_on_shutdown()
         exit(EXIT_FAILURE);
     }
 
-    /* Poll loop */
-    attempts = 0;
-    while (attempts < 20) { /* Max 2 seconds wait */
-        current_offset = get_db_offset(db, file[0]);
-        if (current_offset > start_offset) {
-            break;
-        }
-        flb_time_msleep(100);
-        attempts++;
-    }
-
-    if (!TEST_CHECK(current_offset > start_offset)) {
-        TEST_MSG("DB offset did not advance. start=%ld current=%ld",
-                 start_offset, current_offset);
-        test_tail_ctx_destroy(ctx);
-        unlink(file[0]);
-        unlink(db);
-        exit(EXIT_FAILURE);
-    }
+    /* Wait for tail to read the incomplete line into its buffer */
+    flb_time_msleep(500);
 
     /* Close file descriptors before stopping */
     if (ctx->fds != NULL) {
