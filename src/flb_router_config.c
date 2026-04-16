@@ -1080,9 +1080,36 @@ static int parse_routes_block(struct cfl_variant *variant,
     return -1;
 }
 
+static struct flb_input_instance *find_input_instance_by_index(struct flb_config *config,
+                                                               size_t input_index)
+{
+    size_t index;
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+
+    if (!config) {
+        return NULL;
+    }
+
+    index = 0;
+
+    mk_list_foreach(head, &config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+
+        if (index == input_index) {
+            return ins;
+        }
+
+        index++;
+    }
+
+    return NULL;
+}
+
 static int parse_input_section(struct flb_cf_section *section,
                                struct cfl_list *input_routes,
-                               struct flb_config *config)
+                               struct flb_config *config,
+                               size_t input_index)
 {
     uint32_t mask;
     size_t before_count;
@@ -1136,7 +1163,7 @@ static int parse_input_section(struct flb_cf_section *section,
     cfl_list_init(&input->processors);
     cfl_list_init(&input->routes);
     input->has_alias = FLB_FALSE;
-    input->instance = NULL;
+    input->instance = find_input_instance_by_index(config, input_index);
 
     input->plugin_name = copy_from_cfl_sds(name_var->data.as_string);
     if (!input->plugin_name) {
@@ -1209,6 +1236,7 @@ int flb_router_config_parse(struct flb_cf *cf,
 {
     struct mk_list *head;
     struct flb_cf_section *section;
+    size_t input_index;
     int routes_found = FLB_FALSE;
     int ret;
 
@@ -1218,9 +1246,10 @@ int flb_router_config_parse(struct flb_cf *cf,
 
     cfl_list_init(input_routes);
 
+    input_index = 0;
     mk_list_foreach(head, &cf->inputs) {
         section = mk_list_entry(head, struct flb_cf_section, _head_section);
-        ret = parse_input_section(section, input_routes, config);
+        ret = parse_input_section(section, input_routes, config, input_index);
         if (ret == -1) {
             flb_router_routes_destroy(input_routes);
             cfl_list_init(input_routes);
@@ -1229,6 +1258,7 @@ int flb_router_config_parse(struct flb_cf *cf,
         else if (ret == 1) {
             routes_found = FLB_TRUE;
         }
+        input_index++;
     }
 
     if (cfl_list_is_empty(input_routes) == 1) {
