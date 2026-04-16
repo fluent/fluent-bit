@@ -113,8 +113,7 @@ jobs:
 
       - uses: actions/checkout@v6
         with:
-          repository: mabrarov/fluent-bit-ci
-          ref: feat/enable_tests
+          repository: calyptia/fluent-bit-ci
           path: ci
       - name: Setup Apache Arrow libraries for parquet (-DFLB_ARROW=On Only)
         if: matrix.flb_option == '-DFLB_ARROW=On'
@@ -170,8 +169,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/checkout@v6
         with:
-          repository: mabrarov/fluent-bit-ci
-          ref: feat/enable_tests
+          repository: calyptia/fluent-bit-ci
           path: ci
 
       - name: ${{ matrix.flb_option }}
