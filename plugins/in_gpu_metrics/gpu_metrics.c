@@ -31,6 +31,7 @@
 
 #include "gpu_metrics.h"
 #include "amd_gpu.h"
+#include "nvml_gpu.h"
 
 static int in_gpu_collect(struct flb_input_instance *ins,
                           struct flb_config *config, void *in_context)
@@ -41,7 +42,12 @@ static int in_gpu_collect(struct flb_input_instance *ins,
 
     cfl_list_foreach(head, &ctx->cards) {
         card = cfl_list_entry(head, struct gpu_card, _head);
-        amd_gpu_collect_metrics(ctx, card);
+        if (card->backend_type == GPU_BACKEND_AMD) {
+            amd_gpu_collect_metrics(ctx, card);
+        }
+        else if (card->backend_type == GPU_BACKEND_NVML) {
+            nvml_gpu_collect_metrics(ctx, card);
+        }
     }
 
     flb_input_metrics_append(ctx->ins, NULL, 0, ctx->cmt);
@@ -61,6 +67,8 @@ static int in_gpu_init(struct flb_input_instance *ins,
     }
     ctx->ins = ins;
     ctx->cards_detected = 0;
+    ctx->nvml_initialized = FLB_FALSE;
+    ctx->nvml_lib_handle = NULL;
     cfl_list_init(&ctx->cards);
 
     ret = flb_input_config_map_set(ins, (void *) ctx);
@@ -117,6 +125,11 @@ static int in_gpu_init(struct flb_input_instance *ins,
                                       (char *[]) {"card", "vendor"});
 
     amd_gpu_detect_cards(ctx);
+    if (nvml_gpu_initialize(ctx) == 0) {
+        if (nvml_gpu_detect_cards(ctx) != 0) {
+            flb_plg_debug(ctx->ins, "NVML card detection encountered errors");
+        }
+    }
     flb_input_set_context(ins, ctx);
 
     ret = flb_input_set_collector_time(ins, in_gpu_collect,
@@ -162,6 +175,7 @@ static int in_gpu_exit(void *data, struct flb_config *config)
         cmt_destroy(ctx->cmt);
     }
 
+    nvml_gpu_shutdown(ctx);
     flb_free(ctx);
     return 0;
 }
@@ -188,6 +202,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "enable_temperature", "true",
      0, FLB_TRUE, offsetof(struct in_gpu_metrics, enable_temperature),
      "Enable collection of GPU temperature metrics (gpu_temperature_celsius)."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "enable_nvml", "true",
+     0, FLB_TRUE, offsetof(struct in_gpu_metrics, enable_nvml),
+     "Enable NVIDIA NVML collection when libnvidia-ml is available."
     },
     {
      FLB_CONFIG_MAP_STR, "path_sysfs", "/sys",

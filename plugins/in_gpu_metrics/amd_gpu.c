@@ -275,6 +275,7 @@ int amd_gpu_detect_cards(struct in_gpu_metrics *ctx)
             return -1;
         }
         card->id = id;
+        card->backend_type = GPU_BACKEND_AMD;
         card->hwmon_path = NULL;
         card->hwmon_path = find_hwmon_path(id);
         if (!card->hwmon_path) {
@@ -557,4 +558,3 @@ int amd_gpu_collect_metrics(struct in_gpu_metrics *ctx, struct gpu_card *card)
     flb_sds_destroy(card_id);
     return 0;
 }
-
