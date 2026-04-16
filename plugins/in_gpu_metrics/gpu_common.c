@@ -21,6 +21,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include <errno.h>
+#include <limits.h>
 
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_mem.h>
@@ -102,7 +104,17 @@ static int match_card_pattern(const char *pattern, int card_id)
             }
         }
         else {
-            if (card_id == atoi(token)) {
+            char *endptr;
+            long parsed_id;
+
+            errno = 0;
+            parsed_id = strtol(token, &endptr, 10);
+            if (errno == 0 &&
+                endptr != token &&
+                *endptr == '\0' &&
+                parsed_id >= INT_MIN &&
+                parsed_id <= INT_MAX &&
+                card_id == (int) parsed_id) {
                 flb_free(dup);
                 return FLB_TRUE;
             }
