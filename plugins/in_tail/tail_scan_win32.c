@@ -67,6 +67,7 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
     struct stat st;
     char path[MAX_PATH];
     ssize_t ignored_file_size;
+    uint64_t aged_out_inode;
 
     ignored_file_size = -1;
 
@@ -100,6 +101,20 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
     if (tail_is_excluded(path, ctx) == FLB_TRUE) {
         flb_plg_trace(ctx->ins, "skip '%s' (excluded)", path);
         return -1;
+    }
+
+    if (ctx->ignore_active_older_files &&
+        flb_tail_scan_fetch_aged_out_inode(ctx,
+                                           path,
+                                           strlen(path),
+                                           &aged_out_inode) == 0) {
+        if (aged_out_inode == (uint64_t) st.st_ino) {
+            flb_plg_debug(ctx->ins, "excluded=%s (ignore_active_older_files)",
+                          path);
+            return -1;
+        }
+
+        flb_tail_scan_unregister_aged_out_inode(ctx, path, strlen(path));
     }
 
     if (ctx->ignore_older > 0) {

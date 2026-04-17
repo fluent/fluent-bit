@@ -134,5 +134,26 @@ int flb_tail_pack_line_map(struct flb_time *time, char **data,
                            size_t processed_bytes);
 int flb_tail_file_pack_line(struct flb_time *time, char *data, size_t data_size,
                             struct flb_tail_file *file, size_t processed_bytes);
+static inline off_t flb_tail_file_db_offset(struct flb_tail_file *file)
+{
+    /*
+     * Persist the last resumable offset, not necessarily the most recent raw
+     * read position. If an incomplete trailing line remains buffered, restart
+     * must seek back to the start of that fragment so the completed line can
+     * be reconstructed later.
+     */
+    if (file->decompression_context != NULL) {
+        return file->offset;
+    }
+
+    if (file->buf_len > 0 && file->offset >= (off_t) file->buf_len) {
+        return file->offset - file->buf_len;
+    }
+
+    return file->offset;
+}
+
+int flb_tail_file_update_offset_marker(struct flb_tail_file *file);
+int flb_tail_file_offset_marker_matches(struct flb_tail_file *file);
 
 #endif

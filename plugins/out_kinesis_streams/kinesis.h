@@ -98,6 +98,7 @@ struct flb_kinesis {
     const char *external_id;
     int retry_requests;
     int simple_aggregation;
+    int compression;
     char *sts_endpoint;
     int custom_endpoint;
     uint16_t port;

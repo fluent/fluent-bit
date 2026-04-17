@@ -207,14 +207,14 @@ static void cb_td_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* release */
-    flb_upstream_conn_release(u_conn);
     flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
 
     FLB_OUTPUT_RETURN(FLB_OK);
 
  retry:
-    flb_upstream_conn_release(u_conn);
     flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
 
     FLB_OUTPUT_RETURN(FLB_RETRY);
 }

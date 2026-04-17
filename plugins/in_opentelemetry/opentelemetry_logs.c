@@ -153,6 +153,11 @@ static int otlp_pack_any_value(msgpack_packer *mp_pck,
             result = otel_pack_string(mp_pck, body->string_value);
             break;
 
+        case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX:
+            /* Profiling-only string dictionary reference: ignore in logs. */
+            result = msgpack_pack_nil(mp_pck);
+            break;
+
         case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BOOL_VALUE:
             result =  otel_pack_bool(mp_pck, body->bool_value);
             break;
@@ -261,6 +266,13 @@ static int otel_pack_v1_metadata(struct flb_opentelemetry *ctx,
         }
     }
 
+    if (log_record->dropped_attributes_count > 0) {
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(mp_pck, 24);
+        msgpack_pack_str_body(mp_pck, "dropped_attributes_count", 24);
+        msgpack_pack_uint64(mp_pck, log_record->dropped_attributes_count);
+    }
+
     if (log_record->trace_id.len > 0) {
         flb_mp_map_header_append(&mh);
         msgpack_pack_str(mp_pck, 8);
@@ -285,6 +297,14 @@ static int otel_pack_v1_metadata(struct flb_opentelemetry *ctx,
     msgpack_pack_str(mp_pck, 11);
     msgpack_pack_str_body(mp_pck, "trace_flags", 11);
     msgpack_pack_uint8(mp_pck, (uint8_t) log_record->flags & 0xff);
+
+    if (log_record->event_name != NULL && strlen(log_record->event_name) > 0) {
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(mp_pck, 10);
+        msgpack_pack_str_body(mp_pck, "event_name", 10);
+        msgpack_pack_str(mp_pck, strlen(log_record->event_name));
+        msgpack_pack_str_body(mp_pck, log_record->event_name, strlen(log_record->event_name));
+    }
 
     flb_mp_map_header_end(&mh);
 
@@ -641,16 +661,14 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
 
     /* Detect the type of payload */
     if (content_type) {
-        if (strcasecmp(content_type, "application/json") == 0) {
-            if (buf[0] != '{') {
+        if (opentelemetry_is_json_content_type(content_type) == FLB_TRUE) {
+            if (opentelemetry_payload_starts_with_json_object(buf, size) != FLB_TRUE) {
                 flb_plg_error(ctx->ins, "Invalid JSON payload");
                 return -1;
             }
             is_proto = FLB_FALSE;
         }
-        else if (strcasecmp(content_type, "application/protobuf") == 0 ||
-                 strcasecmp(content_type, "application/grpc") == 0 ||
-                 strcasecmp(content_type, "application/x-protobuf") == 0) {
+        else if (opentelemetry_is_protobuf_content_type(content_type) == FLB_TRUE) {
             is_proto = FLB_TRUE;
         }
         else {
@@ -687,11 +705,41 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
     }
 
     if (ret >= 0) {
-        ret = flb_input_log_append(ctx->ins,
-                                   tag,
-                                   flb_sds_len(tag),
-                                   encoder->output_buffer,
-                                   encoder->output_length);
+        if (opentelemetry_uses_worker_ingress_queue(ctx)) {
+            size_t allocation_size;
+            void *resized_buffer;
+
+            allocation_size = encoder->buffer.alloc;
+
+            if (allocation_size > encoder->output_length) {
+                resized_buffer = flb_realloc(encoder->output_buffer,
+                                             encoder->output_length);
+                if (resized_buffer != NULL) {
+                    encoder->buffer.data = resized_buffer;
+                    encoder->output_buffer = resized_buffer;
+                    encoder->buffer.alloc = encoder->output_length;
+                    allocation_size = encoder->output_length;
+                }
+            }
+
+            ret = opentelemetry_ingest_logs_take(ctx,
+                                                 tag,
+                                                 flb_sds_len(tag),
+                                                 encoder->output_buffer,
+                                                 encoder->output_length,
+                                                 allocation_size);
+            if (ret == 0 || ret == FLB_INPUT_INGRESS_BUSY) {
+                flb_log_event_encoder_claim_internal_buffer_ownership(encoder);
+            }
+        }
+        else {
+            ret = opentelemetry_ingest_logs(ctx,
+                                            tag,
+                                            flb_sds_len(tag),
+                                            encoder->output_buffer,
+                                            encoder->output_length);
+        }
+
         if (ret != 0) {
             flb_plg_error(ctx->ins, "failed to append logs to the input buffer");
         }

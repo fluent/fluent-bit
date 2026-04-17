@@ -435,10 +435,6 @@ static int get_ecs_cluster_metadata(struct flb_filter_ecs *ctx)
         return -1;
     }
 
-    if (free_conn == FLB_TRUE) {
-        flb_upstream_conn_release(u_conn);
-    }
-
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
                         &buffer, &size, &root_type, NULL);
 
@@ -446,6 +442,9 @@ static int get_ecs_cluster_metadata(struct flb_filter_ecs *ctx)
         flb_plg_warn(ctx->ins, "Could not parse response from %s; response=\n%s", 
                      FLB_ECS_FILTER_CLUSTER_PATH, c->resp.payload);
         flb_http_client_destroy(c);
+        if (free_conn == FLB_TRUE) {
+            flb_upstream_conn_release(u_conn);
+        }
         return -1;
     }
 
@@ -458,10 +457,16 @@ static int get_ecs_cluster_metadata(struct flb_filter_ecs *ctx)
         flb_free(buffer);
         msgpack_unpacked_destroy(&result);
         flb_http_client_destroy(c);
+        if (free_conn == FLB_TRUE) {
+            flb_upstream_conn_release(u_conn);
+        }
         return -1;
     }
 
     flb_http_client_destroy(c);
+    if (free_conn == FLB_TRUE) {
+        flb_upstream_conn_release(u_conn);
+    }
 
     root = result.data;
     if (root.type != MSGPACK_OBJECT_MAP) {
@@ -1036,10 +1041,6 @@ static int get_task_metadata(struct flb_filter_ecs *ctx, char* short_id)
         return -1;
     }
 
-    if (free_conn == FLB_TRUE) {
-        flb_upstream_conn_release(u_conn);
-    }
-
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
                         &buffer, &size, &root_type, NULL);
 
@@ -1048,6 +1049,9 @@ static int get_task_metadata(struct flb_filter_ecs *ctx, char* short_id)
                      http_path, c->resp.payload);
         flb_sds_destroy(http_path);
         flb_http_client_destroy(c);
+        if (free_conn == FLB_TRUE) {
+            flb_upstream_conn_release(u_conn);
+        }
         return -1;
     }
 
@@ -1061,10 +1065,16 @@ static int get_task_metadata(struct flb_filter_ecs *ctx, char* short_id)
         msgpack_unpacked_destroy(&result);
         flb_sds_destroy(http_path);
         flb_http_client_destroy(c);
+        if (free_conn == FLB_TRUE) {
+            flb_upstream_conn_release(u_conn);
+        }
         return -1;
     }
 
     flb_http_client_destroy(c);
+    if (free_conn == FLB_TRUE) {
+        flb_upstream_conn_release(u_conn);
+    }
 
     root = result.data;
     if (root.type != MSGPACK_OBJECT_MAP) {

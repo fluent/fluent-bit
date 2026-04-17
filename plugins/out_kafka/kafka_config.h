@@ -36,6 +36,8 @@
 #define FLB_KAFKA_FMT_AVRO            3
 #endif
 #define FLB_KAFKA_FMT_RAW             4
+#define FLB_KAFKA_FMT_OTLP_JSON       5
+#define FLB_KAFKA_FMT_OTLP_PROTO      6
 #define FLB_KAFKA_TS_KEY              "@timestamp"
 #define FLB_KAFKA_QUEUE_FULL_RETRIES  "10"
 

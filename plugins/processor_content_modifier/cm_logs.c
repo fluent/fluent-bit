@@ -292,6 +292,51 @@ static struct cfl_variant *otel_get_scope(struct flb_mp_chunk_record *record)
     return cm_otel_get_scope_metadata(CM_TELEMETRY_LOGS, kvlist);
 }
 
+static struct cfl_variant *otel_get_log_attributes(struct flb_mp_chunk_record *record)
+{
+    int ret;
+    struct cfl_object *obj;
+    struct cfl_variant *var;
+    struct cfl_kvpair *kvpair;
+    struct cfl_kvlist *kvlist;
+    struct cfl_kvlist *kvlist_tmp;
+
+    obj = record->cobj_metadata;
+    if (!obj || !obj->variant || obj->variant->type != CFL_VARIANT_KVLIST) {
+        return NULL;
+    }
+
+    kvlist = obj->variant->data.as_kvlist;
+
+    var = cfl_kvlist_fetch(kvlist, "otlp");
+    if (var) {
+        if (var->type != CFL_VARIANT_KVLIST) {
+            return NULL;
+        }
+    }
+    else {
+        kvlist_tmp = cfl_kvlist_create();
+        if (!kvlist_tmp) {
+            return NULL;
+        }
+
+        ret = cfl_kvlist_insert_kvlist_s(kvlist, "otlp", 4, kvlist_tmp);
+        if (ret != 0) {
+            cfl_kvlist_destroy(kvlist_tmp);
+            return NULL;
+        }
+
+        kvpair = cfl_list_entry_last(&kvlist->list, struct cfl_kvpair, _head);
+        if (!kvpair) {
+            return NULL;
+        }
+
+        var = kvpair->val;
+    }
+
+    return cm_otel_get_or_create_attributes(var->data.as_kvlist);
+}
+
 int cm_logs_process(struct flb_processor_instance *ins,
                     struct content_modifier_ctx *ctx,
                     struct flb_mp_chunk_cobj *chunk_cobj,
@@ -356,6 +401,18 @@ int cm_logs_process(struct flb_processor_instance *ins,
                  record_type == FLB_LOG_EVENT_GROUP_START) {
 
             var = otel_get_scope(record);
+            obj_static.type = CFL_VARIANT_KVLIST;
+            obj_static.variant = var;
+            obj = &obj_static;
+        }
+        else if (ctx->context_type == CM_CONTEXT_OTEL_LOG_ATTR &&
+                 record_type == FLB_LOG_EVENT_NORMAL) {
+
+            var = otel_get_log_attributes(record);
+            if (!var) {
+                continue;
+            }
+
             obj_static.type = CFL_VARIANT_KVLIST;
             obj_static.variant = var;
             obj = &obj_static;

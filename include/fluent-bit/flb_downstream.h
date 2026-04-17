@@ -85,8 +85,10 @@ void flb_downstream_resume(struct flb_downstream *stream);
 int flb_downstream_conn_release(struct flb_connection *connection);
 
 int flb_downstream_conn_pending_destroy_list(struct mk_list *list);
+int flb_downstream_conn_pending_destroy(struct flb_downstream *stream);
 
 int flb_downstream_conn_timeouts(struct mk_list *list);
+int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream);
 
 int flb_downstream_is_async(struct flb_downstream *downstream);
 

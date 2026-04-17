@@ -358,6 +358,9 @@ static flb_sds_t file_to_buffer(char *path, char *context, char *ext)
 
 static void aws_test_destroy(struct aws_test *awt)
 {
+    struct flb_connection *u_conn;
+    struct flb_upstream *upstream;
+
     if (awt->name) {
         flb_sds_destroy(awt->name);
     }
@@ -378,9 +381,11 @@ static void aws_test_destroy(struct aws_test *awt)
     }
 
     if (awt->c) {
-        flb_upstream_destroy(awt->c->u_conn->upstream);
-        flb_free(awt->c->u_conn);
+        u_conn = awt->c->u_conn;
+        upstream = u_conn->upstream;
         flb_http_client_destroy(awt->c);
+        flb_free(u_conn);
+        flb_upstream_destroy(upstream);
     }
 
     http_request_destroy(awt->r);

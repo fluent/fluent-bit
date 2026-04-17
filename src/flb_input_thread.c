@@ -59,9 +59,9 @@ static inline int handle_input_event(flb_pipefd_t fd, struct flb_input_instance 
     uint64_t val;
     struct flb_config *config = ins->config;
 
-    bytes = read(fd, &val, sizeof(val));
+    bytes = flb_pipe_r(fd, &val, sizeof(val));
     if (bytes == -1) {
-        flb_errno();
+        flb_pipe_error();
         return -1;
     }
 

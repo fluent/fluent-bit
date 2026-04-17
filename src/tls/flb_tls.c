@@ -36,6 +36,11 @@ struct flb_config_map tls_configmap[] = {
      "Force certificate validation",
     },
     {
+     FLB_CONFIG_MAP_BOOL, "tls.verify_client_cert", "off",
+     0, FLB_FALSE, 0,
+     "Enable or disable client certificate verification",
+    },
+    {
      FLB_CONFIG_MAP_INT, "tls.debug", "1",
      0, FLB_FALSE, 0,
      "Set TLS debug verbosity level. It accept the following "
@@ -280,6 +285,21 @@ int flb_tls_set_alpn(struct flb_tls *tls, const char *alpn)
 {
     if (tls->ctx) {
         return tls->api->context_alpn_set(tls->ctx, alpn);
+    }
+
+    return 0;
+}
+
+int flb_tls_set_verify_client(struct flb_tls *tls, int verify_client)
+{
+    if (!tls) {
+        return -1;
+    }
+
+    tls->verify_client = verify_client;
+
+    if (tls->ctx && tls->api->context_set_verify_client) {
+        return tls->api->context_set_verify_client(tls->ctx, verify_client);
     }
 
     return 0;

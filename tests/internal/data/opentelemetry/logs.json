@@ -251,6 +251,27 @@
     }
   },
 
+  "valid_log_with_event_name_and_dropped_attributes_count": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "eventName": "com.example.user.login",
+            "droppedAttributesCount": 3,
+            "body": {"stringValue": "test log with event metadata"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{"dropped_attributes_count":3,"event_name":"com.example.user.login"}},
+      "log_body": {"log": "test log with event metadata"}
+    }
+  },
+
   "valid_log_with_trace_span": {
     "input": {
       "resourceLogs": [{
@@ -269,6 +290,26 @@
       "group_body": {"resource":{}},
       "log_metadata": {"otlp":{"trace_id":"5B8EFFF798038103D269B633813FC60C","span_id":"EEE19B7EC3C1B174"}},
       "log_body": {"log": "test log with trace and span"}
+    }
+  },
+
+  "valid_log_with_trace_flags": {
+    "input": {
+      "resourceLogs": [{
+        "scopeLogs": [{
+          "logRecords": [{
+            "timeUnixNano": "1640995200000000000",
+            "traceFlags": 129,
+            "body": {"stringValue": "test log with trace flags"}
+          }]
+        }]
+      }]
+    },
+    "expected": {
+      "group_metadata": {"schema":"otlp","resource_id":0,"scope_id":0},
+      "group_body": {"resource":{}},
+      "log_metadata": {"otlp":{"trace_flags":129}},
+      "log_body": {"log": "test log with trace flags"}
     }
   },
 

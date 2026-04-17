@@ -1772,7 +1772,8 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                                     int total_records,
                                     const char *tag, int tag_len,
                                     const void *data, size_t bytes,
-                                    struct flb_config *config)
+                                    struct flb_config *config,
+                                    int *formatted_records)
 {
     int len;
     int ret;
@@ -1851,6 +1852,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     /* Count number of records */
     array_size = total_records;
 
+    if (formatted_records != NULL) {
+        *formatted_records = 0;
+    }
+
     /* Parameters for labels */
     msgpack_object *payload_labels_ptr;
     int labels_size = 0;
@@ -1891,6 +1896,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     /* Sounds like this should compare to -1 instead of zero */
     if (array_size == 0) {
         return NULL;
+    }
+
+    if (formatted_records != NULL) {
+        *formatted_records = array_size;
     }
 
     /* Create temporal msgpack buffer */
@@ -2677,10 +2686,10 @@ static int stackdriver_format_test(struct flb_config *config,
     struct flb_stackdriver *ctx = plugin_context;
 
     /* Count number of records */
-    total_records = flb_mp_count(data, bytes);
+    total_records = flb_mp_count_log_records(data, bytes);
 
     payload = stackdriver_format(ctx, total_records,
-                                (char *) tag, tag_len, data, bytes, config);
+                                (char *) tag, tag_len, data, bytes, config, NULL);
     if (payload == NULL) {
         return -1;
     }
@@ -2729,7 +2738,7 @@ static void update_http_metrics(struct flb_stackdriver* ctx,
 }
 
 static void update_retry_metric(struct flb_stackdriver *ctx,
-                                 struct flb_event_chunk *event_chunk,
+                                 int retried_records,
                                  uint64_t ts,
                                  int http_status)
 {
@@ -2739,7 +2748,7 @@ static void update_retry_metric(struct flb_stackdriver *ctx,
     /* convert status to string format */
     snprintf(tmp, sizeof(tmp) - 1, "%i", http_status);
     cmt_counter_add(ctx->cmt_retried_records_total,
-                    ts, event_chunk->total_events, 2, (char *[]) {tmp, name});
+                    ts, retried_records, 2, (char *[]) {tmp, name});
 
 }
 #endif
@@ -2747,7 +2756,6 @@ static void update_retry_metric(struct flb_stackdriver *ctx,
 static int parse_partial_success_response(struct flb_http_client* c,
                                           struct flb_stackdriver* ctx,
                                           uint64_t ts,
-                                          int total_events,
                                           int* grpc_status_codes)
 {
     int ret;
@@ -2931,6 +2939,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     int code;
     int ret_partial_success;
     int ret_code = FLB_RETRY;
+    int formatted_records = 0;
     int grpc_status_counts[GRPC_STATUS_CODES_SIZE] = {0};
     size_t b_sent;
     flb_sds_t token;
@@ -2954,7 +2963,8 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
                                      event_chunk->total_events,
                                      event_chunk->tag, flb_sds_len(event_chunk->tag),
                                      event_chunk->data, event_chunk->size,
-                                     config);
+                                     config,
+                                     &formatted_records);
     if (!payload_buf) {
 #ifdef FLB_HAVE_METRICS
         cmt_counter_inc(ctx->cmt_failed_requests,
@@ -2982,7 +2992,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
 
-        update_retry_metric(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
+        update_retry_metric(ctx, formatted_records, ts, STACKDRIVER_NET_ERROR);
 #endif
         flb_sds_destroy(payload_buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -3065,7 +3075,6 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
                 parse_partial_success_response(c,
                                                ctx,
                                                ts,
-                                               (int) event_chunk->total_events,
                                                grpc_status_counts);
 
             int failed_records = 0;
@@ -3078,16 +3087,16 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
               cmt_counter_add(ctx->ins->cmt_dropped_records, ts,
                               failed_records, 1, (char* []) {name});
               int successful_records =
-                  (int) event_chunk->total_events - failed_records;
+                  formatted_records - failed_records;
               if (successful_records != 0) {
                 add_record_metrics(ctx, ts, successful_records, 200, 0);
               }
             }
             else {
-              add_record_metrics(ctx, ts, (int) event_chunk->total_events,
+              add_record_metrics(ctx, ts, formatted_records,
                                  c->resp.status, -1);
               cmt_counter_add(ctx->ins->cmt_dropped_records, ts,
-                              (int) event_chunk->total_events, 1,
+                              formatted_records, 1,
                               (char* []) {name});
             }
 #endif
@@ -3118,7 +3127,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         if (write_entries_latency > 0.0) {
           cmt_histogram_observe(ctx->cmt_write_entries_latency, ts, write_entries_latency, 1, (char *[]) {name});
         }
-        add_record_metrics(ctx, ts, (int) event_chunk->total_events, 200, 0);
+        add_record_metrics(ctx, ts, formatted_records, 200, 0);
 
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS, 1, ctx->ins->metrics);
@@ -3131,7 +3140,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     }
 
     if (ret_code == FLB_RETRY) {
-        update_retry_metric(ctx, event_chunk, ts, c->resp.status);
+        update_retry_metric(ctx, formatted_records, ts, c->resp.status);
     }
 
     /* Update metrics counter by using labels/http status code */

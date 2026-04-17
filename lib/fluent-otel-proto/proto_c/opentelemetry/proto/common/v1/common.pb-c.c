@@ -277,7 +277,7 @@ void   opentelemetry__proto__common__v1__entity_ref__free_unpacked
   assert(message->base.descriptor == &opentelemetry__proto__common__v1__entity_ref__descriptor);
   protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
 }
-static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_value__field_descriptors[7] =
+static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_value__field_descriptors[8] =
 {
   {
     "string_value",
@@ -363,6 +363,18 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__any_valu
     PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "string_value_strindex",
+    8,
+    PROTOBUF_C_LABEL_OPTIONAL,
+    PROTOBUF_C_TYPE_INT32,
+    offsetof(Opentelemetry__Proto__Common__V1__AnyValue, value_case),
+    offsetof(Opentelemetry__Proto__Common__V1__AnyValue, string_value_strindex),
+    NULL,
+    NULL,
+    PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned opentelemetry__proto__common__v1__any_value__field_indices_by_name[] = {
   4,   /* field[4] = array_value */
@@ -372,11 +384,12 @@ static const unsigned opentelemetry__proto__common__v1__any_value__field_indices
   2,   /* field[2] = int_value */
   5,   /* field[5] = kvlist_value */
   0,   /* field[0] = string_value */
+  7,   /* field[7] = string_value_strindex */
 };
 static const ProtobufCIntRange opentelemetry__proto__common__v1__any_value__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 7 }
+  { 0, 8 }
 };
 const ProtobufCMessageDescriptor opentelemetry__proto__common__v1__any_value__descriptor =
 {
@@ -386,7 +399,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__common__v1__any_value__de
   "Opentelemetry__Proto__Common__V1__AnyValue",
   "opentelemetry.proto.common.v1",
   sizeof(Opentelemetry__Proto__Common__V1__AnyValue),
-  7,
+  8,
   opentelemetry__proto__common__v1__any_value__field_descriptors,
   opentelemetry__proto__common__v1__any_value__field_indices_by_name,
   1,  opentelemetry__proto__common__v1__any_value__number_ranges,
@@ -469,7 +482,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__common__v1__key_value_lis
   (ProtobufCMessageInit) opentelemetry__proto__common__v1__key_value_list__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__key_value__field_descriptors[2] =
+static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__key_value__field_descriptors[3] =
 {
   {
     "key",
@@ -495,15 +508,28 @@ static const ProtobufCFieldDescriptor opentelemetry__proto__common__v1__key_valu
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "key_strindex",
+    3,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_INT32,
+    0,   /* quantifier_offset */
+    offsetof(Opentelemetry__Proto__Common__V1__KeyValue, key_strindex),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned opentelemetry__proto__common__v1__key_value__field_indices_by_name[] = {
   0,   /* field[0] = key */
+  2,   /* field[2] = key_strindex */
   1,   /* field[1] = value */
 };
 static const ProtobufCIntRange opentelemetry__proto__common__v1__key_value__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 2 }
+  { 0, 3 }
 };
 const ProtobufCMessageDescriptor opentelemetry__proto__common__v1__key_value__descriptor =
 {
@@ -513,7 +539,7 @@ const ProtobufCMessageDescriptor opentelemetry__proto__common__v1__key_value__de
   "Opentelemetry__Proto__Common__V1__KeyValue",
   "opentelemetry.proto.common.v1",
   sizeof(Opentelemetry__Proto__Common__V1__KeyValue),
-  2,
+  3,
   opentelemetry__proto__common__v1__key_value__field_descriptors,
   opentelemetry__proto__common__v1__key_value__field_indices_by_name,
   1,  opentelemetry__proto__common__v1__key_value__number_ranges,

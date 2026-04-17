@@ -188,13 +188,14 @@ static flb_sds_t azure_kusto_create_blob(struct flb_azure_kusto *ctx, flb_sds_t 
             goto cleanup;
         }
 
+
         if (uri) {
-            flb_plg_debug(ctx->ins, "azure_kusto: before calling azure storage api :: value of set io_timeout is %d", u_conn->net->io_timeout);
             flb_plg_debug(ctx->ins, "uploading payload to blob uri: %s", uri);
             c = flb_http_client(u_conn, FLB_HTTP_PUT, uri, payload, payload_size, NULL, 0,
                                 NULL, 0);
 
             if (c) {
+                flb_http_buffer_size(c, 0);
                 flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
                 flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
                 flb_http_add_header(c, "x-ms-blob-type", 14, "BlockBlob", 9);
@@ -451,6 +452,7 @@ static int azure_kusto_enqueue_ingestion(struct flb_azure_kusto *ctx, flb_sds_t 
                                     flb_sds_len(payload), NULL, 0, NULL, 0);
 
                 if (c) {
+                    flb_http_buffer_size(c, 0);
                     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
                     flb_http_add_header(c, "Content-Type", 12, "application/atom+xml",
                                         20);

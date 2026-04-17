@@ -24,7 +24,7 @@ jobs:
           uses: actions/checkout@v6
 
         - name: Set up Docker Buildx
-          uses: docker/setup-buildx-action@v3
+          uses: docker/setup-buildx-action@v4
 
         - name: Extract metadata from Github
           id: meta
@@ -36,7 +36,7 @@ jobs:
 
         - name: Build the multi-arch images
           id: build
-          uses: docker/build-push-action@v6
+          uses: docker/build-push-action@v7
           with:
             file: ./dockerfiles/Dockerfile
             context: .
@@ -55,7 +55,7 @@ jobs:
           shell: bash
 
         - name: Build the debug multi-arch images
-          uses: docker/build-push-action@v6
+          uses: docker/build-push-action@v7
           with:
             file: ./dockerfiles/Dockerfile
             context: .
@@ -107,6 +107,26 @@ jobs:
               type=sha
             flavor: |
               suffix=-windows-${{ matrix.windows-base-version }}
+
+        # https://github.com/actions/runner-images/issues/12199
+        # https://github.com/moby/moby/issues/48093
+        # https://support.microsoft.com/en-us/topic/gettemppath-changes-in-windows-february-cumulative-update-preview-4cc631fb-9d97-4118-ab6d-f643cd0a7259#ID0EDF
+        - name: Change system temp directory to the drive having sufficient disk space
+          id: relocate-system-temp-dir
+          run: |
+            $ErrorActionPreference = "Stop"
+            if (Test-Path -Path "D:\") {
+              $newSystemTempDir = "D:\SystemTemp"
+              New-Item -ItemType Directory -Path "${newSystemTempDir}" -Force
+              $acl = New-Object System.Security.AccessControl.DirectorySecurity
+              $acl.SetSecurityDescriptorSddlForm("O:SYG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+              Set-Acl "${newSystemTempDir}" -AclObject ${acl}
+              [Environment]::SetEnvironmentVariable("SYSTEMTEMP", "${newSystemTempDir}", [EnvironmentVariableTarget]::Machine)
+              Restart-Service docker
+            } else {
+              Write-Warning "Drive D doesn't exist, so there is no disk to relocate system temp directory"
+            }
+          shell: pwsh
 
         - name: Build the windows images
           id: build

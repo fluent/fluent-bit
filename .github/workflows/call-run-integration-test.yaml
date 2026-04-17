@@ -51,7 +51,7 @@ jobs:
           ref: ${{ inputs.ref }}
           repository: fluent/fluent-bit-ci
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           cli_config_credentials_hostname: 'app.terraform.io'
           cli_config_credentials_token: ${{ secrets.terraform_api_token }}

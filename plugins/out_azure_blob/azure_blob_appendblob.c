@@ -24,24 +24,38 @@
 #include "azure_blob_conf.h"
 #include "azure_blob_uri.h"
 
-flb_sds_t azb_append_blob_uri(struct flb_azure_blob *ctx, char *tag)
+flb_sds_t azb_append_blob_uri(struct flb_azure_blob *ctx,
+                              const char *path_prefix,
+                              const char *tag)
 {
     flb_sds_t uri;
+    const char *effective_path;
 
     uri = azb_uri_container(ctx);
     if (!uri) {
         return NULL;
     }
 
-    if (ctx->path) {
-        flb_sds_printf(&uri, "/%s/%s?comp=appendblock", ctx->path, tag);
+    effective_path = azb_effective_path(ctx, path_prefix);
+
+    if (effective_path && effective_path[0] != '\0') {
+        if (flb_sds_printf(&uri, "/%s/%s?comp=appendblock", effective_path, tag) == NULL) {
+            flb_sds_destroy(uri);
+            return NULL;
+        }
     }
     else {
-        flb_sds_printf(&uri, "/%s?comp=appendblock", tag);
+        if (flb_sds_printf(&uri, "/%s?comp=appendblock", tag) == NULL) {
+            flb_sds_destroy(uri);
+            return NULL;
+        }
     }
 
     if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
-        flb_sds_printf(&uri, "&%s", ctx->sas_token);
+        if (flb_sds_printf(&uri, "&%s", ctx->sas_token) == NULL) {
+            flb_sds_destroy(uri);
+            return NULL;
+        }
     }
 
     return uri;

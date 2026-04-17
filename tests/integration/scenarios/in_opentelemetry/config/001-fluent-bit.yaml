@@ -1,0 +1,47 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: opentelemetry
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      processors:
+        logs:
+          - name: content_modifier
+            context: otel_resource_attributes
+            action: upsert
+            key: "aaa"
+            value: "bbb"
+
+          - name: content_modifier
+            context: otel_resource_attributes
+            action: delete
+            key: "service.name"
+
+          - name: content_modifier
+            context: otel_scope_attributes
+            action: upsert
+            key: "mynewscope"
+            value: "123"
+
+          - name: content_modifier
+            context: otel_scope_name
+            action: upsert
+            value: "new scope name"
+
+          - name: content_modifier
+            context: otel_scope_version
+            action: upsert
+            value: "3.1.0"
+
+  outputs:
+    - name: stdout
+      match: '*'
+
+    - name: opentelemetry
+      match: '*'
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}

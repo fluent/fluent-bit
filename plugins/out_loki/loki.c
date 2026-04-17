@@ -2001,7 +2001,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                             ctx->tcp_host, ctx->tcp_port, c->resp.status);
             }
             /*
-             * Server-side error occured, do not reuse this connection for retry.
+             * Server-side error occurred, do not reuse this connection for retry.
              * This could be an issue of Loki gateway.
              * Rather initiate new connection.
              */
@@ -2244,7 +2244,7 @@ static int cb_loki_format_test(struct flb_config *config,
     dynamic_tenant_id = NULL;
 
     /* Count number of records */
-    total_records = flb_mp_count(data, bytes);
+    total_records = flb_mp_count_log_records(data, bytes);
 
     payload = loki_compose_payload(ctx, total_records,
                                    (char *) tag, tag_len, data, bytes,

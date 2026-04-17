@@ -180,7 +180,7 @@ static flb_sds_t newrelic_compose_payload(struct flb_newrelic *ctx,
     }
 
     /* Count number of records */
-    total_records = flb_mp_count(data, bytes);
+    total_records = flb_mp_count_log_records(data, bytes);
 
     /* Initialize msgpack buffers */
     msgpack_sbuffer_init(&mp_sbuf);

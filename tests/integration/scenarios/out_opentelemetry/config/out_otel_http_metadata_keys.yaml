@@ -1,0 +1,34 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: opentelemetry
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      http2: off
+      tls: off
+      processors:
+        logs:
+          - name: content_modifier
+            context: metadata
+            action: rename
+            key: otlp
+            value: custom_otel
+
+  outputs:
+    - name: opentelemetry
+      match: "*"
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      logs_uri: /metadata/logs
+      logs_observed_timestamp_metadata_key: "$custom_otel['observed_timestamp']"
+      logs_timestamp_metadata_key: "$custom_otel['timestamp']"
+      logs_severity_text_metadata_key: "$custom_otel['severity_text']"
+      logs_severity_number_metadata_key: "$custom_otel['severity_number']"
+      logs_trace_flags_metadata_key: "$custom_otel['trace_flags']"
+      logs_span_id_metadata_key: "$custom_otel['span_id']"
+      logs_trace_id_metadata_key: "$custom_otel['trace_id']"
+      logs_attributes_metadata_key: "$custom_otel['attributes']"

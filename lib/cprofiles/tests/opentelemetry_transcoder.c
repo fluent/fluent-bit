@@ -468,6 +468,82 @@ static struct cprof *create_cprof_with_dictionary_tables(void)
     return cprof;
 }
 
+static cfl_sds_t pack_export_service_request(
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *request)
+{
+    cfl_sds_t packed;
+    size_t    packed_size;
+
+    packed_size =
+        opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__get_packed_size(
+            request);
+
+    packed = cfl_sds_create_size(packed_size);
+    if (packed == NULL) {
+        return NULL;
+    }
+
+    cfl_sds_set_len(
+        packed,
+        opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__pack(
+            request, (uint8_t *) packed));
+
+    return packed;
+}
+
+static int decode_export_service_request(
+    struct cprof **decoded_context,
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *request)
+{
+    cfl_sds_t packed;
+    size_t    offset;
+    int       result;
+
+    packed = pack_export_service_request(request);
+    if (packed == NULL) {
+        return CPROF_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
+    offset = 0;
+    result = cprof_decode_opentelemetry_create(decoded_context,
+                                               (unsigned char *) packed,
+                                               cfl_sds_len(packed),
+                                               &offset);
+
+    cfl_sds_destroy(packed);
+
+    return result;
+}
+
+static Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *
+create_unpacked_dictionary_request(void)
+{
+    cfl_sds_t                                                                  otlp_result;
+    struct cprof                                                              *context;
+    int                                                                        result;
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *request;
+
+    context = create_cprof_with_dictionary_tables();
+    if (context == NULL) {
+        return NULL;
+    }
+
+    result = cprof_encode_opentelemetry_create(&otlp_result, context);
+    cprof_destroy(context);
+    if (result != CPROF_ENCODE_OPENTELEMETRY_SUCCESS || otlp_result == NULL) {
+        return NULL;
+    }
+
+    request = opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__unpack(
+        NULL,
+        cfl_sds_len(otlp_result),
+        (const unsigned char *) otlp_result);
+
+    cprof_encode_opentelemetry_destroy(otlp_result);
+
+    return request;
+}
+
 /* Encode cprof with full dictionary (mappings, functions, locations, links) and check success. */
 static void test_encoder_dictionary_tables()
 {
@@ -619,6 +695,9 @@ static void verify_decoded_cprof_dictionary_tables(struct cprof *decoded)
     /* Exactly one sample: value 42, at least one location_index, link index 0 or matching link */
     TEST_CHECK(cfl_list_size(&profile->samples) == 1);
     if (cfl_list_size(&profile->samples) == 1) {
+        size_t location_table_size;
+        size_t location_index;
+
         sample_iter = profile->samples.next;
         sample = cfl_list_entry(sample_iter, struct cprof_sample, _head);
         TEST_CHECK(sample->value_count == 1);
@@ -627,7 +706,23 @@ static void verify_decoded_cprof_dictionary_tables(struct cprof *decoded)
         }
         TEST_CHECK(sample->location_index_count >= 1 && "sample must have at least one location_index");
         if (sample->location_index_count >= 1 && sample->location_index != NULL) {
-            TEST_CHECK(sample->location_index[0] == 0 && "sample must reference first location");
+            location_table_size = cfl_list_size(&profile->locations);
+            location_index = sample->location_index[0];
+
+            TEST_CHECK(location_index < location_table_size &&
+                       "sample must reference a valid decoded location");
+            if (location_index < location_table_size) {
+                loc_iter = profile->locations.next;
+                for (i = 0; i < location_index && loc_iter != &profile->locations; i++) {
+                    loc_iter = loc_iter->next;
+                }
+
+                if (loc_iter != &profile->locations) {
+                    loc = cfl_list_entry(loc_iter, struct cprof_location, _head);
+                    TEST_CHECK(loc->address == 0x1000ULL &&
+                               "sample must reference decoded location at 0x1000");
+                }
+            }
         }
         /* sample must reference a link; decoder may use dict index 0 or 1 (sentinel vs first real link) */
         TEST_CHECK(cfl_list_size(&profile->link_table) > 0 && "profile must have links");
@@ -746,11 +841,718 @@ static void test_decoder_dictionary_tables()
     cprof_encode_opentelemetry_destroy(otlp_result);
 }
 
+static void test_decoder_dictionary_string_references()
+{
+    int result;
+    struct cprof *decoded_context;
+    struct cprof_resource_profiles *resource_profiles_context;
+    struct cprof_scope_profiles *scope_profiles_context;
+    struct cprof_profile *profile_context;
+    struct cfl_variant *resource_attribute_value;
+    struct cfl_variant *scope_attribute_value;
+    struct cfl_variant *attribute_value;
+    struct cfl_list *iterator;
+
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest request =
+        OPENTELEMETRY__PROTO__COLLECTOR__PROFILES__V1DEVELOPMENT__EXPORT_PROFILES_SERVICE_REQUEST__INIT;
+    Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary dictionary =
+        OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__PROFILES_DICTIONARY__INIT;
+    Opentelemetry__Proto__Profiles__V1development__ResourceProfiles resource_profiles =
+        OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__RESOURCE_PROFILES__INIT;
+    Opentelemetry__Proto__Profiles__V1development__ScopeProfiles scope_profiles =
+        OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__SCOPE_PROFILES__INIT;
+    Opentelemetry__Proto__Resource__V1__Resource resource =
+        OPENTELEMETRY__PROTO__RESOURCE__V1__RESOURCE__INIT;
+    Opentelemetry__Proto__Common__V1__InstrumentationScope scope =
+        OPENTELEMETRY__PROTO__COMMON__V1__INSTRUMENTATION_SCOPE__INIT;
+    Opentelemetry__Proto__Profiles__V1development__Profile profile =
+        OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__PROFILE__INIT;
+    Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit attribute_entry =
+        OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__KEY_VALUE_AND_UNIT__INIT;
+    Opentelemetry__Proto__Common__V1__AnyValue attribute_value_ref =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__KeyValue resource_attribute =
+        OPENTELEMETRY__PROTO__COMMON__V1__KEY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__AnyValue resource_attribute_value_ref =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__KeyValue scope_attribute =
+        OPENTELEMETRY__PROTO__COMMON__V1__KEY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__AnyValue scope_attribute_value_ref =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__INIT;
+    char *string_table_entries[] = {
+        "",
+        "attr.key",
+        "attr.value"
+    };
+    Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit *attribute_table_entries[] = {
+        &attribute_entry
+    };
+    int32_t profile_attribute_indices[] = {
+        0
+    };
+    Opentelemetry__Proto__Profiles__V1development__Profile *profiles[] = {
+        &profile
+    };
+    Opentelemetry__Proto__Profiles__V1development__ScopeProfiles *scope_profiles_entries[] = {
+        &scope_profiles
+    };
+    Opentelemetry__Proto__Profiles__V1development__ResourceProfiles *resource_profiles_entries[] = {
+        &resource_profiles
+    };
+    Opentelemetry__Proto__Common__V1__KeyValue *resource_attributes[] = {
+        &resource_attribute
+    };
+    Opentelemetry__Proto__Common__V1__KeyValue *scope_attributes[] = {
+        &scope_attribute
+    };
+
+    attribute_value_ref.value_case =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX;
+    attribute_value_ref.string_value_strindex = 2;
+
+    resource_attribute_value_ref.value_case =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX;
+    resource_attribute_value_ref.string_value_strindex = 2;
+
+    scope_attribute_value_ref.value_case =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX;
+    scope_attribute_value_ref.string_value_strindex = 2;
+
+    attribute_entry.key_strindex = 1;
+    attribute_entry.value = &attribute_value_ref;
+
+    resource_attribute.key_strindex = 1;
+    resource_attribute.value = &resource_attribute_value_ref;
+
+    scope_attribute.key_strindex = 1;
+    scope_attribute.value = &scope_attribute_value_ref;
+
+    dictionary.string_table = string_table_entries;
+    dictionary.n_string_table = sizeof(string_table_entries) / sizeof(string_table_entries[0]);
+    dictionary.attribute_table = attribute_table_entries;
+    dictionary.n_attribute_table = sizeof(attribute_table_entries) / sizeof(attribute_table_entries[0]);
+
+    resource.attributes = resource_attributes;
+    resource.n_attributes = sizeof(resource_attributes) / sizeof(resource_attributes[0]);
+
+    scope.attributes = scope_attributes;
+    scope.n_attributes = sizeof(scope_attributes) / sizeof(scope_attributes[0]);
+
+    profile.time_unix_nano = 1000;
+    profile.duration_nano = 100;
+    profile.attribute_indices = profile_attribute_indices;
+    profile.n_attribute_indices = sizeof(profile_attribute_indices) / sizeof(profile_attribute_indices[0]);
+
+    scope_profiles.scope = &scope;
+    scope_profiles.profiles = profiles;
+    scope_profiles.n_profiles = sizeof(profiles) / sizeof(profiles[0]);
+
+    resource_profiles.resource = &resource;
+    resource_profiles.scope_profiles = scope_profiles_entries;
+    resource_profiles.n_scope_profiles = sizeof(scope_profiles_entries) / sizeof(scope_profiles_entries[0]);
+
+    request.dictionary = &dictionary;
+    request.resource_profiles = resource_profiles_entries;
+    request.n_resource_profiles = sizeof(resource_profiles_entries) / sizeof(resource_profiles_entries[0]);
+
+    decoded_context = NULL;
+    result = decode_export_service_request(&decoded_context, &request);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_SUCCESS);
+    TEST_CHECK(decoded_context != NULL);
+
+    if (result == CPROF_DECODE_OPENTELEMETRY_SUCCESS && decoded_context != NULL) {
+        TEST_CHECK(cfl_list_size(&decoded_context->profiles) == 1);
+        if (cfl_list_size(&decoded_context->profiles) != 1) {
+            cprof_decode_opentelemetry_destroy(decoded_context);
+            return;
+        }
+
+        iterator = decoded_context->profiles.next;
+        resource_profiles_context = cfl_list_entry(iterator, struct cprof_resource_profiles, _head);
+
+        resource_attribute_value = cfl_kvlist_fetch(resource_profiles_context->resource->attributes, "attr.key");
+        TEST_CHECK(resource_attribute_value != NULL);
+        if (resource_attribute_value != NULL) {
+            TEST_CHECK(resource_attribute_value->type == CFL_VARIANT_STRING);
+            if (resource_attribute_value->type == CFL_VARIANT_STRING) {
+                TEST_CHECK(strcmp(resource_attribute_value->data.as_string, "attr.value") == 0);
+            }
+        }
+
+        TEST_CHECK(cfl_list_size(&resource_profiles_context->scope_profiles) == 1);
+        if (cfl_list_size(&resource_profiles_context->scope_profiles) != 1) {
+            cprof_decode_opentelemetry_destroy(decoded_context);
+            return;
+        }
+        iterator = resource_profiles_context->scope_profiles.next;
+        scope_profiles_context = cfl_list_entry(iterator, struct cprof_scope_profiles, _head);
+
+        scope_attribute_value = cfl_kvlist_fetch(scope_profiles_context->scope->attributes, "attr.key");
+        TEST_CHECK(scope_attribute_value != NULL);
+        if (scope_attribute_value != NULL) {
+            TEST_CHECK(scope_attribute_value->type == CFL_VARIANT_STRING);
+            if (scope_attribute_value->type == CFL_VARIANT_STRING) {
+                TEST_CHECK(strcmp(scope_attribute_value->data.as_string, "attr.value") == 0);
+            }
+        }
+
+        TEST_CHECK(cfl_list_size(&scope_profiles_context->profiles) == 1);
+        if (cfl_list_size(&scope_profiles_context->profiles) != 1) {
+            cprof_decode_opentelemetry_destroy(decoded_context);
+            return;
+        }
+        iterator = scope_profiles_context->profiles.next;
+        profile_context = cfl_list_entry(iterator, struct cprof_profile, _head);
+
+        attribute_value = cfl_kvlist_fetch(profile_context->attributes, "attr.key");
+        TEST_CHECK(attribute_value != NULL);
+        if (attribute_value != NULL) {
+            TEST_CHECK(attribute_value->type == CFL_VARIANT_STRING);
+            if (attribute_value->type == CFL_VARIANT_STRING) {
+                TEST_CHECK(strcmp(attribute_value->data.as_string, "attr.value") == 0);
+            }
+        }
+
+        cprof_decode_opentelemetry_destroy(decoded_context);
+    }
+}
+
+static void test_decoder_dictionary_nested_string_references()
+{
+    int result;
+    struct cprof *decoded_context;
+    struct cprof_resource_profiles *resource_profiles_context;
+    struct cprof_scope_profiles *scope_profiles_context;
+    struct cfl_variant *resource_attribute_value;
+    struct cfl_variant *scope_attribute_value;
+    struct cfl_variant *array_entry;
+    struct cfl_variant *nested_value;
+    struct cfl_list *iterator;
+
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest request =
+        OPENTELEMETRY__PROTO__COLLECTOR__PROFILES__V1DEVELOPMENT__EXPORT_PROFILES_SERVICE_REQUEST__INIT;
+    Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary dictionary =
+        OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__PROFILES_DICTIONARY__INIT;
+    Opentelemetry__Proto__Profiles__V1development__ResourceProfiles resource_profiles =
+        OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__RESOURCE_PROFILES__INIT;
+    Opentelemetry__Proto__Profiles__V1development__ScopeProfiles scope_profiles =
+        OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__SCOPE_PROFILES__INIT;
+    Opentelemetry__Proto__Resource__V1__Resource resource =
+        OPENTELEMETRY__PROTO__RESOURCE__V1__RESOURCE__INIT;
+    Opentelemetry__Proto__Common__V1__InstrumentationScope scope =
+        OPENTELEMETRY__PROTO__COMMON__V1__INSTRUMENTATION_SCOPE__INIT;
+    Opentelemetry__Proto__Profiles__V1development__Profile profile =
+        OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__PROFILE__INIT;
+    Opentelemetry__Proto__Common__V1__KeyValue resource_attribute =
+        OPENTELEMETRY__PROTO__COMMON__V1__KEY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__AnyValue resource_attribute_value_ref =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__KeyValueList resource_kvlist =
+        OPENTELEMETRY__PROTO__COMMON__V1__KEY_VALUE_LIST__INIT;
+    Opentelemetry__Proto__Common__V1__KeyValue resource_nested_entry =
+        OPENTELEMETRY__PROTO__COMMON__V1__KEY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__AnyValue resource_nested_value =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__KeyValue scope_attribute =
+        OPENTELEMETRY__PROTO__COMMON__V1__KEY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__AnyValue scope_attribute_value_ref =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__ArrayValue scope_array =
+        OPENTELEMETRY__PROTO__COMMON__V1__ARRAY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__AnyValue scope_array_string_entry =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__AnyValue scope_array_kvlist_entry =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__KeyValueList scope_kvlist =
+        OPENTELEMETRY__PROTO__COMMON__V1__KEY_VALUE_LIST__INIT;
+    Opentelemetry__Proto__Common__V1__KeyValue scope_nested_entry =
+        OPENTELEMETRY__PROTO__COMMON__V1__KEY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__AnyValue scope_nested_value =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__INIT;
+    char *string_table_entries[] = {
+        "",
+        "outer.key",
+        "array.value",
+        "inner.key",
+        "inner.value"
+    };
+    Opentelemetry__Proto__Profiles__V1development__Profile *profiles[] = {
+        &profile
+    };
+    Opentelemetry__Proto__Profiles__V1development__ScopeProfiles *scope_profiles_entries[] = {
+        &scope_profiles
+    };
+    Opentelemetry__Proto__Profiles__V1development__ResourceProfiles *resource_profiles_entries[] = {
+        &resource_profiles
+    };
+    Opentelemetry__Proto__Common__V1__KeyValue *resource_attributes[] = {
+        &resource_attribute
+    };
+    Opentelemetry__Proto__Common__V1__KeyValue *scope_attributes[] = {
+        &scope_attribute
+    };
+    Opentelemetry__Proto__Common__V1__KeyValue *resource_kvlist_entries[] = {
+        &resource_nested_entry
+    };
+    Opentelemetry__Proto__Common__V1__KeyValue *scope_kvlist_entries[] = {
+        &scope_nested_entry
+    };
+    Opentelemetry__Proto__Common__V1__AnyValue *scope_array_entries[] = {
+        &scope_array_string_entry,
+        &scope_array_kvlist_entry
+    };
+
+    resource_nested_value.value_case =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX;
+    resource_nested_value.string_value_strindex = 4;
+    resource_nested_entry.key_strindex = 3;
+    resource_nested_entry.value = &resource_nested_value;
+    resource_kvlist.values = resource_kvlist_entries;
+    resource_kvlist.n_values = sizeof(resource_kvlist_entries) / sizeof(resource_kvlist_entries[0]);
+    resource_attribute_value_ref.value_case =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_KVLIST_VALUE;
+    resource_attribute_value_ref.kvlist_value = &resource_kvlist;
+    resource_attribute.key_strindex = 1;
+    resource_attribute.value = &resource_attribute_value_ref;
+
+    scope_array_string_entry.value_case =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX;
+    scope_array_string_entry.string_value_strindex = 2;
+    scope_nested_value.value_case =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX;
+    scope_nested_value.string_value_strindex = 4;
+    scope_nested_entry.key_strindex = 3;
+    scope_nested_entry.value = &scope_nested_value;
+    scope_kvlist.values = scope_kvlist_entries;
+    scope_kvlist.n_values = sizeof(scope_kvlist_entries) / sizeof(scope_kvlist_entries[0]);
+    scope_array_kvlist_entry.value_case =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_KVLIST_VALUE;
+    scope_array_kvlist_entry.kvlist_value = &scope_kvlist;
+    scope_array.values = scope_array_entries;
+    scope_array.n_values = sizeof(scope_array_entries) / sizeof(scope_array_entries[0]);
+    scope_attribute_value_ref.value_case =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_ARRAY_VALUE;
+    scope_attribute_value_ref.array_value = &scope_array;
+    scope_attribute.key_strindex = 1;
+    scope_attribute.value = &scope_attribute_value_ref;
+
+    dictionary.string_table = string_table_entries;
+    dictionary.n_string_table = sizeof(string_table_entries) / sizeof(string_table_entries[0]);
+
+    resource.attributes = resource_attributes;
+    resource.n_attributes = sizeof(resource_attributes) / sizeof(resource_attributes[0]);
+
+    scope.attributes = scope_attributes;
+    scope.n_attributes = sizeof(scope_attributes) / sizeof(scope_attributes[0]);
+
+    profile.time_unix_nano = 1000;
+    profile.duration_nano = 100;
+
+    scope_profiles.scope = &scope;
+    scope_profiles.profiles = profiles;
+    scope_profiles.n_profiles = sizeof(profiles) / sizeof(profiles[0]);
+
+    resource_profiles.resource = &resource;
+    resource_profiles.scope_profiles = scope_profiles_entries;
+    resource_profiles.n_scope_profiles = sizeof(scope_profiles_entries) / sizeof(scope_profiles_entries[0]);
+
+    request.dictionary = &dictionary;
+    request.resource_profiles = resource_profiles_entries;
+    request.n_resource_profiles = sizeof(resource_profiles_entries) / sizeof(resource_profiles_entries[0]);
+
+    decoded_context = NULL;
+    result = decode_export_service_request(&decoded_context, &request);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_SUCCESS);
+    TEST_CHECK(decoded_context != NULL);
+
+    if (result != CPROF_DECODE_OPENTELEMETRY_SUCCESS || decoded_context == NULL) {
+        return;
+    }
+
+    iterator = decoded_context->profiles.next;
+    resource_profiles_context = cfl_list_entry(iterator, struct cprof_resource_profiles, _head);
+
+    resource_attribute_value = cfl_kvlist_fetch(resource_profiles_context->resource->attributes, "outer.key");
+    TEST_CHECK(resource_attribute_value != NULL);
+    if (resource_attribute_value != NULL) {
+        TEST_CHECK(resource_attribute_value->type == CFL_VARIANT_KVLIST);
+        if (resource_attribute_value->type == CFL_VARIANT_KVLIST) {
+            nested_value = cfl_kvlist_fetch(resource_attribute_value->data.as_kvlist, "inner.key");
+            TEST_CHECK(nested_value != NULL);
+            if (nested_value != NULL) {
+                TEST_CHECK(nested_value->type == CFL_VARIANT_STRING);
+                if (nested_value->type == CFL_VARIANT_STRING) {
+                    TEST_CHECK(strcmp(nested_value->data.as_string, "inner.value") == 0);
+                }
+            }
+        }
+    }
+
+    iterator = resource_profiles_context->scope_profiles.next;
+    scope_profiles_context = cfl_list_entry(iterator, struct cprof_scope_profiles, _head);
+
+    scope_attribute_value = cfl_kvlist_fetch(scope_profiles_context->scope->attributes, "outer.key");
+    TEST_CHECK(scope_attribute_value != NULL);
+    if (scope_attribute_value != NULL) {
+        TEST_CHECK(scope_attribute_value->type == CFL_VARIANT_ARRAY);
+        if (scope_attribute_value->type == CFL_VARIANT_ARRAY) {
+            TEST_CHECK(cfl_array_size(scope_attribute_value->data.as_array) == 2);
+
+            array_entry = cfl_array_fetch_by_index(scope_attribute_value->data.as_array, 0);
+            TEST_CHECK(array_entry != NULL);
+            if (array_entry != NULL) {
+                TEST_CHECK(array_entry->type == CFL_VARIANT_STRING);
+                if (array_entry->type == CFL_VARIANT_STRING) {
+                    TEST_CHECK(strcmp(array_entry->data.as_string, "array.value") == 0);
+                }
+            }
+
+            array_entry = cfl_array_fetch_by_index(scope_attribute_value->data.as_array, 1);
+            TEST_CHECK(array_entry != NULL);
+            if (array_entry != NULL) {
+                TEST_CHECK(array_entry->type == CFL_VARIANT_KVLIST);
+                if (array_entry->type == CFL_VARIANT_KVLIST) {
+                    nested_value = cfl_kvlist_fetch(array_entry->data.as_kvlist, "inner.key");
+                    TEST_CHECK(nested_value != NULL);
+                    if (nested_value != NULL) {
+                        TEST_CHECK(nested_value->type == CFL_VARIANT_STRING);
+                        if (nested_value->type == CFL_VARIANT_STRING) {
+                            TEST_CHECK(strcmp(nested_value->data.as_string, "inner.value") == 0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    cprof_decode_opentelemetry_destroy(decoded_context);
+}
+
+static void test_decoder_rejects_missing_string_table_for_resource_attributes()
+{
+    int result;
+    struct cprof *decoded_context;
+
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest request =
+        OPENTELEMETRY__PROTO__COLLECTOR__PROFILES__V1DEVELOPMENT__EXPORT_PROFILES_SERVICE_REQUEST__INIT;
+    Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary dictionary =
+        OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__PROFILES_DICTIONARY__INIT;
+    Opentelemetry__Proto__Profiles__V1development__ResourceProfiles resource_profiles =
+        OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__RESOURCE_PROFILES__INIT;
+    Opentelemetry__Proto__Profiles__V1development__ScopeProfiles scope_profiles =
+        OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__SCOPE_PROFILES__INIT;
+    Opentelemetry__Proto__Resource__V1__Resource resource =
+        OPENTELEMETRY__PROTO__RESOURCE__V1__RESOURCE__INIT;
+    Opentelemetry__Proto__Profiles__V1development__Profile profile =
+        OPENTELEMETRY__PROTO__PROFILES__V1DEVELOPMENT__PROFILE__INIT;
+    Opentelemetry__Proto__Common__V1__KeyValue resource_attribute =
+        OPENTELEMETRY__PROTO__COMMON__V1__KEY_VALUE__INIT;
+    Opentelemetry__Proto__Common__V1__AnyValue resource_attribute_value_ref =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__INIT;
+    Opentelemetry__Proto__Profiles__V1development__Profile *profiles[] = {
+        &profile
+    };
+    Opentelemetry__Proto__Profiles__V1development__ScopeProfiles *scope_profiles_entries[] = {
+        &scope_profiles
+    };
+    Opentelemetry__Proto__Profiles__V1development__ResourceProfiles *resource_profiles_entries[] = {
+        &resource_profiles
+    };
+    Opentelemetry__Proto__Common__V1__KeyValue *resource_attributes[] = {
+        &resource_attribute
+    };
+
+    resource_attribute_value_ref.value_case =
+        OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE_STRINDEX;
+    resource_attribute_value_ref.string_value_strindex = 1;
+    resource_attribute.key_strindex = 1;
+    resource_attribute.value = &resource_attribute_value_ref;
+
+    resource.attributes = resource_attributes;
+    resource.n_attributes = sizeof(resource_attributes) / sizeof(resource_attributes[0]);
+
+    profile.time_unix_nano = 1000;
+    profile.duration_nano = 100;
+
+    scope_profiles.profiles = profiles;
+    scope_profiles.n_profiles = sizeof(profiles) / sizeof(profiles[0]);
+
+    resource_profiles.resource = &resource;
+    resource_profiles.scope_profiles = scope_profiles_entries;
+    resource_profiles.n_scope_profiles = sizeof(scope_profiles_entries) / sizeof(scope_profiles_entries[0]);
+
+    request.dictionary = &dictionary;
+    request.resource_profiles = resource_profiles_entries;
+    request.n_resource_profiles = sizeof(resource_profiles_entries) / sizeof(resource_profiles_entries[0]);
+
+    decoded_context = NULL;
+    result = decode_export_service_request(&decoded_context, &request);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+    TEST_CHECK(decoded_context == NULL);
+}
+
+static void test_decoder_rejects_invalid_stack_table_reference()
+{
+    int result;
+    struct cprof *decoded_context;
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *request;
+    Opentelemetry__Proto__Profiles__V1development__Stack **original_stack_table;
+    size_t original_stack_table_count;
+
+    request = create_unpacked_dictionary_request();
+    TEST_CHECK(request != NULL);
+    if (request == NULL) {
+        return;
+    }
+
+    original_stack_table = request->dictionary->stack_table;
+    original_stack_table_count = request->dictionary->n_stack_table;
+    request->dictionary->stack_table = NULL;
+    request->dictionary->n_stack_table = 0;
+    request->resource_profiles[0]->scope_profiles[0]->profiles[0]->samples[0]->stack_index = 0;
+
+    decoded_context = NULL;
+    result = decode_export_service_request(&decoded_context, request);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+    TEST_CHECK(decoded_context == NULL);
+
+    request->dictionary->stack_table = original_stack_table;
+    request->dictionary->n_stack_table = original_stack_table_count;
+
+    opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+        request, NULL);
+}
+
+static void test_decoder_rejects_invalid_location_mapping_reference()
+{
+    int result;
+    struct cprof *decoded_context;
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *request;
+    size_t index;
+    Opentelemetry__Proto__Profiles__V1development__Location *location_entry;
+
+    request = create_unpacked_dictionary_request();
+    TEST_CHECK(request != NULL);
+    if (request == NULL) {
+        return;
+    }
+
+    location_entry = NULL;
+    for (index = 0; index < request->dictionary->n_location_table; index++) {
+        if (request->dictionary->location_table[index] != NULL) {
+            location_entry = request->dictionary->location_table[index];
+            break;
+        }
+    }
+
+    TEST_CHECK(location_entry != NULL);
+    if (location_entry == NULL) {
+        opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+            request, NULL);
+        return;
+    }
+
+    location_entry->mapping_index = request->dictionary->n_mapping_table;
+
+    decoded_context = NULL;
+    result = decode_export_service_request(&decoded_context, request);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+    TEST_CHECK(decoded_context == NULL);
+
+    opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+        request, NULL);
+}
+
+static void test_decoder_rejects_invalid_line_function_reference()
+{
+    int result;
+    struct cprof *decoded_context;
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *request;
+    size_t index;
+    size_t line_index;
+    Opentelemetry__Proto__Profiles__V1development__Location *location_entry;
+
+    request = create_unpacked_dictionary_request();
+    TEST_CHECK(request != NULL);
+    if (request == NULL) {
+        return;
+    }
+
+    location_entry = NULL;
+    for (index = 0; index < request->dictionary->n_location_table; index++) {
+        if (request->dictionary->location_table[index] != NULL &&
+            request->dictionary->location_table[index]->n_lines > 0) {
+            location_entry = request->dictionary->location_table[index];
+            break;
+        }
+    }
+
+    TEST_CHECK(location_entry != NULL);
+    if (location_entry == NULL) {
+        opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+            request, NULL);
+        return;
+    }
+
+    for (line_index = 0; line_index < location_entry->n_lines; line_index++) {
+        if (location_entry->lines[line_index] != NULL) {
+            location_entry->lines[line_index]->function_index = request->dictionary->n_function_table;
+            break;
+        }
+    }
+
+    TEST_CHECK(line_index < location_entry->n_lines);
+    if (line_index >= location_entry->n_lines) {
+        opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+            request, NULL);
+        return;
+    }
+
+    decoded_context = NULL;
+    result = decode_export_service_request(&decoded_context, request);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+    TEST_CHECK(decoded_context == NULL);
+
+    opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+        request, NULL);
+}
+
+static void test_decoder_rejects_invalid_profile_attribute_reference()
+{
+    int result;
+    struct cprof *decoded_context;
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *request;
+    Opentelemetry__Proto__Profiles__V1development__Profile *profile;
+
+    request = create_unpacked_dictionary_request();
+    TEST_CHECK(request != NULL);
+    if (request == NULL) {
+        return;
+    }
+
+    profile = request->resource_profiles[0]->scope_profiles[0]->profiles[0];
+    TEST_CHECK(profile != NULL);
+    if (profile == NULL) {
+        opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+            request, NULL);
+        return;
+    }
+
+    profile->attribute_indices = realloc(profile->attribute_indices, sizeof(int32_t));
+    TEST_CHECK(profile->attribute_indices != NULL);
+    if (profile->attribute_indices == NULL) {
+        opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+            request, NULL);
+        return;
+    }
+    profile->n_attribute_indices = 1;
+    profile->attribute_indices[0] = request->dictionary->n_attribute_table;
+
+    decoded_context = NULL;
+    result = decode_export_service_request(&decoded_context, request);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+    TEST_CHECK(decoded_context == NULL);
+
+    opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+        request, NULL);
+}
+
+static void test_decoder_rejects_invalid_sample_attribute_reference()
+{
+    int result;
+    struct cprof *decoded_context;
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *request;
+    Opentelemetry__Proto__Profiles__V1development__Profile *profile;
+    Opentelemetry__Proto__Profiles__V1development__Sample *sample;
+
+    request = create_unpacked_dictionary_request();
+    TEST_CHECK(request != NULL);
+    if (request == NULL) {
+        return;
+    }
+
+    profile = request->resource_profiles[0]->scope_profiles[0]->profiles[0];
+    sample = profile->samples[0];
+    TEST_CHECK(sample != NULL);
+    if (sample == NULL) {
+        opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+            request, NULL);
+        return;
+    }
+
+    sample->attribute_indices = realloc(sample->attribute_indices, sizeof(int32_t));
+    TEST_CHECK(sample->attribute_indices != NULL);
+    if (sample->attribute_indices == NULL) {
+        opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+            request, NULL);
+        return;
+    }
+    sample->n_attribute_indices = 1;
+    sample->attribute_indices[0] = request->dictionary->n_attribute_table;
+
+    decoded_context = NULL;
+    result = decode_export_service_request(&decoded_context, request);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+    TEST_CHECK(decoded_context == NULL);
+
+    opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+        request, NULL);
+}
+
+static void test_decoder_rejects_invalid_sample_link_reference()
+{
+    int result;
+    struct cprof *decoded_context;
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *request;
+    Opentelemetry__Proto__Profiles__V1development__Profile *profile;
+    Opentelemetry__Proto__Profiles__V1development__Sample *sample;
+
+    request = create_unpacked_dictionary_request();
+    TEST_CHECK(request != NULL);
+    if (request == NULL) {
+        return;
+    }
+
+    profile = request->resource_profiles[0]->scope_profiles[0]->profiles[0];
+    sample = profile->samples[0];
+    TEST_CHECK(sample != NULL);
+    if (sample == NULL) {
+        opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+            request, NULL);
+        return;
+    }
+
+    sample->link_index = request->dictionary->n_link_table;
+
+    decoded_context = NULL;
+    result = decode_export_service_request(&decoded_context, request);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+    TEST_CHECK(decoded_context == NULL);
+
+    opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+        request, NULL);
+}
+
 TEST_LIST = {
     {"encoder", test_encoder},
     {"decoder", test_decoder},
     {"encoder_dictionary_tables", test_encoder_dictionary_tables},
     {"wire_format_dictionary_present", test_wire_format_dictionary_present},
     {"decoder_dictionary_tables", test_decoder_dictionary_tables},
+    {"decoder_dictionary_string_references", test_decoder_dictionary_string_references},
+    {"decoder_dictionary_nested_string_references", test_decoder_dictionary_nested_string_references},
+    {"decoder_rejects_missing_string_table_for_resource_attributes",
+     test_decoder_rejects_missing_string_table_for_resource_attributes},
+    {"decoder_rejects_invalid_stack_table_reference", test_decoder_rejects_invalid_stack_table_reference},
+    {"decoder_rejects_invalid_location_mapping_reference",
+     test_decoder_rejects_invalid_location_mapping_reference},
+    {"decoder_rejects_invalid_line_function_reference",
+     test_decoder_rejects_invalid_line_function_reference},
+    {"decoder_rejects_invalid_profile_attribute_reference",
+     test_decoder_rejects_invalid_profile_attribute_reference},
+    {"decoder_rejects_invalid_sample_attribute_reference",
+     test_decoder_rejects_invalid_sample_attribute_reference},
+    {"decoder_rejects_invalid_sample_link_reference",
+     test_decoder_rejects_invalid_sample_link_reference},
     { 0 }
 };

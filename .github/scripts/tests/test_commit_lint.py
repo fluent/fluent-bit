@@ -149,6 +149,30 @@ def test_valid_commit_single_prefix():
     ok, _ = validate_commit(commit)
     assert ok is True
 
+def test_valid_commit_internal_tests_prefix():
+    """
+    Test that tests/internal commits accept the documented tests: internal: prefix.
+    """
+    commit = make_commit(
+        "tests: internal: add root-key coverage\n\nSigned-off-by: User",
+        ["tests/internal/cfl_record_accessor.c"]
+    )
+    ok, _ = validate_commit(commit)
+    assert ok is True
+
+
+def test_valid_commit_runtime_tests_prefix():
+    """
+    Test that tests/runtime commits accept the documented tests: runtime: prefix.
+    """
+    commit = make_commit(
+        "tests: runtime: add router coverage\n\nSigned-off-by: User",
+        ["tests/runtime/filter.c"]
+    )
+    ok, _ = validate_commit(commit)
+    assert ok is True
+
+
 
 def test_valid_commit_multiple_signoffs_allowed():
     """
@@ -305,6 +329,31 @@ def test_error_multiple_prefixes_inferred_from_files():
     commit = make_commit(
         "in_tail: update handler\n\nSigned-off-by: User",
         ["plugins/in_tail/tail.c", "src/flb_router.c"]
+    )
+    ok, msg = validate_commit(commit)
+    assert ok is False
+    assert "does not match files changed" in msg
+
+
+def test_valid_http_server_umbrella_prefix():
+    """
+    Commits touching only the HTTP server interface boundary may use http_server:.
+    """
+    commit = make_commit(
+        "http_server: unify listener startup\n\nSigned-off-by: User",
+        ["src/http_server/flb_hs.c", "src/flb_http_common.c"]
+    )
+    ok, _ = validate_commit(commit)
+    assert ok is True
+
+
+def test_error_http_server_umbrella_with_unrelated_component():
+    """
+    http_server: must not cover unrelated core files outside the HTTP interface.
+    """
+    commit = make_commit(
+        "http_server: adjust startup\n\nSigned-off-by: User",
+        ["src/http_server/flb_hs.c", "src/flb_input.c"]
     )
     ok, msg = validate_commit(commit)
     assert ok is False
@@ -885,3 +934,68 @@ def test_valid_commit_multiline_subject_ignored():
     )
     ok, _ = validate_commit(commit)
     assert ok is True
+
+
+class FakeDiff:
+    def __init__(self, path, patch):
+        self.b_path = path
+        self.diff = patch.encode()
+
+
+class FakeStats:
+    def __init__(self, files):
+        self.files = {f: {} for f in files}
+
+
+class FakeCommit:
+    def __init__(self, message, diffs):
+        self.message = message
+        self._diffs = diffs
+        self.parents = [object()]
+
+        file_paths = [d.b_path for d in diffs]
+        self.stats = FakeStats(file_paths)
+
+    def diff(self, parent, create_patch=True):
+        return self._diffs
+
+
+def make_fake_commit(message, changes):
+    """
+    changes: list of (path, patch)
+    """
+    diffs = [FakeDiff(path, patch) for path, patch in changes]
+    return FakeCommit(message, diffs)
+
+def test_release_with_version_bump():
+    commit = make_fake_commit(
+        "release: update to 5.0.2\n\nSigned-off-by: User",
+        [
+            ("CMakeLists.txt", """
+-set(FLB_VERSION_PATCH  0)
++set(FLB_VERSION_PATCH  2)
+"""),
+            ("dockerfiles/Dockerfile", """
+-FROM fluent-bit:5.0.0
++FROM fluent-bit:5.0.2
+""")
+        ]
+    )
+
+    ok, msg = validate_commit(commit)
+    assert ok is True, msg
+
+def test_release_rejected_when_cmakelists_has_non_version_change():
+    commit = make_fake_commit(
+        "release: update to 5.0.2\n\nSigned-off-by: User",
+        [
+            ("CMakeLists.txt", """
+-set(FLB_VERSION_PATCH  0)
++set(FLB_VERSION_PATCH  2)
++set(SOME_FLAG ON)
+""")
+        ]
+    )
+
+    ok, _ = validate_commit(commit)
+    assert ok is False

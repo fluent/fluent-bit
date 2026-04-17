@@ -170,6 +170,61 @@ static void cb_check_negative_int_as_float_value(
     flb_free(out);
 }
 
+#define JSON_TAG_KEYS "[12345678, {\"ldap_server\":\"host1\", \"client_ip\":\"10.0.0.1\", \"dn\":\"uid=jdoe\", \"value\":1}]"
+static void cb_check_tag_keys(void *ctx, int ffd,
+                              int res_ret, void *res_data, size_t res_size,
+                              void *data)
+{
+    char *p;
+    flb_sds_t out = res_data;
+    char *tag_key_1 = ",ldap_server=host1";
+    char *tag_key_2 = ",client_ip=10.0.0.1";
+    char *tag_key_3 = ",dn=uid\\=jdoe";
+    char *field_key = "value=1";
+    char *missing_field_1 = "ldap_server=\"host1\"";
+    char *missing_field_2 = "client_ip=\"10.0.0.1\"";
+    char *missing_field_3 = "dn=\"uid\\=jdoe\"";
+
+    set_output_num(1);
+
+    p = strstr(out, tag_key_1);
+    if (!TEST_CHECK(p != NULL)) {
+      TEST_MSG("Given:%s", out);
+    }
+
+    p = strstr(out, tag_key_2);
+    if (!TEST_CHECK(p != NULL)) {
+      TEST_MSG("Given:%s", out);
+    }
+
+    p = strstr(out, tag_key_3);
+    if (!TEST_CHECK(p != NULL)) {
+      TEST_MSG("Given:%s", out);
+    }
+
+    p = strstr(out, field_key);
+    if (!TEST_CHECK(p != NULL)) {
+      TEST_MSG("Given:%s", out);
+    }
+
+    p = strstr(out, missing_field_1);
+    if (!TEST_CHECK(p == NULL)) {
+      TEST_MSG("Given:%s", out);
+    }
+
+    p = strstr(out, missing_field_2);
+    if (!TEST_CHECK(p == NULL)) {
+      TEST_MSG("Given:%s", out);
+    }
+
+    p = strstr(out, missing_field_3);
+    if (!TEST_CHECK(p == NULL)) {
+      TEST_MSG("Given:%s", out);
+    }
+
+    flb_free(out);
+}
+
 void flb_test_basic()
 {
     int ret;
@@ -470,6 +525,51 @@ void flb_test_negative_integer_as_float_value()
     flb_destroy(ctx);
 }
 
+void flb_test_tag_keys()
+{
+    int ret;
+    int size = sizeof(JSON_TAG_KEYS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    clear_output_num();
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error",
+                    NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "influxdb", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "tag_keys", "ldap_server client_ip dn",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_tag_keys,
+                              NULL, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TAG_KEYS, size);
+    TEST_CHECK(ret >= 0);
+
+    sleep(2);
+
+    ret = get_output_num();
+    if (!TEST_CHECK(ret != 0)) {
+        TEST_MSG("no output");
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"basic"                  , flb_test_basic },
@@ -478,5 +578,6 @@ TEST_LIST = {
     {"int_negative_integer"   , flb_test_negative_integer_value },
     {"int_integer_as_float"   , flb_test_integer_as_float_value },
     {"int_negative_integer_as_float" , flb_test_negative_integer_as_float_value },
+    {"tag_keys"               , flb_test_tag_keys },
     {NULL, NULL}
 };

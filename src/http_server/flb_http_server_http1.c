@@ -130,6 +130,11 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
         return -1;
     }
 
+    result = flb_http_request_normalize(&session->stream.request);
+    if (result != 0) {
+        return -1;
+    }
+
     switch (session->inner_request.protocol) {
         case MK_HTTP_PROTOCOL_09:
             session->stream.request.protocol_version = HTTP_PROTOCOL_VERSION_09;
@@ -306,6 +311,7 @@ int flb_http1_response_commit(struct flb_http_response *response)
     cfl_sds_t                        sds_result;
     struct flb_http1_server_session *session;
     struct flb_http_stream          *stream;
+    char                            *header_value;
 
     parent_session = (struct flb_http_server_session *) response->stream->parent;
 
@@ -344,6 +350,32 @@ int flb_http1_response_commit(struct flb_http_response *response)
         return -4;
     }
 
+    header_value = flb_http_response_get_header(response, "server");
+    if (header_value != NULL) {
+        sds_result = cfl_sds_printf(&response_buffer,
+                                    "server: %s\r\n",
+                                    header_value);
+
+        if (sds_result == NULL) {
+            cfl_sds_destroy(response_buffer);
+
+            return -5;
+        }
+    }
+
+    header_value = flb_http_response_get_header(response, "x-http-engine");
+    if (header_value != NULL) {
+        sds_result = cfl_sds_printf(&response_buffer,
+                                    "x-http-engine: %s\r\n",
+                                    header_value);
+
+        if (sds_result == NULL) {
+            cfl_sds_destroy(response_buffer);
+
+            return -6;
+        }
+    }
+
     mk_list_foreach(header_iterator, &response->headers->entries) {
         header_entry = mk_list_entry(header_iterator,
                                      struct flb_hash_table_entry,
@@ -352,7 +384,18 @@ int flb_http1_response_commit(struct flb_http_response *response)
         if (header_entry == NULL) {
             cfl_sds_destroy(response_buffer);
 
-            return -5;
+            return -7;
+        }
+
+        if ((header_entry->key_len == strlen("server") &&
+             strncasecmp((const char *) header_entry->key,
+                         "server",
+                         header_entry->key_len) == 0) ||
+            (header_entry->key_len == strlen("x-http-engine") &&
+             strncasecmp((const char *) header_entry->key,
+                         "x-http-engine",
+                         header_entry->key_len) == 0)) {
+            continue;
         }
 
         sds_result = cfl_sds_printf(&response_buffer,
@@ -365,7 +408,7 @@ int flb_http1_response_commit(struct flb_http_response *response)
         if (sds_result == NULL) {
             cfl_sds_destroy(response_buffer);
 
-            return -6;
+            return -8;
         }
     }
 
@@ -374,7 +417,7 @@ int flb_http1_response_commit(struct flb_http_response *response)
     if (sds_result == NULL) {
         cfl_sds_destroy(response_buffer);
 
-        return -7;
+        return -9;
     }
 
     if (response->body != NULL) {
@@ -385,7 +428,7 @@ int flb_http1_response_commit(struct flb_http_response *response)
         if (sds_result == NULL) {
             cfl_sds_destroy(response_buffer);
 
-            return -8;
+            return -10;
         }
 
         response_buffer = sds_result;
@@ -398,7 +441,7 @@ int flb_http1_response_commit(struct flb_http_response *response)
     cfl_sds_destroy(response_buffer);
 
     if (sds_result == NULL) {
-        return -9;
+        return -11;
     }
 
     session->parent->outgoing_data = sds_result;

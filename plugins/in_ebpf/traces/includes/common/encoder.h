@@ -17,6 +17,14 @@ static inline char *event_type_to_string(enum event_type type) {
             return "malloc";
         case EVENT_TYPE_BIND:
             return "bind";
+        case EVENT_TYPE_VFS:
+            return "vfs";
+        case EVENT_TYPE_LISTEN:
+            return "listen";
+        case EVENT_TYPE_ACCEPT:
+            return "accept";
+        case EVENT_TYPE_CONNECT:
+            return "connect";
         default:
             return "unknown";
     }

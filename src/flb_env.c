@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_file.h>
 
 #include <stdlib.h>
+#include <time.h>
 
 static inline flb_sds_t buf_append(flb_sds_t buf, const char *str, int len)
 {
@@ -87,6 +88,7 @@ struct flb_env *flb_env_create()
 
     env->warn_unused = FLB_TRUE;
     env->ht = ht;
+    mk_list_init(&env->vars);
     env_preset(env);
 
     return env;
@@ -94,11 +96,30 @@ struct flb_env *flb_env_create()
 
 void flb_env_destroy(struct flb_env *env)
 {
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_env_var *var;
+
+    mk_list_foreach_safe(head, tmp, &env->vars) {
+        var = mk_list_entry(head, struct flb_env_var, _head);
+        if (var->name) {
+            flb_sds_destroy(var->name);
+        }
+        if (var->value) {
+            flb_sds_destroy(var->value);
+        }
+        if (var->uri) {
+            flb_sds_destroy(var->uri);
+        }
+        flb_free(var);
+    }
+
     flb_hash_table_destroy(env->ht);
     flb_free(env);
 }
 
-int flb_env_set(struct flb_env *env, const char *key, const char *val)
+int flb_env_set_extended(struct flb_env *env, const char *key, const char *val,
+                         const char *uri, int refresh_interval)
 {
     int id;
     int klen;
@@ -106,58 +127,87 @@ int flb_env_set(struct flb_env *env, const char *key, const char *val)
     void *out_buf;
     size_t out_size;
     flb_sds_t fs_buf = NULL;
+    const char *orig_uri = NULL;
+    const char *value = val;
+    struct flb_env_var *var;
 
-    /* Get lengths */
+    if (uri) {
+        orig_uri = uri;
+        value = uri;
+    }
+
+    if (value == NULL) {
+        value = "";
+    }
+
     klen = strlen(key);
-    vlen = strlen(val);
+    vlen = strlen(value);
 
     /* Check if the variable is a reference to a file */
-    if (vlen > 7 && strncmp(val, "file://", 7) == 0) {
-        /* skip  the file:// prefix */
+    if (vlen > 7 && strncmp(value, "file://", 7) == 0) {
+        orig_uri = value;
         vlen -= 7;
-        val += 7;
+        value += 7;
 
-        /* Check if the file exists */
-        if (access(val, R_OK) == -1) {
-            flb_error("[env] file %s not found", val);
+        if (access(value, R_OK) == -1) {
+            flb_error("[env] file %s not found", value);
             return -1;
         }
-        /* Read the file content */
-        fs_buf = flb_file_read(val);
+
+        fs_buf = flb_file_read(value);
         if (!fs_buf) {
-            flb_error("[env] file %s could not be read", val);
+            flb_error("[env] file %s could not be read", value);
             return -1;
         }
 
-        /* Set the new value */
-        val = fs_buf;
+        value = fs_buf;
         vlen = flb_sds_len(fs_buf);
 
-        /* check if we have an ending \r or \n */
-        if (vlen > 0 && (val[vlen - 1] == '\n' || val[vlen - 1] == '\r')) {
+        if (vlen > 0 && (value[vlen - 1] == '\n' || value[vlen - 1] == '\r')) {
             vlen--;
             flb_sds_len_set(fs_buf, vlen);
         }
 
-        /* Check if the file content is empty */
         if (vlen == 0) {
-            flb_error("[env] file %s content is empty", val);
+            flb_error("[env] file %s content is empty", value);
             flb_sds_destroy(fs_buf);
             return -1;
         }
 
-        flb_debug("[env] file %s content read propery, length= %d", val, vlen);
+        flb_debug("[env] file %s content read propery, length= %d", value, vlen);
     }
 
     /* Check if the key is already set */
     id = flb_hash_table_get(env->ht, key, klen, &out_buf, &out_size);
     if (id >= 0) {
-        /* Remove the old entry */
         flb_hash_table_del(env->ht, key);
     }
 
-    /* Register the new key */
-    id = flb_hash_table_add(env->ht, key, klen, (void *) val, vlen);
+    id = flb_hash_table_add(env->ht, key, klen, (void *) value, vlen);
+
+    var = flb_calloc(1, sizeof(struct flb_env_var));
+    if (!var) {
+        flb_errno();
+        if (fs_buf) {
+            flb_sds_destroy(fs_buf);
+        }
+        return -1;
+    }
+    mk_list_add(&var->_head, &env->vars);
+    var->name = flb_sds_create(key);
+    if (vlen > 0) {
+        var->value = flb_sds_create_len(value, vlen);
+    }
+    if (orig_uri) {
+        var->uri = flb_sds_create(orig_uri);
+    }
+    var->refresh_interval = refresh_interval;
+    if (orig_uri) {
+        var->last_refresh = time(NULL);
+    }
+    else {
+        var->last_refresh = 0;
+    }
 
     if (fs_buf) {
         flb_sds_destroy(fs_buf);
@@ -166,12 +216,23 @@ int flb_env_set(struct flb_env *env, const char *key, const char *val)
     return id;
 }
 
+int flb_env_set(struct flb_env *env, const char *key, const char *val)
+{
+    return flb_env_set_extended(env, key, val, NULL, 0);
+}
+
 const char *flb_env_get(struct flb_env *env, const char *key)
 {
     int len;
     int ret;
     void *out_buf;
     size_t out_size;
+    struct mk_list *head;
+    struct flb_env_var *var;
+    time_t now;
+    flb_sds_t fs_buf;
+    int vlen;
+    const char *file;
 
     if (!key) {
         return NULL;
@@ -179,13 +240,62 @@ const char *flb_env_get(struct flb_env *env, const char *key)
 
     len = strlen(key);
 
-    /* Try to get the value from the hash table */
+    mk_list_foreach(head, &env->vars) {
+        var = mk_list_entry(head, struct flb_env_var, _head);
+        if (var->name && strcmp(var->name, key) == 0) {
+            if (var->uri && var->refresh_interval > 0) {
+                now = time(NULL);
+                if (var->last_refresh == 0 ||
+                    now - var->last_refresh >= var->refresh_interval) {
+                    file = var->uri;
+                    if (strncmp(file, "file://", 7) == 0) {
+                        file += 7;
+                    }
+
+                    if (access(file, R_OK) == -1) {
+                        flb_error("[env] file %s not found", file);
+                        break;
+                    }
+
+                    fs_buf = flb_file_read(file);
+                    if (!fs_buf) {
+                        flb_error("[env] file %s could not be read", file);
+                        break;
+                    }
+
+                    vlen = flb_sds_len(fs_buf);
+                    if (vlen > 0 && (fs_buf[vlen - 1] == '\n' || fs_buf[vlen - 1] == '\r')) {
+                        vlen--;
+                        flb_sds_len_set(fs_buf, vlen);
+                    }
+
+                    if (vlen == 0) {
+                        flb_error("[env] file %s content is empty", file);
+                        flb_sds_destroy(fs_buf);
+                        break;
+                    }
+
+                    flb_hash_table_del(env->ht, key);
+                    if (var->value) {
+                        flb_sds_destroy(var->value);
+                    }
+                    var->value = fs_buf;
+                    ret = flb_hash_table_add(env->ht, key, len, fs_buf, vlen);
+                    if (ret < 0) {
+                        break;
+                    }
+                    var->last_refresh = now;
+                }
+            }
+            break;
+        }
+    }
+
     ret = flb_hash_table_get(env->ht, key, len, &out_buf, &out_size);
     if (ret >= 0) {
         return (char *) out_buf;
     }
 
-    /* If it was not found, try to get it from the real environment */
     out_buf = getenv(key);
     if (!out_buf) {
         return NULL;

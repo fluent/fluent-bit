@@ -63,10 +63,30 @@ extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx);
 
 #define FLB_LOG_MNG_TERMINATION_SIGNAL 1
 #define FLB_LOG_MNG_REFRESH_SIGNAL     2
+#define FLB_LOG_MNG_DRAIN_SIGNAL       3
 
 
 #define FLB_LOG_CACHE_ENTRIES        10
 #define FLB_LOG_CACHE_TEXT_BUF_SIZE  1024
+#define FLB_LOG_QUEUE_LIMIT          1024
+
+struct flb_log_record {
+    int type;
+    uint64_t timestamp_sec;
+    uint32_t timestamp_nsec;
+    size_t size;
+    struct flb_log_record *next;
+    char msg[];
+};
+
+struct flb_log_queue {
+    size_t length;
+    size_t limit;
+    int signal_pending;
+    struct flb_log_record *head;
+    struct flb_log_record *tail;
+    pthread_mutex_t mutex;
+};
 
 /* Logging main context */
 struct flb_log {
@@ -74,6 +94,7 @@ struct flb_log {
     flb_pipefd_t ch_mng[2];    /* worker channel manager   */
     uint16_t type;             /* log type                 */
     uint16_t level;            /* level                    */
+    int out_fd;                /* output file descriptor   */
     char *out;                 /* FLB_LOG_FILE or FLB_LOG_SOCKET */
     pthread_t tid;             /* thread ID   */
     struct flb_worker *worker; /* non-real worker reference */
@@ -84,6 +105,20 @@ struct flb_log {
     int pth_init;
     pthread_cond_t  pth_cond;
     pthread_mutex_t pth_mutex;
+
+    /* Log transport queue */
+    size_t queue_length;
+    size_t queue_limit;
+    size_t dropped_records;
+    int queue_signal_pending;
+    struct flb_log_record *queue_head;
+    struct flb_log_record *queue_tail;
+    pthread_mutex_t queue_mutex;
+
+    /* Pipeline mirror queue */
+    int pipeline_enabled;
+    flb_pipefd_t pipeline_ch[2];
+    struct flb_log_queue pipeline_queue;
 };
 
 struct flb_log_cache_entry {
@@ -105,6 +140,9 @@ struct flb_log_metrics {
 
     /* cmetrics */
     struct cmt_counter *logs_total_counter; /* total number of logs (by message type) */
+    struct cmt_counter *queue_enqueue_counter;
+    struct cmt_counter *queue_drop_counter;
+    struct cmt_counter *queue_drain_counter;
 };
 
 /*
@@ -143,6 +181,11 @@ int flb_log_set_file(struct flb_config *config, char *out);
 int flb_log_destroy(struct flb_log *log, struct flb_config *config);
 void flb_log_print(int type, const char *file, int line, const char *fmt, ...) FLB_FORMAT_PRINTF(4, 5);
 int flb_log_is_truncated(int type, const char *file, int line, const char *fmt, ...) FLB_FORMAT_PRINTF(4, 5);
+void flb_log_record_destroy(struct flb_log_record *record);
+int flb_log_pipeline_enable(struct flb_config *config);
+void flb_log_pipeline_disable(struct flb_config *config);
+flb_pipefd_t flb_log_pipeline_get_event_fd(struct flb_config *config);
+struct flb_log_record *flb_log_pipeline_dequeue(struct flb_config *config);
 
 struct flb_log_cache *flb_log_cache_create(int timeout_seconds, int size);
 void flb_log_cache_destroy(struct flb_log_cache *cache);

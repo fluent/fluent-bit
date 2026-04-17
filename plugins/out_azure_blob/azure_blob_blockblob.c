@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto_constants.h>
+#include <fluent-bit/flb_compression.h>
 
 #include <math.h>
 
@@ -31,18 +32,36 @@
 #include "azure_blob_uri.h"
 #include "azure_blob_http.h"
 
-flb_sds_t azb_block_blob_blocklist_uri(struct flb_azure_blob *ctx, char *name)
+static const char *azb_blob_extension(struct flb_azure_blob *ctx)
+{
+    if (ctx->compress_blob != FLB_TRUE) {
+        return "";
+    }
+
+    if (ctx->compression == FLB_COMPRESSION_ALGORITHM_ZSTD) {
+        return ".zst";
+    }
+
+    return ".gz";
+}
+
+flb_sds_t azb_block_blob_blocklist_uri(struct flb_azure_blob *ctx,
+                                      const char *path_prefix,
+                                      const char *name)
 {
     flb_sds_t uri;
+    const char *effective_path;
 
     uri = azb_uri_container(ctx);
     if (!uri) {
         return NULL;
     }
 
-    if (ctx->path) {
+    effective_path = azb_effective_path(ctx, path_prefix);
+
+    if (effective_path && effective_path[0] != '\0') {
         flb_sds_printf(&uri, "/%s/%s?comp=blocklist",
-                       ctx->path, name);
+                       effective_path, name);
     }
     else {
         flb_sds_printf(&uri, "/%s?comp=blocklist", name);
@@ -55,13 +74,18 @@ flb_sds_t azb_block_blob_blocklist_uri(struct flb_azure_blob *ctx, char *name)
     return uri;
 }
 
-flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *name,
-                             char *blockid, uint64_t ms, char *random_str)
+flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx,
+                             const char *path_prefix,
+                             const char *name,
+                             const char *blockid,
+                             uint64_t ms,
+                             const char *random_str)
 {
     int len;
     flb_sds_t uri;
-    char *ext;
+    const char *ext;
     char *encoded_blockid;
+    const char *effective_path;
 
     len = strlen(blockid);
     encoded_blockid = azb_uri_encode(blockid, len);
@@ -75,21 +99,18 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *name,
         return NULL;
     }
 
-    if (ctx->compress_blob == FLB_TRUE) {
-        ext = ".gz";
-    }
-    else {
-        ext = "";
-    }
+    ext = azb_blob_extension(ctx);
 
-    if (ctx->path) {
+    effective_path = azb_effective_path(ctx, path_prefix);
+
+    if (effective_path && effective_path[0] != '\0') {
         if (ms > 0) {
             flb_sds_printf(&uri, "/%s/%s.%s.%" PRIu64 "%s?blockid=%s&comp=block",
-                    ctx->path, name, random_str, ms, ext, encoded_blockid);
+                    effective_path, name, random_str, ms, ext, encoded_blockid);
         }
         else {
             flb_sds_printf(&uri, "/%s/%s.%s%s?blockid=%s&comp=block",
-                    ctx->path, name, random_str, ext, encoded_blockid);
+                    effective_path, name, random_str, ext, encoded_blockid);
         }
     }
     else {
@@ -112,26 +133,33 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *name,
 }
 
 flb_sds_t azb_block_blob_uri_commit(struct flb_azure_blob *ctx,
-                                    char *tag, uint64_t ms, char *str)
+                                    const char *path_prefix,
+                                    const char *tag,
+                                    uint64_t ms,
+                                    const char *str)
 {
-    char *ext;
+    const char *ext;
     flb_sds_t uri;
+    const char *effective_path;
+
+    if (!ctx || !tag || !str) {
+        return NULL;
+    }
 
     uri = azb_uri_container(ctx);
     if (!uri) {
         return NULL;
     }
 
-    if (ctx->compress_blob == FLB_TRUE) {
-        ext = ".gz";
-    }
-    else {
-        ext = "";
-    }
+    ext = azb_blob_extension(ctx);
 
-    if (ctx->path) {
-        flb_sds_printf(&uri, "/%s/%s.%s.%" PRIu64 "%s?comp=blocklist", ctx->path, tag, str,
-                ms, ext);
+    effective_path = azb_effective_path(ctx, path_prefix);
+
+    if (effective_path && effective_path[0] != '\0') {
+        flb_sds_printf(&uri,
+                       "/%s/%s.%s.%" PRIu64 "%s?comp=blocklist",
+                       effective_path, tag, str,
+                       ms, ext);
     }
     else {
         flb_sds_printf(&uri, "/%s.%s.%" PRIu64 "%s?comp=blocklist", tag, str, ms, ext);
@@ -331,14 +359,19 @@ int azb_block_blob_put_block_list(struct flb_azure_blob *ctx, flb_sds_t uri, flb
 }
 
 /* Commit a single block */
-int azb_block_blob_commit_block(struct flb_azure_blob *ctx, char *blockid, char *tag, uint64_t ms, char *str)
+int azb_block_blob_commit_block(struct flb_azure_blob *ctx,
+                                const char *path_prefix,
+                                const char *blockid,
+                                const char *tag,
+                                uint64_t ms,
+                                const char *str)
 {
     int ret;
     flb_sds_t uri = NULL;
     flb_sds_t payload;
 
     /* Compose commit URI */
-    uri = azb_block_blob_uri_commit(ctx, tag, ms, str);
+    uri = azb_block_blob_uri_commit(ctx, path_prefix, tag, ms, str);
     if (!uri) {
         return FLB_ERROR;
     }
@@ -367,7 +400,9 @@ int azb_block_blob_commit_block(struct flb_azure_blob *ctx, char *blockid, char 
     return ret;
 }
 
-int azb_block_blob_commit_file_parts(struct flb_azure_blob *ctx, uint64_t file_id, cfl_sds_t path, cfl_sds_t part_ids)
+int azb_block_blob_commit_file_parts(struct flb_azure_blob *ctx, uint64_t file_id,
+                                     cfl_sds_t path, cfl_sds_t part_ids,
+                                     const char *path_prefix)
 {
     int ret;
     uint64_t id;
@@ -419,7 +454,7 @@ int azb_block_blob_commit_file_parts(struct flb_azure_blob *ctx, uint64_t file_i
     cfl_sds_cat_safe(&payload, "</BlockList>", 12);
     flb_utils_split_free(list);
 
-    uri = azb_block_blob_blocklist_uri(ctx, path);
+    uri = azb_block_blob_blocklist_uri(ctx, path_prefix, path);
     if (!uri) {
         flb_sds_destroy(payload);
         return -1;

@@ -1058,11 +1058,11 @@ static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
     }
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
-    flb_upstream_conn_release(u_conn);
-
     if (c) {
         flb_http_client_destroy(c);
     }
+
+    flb_upstream_conn_release(u_conn);
 
     FLB_OUTPUT_RETURN(ret);
 }

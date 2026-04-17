@@ -359,6 +359,20 @@ int tls_context_alpn_set(void *ctx_backend, const char *alpn)
     return result;
 }
 
+static int tls_context_set_verify_client(void *ctx_backend, int verify_client)
+{
+    struct tls_context *ctx = ctx_backend;
+    int mode;
+
+    if (ctx->mode == FLB_TLS_SERVER_MODE && verify_client == FLB_TRUE) {
+        mode = SSL_CTX_get_verify_mode(ctx->ctx);
+        mode |= SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
+        SSL_CTX_set_verify(ctx->ctx, mode, NULL);
+    }
+
+    return 0;
+}
+
 #ifdef _MSC_VER
 /* Parse certstore_name prefix like
  *
@@ -860,7 +874,8 @@ static void *tls_context_create(int verify,
         SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_NONE, NULL);
     }
     else {
-        SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
+        int verify_flags = SSL_VERIFY_PEER;
+        SSL_CTX_set_verify(ssl_ctx, verify_flags, NULL);
     }
 
     /* ca_path | ca_file */
@@ -1666,6 +1681,7 @@ static struct flb_tls_backend tls_openssl = {
     .context_create       = tls_context_create,
     .context_destroy      = tls_context_destroy,
     .context_alpn_set     = tls_context_alpn_set,
+    .context_set_verify_client = tls_context_set_verify_client,
     .session_alpn_get     = tls_session_alpn_get,
     .set_minmax_proto     = tls_set_minmax_proto,
     .set_ciphers          = tls_set_ciphers,

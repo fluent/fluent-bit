@@ -29,5 +29,16 @@ int flb_tail_scan_callback(struct flb_input_instance *ins,
 void flb_tail_scan_register_ignored_file_size(struct flb_tail_config *ctx, const char *path, size_t path_length, size_t size);
 void flb_tail_scan_unregister_ignored_file_size(struct flb_tail_config *ctx, const char *path, size_t path_length);
 ssize_t flb_tail_scan_fetch_ignored_file_size(struct flb_tail_config *ctx, const char *path, size_t path_length);
+void flb_tail_scan_register_aged_out_inode(struct flb_tail_config *ctx,
+                                           const char *path,
+                                           size_t path_length,
+                                           uint64_t inode);
+void flb_tail_scan_unregister_aged_out_inode(struct flb_tail_config *ctx,
+                                             const char *path,
+                                             size_t path_length);
+int flb_tail_scan_fetch_aged_out_inode(struct flb_tail_config *ctx,
+                                       const char *path,
+                                       size_t path_length,
+                                       uint64_t *inode);
 
 #endif

@@ -74,6 +74,43 @@ static inline size_t http2_lower_value(size_t left_value, size_t right_value)
     return right_value;
 }
 
+static int http2_request_body_limit_exceeded(struct flb_http_stream *stream,
+                                             size_t append_length)
+{
+    size_t                           current_length;
+    struct flb_http_server_session  *parent_session;
+    struct flb_http_server          *server;
+    size_t                           maximum_size;
+
+    parent_session = (struct flb_http_server_session *) stream->parent;
+
+    if (parent_session == NULL) {
+        return FLB_TRUE;
+    }
+
+    server = parent_session->parent;
+
+    if (server == NULL) {
+        return FLB_TRUE;
+    }
+
+    maximum_size = flb_http_server_get_buffer_max_size(server);
+
+    if (stream->request.body == NULL) {
+        current_length = 0;
+    }
+    else {
+        current_length = cfl_sds_len(stream->request.body);
+    }
+
+    if (append_length > maximum_size ||
+        current_length > maximum_size - append_length) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 /* RESPONSE */
 
 struct flb_http_response *flb_http2_response_begin(
@@ -138,6 +175,7 @@ int flb_http2_response_commit(struct flb_http_response *response)
     struct flb_http2_server_session *session;
     struct flb_http_stream          *stream;
     int                              result;
+    char                            *header_value;
 
     parent_session = (struct flb_http_server_session *) response->stream->parent;
 
@@ -177,6 +215,24 @@ int flb_http2_response_commit(struct flb_http_response *response)
 
     header_index = 1;
 
+    header_value = flb_http_response_get_header(response, "server");
+    if (header_value != NULL) {
+        headers[header_index].name = (uint8_t *) "server";
+        headers[header_index].namelen = strlen("server");
+        headers[header_index].value = (uint8_t *) header_value;
+        headers[header_index].valuelen = strlen(header_value);
+        header_index++;
+    }
+
+    header_value = flb_http_response_get_header(response, "x-http-engine");
+    if (header_value != NULL) {
+        headers[header_index].name = (uint8_t *) "x-http-engine";
+        headers[header_index].namelen = strlen("x-http-engine");
+        headers[header_index].value = (uint8_t *) header_value;
+        headers[header_index].valuelen = strlen(header_value);
+        header_index++;
+    }
+
     mk_list_foreach(header_iterator, &response->headers->entries) {
         header_entry = mk_list_entry(header_iterator, 
                                      struct flb_hash_table_entry, 
@@ -186,6 +242,17 @@ int flb_http2_response_commit(struct flb_http_response *response)
             flb_free(headers);
 
             return -4;
+        }
+
+        if ((header_entry->key_len == strlen("server") &&
+             strncasecmp((const char *) header_entry->key,
+                         "server",
+                         header_entry->key_len) == 0) ||
+            (header_entry->key_len == strlen("x-http-engine") &&
+             strncasecmp((const char *) header_entry->key,
+                         "x-http-engine",
+                         header_entry->key_len) == 0)) {
+            continue;
         }
 
         headers[header_index].name = (uint8_t *) header_entry->key;
@@ -474,6 +541,11 @@ static int http2_header_callback(nghttp2_session *inner_session,
         if (stream->request.path == NULL) {
             return -1;
         }
+
+        result = flb_http_request_normalize(&stream->request);
+        if (result != 0) {
+            return -1;
+        }
     }
     else if (flb_http_server_strncasecmp(
                 name, name_length, ":authority", 0) == 0) {
@@ -510,6 +582,13 @@ static int http2_header_callback(nghttp2_session *inner_session,
         temporary_buffer[sizeof(temporary_buffer) - 1] = '\0';
 
         stream->request.content_length = strtoull(temporary_buffer, NULL, 10);
+
+        if (http2_request_body_limit_exceeded(stream,
+                                              stream->request.content_length)) {
+            stream->status = HTTP_STREAM_STATUS_ERROR;
+
+            return -1;
+        }
     }
 
     result = flb_http_request_set_header(&stream->request, 
@@ -657,6 +736,12 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
         return -1;
     }
 
+    if (http2_request_body_limit_exceeded(stream, len)) {
+        stream->status = HTTP_STREAM_STATUS_ERROR;
+
+        return -1;
+    }
+
     if (stream->request.body == NULL) {
         stream->request.body = cfl_sds_create_size(len);
 
@@ -761,4 +846,3 @@ static ssize_t http2_data_source_read_callback(nghttp2_session *session,
 
     return result;
 }
-

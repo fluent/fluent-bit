@@ -57,6 +57,7 @@ struct flb_az_li {
     int compress_enabled;
 
     /* mangement auth */
+    flb_sds_t auth_url_override;
     flb_sds_t auth_url;
     struct flb_oauth2 *u_auth;
     /* mutex for acquiring tokens */

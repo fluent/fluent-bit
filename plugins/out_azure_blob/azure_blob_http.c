@@ -195,6 +195,9 @@ flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
     if (content_encoding == AZURE_BLOB_CE_GZIP) {
         encoding = "gzip";
     }
+    else if (content_encoding == AZURE_BLOB_CE_ZSTD) {
+        encoding = "zstd";
+    }
     else {
         encoding = "";
     }
@@ -224,6 +227,9 @@ flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
     }
     else if (content_type == AZURE_BLOB_CT_GZIP) {
         ctype = "application/gzip";
+    }
+    else if (content_type == AZURE_BLOB_CT_ZSTD) {
+        ctype = "application/zstd";
     }
 
     flb_sds_printf(&can_req,
@@ -319,11 +325,21 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
                             AZURE_BLOB_CT, sizeof(AZURE_BLOB_CT) - 1,
                             "application/gzip", 16);
     }
+    else if (content_type == AZURE_BLOB_CT_ZSTD) {
+        flb_http_add_header(c,
+                            AZURE_BLOB_CT, sizeof(AZURE_BLOB_CT) - 1,
+                            "application/zstd", 16);
+    }
 
     if (content_encoding == AZURE_BLOB_CE_GZIP) {
         flb_http_add_header(c,
                             AZURE_BLOB_CE, sizeof(AZURE_BLOB_CE) - 1,
                             "gzip", 4);
+    }
+    else if (content_encoding == AZURE_BLOB_CE_ZSTD) {
+        flb_http_add_header(c,
+                            AZURE_BLOB_CE, sizeof(AZURE_BLOB_CE) - 1,
+                            "zstd", 4);
     }
 
     /* Azure header: x-ms-blob-type */
