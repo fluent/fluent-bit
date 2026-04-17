@@ -222,6 +222,10 @@ int amd_gpu_detect_cards(struct in_gpu_metrics *ctx)
         card->id = id;
         card->backend_type = GPU_BACKEND_AMD;
         card->hwmon_path = NULL;
+        card->uuid = NULL;
+        card->parent_uuid = NULL;
+        card->gpu_instance_id = -1;
+        card->compute_instance_id = -1;
         card->hwmon_path = find_hwmon_path(id);
         if (!card->hwmon_path) {
             flb_plg_debug(ctx->ins, "no hwmon path for card%d", id);

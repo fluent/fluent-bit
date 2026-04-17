@@ -27,6 +27,10 @@ struct gpu_card {
     int id;
     int backend_type;
     flb_sds_t hwmon_path;
+    flb_sds_t uuid;
+    flb_sds_t parent_uuid;
+    int gpu_instance_id;
+    int compute_instance_id;
     struct cfl_list _head;
 };
 
@@ -53,6 +57,8 @@ struct in_gpu_metrics {
     struct cmt_gauge *g_temp;
     struct cmt_gauge *g_fan_speed;
     struct cmt_gauge *g_fan_pwm;
+    struct cmt_gauge *g_process_memory;
+    struct cmt_gauge *g_mig_info;
 
     /* plugin instance */
     struct flb_input_instance *ins;
