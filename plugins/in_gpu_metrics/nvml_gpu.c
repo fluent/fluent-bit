@@ -159,6 +159,35 @@ static nvmlDeviceGetComputeRunningProcesses_v3_t f_nvml_device_get_compute_runni
 static nvmlDeviceGetGraphicsRunningProcesses_v3_t f_nvml_device_get_graphics_running_processes_v3;
 static nvmlErrorString_t f_nvml_error_string;
 
+static void nvml_reset_api_symbols()
+{
+    f_nvml_init_v2 = NULL;
+    f_nvml_shutdown = NULL;
+    f_nvml_device_get_count_v2 = NULL;
+    f_nvml_device_get_handle_by_index_v2 = NULL;
+    f_nvml_device_get_handle_by_uuid = NULL;
+    f_nvml_device_get_memory_info = NULL;
+    f_nvml_device_get_utilization_rates = NULL;
+    f_nvml_device_get_temperature = NULL;
+    f_nvml_device_get_power_usage = NULL;
+    f_nvml_device_get_fan_speed = NULL;
+    f_nvml_device_get_clock_info = NULL;
+    f_nvml_device_get_uuid = NULL;
+    f_nvml_device_get_mig_mode = NULL;
+    f_nvml_device_get_max_mig_device_count = NULL;
+    f_nvml_device_get_mig_device_handle_by_index = NULL;
+    f_nvml_device_get_gpu_instance_id = NULL;
+    f_nvml_device_get_compute_instance_id = NULL;
+    f_nvml_device_get_parent_from_mig = NULL;
+    f_nvml_device_get_compute_running_processes = NULL;
+    f_nvml_device_get_graphics_running_processes = NULL;
+    f_nvml_device_get_compute_running_processes_v2 = NULL;
+    f_nvml_device_get_graphics_running_processes_v2 = NULL;
+    f_nvml_device_get_compute_running_processes_v3 = NULL;
+    f_nvml_device_get_graphics_running_processes_v3 = NULL;
+    f_nvml_error_string = NULL;
+}
+
 static const char *nvml_result_to_string(nvmlReturn_t result)
 {
     if (f_nvml_error_string != NULL) {
@@ -515,6 +544,8 @@ int nvml_gpu_initialize(struct in_gpu_metrics *ctx)
 {
     nvmlReturn_t result;
 
+    nvml_reset_api_symbols();
+
     if (ctx->enable_nvml == FLB_FALSE) {
         return 0;
     }
@@ -542,6 +573,7 @@ int nvml_gpu_initialize(struct in_gpu_metrics *ctx)
         load_nvml_symbol(ctx, "nvmlDeviceGetPowerUsage", (void **) &f_nvml_device_get_power_usage) != 0) {
         dlclose(ctx->nvml_lib_handle);
         ctx->nvml_lib_handle = NULL;
+        nvml_reset_api_symbols();
         return -1;
     }
 
@@ -578,6 +610,7 @@ int nvml_gpu_initialize(struct in_gpu_metrics *ctx)
         flb_plg_warn(ctx->ins, "NVML init failed: %s", nvml_result_to_string(result));
         dlclose(ctx->nvml_lib_handle);
         ctx->nvml_lib_handle = NULL;
+        nvml_reset_api_symbols();
         return -1;
     }
 
@@ -592,6 +625,7 @@ int nvml_gpu_detect_cards(struct in_gpu_metrics *ctx)
     unsigned int count;
     nvmlDevice_t device;
     nvmlReturn_t result;
+    int uuid_ok;
     char uuid[NVML_UUID_BUFFER_SIZE];
     int detected;
 
@@ -617,7 +651,9 @@ int nvml_gpu_detect_cards(struct in_gpu_metrics *ctx)
             continue;
         }
 
-        if (nvml_read_device_uuid(device, uuid, sizeof(uuid)) == 0) {
+        uuid_ok = (nvml_read_device_uuid(device, uuid, sizeof(uuid)) == 0);
+
+        if (uuid_ok) {
             if (nvml_register_card(ctx, (int) index, -1, -1, uuid, NULL) != 0) {
                 return -1;
             }
@@ -630,7 +666,7 @@ int nvml_gpu_detect_cards(struct in_gpu_metrics *ctx)
         detected++;
 
         if (nvml_detect_mig_devices(ctx, (int) index, device,
-                                    nvml_read_device_uuid(device, uuid, sizeof(uuid)) == 0 ? uuid : NULL) != 0) {
+                                    uuid_ok ? uuid : NULL) != 0) {
             flb_plg_warn(ctx->ins, "failed to detect MIG devices for card%d", (int) index);
         }
     }
@@ -754,11 +790,16 @@ int nvml_gpu_collect_metrics(struct in_gpu_metrics *ctx, struct gpu_card *card)
 void nvml_gpu_shutdown(struct in_gpu_metrics *ctx)
 {
     if (ctx->nvml_initialized == FLB_TRUE) {
-        f_nvml_shutdown();
+        if (f_nvml_shutdown != NULL) {
+            f_nvml_shutdown();
+        }
         ctx->nvml_initialized = FLB_FALSE;
     }
+
     if (ctx->nvml_lib_handle != NULL) {
         dlclose(ctx->nvml_lib_handle);
         ctx->nvml_lib_handle = NULL;
     }
+
+    nvml_reset_api_symbols();
 }
