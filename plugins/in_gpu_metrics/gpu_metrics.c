@@ -124,6 +124,15 @@ static int in_gpu_init(struct flb_input_instance *ins,
                                       "GPU fan PWM percentage", 2,
                                       (char *[]) {"card", "vendor"});
 
+    ctx->g_process_memory = cmt_gauge_create(ctx->cmt, "gpu", "", "process_memory_used_bytes",
+                                             "Per-process GPU memory in bytes", 3,
+                                             (char *[]) {"card", "vendor", "pid"});
+
+    ctx->g_mig_info = cmt_gauge_create(ctx->cmt, "gpu", "", "mig_device_info",
+                                       "MIG device metadata (always 1)", 5,
+                                       (char *[]) {"card", "vendor", "parent_uuid",
+                                                   "gpu_instance_id", "compute_instance_id"});
+
     amd_gpu_detect_cards(ctx);
     if (nvml_gpu_initialize(ctx) == 0) {
         if (nvml_gpu_detect_cards(ctx) != 0) {
@@ -167,6 +176,13 @@ static int in_gpu_exit(void *data, struct flb_config *config)
         if (card->hwmon_path) {
             flb_sds_destroy(card->hwmon_path);
         }
+        if (card->uuid) {
+            flb_sds_destroy(card->uuid);
+        }
+        if (card->parent_uuid) {
+            flb_sds_destroy(card->parent_uuid);
+        }
+
         cfl_list_del(&card->_head);
         flb_free(card);
     }
