@@ -987,6 +987,12 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
                 return -1;
             }
         }
+#else
+        if (ctx->parsed_mode == FLB_SYSLOG_DTLS) {
+            flb_plg_error(ins, "could not initialize DTLS context");
+            flb_syslog_config_destroy(ctx);
+            return -1;
+        }
 #endif
 
         if (ctx->parsed_mode == FLB_SYSLOG_UDP) {
@@ -1013,10 +1019,11 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
             return -1;
         }
         flb_output_upstream_set(ctx->u, ins);
-
-        /* Set the plugin context */
-        flb_output_set_context(ins, ctx);
     }
+
+    /* Set the plugin context for all modes, including UDP. */
+    flb_output_set_context(ins, ctx);
+
     flb_plg_info(ctx->ins, "setup done for %s:%i (TLS=%s)",
                  ins->host.name, ins->host.port,
                  ins->use_tls ? "on" : "off");

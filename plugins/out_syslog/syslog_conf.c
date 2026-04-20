@@ -87,9 +87,6 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    /* Set context */
-    flb_output_set_context(ins, ctx);
-
     /* Config Mode */
     tmp = flb_output_get_property("mode", ins);
     if (tmp) {
@@ -170,6 +167,9 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
             ctx->maxsize = 2048;
         }
     }
+
+    /* Set context after validation succeeds */
+    flb_output_set_context(ins, ctx);
 
     return ctx;
 }
