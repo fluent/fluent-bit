@@ -117,9 +117,13 @@ class DtlsReceiver:
         self.process = None
 
     def start(self):
-        self.process = subprocess.Popen(
+        openssl = shutil.which("openssl")
+        if openssl is None:
+            raise RuntimeError("openssl is required for DTLS test")
+
+        self.process = subprocess.Popen(  # noqa: S603 - controlled test command
             [
-                "openssl",
+                openssl,
                 "s_server",
                 "-dtls",
                 "-accept",
