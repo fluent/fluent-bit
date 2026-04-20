@@ -129,6 +129,11 @@ int flb_io_net_connect(struct flb_connection *connection,
         fd = flb_net_udp_connect(connection->upstream->tcp_host,
                                  connection->upstream->tcp_port,
                                  connection->stream->net.source_address);
+
+        if (fd >= 0) {
+            connection->fd = fd;
+            connection->event.fd = fd;
+        }
     }
     else {
         /* Perform TCP connection */
