@@ -125,17 +125,26 @@ int flb_io_net_connect(struct flb_connection *connection,
         async = FLB_FALSE;
     }
 
-    /* Perform TCP connection */
-    fd = flb_net_tcp_connect(connection->upstream->tcp_host,
-                             connection->upstream->tcp_port,
-                             connection->stream->net.source_address,
-                             connection->stream->net.connect_timeout,
-                             async, coro, connection);
+    if (connection->stream->transport == FLB_TRANSPORT_UDP) {
+        fd = flb_net_udp_connect(connection->upstream->tcp_host,
+                                 connection->upstream->tcp_port,
+                                 connection->stream->net.source_address);
+    }
+    else {
+        /* Perform TCP connection */
+        fd = flb_net_tcp_connect(connection->upstream->tcp_host,
+                                 connection->upstream->tcp_port,
+                                 connection->stream->net.source_address,
+                                 connection->stream->net.connect_timeout,
+                                 async, coro, connection);
+    }
+
     if (fd == -1) {
         return -1;
     }
 
-    if (connection->upstream->proxied_host) {
+    if (connection->stream->transport == FLB_TRANSPORT_TCP &&
+        connection->upstream->proxied_host) {
         ret = flb_http_client_proxy_connect(connection);
 
         if (ret == -1) {
@@ -156,7 +165,8 @@ int flb_io_net_connect(struct flb_connection *connection,
     }
 
     /* set TCP keepalive and it's options */
-    if (connection->net->tcp_keepalive) {
+    if (connection->stream->transport == FLB_TRANSPORT_TCP &&
+        connection->net->tcp_keepalive) {
         ret = flb_net_socket_tcp_keepalive(connection->fd,
                                            connection->net);
 
@@ -694,13 +704,17 @@ int flb_io_net_write(struct flb_connection *connection, const void *data,
         }
     }
 #ifdef FLB_HAVE_TLS
-    else if (flags & FLB_IO_TLS) {
+    else if (flags & (FLB_IO_TLS | FLB_IO_DTLS)) {
         if (flags & FLB_IO_ASYNC) {
             ret = flb_tls_net_write_async(coro, connection->tls_session, data, len, out_len);
         }
         else {
             ret = flb_tls_net_write(connection->tls_session, data, len, out_len);
         }
+    }
+    else {
+        flb_error("[io] TLS session set on connection #%i but transport flags are invalid (%i)",
+                  connection->fd, flags);
     }
 #endif
 
@@ -742,13 +756,17 @@ ssize_t flb_io_net_read(struct flb_connection *connection, void *buf, size_t len
         }
     }
 #ifdef FLB_HAVE_TLS
-    else if (flags & FLB_IO_TLS) {
+    else if (flags & (FLB_IO_TLS | FLB_IO_DTLS)) {
         if (flags & FLB_IO_ASYNC) {
             ret = flb_tls_net_read_async(coro, connection->tls_session, buf, len);
         }
         else {
             ret = flb_tls_net_read(connection->tls_session, buf, len);
         }
+    }
+    else {
+        flb_error("[io] TLS session set on connection #%i but transport flags are invalid (%i)",
+                  connection->fd, flags);
     }
 #endif
 
