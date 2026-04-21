@@ -150,26 +150,59 @@ static void test_flb_aws_endpoint()
 
     initialization_crutch();
 
+    /* NULL inputs should return NULL */
+    endpoint = flb_aws_endpoint(NULL, "us-east-1");
+    TEST_CHECK(endpoint == NULL);
+
+    endpoint = flb_aws_endpoint("s3", NULL);
+    TEST_CHECK(endpoint == NULL);
+
+    /* Standard commercial region */
     endpoint = flb_aws_endpoint("cloudwatch", "ap-south-1");
-
-    TEST_CHECK(strcmp("cloudwatch.ap-south-1.amazonaws.com",
-                      endpoint) == 0);
+    TEST_CHECK(strcmp("cloudwatch.ap-south-1.amazonaws.com", endpoint) == 0);
     flb_free(endpoint);
 
-    /* China regions have a different TLD */
+    /* China regions (.amazonaws.com.cn) */
     endpoint = flb_aws_endpoint("cloudwatch", "cn-north-1");
-
-    TEST_CHECK(strcmp("cloudwatch.cn-north-1.amazonaws.com.cn",
-                      endpoint) == 0);
+    TEST_CHECK(strcmp("cloudwatch.cn-north-1.amazonaws.com.cn", endpoint) == 0);
     flb_free(endpoint);
 
-    /* EU Sovereign Cloud regions have a different domain */
+    endpoint = flb_aws_endpoint("cloudwatch", "cn-northwest-1");
+    TEST_CHECK(strcmp("cloudwatch.cn-northwest-1.amazonaws.com.cn", endpoint) == 0);
+    flb_free(endpoint);
+
+    /* EU Sovereign Cloud (.amazonaws.eu) */
     endpoint = flb_aws_endpoint("cloudwatch", "eusc-de-east-1");
-
-    TEST_CHECK(strcmp("cloudwatch.eusc-de-east-1.amazonaws.eu",
-                      endpoint) == 0);
+    TEST_CHECK(strcmp("cloudwatch.eusc-de-east-1.amazonaws.eu", endpoint) == 0);
     flb_free(endpoint);
 
+    /* C2S isolated regions (.c2s.ic.gov) */
+    endpoint = flb_aws_endpoint("s3", "us-iso-east-1");
+    TEST_CHECK(strcmp("s3.us-iso-east-1.c2s.ic.gov", endpoint) == 0);
+    flb_free(endpoint);
+
+    endpoint = flb_aws_endpoint("s3", "us-iso-west-1");
+    TEST_CHECK(strcmp("s3.us-iso-west-1.c2s.ic.gov", endpoint) == 0);
+    flb_free(endpoint);
+
+    /* SC2S isolated regions (.sc2s.sgov.gov) */
+    endpoint = flb_aws_endpoint("s3", "us-isob-east-1");
+    TEST_CHECK(strcmp("s3.us-isob-east-1.sc2s.sgov.gov", endpoint) == 0);
+    flb_free(endpoint);
+
+    endpoint = flb_aws_endpoint("s3", "us-isob-west-1");
+    TEST_CHECK(strcmp("s3.us-isob-west-1.sc2s.sgov.gov", endpoint) == 0);
+    flb_free(endpoint);
+
+    /* CSP isolated regions (.csp.hci.ic.gov) */
+    endpoint = flb_aws_endpoint("s3", "us-isof-south-1");
+    TEST_CHECK(strcmp("s3.us-isof-south-1.csp.hci.ic.gov", endpoint) == 0);
+    flb_free(endpoint);
+
+    /* ADC-E isolated regions (.cloud.adc-e.uk) */
+    endpoint = flb_aws_endpoint("s3", "eu-isoe-west-1");
+    TEST_CHECK(strcmp("s3.eu-isoe-west-1.cloud.adc-e.uk", endpoint) == 0);
+    flb_free(endpoint);
 }
 
 static void test_flb_get_s3_key_multi_tag_exists()
