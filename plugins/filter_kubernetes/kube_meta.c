@@ -48,6 +48,7 @@
 #define FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY_LEN \
     (sizeof(FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY) - 1)
 #define FLB_KUBE_TOKEN_BUF_SIZE 8192       /* 8KB */
+#define FLB_KUBE_TOKEN_MAX_SIZE (1024 * 1024) /* 1MB */
 
 static int file_to_buffer(const char *path,
                           char **out_buf, size_t *out_size)
@@ -100,6 +101,9 @@ static int get_token_with_command(const char *command,
     char buf[FLB_KUBE_TOKEN_BUF_SIZE];
     char *temp;
     char *res;
+    size_t capacity = FLB_KUBE_TOKEN_BUF_SIZE;
+    size_t required_size;
+    size_t new_capacity;
     size_t size = 0;
     size_t len = 0;
 
@@ -108,7 +112,7 @@ static int get_token_with_command(const char *command,
         return -1;
     }
 
-    res = flb_calloc(1, FLB_KUBE_TOKEN_BUF_SIZE);
+    res = flb_calloc(1, capacity);
     if (!res) {
         flb_errno();
         pclose(fp);
@@ -117,21 +121,39 @@ static int get_token_with_command(const char *command,
 
     while (fgets(buf, sizeof(buf), fp) != NULL) {
         len = strlen(buf);
-        if (len >= FLB_KUBE_TOKEN_BUF_SIZE - 1) {
-            temp = flb_realloc(res, (FLB_KUBE_TOKEN_BUF_SIZE + size) * 2);
+
+        if (len > FLB_KUBE_TOKEN_MAX_SIZE - size - 1) {
+            flb_free(res);
+            pclose(fp);
+            return -1;
+        }
+        required_size = size + len + 1;
+
+        if (required_size > capacity) {
+            new_capacity = capacity;
+
+            while (new_capacity < required_size) {
+                new_capacity *= 2;
+            }
+
+            temp = flb_realloc(res, new_capacity);
             if (temp == NULL) {
                 flb_errno();
                 flb_free(res);
                 pclose(fp);
                 return -1;
             }
+
             res = temp;
+            capacity = new_capacity;
         }
-        strcpy(res + size, buf);
+
+        memcpy(res + size, buf, len);
         size += len;
+        res[size] = '\0';
     }
 
-    if (strlen(res) < 1) {
+    if (size < 1) {
         flb_free(res);
         pclose(fp);
         return -1;
@@ -140,7 +162,7 @@ static int get_token_with_command(const char *command,
     pclose(fp);
 
     *out_buf = res;
-    *out_size = strlen(res);
+    *out_size = size;
 
     return 0;
 }
@@ -169,8 +191,13 @@ static int get_http_auth_header(struct flb_kube *ctx)
         if (ret == -1) {
             flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_TOKEN);
         }
-        flb_plg_info(ctx->ins, " token updated");
     }
+
+    if (ret == -1 || tk == NULL) {
+        return -1;
+    }
+
+    flb_plg_info(ctx->ins, " token updated");
     ctx->kube_token_create = time(NULL);
 
     /* Token */
