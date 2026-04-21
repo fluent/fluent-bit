@@ -246,6 +246,11 @@ int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url,
 
         if (!c) {
             flb_error("[kubernetes] could not create HTTP client");
+#ifdef FLB_HAVE_TLS
+            if (u_conn->tls_session != NULL) {
+                flb_tls_session_destroy(u_conn->tls_session);
+            }
+#endif
             flb_upstream_conn_recycle(u_conn, FLB_FALSE);
             flb_upstream_conn_release(u_conn);
             flb_upstream_destroy(ctx->aws_pod_association_upstream);
@@ -267,6 +272,11 @@ int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url,
                               c->resp.payload);
             }
             flb_http_client_destroy(c);
+#ifdef FLB_HAVE_TLS
+            if (u_conn->tls_session != NULL) {
+                flb_tls_session_destroy(u_conn->tls_session);
+            }
+#endif
             flb_upstream_conn_recycle(u_conn, FLB_FALSE);
             flb_upstream_conn_release(u_conn);
             return -1;
@@ -279,8 +289,13 @@ int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url,
             parse_pod_service_map(ctx, c->resp.payload, c->resp.payload_size, mutex);
         }
 
-        /* Cleanup - mark connection as non-recyclable to prevent memory leak */
+        /* Destroy TLS session explicitly; the background thread's event loop never drains the destroy_queue. */
         flb_http_client_destroy(c);
+#ifdef FLB_HAVE_TLS
+        if (u_conn->tls_session != NULL) {
+            flb_tls_session_destroy(u_conn->tls_session);
+        }
+#endif
         flb_upstream_conn_recycle(u_conn, FLB_FALSE);
         flb_upstream_conn_release(u_conn);
     }
