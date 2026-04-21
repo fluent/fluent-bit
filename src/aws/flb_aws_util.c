@@ -35,8 +35,34 @@
 
 #define AWS_SERVICE_ENDPOINT_FORMAT            "%s.%s%s"
 #define AWS_SERVICE_ENDPOINT_SUFFIX_COM        ".amazonaws.com"
-#define AWS_SERVICE_ENDPOINT_SUFFIX_COM_CN     ".amazonaws.com.cn"
+#define AWS_SERVICE_ENDPOINT_SUFFIX_SC2S       ".sc2s.sgov.gov"
+#define AWS_SERVICE_ENDPOINT_SUFFIX_CSP        ".csp.hci.ic.gov"
+#define AWS_SERVICE_ENDPOINT_SUFFIX_C2S        ".c2s.ic.gov"
+#define AWS_SERVICE_ENDPOINT_SUFFIX_ADC_E      ".cloud.adc-e.uk"
 #define AWS_SERVICE_ENDPOINT_SUFFIX_EU         ".amazonaws.eu"
+#define AWS_SERVICE_ENDPOINT_SUFFIX_COM_CN     ".amazonaws.com.cn"
+
+/* Maps a region name prefix to its endpoint domain suffix. */
+struct flb_aws_endpoint_suffix {
+    const char *prefix;
+    const char *suffix;
+};
+
+/*
+ * Region prefix to domain suffix mapping for non-standard AWS region families.
+ * Matched via strncmp against the region string, so entries must be ordered
+ * most-specific first to prevent a shorter prefix (e.g. "us-iso-") from
+ * matching before a longer one (e.g. "us-isob-", "us-isof-").
+ */
+static const struct flb_aws_endpoint_suffix endpoint_suffixes[] = {
+    { "us-isob-", AWS_SERVICE_ENDPOINT_SUFFIX_SC2S },
+    { "us-isof-", AWS_SERVICE_ENDPOINT_SUFFIX_CSP },
+    { "us-iso-",  AWS_SERVICE_ENDPOINT_SUFFIX_C2S },
+    { "eu-isoe-", AWS_SERVICE_ENDPOINT_SUFFIX_ADC_E },
+    { "eusc-", AWS_SERVICE_ENDPOINT_SUFFIX_EU },
+    { "cn-", AWS_SERVICE_ENDPOINT_SUFFIX_COM_CN },
+    { NULL, NULL }
+};
 
 #define TAG_PART_DESCRIPTOR "$TAG[%d]"
 #define TAG_DESCRIPTOR "$TAG"
@@ -73,7 +99,8 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    size_t dynamic_headers_len);
 
 /*
- * https://service.region.amazonaws.[com(.cn)|eu]
+ * Constructs an AWS service endpoint of the form: service.region.<domain-suffix>
+ * The domain suffix is resolved via endpoint_suffixes[], defaulting to .amazonaws.com.
  */
 char *flb_aws_endpoint(char* service, char* region)
 {
@@ -81,15 +108,19 @@ char *flb_aws_endpoint(char* service, char* region)
     const char *domain_suffix = AWS_SERVICE_ENDPOINT_SUFFIX_COM;
     size_t len;
     int bytes;
+    int i;
 
-
-    /* China regions end with amazonaws.com.cn */
-    if (strcmp("cn-north-1", region) == 0 ||
-        strcmp("cn-northwest-1", region) == 0) {
-        domain_suffix = AWS_SERVICE_ENDPOINT_SUFFIX_COM_CN;
+    if (!service || !region) {
+        return NULL;
     }
-    else if (strncmp(region, "eusc-", 5) == 0) {
-        domain_suffix = AWS_SERVICE_ENDPOINT_SUFFIX_EU;
+
+    /* Walk the prefix table; first match wins */
+    for (i = 0; endpoint_suffixes[i].prefix != NULL; i++) {
+        if (strncmp(region, endpoint_suffixes[i].prefix,
+                    strlen(endpoint_suffixes[i].prefix)) == 0) {
+            domain_suffix = endpoint_suffixes[i].suffix;
+            break;
+        }
     }
 
     len = strlen(service);
