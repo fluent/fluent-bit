@@ -298,6 +298,10 @@ int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url,
 #endif
         flb_upstream_conn_recycle(u_conn, FLB_FALSE);
         flb_upstream_conn_release(u_conn);
+        flb_upstream_destroy(ctx->aws_pod_association_upstream);
+        flb_tls_destroy(ctx->aws_pod_association_tls);
+        ctx->aws_pod_association_upstream = NULL;
+        ctx->aws_pod_association_tls = NULL;
     }
     return 0;
 }
