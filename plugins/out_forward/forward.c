@@ -840,6 +840,11 @@ static int config_set_properties(struct flb_upstream_node *node,
         fc->send_options = flb_utils_bool(tmp);
     }
 
+    tmp = config_get_property("retain_metadata_in_forward_mode", node, ctx);
+    if (tmp) {
+        fc->fwd_retain_metadata = flb_utils_bool(tmp);
+    }
+
     /* add_option -> extra_options: if the user has defined 'add_option'
      * we need to enable the 'send_options' flag
      */
