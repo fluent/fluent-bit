@@ -8,6 +8,8 @@
 #define VFS_PATH_MAX 256
 #define EXECVE_ARG_MAX 3
 #define EXECVE_ARG_LEN 256
+#define DNS_NAME_MAX 128
+#define DNS_QUERY_RAW_MAX 96
 
 enum event_type {
     EVENT_TYPE_EXECVE,
@@ -18,6 +20,7 @@ enum event_type {
     EVENT_TYPE_LISTEN,
     EVENT_TYPE_ACCEPT,
     EVENT_TYPE_CONNECT,
+    EVENT_TYPE_DNS,
 };
 
 enum vfs_op {
@@ -130,6 +133,18 @@ struct connect_event {
     int error_raw;
 };
 
+struct dns_event {
+    __u16 txid;
+    __u16 query_type;
+    __u8 rcode;
+    __u8 response;
+    __u16 query_raw_len;
+    __u64 latency_ns;
+    int error_raw;
+    char query[DNS_NAME_MAX];
+    __u8 query_raw[DNS_QUERY_RAW_MAX];
+};
+
 struct event {
     enum event_type type;           // Type of event (execve, signal, mem, bind)
     struct event_common common;     // Common fields for all events
@@ -142,6 +157,7 @@ struct event {
         struct listen_event listen;
         struct accept_event accept;
         struct connect_event connect;
+        struct dns_event dns;
     } details;
 };
 
