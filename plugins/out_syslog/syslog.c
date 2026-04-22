@@ -103,27 +103,9 @@ static struct {
 };
 
 #ifdef FLB_HAVE_TLS
-static int syslog_configure_dtls_context(struct flb_output_instance *ins)
+static int syslog_configure_tls_options(struct flb_output_instance *ins)
 {
     int ret;
-
-    if (ins->tls != NULL) {
-        flb_tls_destroy(ins->tls);
-        ins->tls = NULL;
-    }
-
-    ins->tls = flb_tls_create(FLB_TLS_CLIENT_MODE_DGRAM,
-                              ins->tls_verify,
-                              ins->tls_debug,
-                              ins->tls_vhost,
-                              ins->tls_ca_path,
-                              ins->tls_ca_file,
-                              ins->tls_crt_file,
-                              ins->tls_key_file,
-                              ins->tls_key_passwd);
-    if (ins->tls == NULL) {
-        return -1;
-    }
 
     if (ins->tls_verify_hostname == FLB_TRUE) {
         ret = flb_tls_set_verify_hostname(ins->tls, ins->tls_verify_hostname);
@@ -148,7 +130,59 @@ static int syslog_configure_dtls_context(struct flb_output_instance *ins)
         }
     }
 
+#if defined(FLB_SYSTEM_WINDOWS)
+    if (ins->tls_win_use_enterprise_certstore) {
+        ret = flb_tls_set_use_enterprise_store(ins->tls,
+                                               ins->tls_win_use_enterprise_certstore);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    if (ins->tls_win_thumbprints) {
+        ret = flb_tls_set_client_thumbprints(ins->tls, ins->tls_win_thumbprints);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    if (ins->tls_win_certstore_name) {
+        ret = flb_tls_set_certstore_name(ins->tls, ins->tls_win_certstore_name);
+        if (ret == -1) {
+            return -1;
+        }
+
+        ret = flb_tls_load_system_certificates(ins->tls);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+#endif
+
     return 0;
+}
+
+static int syslog_configure_dtls_context(struct flb_output_instance *ins)
+{
+    if (ins->tls != NULL) {
+        flb_tls_destroy(ins->tls);
+        ins->tls = NULL;
+    }
+
+    ins->tls = flb_tls_create(FLB_TLS_CLIENT_MODE_DGRAM,
+                              ins->tls_verify,
+                              ins->tls_debug,
+                              ins->tls_vhost,
+                              ins->tls_ca_path,
+                              ins->tls_ca_file,
+                              ins->tls_crt_file,
+                              ins->tls_key_file,
+                              ins->tls_key_passwd);
+    if (ins->tls == NULL) {
+        return -1;
+    }
+
+    return syslog_configure_tls_options(ins);
 }
 #endif
 
