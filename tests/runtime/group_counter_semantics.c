@@ -699,6 +699,42 @@ static void flb_test_forward_group_size_retain_metadata()
     flb_destroy(ctx);
 }
 
+static void flb_test_forward_group_size_retain_metadata_upstream_node()
+{
+    int ret;
+    int out_ffd;
+    int in_ffd;
+    flb_ctx_t *ctx;
+
+    reset_results();
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "0.2", "Grace", "1", "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "forward", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "tag", "new.tag",
+                   "upstream",
+                   FLB_TESTS_DATA_PATH "/data/forward/upstream_retain_metadata.conf",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_forward_size_check,
+                              NULL, NULL);
+    TEST_CHECK(ret == 0);
+
+    run_group_count_test(ctx);
+    TEST_CHECK(get_forward_size() == 3);
+
+    flb_destroy(ctx);
+}
+
 static void flb_test_loki_group_values_count()
 {
     int out_ffd;
@@ -838,6 +874,8 @@ static void flb_test_forward_output_processor_mixed_payload_smoke()
 TEST_LIST = {
     {"forward_group_size_default", flb_test_forward_group_size_default},
     {"forward_group_size_retain_metadata", flb_test_forward_group_size_retain_metadata},
+    {"forward_group_size_retain_metadata_upstream_node",
+     flb_test_forward_group_size_retain_metadata_upstream_node},
     {"loki_group_values_count", flb_test_loki_group_values_count},
     {"stackdriver_group_entries_count", flb_test_stackdriver_group_entries_count},
     {"forward_output_processor_mixed_payload_smoke",
