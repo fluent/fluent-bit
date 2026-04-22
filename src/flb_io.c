@@ -107,6 +107,7 @@ int flb_io_net_connect(struct flb_connection *connection,
                        struct flb_coro *coro)
 {
     int ret;
+    int socket_ret;
     int async = FLB_FALSE;
     flb_sockfd_t fd = -1;
     int flags = flb_connection_get_flags(connection);
@@ -131,6 +132,24 @@ int flb_io_net_connect(struct flb_connection *connection,
                                  connection->stream->net.source_address);
 
         if (fd >= 0) {
+            if (async == FLB_TRUE) {
+                socket_ret = flb_net_socket_nonblocking(fd);
+                if (socket_ret == -1) {
+                    flb_socket_close(fd);
+                    connection->fd = -1;
+                    connection->event.fd = -1;
+                    return -1;
+                }
+            }
+
+            socket_ret = flb_net_socket_set_rcvtimeout(fd, connection->net->io_timeout);
+            if (socket_ret == -1) {
+                flb_socket_close(fd);
+                connection->fd = -1;
+                connection->event.fd = -1;
+                return -1;
+            }
+
             connection->fd = fd;
             connection->event.fd = fd;
         }
