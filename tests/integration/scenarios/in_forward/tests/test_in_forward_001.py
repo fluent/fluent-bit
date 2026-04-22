@@ -924,6 +924,50 @@ def test_out_forward_logs_signal_e2e_with_forward_receiver():
     assert "This is another example log message." in log_bodies
 
 
+def test_out_forward_logs_signal_e2e_with_forward_receiver_retain_metadata():
+    service = ForwardReceiverService(
+        "in_opentelemetry_to_forward_receiver_retain_metadata.yaml"
+    )
+    service.start()
+
+    try:
+        service.send_json_as_otel_protobuf("test_logs_001.in.json", "logs")
+        messages = service.wait_for_forward_messages(1)
+    finally:
+        service.stop()
+
+    message = messages[0]
+    _assert_forward_signal_message(message, expected_tag="v1_logs", expected_signal=0)
+    assert len(message["records"]) > 0
+
+    schema_metadata_count = 0
+    otlp_metadata_count = 0
+    empty_metadata_count = 0
+
+    for record in message["records"]:
+        metadata = record["metadata"]
+
+        assert isinstance(metadata, dict)
+
+        if "schema" in metadata:
+            assert metadata["schema"] == "otlp"
+            assert metadata["resource_id"] in (0, 1)
+            assert metadata["scope_id"] in (0, 1)
+            schema_metadata_count += 1
+        elif "otlp" in metadata:
+            assert metadata["otlp"]["severity_number"] == 9
+            assert metadata["otlp"]["severity_text"] == "INFO"
+            assert metadata["otlp"]["attributes"]["example_key"] == "example_value"
+            otlp_metadata_count += 1
+        else:
+            assert metadata == {}
+            empty_metadata_count += 1
+
+    assert schema_metadata_count > 0
+    assert otlp_metadata_count > 0
+    assert empty_metadata_count > 0
+
+
 def test_out_forward_metrics_signal_e2e_with_forward_receiver():
     service = ForwardReceiverService("in_opentelemetry_to_forward_receiver.yaml")
     service.start()
