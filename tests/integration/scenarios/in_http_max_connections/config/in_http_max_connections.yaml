@@ -10,6 +10,7 @@ pipeline:
     - name: http
       listen: 127.0.0.1
       port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      http_server.idle_timeout: 2s
       http_server.max_connections: 1
 
   outputs:
