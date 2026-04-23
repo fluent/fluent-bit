@@ -38,6 +38,7 @@
 
 #define HTTP_SERVER_INITIAL_BUFFER_SIZE        (10 * 1024)
 #define HTTP_SERVER_MAXIMUM_BUFFER_SIZE        (10 * (1000 * 1024))
+#define HTTP_SERVER_DEFAULT_IDLE_TIMEOUT       10  /* seconds */
 
 #define FLB_HTTP_SERVER_FLAG_KEEPALIVE         (((uint64_t) 1) << 0)
 #define FLB_HTTP_SERVER_FLAG_AUTO_DEFLATE      (((uint64_t) 1) << 1)
@@ -70,6 +71,7 @@ struct flb_input_instance;
 
 struct flb_http_server_config {
     int    http2;
+    int    idle_timeout; /* seconds */
     size_t buffer_max_size;
     size_t buffer_chunk_size;
     size_t max_connections;
@@ -92,6 +94,7 @@ struct flb_http_server_options {
     struct mk_event_loop                *event_loop;
     struct flb_config                   *system_context;
 
+    int                                  idle_timeout; /* seconds */
     size_t                               buffer_max_size;
     size_t                               buffer_chunk_size;
     size_t                               max_connections;
@@ -131,6 +134,7 @@ struct flb_http_server {
     uint64_t                            flags;
     int                                 status;
     int                                 protocol_version;
+    int                                 idle_timeout; /* seconds */
     struct flb_downstream              *downstream;
     struct cfl_list                     clients;
     flb_http_server_request_processor_callback request_callback;
@@ -161,6 +165,7 @@ struct flb_http_server_session {
     size_t                          read_buffer_size;
 
     int                             releasable;
+    int                             drop_pending;
 
     struct flb_connection          *connection;
     struct flb_http_server         *parent;
@@ -225,6 +230,10 @@ int flb_http_server_init_on_input(struct flb_http_server *session,
 void flb_http_server_set_buffer_max_size(struct flb_http_server *server, size_t size);
 
 size_t flb_http_server_get_buffer_max_size(struct flb_http_server *server);
+
+const struct flb_net_setup *
+flb_http_server_runtime_worker_net_setup_get(struct flb_http_server *server,
+                                             int worker_id);
 
 /* HTTP SESSION */
 
