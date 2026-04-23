@@ -209,6 +209,10 @@ static int prepare_destroy_conn(struct flb_connection *connection)
     flb_trace("[downstream] destroy connection #%i to %s",
               connection->fd, flb_connection_get_remote_address(connection));
 
+    if (connection->drop_notification_callback != NULL) {
+        connection->drop_notification_callback(connection);
+    }
+
     if (MK_EVENT_IS_REGISTERED((&connection->event))) {
         mk_event_del(connection->evl, &connection->event);
     }
