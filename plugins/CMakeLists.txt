@@ -416,6 +416,7 @@ REGISTER_OUT_PLUGIN("out_s3")
 REGISTER_OUT_PLUGIN("out_vivo_exporter")
 REGISTER_OUT_PLUGIN("out_chronicle")
 REGISTER_OUT_PLUGIN("out_arvancloud_cloudlogs")
+REGISTER_OUT_PLUGIN("out_zerobus")
 
 if(FLB_ZIG)
 REGISTER_OUT_PLUGIN("out_zig_demo" "zig")
