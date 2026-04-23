@@ -28,6 +28,11 @@ struct flb_config_map flb_http_server_config_map[] = {
      "Enable HTTP/2 support for the HTTP server"
     },
     {
+     FLB_CONFIG_MAP_TIME, "http_server.idle_timeout", "10s",
+     0, FLB_TRUE, offsetof(struct flb_http_server_config, idle_timeout),
+     "Set the maximum idle time for accepted HTTP connections. 0 disables it."
+    },
+    {
      FLB_CONFIG_MAP_SIZE, "http_server.buffer_max_size", "4M",
      0, FLB_TRUE, offsetof(struct flb_http_server_config, buffer_max_size),
      "Set the maximum size of the HTTP request buffer"

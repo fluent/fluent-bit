@@ -52,6 +52,20 @@ struct flb_http_server_runtime {
     int worker_count;
 };
 
+const struct flb_net_setup *
+flb_http_server_runtime_worker_net_setup_get(struct flb_http_server *server,
+                                             int worker_id)
+{
+    if (server == NULL ||
+        server->runtime == NULL ||
+        worker_id < 0 ||
+        worker_id >= server->runtime->worker_count) {
+        return NULL;
+    }
+
+    return &server->runtime->workers[worker_id].net_setup;
+}
+
 static void flb_http_server_runtime_stop(struct flb_http_server *session);
 
 static void flb_http_server_worker_context_reset(
@@ -98,6 +112,51 @@ static const char *flb_http_server_get_alpn_string(struct flb_http_server *sessi
     return "http/1.0";
 }
 
+static void flb_http_server_connection_drop(struct flb_connection *connection)
+{
+    struct flb_http_server_session *session;
+
+    if (connection == NULL) {
+        return;
+    }
+
+    session = connection->user_data;
+
+    if (session != NULL &&
+        session->connection == connection) {
+        session->connection = NULL;
+        session->drop_pending = FLB_TRUE;
+        connection->event.data = session;
+    }
+    else {
+        connection->event.data = NULL;
+    }
+
+    connection->user_data = NULL;
+    connection->drop_notification_callback = NULL;
+}
+
+static void flb_http_server_reap_stale_sessions(struct flb_http_server *server)
+{
+    struct cfl_list                *iterator_backup;
+    struct cfl_list                *iterator;
+    struct flb_http_server_session *session;
+
+    cfl_list_foreach_safe(iterator,
+                          iterator_backup,
+                          &server->clients) {
+        session = cfl_list_entry(iterator,
+                                 struct flb_http_server_session,
+                                 _head);
+
+        if (session->drop_pending == FLB_FALSE &&
+            (session->connection == NULL ||
+             session->connection->fd == FLB_INVALID_SOCKET)) {
+            flb_http_server_session_destroy(session);
+        }
+    }
+}
+
 static size_t flb_http_server_client_count(struct flb_http_server *server)
 {
     return cfl_list_size(&server->clients);
@@ -112,6 +171,7 @@ static int flb_http_server_apply_options(struct flb_http_server *session,
 
     session->status = HTTP_SERVER_UNINITIALIZED;
     session->protocol_version = options->protocol_version;
+    session->idle_timeout = options->idle_timeout;
     session->flags = options->flags;
     session->request_callback = options->request_callback;
     session->user_data = options->user_data;
@@ -319,12 +379,27 @@ static int flb_http_server_client_activity_event_handler(void *data)
     struct mk_event                *event;
 
     connection = (struct flb_connection *) data;
-
-    session = (struct flb_http_server_session *) connection->user_data;
-
-    server = session->parent;
+    if (connection == NULL) {
+        return -1;
+    }
 
     event = &connection->event;
+
+    session = (struct flb_http_server_session *) connection->user_data;
+    if (session == NULL) {
+        session = (struct flb_http_server_session *) event->data;
+        if (session != NULL &&
+            (session->connection == NULL ||
+             session->connection->fd == FLB_INVALID_SOCKET)) {
+            event->data = NULL;
+            session->drop_pending = FLB_FALSE;
+            flb_http_server_session_destroy(session);
+        }
+
+        return -1;
+    }
+
+    server = session->parent;
 
     if (event->mask & MK_EVENT_READ) {
         result = flb_http_server_session_read(session);
@@ -404,11 +479,14 @@ static int flb_http_server_client_connection_event_handler(void *data)
         return -1;
     }
 
-    if (server->max_connections > 0 &&
-        flb_http_server_client_count(server) >= server->max_connections) {
-        flb_downstream_conn_release(connection);
+    if (server->max_connections > 0) {
+        flb_http_server_reap_stale_sessions(server);
 
-        return -5;
+        if (flb_http_server_client_count(server) >= server->max_connections) {
+            flb_downstream_conn_release(connection);
+
+            return -5;
+        }
     }
 
     session = flb_http_server_session_create(server->protocol_version);
@@ -429,6 +507,8 @@ static int flb_http_server_client_connection_event_handler(void *data)
     MK_EVENT_NEW(&connection->event);
 
     connection->user_data     = (void *) session;
+    connection->event.data    = (void *) session;
+    connection->drop_notification_callback = flb_http_server_connection_drop;
     connection->event.type    = FLB_ENGINE_EV_CUSTOM;
     connection->event.handler = flb_http_server_client_activity_event_handler;
 
@@ -469,6 +549,8 @@ static void flb_http_server_worker_maintenance(struct flb_config *config,
     if (worker->server.downstream != NULL) {
         flb_downstream_conn_timeouts_stream(worker->server.downstream);
     }
+
+    flb_http_server_reap_stale_sessions(&worker->server);
 }
 
 static int flb_http_server_worker_initialize(
@@ -490,6 +572,7 @@ static int flb_http_server_worker_initialize(
     options.networking_setup = &worker->net_setup;
     options.event_loop = worker->event_loop;
     options.system_context = worker->parent.system_context;
+    options.idle_timeout = worker->parent.idle_timeout;
     options.buffer_max_size = worker->parent.buffer_max_size;
     options.workers = 1;
     options.use_caller_event_loop = FLB_TRUE;
@@ -730,6 +813,7 @@ void flb_http_server_options_init(struct flb_http_server_options *options)
 
     options->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
     options->buffer_chunk_size = HTTP_SERVER_INITIAL_BUFFER_SIZE;
+    options->idle_timeout = HTTP_SERVER_DEFAULT_IDLE_TIMEOUT;
     options->max_connections = 0;
     options->workers = 1;
     options->use_caller_event_loop = FLB_TRUE;
@@ -745,6 +829,7 @@ void flb_http_server_config_init(struct flb_http_server_config *config)
     memset(config, 0, sizeof(struct flb_http_server_config));
 
     config->http2 = FLB_TRUE;
+    config->idle_timeout = HTTP_SERVER_DEFAULT_IDLE_TIMEOUT;
     config->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
     config->buffer_chunk_size = HTTP_SERVER_INITIAL_BUFFER_SIZE;
     config->max_connections = 0;
@@ -831,6 +916,7 @@ int flb_input_http_server_options_init(struct flb_http_server_options *options,
     }
 
     if (server_config != NULL) {
+        options->idle_timeout = server_config->idle_timeout;
         if (server_config->buffer_chunk_size > 0) {
             options->buffer_chunk_size = server_config->buffer_chunk_size;
         }
@@ -865,6 +951,12 @@ int flb_http_server_init_with_options(
     if (options->reuse_port == FLB_TRUE &&
         options->networking_setup != NULL) {
         options->networking_setup->share_port = FLB_TRUE;
+    }
+
+    if (options->networking_setup != NULL &&
+        options->networking_setup->io_timeout <= 0 &&
+        options->idle_timeout > 0) {
+        options->networking_setup->io_timeout = options->idle_timeout;
     }
 
     return flb_http_server_apply_options(session, options);
@@ -1114,9 +1206,21 @@ struct flb_http_server_session *flb_http_server_session_create(int version)
 
 void flb_http_server_session_destroy(struct flb_http_server_session *session)
 {
+    struct flb_connection *connection;
+
     if (session != NULL) {
-        if (session->connection != NULL) {
-            flb_downstream_conn_release(session->connection);
+        connection = session->connection;
+        session->connection = NULL;
+
+        if (connection != NULL) {
+            connection->user_data = NULL;
+            connection->event.data = NULL;
+            connection->drop_notification_callback = NULL;
+            session->drop_pending = FLB_FALSE;
+
+            if (connection->fd != FLB_INVALID_SOCKET) {
+                flb_downstream_conn_release(connection);
+            }
         }
 
         if (!cfl_list_entry_is_orphan(&session->_head)) {
