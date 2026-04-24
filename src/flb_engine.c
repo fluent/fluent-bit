@@ -688,6 +688,16 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
     /* Flush all remaining data */
     if (type == 1) {                  /* Engine type */
         if (key == FLB_ENGINE_STOP) {
+            /*
+             * Re-entering the STOP handler in flb_engine_start() would reset
+             * config->event_shutdown.status while the shutdown timerfd is
+             * still registered, so the dispatcher drops the timer and the
+             * pipeline thread busy-loops on epoll.
+             */
+            if (config->is_shutting_down) {
+                flb_debug("[engine] duplicate STOP ignored");
+                return 0;
+            }
             flb_trace("[engine] flush enqueued data");
             flb_engine_flush(config, NULL);
             return FLB_ENGINE_STOP;
