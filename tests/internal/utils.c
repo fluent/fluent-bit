@@ -1000,6 +1000,21 @@ void test_size_to_binary_bytes()
     }
 }
 
+void test_bytes_to_human_readable_size_max(void)
+{
+    char buf[32];
+
+    memset(buf, 0, sizeof(buf));
+    flb_utils_bytes_to_human_readable_size((size_t) -1, buf, sizeof(buf));
+
+    if (sizeof(size_t) == 8) {
+        TEST_CHECK(strcmp(buf, "16.0E") == 0);
+    }
+    else {
+        TEST_CHECK(strcmp(buf, "4.0G") == 0);
+    }
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "url_split", test_url_split },
@@ -1020,5 +1035,6 @@ TEST_LIST = {
     { "test_flb_utils_get_machine_id", test_flb_utils_get_machine_id },
     { "test_size_to_bytes", test_size_to_bytes },
     { "test_size_to_bianry_bytes", test_size_to_binary_bytes },
+    { "test_bytes_to_human_readable_size_max", test_bytes_to_human_readable_size_max },
     { 0 }
 };

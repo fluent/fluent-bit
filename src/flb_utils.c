@@ -813,23 +813,23 @@ void flb_utils_bytes_to_human_readable_size(size_t bytes,
                                             char *out_buf, size_t size)
 {
     uint64_t i;
-    uint64_t u = 1024;
+    uint64_t divider = 1;
     static const char *__units[] = {
         "b", "K", "M", "G",
         "T", "P", "E", "Z", "Y", NULL
     };
 
-    for (i = 0; __units[i] != NULL; i++) {
-        if ((bytes / u) == 0) {
+    for (i = 0; __units[i + 1] != NULL; i++) {
+        if (bytes / divider < 1024) {
             break;
         }
-        u *= 1024;
+        divider *= 1024;
     }
     if (!i) {
         snprintf(out_buf, size, "%lu%s", (long unsigned int) bytes, __units[0]);
     }
     else {
-        float fsize = (float) ((double) bytes / (u / 1024));
+        float fsize = (float) ((double) bytes / divider);
         snprintf(out_buf, size, "%.1f%s", fsize, __units[i]);
     }
 }
