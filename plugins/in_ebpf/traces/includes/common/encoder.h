@@ -27,6 +27,8 @@ static inline char *event_type_to_string(enum event_type type) {
             return "connect";
         case EVENT_TYPE_DNS:
             return "dns";
+        case EVENT_TYPE_SCHED:
+            return "sched";
         default:
             return "unknown";
     }
