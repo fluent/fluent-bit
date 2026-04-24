@@ -27,6 +27,10 @@ endmacro()
 FLB_RT_CORE_TEST(FLB_COROUTINE_TIMEOUT    "core-timeout.c")
 FLB_RT_CORE_TEST(FLB_INTERNAL_LOGGER      "core_internal_logger.c")
 FLB_RT_CORE_TEST(FLB_DOWNSTREAM_ACCEPT_TIMEOUT "core_accept_timeout.c")
+# Uses POSIX alarm()/sigaction() for a watchdog; skip on Windows.
+if(NOT FLB_SYSTEM_WINDOWS)
+  FLB_RT_CORE_TEST(FLB_CORE_SHUTDOWN_SPIN   "core_shutdown_spin.c")
+endif()
 FLB_RT_CORE_TEST(1 "http_client_chunked.c")
 
 FLB_RT_TEST(FLB_CHUNK_TRACE "core_chunk_trace.c")
