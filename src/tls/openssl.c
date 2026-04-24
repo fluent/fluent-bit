@@ -820,8 +820,22 @@ static void *tls_context_create(int verify,
      *
      * https://www.openssl.org/docs/man1.0.2/man3/SSLv23_method.html
      */
-    if (mode == FLB_TLS_SERVER_MODE ||
-        mode == FLB_TLS_SERVER_MODE_DGRAM) {
+    if (mode == FLB_TLS_SERVER_MODE_DGRAM ||
+        mode == FLB_TLS_CLIENT_MODE_DGRAM) {
+#ifndef OPENSSL_NO_DTLS
+        if (mode == FLB_TLS_SERVER_MODE_DGRAM) {
+            ssl_ctx = SSL_CTX_new(DTLSv1_server_method());
+        }
+        else {
+            ssl_ctx = SSL_CTX_new(DTLSv1_client_method());
+        }
+#else
+        flb_error("[openssl] DTLS mode requested but this OpenSSL build "
+                  "does not provide DTLS support");
+        return NULL;
+#endif
+    }
+    else if (mode == FLB_TLS_SERVER_MODE) {
         ssl_ctx = SSL_CTX_new(SSLv23_server_method());
     }
     else {
