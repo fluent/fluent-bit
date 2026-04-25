@@ -23,11 +23,112 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_sds.h>
 
 #include <stdio.h>
 #include <msgpack.h>
 
 #include "nats.h"
+
+static void destroy_nats_context(struct flb_out_nats_config *ctx)
+{
+    if (!ctx) {
+        return;
+    }
+
+    if (ctx->u) {
+        flb_upstream_destroy(ctx->u);
+    }
+
+    if (ctx->connect_msg) {
+        flb_sds_destroy(ctx->connect_msg);
+    }
+
+    flb_free(ctx);
+}
+
+static flb_sds_t escape_json_string(flb_sds_t str)
+{
+    int ret;
+    char *escaped;
+    size_t escaped_size;
+    flb_sds_t out;
+
+    if (!str) {
+        return NULL;
+    }
+
+    ret = flb_utils_write_str_buf(str, flb_sds_len(str),
+                                  &escaped, &escaped_size, FLB_TRUE);
+    if (ret == -1) {
+        return NULL;
+    }
+
+    out = flb_sds_create_len(escaped, escaped_size);
+    flb_free(escaped);
+
+    return out;
+}
+
+static int build_connect_message(struct flb_out_nats_config *ctx)
+{
+    flb_sds_t msg = NULL;
+    flb_sds_t user = NULL;
+    flb_sds_t password = NULL;
+
+    msg = flb_sds_create_size(256);
+    if (!msg) {
+        flb_errno();
+        return -1;
+    }
+
+    msg = flb_sds_printf(&msg,
+                         "CONNECT {\"verbose\":false,\"pedantic\":false,"
+                         "\"ssl_required\":%s,\"name\":\"fluent-bit\","
+                         "\"lang\":\"c\",\"version\":\"%s\"",
+                         ctx->ins->use_tls == FLB_TRUE ? "true" : "false",
+                         FLB_VERSION_STR);
+    if (!msg) {
+        return -1;
+    }
+
+    if (ctx->user) {
+        user = escape_json_string(ctx->user);
+        if (!user) {
+            flb_sds_destroy(msg);
+            return -1;
+        }
+
+        msg = flb_sds_printf(&msg, ",\"user\":\"%s\"", user);
+        flb_sds_destroy(user);
+        if (!msg) {
+            return -1;
+        }
+    }
+
+    if (ctx->password) {
+        password = escape_json_string(ctx->password);
+        if (!password) {
+            flb_sds_destroy(msg);
+            return -1;
+        }
+
+        msg = flb_sds_printf(&msg, ",\"pass\":\"%s\"", password);
+        flb_sds_destroy(password);
+        if (!msg) {
+            return -1;
+        }
+    }
+
+    msg = flb_sds_cat(msg, "}\r\n", 3);
+    if (!msg) {
+        return -1;
+    }
+
+    ctx->connect_msg = msg;
+
+    return 0;
+}
 
 static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
                         void *data)
@@ -41,7 +142,7 @@ static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *conf
     flb_output_net_default("127.0.0.1", 4222, ins);
 
     /* Allocate plugin context */
-    ctx = flb_malloc(sizeof(struct flb_out_nats_config));
+    ctx = flb_calloc(1, sizeof(struct flb_out_nats_config));
     if (!ctx) {
         flb_errno();
         return -1;
@@ -56,8 +157,20 @@ static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *conf
     }
 
     io_flags = FLB_IO_TCP;
+    if (ins->use_tls == FLB_TRUE) {
+        io_flags |= FLB_IO_TLS;
+    }
     if (ins->host.ipv6 == FLB_TRUE) {
         io_flags |= FLB_IO_IPV6;
+    }
+
+    ctx->ins = ins;
+
+    ret = build_connect_message(ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "failed to build NATS CONNECT message");
+        destroy_nats_context(ctx);
+        return -1;
     }
 
     /* Prepare an upstream handler */
@@ -65,13 +178,12 @@ static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *conf
                                    ins->host.name,
                                    ins->host.port,
                                    io_flags,
-                                   NULL);
+                                   ins->tls);
     if (!upstream) {
-        flb_free(ctx);
+        destroy_nats_context(ctx);
         return -1;
     }
     ctx->u   = upstream;
-    ctx->ins = ins;
     flb_output_upstream_set(ctx->u, ins);
     flb_output_set_context(ins, ctx);
 
@@ -175,8 +287,8 @@ static void cb_nats_flush(struct flb_event_chunk *event_chunk,
 
     /* Before to flush the content check if we need to start the handshake */
     ret = flb_io_net_write(u_conn,
-                           NATS_CONNECT,
-                           sizeof(NATS_CONNECT) - 1,
+                           ctx->connect_msg,
+                           flb_sds_len(ctx->connect_msg),
                            &bytes_sent);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
@@ -231,13 +343,23 @@ int cb_nats_exit(void *data, struct flb_config *config)
     (void) config;
     struct flb_out_nats_config *ctx = data;
 
-    flb_upstream_destroy(ctx->u);
-    flb_free(ctx);
+    destroy_nats_context(ctx);
 
     return 0;
 }
 
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "user", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_nats_config, user),
+     "Username for NATS server authentication."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "password", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_nats_config, password),
+     "Password for NATS server authentication."
+    },
+
     /* EOF */
     {0}
 };
@@ -248,6 +370,6 @@ struct flb_output_plugin out_nats_plugin = {
     .cb_init      = cb_nats_init,
     .cb_flush     = cb_nats_flush,
     .cb_exit      = cb_nats_exit,
-    .flags        = FLB_OUTPUT_NET,
+    .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
     .config_map   = config_map
 };
