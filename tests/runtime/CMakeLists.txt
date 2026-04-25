@@ -232,6 +232,7 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_KAFKA            "out_kafka.c")
   FLB_RT_TEST(FLB_OUT_LIB              "out_lib.c")
   FLB_RT_TEST(FLB_OUT_LOKI             "out_loki.c")
+  FLB_RT_TEST(FLB_OUT_NATS             "out_nats.c")
   FLB_RT_TEST(FLB_OUT_NULL             "out_null.c")
   FLB_RT_TEST(FLB_OUT_PLOT             "out_plot.c")
   FLB_RT_TEST(FLB_OUT_RETRY            "out_retry.c")
@@ -345,3 +346,6 @@ flb_runtime_lock_tests("runtime-port-4318"
 flb_runtime_lock_tests("runtime-port-5170"
   flb-rt-in_tcp
   flb-rt-out_tcp)
+
+flb_runtime_lock_tests("runtime-port-54222"
+  flb-rt-out_nats)
