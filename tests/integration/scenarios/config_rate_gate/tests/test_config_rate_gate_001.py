@@ -71,6 +71,7 @@ def test_rate_gate_constructs_input_and_output_pipelines():
     try:
         service.start()
         service.wait_for_log_contains("dummy.0 paused (rate gate limit exceeded)")
+        service.wait_for_log_contains("dummy.0 resume (rate gate)")
         service.wait_for_log_contains("hello from config_rate_gate integration")
     finally:
         service.stop()
