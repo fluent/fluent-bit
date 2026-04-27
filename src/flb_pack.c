@@ -1346,6 +1346,11 @@ static int flb_pack_msgpack_binary_to_hex(msgpack_packer *pck, msgpack_object *o
     input = (const unsigned char *) obj->via.bin.ptr;
     hex_len = (size_t) obj->via.bin.size * 2;
 
+    if (hex_len == 0) {
+        msgpack_pack_str(pck, 0);
+        return 0;
+    }
+
     hex = flb_malloc(hex_len);
     if (!hex) {
         flb_errno();
@@ -1401,7 +1406,10 @@ static int flb_pack_msgpack_append_json_metadata(msgpack_packer *pck, msgpack_ob
                 if ((msgpack_object_eq_str(&nested_kv->key, "trace_id") ||
                      msgpack_object_eq_str(&nested_kv->key, "span_id")) &&
                     nested_kv->val.type == MSGPACK_OBJECT_BIN) {
-                    flb_pack_msgpack_binary_to_hex(pck, &nested_kv->val);
+                    if (flb_pack_msgpack_binary_to_hex(pck, &nested_kv->val) != 0) {
+                        /* keep the map well-formed if hex conversion fails */
+                        msgpack_pack_str(pck, 0);
+                    }
                 }
                 else {
                     msgpack_pack_object(pck, nested_kv->val);
