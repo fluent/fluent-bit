@@ -31,6 +31,7 @@
 #include "tail_config.h"
 #include "tail_file.h"
 #include "tail_db.h"
+#include "tail_scan.h"
 #include "tail_signal.h"
 
 #include <limits.h>
@@ -163,22 +164,177 @@ static int flb_tail_fs_add_rotated(struct flb_tail_file *file)
     return tail_fs_add(file, FLB_FALSE);
 }
 
+static int reset_file_on_truncate(struct flb_tail_config *ctx,
+                                  struct flb_tail_file *file,
+                                  int64_t size_delta,
+                                  const char *caller)
+{
+    int64_t offset;
+
+    offset = lseek(file->fd, 0, SEEK_SET);
+    if (offset == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    flb_plg_debug(ctx->ins,
+                  "%s: inode=%"PRIu64" file truncated %s (diff: %"PRId64" bytes)",
+                  caller, file->inode, file->name, size_delta);
+
+    file->offset = offset;
+    file->stream_offset = offset;
+    file->last_processed_bytes = 0;
+    file->buf_len = 0;
+    file->pending_bytes = file->size;
+
+#ifdef FLB_HAVE_SQLDB
+    if (ctx->db) {
+        flb_tail_db_file_offset(file, ctx);
+    }
+#endif
+
+    return 0;
+}
+
+static int reconcile_file_state(struct flb_tail_config *ctx,
+                                struct flb_tail_file *file,
+                                const char *caller,
+                                int *pending_data_detected)
+{
+    int ret;
+    int64_t size_delta;
+    struct stat st;
+
+    *pending_data_detected = FLB_FALSE;
+
+    ret = fstat(file->fd, &st);
+    if (ret == -1) {
+        flb_plg_debug(ctx->ins, "inode=%"PRIu64" error stat(2) %s, removing",
+                      file->inode, file->name);
+        flb_tail_file_remove(file);
+        return -1;
+    }
+
+    size_delta = st.st_size - file->size;
+    if (size_delta != 0) {
+        file->size = st.st_size;
+    }
+
+    if (size_delta < 0 || st.st_size < file->offset ||
+        flb_tail_file_offset_marker_matches(file) != FLB_TRUE) {
+        ret = reset_file_on_truncate(ctx, file, size_delta, caller);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    if (file->offset < st.st_size) {
+        file->pending_bytes = (st.st_size - file->offset);
+        *pending_data_detected = FLB_TRUE;
+    }
+    else {
+        file->pending_bytes = 0;
+    }
+
+    if (st.st_nlink == 0) {
+        if (*pending_data_detected == FLB_TRUE) {
+            return 0;
+        }
+
+        if (file->buf_len > 0) {
+            return 0;
+        }
+
+        flb_plg_debug(ctx->ins, "inode=%"PRIu64" file has been deleted: %s",
+                      file->inode, file->name);
+
+#ifdef FLB_HAVE_SQLDB
+        if (ctx->db) {
+            flb_tail_db_file_delete(file, ctx);
+        }
+#endif
+        flb_tail_file_remove(file);
+        return -1;
+    }
+
+    ret = flb_tail_file_is_rotated(ctx, file);
+    if (ret == FLB_TRUE) {
+        ret = flb_tail_file_rotated(file);
+        if (ret == -1) {
+            return -1;
+        }
+
+        ret = flb_tail_fs_remove(ctx, file);
+        if (ret == -1) {
+            return -1;
+        }
+
+        ret = flb_tail_fs_add_rotated(file);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+    else if (ret == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int reconcile_all_files(struct flb_tail_config *ctx)
+{
+    int ret;
+    int pending;
+    int pending_data_detected;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_tail_file *file;
+
+    pending_data_detected = FLB_FALSE;
+
+    mk_list_foreach_safe(head, tmp, &ctx->files_event) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        ret = reconcile_file_state(ctx, file, "inotify_reconcile", &pending);
+        if (ret == -1) {
+            continue;
+        }
+
+        if (pending == FLB_TRUE) {
+            pending_data_detected = FLB_TRUE;
+        }
+    }
+
+    if (pending_data_detected == FLB_TRUE) {
+        tail_signal_pending(ctx);
+    }
+
+    return pending_data_detected;
+}
+
 static int tail_fs_event(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
     int ret;
-    int64_t offset;
     struct mk_list *head;
     struct mk_list *tmp;
     struct flb_tail_config *ctx = in_context;
     struct flb_tail_file *file = NULL;
     struct inotify_event ev;
-    struct stat st;
+    int pending_data_detected;
 
     /* Read the event */
     ret = read(ctx->fd_notify, &ev, sizeof(struct inotify_event));
     if (ret < 1) {
         return -1;
+    }
+
+    if (ev.mask & IN_Q_OVERFLOW) {
+        debug_event_mask(ctx, NULL, ev.mask);
+        flb_plg_warn(ctx->ins, "inotify event queue overflow, reconciling files");
+
+        reconcile_all_files(ctx);
+        flb_tail_scan(ctx->path_list, ctx);
+        return 0;
     }
 
     /* Lookup watched file */
@@ -210,71 +366,25 @@ static int tail_fs_event(struct flb_input_instance *ins,
                       file->inode, file->name);
 
         /* A rotated file must be re-registered */
-        flb_tail_file_rotated(file);
-        flb_tail_fs_remove(ctx, file);
-        flb_tail_fs_add_rotated(file);
+        ret = flb_tail_file_rotated(file);
+        if (ret == -1) {
+            return -1;
+        }
+
+        ret = flb_tail_fs_remove(ctx, file);
+        if (ret == -1) {
+            return -1;
+        }
+
+        ret = flb_tail_fs_add_rotated(file);
+        if (ret == -1) {
+            return -1;
+        }
     }
 
-    ret = fstat(file->fd, &st);
+    ret = reconcile_file_state(ctx, file, "tail_fs_event", &pending_data_detected);
     if (ret == -1) {
-        flb_plg_debug(ins, "inode=%"PRIu64" error stat(2) %s, removing",
-                      file->inode, file->name);
-        flb_tail_file_remove(file);
         return 0;
-    }
-
-    /* Check if the file was truncated */
-    int64_t size_delta = st.st_size - file->size;
-    if (size_delta != 0) {
-        file->size = st.st_size;
-    }
-
-    file->pending_bytes = (st.st_size > file->offset) ? (st.st_size - file->offset) : 0;
-
-    /* File was removed ? */
-    if (ev.mask & IN_ATTRIB) {
-        /* Check if the file have been deleted */
-        if (st.st_nlink == 0) {
-            flb_plg_debug(ins, "inode=%"PRIu64" file has been deleted: %s",
-                          file->inode, file->name);
-
-#ifdef FLB_HAVE_SQLDB
-            if (ctx->db) {
-                /* Remove file entry from the database */
-                flb_tail_db_file_delete(file, ctx);
-            }
-#endif
-            /* Remove file from the monitored list */
-            flb_tail_file_remove(file);
-            return 0;
-        }
-    }
-
-    if (ev.mask & IN_MODIFY) {
-        /*
-         * The file was modified, check how many new bytes do
-         * we have.
-         */
-
-        if (size_delta < 0) {
-            offset = lseek(file->fd, 0, SEEK_SET);
-            if (offset == -1) {
-                flb_errno();
-                return -1;
-            }
-
-            flb_plg_debug(ctx->ins, "tail_fs_event: inode=%"PRIu64" file truncated %s (diff: %"PRId64" bytes)",
-                          file->inode, file->name, size_delta);
-            file->offset = offset;
-            file->buf_len = 0;
-
-            /* Update offset in the database file */
-#ifdef FLB_HAVE_SQLDB
-            if (ctx->db) {
-                flb_tail_db_file_offset(file, ctx);
-            }
-#endif
-        }
     }
 
     /* Collect the data */
@@ -307,44 +417,32 @@ static int in_tail_progress_check_callback(struct flb_input_instance *ins,
                                            struct flb_config *config, void *context)
 {
     int ret = 0;
+    int pending;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_tail_config *ctx = context;
     struct flb_tail_file *file;
     int pending_data_detected;
-    struct stat st;
 
     (void) config;
+    (void) ins;
 
     pending_data_detected = FLB_FALSE;
 
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-
-        if (file->offset < file->size) {
-            pending_data_detected = FLB_TRUE;
-
-            continue;
-        }
-
-        ret = fstat(file->fd, &st);
+        ret = reconcile_file_state(ctx, file, "in_tail_progress_check", &pending);
         if (ret == -1) {
-            flb_errno();
-            flb_plg_error(ins, "fstat error");
-
             continue;
         }
 
-        if (file->offset < st.st_size) {
-            file->size = st.st_size;
-            file->pending_bytes = (file->size - file->offset);
-
+        if (pending == FLB_TRUE) {
             pending_data_detected = FLB_TRUE;
         }
     }
 
     if (pending_data_detected) {
-       tail_signal_pending(ctx);
+        tail_signal_pending(ctx);
     }
 
     return 0;

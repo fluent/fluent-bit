@@ -169,6 +169,18 @@ int flb_tail_file_offset_marker_matches(struct flb_tail_file *file)
     return FLB_TRUE;
 }
 
+static void update_resumable_offset_state(struct flb_tail_file *file)
+{
+#ifdef FLB_HAVE_SQLDB
+    if (file->config->db) {
+        flb_tail_db_file_offset(file, file->config);
+        return;
+    }
+#endif
+
+    flb_tail_file_update_offset_marker(file);
+}
+
 static uint64_t stat_get_st_dev(struct stat *st)
 {
 #ifdef FLB_SYSTEM_WINDOWS
@@ -1705,12 +1717,7 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
         file->offset = offset;
         file->buf_len = 0;
 
-        /* Update offset in the database file */
-#ifdef FLB_HAVE_SQLDB
-        if (ctx->db) {
-            flb_tail_db_file_offset(file, ctx);
-        }
-#endif
+        update_resumable_offset_state(file);
     }
     else {
         // Avoid negative pending_bytes when fstat() has stale data and size < offset
@@ -1766,11 +1773,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                 file->buf_len -= processed_bytes;
                 file->buf_data[file->buf_len] = '\0';
 
-#ifdef FLB_HAVE_SQLDB
-                if (file->config->db) {
-                    flb_tail_db_file_offset(file, file->config);
-                }
-#endif
+                update_resumable_offset_state(file);
                 return adjust_counters(ctx, file);
             }
         }
@@ -1954,11 +1957,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         file->buf_len -= processed_bytes;
         file->buf_data[file->buf_len] = '\0';
 
-#ifdef FLB_HAVE_SQLDB
-        if (file->config->db) {
-            flb_tail_db_file_offset(file, file->config);
-        }
-#endif
+        update_resumable_offset_state(file);
 
         /* adjust file counters, returns FLB_TAIL_OK or FLB_TAIL_ERROR */
         ret = adjust_counters(ctx, file);
