@@ -644,6 +644,54 @@ def test_in_opentelemetry_stdout_otlp_json_logs():
     assert records[0]["resource_attributes"]["service.name"] == "example-service"
 
 
+def test_in_opentelemetry_stdout_otlp_json_logs_preserve_trace_and_span_id_hex():
+    service = Service("003-stdout-otlp-json.yaml")
+    service.start()
+
+    payload = {
+        "resourceLogs": [
+            {
+                "resource": {
+                    "attributes": [
+                        {"key": "service.name", "value": {"stringValue": "my.service"}}
+                    ]
+                },
+                "scopeLogs": [
+                    {
+                        "scope": {"name": "my.library", "version": "1.0.0"},
+                        "logRecords": [
+                            {
+                                "timeUnixNano": "1774877764000000000",
+                                "observedTimeUnixNano": "1774877764000000000",
+                                "severityNumber": 2,
+                                "severityText": "INFO",
+                                "traceId": "c413d5b5fea3657325ff663320c7fd10",
+                                "spanId": "77651bbd5ce0ce99",
+                                "body": {"stringValue": "trace/span id repro payload"},
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+    response = service.send_raw_request(
+        "/v1/logs",
+        json.dumps(payload).encode("utf-8"),
+        content_type="application/json",
+    )
+    assert 200 <= response.status_code < 300
+
+    output = read_stdout_otlp_json(service, "resourceLogs")
+    service.stop()
+
+    records = list(iter_log_records(output))
+    assert len(records) >= 1
+    assert records[0]["record"]["traceId"] == "c413d5b5fea3657325ff663320c7fd10"
+    assert records[0]["record"]["spanId"] == "77651bbd5ce0ce99"
+
+
 def test_in_opentelemetry_stdout_otlp_json_metrics():
     service = Service("003-stdout-otlp-json.yaml")
     service.start()
