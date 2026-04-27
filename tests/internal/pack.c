@@ -5,6 +5,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_pack_json.h>
 #include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_str.h>
 #include <monkey/mk_core.h>
 
@@ -1287,6 +1288,68 @@ void test_json_pack_token_count_overflow()
     flb_pack_state_reset(&state);
 }
 
+void test_json_otlp_trace_span_id_hex_encoding()
+{
+    int ret;
+    char trace_id[] = {
+        '\xc4', '\x13', '\xd5', '\xb5', '\xfe', '\xa3', '\x65', '\x73',
+        '\x25', '\xff', '\x66', '\x33', '\x20', '\xc7', '\xfd', '\x10'
+    };
+    char span_id[] = {
+        '\x77', '\x65', '\x1b', '\xbd', '\x5c', '\xe0', '\xce', '\x99'
+    };
+    flb_sds_t json;
+    struct flb_log_event_encoder encoder;
+
+    ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_init failed");
+        return;
+    }
+
+    ret = flb_log_event_encoder_begin_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_set_current_timestamp(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    ret = flb_log_event_encoder_append_metadata_values(&encoder,
+                                                       FLB_LOG_EVENT_CSTRING_VALUE("otlp"));
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_begin_map(&encoder, FLB_LOG_EVENT_METADATA);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    ret = flb_log_event_encoder_append_metadata_values(&encoder,
+                                                       FLB_LOG_EVENT_CSTRING_VALUE("trace_id"),
+                                                       FLB_LOG_EVENT_BINARY_VALUE(trace_id, 16),
+                                                       FLB_LOG_EVENT_CSTRING_VALUE("span_id"),
+                                                       FLB_LOG_EVENT_BINARY_VALUE(span_id, 8));
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    ret = flb_log_event_encoder_commit_map(&encoder, FLB_LOG_EVENT_METADATA);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    ret = flb_log_event_encoder_append_body_values(&encoder,
+                                                   FLB_LOG_EVENT_CSTRING_VALUE("message"),
+                                                   FLB_LOG_EVENT_CSTRING_VALUE("test"));
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    ret = flb_log_event_encoder_commit_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    json = flb_pack_msgpack_to_json_format((char *) encoder.output_buffer,
+                                           encoder.output_length,
+                                           FLB_PACK_JSON_FORMAT_LINES,
+                                           FLB_PACK_JSON_DATE_DOUBLE,
+                                           NULL,
+                                           FLB_TRUE);
+    TEST_CHECK(json != NULL);
+    TEST_CHECK(strstr(json, "\"trace_id\":\"c413d5b5fea3657325ff663320c7fd10\"") != NULL);
+    TEST_CHECK(strstr(json, "\"span_id\":\"77651bbd5ce0ce99\"") != NULL);
+
+    flb_sds_destroy(json);
+    flb_log_event_encoder_destroy(&encoder);
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
@@ -1318,5 +1381,6 @@ TEST_LIST = {
     { "json_pack_surrogate_pairs", test_json_pack_surrogate_pairs},
     { "json_pack_surrogate_pairs_with_replacement", test_json_pack_surrogate_pairs_with_replacement},
     { "json_pack_token_count_overflow", test_json_pack_token_count_overflow},
+    { "json_otlp_trace_span_id_hex_encoding", test_json_otlp_trace_span_id_hex_encoding},
     { 0 }
 };
