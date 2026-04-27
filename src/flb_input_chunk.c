@@ -3134,6 +3134,17 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
 
         while (1) {
             if (flb_input_paused(ins) == FLB_TRUE) {
+                /*
+                 * When an input is paused only by rate gate, there might be no
+                 * chunk lifecycle updates to trigger a resume re-check. Poll
+                 * it here so time-window based rate limits can recover.
+                 */
+                flb_input_rate_gate_maybe_resume(ins);
+
+                if (flb_input_paused(ins) == FLB_FALSE) {
+                    continue;
+                }
+
                 break;
             }
 
