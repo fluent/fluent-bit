@@ -246,8 +246,9 @@ int flb_tail_fs_stat_add(struct flb_tail_file *file)
 
 int flb_tail_fs_stat_remove(struct flb_tail_file *file)
 {
-    if (file->tail_mode == FLB_TAIL_EVENT) {
+    if (file->fs_backend != NULL) {
         flb_free(file->fs_backend);
+        file->fs_backend = NULL;
     }
     return 0;
 }
