@@ -1317,6 +1317,109 @@ static int msgpack_pack_formatted_datetime(flb_sds_t out_buf, char time_formatte
     return 0;
 }
 
+static int msgpack_object_eq_str(msgpack_object *obj, const char *str)
+{
+    size_t len;
+
+    len = strlen(str);
+
+    if (obj->type != MSGPACK_OBJECT_STR || obj->via.str.size != len) {
+        return FLB_FALSE;
+    }
+
+    return (memcmp(obj->via.str.ptr, str, len) == 0);
+}
+
+static int flb_pack_msgpack_binary_to_hex(msgpack_packer *pck, msgpack_object *obj)
+{
+    uint32_t index;
+    uint8_t byte;
+    char *hex;
+    static const char table[] = "0123456789abcdef";
+    const unsigned char *input;
+    size_t hex_len;
+
+    if (obj->type != MSGPACK_OBJECT_BIN) {
+        return -1;
+    }
+
+    input = (const unsigned char *) obj->via.bin.ptr;
+    hex_len = (size_t) obj->via.bin.size * 2;
+
+    hex = flb_malloc(hex_len);
+    if (!hex) {
+        flb_errno();
+        return -1;
+    }
+
+    for (index = 0; index < obj->via.bin.size; index++) {
+        byte = input[index];
+        hex[index * 2]     = table[(byte >> 4) & 0x0f];
+        hex[index * 2 + 1] = table[byte & 0x0f];
+    }
+
+    msgpack_pack_str(pck, hex_len);
+    msgpack_pack_str_body(pck, hex, hex_len);
+
+    flb_free(hex);
+    return 0;
+}
+
+static int flb_pack_msgpack_append_json_metadata(msgpack_packer *pck, msgpack_object *metadata)
+{
+    int index;
+    int nested_index;
+    msgpack_object_kv *kv;
+    msgpack_object_kv *nested_kv;
+    msgpack_object *value;
+    struct flb_mp_map_header metadata_mh;
+    struct flb_mp_map_header otlp_mh;
+
+    if (metadata == NULL || metadata->type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
+
+    flb_mp_map_header_init(&metadata_mh, pck);
+
+    for (index = 0; index < metadata->via.map.size; index++) {
+        kv = &metadata->via.map.ptr[index];
+        value = &kv->val;
+
+        flb_mp_map_header_append(&metadata_mh);
+        msgpack_pack_object(pck, kv->key);
+
+        if (msgpack_object_eq_str(&kv->key, "otlp") &&
+            value->type == MSGPACK_OBJECT_MAP) {
+            flb_mp_map_header_init(&otlp_mh, pck);
+
+            for (nested_index = 0; nested_index < value->via.map.size; nested_index++) {
+                nested_kv = &value->via.map.ptr[nested_index];
+
+                flb_mp_map_header_append(&otlp_mh);
+                msgpack_pack_object(pck, nested_kv->key);
+
+                if ((msgpack_object_eq_str(&nested_kv->key, "trace_id") ||
+                     msgpack_object_eq_str(&nested_kv->key, "span_id")) &&
+                    nested_kv->val.type == MSGPACK_OBJECT_BIN) {
+                    flb_pack_msgpack_binary_to_hex(pck, &nested_kv->val);
+                }
+                else {
+                    msgpack_pack_object(pck, nested_kv->val);
+                }
+            }
+
+            flb_mp_map_header_end(&otlp_mh);
+        }
+        else {
+            msgpack_pack_object(pck, *value);
+        }
+    }
+
+    flb_mp_map_header_end(&metadata_mh);
+
+    return 0;
+}
+
 flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                                           int json_format, int date_format,
                                           flb_sds_t date_key, int escape_unicode)
@@ -1467,7 +1570,12 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                 flb_mp_map_header_append(&mh_internal);
                 msgpack_pack_str(&tmp_pck, 12);
                 msgpack_pack_str_body(&tmp_pck, "log_metadata", 12);
-                msgpack_pack_object(&tmp_pck, *log_event.metadata);
+                if (log_event.metadata->type == MSGPACK_OBJECT_MAP) {
+                    flb_pack_msgpack_append_json_metadata(&tmp_pck, log_event.metadata);
+                }
+                else {
+                    msgpack_pack_object(&tmp_pck, *log_event.metadata);
+                }
             }
 
             /* finalize the internal map */
