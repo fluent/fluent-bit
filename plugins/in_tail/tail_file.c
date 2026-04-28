@@ -181,6 +181,32 @@ static void update_resumable_offset_state(struct flb_tail_file *file)
     flb_tail_file_update_offset_marker(file);
 }
 
+int flb_tail_file_reset_on_truncate(struct flb_tail_file *file,
+                                    int64_t size_delta,
+                                    const char *caller)
+{
+    int64_t offset;
+    struct flb_tail_config *ctx = file->config;
+
+    offset = lseek(file->fd, 0, SEEK_SET);
+    if (offset == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    flb_plg_debug(ctx->ins,
+                  "%s: inode=%"PRIu64" file truncated %s (diff: %"PRId64" bytes)",
+                  caller, file->inode, file->name, size_delta);
+
+    file->offset = offset;
+    file->stream_offset = offset;
+    file->last_processed_bytes = 0;
+    file->buf_len = 0;
+
+    update_resumable_offset_state(file);
+    return 0;
+}
+
 static uint64_t stat_get_st_dev(struct stat *st)
 {
 #ifdef FLB_SYSTEM_WINDOWS
@@ -1690,8 +1716,9 @@ int flb_tail_file_remove_all(struct flb_tail_config *ctx)
 static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *file)
 {
     int ret;
-    int64_t offset;
     struct stat st;
+
+    (void) ctx;
 
     ret = fstat(file->fd, &st);
     if (ret == -1) {
@@ -1706,18 +1733,10 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
 
     /* Check if the file was truncated by comparing current size with previous size */
     if (size_delta < 0) {
-        offset = lseek(file->fd, 0, SEEK_SET);
-        if (offset == -1) {
-            flb_errno();
+        if (flb_tail_file_reset_on_truncate(file, size_delta,
+                                            "adjust_counters") == -1) {
             return FLB_TAIL_ERROR;
         }
-
-        flb_plg_debug(ctx->ins, "adjust_counters: inode=%"PRIu64" file truncated %s (diff: %"PRId64" bytes)",
-                      file->inode, file->name, size_delta);
-        file->offset = offset;
-        file->buf_len = 0;
-
-        update_resumable_offset_state(file);
     }
     else {
         // Avoid negative pending_bytes when fstat() has stale data and size < offset

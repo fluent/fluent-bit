@@ -164,38 +164,6 @@ static int flb_tail_fs_add_rotated(struct flb_tail_file *file)
     return tail_fs_add(file, FLB_FALSE);
 }
 
-static int reset_file_on_truncate(struct flb_tail_config *ctx,
-                                  struct flb_tail_file *file,
-                                  int64_t size_delta,
-                                  const char *caller)
-{
-    int64_t offset;
-
-    offset = lseek(file->fd, 0, SEEK_SET);
-    if (offset == -1) {
-        flb_errno();
-        return -1;
-    }
-
-    flb_plg_debug(ctx->ins,
-                  "%s: inode=%"PRIu64" file truncated %s (diff: %"PRId64" bytes)",
-                  caller, file->inode, file->name, size_delta);
-
-    file->offset = offset;
-    file->stream_offset = offset;
-    file->last_processed_bytes = 0;
-    file->buf_len = 0;
-    file->pending_bytes = file->size;
-
-#ifdef FLB_HAVE_SQLDB
-    if (ctx->db) {
-        flb_tail_db_file_offset(file, ctx);
-    }
-#endif
-
-    return 0;
-}
-
 static int reconcile_file_state(struct flb_tail_config *ctx,
                                 struct flb_tail_file *file,
                                 const char *caller,
@@ -205,7 +173,9 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
     int64_t size_delta;
     struct stat st;
 
-    *pending_data_detected = FLB_FALSE;
+    if (pending_data_detected != NULL) {
+        *pending_data_detected = FLB_FALSE;
+    }
 
     ret = fstat(file->fd, &st);
     if (ret == -1) {
@@ -222,7 +192,7 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
 
     if (size_delta < 0 || st.st_size < file->offset ||
         flb_tail_file_offset_marker_matches(file) != FLB_TRUE) {
-        ret = reset_file_on_truncate(ctx, file, size_delta, caller);
+        ret = flb_tail_file_reset_on_truncate(file, size_delta, caller);
         if (ret == -1) {
             return -1;
         }
@@ -230,14 +200,16 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
 
     if (file->offset < st.st_size) {
         file->pending_bytes = (st.st_size - file->offset);
-        *pending_data_detected = FLB_TRUE;
+        if (pending_data_detected != NULL) {
+            *pending_data_detected = FLB_TRUE;
+        }
     }
     else {
         file->pending_bytes = 0;
     }
 
     if (st.st_nlink == 0) {
-        if (*pending_data_detected == FLB_TRUE) {
+        if (file->pending_bytes > 0) {
             return 0;
         }
 
@@ -268,14 +240,16 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
         if (ret == -1) {
             return -1;
         }
+    }
+    else if (ret == -1) {
+        return -1;
+    }
 
+    if (file->rotated != 0 && file->watch_fd == -1) {
         ret = flb_tail_fs_add_rotated(file);
         if (ret == -1) {
             return -1;
         }
-    }
-    else if (ret == -1) {
-        return -1;
     }
 
     return 0;
@@ -320,7 +294,8 @@ static int tail_fs_event(struct flb_input_instance *ins,
     struct flb_tail_config *ctx = in_context;
     struct flb_tail_file *file = NULL;
     struct inotify_event ev;
-    int pending_data_detected;
+
+    (void) ins;
 
     /* Read the event */
     ret = read(ctx->fd_notify, &ev, sizeof(struct inotify_event));
@@ -360,29 +335,12 @@ static int tail_fs_event(struct flb_input_instance *ins,
         return -1;
     }
 
-    /* Check file rotation (only if it has not been rotated before) */
-    if (ev.mask & IN_MOVE_SELF && file->rotated == 0) {
-        flb_plg_debug(ins, "inode=%"PRIu64" rotated IN_MOVE SELF '%s'",
-                      file->inode, file->name);
-
-        /* A rotated file must be re-registered */
-        ret = flb_tail_file_rotated(file);
-        if (ret == -1) {
-            return -1;
-        }
-
-        ret = flb_tail_fs_remove(ctx, file);
-        if (ret == -1) {
-            return -1;
-        }
-
-        ret = flb_tail_fs_add_rotated(file);
-        if (ret == -1) {
-            return -1;
-        }
-    }
-
-    ret = reconcile_file_state(ctx, file, "tail_fs_event", &pending_data_detected);
+    /*
+     * IN_MOVE_SELF rotation is handled inside reconcile_file_state via
+     * flb_tail_file_is_rotated, which detects the inode/name divergence and
+     * re-registers the watch through the same retry path.
+     */
+    ret = reconcile_file_state(ctx, file, "tail_fs_event", NULL);
     if (ret == -1) {
         return 0;
     }
