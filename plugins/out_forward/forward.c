@@ -1739,7 +1739,7 @@ static struct flb_config_map config_map[] = {
      "Set timestamp in integer format (compat mode for old Fluentd v0.12)"
     },
     {
-     FLB_CONFIG_MAP_BOOL, "retain_metadata_in_forward_mode", "false",
+     FLB_CONFIG_MAP_BOOL, "retain_metadata_in_forward_mode", "true",
      0, FLB_TRUE, offsetof(struct flb_forward_config, fwd_retain_metadata),
      "Retain metadata when operating in forward mode"
     },
