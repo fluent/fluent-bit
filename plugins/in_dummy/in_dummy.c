@@ -446,10 +446,6 @@ static int in_dummy_init(struct flb_input_instance *in,
 
     flb_input_set_context(in, ctx);
 
-    if (ctx->flush_on_startup) {
-        in_dummy_collect(in, config, ctx);
-    }
-
     ret = flb_input_set_collector_time(in,
                                        in_dummy_collect,
                                        tm.tv_sec,
@@ -463,6 +459,20 @@ static int in_dummy_init(struct flb_input_instance *in,
     ctx->coll_fd = ret;
 
     flb_time_get(&ctx->base_timestamp);
+
+    return 0;
+}
+
+static int in_dummy_pre_run(struct flb_input_instance *in,
+                            struct flb_config *config, void *in_context)
+{
+    struct flb_dummy *ctx;
+
+    ctx = (struct flb_dummy *) in_context;
+
+    if (ctx != NULL && ctx->flush_on_startup) {
+        in_dummy_collect(in, config, in_context);
+    }
 
     return 0;
 }
@@ -570,7 +580,7 @@ struct flb_input_plugin in_dummy_plugin = {
     .name         = "dummy",
     .description  = "Generate dummy data",
     .cb_init      = in_dummy_init,
-    .cb_pre_run   = NULL,
+    .cb_pre_run   = in_dummy_pre_run,
     .cb_collect   = in_dummy_collect,
     .cb_flush_buf = NULL,
     .config_map   = config_map,
