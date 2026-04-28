@@ -637,6 +637,70 @@ void flb_test_helloworld(void)
     flb_destroy(ctx);
 }
 
+void flb_test_dummy_flush_on_startup(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    char *result;
+    struct flb_lib_out_cb cb_data;
+
+    char *script_body = ""
+      "function lua_main(tag, timestamp, record)\n"
+      "    record[\"check\"] = \"checkval\"\n"
+      "    return 2, timestamp, record\n"
+      "end\n";
+
+    clear_output();
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", FLUSH_INTERVAL, "grace", "1", NULL);
+
+    cb_data.cb = callback_test;
+    cb_data.data = NULL;
+
+    ret = create_script(script_body, strlen(script_body));
+    TEST_CHECK(ret == 0);
+
+    filter_ffd = flb_filter(ctx, (char *) "lua", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "*",
+                         "call", "lua_main",
+                         "script", TMP_LUA_PATH,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    in_ffd = flb_input(ctx, (char *) "dummy", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    flb_input_set(ctx, in_ffd, "flush_on_startup", "true", NULL);
+    flb_input_set(ctx, in_ffd, "samples", "1", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "lib", (void *) &cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "format", "json",
+                   NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    wait_with_timeout(2000, &output);
+    TEST_CHECK(output != NULL);
+    result = strstr(output, "\"check\":\"checkval\"");
+    TEST_CHECK(result != NULL);
+
+    flb_lib_free(output);
+    delete_script();
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 // https://github.com/fluent/fluent-bit/issues/3343
 void flb_test_type_array_key(void)
 {
@@ -1614,6 +1678,7 @@ void flb_test_group_lua_drop(void)
 
 TEST_LIST = {
     {"hello_world",  flb_test_helloworld},
+    {"dummy_flush_on_startup", flb_test_dummy_flush_on_startup},
     {"append_tag",   flb_test_append_tag},
     {"type_int_key", flb_test_type_int_key},
     {"type_int_key_multi", flb_test_type_int_key_multi},
