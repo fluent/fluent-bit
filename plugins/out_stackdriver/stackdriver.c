@@ -36,6 +36,7 @@
 
 #include <msgpack.h>
 
+#include "stackdriver_external_account.h"
 #include "gce_metadata.h"
 #include "stackdriver.h"
 #include "stackdriver_conf.h"
@@ -353,6 +354,11 @@ static int get_oauth2_token(struct flb_stackdriver *ctx)
     /* In case of using metadata server, fetch token from there */
     if (ctx->metadata_server_auth) {
         return gce_metadata_read_token(ctx);
+    }
+
+    /* Workload Identity Federation (external_account) */
+    if (stackdriver_external_account_is_configured(ctx)) {
+        return stackdriver_external_account_read_token(ctx);
     }
 
     /* JWT encode for oauth2 */
@@ -3044,6 +3050,21 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
     flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
+
+    /*
+     * quota_project_id (when set in the credentials file) controls which
+     * project gets billed and quota-counted for outbound API calls. It is
+     * forwarded as x-goog-user-project so cross-project setups (federated
+     * identity in project A, logs to project B, billing to project C)
+     * charge the right tenant.
+     */
+    if (ctx->creds && ctx->creds->quota_project_id &&
+        flb_sds_len(ctx->creds->quota_project_id) > 0) {
+        flb_http_add_header(c, "x-goog-user-project", 19,
+                            ctx->creds->quota_project_id,
+                            flb_sds_len(ctx->creds->quota_project_id));
+    }
+
     /* Content Encoding: gzip */
     if (compressed == FLB_TRUE) {
         flb_http_set_content_encoding_gzip(c);
