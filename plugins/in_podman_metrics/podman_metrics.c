@@ -274,10 +274,19 @@ static int create_counter(struct flb_in_metrics *ctx, struct cmt_counter **count
         return -1;
     }
 
-    if (strcmp(metric_name, COUNTER_CPU) == 0 || strcmp(metric_name, COUNTER_CPU_USER) == 0) {
-        fvalue = fvalue / 1000000000;
-        flb_plg_trace(ctx->ins, "Converting %s from nanoseconds to seconds (%lu -> %lu)", metric_name, value, fvalue);
-
+    if (strcmp(metric_name, COUNTER_CPU) == 0 ||
+        strcmp(metric_name, COUNTER_CPU_USER) == 0) {
+        if (ctx->cgroup_version == CGROUP_V2) {
+            /* cgroup v2 cpu.stat reports in microseconds */
+            fvalue = fvalue / 1000000;
+        }
+        else {
+            /* cgroup v1 cpuacct reports in nanoseconds */
+            fvalue = fvalue / 1000000000;
+        }
+        flb_plg_trace(ctx->ins,
+                      "Converting %s to seconds (%lu -> %lu)",
+                      metric_name, value, fvalue);
     }
 
     labels = (char *[]){id, name, image_name, interface};
