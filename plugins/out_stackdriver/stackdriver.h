@@ -38,6 +38,27 @@
 /* Stackdriver authorization URL */
 #define FLB_STD_AUTH_URL  "https://oauth2.googleapis.com/token"
 
+/*
+ * Workload Identity Federation (external_account) — see
+ * https://cloud.google.com/iam/docs/workload-identity-federation
+ */
+#define FLB_STD_CREDENTIAL_TYPE_SERVICE_ACCOUNT  "service_account"
+#define FLB_STD_CREDENTIAL_TYPE_EXTERNAL_ACCOUNT "external_account"
+
+#define FLB_STD_DEFAULT_STS_TOKEN_URL "https://sts.googleapis.com/v1/token"
+
+/* Scope used for the federated access token when impersonation is enabled */
+#define FLB_STD_IAM_SCOPE "https://www.googleapis.com/auth/cloud-platform"
+
+/* OAuth 2.0 token exchange grant_type and requested_token_type (RFC 8693) */
+#define FLB_STD_TOKEN_EXCHANGE_GRANT_TYPE \
+    "urn:ietf:params:oauth:grant-type:token-exchange"
+#define FLB_STD_TOKEN_TYPE_ACCESS_TOKEN \
+    "urn:ietf:params:oauth:token-type:access_token"
+
+/* Default lifetime requested when impersonating a service account */
+#define FLB_STD_DEFAULT_IMPERSONATION_LIFETIME_SECONDS 3600
+
 /* Stackdriver Logging 'write' end-point */
 #define FLB_STD_WRITE_URI "/v2/entries:write"
 #define FLB_STD_WRITE_URI_SIZE 17
@@ -105,6 +126,39 @@ struct flb_stackdriver_oauth_credentials {
     flb_sds_t client_id;
     flb_sds_t auth_uri;
     flb_sds_t token_uri;
+
+    /*
+     * Workload Identity Federation (type == "external_account").
+     * Supports file-based and URL-based credential_source variants;
+     * executable, aws and certificate variants are rejected at parse time.
+     */
+    flb_sds_t client_secret;
+    flb_sds_t audience;
+    flb_sds_t subject_token_type;
+    flb_sds_t token_url;
+    flb_sds_t service_account_impersonation_url;
+    int       sa_impersonation_lifetime_seconds;
+    /*
+     * Optional impersonation delegation chain. Each delegate must have
+     * iam.serviceAccountTokenCreator on the next; the final email is the
+     * service account whose access token gets returned.
+     */
+    flb_sds_t *sa_impersonation_delegates;
+    int        sa_impersonation_delegates_count;
+    flb_sds_t cred_source_file;
+    flb_sds_t cred_source_url;
+    /*
+     * Optional HTTP headers sent with the credential_source.url GET. The
+     * three arrays are parallel: keys[i] / vals[i] form one header.
+     */
+    flb_sds_t *cred_source_headers_keys;
+    flb_sds_t *cred_source_headers_vals;
+    int        cred_source_headers_count;
+    flb_sds_t cred_source_format_type;            /* "text" or "json" */
+    flb_sds_t cred_source_format_subject_field;
+    flb_sds_t workforce_pool_user_project;
+    flb_sds_t quota_project_id;
+    flb_sds_t universe_domain;
 };
 
 struct flb_stackdriver_env {
@@ -214,6 +268,17 @@ struct flb_stackdriver {
 
     /* upstream context for metadata end-point */
     struct flb_upstream *metadata_u;
+
+    /*
+     * Upstream contexts for Workload Identity Federation. They are created
+     * lazily (under token_mutex) by stackdriver_external_account_read_token(), so
+     * that the plugin still loads when the credentials file is absent or
+     * uses a non-WIF type.
+     */
+    struct flb_upstream *wif_sts_u;
+    struct flb_upstream *wif_iam_u;
+    /* Upstream for credential_source.url subject-token fetch. */
+    struct flb_upstream *wif_subject_url_u;
 
     /* the key to extract unstructured text payload from */
     flb_sds_t text_payload_key;

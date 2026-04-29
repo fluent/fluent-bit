@@ -8,6 +8,7 @@ set(src
   stackdriver_timestamp.c
   stackdriver_helper.c
   stackdriver_resource_types.c
+  stackdriver_external_account.c
   )
 
 FLB_PLUGIN(out_stackdriver "${src}" "")
