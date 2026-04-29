@@ -343,6 +343,54 @@ int fill_counters_with_sysfs_data_v1(struct flb_in_metrics *ctx)
 }
 
 /*
+ * Read uint64_t value from sysfs file, with special handling for the "max"
+ * keyword used by cgroup v2 to indicate an unlimited resource.
+ * Returns 0 when file contains "max".
+ */
+static uint64_t read_from_sysfs_or_max(struct flb_in_metrics *ctx,
+                                        flb_sds_t dir,
+                                        flb_sds_t name)
+{
+    char path[SYSFS_FILE_PATH_SIZE];
+    char buf[32];
+    uint64_t value = UINT64_MAX;
+    FILE *fp;
+    int c;
+
+    if (dir == NULL) {
+        return value;
+    }
+
+    snprintf(path, sizeof(path), "%s/%s", dir, name);
+
+    fp = fopen(path, "r");
+    if (!fp) {
+        flb_plg_warn(ctx->ins, "Failed to read %s", path);
+        return value;
+    }
+
+    if (fgets(buf, sizeof(buf), fp) != NULL) {
+        /* cgroup v2 uses "max" to indicate unlimited */
+        if (strncmp(buf, "max", 3) == 0) {
+            flb_plg_debug(ctx->ins, "%s: max (unlimited)", path);
+            fclose(fp);
+            return 0;
+        }
+        c = sscanf(buf, "%lu", &value);
+        if (c != 1) {
+            flb_plg_warn(ctx->ins,
+                         "Failed to read a number from %s", path);
+            fclose(fp);
+            return UINT64_MAX;
+        }
+    }
+
+    fclose(fp);
+    flb_plg_debug(ctx->ins, "%s: %lu", path, value);
+    return value;
+}
+
+/*
  * Iterate over previously created container list. For each entry, generate its
  * path in sysfs system directory. From this path, grab data about container metrics
  * and put it this entry.
@@ -363,8 +411,11 @@ int fill_counters_with_sysfs_data_v2(struct flb_in_metrics *ctx)
 
         cnt->memory_usage = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_MEMORY, NULL);
         cnt->memory_max_usage = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_MAX_MEMORY, NULL);
-        cnt->rss = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_MEMORY_STAT, STAT_KEY_RSS);
-        cnt->memory_limit = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_MEMORY_LIMIT, NULL);
+        cnt->rss = get_data_from_sysfs(ctx, path,
+                                       V2_SYSFS_FILE_MEMORY_STAT,
+                                       V2_STAT_KEY_RSS);
+        cnt->memory_limit = read_from_sysfs_or_max(ctx, path,
+                                                    V2_SYSFS_FILE_MEMORY_LIMIT);
         cnt->cpu_user = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_CPU_STAT, STAT_KEY_CPU_USER);
         cnt->cpu = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_CPU_STAT, STAT_KEY_CPU);
         pid = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_PIDS, NULL);
