@@ -29,6 +29,26 @@
     FLB_TESTS_DATA_PATH "/data/stackdriver/stackdriver-credentials.json"
 #define STACKDRIVER_DATA_PATH "/data/stackdriver"
 
+/* external_account / Workload Identity Federation fixtures */
+#define EXT_ACCT_CREDS_FILE \
+    FLB_TESTS_DATA_PATH "/data/stackdriver/stackdriver-credentials-external-account.json"
+#define EXT_ACCT_CREDS_NO_IMP \
+    FLB_TESTS_DATA_PATH "/data/stackdriver/stackdriver-credentials-external-account-no-impersonation.json"
+#define EXT_ACCT_CREDS_URL \
+    FLB_TESTS_DATA_PATH "/data/stackdriver/stackdriver-credentials-external-account-url.json"
+#define EXT_ACCT_CREDS_EXEC \
+    FLB_TESTS_DATA_PATH "/data/stackdriver/stackdriver-credentials-external-account-exec.json"
+#define EXT_ACCT_CREDS_NO_AUDIENCE \
+    FLB_TESTS_DATA_PATH "/data/stackdriver/stackdriver-credentials-external-account-no-audience.json"
+#define EXT_ACCT_CREDS_NO_SUBJECT_TYPE \
+    FLB_TESTS_DATA_PATH "/data/stackdriver/stackdriver-credentials-external-account-no-subject-token-type.json"
+#define EXT_ACCT_CREDS_WORKFORCE_MISMATCH \
+    FLB_TESTS_DATA_PATH "/data/stackdriver/stackdriver-credentials-external-account-workforce-mismatch.json"
+#define EXT_ACCT_CREDS_AWS \
+    FLB_TESTS_DATA_PATH "/data/stackdriver/stackdriver-credentials-external-account-aws.json"
+#define EXT_ACCT_CREDS_CERT \
+    FLB_TESTS_DATA_PATH "/data/stackdriver/stackdriver-credentials-external-account-cert.json"
+
 /* JSON payload example */
 #include "data/stackdriver/json.h"
 #include "data/stackdriver/stackdriver_test_operation.h"
@@ -6537,6 +6557,162 @@ void flb_test_non_scalar_payload_with_residual_fields()
     flb_destroy(ctx);
 }
 
+/*
+ * external_account / Workload Identity Federation parser tests.
+ *
+ * These run the plugin with no network access, so they cannot exercise
+ * the STS/IAM round-trip. Instead they verify that the credentials file
+ * parser handles each variant correctly: accepted variants leave the
+ * plugin reachable through the format callback; rejected variants fail
+ * init so the format callback never runs.
+ */
+static int ext_acct_format_called;
+
+static void cb_ext_acct_mark(void *ctx, int ffd,
+                             int res_ret, void *res_data, size_t res_size,
+                             void *data)
+{
+    ext_acct_format_called = FLB_TRUE;
+    flb_sds_destroy(res_data);
+}
+
+static int run_external_account_init(const char *creds_path)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+    static const char dummy_record[] = "[1448403340, {\"k\":\"v\"}]";
+
+    ext_acct_format_called = FLB_FALSE;
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", creds_path,
+                   "resource", "global",
+                   "export_to_project_id", "fluent-bit-test-project",
+                   NULL);
+
+    flb_output_set_test(ctx, out_ffd, "formatter",
+                        cb_ext_acct_mark, NULL, NULL);
+
+    ret = flb_start(ctx);
+    if (ret == 0) {
+        flb_lib_push(ctx, in_ffd, (char *) dummy_record,
+                     sizeof(dummy_record) - 1);
+        sleep(1);
+        flb_stop(ctx);
+    }
+
+    flb_destroy(ctx);
+    return ret;
+}
+
+void flb_test_external_account_with_impersonation()
+{
+    int ret;
+
+    ret = run_external_account_init(EXT_ACCT_CREDS_FILE);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(ext_acct_format_called == FLB_TRUE);
+}
+
+void flb_test_external_account_no_impersonation()
+{
+    int ret;
+
+    ret = run_external_account_init(EXT_ACCT_CREDS_NO_IMP);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(ext_acct_format_called == FLB_TRUE);
+}
+
+void flb_test_external_account_url_source()
+{
+    int ret;
+
+    /*
+     * URL-sourced credential_source must initialize successfully. Token
+     * acquisition is lazy (first flush), and this test does not stand up a
+     * local HTTP server — it only verifies that init succeeds and the
+     * formatter callback fires for the first record. End-to-end coverage
+     * (real HTTP GET, STS exchange, log delivery) is exercised by the
+     * out-of-tree smoke harness in tmp/run_url_test.sh.
+     */
+    ret = run_external_account_init(EXT_ACCT_CREDS_URL);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(ext_acct_format_called == FLB_TRUE);
+}
+
+void flb_test_external_account_rejects_executable_source()
+{
+    int ret;
+
+    /*
+     * Executable credential_source is unsupported and must be rejected at
+     * init time, not silently accepted with the output disabled.
+     */
+    ret = run_external_account_init(EXT_ACCT_CREDS_EXEC);
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(ext_acct_format_called == FLB_FALSE);
+}
+
+void flb_test_external_account_rejects_aws_source()
+{
+    int ret;
+
+    ret = run_external_account_init(EXT_ACCT_CREDS_AWS);
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(ext_acct_format_called == FLB_FALSE);
+}
+
+void flb_test_external_account_rejects_certificate_source()
+{
+    int ret;
+
+    ret = run_external_account_init(EXT_ACCT_CREDS_CERT);
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(ext_acct_format_called == FLB_FALSE);
+}
+
+void flb_test_external_account_rejects_missing_audience()
+{
+    int ret;
+
+    ret = run_external_account_init(EXT_ACCT_CREDS_NO_AUDIENCE);
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(ext_acct_format_called == FLB_FALSE);
+}
+
+void flb_test_external_account_rejects_missing_subject_token_type()
+{
+    int ret;
+
+    ret = run_external_account_init(EXT_ACCT_CREDS_NO_SUBJECT_TYPE);
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(ext_acct_format_called == FLB_FALSE);
+}
+
+void flb_test_external_account_rejects_workforce_mismatch()
+{
+    int ret;
+
+    /*
+     * workforce_pool_user_project is only valid with workforce-pool
+     * audiences. Setting it on a workload-pool audience must be a hard
+     * config error, not a silent no-op.
+     */
+    ret = run_external_account_init(EXT_ACCT_CREDS_WORKFORCE_MISMATCH);
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(ext_acct_format_called == FLB_FALSE);
+}
+
 /* Test list */
 TEST_LIST = {
     {"severity_multi_entries", flb_test_multi_entries_severity },
@@ -6671,5 +6847,16 @@ TEST_LIST = {
     {"string_text_payload_with_mismatched_text_payload_key", flb_test_string_text_payload_with_mismatched_text_payload_key},
     {"string_text_payload_with_residual_fields", flb_test_string_text_payload_with_residual_fields},
     {"non_scalar_payload_with_residual_fields", flb_test_non_scalar_payload_with_residual_fields},
+
+    /* external_account / Workload Identity Federation */
+    {"external_account_with_impersonation", flb_test_external_account_with_impersonation},
+    {"external_account_no_impersonation", flb_test_external_account_no_impersonation},
+    {"external_account_url_source", flb_test_external_account_url_source},
+    {"external_account_rejects_executable_source", flb_test_external_account_rejects_executable_source},
+    {"external_account_rejects_aws_source", flb_test_external_account_rejects_aws_source},
+    {"external_account_rejects_certificate_source", flb_test_external_account_rejects_certificate_source},
+    {"external_account_rejects_missing_audience", flb_test_external_account_rejects_missing_audience},
+    {"external_account_rejects_missing_subject_token_type", flb_test_external_account_rejects_missing_subject_token_type},
+    {"external_account_rejects_workforce_mismatch", flb_test_external_account_rejects_workforce_mismatch},
     {NULL, NULL}
 };
