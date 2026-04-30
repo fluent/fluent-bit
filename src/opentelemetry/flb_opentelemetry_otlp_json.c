@@ -3160,140 +3160,112 @@ flb_sds_t flb_opentelemetry_metrics_msgpack_to_otlp_json(const void *data,
                                                          size_t size,
                                                          int *result)
 {
-    int       ret;
-    int       first_entry;
-    size_t    offset;
-    flb_sds_t rendered;
-    flb_sds_t json;
-    flb_sds_t output;
+    int        ret;
+    int        decoded_count;
+    size_t     offset;
+    flb_sds_t  output;
     struct cmt *context;
+    struct cmt *merged_context;
 
     if (data == NULL || size == 0) {
         set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_ARGUMENT, EINVAL);
         return NULL;
     }
 
-    rendered = NULL;
-    json = NULL;
-    output = flb_sds_create("{\"resourceMetrics\":[");
-    offset = 0;
-    first_entry = FLB_TRUE;
-
-    if (output == NULL) {
+    merged_context = cmt_create();
+    if (merged_context == NULL) {
         set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, ENOMEM);
         return NULL;
     }
 
+    output = NULL;
+    offset = 0;
+    decoded_count = 0;
+
     while ((ret = cmt_decode_msgpack_create(&context, (char *) data, size, &offset)) ==
            CMT_DECODE_MSGPACK_SUCCESS) {
-        rendered = flb_opentelemetry_metrics_to_otlp_json(context, result);
+        ret = cmt_cat(merged_context, context);
+        cmt_destroy(context);
 
-        if (rendered == NULL) {
-            flb_sds_destroy(output);
+        if (ret != 0) {
+            cmt_destroy(merged_context);
+            set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, ENOMEM);
             return NULL;
         }
 
-        if (append_rendered_root_array_content(&output,
-                                               &first_entry,
-                                               rendered,
-                                               "resourceMetrics") != 0) {
-            flb_sds_destroy(rendered);
-            flb_sds_destroy(output);
-            set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, EINVAL);
-            return NULL;
-        }
-
-        flb_sds_destroy(rendered);
+        decoded_count++;
     }
 
-    if (ret != CMT_DECODE_MSGPACK_INSUFFICIENT_DATA &&
-        ret != CMT_DECODE_MSGPACK_SUCCESS) {
-        flb_sds_destroy(output);
+    if (!((ret == CMT_DECODE_MSGPACK_INSUFFICIENT_DATA &&
+           offset == size &&
+           decoded_count > 0) ||
+          (ret == CMT_DECODE_MSGPACK_SUCCESS && offset == size))) {
+        cmt_destroy(merged_context);
         set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_ARGUMENT, EINVAL);
         return NULL;
     }
 
-    json = flb_sds_cat(output, "]}", 2);
-    if (json == NULL) {
-        flb_sds_destroy(output);
-        set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, ENOMEM);
-        return NULL;
-    }
+    output = flb_opentelemetry_metrics_to_otlp_json(merged_context, result);
+    cmt_destroy(merged_context);
 
-    set_result(result, FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
-
-    return json;
+    return output;
 }
 
 flb_sds_t flb_opentelemetry_metrics_msgpack_to_otlp_json_pretty(const void *data,
                                                                 size_t size,
                                                                 int *result)
 {
-    int       ret;
-    int       first_entry;
-    size_t    offset;
-    flb_sds_t rendered;
-    flb_sds_t output;
+    int        ret;
+    int        decoded_count;
+    size_t     offset;
+    flb_sds_t  output;
     struct cmt *context;
+    struct cmt *merged_context;
 
     if (data == NULL || size == 0) {
         set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_ARGUMENT, EINVAL);
         return NULL;
     }
 
-    rendered = NULL;
-    output = flb_sds_create("");
-    offset = 0;
-    first_entry = FLB_TRUE;
-
-    if (output == NULL) {
+    merged_context = cmt_create();
+    if (merged_context == NULL) {
         set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, ENOMEM);
         return NULL;
     }
 
+    output = NULL;
+    offset = 0;
+    decoded_count = 0;
+
     while ((ret = cmt_decode_msgpack_create(&context, (char *) data, size, &offset)) ==
            CMT_DECODE_MSGPACK_SUCCESS) {
-        rendered = flb_opentelemetry_metrics_to_otlp_json_render(context,
-                                                                 FLB_TRUE,
-                                                                 result);
+        ret = cmt_cat(merged_context, context);
+        cmt_destroy(context);
 
-        if (rendered == NULL) {
-            flb_sds_destroy(output);
+        if (ret != 0) {
+            cmt_destroy(merged_context);
+            set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, ENOMEM);
             return NULL;
         }
 
-        if (append_rendered_root_array_content(&output,
-                                               &first_entry,
-                                               rendered,
-                                               "resourceMetrics") != 0) {
-            flb_sds_destroy(rendered);
-            flb_sds_destroy(output);
-            set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, EINVAL);
-            return NULL;
-        }
-
-        flb_sds_destroy(rendered);
+        decoded_count++;
     }
 
-    if (ret != CMT_DECODE_MSGPACK_INSUFFICIENT_DATA &&
-        ret != CMT_DECODE_MSGPACK_SUCCESS) {
-        flb_sds_destroy(output);
+    if (!((ret == CMT_DECODE_MSGPACK_INSUFFICIENT_DATA &&
+           offset == size &&
+           decoded_count > 0) ||
+          (ret == CMT_DECODE_MSGPACK_SUCCESS && offset == size))) {
+        cmt_destroy(merged_context);
         set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_ARGUMENT, EINVAL);
         return NULL;
     }
 
-    rendered = wrap_rendered_root_array_output("resourceMetrics",
-                                               output,
-                                               FLB_TRUE);
-    flb_sds_destroy(output);
-    if (rendered == NULL) {
-        set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, ENOMEM);
-        return NULL;
-    }
+    output = flb_opentelemetry_metrics_to_otlp_json_render(merged_context,
+                                                           FLB_TRUE,
+                                                           result);
+    cmt_destroy(merged_context);
 
-    set_result(result, FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
-
-    return rendered;
+    return output;
 }
 
 static struct flb_json_mut_val *ctr_attributes_to_kv_array(struct flb_json_mut_doc *doc,
