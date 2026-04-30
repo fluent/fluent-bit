@@ -22,7 +22,7 @@ void flb_test_s3_multipart_success(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
-    char store_dir[] = "/tmp/flb-s3-test-XXXXXX";
+    char store_dir[] = "/tmp/flb-s3-test-multipart-XXXXXX";
 
     TEST_CHECK(mkdtemp(store_dir) != NULL);
 
@@ -120,6 +120,7 @@ void flb_test_s3_putobject_error(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
+    char store_dir[] = "/tmp/flb-s3-test-putobj-XXXXXX";
 
     /* mocks calls- signals that we are in test mode */
     setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
@@ -139,6 +140,7 @@ void flb_test_s3_putobject_error(void)
     flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
     flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd,"store_dir", store_dir, NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -228,7 +230,7 @@ void flb_test_s3_upload_part_error(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
-    char store_dir[] = "/tmp/flb-s3-test-XXXXXX";
+    char store_dir[] = "/tmp/flb-s3-test-part-err-XXXXXX";
 
     TEST_CHECK(mkdtemp(store_dir) != NULL);
 
@@ -286,7 +288,7 @@ void flb_test_s3_complete_upload_error(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
-    char store_dir[] = "/tmp/flb-s3-test-XXXXXX";
+    char store_dir[] = "/tmp/flb-s3-test-uplaod-err-XXXXXX";
 
     TEST_CHECK(mkdtemp(store_dir) != NULL);
 
@@ -625,7 +627,7 @@ void flb_test_s3_preserve_data_ordering(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
-    char store_dir[] = "/tmp/flb-s3-test-XXXXXX";
+    char store_dir[] = "/tmp/flb-s3-test-ordering-XXXXXX";
 
     TEST_CHECK(mkdtemp(store_dir) != NULL);
 
