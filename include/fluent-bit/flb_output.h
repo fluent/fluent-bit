@@ -561,6 +561,7 @@ struct flb_output_flush {
     int id;                            /* out-thread ID      */
     const void *buffer;                /* output buffer      */
     struct flb_task *task;             /* Parent flb_task    */
+    int task_id;                        /* Parent task id     */
     struct flb_config *config;         /* FLB context        */
     struct flb_output_instance *o_ins; /* output instance    */
     struct flb_coro *coro;             /* parent coro addr   */
@@ -777,6 +778,7 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
     out_flush->id     = flb_output_flush_id_get(o_ins);
     out_flush->o_ins  = o_ins;
     out_flush->task   = task;
+    out_flush->task_id = task->id;
     out_flush->buffer = task->event_chunk->data;
     out_flush->config = config;
     out_flush->coro   = coro;
@@ -1233,6 +1235,11 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     o_ins = out_flush->o_ins;
     task = out_flush->task;
 
+    if (flb_task_is_valid(task) == FLB_FALSE || o_ins == NULL) {
+        flb_errno();
+        return;
+    }
+
     if (out_flush->processed_event_chunk) {
         counted_event_chunk = out_flush->processed_event_chunk;
     }
@@ -1243,7 +1250,7 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     records = 0;
     bytes = 0;
 
-    if (task != NULL && task->event_chunk != NULL) {
+    if (task->event_chunk != NULL) {
         records = task->event_chunk->total_events;
     }
 
@@ -1253,11 +1260,6 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
         }
 
         bytes = counted_event_chunk->size;
-    }
-
-    if (task == NULL) {
-        flb_errno();
-        return;
     }
 
     flb_task_acquire_lock(task);
@@ -1293,7 +1295,7 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
      *
      * We put together the return value with the task_id on the 32 bits at right
      */
-    set = FLB_TASK_SET(ret, task->id, o_ins->id);
+    set = FLB_TASK_SET(ret, out_flush->task_id, o_ins->id);
     val = FLB_BITS_U64_SET(2 /* FLB_ENGINE_TASK */, set);
 
     /*
