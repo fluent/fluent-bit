@@ -505,13 +505,24 @@ static yyjson_mut_val *msgpack_to_yyjson_mut(yyjson_mut_doc *document,
     }
 }
 
-static yyjson_mut_val *mutable_to_yyjson_mut(yyjson_mut_doc *document,
-                                             struct flb_json_mut_val *value)
+/*
+ * This limit prevents stack overflows in case mutable documents contain
+ * unexpectedly deep nesting or structural cycles.
+ */
+#define FLB_JSON_MUT_RENDER_MAX_DEPTH 1024
+
+static yyjson_mut_val *mutable_to_yyjson_mut_internal(yyjson_mut_doc *document,
+                                                      struct flb_json_mut_val *value,
+                                                      size_t depth)
 {
     struct flb_json_mut_kv    *kv_entry;
     struct flb_json_mut_entry *array_entry;
     yyjson_mut_val            *result;
     yyjson_mut_val            *item;
+
+    if (depth > FLB_JSON_MUT_RENDER_MAX_DEPTH) {
+        return NULL;
+    }
 
     switch (value->type) {
     case FLB_JSON_MUT_OBJECT:
@@ -523,7 +534,9 @@ static yyjson_mut_val *mutable_to_yyjson_mut(yyjson_mut_doc *document,
         for (kv_entry = value->data.object.head;
              kv_entry != NULL;
              kv_entry = kv_entry->next) {
-            item = mutable_to_yyjson_mut(document, kv_entry->value);
+            item = mutable_to_yyjson_mut_internal(document,
+                                                 kv_entry->value,
+                                                 depth + 1);
             if (item == NULL) {
                 return NULL;
             }
@@ -545,7 +558,9 @@ static yyjson_mut_val *mutable_to_yyjson_mut(yyjson_mut_doc *document,
         for (array_entry = value->data.array.head;
              array_entry != NULL;
              array_entry = array_entry->next) {
-            item = mutable_to_yyjson_mut(document, array_entry->value);
+            item = mutable_to_yyjson_mut_internal(document,
+                                                 array_entry->value,
+                                                 depth + 1);
             if (item == NULL || !yyjson_mut_arr_add_val(result, item)) {
                 return NULL;
             }
@@ -567,6 +582,12 @@ static yyjson_mut_val *mutable_to_yyjson_mut(yyjson_mut_doc *document,
     default:
         return NULL;
     }
+}
+
+static yyjson_mut_val *mutable_to_yyjson_mut(yyjson_mut_doc *document,
+                                             struct flb_json_mut_val *value)
+{
+    return mutable_to_yyjson_mut_internal(document, value, 0);
 }
 
 static char *render_msgpack_document_yyjson(struct flb_json_doc *document,
