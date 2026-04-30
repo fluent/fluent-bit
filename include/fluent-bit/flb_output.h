@@ -1240,11 +1240,25 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
         counted_event_chunk = task->event_chunk;
     }
 
-    records = task->event_chunk->total_events;
-    if (counted_event_chunk->type == FLB_EVENT_TYPE_LOGS) {
-        records = counted_event_chunk->total_events;
+    records = 0;
+    bytes = 0;
+
+    if (task != NULL && task->event_chunk != NULL) {
+        records = task->event_chunk->total_events;
     }
-    bytes = counted_event_chunk->size;
+
+    if (counted_event_chunk != NULL) {
+        if (counted_event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+            records = counted_event_chunk->total_events;
+        }
+
+        bytes = counted_event_chunk->size;
+    }
+
+    if (task == NULL) {
+        flb_errno();
+        return;
+    }
 
     flb_task_acquire_lock(task);
     flb_task_set_route_data(task, o_ins, records, bytes);
