@@ -3187,7 +3187,6 @@ flb_sds_t flb_opentelemetry_metrics_msgpack_to_otlp_json(const void *data,
     while ((ret = cmt_decode_msgpack_create(&context, (char *) data, size, &offset)) ==
            CMT_DECODE_MSGPACK_SUCCESS) {
         rendered = flb_opentelemetry_metrics_to_otlp_json(context, result);
-        cmt_destroy(context);
 
         if (rendered == NULL) {
             flb_sds_destroy(output);
@@ -3257,7 +3256,6 @@ flb_sds_t flb_opentelemetry_metrics_msgpack_to_otlp_json_pretty(const void *data
         rendered = flb_opentelemetry_metrics_to_otlp_json_render(context,
                                                                  FLB_TRUE,
                                                                  result);
-        cmt_destroy(context);
 
         if (rendered == NULL) {
             flb_sds_destroy(output);
