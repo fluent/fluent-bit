@@ -3991,7 +3991,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                                     event_chunk->tag,
                                     flb_sds_len(event_chunk->tag));
 
-    if (upload_file == NULL) {
+    if (upload_file == NULL && event_chunk->type == FLB_EVENT_TYPE_LOGS) {
         ret = flb_log_event_decoder_init(&log_decoder,
                                          (char *) event_chunk->data,
                                          event_chunk->size);
@@ -4016,7 +4016,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
 
         flb_log_event_decoder_destroy(&log_decoder);
     }
-    else {
+    else if (upload_file != NULL) {
         /* Get file_first_log_time from upload_file */
         file_first_log_time = upload_file->first_log_time;
     }
