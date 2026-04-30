@@ -26,6 +26,12 @@
 
 #include "logdna.h"
 
+#define LOGDNA_META_KEY "meta"
+#define LOGDNA_LEVEL_KEY "level"
+#define LOGDNA_SEVERITY_KEY "severity"
+#define LOGDNA_FILE_KEY "file"
+#define LOGDNA_APP_KEY "app"
+
 static inline int primary_key_check(msgpack_object k, char *name, int len)
 {
     if (k.type != MSGPACK_OBJECT_STR) {
@@ -44,19 +50,26 @@ static inline int primary_key_check(msgpack_object k, char *name, int len)
 }
 
 /*
- * This function looks for the following keys and add them to the buffer
+ * This function looks for the following primary keys and promotes them to
+ * the top-level line object:
  *
  * - level or severity
  * - file
  * - app
  * - meta
+ *
+ * When line_pck is not NULL, non-primary keys are packed into it for use
+ * as the "line" body (excluding the promoted keys).
  */
 static int record_append_primary_keys(struct flb_logdna *ctx,
                                       msgpack_object *map,
-                                      msgpack_packer *mp_sbuf)
+                                      msgpack_packer *mp_sbuf,
+                                      msgpack_packer *line_pck)
 {
     int i;
     int c = 0;
+    int is_primary;
+    int line_count = 0;
     msgpack_object *level = NULL;
     msgpack_object *file = NULL;
     msgpack_object *app = NULL;
@@ -64,63 +77,94 @@ static int record_append_primary_keys(struct flb_logdna *ctx,
     msgpack_object k;
     msgpack_object v;
 
-    for (i = 0; i < map->via.array.size; i++) {
+    if (line_pck) {
+        for (i = 0; i < map->via.map.size; i++) {
+            k = map->via.map.ptr[i].key;
+            if (primary_key_check(k, LOGDNA_META_KEY, sizeof(LOGDNA_META_KEY) - 1) == FLB_TRUE ||
+                primary_key_check(k, LOGDNA_LEVEL_KEY, sizeof(LOGDNA_LEVEL_KEY) - 1) == FLB_TRUE ||
+                primary_key_check(k, LOGDNA_SEVERITY_KEY, sizeof(LOGDNA_SEVERITY_KEY) - 1) == FLB_TRUE ||
+                primary_key_check(k, LOGDNA_FILE_KEY, sizeof(LOGDNA_FILE_KEY) - 1) == FLB_TRUE ||
+                primary_key_check(k, LOGDNA_APP_KEY, sizeof(LOGDNA_APP_KEY) - 1) == FLB_TRUE) {
+                continue;
+            }
+            line_count++;
+        }
+        msgpack_pack_map(line_pck, line_count);
+    }
+
+    for (i = 0; i < map->via.map.size; i++) {
         k = map->via.map.ptr[i].key;
         v = map->via.map.ptr[i].val;
+        is_primary = FLB_FALSE;
 
-        /* Level - optional */
-        if (!level &&
-            (primary_key_check(k, "level", 5) == FLB_TRUE ||
-             primary_key_check(k, "severity", 8) == FLB_TRUE)) {
-            level = &k;
-            msgpack_pack_str(mp_sbuf, 5);
-            msgpack_pack_str_body(mp_sbuf, "level", 5);
-            msgpack_pack_object(mp_sbuf, v);
-            c++;
+        /* Level - optional (both "level" and "severity" are primary) */
+        if (primary_key_check(k, LOGDNA_LEVEL_KEY, sizeof(LOGDNA_LEVEL_KEY) - 1) == FLB_TRUE ||
+            primary_key_check(k, LOGDNA_SEVERITY_KEY, sizeof(LOGDNA_SEVERITY_KEY) - 1) == FLB_TRUE) {
+            is_primary = FLB_TRUE;
+            if (!level) {
+                level = &k;
+                msgpack_pack_str(mp_sbuf, sizeof(LOGDNA_LEVEL_KEY) - 1);
+                msgpack_pack_str_body(mp_sbuf, LOGDNA_LEVEL_KEY, sizeof(LOGDNA_LEVEL_KEY) - 1);
+                msgpack_pack_object(mp_sbuf, v);
+                c++;
+            }
         }
 
         /* Meta - optional */
-        if (!meta && primary_key_check(k, "meta", 4) == FLB_TRUE) {
-            meta = &k;
-            msgpack_pack_str(mp_sbuf, 4);
-            msgpack_pack_str_body(mp_sbuf, "meta", 4);
-            msgpack_pack_object(mp_sbuf, v);
-            c++;
+        if (primary_key_check(k, LOGDNA_META_KEY, sizeof(LOGDNA_META_KEY) - 1) == FLB_TRUE) {
+            is_primary = FLB_TRUE;
+            if (!meta) {
+                meta = &k;
+                msgpack_pack_str(mp_sbuf, sizeof(LOGDNA_META_KEY) - 1);
+                msgpack_pack_str_body(mp_sbuf, LOGDNA_META_KEY, sizeof(LOGDNA_META_KEY) - 1);
+                msgpack_pack_object(mp_sbuf, v);
+                c++;
+            }
         }
 
         /* File */
-        if (!file && primary_key_check(k, "file", 4) == FLB_TRUE) {
-            file = &k;
-            msgpack_pack_str(mp_sbuf, 4);
-            msgpack_pack_str_body(mp_sbuf, "file", 4);
-            msgpack_pack_object(mp_sbuf, v);
-            c++;
+        if (primary_key_check(k, LOGDNA_FILE_KEY, sizeof(LOGDNA_FILE_KEY) - 1) == FLB_TRUE) {
+            is_primary = FLB_TRUE;
+            if (!file) {
+                file = &k;
+                msgpack_pack_str(mp_sbuf, sizeof(LOGDNA_FILE_KEY) - 1);
+                msgpack_pack_str_body(mp_sbuf, LOGDNA_FILE_KEY, sizeof(LOGDNA_FILE_KEY) - 1);
+                msgpack_pack_object(mp_sbuf, v);
+                c++;
+            }
         }
 
         /* App */
-        if (primary_key_check(k, "app", 3) == FLB_TRUE) {
-            app = &k;
-            msgpack_pack_str(mp_sbuf, 3);
-            msgpack_pack_str_body(mp_sbuf, "app", 3);
-            msgpack_pack_object(mp_sbuf, v);
-            c++;
+        if (primary_key_check(k, LOGDNA_APP_KEY, sizeof(LOGDNA_APP_KEY) - 1) == FLB_TRUE) {
+            is_primary = FLB_TRUE;
+            if (!app) {
+                app = &k;
+                msgpack_pack_str(mp_sbuf, sizeof(LOGDNA_APP_KEY) - 1);
+                msgpack_pack_str_body(mp_sbuf, LOGDNA_APP_KEY, sizeof(LOGDNA_APP_KEY) - 1);
+                msgpack_pack_object(mp_sbuf, v);
+                c++;
+            }
+        }
+
+        if (line_pck && is_primary == FLB_FALSE) {
+            msgpack_pack_object(line_pck, k);
+            msgpack_pack_object(line_pck, v);
         }
     }
 
     /* Set the global file name if the record did not provided one */
     if (!file && ctx->file) {
-        msgpack_pack_str(mp_sbuf, 4);
-        msgpack_pack_str_body(mp_sbuf, "file", 4);
+        msgpack_pack_str(mp_sbuf, sizeof(LOGDNA_FILE_KEY) - 1);
+        msgpack_pack_str_body(mp_sbuf, LOGDNA_FILE_KEY, sizeof(LOGDNA_FILE_KEY) - 1);
         msgpack_pack_str(mp_sbuf, flb_sds_len(ctx->file));
         msgpack_pack_str_body(mp_sbuf, ctx->file, flb_sds_len(ctx->file));
         c++;
     }
 
-
     /* If no application name is set, set the default */
     if (!app) {
-        msgpack_pack_str(mp_sbuf, 3);
-        msgpack_pack_str_body(mp_sbuf, "app", 3);
+        msgpack_pack_str(mp_sbuf, sizeof(LOGDNA_APP_KEY) - 1);
+        msgpack_pack_str_body(mp_sbuf, LOGDNA_APP_KEY, sizeof(LOGDNA_APP_KEY) - 1);
         msgpack_pack_str(mp_sbuf, flb_sds_len(ctx->app));
         msgpack_pack_str_body(mp_sbuf, ctx->app, flb_sds_len(ctx->app));
         c++;
@@ -139,10 +183,14 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
     int total_lines;
     int array_size = 0;
     off_t map_off;
+    size_t off;
     char *line_json;
     flb_sds_t json;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_line_pck;
+    msgpack_sbuffer mp_line_sbuf;
+    msgpack_unpacked mp_line_result;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
 
@@ -178,10 +226,24 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
         msgpack_pack_map(&mp_pck, array_size);
 
         /*
-         * Append primary keys found, the return values is the number of appended
+         * Append primary keys found, the return value is the number of appended
          * keys to the record, we use that to adjust the map header size.
+         *
+         * When exclude_promoted_keys is enabled, non-primary keys are packed
+         * into mp_line_sbuf for use as the "line" body.
          */
-        ret = record_append_primary_keys(ctx, log_event.body, &mp_pck);
+        if (ctx->exclude_promoted_keys) {
+            msgpack_sbuffer_init(&mp_line_sbuf);
+            msgpack_packer_init(&mp_line_pck, &mp_line_sbuf,
+                                msgpack_sbuffer_write);
+
+            ret = record_append_primary_keys(ctx, log_event.body,
+                                             &mp_pck, &mp_line_pck);
+        }
+        else {
+            ret = record_append_primary_keys(ctx, log_event.body,
+                                             &mp_pck, NULL);
+        }
         array_size += ret;
 
         /* Timestamp */
@@ -193,7 +255,23 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
         msgpack_pack_str(&mp_pck, 4);
         msgpack_pack_str_body(&mp_pck, "line", 4);
 
-        line_json = flb_msgpack_to_json_str(1024, log_event.body, config->json_escape_unicode);
+        if (ctx->exclude_promoted_keys) {
+            msgpack_unpacked_init(&mp_line_result);
+            off = 0;
+            msgpack_unpack_next(&mp_line_result,
+                                mp_line_sbuf.data, mp_line_sbuf.size, &off);
+
+            line_json = flb_msgpack_to_json_str(1024, &mp_line_result.data,
+                                                config->json_escape_unicode);
+
+            msgpack_unpacked_destroy(&mp_line_result);
+            msgpack_sbuffer_destroy(&mp_line_sbuf);
+        }
+        else {
+            line_json = flb_msgpack_to_json_str(1024, log_event.body,
+                                                config->json_escape_unicode);
+        }
+
         len = strlen(line_json);
         msgpack_pack_str(&mp_pck, len);
         msgpack_pack_str_body(&mp_pck, line_json, len);
@@ -584,10 +662,38 @@ static struct flb_config_map config_map[] = {
      "Name of the application generating the data (optional)"
     },
 
+    {
+     FLB_CONFIG_MAP_BOOL, "exclude_promoted_keys", "false",
+     0, FLB_TRUE, offsetof(struct flb_logdna, exclude_promoted_keys),
+     "Exclude promoted keys (meta, level, severity (promoted as level), app, file) from the line body"
+    },
+
     /* EOF */
     {0}
 
 };
+
+static int cb_logdna_format_test(struct flb_config *config,
+                                 struct flb_input_instance *ins,
+                                 void *plugin_context,
+                                 void *flush_ctx,
+                                 int event_type,
+                                 const char *tag, int tag_len,
+                                 const void *data, size_t bytes,
+                                 void **out_data, size_t *out_size)
+{
+    flb_sds_t json;
+    struct flb_logdna *ctx = plugin_context;
+
+    json = logdna_compose_payload(ctx, data, bytes, tag, tag_len, config);
+    if (!json) {
+        return -1;
+    }
+
+    *out_data = json;
+    *out_size = flb_sds_len(json);
+    return 0;
+}
 
 /* Plugin reference */
 struct flb_output_plugin out_logdna_plugin = {
@@ -597,5 +703,6 @@ struct flb_output_plugin out_logdna_plugin = {
     .cb_flush    = cb_logdna_flush,
     .cb_exit     = cb_logdna_exit,
     .config_map  = config_map,
+    .test_formatter.callback = cb_logdna_format_test,
     .flags       = FLB_OUTPUT_NET | FLB_IO_TLS,
 };

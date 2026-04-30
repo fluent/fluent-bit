@@ -41,6 +41,7 @@ struct flb_logdna {
     flb_sds_t file;
     flb_sds_t app;
     struct mk_list *tags;
+    int exclude_promoted_keys;
 
     /* Internal */
     flb_sds_t _hostname;
