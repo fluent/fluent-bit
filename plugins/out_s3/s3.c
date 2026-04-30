@@ -4449,7 +4449,7 @@ struct flb_output_plugin out_s3_plugin = {
     .cb_worker_init = cb_s3_worker_init,
     .cb_worker_exit = cb_s3_worker_exit,
     .workers        = 1,
-    .event_type     = FLB_OUTPUT_LOGS | FLB_OUTPUT_BLOBS,
+    .event_type     = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES | FLB_OUTPUT_BLOBS,
     .flags          = FLB_OUTPUT_NET | FLB_IO_TLS,
     .config_map     = config_map
 };
