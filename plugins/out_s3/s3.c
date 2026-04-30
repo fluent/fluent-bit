@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_opentelemetry.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/aws/flb_aws_compress.h>
@@ -69,6 +70,10 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
 static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_log_time,
                          char *body, size_t body_size);
 
+static int s3_put_marshaled_object(struct flb_s3 *ctx, const char *tag,
+                                   time_t file_first_log_time,
+                                   char *body, size_t body_size);
+
 static int put_all_chunks(struct flb_s3 *ctx);
 
 static void cb_s3_upload(struct flb_config *ctx, void *data);
@@ -83,6 +88,10 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx,
 static void remove_from_queue(struct upload_queue *entry);
 
 static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *context);
+
+static flb_sds_t s3_format_event_chunk(struct flb_s3 *ctx,
+                                       struct flb_event_chunk *event_chunk,
+                                       struct flb_config *config);
 
 static struct flb_aws_header *get_content_encoding_header(int compression_type)
 {
@@ -649,6 +658,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     ctx->retry_time = 0;
     ctx->upload_queue_success = FLB_FALSE;
+    ctx->out_format = FLB_PACK_JSON_FORMAT_LINES;
 
     /*
      * The engine default retry_limit (1) is too low for S3's internal
@@ -682,6 +692,33 @@ static int cb_s3_init(struct flb_output_instance *ins,
     if (ctx->ins->total_limit_size != -1) {
         flb_plg_warn(ctx->ins, "Please use 'store_dir_limit_size' with s3 output instead of 'storage.total_limit_size'. "
                      "S3 has its own buffer files located in the store_dir.");
+    }
+
+    /* Format key */
+    tmp = flb_output_get_property("format", ins);
+    if (tmp) {
+        ret = flb_pack_to_json_format_type(tmp);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "invalid format '%s'", tmp);
+            return -1;
+        }
+
+        if (ret != FLB_PACK_JSON_FORMAT_LINES &&
+            ret != FLB_PACK_JSON_FORMAT_OTLP &&
+            ret != FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
+            flb_plg_error(ctx->ins, "unsupported format '%s'", tmp);
+            return -1;
+        }
+        ctx->out_format = ret;
+
+        if ((ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP ||
+             ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP_PRETTY) &&
+            ctx->log_key != NULL) {
+            flb_plg_error(ctx->ins,
+                          "'log_key' is not supported when format is "
+                          "otlp_json or otlp_json_pretty");
+            return -1;
+        }
     }
 
     /* Date key */
@@ -1382,6 +1419,39 @@ multipart:
     }
 
     return FLB_OK;
+}
+
+static int s3_put_marshaled_object(struct flb_s3 *ctx, const char *tag,
+                                   time_t file_first_log_time,
+                                   char *body, size_t body_size)
+{
+    int ret;
+    void *payload_buf = NULL;
+    size_t payload_size = 0;
+    char *payload_body = body;
+    size_t payload_body_size = body_size;
+
+    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+        ret = flb_aws_compression_compress(ctx->compression,
+                                           body, body_size,
+                                           &payload_buf, &payload_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Failed to compress data");
+            return -1;
+        }
+
+        payload_body = (char *) payload_buf;
+        payload_body_size = payload_size;
+    }
+
+    ret = s3_put_object(ctx, tag, file_first_log_time,
+                        payload_body, payload_body_size);
+
+    if (payload_buf != NULL) {
+        flb_free(payload_buf);
+    }
+
+    return ret;
 }
 
 
@@ -3765,6 +3835,109 @@ static int s3_timer_create(struct flb_s3 *ctx)
     return 0;
 }
 
+static flb_sds_t s3_format_event_chunk(struct flb_s3 *ctx,
+                                       struct flb_event_chunk *event_chunk,
+                                       struct flb_config *config)
+{
+    int result;
+    flb_sds_t payload;
+    static const char *default_logs_body_keys[] = {"log", "message"};
+    struct flb_opentelemetry_otlp_logs_options options;
+
+    if (ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP) {
+        if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+            memset(&options, 0, sizeof(options));
+            options.logs_require_otel_metadata = FLB_FALSE;
+            options.logs_body_keys = default_logs_body_keys;
+            options.logs_body_key_count = 2;
+            options.logs_body_key_attributes = FLB_FALSE;
+
+            payload = flb_opentelemetry_logs_to_otlp_json(event_chunk->data,
+                                                          event_chunk->size,
+                                                          &options,
+                                                          &result);
+        }
+#ifdef FLB_HAVE_METRICS
+        else if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
+            payload = flb_opentelemetry_metrics_msgpack_to_otlp_json(event_chunk->data,
+                                                                     event_chunk->size,
+                                                                     &result);
+        }
+#endif
+        else if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
+            payload = flb_opentelemetry_traces_msgpack_to_otlp_json(event_chunk->data,
+                                                                    event_chunk->size,
+                                                                    &result);
+        }
+        else {
+            return NULL;
+        }
+
+        if (payload == NULL) {
+            flb_plg_error(ctx->ins,
+                          "could not convert event chunk to OTLP JSON: %d",
+                          result);
+            return NULL;
+        }
+
+        return payload;
+    }
+    else if (ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
+        if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+            memset(&options, 0, sizeof(options));
+            options.logs_require_otel_metadata = FLB_FALSE;
+            options.logs_body_keys = default_logs_body_keys;
+            options.logs_body_key_count = 2;
+            options.logs_body_key_attributes = FLB_FALSE;
+
+            payload = flb_opentelemetry_logs_to_otlp_json_pretty(event_chunk->data,
+                                                                 event_chunk->size,
+                                                                 &options,
+                                                                 &result);
+        }
+#ifdef FLB_HAVE_METRICS
+        else if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
+            payload = flb_opentelemetry_metrics_msgpack_to_otlp_json_pretty(
+                event_chunk->data,
+                event_chunk->size,
+                &result);
+        }
+#endif
+        else if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
+            payload = flb_opentelemetry_traces_msgpack_to_otlp_json_pretty(
+                event_chunk->data,
+                event_chunk->size,
+                &result);
+        }
+        else {
+            return NULL;
+        }
+
+        if (payload == NULL) {
+            flb_plg_error(ctx->ins,
+                          "could not convert event chunk to OTLP JSON: %d",
+                          result);
+            return NULL;
+        }
+
+        return payload;
+    }
+
+    if (ctx->log_key) {
+        return flb_pack_msgpack_extract_log_key(ctx,
+                                                event_chunk->data,
+                                                event_chunk->size,
+                                                config);
+    }
+
+    return flb_pack_msgpack_to_json_format(event_chunk->data,
+                                           event_chunk->size,
+                                           FLB_PACK_JSON_FORMAT_LINES,
+                                           ctx->json_date_format,
+                                           ctx->date_key,
+                                           config->json_escape_unicode);
+}
+
 static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                         struct flb_output_flush *out_flush,
                         struct flb_input_instance *i_ins,
@@ -3800,20 +3973,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     flush_init(ctx);
 
     /* Process chunk */
-    if (ctx->log_key) {
-        chunk = flb_pack_msgpack_extract_log_key(ctx,
-                                                 event_chunk->data,
-                                                 event_chunk->size,
-                                                 config);
-    }
-    else {
-        chunk = flb_pack_msgpack_to_json_format(event_chunk->data,
-                                                event_chunk->size,
-                                                FLB_PACK_JSON_FORMAT_LINES,
-                                                ctx->json_date_format,
-                                                ctx->date_key,
-                                                config->json_escape_unicode);
-    }
+    chunk = s3_format_event_chunk(ctx, event_chunk, config);
     if (chunk == NULL) {
         flb_plg_error(ctx->ins, "Could not marshal msgpack to output string");
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -3857,6 +4017,22 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
 
     if (file_first_log_time == 0) {
         file_first_log_time = time(NULL);
+    }
+
+    if (ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP ||
+        ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
+        ret = s3_put_marshaled_object(ctx,
+                                      event_chunk->tag,
+                                      file_first_log_time,
+                                      chunk,
+                                      chunk_size);
+        flb_sds_destroy(chunk);
+
+        if (ret < 0) {
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        FLB_OUTPUT_RETURN(FLB_OK);
     }
 
     /* Discard upload_file if it has failed to upload retry_limit times */
@@ -3999,6 +4175,11 @@ static int cb_s3_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "format", "json_lines",
+     0, FLB_FALSE, 0,
+     "Set record output format. Supported values are json_lines, otlp_json and otlp_json_pretty."
+    },
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,

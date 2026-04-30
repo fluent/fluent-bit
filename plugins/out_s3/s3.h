@@ -153,6 +153,7 @@ struct flb_s3 {
     struct flb_tls *client_tls;
 
     struct flb_aws_client *s3_client;
+    int out_format;
     int json_date_format;
     flb_sds_t json_date_key;
     flb_sds_t date_key;
