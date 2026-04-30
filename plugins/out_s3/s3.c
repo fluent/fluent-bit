@@ -703,7 +703,13 @@ static int cb_s3_init(struct flb_output_instance *ins,
             return -1;
         }
 
-        if (ret != FLB_PACK_JSON_FORMAT_LINES &&
+        if (ret == FLB_PACK_JSON_FORMAT_JSON) {
+            flb_plg_warn(ctx->ins,
+                         "'json' format is implicitly interpreted as 'json_lines' before."
+                         "Now interpreted as 'json_lines' explicitly now");
+            ret =  FLB_PACK_JSON_FORMAT_LINES;
+        }
+        else if (ret != FLB_PACK_JSON_FORMAT_LINES &&
             ret != FLB_PACK_JSON_FORMAT_OTLP &&
             ret != FLB_PACK_JSON_FORMAT_OTLP_PRETTY) {
             flb_plg_error(ctx->ins, "unsupported format '%s'", tmp);
