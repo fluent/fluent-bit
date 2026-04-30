@@ -55,6 +55,8 @@
 #define FLB_TASK_ROUTE_ACTIVE   1
 #define FLB_TASK_ROUTE_DROPPED  2
 
+#define FLB_TASK_MAGIC 0xf17b7a5cU
+
 struct flb_task_route {
     int status;
     int records;
@@ -95,6 +97,7 @@ struct flb_task {
     struct flb_input_instance *i_ins;    /* input instance                */
     struct flb_config *config;           /* parent flb config             */
     pthread_mutex_t lock;
+    uint32_t magic;
 };
 
 /*
@@ -241,6 +244,32 @@ static FLB_INLINE size_t flb_task_get_route_status(
     return result;
 }
 
+static FLB_INLINE int flb_task_is_valid(struct flb_task *task)
+{
+    if (task == NULL) {
+        return FLB_FALSE;
+    }
+
+    if (task->magic != FLB_TASK_MAGIC) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
+static FLB_INLINE int flb_task_route_list_is_valid(struct flb_task *task)
+{
+    if (flb_task_is_valid(task) == FLB_FALSE) {
+        return FLB_FALSE;
+    }
+
+    if (task->routes.next == NULL || task->routes.prev == NULL) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
 static FLB_INLINE void flb_task_set_route_status(
                         struct flb_task *task,
                         struct flb_output_instance *o_ins,
@@ -248,6 +277,10 @@ static FLB_INLINE void flb_task_set_route_status(
 {
     struct mk_list        *iterator;
     struct flb_task_route *route;
+
+    if (flb_task_route_list_is_valid(task) == FLB_FALSE) {
+        return;
+    }
 
     mk_list_foreach(iterator, &task->routes) {
         route = mk_list_entry(iterator, struct flb_task_route, _head);
@@ -267,6 +300,10 @@ static FLB_INLINE void flb_task_set_route_data(
 {
     struct mk_list        *iterator;
     struct flb_task_route *route;
+
+    if (flb_task_route_list_is_valid(task) == FLB_FALSE) {
+        return;
+    }
 
     mk_list_foreach(iterator, &task->routes) {
         route = mk_list_entry(iterator, struct flb_task_route, _head);
@@ -289,6 +326,10 @@ static FLB_INLINE int flb_task_get_route_data(
     struct flb_task_route *route;
 
     if (records == NULL || bytes == NULL) {
+        return -1;
+    }
+
+    if (flb_task_route_list_is_valid(task) == FLB_FALSE) {
         return -1;
     }
 

@@ -465,6 +465,7 @@ struct flb_task *task_alloc(struct flb_config *config)
     mk_list_init(&task->retries);
 
     pthread_mutex_init(&task->lock, NULL);
+    task->magic = FLB_TASK_MAGIC;
 
     return task;
 }
@@ -931,6 +932,8 @@ void flb_task_destroy(struct flb_task *task, int del)
     if (task->i_ins != NULL) {
         flb_input_chunk_set_limits(task->i_ins);
     }
+
+    task->magic = 0;
 
     if (task->event_chunk != NULL) {
         flb_event_chunk_destroy(task->event_chunk);
