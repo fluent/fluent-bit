@@ -709,6 +709,42 @@ static struct flb_json_mut_entry *mut_array_entry_create(struct flb_json_mut_doc
     return entry;
 }
 
+static int mut_val_contains(struct flb_json_mut_val *value,
+                            struct flb_json_mut_val *target)
+{
+    struct flb_json_mut_kv    *kv_entry;
+    struct flb_json_mut_entry *array_entry;
+
+    if (value == NULL || target == NULL) {
+        return FLB_FALSE;
+    }
+
+    if (value == target) {
+        return FLB_TRUE;
+    }
+
+    if (value->type == FLB_JSON_MUT_OBJECT) {
+        for (kv_entry = value->data.object.head;
+             kv_entry != NULL;
+             kv_entry = kv_entry->next) {
+            if (mut_val_contains(kv_entry->value, target)) {
+                return FLB_TRUE;
+            }
+        }
+    }
+    else if (value->type == FLB_JSON_MUT_ARRAY) {
+        for (array_entry = value->data.array.head;
+             array_entry != NULL;
+             array_entry = array_entry->next) {
+            if (mut_val_contains(array_entry->value, target)) {
+                return FLB_TRUE;
+            }
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 static struct flb_json_mut_val *copy_msgpack_to_mutable(struct flb_json_mut_doc *document,
                                                         msgpack_object *object);
 
@@ -1544,6 +1580,10 @@ int flb_json_mut_arr_add_val(struct flb_json_mut_val *array,
         return 0;
     }
 
+    if (mut_val_contains(value, array)) {
+        return 0;
+    }
+
     entry = mut_array_entry_create(array->owner, value);
     if (entry == NULL) {
         return 0;
@@ -1721,6 +1761,10 @@ static int flb_json_mut_obj_add_val_len(struct flb_json_mut_doc *document,
     }
 
     if (object->owner != document || value->owner != document) {
+        return 0;
+    }
+
+    if (mut_val_contains(value, object)) {
         return 0;
     }
 
