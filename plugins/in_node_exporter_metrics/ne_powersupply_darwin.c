@@ -260,13 +260,17 @@ static int ne_powersupply_update(struct flb_input_instance *ins,
     uint64_t ts;
     CFTypeRef info;
     CFArrayRef list;
+    CFTypeRef source;
     CFIndex i;
+    int ret;
+    int has_failures;
 
     (void) ins;
     (void) config;
 
     ctx = in_context;
     ts = cfl_time_now();
+    has_failures = FLB_FALSE;
 
     info = IOPSCopyPowerSourcesInfo();
     if (info == NULL) {
@@ -280,11 +284,23 @@ static int ne_powersupply_update(struct flb_input_instance *ins,
     }
 
     for (i = 0; i < CFArrayGetCount(list); i++) {
-        update_power_source(ctx, CFArrayGetValueAtIndex(list, i), info, ts);
+        source = CFArrayGetValueAtIndex(list, i);
+        ret = update_power_source(ctx, source, info, ts);
+        if (ret != 0) {
+            flb_plg_debug(ctx->ins,
+                          "failed to update power source metrics for source index=%ld ptr=%p",
+                          i, source);
+            has_failures = FLB_TRUE;
+            continue;
+        }
     }
 
     CFRelease(list);
     CFRelease(info);
+
+    if (has_failures == FLB_TRUE) {
+        return -1;
+    }
 
     return 0;
 }
