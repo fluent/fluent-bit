@@ -829,28 +829,28 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 # endif
 #endif
 
-    if (plugin->flags & FLB_OUTPUT_NET) {
-        output_uri = flb_plugin_alias_rewrite(FLB_PLUGIN_OUTPUT, output_name);
-        if (output_uri == FLB_PLUGIN_ALIAS_ERR) {
-            if ((instance->flags & FLB_OUTPUT_SYNCHRONOUS) &&
-                 instance->singleplex_queue != NULL) {
-                flb_task_queue_destroy(instance->singleplex_queue);
-            }
-            if (instance->callback != NULL) {
-                flb_callback_destroy(instance->callback);
-            }
-            if (plugin->type != FLB_OUTPUT_PLUGIN_CORE &&
-                instance->context != NULL) {
-                flb_free(instance->context);
-            }
-            flb_free(instance->http_server_config);
-            flb_free(instance);
-            return NULL;
+    output_uri = flb_plugin_alias_rewrite(FLB_PLUGIN_OUTPUT, output_name);
+    if (output_uri == FLB_PLUGIN_ALIAS_ERR) {
+        if ((instance->flags & FLB_OUTPUT_SYNCHRONOUS) &&
+            instance->singleplex_queue != NULL) {
+            flb_task_queue_destroy(instance->singleplex_queue);
         }
-        else if (output_uri != NULL) {
-            output_name = output_uri;
+        if (instance->callback != NULL) {
+            flb_callback_destroy(instance->callback);
         }
+        if (plugin->type != FLB_OUTPUT_PLUGIN_CORE &&
+            instance->context != NULL) {
+            flb_free(instance->context);
+        }
+        flb_free(instance->http_server_config);
+        flb_free(instance);
+        return NULL;
+    }
+    else if (output_uri != NULL) {
+        output_name = output_uri;
+    }
 
+    if (plugin->flags & FLB_OUTPUT_NET) {
         ret = flb_net_host_set(plugin->name, &instance->host, output_name);
         if (output_uri != NULL) {
             flb_free(output_uri);
