@@ -86,70 +86,86 @@ static int filesystem_update(struct flb_ne *ctx)
     return 0;
 }
 
+static void ne_filesystem_destroy_regexes(struct flb_ne *ctx)
+{
+    if (ctx->fs_regex_skip_mount != NULL) {
+        flb_regex_destroy(ctx->fs_regex_skip_mount);
+        ctx->fs_regex_skip_mount = NULL;
+    }
+
+    if (ctx->fs_regex_skip_fs_types != NULL) {
+        flb_regex_destroy(ctx->fs_regex_skip_fs_types);
+        ctx->fs_regex_skip_fs_types = NULL;
+    }
+}
+
 static int ne_filesystem_init(struct flb_ne *ctx)
 {
     ctx->fs_regex_skip_mount = flb_regex_create(ctx->fs_regex_ingore_mount_point_text);
     if (ctx->fs_regex_skip_mount == NULL) {
-        return -1;
+        goto error;
     }
 
     ctx->fs_regex_skip_fs_types = flb_regex_create(ctx->fs_regex_ingore_filesystem_type_text);
     if (ctx->fs_regex_skip_fs_types == NULL) {
-        flb_regex_destroy(ctx->fs_regex_skip_mount);
-        ctx->fs_regex_skip_mount = NULL;
-        return -1;
+        goto error;
     }
 
     ctx->fs_avail_bytes = cmt_gauge_create(ctx->cmt, "node", "filesystem", "avail_bytes",
                                            "Filesystem space available to non-root users in bytes.",
                                            3, (char *[]) {"device", "fstype", "mountpoint"});
     if (ctx->fs_avail_bytes == NULL) {
-        return -1;
+        goto error;
     }
 
     ctx->fs_device_error = cmt_gauge_create(ctx->cmt, "node", "filesystem", "device_error",
                                             "Whether an error occurred while getting statistics for the given device.",
                                             3, (char *[]) {"device", "fstype", "mountpoint"});
     if (ctx->fs_device_error == NULL) {
-        return -1;
+        goto error;
     }
 
     ctx->fs_files = cmt_gauge_create(ctx->cmt, "node", "filesystem", "files",
                                      "Filesystem total file nodes.",
                                      3, (char *[]) {"device", "fstype", "mountpoint"});
     if (ctx->fs_files == NULL) {
-        return -1;
+        goto error;
     }
 
     ctx->fs_files_free = cmt_gauge_create(ctx->cmt, "node", "filesystem", "files_free",
                                           "Filesystem total free file nodes.",
                                           3, (char *[]) {"device", "fstype", "mountpoint"});
     if (ctx->fs_files_free == NULL) {
-        return -1;
+        goto error;
     }
 
     ctx->fs_free_bytes = cmt_gauge_create(ctx->cmt, "node", "filesystem", "free_bytes",
                                           "Filesystem free space in bytes.",
                                           3, (char *[]) {"device", "fstype", "mountpoint"});
     if (ctx->fs_free_bytes == NULL) {
-        return -1;
+        goto error;
     }
 
     ctx->fs_readonly = cmt_gauge_create(ctx->cmt, "node", "filesystem", "readonly",
                                         "Filesystem read-only status.",
                                         3, (char *[]) {"device", "fstype", "mountpoint"});
     if (ctx->fs_readonly == NULL) {
-        return -1;
+        goto error;
     }
 
     ctx->fs_size_bytes = cmt_gauge_create(ctx->cmt, "node", "filesystem", "size_bytes",
                                           "Filesystem size in bytes.",
                                           3, (char *[]) {"device", "fstype", "mountpoint"});
     if (ctx->fs_size_bytes == NULL) {
-        return -1;
+        goto error;
     }
 
     return 0;
+
+error:
+    ne_filesystem_destroy_regexes(ctx);
+
+    return -1;
 }
 
 static int ne_filesystem_update(struct flb_input_instance *ins,
@@ -162,15 +178,7 @@ static int ne_filesystem_update(struct flb_input_instance *ins,
 
 static int ne_filesystem_exit(struct flb_ne *ctx)
 {
-    if (ctx->fs_regex_skip_mount != NULL) {
-        flb_regex_destroy(ctx->fs_regex_skip_mount);
-        ctx->fs_regex_skip_mount = NULL;
-    }
-
-    if (ctx->fs_regex_skip_fs_types != NULL) {
-        flb_regex_destroy(ctx->fs_regex_skip_fs_types);
-        ctx->fs_regex_skip_fs_types = NULL;
-    }
+    ne_filesystem_destroy_regexes(ctx);
 
     return 0;
 }
