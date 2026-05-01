@@ -192,6 +192,7 @@ struct flb_ne {
     struct cmt_counter *netstat_Udp_InErrors;
     struct cmt_counter *netstat_Udp_OutDatagrams;
     struct cmt_counter *netstat_Udp_NoPorts;
+    struct mk_list      netstat_dynamic_metrics;
 
     /* time */
     struct cmt_gauge *time;
