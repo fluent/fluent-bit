@@ -370,9 +370,9 @@ struct flb_hs *flb_hs_create(const char *listen, const char *tcp_port,
     options.networking_flags = 0;
     flb_net_setup_init(&hs->net_setup);
     options.networking_setup = &hs->net_setup;
-    options.event_loop = config->evl;
+    options.event_loop = NULL;
     options.system_context = config;
-    options.use_caller_event_loop = FLB_TRUE;
+    options.use_caller_event_loop = FLB_FALSE;
 
     ret = flb_http_server_init_with_options(&hs->server, &options);
     if (ret != 0) {
