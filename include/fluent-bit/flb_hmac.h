@@ -23,7 +23,9 @@
 #include <openssl/sha.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
+#ifndef OPENSSL_NO_ENGINE
 #include <openssl/engine.h>
+#endif
 #include <fluent-bit/flb_crypto_constants.h>
 
 struct flb_hmac {
