@@ -140,9 +140,9 @@ static inline int process_pack(struct tcp_conn *conn,
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         if (ctx->log_encoder->output_length > 0) {
-            flb_input_log_append(conn->ins, NULL, 0,
-                                 ctx->log_encoder->output_buffer,
-                                 ctx->log_encoder->output_length);
+            tcp_ingest_logs(ctx,
+                            ctx->log_encoder->output_buffer,
+                            ctx->log_encoder->output_length);
         }
         ret = 0;
     }
@@ -384,9 +384,9 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         if (ctx->log_encoder->output_length > 0) {
-            flb_input_log_append(conn->ins, NULL, 0,
-                                 ctx->log_encoder->output_buffer,
-                                 ctx->log_encoder->output_length);
+            tcp_ingest_logs(ctx,
+                            ctx->log_encoder->output_buffer,
+                            ctx->log_encoder->output_length);
         }
     }
     else {
