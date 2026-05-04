@@ -1,0 +1,38 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: nginx.b2b.access
+      rate: 1
+      samples: 5
+      dummy: '{"request_method":"GET","status":"200","host":"example.com","endpoint":"/","hostname":"host-a","upstream_response_time":"0.125"}'
+
+  filters:
+    - name: log_to_metrics
+      match: nginx.b2b.access
+      tag: metrics.nginx
+      emitter_name: em_status_code
+      flush_interval_sec: 1
+      metric_mode: counter
+      metric_name: nginx_request_status_code_total
+      metric_description: Counts nginx request status codes
+      metric_namespace: nginx
+      metric_subsystem: request
+      label_field:
+        - request_method
+        - status
+        - host
+        - endpoint
+        - hostname
+
+  outputs:
+    - name: prometheus_exporter
+      match: metrics.nginx
+      host: 127.0.0.1
+      port: ${EXPORTER_PORT}
