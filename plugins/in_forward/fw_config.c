@@ -68,6 +68,7 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
         return NULL;
     }
     config->coll_fd = -1;
+    config->workers = 1;
 
     config->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
 
@@ -147,6 +148,11 @@ int fw_config_destroy(struct flb_in_fw_config *config)
         flb_input_collector_delete(config->coll_fd, config->ins);
 
         config->coll_fd = -1;
+    }
+
+    if (config->listener_registered == FLB_TRUE && config->event_loop != NULL) {
+        mk_event_del(config->event_loop, &config->listener_event);
+        config->listener_registered = FLB_FALSE;
     }
 
     if (config->downstream != NULL) {
