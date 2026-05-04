@@ -210,9 +210,9 @@ static inline int process_pack(struct udp_conn *conn,
     msgpack_unpacked_destroy(&result);
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        flb_input_log_append(conn->ins, NULL, 0,
-                             ctx->log_encoder->output_buffer,
-                             ctx->log_encoder->output_length);
+        udp_ingest_logs(ctx,
+                        ctx->log_encoder->output_buffer,
+                        ctx->log_encoder->output_length);
         ret = 0;
     }
     else {
@@ -441,9 +441,9 @@ static ssize_t parse_payload_none(struct udp_conn *conn)
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        flb_input_log_append(conn->ins, NULL, 0,
-                             ctx->log_encoder->output_buffer,
-                             ctx->log_encoder->output_length);
+        udp_ingest_logs(ctx,
+                        ctx->log_encoder->output_buffer,
+                        ctx->log_encoder->output_length);
     }
     else {
         flb_plg_error(ctx->ins, "log event encoding error : %d", ret);
