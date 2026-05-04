@@ -31,6 +31,8 @@
 #include <cmetrics/cmt_compat.h>
 #include <cmetrics/cmt_label.h>
 #include <cmetrics/cmt_version.h>
+#include <cmetrics/cmt_map.h>
+#include <cmetrics/cmt_metric.h>
 
 #include <cfl/cfl_kvlist.h>
 
@@ -152,4 +154,80 @@ int cmt_label_add(struct cmt *cmt, char *key, char *val)
 char *cmt_version()
 {
     return CMT_VERSION_STR;
+}
+
+static int cmt_expire_map(struct cmt_map *map, uint64_t min_timestamp)
+{
+    int count = 0;
+    struct cfl_list *mhead;
+    struct cfl_list *mtmp;
+    struct cmt_metric *metric;
+
+    cfl_list_foreach_safe(mhead, mtmp, &map->metrics) {
+        metric = cfl_list_entry(mhead, struct cmt_metric, _head);
+        if (cmt_metric_get_timestamp(metric) < min_timestamp) {
+            cmt_map_metric_destroy(metric);
+            count++;
+        }
+    }
+    return count;
+}
+
+/*
+ * Remove from every metric map any label-set (cmt_metric) whose timestamp
+ * is strictly less than min_timestamp.  Call this after a collection pass
+ * with the timestamp captured at the start of that pass so that entries for
+ * resources that disappeared (e.g. dead processes) are freed automatically.
+ *
+ * Only dynamic label-set entries (map->metrics list) are considered; the
+ * static no-label entry (map->metric) is never touched.
+ *
+ * Returns the number of purged label-sets.
+ */
+int cmt_expire(struct cmt *cmt, uint64_t min_timestamp)
+{
+    int count = 0;
+    struct cfl_list *head;
+    struct cfl_list *tmp;
+    struct cfl_list *mhead;
+    struct cfl_list *mtmp;
+    struct cmt_counter *c;
+    struct cmt_gauge *g;
+    struct cmt_summary *s;
+    struct cmt_histogram *h;
+    struct cmt_exp_histogram *eh;
+    struct cmt_untyped *u;
+    struct cmt_metric *metric;
+
+    cfl_list_foreach_safe(head, tmp, &cmt->counters) {
+        c = cfl_list_entry(head, struct cmt_counter, _head);
+        count += cmt_expire_map(c->map, min_timestamp);
+    }
+
+    cfl_list_foreach_safe(head, tmp, &cmt->gauges) {
+        g = cfl_list_entry(head, struct cmt_gauge, _head);
+        count += cmt_expire_map(g->map, min_timestamp);
+    }
+
+    cfl_list_foreach_safe(head, tmp, &cmt->summaries) {
+        s = cfl_list_entry(head, struct cmt_summary, _head);
+        count += cmt_expire_map(s->map, min_timestamp);
+    }
+
+    cfl_list_foreach_safe(head, tmp, &cmt->histograms) {
+        h = cfl_list_entry(head, struct cmt_histogram, _head);
+        count += cmt_expire_map(h->map, min_timestamp);
+    }
+
+    cfl_list_foreach_safe(head, tmp, &cmt->exp_histograms) {
+        eh = cfl_list_entry(head, struct cmt_exp_histogram, _head);
+        count += cmt_expire_map(eh->map, min_timestamp);
+    }
+
+    cfl_list_foreach_safe(head, tmp, &cmt->untypeds) {
+        u = cfl_list_entry(head, struct cmt_untyped, _head);
+        count += cmt_expire_map(u->map, min_timestamp);
+    }
+
+    return count;
 }
