@@ -7,7 +7,9 @@ import socket
 import ssl
 import subprocess
 import tempfile
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import opentelemetry
@@ -102,6 +104,7 @@ class Service:
 
     def start(self):
         self.service.start()
+        self.flb = self.service.flb
         self.flb_listener_port = self.service.flb_listener_port
 
     def stop(self):
@@ -123,6 +126,16 @@ class Service:
             interval=0.2,
             description=f"{minimum_count} forwarded forward records",
         )
+
+    def wait_for_log_message(self, pattern, timeout=10, interval=0.25):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.flb and self.flb.log_file and os.path.exists(self.flb.log_file):
+                with open(self.flb.log_file, "r", encoding="utf-8", errors="replace") as log_file:
+                    if pattern in log_file.read():
+                        return True
+            time.sleep(interval)
+        raise TimeoutError(f"Timed out waiting for log pattern: {pattern}")
 
 
 class StorageLimitService(Service):
@@ -413,6 +426,11 @@ def _send_tcp_payload(port, payload):
         sock.sendall(payload)
 
 
+def _drop_partial_tcp_payload(port, payload):
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+        sock.sendall(payload)
+
+
 def _send_unix_payload(path, payload):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(5)
@@ -425,6 +443,11 @@ def _send_tls_payload(port, payload, cafile):
     with socket.create_connection(("127.0.0.1", port), timeout=5) as raw_sock:
         with context.wrap_socket(raw_sock, server_hostname="localhost") as tls_sock:
             tls_sock.sendall(payload)
+
+
+def _drop_raw_tls_connection(port, payload):
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+        sock.sendall(payload)
 
 
 def _recv_msgpack_value(sock):
@@ -597,6 +620,61 @@ def test_in_forward_forward_mode_multiple_entries():
         service.stop()
 
     assert [record["message"] for record in records[:2]] == ["entry-1", "entry-2"]
+
+
+def test_in_forward_workers_concurrent_message_mode_records():
+    total_records = 16
+    service = Service("in_forward_workers.yaml")
+    service.start()
+    service.wait_for_log_message("with 4 workers", timeout=10)
+
+    try:
+        payloads = [
+            _message_mode_payload(TEST_TAG, {"message": f"worker-{i}", "value": i})
+            for i in range(total_records)
+        ]
+        with ThreadPoolExecutor(max_workers=total_records) as executor:
+            list(executor.map(
+                lambda payload: _send_tcp_payload(service.flb_listener_port, payload),
+                payloads,
+            ))
+        records = service.wait_for_record_count(total_records, timeout=20)
+    finally:
+        service.stop()
+
+    values = sorted(record["value"] for record in records)
+    assert values == list(range(total_records))
+
+
+def test_in_forward_workers_drop_partial_connections_and_continue():
+    dropped_connections = 8
+    valid_records = 8
+    service = Service("in_forward_workers.yaml")
+    service.start()
+    service.wait_for_log_message("with 4 workers", timeout=10)
+
+    try:
+        with ThreadPoolExecutor(max_workers=dropped_connections) as executor:
+            list(executor.map(
+                lambda _: _drop_partial_tcp_payload(service.flb_listener_port, b"\x93\xa4test"),
+                range(dropped_connections),
+            ))
+
+        payloads = [
+            _message_mode_payload(TEST_TAG, {"message": f"valid-{i}", "value": i})
+            for i in range(valid_records)
+        ]
+        with ThreadPoolExecutor(max_workers=valid_records) as executor:
+            list(executor.map(
+                lambda payload: _send_tcp_payload(service.flb_listener_port, payload),
+                payloads,
+            ))
+        records = service.wait_for_record_count(valid_records, timeout=20)
+    finally:
+        service.stop()
+
+    values = sorted(record["value"] for record in records)
+    assert values == list(range(valid_records))
 
 
 def test_in_forward_packed_forward_gzip():
@@ -782,6 +860,64 @@ def test_in_forward_tls_message_mode():
         service.stop()
 
     assert records[0]["message"] == "tls-message"
+
+
+def test_in_forward_tls_workers_concurrent_message_mode_records():
+    total_records = 16
+    service = Service("in_forward_tls_workers.yaml")
+    service.start()
+    service.wait_for_log_message("with 4 workers", timeout=10)
+
+    try:
+        with ThreadPoolExecutor(max_workers=total_records) as executor:
+            list(executor.map(
+                lambda i: _send_tls_payload(service.flb_listener_port,
+                                            _message_mode_payload(
+                                                TEST_TAG,
+                                                {"message": f"tls-worker-{i}",
+                                                 "value": i}),
+                                            service.tls_crt_file),
+                range(total_records),
+            ))
+        records = service.wait_for_record_count(total_records, timeout=20)
+    finally:
+        service.stop()
+
+    values = sorted(record["value"] for record in records)
+    assert values == list(range(total_records))
+
+
+def test_in_forward_tls_workers_drop_bad_handshakes_and_continue():
+    dropped_connections = 8
+    valid_records = 8
+    service = Service("in_forward_tls_workers.yaml")
+    service.start()
+    service.wait_for_log_message("with 4 workers", timeout=10)
+
+    try:
+        with ThreadPoolExecutor(max_workers=dropped_connections) as executor:
+            list(executor.map(
+                lambda i: _drop_raw_tls_connection(service.flb_listener_port,
+                                                   f"not-tls-{i}".encode("utf-8")),
+                range(dropped_connections),
+            ))
+
+        with ThreadPoolExecutor(max_workers=valid_records) as executor:
+            list(executor.map(
+                lambda i: _send_tls_payload(service.flb_listener_port,
+                                            _message_mode_payload(
+                                                TEST_TAG,
+                                                {"message": f"valid-tls-{i}",
+                                                 "value": i}),
+                                            service.tls_crt_file),
+                range(valid_records),
+            ))
+        records = service.wait_for_record_count(valid_records, timeout=20)
+    finally:
+        service.stop()
+
+    values = sorted(record["value"] for record in records)
+    assert values == list(range(valid_records))
 
 
 def test_in_forward_secure_forward_auth_success():
