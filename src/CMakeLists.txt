@@ -52,6 +52,7 @@ set(src
   flb_storage.c
   flb_connection.c
   flb_downstream.c
+  flb_downstream_worker.c
   flb_upstream.c
   flb_upstream_ha.c
   flb_upstream_node.c
