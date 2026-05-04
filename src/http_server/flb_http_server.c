@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_pthread.h>
+#include <fluent-bit/flb_downstream_worker.h>
 #include <string.h>
 
 #include <fluent-bit/http_server/flb_http_server.h>
@@ -33,41 +34,11 @@
 /* PRIVATE */
 
 struct flb_http_server_worker_context {
-    struct flb_http_server parent;
     struct flb_http_server server;
     struct flb_net_setup net_setup;
-    struct mk_event_loop *event_loop;
-    pthread_t thread;
-    pthread_mutex_t mutex;
-    pthread_cond_t condition;
-    int worker_id;
-    int should_exit;
-    int initialized;
-    int thread_created;
-    int startup_result;
-};
-
-struct flb_http_server_runtime {
-    struct flb_http_server_worker_context *workers;
-    int worker_count;
 };
 
 static void flb_http_server_runtime_stop(struct flb_http_server *session);
-
-static void flb_http_server_worker_context_reset(
-    struct flb_http_server_worker_context *worker)
-{
-    memset(worker, 0, sizeof(struct flb_http_server_worker_context));
-    pthread_mutex_init(&worker->mutex, NULL);
-    pthread_cond_init(&worker->condition, NULL);
-}
-
-static void flb_http_server_worker_context_cleanup(
-    struct flb_http_server_worker_context *worker)
-{
-    pthread_mutex_destroy(&worker->mutex);
-    pthread_cond_destroy(&worker->condition);
-}
 
 static int flb_http_server_running_on_caller_context(
     struct flb_http_server *session)
@@ -457,144 +428,116 @@ static int flb_http_server_client_connection_event_handler(void *data)
     return 0;
 }
 
-static void flb_http_server_worker_maintenance(struct flb_config *config,
-                                               void *data)
+static void flb_http_server_worker_maintenance(struct flb_downstream_worker *worker,
+                                               void *worker_context)
 {
-    struct flb_http_server_worker_context *worker;
+    struct flb_http_server_worker_context *context;
 
-    (void) config;
+    (void) worker;
 
-    worker = data;
+    context = worker_context;
 
-    if (worker->server.downstream != NULL) {
-        flb_downstream_conn_timeouts_stream(worker->server.downstream);
+    if (context->server.downstream != NULL) {
+        flb_downstream_conn_timeouts_stream(context->server.downstream);
+        flb_downstream_conn_pending_destroy(context->server.downstream);
     }
 }
 
-static int flb_http_server_worker_initialize(
-    struct flb_http_server_worker_context *worker)
+static int flb_http_server_worker_initialize(struct flb_downstream_worker *worker,
+                                             struct flb_http_server *parent,
+                                             struct flb_http_server_worker_context *context)
 {
     int result;
     struct flb_http_server_options options;
 
+    memcpy(&context->net_setup,
+           parent->networking_setup,
+           sizeof(struct flb_net_setup));
+    context->net_setup.share_port = FLB_TRUE;
+
     flb_http_server_options_init(&options);
 
-    options.protocol_version = worker->parent.protocol_version;
-    options.flags = worker->parent.flags;
-    options.request_callback = worker->parent.request_callback;
-    options.user_data = worker->parent.user_data;
-    options.address = worker->parent.address;
-    options.port = worker->parent.port;
-    options.tls_provider = worker->parent.tls_provider;
-    options.networking_flags = worker->parent.networking_flags;
-    options.networking_setup = &worker->net_setup;
+    options.protocol_version = parent->protocol_version;
+    options.flags = parent->flags;
+    options.request_callback = parent->request_callback;
+    options.user_data = parent->user_data;
+    options.address = parent->address;
+    options.port = parent->port;
+    options.tls_provider = parent->tls_provider;
+    options.networking_flags = parent->networking_flags;
+    options.networking_setup = &context->net_setup;
     options.event_loop = worker->event_loop;
-    options.system_context = worker->parent.system_context;
-    options.buffer_max_size = worker->parent.buffer_max_size;
+    options.system_context = parent->system_context;
+    options.buffer_max_size = parent->buffer_max_size;
     options.workers = 1;
     options.use_caller_event_loop = FLB_TRUE;
-    options.reuse_port = worker->parent.reuse_port;
-    options.cb_worker_init = worker->parent.cb_worker_init;
-    options.cb_worker_exit = worker->parent.cb_worker_exit;
+    options.reuse_port = FLB_TRUE;
+    options.cb_worker_init = parent->cb_worker_init;
+    options.cb_worker_exit = parent->cb_worker_exit;
 
-    result = flb_http_server_init_with_options(&worker->server, &options);
+    result = flb_http_server_init_with_options(&context->server, &options);
     if (result != 0) {
         return result;
     }
 
-    result = flb_http_server_start(&worker->server);
+    result = flb_http_server_start(&context->server);
     if (result != 0) {
         return result;
     }
 
-    flb_downstream_thread_safe(worker->server.downstream);
+    flb_downstream_thread_safe(context->server.downstream);
 
-    worker->server.worker_id = worker->worker_id;
-    worker->server.workers = worker->parent.workers;
+    context->server.worker_id = worker->worker_id;
+    context->server.workers = parent->workers;
 
     return 0;
 }
 
-static void *flb_http_server_worker_thread(void *data)
+static int flb_http_server_worker_init(struct flb_downstream_worker *worker,
+                                       void *parent,
+                                       void **worker_context)
 {
-    int result;
-    struct mk_event *event;
-    struct flb_net_dns dns_ctx = {0};
-    struct flb_http_server_worker_context *worker;
+    int ret;
+    struct flb_http_server *parent_server;
+    struct flb_http_server_worker_context *context;
 
-    worker = data;
+    parent_server = parent;
 
-    worker->event_loop = mk_event_loop_create(256);
-    if (worker->event_loop == NULL) {
-        result = -1;
-        goto signal_and_exit;
+    context = flb_calloc(1, sizeof(struct flb_http_server_worker_context));
+    if (context == NULL) {
+        flb_errno();
+        return -1;
     }
 
-    flb_engine_evl_set(worker->event_loop);
-    flb_net_ctx_init(&dns_ctx);
-    flb_net_dns_ctx_set(&dns_ctx);
-
-    result = flb_http_server_worker_initialize(worker);
-
-signal_and_exit:
-    pthread_mutex_lock(&worker->mutex);
-    worker->startup_result = result;
-    worker->initialized = FLB_TRUE;
-    pthread_cond_signal(&worker->condition);
-    pthread_mutex_unlock(&worker->mutex);
-
-    if (result != 0) {
-        goto cleanup;
+    ret = flb_http_server_worker_initialize(worker, parent_server, context);
+    if (ret != 0) {
+        flb_free(context);
+        return ret;
     }
 
-    while (worker->should_exit == FLB_FALSE) {
-        mk_event_wait_2(worker->event_loop, 250);
+    *worker_context = context;
 
-        mk_event_foreach(event, worker->event_loop) {
-            if (event->type == FLB_ENGINE_EV_CUSTOM) {
-                event->handler(event);
-            }
-        }
+    return 0;
+}
 
-        flb_http_server_worker_maintenance(worker->parent.system_context,
-                                           worker);
-        flb_downstream_conn_pending_destroy(worker->server.downstream);
-    }
+static void flb_http_server_worker_exit(struct flb_downstream_worker *worker,
+                                        void *worker_context)
+{
+    struct flb_http_server_worker_context *context;
 
-cleanup:
-    flb_http_server_destroy(&worker->server);
+    (void) worker;
 
-    if (worker->event_loop != NULL) {
-        mk_event_loop_destroy(worker->event_loop);
-        worker->event_loop = NULL;
-    }
+    context = worker_context;
 
-    return NULL;
+    flb_http_server_destroy(&context->server);
+    flb_free(context);
 }
 
 static int flb_http_server_runtime_start(struct flb_http_server *session)
 {
     const char *alpn;
-    int index;
     int result;
-    struct flb_http_server_runtime *runtime;
-
-    runtime = flb_calloc(1, sizeof(struct flb_http_server_runtime));
-    if (runtime == NULL) {
-        flb_errno();
-        return -1;
-    }
-
-    runtime->workers = flb_calloc(session->workers,
-                                  sizeof(struct flb_http_server_worker_context));
-    if (runtime->workers == NULL) {
-        flb_errno();
-        flb_free(runtime);
-        return -1;
-    }
-
-    runtime->worker_count = session->workers;
-    session->runtime = runtime;
+    struct flb_downstream_worker_options options;
 
     if (session->tls_provider != NULL &&
         session->tls_alpn_configured == FLB_FALSE) {
@@ -602,56 +545,22 @@ static int flb_http_server_runtime_start(struct flb_http_server *session)
         result = flb_tls_set_alpn(session->tls_provider, alpn);
 
         if (result != 0) {
-            flb_free(runtime->workers);
-            flb_free(runtime);
-            session->runtime = NULL;
-
             return -1;
         }
 
         session->tls_alpn_configured = FLB_TRUE;
     }
 
-    for (index = 0; index < runtime->worker_count; index++) {
-        flb_http_server_worker_context_reset(&runtime->workers[index]);
-        memcpy(&runtime->workers[index].parent,
-               session,
-               sizeof(struct flb_http_server));
-        memcpy(&runtime->workers[index].net_setup,
-               session->networking_setup,
-               sizeof(struct flb_net_setup));
+    memset(&options, 0, sizeof(struct flb_downstream_worker_options));
+    options.workers = session->workers;
+    options.config = session->system_context;
+    options.parent = session;
+    options.cb_init = flb_http_server_worker_init;
+    options.cb_exit = flb_http_server_worker_exit;
+    options.cb_maintenance = flb_http_server_worker_maintenance;
 
-        runtime->workers[index].net_setup.share_port = FLB_TRUE;
-        runtime->workers[index].worker_id = index;
-        runtime->workers[index].parent.reuse_port = FLB_TRUE;
-        runtime->workers[index].parent.runtime = NULL;
-        runtime->workers[index].parent.workers = session->workers;
-
-        result = pthread_create(&runtime->workers[index].thread,
-                                NULL,
-                                flb_http_server_worker_thread,
-                                &runtime->workers[index]);
-        if (result != 0) {
-            runtime->workers[index].startup_result = -1;
-            break;
-        }
-        runtime->workers[index].thread_created = FLB_TRUE;
-
-        pthread_mutex_lock(&runtime->workers[index].mutex);
-        while (runtime->workers[index].initialized == FLB_FALSE) {
-            pthread_cond_wait(&runtime->workers[index].condition,
-                              &runtime->workers[index].mutex);
-        }
-        result = runtime->workers[index].startup_result;
-        pthread_mutex_unlock(&runtime->workers[index].mutex);
-
-        if (result != 0) {
-            break;
-        }
-    }
-
-    if (index != runtime->worker_count) {
-        flb_http_server_runtime_stop(session);
+    result = flb_downstream_worker_runtime_start(&session->runtime, &options);
+    if (result != 0) {
         return -1;
     }
 
@@ -662,27 +571,7 @@ static int flb_http_server_runtime_start(struct flb_http_server *session)
 
 static void flb_http_server_runtime_stop(struct flb_http_server *session)
 {
-    int index;
-    struct flb_http_server_runtime *runtime;
-
-    runtime = session->runtime;
-    if (runtime == NULL) {
-        return;
-    }
-
-    for (index = 0; index < runtime->worker_count; index++) {
-        runtime->workers[index].should_exit = FLB_TRUE;
-
-        if (runtime->workers[index].thread_created == FLB_TRUE) {
-            pthread_join(runtime->workers[index].thread, NULL);
-        }
-
-        flb_http_server_worker_context_cleanup(&runtime->workers[index]);
-    }
-
-    flb_free(runtime->workers);
-    flb_free(runtime);
-
+    flb_downstream_worker_runtime_stop(session->runtime);
     session->runtime = NULL;
 }
 

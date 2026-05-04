@@ -58,7 +58,7 @@ typedef int (*flb_http_server_request_processor_callback)(
                  struct flb_http_response *response);
 
 struct flb_http_server;
-struct flb_http_server_runtime;
+struct flb_downstream_worker_runtime;
 
 typedef int (*flb_http_server_worker_callback)(struct flb_http_server *server,
                                                void *data);
@@ -145,7 +145,7 @@ struct flb_http_server {
     int                                 tls_alpn_configured;
     flb_http_server_worker_callback     cb_worker_init;
     flb_http_server_worker_callback     cb_worker_exit;
-    struct flb_http_server_runtime     *runtime;
+    struct flb_downstream_worker_runtime *runtime;
 };
 
 struct flb_http_server_session {
