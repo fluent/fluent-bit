@@ -32,7 +32,7 @@ static void test_kv_item_set_duplicate()
 static void test_kv_get_all_key_values()
 {
     struct mk_list list;
-    struct flb_kv_pair **pairs;
+    struct flb_kv **pairs;
 
     flb_kv_init(&list);
 
