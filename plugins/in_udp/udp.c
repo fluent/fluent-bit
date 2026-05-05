@@ -98,6 +98,7 @@ static int in_udp_start_listener(struct flb_in_udp_config *ctx,
                                              config);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Could not set collector for IN_UDP input plugin");
+            in_udp_dummy_conn_destroy(ctx);
             return -1;
         }
 
@@ -106,6 +107,7 @@ static int in_udp_start_listener(struct flb_in_udp_config *ctx,
 
         if (ctx->collector_event == NULL) {
             flb_plg_error(ctx->ins, "Could not get collector event");
+            in_udp_dummy_conn_destroy(ctx);
             return -1;
         }
     }
@@ -123,6 +125,7 @@ static int in_udp_start_listener(struct flb_in_udp_config *ctx,
                            &ctx->listener_event);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "could not register UDP worker listener");
+            in_udp_dummy_conn_destroy(ctx);
             return -1;
         }
 
