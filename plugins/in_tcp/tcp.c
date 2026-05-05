@@ -44,6 +44,23 @@ static void in_tcp_connections_destroy(struct flb_in_tcp_config *ctx)
     }
 }
 
+static void in_tcp_connections_pause(struct flb_in_tcp_config *ctx)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct tcp_conn *conn;
+
+    mk_list_foreach_safe(head, tmp, &ctx->connections) {
+        conn = mk_list_entry(head, struct tcp_conn, _head);
+        if (conn->busy) {
+            conn->pending_close = FLB_TRUE;
+            continue;
+        }
+
+        tcp_conn_del(conn);
+    }
+}
+
 static int in_tcp_worker_listener_event(void *data)
 {
     struct mk_event *event;
@@ -217,6 +234,7 @@ static void in_tcp_worker_pause(struct flb_downstream_worker *worker,
     if (ctx->downstream != NULL) {
         flb_downstream_pause(ctx->downstream);
     }
+    in_tcp_connections_pause(ctx);
 }
 
 static void in_tcp_worker_resume(struct flb_downstream_worker *worker,
@@ -352,9 +370,6 @@ static int in_tcp_exit(void *data, struct flb_config *config)
 static void in_tcp_pause(void *data, struct flb_config *config)
 {
     struct flb_in_tcp_config *ctx = data;
-    struct mk_list *head;
-    struct mk_list *tmp;
-    struct tcp_conn *conn;
 
     (void) config;
 
@@ -367,15 +382,7 @@ static void in_tcp_pause(void *data, struct flb_config *config)
 
     flb_downstream_pause(ctx->downstream);
 
-    mk_list_foreach_safe(head, tmp, &ctx->connections) {
-        conn = mk_list_entry(head, struct tcp_conn, _head);
-        if (conn->busy) {
-            conn->pending_close = FLB_TRUE;
-            continue;
-        }
-
-        tcp_conn_del(conn);
-    }
+    in_tcp_connections_pause(ctx);
 }
 
 static void in_tcp_resume(void *data, struct flb_config *config)
