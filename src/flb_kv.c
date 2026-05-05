@@ -178,7 +178,7 @@ struct flb_kv **flb_kv_get_all_key_values(struct mk_list *list)
         return NULL;
     }
 
-    arr = flb_calloc(count, sizeof(struct flb_kv_pair *));
+    arr = flb_calloc(count, sizeof(struct flb_kv *));
     if (!arr) {
         flb_errno();
         return NULL;
