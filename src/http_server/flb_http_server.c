@@ -482,6 +482,7 @@ static int flb_http_server_worker_initialize(struct flb_downstream_worker *worke
 
     result = flb_http_server_start(&context->server);
     if (result != 0) {
+        flb_http_server_destroy(&context->server);
         return result;
     }
 
