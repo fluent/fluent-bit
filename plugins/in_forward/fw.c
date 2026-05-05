@@ -163,9 +163,9 @@ static int in_fw_collect_ctx(struct flb_in_fw_config *ctx)
         return -1;
     }
 
-    if(ctx->is_paused) {
-        flb_downstream_conn_release(connection);
+    if (ctx->is_paused) {
         flb_plg_trace(ctx->ins, "TCP connection will be closed FD=%i", connection->fd);
+        flb_downstream_conn_release(connection);
         ctx->state = state_backup;
 
         return -1;

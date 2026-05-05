@@ -1142,7 +1142,9 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
                                 cmt);
         if (ret != 0) {
             flb_plg_error(ins, "could not append metrics. ret=%d", ret);
-            cmt_decode_msgpack_destroy(cmt);
+            if (conn->ctx->use_ingress_queue == FLB_FALSE) {
+                cmt_decode_msgpack_destroy(cmt);
+            }
             return -1;
         }
 
@@ -1163,7 +1165,9 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
                                ctr);
         if (ret != 0) {
             flb_plg_error(ins, "could not append traces. ret=%d", ret);
-            ctr_decode_msgpack_destroy(ctr);
+            if (conn->ctx->use_ingress_queue == FLB_FALSE) {
+                ctr_decode_msgpack_destroy(ctr);
+            }
             return -1;
         }
         /* Note: flb_input_trace_append takes ownership of ctr and destroys it on success */
