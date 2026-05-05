@@ -27,6 +27,7 @@
 struct flb_downstream_worker_runtime {
     struct flb_downstream_worker *workers;
     int worker_count;
+    int active_workers;
     struct flb_config *config;
     void *parent;
     flb_downstream_worker_init_cb cb_init;
@@ -81,7 +82,7 @@ signal_and_exit:
         goto cleanup;
     }
 
-    while (worker->should_exit == FLB_FALSE) {
+    while (atomic_load(&worker->should_exit) == FLB_FALSE) {
         mk_event_wait_2(worker->event_loop, 250);
 
         mk_event_foreach(event, worker->event_loop) {
@@ -146,6 +147,7 @@ int flb_downstream_worker_runtime_start(struct flb_downstream_worker_runtime **o
 
     for (i = 0; i < runtime->worker_count; i++) {
         downstream_worker_context_reset(&runtime->workers[i]);
+        runtime->active_workers++;
         runtime->workers[i].runtime = runtime;
         runtime->workers[i].parent = runtime->parent;
         runtime->workers[i].worker_id = i;
@@ -191,8 +193,8 @@ void flb_downstream_worker_runtime_stop(struct flb_downstream_worker_runtime *ru
         return;
     }
 
-    for (i = 0; i < runtime->worker_count; i++) {
-        runtime->workers[i].should_exit = FLB_TRUE;
+    for (i = 0; i < runtime->active_workers; i++) {
+        atomic_store(&runtime->workers[i].should_exit, FLB_TRUE);
         if (runtime->workers[i].thread_created == FLB_TRUE) {
             pthread_join(runtime->workers[i].thread, NULL);
         }
