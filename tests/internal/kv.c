@@ -61,6 +61,7 @@ static void test_kv_get_all_key_values()
     }
 
     flb_kv_release(&list);
+    flb_free(pairs);
 }
 
 TEST_LIST = {
