@@ -73,8 +73,14 @@ class Service:
         return records
 
     def wait_for_record_count(self, minimum_count, timeout=10):
+        def records_ready():
+            records = self.flattened_records()
+            if len(records) >= minimum_count:
+                return records
+            return None
+
         return self.service.wait_for_condition(
-            lambda: self.flattened_records() if len(self.flattened_records()) >= minimum_count else None,
+            records_ready,
             timeout=timeout,
             interval=0.2,
             description=f"{minimum_count} forwarded UDP payloads",
@@ -167,6 +173,7 @@ def test_in_udp_workers_drop_malformed_datagrams_and_continue():
                 range(valid_records),
             ))
         records = service.wait_for_record_count(valid_records, timeout=20)
+        assert len(records) == valid_records
     finally:
         service.stop()
 

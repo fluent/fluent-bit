@@ -426,11 +426,6 @@ def _send_tcp_payload(port, payload):
         sock.sendall(payload)
 
 
-def _drop_partial_tcp_payload(port, payload):
-    with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
-        sock.sendall(payload)
-
-
 def _send_unix_payload(path, payload):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(5)
@@ -443,11 +438,6 @@ def _send_tls_payload(port, payload, cafile):
     with socket.create_connection(("127.0.0.1", port), timeout=5) as raw_sock:
         with context.wrap_socket(raw_sock, server_hostname="localhost") as tls_sock:
             tls_sock.sendall(payload)
-
-
-def _drop_raw_tls_connection(port, payload):
-    with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
-        sock.sendall(payload)
 
 
 def _recv_msgpack_value(sock):
@@ -654,9 +644,10 @@ def test_in_forward_workers_drop_partial_connections_and_continue():
     service.wait_for_log_message("with 4 workers", timeout=10)
 
     try:
+        # Send partial MessagePack bytes and close to exercise drop cleanup.
         with ThreadPoolExecutor(max_workers=dropped_connections) as executor:
             list(executor.map(
-                lambda _: _drop_partial_tcp_payload(service.flb_listener_port, b"\x93\xa4test"),
+                lambda _: _send_tcp_payload(service.flb_listener_port, b"\x93\xa4test"),
                 range(dropped_connections),
             ))
 
@@ -895,10 +886,11 @@ def test_in_forward_tls_workers_drop_bad_handshakes_and_continue():
     service.wait_for_log_message("with 4 workers", timeout=10)
 
     try:
+        # Send raw non-TLS bytes and close to exercise handshake cleanup.
         with ThreadPoolExecutor(max_workers=dropped_connections) as executor:
             list(executor.map(
-                lambda i: _drop_raw_tls_connection(service.flb_listener_port,
-                                                   f"not-tls-{i}".encode("utf-8")),
+                lambda i: _send_tcp_payload(service.flb_listener_port,
+                                            f"not-tls-{i}".encode("utf-8")),
                 range(dropped_connections),
             ))
 
