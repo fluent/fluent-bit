@@ -9,8 +9,8 @@ pipeline:
   inputs:
     - name: dummy
       tag: nginx.b2b.access
-      rate: 1
-      samples: 5
+      rate: 25
+      samples: 100
       dummy: '{"request_method":"GET","status":"200","host":"example.com","endpoint":"/","hostname":"host-a","upstream_response_time":"0.125"}'
 
   filters:
@@ -20,7 +20,7 @@ pipeline:
       emitter_name: em_status_code
       flush_interval_sec: 1
       metric_mode: counter
-      metric_name: nginx_request_status_code_total
+      metric_name: status_code_total
       metric_description: Counts nginx request status codes
       metric_namespace: nginx
       metric_subsystem: request

@@ -1,11 +1,10 @@
 import os
-import time
 
 from utils.http_matrix import run_curl_request
 from utils.test_service import FluentBitTestService
 
 
-COUNTER_NAME = "nginx_request_nginx_request_status_code_total"
+COUNTER_NAME = "nginx_request_status_code_total"
 COUNTER_LABELS = (
     'request_method="GET"',
     'status="200"',
@@ -13,6 +12,7 @@ COUNTER_LABELS = (
     'endpoint="/"',
     'hostname="host-a"',
 )
+EXPECTED_SAMPLE_COUNT = 100
 
 
 class Service:
@@ -41,15 +41,20 @@ def _counter_value(metrics_text):
         if not line.startswith(f"{COUNTER_NAME}{{"):
             continue
         if all(label in line for label in COUNTER_LABELS):
-            return float(line.rsplit(" ", 1)[1])
+            fields = line.split()
+            if len(fields) < 2:
+                continue
+            value_field = fields[-2] if len(fields) > 2 else fields[-1]
+            return float(value_field)
     return None
 
 
 def test_log_to_metrics_counter_timer_emits_repeated_metric_chunks():
     service = Service("counter_timer_prometheus.yaml")
-    service.start()
 
     try:
+        service.start()
+
         first_value = service.service.wait_for_condition(
             lambda: _counter_value(service.scrape_metrics()["body"]),
             timeout=15,
@@ -57,7 +62,7 @@ def test_log_to_metrics_counter_timer_emits_repeated_metric_chunks():
             description="initial log_to_metrics counter scrape",
         )
 
-        second_value = service.service.wait_for_condition(
+        service.service.wait_for_condition(
             lambda: (
                 value
                 if (value := _counter_value(service.scrape_metrics()["body"])) is not None
@@ -69,7 +74,16 @@ def test_log_to_metrics_counter_timer_emits_repeated_metric_chunks():
             description="increasing log_to_metrics counter scrape",
         )
 
-        assert second_value > first_value
-        time.sleep(3)
+        service.service.wait_for_condition(
+            lambda: (
+                value
+                if (value := _counter_value(service.scrape_metrics()["body"])) is not None
+                and value >= EXPECTED_SAMPLE_COUNT
+                else None
+            ),
+            timeout=15,
+            interval=1,
+            description="complete log_to_metrics counter scrape",
+        )
     finally:
         service.stop()
