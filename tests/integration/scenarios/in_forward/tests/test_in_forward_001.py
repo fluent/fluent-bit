@@ -616,9 +616,9 @@ def test_in_forward_workers_concurrent_message_mode_records():
     total_records = 16
     service = Service("in_forward_workers.yaml")
     service.start()
-    service.wait_for_log_message("with 4 workers", timeout=10)
 
     try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
         payloads = [
             _message_mode_payload(TEST_TAG, {"message": f"worker-{i}", "value": i})
             for i in range(total_records)
@@ -641,9 +641,9 @@ def test_in_forward_workers_drop_partial_connections_and_continue():
     valid_records = 8
     service = Service("in_forward_workers.yaml")
     service.start()
-    service.wait_for_log_message("with 4 workers", timeout=10)
 
     try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
         # Send partial MessagePack bytes and close to exercise drop cleanup.
         with ThreadPoolExecutor(max_workers=dropped_connections) as executor:
             list(executor.map(
@@ -857,9 +857,9 @@ def test_in_forward_tls_workers_concurrent_message_mode_records():
     total_records = 16
     service = Service("in_forward_tls_workers.yaml")
     service.start()
-    service.wait_for_log_message("with 4 workers", timeout=10)
 
     try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
         with ThreadPoolExecutor(max_workers=total_records) as executor:
             list(executor.map(
                 lambda i: _send_tls_payload(service.flb_listener_port,
@@ -883,9 +883,9 @@ def test_in_forward_tls_workers_drop_bad_handshakes_and_continue():
     valid_records = 8
     service = Service("in_forward_tls_workers.yaml")
     service.start()
-    service.wait_for_log_message("with 4 workers", timeout=10)
 
     try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
         # Send raw non-TLS bytes and close to exercise handshake cleanup.
         with ThreadPoolExecutor(max_workers=dropped_connections) as executor:
             list(executor.map(
