@@ -581,7 +581,9 @@ def test_out_kafka_otlp_logs_preserve_resources_across_requests_in_same_chunk(
     messages = service.wait_for_messages(1, timeout=10)
     service.stop()
 
-    resources = _collect_resources(messages, format_name, "logs")
+    assert len(messages) == 1
+
+    resources = _collect_resources(messages[:1], format_name, "logs")
     body_to_user = {
         record["body"]["stringValue"]: next(
             attribute["value"]["stringValue"]
@@ -593,6 +595,8 @@ def test_out_kafka_otlp_logs_preserve_resources_across_requests_in_same_chunk(
         for record in scope["logRecords"]
     }
 
+    assert "event-a" in body_to_user
+    assert "event-b" in body_to_user
     assert body_to_user["event-a"] == "user-a"
     assert body_to_user["event-b"] == "user-b"
     assert len(resources) == 2
