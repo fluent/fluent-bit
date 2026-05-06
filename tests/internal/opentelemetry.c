@@ -2146,6 +2146,118 @@ void test_opentelemetry_logs_otlp_json_preserves_appended_resources()
     flb_log_event_encoder_destroy(&encoder);
 }
 
+void test_opentelemetry_logs_otlp_resource_schema_url_identity()
+{
+    int ret;
+    int result;
+    char *input_a;
+    char *input_b;
+    char *expected;
+    flb_sds_t actual_json;
+    flb_sds_t actual_proto;
+    flb_sds_t normalized_expected;
+    struct flb_log_event_encoder encoder;
+    struct flb_opentelemetry_otlp_logs_options options;
+    Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest *decoded;
+
+    input_a =
+        "{\"resourceLogs\":[{\"schemaUrl\":\"schema-a\",\"resource\":{\"attributes\":[{"
+        "\"key\":\"service.name\",\"value\":{\"stringValue\":\"svc\"}}]},\"scopeLogs\":[{"
+        "\"scope\":{},\"logRecords\":[{\"timeUnixNano\":\"1640995200000000000\","
+        "\"body\":{\"stringValue\":\"event-a\"}}]}]}]}";
+
+    input_b =
+        "{\"resourceLogs\":[{\"schemaUrl\":\"schema-b\",\"resource\":{\"attributes\":[{"
+        "\"key\":\"service.name\",\"value\":{\"stringValue\":\"svc\"}}]},\"scopeLogs\":[{"
+        "\"scope\":{},\"logRecords\":[{\"timeUnixNano\":\"1640995201000000000\","
+        "\"body\":{\"stringValue\":\"event-b\"}}]}]}]}";
+
+    expected =
+        "{\"resourceLogs\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\","
+        "\"value\":{\"stringValue\":\"svc\"}}]},\"scopeLogs\":[{\"scope\":{},"
+        "\"logRecords\":[{\"timeUnixNano\":\"1640995200000000000\","
+        "\"body\":{\"stringValue\":\"event-a\"}}]}],\"schemaUrl\":\"schema-a\"},{"
+        "\"resource\":{\"attributes\":[{\"key\":\"service.name\",\"value\":{\"stringValue\":\"svc\"}}]},"
+        "\"scopeLogs\":[{\"scope\":{},\"logRecords\":[{\"timeUnixNano\":\"1640995201000000000\","
+        "\"body\":{\"stringValue\":\"event-b\"}}]}],\"schemaUrl\":\"schema-b\"}]}";
+
+    ret = flb_log_event_encoder_init(&encoder,
+                                     FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return;
+    }
+
+    ret = flb_opentelemetry_logs_json_to_msgpack(&encoder,
+                                                 input_a,
+                                                 strlen(input_a),
+                                                 "log",
+                                                 &result);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(result == 0);
+
+    ret = flb_opentelemetry_logs_json_to_msgpack(&encoder,
+                                                 input_b,
+                                                 strlen(input_b),
+                                                 "log",
+                                                 &result);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(result == 0);
+    if (ret != 0 || result != 0) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.logs_require_otel_metadata = FLB_TRUE;
+    options.logs_body_key = "log";
+
+    actual_json = flb_opentelemetry_logs_to_otlp_json(encoder.output_buffer,
+                                                      encoder.output_length,
+                                                      &options,
+                                                      &result);
+    TEST_CHECK(actual_json != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+    if (actual_json == NULL) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    normalized_expected = test_normalize_json(expected);
+    TEST_CHECK(normalized_expected != NULL);
+    if (normalized_expected != NULL) {
+        TEST_CHECK(strcmp(normalized_expected, actual_json) == 0);
+        flb_sds_destroy(normalized_expected);
+    }
+    flb_sds_destroy(actual_json);
+
+    actual_proto = flb_opentelemetry_logs_to_otlp_proto(encoder.output_buffer,
+                                                       encoder.output_length,
+                                                       &options,
+                                                       &result);
+    TEST_CHECK(actual_proto != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_PROTO_SUCCESS);
+    if (actual_proto == NULL) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    decoded =
+        opentelemetry__proto__collector__logs__v1__export_logs_service_request__unpack(
+            NULL, flb_sds_len(actual_proto), (uint8_t *) actual_proto);
+    TEST_CHECK(decoded != NULL);
+    if (decoded != NULL) {
+        TEST_CHECK(decoded->n_resource_logs == 2);
+        TEST_CHECK(strcmp(decoded->resource_logs[0]->schema_url, "schema-a") == 0);
+        TEST_CHECK(strcmp(decoded->resource_logs[1]->schema_url, "schema-b") == 0);
+        opentelemetry__proto__collector__logs__v1__export_logs_service_request__free_unpacked(decoded,
+                                                                                               NULL);
+    }
+
+    flb_sds_destroy(actual_proto);
+    flb_log_event_encoder_destroy(&encoder);
+}
+
 void test_opentelemetry_logs_otlp_json_from_plain_logs()
 {
     int ret;
@@ -2635,6 +2747,8 @@ TEST_LIST = {
       test_opentelemetry_logs_otlp_json_roundtrip },
     { "opentelemetry_logs_otlp_json_preserves_appended_resources",
       test_opentelemetry_logs_otlp_json_preserves_appended_resources },
+    { "opentelemetry_logs_otlp_resource_schema_url_identity",
+      test_opentelemetry_logs_otlp_resource_schema_url_identity },
     { "opentelemetry_logs_otlp_json_from_plain_logs",
       test_opentelemetry_logs_otlp_json_from_plain_logs },
     { "opentelemetry_logs_otlp_proto_from_plain_logs",
