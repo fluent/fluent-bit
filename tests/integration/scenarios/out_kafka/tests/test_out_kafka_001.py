@@ -218,6 +218,38 @@ def _build_multi_resource_payload(service, signal_type, json_file):
     return payload
 
 
+def _build_resource_collision_payload(user_id, body):
+    return {
+        "resource_logs": [
+            {
+                "resource": {
+                    "attributes": [
+                        {
+                            "key": "user.id",
+                            "value": {
+                                "string_value": user_id,
+                            },
+                        }
+                    ],
+                },
+                "scope_logs": [
+                    {
+                        "scope": {},
+                        "log_records": [
+                            {
+                                "time_unix_nano": "1640995200000000000",
+                                "body": {
+                                    "string_value": body,
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+
 def _decode_kafka_payload(message, format_name, signal_type):
     if format_name == "otlp_json":
         return json.loads(message["value"].decode("utf-8"))
@@ -522,3 +554,45 @@ def test_out_kafka_otlp_formats_preserve_multiple_resources(
         assert "checkout-span" in span_names
         assert "bulk-trace-span" in span_names
         assert "checkout-bulk" in service_names
+
+
+@pytest.mark.parametrize(
+    "format_name,config_file",
+    [
+        ("otlp_json", "out_kafka_otlp_json_slow_flush.yaml"),
+        ("otlp_proto", "out_kafka_otlp_proto_slow_flush.yaml"),
+    ],
+)
+def test_out_kafka_otlp_logs_preserve_resources_across_requests_in_same_chunk(
+    format_name,
+    config_file,
+):
+    service = Service(config_file)
+    service.start()
+    service.send_payload_dict(
+        _build_resource_collision_payload("user-a", "event-a"),
+        "logs",
+    )
+    service.send_payload_dict(
+        _build_resource_collision_payload("user-b", "event-b"),
+        "logs",
+    )
+
+    messages = service.wait_for_messages(1, timeout=10)
+    service.stop()
+
+    resources = _collect_resources(messages, format_name, "logs")
+    body_to_user = {
+        record["body"]["stringValue"]: next(
+            attribute["value"]["stringValue"]
+            for attribute in resource["resource"]["attributes"]
+            if attribute["key"] == "user.id"
+        )
+        for resource in resources
+        for scope in resource["scopeLogs"]
+        for record in scope["logRecords"]
+    }
+
+    assert body_to_user["event-a"] == "user-a"
+    assert body_to_user["event-b"] == "user-b"
+    assert len(resources) == 2

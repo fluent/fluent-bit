@@ -251,6 +251,41 @@ def maybe_read_prometheus_metric_value(metrics_text, metric_name, input_name):
     except AssertionError:
         return None
 
+
+def build_resource_collision_logs_payload(user_id, body):
+    payload = {
+        "resourceLogs": [
+            {
+                "resource": {
+                    "attributes": [
+                        {
+                            "key": "user.id",
+                            "value": {
+                                "stringValue": user_id,
+                            },
+                        }
+                    ],
+                },
+                "scopeLogs": [
+                    {
+                        "scope": {},
+                        "logRecords": [
+                            {
+                                "timeUnixNano": "1640995200000000000",
+                                "body": {
+                                    "stringValue": body,
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    return json_format.Parse(json.dumps(payload), ExportLogsServiceRequest()).SerializeToString()
+
+
 class Service:
     def __init__(self, config_file, *, use_auth_server=False):
         # Compose the absolute path for the Fluent Bit configuration file
@@ -642,6 +677,36 @@ def test_in_opentelemetry_stdout_otlp_json_logs():
     assert records[0]["record"]["severityText"] == "INFO"
     assert records[0]["record"]["timeUnixNano"] == "1650917400000000000"
     assert records[0]["resource_attributes"]["service.name"] == "example-service"
+
+
+def test_in_opentelemetry_stdout_otlp_json_logs_preserve_resources_across_requests():
+    service = Service("stdout-otlp-json-slow-flush.yaml")
+    service.start()
+
+    response = service.send_raw_request(
+        "/v1/logs",
+        build_resource_collision_logs_payload("user-a", "event-a"),
+    )
+    assert 200 <= response.status_code < 300
+
+    response = service.send_raw_request(
+        "/v1/logs",
+        build_resource_collision_logs_payload("user-b", "event-b"),
+    )
+    assert 200 <= response.status_code < 300
+
+    output = read_stdout_otlp_json(service, "resourceLogs", timeout=10)
+    service.stop()
+
+    records = list(iter_log_records(output))
+    body_to_user = {
+        record["body"]: record["resource_attributes"]["user.id"]
+        for record in records
+    }
+
+    assert body_to_user["event-a"] == "user-a"
+    assert body_to_user["event-b"] == "user-b"
+    assert len(output["resourceLogs"]) == 2
 
 
 def test_in_opentelemetry_stdout_otlp_json_metrics():

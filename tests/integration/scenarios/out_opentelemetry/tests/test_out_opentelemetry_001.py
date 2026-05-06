@@ -34,13 +34,17 @@ def _repo_relative(*parts):
 
 def iter_log_records(output):
     for resource_log in output.get("resourceLogs", []):
+        resource_attributes = {
+            item["key"]: next(iter(item["value"].values()))
+            for item in resource_log.get("resource", {}).get("attributes", [])
+        }
         for scope_log in resource_log.get("scopeLogs", []):
             for record in scope_log.get("logRecords", []):
                 attributes = {
                     item["key"]: next(iter(item["value"].values()))
                     for item in record.get("attributes", [])
                 }
-                yield record, attributes
+                yield record, attributes, resource_attributes
 
 
 def iter_metric_attributes(output):
@@ -199,6 +203,21 @@ class Service:
         )
         response.raise_for_status()
 
+    def send_payload_dict(self, payload_dict, signal_type):
+        payload = self._build_signal_payload_from_dict(payload_dict, signal_type)
+        endpoints = {
+            "logs": "/v1/logs",
+            "metrics": "/v1/metrics",
+            "traces": "/v1/traces",
+        }
+        response = requests.post(
+            f"http://127.0.0.1:{self.flb_listener_port}{endpoints[signal_type]}",
+            data=payload.SerializeToString(),
+            headers={"Content-Type": "application/x-protobuf"},
+            timeout=5,
+        )
+        response.raise_for_status()
+
     def send_json_traces_payload(self, json_file):
         payload = self._build_signal_payload(json_file, "traces")
         response = requests.post(
@@ -226,6 +245,59 @@ class Service:
             json.dumps(read_json_file(self._resolve_json_fixture(json_file))),
             messages[signal_type],
         )
+
+    def _build_signal_payload_from_dict(self, payload_dict, signal_type):
+        messages = {
+            "logs": ExportLogsServiceRequest(),
+            "metrics": ExportMetricsServiceRequest(),
+            "traces": ExportTraceServiceRequest(),
+        }
+        return json_format.Parse(json.dumps(payload_dict), messages[signal_type])
+
+
+def _build_resource_collision_payload(user_id, body):
+    return {
+        "resource_logs": [
+            {
+                "resource": {
+                    "attributes": [
+                        {
+                            "key": "user.id",
+                            "value": {
+                                "string_value": user_id,
+                            },
+                        }
+                    ],
+                },
+                "scope_logs": [
+                    {
+                        "scope": {},
+                        "log_records": [
+                            {
+                                "time_unix_nano": "1640995200000000000",
+                                "body": {
+                                    "string_value": body,
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def _assert_log_resource_attribution(logs_seen):
+    output = json.loads(json_format.MessageToJson(logs_seen[0]))
+    records = list(iter_log_records(output))
+    body_to_user = {
+        record["body"]["stringValue"]: resource_attributes["user.id"]
+        for record, _, resource_attributes in records
+    }
+
+    assert body_to_user["event-a"] == "user-a"
+    assert body_to_user["event-b"] == "user-b"
+    assert len(output["resourceLogs"]) == 2
 
 
 def test_out_opentelemetry_http_logs_uri_headers_and_basic_auth():
@@ -336,7 +408,7 @@ def test_out_opentelemetry_gzip_and_logs_body_key_attributes():
 
     request_seen = requests_seen[0]
     output = json.loads(json_format.MessageToJson(logs_seen[0]))
-    record, attributes = next(iter_log_records(output))
+    record, attributes, _ = next(iter_log_records(output))
 
     assert request_seen["headers"]["Content-Encoding"] == "gzip"
     assert record["body"]["stringValue"] == "body only"
@@ -354,7 +426,7 @@ def test_out_opentelemetry_zstd_and_logs_body_key_attributes():
 
     request_seen = requests_seen[0]
     output = json.loads(json_format.MessageToJson(logs_seen[0]))
-    record, attributes = next(iter_log_records(output))
+    record, attributes, _ = next(iter_log_records(output))
 
     assert request_seen["headers"]["Content-Encoding"] == "zstd"
     assert record["body"]["stringValue"] == "zstd body"
@@ -397,6 +469,34 @@ def test_out_opentelemetry_grpc_custom_logs_uri():
     assert request_seen["path"] == "/custom.logs.v1.Logs/Push"
     assert request_seen["headers"]["x-grpc"] == "otlp-test"
     assert record["body"]["stringValue"] == "hello via grpc"
+
+
+@pytest.mark.parametrize(
+    "config_file,receiver_mode",
+    [
+        ("out_otel_http_logs_otlp_input_slow_flush.yaml", "http"),
+        ("out_otel_grpc_logs_otlp_input_slow_flush.yaml", "grpc"),
+    ],
+    ids=["http", "grpc"],
+)
+def test_out_opentelemetry_logs_preserve_resources_across_otlp_input_requests(
+    config_file,
+    receiver_mode,
+):
+    service = Service(config_file, receiver_mode=receiver_mode)
+    service.start()
+    service.send_payload_dict(
+        _build_resource_collision_payload("user-a", "event-a"),
+        "logs",
+    )
+    service.send_payload_dict(
+        _build_resource_collision_payload("user-b", "event-b"),
+        "logs",
+    )
+    logs_seen = service.wait_for_signal("logs", minimum_count=1, timeout=10)
+    service.stop()
+
+    _assert_log_resource_attribution(logs_seen)
 
 
 def test_out_opentelemetry_metrics_uri_and_add_label():
@@ -498,7 +598,7 @@ def test_out_opentelemetry_custom_metadata_key_accessors():
 
     request_seen = requests_seen[0]
     output = json.loads(json_format.MessageToJson(logs_seen[0]))
-    record, attributes = next(iter_log_records(output))
+    record, attributes, _ = next(iter_log_records(output))
 
     assert request_seen["path"] == "/metadata/logs"
     assert record["severityText"] == "WARN"
