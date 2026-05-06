@@ -97,6 +97,75 @@ static uint64_t msgpack_object_hash(msgpack_object *object)
     return hash;
 }
 
+static uint64_t msgpack_object_pair_hash(msgpack_object *left,
+                                         msgpack_object *right)
+{
+    uint64_t        hash;
+    msgpack_sbuffer buffer;
+    msgpack_packer  packer;
+
+    msgpack_sbuffer_init(&buffer);
+    msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
+
+    if (msgpack_pack_array(&packer, 2) != 0) {
+        msgpack_sbuffer_destroy(&buffer);
+        return 0;
+    }
+
+    if (left == NULL) {
+        msgpack_pack_nil(&packer);
+    }
+    else if (msgpack_pack_object(&packer, *left) != 0) {
+        msgpack_sbuffer_destroy(&buffer);
+        return 0;
+    }
+
+    if (right == NULL) {
+        msgpack_pack_nil(&packer);
+    }
+    else if (msgpack_pack_object(&packer, *right) != 0) {
+        msgpack_sbuffer_destroy(&buffer);
+        return 0;
+    }
+
+    hash = cfl_hash_64bits(buffer.data, buffer.size);
+    msgpack_sbuffer_destroy(&buffer);
+
+    return hash;
+}
+
+static msgpack_object *resource_schema_url_object(msgpack_object *resource_object,
+                                                  msgpack_object *resource_body)
+{
+    msgpack_object *schema_url;
+
+    if (resource_body != NULL && resource_body->type == MSGPACK_OBJECT_MAP) {
+        schema_url = msgpack_map_get_object(&resource_body->via.map, "schema_url");
+        if (schema_url != NULL) {
+            return schema_url;
+        }
+    }
+
+    if (resource_object != NULL && resource_object->type == MSGPACK_OBJECT_MAP) {
+        schema_url = msgpack_map_get_object(&resource_object->via.map, "schema_url");
+        if (schema_url != NULL) {
+            return schema_url;
+        }
+    }
+
+    return NULL;
+}
+
+static uint64_t resource_identity_hash(msgpack_object *resource_object,
+                                       msgpack_object *resource_body)
+{
+    msgpack_object *schema_url;
+
+    schema_url = resource_schema_url_object(resource_object, resource_body);
+
+    return msgpack_object_pair_hash(resource_object, schema_url);
+}
+
 static void set_result(int *result, int value)
 {
     if (result != NULL) {
@@ -1093,16 +1162,14 @@ static struct otlp_logs_resource_state *append_logs_resource_state(
         return NULL;
     }
 
-    if (resource_body != NULL && resource_body->type == MSGPACK_OBJECT_MAP) {
-        schema_url = msgpack_map_get_object(&resource_body->via.map, "schema_url");
-        if (schema_url != NULL && schema_url->type == MSGPACK_OBJECT_STR) {
-            if (!flb_json_mut_obj_add_strncpy(doc,
-                                            resource_log,
-                                            "schemaUrl",
-                                            schema_url->via.str.ptr,
-                                            schema_url->via.str.size)) {
-                return NULL;
-            }
+    schema_url = resource_schema_url_object(resource_object, resource_body);
+    if (schema_url != NULL && schema_url->type == MSGPACK_OBJECT_STR) {
+        if (!flb_json_mut_obj_add_strncpy(doc,
+                                          resource_log,
+                                          "schemaUrl",
+                                          schema_url->via.str.ptr,
+                                          schema_url->via.str.size)) {
+            return NULL;
         }
     }
 
@@ -1202,7 +1269,7 @@ static int ensure_default_logs_scope_state(
     uint64_t resource_hash;
     uint64_t scope_hash;
 
-    resource_hash = msgpack_object_hash(NULL);
+    resource_hash = resource_identity_hash(NULL, NULL);
     scope_hash = msgpack_object_hash(NULL);
 
     *current_resource = find_logs_resource_state(*resource_states,
@@ -1647,7 +1714,7 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
                 scope_object = msgpack_map_get_object(&group_body->via.map, "scope");
             }
 
-            resource_hash = msgpack_object_hash(resource_object);
+            resource_hash = resource_identity_hash(resource_object, group_body);
             scope_hash = msgpack_object_hash(scope_object);
 
             current_resource = find_logs_resource_state(resource_states,
