@@ -252,7 +252,7 @@ def maybe_read_prometheus_metric_value(metrics_text, metric_name, input_name):
         return None
 
 
-def build_resource_collision_logs_payload(user_id, body):
+def build_resource_collision_logs_payload(user_id, body, schema_url=None):
     payload = {
         "resourceLogs": [
             {
@@ -283,7 +283,47 @@ def build_resource_collision_logs_payload(user_id, body):
         ],
     }
 
+    if schema_url is not None:
+        payload["resourceLogs"][0]["schemaUrl"] = schema_url
+
     return json_format.Parse(json.dumps(payload), ExportLogsServiceRequest()).SerializeToString()
+
+
+def build_resource_collision_logs_json_payload(user_id, body, schema_url=None):
+    payload = {
+        "resourceLogs": [
+            {
+                "resource": {
+                    "attributes": [
+                        {
+                            "key": "user.id",
+                            "value": {
+                                "stringValue": user_id,
+                            },
+                        }
+                    ],
+                },
+                "scopeLogs": [
+                    {
+                        "scope": {},
+                        "logRecords": [
+                            {
+                                "timeUnixNano": "1640995200000000000",
+                                "body": {
+                                    "stringValue": body,
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    if schema_url is not None:
+        payload["resourceLogs"][0]["schemaUrl"] = schema_url
+
+    return json.dumps(payload).encode("utf-8")
 
 
 class Service:
@@ -706,6 +746,49 @@ def test_in_opentelemetry_stdout_otlp_json_logs_preserve_resources_across_reques
 
     assert body_to_user["event-a"] == "user-a"
     assert body_to_user["event-b"] == "user-b"
+    assert len(output["resourceLogs"]) == 2
+
+
+@pytest.mark.parametrize(
+    "content_type,payload_builder",
+    [
+        ("application/x-protobuf", build_resource_collision_logs_payload),
+        ("application/json", build_resource_collision_logs_json_payload),
+    ],
+)
+def test_in_opentelemetry_stdout_otlp_json_logs_preserve_resource_schema_urls(
+    content_type,
+    payload_builder,
+):
+    service = Service("stdout-otlp-json-slow-flush.yaml")
+    service.start()
+
+    response = service.send_raw_request(
+        "/v1/logs",
+        payload_builder("same-user", "event-a", "schema-a"),
+        content_type=content_type,
+    )
+    assert 200 <= response.status_code < 300
+
+    response = service.send_raw_request(
+        "/v1/logs",
+        payload_builder("same-user", "event-b", "schema-b"),
+        content_type=content_type,
+    )
+    assert 200 <= response.status_code < 300
+
+    output = read_stdout_otlp_json(service, "resourceLogs", timeout=10)
+    service.stop()
+
+    body_to_schema_url = {
+        record["body"]["stringValue"]: resource_log["schemaUrl"]
+        for resource_log in output["resourceLogs"]
+        for scope_log in resource_log["scopeLogs"]
+        for record in scope_log["logRecords"]
+    }
+
+    assert body_to_schema_url["event-a"] == "schema-a"
+    assert body_to_schema_url["event-b"] == "schema-b"
     assert len(output["resourceLogs"]) == 2
 
 
