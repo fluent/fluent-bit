@@ -32,18 +32,21 @@ def _repo_relative(*parts):
     return os.path.abspath(os.path.join(os.path.dirname(__file__), *parts))
 
 
+def _attributes_to_dict(attributes):
+    return {
+        item["key"]: next(iter(item["value"].values()))
+        for item in attributes
+    }
+
+
 def iter_log_records(output):
     for resource_log in output.get("resourceLogs", []):
-        resource_attributes = {
-            item["key"]: next(iter(item["value"].values()))
-            for item in resource_log.get("resource", {}).get("attributes", [])
-        }
+        resource_attributes = _attributes_to_dict(
+            resource_log.get("resource", {}).get("attributes", [])
+        )
         for scope_log in resource_log.get("scopeLogs", []):
             for record in scope_log.get("logRecords", []):
-                attributes = {
-                    item["key"]: next(iter(item["value"].values()))
-                    for item in record.get("attributes", [])
-                }
+                attributes = _attributes_to_dict(record.get("attributes", []))
                 yield record, attributes, resource_attributes
 
 
@@ -287,6 +290,77 @@ def _build_resource_collision_payload(user_id, body):
     }
 
 
+def _build_conditional_grouped_logs_payload():
+    groups = [
+        ("alpha", "group-alpha", "scope-alpha", "1.0.0", "event-alpha"),
+        ("beta", "group-beta", "scope-beta", "2.0.0", "event-beta"),
+        ("fallback", "group-default", "scope-default", "3.0.0", "event-default"),
+    ]
+
+    resource_logs = []
+    for route_group, group_id, scope_name, scope_version, body in groups:
+        resource_logs.append(
+            {
+                "resource": {
+                    "attributes": [
+                        {
+                            "key": "route_group",
+                            "value": {
+                                "string_value": route_group,
+                            },
+                        },
+                        {
+                            "key": "group_id",
+                            "value": {
+                                "string_value": group_id,
+                            },
+                        },
+                        {
+                            "key": "service_name",
+                            "value": {
+                                "string_value": f"service-{route_group}",
+                            },
+                        },
+                    ],
+                },
+                "scope_logs": [
+                    {
+                        "scope": {
+                            "name": scope_name,
+                            "version": scope_version,
+                            "attributes": [
+                                {
+                                    "key": "scope_marker",
+                                    "value": {
+                                        "string_value": f"{scope_name}-marker",
+                                    },
+                                }
+                            ],
+                        },
+                        "log_records": [
+                            {
+                                "time_unix_nano": "1640995200000000000",
+                                "body": {
+                                    "string_value": body,
+                                },
+                                "attributes": [
+                                    {
+                                        "key": "record_marker",
+                                        "value": {
+                                            "string_value": f"{body}-marker",
+                                        },
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+
+    return {"resource_logs": resource_logs}
+
+
 def _assert_log_resource_attribution(logs_seen):
     output = json.loads(json_format.MessageToJson(logs_seen[0]))
     records = list(iter_log_records(output))
@@ -298,6 +372,47 @@ def _assert_log_resource_attribution(logs_seen):
     assert body_to_user["event-a"] == "user-a"
     assert body_to_user["event-b"] == "user-b"
     assert len(output["resourceLogs"]) == 2
+
+
+def _log_payloads_by_request_path(logs_seen, requests_seen):
+    assert len(logs_seen) >= len(requests_seen)
+
+    return {
+        request_seen["path"]: json.loads(json_format.MessageToJson(logs_seen[index]))
+        for index, request_seen in enumerate(requests_seen)
+    }
+
+
+def _assert_single_grouped_log(output, *, route_group, group_id, scope_name,
+                               scope_version, body):
+    resource_logs = output.get("resourceLogs", [])
+    assert len(resource_logs) == 1
+
+    resource_log = resource_logs[0]
+    resource_attributes = _attributes_to_dict(
+        resource_log.get("resource", {}).get("attributes", [])
+    )
+    assert resource_attributes["route_group"] == route_group
+    assert resource_attributes["group_id"] == group_id
+    assert resource_attributes["service_name"] == f"service-{route_group}"
+
+    scope_logs = resource_log.get("scopeLogs", [])
+    assert len(scope_logs) == 1
+
+    scope_log = scope_logs[0]
+    scope = scope_log["scope"]
+    assert scope["name"] == scope_name
+    assert scope["version"] == scope_version
+    assert _attributes_to_dict(scope.get("attributes", []))["scope_marker"] == (
+        f"{scope_name}-marker"
+    )
+
+    records = scope_log.get("logRecords", [])
+    assert len(records) == 1
+    assert records[0]["body"]["stringValue"] == body
+    assert _attributes_to_dict(records[0].get("attributes", []))["record_marker"] == (
+        f"{body}-marker"
+    )
 
 
 def test_out_opentelemetry_http_logs_uri_headers_and_basic_auth():
@@ -610,6 +725,57 @@ def test_out_opentelemetry_custom_metadata_key_accessors():
     assert record["flags"] == 1
     assert attributes["example_key"] == "example_value"
     assert attributes["custom_attr"] == "custom_value"
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "out_otel_http_conditional_grouped_logs_non_threaded.yaml",
+        "out_otel_http_conditional_grouped_logs_threaded.yaml",
+    ],
+    ids=["non_threaded", "threaded"],
+)
+def test_out_opentelemetry_conditional_routing_preserves_group_metadata(config_file):
+    service = Service(config_file)
+    service.start()
+    try:
+        service.send_payload_dict(_build_conditional_grouped_logs_payload(), "logs")
+        logs_seen = list(service.wait_for_signal("logs", minimum_count=3, timeout=15))
+        requests_seen = list(service.wait_for_requests(3, timeout=15))
+    finally:
+        service.stop()
+
+    payloads_by_path = _log_payloads_by_request_path(logs_seen, requests_seen)
+    assert set(payloads_by_path) == {
+        "/conditional/group/alpha",
+        "/conditional/group/beta",
+        "/conditional/group/default",
+    }
+
+    _assert_single_grouped_log(
+        payloads_by_path["/conditional/group/alpha"],
+        route_group="alpha",
+        group_id="group-alpha",
+        scope_name="scope-alpha",
+        scope_version="1.0.0",
+        body="event-alpha",
+    )
+    _assert_single_grouped_log(
+        payloads_by_path["/conditional/group/beta"],
+        route_group="beta",
+        group_id="group-beta",
+        scope_name="scope-beta",
+        scope_version="2.0.0",
+        body="event-beta",
+    )
+    _assert_single_grouped_log(
+        payloads_by_path["/conditional/group/default"],
+        route_group="fallback",
+        group_id="group-default",
+        scope_name="scope-default",
+        scope_version="3.0.0",
+        body="event-default",
+    )
 
 
 def _wait_for_log_message(service, message, timeout=15):
