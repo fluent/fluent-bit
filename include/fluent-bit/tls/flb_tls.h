@@ -93,7 +93,7 @@ struct flb_tls_backend {
     int (*net_read) (struct flb_tls_session *, void *, size_t);
     int (*net_write) (struct flb_tls_session *, const void *data,
                       size_t len);
-    int (*net_handshake) (struct flb_tls *, char *, void *);
+    int (*net_handshake) (struct flb_tls *, char *, struct flb_tls_session *);
 
 #if defined(FLB_SYSTEM_WINDOWS)
     int (*set_certstore_name)(struct flb_tls *tls, const char *certstore_name);

@@ -23,6 +23,8 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_connection.h>
+#include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/tls/flb_tls_info.h>
 
@@ -77,6 +79,61 @@ struct tls_session {
     int continuation_flag;
     struct tls_context *parent;    /* parent struct tls_context ref */
 };
+
+#define FLB_TLS_LOG_CONTEXT_BUF_SIZE 320
+
+/*
+ * Build a "[upstream=<plugin> remote=<host:port>]" suffix for TLS error logs
+ * so users can tell which plugin/connection produced the error. Plugin name is
+ * best-effort (only outputs set the upstream label); remote address is always
+ * available. Returns "" if no useful context can be derived.
+ */
+static const char *tls_log_context(struct flb_tls_session *flb_session,
+                                   char *buf, size_t buf_size)
+{
+    const char *plugin_label = NULL;
+    const char *remote_addr = NULL;
+    struct flb_connection *connection;
+    struct flb_upstream *upstream;
+
+    if (buf == NULL || buf_size == 0) {
+        return "";
+    }
+
+    buf[0] = '\0';
+
+    if (flb_session == NULL) {
+        return buf;
+    }
+
+    connection = flb_session->connection;
+    if (connection == NULL) {
+        return buf;
+    }
+
+    if (connection->type == FLB_UPSTREAM_CONNECTION &&
+        connection->upstream != NULL) {
+        upstream = connection->upstream;
+        if (upstream->cmt_total_connections_label != NULL) {
+            plugin_label = upstream->cmt_total_connections_label;
+        }
+    }
+
+    remote_addr = flb_connection_get_remote_address(connection);
+
+    if (plugin_label != NULL && remote_addr != NULL && remote_addr[0] != '\0') {
+        snprintf(buf, buf_size, " [upstream=%s remote=%s]",
+                 plugin_label, remote_addr);
+    }
+    else if (plugin_label != NULL) {
+        snprintf(buf, buf_size, " [upstream=%s]", plugin_label);
+    }
+    else if (remote_addr != NULL && remote_addr[0] != '\0') {
+        snprintf(buf, buf_size, " [remote=%s]", remote_addr);
+    }
+
+    return buf;
+}
 
 static int tls_init(void)
 {
@@ -1366,11 +1423,13 @@ static int tls_net_read(struct flb_tls_session *session,
     int ret;
     unsigned long err_code;
     char err_buf[256];
+    char ctx_buf[FLB_TLS_LOG_CONTEXT_BUF_SIZE];
     struct tls_context *ctx;
     struct tls_session *backend_session;
 
     if (session->ptr == NULL) {
-        flb_error("[tls] error: uninitialized backend session");
+        flb_error("[tls] error: uninitialized backend session%s",
+                  tls_log_context(session, ctx_buf, sizeof(ctx_buf)));
 
         return -1;
     }
@@ -1401,10 +1460,12 @@ static int tls_net_read(struct flb_tls_session *session,
 
             if (err_code != 0) {
                 ERR_error_string_n(err_code, err_buf, sizeof(err_buf)-1);
-                flb_error("[tls] syscall error: %s", err_buf);
+                flb_error("[tls] syscall error: %s%s", err_buf,
+                          tls_log_context(session, ctx_buf, sizeof(ctx_buf)));
             }
             else {
-                flb_error("[tls] syscall error: %s", strerror(errno));
+                flb_error("[tls] syscall error: %s%s", strerror(errno),
+                          tls_log_context(session, ctx_buf, sizeof(ctx_buf)));
             }
 
             /* According to the documentation these are non-recoverable
@@ -1421,10 +1482,12 @@ static int tls_net_read(struct flb_tls_session *session,
 
             if (err_code != 0) {
                 ERR_error_string_n(err_code, err_buf, sizeof(err_buf)-1);
-                flb_error("[tls] error: %s", err_buf);
+                flb_error("[tls] error: %s%s", err_buf,
+                          tls_log_context(session, ctx_buf, sizeof(ctx_buf)));
             }
             else {
-                flb_error("[tls] error: %s", strerror(errno));
+                flb_error("[tls] error: %s%s", strerror(errno),
+                          tls_log_context(session, ctx_buf, sizeof(ctx_buf)));
             }
         }
         else {
@@ -1443,12 +1506,14 @@ static int tls_net_write(struct flb_tls_session *session,
     int ssl_ret;
     unsigned long err_code;
     char err_buf[256];
+    char ctx_buf[FLB_TLS_LOG_CONTEXT_BUF_SIZE];
     size_t total = 0;
     struct tls_context *ctx;
     struct tls_session *backend_session;
 
     if (session->ptr == NULL) {
-        flb_error("[tls] error: uninitialized backend session");
+        flb_error("[tls] error: uninitialized backend session%s",
+                  tls_log_context(session, ctx_buf, sizeof(ctx_buf)));
 
         return -1;
     }
@@ -1481,12 +1546,15 @@ static int tls_net_write(struct flb_tls_session *session,
                     flb_debug("[tls] connection closed");
                 }
                 else {
-                    flb_error("[tls] syscall error: %s", strerror(errno));
+                    flb_error("[tls] syscall error: %s%s", strerror(errno),
+                              tls_log_context(session, ctx_buf,
+                                              sizeof(ctx_buf)));
                 }
             }
             else {
                 ERR_error_string_n(err_code, err_buf, sizeof(err_buf) - 1);
-                flb_error("[tls] syscall error: %s", err_buf);
+                flb_error("[tls] syscall error: %s%s", err_buf,
+                          tls_log_context(session, ctx_buf, sizeof(ctx_buf)));
             }
 
             /* According to the documentation these are non-recoverable
@@ -1501,11 +1569,13 @@ static int tls_net_write(struct flb_tls_session *session,
         else {
             err_code = ERR_get_error();
             if (err_code == 0) {
-                flb_error("[tls] unknown error");
+                flb_error("[tls] unknown error%s",
+                          tls_log_context(session, ctx_buf, sizeof(ctx_buf)));
             }
             else {
                 ERR_error_string_n(err_code, err_buf, sizeof(err_buf) - 1);
-                flb_error("[tls] error: %s", err_buf);
+                flb_error("[tls] error: %s%s", err_buf,
+                          tls_log_context(session, ctx_buf, sizeof(ctx_buf)));
             }
 
             ret = -1;
@@ -1541,14 +1611,15 @@ int setup_hostname_validation(struct tls_session *session, const char *hostname)
 
 static int tls_net_handshake(struct flb_tls *tls,
                              char *vhost,
-                             void *ptr_session)
+                             struct flb_tls_session *flb_session)
 {
     int ret = 0;
     int ssl_error = 0;
     long ssl_code = 0;
     unsigned long err_code = 0;
     char err_buf[256];
-    struct tls_session *session = ptr_session;
+    char ctx_buf[FLB_TLS_LOG_CONTEXT_BUF_SIZE];
+    struct tls_session *session = flb_session->ptr;
     struct tls_context *ctx;
     const char *x509_err;
 
@@ -1628,10 +1699,15 @@ static int tls_net_handshake(struct flb_tls *tls,
                 if (ssl_code != X509_V_OK) {
                     /* Refer to: https://x509errors.org/ */
                     x509_err = X509_verify_cert_error_string(ssl_code);
-                    flb_error("[tls] certificate verification failed, reason: %s (X509 code: %ld)", x509_err, ssl_code);
+                    flb_error("[tls] certificate verification failed, reason: %s (X509 code: %ld)%s",
+                              x509_err, ssl_code,
+                              tls_log_context(flb_session, ctx_buf,
+                                              sizeof(ctx_buf)));
                 }
                 else {
-                    flb_error("[tls] error: unexpected EOF");
+                    flb_error("[tls] error: unexpected EOF%s",
+                              tls_log_context(flb_session, ctx_buf,
+                                              sizeof(ctx_buf)));
                 }
             }
             else {
@@ -1639,11 +1715,15 @@ static int tls_net_handshake(struct flb_tls *tls,
 
                 if (err_code != 0) {
                     ERR_error_string_n(err_code, err_buf, sizeof(err_buf)-1);
-                    flb_error("[tls] error: %s", err_buf);
+                    flb_error("[tls] error: %s%s", err_buf,
+                              tls_log_context(flb_session, ctx_buf,
+                                              sizeof(ctx_buf)));
                 }
                 else {
-                    flb_error("[tls] error: tls handshake failed (ssl_error=%d)",
-                              ssl_error);
+                    flb_error("[tls] error: tls handshake failed (ssl_error=%d)%s",
+                              ssl_error,
+                              tls_log_context(flb_session, ctx_buf,
+                                              sizeof(ctx_buf)));
                 }
             }
 

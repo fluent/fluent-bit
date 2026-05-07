@@ -653,7 +653,7 @@ int flb_tls_session_create(struct flb_tls *tls,
     io_tls_backup_event(session->connection, &event_backup);
 
  retry_handshake:
-    result = tls->api->net_handshake(tls, vhost, session->ptr);
+    result = tls->api->net_handshake(tls, vhost, session);
 
     if (result != 0) {
         if (result != FLB_TLS_WANT_READ && result != FLB_TLS_WANT_WRITE) {
