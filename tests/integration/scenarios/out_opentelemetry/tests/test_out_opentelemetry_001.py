@@ -291,72 +291,84 @@ def _build_resource_collision_payload(user_id, body):
 
 
 def _build_conditional_grouped_logs_payload():
-    groups = [
-        ("alpha", "group-alpha", "scope-alpha", "1.0.0", "event-alpha"),
-        ("beta", "group-beta", "scope-beta", "2.0.0", "event-beta"),
-        ("fallback", "group-default", "scope-default", "3.0.0", "event-default"),
-    ]
-
-    resource_logs = []
-    for route_group, group_id, scope_name, scope_version, body in groups:
-        resource_logs.append(
-            {
-                "resource": {
-                    "attributes": [
-                        {
-                            "key": "route_group",
-                            "value": {
-                                "string_value": route_group,
-                            },
-                        },
-                        {
-                            "key": "group_id",
-                            "value": {
-                                "string_value": group_id,
-                            },
-                        },
-                        {
-                            "key": "service_name",
-                            "value": {
-                                "string_value": f"service-{route_group}",
-                            },
-                        },
-                    ],
-                },
-                "scope_logs": [
+    def resource(route_group, group_id, scopes):
+        return {
+            "schema_url": f"https://schemas.example/{route_group}",
+            "resource": {
+                "attributes": [
                     {
-                        "scope": {
-                            "name": scope_name,
-                            "version": scope_version,
-                            "attributes": [
-                                {
-                                    "key": "scope_marker",
-                                    "value": {
-                                        "string_value": f"{scope_name}-marker",
-                                    },
-                                }
-                            ],
+                        "key": "route_group",
+                        "value": {
+                            "string_value": route_group,
                         },
-                        "log_records": [
-                            {
-                                "time_unix_nano": "1640995200000000000",
-                                "body": {
-                                    "string_value": body,
-                                },
-                                "attributes": [
-                                    {
-                                        "key": "record_marker",
-                                        "value": {
-                                            "string_value": f"{body}-marker",
-                                        },
-                                    }
-                                ],
-                            }
-                        ],
+                    },
+                    {
+                        "key": "group_id",
+                        "value": {
+                            "string_value": group_id,
+                        },
+                    },
+                    {
+                        "key": "service_name",
+                        "value": {
+                            "string_value": f"service-{route_group}",
+                        },
+                    },
+                ],
+            },
+            "scope_logs": scopes,
+        }
+
+    def scope(scope_name, scope_version, body, flags):
+        return {
+            "schema_url": f"https://schemas.example/{scope_name}",
+            "scope": {
+                "name": scope_name,
+                "version": scope_version,
+                "attributes": [
+                    {
+                        "key": "scope_marker",
+                        "value": {
+                            "string_value": f"{scope_name}-marker",
+                        },
                     }
                 ],
-            }
-        )
+            },
+            "log_records": [
+                {
+                    "time_unix_nano": "1640995200000000000",
+                    "body": {
+                        "string_value": body,
+                    },
+                    "flags": flags,
+                    "attributes": [
+                        {
+                            "key": "record_marker",
+                            "value": {
+                                "string_value": f"{body}-marker",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+
+    resource_logs = [
+        resource(
+            "alpha",
+            "group-alpha",
+            [
+                scope("scope-alpha-a", "1.0.0", "event-alpha-a", 1),
+                scope("scope-alpha-b", "1.1.0", "event-alpha-b", 2),
+            ],
+        ),
+        resource("beta", "group-beta", [scope("scope-beta", "2.0.0", "event-beta", 3)]),
+        resource(
+            "fallback",
+            "group-default",
+            [scope("scope-default", "3.0.0", "event-default", 4)],
+        ),
+    ]
 
     return {"resource_logs": resource_logs}
 
@@ -383,12 +395,13 @@ def _log_payloads_by_request_path(logs_seen, requests_seen):
     }
 
 
-def _assert_single_grouped_log(output, *, route_group, group_id, scope_name,
-                               scope_version, body):
+def _assert_grouped_resource(output, *, route_group, group_id, scopes):
     resource_logs = output.get("resourceLogs", [])
     assert len(resource_logs) == 1
 
     resource_log = resource_logs[0]
+    assert resource_log["schemaUrl"] == f"https://schemas.example/{route_group}"
+
     resource_attributes = _attributes_to_dict(
         resource_log.get("resource", {}).get("attributes", [])
     )
@@ -397,22 +410,24 @@ def _assert_single_grouped_log(output, *, route_group, group_id, scope_name,
     assert resource_attributes["service_name"] == f"service-{route_group}"
 
     scope_logs = resource_log.get("scopeLogs", [])
-    assert len(scope_logs) == 1
+    assert len(scope_logs) == len(scopes)
 
-    scope_log = scope_logs[0]
-    scope = scope_log["scope"]
-    assert scope["name"] == scope_name
-    assert scope["version"] == scope_version
-    assert _attributes_to_dict(scope.get("attributes", []))["scope_marker"] == (
-        f"{scope_name}-marker"
-    )
+    for scope_log, expected in zip(scope_logs, scopes):
+        scope = scope_log["scope"]
+        assert scope_log["schemaUrl"] == f"https://schemas.example/{expected['name']}"
+        assert scope["name"] == expected["name"]
+        assert scope["version"] == expected["version"]
+        assert _attributes_to_dict(scope.get("attributes", []))["scope_marker"] == (
+            f"{expected['name']}-marker"
+        )
 
-    records = scope_log.get("logRecords", [])
-    assert len(records) == 1
-    assert records[0]["body"]["stringValue"] == body
-    assert _attributes_to_dict(records[0].get("attributes", []))["record_marker"] == (
-        f"{body}-marker"
-    )
+        records = scope_log.get("logRecords", [])
+        assert len(records) == 1
+        assert records[0]["body"]["stringValue"] == expected["body"]
+        assert records[0]["flags"] == expected["flags"]
+        assert _attributes_to_dict(records[0].get("attributes", []))["record_marker"] == (
+            f"{expected['body']}-marker"
+        )
 
 
 def test_out_opentelemetry_http_logs_uri_headers_and_basic_auth():
@@ -752,29 +767,50 @@ def test_out_opentelemetry_conditional_routing_preserves_group_metadata(config_f
         "/conditional/group/default",
     }
 
-    _assert_single_grouped_log(
+    _assert_grouped_resource(
         payloads_by_path["/conditional/group/alpha"],
         route_group="alpha",
         group_id="group-alpha",
-        scope_name="scope-alpha",
-        scope_version="1.0.0",
-        body="event-alpha",
+        scopes=[
+            {
+                "name": "scope-alpha-a",
+                "version": "1.0.0",
+                "body": "event-alpha-a",
+                "flags": 1,
+            },
+            {
+                "name": "scope-alpha-b",
+                "version": "1.1.0",
+                "body": "event-alpha-b",
+                "flags": 2,
+            },
+        ],
     )
-    _assert_single_grouped_log(
+    _assert_grouped_resource(
         payloads_by_path["/conditional/group/beta"],
         route_group="beta",
         group_id="group-beta",
-        scope_name="scope-beta",
-        scope_version="2.0.0",
-        body="event-beta",
+        scopes=[
+            {
+                "name": "scope-beta",
+                "version": "2.0.0",
+                "body": "event-beta",
+                "flags": 3,
+            },
+        ],
     )
-    _assert_single_grouped_log(
+    _assert_grouped_resource(
         payloads_by_path["/conditional/group/default"],
         route_group="fallback",
         group_id="group-default",
-        scope_name="scope-default",
-        scope_version="3.0.0",
-        body="event-default",
+        scopes=[
+            {
+                "name": "scope-default",
+                "version": "3.0.0",
+                "body": "event-default",
+                "flags": 4,
+            },
+        ],
     )
 
 

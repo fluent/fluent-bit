@@ -26,6 +26,7 @@ class FluentBitTestService:
         self.post_stop = post_stop
         self.flb = None
         self._previous_env = {}
+        self._allocated_ports = set()
 
     def _reset_storage(self):
         if not self.data_storage:
@@ -38,8 +39,15 @@ class FluentBitTestService:
         os.environ[key] = value
 
     def allocate_port_env(self, key, *, starting_port=0):
-        port = find_available_port(starting_port)
+        port = self._allocate_port(starting_port)
         self._set_env(key, str(port))
+        return port
+
+    def _allocate_port(self, starting_port=0):
+        port = find_available_port(starting_port)
+        while port in self._allocated_ports:
+            port = find_available_port(port + 1)
+        self._allocated_ports.add(port)
         return port
 
     def _restore_env(self):
@@ -53,8 +61,8 @@ class FluentBitTestService:
     def start(self):
         self._reset_storage()
         self.flb = FluentBitManager(self.config_path)
-        self.flb_listener_port = find_available_port()
-        self.test_suite_http_port = find_available_port()
+        self.flb_listener_port = self._allocate_port()
+        self.test_suite_http_port = self._allocate_port()
         self._set_env("FLUENT_BIT_TEST_LISTENER_PORT", str(self.flb_listener_port))
         self._set_env("TEST_SUITE_HTTP_PORT", str(self.test_suite_http_port))
 
@@ -74,6 +82,7 @@ class FluentBitTestService:
             if self.post_stop:
                 self.post_stop(self)
             self._restore_env()
+            self._allocated_ports.clear()
 
     def wait_for_http_endpoint(self, url, *, timeout=10, interval=0.5):
         deadline = time.time() + timeout
