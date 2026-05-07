@@ -497,6 +497,8 @@ static void format_metric(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
     int len;
     int count = 0;
     int static_labels = 0;
+    int label_key_count;
+    int label_index;
     char tmp[128];
     uint64_t ts;
     struct tm tm;
@@ -542,7 +544,28 @@ static void format_metric(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
         }
     }
 
-    n = cfl_list_size(&metric->labels);
+    n = 0;
+    label_key_count = map->label_count;
+    label_index = 0;
+    if (label_key_count > 0) {
+        label_k = cfl_list_entry_first(&map->label_keys, struct cmt_map_label, _head);
+    }
+    cfl_list_foreach(head, &metric->labels) {
+        if (label_index >= label_key_count) {
+            break;
+        }
+
+        label_v = cfl_list_entry(head, struct cmt_map_label, _head);
+
+        if (label_k->name != NULL && label_v->name != NULL) {
+            n++;
+        }
+
+        label_index++;
+        label_k = cfl_list_entry_next(&label_k->_head, struct cmt_map_label,
+                                      _head, &map->label_keys);
+    }
+
     if (n > 0) {
         if (static_labels > 0) {
             cfl_sds_cat_safe(buf, ",", 1);
@@ -551,11 +574,23 @@ static void format_metric(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
             cfl_sds_cat_safe(buf, "{", 1);
         }
 
+        label_index = 0;
         label_k = cfl_list_entry_first(&map->label_keys, struct cmt_map_label, _head);
 
         i = 1;
         cfl_list_foreach(head, &metric->labels) {
+            if (label_index >= label_key_count) {
+                break;
+            }
+
             label_v = cfl_list_entry(head, struct cmt_map_label, _head);
+
+            if (label_k->name == NULL || label_v->name == NULL) {
+                label_index++;
+                label_k = cfl_list_entry_next(&label_k->_head, struct cmt_map_label,
+                                              _head, &map->label_keys);
+                continue;
+            }
 
             cfl_sds_cat_safe(buf, label_k->name, cfl_sds_len(label_k->name));
             cfl_sds_cat_safe(buf, "=\"", 2);
@@ -569,8 +604,9 @@ static void format_metric(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
             }
             i++;
 
+            label_index++;
             label_k = cfl_list_entry_next(&label_k->_head, struct cmt_map_label,
-                                         _head, &map->label_keys);
+                                          _head, &map->label_keys);
         }
         cfl_sds_cat_safe(buf, "}", 1);
 
