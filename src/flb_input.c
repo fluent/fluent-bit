@@ -44,6 +44,7 @@
 #include <fluent-bit/flb_ring_buffer.h>
 #include <fluent-bit/flb_processor.h>
 #include <fluent-bit/flb_oauth2_jwt.h>
+#include <fluent-bit/flb_plugin_alias.h>
 
 /* input plugin macro helpers */
 #include <fluent-bit/flb_input_plugin.h>
@@ -197,13 +198,21 @@ struct mk_list *flb_input_get_global_config_map(struct flb_config *config)
 static int check_protocol(const char *prot, const char *output)
 {
     int len;
+    char *separator;
 
-    len = strlen(prot);
-    if (len != strlen(output)) {
+    separator = strstr(output, "://");
+    if (separator != NULL && separator != output) {
+        len = separator - output;
+    }
+    else {
+        len = strlen(output);
+    }
+
+    if (strlen(prot) != (size_t) len) {
         return 0;
     }
 
-    if (protcmp(prot, output) != 0) {
+    if (strncasecmp(prot, output, len) != 0) {
         return 0;
     }
 
@@ -275,8 +284,12 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
     int id;
     int ret;
     int flags = 0;
+    size_t input_name_length;
+    const char *alias_target;
+    const char *input_name;
+    const char *separator;
     struct mk_list *head;
-    struct flb_input_plugin *plugin;
+    struct flb_input_plugin *plugin = NULL;
     struct flb_input_instance *instance = NULL;
 
 /* use for locking the use of the chunk trace context. */
@@ -289,9 +302,36 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         return NULL;
     }
 
+    input_name = input;
+
+    /* Prefer an exact registered plugin name over an alias with the same name. */
     mk_list_foreach(head, &config->in_plugins) {
         plugin = mk_list_entry(head, struct flb_input_plugin, _head);
-        if (!check_protocol(plugin->name, input)) {
+        if (check_protocol(plugin->name, input_name)) {
+            break;
+        }
+        plugin = NULL;
+    }
+
+    if (plugin == NULL) {
+        separator = strstr(input, "://");
+        if (separator != NULL && separator != input) {
+            input_name_length = separator - input;
+        }
+        else {
+            input_name_length = strlen(input);
+        }
+        alias_target = flb_plugin_alias_get(FLB_PLUGIN_INPUT, input,
+                                            input_name_length);
+        if (alias_target == NULL) {
+            return NULL;
+        }
+        input_name = alias_target;
+    }
+
+    mk_list_foreach(head, &config->in_plugins) {
+        plugin = mk_list_entry(head, struct flb_input_plugin, _head);
+        if (!check_protocol(plugin->name, input_name)) {
             plugin = NULL;
             continue;
         }
@@ -471,7 +511,12 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 
         /* Plugin use networking */
         if (plugin->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) {
-            ret = flb_net_host_set(plugin->name, &instance->host, input);
+            if (strstr(input, "://") != NULL) {
+                ret = flb_net_host_set(plugin->name, &instance->host, input);
+            }
+            else {
+                ret = flb_net_host_set(plugin->name, &instance->host, input_name);
+            }
             if (ret != 0) {
                 if (instance->ht_log_chunks) {
                     flb_hash_table_destroy(instance->ht_log_chunks);
