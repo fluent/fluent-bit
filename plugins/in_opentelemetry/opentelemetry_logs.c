@@ -320,12 +320,13 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                                      uint8_t *in_buf,
                                      size_t in_size)
 {
-    int ret;
+    int ret = 0;
     int len;
     int resource_logs_index;
     int scope_log_index;
     int log_record_index;
     char *logs_body_key;
+    int scope_has_schema_url;
     struct flb_mp_map_header mh;
     struct flb_mp_map_header mh_tmp;
     struct flb_time tm;
@@ -356,6 +357,11 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
     }
 
     resource_logs = input_logs->resource_logs;
+    if (input_logs->n_resource_logs == 0) {
+        ret = 0;
+        goto binary_payload_to_msgpack_end;
+    }
+
     if (resource_logs == NULL) {
         flb_plg_warn(ctx->ins, "no resource logs found");
         ret = -1;
@@ -364,6 +370,11 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
 
     for (resource_logs_index = 0; resource_logs_index < input_logs->n_resource_logs; resource_logs_index++) {
         resource_log = resource_logs[resource_logs_index];
+        if (resource_log == NULL) {
+            flb_plg_warn(ctx->ins, "null resource logs entry found");
+            ret = -1;
+            goto binary_payload_to_msgpack_end;
+        }
 
         resource = resource_log->resource;
         scope_logs = resource_log->scope_logs;
@@ -376,7 +387,17 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
 
         for (scope_log_index = 0; scope_log_index < resource_log->n_scope_logs; scope_log_index++) {
             scope_log = scope_logs[scope_log_index];
+            if (scope_log == NULL) {
+                flb_plg_warn(ctx->ins, "null scope logs entry found");
+                ret = -1;
+                goto binary_payload_to_msgpack_end;
+            }
+
             log_records = scope_log->log_records;
+
+            if (scope_log->n_log_records == 0) {
+                continue;
+            }
 
             if (log_records == NULL) {
                 flb_plg_warn(ctx->ins, "no log records found");
@@ -452,11 +473,17 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
 
             /* Scope */
             scope = scope_log->scope;
+            scope_has_schema_url = FLB_FALSE;
 
-            if (scope && (scope->name || scope->version || scope->n_attributes > 0)) {
+            if (scope_log->schema_url && strlen(scope_log->schema_url) > 0) {
+                scope_has_schema_url = FLB_TRUE;
+            }
+
+            if (scope && (scope->name || scope->version ||
+                          scope->n_attributes > 0 || scope_has_schema_url == FLB_TRUE)) {
                 flb_mp_map_header_init(&mh_tmp, mp_pck);
 
-                if (scope_log->schema_url && strlen(scope_log->schema_url) > 0) {
+                if (scope_has_schema_url == FLB_TRUE) {
                     flb_mp_map_header_append(&mh_tmp);
                     msgpack_pack_str(mp_pck, 10);
                     msgpack_pack_str_body(mp_pck, "schema_url", 10);
@@ -508,8 +535,19 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                 flb_mp_map_header_end(&mh_tmp);
             }
             else {
-                /* set an empty scope */
-                msgpack_pack_map(mp_pck, 0);
+                flb_mp_map_header_init(&mh_tmp, mp_pck);
+
+                if (scope_has_schema_url == FLB_TRUE) {
+                    flb_mp_map_header_append(&mh_tmp);
+                    msgpack_pack_str(mp_pck, 10);
+                    msgpack_pack_str_body(mp_pck, "schema_url", 10);
+
+                    len = strlen(scope_log->schema_url);
+                    msgpack_pack_str(mp_pck, len);
+                    msgpack_pack_str_body(mp_pck, scope_log->schema_url, len);
+                }
+
+                flb_mp_map_header_end(&mh_tmp);
             }
 
             flb_mp_map_header_end(&mh);
