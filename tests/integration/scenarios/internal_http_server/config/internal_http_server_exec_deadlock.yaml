@@ -1,0 +1,19 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_listen: 127.0.0.1
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: exec
+      tag: test
+      command: curl -s http://127.0.0.1:${FLUENT_BIT_HTTP_MONITORING_PORT}/api/v1/metrics/prometheus
+      interval_sec: 1
+      buf_size: 128k
+
+  outputs:
+    - name: "null"
+      match: "*"
