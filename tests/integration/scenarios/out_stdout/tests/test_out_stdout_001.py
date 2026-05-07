@@ -212,16 +212,15 @@ def test_out_stdout_routes_without_alias_bind_to_third_input():
     service = Service("out_stdout_routing_no_alias.yaml")
     service.start()
     service.wait_for_log_contains("[0] topic1:", timeout=10)
-    service.wait_for_log_contains("no matching route for input chunk", timeout=10)
-    log_text = service.wait_for_log_contains("tag 'firstdummy'", timeout=10)
+    log_text = service.read_log()
     service.stop()
 
     assert "connected input 'dummy.2' route 'topic1' to output 'stdout1'" in log_text
     assert "[0] topic1:" in log_text
     assert "\"topic\"=>\"topic1\"" in log_text
     assert "\"message\"=>\"custom dummy\"" in log_text
-    assert "no matching route for input chunk" in log_text
-    assert "tag 'firstdummy'" in log_text
+    assert "\"message\"=>\"custom dummy one\"" not in log_text
+    assert "\"message\"=>\"custom dummy two\"" not in log_text
 
 
 def test_out_stdout_routes_with_alias_bind_to_third_input():
@@ -234,3 +233,30 @@ def test_out_stdout_routes_with_alias_bind_to_third_input():
     assert "[0] topic1:" in log_text
     assert "\"topic\"=>\"topic1\"" in log_text
     assert "\"message\"=>\"custom dummy\"" in log_text
+
+
+def test_out_stdout_threaded_input_conditional_route_matches():
+    service = Service("out_stdout_threaded_conditional_routing.yaml")
+    service.start()
+    log_text = service.wait_for_log_contains("[0] threaded_topic1:", timeout=10)
+    service.stop()
+
+    assert "connected input 'threaded_routed_dummy' route 'threaded_topic1'" in log_text
+    assert "[0] threaded_topic1:" in log_text
+    assert "\"topic\"=>\"topic1\"" in log_text
+    assert "\"message\"=>\"threaded conditional match\"" in log_text
+    assert "conditional routing not supported for threaded inputs" not in log_text
+
+
+def test_out_stdout_threaded_input_conditional_default_route():
+    service = Service("out_stdout_threaded_conditional_default_route.yaml")
+    service.start()
+    log_text = service.wait_for_log_contains("[0] threaded_default:", timeout=10)
+    service.stop()
+
+    assert "connected input 'threaded_default_dummy' route 'threaded_topic1'" in log_text
+    assert "connected input 'threaded_default_dummy' route 'threaded_default'" in log_text
+    assert "[0] threaded_default:" in log_text
+    assert "\"message\"=>\"threaded default route\"" in log_text
+    assert "[0] threaded_topic1:" not in log_text
+    assert "conditional routing not supported for threaded inputs" not in log_text
