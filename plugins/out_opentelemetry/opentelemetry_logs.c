@@ -28,6 +28,8 @@
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_gzip.h>
 
+#include <stdint.h>
+
 #include <cfl/cfl_hash.h>
 #include <fluent-otel-proto/fluent-otel.h>
 
@@ -37,6 +39,7 @@
 
 #define RESOURCE_LOGS_INITIAL_CAPACITY 256
 #define SCOPE_LOGS_INITIAL_CAPACITY    100
+#define OTLP_GROUP_HASH_ERROR          UINT64_MAX
 
 static int hex_to_int(char ch)
 {
@@ -187,7 +190,7 @@ static uint64_t msgpack_object_hash(msgpack_object *object)
 
     if (msgpack_pack_object(&packer, *object) != 0) {
         msgpack_sbuffer_destroy(&buffer);
-        return 0;
+        return OTLP_GROUP_HASH_ERROR;
     }
 
     hash = cfl_hash_64bits(buffer.data, buffer.size);
@@ -208,23 +211,29 @@ static uint64_t msgpack_object_pair_hash(msgpack_object *left,
 
     if (msgpack_pack_array(&packer, 2) != 0) {
         msgpack_sbuffer_destroy(&buffer);
-        return 0;
+        return OTLP_GROUP_HASH_ERROR;
     }
 
     if (left == NULL) {
-        msgpack_pack_nil(&packer);
+        if (msgpack_pack_nil(&packer) != 0) {
+            msgpack_sbuffer_destroy(&buffer);
+            return OTLP_GROUP_HASH_ERROR;
+        }
     }
     else if (msgpack_pack_object(&packer, *left) != 0) {
         msgpack_sbuffer_destroy(&buffer);
-        return 0;
+        return OTLP_GROUP_HASH_ERROR;
     }
 
     if (right == NULL) {
-        msgpack_pack_nil(&packer);
+        if (msgpack_pack_nil(&packer) != 0) {
+            msgpack_sbuffer_destroy(&buffer);
+            return OTLP_GROUP_HASH_ERROR;
+        }
     }
     else if (msgpack_pack_object(&packer, *right) != 0) {
         msgpack_sbuffer_destroy(&buffer);
-        return 0;
+        return OTLP_GROUP_HASH_ERROR;
     }
 
     hash = cfl_hash_64bits(buffer.data, buffer.size);
@@ -1213,6 +1222,12 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
             get_otlp_group_identity_hashes(event.body,
                                            &tmp_resource_hash,
                                            &tmp_scope_hash);
+            if (tmp_resource_hash == OTLP_GROUP_HASH_ERROR ||
+                tmp_scope_hash == OTLP_GROUP_HASH_ERROR) {
+                flb_plg_error(ctx->ins, "could not compute OTLP group identity hash");
+                ret = FLB_RETRY;
+                break;
+            }
 
             /* flag this as a native otel schema */
             if (standalone_context_active == FLB_TRUE) {
@@ -1495,6 +1510,12 @@ start_resource:
             get_otlp_group_identity_hashes(NULL,
                                            &tmp_resource_hash,
                                            &tmp_scope_hash);
+            if (tmp_resource_hash == OTLP_GROUP_HASH_ERROR ||
+                tmp_scope_hash == OTLP_GROUP_HASH_ERROR) {
+                flb_plg_error(ctx->ins, "could not compute default OTLP group identity hash");
+                ret = FLB_RETRY;
+                break;
+            }
             force_new_resource = FLB_FALSE;
             goto start_resource;
         }
