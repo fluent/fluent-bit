@@ -480,7 +480,8 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
             }
 
             if (scope && (scope->name || scope->version ||
-                          scope->n_attributes > 0 || scope_has_schema_url == FLB_TRUE)) {
+                          scope->n_attributes > 0 || scope->dropped_attributes_count > 0 ||
+                          scope_has_schema_url == FLB_TRUE)) {
                 flb_mp_map_header_init(&mh_tmp, mp_pck);
 
                 if (scope_has_schema_url == FLB_TRUE) {
