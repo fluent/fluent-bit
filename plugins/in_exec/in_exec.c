@@ -482,6 +482,7 @@ static struct flb_config_map config_map[] = {
 struct flb_input_plugin in_exec_plugin = {
     .name         = "exec",
     .description  = "Exec Input",
+    .flags        = FLB_INPUT_THREADED,
     .cb_init      = in_exec_init,
     .cb_pre_run   = in_exec_prerun,
     .cb_collect   = in_exec_collect,
