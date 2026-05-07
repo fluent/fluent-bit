@@ -658,8 +658,18 @@ struct proxy_url_check proxy_url_checks[] = {
     /* issue #5530. Password contains @ */
     {0, "http://example_user:example_pass_w_@_char@proxy.com:8080",
      "http", "proxy.com", "8080", "example_user", "example_pass_w_@_char"},
-    {-1, "https://proxy.com:8080",
-     NULL, NULL, NULL, NULL, NULL}
+    /* HTTPS proxy with explicit port */
+    {0, "https://proxy.com:8080",
+     "https", "proxy.com", "8080", NULL, NULL},
+    /* HTTPS proxy, default port 443 */
+    {0, "https://proxy.com",
+     "https", "proxy.com", "443", NULL, NULL},
+    /* HTTPS proxy with credentials */
+    {0, "https://user:pass@proxy.com:443",
+     "https", "proxy.com", "443", "user", "pass"},
+    /* Unsupported schemes must be rejected */
+    {-1, "ftp://proxy.com:21",  NULL, NULL, NULL, NULL, NULL},
+    {-1, "socks5://proxy.com", NULL, NULL, NULL, NULL, NULL},
 
 };
 

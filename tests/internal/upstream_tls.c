@@ -7,6 +7,7 @@
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/tls/flb_tls.h>
+#include <fluent-bit/flb_config.h>
 
 #include "flb_tests_internal.h"
 
@@ -161,12 +162,87 @@ void test_tls_session_destroy_no_double_free(void)
 #endif
 }
 
+/*
+ * Verify that flb_upstream_create creates a proxy_tls_context with
+ * verify_hostname enabled when an https:// proxy is configured.
+ */
+void test_upstream_create_https_proxy_sets_tls_context(void)
+{
+    struct flb_config *config;
+    struct flb_upstream *u;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    if (config == NULL) {
+        return;
+    }
+
+    config->http_proxy = "https://proxy.example.com:8080";
+
+    u = flb_upstream_create(config, "dest.example.com", 443,
+                            FLB_IO_TLS, NULL);
+    TEST_CHECK(u != NULL);
+    if (u == NULL) {
+        config->http_proxy = NULL;
+        flb_config_exit(config);
+        return;
+    }
+
+    TEST_CHECK(u->proxy_tls_context != NULL);
+    TEST_MSG("proxy_tls_context should be non-NULL for https:// proxy");
+
+    if (u->proxy_tls_context != NULL) {
+        TEST_CHECK(u->proxy_tls_context->verify_hostname == FLB_TRUE);
+        TEST_MSG("proxy_tls_context should have verify_hostname enabled");
+    }
+
+    config->http_proxy = NULL;
+    flb_upstream_destroy(u);
+    flb_config_exit(config);
+}
+
+/*
+ * Verify that flb_upstream_create does NOT create a proxy_tls_context
+ * when a plain http:// proxy is configured.
+ */
+void test_upstream_create_http_proxy_no_tls_context(void)
+{
+    struct flb_config *config;
+    struct flb_upstream *u;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    if (config == NULL) {
+        return;
+    }
+
+    config->http_proxy = "http://proxy.example.com:3128";
+
+    u = flb_upstream_create(config, "dest.example.com", 80,
+                            FLB_IO_TCP, NULL);
+    TEST_CHECK(u != NULL);
+    if (u == NULL) {
+        config->http_proxy = NULL;
+        flb_config_exit(config);
+        return;
+    }
+
+    TEST_CHECK(u->proxy_tls_context == NULL);
+    TEST_MSG("proxy_tls_context should be NULL for plain http:// proxy");
+
+    config->http_proxy = NULL;
+    flb_upstream_destroy(u);
+    flb_config_exit(config);
+}
+
 #endif
 
 TEST_LIST = {
 #ifdef FLB_HAVE_TLS
     {"prepare_destroy_conn_marks_tls_session_stale", test_prepare_destroy_conn_marks_tls_session_stale},
     {"tls_session_destroy_no_double_free", test_tls_session_destroy_no_double_free},
+    {"upstream_create_https_proxy_sets_tls_context", test_upstream_create_https_proxy_sets_tls_context},
+    {"upstream_create_http_proxy_no_tls_context", test_upstream_create_http_proxy_no_tls_context},
 #endif
     {0}
 };
