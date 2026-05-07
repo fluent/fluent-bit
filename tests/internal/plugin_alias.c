@@ -29,6 +29,14 @@
 
 #include "flb_tests_internal.h"
 
+static struct flb_plugin_alias_entry custom_aliases[] = {
+    { FLB_PLUGIN_INPUT, "tailing", "tail" },
+    { FLB_PLUGIN_FILTER, "grepper", "grep" },
+    { FLB_PLUGIN_PROCESSOR, "countering", "content_modifier" },
+    { FLB_PLUGIN_OUTPUT, "elasticsearch", "es_custom" },
+    { 0, NULL, NULL }
+};
+
 void plugin_alias_lookup_test()
 {
     const char *alias_target;
@@ -43,6 +51,35 @@ void plugin_alias_lookup_test()
     if (!TEST_CHECK(strcmp(alias_target, "es") == 0)) {
         TEST_MSG("unexpected alias target: %s", alias_target);
     }
+}
+
+void plugin_alias_custom_map_test()
+{
+    const char *alias_target;
+
+    flb_plugin_alias_set_custom_entries(custom_aliases);
+
+    alias_target = flb_plugin_alias_get(FLB_PLUGIN_INPUT, "tailing",
+                                        strlen("tailing"));
+    TEST_CHECK(alias_target != NULL);
+    TEST_CHECK(strcmp(alias_target, "tail") == 0);
+
+    alias_target = flb_plugin_alias_get(FLB_PLUGIN_FILTER, "grepper",
+                                        strlen("grepper"));
+    TEST_CHECK(alias_target != NULL);
+    TEST_CHECK(strcmp(alias_target, "grep") == 0);
+
+    alias_target = flb_plugin_alias_get(FLB_PLUGIN_OUTPUT, "elasticsearch",
+                                        strlen("elasticsearch"));
+    TEST_CHECK(alias_target != NULL);
+    TEST_CHECK(strcmp(alias_target, "es_custom") == 0);
+
+    flb_plugin_alias_reset_custom_entries();
+
+    alias_target = flb_plugin_alias_get(FLB_PLUGIN_OUTPUT, "elasticsearch",
+                                        strlen("elasticsearch"));
+    TEST_CHECK(alias_target != NULL);
+    TEST_CHECK(strcmp(alias_target, "es") == 0);
 }
 
 void plugin_alias_rewrite_test()
@@ -123,6 +160,7 @@ void output_alias_instantiation_test()
 
 TEST_LIST = {
     { "plugin_alias_lookup_test", plugin_alias_lookup_test },
+    { "plugin_alias_custom_map_test", plugin_alias_custom_map_test },
     { "plugin_alias_rewrite_test", plugin_alias_rewrite_test },
     { "network_alias_address_parse_test", network_alias_address_parse_test },
     { "output_alias_instantiation_test", output_alias_instantiation_test },
