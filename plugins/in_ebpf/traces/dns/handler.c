@@ -204,17 +204,17 @@ int trace_dns_handler(void *ctx, void *data, size_t data_sz)
         return 0;
     }
     if (ret != 0) {
+        flb_log_event_encoder_reset(encoder);
         return -1;
     }
 
     ret = flb_input_log_append(event_ctx->ins, NULL, 0,
                                encoder->output_buffer,
                                encoder->output_length);
+    flb_log_event_encoder_reset(encoder);
     if (ret == -1) {
         return -1;
     }
-
-    flb_log_event_encoder_reset(encoder);
 
     return 0;
 }

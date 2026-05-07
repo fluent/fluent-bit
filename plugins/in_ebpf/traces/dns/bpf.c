@@ -18,6 +18,9 @@
 #ifndef AF_INET
 #define AF_INET 2
 #endif
+#ifndef AF_INET6
+#define AF_INET6 10
+#endif
 
 #ifndef DNS_PORT
 #define DNS_PORT 53
@@ -51,12 +54,12 @@ struct dns_recv_args {
 
 struct dns_connect_args {
     int fd;
-    const struct sockaddr *addr;
-    __u32 addrlen;
+    __u16 family;
+    __u16 port;
 };
 
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 16384);
     __type(key, struct dns_query_key);
     __type(value, struct dns_query_state);
@@ -157,16 +160,38 @@ static __always_inline int parse_dns_response(const void *payload, __u64 len,
 static __always_inline int is_dns_destination(const struct sockaddr *addr, __u32 addrlen)
 {
     struct sockaddr_in dst;
+    struct sockaddr_in6 dst6;
 
-    if (!addr || addrlen < sizeof(struct sockaddr_in)) {
+    if (!addr) {
         return 0;
     }
 
-    if (bpf_probe_read_user(&dst, sizeof(dst), addr) != 0) {
+    if (addrlen >= sizeof(struct sockaddr_in)) {
+        if (bpf_probe_read_user(&dst, sizeof(dst), addr) == 0) {
+            if (dst.sin_family == AF_INET && bpf_ntohs(dst.sin_port) == DNS_PORT) {
+                return 1;
+            }
+        }
+    }
+
+    if (addrlen < sizeof(struct sockaddr_in6)) {
         return 0;
     }
 
-    if (dst.sin_family != AF_INET || bpf_ntohs(dst.sin_port) != DNS_PORT) {
+    if (bpf_probe_read_user(&dst6, sizeof(dst6), addr) != 0) {
+        return 0;
+    }
+
+    if (dst6.sin6_family != AF_INET6 || bpf_ntohs(dst6.sin6_port) != DNS_PORT) {
+        return 0;
+    }
+
+    return 1;
+}
+
+static __always_inline int is_dns_family_port(__u16 family, __u16 port)
+{
+    if ((family != AF_INET && family != AF_INET6) || port != DNS_PORT) {
         return 0;
     }
 
@@ -179,14 +204,38 @@ int trace_dns_connect_enter(struct syscall_trace_enter *ctx)
     __u32 tid;
     __u64 pid_tgid;
     struct dns_connect_args args;
+    __u16 family;
+    __u16 port;
+    struct sockaddr sa;
+    struct sockaddr_in sa4;
+    struct sockaddr_in6 sa6;
 
     args.fd = (int) ctx->args[0];
-    args.addr = (const struct sockaddr *) ctx->args[1];
-    args.addrlen = (__u32) ctx->args[2];
+    family = 0;
+    port = 0;
 
-    if (!args.addr) {
+    if (!ctx->args[1]) {
         return 0;
     }
+
+    if (bpf_probe_read_user(&sa, sizeof(sa), (const void *) ctx->args[1]) != 0) {
+        return 0;
+    }
+
+    family = sa.sa_family;
+    if (family == AF_INET && (__u32) ctx->args[2] >= sizeof(struct sockaddr_in)) {
+        if (bpf_probe_read_user(&sa4, sizeof(sa4), (const void *) ctx->args[1]) == 0) {
+            port = bpf_ntohs(sa4.sin_port);
+        }
+    }
+    else if (family == AF_INET6 && (__u32) ctx->args[2] >= sizeof(struct sockaddr_in6)) {
+        if (bpf_probe_read_user(&sa6, sizeof(sa6), (const void *) ctx->args[1]) == 0) {
+            port = bpf_ntohs(sa6.sin6_port);
+        }
+    }
+
+    args.family = family;
+    args.port = port;
 
     pid_tgid = bpf_get_current_pid_tgid();
     tid = (__u32) pid_tgid;
@@ -217,16 +266,38 @@ int trace_dns_connect_exit(struct syscall_trace_exit *ctx)
     }
 
     ret = ctx->ret;
-    if (ret == 0 && is_dns_destination(args->addr, args->addrlen)) {
+    key.pid = pid;
+    key.fd = args->fd;
+
+    if (ret == 0 && is_dns_family_port(args->family, args->port)) {
         mntns_id = gadget_get_mntns_id();
         if (!gadget_should_discard_mntns_id(mntns_id)) {
-            key.pid = pid;
-            key.fd = args->fd;
             bpf_map_update_elem(&dns_sockets, &key, &mntns_id, BPF_ANY);
         }
     }
+    else {
+        bpf_map_delete_elem(&dns_sockets, &key);
+    }
 
     bpf_map_delete_elem(&dns_connect_pending, &tid);
+
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_enter_close")
+int trace_dns_close_enter(struct syscall_trace_enter *ctx)
+{
+    __u64 pid_tgid;
+    __u32 pid;
+    struct dns_socket_key key;
+
+    pid_tgid = bpf_get_current_pid_tgid();
+    pid = (__u32) (pid_tgid >> 32);
+
+    key.pid = pid;
+    key.fd = (__s32) ((int) ctx->args[0]);
+
+    bpf_map_delete_elem(&dns_sockets, &key);
 
     return 0;
 }
