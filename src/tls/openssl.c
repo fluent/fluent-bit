@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_connection.h>
 #include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/tls/flb_tls_info.h>
 
@@ -80,27 +81,35 @@ struct tls_session {
     struct tls_context *parent;    /* parent struct tls_context ref */
 };
 
-#define FLB_TLS_LOG_CONTEXT_BUF_SIZE 320
+#define FLB_TLS_LOG_CONTEXT_BUF_SIZE 384
 
 /*
- * Build a "[upstream=<plugin> remote=<host:port>]" suffix for TLS error logs
- * so users can tell which plugin/connection produced the error. Plugin name is
- * best-effort (only outputs set the upstream label); remote address is always
- * available. Returns "" if no useful context can be derived.
+ * Build a "[direction=... local=... remote=... upstream=...]" suffix for TLS
+ * error logs so users can tell which plugin/connection produced the error and
+ * which direction it was going. For outgoing (upstream) connections we expose
+ * the plugin label (best-effort: only outputs set it). For incoming
+ * (downstream) connections we expose the listen address as 'local=' so users
+ * can tell which input plugin received the connection. Returns "" if no
+ * useful context can be derived.
  */
 static const char *tls_log_context(struct flb_tls_session *flb_session,
                                    char *buf, size_t buf_size)
 {
+    const char *direction = NULL;
     const char *plugin_label = NULL;
     const char *remote_addr = NULL;
+    char local_addr[96];
     struct flb_connection *connection;
     struct flb_upstream *upstream;
+    struct flb_downstream *downstream;
+    size_t off;
 
     if (buf == NULL || buf_size == 0) {
         return "";
     }
 
     buf[0] = '\0';
+    local_addr[0] = '\0';
 
     if (flb_session == NULL) {
         return buf;
@@ -111,25 +120,64 @@ static const char *tls_log_context(struct flb_tls_session *flb_session,
         return buf;
     }
 
-    if (connection->type == FLB_UPSTREAM_CONNECTION &&
-        connection->upstream != NULL) {
-        upstream = connection->upstream;
-        if (upstream->cmt_total_connections_label != NULL) {
-            plugin_label = upstream->cmt_total_connections_label;
+    if (connection->type == FLB_UPSTREAM_CONNECTION) {
+        direction = "outgoing";
+
+        if (connection->upstream != NULL) {
+            upstream = connection->upstream;
+            if (upstream->cmt_total_connections_label != NULL) {
+                plugin_label = upstream->cmt_total_connections_label;
+            }
+        }
+    }
+    else if (connection->type == FLB_DOWNSTREAM_CONNECTION) {
+        direction = "incoming";
+
+        if (connection->downstream != NULL) {
+            downstream = connection->downstream;
+            if (downstream->host != NULL) {
+                snprintf(local_addr, sizeof(local_addr), "tcp://%s:%u",
+                         downstream->host, downstream->port);
+            }
         }
     }
 
     remote_addr = flb_connection_get_remote_address(connection);
 
-    if (plugin_label != NULL && remote_addr != NULL && remote_addr[0] != '\0') {
-        snprintf(buf, buf_size, " [upstream=%s remote=%s]",
-                 plugin_label, remote_addr);
+    if (direction == NULL && local_addr[0] == '\0' &&
+        (remote_addr == NULL || remote_addr[0] == '\0') &&
+        plugin_label == NULL) {
+        return buf;
     }
-    else if (plugin_label != NULL) {
-        snprintf(buf, buf_size, " [upstream=%s]", plugin_label);
+
+    off = 0;
+    off += snprintf(buf + off, buf_size - off, " [");
+
+    if (direction != NULL && off < buf_size) {
+        off += snprintf(buf + off, buf_size - off, "direction=%s", direction);
     }
-    else if (remote_addr != NULL && remote_addr[0] != '\0') {
-        snprintf(buf, buf_size, " [remote=%s]", remote_addr);
+
+    if (local_addr[0] != '\0' && off < buf_size) {
+        off += snprintf(buf + off, buf_size - off,
+                        "%slocal=%s", off > 2 ? " " : "", local_addr);
+    }
+
+    if (remote_addr != NULL && remote_addr[0] != '\0' && off < buf_size) {
+        off += snprintf(buf + off, buf_size - off,
+                        "%sremote=%s", off > 2 ? " " : "", remote_addr);
+    }
+
+    if (plugin_label != NULL && off < buf_size) {
+        off += snprintf(buf + off, buf_size - off,
+                        "%supstream=%s", off > 2 ? " " : "", plugin_label);
+    }
+
+    if (off < buf_size) {
+        snprintf(buf + off, buf_size - off, "]");
+    }
+    else {
+        buf[buf_size - 2] = ']';
+        buf[buf_size - 1] = '\0';
     }
 
     return buf;
