@@ -897,28 +897,32 @@ static void route_payload_list_destroy(struct cfl_list *payloads)
     }
 }
 
-static void input_chunk_remove_conditional_routes(struct flb_input_instance *ins,
-                                                  struct flb_input_chunk *chunk)
+static int input_chunk_write_direct_route_metadata(struct flb_input_instance *ins,
+                                                   struct flb_input_chunk *chunk)
 {
-    ssize_t chunk_size;
-    size_t chunk_size_sz;
+    int ret;
+    int direct_count;
+    int direct_index;
+    int write_ret;
+    int label_is_alias;
+    int tag_len;
+    size_t label_length;
+    size_t plugin_length;
+    const char *tag;
+    const char *label_source;
+    const char *plugin_name;
     struct cfl_list *head;
     struct flb_router_path *route_path;
+    struct flb_chunk_direct_route *direct_routes;
 
     if (!ins || !chunk || !chunk->routes_mask || !ins->config) {
-        return;
+        return -1;
     }
 
-    chunk_size = -1;
+    direct_count = 0;
     cfl_list_foreach(head, &ins->routes_direct) {
         route_path = cfl_list_entry(head, struct flb_router_path, _head);
-
-        if (!route_path->route || !route_path->ins) {
-            continue;
-        }
-
-        if (!route_path->route->condition &&
-            !route_path->route->per_record_routing) {
+        if (!route_path->ins) {
             continue;
         }
 
@@ -928,32 +932,182 @@ static void input_chunk_remove_conditional_routes(struct flb_input_instance *ins
             continue;
         }
 
-        flb_routes_mask_clear_bit(chunk->routes_mask,
-                                  route_path->ins->id,
-                                  ins->config->router);
+        direct_count++;
+    }
 
-        if (route_path->ins->total_limit_size == -1 ||
-            chunk->fs_counted == FLB_FALSE) {
+    if (direct_count == 0) {
+        return 0;
+    }
+
+    ret = flb_input_chunk_get_tag(chunk, &tag, &tag_len);
+    if (ret != 0 || !tag || tag_len <= 0) {
+        return -1;
+    }
+
+    direct_routes = flb_calloc((size_t) direct_count,
+                               sizeof(struct flb_chunk_direct_route));
+    if (!direct_routes) {
+        flb_errno();
+        return -1;
+    }
+
+    direct_index = 0;
+    cfl_list_foreach(head, &ins->routes_direct) {
+        route_path = cfl_list_entry(head, struct flb_router_path, _head);
+        if (!route_path->ins) {
             continue;
         }
 
-        if (chunk_size == -1) {
-            chunk_size = flb_input_chunk_get_real_size(chunk);
-            if (chunk_size <= 0) {
-                chunk_size = 0;
+        if (flb_routes_mask_get_bit(chunk->routes_mask,
+                                    route_path->ins->id,
+                                    ins->config->router) == 0) {
+            continue;
+        }
+
+        if (direct_index >= direct_count) {
+            continue;
+        }
+
+        label_source = route_path->ins->alias;
+        label_length = 0;
+        plugin_name = NULL;
+        plugin_length = 0;
+        label_is_alias = FLB_FALSE;
+        if (!label_source || label_source[0] == '\0') {
+            label_source = route_path->ins->name;
+        }
+        else {
+            label_is_alias = FLB_TRUE;
+        }
+        if (label_source) {
+            label_length = strlen(label_source);
+            if (label_length > UINT16_MAX) {
+                label_length = UINT16_MAX;
+            }
+        }
+        if (route_path->ins->p && route_path->ins->p->name) {
+            plugin_name = route_path->ins->p->name;
+            plugin_length = strlen(plugin_name);
+            if (plugin_length > UINT16_MAX) {
+                plugin_length = UINT16_MAX;
             }
         }
 
-        if (chunk_size > 0) {
-            chunk_size_sz = (size_t) chunk_size;
-            if (route_path->ins->fs_chunks_size > chunk_size_sz) {
-                route_path->ins->fs_chunks_size -= chunk_size_sz;
-            }
-            else {
-                route_path->ins->fs_chunks_size = 0;
-            }
+        direct_routes[direct_index].id = (uint32_t) route_path->ins->id;
+        direct_routes[direct_index].label = label_source;
+        direct_routes[direct_index].label_length = (uint16_t) label_length;
+        direct_routes[direct_index].label_is_alias = (uint8_t) label_is_alias;
+        direct_routes[direct_index].plugin_name = plugin_name;
+        direct_routes[direct_index].plugin_name_length = (uint16_t) plugin_length;
+        direct_index++;
+    }
+
+    if (direct_index == direct_count) {
+        write_ret = flb_input_chunk_write_header_v2(chunk->chunk,
+                                                    chunk->event_type,
+                                                    (char *) tag,
+                                                    tag_len,
+                                                    direct_routes,
+                                                    direct_count);
+        if (write_ret != 0) {
+            flb_plg_warn(ins,
+                         "failed to persist direct routes for chunk %s",
+                         flb_input_chunk_get_name(chunk));
         }
     }
+
+    flb_free(direct_routes);
+
+    return 0;
+}
+
+static int input_chunk_apply_base_direct_routes(struct flb_input_instance *ins,
+                                                struct flb_input_chunk *chunk)
+{
+    int has_routes;
+    ssize_t chunk_size;
+    size_t chunk_size_sz;
+    size_t mask_size;
+    struct cfl_list *head;
+    struct mk_list *o_head;
+    struct flb_router_path *route_path;
+    struct flb_output_instance *o_ins;
+
+    if (!ins || !chunk || !chunk->routes_mask || !ins->config) {
+        return -1;
+    }
+
+    chunk_size = -1;
+    chunk_size_sz = 0;
+
+    if (chunk->fs_counted == FLB_TRUE) {
+        chunk_size = flb_input_chunk_get_real_size(chunk);
+        if (chunk_size > 0) {
+            chunk_size_sz = (size_t) chunk_size;
+        }
+
+        mk_list_foreach(o_head, &ins->config->outputs) {
+            o_ins = mk_list_entry(o_head, struct flb_output_instance, _head);
+
+            if (o_ins->total_limit_size == -1) {
+                continue;
+            }
+
+            if (flb_routes_mask_get_bit(chunk->routes_mask,
+                                        o_ins->id,
+                                        ins->config->router) == 0) {
+                continue;
+            }
+
+            if (o_ins->fs_chunks_size > chunk_size_sz) {
+                o_ins->fs_chunks_size -= chunk_size_sz;
+            }
+            else {
+                o_ins->fs_chunks_size = 0;
+            }
+        }
+
+        chunk->fs_counted = FLB_FALSE;
+    }
+
+    mask_size = flb_routes_mask_get_size(ins->config->router);
+    memset(chunk->routes_mask, 0, sizeof(flb_route_mask_element) * mask_size);
+
+    has_routes = FLB_FALSE;
+    cfl_list_foreach(head, &ins->routes_direct) {
+        route_path = cfl_list_entry(head, struct flb_router_path, _head);
+
+        if (!route_path->ins) {
+            continue;
+        }
+
+        if (route_path->route &&
+            (route_path->route->condition || route_path->route->per_record_routing)) {
+            continue;
+        }
+
+        flb_routes_mask_set_bit(chunk->routes_mask,
+                                route_path->ins->id,
+                                ins->config->router);
+        has_routes = FLB_TRUE;
+    }
+
+    if (has_routes == FLB_FALSE) {
+        return 0;
+    }
+
+    if (chunk_size == -1) {
+        chunk_size = flb_input_chunk_get_real_size(chunk);
+        if (chunk_size > 0) {
+            chunk_size_sz = (size_t) chunk_size;
+        }
+    }
+
+    if (chunk_size_sz > 0) {
+        flb_input_chunk_update_output_instances(chunk, chunk_size_sz);
+    }
+
+    return input_chunk_write_direct_route_metadata(ins, chunk);
 }
 
 static int input_has_conditional_routes(struct flb_input_instance *ins)
@@ -1372,7 +1526,9 @@ static int input_log_append_processed_internal(struct flb_input_instance *ins,
                                base_tag_len,
                                (void **) &chunk,
                                &dummy) >= 0 && chunk) {
-            input_chunk_remove_conditional_routes(ins, chunk);
+            if (input_chunk_apply_base_direct_routes(ins, chunk) != 0) {
+                return -1;
+            }
         }
     }
 
