@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 
+import pytest
 import requests
 from google.protobuf import json_format
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
@@ -124,6 +125,20 @@ def _find_json_line(log_text, needle):
         if needle in line and line.lstrip().startswith("{"):
             return json.loads(line)
     raise AssertionError(f"Could not find JSON line containing {needle!r}")
+
+
+def _stdout_lines_for_tag(log_text, tag):
+    return [
+        line
+        for line in log_text.splitlines()
+        if f"] {tag}:" in line
+    ]
+
+
+def _assert_stdout_tag_contains(log_text, tag, *needles):
+    assert f"] {tag}:" in log_text, f"Could not find stdout tag {tag!r}"
+    for needle in needles:
+        assert needle in log_text
 
 
 def test_out_stdout_default_format_emits_tagged_log_line():
@@ -260,3 +275,65 @@ def test_out_stdout_threaded_input_conditional_default_route():
     assert "\"message\"=>\"threaded default route\"" in log_text
     assert "[0] threaded_topic1:" not in log_text
     assert "conditional routing not supported for threaded inputs" not in log_text
+
+
+@pytest.mark.parametrize(
+    ("mode", "label", "config_file"),
+    [
+        (
+            "non_threaded",
+            "non threaded",
+            "out_stdout_conditional_corner_non_threaded.yaml",
+        ),
+        (
+            "threaded",
+            "threaded",
+            "out_stdout_conditional_corner_threaded.yaml",
+        ),
+    ],
+)
+def test_out_stdout_conditional_routing_corner_cases(mode, label, config_file):
+    service = Service(config_file)
+    service.start()
+    service.wait_for_log_contains(f"[0] {mode}_topic1:", timeout=10)
+    service.wait_for_log_contains(f"[0] {mode}_default:", timeout=10)
+    service.wait_for_log_contains(f"{label} unmatched without default", timeout=10)
+    log_text = service.read_log()
+    service.stop()
+
+    assert "conditional routing not supported for threaded inputs" not in log_text
+
+    _assert_stdout_tag_contains(
+        log_text,
+        f"{mode}_topic1",
+        f"\"message\"=>\"{label} processor match\"",
+        "\"topic\"=>\"topic1\"",
+    )
+    _assert_stdout_tag_contains(
+        log_text,
+        f"{mode}.processor.base",
+        f"\"message\"=>\"{label} processor match\"",
+        "\"topic\"=>\"topic1\"",
+    )
+
+    _assert_stdout_tag_contains(
+        log_text,
+        f"{mode}_default",
+        f"\"message\"=>\"{label} default fallback\"",
+        "\"topic\"=>\"topic2\"",
+    )
+    _assert_stdout_tag_contains(
+        log_text,
+        f"{mode}.default.base",
+        f"\"message\"=>\"{label} default fallback\"",
+        "\"topic\"=>\"topic2\"",
+    )
+
+    _assert_stdout_tag_contains(
+        log_text,
+        f"{mode}.miss.base",
+        f"\"message\"=>\"{label} unmatched without default\"",
+        "\"topic\"=>\"topic2\"",
+    )
+    assert _stdout_lines_for_tag(log_text, f"{mode}_default_topic1") == []
+    assert _stdout_lines_for_tag(log_text, f"{mode}_miss_topic1") == []
