@@ -18,8 +18,10 @@
  */
 
 #include <dirent.h>
-#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#include <fluent-bit/flb_utils.h>
 
 #include "ne.h"
 
@@ -109,24 +111,6 @@ static struct ps_metric_spec ps_numeric_metrics[] = {
     {"temp_min_celsius", "temp_min", 10.0},
 };
 
-static int read_long_file(const char *path, long *out)
-{
-    FILE *fp;
-
-    fp = fopen(path, "r");
-    if (fp == NULL) {
-        return -1;
-    }
-
-    if (fscanf(fp, "%ld", out) != 1) {
-        fclose(fp);
-        return -1;
-    }
-
-    fclose(fp);
-    return 0;
-}
-
 static struct cmt_gauge *ps_metric_get(struct flb_ne *ctx, const char *name)
 {
     struct mk_list *head;
@@ -176,6 +160,9 @@ static int update_one(struct flb_ne *ctx, const char *name)
     long v;
     uint64_t ts;
     char path[1024];
+    char *buf;
+    char *end;
+    size_t buf_size;
     char *labels[] = {(char *) name};
     struct cmt_gauge *gauge;
 
@@ -185,7 +172,14 @@ static int update_one(struct flb_ne *ctx, const char *name)
         snprintf(path, sizeof(path) - 1, "%s/class/power_supply/%s/%s",
                  ctx->path_sysfs, name, ps_numeric_metrics[i].file_name);
 
-        if (read_long_file(path, &v) == 0) {
+        if (flb_utils_read_file(path, &buf, &buf_size) == 0 && buf != NULL && buf_size > 0) {
+            v = strtol(buf, &end, 10);
+            if (end == buf) {
+                flb_free(buf);
+                continue;
+            }
+            flb_free(buf);
+
             gauge = ps_metric_get(ctx, ps_numeric_metrics[i].metric_name);
             if (gauge != NULL) {
                 cmt_gauge_set(gauge, ts, ((double) v) / ps_numeric_metrics[i].divisor,
