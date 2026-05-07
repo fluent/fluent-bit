@@ -88,6 +88,7 @@ static struct cmt_gauge *netstat_dynamic_metric_get(struct flb_ne *ctx, const ch
 
     entry = flb_calloc(1, sizeof(struct netstat_dynamic_metric));
     if (entry == NULL) {
+        flb_errno();
         return NULL;
     }
 
@@ -275,6 +276,13 @@ static void netstat_process_pair(struct flb_ne *ctx,
     int values_count;
     struct mk_list headers;
     struct mk_list values;
+    int idx;
+    double d_val;
+    struct cmt_gauge *metric;
+    char metric_name[256];
+    struct flb_slist_entry *proto_name;
+    struct flb_slist_entry *key;
+    struct flb_slist_entry *val;
 
     mk_list_init(&headers);
     mk_list_init(&values);
@@ -290,13 +298,6 @@ static void netstat_process_pair(struct flb_ne *ctx,
             netstat_process_udp(ctx, &headers, headers_count, &values, values_count, ts);
         }
         else if (proto == NETSTAT_PROTO_TCPEXT || proto == NETSTAT_PROTO_IPEXT) {
-            int idx;
-            double d_val;
-            struct cmt_gauge *metric;
-            char metric_name[256];
-            struct flb_slist_entry *key;
-            struct flb_slist_entry *val;
-
             for (idx = 1; idx < headers_count && idx < values_count; idx++) {
                 key = flb_slist_entry_get(&headers, idx);
                 val = flb_slist_entry_get(&values, idx);
@@ -324,14 +325,6 @@ static void netstat_process_pair(struct flb_ne *ctx,
             }
         }
         else {
-            int idx;
-            double d_val;
-            struct cmt_gauge *metric;
-            char metric_name[256];
-            struct flb_slist_entry *proto_name;
-            struct flb_slist_entry *key;
-            struct flb_slist_entry *val;
-
             proto_name = flb_slist_entry_get(&headers, 0);
             if (proto_name != NULL && strlen(proto_name->str) > 1) {
                 proto_name->str[strlen(proto_name->str) - 1] = '\0';
