@@ -389,10 +389,30 @@ def _assert_log_resource_attribution(logs_seen):
 def _log_payloads_by_request_path(logs_seen, requests_seen):
     assert len(logs_seen) >= len(requests_seen)
 
-    return {
-        request_seen["path"]: json.loads(json_format.MessageToJson(logs_seen[index]))
-        for index, request_seen in enumerate(requests_seen)
-    }
+    decoded_by_path = {}
+    for log_seen in logs_seen:
+        output = json.loads(json_format.MessageToJson(log_seen))
+        resource_logs = output.get("resourceLogs", [])
+        assert len(resource_logs) == 1
+
+        resource_attributes = _attributes_to_dict(
+            resource_logs[0].get("resource", {}).get("attributes", [])
+        )
+        group_id = resource_attributes.get("group_id")
+        assert group_id is not None
+        assert group_id.startswith("group-")
+
+        path = f"/conditional/group/{group_id[6:]}"
+        assert path not in decoded_by_path
+        decoded_by_path[path] = output
+
+    payloads_by_path = {}
+    for request_seen in requests_seen:
+        path = request_seen["path"]
+        assert path in decoded_by_path
+        payloads_by_path[path] = decoded_by_path[path]
+
+    return payloads_by_path
 
 
 def _assert_grouped_resource(output, *, route_group, group_id, scopes):
