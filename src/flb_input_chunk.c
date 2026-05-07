@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_chunk.h>
+#include <fluent-bit/flb_input_log.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_time.h>
@@ -3128,9 +3129,17 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
                     tag_len = 0;
                 }
 
-                input_chunk_append_raw(cr->ins, cr->event_type, cr->records,
-                                       cr->tag, tag_len,
-                                       cr->buf_data, cr->buf_size);
+                if (cr->event_type == FLB_INPUT_LOGS &&
+                    (cr->flags & FLB_INPUT_CHUNK_RAW_LOG_ROUTING) != 0) {
+                    flb_input_log_append_processed(cr->ins, cr->records,
+                                                   cr->tag, tag_len,
+                                                   cr->buf_data, cr->buf_size);
+                }
+                else {
+                    input_chunk_append_raw(cr->ins, cr->event_type, cr->records,
+                                           cr->tag, tag_len,
+                                           cr->buf_data, cr->buf_size);
+                }
                 destroy_chunk_raw(cr);
             }
             cr = NULL;
