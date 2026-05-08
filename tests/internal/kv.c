@@ -49,7 +49,7 @@ static void test_kv_get_all_key_values()
     TEST_CHECK(pairs != NULL);
     TEST_CHECK(count == 3);
 
-    if (pairs) {
+    if (pairs && count == 3) {
         TEST_CHECK(pairs[0] != NULL);
         TEST_CHECK(strcmp(pairs[0]->key, "host") == 0);
         TEST_CHECK(strcmp(pairs[0]->val, "localhost") == 0);
