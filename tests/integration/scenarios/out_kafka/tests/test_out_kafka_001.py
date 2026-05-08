@@ -645,3 +645,57 @@ def test_out_kafka_otlp_logs_preserve_resource_schema_urls_across_requests(
     assert body_to_schema_url["event-a"] == "schema-a"
     assert body_to_schema_url["event-b"] == "schema-b"
     assert len(resources) == 2
+
+
+@pytest.mark.parametrize(
+    "format_name,config_file",
+    [
+        ("otlp_json", "out_kafka_otlp_json_partition_by_resource.yaml"),
+        ("otlp_proto", "out_kafka_otlp_proto_partition_by_resource.yaml"),
+    ],
+)
+def test_out_kafka_otlp_logs_partition_by_resource(format_name, config_file):
+    service = Service(config_file)
+    service.start()
+    service.send_payload_dict(
+        _build_resource_collision_payload("user-a", "event-a"),
+        "logs",
+    )
+    service.send_payload_dict(
+        _build_resource_collision_payload("user-b", "event-b"),
+        "logs",
+    )
+
+    messages = service.wait_for_messages(2, timeout=10)
+    service.stop()
+
+    assert len(messages) == 2
+
+    keys = {message["key"] for message in messages}
+    assert len(keys) == 2
+    assert b"static-otlp-key" not in keys
+
+    body_to_user = {}
+    for message in messages:
+        assert message["topic"] == "otlp-topic"
+        assert message["key"]
+
+        payload = _decode_kafka_payload(message, format_name, "logs")
+        resources = payload["resourceLogs"]
+        assert len(resources) == 1
+
+        resource = resources[0]
+        user_id = next(
+            attribute["value"]["stringValue"]
+            for attribute in resource["resource"]["attributes"]
+            if attribute["key"] == "user.id"
+        )
+
+        for scope in resource["scopeLogs"]:
+            for record in scope["logRecords"]:
+                body_to_user[record["body"]["stringValue"]] = user_id
+
+    assert body_to_user == {
+        "event-a": "user-a",
+        "event-b": "user-b",
+    }
