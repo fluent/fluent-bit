@@ -19,12 +19,12 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <pthread.h>
 
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_plugin_alias.h>
+#include <fluent-bit/flb_compat.h>
 
 /*
  * Table that maps user-facing aliases to plugin short names.
