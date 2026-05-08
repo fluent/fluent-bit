@@ -161,13 +161,17 @@ const char *flb_kv_get_key_value(const char *key, struct mk_list *list)
     return NULL;
 }
 
-struct flb_kv **flb_kv_get_all_key_values(struct mk_list *list)
+struct flb_kv **flb_kv_get_all_key_values(struct mk_list *list, int *out_count)
 {
     int count;
     int i = 0;
     struct mk_list *head;
     struct flb_kv *kv;
     struct flb_kv **arr;
+
+    if (out_count) {
+        *out_count = 0;
+    }
 
     if (!list) {
         return NULL;
@@ -188,6 +192,10 @@ struct flb_kv **flb_kv_get_all_key_values(struct mk_list *list)
         kv = mk_list_entry(head, struct flb_kv, _head);
         arr[i] = kv;
         i++;
+    }
+
+    if (out_count) {
+        *out_count = count;
     }
 
     return arr;

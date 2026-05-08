@@ -41,6 +41,6 @@ struct flb_kv *flb_kv_item_set(struct mk_list *list,
 void flb_kv_item_destroy(struct flb_kv *kv);
 void flb_kv_release(struct mk_list *list);
 const char *flb_kv_get_key_value(const char *key, struct mk_list *list);
-struct flb_kv **flb_kv_get_all_key_values(struct mk_list *list);
+struct flb_kv **flb_kv_get_all_key_values(struct mk_list *list, int *out_count);
 
 #endif
