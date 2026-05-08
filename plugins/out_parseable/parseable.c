@@ -2910,6 +2910,48 @@ static int cb_parseable_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/*
+ * Formatter callback used by the unit tests. It delegates to the same
+ * JSON / OTEL JSON path that cb_parseable_flush() uses for log events,
+ * letting tests inspect the wire payload without performing HTTP I/O.
+ */
+static int cb_parseable_format_test(struct flb_config *config,
+                                     struct flb_input_instance *ins,
+                                     void *plugin_context,
+                                     void *flush_ctx,
+                                     int event_type,
+                                     const char *tag, int tag_len,
+                                     const void *data, size_t bytes,
+                                     void **out_data, size_t *out_size)
+{
+    struct flb_out_parseable *ctx = plugin_context;
+    (void) ins;
+    (void) flush_ctx;
+    (void) event_type;
+    (void) tag;
+    (void) tag_len;
+
+    /* Mirror the log-event branch of cb_parseable_flush() */
+    if (ctx->data_type &&
+        (strcasecmp(ctx->data_type, "traces") == 0 ||
+         strcasecmp(ctx->data_type, "otel-trace") == 0 ||
+         strcasecmp(ctx->data_type, "otel-traces") == 0 ||
+         strcasecmp(ctx->data_type, "metrics") == 0 ||
+         strcasecmp(ctx->data_type, "otel-metric") == 0 ||
+         strcasecmp(ctx->data_type, "otel-metrics") == 0)) {
+        if (parseable_format_json_to_otel(ctx, data, bytes,
+                                          out_data, out_size, config) != 0) {
+            return -1;
+        }
+        return 0;
+    }
+
+    if (parseable_format_json(ctx, data, bytes, out_data, out_size, config) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
 /* Plugin descriptor */
 struct flb_output_plugin out_parseable_plugin = {
     .name        = "parseable",
@@ -2919,6 +2961,10 @@ struct flb_output_plugin out_parseable_plugin = {
     .cb_flush    = cb_parseable_flush,
     .cb_exit     = cb_parseable_exit,
     .config_map  = config_map,
+
+    /* for testing */
+    .test_formatter.callback = cb_parseable_format_test,
+
     .event_type  = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES,
     .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
     .workers     = 2
