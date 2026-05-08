@@ -33,18 +33,21 @@ static void test_kv_get_all_key_values()
 {
     struct mk_list list;
     struct flb_kv **pairs;
+    int count = -1;
 
     flb_kv_init(&list);
 
-    pairs = flb_kv_get_all_key_values(&list);
+    pairs = flb_kv_get_all_key_values(&list, &count);
     TEST_CHECK(pairs == NULL);
+    TEST_CHECK(count == 0);
 
     flb_kv_item_set(&list, "host", "localhost");
     flb_kv_item_set(&list, "port", "8080");
     flb_kv_item_set(&list, "path", "/api");
 
-    pairs = flb_kv_get_all_key_values(&list);
+    pairs = flb_kv_get_all_key_values(&list, &count);
     TEST_CHECK(pairs != NULL);
+    TEST_CHECK(count == 3);
 
     if (pairs) {
         TEST_CHECK(pairs[0] != NULL);
