@@ -160,3 +160,35 @@ const char *flb_kv_get_key_value(const char *key, struct mk_list *list)
 
     return NULL;
 }
+
+struct flb_kv **flb_kv_get_all_key_values(struct mk_list *list)
+{
+    int count;
+    int i = 0;
+    struct mk_list *head;
+    struct flb_kv *kv;
+    struct flb_kv **arr;
+
+    if (!list) {
+        return NULL;
+    }
+
+    count = mk_list_size(list);
+    if (count == 0) {
+        return NULL;
+    }
+
+    arr = flb_calloc(count, sizeof(struct flb_kv *));
+    if (!arr) {
+        flb_errno();
+        return NULL;
+    }
+
+    mk_list_foreach(head, list) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        arr[i] = kv;
+        i++;
+    }
+
+    return arr;
+}
