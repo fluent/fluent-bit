@@ -184,4 +184,20 @@ struct flb_elasticsearch {
     struct flb_output_instance *ins;
 };
 
+/**
+ *  Get plugin configuration.
+ *  In HA mode, the selected upstream node is also output.
+ *  In HA mode, the returned plugin configuration matches the output upstream node.
+ *
+ *  @param ctx  Non-NULL plugin context.
+ *  @param node Non-NULL output parameter for selected upstream node.
+ *              `*node` is set to NULL if not in HA mode or
+ *              there is no upstream node.
+ *
+ *  @return Configuration of plugin or NULL if error happened or
+ *          there is no upstream node (in HA mode).
+ */
+struct flb_elasticsearch_config *flb_elasticsearch_target(
+        struct flb_elasticsearch *ctx, struct flb_upstream_node **node);
+
 #endif
