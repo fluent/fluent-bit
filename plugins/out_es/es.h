@@ -20,8 +20,11 @@
 #ifndef FLB_OUT_ES_H
 #define FLB_OUT_ES_H
 
+#include <monkey/mk_core/mk_list.h>
+#include <fluent-bit/flb_sds.h>
+
 #define FLB_ES_DEFAULT_HOST       "127.0.0.1"
-#define FLB_ES_DEFAULT_PORT       92000
+#define FLB_ES_DEFAULT_PORT       9200
 #define FLB_ES_DEFAULT_INDEX      "fluent-bit"
 #define FLB_ES_DEFAULT_TYPE       "_doc"
 #define FLB_ES_DEFAULT_PREFIX     "logstash"
@@ -45,10 +48,23 @@
 #define FLB_ES_STATUS_DUPLICATES       (1 << 6)
 #define FLB_ES_STATUS_ERROR            (1 << 7)
 
-struct flb_elasticsearch {
+struct flb_upstream;
+struct flb_upstream_ha;
+struct flb_upstream_node;
+struct flb_output_instance;
+struct flb_record_accessor;
+
+#ifdef FLB_HAVE_AWS
+struct flb_aws_provider;
+struct flb_tls;
+#endif
+
+struct flb_elasticsearch_config {
     /* Elasticsearch index (database) and type (table) */
     char *index;
+    int own_index;
     char *type;
+    int own_type;
     int suppress_type_name;
 
     /* HTTP Auth */
@@ -70,9 +86,7 @@ struct flb_elasticsearch {
     struct flb_aws_provider *base_aws_provider;
     /* tls instances can't be re-used; aws provider requires a separate one */
     struct flb_tls *aws_tls;
-    /* one for the standard chain provider, one for sts assume role */
     struct flb_tls *aws_sts_tls;
-    char *aws_session_name;
     char *aws_service_name;
     struct mk_list *aws_unsigned_headers;
 #endif
@@ -118,7 +132,6 @@ struct flb_elasticsearch {
     /* time key nanoseconds */
     int time_key_nanos;
 
-
     /* write operation */
     flb_sds_t write_operation;
     /* write operation elasticsearch operation */
@@ -140,8 +153,18 @@ struct flb_elasticsearch {
     /* Compression mode (gzip) */
     int compress_gzip;
 
-    /* Upstream connection to the backend server */
+    /* List entry data for flb_elasticsearch->configs list */
+    struct mk_list _head;
+};
+
+struct flb_elasticsearch {
+    /* if HA mode is enabled */
+    int ha_mode;
+    struct flb_upstream_ha *ha;
+
+    /* Upstream handler and config context for single mode (no HA) */
     struct flb_upstream *u;
+    struct mk_list configs;
 
     /* Plugin output instance reference */
     struct flb_output_instance *ins;
