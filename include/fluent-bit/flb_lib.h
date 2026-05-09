@@ -71,17 +71,14 @@ FLB_EXPORT int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
                                    void (*out_callback) (void *, int, int,
                                                          void *, size_t, void *),
                                    void *out_callback_data,
-                                   void *test_ctx);
-FLB_EXPORT int flb_output_set_test_with_ctx_callback(
-                                   flb_ctx_t *ctx, int ffd, char *test_name,
-                                   void (*out_callback) (void *, int, int,
-                                                         void *, size_t, void *),
-                                   void *out_callback_data,
-                                   void *test_ctx,
-                                   void *(*test_ctx_callback) (
-                                           struct flb_config *,
-                                           struct flb_input_instance *,
-                                           void *, void *));
+                                   void *flush_ctx);
+FLB_EXPORT int flb_output_set_test_flush_ctx_callback(flb_ctx_t *ctx, int ffd,
+                                                      char *test_name,
+                                                      void *(*flush_ctx_callback)(
+                                                              struct flb_config *,
+                                                              struct flb_input_instance *,
+                                                              void *, void *),
+                                                      void *flush_ctx);
 FLB_EXPORT int flb_output_set_callback(flb_ctx_t *ctx, int ffd, char *name,
                                        void (*cb)(char *, void *, void *));
 FLB_EXPORT int flb_output_set_http_test(flb_ctx_t *ctx, int ffd, char *test_name,
