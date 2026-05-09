@@ -1066,6 +1066,7 @@ TEST_LIST = {
     {"write_operation_create", flb_test_write_operation_create },
     {"write_operation_update", flb_test_write_operation_update },
     {"write_operation_upsert", flb_test_write_operation_upsert },
+    {"null_index"            , flb_test_null_index },
     {"index_type"            , flb_test_index_type },
     {"logstash_format"       , flb_test_logstash_format },
     {"logstash_format_nanos" , flb_test_logstash_format_nanos },
