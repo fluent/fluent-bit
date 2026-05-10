@@ -201,6 +201,9 @@ const char *flb_env_get(struct flb_env *env, const char *key)
 /*
  * Given a 'value', lookup for variables, if found, return a new composed
  * sds string.
+ *
+ * Supports bash-style default substitution inside ${...}:
+ *   ${name:-word}  — if unset or empty, expand word; do not assign.
  */
 flb_sds_t flb_env_var_translate(struct flb_env *env, const char *value)
 {
@@ -211,6 +214,9 @@ flb_sds_t flb_env_var_translate(struct flb_env *env, const char *value)
     int pre_var;
     int have_var = FLB_FALSE;
     const char *env_var = NULL;
+    char *v_sep;
+    const char *def_val;
+    int def_len;
     char *v_start = NULL;
     char *v_end = NULL;
     char tmp[4096];
@@ -248,6 +254,18 @@ flb_sds_t flb_env_var_translate(struct flb_env *env, const char *value)
         strncpy(tmp, v_start, v_len);
         tmp[v_len] = '\0';
         have_var = FLB_TRUE;
+        
+        /* Bash-style default value expansion :- */
+        v_sep = strstr(tmp, ":");
+        def_val = NULL;
+        def_len = 0;
+
+        if (v_sep && (v_sep[1] == '-')) {
+            def_val = v_sep + 2;
+            def_len = strlen(def_val);
+            *v_sep = '\0';
+        }
+
 
         /* Append pre-variable content */
         pre_var = (v_start - 2) - (value + i);
@@ -264,7 +282,8 @@ flb_sds_t flb_env_var_translate(struct flb_env *env, const char *value)
 
         /* Lookup the variable in our env-hash */
         env_var = flb_env_get(env, tmp);
-        if (env_var) {
+        /* Skip env if it's empty and have a fallback defined */ 
+        if (env_var && !(def_val && strlen(env_var) == 0)) {
             e_len = strlen(env_var);
             s = buf_append(buf, env_var, e_len);
             if (!s) {
@@ -272,6 +291,16 @@ flb_sds_t flb_env_var_translate(struct flb_env *env, const char *value)
                 return NULL;
             }
             if (s != buf) {
+                buf = s;
+            }
+        }
+        else if (def_val) {
+            if (def_len > 0) {
+                s = buf_append(buf, def_val, def_len);
+                if (!s) {
+                    flb_sds_destroy(buf);
+                    return NULL;
+                }
                 buf = s;
             }
         }
