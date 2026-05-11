@@ -89,6 +89,7 @@ struct flb_gcs {
     int compression_type;
     struct flb_fstore *fs;
     struct flb_fstore_stream *fs_stream;
+    flb_sds_t fs_stream_name;
     struct mk_list upload_queue;
     time_t upload_timeout;
     int retry_time;

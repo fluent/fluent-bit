@@ -25,6 +25,35 @@
 #include "gcs.h"
 #include "gcs_store.h"
 
+static void normalize_stream_suffix(char *out, size_t out_size, const char *in)
+{
+    size_t i;
+    char ch;
+
+    if (!out || out_size == 0) {
+        return;
+    }
+
+    if (!in) {
+        out[0] = '\0';
+        return;
+    }
+
+    for (i = 0; i < out_size - 1 && in[i] != '\0'; i++) {
+        ch = in[i];
+        if ((ch >= 'a' && ch <= 'z') ||
+            (ch >= 'A' && ch <= 'Z') ||
+            (ch >= '0' && ch <= '9') ||
+            ch == '_' || ch == '-' || ch == '.') {
+            out[i] = ch;
+        }
+        else {
+            out[i] = '_';
+        }
+    }
+    out[i] = '\0';
+}
+
 static flb_sds_t gen_store_filename(void)
 {
     unsigned long hash;
@@ -54,22 +83,53 @@ static flb_sds_t gen_store_filename(void)
 
 int gcs_store_init(struct flb_gcs *ctx)
 {
+    const char *instance_name;
+    char stream_suffix[96];
+    flb_sds_t stream_name;
+
+    stream_name = flb_sds_create_size(64);
+    if (!stream_name) {
+       flb_errno();
+       return -1;
+    }
+
     ctx->fs = flb_fstore_create(ctx->store_dir, FLB_FSTORE_FS);
     if (!ctx->fs) {
         return -1;
     }
 
-    ctx->fs_stream = flb_fstore_stream_create(ctx->fs, "gcs_upload_buffer");
-    if (!ctx->fs_stream) {
+    instance_name = ctx->ins->alias ? ctx->ins->alias : ctx->ins->name;
+    normalize_stream_suffix(stream_suffix, sizeof(stream_suffix), instance_name);
+
+    flb_sds_printf(&stream_name, "gcs_upload_buffer_%s", stream_suffix);
+    if (!stream_name) {
         flb_fstore_destroy(ctx->fs);
         ctx->fs = NULL;
+
         return -1;
     }
+
+    ctx->fs_stream_name = stream_name;
+    ctx->fs_stream = flb_fstore_stream_create(ctx->fs, ctx->fs_stream_name);
+    if (!ctx->fs_stream) {
+        flb_sds_destroy(ctx->fs_stream_name);
+        ctx->fs_stream_name = NULL;
+        flb_fstore_destroy(ctx->fs);
+        ctx->fs = NULL;
+
+        return -1;
+    }
+
     return 0;
 }
 
 int gcs_store_exit(struct flb_gcs *ctx)
 {
+    if (ctx->fs_stream_name) {
+        flb_sds_destroy(ctx->fs_stream_name);
+        ctx->fs_stream_name = NULL;
+    }
+
     if (ctx->fs) {
         flb_fstore_destroy(ctx->fs);
     }
