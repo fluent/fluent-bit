@@ -123,6 +123,7 @@ DEFINE_OPTION(FLB_OUT_EXIT                    "Enable Exit output plugin"       
 DEFINE_OPTION(FLB_OUT_FILE                    "Enable file output plugin"                    ON)
 DEFINE_OPTION(FLB_OUT_FLOWCOUNTER             "Enable flowcount output plugin"               ON)
 DEFINE_OPTION(FLB_OUT_FORWARD                 "Enable Forward output plugin"                 ON)
+DEFINE_OPTION(FLB_OUT_GCS                     "Enable GCS output plugin"                     ON)
 DEFINE_OPTION(FLB_OUT_GELF                    "Enable GELF output plugin"                    ON)
 DEFINE_OPTION(FLB_OUT_HTTP                    "Enable HTTP output plugin"                    ON)
 DEFINE_OPTION(FLB_OUT_INFLUXDB                "Enable InfluxDB output plugin"                ON)

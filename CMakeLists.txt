@@ -374,6 +374,7 @@ if(FLB_ALL)
   # Output plugins
   set(FLB_OUT_ES          1)
   set(FLB_OUT_FORWARD     1)
+  set(FLB_OUT_GCS         1)
   set(FLB_OUT_GELF        1)
   set(FLB_OUT_HTTP        1)
   set(FLB_OUT_NATS        1)
