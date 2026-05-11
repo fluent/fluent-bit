@@ -53,34 +53,6 @@ static struct flb_aws_header *get_content_encoding_header(int compression_type)
     }
 }
 
-static struct flb_aws_header content_type_header = {
-    .key = "Content-Type",
-    .key_len = 12,
-    .val = "",
-    .val_len = 0,
-};
-
-static struct flb_aws_header canned_acl_header = {
-    .key = "x-goog-acl",
-    .key_len = 10,
-    .val = "",
-    .val_len = 0,
-};
-
-static struct flb_aws_header content_md5_header = {
-    .key = "Content-MD5",
-    .key_len = 11,
-    .val = "",
-    .val_len = 0,
-};
-
-static struct flb_aws_header storage_class_header = {
-    .key = "x-goog-storage-class",
-    .key_len = 20,
-    .val = "",
-    .val_len = 0,
-};
-
 static inline int key_cmp(char *str, int len, char *cmp) {
     if (strlen(cmp) != len) {
         return -1;
@@ -590,7 +562,10 @@ static int add_to_queue(struct flb_gcs *ctx, struct gcs_file *chunk,
 
     entry->upload_file = chunk;
     entry->tag_len = tag_len;
-    entry->upload_time = time(NULL) + ctx->upload_timeout;
+    entry->upload_time = chunk->create_time + ctx->upload_timeout;
+    if (entry->upload_time < time(NULL)) {
+        entry->upload_time = time(NULL);
+    }
     mk_list_add(&entry->_head, &ctx->upload_queue);
     return 0;
 }
@@ -660,6 +635,22 @@ static int gcs_upload_object(struct flb_gcs *ctx,
     struct flb_connection *u_conn;
     struct flb_http_client *c;
     struct flb_aws_header *encoding_header;
+    struct flb_aws_header content_type_header = {
+        .key = "Content-Type",
+        .key_len = 12
+    };
+    struct flb_aws_header canned_acl_header = {
+        .key = "x-goog-acl",
+        .key_len = 10
+    };
+    struct flb_aws_header content_md5_header = {
+        .key = "Content-MD5",
+        .key_len = 11
+    };
+    struct flb_aws_header storage_class_header = {
+        .key = "x-goog-storage-class",
+        .key_len = 20
+    };
     char final_body_md5[25];
 
     if (gcs_under_test_mode() == FLB_TRUE) {
@@ -719,6 +710,13 @@ static int gcs_upload_object(struct flb_gcs *ctx,
     }
 
     ret = flb_http_do(c, &bytes);
+    if (ret == 0 &&
+        (c->resp.status < 200 || c->resp.status >= 300)) {
+        flb_plg_error(ctx->ins,
+                      "gcs upload failed with status=%i",
+                      c->resp.status);
+        ret = -1;
+    }
     flb_http_client_destroy(c);
     flb_upstream_conn_release(u_conn);
 
@@ -754,9 +752,16 @@ static int upload_data(struct flb_gcs *ctx,
         return -1;
     }
 
+    if (ctx->key_fmt_has_seq_index) {
+        ctx->seq_index++;
+    }
+
     gcs_key = flb_get_s3_key(ctx->gcs_key_format, time(NULL),
-                             entry->tag, ctx->tag_delimiters, 0);
+                             entry->tag, ctx->tag_delimiters, ctx->seq_index);
     if (!gcs_key) {
+        if (ctx->key_fmt_has_seq_index && ctx->seq_index > 0) {
+            ctx->seq_index--;
+        }
         flb_sds_destroy(auth);
         return -1;
     }
@@ -771,12 +776,18 @@ static int upload_data(struct flb_gcs *ctx,
             gcs_key_final = flb_sds_create_size(flb_sds_len(gcs_key) + 16);
             if (!gcs_key_final) {
                 flb_errno();
+                if (ctx->key_fmt_has_seq_index && ctx->seq_index > 0) {
+                    ctx->seq_index--;
+                }
                 flb_sds_destroy(auth);
                 flb_sds_destroy(gcs_key);
                 return -1;
             }
             flb_sds_printf(&gcs_key_final, "%s-object%s", gcs_key, random_hex);
             if (!gcs_key_final) {
+                if (ctx->key_fmt_has_seq_index && ctx->seq_index > 0) {
+                    ctx->seq_index--;
+                }
                 flb_sds_destroy(auth);
                 flb_sds_destroy(gcs_key);
                 return -1;
@@ -786,7 +797,6 @@ static int upload_data(struct flb_gcs *ctx,
     }
 
     if (ctx->key_fmt_has_seq_index) {
-        ctx->seq_index++;
         ret_seq = write_seq_index(ctx->seq_index_file, ctx->seq_index);
         if (ret_seq == -1) {
             flb_sds_destroy(auth);
@@ -1082,6 +1092,9 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
     }
 
     ctx->o = flb_oauth2_create(config, FLB_GCS_AUTH_URL, FLB_GCS_TOKEN_REFRESH);
+    if (!ctx->o) {
+        goto error;
+    }
     if (pthread_mutex_init(&ctx->token_mutex, NULL) == 0) {
         ctx->token_mutex_initialized = FLB_TRUE;
     }
@@ -1090,6 +1103,9 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
     }
     ctx->u = flb_upstream_create(config, FLB_GCS_DEFAULT_HOST, FLB_GCS_DEFAULT_PORT,
                                  FLB_IO_TLS, ins->tls);
+    if (!ctx->u) {
+        goto error;
+    }
     ctx->out_format = FLB_PACK_JSON_FORMAT_LINES;
     ctx->json_date_format = FLB_PACK_JSON_DATE_DOUBLE;
     if (ctx->content_type == NULL) {
