@@ -979,9 +979,9 @@ static int fw_process_forward_mode_entry(
     }
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
-        flb_input_log_append(conn->ctx->ins, tag, tag_len,
-                             conn->ctx->log_encoder->output_buffer,
-                             conn->ctx->log_encoder->output_length);
+        fw_ingest_logs(conn->ctx, tag, tag_len,
+                       conn->ctx->log_encoder->output_buffer,
+                       conn->ctx->log_encoder->output_length);
     }
 
     flb_log_event_encoder_reset(conn->ctx->log_encoder);
@@ -1050,9 +1050,9 @@ static int fw_process_message_mode_entry(
     }
 
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
-        flb_input_log_append(in, tag, tag_len,
-                             conn->ctx->log_encoder->output_buffer,
-                             conn->ctx->log_encoder->output_length);
+        fw_ingest_logs(conn->ctx, tag, tag_len,
+                       conn->ctx->log_encoder->output_buffer,
+                       conn->ctx->log_encoder->output_length);
     }
 
     flb_log_event_encoder_reset(conn->ctx->log_encoder);
@@ -1120,9 +1120,9 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
     struct ctrace *ctr;
 
     if (event_type == FLB_EVENT_TYPE_LOGS) {
-        ret = flb_input_log_append(conn->in,
-                                   out_tag, flb_sds_len(out_tag),
-                                   data, len);
+        ret = fw_ingest_logs(conn->ctx,
+                             out_tag, flb_sds_len(out_tag),
+                             data, len);
         if (ret != 0) {
             flb_plg_error(ins, "could not append logs. ret=%d", ret);
             return -1;
@@ -1137,15 +1137,20 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
             return -1;
         }
 
-        ret = flb_input_metrics_append(conn->in,
-                                       out_tag, flb_sds_len(out_tag),
-                                       cmt);
+        ret = fw_ingest_metrics(conn->ctx,
+                                out_tag, flb_sds_len(out_tag),
+                                cmt);
         if (ret != 0) {
             flb_plg_error(ins, "could not append metrics. ret=%d", ret);
-            cmt_decode_msgpack_destroy(cmt);
+            if (conn->ctx->use_ingress_queue == FLB_FALSE) {
+                cmt_decode_msgpack_destroy(cmt);
+            }
             return -1;
         }
-        cmt_decode_msgpack_destroy(cmt);
+
+        if (conn->ctx->use_ingress_queue == FLB_FALSE) {
+            cmt_decode_msgpack_destroy(cmt);
+        }
     }
     else if (event_type == FLB_EVENT_TYPE_TRACES) {
         off = 0;
@@ -1155,12 +1160,14 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
             return -1;
         }
 
-        ret = flb_input_trace_append(ins,
-                                     out_tag, flb_sds_len(out_tag),
-                                     ctr);
+        ret = fw_ingest_traces(conn->ctx,
+                               out_tag, flb_sds_len(out_tag),
+                               ctr);
         if (ret != 0) {
             flb_plg_error(ins, "could not append traces. ret=%d", ret);
-            ctr_decode_msgpack_destroy(ctr);
+            if (conn->ctx->use_ingress_queue == FLB_FALSE) {
+                ctr_decode_msgpack_destroy(ctr);
+            }
             return -1;
         }
         /* Note: flb_input_trace_append takes ownership of ctr and destroys it on success */

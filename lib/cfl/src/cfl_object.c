@@ -18,6 +18,7 @@
  */
 
 #include "cfl/cfl.h"
+#include <cfl/cfl_container.h>
 
 /* CFL Object
  * ==========
@@ -43,38 +44,207 @@ struct cfl_object *cfl_object_create()
     return o;
 }
 
+static int reuses_current_root(struct cfl_object *o, int type, void *ptr)
+{
+    if (o->variant == NULL) {
+        return CFL_FALSE;
+    }
+
+    if (type == CFL_OBJECT_KVLIST &&
+        o->variant->type == CFL_VARIANT_KVLIST &&
+        o->variant->data.as_kvlist == ptr) {
+        return CFL_TRUE;
+    }
+
+    if (type == CFL_OBJECT_ARRAY &&
+        o->variant->type == CFL_VARIANT_ARRAY &&
+        o->variant->data.as_array == ptr) {
+        return CFL_TRUE;
+    }
+
+    if (type == CFL_OBJECT_VARIANT && o->variant == ptr) {
+        return CFL_TRUE;
+    }
+
+    return CFL_FALSE;
+}
+
+static int kvlist_contains_current(struct cfl_kvlist *kvlist,
+                                   struct cfl_variant *current)
+{
+    if (cfl_container_kvlist_contains_variant(kvlist, current)) {
+        return CFL_TRUE;
+    }
+
+    if (current->type == CFL_VARIANT_KVLIST &&
+        cfl_container_kvlist_contains_kvlist(kvlist,
+                                             current->data.as_kvlist)) {
+        return CFL_TRUE;
+    }
+
+    if (current->type == CFL_VARIANT_ARRAY &&
+        cfl_container_kvlist_contains_array(kvlist,
+                                            current->data.as_array)) {
+        return CFL_TRUE;
+    }
+
+    return CFL_FALSE;
+}
+
+static int array_contains_current(struct cfl_array *array,
+                                  struct cfl_variant *current)
+{
+    if (cfl_container_array_contains_variant(array, current)) {
+        return CFL_TRUE;
+    }
+
+    if (current->type == CFL_VARIANT_KVLIST &&
+        cfl_container_array_contains_kvlist(array,
+                                            current->data.as_kvlist)) {
+        return CFL_TRUE;
+    }
+
+    if (current->type == CFL_VARIANT_ARRAY &&
+        cfl_container_array_contains_array(array,
+                                           current->data.as_array)) {
+        return CFL_TRUE;
+    }
+
+    return CFL_FALSE;
+}
+
+static int variant_contains_current(struct cfl_variant *variant,
+                                    struct cfl_variant *current)
+{
+    if (cfl_container_variant_contains_variant(variant, current)) {
+        return CFL_TRUE;
+    }
+
+    if (current->type == CFL_VARIANT_KVLIST &&
+        cfl_container_variant_contains_kvlist(variant,
+                                              current->data.as_kvlist)) {
+        return CFL_TRUE;
+    }
+
+    if (current->type == CFL_VARIANT_ARRAY &&
+        cfl_container_variant_contains_array(variant,
+                                             current->data.as_array)) {
+        return CFL_TRUE;
+    }
+
+    return CFL_FALSE;
+}
+
+static int current_contains_candidate(struct cfl_variant *current,
+                                      int type, void *ptr)
+{
+    struct cfl_variant *variant;
+
+    if (type == CFL_OBJECT_KVLIST) {
+        return cfl_container_variant_contains_kvlist(current, ptr);
+    }
+
+    if (type == CFL_OBJECT_ARRAY) {
+        return cfl_container_variant_contains_array(current, ptr);
+    }
+
+    if (type == CFL_OBJECT_VARIANT) {
+        variant = ptr;
+
+        if (cfl_container_variant_contains_variant(current, variant)) {
+            return CFL_TRUE;
+        }
+
+        if (variant->type == CFL_VARIANT_KVLIST &&
+            cfl_container_variant_contains_kvlist(current,
+                                                  variant->data.as_kvlist)) {
+            return CFL_TRUE;
+        }
+
+        if (variant->type == CFL_VARIANT_ARRAY &&
+            cfl_container_variant_contains_array(current,
+                                                 variant->data.as_array)) {
+            return CFL_TRUE;
+        }
+    }
+
+    return CFL_FALSE;
+}
+
+static int candidate_contains_current(struct cfl_variant *current,
+                                      int type, void *ptr)
+{
+    if (type == CFL_OBJECT_KVLIST) {
+        return kvlist_contains_current(ptr, current);
+    }
+
+    if (type == CFL_OBJECT_ARRAY) {
+        return array_contains_current(ptr, current);
+    }
+
+    if (type == CFL_OBJECT_VARIANT) {
+        return variant_contains_current(ptr, current);
+    }
+
+    return CFL_FALSE;
+}
+
 /*
  * Associate a CFL data type to the object. We only support kvlist, array and variant. Note
  * that everything is held as a variant internally.
  */
 int cfl_object_set(struct cfl_object *o, int type, void *ptr)
 {
-    if (!o) {
+    struct cfl_variant *variant;
+
+    if (!o || !ptr) {
         return -1;
     }
 
+    if (o->variant != NULL) {
+        if (reuses_current_root(o, type, ptr)) {
+            o->type = type;
+            return 0;
+        }
+
+        if (current_contains_candidate(o->variant, type, ptr) ||
+            candidate_contains_current(o->variant, type, ptr)) {
+            return -1;
+        }
+    }
+
     if (type == CFL_OBJECT_KVLIST) {
-        o->type = CFL_OBJECT_KVLIST;
-        o->variant = cfl_variant_create_from_kvlist(ptr);
+        variant = cfl_variant_create_from_kvlist(ptr);
     }
     else if (type == CFL_OBJECT_VARIANT) {
-        o->type = CFL_OBJECT_VARIANT;
-        o->variant = ptr;
+        variant = ptr;
     }
     else if (type == CFL_OBJECT_ARRAY) {
-        o->type = CFL_OBJECT_ARRAY;
-        o->variant = cfl_variant_create_from_array(ptr);
+        variant = cfl_variant_create_from_array(ptr);
     }
     else {
         return -1;
     }
+
+    if (variant == NULL) {
+        return -1;
+    }
+
+    if (o->variant != NULL && o->variant != variant) {
+        cfl_variant_destroy(o->variant);
+    }
+
+    o->type = type;
+    o->variant = variant;
 
     return 0;
 }
 
 int cfl_object_print(FILE *stream, struct cfl_object *o)
 {
-    if (!o) {
+    int ret;
+
+    if (stream == NULL || o == NULL) {
         return -1;
     }
 
@@ -82,8 +252,14 @@ int cfl_object_print(FILE *stream, struct cfl_object *o)
         return -1;
     }
 
-    cfl_variant_print(stream, o->variant);
-    printf("\n");
+    ret = cfl_variant_print(stream, o->variant);
+    if (ret < 0) {
+        return -1;
+    }
+
+    if (fputc('\n', stream) == EOF) {
+        return -1;
+    }
 
     return 0;
 }

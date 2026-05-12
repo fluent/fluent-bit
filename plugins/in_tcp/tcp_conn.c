@@ -140,9 +140,15 @@ static inline int process_pack(struct tcp_conn *conn,
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         if (ctx->log_encoder->output_length > 0) {
-            flb_input_log_append(conn->ins, NULL, 0,
-                                 ctx->log_encoder->output_buffer,
-                                 ctx->log_encoder->output_length);
+            ret = tcp_ingest_logs(ctx,
+                                  ctx->log_encoder->output_buffer,
+                                  ctx->log_encoder->output_length);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins,
+                              "could not append TCP logs for %s:%s. ret=%d",
+                              ctx->listen, ctx->tcp_port, ret);
+                return -1;
+            }
         }
         ret = 0;
     }
@@ -384,9 +390,15 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
         if (ctx->log_encoder->output_length > 0) {
-            flb_input_log_append(conn->ins, NULL, 0,
-                                 ctx->log_encoder->output_buffer,
-                                 ctx->log_encoder->output_length);
+            ret = tcp_ingest_logs(ctx,
+                                  ctx->log_encoder->output_buffer,
+                                  ctx->log_encoder->output_length);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins,
+                              "could not append TCP logs for %s:%s. ret=%d",
+                              ctx->listen, ctx->tcp_port, ret);
+                return -1;
+            }
         }
     }
     else {

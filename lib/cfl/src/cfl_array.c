@@ -21,9 +21,14 @@
 #include <cfl/cfl_array.h>
 #include <cfl/cfl_variant.h>
 
+#include <stdint.h>
+
+#include <cfl/cfl_container.h>
+
 struct cfl_array *cfl_array_create(size_t slot_count)
 {
     struct cfl_array *array;
+    size_t alloc_count;
 
     array = malloc(sizeof(struct cfl_array));
     if (array == NULL) {
@@ -35,7 +40,16 @@ struct cfl_array *cfl_array_create(size_t slot_count)
     array->resizable = CFL_FALSE;
 
     /* allocate fixed number of entries */
-    array->entries = calloc(slot_count, sizeof(void *));
+    alloc_count = slot_count;
+    if (alloc_count == 0) {
+        alloc_count = 1;
+    }
+    if (alloc_count > SIZE_MAX / sizeof(void *)) {
+        free(array);
+        return NULL;
+    }
+
+    array->entries = calloc(alloc_count, sizeof(void *));
     if (array->entries == NULL) {
         cfl_errno();
         free(array);
@@ -70,6 +84,10 @@ void cfl_array_destroy(struct cfl_array *array)
 
 int cfl_array_resizable(struct cfl_array *array, int v)
 {
+    if (array == NULL) {
+        return -1;
+    }
+
     if (v != CFL_TRUE && v != CFL_FALSE) {
         return -1;
     }
@@ -81,6 +99,10 @@ int cfl_array_resizable(struct cfl_array *array, int v)
 int cfl_array_remove_by_index(struct cfl_array *array,
                               size_t position)
 {
+    if (array == NULL) {
+        return -1;
+    }
+
     if (position >= array->entry_count) {
         return -1;
     }
@@ -105,6 +127,10 @@ int cfl_array_remove_by_reference(struct cfl_array *array,
 {
     size_t index;
 
+    if (array == NULL || value == NULL) {
+        return -1;
+    }
+
     for (index = 0 ; index < array->entry_count ; index++) {
         if (array->entries[index] == value) {
             return cfl_array_remove_by_index(array, index);
@@ -120,6 +146,32 @@ int cfl_array_append(struct cfl_array *array,
     void *tmp;
     size_t new_slot_count;
     size_t new_size;
+    size_t base_slot_count;
+
+    if (array == NULL || value == NULL) {
+        return -1;
+    }
+
+    if (cfl_container_array_contains_variant(array, value)) {
+        return -1;
+    }
+
+    /* Only container-valued variants can participate in container cycles. */
+    if (value->type == CFL_VARIANT_ARRAY || value->type == CFL_VARIANT_KVLIST) {
+        if (cfl_container_variant_contains_array(value, array)) {
+            return -1;
+        }
+
+        if (value->type == CFL_VARIANT_ARRAY &&
+            cfl_container_array_contains_array(array, value->data.as_array)) {
+            return -1;
+        }
+
+        if (value->type == CFL_VARIANT_KVLIST &&
+            cfl_container_array_contains_kvlist(array, value->data.as_kvlist)) {
+            return -1;
+        }
+    }
 
     if (array->entry_count >= array->slot_count) {
         /*
@@ -129,17 +181,21 @@ int cfl_array_append(struct cfl_array *array,
          * it controls the input data.
          */
         if (array->resizable) {
-
-            /*
-             * if the array size is zero (created as an array of 0 slots),
-             * change the size to 1 so the resize can work properly
-             */
-            if (array->slot_count == 0) {
-                array->slot_count = 1;
+            base_slot_count = array->slot_count;
+            if (base_slot_count == 0) {
+                base_slot_count = 1;
             }
 
             /* set new number of slots and total size */
-            new_slot_count = (array->slot_count * 2);
+            if (base_slot_count > SIZE_MAX / 2) {
+                return -1;
+            }
+
+            new_slot_count = (base_slot_count * 2);
+            if (new_slot_count > SIZE_MAX / sizeof(void *)) {
+                return -1;
+            }
+
             new_size = (new_slot_count * sizeof(void *));
 
             tmp = realloc(array->entries, new_size);
@@ -360,6 +416,15 @@ int cfl_array_append_array(struct cfl_array *array, struct cfl_array *value)
     struct cfl_variant *value_instance;
     int                 result;
 
+    if (array == NULL || value == NULL) {
+        return -1;
+    }
+
+    if (cfl_container_array_contains_array(array, value) ||
+        cfl_container_array_contains_array(value, array)) {
+        return -1;
+    }
+
     value_instance = cfl_variant_create_from_array(value);
 
     if (value_instance == NULL) {
@@ -381,6 +446,10 @@ int cfl_array_append_new_array(struct cfl_array *array, size_t size)
     int               result;
     struct cfl_array *value;
 
+    if (array == NULL) {
+        return -1;
+    }
+
     value = cfl_array_create(size);
 
     if (value == NULL) {
@@ -388,8 +457,7 @@ int cfl_array_append_new_array(struct cfl_array *array, size_t size)
     }
 
     result = cfl_array_append_array(array, value);
-
-    if (result) {
+    if (result == -1) {
         cfl_array_destroy(value);
     }
 
@@ -400,6 +468,15 @@ int cfl_array_append_kvlist(struct cfl_array *array, struct cfl_kvlist *value)
 {
     struct cfl_variant *value_instance;
     int                 result;
+
+    if (array == NULL || value == NULL) {
+        return -1;
+    }
+
+    if (cfl_container_array_contains_kvlist(array, value) ||
+        cfl_container_kvlist_contains_array(value, array)) {
+        return -1;
+    }
 
     value_instance = cfl_variant_create_from_kvlist(value);
     if (value_instance == NULL) {
@@ -429,17 +506,36 @@ int cfl_array_print(FILE *fp, struct cfl_array *array)
 
     size = array->entry_count;
     if (size == 0) {
-        fputs("[]", fp);
+        if (fputs("[]", fp) == EOF) {
+            return -1;
+        }
+
         return 0;
     }
 
-    fputs("[", fp);
+    if (fputc('[', fp) == EOF) {
+        return -1;
+    }
+
     for (i=0; i<size-1; i++) {
         ret = cfl_variant_print(fp, array->entries[i]);
-        fputs(",", fp);
+        if (ret < 0) {
+            return -1;
+        }
+
+        if (fputc(',', fp) == EOF) {
+            return -1;
+        }
     }
+
     ret = cfl_variant_print(fp, array->entries[size-1]);
-    fputs("]", fp);
+    if (ret < 0) {
+        return -1;
+    }
+
+    if (fputc(']', fp) == EOF) {
+        return -1;
+    }
 
     return ret;
 }
