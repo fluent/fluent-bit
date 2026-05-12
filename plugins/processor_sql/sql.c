@@ -679,7 +679,7 @@ static int cb_process_logs(struct flb_processor_instance *ins,
 static struct flb_config_map config_map[] = {
     {
         FLB_CONFIG_MAP_STR, "query", NULL,
-        0, FLB_TRUE, offsetof(struct sql_ctx, query_str),
+        FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct sql_ctx, query_str),
         "SQL query for data selection."
     },
 
@@ -698,4 +698,3 @@ struct flb_processor_plugin processor_sql_plugin = {
     .config_map         = config_map,
     .flags              = 0
 };
-
