@@ -1212,7 +1212,8 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "metric_description", NULL,
-     0, FLB_TRUE, offsetof(struct log_to_metrics_ctx, metric_description),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE,
+     offsetof(struct log_to_metrics_ctx, metric_description),
      "Help text for metric"
     },
     {
@@ -1237,7 +1238,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "tag", NULL,
-     0, FLB_TRUE, offsetof(struct log_to_metrics_ctx, tag),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct log_to_metrics_ctx, tag),
      "Metric Tag"
     },
     {
