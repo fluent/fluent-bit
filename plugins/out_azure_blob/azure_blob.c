@@ -2445,13 +2445,14 @@ static int cb_worker_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "account_name", NULL,
-     0, FLB_TRUE, offsetof(struct flb_azure_blob, account_name),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_azure_blob, account_name),
      "Azure account name (mandatory)"
     },
 
     {
      FLB_CONFIG_MAP_STR, "container_name", NULL,
-     0, FLB_TRUE, offsetof(struct flb_azure_blob, container_name),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE,
+     offsetof(struct flb_azure_blob, container_name),
      "Container name (mandatory)"
     },
 
