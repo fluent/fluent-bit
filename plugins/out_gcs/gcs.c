@@ -74,6 +74,14 @@ static int gcs_under_test_mode(void)
     return FLB_FALSE;
 }
 
+static int gcs_setenv(const char *key, const char *val)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    return _putenv_s(key, val);
+#else
+    return setenv(key, val, 1);
+#endif
+}
 
 static void mock_gcs_call_increment_counter(const char *api)
 {
@@ -87,7 +95,7 @@ static void mock_gcs_call_increment_counter(const char *api)
     count = val ? atoi(val) : 0;
     count++;
     snprintf(buf, sizeof(buf), "%d", count);
-    setenv(env_var, buf, 1);
+    gcs_setenv(env_var, buf);
 }
 
 static int read_seq_index(const char *path, uint64_t *out_value)
