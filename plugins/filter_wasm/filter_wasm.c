@@ -459,7 +459,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "wasm_path", NULL,
-     0, FLB_TRUE, offsetof(struct flb_filter_wasm, wasm_path),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_filter_wasm, wasm_path),
      "Set the wasm path to execute"
     },
     {
@@ -470,7 +470,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "function_name", NULL,
-     0, FLB_TRUE, offsetof(struct flb_filter_wasm, wasm_function_name),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_filter_wasm, wasm_function_name),
      "Set the function name in wasm to execute"
     },
     {
