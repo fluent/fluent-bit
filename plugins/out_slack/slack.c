@@ -317,7 +317,7 @@ static int cb_slack_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
         FLB_CONFIG_MAP_STR, "webhook", NULL,
-        0, FLB_TRUE, offsetof(struct flb_slack, webhook),
+        FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_slack, webhook),
         NULL
     },
 
