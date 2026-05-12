@@ -20,8 +20,9 @@
 #ifndef FLB_DOWNSTREAM_WORKER_H
 #define FLB_DOWNSTREAM_WORKER_H
 
-#include <stdatomic.h>
 #include <pthread.h>
+
+#include <cfl/cfl_atomic.h>
 
 #include <fluent-bit/flb_config.h>
 
@@ -56,7 +57,7 @@ struct flb_downstream_worker {
     pthread_t thread;
     pthread_mutex_t mutex;
     pthread_cond_t condition;
-    atomic_int should_exit;
+    uint64_t should_exit;
     int initialized;
     int thread_created;
     int startup_result;

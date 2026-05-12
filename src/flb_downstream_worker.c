@@ -82,7 +82,7 @@ signal_and_exit:
         goto cleanup;
     }
 
-    while (atomic_load(&worker->should_exit) == FLB_FALSE) {
+    while (cfl_atomic_load(&worker->should_exit) == FLB_FALSE) {
         mk_event_wait_2(worker->event_loop, 250);
 
         mk_event_foreach(event, worker->event_loop) {
@@ -194,7 +194,7 @@ void flb_downstream_worker_runtime_stop(struct flb_downstream_worker_runtime *ru
     }
 
     for (i = 0; i < runtime->active_workers; i++) {
-        atomic_store(&runtime->workers[i].should_exit, FLB_TRUE);
+        cfl_atomic_store(&runtime->workers[i].should_exit, FLB_TRUE);
         if (runtime->workers[i].thread_created == FLB_TRUE) {
             pthread_join(runtime->workers[i].thread, NULL);
         }
