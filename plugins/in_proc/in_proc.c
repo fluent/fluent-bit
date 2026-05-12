@@ -513,7 +513,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "proc_name", NULL,
-     0, FLB_TRUE, offsetof(struct flb_in_proc_config, proc_name),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_in_proc_config, proc_name),
      "Define process name to health check"
     },
     /* EOF */
