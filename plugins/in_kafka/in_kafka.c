@@ -523,7 +523,7 @@ static struct flb_config_map config_map[] = {
    },
    {
     FLB_CONFIG_MAP_STR, "topics", (char *)NULL,
-    0, FLB_FALSE, 0,
+    FLB_CONFIG_MAP_REQUIRED, FLB_FALSE, 0,
     "Set the kafka topics, delimited by commas."
    },
    {
@@ -533,7 +533,7 @@ static struct flb_config_map config_map[] = {
    },
    {
     FLB_CONFIG_MAP_STR, "brokers", (char *)NULL,
-    0, FLB_FALSE, 0,
+    FLB_CONFIG_MAP_REQUIRED, FLB_FALSE, 0,
     "Set the kafka brokers, delimited by commas."
    },
    {
