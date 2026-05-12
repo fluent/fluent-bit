@@ -274,7 +274,8 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "socket_path", (char *)NULL,
-     0, FLB_TRUE, offsetof(struct flb_in_unix_socket_config, listen),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE,
+     offsetof(struct flb_in_unix_socket_config, listen),
      "Unix socket path"
     },
     {
