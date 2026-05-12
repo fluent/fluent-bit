@@ -120,7 +120,7 @@ static int collect_container_data(struct flb_in_metrics *ctx)
                     }
                     else {
                         strncpy(image_name, "unknown", IMAGE_NAME_SIZE - 1);
-                        image_name[7] = '\0';
+                        image_name[sizeof("unknown") - 1] = '\0';
                     }
 
                     flb_plg_trace(ctx->ins, "Found image name %s", image_name);
