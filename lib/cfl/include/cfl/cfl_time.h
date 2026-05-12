@@ -20,7 +20,7 @@
 #ifndef CFL_TIME_H
 #define CFL_TIME_H
 
-#include <cfl/cfl.h>
+#include <stdint.h>
 
 uint64_t cfl_time_now();
 

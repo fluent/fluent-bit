@@ -27,12 +27,18 @@
 #include <string.h>
 #include <stdarg.h>
 #include <inttypes.h>
+#include <limits.h>
+#include <stdint.h>
 
 #include <cfl/cfl_sds.h>
 
 size_t cfl_sds_avail(cfl_sds_t s)
 {
     struct cfl_sds *h;
+
+    if (s == NULL) {
+        return 0;
+    }
 
     h = CFL_SDS_HEADER(s);
     return (size_t) (h->alloc - h->len);
@@ -43,6 +49,10 @@ static cfl_sds_t sds_alloc(size_t size)
     void *buf;
     cfl_sds_t s;
     struct cfl_sds *head;
+
+    if (size > SIZE_MAX - CFL_SDS_HEADER_SIZE - 1) {
+        return NULL;
+    }
 
     buf = malloc(CFL_SDS_HEADER_SIZE + size + 1);
     if (!buf) {
@@ -61,6 +71,10 @@ static cfl_sds_t sds_alloc(size_t size)
 
 size_t cfl_sds_alloc(cfl_sds_t s)
 {
+    if (s == NULL) {
+        return 0;
+    }
+
     return (size_t) CFL_SDS_HEADER(s)->alloc;
 }
 
@@ -71,9 +85,31 @@ cfl_sds_t cfl_sds_increase(cfl_sds_t s, size_t len)
     cfl_sds_t out;
     void *tmp;
 
+    if (s == NULL) {
+        return NULL;
+    }
+
     out = s;
-    new_size = (CFL_SDS_HEADER_SIZE + cfl_sds_alloc(s) + len + 1);
     head = CFL_SDS_HEADER(s);
+
+    if (len == 0) {
+        return s;
+    }
+
+    if (head->alloc > UINT64_MAX - len) {
+        return NULL;
+    }
+
+    if (cfl_sds_alloc(s) > SIZE_MAX - len) {
+        return NULL;
+    }
+
+    new_size = cfl_sds_alloc(s) + len;
+    if (new_size > SIZE_MAX - CFL_SDS_HEADER_SIZE - 1) {
+        return NULL;
+    }
+    new_size += CFL_SDS_HEADER_SIZE + 1;
+
     tmp = realloc(head, new_size);
     if (!tmp) {
         return NULL;
@@ -87,6 +123,10 @@ cfl_sds_t cfl_sds_increase(cfl_sds_t s, size_t len)
 
 size_t cfl_sds_len(cfl_sds_t s)
 {
+    if (s == NULL) {
+        return 0;
+    }
+
     return (size_t) CFL_SDS_HEADER(s)->len;
 }
 
@@ -94,6 +134,10 @@ cfl_sds_t cfl_sds_create_len(const char *str, int len)
 {
     cfl_sds_t s;
     struct cfl_sds *head;
+
+    if (len < 0) {
+        return NULL;
+    }
 
     s = sds_alloc(len);
     if (!s) {
@@ -119,9 +163,12 @@ cfl_sds_t cfl_sds_create(const char *str)
     }
     else {
         len = strlen(str);
+        if (len > INT_MAX) {
+            return NULL;
+        }
     }
 
-    return cfl_sds_create_len(str, len);
+    return cfl_sds_create_len(str, (int) len);
 }
 
 void cfl_sds_destroy(cfl_sds_t s)
@@ -139,21 +186,72 @@ void cfl_sds_destroy(cfl_sds_t s)
 cfl_sds_t cfl_sds_cat(cfl_sds_t s, const char *str, int len)
 {
     size_t avail;
+    size_t append_len;
+    size_t source_offset;
+    uintptr_t buffer_addr;
+    uintptr_t source_addr;
     struct cfl_sds *head;
     cfl_sds_t tmp = NULL;
+    const char *source;
+    int source_in_buffer;
+
+    if (s == NULL || str == NULL || len < 0) {
+        return NULL;
+    }
+
+    if (len == 0) {
+        return s;
+    }
+
+    append_len = (size_t) len;
+    head = CFL_SDS_HEADER(s);
+    if (head->len > head->alloc || head->len > SIZE_MAX - append_len - 1) {
+        return NULL;
+    }
+
+    source = str;
+    source_in_buffer = 0;
+    source_offset = 0;
+
+    /*
+     * This flat-address check lets self-appends survive realloc. If the
+     * source starts inside the SDS buffer, the whole source slice must also
+     * fit in that allocation.
+     */
+    buffer_addr = (uintptr_t) s;
+    source_addr = (uintptr_t) str;
+    if (source_addr >= buffer_addr &&
+        (source_addr - buffer_addr) <= head->alloc) {
+        source_offset = (size_t) (source_addr - buffer_addr);
+
+        if (append_len - 1 > head->alloc - source_offset) {
+            return NULL;
+        }
+
+        source_in_buffer = 1;
+    }
 
     avail = cfl_sds_avail(s);
-    if (avail < len) {
-        tmp = cfl_sds_increase(s, len);
+    if (avail < append_len) {
+        tmp = cfl_sds_increase(s, append_len - avail);
         if (!tmp) {
             return NULL;
         }
         s = tmp;
     }
-    memcpy((char *) (s + cfl_sds_len(s)), str, len);
+
+    if (source_in_buffer) {
+        source = s + source_offset;
+    }
 
     head = CFL_SDS_HEADER(s);
-    head->len += len;
+    if (head->len > UINT64_MAX - append_len) {
+        return NULL;
+    }
+
+    memmove((char *) (s + head->len), source, append_len);
+
+    head->len += append_len;
     s[head->len] = '\0';
 
     return s;
@@ -168,13 +266,26 @@ void cfl_sds_set_len(cfl_sds_t s, size_t len)
 {
     struct cfl_sds *head;
 
+    if (s == NULL) {
+        return;
+    }
+
     head = CFL_SDS_HEADER(s);
+    if (len > head->alloc) {
+        return;
+    }
+
     head->len = len;
+    s[len] = '\0';
 }
 
 void cfl_sds_cat_safe(cfl_sds_t *buf, const char *str, int len)
 {
     cfl_sds_t tmp;
+
+    if (buf == NULL || *buf == NULL) {
+        return;
+    }
 
     tmp = cfl_sds_cat(*buf, str, len);
     if (!tmp) {
@@ -186,51 +297,54 @@ void cfl_sds_cat_safe(cfl_sds_t *buf, const char *str, int len)
 cfl_sds_t cfl_sds_printf(cfl_sds_t *sds, const char *fmt, ...)
 {
     va_list ap;
-    int len = strlen(fmt)*2;
+    size_t avail;
+    size_t growth;
+    size_t base_len;
     int size;
     cfl_sds_t tmp = NULL;
     cfl_sds_t s;
     struct cfl_sds *head;
 
-    if (len < 64) len = 64;
-
-    s = *sds;
-    if (cfl_sds_avail(s)< len) {
-        tmp = cfl_sds_increase(s, len);
-        if (!tmp) {
-            return NULL;
-        }
-        *sds = s = tmp;
-    }
-
-    va_start(ap, fmt);
-    size = vsnprintf((char *) (s + cfl_sds_len(s)), cfl_sds_avail(s), fmt, ap);
-    if (size < 0) {
-        va_end(ap);
+    if (sds == NULL || *sds == NULL || fmt == NULL) {
         return NULL;
     }
-    va_end(ap);
 
-    if (size >= cfl_sds_avail(s)) {
-        tmp = cfl_sds_increase(s, size - cfl_sds_avail(s) + 1);
+    s = *sds;
+    base_len = cfl_sds_len(s);
+    if (base_len > cfl_sds_alloc(s)) {
+        return NULL;
+    }
+
+    while (1) {
+        avail = cfl_sds_avail(s);
+        va_start(ap, fmt);
+        size = vsnprintf((char *) (s + base_len), avail + 1, fmt, ap);
+        va_end(ap);
+
+        if (size < 0) {
+            return NULL;
+        }
+
+        if ((size_t) size <= avail) {
+            break;
+        }
+
+        growth = (size_t) size - avail;
+        tmp = cfl_sds_increase(s, growth);
         if (!tmp) {
             return NULL;
         }
-        *sds = s = tmp;
 
-        va_start(ap, fmt);
-        size = vsnprintf((char *) (s + cfl_sds_len(s)), cfl_sds_avail(s), fmt, ap);
-        if (size > cfl_sds_avail(s)) {
-            va_end(ap);
-            return NULL;
-        }
-        va_end(ap);
+        *sds = s = tmp;
     }
 
     head = CFL_SDS_HEADER(s);
-    head->len += size;
+    if (head->len > UINT64_MAX - (size_t) size) {
+        return NULL;
+    }
+
+    head->len += (size_t) size;
     s[head->len] = '\0';
 
     return s;
 }
-

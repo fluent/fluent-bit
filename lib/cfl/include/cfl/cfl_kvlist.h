@@ -21,6 +21,9 @@
 #define CFL_KVLIST_H
 
 #include <stdio.h>
+#include <stddef.h>
+#include <stdint.h>
+
 #include <cfl/cfl_sds.h>
 #include <cfl/cfl_list.h>
 #include <cfl/cfl_variant.h>
@@ -38,6 +41,11 @@ struct cfl_kvlist {
 struct cfl_kvlist *cfl_kvlist_create();
 void cfl_kvlist_destroy(struct cfl_kvlist *list);
 
+/*
+ * Insert APIs take ownership of array, kvlist, and variant values on success.
+ * A value must have a single owning parent; inserting the same pointer into
+ * multiple containers is unsupported and can result in double-free.
+ */
 int cfl_kvlist_insert_string(struct cfl_kvlist *list,
                              char *key, char *value);
 

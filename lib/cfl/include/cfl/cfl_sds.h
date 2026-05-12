@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include <stdint.h>
 
 #define CFL_SDS_HEADER_SIZE (sizeof(uint64_t) + sizeof(uint64_t))
 
@@ -45,7 +46,19 @@ struct cfl_sds {
 
 static inline void cfl_sds_len_set(cfl_sds_t s, size_t len)
 {
-    CFL_SDS_HEADER(s)->len = len;
+    struct cfl_sds *head;
+
+    if (s == NULL) {
+        return;
+    }
+
+    head = CFL_SDS_HEADER(s);
+    if (len > head->alloc) {
+        return;
+    }
+
+    head->len = len;
+    s[len] = '\0';
 }
 
 size_t cfl_sds_avail(cfl_sds_t s);
