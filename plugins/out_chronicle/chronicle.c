@@ -1144,12 +1144,12 @@ static struct flb_config_map config_map[] = {
     },
     {
       FLB_CONFIG_MAP_STR, "customer_id", (char *)NULL,
-      0, FLB_TRUE, offsetof(struct flb_chronicle, customer_id),
+      FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_chronicle, customer_id),
       "Set the customer id"
     },
     {
       FLB_CONFIG_MAP_STR, "log_type", (char *)NULL,
-      0, FLB_TRUE, offsetof(struct flb_chronicle, log_type),
+      FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_chronicle, log_type),
       "Set the log type"
     },
     {
