@@ -1609,13 +1609,13 @@ static struct flb_config_map config_map[] = {
      offsetof(struct flb_azure_kusto, auth_type_str),
      "Set the authentication type: 'service_principal', 'managed_identity', or 'workload_identity'. "
      "For managed_identity, use 'system' as client_id for system-assigned identity, or specify the managed identity's client ID"},
-    {FLB_CONFIG_MAP_STR, "ingestion_endpoint", (char *)NULL, 0, FLB_TRUE,
+    {FLB_CONFIG_MAP_STR, "ingestion_endpoint", (char *)NULL, FLB_CONFIG_MAP_REQUIRED, FLB_TRUE,
      offsetof(struct flb_azure_kusto, ingestion_endpoint),
      "Set the Kusto cluster's ingestion endpoint URL (e.g. "
      "https://ingest-mycluster.eastus.kusto.windows.net)"},
-    {FLB_CONFIG_MAP_STR, "database_name", (char *)NULL, 0, FLB_TRUE,
+    {FLB_CONFIG_MAP_STR, "database_name", (char *)NULL, FLB_CONFIG_MAP_REQUIRED, FLB_TRUE,
      offsetof(struct flb_azure_kusto, database_name), "Set the database name"},
-    {FLB_CONFIG_MAP_STR, "table_name", (char *)NULL, 0, FLB_TRUE,
+    {FLB_CONFIG_MAP_STR, "table_name", (char *)NULL, FLB_CONFIG_MAP_REQUIRED, FLB_TRUE,
      offsetof(struct flb_azure_kusto, table_name), "Set the table name"},
     {FLB_CONFIG_MAP_STR, "ingestion_mapping_reference", (char *)NULL, 0, FLB_TRUE,
      offsetof(struct flb_azure_kusto, ingestion_mapping_reference),
