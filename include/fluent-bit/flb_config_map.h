@@ -55,6 +55,7 @@ struct flb_config;
 
 #define FLB_CONFIG_MAP_MULT       1
 #define FLB_CONFIG_MAP_DYNAMIC_ENV 2    /* flag: resolve environment variables at runtime */
+#define FLB_CONFIG_MAP_REQUIRED    4    /* flag: option is required */
 
 struct flb_config_map_val {
     union {

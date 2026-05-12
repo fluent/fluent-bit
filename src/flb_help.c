@@ -141,6 +141,17 @@ int pack_config_map_entry(msgpack_packer *mp_pck, struct flb_config_map *m)
         fprintf(stderr, "[help] invalid config map type %i\n", m->type);
         exit(EXIT_FAILURE);
     }
+
+    /* required */
+    flb_mp_map_header_append(&mh);
+    pack_str(mp_pck, "required");
+    if (m->flags & FLB_CONFIG_MAP_REQUIRED) {
+        msgpack_pack_true(mp_pck);
+    }
+    else {
+        msgpack_pack_false(mp_pck);
+    }
+
     flb_mp_map_header_end(&mh);
     return 0;
 }
