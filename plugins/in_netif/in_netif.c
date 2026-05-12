@@ -351,7 +351,7 @@ static int in_netif_init(struct flb_input_instance *in,
 static struct flb_config_map config_map[] = {
     {
       FLB_CONFIG_MAP_STR, "interface", (char *)NULL,
-      0, FLB_TRUE, offsetof(struct flb_in_netif_config, interface),
+      FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_in_netif_config, interface),
       "Set the interface, eg: eth0 or enp1s0"
     },
     {
