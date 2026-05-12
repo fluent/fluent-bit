@@ -606,7 +606,7 @@ static int cb_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "file", NULL,
-     0, FLB_TRUE, offsetof(struct checklist, file),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct checklist, file),
      "Specify the file that contains the patterns to lookup."
     },
 
