@@ -1083,12 +1083,12 @@ static struct flb_config_map config_map[] = {
 
     {
      FLB_CONFIG_MAP_STR, "api_key", NULL,
-     0, FLB_TRUE, offsetof(struct flb_calyptia, api_key),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_calyptia, api_key),
      "Calyptia Cloud API Key."
     },
     {
      FLB_CONFIG_MAP_STR, "machine_id", NULL,
-     0, FLB_TRUE, offsetof(struct flb_calyptia, machine_id),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_calyptia, machine_id),
      "Custom machine_id to be used when registering agent"
     },
     {
