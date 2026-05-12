@@ -20,11 +20,11 @@
 #ifndef FLB_DOWNSTREAM_WORKER_H
 #define FLB_DOWNSTREAM_WORKER_H
 
-#include <pthread.h>
-
 #include <cfl/cfl_atomic.h>
 
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_pipe.h>
+#include <fluent-bit/flb_pthread.h>
 
 #include <monkey/mk_core.h>
 
@@ -49,6 +49,8 @@ typedef void (*flb_downstream_worker_foreach_cb)(struct flb_downstream_worker *w
 struct flb_downstream_worker {
     struct flb_downstream_worker_runtime *runtime;
     struct mk_event_loop *event_loop;
+    struct mk_event control_event;
+    flb_pipefd_t control_channel[2];
     void *context;
     void *parent;
     int worker_id;
@@ -58,8 +60,12 @@ struct flb_downstream_worker {
     pthread_mutex_t mutex;
     pthread_cond_t condition;
     uint64_t should_exit;
+    flb_downstream_worker_foreach_cb control_callback;
+    void *control_data;
     int initialized;
     int thread_created;
+    int control_channel_created;
+    int control_done;
     int startup_result;
 };
 

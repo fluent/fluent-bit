@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_pipe.h>
 
 #include <string.h>
 
@@ -48,6 +49,37 @@ static void downstream_worker_context_cleanup(struct flb_downstream_worker *work
     pthread_cond_destroy(&worker->condition);
 }
 
+static int downstream_worker_control_event(struct flb_downstream_worker *worker)
+{
+    ssize_t bytes;
+    uint64_t signal;
+    flb_downstream_worker_foreach_cb callback;
+    void *data;
+
+    bytes = flb_pipe_r(worker->control_channel[0], &signal, sizeof(signal));
+    if (bytes <= 0) {
+        return -1;
+    }
+
+    pthread_mutex_lock(&worker->mutex);
+    callback = worker->control_callback;
+    data = worker->control_data;
+    pthread_mutex_unlock(&worker->mutex);
+
+    if (callback != NULL && worker->context != NULL) {
+        callback(worker, worker->context, data);
+    }
+
+    pthread_mutex_lock(&worker->mutex);
+    worker->control_callback = NULL;
+    worker->control_data = NULL;
+    worker->control_done = FLB_TRUE;
+    pthread_cond_signal(&worker->condition);
+    pthread_mutex_unlock(&worker->mutex);
+
+    return 0;
+}
+
 static void *downstream_worker_thread(void *data)
 {
     int ret;
@@ -64,6 +96,17 @@ static void *downstream_worker_thread(void *data)
         ret = -1;
         goto signal_and_exit;
     }
+
+    MK_EVENT_NEW(&worker->control_event);
+    ret = mk_event_channel_create(worker->event_loop,
+                                  &worker->control_channel[0],
+                                  &worker->control_channel[1],
+                                  &worker->control_event);
+    if (ret != 0) {
+        ret = -1;
+        goto signal_and_exit;
+    }
+    worker->control_channel_created = FLB_TRUE;
 
     flb_engine_evl_set(worker->event_loop);
     flb_net_ctx_init(&dns_ctx);
@@ -85,9 +128,19 @@ signal_and_exit:
     while (cfl_atomic_load(&worker->should_exit) == FLB_FALSE) {
         mk_event_wait_2(worker->event_loop, 250);
 
-        mk_event_foreach(event, worker->event_loop) {
-            if (event->type == FLB_ENGINE_EV_CUSTOM) {
-                event->handler(event);
+        {
+            mk_event_foreach(event, worker->event_loop) {
+                if (event->type == FLB_ENGINE_EV_CUSTOM) {
+                    event->handler(event);
+                }
+            }
+        }
+
+        {
+            mk_event_foreach(event, worker->event_loop) {
+                if (event == &worker->control_event) {
+                    downstream_worker_control_event(worker);
+                }
             }
         }
 
@@ -100,6 +153,14 @@ cleanup:
     if (runtime->cb_exit != NULL && worker->context != NULL) {
         runtime->cb_exit(worker, worker->context);
         worker->context = NULL;
+    }
+
+    if (worker->control_channel_created == FLB_TRUE) {
+        mk_event_channel_destroy(worker->event_loop,
+                                 worker->control_channel[0],
+                                 worker->control_channel[1],
+                                 &worker->control_event);
+        worker->control_channel_created = FLB_FALSE;
     }
 
     if (worker->event_loop != NULL) {
@@ -210,16 +271,39 @@ void flb_downstream_worker_runtime_foreach(struct flb_downstream_worker_runtime 
                                            void *data)
 {
     int i;
+    ssize_t bytes;
+    uint64_t signal = 1;
+    struct flb_downstream_worker *worker;
 
     if (runtime == NULL || callback == NULL) {
         return;
     }
 
     for (i = 0; i < runtime->worker_count; i++) {
-        if (runtime->workers[i].context != NULL) {
-            callback(&runtime->workers[i],
-                     runtime->workers[i].context,
-                     data);
+        worker = &runtime->workers[i];
+
+        if (worker->context == NULL || worker->thread_created != FLB_TRUE ||
+            worker->control_channel_created != FLB_TRUE) {
+            continue;
         }
+
+        pthread_mutex_lock(&worker->mutex);
+        worker->control_callback = callback;
+        worker->control_data = data;
+        worker->control_done = FLB_FALSE;
+
+        bytes = flb_pipe_w(worker->control_channel[1], &signal, sizeof(signal));
+        if (bytes <= 0) {
+            worker->control_callback = NULL;
+            worker->control_data = NULL;
+            worker->control_done = FLB_TRUE;
+            pthread_mutex_unlock(&worker->mutex);
+            continue;
+        }
+
+        while (worker->control_done == FLB_FALSE) {
+            pthread_cond_wait(&worker->condition, &worker->mutex);
+        }
+        pthread_mutex_unlock(&worker->mutex);
     }
 }
