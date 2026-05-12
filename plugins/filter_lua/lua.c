@@ -782,7 +782,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "call", NULL,
-     0, FLB_TRUE, offsetof(struct lua_filter, call),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct lua_filter, call),
      "Lua function name that will be triggered to do filtering."
     },
     {
