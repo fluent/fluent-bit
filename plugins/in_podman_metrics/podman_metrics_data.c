@@ -369,20 +369,25 @@ static uint64_t read_from_sysfs_or_max(struct flb_in_metrics *ctx,
         return value;
     }
 
-    if (fgets(buf, sizeof(buf), fp) != NULL) {
-        /* cgroup v2 uses "max" to indicate unlimited */
-        if (strncmp(buf, "max", 3) == 0) {
-            flb_plg_debug(ctx->ins, "%s: max (unlimited)", path);
-            fclose(fp);
-            return 0;
-        }
-        c = sscanf(buf, "%lu", &value);
-        if (c != 1) {
-            flb_plg_warn(ctx->ins,
-                         "Failed to read a number from %s", path);
-            fclose(fp);
-            return UINT64_MAX;
-        }
+    if (fgets(buf, sizeof(buf), fp) == NULL) {
+        flb_plg_warn(ctx->ins, "Failed to read a value from %s", path);
+        fclose(fp);
+        return UINT64_MAX;
+    }
+
+    /* cgroup v2 uses "max" to indicate unlimited */
+    if (strncmp(buf, "max", 3) == 0) {
+        flb_plg_debug(ctx->ins, "%s: max (unlimited)", path);
+        fclose(fp);
+        return 0;
+    }
+
+    c = sscanf(buf, "%lu", &value);
+    if (c != 1) {
+        flb_plg_warn(ctx->ins,
+                     "Failed to read a number from %s", path);
+        fclose(fp);
+        return UINT64_MAX;
     }
 
     fclose(fp);
