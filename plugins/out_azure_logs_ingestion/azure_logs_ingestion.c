@@ -391,12 +391,12 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "client_id", (char *)NULL,
-     0, FLB_TRUE, offsetof(struct flb_az_li, client_id),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_az_li, client_id),
      "Set the client/app ID of the AAD application"
     },
     {
      FLB_CONFIG_MAP_STR, "client_secret", (char *)NULL,
-     0, FLB_TRUE, offsetof(struct flb_az_li, client_secret),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_az_li, client_secret),
      "Set the client secret of the AAD application"
     },
     {
@@ -406,18 +406,18 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "dce_url", (char *)NULL,
-     0, FLB_TRUE, offsetof(struct flb_az_li, dce_url),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_az_li, dce_url),
      "Data Collection Endpoint(DCE) URI (e.g. "
      "https://la-endpoint-q12a.eastus-1.ingest.monitor.azure.com)"
     },
     {
      FLB_CONFIG_MAP_STR, "dcr_id", (char *)NULL,
-     0, FLB_TRUE, offsetof(struct flb_az_li, dcr_id),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_az_li, dcr_id),
      "Data Collection Rule (DCR) immutable ID"
     },
     {
      FLB_CONFIG_MAP_STR, "table_name", (char *)NULL,
-     0, FLB_TRUE, offsetof(struct flb_az_li, table_name),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_az_li, table_name),
      "The name of the custom log table, including '_CL' suffix"
     },
     /* optional params */
