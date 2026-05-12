@@ -403,12 +403,12 @@ static int cb_serial_init(struct flb_input_instance *in,
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "file", (char *)NULL,
-     0, FLB_TRUE, offsetof(struct flb_in_serial_config, file),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_in_serial_config, file),
      "Set the serial character device file name"
     },
     {
      FLB_CONFIG_MAP_STR, "bitrate", (char *)NULL,
-     0, FLB_TRUE, offsetof(struct flb_in_serial_config, bitrate),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_in_serial_config, bitrate),
      "Set the serial bitrate (baudrate)"
     },
     {
