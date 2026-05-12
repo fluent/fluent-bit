@@ -729,7 +729,7 @@ static int cb_nest_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
    {
     FLB_CONFIG_MAP_STR, "Operation", NULL,
-    0, FLB_FALSE, 0,
+    FLB_CONFIG_MAP_REQUIRED, FLB_FALSE, 0,
     "Select the operation nest or lift"
    },
    {
