@@ -491,17 +491,19 @@ static int cb_geoip2_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "database", (char *)NULL,
-     0, FLB_TRUE, offsetof(struct geoip2_ctx, database),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct geoip2_ctx, database),
      "Set the geoip2 database path"
     },
     {
      FLB_CONFIG_MAP_STR, "lookup_key", NULL,
-     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct geoip2_ctx, lookup_keys),
+     FLB_CONFIG_MAP_MULT | FLB_CONFIG_MAP_REQUIRED, FLB_TRUE,
+     offsetof(struct geoip2_ctx, lookup_keys),
      "Add a lookup_key"
     },
     {
      FLB_CONFIG_MAP_STR, "record", NULL,
-     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct geoip2_ctx, record_keys),
+     FLB_CONFIG_MAP_MULT | FLB_CONFIG_MAP_REQUIRED, FLB_TRUE,
+     offsetof(struct geoip2_ctx, record_keys),
      "Add a record to the output base on geoip2"
     },
     /* EOF */
