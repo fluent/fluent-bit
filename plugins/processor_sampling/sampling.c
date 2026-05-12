@@ -172,7 +172,7 @@ static int cb_exit(struct flb_processor_instance *processor_instance, void *data
 static struct flb_config_map config_map[] = {
     {
         FLB_CONFIG_MAP_STR, "type", NULL,
-        0, FLB_TRUE, offsetof(struct sampling, type_str),
+        FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct sampling, type_str),
         "Type of the sampling processor"
     },
     {
