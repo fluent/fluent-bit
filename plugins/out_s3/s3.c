@@ -4116,7 +4116,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "bucket", NULL,
-     0, FLB_TRUE, offsetof(struct flb_s3, bucket),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_s3, bucket),
     "S3 bucket name."
     },
     {
