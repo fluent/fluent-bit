@@ -1127,12 +1127,12 @@ static struct flb_config_map config_map[] = {
     },
     {
       FLB_CONFIG_MAP_STR, "dataset_id", (char *)NULL,
-      0, FLB_TRUE, offsetof(struct flb_bigquery, dataset_id),
+      FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_bigquery, dataset_id),
       "Set the dataset id"
     },
     {
       FLB_CONFIG_MAP_STR, "table_id", (char *)NULL,
-      0, FLB_TRUE, offsetof(struct flb_bigquery, table_id),
+      FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_bigquery, table_id),
       "Set the table id"
     },
     {
