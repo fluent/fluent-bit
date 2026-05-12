@@ -443,13 +443,13 @@ static int cb_firehose_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "region", NULL,
-     0, FLB_TRUE, offsetof(struct flb_firehose, region),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_firehose, region),
      "The AWS region of your delivery stream"
     },
 
     {
      FLB_CONFIG_MAP_STR, "delivery_stream", NULL,
-     0, FLB_TRUE, offsetof(struct flb_firehose, delivery_stream),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_firehose, delivery_stream),
      "Firehose delivery stream name"
     },
 
