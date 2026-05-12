@@ -606,12 +606,13 @@ static int cb_nightfall_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "nightfall_api_key", NULL,
-     0, FLB_TRUE, offsetof(struct flb_filter_nightfall, nightfall_api_key),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE,
+     offsetof(struct flb_filter_nightfall, nightfall_api_key),
      "The Nightfall API key to scan your logs with."
     },
     {
      FLB_CONFIG_MAP_STR, "policy_id", NULL,
-     0, FLB_TRUE, offsetof(struct flb_filter_nightfall, policy_id),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_filter_nightfall, policy_id),
      "The Nightfall policy ID to scan your logs with."
     },
     {
