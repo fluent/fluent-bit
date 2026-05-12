@@ -398,13 +398,13 @@ static int cb_azure_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "customer_id", NULL,
-     0, FLB_TRUE, offsetof(struct flb_azure, customer_id),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_azure, customer_id),
      "Customer ID or WorkspaceID string."
     },
 
     {
      FLB_CONFIG_MAP_STR, "shared_key", NULL,
-     0, FLB_TRUE, offsetof(struct flb_azure, shared_key),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_azure, shared_key),
      "The primary or the secondary Connected Sources client authentication key."
     },
 
