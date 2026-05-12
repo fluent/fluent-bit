@@ -423,7 +423,7 @@ static int in_exec_wasi_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "wasi_path", NULL,
-     0, FLB_TRUE, offsetof(struct flb_exec_wasi, wasi_path),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_exec_wasi, wasi_path),
      "Set the path of WASM program to execute"
     },
     {
