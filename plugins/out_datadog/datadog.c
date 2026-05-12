@@ -514,7 +514,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "apikey", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_datadog, api_key),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_out_datadog, api_key),
      "Datadog API key"
     },
     {
