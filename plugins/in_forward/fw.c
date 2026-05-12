@@ -470,6 +470,7 @@ static void in_fw_worker_pause(struct flb_downstream_worker *worker,
         flb_downstream_pause(ctx->downstream);
         ctx->is_paused = FLB_TRUE;
         ctx->state = FW_INSTANCE_STATE_PAUSED;
+        fw_conn_del_all(ctx);
     }
 }
 
