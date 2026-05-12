@@ -507,12 +507,12 @@ static int cb_tensorflow_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
         FLB_CONFIG_MAP_STR, "model_file", NULL,
-        0, FLB_FALSE, 0,
+        FLB_CONFIG_MAP_REQUIRED, FLB_FALSE, 0,
         "Address of the TensorFlow Lite model file (.tflite)"
     },
     {
         FLB_CONFIG_MAP_STR, "input_field", NULL,
-        0, FLB_FALSE, 0,
+        FLB_CONFIG_MAP_REQUIRED, FLB_FALSE, 0,
         "Input field name to use for inference."
     },
     {
