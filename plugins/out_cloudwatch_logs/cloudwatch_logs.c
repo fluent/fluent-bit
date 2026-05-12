@@ -581,13 +581,13 @@ void log_stream_destroy(struct log_stream *stream)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "region", NULL,
-     0, FLB_FALSE, 0,
+     FLB_CONFIG_MAP_REQUIRED, FLB_FALSE, 0,
      "The AWS region to send logs to"
     },
 
     {
      FLB_CONFIG_MAP_STR, "log_group_name", NULL,
-     0, FLB_FALSE, 0,
+     FLB_CONFIG_MAP_REQUIRED, FLB_FALSE, 0,
      "CloudWatch Log Group Name"
     },
 
