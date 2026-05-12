@@ -460,12 +460,12 @@ static int cb_parser_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "Key_Name", NULL,
-     0, FLB_TRUE, offsetof(struct filter_parser_ctx, key_name),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct filter_parser_ctx, key_name),
      "Specify field name in record to parse."
     },
     {
      FLB_CONFIG_MAP_STR, "Parser", NULL,
-     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     FLB_CONFIG_MAP_MULT | FLB_CONFIG_MAP_REQUIRED, FLB_FALSE, 0,
      "Specify the parser name to interpret the field. "
      "Multiple Parser entries are allowed (one per line)."
     },
