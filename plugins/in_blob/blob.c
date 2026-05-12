@@ -984,7 +984,7 @@ static int in_blob_notification(struct flb_input_instance *in_context,
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "path", NULL,
-     0, FLB_TRUE, offsetof(struct blob_ctx, path),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct blob_ctx, path),
      "Path to scan for blob/binary files"
     },
 
