@@ -453,13 +453,13 @@ static int cb_kinesis_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "region", NULL,
-     0, FLB_TRUE, offsetof(struct flb_kinesis, region),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_kinesis, region),
      "The AWS region of your kinesis stream"
     },
 
     {
      FLB_CONFIG_MAP_STR, "stream", NULL,
-     0, FLB_TRUE, offsetof(struct flb_kinesis, stream_name),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_kinesis, stream_name),
      "Kinesis stream name"
     },
 
