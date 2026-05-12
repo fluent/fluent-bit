@@ -436,7 +436,7 @@ static int in_exec_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "command", NULL,
-     0, FLB_TRUE, offsetof(struct flb_exec, cmd),
+     FLB_CONFIG_MAP_REQUIRED, FLB_TRUE, offsetof(struct flb_exec, cmd),
      "Set the command to execute"
     },
     {
