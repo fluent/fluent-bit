@@ -589,7 +589,8 @@ static int cb_rewrite_tag_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_SLIST_4, "rule", NULL,
-     FLB_TRUE, FLB_TRUE, offsetof(struct flb_rewrite_tag, cm_rules),
+     FLB_CONFIG_MAP_MULT | FLB_CONFIG_MAP_REQUIRED, FLB_TRUE,
+     offsetof(struct flb_rewrite_tag, cm_rules),
      NULL
     },
     {
