@@ -400,7 +400,7 @@ static int in_tail_progress_check_callback(struct flb_input_instance *ins,
     }
 
     if (pending_data_detected) {
-        tail_signal_pending(ctx);
+       tail_signal_pending(ctx);
     }
 
     return 0;
