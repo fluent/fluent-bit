@@ -15,10 +15,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, windows-2019]
+        os: [windows-latest, windows-2022]
     steps:
-      - uses: actions/checkout@v4
-      - name: Build on ${{ matrix.os }} with vs-2019
+      - uses: actions/checkout@v6
+      - name: Build on ${{ matrix.os }} with MSVC
         run: |
           .\scripts\win_build.bat
       - name: Run unit tests.
@@ -31,9 +31,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, windows-2019]
+        os: [windows-latest, windows-2022]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Get dependencies w/ chocolatey
         uses: crazy-max/ghaction-chocolatey@v3
         with:
@@ -106,7 +106,11 @@ jobs:
     steps:
       - name: Set up base image dependencies
         run: |
-          apt-get update
+          printf '%s\n' \
+            'deb http://archive.debian.org/debian buster main' \
+            'deb http://archive.debian.org/debian-security buster/updates main' \
+            > /etc/apt/sources.list
+          apt-get -o Acquire::Check-Valid-Until=false update
           apt-get install -y build-essential wget make gcc g++
 
       - name: Install CMake 3.20.0
@@ -122,7 +126,7 @@ jobs:
           # Confirm CMake installation
           /usr/local/bin/cmake --version
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Run compilation
         run: |
@@ -138,7 +142,7 @@ jobs:
         os: [ubuntu-latest]
         compiler: [ gcc, clang ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
         uses: uraimo/run-on-arch-action@v3.0.1
         with:
@@ -167,7 +171,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         compiler: [ gcc, clang ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
         run: |
           echo "CC = $CC, CXX = $CXX"
@@ -193,36 +197,21 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: true
-          dependencies_debian: 'wget'
 
-      - name: Install CMake 3.20.0
-        run: |
-          CMAKE_VERSION=3.20.0
-          wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh
-          chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh
-
-          # Create a writable temporary directory
-          mkdir -p /tmp/cmake
-
-          # Install CMake to /tmp/cmake
-          ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/tmp/cmake
-
-          # Add CMake to the PATH
-          echo 'export PATH=/tmp/cmake/bin:$PATH' >> ~/.bashrc
-          source ~/.bashrc
-
-          # Verify installation
-          /tmp/cmake/bin/cmake --version
-
-      - uses: actions/checkout@v4
+      - uses: docker://lpenz/ghaction-cmake:0.19
         with:
+          pre_command: |
+            CMAKE_VERSION=3.20.0
+            curl -fsSLO https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh
+            chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh
+            ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local
+            cmake --version
           preset: ${{ matrix.preset }}
-
           cmakeflags: '-DCFL_TESTS=On -DCFL_DEV=on .'
-          build_command: /tmp/cmake/bin/cmake && make all
+          build_command: make all
 
   # this job provides the single required status for PRs to be merged into main.
   # instead of updating the protected branch status in github, developers can update the needs section below

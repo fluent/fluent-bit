@@ -17,12 +17,15 @@
  *  limitations under the License.
  */
 
-#ifndef CFL_CHECKSUM_H
-#define CFL_CHECKSUM_H
+#ifndef CFL_ATOMIC_H
+#define CFL_ATOMIC_H
 
-#include <stddef.h>
 #include <stdint.h>
 
-uint32_t cfl_checksum_crc32c(unsigned char *buffer, size_t length);
+int cfl_atomic_initialize();
+int cfl_atomic_compare_exchange(uint64_t *storage, uint64_t old_value,
+                                uint64_t new_value);
+void cfl_atomic_store(uint64_t *storage, uint64_t new_value);
+uint64_t cfl_atomic_load(uint64_t *storage);
 
 #endif

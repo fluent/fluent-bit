@@ -17,12 +17,33 @@
  *  limitations under the License.
  */
 
-#ifndef CFL_CHECKSUM_H
-#define CFL_CHECKSUM_H
+#include <cfl/cfl_array.h>
+#include <cfl/cfl_atomic.h>
+#include <cfl/cfl_checksum.h>
+#include <cfl/cfl_compat.h>
+#include <cfl/cfl_found.h>
+#include <cfl/cfl_hash.h>
+#include <cfl/cfl_info.h>
+#include <cfl/cfl_kv.h>
+#include <cfl/cfl_kvlist.h>
+#include <cfl/cfl_list.h>
+#include <cfl/cfl_log.h>
+#include <cfl/cfl_object.h>
+#include <cfl/cfl_sds.h>
+#include <cfl/cfl_time.h>
+#include <cfl/cfl_utils.h>
+#include <cfl/cfl_variant.h>
+#include <cfl/cfl_version.h>
+#include <cfl/cfl.h>
 
-#include <stddef.h>
-#include <stdint.h>
+#include "cfl_tests_internal.h"
 
-uint32_t cfl_checksum_crc32c(unsigned char *buffer, size_t length);
+static void public_headers_compile()
+{
+    TEST_CHECK(cfl_found() == 0);
+}
 
-#endif
+TEST_LIST = {
+    {"public_headers_compile", public_headers_compile},
+    { 0 }
+};
