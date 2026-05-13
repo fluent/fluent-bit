@@ -21,9 +21,14 @@
 #define CFL_KVLIST_H
 
 #include <stdio.h>
+#include <stddef.h>
+#include <stdint.h>
+
 #include <cfl/cfl_sds.h>
 #include <cfl/cfl_list.h>
 #include <cfl/cfl_variant.h>
+
+struct cfl_array;
 
 struct cfl_kvpair {
     cfl_sds_t            key;    /* Key */
@@ -32,12 +37,22 @@ struct cfl_kvpair {
 };
 
 struct cfl_kvlist {
-    struct cfl_list list;
+    struct cfl_list     list;
+    struct cfl_variant *owner;
+    struct cfl_array   *parent_array;
+    struct cfl_kvlist  *parent_kvlist;
 };
 
 struct cfl_kvlist *cfl_kvlist_create();
 void cfl_kvlist_destroy(struct cfl_kvlist *list);
 
+/*
+ * Insert APIs take ownership of array, kvlist, and variant values on success.
+ * A raw array or kvlist must have one owning variant at a time. To move an
+ * existing kvpair value, detach it with cfl_kvpair_take_value() before
+ * reinserting it. Do not leave the same variant pointer attached to multiple
+ * live containers.
+ */
 int cfl_kvlist_insert_string(struct cfl_kvlist *list,
                              char *key, char *value);
 
@@ -128,6 +143,7 @@ struct cfl_variant *cfl_kvlist_fetch_s(struct cfl_kvlist *list, char *key, size_
 int cfl_kvlist_contains(struct cfl_kvlist *kvlist, char *name);
 int cfl_kvlist_remove(struct cfl_kvlist *kvlist, char *name);
 void cfl_kvpair_destroy(struct cfl_kvpair *pair);
+struct cfl_variant *cfl_kvpair_take_value(struct cfl_kvpair *pair);
 
 
 #endif

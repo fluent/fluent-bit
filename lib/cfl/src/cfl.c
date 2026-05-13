@@ -21,11 +21,10 @@
 
 int cfl_init()
 {
-    return 0;
+    return cfl_atomic_initialize();
 }
 
 char *cfl_version()
 {
     return CFL_VERSION_STR;
 }
-

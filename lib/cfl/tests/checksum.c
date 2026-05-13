@@ -17,12 +17,22 @@
  *  limitations under the License.
  */
 
-#ifndef CFL_CHECKSUM_H
-#define CFL_CHECKSUM_H
+#include <cfl/cfl_checksum.h>
 
-#include <stddef.h>
-#include <stdint.h>
+#include "cfl_tests_internal.h"
 
-uint32_t cfl_checksum_crc32c(unsigned char *buffer, size_t length);
+static void crc32c_null_input()
+{
+    uint32_t crc;
 
-#endif
+    crc = cfl_checksum_crc32c(NULL, 0);
+    TEST_CHECK(crc == 0);
+
+    crc = cfl_checksum_crc32c(NULL, 1);
+    TEST_CHECK(crc == 0);
+}
+
+TEST_LIST = {
+    {"crc32c_null_input", crc32c_null_input},
+    { 0 }
+};
