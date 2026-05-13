@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_server.h>
+#include <inttypes.h>
 
 static struct cmt *metrics_context_create(struct flb_storage_metrics *sm)
 {
@@ -843,6 +844,25 @@ static inline int flb_storage_chunk_restore_state(struct cio_chunk *src, int was
     return ret_val;
 }
 
+static ssize_t dlq_stream_total_size(struct cio_stream *st)
+{
+    ssize_t chunk_size;
+    ssize_t total = 0;
+    struct cio_chunk *ch;
+    struct mk_list *head;
+
+    mk_list_foreach(head, &st->chunks) {
+        ch = mk_list_entry(head, struct cio_chunk, _head);
+
+        chunk_size = cio_chunk_get_real_size(ch);
+        if (chunk_size > 0) {
+            total += chunk_size;
+        }
+    }
+
+    return total;
+}
+
 int flb_storage_quarantine_chunk(struct flb_config *ctx,
                                  struct cio_chunk *src,
                                  const char *tag,
@@ -859,6 +879,8 @@ int flb_storage_quarantine_chunk(struct flb_config *ctx,
     struct cio_chunk *dst;
     char safe_tag[128];
     char safe_out[64];
+    ssize_t current_size;
+    int64_t max_size;
 
     if (!ctx || !src) {
         return -1;
@@ -866,6 +888,22 @@ int flb_storage_quarantine_chunk(struct flb_config *ctx,
     dlq = get_or_create_rejected_stream(ctx);
     if (!dlq) {
         return -1;
+    }
+
+    if (ctx->storage_rejected_limit) {
+        max_size = flb_utils_size_to_bytes(ctx->storage_rejected_limit);
+        if (max_size <= 0) {
+            flb_warn("[storage] invalid DLQ size limit '%s'",
+                     ctx->storage_rejected_limit);
+            return -1;
+        }
+
+        current_size = dlq_stream_total_size(dlq);
+        if (current_size >= max_size) {
+            flb_warn("[storage] DLQ size limit reached (%zd/%" PRId64 " bytes), "
+                     "rejected chunk copy skipped", current_size, max_size);
+            return -1;
+        }
     }
 
     /* Remember original state and bring the chunk up if needed */
@@ -887,6 +925,14 @@ int flb_storage_quarantine_chunk(struct flb_config *ctx,
 
     if (cio_chunk_get_content_copy(src, &buf, &size) != CIO_OK || size == 0) {
         flb_warn("[storage] cannot read content for DLQ copy (size=%zu)", size);
+        return flb_storage_chunk_restore_state(src, was_up, -1);
+    }
+
+    if (ctx->storage_rejected_limit && current_size + (ssize_t) size > max_size) {
+        flb_warn("[storage] DLQ size limit exceeded (%zd + %zu > %" PRId64
+                 " bytes), rejected chunk copy skipped",
+                 current_size, size, max_size);
+        flb_free(buf);
         return flb_storage_chunk_restore_state(src, was_up, -1);
     }
 
