@@ -773,6 +773,7 @@ static enum status state_move_into_config_group(struct parser_state *state, stru
 static enum status state_copy_into_properties(struct parser_state *state, struct flb_cf *conf, struct cfl_kvlist *properties)
 {
     struct cfl_list *head;
+    struct cfl_list *tmp;
     struct cfl_kvpair *kvp;
     struct cfl_variant *var;
     struct cfl_variant *value;
@@ -781,7 +782,7 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
     size_t entry_count;
     int array_all_strings;
 
-    cfl_list_foreach(head, &state->keyvals->list) {
+    cfl_list_foreach_safe(head, tmp, &state->keyvals->list) {
         kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
         switch (kvp->val->type) {
         case CFL_VARIANT_STRING:
@@ -844,6 +845,7 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
                     cfl_variant_destroy(value);
                     return YAML_FAILURE;
                 }
+                cfl_kvpair_destroy(kvp);
             }
             break;
         case CFL_VARIANT_KVLIST:
@@ -863,6 +865,7 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
                 cfl_variant_destroy(value);
                 return YAML_FAILURE;
             }
+            cfl_kvpair_destroy(kvp);
             break;
         default:
             flb_error("unknown value type for properties: %d", kvp->val->type);
