@@ -584,10 +584,43 @@ static void test_dlq_preserves_chunk_state_when_initially_up(void)
     test_cleanup_with_cio(ctx, root);
 }
 
+static void test_dlq_respects_size_limit(void)
+{
+    char root[256], rejdir[256], latest[1024];
+    struct flb_config *ctx = NULL;
+    struct cio_chunk *src = NULL;
+    int rc;
+    const char *payload = "{\"msg\":\"this payload exceeds 16 bytes\"}\n";
+
+    tmpdir_for(root, sizeof(root), "size-limit");
+    snprintf(rejdir, sizeof(rejdir), "%s/%s", root, "rejected");
+    mkpath(rejdir);
+
+    ctx = make_ctx_fs(root, "rejected");
+    ctx->storage_rejected_limit = flb_strdup("16");
+    TEST_CHECK(ctx->storage_rejected_limit != NULL);
+
+    src = make_src_chunk(ctx, FLB_STORAGE_FS,
+                         "limit_in",
+                         "limit-0-0000000000.000000000.flb",
+                         payload);
+    TEST_CHECK(src != NULL);
+
+    rc = flb_storage_quarantine_chunk(ctx, src,
+                                      "tag.limit", 500, "out_http");
+    TEST_CHECK(rc != 0);
+
+    TEST_CHECK(find_latest_flb(rejdir, latest, sizeof(latest)) != 0);
+
+    cio_chunk_close(src, CIO_FALSE);
+    test_cleanup_with_cio(ctx, root);
+}
+
 TEST_LIST = {
     { "dlq_copy_from_fs_chunk",  test_dlq_copy_from_fs_chunk },
     { "dlq_disabled_no_copy",    test_dlq_disabled_no_copy },
     { "dlq_restores_chunk_state_when_initially_down",   test_dlq_restores_chunk_state_when_initially_down },
     { "dlq_preserves_chunk_state_when_initially_up",    test_dlq_preserves_chunk_state_when_initially_up },
+    { "dlq_respects_size_limit", test_dlq_respects_size_limit },
     { NULL, NULL }
 };
