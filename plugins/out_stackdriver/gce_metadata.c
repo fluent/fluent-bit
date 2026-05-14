@@ -44,15 +44,21 @@ static int fetch_metadata(struct flb_stackdriver *ctx,
     /* If runtime test mode is enabled, add test data */
     if (ctx->ins->test_mode == FLB_TRUE) {
         if (strcmp(uri, FLB_STD_METADATA_PROJECT_ID_URI) == 0) {
-            flb_sds_cat(payload, "fluent-bit-test", 15);
+            if (!flb_sds_cat(payload, "fluent-bit-test", 15)) {
+                return -1;
+            }
             return 0;
         }
         else if (strcmp(uri, FLB_STD_METADATA_ZONE_URI) == 0) {
-            flb_sds_cat(payload, "projects/0123456789/zones/fluent", 32);
+            if (!flb_sds_cat(payload, "projects/0123456789/zones/fluent", 32)) {
+                return -1;
+            }
             return 0;
         }
         else if (strcmp(uri, FLB_STD_METADATA_INSTANCE_ID_URI) == 0) {
-            flb_sds_cat(payload, "333222111", 9);
+            if (!flb_sds_cat(payload, "333222111", 9)) {
+                return -1;
+            }
             return 0;
         }
         return -1;
@@ -112,11 +118,38 @@ static int fetch_metadata(struct flb_stackdriver *ctx,
 int gce_metadata_read_token(struct flb_stackdriver *ctx)
 {
     int ret;
-    flb_sds_t uri = flb_sds_create(FLB_STD_METADATA_SERVICE_ACCOUNT_URI);
-    flb_sds_t payload = flb_sds_create_size(FLB_STD_METADATA_TOKEN_SIZE_MAX);
+    flb_sds_t tmp;
+    flb_sds_t uri;
+    flb_sds_t payload;
 
-    uri = flb_sds_cat(uri, ctx->client_email, flb_sds_len(ctx->client_email));
-    uri = flb_sds_cat(uri, "/token", 6);
+    uri = flb_sds_create(FLB_STD_METADATA_SERVICE_ACCOUNT_URI);
+    payload = flb_sds_create_size(FLB_STD_METADATA_TOKEN_SIZE_MAX);
+
+    if (!uri || !payload) {
+        flb_sds_destroy(payload);
+        flb_sds_destroy(uri);
+
+        return -1;
+    }
+
+    tmp = flb_sds_cat(uri, ctx->client_email, flb_sds_len(ctx->client_email));
+    if (!tmp) {
+        flb_sds_destroy(payload);
+        flb_sds_destroy(uri);
+
+        return -1;
+    }
+    uri = tmp;
+
+    tmp = flb_sds_cat(uri, "/token", 6);
+    if (!tmp) {
+        flb_sds_destroy(payload);
+        flb_sds_destroy(uri);
+
+        return -1;
+    }
+    uri = tmp;
+
     ret = fetch_metadata(ctx, ctx->metadata_u, uri, payload);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "can't fetch token from the metadata server");
