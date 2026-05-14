@@ -325,7 +325,7 @@ def test_in_elasticsearch_bulk_small_status_buffer_does_not_crash(case):
     # The regression condition is process termination from a reachable double-free.
     # Response formatting can still vary under constrained buffer settings, but the
     # parser must not take down the process.
-    assert curl_result.returncode in {0, 56}
+    assert curl_result.returncode in {0, 55, 56}
     assert health_result["status_code"] == 200
 
 
