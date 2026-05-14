@@ -105,7 +105,32 @@ static int status_buffer_avail(struct flb_in_elasticsearch *ctx, flb_sds_t bulk_
     return FLB_TRUE;
 }
 
-static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char *buf, size_t size, flb_sds_t bulk_statuses)
+static int bulk_statuses_cat(struct flb_in_elasticsearch *ctx,
+                             flb_sds_t *bulk_statuses,
+                             const char *data, size_t len)
+{
+    flb_sds_t tmp;
+
+    if (flb_sds_avail(*bulk_statuses) < len) {
+        flb_plg_warn(ctx->ins, "left buffer for bulk status(es) is too small");
+
+        return FLB_FALSE;
+    }
+
+    tmp = flb_sds_cat(*bulk_statuses, data, len);
+    if (!tmp) {
+        flb_errno();
+
+        return FLB_FALSE;
+    }
+
+    *bulk_statuses = tmp;
+
+    return FLB_TRUE;
+}
+
+static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char *buf,
+                          size_t size, flb_sds_t *bulk_statuses)
 {
     struct flb_log_event_encoder *encoder;
     struct flb_log_event_encoder local_encoder;
@@ -146,9 +171,15 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
     while (msgpack_unpack_next(&result, buf, size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
             if (idx > 0 && idx % 2 == 0) {
-                flb_sds_cat(bulk_statuses, ",", 1);
+                if (status_buffer_avail(ctx, *bulk_statuses, 51) == FLB_FALSE) {
+                    break;
+                }
+
+                if (bulk_statuses_cat(ctx, bulk_statuses, ",", 1) == FLB_FALSE) {
+                    break;
+                }
             }
-            if (status_buffer_avail(ctx, bulk_statuses, 50) == FLB_FALSE) {
+            else if (status_buffer_avail(ctx, *bulk_statuses, 50) == FLB_FALSE) {
                 break;
             }
             if (idx % 2 == 0) {
@@ -156,19 +187,36 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
 
                 if (op_ret) {
                     if (flb_sds_cmp(write_op, "index", op_str_size) == 0) {
-                        flb_sds_cat(bulk_statuses, "{\"index\":", 9);
+                        if (bulk_statuses_cat(ctx, bulk_statuses,
+                                              "{\"index\":", 9) == FLB_FALSE) {
+                            flb_sds_destroy(write_op);
+                            break;
+                        }
                         error_op = FLB_FALSE;
                     }
                     else if (flb_sds_cmp(write_op, "create", op_str_size) == 0) {
-                        flb_sds_cat(bulk_statuses, "{\"create\":", 10);
+                        if (bulk_statuses_cat(ctx, bulk_statuses,
+                                              "{\"create\":", 10) == FLB_FALSE) {
+                            flb_sds_destroy(write_op);
+                            break;
+                        }
                         error_op = FLB_FALSE;
                     }
                     else if (flb_sds_cmp(write_op, "update", op_str_size) == 0) {
-                        flb_sds_cat(bulk_statuses, "{\"update\":", 10);
+                        if (bulk_statuses_cat(ctx, bulk_statuses,
+                                              "{\"update\":", 10) == FLB_FALSE) {
+                            flb_sds_destroy(write_op);
+                            break;
+                        }
                         error_op = FLB_TRUE;
                     }
                     else if (flb_sds_cmp(write_op, "delete", op_str_size) == 0) {
-                        flb_sds_cat(bulk_statuses, "{\"delete\":{\"status\":404,\"result\":\"not_found\"}}", 46);
+                        if (bulk_statuses_cat(ctx, bulk_statuses,
+                                              "{\"delete\":{\"status\":404,\"result\":\"not_found\"}}",
+                                              46) == FLB_FALSE) {
+                            flb_sds_destroy(write_op);
+                            break;
+                        }
                         error_op = FLB_TRUE;
                         idx += 1; /* Prepare to adjust to multiple of two
                                    * in the end of the loop.
@@ -178,7 +226,12 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         goto proceed;
                     }
                     else {
-                        flb_sds_cat(bulk_statuses, "{\"unknown\":{\"status\":400,\"result\":\"bad_request\"}}", 49);
+                        if (bulk_statuses_cat(ctx, bulk_statuses,
+                                              "{\"unknown\":{\"status\":400,\"result\":\"bad_request\"}}",
+                                              49) == FLB_FALSE) {
+                            flb_sds_destroy(write_op);
+                            break;
+                        }
                         error_op = FLB_TRUE;
 
                         flb_sds_destroy(write_op);
@@ -315,15 +368,36 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                 }
                 if (op_ret) {
                     if (flb_sds_cmp(write_op, "index", op_str_size) == 0) {
-                        flb_sds_cat(bulk_statuses, "{\"status\":201,\"result\":\"created\"}}", 34);
+                        if (bulk_statuses_cat(ctx, bulk_statuses,
+                                              "{\"status\":201,\"result\":\"created\"}}",
+                                              34) == FLB_FALSE) {
+                            flb_sds_destroy(write_op);
+                            write_op = NULL;
+
+                            break;
+                        }
                     }
                     else if (flb_sds_cmp(write_op, "create", op_str_size) == 0) {
-                        flb_sds_cat(bulk_statuses, "{\"status\":201,\"result\":\"created\"}}", 34);
+                        if (bulk_statuses_cat(ctx, bulk_statuses,
+                                              "{\"status\":201,\"result\":\"created\"}}",
+                                              34) == FLB_FALSE) {
+                            flb_sds_destroy(write_op);
+                            write_op = NULL;
+
+                            break;
+                        }
                     }
                     else if (flb_sds_cmp(write_op, "update", op_str_size) == 0) {
-                        flb_sds_cat(bulk_statuses, "{\"status\":403,\"result\":\"forbidden\"}}", 36);
+                        if (bulk_statuses_cat(ctx, bulk_statuses,
+                                              "{\"status\":403,\"result\":\"forbidden\"}}",
+                                              36) == FLB_FALSE) {
+                            flb_sds_destroy(write_op);
+                            write_op = NULL;
+
+                            break;
+                        }
                     }
-                    if (status_buffer_avail(ctx, bulk_statuses, 50) == FLB_FALSE) {
+                    if (status_buffer_avail(ctx, *bulk_statuses, 50) == FLB_FALSE) {
                         flb_sds_destroy(write_op);
                         write_op = NULL;
 
@@ -383,7 +457,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
 }
 
 static ssize_t parse_payload_ndjson(struct flb_in_elasticsearch *ctx, flb_sds_t tag,
-                                    char *payload, size_t size, flb_sds_t bulk_statuses)
+                                    char *payload, size_t size, flb_sds_t *bulk_statuses)
 {
     int ret;
     int out_size;
@@ -529,7 +603,7 @@ static int process_payload_ng(struct flb_http_request *request,
                               struct flb_http_response *response,
                               struct flb_in_elasticsearch *context,
                               flb_sds_t tag,
-                              flb_sds_t bulk_statuses)
+                              flb_sds_t *bulk_statuses)
 {
     if (request->content_type == NULL) {
         send_response_ng(response, 400, NULL, "error: header 'Content-Type' is not set\n");
@@ -563,6 +637,7 @@ int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
     int                          result;
     flb_sds_t                    tag;
     size_t                       len;
+    flb_sds_t                    tmp;
 
     bulk_statuses = NULL;
     bulk_response = NULL;
@@ -627,7 +702,7 @@ int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
                 return -1;
             }
 
-            result = process_payload_ng(request, response, context, tag, bulk_statuses);
+            result = process_payload_ng(request, response, context, tag, &bulk_statuses);
 
             flb_sds_destroy(tag);
 
@@ -647,20 +722,49 @@ int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
             len = flb_sds_len(bulk_statuses);
 
             if (flb_sds_alloc(bulk_response) < len + 27) {
-                bulk_response = flb_sds_increase(bulk_response, len + 27 - flb_sds_alloc(bulk_response));
+                tmp = flb_sds_increase(bulk_response, len + 27 - flb_sds_alloc(bulk_response));
+
+                if (tmp == NULL) {
+                    flb_sds_destroy(bulk_statuses);
+                    flb_sds_destroy(bulk_response);
+                    return -1;
+                }
+
+                bulk_response = tmp;
             }
 
             error_str = strstr(bulk_statuses, "\"status\":40");
 
             if (error_str){
-                flb_sds_cat(bulk_response, "{\"errors\":true,\"items\":[", 24);
+                tmp = flb_sds_cat(bulk_response, "{\"errors\":true,\"items\":[", 24);
             }
             else {
-                flb_sds_cat(bulk_response, "{\"errors\":false,\"items\":[", 25);
+                tmp = flb_sds_cat(bulk_response, "{\"errors\":false,\"items\":[", 25);
             }
 
-            flb_sds_cat(bulk_response, bulk_statuses, flb_sds_len(bulk_statuses));
-            flb_sds_cat(bulk_response, "]}", 2);
+            if (tmp == NULL) {
+                flb_sds_destroy(bulk_statuses);
+                flb_sds_destroy(bulk_response);
+                return -1;
+            }
+
+            bulk_response = tmp;
+
+            tmp = flb_sds_cat(bulk_response, bulk_statuses, flb_sds_len(bulk_statuses));
+            if (tmp == NULL) {
+                flb_sds_destroy(bulk_statuses);
+                flb_sds_destroy(bulk_response);
+                return -1;
+            }
+            bulk_response = tmp;
+
+            tmp = flb_sds_cat(bulk_response, "]}", 2);
+            if (tmp == NULL) {
+                flb_sds_destroy(bulk_statuses);
+                flb_sds_destroy(bulk_response);
+                return -1;
+            }
+            bulk_response = tmp;
 
             send_json_response_ng(response, 200, bulk_response);
 
