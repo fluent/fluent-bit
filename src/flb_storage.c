@@ -854,7 +854,8 @@ static ssize_t dlq_stream_total_size(struct cio_stream *st)
     mk_list_foreach(head, &st->chunks) {
         ch = mk_list_entry(head, struct cio_chunk, _head);
 
-        chunk_size = cio_chunk_get_real_size(ch);
+        /* Total content bytes, to match write-path size checks */
+        chunk_size = cio_chunk_get_content_size(ch);
         if (chunk_size > 0) {
             total += chunk_size;
         }
@@ -880,6 +881,7 @@ int flb_storage_quarantine_chunk(struct flb_config *ctx,
     char safe_tag[128];
     char safe_out[64];
     ssize_t current_size;
+    ssize_t next_size;
     int64_t max_size;
 
     if (!ctx || !src) {
@@ -934,6 +936,14 @@ int flb_storage_quarantine_chunk(struct flb_config *ctx,
                  current_size, size, max_size);
         flb_free(buf);
         return flb_storage_chunk_restore_state(src, was_up, -1);
+    }
+
+    if (ctx->storage_rejected_limit) {
+        next_size = current_size + (ssize_t) size;
+        if (next_size >= (max_size * 9) / 10) {
+            flb_warn("[storage] DLQ content size is at %zd/%" PRId64
+                     " bytes (>=90%% of limit)", next_size, max_size);
+        }
     }
 
     /* Create + write the DLQ copy */
