@@ -97,7 +97,11 @@ static int meminfo_configure(struct flb_ne *ctx)
         entry->str[len] = '\0';
 
         flb_sds_len_set(metric_name, 0);
-        flb_sds_cat(metric_name, entry->str, flb_sds_len(entry->str));
+        ret = flb_sds_cat_safe(&metric_name, entry->str, flb_sds_len(entry->str));
+        if (ret != 0) {
+            flb_slist_destroy(&split_list);
+            goto error;
+        }
 
         /* Metric description */
         flb_sds_len_set(metric_desc, 0);
@@ -254,8 +258,28 @@ static int meminfo_update(struct flb_ne *ctx)
         else if (parts == 3) {
             /* Compose new metric name */
             tmp = flb_sds_create_size(256);
-            flb_sds_cat_safe(&tmp, metric_name, flb_sds_len(metric_name) - 1);
-            flb_sds_cat_safe(&tmp, "_bytes", 6);
+            if (!tmp) {
+                flb_errno();
+                flb_slist_destroy(&split_list);
+                flb_slist_destroy(&list);
+                return -1;
+            }
+
+            ret = flb_sds_cat_safe(&tmp, metric_name, flb_sds_len(metric_name) - 1);
+            if (ret == -1) {
+                flb_sds_destroy(tmp);
+                flb_slist_destroy(&split_list);
+                flb_slist_destroy(&list);
+                return -1;
+            }
+
+            ret = flb_sds_cat_safe(&tmp, "_bytes", 6);
+            if (ret == -1) {
+                flb_sds_destroy(tmp);
+                flb_slist_destroy(&split_list);
+                flb_slist_destroy(&list);
+                return -1;
+            }
 
             /* Get metric context */
             ret = flb_hash_table_get(ctx->meminfo_ht,
