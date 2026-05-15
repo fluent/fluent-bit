@@ -74,6 +74,7 @@
 #define PODMAN_CONFIG_DEFAULT_PATH      "/var/lib/containers/storage/overlay-containers/containers.json"
 #define PODMAN_SOCKET_DEFAULT_PATH      "/run/podman/podman.sock"
 #define PODMAN_REST_CONTAINERS_PATH     "/v4.0.0/libpod/containers/json?all=true"
+#define PODMAN_REST_CONTAINERS_COMPAT_PATH "/v1.41/containers/json?all=true"
 
 /* Markers of network values in /proc/<pid>/dev/net */
 #define DEV_NET_IGNORE_LINES            2

@@ -37,6 +37,12 @@
 #define ACCESS_STATE_NO        0
 #define ACCESS_STATE_YES       1
 
+static int collect_container_data_from_rest_api(struct flb_in_metrics *ctx);
+static int collect_container_stats_from_rest_api(struct flb_in_metrics *ctx,
+                                                 struct container *cnt);
+static int add_container_to_list(struct flb_in_metrics *ctx, flb_sds_t id,
+                                 flb_sds_t name, flb_sds_t image_name);
+
 static int collect_container_data_from_rest_api(struct flb_in_metrics *ctx)
 {
     int fd;
@@ -49,89 +55,135 @@ static int collect_container_data_from_rest_api(struct flb_in_metrics *ctx)
     int names_array_id;
     int i;
     int collected;
+    int running;
     struct sockaddr_un address;
     char request[256];
     char *response;
     char *body;
+    char *status;
+    int http_status;
     char id[CONTAINER_ID_SIZE];
     char name[CONTAINER_NAME_SIZE];
     char image_name[IMAGE_NAME_SIZE];
     jsmn_parser parser;
     jsmntok_t tokens[JSON_TOKENS];
-
-    fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (fd == -1) {
-        flb_errno();
-        return -1;
-    }
+    const char *paths[] = {
+        PODMAN_REST_CONTAINERS_PATH,
+        PODMAN_REST_CONTAINERS_COMPAT_PATH
+    };
+    int p;
 
     memset(&address, 0, sizeof(address));
     address.sun_family = AF_UNIX;
     strncpy(address.sun_path, ctx->podman_socket_path, sizeof(address.sun_path) - 1);
 
-    if (connect(fd, (struct sockaddr *) &address, sizeof(address)) == -1) {
-        close(fd);
-        if (ctx->rest_api_accessible != ACCESS_STATE_NO) {
-            flb_plg_warn(ctx->ins, "Failed to connect to Podman REST API via %s",
-                         ctx->podman_socket_path);
+    for (p = 0; p < 2; p++) {
+        fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (fd == -1) {
+            flb_errno();
+            return -1;
         }
-        ctx->rest_api_accessible = ACCESS_STATE_NO;
-        return -1;
-    }
-    ctx->rest_api_accessible = ACCESS_STATE_YES;
 
-    ret = snprintf(request, sizeof(request),
-                   "GET %s HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-                   PODMAN_REST_CONTAINERS_PATH);
-    if (ret <= 0 || ret >= sizeof(request)) {
-        close(fd);
-        return -1;
-    }
-
-    sent = send(fd, request, ret, 0);
-    if (sent <= 0) {
-        close(fd);
-        return -1;
-    }
-
-    capacity = 32768;
-    length = 0;
-    response = flb_calloc(1, capacity);
-    if (response == NULL) {
-        close(fd);
-        return -1;
-    }
-
-    while (1) {
-        received = recv(fd, response + length, capacity - length - 1, 0);
-        if (received <= 0) {
-            break;
+        if (connect(fd, (struct sockaddr *) &address, sizeof(address)) == -1) {
+            close(fd);
+            if (ctx->rest_api_accessible != ACCESS_STATE_NO) {
+                flb_plg_warn(ctx->ins, "Failed to connect to Podman REST API via %s",
+                             ctx->podman_socket_path);
+            }
+            ctx->rest_api_accessible = ACCESS_STATE_NO;
+            return 0;
         }
-        length += received;
-        if (length >= capacity - 2048) {
-            capacity *= 2;
-            response = flb_realloc(response, capacity);
-            if (response == NULL) {
-                close(fd);
-                return -1;
+        ctx->rest_api_accessible = ACCESS_STATE_YES;
+
+        ret = snprintf(request, sizeof(request),
+                       "GET %s HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+                       paths[p]);
+        if (ret <= 0 || ret >= sizeof(request)) {
+            close(fd);
+            return 0;
+        }
+
+        sent = send(fd, request, ret, 0);
+        if (sent <= 0) {
+            close(fd);
+            return 0;
+        }
+
+        capacity = 32768;
+        length = 0;
+        response = flb_calloc(1, capacity);
+        if (response == NULL) {
+            close(fd);
+            return 0;
+        }
+
+        while (1) {
+            received = recv(fd, response + length, capacity - length - 1, 0);
+            if (received <= 0) {
+                break;
+            }
+            length += received;
+            if (length >= capacity - 2048) {
+                capacity *= 2;
+                response = flb_realloc(response, capacity);
+                if (response == NULL) {
+                    close(fd);
+                    return 0;
+                }
             }
         }
-    }
-    close(fd);
-    response[length] = '\0';
+        response[length] = '\0';
 
-    body = strstr(response, "\r\n\r\n");
-    if (body == NULL) {
-        flb_free(response);
-        return -1;
-    }
-    body += 4;
+        status = strstr(response, "HTTP/1.1 ");
+        if (status != NULL) {
+            http_status = atoi(status + 9);
+            if (http_status != 200) {
+                flb_plg_warn(ctx->ins,
+                             "Podman REST API returned HTTP status %d for %s",
+                             http_status, paths[p]);
+                flb_free(response);
+                response = NULL;
+                close(fd);
+                continue;
+            }
+        }
 
-    jsmn_init(&parser);
-    ret = jsmn_parse(&parser, body, strlen(body), tokens, JSON_TOKENS);
-    if (ret < 1 || tokens[0].type != JSMN_ARRAY) {
-        flb_free(response);
-        return -1;
+        body = strstr(response, "\r\n\r\n");
+        if (body == NULL) {
+            flb_free(response);
+            response = NULL;
+            close(fd);
+            continue;
+        }
+        body += 4;
+
+        jsmn_init(&parser);
+        ret = jsmn_parse(&parser, body, strlen(body), tokens, JSON_TOKENS);
+        if (ret < 1 || tokens[0].type != JSMN_ARRAY) {
+            flb_plg_warn(ctx->ins,
+                         "Podman REST API returned invalid JSON payload for %s",
+                         paths[p]);
+            flb_free(response);
+            response = NULL;
+            close(fd);
+            continue;
+        }
+
+        if (tokens[0].size == 0 && p == 0) {
+            flb_plg_debug(ctx->ins,
+                          "Podman REST API %s returned an empty list, trying %s",
+                          paths[p], paths[1]);
+            flb_free(response);
+            response = NULL;
+            close(fd);
+            continue;
+        }
+        close(fd);
+        break;
+    }
+    if (response == NULL) {
+        ctx->rest_api_accessible = ACCESS_STATE_NO;
+        return 0;
     }
 
     collected = 0;
@@ -139,6 +191,7 @@ static int collect_container_data_from_rest_api(struct flb_in_metrics *ctx)
     name[0] = '\0';
     image_name[0] = '\0';
 
+    running = FLB_FALSE;
     for (i = 0; i < ret; i++) {
         if (tokens[i].type != JSMN_STRING) {
             continue;
@@ -147,12 +200,18 @@ static int collect_container_data_from_rest_api(struct flb_in_metrics *ctx)
         if (tokens[i].end - tokens[i].start == 2 &&
             strncmp(body + tokens[i].start, "Id", 2) == 0) {
             token_len = tokens[i + 1].end - tokens[i + 1].start;
+            if (token_len >= sizeof(id)) {
+                token_len = sizeof(id) - 1;
+            }
             strncpy(id, body + tokens[i + 1].start, token_len);
             id[token_len] = '\0';
         }
         else if (tokens[i].end - tokens[i].start == 5 &&
                  strncmp(body + tokens[i].start, "Image", 5) == 0) {
             token_len = tokens[i + 1].end - tokens[i + 1].start;
+            if (token_len >= sizeof(image_name)) {
+                token_len = sizeof(image_name) - 1;
+            }
             strncpy(image_name, body + tokens[i + 1].start, token_len);
             image_name[token_len] = '\0';
         }
@@ -161,13 +220,28 @@ static int collect_container_data_from_rest_api(struct flb_in_metrics *ctx)
             names_array_id = i + 1;
             if (tokens[names_array_id].type == JSMN_ARRAY && tokens[names_array_id].size > 0) {
                 token_len = tokens[names_array_id + 1].end - tokens[names_array_id + 1].start;
+                if (token_len >= sizeof(name)) {
+                    token_len = sizeof(name) - 1;
+                }
                 strncpy(name, body + tokens[names_array_id + 1].start, token_len);
                 name[token_len] = '\0';
             }
         }
         else if (tokens[i].end - tokens[i].start == 5 &&
                  strncmp(body + tokens[i].start, "State", 5) == 0) {
+            if (tokens[i + 1].type == JSMN_STRING) {
+                if ((tokens[i + 1].end - tokens[i + 1].start) == 7 &&
+                    strncmp(body + tokens[i + 1].start, "running", 7) == 0) {
+                    running = FLB_TRUE;
+                }
+                else {
+                    running = FLB_FALSE;
+                }
+            }
+
             if (id[0] != '\0') {
+                struct container *cnt;
+
                 if (name[0] == '\0') {
                     snprintf(name, sizeof(name), "%s", id);
                 }
@@ -175,17 +249,184 @@ static int collect_container_data_from_rest_api(struct flb_in_metrics *ctx)
                     snprintf(image_name, sizeof(image_name), "unknown");
                 }
                 add_container_to_list(ctx, id, name, image_name);
+                cnt = mk_list_entry_last(&ctx->items, struct container, _head);
+                if (running == FLB_TRUE) {
+                    collect_container_stats_from_rest_api(ctx, cnt);
+                }
                 collected++;
             }
             id[0] = '\0';
             name[0] = '\0';
             image_name[0] = '\0';
+            running = FLB_FALSE;
         }
     }
 
     flb_free(response);
     flb_plg_debug(ctx->ins, "Collected %d containers from podman REST API", collected);
     return collected;
+}
+
+static int parse_uint64_token(const char *body, jsmntok_t *tok, uint64_t *value)
+{
+    char tmp[32];
+    size_t token_len;
+    char *tail;
+
+    if (tok->type != JSMN_PRIMITIVE) {
+        return -1;
+    }
+
+    token_len = tok->end - tok->start;
+    if (token_len == 0 || token_len >= sizeof(tmp)) {
+        return -1;
+    }
+
+    memcpy(tmp, body + tok->start, token_len);
+    tmp[token_len] = '\0';
+    *value = strtoull(tmp, &tail, 10);
+    if (tail == NULL || *tail != '\0') {
+        return -1;
+    }
+    return 0;
+}
+
+static int collect_container_stats_from_rest_api(struct flb_in_metrics *ctx,
+                                                 struct container *cnt)
+{
+    int fd;
+    int ret;
+    int sent;
+    int received;
+    int capacity;
+    int length;
+    int i;
+    struct sockaddr_un address;
+    char request[512];
+    char path[256];
+    char *response;
+    char *body;
+    char *status;
+    int http_status;
+    const char *paths[] = {
+        "/v4.0.0/libpod/containers/%s/stats?stream=false",
+        "/v1.41/containers/%s/stats?stream=false"
+    };
+    jsmn_parser parser;
+    jsmntok_t tokens[JSON_TOKENS];
+
+    for (i = 0; i < 2; i++) {
+        ret = snprintf(path, sizeof(path), paths[i], cnt->id);
+        if (ret <= 0 || ret >= sizeof(path)) {
+            continue;
+        }
+
+        memset(&address, 0, sizeof(address));
+        address.sun_family = AF_UNIX;
+        strncpy(address.sun_path, ctx->podman_socket_path, sizeof(address.sun_path) - 1);
+
+        fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (fd == -1) {
+            flb_errno();
+            return -1;
+        }
+
+        if (connect(fd, (struct sockaddr *) &address, sizeof(address)) == -1) {
+            close(fd);
+            return -1;
+        }
+
+        ret = snprintf(request, sizeof(request),
+                       "GET %s HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+                       path);
+        if (ret <= 0 || ret >= sizeof(request)) {
+            close(fd);
+            return -1;
+        }
+
+        sent = send(fd, request, ret, 0);
+        if (sent <= 0) {
+            close(fd);
+            return -1;
+        }
+
+        capacity = 32768;
+        length = 0;
+        response = flb_calloc(1, capacity);
+        if (response == NULL) {
+            close(fd);
+            return -1;
+        }
+
+        while (1) {
+            received = recv(fd, response + length, capacity - length - 1, 0);
+            if (received <= 0) {
+                break;
+            }
+            length += received;
+            if (length >= capacity - 2048) {
+                capacity *= 2;
+                response = flb_realloc(response, capacity);
+                if (response == NULL) {
+                    close(fd);
+                    return -1;
+                }
+            }
+        }
+        close(fd);
+
+        response[length] = '\0';
+        status = strstr(response, "HTTP/1.1 ");
+        if (status != NULL) {
+            http_status = atoi(status + 9);
+            if (http_status != 200) {
+                flb_free(response);
+                continue;
+            }
+        }
+
+        body = strstr(response, "\r\n\r\n");
+        if (body == NULL) {
+            flb_free(response);
+            continue;
+        }
+        body += 4;
+
+        jsmn_init(&parser);
+        ret = jsmn_parse(&parser, body, strlen(body), tokens, JSON_TOKENS);
+        if (ret < 1 || tokens[0].type != JSMN_OBJECT) {
+            flb_free(response);
+            continue;
+        }
+
+        for (i = 1; i < ret - 1; i++) {
+            if (tokens[i].type != JSMN_STRING) {
+                continue;
+            }
+
+            if (tokens[i].end - tokens[i].start == 4 &&
+                strncmp(body + tokens[i].start, "pids", 4) == 0) {
+                continue;
+            }
+            if (tokens[i].end - tokens[i].start == 7 &&
+                strncmp(body + tokens[i].start, "CPUNano", 7) == 0) {
+                parse_uint64_token(body, &tokens[i + 1], &cnt->cpu);
+            }
+            else if (tokens[i].end - tokens[i].start == 8 &&
+                     strncmp(body + tokens[i].start, "MemUsage", 8) == 0) {
+                parse_uint64_token(body, &tokens[i + 1], &cnt->memory_usage);
+            }
+            else if (tokens[i].end - tokens[i].start == 8 &&
+                     strncmp(body + tokens[i].start, "MemLimit", 8) == 0) {
+                parse_uint64_token(body, &tokens[i + 1], &cnt->memory_limit);
+            }
+        }
+
+        flb_free(response);
+        return 0;
+    }
+
+    return -1;
 }
 
 /*
