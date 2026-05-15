@@ -25,9 +25,168 @@
 
 #include <monkey/mk_core/mk_list.h>
 
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+
 #include "podman_metrics.h"
 #include "podman_metrics_config.h"
 #include "podman_metrics_data.h"
+
+#define ACCESS_STATE_UNKNOWN  -1
+#define ACCESS_STATE_NO        0
+#define ACCESS_STATE_YES       1
+
+static int collect_container_data_from_rest_api(struct flb_in_metrics *ctx)
+{
+    int fd;
+    int ret;
+    int sent;
+    int received;
+    int capacity;
+    int length;
+    int token_len;
+    int names_array_id;
+    int i;
+    int collected;
+    struct sockaddr_un address;
+    char request[256];
+    char *response;
+    char *body;
+    char id[CONTAINER_ID_SIZE];
+    char name[CONTAINER_NAME_SIZE];
+    char image_name[IMAGE_NAME_SIZE];
+    jsmn_parser parser;
+    jsmntok_t tokens[JSON_TOKENS];
+
+    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    strncpy(address.sun_path, ctx->podman_socket_path, sizeof(address.sun_path) - 1);
+
+    if (connect(fd, (struct sockaddr *) &address, sizeof(address)) == -1) {
+        close(fd);
+        if (ctx->rest_api_accessible != ACCESS_STATE_NO) {
+            flb_plg_warn(ctx->ins, "Failed to connect to Podman REST API via %s",
+                         ctx->podman_socket_path);
+        }
+        ctx->rest_api_accessible = ACCESS_STATE_NO;
+        return -1;
+    }
+    ctx->rest_api_accessible = ACCESS_STATE_YES;
+
+    ret = snprintf(request, sizeof(request),
+                   "GET %s HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+                   PODMAN_REST_CONTAINERS_PATH);
+    if (ret <= 0 || ret >= sizeof(request)) {
+        close(fd);
+        return -1;
+    }
+
+    sent = send(fd, request, ret, 0);
+    if (sent <= 0) {
+        close(fd);
+        return -1;
+    }
+
+    capacity = 32768;
+    length = 0;
+    response = flb_calloc(1, capacity);
+    if (response == NULL) {
+        close(fd);
+        return -1;
+    }
+
+    while (1) {
+        received = recv(fd, response + length, capacity - length - 1, 0);
+        if (received <= 0) {
+            break;
+        }
+        length += received;
+        if (length >= capacity - 2048) {
+            capacity *= 2;
+            response = flb_realloc(response, capacity);
+            if (response == NULL) {
+                close(fd);
+                return -1;
+            }
+        }
+    }
+    close(fd);
+    response[length] = '\0';
+
+    body = strstr(response, "\r\n\r\n");
+    if (body == NULL) {
+        flb_free(response);
+        return -1;
+    }
+    body += 4;
+
+    jsmn_init(&parser);
+    ret = jsmn_parse(&parser, body, strlen(body), tokens, JSON_TOKENS);
+    if (ret < 1 || tokens[0].type != JSMN_ARRAY) {
+        flb_free(response);
+        return -1;
+    }
+
+    collected = 0;
+    id[0] = '\0';
+    name[0] = '\0';
+    image_name[0] = '\0';
+
+    for (i = 0; i < ret; i++) {
+        if (tokens[i].type != JSMN_STRING) {
+            continue;
+        }
+
+        if (tokens[i].end - tokens[i].start == 2 &&
+            strncmp(body + tokens[i].start, "Id", 2) == 0) {
+            token_len = tokens[i + 1].end - tokens[i + 1].start;
+            strncpy(id, body + tokens[i + 1].start, token_len);
+            id[token_len] = '\0';
+        }
+        else if (tokens[i].end - tokens[i].start == 5 &&
+                 strncmp(body + tokens[i].start, "Image", 5) == 0) {
+            token_len = tokens[i + 1].end - tokens[i + 1].start;
+            strncpy(image_name, body + tokens[i + 1].start, token_len);
+            image_name[token_len] = '\0';
+        }
+        else if (tokens[i].end - tokens[i].start == 5 &&
+                 strncmp(body + tokens[i].start, "Names", 5) == 0) {
+            names_array_id = i + 1;
+            if (tokens[names_array_id].type == JSMN_ARRAY && tokens[names_array_id].size > 0) {
+                token_len = tokens[names_array_id + 1].end - tokens[names_array_id + 1].start;
+                strncpy(name, body + tokens[names_array_id + 1].start, token_len);
+                name[token_len] = '\0';
+            }
+        }
+        else if (tokens[i].end - tokens[i].start == 5 &&
+                 strncmp(body + tokens[i].start, "State", 5) == 0) {
+            if (id[0] != '\0') {
+                if (name[0] == '\0') {
+                    snprintf(name, sizeof(name), "%s", id);
+                }
+                if (image_name[0] == '\0') {
+                    snprintf(image_name, sizeof(image_name), "unknown");
+                }
+                add_container_to_list(ctx, id, name, image_name);
+                collected++;
+            }
+            id[0] = '\0';
+            name[0] = '\0';
+            image_name[0] = '\0';
+        }
+    }
+
+    flb_free(response);
+    flb_plg_debug(ctx->ins, "Collected %d containers from podman REST API", collected);
+    return collected;
+}
 
 /*
  * Collect information about podman containers (ID and Name) from podman configuration
@@ -59,9 +218,15 @@ static int collect_container_data(struct flb_in_metrics *ctx)
 
     flb_utils_read_file(ctx->config, &buffer, &read_bytes);
     if (!read_bytes) {
-        flb_plg_warn(ctx->ins, "Failed to open %s", ctx->config);
-        return -1;
+        if (ctx->config_accessible != ACCESS_STATE_NO) {
+            flb_plg_warn(ctx->ins,
+                         "Failed to open %s. Falling back to Podman REST API via %s",
+                         ctx->config, ctx->podman_socket_path);
+        }
+        ctx->config_accessible = ACCESS_STATE_NO;
+        return collect_container_data_from_rest_api(ctx);
     }
+    ctx->config_accessible = ACCESS_STATE_YES;
     buffer[read_bytes] = 0;
     flb_plg_debug(ctx->ins, "Read %zu bytes", read_bytes);
 
@@ -427,6 +592,8 @@ static int in_metrics_init(struct flb_input_instance *in, struct flb_config *con
     ctx->rx_errors = NULL;
     ctx->tx_bytes = NULL;
     ctx->tx_errors = NULL;
+    ctx->config_accessible = ACCESS_STATE_UNKNOWN;
+    ctx->rest_api_accessible = ACCESS_STATE_UNKNOWN;
 
     if (flb_input_config_map_set(in, (void *) ctx) == -1) {
         flb_free(ctx);
@@ -448,6 +615,16 @@ static int in_metrics_init(struct flb_input_instance *in, struct flb_config *con
     else {
         flb_plg_info(ctx->ins, "Using default config file %s", PODMAN_CONFIG_DEFAULT_PATH);
         ctx->config = flb_sds_create(PODMAN_CONFIG_DEFAULT_PATH);
+    }
+    if (access(ctx->config, R_OK) == 0) {
+        ctx->config_accessible = ACCESS_STATE_YES;
+        flb_plg_info(ctx->ins, "Podman config %s is accessible", ctx->config);
+    }
+    else {
+        ctx->config_accessible = ACCESS_STATE_NO;
+        flb_plg_info(ctx->ins,
+                     "Podman config %s is not accessible, REST API at %s will be used",
+                     ctx->config, ctx->podman_socket_path);
     }
 
     if (get_cgroup_version(ctx) == CGROUP_V2) {

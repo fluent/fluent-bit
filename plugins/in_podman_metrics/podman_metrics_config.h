@@ -72,6 +72,8 @@
 
 /* Default podman config file path, in case of not provided one */
 #define PODMAN_CONFIG_DEFAULT_PATH      "/var/lib/containers/storage/overlay-containers/containers.json"
+#define PODMAN_SOCKET_DEFAULT_PATH      "/run/podman/podman.sock"
+#define PODMAN_REST_CONTAINERS_PATH     "/v4.0.0/libpod/containers/json?all=true"
 
 /* Markers of network values in /proc/<pid>/dev/net */
 #define DEV_NET_IGNORE_LINES            2
@@ -174,6 +176,7 @@ struct flb_in_metrics {
     int scrape_on_start;
     int scrape_interval;
     flb_sds_t podman_config_path;
+    flb_sds_t podman_socket_path;
 
     /* container list */
     struct mk_list items;
@@ -198,6 +201,8 @@ struct flb_in_metrics {
 
     /* podman config file path */
     flb_sds_t config;
+    int config_accessible;
+    int rest_api_accessible;
 
     /* proc and sys paths, overwriting mostly for testing */
     flb_sds_t sysfs_path;

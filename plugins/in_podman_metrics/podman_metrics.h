@@ -31,6 +31,7 @@
 #include "podman_metrics_config.h"
 
 static int collect_container_data(struct flb_in_metrics *ctx);
+static int collect_container_data_from_rest_api(struct flb_in_metrics *ctx);
 static int add_container_to_list(struct flb_in_metrics *ctx, flb_sds_t id, flb_sds_t name, flb_sds_t image_name);
 static int destroy_container_list(struct flb_in_metrics *ctx);
 
@@ -67,6 +68,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "path.config", NULL,
      0, FLB_TRUE, offsetof(struct flb_in_metrics, podman_config_path),
      "Path to podman config file"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "path.podman_socket", PODMAN_SOCKET_DEFAULT_PATH,
+     0, FLB_TRUE, offsetof(struct flb_in_metrics, podman_socket_path),
+     "Path to Podman REST API unix socket"
     },
     {
      FLB_CONFIG_MAP_STR, "path.sysfs", SYSFS_PATH,
