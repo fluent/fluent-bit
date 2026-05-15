@@ -1089,21 +1089,22 @@ static size_t receiver_recv(struct fw_conn *conn, char *buf, size_t try_size) {
     return actual_size;
 }
 
-static size_t receiver_to_unpacker(struct fw_conn *conn, size_t request_size,
-                                   msgpack_unpacker *unpacker)
+static int receiver_to_unpacker(struct fw_conn *conn, size_t request_size,
+                                msgpack_unpacker *unpacker, size_t *recv_len)
 {
-    size_t recv_len;
+    *recv_len = 0;
 
     /* make sure there's enough room, or expand the unpacker accordingly */
     if (msgpack_unpacker_buffer_capacity(unpacker) < request_size) {
-        msgpack_unpacker_reserve_buffer(unpacker, request_size);
-        assert(msgpack_unpacker_buffer_capacity(unpacker) >= request_size);
+        if (!msgpack_unpacker_reserve_buffer(unpacker, request_size)) {
+            return -1;
+        }
     }
-    recv_len = receiver_recv(conn, msgpack_unpacker_buffer(unpacker),
-                             request_size);
-    msgpack_unpacker_buffer_consumed(unpacker, recv_len);
+    *recv_len = receiver_recv(conn, msgpack_unpacker_buffer(unpacker),
+                              request_size);
+    msgpack_unpacker_buffer_consumed(unpacker, *recv_len);
 
-    return recv_len;
+    return 0;
 }
 
 static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
@@ -1284,11 +1285,26 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     }
 
     unp = msgpack_unpacker_new(1024);
+    if (!unp) {
+        flb_plg_error(ctx->ins, "could not allocate msgpack unpacker");
+        flb_sds_destroy(out_tag);
+        return -1;
+    }
+
     msgpack_unpacked_init(&result);
     conn->rest = conn->buf_len;
 
     while (1) {
-        recv_len = receiver_to_unpacker(conn, EACH_RECV_SIZE, unp);
+        ret = receiver_to_unpacker(conn, EACH_RECV_SIZE, unp, &recv_len);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not allocate msgpack unpacker buffer");
+            msgpack_unpacked_destroy(&result);
+            msgpack_unpacker_free(unp);
+            flb_sds_destroy(out_tag);
+
+            return -1;
+        }
+
         if (recv_len == 0) {
             /* No more data */
             msgpack_unpacker_free(unp);
