@@ -1,7 +1,7 @@
 pipeline:
   inputs:
     - name: opentelemetry
-      port: 4318
+      port: 4319
       routes:
         logs:
           # Route 1: Match by resource attribute - service_name
