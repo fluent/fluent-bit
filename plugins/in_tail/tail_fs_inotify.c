@@ -267,6 +267,10 @@ static int tail_fs_event(struct flb_input_instance *ins,
                           file->inode, file->name, size_delta);
             file->offset = offset;
             file->buf_len = 0;
+            file->anchor_offset = offset;
+            file->skip_bytes = 0;
+            file->exclude_bytes = 0;
+            file->skipping_mode = FLB_FALSE;
 
             /* Update offset in the database file */
 #ifdef FLB_HAVE_SQLDB
