@@ -215,7 +215,7 @@ static int tail_fs_event(struct flb_input_instance *ins,
         flb_tail_fs_add_rotated(file);
     }
 
-    ret = fstat(file->fd, &st);
+    ret = flb_tail_file_stat(file, &st);
     if (ret == -1) {
         flb_plg_debug(ins, "inode=%"PRIu64" error stat(2) %s, removing",
                       file->inode, file->name);
@@ -257,15 +257,22 @@ static int tail_fs_event(struct flb_input_instance *ins,
          */
 
         if (size_delta < 0) {
-            offset = lseek(file->fd, 0, SEEK_SET);
-            if (offset == -1) {
-                flb_errno();
-                return -1;
+            /* If keeping handle open, it's already open but at wrong offset - seek to beginning */
+            if (ctx->keep_file_handle == FLB_TRUE) {
+                offset = lseek(file->fd, 0, SEEK_SET);
+                if (offset == -1) {
+                    flb_errno();
+                    return -1;
+                }
+                file->offset = offset;
+            }
+            else {
+                /* If not keeping handle open, just update offset - handle will be opened/seeks correctly later */
+                file->offset = 0;
             }
 
             flb_plg_debug(ctx->ins, "tail_fs_event: inode=%"PRIu64" file truncated %s (diff: %"PRId64" bytes)",
                           file->inode, file->name, size_delta);
-            file->offset = offset;
             file->buf_len = 0;
 
             /* Update offset in the database file */
@@ -327,7 +334,7 @@ static int in_tail_progress_check_callback(struct flb_input_instance *ins,
             continue;
         }
 
-        ret = fstat(file->fd, &st);
+        ret = flb_tail_file_stat(file, &st);
         if (ret == -1) {
             flb_errno();
             flb_plg_error(ins, "fstat error");
