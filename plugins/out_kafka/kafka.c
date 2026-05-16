@@ -308,6 +308,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                                 flb_info("[out_kafka] new topic added: %s", dynamic_topic);
                             }
                         }
+                        flb_utils_split_free(topics);
                         flb_free(dynamic_topic);
                     }
                 }
