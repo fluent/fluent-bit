@@ -23,10 +23,10 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/http_server/flb_http_server.h>
 #include <monkey/mk_core.h>
-#include <pthread.h>
 
 /*
  * HTTP buffers that contains certain cached data to be used
