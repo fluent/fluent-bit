@@ -27,7 +27,6 @@
 #include <fluent-bit/http_server/flb_hs_utils.h>
 
 #include <errno.h>
-#include <pthread.h>
 
 /* v1 */
 #include "api/v1/register.h"
