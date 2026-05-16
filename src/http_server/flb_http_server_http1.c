@@ -419,6 +419,7 @@ int flb_http1_response_commit(struct flb_http_response *response)
 
         return -9;
     }
+    response_buffer = sds_result;
 
     response_buffer = sds_result;
 

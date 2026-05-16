@@ -26,12 +26,14 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/http_server/flb_http_server.h>
 #include <monkey/mk_core.h>
+#include <pthread.h>
 
 /*
  * HTTP buffers that contains certain cached data to be used
  * by end-points.
  */
 struct flb_hs_buf {
+    pthread_mutex_t lock;
     int users;
     int pending_free;
     flb_sds_t data;
@@ -81,6 +83,7 @@ struct flb_hs {
     struct flb_config *config;
     struct mk_list routes;
     struct mk_list health_metrics;
+    pthread_mutex_t health_metrics_lock;
     struct flb_health_check_metrics_counter health_counter;
 
     struct flb_hs_buf metrics;
@@ -102,6 +105,8 @@ int flb_hs_push_storage_metrics(struct flb_hs *hs, void *data, size_t size);
 int flb_hs_destroy(struct flb_hs *ctx);
 int flb_hs_start(struct flb_hs *hs);
 void flb_hs_cmt_buffer_destroy(void *data);
+int flb_hs_buf_acquire(struct flb_hs_buf *buffer, int require_data,
+                       int require_raw_data);
 void flb_hs_buf_release(struct flb_hs_buf *buffer, void (*raw_free)(void *));
 int flb_hs_register_endpoint(struct flb_hs *hs,
                              const char *path,

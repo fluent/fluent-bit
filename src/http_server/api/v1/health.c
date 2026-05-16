@@ -48,12 +48,15 @@ int flb_hs_health_state_get(struct flb_hs *hs, struct flb_hs_health_state *state
     }
 
     memset(state, 0, sizeof(struct flb_hs_health_state));
+    pthread_mutex_lock(&hs->health_metrics_lock);
+
     state->error_limit = hs->health_counter.error_limit;
     state->retry_failure_limit = hs->health_counter.retry_failure_limit;
     state->period_limit = hs->health_counter.period_limit;
 
     if (mk_list_is_empty(&hs->health_metrics) == 0) {
         state->healthy = FLB_TRUE;
+        pthread_mutex_unlock(&hs->health_metrics_lock);
         return 0;
     }
 
@@ -79,10 +82,12 @@ int flb_hs_health_state_get(struct flb_hs *hs, struct flb_hs_health_state *state
     if (state->errors > hs->health_counter.error_limit ||
         state->retries_failed > hs->health_counter.retry_failure_limit) {
         state->healthy = FLB_FALSE;
+        pthread_mutex_unlock(&hs->health_metrics_lock);
         return 0;
     }
 
     state->healthy = FLB_TRUE;
+    pthread_mutex_unlock(&hs->health_metrics_lock);
 
     return 0;
 }
