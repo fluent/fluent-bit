@@ -340,6 +340,35 @@ void wait_num_with_timeout(uint32_t timeout_ms, int *output_num)
     }
 }
 
+void wait_expected_num_with_timeout(uint32_t timeout_ms, int expected_num, int *output_num)
+{
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    uint64_t elapsed_time_flb = 0;
+
+    flb_time_get(&start_time);
+
+    while (true) {
+        *output_num = get_output_num();
+
+        if (*output_num >= expected_num) {
+            break;
+        }
+
+        flb_time_msleep(100);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
+
+        if (elapsed_time_flb > timeout_ms) {
+            flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
+            /* Reached timeout. */
+            break;
+        }
+    }
+}
+
 static inline int64_t set_result(int64_t v)
 {
     int64_t old = __sync_lock_test_and_set(&result_time, v);
@@ -1066,13 +1095,10 @@ void flb_test_in_tail_truncate_long_lines()
     flb_ctx_t    *ctx = NULL;
     int in_ffd, out_ffd;
     char path[PATH_MAX];
-    struct tail_test_result result = {0};
     int fd;
 
     const char *target = "truncate_long_lines_basic";
     int nExpected = 3;              /* before + truncated long line + after */
-    int nExpectedNotMatched = 0;    /* unused */
-    int nExpectedLines = 0;         /* unused */
 
     struct flb_lib_out_cb cb;
     int unused = 0;
@@ -1128,7 +1154,7 @@ void flb_test_in_tail_truncate_long_lines()
     ret = flb_start(ctx);
     TEST_CHECK_(ret == 0, "starting engine");
 
-    wait_num_with_timeout(5000, &num);
+    wait_expected_num_with_timeout(5000, nExpected, &num);
 
     num = get_output_num();
     TEST_CHECK(num == nExpected);
