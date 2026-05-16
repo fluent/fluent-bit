@@ -7,10 +7,78 @@
 %{
 
 #include <cmetrics/cmt_decode_prometheus.h>
+#include <stdio.h>
 
 #define STRBUF_RET \
     yylval->str = context->strbuf; \
     context->strbuf = NULL
+
+static void set_allocation_error(struct cmt_decode_prometheus_context *context)
+{
+    context->errcode = CMT_DECODE_PROMETHEUS_ALLOCATION_ERROR;
+
+    if (context->opts.errbuf != NULL && context->opts.errbuf_size > 0) {
+        snprintf(context->opts.errbuf,
+                 context->opts.errbuf_size - 1,
+                 "memory allocation failed");
+    }
+}
+
+static int reset_strbuf(struct cmt_decode_prometheus_context *context)
+{
+    if (context->strbuf != NULL) {
+        cfl_sds_destroy(context->strbuf);
+    }
+
+    context->strbuf = cfl_sds_create_size(256);
+    if (context->strbuf == NULL) {
+        set_allocation_error(context);
+
+        return -1;
+    }
+
+    return 0;
+}
+
+static int append_strbuf(struct cmt_decode_prometheus_context *context,
+                         const char *text, int length)
+{
+    cfl_sds_t result;
+
+    result = cfl_sds_cat(context->strbuf, text, length);
+    if (result == NULL) {
+        set_allocation_error(context);
+
+        return -1;
+    }
+
+    context->strbuf = result;
+
+    return 0;
+}
+
+#define STRBUF_CREATE() \
+    do { \
+        if (reset_strbuf(context) != 0) { \
+            return 0; \
+        } \
+    } while (0)
+
+#define STRBUF_APPEND(text, length) \
+    do { \
+        if (append_strbuf(context, (text), (length)) != 0) { \
+            return 0; \
+        } \
+    } while (0)
+
+#define SET_STR_TOKEN() \
+    do { \
+        yylval->str = cfl_sds_create(yytext); \
+        if (yylval->str == NULL) { \
+            set_allocation_error(context); \
+            return 0; \
+        } \
+    } while (0)
 
 %}
 
@@ -74,7 +142,7 @@
 
 <HELPTAG,TYPETAG>[^ \t]+ {
     // The next token will be the metric name
-    yylval->str = cfl_sds_create(yytext);
+    SET_STR_TOKEN();
     return YYSTATE == HELPTAG ? HELP : TYPE;
 }
 
@@ -86,7 +154,7 @@
         // separate start condition for this to handle "\\" and "\n" escapes
         // more easily.
         BEGIN(INHELPTAG);
-        context->strbuf = cfl_sds_create_size(256);
+        STRBUF_CREATE();
     }
     else {
         // For TYPETAG we enter INTYPETAG start condition to check only valid
@@ -107,17 +175,17 @@
 
 <INHELPTAG>\\n {
     // Process linefeed escape sequence
-    context->strbuf = cfl_sds_cat(context->strbuf, "\n", 1);
+    STRBUF_APPEND("\n", 1);
 }
 
 <INHELPTAG>\\\\ {
     // Process backslack escape sequence
-    context->strbuf = cfl_sds_cat(context->strbuf, "\\", 1);
+    STRBUF_APPEND("\\", 1);
 }
 
 <INHELPTAG>[^\r\n\\]+ {
     // Put everything that is not a backslash or a line feed into strbuf
-    context->strbuf = cfl_sds_cat(context->strbuf, yytext, yyleng);
+    STRBUF_APPEND(yytext, yyleng);
 }
 
 <INTYPETAG>counter {
@@ -146,26 +214,23 @@
 
 ["] {
     BEGIN(INQUOTE);
-    if (context->strbuf != NULL) {
-        cfl_sds_destroy(context->strbuf);
-    }
-    context->strbuf = cfl_sds_create_size(256);
+    STRBUF_CREATE();
 }
 
 <INQUOTE>[\\]["] {
-    context->strbuf = cfl_sds_cat(context->strbuf, "\"", 1);
+    STRBUF_APPEND("\"", 1);
 }
 
 <INQUOTE>\\n {
-    context->strbuf = cfl_sds_cat(context->strbuf, "\n", 1);
+    STRBUF_APPEND("\n", 1);
 }
 
 <INQUOTE>\\\\ {
-    context->strbuf = cfl_sds_cat(context->strbuf, "\\", 1);
+    STRBUF_APPEND("\\", 1);
 }
 
 <INQUOTE>[^\r\n\\"]+ {
-    context->strbuf = cfl_sds_cat(context->strbuf, yytext, yyleng);
+    STRBUF_APPEND(yytext, yyleng);
 }
 
 <INQUOTE>["] {
@@ -180,7 +245,7 @@
 }
 
 [a-zA-Z_][a-zA-Z_0-9]*  {
-    yylval->str = cfl_sds_create(yytext);
+    SET_STR_TOKEN();
     return IDENTIFIER;
 }
 
