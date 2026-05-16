@@ -19,6 +19,8 @@ import yaml
 import logging
 import pytest
 
+from utils.test_service import stop_active_services
+
 # Configure logging
 def configure_logging():
     logger = logging.getLogger(__name__)
@@ -51,6 +53,10 @@ def pytest_sessionstart(session):
     logger.info("Starting pytest session")
     #flb = FluentBitManager(GLOBAL_CONFIG['fluent_bit']['config_path'])
     #flb = FluentBitManager()
+
+@pytest.hookimpl(trylast=True)
+def pytest_runtest_teardown(item, nextitem):
+    stop_active_services()
 
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):

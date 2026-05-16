@@ -7,6 +7,22 @@ from utils.fluent_bit_manager import FluentBitManager
 from utils.network import find_available_port
 
 
+_active_services = set()
+
+
+def stop_active_services():
+    errors = []
+
+    for service in list(_active_services):
+        try:
+            service.stop()
+        except Exception as exc:
+            errors.append(exc)
+
+    if errors:
+        raise errors[0]
+
+
 class FluentBitTestService:
     def __init__(
         self,
@@ -69,20 +85,29 @@ class FluentBitTestService:
         for key, value in self.extra_env.items():
             self._set_env(key, str(value))
 
-        if self.pre_start:
-            self.pre_start(self)
+        _active_services.add(self)
 
-        self.flb.start()
+        try:
+            if self.pre_start:
+                self.pre_start(self)
+
+            self.flb.start()
+        except Exception:
+            self.stop()
+            raise
 
     def stop(self):
+        had_allocated_ports = bool(self._allocated_ports)
+
         try:
             if self.flb:
                 self.flb.stop()
         finally:
-            if self.post_stop:
+            if self.post_stop and had_allocated_ports:
                 self.post_stop(self)
             self._restore_env()
             self._allocated_ports.clear()
+            _active_services.discard(self)
 
     def wait_for_http_endpoint(self, url, *, timeout=10, interval=0.5):
         deadline = time.time() + timeout
