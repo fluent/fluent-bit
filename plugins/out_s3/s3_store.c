@@ -215,6 +215,7 @@ static int set_files_context(struct flb_s3 *ctx)
     struct flb_fstore_stream *fs_stream;
     struct flb_fstore_file *fsf;
     struct s3_file *s3_file;
+    ssize_t file_size;
 
     mk_list_foreach(head, &ctx->fs->streams) {
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
@@ -245,6 +246,11 @@ static int set_files_context(struct flb_s3 *ctx)
             s3_file->fsf = fsf;
             s3_file->first_log_time = time(NULL);
             s3_file->create_time = time(NULL);
+
+            file_size = cio_chunk_get_real_size(fsf->chunk);
+            if (file_size > 0) {
+                s3_file->size = (size_t) file_size;
+            }
 
             /* Use fstore opaque 'data' reference to keep our context */
             fsf->data = s3_file;
@@ -321,6 +327,16 @@ int s3_store_init(struct flb_s3 *ctx)
     }
     ctx->stream_upload = fs_stream;
 
+    /* Terminal quarantine stream */
+    fs_stream = flb_fstore_stream_create(ctx->fs, "quarantine");
+    if (!fs_stream) {
+        flb_plg_error(ctx->ins, "could not initialize quarantine stream");
+        flb_fstore_destroy(fs);
+        ctx->fs = NULL;
+        return -1;
+    }
+    ctx->stream_quarantine = fs_stream;
+
     set_files_context(ctx);
     return 0;
 }
@@ -376,7 +392,8 @@ int s3_store_has_data(struct flb_s3 *ctx)
     mk_list_foreach(head, &ctx->fs->streams) {
         /* skip multi upload stream */
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
-        if (fs_stream == ctx->stream_upload) {
+        if (fs_stream == ctx->stream_upload ||
+            fs_stream == ctx->stream_quarantine) {
             continue;
         }
 
@@ -411,6 +428,47 @@ int s3_store_file_inactive(struct flb_s3 *ctx, struct s3_file *s3_file)
     ret = flb_fstore_file_inactive(ctx->fs, fsf);
 
     return ret;
+}
+
+int s3_store_file_quarantine(struct flb_s3 *ctx, struct s3_file *s3_file)
+{
+    struct flb_fstore_file *fsf;
+    struct flb_fstore_file *qfsf;
+    void *buf;
+    size_t size;
+    int ret;
+
+    fsf = s3_file->fsf;
+    ret = flb_fstore_file_content_copy(ctx->fs, fsf, &buf, &size);
+    if (ret < 0) {
+        return -1;
+    }
+
+    qfsf = flb_fstore_file_create(ctx->fs, ctx->stream_quarantine, fsf->name, size);
+    if (qfsf == NULL) {
+        flb_free(buf);
+        return -1;
+    }
+
+    if (fsf->meta_buf != NULL && fsf->meta_size > 0) {
+        ret = flb_fstore_file_meta_set(ctx->fs, qfsf, fsf->meta_buf, fsf->meta_size);
+        if (ret < 0) {
+            flb_free(buf);
+            flb_fstore_file_delete(ctx->fs, qfsf);
+            return -1;
+        }
+    }
+
+    ret = flb_fstore_file_append(qfsf, buf, size);
+    flb_free(buf);
+    if (ret < 0) {
+        flb_fstore_file_delete(ctx->fs, qfsf);
+        return -1;
+    }
+
+    flb_fstore_file_delete(ctx->fs, fsf);
+    flb_free(s3_file);
+    return 0;
 }
 
 int s3_store_file_delete(struct flb_s3 *ctx, struct s3_file *s3_file)
