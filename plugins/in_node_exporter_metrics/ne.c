@@ -526,6 +526,12 @@ static struct flb_config_map config_map[] = {
      "ignore regular expression for disk devices"
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "netdev.ignore_device_regex", NULL,
+     0, FLB_TRUE, offsetof(struct flb_ne, netdev_regex_skip_devices_text),
+     "ignore regular expression for network devices"
+    },
+
     /* hwmon specific settings */
     {
      FLB_CONFIG_MAP_STR, "collector.hwmon.chip-include", NULL,
