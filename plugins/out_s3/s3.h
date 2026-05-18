@@ -49,6 +49,8 @@
 #define DEFAULT_UPLOAD_TIMEOUT 3600
 
 #define MAX_UPLOAD_ERRORS 5
+#define S3_RETRY_EXHAUSTED_DELETE     0
+#define S3_RETRY_EXHAUSTED_QUARANTINE 1
 
 /*
  * If we see repeated errors on an upload/chunk, we will discard it
@@ -113,6 +115,7 @@ struct flb_s3 {
     char *sts_endpoint;
     char *canned_acl;
     char *content_type;
+    char *retry_exhausted_action_str;
     char *storage_class;
     char *log_key;
     char *external_id;
@@ -122,10 +125,12 @@ struct flb_s3 {
     int use_put_object;
     int send_content_md5;
     int static_file_path;
+    int retry_exhausted_action;
     int compression;
     int port;
     int insecure;
     size_t store_dir_limit_size;
+    size_t quarantine_dir_limit_size;
 
     struct flb_blob_db blob_db;
     flb_sds_t blob_database_file;
@@ -143,6 +148,7 @@ struct flb_s3 {
 
     /* track the total amount of buffered data */
     size_t current_buffer_size;
+    size_t quarantine_buffer_size;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;
@@ -164,6 +170,7 @@ struct flb_s3 {
     struct flb_fstore *fs;
     struct flb_fstore_stream *stream_active;  /* default active stream */
     struct flb_fstore_stream *stream_upload;  /* multipart upload stream */
+    struct flb_fstore_stream *stream_quarantine; /* retry-exhausted stream */
     struct flb_fstore_stream *stream_metadata; /* s3 metadata stream */
 
     /*

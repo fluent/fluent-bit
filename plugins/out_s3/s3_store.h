@@ -45,6 +45,7 @@ int s3_store_has_data(struct flb_s3 *ctx);
 int s3_store_has_uploads(struct flb_s3 *ctx);
 
 int s3_store_file_inactive(struct flb_s3 *ctx, struct s3_file *s3_file);
+int s3_store_file_quarantine(struct flb_s3 *ctx, struct s3_file *s3_file);
 struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
                                   int tag_len);
 int s3_store_file_delete(struct flb_s3 *ctx, struct s3_file *s3_file);
