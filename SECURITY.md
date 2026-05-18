@@ -6,13 +6,14 @@ Fluent Bit maintains active security support for a limited set of release lines.
 
 | Version   | Status     | Security Updates Until |
 |-----------|------------|------------------------|
+| **5.0.x** | ✅ Active  | **November 30, 2026**  |
 | **4.2.x** | ✅ Active  | **July 30, 2026**      |
-| **4.1.x** | ✅ Active  | **February 28, 2026**  |
+| **4.1.x** | ❌ EOL     | **February 28, 2026**  |
 | **4.0.x** | ❌ EOL     | **December 23, 2025**  |
 | **3.2.x** | ❌ EOL     | —                      |
 | **< 3.2** | ❌ EOL     | —                      |
 
-> **Note:** 3.2 and earlier are End-of-Life (EOL) and receive no further fixes.
+> **Note:** 4.1 and earlier are End-of-Life (EOL) and receive no further fixes.
 
 ---
 
