@@ -20,7 +20,7 @@
 #ifndef FLB_OUT_KINESIS_API
 #define FLB_OUT_KINESIS_API
 
-#define PUT_RECORDS_PAYLOAD_SIZE         5242880
+#define PUT_RECORDS_PAYLOAD_SIZE         10485760
 #define MAX_EVENTS_PER_PUT               500
 #define MAX_EVENT_SIZE                   1048556 /* 1048576 - 20 bytes for partition key */
 #define MAX_B64_EVENT_SIZE               1398076 /* ceil(1048556 / 3) * 4 */
