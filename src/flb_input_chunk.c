@@ -582,6 +582,39 @@ int flb_input_chunk_write_at(void *data, off_t offset,
     return ret;
 }
 
+int flb_input_chunk_release_route(struct flb_input_chunk *ic,
+                                  struct flb_output_instance *o_ins)
+{
+    ssize_t bytes;
+
+    if (ic == NULL || o_ins == NULL || ic->routes_mask == NULL) {
+        return -1;
+    }
+
+    if (!flb_routes_mask_get_bit(ic->routes_mask,
+                                 o_ins->id,
+                                 o_ins->config->router)) {
+        return 0;
+    }
+
+    if (o_ins->total_limit_size != -1 && ic->fs_counted == FLB_TRUE) {
+        bytes = flb_input_chunk_get_real_size(ic);
+        if (bytes < 0) {
+            flb_debug("[input chunk] could not retrieve chunk real size");
+            return -1;
+        }
+
+        FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, bytes);
+        o_ins->fs_chunks_size -= bytes;
+    }
+
+    flb_routes_mask_clear_bit(ic->routes_mask,
+                              o_ins->id,
+                              o_ins->config->router);
+
+    return 0;
+}
+
 static int flb_input_chunk_drop_task_route(
             struct flb_task *task,
             struct flb_output_instance *output_plugin,
