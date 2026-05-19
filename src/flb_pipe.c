@@ -43,31 +43,38 @@
 #include <fluent-bit/flb_time.h>
 
 #ifdef _WIN32
+#include <monkey/mk_core/mk_win32_socketpair.h>
 
 /*
- * Building on Windows means that Monkey library (lib/monkey) and it
- * core runtime have been build with 'libevent' backend support, that
- * library provide an abstraction to create a socketpairs.
+ * Building on Windows means that Monkey library (lib/monkey) provides
+ * a socketpair abstraction backed by AF_UNIX stream sockets when the
+ * platform supports them.
  *
  * Creating a pipe on Fluent Bit @Windows, means create a socket pair.
  */
 
 int flb_pipe_create(flb_pipefd_t pipefd[2])
 {
+    SOCKET pair[2];
     struct linger sl = {1, 0}; /* l_onoff = 1, l_linger = 0 */
 
-    if (evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, pipefd) == -1) {
+    if (mk_win32_socketpair(pair) == -1) {
         perror("socketpair");
         return -1;
     }
 
-    if (setsockopt(pipefd[0], SOL_SOCKET, SO_LINGER, (const char*)&sl, sizeof(sl)) == -1) {
+    pipefd[0] = (flb_pipefd_t) pair[0];
+    pipefd[1] = (flb_pipefd_t) pair[1];
+
+    if (setsockopt((SOCKET) pipefd[0],
+                   SOL_SOCKET, SO_LINGER, (const char *) &sl, sizeof(sl)) == -1) {
         perror("setsockopt linger failed on pipefd[0]");
         flb_pipe_destroy(pipefd);
         return -1;
     }
 
-    if (setsockopt(pipefd[1], SOL_SOCKET, SO_LINGER, (const char*)&sl, sizeof(sl)) == -1) {
+    if (setsockopt((SOCKET) pipefd[1],
+                   SOL_SOCKET, SO_LINGER, (const char *) &sl, sizeof(sl)) == -1) {
         perror("setsockopt linger failed on pipefd[1]");
         flb_pipe_destroy(pipefd);
         return -1;
@@ -78,18 +85,20 @@ int flb_pipe_create(flb_pipefd_t pipefd[2])
 
 void flb_pipe_destroy(flb_pipefd_t pipefd[2])
 {
-    evutil_closesocket(pipefd[0]);
-    evutil_closesocket(pipefd[1]);
+    closesocket((SOCKET) pipefd[0]);
+    closesocket((SOCKET) pipefd[1]);
 }
 
 int flb_pipe_close(flb_pipefd_t fd)
 {
-    return evutil_closesocket(fd);
+    return closesocket((SOCKET) fd);
 }
 
 int flb_pipe_set_nonblocking(flb_pipefd_t fd)
 {
-    return evutil_make_socket_nonblocking(fd);
+    u_long mode = 1;
+
+    return ioctlsocket((SOCKET) fd, FIONBIO, &mode);
 }
 #else
 /* All other flavors of Unix/BSD are OK */
@@ -133,7 +142,7 @@ int flb_pipe_set_nonblocking(flb_pipefd_t fd)
 #endif
 
 /* Blocking read until receive 'count' bytes */
-ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
+ssize_t flb_pipe_read_all(flb_pipefd_t fd, void *buf, size_t count)
 {
     ssize_t bytes;
     size_t total = 0;
@@ -165,7 +174,7 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
 }
 
 /* Blocking write until send 'count bytes */
-ssize_t flb_pipe_write_all(int fd, const void *buf, size_t count)
+ssize_t flb_pipe_write_all(flb_pipefd_t fd, const void *buf, size_t count)
 {
     ssize_t bytes;
     size_t total = 0;

@@ -25,7 +25,7 @@
 #ifdef _WIN32
 #include <event.h>
 
-#define flb_sockfd_t         evutil_socket_t
+#define flb_sockfd_t         intptr_t
 
 #define flb_socket_close(fd) evutil_closesocket(fd)
 #define flb_socket_error(fd) evutil_socket_geterror(fd)
