@@ -44,6 +44,9 @@ jobs:
     needs:
       - pr-package-test-build-get-meta
       - pr-package-test-build-generate-matrix
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/call-build-images.yaml
     with:
       version: pr-${{ github.event.pull_request.number }}
