@@ -56,6 +56,12 @@
 
 #define FLB_INPUT_CHUNK_RAW_LOG_ROUTING      (1 << 0)
 
+/*
+ * chunkio file header overhead:
+ * 2 header bytes + 4 CRC32 + 16 padding + 2 metadata length bytes.
+ */
+#define FLB_INPUT_CHUNK_FILE_HEADER_SIZE 24
+
 struct input_chunk_raw {
     struct flb_input_instance *ins;
     int event_type;
@@ -383,16 +389,21 @@ static int flb_input_chunk_release_space(
                 continue;
             }
 
+            chunk_size = flb_input_chunk_get_real_size(old_input_chunk);
+            if (chunk_size < 0) {
+                flb_debug("[input chunk] could not retrieve chunk real size");
+                continue;
+            }
+
+            chunk_released = FLB_FALSE;
+            chunk_destroy_flag = FLB_FALSE;
+
             if (flb_input_chunk_drop_task_route(old_input_chunk->task,
                                                 output_plugin,
                                                 &dropped_record_count,
                                                 &dropped_byte_count) == FLB_FALSE) {
                 continue;
             }
-
-            chunk_size = flb_input_chunk_get_real_size(old_input_chunk);
-            chunk_released = FLB_FALSE;
-            chunk_destroy_flag = FLB_FALSE;
 
             if (release_scope == FLB_INPUT_CHUNK_RELEASE_SCOPE_LOCAL) {
                 flb_routes_mask_clear_bit(old_input_chunk->routes_mask,
@@ -543,12 +554,7 @@ ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic)
     }
 
     meta_size = cio_meta_size(ic->chunk);
-    size += meta_size
-        /* See https://github.com/edsiper/chunkio#file-layout for more details */
-         + 2    /* HEADER BYTES */
-         + 4    /* CRC32 */
-         + 16   /* PADDING */
-         + 2;   /* METADATA LENGTH BYTES */
+    size += meta_size + FLB_INPUT_CHUNK_FILE_HEADER_SIZE;
 
     return size;
 }
@@ -725,12 +731,16 @@ static size_t flb_input_chunk_get_projected_write_size(
     size_t needed_size;
     size_t page_size;
     size_t meta_size;
+    size_t content_size;
     size_t logical_size;
     size_t alloc_size;
     size_t current_size;
     size_t realloc_size;
     size_t projected_size;
     size_t target_size;
+    ssize_t real_size;
+    ssize_t meta_size_value;
+    ssize_t content_size_value;
     struct cio_chunk *chunk;
     struct flb_input_chunk_cio_file_view *chunk_file;
 
@@ -747,12 +757,22 @@ static size_t flb_input_chunk_get_projected_write_size(
         chunk_file = (struct flb_input_chunk_cio_file_view *) chunk->backend;
     }
 
-    meta_size = (size_t) cio_meta_size(ic->chunk);
-    if ((size_t) flb_input_chunk_get_size(ic) > SIZE_MAX - meta_size - 24) {
+    meta_size_value = cio_meta_size(ic->chunk);
+    content_size_value = flb_input_chunk_get_size(ic);
+
+    if (meta_size_value < 0 || content_size_value < 0) {
         return SIZE_MAX;
     }
 
-    logical_size = (size_t) flb_input_chunk_get_size(ic) + meta_size + 24;
+    meta_size = (size_t) meta_size_value;
+    content_size = (size_t) content_size_value;
+
+    if (meta_size > SIZE_MAX - FLB_INPUT_CHUNK_FILE_HEADER_SIZE ||
+        content_size > SIZE_MAX - meta_size - FLB_INPUT_CHUNK_FILE_HEADER_SIZE) {
+        return SIZE_MAX;
+    }
+
+    logical_size = content_size + meta_size + FLB_INPUT_CHUNK_FILE_HEADER_SIZE;
     if (logical_size > SIZE_MAX - append_size) {
         return SIZE_MAX;
     }
@@ -801,7 +821,10 @@ static size_t flb_input_chunk_get_projected_write_size(
 
     current_size = 0;
     if (ic->fs_counted == FLB_TRUE) {
-        current_size = (size_t) flb_input_chunk_get_real_size(ic);
+        real_size = flb_input_chunk_get_real_size(ic);
+        if (real_size > 0) {
+            current_size = (size_t) real_size;
+        }
     }
 
     if (projected_size > current_size) {
