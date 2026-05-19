@@ -141,13 +141,16 @@ class StorageLimitService(Service):
     def __init__(self, config_file):
         super().__init__(config_file)
         self.storage_path = tempfile.mkdtemp(prefix="fluent_bit_forward_storage_")
+        self.file_output_path = tempfile.mkdtemp(prefix="fluent_bit_forward_file_output_")
         self.service.extra_env["FORWARD_STORAGE_PATH"] = self.storage_path
+        self.service.extra_env["FORWARD_FILE_OUTPUT_PATH"] = self.file_output_path
 
     def stop(self):
         try:
             super().stop()
         finally:
             shutil.rmtree(self.storage_path, ignore_errors=True)
+            shutil.rmtree(self.file_output_path, ignore_errors=True)
 
     def count_chunk_files(self):
         stream_dir = Path(self.storage_path) / "forward.0"
@@ -162,6 +165,36 @@ class StorageLimitService(Service):
             return []
 
         return [path.read_bytes() for path in stream_dir.rglob("*.flb") if path.is_file()]
+
+    def file_output_contents(self):
+        output_dir = Path(self.file_output_path)
+        if not output_dir.exists():
+            return ""
+
+        contents = []
+        for path in output_dir.rglob("*"):
+            if path.is_file():
+                contents.append(path.read_text(encoding="utf-8", errors="replace"))
+
+        return "\n".join(contents)
+
+    def wait_for_file_output_contains(self, text, timeout=10):
+        return self.service.wait_for_condition(
+            lambda: self.file_output_contents()
+            if text in self.file_output_contents()
+            else None,
+            timeout=timeout,
+            interval=0.2,
+            description=f"file output text {text!r}",
+        )
+
+    def wait_for_http_request_count(self, minimum_count, timeout=10):
+        return self.service.wait_for_condition(
+            lambda: data_storage["requests"] if len(data_storage["requests"]) >= minimum_count else None,
+            timeout=timeout,
+            interval=0.2,
+            description=f"{minimum_count} retrying HTTP output requests",
+        )
 
 
 class ForwardReceiverService:
@@ -1437,3 +1470,70 @@ def test_in_forward_storage_limit_multi_output_prefers_deletable_solo_chunk():
 
     assert any(b"shared.one" in content for content in chunk_contents)
     assert not any(b"solo.one" in content for content in chunk_contents)
+
+
+def test_in_forward_storage_limit_shared_success_route_deletes_old_chunk():
+    service = StorageLimitService("in_forward_storage_limit_shared_success_output.yaml")
+    timeout = 30 if os.environ.get("VALGRIND") else 10
+    service.start()
+
+    try:
+        configure_http_response(status_code=500, body={"status": "retry"})
+
+        _send_tcp_payload(
+            service.flb_listener_port,
+            _message_mode_payload("shared.one", {"message": "shared-one"}),
+        )
+        service.wait_for_file_output_contains("shared-one", timeout=timeout)
+        service.wait_for_http_request_count(1, timeout=timeout)
+
+        _send_tcp_payload(
+            service.flb_listener_port,
+            _message_mode_payload("shared.two", {"message": "shared-two"}),
+        )
+        service.wait_for_file_output_contains("shared-two", timeout=timeout)
+        service.wait_for_http_request_count(2, timeout=timeout)
+
+        service.service.wait_for_condition(
+            lambda: service.count_chunk_files() == 2,
+            timeout=timeout,
+            interval=0.2,
+            description="2 shared chunk files before stale route eviction",
+        )
+
+        _send_tcp_payload(
+            service.flb_listener_port,
+            _message_mode_payload("shared.three", {"message": "shared-three"}),
+        )
+        service.wait_for_file_output_contains("shared-three", timeout=timeout)
+        service.wait_for_http_request_count(3, timeout=timeout)
+
+        def shared_success_eviction_snapshot():
+            chunk_contents = service.chunk_file_contents()
+
+            if len(chunk_contents) != 2:
+                return None
+
+            if any(b"shared-one" in content for content in chunk_contents):
+                return None
+
+            if not any(b"shared-two" in content for content in chunk_contents):
+                return None
+
+            if not any(b"shared-three" in content for content in chunk_contents):
+                return None
+
+            return chunk_contents
+
+        chunk_contents = service.service.wait_for_condition(
+            shared_success_eviction_snapshot,
+            timeout=timeout,
+            interval=0.2,
+            description="shared-output stale route eviction snapshot",
+        )
+    finally:
+        service.stop()
+
+    assert not any(b"shared-one" in content for content in chunk_contents)
+    assert any(b"shared-two" in content for content in chunk_contents)
+    assert any(b"shared-three" in content for content in chunk_contents)
