@@ -389,7 +389,11 @@ int mk_http_parser_chunked_decode_buf(struct mk_http_parser *p,
 
 static inline int mk_http_parser_more(struct mk_http_parser *p, int len)
 {
-    if (abs(len - p->i) - 1 > 0) {
+    if (len <= 0 || p->i < 0) {
+        return MK_FALSE;
+    }
+
+    if ((p->i + 1) < len) {
         return MK_TRUE;
     }
 
