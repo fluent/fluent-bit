@@ -1,8 +1,8 @@
 name: PR - packaging tests run on-demand via label
 on:
-  # This workflow is label-gated and should be triggerable by maintainers on
-  # PRs where the default pull_request event cannot access the required
-  # repository permissions.
+  # Use pull_request_target only to observe trusted PR metadata/labels and
+  # dispatch an unprivileged workflow_dispatch build. Do not checkout or run
+  # pull request code from this event.
   pull_request_target:
     types:
       - labeled
@@ -11,19 +11,50 @@ on:
       - synchronize
     branches:
       - master
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to use for package version metadata.
+        required: true
+        type: string
+      pr_ref:
+        description: Pull request merge ref to build, e.g. refs/pull/123/merge.
+        required: true
+        type: string
 
 # Cancel any running on push
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: >-
+    ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' &&
+    inputs.pr_number || github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
+  pr-package-test-dispatch:
+    name: PR - dispatch package builds
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      contains(github.event.pull_request.labels.*.name, 'ok-package-test')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch unprivileged package build
+        run: >-
+          gh workflow run pr-package-tests.yaml
+          --ref "${BASE_REF}"
+          -f pr_number="${PR_NUMBER}"
+          -f pr_ref="refs/pull/${PR_NUMBER}/merge"
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+
   # This job provides this metadata for the other jobs to use.
   pr-package-test-build-get-meta:
     # This is a long test to run so only on-demand for certain PRs
-    if: >-
-      contains(github.event.pull_request.labels.*.name, 'ok-package-test') &&
-      github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch'
     name: Get metadata to add to build
     runs-on: ubuntu-latest
     outputs:
@@ -46,11 +77,11 @@ jobs:
       - pr-package-test-build-generate-matrix
     permissions:
       contents: read
-      packages: write
+      packages: read
     uses: ./.github/workflows/call-build-images.yaml
     with:
-      version: pr-${{ github.event.pull_request.number }}
-      ref: ${{ github.event.pull_request.head.sha }}
+      version: pr-${{ inputs.pr_number }}
+      ref: ${{ inputs.pr_ref }}
       registry: ghcr.io
       username: ${{ github.actor }}
       image: ${{ github.repository }}/pr
@@ -86,10 +117,12 @@ jobs:
     needs:
       - pr-package-test-build-get-meta
       - pr-package-test-build-generate-matrix
+    permissions:
+      contents: read
     uses: ./.github/workflows/call-build-linux-packages.yaml
     with:
-      version: pr-${{ github.event.pull_request.number }}
-      ref: ${{ github.event.pull_request.head.sha }}
+      version: pr-${{ inputs.pr_number }}
+      ref: ${{ inputs.pr_ref }}
       build_matrix: ${{ needs.pr-package-test-build-generate-matrix.outputs.build-matrix }}
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
     secrets:
@@ -99,10 +132,12 @@ jobs:
     name: PR - packages build Windows
     needs:
       - pr-package-test-build-get-meta
+    permissions:
+      contents: read
     uses: ./.github/workflows/call-build-windows.yaml
     with:
-      version: pr-${{ github.event.pull_request.number }}
-      ref: ${{ github.event.pull_request.head.sha }}
+      version: pr-${{ inputs.pr_number }}
+      ref: ${{ inputs.pr_ref }}
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
@@ -111,10 +146,12 @@ jobs:
     name: PR - packages build MacOS
     needs:
       - pr-package-test-build-get-meta
+    permissions:
+      contents: read
     uses: ./.github/workflows/call-build-macos.yaml
     with:
-      version: pr-${{ github.event.pull_request.number }}
-      ref: ${{ github.event.pull_request.head.sha }}
+      version: pr-${{ inputs.pr_number }}
+      ref: ${{ inputs.pr_ref }}
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
