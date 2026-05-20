@@ -52,8 +52,13 @@
 #ifndef ARC4RANDOM_NO_INCLUDES
 #include "evconfig-private.h"
 #ifdef _WIN32
+#ifndef EVENT__HAVE_BCRYPTGENRANDOM
 #include <wincrypt.h>
+#else
+#include <bcrypt.h>
+#endif
 #include <process.h>
+#include <winerror.h>
 #else
 #include <fcntl.h>
 #include <unistd.h>
@@ -61,6 +66,9 @@
 #include <sys/time.h>
 #ifdef EVENT__HAVE_SYS_SYSCTL_H
 #include <sys/sysctl.h>
+#endif
+#ifdef EVENT__HAVE_SYS_RANDOM_H
+#include <sys/random.h>
 #endif
 #endif
 #include <limits.h>
@@ -71,8 +79,7 @@
 /* Add platform entropy 32 bytes (256 bits) at a time. */
 #define ADD_ENTROPY 32
 
-/* Re-seed from the platform RNG after generating this many bytes. */
-#define BYTES_BEFORE_RESEED 1600000
+#define REKEY_BASE (1024*1024) /* NB. should be a power of 2 */
 
 struct arc4_stream {
 	unsigned char i;
@@ -85,11 +92,14 @@ struct arc4_stream {
 #define pid_t int
 #endif
 
+#ifndef O_RDONLY
+#define O_RDONLY _O_RDONLY
+#endif
+
 static int rs_initialized;
 static struct arc4_stream rs;
 static pid_t arc4_stir_pid;
 static int arc4_count;
-static int arc4_seeded_ok;
 
 static inline unsigned char arc4_getbyte(void);
 
@@ -146,66 +156,54 @@ read_all(int fd, unsigned char *buf, size_t count)
 static int
 arc4_seed_win32(void)
 {
+	unsigned char buf[ADD_ENTROPY];
+#ifndef EVENT__HAVE_BCRYPTGENRANDOM
 	/* This is adapted from Tor's crypto_seed_rng() */
 	static int provider_set = 0;
 	static HCRYPTPROV provider;
-	unsigned char buf[ADD_ENTROPY];
 
 	if (!provider_set) {
 		if (!CryptAcquireContext(&provider, NULL, NULL, PROV_RSA_FULL,
-		    CRYPT_VERIFYCONTEXT)) {
+			CRYPT_VERIFYCONTEXT)) {
 			if (GetLastError() != (DWORD)NTE_BAD_KEYSET)
 				return -1;
 		}
 		provider_set = 1;
 	}
 	if (!CryptGenRandom(provider, sizeof(buf), buf))
+#else
+
+	if (BCryptGenRandom(NULL, buf, sizeof(buf),
+		BCRYPT_USE_SYSTEM_PREFERRED_RNG))
+#endif
 		return -1;
 	arc4_addrandom(buf, sizeof(buf));
 	evutil_memclear_(buf, sizeof(buf));
-	arc4_seeded_ok = 1;
 	return 0;
 }
 #endif
 
-#if defined(EVENT__HAVE_SYS_SYSCTL_H) && defined(EVENT__HAVE_SYSCTL)
-#if EVENT__HAVE_DECL_CTL_KERN && EVENT__HAVE_DECL_KERN_RANDOM && EVENT__HAVE_DECL_RANDOM_UUID
-#define TRY_SEED_SYSCTL_LINUX
+#if defined(EVENT__HAVE_GETRANDOM)
+#define TRY_SEED_GETRANDOM
 static int
-arc4_seed_sysctl_linux(void)
+arc4_seed_getrandom(void)
 {
-	/* Based on code by William Ahern, this function tries to use the
-	 * RANDOM_UUID sysctl to get entropy from the kernel.  This can work
-	 * even if /dev/urandom is inaccessible for some reason (e.g., we're
-	 * running in a chroot). */
-	int mib[] = { CTL_KERN, KERN_RANDOM, RANDOM_UUID };
 	unsigned char buf[ADD_ENTROPY];
-	size_t len, n;
-	unsigned i;
-	int any_set;
-
-	memset(buf, 0, sizeof(buf));
+	size_t len;
+	ssize_t n = 0;
 
 	for (len = 0; len < sizeof(buf); len += n) {
-		n = sizeof(buf) - len;
-
-		if (0 != sysctl(mib, 3, &buf[len], &n, NULL, 0))
+		n = getrandom(&buf[len], sizeof(buf) - len, 0);
+		if (n < 0)
 			return -1;
 	}
-	/* make sure that the buffer actually got set. */
-	for (i=0,any_set=0; i<sizeof(buf); ++i) {
-		any_set |= buf[i];
-	}
-	if (!any_set)
-		return -1;
-
 	arc4_addrandom(buf, sizeof(buf));
 	evutil_memclear_(buf, sizeof(buf));
-	arc4_seeded_ok = 1;
 	return 0;
 }
-#endif
+#endif /* EVENT__HAVE_GETRANDOM */
 
+#if defined(EVENT__HAVE_SYS_SYSCTL_H) && defined(EVENT__HAVE_SYSCTL)
 #if EVENT__HAVE_DECL_CTL_KERN && EVENT__HAVE_DECL_KERN_ARND
 #define TRY_SEED_SYSCTL_BSD
 static int
@@ -241,7 +239,6 @@ arc4_seed_sysctl_bsd(void)
 
 	arc4_addrandom(buf, sizeof(buf));
 	evutil_memclear_(buf, sizeof(buf));
-	arc4_seeded_ok = 1;
 	return 0;
 }
 #endif
@@ -287,7 +284,6 @@ arc4_seed_proc_sys_kernel_random_uuid(void)
 	}
 	evutil_memclear_(entropy, sizeof(entropy));
 	evutil_memclear_(buf, sizeof(buf));
-	arc4_seeded_ok = 1;
 	return 0;
 }
 #endif
@@ -311,7 +307,6 @@ static int arc4_seed_urandom_helper_(const char *fname)
 		return -1;
 	arc4_addrandom(buf, sizeof(buf));
 	evutil_memclear_(buf, sizeof(buf));
-	arc4_seeded_ok = 1;
 	return 0;
 }
 
@@ -347,6 +342,10 @@ arc4_seed(void)
 	if (0 == arc4_seed_win32())
 		ok = 1;
 #endif
+#ifdef TRY_SEED_GETRANDOM
+	if (0 == arc4_seed_getrandom())
+		ok = 1;
+#endif
 #ifdef TRY_SEED_URANDOM
 	if (0 == arc4_seed_urandom())
 		ok = 1;
@@ -356,12 +355,6 @@ arc4_seed(void)
 	    0 == arc4_seed_proc_sys_kernel_random_uuid())
 		ok = 1;
 #endif
-#ifdef TRY_SEED_SYSCTL_LINUX
-	/* Apparently Linux is deprecating sysctl, and spewing warning
-	 * messages when you try to use it. */
-	if (!ok && 0 == arc4_seed_sysctl_linux())
-		ok = 1;
-#endif
 #ifdef TRY_SEED_SYSCTL_BSD
 	if (0 == arc4_seed_sysctl_bsd())
 		ok = 1;
@@ -369,18 +362,20 @@ arc4_seed(void)
 	return ok ? 0 : -1;
 }
 
+static inline unsigned int
+arc4_getword(void);
 static int
 arc4_stir(void)
 {
 	int     i;
+	ARC4RANDOM_UINT32 rekey_fuzz; 
 
 	if (!rs_initialized) {
 		arc4_init();
 		rs_initialized = 1;
 	}
 
-	arc4_seed();
-	if (!arc4_seeded_ok)
+	if (0 != arc4_seed())
 		return -1;
 
 	/*
@@ -399,12 +394,14 @@ arc4_stir(void)
 	 * belief that "words" in the Fluhrer/Mantin/Shamir paper refers
 	 * to processor words.
 	 *
-	 * We add another sect to the cargo cult, and choose 12*256.
+	 * We add another sect to the cargo cult, and choose 16*256.
 	 */
-	for (i = 0; i < 12*256; i++)
+	for (i = 0; i < 16*256; i++)
 		(void)arc4_getbyte();
 
-	arc4_count = BYTES_BEFORE_RESEED;
+	rekey_fuzz = arc4_getword();
+	/* rekey interval should not be predictable */
+	arc4_count = REKEY_BASE + (rekey_fuzz % REKEY_BASE);
 
 	return 0;
 }
@@ -441,7 +438,7 @@ arc4_getword(void)
 {
 	unsigned int val;
 
-	val = arc4_getbyte() << 24;
+	val = (unsigned)arc4_getbyte() << 24;
 	val |= arc4_getbyte() << 16;
 	val |= arc4_getbyte() << 8;
 	val |= arc4_getbyte();
@@ -494,6 +491,7 @@ arc4random(void)
 }
 #endif
 
+#ifndef EVENT__HAVE_ARC4RANDOM_BUF
 ARC4RANDOM_EXPORT void
 arc4random_buf(void *buf_, size_t n)
 {
@@ -507,6 +505,7 @@ arc4random_buf(void *buf_, size_t n)
 	}
 	ARC4_UNLOCK_();
 }
+#endif  /* #ifndef EVENT__HAVE_ARC4RANDOM_BUF */
 
 #ifndef ARC4RANDOM_NOUNIFORM
 /*
@@ -527,17 +526,8 @@ arc4random_uniform(unsigned int upper_bound)
 	if (upper_bound < 2)
 		return 0;
 
-#if (UINT_MAX > 0xffffffffUL)
-	min = 0x100000000UL % upper_bound;
-#else
-	/* Calculate (2**32 % upper_bound) avoiding 64-bit math */
-	if (upper_bound > 0x80000000)
-		min = 1 + ~upper_bound;		/* 2**32 - upper_bound */
-	else {
-		/* (2**32 - (x * 2)) % x == 2**32 % x when x <= 2**31 */
-		min = ((0xffffffff - (upper_bound * 2)) + 1) % upper_bound;
-	}
-#endif
+	/* 2**32 % x == (2**32 - x) % x */
+	min = -upper_bound % upper_bound;
 
 	/*
 	 * This could theoretically loop forever but each retry has

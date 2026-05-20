@@ -23,7 +23,7 @@ endif()
 # Monkey Version
 set(MK_VERSION_MAJOR  1)
 set(MK_VERSION_MINOR  8)
-set(MK_VERSION_PATCH  7)
+set(MK_VERSION_PATCH  8)
 set(MK_VERSION_STR "${MK_VERSION_MAJOR}.${MK_VERSION_MINOR}.${MK_VERSION_PATCH}")
 
 # Output paths
@@ -59,10 +59,15 @@ option(MK_PLUGIN_CGI           "CGI support"              No)
 option(MK_PLUGIN_CHEETAH       "Cheetah Shell Interface"  No)
 option(MK_PLUGIN_DIRLISTING    "Directory Listing"       Yes)
 option(MK_PLUGIN_FASTCGI       "FastCGI"                  No)
-option(MK_PLUGIN_LIANA         "Basic network layer"     Yes)
 option(MK_PLUGIN_LOGGER        "Log Writer"               No)
 option(MK_PLUGIN_MANDRIL       "Security"                Yes)
-option(MK_PLUGIN_TLS           "TLS/SSL support"          No)
+option(MK_TLS                  "TLS/SSL support"         Yes)
+set(MK_TLS_BACKEND "auto" CACHE STRING "TLS backend: auto, openssl, or mbedtls")
+set_property(CACHE MK_TLS_BACKEND PROPERTY STRINGS auto openssl mbedtls)
+
+if(DEFINED MK_PLUGIN_TLS)
+  set(MK_TLS ${MK_PLUGIN_TLS})
+endif()
 
 # Options to build Monkey with/without binary and
 # static/dynamic library modes (default is always just
@@ -101,12 +106,6 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(MK_SYSTEM_MALLOC 1)
 endif()
 
-if(MK_STATIC_PLUGINS)
-  set(MK_STATIC_PLUGINS "${MK_STATIC_PLUGINS},liana")
-else()
-  set(MK_STATIC_PLUGINS "liana")
-endif()
-
 # Variable to be populated by plugins/CMakeLists.txt. It will contain the
 # code required to initialize any static plugin.
 set(STATIC_PLUGINS_INIT "")
@@ -131,6 +130,10 @@ endmacro()
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
   MK_DEFINITION(_CRT_SECURE_NO_WARNINGS)
+endif()
+
+if (MK_TLS)
+  MK_DEFINITION(MK_HAVE_TLS)
 endif()
 
 # Enable experimental (dev) HTTP/2 support
@@ -233,6 +236,23 @@ endif()
 # =========== CONFIGURATION FILES=============
 # ============================================
 
+# Build/runtime paths
+#
+# These defaults make an in-tree build immediately runnable via ./bin/monkey
+# while still allowing packagers to override them with cache entries.
+set(MK_PATH_CONF "${PROJECT_BINARY_DIR}/conf" CACHE PATH
+    "Default Monkey configuration directory")
+set(MK_PATH_LOG "${PROJECT_BINARY_DIR}/logs" CACHE PATH
+    "Default Monkey log directory")
+set(MK_PATH_PIDPATH "${PROJECT_BINARY_DIR}/run" CACHE PATH
+    "Default Monkey PID directory")
+set(MK_PATH_WWW "${PROJECT_SOURCE_DIR}/htdocs" CACHE PATH
+    "Default Monkey document root")
+
+file(MAKE_DIRECTORY "${MK_PATH_CONF}")
+file(MAKE_DIRECTORY "${MK_PATH_LOG}")
+file(MAKE_DIRECTORY "${MK_PATH_PIDPATH}")
+
 # Default values for conf/monkey.conf
 set(MK_CONF_LISTEN       "2001")
 set(MK_CONF_WORKERS      "0")
@@ -251,6 +271,7 @@ set(MK_CONF_SYMLINK      "Off")
 set(MK_CONF_DEFAULT_MIME "text/plain")
 set(MK_CONF_FDT          "On")
 set(MK_CONF_OVERCAPACITY "Resist")
+set(MK_PIDFILE           "${MK_CONF_PIDFILE}")
 
 # Default values for conf/sites/default
 set(MK_VH_SERVERNAME     "127.0.0.1")
@@ -318,6 +339,7 @@ add_subdirectory(deps/rbtree)
 add_subdirectory(deps/regex)
 add_subdirectory(deps/flb_libco)
 add_subdirectory(mk_core)
+add_subdirectory(tls)
 add_subdirectory(plugins)
 add_subdirectory(mk_server)
 
