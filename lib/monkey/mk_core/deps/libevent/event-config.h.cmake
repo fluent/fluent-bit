@@ -63,6 +63,9 @@
 /* Define to 1 if you have the <arpa/inet.h> header file. */
 #cmakedefine EVENT__HAVE_ARPA_INET_H
 
+/* Define to 1 if you have the <afunix.h> header file. */
+#cmakedefine EVENT__HAVE_AFUNIX_H
+
 /* Define to 1 if you have the `clock_gettime' function. */
 #cmakedefine EVENT__HAVE_CLOCK_GETTIME
 
