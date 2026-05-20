@@ -10,6 +10,9 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
+/* This example is very old, and it uses some deprecated OpenSSL APIs */
+#define OPENSSL_SUPPRESS_DEPRECATED
+
 #include <stdio.h>
 #include <assert.h>
 #include <stdlib.h>
@@ -22,6 +25,7 @@
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <signal.h>
 #endif
 
 #include <event2/bufferevent_ssl.h>
@@ -30,6 +34,7 @@
 #include <event2/listener.h>
 #include <event2/util.h>
 
+#include "util-internal.h"
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
@@ -111,10 +116,15 @@ eventcb(struct bufferevent *bev, short what, void *ctx)
 				    ERR_reason_error_string(err);
 				const char *lib = (const char*)
 				    ERR_lib_error_string(err);
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+				fprintf(stderr,
+					"%s in %s\n", msg, lib);
+#else
 				const char *func = (const char*)
 				    ERR_func_error_string(err);
 				fprintf(stderr,
 				    "%s in %s %s\n", msg, lib, func);
+#endif
 			}
 			if (errno)
 				perror("connection error");
@@ -194,6 +204,7 @@ accept_cb(struct evconnlistener *listener, evutil_socket_t fd,
 			perror("Bufferevent_openssl_new");
 			bufferevent_free(b_out);
 			bufferevent_free(b_in);
+			return;
 		}
 		b_out = b_ssl;
 	}
@@ -213,6 +224,20 @@ main(int argc, char **argv)
 
 	int use_ssl = 0;
 	struct evconnlistener *listener;
+
+#ifdef _WIN32
+	{
+		WORD wVersionRequested;
+		WSADATA wsaData;
+		wVersionRequested = MAKEWORD(2, 2);
+		(void) WSAStartup(wVersionRequested, &wsaData);
+	}
+#else
+	if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
+		perror("signal()");
+		return 1;
+	}
+#endif
 
 	if (argc < 3)
 		syntax();
@@ -259,7 +284,8 @@ main(int argc, char **argv)
 
 	if (use_ssl) {
 		int r;
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || \
+	(defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20700000L)
 		SSL_library_init();
 		ERR_load_crypto_strings();
 		SSL_load_error_strings();
@@ -286,6 +312,10 @@ main(int argc, char **argv)
 
 	evconnlistener_free(listener);
 	event_base_free(base);
+
+#ifdef _WIN32
+	WSACleanup();
+#endif
 
 	return 0;
 }

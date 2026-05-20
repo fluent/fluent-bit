@@ -113,13 +113,13 @@ errorcb(struct bufferevent *b, short what, void *arg)
 static void
 frob_socket(evutil_socket_t sock)
 {
-#ifdef HAVE_SO_LINGER
+#ifdef EVENT__HAVE_STRUCT_LINGER
 	struct linger l;
 #endif
 	int one = 1;
 	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (void*)&one, sizeof(one))<0)
 		perror("setsockopt(SO_REUSEADDR)");
-#ifdef HAVE_SO_LINGER
+#ifdef EVENT__HAVE_STRUCT_LINGER
 	l.l_onoff = 1;
 	l.l_linger = 0;
 	if (setsockopt(sock, SOL_SOCKET, SO_LINGER, (void*)&l, sizeof(l))<0)
@@ -163,7 +163,11 @@ launch_request(void)
 	evutil_gettimeofday(&ri->started, NULL);
 
 	b = bufferevent_socket_new(base, sock, BEV_OPT_CLOSE_ON_FREE);
-
+	if (b == NULL) {
+		perror("bufferevent_socket_new");
+		evutil_closesocket(sock);
+		return -1;
+	}
 	bufferevent_setcb(b, readcb, NULL, errorcb, ri);
 	bufferevent_enable(b, EV_READ|EV_WRITE);
 
@@ -193,9 +197,13 @@ main(int argc, char **argv)
 
 	base = event_base_new();
 
+	if (base == NULL) {
+		return 1;
+	}
+
 	for (i=0; i < PARALLELISM; ++i) {
 		if (launch_request() < 0)
-			perror("launch");
+			fprintf(stderr, "Cannot launch %i request\n", i);
 	}
 
 	evutil_gettimeofday(&start, NULL);

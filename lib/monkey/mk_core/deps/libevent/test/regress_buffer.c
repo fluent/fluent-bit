@@ -24,6 +24,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "tinytest_macros.h"
 #include "util-internal.h"
 
 #ifdef _WIN32
@@ -62,6 +63,8 @@
 #include "log-internal.h"
 
 #include "regress.h"
+
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 
 /* Validates that an evbuffer is good. Returns false if it isn't, true if it
  * is*/
@@ -125,19 +128,16 @@ evbuffer_get_waste(struct evbuffer *buf, size_t *allocatedp, size_t *wastedp, si
 {
 	struct evbuffer_chain *chain;
 	size_t a, w, u;
-	int n = 0;
 	u = a = w = 0;
 
 	chain = buf->first;
 	/* skip empty at start */
 	while (chain && chain->off==0) {
-		++n;
 		a += chain->buffer_len;
 		chain = chain->next;
 	}
 	/* first nonempty chain: stuff at the end only is wasted. */
 	if (chain) {
-		++n;
 		a += chain->buffer_len;
 		u += chain->off;
 		if (chain->next && chain->next->off)
@@ -146,7 +146,6 @@ evbuffer_get_waste(struct evbuffer *buf, size_t *allocatedp, size_t *wastedp, si
 	}
 	/* subsequent nonempty chains */
 	while (chain && chain->off) {
-		++n;
 		a += chain->buffer_len;
 		w += (size_t)chain->misalign;
 		u += chain->off;
@@ -156,7 +155,6 @@ evbuffer_get_waste(struct evbuffer *buf, size_t *allocatedp, size_t *wastedp, si
 	}
 	/* subsequent empty chains */
 	while (chain) {
-		++n;
 		a += chain->buffer_len;
 	}
 	*allocatedp = a;
@@ -294,33 +292,39 @@ no_cleanup(const void *data, size_t datalen, void *extra)
 static void
 test_evbuffer_remove_buffer_with_empty(void *ptr)
 {
-    struct evbuffer *src = evbuffer_new();
-    struct evbuffer *dst = evbuffer_new();
-    char buf[2];
+	struct evbuffer *src = evbuffer_new();
+	struct evbuffer *dst = evbuffer_new();
+	char buf[2] = { 'A', 'A' };
 
-    evbuffer_validate(src);
-    evbuffer_validate(dst);
+	evbuffer_validate(src);
+	evbuffer_validate(dst);
 
-    /* setup the buffers */
-    /* we need more data in src than we will move later */
-    evbuffer_add_reference(src, buf, sizeof(buf), no_cleanup, NULL);
-    evbuffer_add_reference(src, buf, sizeof(buf), no_cleanup, NULL);
-    /* we need one buffer in dst and one empty buffer at the end */
-    evbuffer_add(dst, buf, sizeof(buf));
-    evbuffer_add_reference(dst, buf, 0, no_cleanup, NULL);
+	/* setup the buffers */
+	/* we need more data in src than we will move later */
+	evbuffer_add_reference(src, buf, sizeof(buf), no_cleanup, NULL);
+	evbuffer_add_reference(src, buf, sizeof(buf), no_cleanup, NULL);
+	/* we need one buffer in dst and one empty buffer at the end */
+	evbuffer_add(dst, buf, sizeof(buf));
+	evbuffer_add_reference(dst, buf, 0, no_cleanup, NULL);
 
-    evbuffer_validate(src);
-    evbuffer_validate(dst);
+	evbuffer_validate(src);
+	evbuffer_validate(dst);
 
-    /* move three bytes over */
-    evbuffer_remove_buffer(src, dst, 3);
+	tt_mem_op(evbuffer_pullup(src, -1), ==, "AAAA", 4);
+	tt_mem_op(evbuffer_pullup(dst, -1), ==, "AA", 2);
 
-    evbuffer_validate(src);
-    evbuffer_validate(dst);
+	/* move three bytes over */
+	evbuffer_remove_buffer(src, dst, 3);
 
-end:
-    evbuffer_free(src);
-    evbuffer_free(dst);
+	evbuffer_validate(src);
+	evbuffer_validate(dst);
+
+	tt_mem_op(evbuffer_pullup(src, -1), ==, "A", 1);
+	tt_mem_op(evbuffer_pullup(dst, -1), ==, "AAAAA", 5);
+
+ end:
+	evbuffer_free(src);
+	evbuffer_free(dst);
 }
 
 static void
@@ -350,6 +354,9 @@ test_evbuffer_remove_buffer_with_empty2(void *ptr)
 	evbuffer_validate(src);
 	evbuffer_validate(dst);
 
+	tt_mem_op(evbuffer_pullup(src, -1), ==, "foofoofoo", 9);
+	tt_mem_op(evbuffer_pullup(dst, -1), ==, "foofoofoo", 9);
+
 	evbuffer_remove_buffer(src, dst, 8);
 
 	evbuffer_validate(src);
@@ -357,6 +364,9 @@ test_evbuffer_remove_buffer_with_empty2(void *ptr)
 
 	tt_int_op(evbuffer_get_length(src), ==, 1);
 	tt_int_op(evbuffer_get_length(dst), ==, 17);
+
+	tt_mem_op(evbuffer_pullup(src, -1), ==, "o", 1);
+	tt_mem_op(evbuffer_pullup(dst, -1), ==, "foofoofoofoofoofo", 17);
 
  end:
 	evbuffer_free(src);
@@ -391,6 +401,9 @@ test_evbuffer_remove_buffer_with_empty3(void *ptr)
 	evbuffer_validate(src);
 	evbuffer_validate(dst);
 
+	tt_mem_op(evbuffer_pullup(src, -1), ==, "foofoo", 6);
+	tt_mem_op(evbuffer_pullup(dst, -1), ==, "foofoo", 6);
+
 	evbuffer_remove_buffer(src, dst, 5);
 
 	evbuffer_validate(src);
@@ -399,10 +412,126 @@ test_evbuffer_remove_buffer_with_empty3(void *ptr)
 	tt_int_op(evbuffer_get_length(src), ==, 1);
 	tt_int_op(evbuffer_get_length(dst), ==, 11);
 
+	tt_mem_op(evbuffer_pullup(src, -1), ==, "o", 1);
+	tt_mem_op(evbuffer_pullup(dst, -1), ==, "foofoofoofo", 11);
+
  end:
 	evbuffer_free(src);
 	evbuffer_free(dst);
 	evbuffer_free(buf);
+}
+
+static void
+test_evbuffer_pullup_with_empty(void *ptr)
+{
+	struct evbuffer *buf = NULL;
+
+	buf = evbuffer_new();
+	evbuffer_add(buf, "foo", 3);
+	evbuffer_add_reference(buf, NULL, 0, NULL, NULL);
+	evbuffer_validate(buf);
+	tt_int_op(evbuffer_get_length(buf), ==, 3);
+	tt_mem_op(evbuffer_pullup(buf, -1), ==, "foo", 3);
+
+	evbuffer_free(buf);
+	buf = evbuffer_new();
+	evbuffer_validate(buf);
+	tt_int_op(evbuffer_get_length(buf), ==, 0);
+	tt_ptr_op(evbuffer_pullup(buf, -1), ==, NULL);
+
+	evbuffer_free(buf);
+	buf = evbuffer_new();
+	evbuffer_add(buf, "foo", 3);
+	evbuffer_add_reference(buf, NULL, 0, NULL, NULL);
+	evbuffer_validate(buf);
+	tt_mem_op(evbuffer_pullup(buf, 3), ==, "foo", 3);
+
+ end:
+	if (buf)
+		evbuffer_free(buf);
+}
+
+static void
+test_evbuffer_remove_buffer_with_empty_front(void *ptr)
+{
+	struct evbuffer *buf1 = NULL, *buf2 = NULL;
+
+	buf1 = evbuffer_new();
+	tt_assert(buf1);
+
+	buf2 = evbuffer_new();
+	tt_assert(buf2);
+
+	tt_int_op(evbuffer_add_reference(buf1, "foo", 3, NULL, NULL), ==, 0);
+	tt_int_op(evbuffer_prepend(buf1, "", 0), ==, 0);
+	tt_int_op(evbuffer_remove_buffer(buf1, buf2, 1), ==, 1);
+	tt_int_op(evbuffer_add(buf1, "bar", 3), ==, 0);
+	tt_mem_op(evbuffer_pullup(buf1, -1), ==, "oobar", 5);
+
+	evbuffer_validate(buf1);
+	evbuffer_validate(buf2);
+
+ end:
+	if (buf1)
+		evbuffer_free(buf1);
+	if (buf2)
+		evbuffer_free(buf2);
+}
+
+static void
+test_evbuffer_remove_buffer_adjust_last_with_datap_with_empty(void *ptr)
+{
+	struct evbuffer *buf1 = NULL, *buf2 = NULL;
+
+	buf1 = evbuffer_new();
+	tt_assert(buf1);
+
+	buf2 = evbuffer_new();
+	tt_assert(buf2);
+
+	tt_int_op(evbuffer_add(buf1, "aaaaaa", 6), ==, 0);
+
+	// buf1: aaaaaab
+	// buf2:
+	{
+		struct evbuffer_iovec iovecs[2];
+		/** we want two chains, to leave one chain empty */
+		tt_int_op(evbuffer_reserve_space(buf1, 971, iovecs, 2), ==, 2);
+		tt_int_op(iovecs[0].iov_len, >=, 1);
+		tt_int_op(iovecs[1].iov_len, >=, 1);
+		tt_assert(*(char *)(iovecs[0].iov_base) = 'b');
+		tt_assert(iovecs[0].iov_len = 1);
+		tt_int_op(evbuffer_commit_space(buf1, iovecs, 1), ==, 0);
+	}
+
+	// buf1: aaaaaab
+	// buf2: dddcc
+	tt_int_op(evbuffer_add(buf2, "cc", 2), ==, 0);
+	tt_int_op(evbuffer_prepend(buf2, "ddd", 3), ==, 0);
+
+	// buf1:
+	// buf2: aaaaaabdddcc
+	tt_int_op(evbuffer_prepend_buffer(buf2, buf1), ==, 0);
+
+	// buf1: aaaaaabdddcc
+	// buf2:
+	tt_int_op(evbuffer_add_buffer(buf1, buf2), ==, 0);
+
+	// buf1: c
+	// buf2: aaaaaabdddc
+	tt_int_op(evbuffer_remove_buffer(buf1, buf2, 11), ==, 11);
+
+	// This fails today, we observe "aaaaaabcddd" instead!
+	tt_mem_op(evbuffer_pullup(buf2, -1), ==, "aaaaaabdddc", 11);
+
+	evbuffer_validate(buf1);
+	evbuffer_validate(buf2);
+
+ end:
+	if (buf1)
+		evbuffer_free(buf1);
+	if (buf2)
+		evbuffer_free(buf2);
 }
 
 static void
@@ -574,7 +703,7 @@ test_evbuffer_reserve_many(void *ptr)
 	int fill_first = ptr && !strcmp(ptr, "fill");
 	char *cp1, *cp2;
 
-	/* When reserving the the first chunk, we just allocate it */
+	/* When reserving the first chunk, we just allocate it */
 	n = evbuffer_reserve_space(buf, 128, v, 2);
 	evbuffer_validate(buf);
 	tt_int_op(n, ==, 1);
@@ -632,6 +761,63 @@ test_evbuffer_reserve_many(void *ptr)
 
 end:
 	evbuffer_free(buf);
+}
+
+static void
+test_evbuffer_reserve_with_empty(void *ptr)
+{
+	struct evbuffer *buf;
+	struct evbuffer_iovec v[2];
+
+	tt_assert(buf = evbuffer_new());
+	evbuffer_add(buf, "a", 1);
+	tt_int_op(evbuffer_reserve_space(buf, 1<<12, v, 2), ==, 2);
+	v[0].iov_len = 1;
+	*(char *)v[0].iov_base = 'b';
+	tt_int_op(evbuffer_commit_space(buf, v, 1), ==, 0);
+	evbuffer_add(buf, "c", 1);
+	tt_mem_op(evbuffer_pullup(buf, -1), ==, "abc", 2);
+
+	evbuffer_validate(buf);
+
+ end:
+	if (buf)
+		evbuffer_free(buf);
+}
+
+/* regression for evbuffer_expand_fast_() with invalid last_with_datap that has
+ * been left after evbuffer_prepend() with empty chain in it */
+static void
+test_evbuffer_reserve_invalid_last_with_datap(void *ptr)
+{
+	struct evbuffer *buf = NULL;
+	struct evbuffer_iovec vec[2];
+	const int nvec = ARRAY_SIZE(vec);
+	int i, avec;
+
+	buf = evbuffer_new();
+	tt_assert(buf);
+
+	/* prepend with an empty chain */
+	evbuffer_add_reference(buf, "", 0, NULL, NULL);
+	evbuffer_prepend(buf, "foo", 3);
+	/* after invalid last_with_datap will create new chain */
+	evbuffer_add(buf, "", 0);
+	/* we need to create at least 2 "used" (in evbuffer_expand_fast_()) chains */
+	tt_int_op(avec = evbuffer_reserve_space(buf, 1<<12, vec, nvec), >=, 1);
+	for (i = 0; i < avec; ++i)
+		vec[i].iov_len = 0;
+	tt_int_op(evbuffer_commit_space(buf, vec, avec), ==, 0);
+
+	/* and an actual problem, that triggers an assert(chain == buf->first) in
+	 * evbuffer_expand_fast_() */
+	tt_int_op(evbuffer_reserve_space(buf, 1<<13, vec, nvec), >=, 1);
+
+	evbuffer_validate(buf);
+
+end:
+	if (buf)
+		evbuffer_free(buf);
 }
 
 static void
@@ -921,6 +1107,49 @@ addfile_test_readcb(evutil_socket_t fd, short what, void *arg)
 	}
 }
 
+/* Without mm replacement malloc(0) will not fail, like it should to make the
+ * evbuffer_file_segment_materialize() fails after mmap() failed */
+#ifndef EVENT__DISABLE_MM_REPLACEMENT
+static void
+test_evbuffer_add_file_leak1(void *ptr)
+{
+	struct basic_test_data *testdata = ptr;
+	struct evbuffer *buf = NULL;
+	char *tmpfilename = NULL;
+	int fd;
+
+	(void)testdata;
+
+	fd = regress_make_tmpfile("", 0, &tmpfilename);
+	/* On Windows, if TMP environment variable is corrupted, we may not be
+	 * able create temporary file, just skip it */
+	if (fd < 0)
+		tt_skip();
+	TT_BLATHER(("Temporary path: %s, fd: %i", tmpfilename, fd));
+
+	/* On windows _get_osfhandle(closed fd) leads to crash */
+#ifndef _WIN32
+	/* close fd before usage, so that the fallback with pread() will fail (in
+	 * evbuffer_file_segment_materialize()) */
+	close(fd);
+#endif
+
+	/* mmap(offset=0, length=0) will fail, this is enough */
+	buf = evbuffer_new();
+	tt_assert(evbuffer_add_file(buf, fd, 0, 0) == -1);
+	evbuffer_validate(buf);
+
+end:
+	if (tmpfilename) {
+		unlink(tmpfilename);
+		free(tmpfilename);
+	}
+	if (buf)
+		evbuffer_free(buf);
+	/* NOTE: file will be closed in evbuffer_add_file() */
+}
+#endif
+
 static void
 test_evbuffer_add_file(void *ptr)
 {
@@ -966,13 +1195,12 @@ test_evbuffer_add_file(void *ptr)
 	}
 	if (strstr(impl, "offset_in_segment")) {
 		/* If offset_in_segment is set, we add a subsection of the
-		 * file semgment starting from a point other than byte 0 of
+		 * file segment starting from a point other than byte 0 of
 		 * the segment. */
 		view_from_offset = 1;
 	}
 	if (strstr(impl, "sendfile")) {
-		/* If sendfile is set, we try to use a sendfile/splice style
-		 * backend. */
+		/* If sendfile is set, we try to use a sendfile style backend. */
 		flags = EVBUF_FS_DISABLE_MMAP;
 		want_cansendfile = 1;
 		want_ismapping = 0;
@@ -1010,6 +1238,10 @@ test_evbuffer_add_file(void *ptr)
 	}
 
 	fd = regress_make_tmpfile(data, datalen, &tmpfilename);
+	/* On Windows, if TMP environment variable is corrupted, we may not be
+	 * able create temporary file, just skip it */
+	if (fd < 0)
+		tt_skip();
 
 	if (map_from_offset) {
 		starting_offset = datalen/4 + 1;
@@ -1048,14 +1280,12 @@ test_evbuffer_add_file(void *ptr)
 #if defined(EVENT__HAVE_SENDFILE) && defined(__sun__) && defined(__svr4__)
 	/* We need to use a pair of AF_INET sockets, since Solaris
 	   doesn't support sendfile() over AF_UNIX. */
-	if (evutil_ersatz_socketpair_(AF_INET, SOCK_STREAM, 0, pair) == -1)
+	if (evutil_ersatz_socketpair_(AF_INET, SOCK_STREAM|EVUTIL_SOCK_NONBLOCK, 0, pair) == -1)
 		tt_abort_msg("ersatz_socketpair failed");
 #else
-	if (evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == -1)
+	if (evutil_socketpair(AF_UNIX, SOCK_STREAM|EVUTIL_SOCK_NONBLOCK, 0, pair) == -1)
 		tt_abort_msg("socketpair failed");
 #endif
-	evutil_make_socket_nonblocking(pair[0]);
-	evutil_make_socket_nonblocking(pair[1]);
 
 	tt_assert(fd != -1);
 
@@ -1078,7 +1308,9 @@ test_evbuffer_add_file(void *ptr)
 	    addfile_test_writecb, src);
 	rev = event_new(base, pair[1], EV_READ|EV_PERSIST,
 	    addfile_test_readcb, dest);
-
+	tt_assert(wev);
+	tt_assert(rev);
+	
 	event_add(wev, NULL);
 	event_add(rev, NULL);
 	event_base_dispatch(base);
@@ -1141,9 +1373,16 @@ test_evbuffer_file_segment_add_cleanup_cb(void* ptr)
 	struct evbuffer *evb = NULL;
 	struct evbuffer_file_segment *seg = NULL, *segptr;
 	char const* arg = "token";
+	struct stat st;
 
 	fd = regress_make_tmpfile("file_segment_test_file", 22, &tmpfilename);
-	tt_int_op(fd, >=, 0);
+	/* On Windows, if TMP environment variable is corrupted, we may not be
+	 * able create temporary file, just skip it */
+	if (fd < 0)
+		tt_skip();
+
+	fstat(fd, &st);
+	tt_assert(st.st_size == 22);
 
 	evb = evbuffer_new();
 	tt_assert(evb);
@@ -1796,12 +2035,12 @@ test_evbuffer_callbacks(void *ptr)
 	tt_assert(cb1 != NULL);
 	cb2 = evbuffer_add_cb(buf, log_change_callback, buf_out2);
 	tt_assert(cb2 != NULL);
-	evbuffer_setcb(buf, self_draining_callback, NULL);
+	tt_int_op(evbuffer_setcb(buf, self_draining_callback, NULL), ==, 0);
 	evbuffer_add_printf(buf, "This should get drained right away.");
 	tt_uint_op(evbuffer_get_length(buf), ==, 0);
 	tt_uint_op(evbuffer_get_length(buf_out1), ==, 0);
 	tt_uint_op(evbuffer_get_length(buf_out2), ==, 0);
-	evbuffer_setcb(buf, NULL, NULL);
+	tt_int_op(evbuffer_setcb(buf, NULL, NULL), ==, 0);
 	evbuffer_add_printf(buf, "This will not.");
 	tt_str_op((const char *) evbuffer_pullup(buf, -1), ==, "This will not.");
 	evbuffer_validate(buf);
@@ -1825,6 +2064,14 @@ test_evbuffer_callbacks(void *ptr)
 		  "0->11; 11->11; 11->0; ");
 	tt_str_op(evbuffer_pullup(buf_out2, -1), ==,
 		  "0->15; 15->11; 11->0; ");
+#endif
+
+	/* the next call to readline should fail */
+#ifndef EVENT__DISABLE_MM_REPLACEMENT
+	event_set_mem_functions(failing_malloc, realloc, free);
+	tt_int_op(evbuffer_setcb(buf, self_draining_callback, NULL), ==, -1);
+	evbuffer_validate(buf);
+	event_set_mem_functions(malloc, realloc, free);
 #endif
 
  end:
@@ -1916,6 +2163,81 @@ test_evbuffer_add_reference(void *ptr)
 	buf1 = NULL;
 	tt_int_op(ref_done_cb_called_count, ==, 3);
 	tt_assert(ref_done_cb_called_with == (void*)3333);
+
+end:
+	if (buf1)
+		evbuffer_free(buf1);
+	if (buf2)
+		evbuffer_free(buf2);
+}
+
+static void
+ref_done_cb_with_offset(const void *data, size_t len, void *arg)
+{
+	size_t expected_len = (size_t)arg;
+	if (len != expected_len)
+		TT_FAIL(("%zu != %zu, data: '%s'", len, expected_len, (const char *)data));
+}
+static void
+test_evbuffer_add_reference_with_offset(void* ptr)
+{
+	const char* prefix = "|prefix| ";
+	const char* content1 = "|prefix| If you have found the answer to such a problem";
+	const char *content2 = "|prefix| you ought to write it up for publication";
+
+	struct evbuffer *buf1 = NULL, *buf2 = NULL;
+	/* -- Knuth's "Notes on the Exercises" from TAOCP */
+	char tmp[16];
+
+	size_t prefix_len = strlen(prefix);
+	size_t len1 = strlen(content1) - prefix_len;
+	size_t len2 = strlen(content2) - prefix_len;
+
+	buf1 = evbuffer_new();
+	tt_assert(buf1);
+
+	evbuffer_add_reference_with_offset(buf1, (const void *)content1, prefix_len,
+		len1, ref_done_cb_with_offset, (void *)(len1 + prefix_len));
+	evbuffer_add(buf1, ", ", 2);
+	evbuffer_add_reference_with_offset(buf1, (const void *)content2, prefix_len,
+		len2, ref_done_cb_with_offset, (void *)(len2 + prefix_len));
+	tt_int_op(evbuffer_get_length(buf1), ==, len1 + len2 + 2 /* ", " */);
+
+	/* Make sure we can drain a little from a reference. */
+	tt_int_op(evbuffer_remove(buf1, tmp, 6), ==, 6);
+	tt_mem_op(tmp, ==, "If you", 6);
+	tt_int_op(evbuffer_remove(buf1, tmp, 5), ==, 5);
+	tt_mem_op(tmp, ==, " have", 5);
+
+	/* Make sure that prepending does not meddle with immutable data */
+	tt_int_op(evbuffer_prepend(buf1, "I have ", 7), ==, 0);
+	tt_mem_op(content1, ==, prefix, prefix_len);
+	evbuffer_validate(buf1);
+
+	/* Make sure that when the chunk is over, the callback is invoked. */
+	evbuffer_drain(buf1, 7); /* Remove prepended stuff. */
+	evbuffer_drain(buf1, len1 - 11 - 1); /* remove all but one byte of chunk1 */
+	evbuffer_remove(buf1, tmp, 1);
+	tt_int_op(tmp[0], ==, 'm');
+	evbuffer_validate(buf1);
+
+	/* Drain some of the remaining chunk, then add it to another buffer */
+	evbuffer_drain(buf1, 6); /* Remove the ", you ". */
+	buf2 = evbuffer_new();
+	tt_assert(buf2);
+	evbuffer_add(buf2, "I ", 2);
+
+	evbuffer_add_buffer(buf2, buf1);
+	evbuffer_remove(buf2, tmp, 16);
+	tt_mem_op("I ought to write", ==, tmp, 16);
+	evbuffer_drain(buf2, evbuffer_get_length(buf2));
+	evbuffer_validate(buf2);
+
+	/* Now add more stuff to buf1 and make sure that it gets removed on free. */
+	evbuffer_add(buf1, "You shake and shake the ", 24);
+	evbuffer_add_reference(
+		buf1, "ketchup bottle", 14, ref_done_cb, (void *)3333);
+	evbuffer_add(buf1, ". Nothing comes and then a lot'll.", 35);
 
 end:
 	if (buf1)
@@ -2030,6 +2352,40 @@ end:
 }
 
 static void
+test_evbuffer_multicast_empty_chain(void *ptr)
+{
+	const char chunk[] = "If you have found the answer to such a problem";
+	size_t len = strlen(chunk);
+
+	struct evbuffer *buf1 = NULL, *buf2 = NULL;
+
+	buf1 = evbuffer_new();
+	tt_assert(buf1);
+	buf2 = evbuffer_new();
+	tt_assert(buf2);
+
+	evbuffer_add_reference(buf2, "", 0, NULL, NULL);
+	evbuffer_validate(buf2);
+	tt_int_op(evbuffer_get_length(buf2), ==, 0);
+
+	evbuffer_add(buf1, chunk, len);
+	evbuffer_validate(buf1);
+
+	tt_int_op(evbuffer_add_buffer_reference(buf2, buf1), ==, 0);
+	evbuffer_validate(buf2);
+	tt_int_op(evbuffer_get_length(buf2), ==, len);
+
+	tt_assert(!strncmp((char *)evbuffer_pullup(buf2, -1), chunk, len));
+	evbuffer_validate(buf2);
+
+end:
+	if (buf1)
+		evbuffer_free(buf1);
+	if (buf2)
+		evbuffer_free(buf2);
+}
+
+static void
 check_prepend(struct evbuffer *buffer,
     const struct evbuffer_cb_info *cbinfo,
     void *arg)
@@ -2115,6 +2471,58 @@ end:
 	if (buf2)
 		evbuffer_free(buf2);
 
+}
+
+static void
+test_evbuffer_empty_reference_prepend(void *ptr)
+{
+	struct evbuffer *buf = NULL;
+
+	buf = evbuffer_new();
+	tt_assert(buf);
+
+	/** empty chain could leave invalid last_with_datap */
+	evbuffer_add_reference(buf, "", 0, NULL, NULL);
+	evbuffer_validate(buf);
+	evbuffer_prepend(buf, "foo", 3);
+
+	evbuffer_validate(buf);
+	tt_assert(!strncmp((char *)evbuffer_pullup(buf, -1), "foo", 3));
+	evbuffer_validate(buf);
+
+end:
+	if (buf)
+		evbuffer_free(buf);
+}
+static void
+test_evbuffer_empty_reference_prepend_buffer(void *ptr)
+{
+	struct evbuffer *buf1 = NULL, *buf2 = NULL;
+
+	buf1 = evbuffer_new();
+	tt_assert(buf1);
+	buf2 = evbuffer_new();
+	tt_assert(buf2);
+
+	/** empty chain could leave invalid last_with_datap */
+	evbuffer_add_reference(buf1, "", 0, NULL, NULL);
+	evbuffer_validate(buf1);
+	evbuffer_add(buf2, "foo", 3);
+	evbuffer_validate(buf2);
+	evbuffer_prepend_buffer(buf2, buf1);
+	evbuffer_validate(buf2);
+
+	tt_assert(!strncmp((char *)evbuffer_pullup(buf2, -1), "foo", 3));
+	evbuffer_validate(buf2);
+
+	tt_assert(evbuffer_pullup(buf1, -1) == NULL);
+	evbuffer_validate(buf2);
+
+end:
+	if (buf1)
+		evbuffer_free(buf1);
+	if (buf2)
+		evbuffer_free(buf2);
 }
 
 static void
@@ -2274,28 +2682,37 @@ end:
 static void
 test_evbuffer_freeze(void *ptr)
 {
-	struct evbuffer *buf = NULL, *tmp_buf=NULL;
+	struct basic_test_data *testdata = ptr;
+	evutil_socket_t *pair = testdata->pair;
+	struct evbuffer *buf = NULL, *buf_two = NULL, *tmp_buf = NULL;
 	const char string[] = /* Year's End, Richard Wilbur */
 	    "I've known the wind by water banks to shake\n"
 	    "The late leaves down, which frozen where they fell\n"
 	    "And held in ice as dancers in a spell\n"
 	    "Fluttered all winter long into a lake...";
-	const int start = !strcmp(ptr, "start");
+	const int start = !strcmp(testdata->setup_data, "start");
+	const char tmpfilecontent[] = "file_freeze_test_file";
 	char *cp;
 	char charbuf[128];
+	char *tmpfilename = NULL;
+	int fd = -1;
 	int r;
-	size_t orig_length;
+	size_t orig_length, len;
 	struct evbuffer_iovec v[1];
 
 	if (!start)
-		tt_str_op(ptr, ==, "end");
+		tt_str_op(testdata->setup_data, ==, "end");
 
 	buf = evbuffer_new();
+	buf_two = evbuffer_new();
 	tmp_buf = evbuffer_new();
 	tt_assert(tmp_buf);
 
 	evbuffer_add(buf, string, strlen(string));
+	evbuffer_add(buf_two, "abc", 3);
+	evbuffer_add(tmp_buf, "xyz", 3);
 	evbuffer_freeze(buf, start); /* Freeze the start or the end.*/
+	evbuffer_freeze(buf_two, start);
 
 #define FREEZE_EQ(a, startcase, endcase)		\
 	do {						\
@@ -2324,7 +2741,27 @@ test_evbuffer_freeze(void *ptr)
 	FREEZE_EQ(r, 0, -1);
 	r = evbuffer_add_printf(buf, "Hello %s", "world");
 	FREEZE_EQ(r, 11, -1);
-	/* TODO: test add_buffer, add_file, read */
+
+	r = evbuffer_add_buffer(buf, tmp_buf);
+	FREEZE_EQ(r, 0, -1);
+	len = strlen(tmpfilecontent);
+	fd = regress_make_tmpfile(tmpfilecontent, len, &tmpfilename);
+	/* On Windows, if TMP environment variable is corrupted, we may not be
+	 * able create temporary file, just skip it */
+	if (fd < 0)
+		tt_skip();
+
+	r = evbuffer_add_file(buf, fd, 0, len);
+	FREEZE_EQ(r, 0, -1);
+
+	if (start)
+		evbuffer_add(tmp_buf, "xyz", 3);
+
+	tt_assert(evbuffer_get_length(tmp_buf));
+	len = evbuffer_get_length(tmp_buf);
+	evbuffer_write(tmp_buf, pair[0]);
+	r = evbuffer_read(buf, pair[1], -1);
+	FREEZE_EQ(r, len, -1);
 
 	if (!start)
 		tt_int_op(orig_length, ==, evbuffer_get_length(buf));
@@ -2342,7 +2779,24 @@ test_evbuffer_freeze(void *ptr)
 	FREEZE_EQ(cp==NULL, 1, 0);
 	if (cp)
 		free(cp);
-	/* TODO: Test remove_buffer, add_buffer, write, prepend_buffer */
+
+	evbuffer_add(tmp_buf, "xyz", 3);
+	tt_assert(evbuffer_get_length(tmp_buf));
+	r = evbuffer_remove_buffer(buf, tmp_buf, 3);
+	FREEZE_EQ(r, -1, 3);
+	r = evbuffer_drain(buf, 3);
+	FREEZE_EQ(r, -1, 0);
+	r = evbuffer_prepend_buffer(buf, tmp_buf);
+	FREEZE_EQ(r, -1, 0);
+
+	len = evbuffer_get_length(buf);
+	r = evbuffer_write(buf, pair[0]);
+	evbuffer_read(tmp_buf, pair[1], -1);
+	FREEZE_EQ(r, -1, len);
+	len = evbuffer_get_length(buf_two);
+	r = evbuffer_write_atmost(buf_two, pair[0], -1);
+	evbuffer_read(tmp_buf, pair[1], -1);
+	FREEZE_EQ(r, -1, len);
 
 	if (start)
 		tt_int_op(orig_length, ==, evbuffer_get_length(buf));
@@ -2351,8 +2805,16 @@ end:
 	if (buf)
 		evbuffer_free(buf);
 
+	if (buf_two)
+		evbuffer_free(buf_two);
+
 	if (tmp_buf)
 		evbuffer_free(tmp_buf);
+
+	if (tmpfilename) {
+		unlink(tmpfilename);
+		free(tmpfilename);
+	}
 }
 
 static void
@@ -2504,12 +2966,17 @@ struct testcase_t evbuffer_testcases[] = {
 	{ "remove_buffer_with_empty", test_evbuffer_remove_buffer_with_empty, 0, NULL, NULL },
 	{ "remove_buffer_with_empty2", test_evbuffer_remove_buffer_with_empty2, 0, NULL, NULL },
 	{ "remove_buffer_with_empty3", test_evbuffer_remove_buffer_with_empty3, 0, NULL, NULL },
+	{ "remove_buffer_with_empty_front", test_evbuffer_remove_buffer_with_empty_front, 0, NULL, NULL },
+	{ "remove_buffer_adjust_last_with_datap_with_empty",
+	  test_evbuffer_remove_buffer_adjust_last_with_datap_with_empty, 0, NULL, NULL },
 	{ "add_buffer_with_empty", test_evbuffer_add_buffer_with_empty, 0, NULL, NULL },
 	{ "add_buffer_with_empty2", test_evbuffer_add_buffer_with_empty2, 0, NULL, NULL },
 	{ "reserve2", test_evbuffer_reserve2, 0, NULL, NULL },
 	{ "reserve_many", test_evbuffer_reserve_many, 0, NULL, NULL },
 	{ "reserve_many2", test_evbuffer_reserve_many, 0, &nil_setup, (void*)"add" },
 	{ "reserve_many3", test_evbuffer_reserve_many, 0, &nil_setup, (void*)"fill" },
+	{ "reserve_with_empty", test_evbuffer_reserve_with_empty, 0, NULL, NULL },
+	{ "reserve_invalid_last_with_datap", test_evbuffer_reserve_invalid_last_with_datap, TT_FORK, NULL, NULL },
 	{ "expand", test_evbuffer_expand, 0, NULL, NULL },
 	{ "expand_overflow", test_evbuffer_expand_overflow, 0, NULL, NULL },
 	{ "add1", test_evbuffer_add1, 0, NULL, NULL },
@@ -2524,16 +2991,24 @@ struct testcase_t evbuffer_testcases[] = {
 	{ "search", test_evbuffer_search, 0, NULL, NULL },
 	{ "callbacks", test_evbuffer_callbacks, 0, NULL, NULL },
 	{ "add_reference", test_evbuffer_add_reference, 0, NULL, NULL },
+	{ "add_reference_with_offset", test_evbuffer_add_reference_with_offset, 0, NULL, NULL},
 	{ "multicast", test_evbuffer_multicast, 0, NULL, NULL },
 	{ "multicast_drain", test_evbuffer_multicast_drain, 0, NULL, NULL },
+	{ "multicast_empty_chain", test_evbuffer_multicast_empty_chain, TT_FORK, NULL, NULL },
 	{ "prepend", test_evbuffer_prepend, TT_FORK, NULL, NULL },
+	{ "empty_reference_prepend", test_evbuffer_empty_reference_prepend, TT_FORK, NULL, NULL },
+	{ "empty_reference_prepend_buffer", test_evbuffer_empty_reference_prepend_buffer, TT_FORK, NULL, NULL },
 	{ "peek", test_evbuffer_peek, 0, NULL, NULL },
 	{ "peek_first_gt", test_evbuffer_peek_first_gt, 0, NULL, NULL },
-	{ "freeze_start", test_evbuffer_freeze, 0, &nil_setup, (void*)"start" },
-	{ "freeze_end", test_evbuffer_freeze, 0, &nil_setup, (void*)"end" },
+	{ "freeze_start", test_evbuffer_freeze, TT_NEED_SOCKETPAIR, &basic_setup, (void*)"start" },
+	{ "freeze_end", test_evbuffer_freeze, TT_NEED_SOCKETPAIR, &basic_setup, (void*)"end" },
 	{ "add_iovec", test_evbuffer_add_iovec, 0, NULL, NULL},
 	{ "copyout", test_evbuffer_copyout, 0, NULL, NULL},
 	{ "file_segment_add_cleanup_cb", test_evbuffer_file_segment_add_cleanup_cb, 0, NULL, NULL },
+	{ "pullup_with_empty", test_evbuffer_pullup_with_empty, 0, NULL, NULL },
+#ifndef EVENT__DISABLE_MM_REPLACEMENT
+	{ "add_file_leak1", test_evbuffer_add_file_leak1, TT_NO_LOGS, NULL, NULL },
+#endif
 
 #define ADDFILE_TEST(name, parameters)					\
 	{ name, test_evbuffer_add_file, TT_FORK|TT_NEED_BASE,		\

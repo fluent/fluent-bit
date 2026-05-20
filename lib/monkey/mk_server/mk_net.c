@@ -23,6 +23,7 @@
 #include <monkey/mk_plugin.h>
 #include <monkey/mk_thread.h>
 #include <monkey/mk_tls.h>
+#include <monkey/mk_socket.h>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -30,7 +31,138 @@
 #else
 #include <sys/socket.h>
 #include <netinet/tcp.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <fcntl.h>
 #endif
+
+#if defined (__linux__)
+#include <sys/sendfile.h>
+#endif
+
+static int net_plain_read(struct mk_plugin *plugin, int socket_fd,
+                          void *buf, int count)
+{
+    (void) plugin;
+
+    return recv(socket_fd, buf, count, 0);
+}
+
+static int net_plain_write(struct mk_plugin *plugin, int socket_fd,
+                           const void *buf, size_t count)
+{
+    (void) plugin;
+
+    return send(socket_fd, buf, count, 0);
+}
+
+static int net_plain_writev(struct mk_plugin *plugin, int socket_fd,
+                            struct mk_iov *mk_io)
+{
+    (void) plugin;
+
+    return mk_iov_send(socket_fd, mk_io);
+}
+
+static int net_plain_close(struct mk_plugin *plugin, int socket_fd)
+{
+    (void) plugin;
+
+#ifdef _WIN32
+    return closesocket(socket_fd);
+#else
+    return close(socket_fd);
+#endif
+}
+
+static int net_plain_send_file(struct mk_plugin *plugin, int socket_fd,
+                               int file_fd, off_t *file_offset,
+                               size_t file_count)
+{
+    ssize_t ret = -1;
+
+    (void) plugin;
+
+#if defined (__linux__)
+    ret = sendfile(socket_fd, file_fd, file_offset, file_count);
+    if (ret == -1 && errno != EAGAIN) {
+        MK_TRACE("[net] sendfile(%i) failed: %s", socket_fd, strerror(errno));
+    }
+    return ret;
+#elif defined (__APPLE__)
+    off_t offset = *file_offset;
+    off_t len = (off_t) file_count;
+
+    ret = sendfile(file_fd, socket_fd, offset, &len, NULL, 0);
+    if (ret == -1 && errno != EAGAIN) {
+        MK_TRACE("[net] sendfile(%i) failed: %s", socket_fd, strerror(errno));
+    }
+    else if (len > 0) {
+        *file_offset += len;
+        return len;
+    }
+    return ret;
+#elif defined (__FreeBSD__)
+    off_t offset = *file_offset;
+    off_t len = (off_t) file_count;
+
+    ret = sendfile(file_fd, socket_fd, offset, len, NULL, 0, 0);
+    if (ret == -1 && errno != EAGAIN) {
+        MK_TRACE("[net] sendfile(%i) failed: %s", socket_fd, strerror(errno));
+    }
+    else if (len > 0) {
+        *file_offset += len;
+        return len;
+    }
+    return ret;
+#else
+    ssize_t bytes_written = 0;
+    ssize_t send_ret;
+    ssize_t to_be_sent;
+    uint8_t temporary_buffer[1024];
+
+    if (file_offset != NULL) {
+        lseek(file_fd, *file_offset, SEEK_SET);
+    }
+
+    while (1) {
+        ret = read(file_fd, temporary_buffer, sizeof(temporary_buffer));
+        if (ret == 0) {
+            return bytes_written;
+        }
+        else if (ret < 0) {
+            return -1;
+        }
+
+        to_be_sent = ret;
+        while (to_be_sent > 0) {
+            send_ret = send(socket_fd,
+                            &temporary_buffer[ret - to_be_sent],
+                            to_be_sent, 0);
+            if (send_ret == -1) {
+                if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                    return -1;
+                }
+            }
+            else {
+                bytes_written += send_ret;
+                to_be_sent -= send_ret;
+            }
+        }
+    }
+#endif
+}
+
+static struct mk_plugin_network mk_net_io_plain = {
+    .read        = net_plain_read,
+    .write       = net_plain_write,
+    .writev      = net_plain_writev,
+    .close       = net_plain_close,
+    .send_file   = net_plain_send_file,
+    .event_interest = NULL,
+    .buffer_size = MK_REQUEST_CHUNK,
+    .plugin      = NULL
+};
 
 /* Initialize the network stack*/
 int mk_net_init()
@@ -61,6 +193,21 @@ int mk_net_init()
 #endif
 
     return 0;
+}
+
+struct mk_plugin_network *mk_net_transport_default()
+{
+    return &mk_net_io_plain;
+}
+
+int mk_net_transport_event_interest(struct mk_plugin_network *transport,
+                                    int fd, int fallback)
+{
+    if (transport != NULL && transport->event_interest != NULL) {
+        return transport->event_interest(transport->plugin, fd, fallback);
+    }
+
+    return fallback;
 }
 
 /* Connect to a TCP socket server */
@@ -209,7 +356,10 @@ int mk_net_conn_write(struct mk_channel *channel,
             ret = mk_event_add(sched->loop,
                                channel->fd,
                                MK_EVENT_THREAD,
-                               MK_EVENT_WRITE, channel->event);
+                               mk_net_transport_event_interest(channel->io,
+                                                               channel->fd,
+                                                               MK_EVENT_WRITE),
+                               channel->event);
             if (ret == -1) {
                 /*
                  * If we failed here there no much that we can do, just
@@ -262,7 +412,10 @@ int mk_net_conn_write(struct mk_channel *channel,
         ret = mk_event_add(sched->loop,
                            channel->fd,
                            MK_EVENT_THREAD,
-                           MK_EVENT_WRITE, channel->event);
+                           mk_net_transport_event_interest(channel->io,
+                                                           channel->fd,
+                                                           MK_EVENT_WRITE),
+                           channel->event);
         if (ret == -1) {
             /*
              * If we failed here there no much that we can do, just

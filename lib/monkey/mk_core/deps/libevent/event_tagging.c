@@ -93,9 +93,13 @@
        a final padding nibble with value 0 is appended.
 */
 
+EVENT2_EXPORT_SYMBOL
 int evtag_decode_int(ev_uint32_t *pnumber, struct evbuffer *evbuf);
+EVENT2_EXPORT_SYMBOL
 int evtag_decode_int64(ev_uint64_t *pnumber, struct evbuffer *evbuf);
+EVENT2_EXPORT_SYMBOL
 int evtag_encode_tag(struct evbuffer *evbuf, ev_uint32_t tag);
+EVENT2_EXPORT_SYMBOL
 int evtag_decode_tag(ev_uint32_t *ptag, struct evbuffer *evbuf);
 
 void
@@ -206,12 +210,13 @@ decode_tag_internal(ev_uint32_t *ptag, struct evbuffer *evbuf, int dodrain)
 	 * the encoding of a number is at most one byte more than its
 	 * storage size.  however, it may also be much smaller.
 	 */
+	size_t pullup_len = len < sizeof(number) + 1 ? len : sizeof(number) + 1;
 	data = evbuffer_pullup(
-		evbuf, len < sizeof(number) + 1 ? len : sizeof(number) + 1);
+		evbuf, pullup_len);
 	if (!data)
 		return (-1);
 
-	while (count++ < len) {
+	while (count++ < pullup_len) {
 		ev_uint8_t lower = *data++;
 		if (shift >= 28) {
 			/* Make sure it fits into 32 bits */
@@ -441,7 +446,7 @@ evtag_unmarshal_header(struct evbuffer *evbuf, ev_uint32_t *ptag)
 
 	if (decode_tag_internal(ptag, evbuf, 1 /* dodrain */) == -1)
 		return (-1);
-	if (evtag_decode_int(&len, evbuf) == -1)
+	if (evtag_decode_int(&len, evbuf) == -1 || len > INT_MAX)
 		return (-1);
 
 	if (evbuffer_get_length(evbuf) < len)
