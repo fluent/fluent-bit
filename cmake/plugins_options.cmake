@@ -158,4 +158,4 @@ DEFINE_OPTION(FLB_OUT_UDP                     "Enable UDP output plugin"        
 DEFINE_OPTION(FLB_OUT_VIVO_EXPORTER           "Enable Vivo exporter output plugin"           ON)
 DEFINE_OPTION(FLB_OUT_WEBSOCKET               "Enable Websocket output plugin"               ON)
 DEFINE_OPTION(FLB_OUT_ARVANCLOUD_CLOUDLOGS    "Enable ArvanCloud CloudLogs output plugin"    ON)
-DEFINE_OPTION(FLB_OUT_ZEROBUS                 "Enable Databricks Zerobus output plugin"      ON)
+DEFINE_OPTION(FLB_OUT_ZEROBUS                 "Enable Databricks Zerobus output plugin"      OFF)
