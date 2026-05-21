@@ -4,7 +4,7 @@
 # on the build system before configuring.  Fluent Bit does not download
 # third-party dependencies at configure/build time.
 #
-# If the library is not found the plugin is silently disabled.
+# If the plugin is enabled and the library is not found, configuration fails.
 #
 # Use -DZEROBUS_LIB_DIR=/path/to/dir to point to a custom location.
 #
@@ -29,8 +29,8 @@ endif()
 if(ZEROBUS_LIB_FILE)
   message(STATUS "ZeroBus FFI library: ${ZEROBUS_LIB_FILE}")
 else()
-  message(STATUS
-    "ZeroBus FFI: library not found, disabling out_zerobus. "
-    "To enable, install libzerobus_ffi or set -DZEROBUS_LIB_DIR=/path/to/lib.")
-  FLB_OPTION(FLB_OUT_ZEROBUS OFF)
+  message(FATAL_ERROR
+    "ZeroBus FFI library not found. Install libzerobus_ffi or set "
+    "-DZEROBUS_LIB_DIR=/path/to/lib, or disable the plugin with "
+    "-DFLB_OUT_ZEROBUS=OFF.")
 endif()
