@@ -140,7 +140,7 @@ static int log_cresult_error(struct flb_output_instance *ins,
 }
 
 /*
- * Convert a log event body to a JSON string for ZeroBus ingestion.
+ * Convert a log event body to a JSON string for Zerobus ingestion.
  *
  * Matches the Go plugin's recordToJSON: applies log_keys filter, then
  * injects raw_log_key (full pre-filter record), time_key, and _tag
@@ -270,7 +270,7 @@ static flb_sds_t record_to_json(struct flb_out_zerobus *ctx,
 }
 
 /*
- * Plugin init callback: validate required config, then create the ZeroBus
+ * Plugin init callback: validate required config, then create the Zerobus
  * SDK handle and stream. Returns 0 on success, -1 on failure.
  */
 static int cb_zerobus_init(struct flb_output_instance *ins,
@@ -341,7 +341,7 @@ static int cb_zerobus_init(struct flb_output_instance *ins,
                                ctx->workspace_url,
                                &result);
     if (!ctx->sdk || !result.success) {
-        log_cresult_error(ins, &result, "failed to create ZeroBus SDK");
+        log_cresult_error(ins, &result, "failed to create Zerobus SDK");
         goto init_error;
     }
 
@@ -361,7 +361,7 @@ static int cb_zerobus_init(struct flb_output_instance *ins,
                                             &opts,
                                             &result);
     if (!ctx->stream || !result.success) {
-        log_cresult_error(ins, &result, "failed to create ZeroBus stream");
+        log_cresult_error(ins, &result, "failed to create Zerobus stream");
         zerobus_sdk_free(ctx->sdk);
         ctx->sdk = NULL;
         goto init_error;
@@ -386,7 +386,7 @@ init_error:
 
 /*
  * Plugin flush callback: decode incoming log events, convert each to JSON,
- * and ingest the batch via ZeroBus. Waits for server-side acknowledgment
+ * and ingest the batch via Zerobus. Waits for server-side acknowledgment
  * before returning. Returns FLB_OK, FLB_RETRY, or FLB_ERROR via
  * FLB_OUTPUT_RETURN.
  */
@@ -521,7 +521,7 @@ flush_cleanup:
 }
 
 /*
- * Plugin exit callback: close the ZeroBus stream, free the SDK handle,
+ * Plugin exit callback: close the Zerobus stream, free the SDK handle,
  * and release the plugin context. Returns 0.
  */
 static int cb_zerobus_exit(void *data, struct flb_config *config)
@@ -565,7 +565,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "endpoint", NULL,
      0, FLB_FALSE, 0,
-     "ZeroBus gRPC endpoint URL (https:// prepended if no scheme)"
+     "Zerobus gRPC endpoint URL (https:// prepended if no scheme)"
     },
     {
      FLB_CONFIG_MAP_STR, "workspace_url", NULL,
@@ -612,7 +612,7 @@ static struct flb_config_map config_map[] = {
 
 struct flb_output_plugin out_zerobus_plugin = {
     .name         = "zerobus",
-    .description  = "Send logs to Databricks ZeroBus",
+    .description  = "Send logs to Databricks Zerobus",
     .cb_init      = cb_zerobus_init,
     .cb_flush     = cb_zerobus_flush,
     .cb_exit      = cb_zerobus_exit,

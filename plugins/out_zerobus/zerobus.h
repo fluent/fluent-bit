@@ -28,7 +28,7 @@
 #include <stdbool.h>
 
 /*
- * ZeroBus FFI declarations
+ * Zerobus FFI declarations
  *
  * These types and functions are provided by the prebuilt Rust FFI static
  * library (libzerobus_ffi.a).  The declarations below are extracted from
@@ -106,7 +106,7 @@ extern CStreamConfigurationOptions zerobus_get_default_config(void);
 
 /* Plugin context */
 struct flb_out_zerobus {
-    /* ZeroBus handles */
+    /* Zerobus handles */
     CZerobusSdk    *sdk;
     CZerobusStream *stream;
 
