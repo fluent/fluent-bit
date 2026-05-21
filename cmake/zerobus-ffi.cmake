@@ -1,6 +1,6 @@
-# Locate the pre-installed ZeroBus FFI static library.
+# Locate the pre-installed Zerobus FFI static library.
 #
-# The out_zerobus plugin requires the ZeroBus FFI library to be installed
+# The out_zerobus plugin requires the Zerobus FFI library to be installed
 # on the build system before configuring.  Fluent Bit does not download
 # third-party dependencies at configure/build time.
 #
@@ -27,10 +27,10 @@ else()
 endif()
 
 if(ZEROBUS_LIB_FILE)
-  message(STATUS "ZeroBus FFI library: ${ZEROBUS_LIB_FILE}")
+  message(STATUS "Zerobus FFI library: ${ZEROBUS_LIB_FILE}")
 else()
   message(FATAL_ERROR
-    "ZeroBus FFI library not found. Install libzerobus_ffi or set "
+    "Zerobus FFI library not found. Install libzerobus_ffi or set "
     "-DZEROBUS_LIB_DIR=/path/to/lib, or disable the plugin with "
     "-DFLB_OUT_ZEROBUS=OFF.")
 endif()

@@ -1370,7 +1370,7 @@ if(FLB_OUT_PGSQL AND (NOT PostgreSQL_FOUND))
    FLB_OPTION(FLB_OUT_PGSQL OFF)
 endif()
 
-# ZeroBus FFI
+# Zerobus FFI
 # ===========
 if(FLB_OUT_ZEROBUS)
   include(cmake/zerobus-ffi.cmake)
