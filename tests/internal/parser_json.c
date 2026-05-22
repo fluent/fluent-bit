@@ -319,6 +319,67 @@ void test_time_keep()
     flb_config_exit(config);
 }
 
+void test_time_numeric()
+{
+    struct flb_parser *parser = NULL;
+    struct flb_config *config = NULL;
+    int ret = 0;
+    char *input = "{\"str\":\"text\", \"int\":100, \"double\":1.23, \"bool\":true, \"time\":422500}";
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    struct flb_time out_time;
+    char *expected_strs[] = {"str", "text", "int", "100", "double","1.23", "bool", "true"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    out_time.tm.tv_sec = 0;
+    out_time.tm.tv_nsec = 0;
+
+
+    config = flb_config_init();
+    if(!TEST_CHECK(config != NULL)) {
+        TEST_MSG("flb_config_init failed");
+        exit(1);
+    }
+
+    parser = flb_parser_create("json", "json", NULL, FLB_FALSE, "MILLISECONDS", "time", NULL,
+                               FLB_FALSE /*time_keep */, FLB_FALSE, FLB_FALSE, FLB_FALSE,
+                               NULL, 0, NULL, config);
+    if (!TEST_CHECK(parser != NULL)) {
+        TEST_MSG("flb_parser_create failed");
+        flb_config_exit(config);
+        exit(1);
+    }
+
+    ret = flb_parser_do(parser, input, strlen(input), &out_buf, &out_size, &out_time);
+    if (!TEST_CHECK(ret != -1)) {
+        TEST_MSG("flb_parser_do failed");
+        flb_parser_destroy(parser);
+        flb_config_exit(config);
+        exit(1);
+    }
+
+    ret = compare_msgpack(out_buf, out_size, &expected);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("compare failed");
+        flb_free(out_buf);
+        flb_parser_destroy(parser);
+        flb_config_exit(config);
+        exit(1);
+    }
+
+    if (!TEST_CHECK(out_time.tm.tv_sec == 422 && out_time.tm.tv_nsec == 500000000)) {
+        TEST_MSG("timestamp error. sec  Got=%ld Expect=422", out_time.tm.tv_sec);
+        TEST_MSG("timestamp error. nsec Got=%ld Expect=500000000", out_time.tm.tv_nsec);
+    }
+
+    flb_free(out_buf);
+    flb_parser_destroy(parser);
+    flb_config_exit(config);
+}
+
 /*
  * JSON parser doesn't support 'types' option.
  * This test is to check that 'types' doesn't affect output.
@@ -540,6 +601,7 @@ TEST_LIST = {
     { "basic", test_basic},
     { "time_key", test_time_key},
     { "time_keep", test_time_keep},
+    { "time_numeric", test_time_numeric},
     { "types_is_not_supported", test_types_is_not_supported},
     { "decode_field_json", test_decode_field_json},
     { "time_key_kept_if_parse_fails", test_time_key_kept_if_parse_fails},
