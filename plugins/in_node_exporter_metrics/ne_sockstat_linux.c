@@ -170,7 +170,7 @@ static int sockstat_update(struct flb_ne *ctx)
     struct flb_slist_entry *val;
 
     mk_list_init(&list);
-    ret = ne_utils_file_read_lines(ctx->path_procfs, "/net/sockstat", &list);
+    ret = ne_utils_file_read_lines(ctx, ctx->path_procfs, "/net/sockstat", &list);
     if (ret == -1) {
         return -1;
     }
@@ -298,7 +298,7 @@ static int sockstat_update(struct flb_ne *ctx)
 
     /* Parse IPv6 statistics */
     mk_list_init(&list);
-    ret = ne_utils_file_read_lines(ctx->path_procfs, "/net/sockstat6", &list);
+    ret = ne_utils_file_read_lines(ctx, ctx->path_procfs, "/net/sockstat6", &list);
     if (ret != -1) {
         mk_list_foreach(head, &list) {
             line = mk_list_entry(head, struct flb_slist_entry, _head);
