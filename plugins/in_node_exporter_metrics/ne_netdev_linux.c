@@ -98,7 +98,7 @@ static int netdev_configure(struct flb_ne *ctx)
     mk_list_init(&rx_list);
     mk_list_init(&tx_list);
 
-    ret = ne_utils_file_read_lines(ctx->path_procfs, "/net/dev", &list);
+    ret = ne_utils_file_read_lines(ctx, ctx->path_procfs, "/net/dev", &list);
     if (ret == -1) {
         return -1;
     }
@@ -236,7 +236,7 @@ static int netdev_update(struct flb_ne *ctx)
     mk_list_init(&rx_list);
     mk_list_init(&tx_list);
 
-    ret = ne_utils_file_read_lines(ctx->path_procfs, "/net/dev", &list);
+    ret = ne_utils_file_read_lines(ctx, ctx->path_procfs, "/net/dev", &list);
     if (ret == -1) {
         return -1;
     }
