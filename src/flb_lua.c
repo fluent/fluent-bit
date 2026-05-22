@@ -269,7 +269,7 @@ static int lua_isinteger(lua_State *L, int index)
 */
 static int lua_table_maxn(lua_State *l, int index)
 {
-#if defined(LUA_VERSION_NUM) && LUA_VERSION_NUM < 520
+#if defined(LUA_VERSION_NUM) && LUA_VERSION_NUM < 502
     int ret = -1;
     if (lua_type(l, index) != LUA_TTABLE) {
         return -1;
