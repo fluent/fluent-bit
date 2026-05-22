@@ -112,7 +112,7 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
         entry = mk_list_entry(head, struct flb_slist_entry, _head);
 
         /* Core ID */
-        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
                                         entry->str,
                                         "topology", "core_id",
                                         &core_id);
@@ -121,7 +121,7 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
         }
 
         /* Physical ID */
-        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
                                         entry->str,
                                         "topology", "physical_package_id",
                                         &physical_package_id);
@@ -130,7 +130,7 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
         }
 
         /* Package Metric: node_cpu_core_throttles_total */
-        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
                                         entry->str,
                                         "thermal_throttle", "core_throttle_count",
                                         &core_throttle_count);
@@ -150,7 +150,7 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
         }
 
         /* Package Metric: node_cpu_package_throttles_total */
-        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
                                         entry->str,
                                         "thermal_throttle", "package_throttle_count",
                                         &package_throttle_count);
@@ -307,7 +307,7 @@ static int cpu_stat_update(struct flb_ne *ctx, uint64_t ts)
     struct flb_slist_entry *line;
     struct cpu_stat_info st = {0};
 
-    ret = ne_utils_file_read_lines(ctx->path_procfs, "/stat", &list);
+    ret = ne_utils_file_read_lines(ctx, ctx->path_procfs, "/stat", &list);
     if (ret == -1) {
         return -1;
     }

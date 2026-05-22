@@ -65,7 +65,8 @@ int ne_utils_str_to_uint64(char *str, uint64_t *out_val)
     return 0;
 }
 
-int ne_utils_file_read_uint64(const char *mount,
+int ne_utils_file_read_uint64(struct flb_ne *ctx,
+                              const char *mount,
                               const char *path,
                               const char *join_a, const char *join_b,
                               uint64_t *out_val)
@@ -122,6 +123,12 @@ int ne_utils_file_read_uint64(const char *mount,
 
     fd = open(p, O_RDONLY);
     if (fd == -1) {
+        if (ctx) {
+            flb_plg_error(ctx->ins, "could not open '%s'", p);
+        }
+        else {
+            flb_errno();
+        }
         flb_sds_destroy(p);
         return -1;
     }
@@ -129,7 +136,12 @@ int ne_utils_file_read_uint64(const char *mount,
 
     bytes = read(fd, &tmp, sizeof(tmp));
     if (bytes == -1) {
-        flb_errno();
+        if (ctx) {
+            flb_plg_error(ctx->ins, "could not read from '%s'", p);
+        }
+        else {
+            flb_errno();
+        }
         close(fd);
         return -1;
     }
@@ -148,7 +160,7 @@ int ne_utils_file_read_uint64(const char *mount,
  * Read a file and every non-empty line is stored as a flb_slist_entry in the
  * given list.
  */
-int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list *list)
+int ne_utils_file_read_lines(struct flb_ne *ctx, const char *mount, const char *path, struct mk_list *list)
 {
     int len;
     int ret;
@@ -167,7 +179,12 @@ int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list
     snprintf(real_path, sizeof(real_path) - 1, "%s%s", mount, path);
     f = fopen(real_path, "r");
     if (f == NULL) {
-        flb_errno();
+        if (ctx) {
+            flb_plg_error(ctx->ins, "could not open '%s'", real_path);
+        }
+        else {
+            flb_errno();
+        }
         return -1;
     }
 
@@ -196,7 +213,8 @@ int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list
 /*
  * Read a file and store the first line as a string.
  */
-int ne_utils_file_read_sds(const char *mount,
+int ne_utils_file_read_sds(struct flb_ne *ctx,
+                           const char *mount,
                            const char *path,
                            const char *join_a,
                            const char *join_b,
@@ -250,6 +268,12 @@ int ne_utils_file_read_sds(const char *mount,
 
     fd = open(p, O_RDONLY);
     if (fd == -1) {
+        if (ctx) {
+            flb_plg_error(ctx->ins, "could not open '%s'", p);
+        }
+        else {
+            flb_errno();
+        }
         flb_sds_destroy(p);
         return -1;
     }
@@ -257,7 +281,12 @@ int ne_utils_file_read_sds(const char *mount,
 
     bytes = read(fd, &tmp, sizeof(tmp));
     if (bytes == -1) {
-        flb_errno();
+        if (ctx) {
+            flb_plg_error(ctx->ins, "could not read from '%s'", p);
+        }
+        else {
+            flb_errno();
+        }
         close(fd);
         return -1;
     }
