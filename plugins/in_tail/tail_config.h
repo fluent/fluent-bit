@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_sqldb.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_log_event.h>
+#include <stdbool.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif
@@ -160,6 +161,8 @@ struct flb_tail_config {
 
     /* List of shell patterns used to exclude certain file names */
     struct mk_list *exclude_list;
+
+    bool disable_debug_eventlogs;
 
     /* Plugin input instance */
     struct flb_input_instance *ins;

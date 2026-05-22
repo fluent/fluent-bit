@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/multiline/flb_ml_parser.h>
@@ -25,6 +26,8 @@
 #include <stdlib.h>
 #include <fcntl.h>
 
+#include "fluent-bit/flb_sds.h"
+#include "mk_core/mk_list.h"
 #include "tail_fs.h"
 #include "tail_db.h"
 #include "tail_config.h"
@@ -153,6 +156,41 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         flb_plg_error(ctx->ins, "no input 'path' was given");
         flb_tail_config_destroy(ctx);
         return NULL;
+    }
+
+    ctx->disable_debug_eventlogs = false;
+    /* Don't write debug logs for any tail plugins that are watching the
+       file Fluentbit itself is writing logs out to, to avoid an ouroboros
+       infinite logging loop, unless explicitly opted into via env var
+    */
+    char *buf2;
+    struct flb_env *env;
+    env = config->env;
+    buf2 = (char *)flb_env_get(env, "FLB_ALLOW_SERVICE_TAIL_DEBUG");
+
+    {
+        struct mk_list *head;
+        struct flb_slist_entry *pattern;
+        mk_list_foreach(head, ctx->path_list) {
+            pattern = mk_list_entry(head, struct flb_slist_entry, _head);
+
+            flb_plg_info(ctx->ins, "check for path %s", pattern->str);
+            // XXX: should probably expand the pattern for this check
+            if (strcmp(pattern->str, config->log_file) == 0) {
+                flb_sds_t msgbuf = flb_sds_create_size(256);
+                flb_sds_printf(&msgbuf, "This tail plugin instance targets the same path as the Fluentbit logging service file output.");
+
+                if (!buf2) {
+                    ctx->disable_debug_eventlogs = true;
+                    flb_sds_printf(&msgbuf, " Tail event debug logging will not be emitted for this plugin instance without FLB_ALLOW_SERVICE_TAIL_DEBUG");
+                }
+                else {
+                    flb_sds_printf(&msgbuf, " Tail event debug logging has been enabled via FLB_ALLOW_SERVICE_TAIL_DEBUG - large log volume likely to occur");
+                }
+                flb_plg_debug(ctx->ins, "%s", msgbuf);
+                flb_sds_destroy(msgbuf);
+            }
+        }
     }
 
     /* Config: seconds interval before to re-scan the path */
