@@ -77,6 +77,7 @@ endif()
 
 # fallocate(2) support
 check_c_source_compiles("
+  #define _GNU_SOURCE
   #include <fcntl.h>
   int main() {
      fallocate(0,0,0);
