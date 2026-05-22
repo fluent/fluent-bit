@@ -838,7 +838,11 @@ static int chronicle_metadata_resolve(struct flb_chronicle *ctx,
         *namespace = flb_ra_translate_check(ctx->namespace_ra,
                                             tag, tag_len,
                                             map, NULL, FLB_TRUE);
-        if (!*namespace) {
+        if (!*namespace || flb_sds_len(*namespace) == 0) {
+            if (*namespace) {
+                flb_sds_destroy(*namespace);
+                *namespace = NULL;
+            }
             if (ctx->namespace) {
                 *namespace = flb_sds_create(ctx->namespace);
             }
