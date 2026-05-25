@@ -141,10 +141,6 @@ static void flb_http_server_connection_drop(struct flb_connection *connection)
         session->connection == connection) {
         session->connection = NULL;
         session->drop_pending = FLB_TRUE;
-        connection->event.data = session;
-    }
-    else {
-        connection->event.data = NULL;
     }
 
     connection->user_data = NULL;
@@ -402,15 +398,13 @@ static int flb_http_server_client_activity_event_handler(void *data)
 
     session = (struct flb_http_server_session *) connection->user_data;
     if (session == NULL) {
-        session = (struct flb_http_server_session *) event->data;
-        if (session != NULL &&
-            (session->connection == NULL ||
-             session->connection->fd == FLB_INVALID_SOCKET)) {
-            event->data = NULL;
-            session->drop_pending = FLB_FALSE;
-            flb_http_server_session_destroy(session);
-        }
+        return -1;
+    }
 
+    if (session->connection == NULL ||
+        session->connection->fd == FLB_INVALID_SOCKET) {
+        session->drop_pending = FLB_FALSE;
+        flb_http_server_session_destroy(session);
         return -1;
     }
 
@@ -522,7 +516,6 @@ static int flb_http_server_client_connection_event_handler(void *data)
     MK_EVENT_NEW(&connection->event);
 
     connection->user_data     = (void *) session;
-    connection->event.data    = (void *) session;
     connection->drop_notification_callback = flb_http_server_connection_drop;
     connection->event.type    = FLB_ENGINE_EV_CUSTOM;
     connection->event.handler = flb_http_server_client_activity_event_handler;
@@ -1257,7 +1250,6 @@ void flb_http_server_session_destroy(struct flb_http_server_session *session)
 
         if (connection != NULL) {
             connection->user_data = NULL;
-            connection->event.data = NULL;
             connection->drop_notification_callback = NULL;
             session->drop_pending = FLB_FALSE;
 
