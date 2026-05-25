@@ -243,8 +243,15 @@ int flb_metrics_dump_values(char **out_buf, size_t *out_size,
         msgpack_pack_uint64(&mp_pck, m->val);
     }
 
-    *out_buf  = mp_sbuf.data;
+    *out_buf = flb_malloc(mp_sbuf.size);
+    if (!*out_buf) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return -1;
+    }
+    memcpy(*out_buf, mp_sbuf.data, mp_sbuf.size);
     *out_size = mp_sbuf.size;
+
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
 }
