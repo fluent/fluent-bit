@@ -333,6 +333,9 @@ struct flb_config {
 
     int dry_run;
 
+    /* Heap limit configuration */
+    size_t heap_mem_limit;
+
     /* New Router Configuration */
     struct cfl_list input_routes;
 };
@@ -365,6 +368,7 @@ enum conf_type {
     FLB_CONF_TYPE_DOUBLE,
     FLB_CONF_TYPE_BOOL,
     FLB_CONF_TYPE_STR,
+    FLB_CONF_TYPE_SIZE,
     FLB_CONF_TYPE_OTHER,
 };
 
@@ -378,6 +382,7 @@ enum conf_type {
 #define FLB_CONF_STR_STREAMS_FILE "Streams_File"
 #define FLB_CONF_STR_STREAMS_STR_CONV "sp.convert_from_str_to_num"
 #define FLB_CONF_STR_CONV_NAN     "json.convert_nan_to_null"
+#define FLB_CONF_STR_HEAP_MEM_LIMIT "heap.mem_limit"
 
 /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER

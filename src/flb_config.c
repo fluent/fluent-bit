@@ -229,6 +229,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, hot_reload_watchdog_timeout_seconds)},
 
+    {FLB_CONF_STR_HEAP_MEM_LIMIT,
+     FLB_CONF_TYPE_SIZE,
+     offsetof(struct flb_config, heap_mem_limit)},
+
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
 
@@ -744,6 +748,7 @@ int flb_config_set_property(struct flb_config *config,
     int *i_val;
     double *d_val;
     char **s_val;
+    size_t *sz_val;
     size_t len = strnlen(k, 256);
     char *key = service_configs[0].key;
     flb_sds_t tmp = NULL;
@@ -807,6 +812,11 @@ int flb_config_set_property(struct flb_config *config,
                     }
 
                     *s_val = flb_strdup(tmp);
+                    flb_sds_destroy(tmp);
+                    break;
+                case FLB_CONF_TYPE_SIZE:
+                    sz_val = (size_t*)((char*)config+service_configs[i].offset);
+                    *sz_val = flb_utils_size_to_bytes(tmp);
                     flb_sds_destroy(tmp);
                     break;
                 default:
