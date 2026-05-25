@@ -63,8 +63,28 @@ static inline int flb_fuzz_get_probability(int val) {
 }
 #endif
 
+FLB_EXPORT extern void flb_mem_account_add(size_t size);
+FLB_EXPORT extern void flb_mem_account_sub(size_t size);
+FLB_EXPORT extern size_t flb_mem_usage_get(void);
+
+#ifdef FLB_HAVE_JEMALLOC
+    #define FLB_MEM_SIZE(ptr) malloc_usable_size((void *)ptr)
+#elif defined(_WIN32)
+    #include <malloc.h>
+    #define FLB_MEM_SIZE(ptr) _msize((void *)ptr)
+#elif defined(__APPLE__)
+    #include <malloc/malloc.h>
+    #define FLB_MEM_SIZE(ptr) malloc_size((void *)ptr)
+#else
+    #include <malloc.h>
+    #define FLB_MEM_SIZE(ptr) malloc_usable_size((void *)ptr)
+#endif
+
+static inline void flb_free(void *ptr);
+
 static inline FLB_ALLOCSZ_ATTR(1)
 void *flb_malloc(const size_t size) {
+    void *ptr;
 
 #ifdef FLB_HAVE_TESTS_OSSFUZZ
    // 1% chance of failure
@@ -73,18 +93,19 @@ void *flb_malloc(const size_t size) {
    }
 #endif
 
-    if (size == 0) {
+    ptr = malloc(size);
+    if (!ptr) {
         return NULL;
     }
-
-    return malloc(size);
+    
+    flb_mem_account_add(FLB_MEM_SIZE(ptr));
+    return ptr;
 }
 
 static inline FLB_ALLOCSZ_ATTR(1, 2)
 void *flb_calloc(size_t n, const size_t size) {
-    if (size == 0) {
-        return NULL;
-    }
+    void *ptr;
+
 #ifdef FLB_HAVE_TESTS_OSSFUZZ
    // Add chance of failure. Used by fuzzing to test error-handling code.
    if (flb_fuzz_get_probability(1)) {
@@ -92,13 +113,40 @@ void *flb_calloc(size_t n, const size_t size) {
    }
 #endif
 
-    return calloc(n, size);
+    ptr = calloc(n, size);
+    if (!ptr) {
+        return NULL;
+    }
+
+    flb_mem_account_add(FLB_MEM_SIZE(ptr));
+    return ptr;
 }
 
 static inline FLB_ALLOCSZ_ATTR(2)
 void *flb_realloc(void *ptr, const size_t size)
 {
-    return realloc(ptr, size);
+    void *new_ptr;
+    size_t old_size = 0;
+
+    if (!ptr) {
+        return flb_malloc(size);
+    }
+    
+    if (size == 0) {
+        flb_free(ptr);
+        return NULL;
+    }
+
+    old_size = FLB_MEM_SIZE(ptr);
+    new_ptr = realloc(ptr, size);
+    if (!new_ptr) {
+        return NULL;
+    }
+
+    flb_mem_account_sub(old_size);
+    flb_mem_account_add(FLB_MEM_SIZE(new_ptr));
+
+    return new_ptr;
 }
 
 static inline FLB_ALLOCSZ_ATTR(3)
@@ -124,8 +172,14 @@ void *flb_realloc_z(void *ptr, const size_t old_size, const size_t new_size)
 
 
 static inline void flb_free(void *ptr) {
+    if (!ptr) {
+        return;
+    }
+    
+    flb_mem_account_sub(FLB_MEM_SIZE(ptr));
     free(ptr);
 }
+
 
 #undef FLB_ALLOCSZ_ATTR
 
