@@ -930,6 +930,22 @@ void flb_task_destroy(struct flb_task *task, int del)
 
     if (task->i_ins != NULL) {
         flb_input_chunk_set_limits(task->i_ins);
+
+        if (task->i_ins->config->heap_mem_limit > 0) {
+            struct mk_list *i_head;
+            struct flb_input_instance *ins;
+
+            /* 
+             * If the global heap limit is configured, freeing memory from this task
+             * might allow OTHER globally-paused inputs to resume. We must evaluate them.
+             */
+            mk_list_foreach(i_head, &task->i_ins->config->inputs) {
+                ins = mk_list_entry(i_head, struct flb_input_instance, _head);
+                if (ins != task->i_ins && ins->mem_buf_status == FLB_INPUT_PAUSED) {
+                    flb_input_chunk_set_limits(ins);
+                }
+            }
+        }
     }
 
     if (task->event_chunk != NULL) {
