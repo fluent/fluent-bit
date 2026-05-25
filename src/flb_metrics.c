@@ -347,6 +347,24 @@ static int attach_hot_reload_info(struct flb_config *ctx, struct cmt *cmt, uint6
     return 0;
 }
 
+static int attach_heap_usage(struct flb_config *ctx, struct cmt *cmt, uint64_t ts,
+                             char *hostname)
+{
+    double val;
+    struct cmt_gauge *g;
+
+    g = cmt_gauge_create(cmt, "fluentbit", "", "heap_usage_bytes",
+                         "Total heap memory usage in bytes.",
+                         1, (char *[]) {"hostname"});
+    if (!g) {
+        return -1;
+    }
+
+    val = (double) flb_mem_usage_get();
+    cmt_gauge_set(g, ts, val, 1, (char *[]) {hostname});
+    return 0;
+}
+
 /* Append internal Fluent Bit metrics to context */
 int flb_metrics_fluentbit_add(struct flb_config *ctx, struct cmt *cmt)
 {
@@ -368,6 +386,7 @@ int flb_metrics_fluentbit_add(struct flb_config *ctx, struct cmt *cmt)
     attach_process_start_time_seconds(ctx, cmt, ts, hostname);
     attach_build_info(ctx, cmt, ts, hostname);
     attach_hot_reload_info(ctx, cmt, ts, hostname);
+    attach_heap_usage(ctx, cmt, ts, hostname);
 
     return 0;
 }
