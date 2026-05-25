@@ -2166,7 +2166,7 @@ int flb_utils_read_file_offset(char *path, off_t offset_start, off_t offset_end,
             }
             if (ferror(fp)) {
                 flb_errno();
-                free(buf);
+                flb_free(buf);
                 fclose(fp);
                 return -1;
             }
