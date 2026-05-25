@@ -2401,6 +2401,16 @@ static inline int flb_input_chunk_is_mem_overlimit(struct flb_input_instance *i)
     return FLB_FALSE;
 }
 
+static inline int flb_input_chunk_is_global_heap_overlimit(struct flb_input_instance *i)
+{
+    if (i->config->heap_mem_limit > 0 &&
+        flb_mem_usage_get() >= i->config->heap_mem_limit) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 static inline int flb_input_chunk_is_storage_overlimit(struct flb_input_instance *i)
 {
     struct flb_storage_input *storage = (struct flb_storage_input *)i->storage;
@@ -2452,16 +2462,15 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
      * and perform further adjustments.
      */
     if (flb_input_chunk_is_mem_overlimit(in) == FLB_FALSE &&
+        flb_input_chunk_is_global_heap_overlimit(in) == FLB_FALSE &&
         in->config->is_running == FLB_TRUE &&
         in->config->is_ingestion_active == FLB_TRUE &&
         in->mem_buf_status == FLB_INPUT_PAUSED) {
         in->mem_buf_status = FLB_INPUT_RUNNING;
         if (in->p->cb_resume) {
             flb_input_resume(in);
-            flb_info("[input] %s resume (mem buf overlimit - buf size %zuB now below limit %zuB)",
-                      flb_input_name(in),
-                      in->mem_chunks_size,
-                      in->mem_buf_limit);
+            flb_info("[input] %s resume (mem buf overlimit / global heap - limits not exceeded)",
+                      flb_input_name(in));
         }
     }
     if (flb_input_chunk_is_storage_overlimit(in) == FLB_FALSE &&
@@ -2501,6 +2510,21 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i, size_t j
 
     if (storage->type == FLB_STORAGE_FS) {
         return FLB_FALSE;
+    }
+
+    if (flb_input_chunk_is_global_heap_overlimit(i) == FLB_TRUE) {
+        if (i->storage_type == FLB_STORAGE_MEMRB) {
+            return FLB_FALSE;
+        }
+
+        flb_warn("[input] %s paused (global heap mem overlimit - usage %zuB exceeded limit %zuB)",
+                 flb_input_name(i),
+                 flb_mem_usage_get(),
+                 i->config->heap_mem_limit
+                );
+        flb_input_pause(i);
+        i->mem_buf_status = FLB_INPUT_PAUSED;
+        return FLB_TRUE;
     }
 
     if (flb_input_chunk_is_mem_overlimit(i) == FLB_TRUE) {
@@ -2551,7 +2575,7 @@ int flb_input_chunk_set_up_down(struct flb_input_chunk *ic)
     /* Register the total into the context variable */
     in->mem_chunks_size = total;
 
-    if (flb_input_chunk_is_mem_overlimit(in) == FLB_TRUE) {
+    if (flb_input_chunk_is_mem_overlimit(in) == FLB_TRUE || flb_input_chunk_is_global_heap_overlimit(in) == FLB_TRUE) {
         if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
             cio_chunk_down(ic->chunk);
 
