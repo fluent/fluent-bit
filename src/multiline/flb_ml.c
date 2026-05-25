@@ -1202,7 +1202,7 @@ void flb_deduplication_list_purge(struct cfl_list *deduplication_list)
 
         cfl_list_del(&entry->_head);
 
-        free(entry);
+        flb_free(entry);
     }
 }
 
