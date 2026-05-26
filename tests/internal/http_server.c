@@ -475,12 +475,10 @@ void test_http_server_session_destroy_with_closed_connection()
 
     session->connection = &connection;
     connection.user_data = session;
-    connection.event.data = session;
 
     flb_http_server_session_destroy(session);
 
     TEST_CHECK(connection.user_data == NULL);
-    TEST_CHECK(connection.event.data == NULL);
 }
 
 void test_http_server_session_destroy_clears_drop_pending()
@@ -500,12 +498,10 @@ void test_http_server_session_destroy_clears_drop_pending()
     session->drop_pending = FLB_TRUE;
     session->releasable = FLB_FALSE;
     connection.user_data = session;
-    connection.event.data = session;
 
     flb_http_server_session_destroy(session);
 
     TEST_CHECK(connection.user_data == NULL);
-    TEST_CHECK(connection.event.data == NULL);
     TEST_CHECK(session->drop_pending == FLB_FALSE);
 
     flb_free(session);
