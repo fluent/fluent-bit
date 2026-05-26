@@ -28,7 +28,8 @@ struct flb_zstd_decompression_context {
     ZSTD_DCtx *dctx;
 };
 
-#define FLB_ZSTD_DEFAULT_CHUNK 64 * 1024  /* 64 KB buffer */
+#define FLB_ZSTD_DEFAULT_CHUNK      (64 * 1024)       /* 64 KB buffer */
+#define FLB_ZSTD_DECOMPRESS_MAX     (100 * 1024 * 1024)  /* 100 MB limit */
 
 int flb_zstd_compress(void *in_data, size_t in_len, void **out_data, size_t *out_len)
 {
@@ -105,6 +106,12 @@ static int zstd_uncompress_unknown_size(void *in_data, size_t in_len, void **out
         /* check if we need more space */
         if (output.pos == out_size) {
             out_size *= 2;
+            if (out_size > FLB_ZSTD_DECOMPRESS_MAX) {
+                flb_error("[zstd] maximum decompression size reached (~100 MB)");
+                flb_free(buf);
+                ZSTD_freeDCtx(dctx);
+                return -1;
+            }
             tmp = flb_realloc(buf, out_size);
             if (!tmp) {
                 flb_errno();
@@ -144,6 +151,12 @@ int flb_zstd_uncompress(void *in_data, size_t in_len, void **out_data, size_t *o
     else if (size == ZSTD_CONTENTSIZE_UNKNOWN) {
         ret = zstd_uncompress_unknown_size(in_data, in_len, out_data, out_len);
         return ret;
+    }
+
+    if (size > FLB_ZSTD_DECOMPRESS_MAX) {
+        flb_error("[zstd] maximum decompression size is %d bytes",
+                  FLB_ZSTD_DECOMPRESS_MAX);
+        return -1;
     }
 
     buf = flb_malloc(size);
