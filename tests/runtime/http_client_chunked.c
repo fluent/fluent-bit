@@ -2,12 +2,13 @@
 
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
 #include <unistd.h>
-#include <errno.h>
-#include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#endif
+#include <fluent-bit/flb_compat.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_error.h>
@@ -42,7 +43,7 @@ static int socket_write_all(int fd, const char *buffer, size_t length)
     offset = 0;
 
     while (offset < length) {
-        bytes = write(fd, buffer + offset, length - offset);
+        bytes = send(fd, buffer + offset, length - offset, 0);
         if (bytes == -1) {
             if (errno == EINTR) {
                 continue;
@@ -78,18 +79,18 @@ static int create_listen_socket(int *out_port)
     address.sin_port = htons(0);
 
     if (bind(fd, (struct sockaddr *) &address, sizeof(address)) == -1) {
-        close(fd);
+        flb_socket_close(fd);
         return -1;
     }
 
     if (listen(fd, 4) == -1) {
-        close(fd);
+        flb_socket_close(fd);
         return -1;
     }
 
     length = sizeof(address);
     if (getsockname(fd, (struct sockaddr *) &address, &length) == -1) {
-        close(fd);
+        flb_socket_close(fd);
         return -1;
     }
 
@@ -131,7 +132,7 @@ static void *chunked_server_thread(void *data)
         return NULL;
     }
 
-    bytes = read(conn_fd, request, sizeof(request));
+    bytes = recv(conn_fd, request, sizeof(request), 0);
     (void) bytes;
 
     for (index = 0; fragments[index] != NULL; index++) {
@@ -144,7 +145,7 @@ static void *chunked_server_thread(void *data)
         usleep(10000);
     }
 
-    close(conn_fd);
+    flb_socket_close(conn_fd);
 
     return NULL;
 }
@@ -235,6 +236,10 @@ void test_http_client_chunked_runtime()
     struct chunked_server_ctx server;
     struct runtime_http_client_ctx *ctx;
     int payload_ready;
+#ifdef _WIN32
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
 
     memset(&server, 0, sizeof(server));
     server.listen_fd = -1;
@@ -253,14 +258,14 @@ void test_http_client_chunked_runtime()
     ret = pthread_create(&server.thread, NULL, chunked_server_thread, &server);
     TEST_CHECK(ret == 0);
     if (ret != 0) {
-        close(server.listen_fd);
+        flb_socket_close(server.listen_fd);
         return;
     }
     thread_started = FLB_TRUE;
 
     ctx = runtime_http_client_ctx_create(server.port);
     if (!TEST_CHECK(ctx != NULL)) {
-        close(server.listen_fd);
+        flb_socket_close(server.listen_fd);
         pthread_join(server.thread, NULL);
         return;
     }
@@ -314,9 +319,8 @@ cleanup:
     if (ctx != NULL) {
         runtime_http_client_ctx_destroy(ctx);
     }
-
     if (server.listen_fd != -1) {
-        close(server.listen_fd);
+        flb_socket_close(server.listen_fd);
     }
 
     if (thread_started == FLB_TRUE) {
