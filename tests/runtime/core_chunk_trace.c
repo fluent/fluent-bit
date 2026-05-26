@@ -21,9 +21,11 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_chunk_trace.h>
 #include <fluent-bit/flb_router.h>
-#include <pthread.h>
+#include <fluent-bit/flb_compat.h>
 #include <stdlib.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include "flb_tests_runtime.h"
 
 
