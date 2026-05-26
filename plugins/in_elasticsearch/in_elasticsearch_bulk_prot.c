@@ -73,6 +73,10 @@ static int get_write_op(struct flb_in_elasticsearch *ctx, msgpack_object *map, f
     msgpack_object key;
     int check = FLB_FALSE;
 
+    if (map->via.map.size == 0) {
+        return FLB_FALSE;
+    }
+
     kv = map->via.map.ptr;
     key = kv[0].key;
     if (key.type == MSGPACK_OBJECT_BIN) {
