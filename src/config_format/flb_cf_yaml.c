@@ -2373,6 +2373,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
             if (state_variant_set_child(ctx, state, variant)) {
                 flb_error("unable to add key to list map");
+                cfl_variant_destroy(variant);
                 return YAML_FAILURE;
             }
 
@@ -2384,10 +2385,17 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
             state = state_pop(ctx);
 
+            if (state == NULL) {
+                cfl_variant_destroy(variant);
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
+
             if (state->state == STATE_PLUGIN_VAL) {
                 /* set variant to the parent state keyvals */
                 if (cfl_kvlist_insert(state->keyvals, state->key, variant) < 0) {
                     flb_error("unable to insert variant");
+                    cfl_variant_destroy(variant);
                     return YAML_FAILURE;
                 }
 
@@ -2398,11 +2406,13 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
             if (state->variant->type == CFL_VARIANT_KVLIST && state->variant_kvlist_key == NULL) {
                 flb_error("invalid state, should have a variant key");
+                cfl_variant_destroy(variant);
                 return YAML_FAILURE;
             }
 
             if (state_variant_set_child(ctx, state, variant)) {
                 flb_error("unable to add key to list map");
+                cfl_variant_destroy(variant);
                 return YAML_FAILURE;
             }
 
