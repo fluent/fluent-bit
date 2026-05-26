@@ -1478,6 +1478,14 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 /*
                  * Forward format 2 (message mode) : [tag, time, map, ...]
                  */
+                if (root.via.array.size < 3) {
+                    flb_plg_warn(ctx->ins,
+                                 "message mode requires at least 3 elements");
+                    msgpack_unpacked_destroy(&result);
+                    msgpack_unpacker_free(unp);
+                    flb_sds_destroy(out_tag);
+                    return -1;
+                }
                 map = root.via.array.ptr[2];
                 if (map.type != MSGPACK_OBJECT_MAP) {
                     flb_plg_warn(ctx->ins, "invalid data format, map expected");
