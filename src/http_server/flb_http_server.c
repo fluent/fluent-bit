@@ -645,13 +645,6 @@ signal_and_exit:
     }
 
 cleanup:
-    flb_http_server_destroy(&worker->server);
-
-    if (worker->event_loop != NULL) {
-        mk_event_loop_destroy(worker->event_loop);
-        worker->event_loop = NULL;
-    }
-
     return NULL;
 }
 
@@ -758,6 +751,13 @@ static void flb_http_server_runtime_stop(struct flb_http_server *session)
 
         if (runtime->workers[index].thread_created == FLB_TRUE) {
             pthread_join(runtime->workers[index].thread, NULL);
+
+            flb_http_server_destroy(&runtime->workers[index].server);
+
+            if (runtime->workers[index].event_loop != NULL) {
+                mk_event_loop_destroy(runtime->workers[index].event_loop);
+                runtime->workers[index].event_loop = NULL;
+            }
         }
 
         flb_http_server_worker_context_cleanup(&runtime->workers[index]);
