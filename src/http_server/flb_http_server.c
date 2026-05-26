@@ -128,7 +128,6 @@ static void flb_http_server_connection_drop(struct flb_connection *connection)
         session->drop_pending = FLB_FALSE;
     }
 
-    connection->user_data = NULL;
     connection->drop_notification_callback = NULL;
 }
 
