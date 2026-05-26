@@ -125,7 +125,7 @@ static void flb_http_server_connection_drop(struct flb_connection *connection)
     if (session != NULL &&
         session->connection == connection) {
         session->connection = NULL;
-        session->drop_pending = FLB_TRUE;
+        session->drop_pending = FLB_FALSE;
     }
 
     connection->user_data = NULL;
