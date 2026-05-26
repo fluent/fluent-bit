@@ -35,6 +35,7 @@
 
 #define FLB_000_WIN FLB_TESTS_CONF_PATH "\\fluent-bit-windows.yaml"
 #define FLB_BROKEN_PLUGIN_VARIANT FLB_TESTS_CONF_PATH "/broken_plugin_variant.yaml"
+#define FLB_CLUSTERFUZZ_VARIANT_MISSING_KEY FLB_TESTS_CONF_PATH "/clusterfuzz_variant_missing_key.yaml"
 
 #ifdef _WIN32
 #define FLB_BASIC FLB_000_WIN
@@ -196,15 +197,24 @@ static void test_customs_section()
 
 static void test_broken_plugin_variant_yaml()
 {
+    char *test_cases[] = {
+        FLB_BROKEN_PLUGIN_VARIANT,
+        FLB_CLUSTERFUZZ_VARIANT_MISSING_KEY,
+        NULL,
+    };
     struct flb_cf *cf;
+    int i;
 
-    cf = flb_cf_yaml_create(NULL, FLB_BROKEN_PLUGIN_VARIANT, NULL, 0);
-    TEST_CHECK(cf == NULL);
+    for (i = 0; test_cases[i] != NULL; i++) {
+        cf = flb_cf_yaml_create(NULL, test_cases[i], NULL, 0);
+        TEST_CHECK_(cf == NULL,
+                    "config_format created from broken YAML file %s",
+                    test_cases[i]);
 
-    if (cf != NULL) {
-        TEST_CHECK_(cf != NULL, "somewhat config_format is created wrongly");
-        flb_cf_dump(cf);
-        flb_cf_destroy(cf);
+        if (cf != NULL) {
+            flb_cf_dump(cf);
+            flb_cf_destroy(cf);
+        }
     }
 }
 
