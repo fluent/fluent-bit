@@ -231,16 +231,15 @@ int flb_net_socket_share_port(flb_sockfd_t fd)
     int on = 1;
     int ret;
 
-#ifdef SO_REUSEPORT
+#if defined(SO_REUSEPORT) && !defined(FLB_SYSTEM_WINDOWS)
     ret = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
-#else
-    ret = -1;
-#endif
-
     if (ret == -1) {
         flb_errno();
         return -1;
     }
+#else
+    (void) fd;
+#endif
 
     return 0;
 }
