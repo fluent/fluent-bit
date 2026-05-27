@@ -175,8 +175,9 @@ int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
 
         frame_type    = *((uint8_t *) &frame_buffer[0]);
 
-        frame_length  = *((uint32_t *) &frame_buffer[1]);
-        frame_length &= 0x00FFFFFF;
+        frame_length  = ((uint32_t)((unsigned char) frame_buffer[1]))       |
+                        ((uint32_t)((unsigned char) frame_buffer[2]) << 8)  |
+                        ((uint32_t)((unsigned char) frame_buffer[3]) << 16);
 
         frame_body    = &frame_buffer[4];
 
