@@ -623,19 +623,16 @@ static void *flb_http_server_worker_thread(void *data)
 
     worker = data;
 
-    /* 
-     * Ensure worker TLS is zeroed for this thread so logging macros
-     * do not read garbage memory on architectures like aarch64.
-     */
-    FLB_TLS_SET(flb_worker_ctx, NULL);
-
     worker->event_loop = mk_event_loop_create(256);
     if (worker->event_loop == NULL) {
         result = -1;
         goto signal_and_exit;
     }
 
+    flb_engine_evl_init();
     flb_engine_evl_set(worker->event_loop);
+
+    flb_net_dns_ctx_init();
     flb_net_ctx_init(&dns_ctx);
     flb_net_dns_ctx_set(&dns_ctx);
 
