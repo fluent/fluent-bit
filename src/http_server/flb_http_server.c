@@ -609,6 +609,12 @@ static void *flb_http_server_worker_thread(void *data)
 
     worker = data;
 
+    /* 
+     * Ensure worker TLS is zeroed for this thread so logging macros
+     * do not read garbage memory on architectures like aarch64.
+     */
+    FLB_TLS_SET(flb_worker_ctx, NULL);
+
     worker->event_loop = mk_event_loop_create(256);
     if (worker->event_loop == NULL) {
         result = -1;
@@ -647,6 +653,13 @@ signal_and_exit:
     }
 
 cleanup:
+    if (worker->server.status == HTTP_SERVER_RUNNING &&
+        worker->server.cb_worker_exit != NULL) {
+        worker->server.cb_worker_exit(&worker->server,
+                                      worker->server.user_data);
+        worker->server.cb_worker_exit = NULL;
+    }
+
     return NULL;
 }
 
