@@ -69,12 +69,25 @@ flb_http_server_runtime_worker_net_setup_get(struct flb_http_server *server,
 
 static void flb_http_server_runtime_stop(struct flb_http_server *session);
 
-static void flb_http_server_worker_context_reset(
+static int flb_http_server_worker_context_reset(
     struct flb_http_server_worker_context *worker)
 {
+    int result;
+
     memset(worker, 0, sizeof(struct flb_http_server_worker_context));
-    pthread_mutex_init(&worker->mutex, NULL);
-    pthread_cond_init(&worker->condition, NULL);
+
+    result = pthread_mutex_init(&worker->mutex, NULL);
+    if (result != 0) {
+        return result;
+    }
+
+    result = pthread_cond_init(&worker->condition, NULL);
+    if (result != 0) {
+        pthread_mutex_destroy(&worker->mutex);
+        return result;
+    }
+
+    return 0;
 }
 
 static void flb_http_server_worker_context_cleanup(
@@ -676,14 +689,11 @@ static int flb_http_server_runtime_start(struct flb_http_server *session)
         return -1;
     }
 
-    session->runtime = runtime;
-    runtime->worker_count = session->workers;
-    runtime->workers = flb_calloc(runtime->worker_count,
+    runtime->workers = flb_calloc(session->workers,
                                   sizeof(struct flb_http_server_worker_context));
     if (runtime->workers == NULL) {
         flb_errno();
         flb_free(runtime);
-        session->runtime = NULL;
         return -1;
     }
 
@@ -695,7 +705,6 @@ static int flb_http_server_runtime_start(struct flb_http_server *session)
         if (result != 0) {
             flb_free(runtime->workers);
             flb_free(runtime);
-            session->runtime = NULL;
 
             return -1;
         }
@@ -703,8 +712,25 @@ static int flb_http_server_runtime_start(struct flb_http_server *session)
         session->tls_alpn_configured = FLB_TRUE;
     }
 
+    for (index = 0; index < session->workers; index++) {
+        result = flb_http_server_worker_context_reset(&runtime->workers[index]);
+        if (result != 0) {
+            while (index > 0) {
+                index--;
+                flb_http_server_worker_context_cleanup(&runtime->workers[index]);
+            }
+
+            flb_free(runtime->workers);
+            flb_free(runtime);
+
+            return -1;
+        }
+    }
+
+    runtime->worker_count = session->workers;
+    session->runtime = runtime;
+
     for (index = 0; index < runtime->worker_count; index++) {
-        flb_http_server_worker_context_reset(&runtime->workers[index]);
         memcpy(&runtime->workers[index].parent,
                session,
                sizeof(struct flb_http_server));
