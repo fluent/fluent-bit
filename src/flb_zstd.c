@@ -105,12 +105,15 @@ static int zstd_uncompress_unknown_size(void *in_data, size_t in_len, void **out
 
         /* check if we need more space */
         if (output.pos == out_size) {
-            out_size *= 2;
-            if (out_size > FLB_ZSTD_DECOMPRESS_MAX) {
+            if (out_size >= FLB_ZSTD_DECOMPRESS_MAX) {
                 flb_error("[zstd] maximum decompression size reached (~100 MB)");
                 flb_free(buf);
                 ZSTD_freeDCtx(dctx);
                 return -1;
+            }
+            out_size *= 2;
+            if (out_size > FLB_ZSTD_DECOMPRESS_MAX) {
+                out_size = FLB_ZSTD_DECOMPRESS_MAX;
             }
             tmp = flb_realloc(buf, out_size);
             if (!tmp) {
