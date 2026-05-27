@@ -661,16 +661,16 @@ static int flb_http_server_runtime_start(struct flb_http_server *session)
         return -1;
     }
 
-    runtime->workers = flb_calloc(session->workers,
+    session->runtime = runtime;
+    runtime->worker_count = session->workers;
+    runtime->workers = flb_calloc(runtime->worker_count,
                                   sizeof(struct flb_http_server_worker_context));
     if (runtime->workers == NULL) {
         flb_errno();
         flb_free(runtime);
+        session->runtime = NULL;
         return -1;
     }
-
-    runtime->worker_count = session->workers;
-    session->runtime = runtime;
 
     if (session->tls_provider != NULL &&
         session->tls_alpn_configured == FLB_FALSE) {
