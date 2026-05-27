@@ -14,12 +14,16 @@
 #include "flb_tests_internal.h"
 
 #define TEST_HTTP_SERVER_HOST "127.0.0.1"
+#define TEST_HTTP_SERVER_WORKERS 2
 
 struct test_http_server_context {
     pthread_mutex_t lock;
     int init_calls;
     int exit_calls;
     int request_calls;
+    int exit_thread_mismatches;
+    struct flb_http_server *initialized_servers[TEST_HTTP_SERVER_WORKERS];
+    pthread_t initialized_threads[TEST_HTTP_SERVER_WORKERS];
 };
 
 
@@ -38,11 +42,15 @@ static int test_http_server_worker_init(struct flb_http_server *server, void *da
 {
     struct test_http_server_context *context;
 
-    (void) server;
-
     context = data;
 
     pthread_mutex_lock(&context->lock);
+
+    if (context->init_calls < TEST_HTTP_SERVER_WORKERS) {
+        context->initialized_servers[context->init_calls] = server;
+        context->initialized_threads[context->init_calls] = pthread_self();
+    }
+
     context->init_calls++;
     pthread_mutex_unlock(&context->lock);
 
@@ -51,13 +59,28 @@ static int test_http_server_worker_init(struct flb_http_server *server, void *da
 
 static int test_http_server_worker_exit(struct flb_http_server *server, void *data)
 {
+    int index;
+    int matching_thread;
     struct test_http_server_context *context;
 
-    (void) server;
-
     context = data;
+    matching_thread = FLB_FALSE;
 
     pthread_mutex_lock(&context->lock);
+
+    for (index = 0; index < context->init_calls &&
+                    index < TEST_HTTP_SERVER_WORKERS; index++) {
+        if (context->initialized_servers[index] == server &&
+            pthread_equal(context->initialized_threads[index], pthread_self())) {
+            matching_thread = FLB_TRUE;
+            break;
+        }
+    }
+
+    if (matching_thread == FLB_FALSE) {
+        context->exit_thread_mismatches++;
+    }
+
     context->exit_calls++;
     pthread_mutex_unlock(&context->lock);
 
@@ -223,6 +246,67 @@ void test_http_server_managed_worker_contract()
     flb_http_server_destroy(&server);
     test_http_server_context_destroy(&context);
     flb_config_exit(config);
+}
+
+void test_http_server_worker_exit_runs_on_worker_thread()
+{
+    int ret;
+    struct flb_config *config;
+    struct flb_net_setup net_setup;
+    struct flb_http_server server;
+    struct flb_http_server_options options;
+    struct test_http_server_context context;
+
+    ret = test_http_server_network_init();
+    if (ret != 0) {
+        return;
+    }
+
+    config = flb_config_init();
+    if (!TEST_CHECK(config != NULL)) {
+        test_http_server_network_cleanup();
+        return;
+    }
+
+    test_http_server_context_init(&context);
+
+    flb_net_setup_init(&net_setup);
+    flb_http_server_options_init(&options);
+
+    options.protocol_version = HTTP_PROTOCOL_VERSION_AUTODETECT;
+    options.request_callback = test_http_server_request_handler;
+    options.user_data = &context;
+    options.address = (char *) TEST_HTTP_SERVER_HOST;
+    options.port = 0;
+    options.networking_flags = FLB_IO_TCP;
+    options.networking_setup = &net_setup;
+    options.system_context = config;
+    options.workers = TEST_HTTP_SERVER_WORKERS;
+    options.cb_worker_init = test_http_server_worker_init;
+    options.cb_worker_exit = test_http_server_worker_exit;
+
+    ret = flb_http_server_init_with_options(&server, &options);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        ret = flb_http_server_start(&server);
+        TEST_CHECK(ret == 0);
+
+        if (ret == 0) {
+            TEST_CHECK(context.init_calls == TEST_HTTP_SERVER_WORKERS);
+
+            flb_http_server_destroy(&server);
+
+            TEST_CHECK(context.exit_calls == TEST_HTTP_SERVER_WORKERS);
+            TEST_CHECK(context.exit_thread_mismatches == 0);
+        }
+        else {
+            flb_http_server_destroy(&server);
+        }
+    }
+
+    test_http_server_context_destroy(&context);
+    flb_config_exit(config);
+    test_http_server_network_cleanup();
 }
 
 void test_http_server_idle_timeout_applies_to_networking_setup()
@@ -431,6 +515,8 @@ TEST_LIST = {
     { "http_server_options_defaults", test_http_server_options_defaults },
     { "http_server_options_multi_worker_magic", test_http_server_options_multi_worker_magic },
     { "http_server_managed_worker_contract", test_http_server_managed_worker_contract },
+    { "http_server_worker_exit_runs_on_worker_thread",
+      test_http_server_worker_exit_runs_on_worker_thread },
     { "http_server_idle_timeout_applies_to_networking_setup",
       test_http_server_idle_timeout_applies_to_networking_setup },
     { "http_server_explicit_network_timeout_is_preserved",
