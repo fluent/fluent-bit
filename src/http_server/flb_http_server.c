@@ -67,7 +67,8 @@ flb_http_server_runtime_worker_net_setup_get(struct flb_http_server *server,
     return &server->runtime->workers[worker_id].net_setup;
 }
 
-static void flb_http_server_runtime_stop(struct flb_http_server *session);
+static void flb_http_server_runtime_stop(struct flb_http_server *session,
+                                         struct flb_http_server_runtime *runtime);
 
 static int flb_http_server_worker_context_reset(
     struct flb_http_server_worker_context *worker)
@@ -728,7 +729,6 @@ static int flb_http_server_runtime_start(struct flb_http_server *session)
     }
 
     runtime->worker_count = session->workers;
-    session->runtime = runtime;
 
     for (index = 0; index < runtime->worker_count; index++) {
         memcpy(&runtime->workers[index].parent,
@@ -768,24 +768,27 @@ static int flb_http_server_runtime_start(struct flb_http_server *session)
     }
 
     if (index != runtime->worker_count) {
-        flb_http_server_runtime_stop(session);
+        flb_http_server_runtime_stop(session, runtime);
         return -1;
     }
 
+    session->runtime = runtime;
     session->status = HTTP_SERVER_RUNNING;
 
     return 0;
 }
 
-static void flb_http_server_runtime_stop(struct flb_http_server *session)
+static void flb_http_server_runtime_stop(struct flb_http_server *session,
+                                         struct flb_http_server_runtime *runtime)
 {
     int index;
-    struct flb_http_server_runtime *runtime;
+    int published;
 
-    runtime = session->runtime;
     if (runtime == NULL) {
         return;
     }
+
+    published = (session->runtime == runtime);
 
     for (index = 0; index < runtime->worker_count; index++) {
         cfl_atomic_store(&runtime->workers[index].should_exit, FLB_TRUE);
@@ -804,10 +807,12 @@ static void flb_http_server_runtime_stop(struct flb_http_server *session)
         flb_http_server_worker_context_cleanup(&runtime->workers[index]);
     }
 
+    if (published == FLB_TRUE) {
+        session->runtime = NULL;
+    }
+
     flb_free(runtime->workers);
     flb_free(runtime);
-
-    session->runtime = NULL;
 }
 
 /* HTTP SERVER */
@@ -1075,7 +1080,7 @@ int flb_http_server_stop(struct flb_http_server *server)
     struct flb_http_server_session *session;
 
     if (server->runtime != NULL) {
-        flb_http_server_runtime_stop(server);
+        flb_http_server_runtime_stop(server, server->runtime);
         server->status = HTTP_SERVER_STOPPED;
         return 0;
     }
