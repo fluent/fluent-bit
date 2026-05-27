@@ -29,6 +29,7 @@
 
 #include <fluent-bit/flb_snappy.h>
 #include <fluent-bit/flb_gzip.h>
+#include <cfl/cfl_atomic.h>
 
 /* PRIVATE */
 
@@ -41,7 +42,7 @@ struct flb_http_server_worker_context {
     pthread_mutex_t mutex;
     pthread_cond_t condition;
     int worker_id;
-    int should_exit;
+    uint64_t should_exit;
     int initialized;
     int thread_created;
     int startup_result;
@@ -601,6 +602,7 @@ static int flb_http_server_worker_initialize(
 static void *flb_http_server_worker_thread(void *data)
 {
     int result;
+    uint64_t should_exit;
     struct mk_event *event;
     struct flb_net_dns dns_ctx = {0};
     struct flb_http_server_worker_context *worker;
@@ -630,7 +632,7 @@ signal_and_exit:
         goto cleanup;
     }
 
-    while (worker->should_exit == FLB_FALSE) {
+    while ((should_exit = cfl_atomic_load(&worker->should_exit)) == FLB_FALSE) {
         mk_event_wait_2(worker->event_loop, 250);
 
         mk_event_foreach(event, worker->event_loop) {
@@ -747,7 +749,7 @@ static void flb_http_server_runtime_stop(struct flb_http_server *session)
     }
 
     for (index = 0; index < runtime->worker_count; index++) {
-        runtime->workers[index].should_exit = FLB_TRUE;
+        cfl_atomic_store(&runtime->workers[index].should_exit, FLB_TRUE);
 
         if (runtime->workers[index].thread_created == FLB_TRUE) {
             pthread_join(runtime->workers[index].thread, NULL);
