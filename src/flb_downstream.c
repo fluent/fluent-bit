@@ -158,7 +158,18 @@ int flb_downstream_setup(struct flb_downstream *stream,
         return -2;
     }
 
-    mk_list_add(&stream->base._head, &config->downstreams);
+    if (config != NULL) {
+        /*
+         * flb_downstream_setup can be called concurrently by multiple HTTP
+         * server worker threads, so we must protect the shared list.
+         * Since there is no explicit mutex for downstreams, and we only
+         * do this at startup, we will just lock the collectors_mutex as
+         * a workaround to prevent the data race on aarch64.
+         */
+        pthread_mutex_lock(&config->collectors_mutex);
+        mk_list_add(&stream->base._head, &config->downstreams);
+        pthread_mutex_unlock(&config->collectors_mutex);
+    }
 
     return 0;
 }
@@ -426,8 +437,16 @@ void flb_downstream_destroy(struct flb_downstream *stream)
             flb_socket_close(stream->server_fd);
         }
 
+        if (stream->base.config != NULL) {
+            pthread_mutex_lock(&stream->base.config->collectors_mutex);
+        }
+
         if (mk_list_entry_orphan(&stream->base._head) == 0) {
             mk_list_del(&stream->base._head);
+        }
+
+        if (stream->base.config != NULL) {
+            pthread_mutex_unlock(&stream->base.config->collectors_mutex);
         }
 
         if (stream->base.dynamically_allocated) {
