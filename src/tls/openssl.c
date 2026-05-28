@@ -1334,6 +1334,10 @@ static int tls_session_destroy(void *session)
      * Free it explicitly now, under its own context mutex.
      */
     if (ptr->outer_session != NULL) {
+        /* After session_set_outer(), the outer backend session is owned only
+         * by the inner session; no path should independently use it or acquire
+         * outer-context then inner-context locks for the same chained pair.
+         */
         outer_ctx = ptr->outer_session->parent;
         pthread_mutex_lock(&outer_ctx->mutex);
         SSL_free(ptr->outer_session->ssl);
