@@ -33,7 +33,7 @@
 
 static int fetch_metadata(struct flb_stackdriver *ctx,
                           struct flb_upstream *upstream, char *uri,
-                          char *payload)
+                          flb_sds_t *payload)
 {
     int ret;
     int ret_code;
@@ -44,15 +44,30 @@ static int fetch_metadata(struct flb_stackdriver *ctx,
     /* If runtime test mode is enabled, add test data */
     if (ctx->ins->test_mode == FLB_TRUE) {
         if (strcmp(uri, FLB_STD_METADATA_PROJECT_ID_URI) == 0) {
-            flb_sds_cat(payload, "fluent-bit-test", 15);
+            flb_sds_t tmp;
+            tmp = flb_sds_cat(*payload, "fluent-bit-test", 15);
+            if (!tmp) {
+                return -1;
+            }
+            *payload = tmp;
             return 0;
         }
         else if (strcmp(uri, FLB_STD_METADATA_ZONE_URI) == 0) {
-            flb_sds_cat(payload, "projects/0123456789/zones/fluent", 32);
+            flb_sds_t tmp;
+            tmp = flb_sds_cat(*payload, "projects/0123456789/zones/fluent", 32);
+            if (!tmp) {
+                return -1;
+            }
+            *payload = tmp;
             return 0;
         }
         else if (strcmp(uri, FLB_STD_METADATA_INSTANCE_ID_URI) == 0) {
-            flb_sds_cat(payload, "333222111", 9);
+            flb_sds_t tmp;
+            tmp = flb_sds_cat(*payload, "333222111", 9);
+            if (!tmp) {
+                return -1;
+            }
+            *payload = tmp;
             return 0;
         }
         return -1;
@@ -87,8 +102,15 @@ static int fetch_metadata(struct flb_stackdriver *ctx,
         /* The request was issued successfully, validate the 'error' field */
         flb_plg_debug(ctx->ins, "HTTP Status=%i", c->resp.status);
         if (c->resp.status == 200) {
-            ret_code = 0;
-            flb_sds_copy(payload, c->resp.payload, c->resp.payload_size);
+            flb_sds_t tmp;
+            tmp = flb_sds_copy(*payload, c->resp.payload, c->resp.payload_size);
+            if (!tmp) {
+                ret_code = -1;
+            }
+            else {
+                *payload = tmp;
+                ret_code = 0;
+            }
         }
         else {
             if (c->resp.payload_size > 0) {
@@ -117,7 +139,7 @@ int gce_metadata_read_token(struct flb_stackdriver *ctx)
 
     uri = flb_sds_cat(uri, ctx->client_email, flb_sds_len(ctx->client_email));
     uri = flb_sds_cat(uri, "/token", 6);
-    ret = fetch_metadata(ctx, ctx->metadata_u, uri, payload);
+    ret = fetch_metadata(ctx, ctx->metadata_u, uri, &payload);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "can't fetch token from the metadata server");
         flb_sds_destroy(payload);
@@ -147,7 +169,7 @@ int gce_metadata_read_zone(struct flb_stackdriver *ctx)
     flb_sds_t zone = NULL;
 
     ret = fetch_metadata(ctx, ctx->metadata_u, FLB_STD_METADATA_ZONE_URI,
-                         payload);
+                         &payload);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "can't fetch zone from the metadata server");
         flb_sds_destroy(payload);
@@ -193,7 +215,7 @@ int gce_metadata_read_project_id(struct flb_stackdriver *ctx)
     flb_sds_t payload = flb_sds_create_size(4096);
 
     ret = fetch_metadata(ctx, ctx->metadata_u,
-                         FLB_STD_METADATA_PROJECT_ID_URI, payload);
+                         FLB_STD_METADATA_PROJECT_ID_URI, &payload);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "can't fetch project id from the metadata server");
         flb_sds_destroy(payload);
@@ -210,7 +232,7 @@ int gce_metadata_read_instance_id(struct flb_stackdriver *ctx)
     flb_sds_t payload = flb_sds_create_size(4096);
 
     ret = fetch_metadata(ctx, ctx->metadata_u,
-                         FLB_STD_METADATA_INSTANCE_ID_URI, payload);
+                         FLB_STD_METADATA_INSTANCE_ID_URI, &payload);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "can't fetch instance id from the metadata server");
         flb_sds_destroy(payload);
