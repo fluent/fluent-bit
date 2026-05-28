@@ -1165,16 +1165,36 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
     time_t time_now;
     char *p = NULL;
     char *fmt;
-    int time_len = tsize;
+    char *buf;
+    char *time_buf = NULL;
+    int time_len;
     const char *time_ptr = time_str;
     char tmp[64];
+    size_t buf_size = sizeof(tmp);
     struct tm tmy;
 
     *ns = 0;
 
-    if (tsize > sizeof(tmp) - 1) {
-        flb_error("[parser] time string length is too long");
+    if (tsize > INT_MAX) {
+        flb_error("[parser] time string length exceeds supported range");
         return -1;
+    }
+
+    time_len = (int) tsize;
+    buf = tmp;
+
+    if (tsize > sizeof(tmp) - 1) {
+        if (tsize > (SIZE_MAX - 8)) {
+            flb_error("[parser] time string length is too long");
+            return -1;
+        }
+        buf_size = tsize + 8;
+        time_buf = flb_malloc(buf_size);
+        if (time_buf == NULL) {
+            flb_errno();
+            return -1;
+        }
+        buf = time_buf;
     }
 
     /*
@@ -1184,7 +1204,8 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
      */
     if (parser->time_with_year == FLB_FALSE) {
         /* Given time string is too long */
-        if (time_len + 6 >= sizeof(tmp)) {
+        if (time_len + 6 >= buf_size) {
+            flb_free(time_buf);
             return -1;
         }
 
@@ -1212,7 +1233,7 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
 
         uint64_t t = tmy.tm_year + 1900;
 
-        fmt = tmp;
+        fmt = buf;
         u64_to_str(t, fmt);
         fmt += 4;
         *fmt++ = ' ';
@@ -1221,8 +1242,8 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         fmt += time_len;
         *fmt++ = '\0';
 
-        time_ptr = tmp;
-        time_len = strlen(tmp);
+        time_ptr = buf;
+        time_len = strlen(buf);
         p = flb_strptime(time_ptr, parser->time_fmt_year, tm);
     }
     else {
@@ -1231,13 +1252,14 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
          * null-terminated, which time_ptr is not guaranteed
          * to be. So we use tmp to hold our string.
          */
-        if (time_len >= sizeof(tmp)) {
+        if (time_len >= buf_size) {
+            flb_free(time_buf);
             return -1;
         }
-        memcpy(tmp, time_ptr, time_len);
-        tmp[time_len] = '\0';
-        time_ptr = tmp;
-        time_len = strlen(tmp);
+        memcpy(buf, time_ptr, time_len);
+        buf[time_len] = '\0';
+        time_ptr = buf;
+        time_len = strlen(buf);
 
         p = flb_strptime(time_ptr, parser->time_fmt, tm);
     }
@@ -1245,9 +1267,11 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
     if (p == NULL) {
         if (parser->time_strict) {
             flb_error("[parser] cannot parse '%.*s'", (int)tsize, time_str);
+            flb_free(time_buf);
             return -1;
         }
         flb_debug("[parser] non-exact match '%.*s'", (int)tsize, time_str);
+        flb_free(time_buf);
         return 0;
     }
 
@@ -1256,9 +1280,11 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         if (ret < 0) {
             if (parser->time_strict) {
                 flb_error("[parser] cannot parse %%L for '%.*s'", (int)tsize, time_str);
+                flb_free(time_buf);
                 return -1;
             }
             flb_debug("[parser] non-exact match on %%L '%.*s'", (int)tsize, time_str);
+            flb_free(time_buf);
             return 0;
         }
         p += ret;
@@ -1268,9 +1294,11 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         if (p == NULL) {
             if (parser->time_strict) {
                 flb_error("[parser] cannot parse '%.*s' after %%L", (int)tsize, time_str);
+                flb_free(time_buf);
                 return -1;
             }
             flb_debug("[parser] non-exact match after %%L '%.*s'", (int)tsize, time_str);
+            flb_free(time_buf);
             return 0;
         }
     }
@@ -1279,6 +1307,7 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         flb_tm_gmtoff(tm) = parser->time_offset;
     }
 
+    flb_free(time_buf);
     return 0;
 }
 
