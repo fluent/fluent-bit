@@ -55,7 +55,15 @@ int azure_kusto_store_file_upload_read(struct flb_azure_kusto *ctx, struct flb_f
 
 int azure_kusto_store_file_meta_get(struct flb_azure_kusto *ctx, struct flb_fstore_file *fsf);
 
-void azure_kusto_store_file_lock(struct azure_kusto_file *azure_kusto_file);
-void azure_kusto_store_file_unlock(struct azure_kusto_file *azure_kusto_file);
+void azure_kusto_store_file_lock(struct flb_azure_kusto *ctx,
+                                 struct azure_kusto_file *azure_kusto_file);
+void azure_kusto_store_file_unlock(struct flb_azure_kusto *ctx,
+                                   struct azure_kusto_file *azure_kusto_file);
+void azure_kusto_store_file_wait(struct flb_azure_kusto *ctx);
+int azure_kusto_store_file_user_enter(struct flb_azure_kusto *ctx);
+void azure_kusto_store_file_user_exit(struct flb_azure_kusto *ctx);
+int azure_kusto_store_file_shutting_down(struct flb_azure_kusto *ctx);
+int azure_kusto_store_file_wait_or_shutdown(struct flb_azure_kusto *ctx, int seconds);
+void azure_kusto_store_file_shutdown(struct flb_azure_kusto *ctx);
 
 #endif

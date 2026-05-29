@@ -629,17 +629,19 @@ int azure_kusto_queued_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
         blob_uri = azure_kusto_create_blob(ctx, blob_id, payload, payload_size);
 
         if (blob_uri) {
-            if (ctx->buffering_enabled == FLB_TRUE && upload_file != NULL && ctx->buffer_file_delete_early == FLB_TRUE) {
-                flb_plg_debug(ctx->ins, "buffering enabled, ingest to blob successfully done and now deleting the buffer file %s", blob_id);
-                if (azure_kusto_store_file_delete(ctx, upload_file) != 0) {
-                    flb_plg_error(ctx->ins, "blob creation successful but error deleting buffer file %s", blob_id);
-                }
-            }
             ret = azure_kusto_enqueue_ingestion(ctx, blob_uri, payload_size);
 
             if (ret != 0) {
                 flb_plg_error(ctx->ins, "failed to enqueue ingestion blob to queue");
                 ret = -1;
+            }
+            else if (ctx->buffering_enabled == FLB_TRUE && upload_file != NULL &&
+                     ctx->buffer_file_delete_early == FLB_TRUE) {
+                flb_plg_debug(ctx->ins, "queue succeeded, deleting buffer file %s", blob_id);
+                if (azure_kusto_store_file_delete(ctx, upload_file) != 0) {
+                    flb_plg_error(ctx->ins, "queue successful but error deleting buffer file %s", blob_id);
+                    ret = -1;
+                }
             }
 
             flb_sds_destroy(blob_uri);

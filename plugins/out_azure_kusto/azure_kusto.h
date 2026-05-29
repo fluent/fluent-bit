@@ -136,6 +136,7 @@ struct flb_azure_kusto {
 
     int timer_created;
     int timer_ms;
+    struct flb_sched_timer *upload_timer;
 
     /* mutex for acquiring oauth tokens */
     pthread_mutex_t token_mutex;
@@ -149,6 +150,13 @@ struct flb_azure_kusto {
     pthread_mutex_t blob_mutex;
 
     pthread_mutex_t buffer_mutex;
+
+    /* protects fstore file list/context updates */
+    pthread_mutex_t files_mutex;
+    pthread_cond_t files_cond;
+    int files_inflight;
+    int files_users;
+    int files_shutdown;
 
     int buffering_enabled;
 

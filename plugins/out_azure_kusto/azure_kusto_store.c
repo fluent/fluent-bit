@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_fstore.h>
 #include <fluent-bit/flb_time.h>
+#include <time.h>
 
 /**
  * Generates a unique store filename based on a given tag and the current time.
@@ -134,49 +135,41 @@ struct azure_kusto_file *azure_kusto_store_file_get(struct flb_azure_kusto *ctx,
     struct mk_list *tmp;
     struct flb_fstore_file *fsf = NULL;
     struct azure_kusto_file *azure_kusto_file;
-    int found = 0;
 
-    /*
-     * Based in the current ctx->stream_name, locate a candidate file to
-     * store the incoming data using as a lookup pattern the content Tag.
-     */
+    pthread_mutex_lock(&ctx->files_mutex);
+
     mk_list_foreach_safe(head, tmp, &ctx->stream_active->files) {
         fsf = mk_list_entry(head, struct flb_fstore_file, _head);
 
-        /* skip and warn on partially initialized chunks */
         if (fsf->data == NULL) {
-            flb_plg_warn(ctx->ins, "BAD: found flb_fstore_file with NULL data reference, tag=%s, file=%s, will try to delete", tag, fsf->name);
+            flb_plg_warn(ctx->ins,
+                         "found buffer file with NULL context, tag=%s, file=%s",
+                         tag, fsf->name);
             flb_fstore_file_delete(ctx->fs, fsf);
+            continue;
         }
 
         if (fsf->meta_size != tag_len) {
-            fsf = NULL;
             continue;
         }
 
-        /* skip locked chunks */
         azure_kusto_file = fsf->data;
         if (azure_kusto_file->locked == FLB_TRUE) {
             flb_plg_debug(ctx->ins, "File '%s' is locked, skipping", fsf->name);
-            fsf = NULL;
             continue;
         }
 
-
-        /* compare meta and tag */
-        if (strncmp((char *) fsf->meta_buf, tag, tag_len) == 0 ) {
-            flb_plg_debug(ctx->ins, "Found matching file '%s' for tag '%.*s'", fsf->name, tag_len, tag);
-            found = 1;
-            break;
+        if (strncmp((char *) fsf->meta_buf, tag, tag_len) == 0) {
+            flb_plg_debug(ctx->ins, "Found matching file '%s' for tag '%.*s'",
+                          fsf->name, tag_len, tag);
+            azure_kusto_store_file_lock(ctx, azure_kusto_file);
+            pthread_mutex_unlock(&ctx->files_mutex);
+            return azure_kusto_file;
         }
     }
 
-    if (!found) {
-        return NULL;
-    }
-    else {
-        return fsf->data;
-    }
+    pthread_mutex_unlock(&ctx->files_mutex);
+    return NULL;
 }
 
 /**
@@ -222,6 +215,7 @@ int azure_kusto_store_buffer_put(struct flb_azure_kusto *ctx, struct azure_kusto
     flb_sds_t name;
     struct flb_fstore_file *fsf;
     size_t space_remaining;
+    int created_file = FLB_FALSE;
 
     if (ctx->store_dir_limit_size > 0 && ctx->current_buffer_size + bytes >= ctx->store_dir_limit_size) {
         flb_plg_error(ctx->ins, "Buffer is full: current_buffer_size=%zu, new_data=%zu, store_dir_limit_size=%zu bytes",
@@ -239,9 +233,12 @@ int azure_kusto_store_buffer_put(struct flb_azure_kusto *ctx, struct azure_kusto
 
         flb_plg_debug(ctx->ins, "[azure_kusto] new buffer file: %s", name);
 
+        pthread_mutex_lock(&ctx->files_mutex);
+
         /* Create the file */
         fsf = flb_fstore_file_create(ctx->fs, ctx->stream_active, name, bytes);
         if (!fsf) {
+            pthread_mutex_unlock(&ctx->files_mutex);
             flb_plg_error(ctx->ins, "could not create the file '%s' in the store",
                           name);
             flb_sds_destroy(name);
@@ -253,6 +250,7 @@ int azure_kusto_store_buffer_put(struct flb_azure_kusto *ctx, struct azure_kusto
         if (ret == -1) {
             flb_plg_warn(ctx->ins, "Deleting buffer file because metadata could not be written");
             flb_fstore_file_delete(ctx->fs, fsf);
+            pthread_mutex_unlock(&ctx->files_mutex);
             return -1;
         }
 
@@ -262,14 +260,18 @@ int azure_kusto_store_buffer_put(struct flb_azure_kusto *ctx, struct azure_kusto
             flb_errno();
             flb_plg_warn(ctx->ins, "Deleting buffer file because azure_kusto context creation failed");
             flb_fstore_file_delete(ctx->fs, fsf);
+            pthread_mutex_unlock(&ctx->files_mutex);
             return -1;
         }
         azure_kusto_file->fsf = fsf;
         azure_kusto_file->create_time = time(NULL);
         azure_kusto_file->size = 0; /* Initialize size to 0 */
+        azure_kusto_store_file_lock(ctx, azure_kusto_file);
+        created_file = FLB_TRUE;
 
         /* Use fstore opaque 'data' reference to keep our context */
         fsf->data = azure_kusto_file;
+        pthread_mutex_unlock(&ctx->files_mutex);
         flb_sds_destroy(name);
 
     }
@@ -282,6 +284,9 @@ int azure_kusto_store_buffer_put(struct flb_azure_kusto *ctx, struct azure_kusto
 
     if (ret != 0) {
         flb_plg_error(ctx->ins, "error writing data to local azure_kusto file");
+        if (created_file == FLB_TRUE) {
+            azure_kusto_store_file_unlock(ctx, azure_kusto_file);
+        }
         return -1;
     }
 
@@ -299,6 +304,11 @@ int azure_kusto_store_buffer_put(struct flb_azure_kusto *ctx, struct azure_kusto
                          ctx->current_buffer_size, ctx->store_dir_limit_size);
         }
     }
+
+    if (created_file == FLB_TRUE) {
+        azure_kusto_store_file_unlock(ctx, azure_kusto_file);
+    }
+
     return 0;
 }
 
@@ -510,7 +520,10 @@ int azure_kusto_store_exit(struct flb_azure_kusto *ctx)
         return 0;
     }
 
-    /* release local context on non-multi upload files */
+    azure_kusto_store_file_wait(ctx);
+
+    pthread_mutex_lock(&ctx->files_mutex);
+
     mk_list_foreach(head, &ctx->fs->streams) {
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
         if (fs_stream == ctx->stream_upload) {
@@ -522,13 +535,16 @@ int azure_kusto_store_exit(struct flb_azure_kusto *ctx)
             if (fsf->data != NULL) {
                 azure_kusto_file = fsf->data;
                 flb_free(azure_kusto_file);
+                fsf->data = NULL;
             }
         }
     }
 
-    if (ctx->fs) {
-        flb_fstore_destroy(ctx->fs);
-    }
+    pthread_mutex_unlock(&ctx->files_mutex);
+
+    flb_fstore_destroy(ctx->fs);
+    ctx->fs = NULL;
+
     return 0;
 }
 
@@ -639,10 +655,21 @@ int azure_kusto_store_file_inactive(struct flb_azure_kusto *ctx, struct azure_ku
     int ret;
     struct flb_fstore_file *fsf;
 
+    pthread_mutex_lock(&ctx->files_mutex);
+
     fsf = azure_kusto_file->fsf;
+    fsf->data = NULL;
+
+    if (azure_kusto_file->locked == FLB_TRUE) {
+        azure_kusto_file->locked = FLB_FALSE;
+        ctx->files_inflight--;
+        pthread_cond_signal(&ctx->files_cond);
+    }
 
     flb_free(azure_kusto_file);
     ret = flb_fstore_file_inactive(ctx->fs, fsf);
+
+    pthread_mutex_unlock(&ctx->files_mutex);
 
     return ret;
 }
@@ -663,11 +690,22 @@ int azure_kusto_store_file_cleanup(struct flb_azure_kusto *ctx, struct azure_kus
 {
     struct flb_fstore_file *fsf;
 
+    pthread_mutex_lock(&ctx->files_mutex);
+
     fsf = azure_kusto_file->fsf;
+    fsf->data = NULL;
+
+    if (azure_kusto_file->locked == FLB_TRUE) {
+        azure_kusto_file->locked = FLB_FALSE;
+        ctx->files_inflight--;
+        pthread_cond_signal(&ctx->files_cond);
+    }
 
     /* permanent deletion */
     flb_fstore_file_delete(ctx->fs, fsf);
     flb_free(azure_kusto_file);
+
+    pthread_mutex_unlock(&ctx->files_mutex);
 
     return 0;
 }
@@ -690,12 +728,29 @@ int azure_kusto_store_file_delete(struct flb_azure_kusto *ctx, struct azure_kust
 {
     struct flb_fstore_file *fsf;
 
+    pthread_mutex_lock(&ctx->files_mutex);
+
     fsf = azure_kusto_file->fsf;
-    ctx->current_buffer_size -= azure_kusto_file->size;
+    fsf->data = NULL;
+
+    if (azure_kusto_file->locked == FLB_TRUE) {
+        azure_kusto_file->locked = FLB_FALSE;
+        ctx->files_inflight--;
+        pthread_cond_signal(&ctx->files_cond);
+    }
+
+    if (ctx->current_buffer_size >= azure_kusto_file->size) {
+        ctx->current_buffer_size -= azure_kusto_file->size;
+    }
+    else {
+        ctx->current_buffer_size = 0;
+    }
 
     /* permanent deletion */
     flb_fstore_file_delete(ctx->fs, fsf);
     flb_free(azure_kusto_file);
+
+    pthread_mutex_unlock(&ctx->files_mutex);
 
     return 0;
 }
@@ -751,9 +806,11 @@ int azure_kusto_store_file_meta_get(struct flb_azure_kusto *ctx, struct flb_fsto
  * @param azure_kusto_file A pointer to the `azure_kusto_file` structure
  *                         representing the file to be locked.
  */
-void azure_kusto_store_file_lock(struct azure_kusto_file *azure_kusto_file)
+void azure_kusto_store_file_lock(struct flb_azure_kusto *ctx,
+                                  struct azure_kusto_file *azure_kusto_file)
 {
     azure_kusto_file->locked = FLB_TRUE;
+    ctx->files_inflight++;
 }
 
 /**
@@ -765,7 +822,98 @@ void azure_kusto_store_file_lock(struct azure_kusto_file *azure_kusto_file)
  * @param azure_kusto_file A pointer to the `azure_kusto_file` structure
  *                         representing the file to be unlocked.
  */
-void azure_kusto_store_file_unlock(struct azure_kusto_file *azure_kusto_file)
+void azure_kusto_store_file_unlock(struct flb_azure_kusto *ctx,
+                                   struct azure_kusto_file *azure_kusto_file)
 {
-    azure_kusto_file->locked = FLB_FALSE;
+    pthread_mutex_lock(&ctx->files_mutex);
+
+    if (azure_kusto_file->locked == FLB_TRUE) {
+        azure_kusto_file->locked = FLB_FALSE;
+        ctx->files_inflight--;
+        pthread_cond_signal(&ctx->files_cond);
+    }
+
+    pthread_mutex_unlock(&ctx->files_mutex);
+}
+
+void azure_kusto_store_file_wait(struct flb_azure_kusto *ctx)
+{
+    pthread_mutex_lock(&ctx->files_mutex);
+
+    while (ctx->files_inflight > 0) {
+        pthread_cond_wait(&ctx->files_cond, &ctx->files_mutex);
+    }
+
+    pthread_mutex_unlock(&ctx->files_mutex);
+}
+
+int azure_kusto_store_file_user_enter(struct flb_azure_kusto *ctx)
+{
+    pthread_mutex_lock(&ctx->files_mutex);
+
+    if (ctx->files_shutdown == FLB_TRUE) {
+        pthread_mutex_unlock(&ctx->files_mutex);
+        return -1;
+    }
+
+    ctx->files_users++;
+    pthread_mutex_unlock(&ctx->files_mutex);
+
+    return 0;
+}
+
+void azure_kusto_store_file_user_exit(struct flb_azure_kusto *ctx)
+{
+    pthread_mutex_lock(&ctx->files_mutex);
+
+    ctx->files_users--;
+    pthread_cond_signal(&ctx->files_cond);
+
+    pthread_mutex_unlock(&ctx->files_mutex);
+}
+
+int azure_kusto_store_file_shutting_down(struct flb_azure_kusto *ctx)
+{
+    int shutting_down;
+
+    pthread_mutex_lock(&ctx->files_mutex);
+    shutting_down = ctx->files_shutdown;
+    pthread_mutex_unlock(&ctx->files_mutex);
+
+    return shutting_down;
+}
+
+int azure_kusto_store_file_wait_or_shutdown(struct flb_azure_kusto *ctx, int seconds)
+{
+    int shutting_down;
+    struct timespec ts;
+
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += seconds;
+
+    pthread_mutex_lock(&ctx->files_mutex);
+
+    while (ctx->files_shutdown == FLB_FALSE) {
+        if (pthread_cond_timedwait(&ctx->files_cond, &ctx->files_mutex, &ts) != 0) {
+            break;
+        }
+    }
+
+    shutting_down = ctx->files_shutdown;
+    pthread_mutex_unlock(&ctx->files_mutex);
+
+    return shutting_down == FLB_TRUE ? -1 : 0;
+}
+
+void azure_kusto_store_file_shutdown(struct flb_azure_kusto *ctx)
+{
+    pthread_mutex_lock(&ctx->files_mutex);
+
+    ctx->files_shutdown = FLB_TRUE;
+    pthread_cond_broadcast(&ctx->files_cond);
+    while (ctx->files_users > 0 || ctx->files_inflight > 0) {
+        pthread_cond_wait(&ctx->files_cond, &ctx->files_mutex);
+    }
+
+    pthread_mutex_unlock(&ctx->files_mutex);
 }
