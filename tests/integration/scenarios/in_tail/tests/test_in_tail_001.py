@@ -106,6 +106,53 @@ class Service:
             time.sleep(0.5)
 
 
+class StorageFailureService:
+    def __init__(self, config_file, *, tail_path, db_path, storage_path):
+        self.config_file = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "../config", config_file)
+        )
+        self.service = FluentBitTestService(
+            self.config_file,
+            extra_env={
+                "TAIL_TEST_PATH": tail_path,
+                "TAIL_TEST_DB": db_path,
+                "TAIL_STORAGE_PATH": storage_path,
+            },
+            pre_start=self._set_closed_output_port,
+        )
+
+    def _set_closed_output_port(self, service):
+        service.allocate_port_env("TAIL_STORAGE_OUTPUT_PORT")
+
+    def start(self):
+        self.service.start()
+
+    def stop(self):
+        self.service.stop()
+
+    def wait_for_log_line(self, needle, timeout=20):
+        def has_log_line():
+            log_file = self.service.flb.log_file
+
+            if not log_file or not os.path.exists(log_file):
+                return None
+
+            with open(log_file, "r", encoding="utf-8") as handle:
+                content = handle.read()
+
+            if needle in content:
+                return content
+
+            return None
+
+        return self.service.wait_for_condition(
+            has_log_line,
+            timeout=timeout,
+            interval=0.5,
+            description=f"log line containing {needle!r}",
+        )
+
+
 def flatten_records(payloads):
     records = []
 
@@ -150,10 +197,71 @@ def assert_log_set(records, expected_logs):
         assert logs.count(expected) == 1
 
 
+def wait_for_path_absent(path, timeout=20):
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        if not path.exists():
+            return
+
+        time.sleep(0.5)
+
+    raise TimeoutError(f"Timed out waiting for {path} to be deleted")
+
+
+def write_checksum_corrupted_chunk(storage_path):
+    stream_path = storage_path / "tail.0"
+    chunk_path = stream_path / "1-177560529.168611552.flb"
+    data = bytearray(25)
+
+    stream_path.mkdir()
+
+    data[0] = 0xC1
+    data[1] = 0x00
+    data[10] = 0x00
+    data[11] = 0x00
+    data[12] = 0x00
+    data[13] = 0x01
+    data[22] = 0x00
+    data[23] = 0x00
+    data[24] = 0x91
+
+    with open(chunk_path, "wb") as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+    return chunk_path
+
+
 @pytest.fixture
 def workspace():
     with tempfile.TemporaryDirectory(prefix="flb-tail-it-") as tmpdir:
         yield Path(tmpdir)
+
+
+def test_in_tail_storage_deletes_checksum_corrupted_chunk_on_startup(workspace):
+    log_file = workspace / "checksum-corrupt.log"
+    db_path = workspace / "tail.db"
+    storage_path = workspace / "storage"
+
+    storage_path.mkdir()
+    log_file.write_text("", encoding="utf-8")
+    corrupted_chunk = write_checksum_corrupted_chunk(storage_path)
+
+    service = StorageFailureService(
+        "tail_storage_corrupt_chunk.yaml",
+        tail_path=log_file,
+        db_path=db_path,
+        storage_path=storage_path,
+    )
+
+    try:
+        service.start()
+        service.wait_for_log_line("invalid crc32")
+        wait_for_path_absent(corrupted_chunk)
+    finally:
+        service.stop()
 
 
 def test_in_tail_discovers_new_files_from_head(workspace):
