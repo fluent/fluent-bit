@@ -1,5 +1,6 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 #include <errno.h>
+#include <stdint.h>
 #include <string.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_avro.h>
@@ -265,6 +266,62 @@ void test_msgpack2avro()
     msgpack_zone_destroy(&mempool);
     msgpack_sbuffer_destroy(&sbuf);
 }
+
+const char JSON_INT64_SCHEMA[] =
+"{\"type\":\"record\","
+"\"name\":\"Int64Record\","
+"\"fields\":["
+"{\"name\":\"positive\",\"type\":\"long\"},"
+"{\"name\":\"negative\",\"type\":\"long\"}]}";
+
+void test_msgpack_to_avro_int64()
+{
+    int64_t positive_expected = 4294967296LL;
+    int64_t negative_expected = -2147483649LL;
+    int64_t actual = 0;
+    avro_value_t aobject;
+    avro_value_t test_value;
+    avro_schema_t aschema;
+    avro_value_iface_t *aclass;
+    msgpack_sbuffer sbuf;
+    msgpack_packer pk;
+    msgpack_unpacked msg;
+
+    aclass = flb_avro_init(&aobject, (char *) JSON_INT64_SCHEMA,
+                           strlen(JSON_INT64_SCHEMA), &aschema);
+    TEST_CHECK(aclass != NULL);
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&pk, 2);
+    msgpack_pack_str(&pk, 8);
+    msgpack_pack_str_body(&pk, "positive", 8);
+    msgpack_pack_uint64(&pk, (uint64_t) positive_expected);
+    msgpack_pack_str(&pk, 8);
+    msgpack_pack_str_body(&pk, "negative", 8);
+    msgpack_pack_int64(&pk, negative_expected);
+
+    msgpack_unpacked_init(&msg);
+    TEST_CHECK(msgpack_unpack_next(&msg, sbuf.data, sbuf.size, NULL) ==
+               MSGPACK_UNPACK_SUCCESS);
+    TEST_CHECK(flb_msgpack_to_avro(&aobject, &msg.data) == FLB_TRUE);
+
+    TEST_CHECK(avro_value_get_by_name(&aobject, "positive", &test_value, NULL) == 0);
+    TEST_CHECK(avro_value_get_long(&test_value, &actual) == 0);
+    TEST_CHECK(actual == positive_expected);
+
+    TEST_CHECK(avro_value_get_by_name(&aobject, "negative", &test_value, NULL) == 0);
+    TEST_CHECK(avro_value_get_long(&test_value, &actual) == 0);
+    TEST_CHECK(actual == negative_expected);
+
+    msgpack_unpacked_destroy(&msg);
+    msgpack_sbuffer_destroy(&sbuf);
+    avro_value_decref(&aobject);
+    avro_value_iface_decref(aclass);
+    avro_schema_decref(aschema);
+}
+
 const char  JSON_SINGLE_MAP_001_SCHEMA_WITH_UNION[] =
 "{\"type\":\"record\",\
   \"name\":\"Map001\",\
@@ -376,6 +433,7 @@ TEST_LIST = {
     /* Avro */
     { "msgpack_to_avro_basic", test_unpack_to_avro},
     { "test_parse_reordered_schema", test_parse_reordered_schema},
+    { "test_msgpack_to_avro_int64", test_msgpack_to_avro_int64},
     { "test_union_type_sanity", test_union_type_sanity},
     { "test_union_type_branches", test_union_type_branches},
     { 0 }
