@@ -1,0 +1,18 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: error
+  bogus:
+    nested:
+      key: value
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: bad.nested
+      dummy: '{"message":"x"}'
+      samples: 1
+
+  outputs:
+    - name: 'null'
+      match: '*'

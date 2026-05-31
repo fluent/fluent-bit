@@ -1,0 +1,16 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: error
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: bad.dotted
+      dummy: '{"message":"x"}'
+      samples: 1
+      telemetry.metrics.logs.tag_records: true
+
+  outputs:
+    - name: 'null'
+      match: '*'
