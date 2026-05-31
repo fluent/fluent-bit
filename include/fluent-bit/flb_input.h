@@ -263,6 +263,7 @@ struct flb_input_instance {
     char *tag;                           /* Input tag for routing        */
     int tag_len;
     int tag_default;                     /* is it using the default tag? */
+    int telemetry_metrics_logs_tag_records;   /* override service tag records */
 
     /* By default all input instances are 'routable' */
     int routable;
@@ -403,6 +404,8 @@ struct flb_input_instance {
     struct cmt *cmt;                     /* parent context              */
     struct cmt_counter *cmt_bytes;       /* metric: input_bytes_total   */
     struct cmt_counter *cmt_records;     /* metric: input_records_total */
+    struct cmt_counter *cmt_logs_tag_records;
+    struct cmt_counter *cmt_logs_tag_records_untracked;
 
     /* is the input instance overlimit ?: 1 or 0 */
     struct cmt_gauge   *cmt_storage_overlimit;
