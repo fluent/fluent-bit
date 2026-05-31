@@ -1966,6 +1966,19 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
             break;
+        case YAML_MAPPING_START_EVENT:
+            if (state->section == SECTION_ENV) {
+                flb_error("nested maps are not allowed in env section");
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+
+            state = state_push_variant(ctx, state, 1);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            break;
         default:
             yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
@@ -2238,6 +2251,21 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 break;
             }
 
+            if (state->section == SECTION_INPUT &&
+                strcmp(state->key, "telemetry") == 0) {
+                /*
+                 * Input telemetry is consumed structurally at load time. Other
+                 * nested input maps keep the legacy group behavior.
+                 */
+                state = state_push_variant(ctx, state, 1);
+
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+                break;
+            }
+
             state = state_push(ctx, STATE_GROUP_KEY);
 
             if (state == NULL) {
@@ -2396,6 +2424,21 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 if (cfl_kvlist_insert(state->keyvals, state->key, variant) < 0) {
                     flb_error("unable to insert variant");
                     cfl_variant_destroy(variant);
+                    return YAML_FAILURE;
+                }
+
+                state = state_pop(ctx);
+
+                break;
+            }
+
+            if (state->state == STATE_SECTION_VAL) {
+                if (flb_cf_section_property_add_variant(conf,
+                                                        state->cf_section->properties,
+                                                        state->key,
+                                                        flb_sds_len(state->key),
+                                                        variant) == NULL) {
+                    flb_error("unable to insert section variant");
                     return YAML_FAILURE;
                 }
 
