@@ -1,0 +1,22 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: error
+  telemetry:
+    metrics:
+      logs:
+        tag_records:
+          - 1
+          - 2
+          - 3
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: bad.type
+      dummy: '{"message":"x"}'
+      samples: 1
+
+  outputs:
+    - name: 'null'
+      match: '*'
