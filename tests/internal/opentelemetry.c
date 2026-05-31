@@ -2735,6 +2735,591 @@ void test_opentelemetry_traces_otlp_proto_roundtrip()
     ctr_destroy(trace_context);
 }
 
+/*
+ * Test that the multi-key body_keys array path (used by otel_process_logs_json)
+ * extracts the log body from a matching key and ignores unmatched keys.
+ */
+/*
+ * Encode a single plain-log record via the body_keys array path and verify the
+ * OTLP JSON output matches exactly what the default $message key would produce.
+ */
+void test_opentelemetry_logs_otlp_json_body_keys_array()
+{
+    int ret;
+    int result;
+    flb_sds_t actual;
+    flb_sds_t normalized_expected;
+    struct flb_time timestamp;
+    struct flb_log_event_encoder encoder;
+    struct flb_opentelemetry_otlp_logs_options options;
+    const char *body_keys[] = { "$log", "$message" };
+    char *expected =
+        "{\"resourceLogs\":[{\"resource\":{},\"scopeLogs\":[{\"scope\":{},"
+        "\"logRecords\":[{\"timeUnixNano\":\"1640995200000000000\","
+        "\"body\":{\"stringValue\":\"hello json encoding\"}}]}]}]}";
+
+    timestamp.tm.tv_sec  = 1640995200;
+    timestamp.tm.tv_nsec = 0;
+
+    ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return;
+    }
+
+    ret = flb_log_event_encoder_begin_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_set_timestamp(&encoder, &timestamp);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_append_body_values(
+            &encoder,
+            FLB_LOG_EVENT_CSTRING_VALUE("message"),
+            FLB_LOG_EVENT_CSTRING_VALUE("hello json encoding"));
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_commit_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.logs_require_otel_metadata = FLB_FALSE;
+    options.logs_body_keys             = body_keys;
+    options.logs_body_key_count        = 2;
+    options.logs_body_key_attributes   = FLB_FALSE;
+
+    actual = flb_opentelemetry_logs_to_otlp_json(encoder.output_buffer,
+                                                 encoder.output_length,
+                                                 &options,
+                                                 &result);
+    TEST_CHECK(actual != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+    if (actual == NULL) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    normalized_expected = test_normalize_json(expected);
+    TEST_CHECK(normalized_expected != NULL);
+    if (normalized_expected == NULL) {
+        flb_sds_destroy(actual);
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    TEST_CHECK(strcmp(normalized_expected, actual) == 0);
+
+    flb_sds_destroy(normalized_expected);
+    flb_sds_destroy(actual);
+    flb_log_event_encoder_destroy(&encoder);
+}
+
+/*
+ * When logs_body_key_attributes=true, keys that are NOT the designated body key
+ * should appear in the logRecord's attributes instead of being dropped.
+ */
+void test_opentelemetry_logs_otlp_json_body_key_attributes()
+{
+    int ret;
+    int result;
+    flb_sds_t actual;
+    struct flb_time timestamp;
+    struct flb_log_event_encoder encoder;
+    struct flb_opentelemetry_otlp_logs_options options;
+    const char *body_keys[] = { "$message" };
+
+    timestamp.tm.tv_sec  = 1640995200;
+    timestamp.tm.tv_nsec = 0;
+
+    ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return;
+    }
+
+    ret = flb_log_event_encoder_begin_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_set_timestamp(&encoder, &timestamp);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    /* "message" is the designated body key; "level" is a remaining key → attribute */
+    ret = flb_log_event_encoder_append_body_values(
+            &encoder,
+            FLB_LOG_EVENT_CSTRING_VALUE("message"),
+            FLB_LOG_EVENT_CSTRING_VALUE("body text"));
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_append_body_values(
+            &encoder,
+            FLB_LOG_EVENT_CSTRING_VALUE("level"),
+            FLB_LOG_EVENT_CSTRING_VALUE("info"));
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_commit_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.logs_require_otel_metadata = FLB_FALSE;
+    options.logs_body_keys             = body_keys;
+    options.logs_body_key_count        = 1;
+    options.logs_body_key_attributes   = FLB_TRUE;
+
+    actual = flb_opentelemetry_logs_to_otlp_json(encoder.output_buffer,
+                                                 encoder.output_length,
+                                                 &options,
+                                                 &result);
+    TEST_CHECK(actual != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+    if (actual == NULL) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    /* "message" must be the body; "level" must appear as an attribute */
+    TEST_CHECK(strstr(actual, "\"stringValue\":\"body text\"") != NULL);
+    TEST_CHECK(strstr(actual, "\"level\"") != NULL);
+    TEST_CHECK(strstr(actual, "\"info\"") != NULL);
+    /* the body key itself must NOT bleed into attributes */
+    TEST_CHECK(strstr(actual, "\"message\"") == NULL);
+
+    flb_sds_destroy(actual);
+    flb_log_event_encoder_destroy(&encoder);
+}
+
+void test_opentelemetry_metrics_otlp_json_add_label()
+{
+    int ret;
+    int result;
+    char *msgpack_buffer;
+    size_t msgpack_size;
+    flb_sds_t actual;
+    struct cfl_list contexts;
+    struct cmt *context;
+    char *input =
+        "{\"resourceMetrics\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\","
+        "\"value\":{\"stringValue\":\"svc\"}}]},\"scopeMetrics\":[{\"scope\":{\"name\":\"scope-a\","
+        "\"version\":\"1.0.0\"},\"metrics\":[{\"name\":\"requests_total\",\"description\":\"count\","
+        "\"unit\":\"1\",\"sum\":{\"dataPoints\":[{\"attributes\":[{\"key\":\"method\","
+        "\"value\":{\"stringValue\":\"GET\"}}],\"timeUnixNano\":\"1704067201000000000\","
+        "\"startTimeUnixNano\":\"1704067200000000000\",\"asInt\":\"42\"}],"
+        "\"aggregationTemporality\":2,\"isMonotonic\":true}}]}]}]}";
+
+    cfl_list_init(&contexts);
+
+    ret = flb_opentelemetry_metrics_json_to_cmt(&contexts, input, strlen(input));
+    TEST_CHECK(ret == 0);
+    if (ret != 0 || cfl_list_is_empty(&contexts)) {
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
+
+    context = cfl_list_entry_first(&contexts, struct cmt, _head);
+
+    ret = cmt_label_add(context, "env", "prod");
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
+
+    ret = cmt_encode_msgpack_create(context, &msgpack_buffer, &msgpack_size);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
+
+    actual = flb_opentelemetry_metrics_msgpack_to_otlp_json(msgpack_buffer,
+                                                            msgpack_size,
+                                                            &result);
+    TEST_CHECK(actual != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+    if (actual == NULL) {
+        flb_free(msgpack_buffer);
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
+
+    TEST_CHECK(strstr(actual, "\"env\"") != NULL);
+    TEST_CHECK(strstr(actual, "\"prod\"") != NULL);
+
+    flb_free(msgpack_buffer);
+    flb_sds_destroy(actual);
+    destroy_metrics_context_list(&contexts);
+}
+
+void test_opentelemetry_logs_otlp_json_max_resources_cap()
+{
+    int ret;
+    int result;
+    flb_sds_t actual;
+    struct flb_log_event_encoder encoder;
+    struct flb_opentelemetry_otlp_logs_options options;
+    char *input_a =
+        "{\"resourceLogs\":[{\"resource\":{\"attributes\":[{\"key\":\"user.id\","
+        "\"value\":{\"stringValue\":\"user-a\"}}]},\"scopeLogs\":[{\"scope\":{},"
+        "\"logRecords\":[{\"timeUnixNano\":\"1640995200000000000\","
+        "\"body\":{\"stringValue\":\"event-a\"}}]}]}]}";
+    char *input_b =
+        "{\"resourceLogs\":[{\"resource\":{\"attributes\":[{\"key\":\"user.id\","
+        "\"value\":{\"stringValue\":\"user-b\"}}]},\"scopeLogs\":[{\"scope\":{},"
+        "\"logRecords\":[{\"timeUnixNano\":\"1640995201000000000\","
+        "\"body\":{\"stringValue\":\"event-b\"}}]}]}]}";
+
+    ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return;
+    }
+
+    ret = flb_opentelemetry_logs_json_to_msgpack(&encoder,
+                                                 input_a, strlen(input_a),
+                                                 "log", &result);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(result == 0);
+
+    ret = flb_opentelemetry_logs_json_to_msgpack(&encoder,
+                                                 input_b, strlen(input_b),
+                                                 "log", &result);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(result == 0);
+    if (ret != 0 || result != 0) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.logs_require_otel_metadata = FLB_TRUE;
+    options.max_resources = 1;
+
+    actual = flb_opentelemetry_logs_to_otlp_json(encoder.output_buffer,
+                                                 encoder.output_length,
+                                                 &options,
+                                                 &result);
+    TEST_CHECK(actual != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+    if (actual == NULL) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    /* first resource and its record must be present */
+    TEST_CHECK(strstr(actual, "user-a") != NULL);
+    TEST_CHECK(strstr(actual, "event-a") != NULL);
+    /* second resource must be silently dropped */
+    TEST_CHECK(strstr(actual, "user-b") == NULL);
+    TEST_CHECK(strstr(actual, "event-b") == NULL);
+
+    flb_sds_destroy(actual);
+    flb_log_event_encoder_destroy(&encoder);
+}
+
+/*
+ * Verify that max_scopes=1 causes the second scopeLogs group to be silently
+ * dropped while the first scope's log record is preserved.
+ *
+ * Setup: one resource with two distinct scopes (scope-a and scope-b), each
+ * carrying one log record.  With max_scopes=1 only scope-a/event-a should
+ * appear in the output JSON.
+ */
+void test_opentelemetry_logs_otlp_json_max_scopes_cap()
+{
+    int ret;
+    int result;
+    flb_sds_t actual;
+    struct flb_log_event_encoder encoder;
+    struct flb_opentelemetry_otlp_logs_options options;
+    /* Two scope logs inside a single resource */
+    char *input_two_scopes =
+        "{\"resourceLogs\":[{\"resource\":{\"attributes\":[{\"key\":\"svc\","
+        "\"value\":{\"stringValue\":\"test\"}}]},"
+        "\"scopeLogs\":["
+        "{\"scope\":{\"name\":\"scope-a\"},\"logRecords\":[{\"timeUnixNano\":"
+        "\"1640995200000000000\",\"body\":{\"stringValue\":\"event-a\"}}]},"
+        "{\"scope\":{\"name\":\"scope-b\"},\"logRecords\":[{\"timeUnixNano\":"
+        "\"1640995201000000000\",\"body\":{\"stringValue\":\"event-b\"}}]}"
+        "]}]}";
+
+    ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return;
+    }
+
+    ret = flb_opentelemetry_logs_json_to_msgpack(&encoder,
+                                                 input_two_scopes,
+                                                 strlen(input_two_scopes),
+                                                 "log",
+                                                 &result);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(result == 0);
+    if (ret != 0 || result != 0) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.logs_require_otel_metadata = FLB_TRUE;
+    options.max_scopes = 1;
+
+    actual = flb_opentelemetry_logs_to_otlp_json(encoder.output_buffer,
+                                                 encoder.output_length,
+                                                 &options,
+                                                 &result);
+    TEST_CHECK(actual != NULL);
+    TEST_MSG("flb_opentelemetry_logs_to_otlp_json returned NULL");
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+    TEST_MSG("result code: %d", result);
+    if (actual == NULL) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    /* first scope must be present */
+    TEST_CHECK(strstr(actual, "scope-a") != NULL);
+    TEST_MSG("scope-a not found in output: %s", actual);
+    TEST_CHECK(strstr(actual, "event-a") != NULL);
+    TEST_MSG("event-a not found in output: %s", actual);
+    /* second scope must be silently dropped */
+    TEST_CHECK(strstr(actual, "scope-b") == NULL);
+    TEST_MSG("scope-b should have been dropped but found in output: %s", actual);
+    TEST_CHECK(strstr(actual, "event-b") == NULL);
+    TEST_MSG("event-b should have been dropped but found in output: %s", actual);
+
+    flb_sds_destroy(actual);
+    flb_log_event_encoder_destroy(&encoder);
+}
+
+/*
+ * Verify that a logs_body_key with a leading '$' prefix (record-accessor style,
+ * e.g. "$log") is correctly stripped and used as a plain map key during body
+ * extraction.  The resulting body must contain the field value, not the full
+ * record map.
+ */
+void test_opentelemetry_logs_otlp_json_body_key_dollar_prefix()
+{
+    int ret;
+    int result;
+    flb_sds_t actual;
+    struct flb_time timestamp;
+    struct flb_log_event_encoder encoder;
+    struct flb_opentelemetry_otlp_logs_options options;
+    const char *body_keys[] = { "$log" };
+
+    timestamp.tm.tv_sec  = 1640995200;
+    timestamp.tm.tv_nsec = 0;
+
+    ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return;
+    }
+
+    ret = flb_log_event_encoder_begin_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_set_timestamp(&encoder, &timestamp);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    /* record body: {"log": "extracted body text", "other": "ignored"} */
+    ret = flb_log_event_encoder_append_body_values(
+            &encoder,
+            FLB_LOG_EVENT_CSTRING_VALUE("log"),
+            FLB_LOG_EVENT_CSTRING_VALUE("extracted body text"));
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_append_body_values(
+            &encoder,
+            FLB_LOG_EVENT_CSTRING_VALUE("other"),
+            FLB_LOG_EVENT_CSTRING_VALUE("ignored"));
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    ret = flb_log_event_encoder_commit_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.logs_require_otel_metadata = FLB_FALSE;
+    options.logs_body_keys             = body_keys;
+    options.logs_body_key_count        = 1;
+    options.logs_body_key_attributes   = FLB_FALSE;
+
+    actual = flb_opentelemetry_logs_to_otlp_json(encoder.output_buffer,
+                                                 encoder.output_length,
+                                                 &options,
+                                                 &result);
+    TEST_CHECK(actual != NULL);
+    TEST_MSG("flb_opentelemetry_logs_to_otlp_json returned NULL");
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+    TEST_MSG("result code: %d", result);
+    if (actual == NULL) {
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    /*
+     * The body must be the string value of the "log" key, not the full record
+     * map serialised as a kvlistValue.
+     */
+    TEST_CHECK(strstr(actual, "\"stringValue\":\"extracted body text\"") != NULL);
+    TEST_MSG("expected body stringValue not found in output: %s", actual);
+
+    /* The output must NOT contain a kvlistValue wrapping the whole record */
+    TEST_CHECK(strstr(actual, "\"kvlistValue\"") == NULL);
+    TEST_MSG("body was wrapped as kvlistValue (full map) instead of a string: %s", actual);
+
+    flb_sds_destroy(actual);
+    flb_log_event_encoder_destroy(&encoder);
+}
+
+/*
+ * Regression guard: verify that the protobuf encoding path
+ * (flb_opentelemetry_metrics_msgpack_to_otlp_proto) still works correctly
+ * after the JSON encoding feature was introduced.  Uses the same input as
+ * test_opentelemetry_metrics_otlp_json_roundtrip.
+ */
+void test_opentelemetry_metrics_otlp_json_protobuf_default()
+{
+    int ret;
+    int result;
+    char *msgpack_buffer;
+    char *input;
+    size_t msgpack_size;
+    flb_sds_t actual;
+    struct cfl_list contexts;
+    struct cmt *context;
+    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *decoded;
+
+    input =
+        "{\"resourceMetrics\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\","
+        "\"value\":{\"stringValue\":\"svc\"}}]},\"scopeMetrics\":[{\"scope\":{\"name\":\"scope-a\","
+        "\"version\":\"1.0.0\"},\"metrics\":[{\"name\":\"requests_total\",\"description\":\"count\","
+        "\"unit\":\"1\",\"sum\":{\"dataPoints\":[{\"attributes\":[{\"key\":\"method\","
+        "\"value\":{\"stringValue\":\"GET\"}}],\"timeUnixNano\":\"1704067201000000000\","
+        "\"startTimeUnixNano\":\"1704067200000000000\",\"asInt\":\"42\"}],"
+        "\"aggregationTemporality\":2,\"isMonotonic\":true}}]}]}]}";
+
+    cfl_list_init(&contexts);
+
+    ret = flb_opentelemetry_metrics_json_to_cmt(&contexts,
+                                                input,
+                                                strlen(input));
+    TEST_CHECK(ret == 0);
+    if (ret != 0 || cfl_list_is_empty(&contexts)) {
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
+
+    context = cfl_list_entry_first(&contexts, struct cmt, _head);
+    ret = cmt_encode_msgpack_create(context, &msgpack_buffer, &msgpack_size);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
+
+    actual = flb_opentelemetry_metrics_msgpack_to_otlp_proto(msgpack_buffer,
+                                                             msgpack_size,
+                                                             &result);
+    TEST_CHECK(actual != NULL);
+    TEST_MSG("flb_opentelemetry_metrics_msgpack_to_otlp_proto returned NULL");
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_PROTO_SUCCESS);
+    TEST_MSG("result code: %d (expected FLB_OPENTELEMETRY_OTLP_PROTO_SUCCESS)", result);
+    if (actual == NULL) {
+        flb_free(msgpack_buffer);
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
+
+    /* Decode and verify basic structural correctness */
+    decoded =
+        opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(
+            NULL, flb_sds_len(actual), (uint8_t *) actual);
+    TEST_CHECK(decoded != NULL);
+    TEST_MSG("protobuf unpack returned NULL");
+    if (decoded != NULL) {
+        TEST_CHECK(decoded->n_resource_metrics > 0);
+        TEST_MSG("expected at least one resourceMetric, got 0");
+        opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__free_unpacked(
+            decoded, NULL);
+    }
+
+    cmt_encode_opentelemetry_destroy((cfl_sds_t) actual);
+    flb_free(msgpack_buffer);
+    destroy_metrics_context_list(&contexts);
+}
+
+/*
+ * Tests 4 and 5 (test_opentelemetry_logs_otlp_json_grpc_encoding_incompatibility
+ * and test_opentelemetry_logs_otlp_json_invalid_encoding) are NOT implemented
+ * as runnable tests.
+ *
+ * Reason: the validation logic for encoding=json vs grpc=on lives inside
+ * flb_opentelemetry_context_create() in opentelemetry_conf.c.  That function
+ * requires a fully-initialized struct flb_output_instance (with config-map
+ * support, upstream creation, OAuth2, TLS, etc.) and a struct flb_config.
+ * Constructing those objects without spinning up the full Fluent Bit daemon is
+ * not feasible from an isolated unit test.  The behaviour is covered at the
+ * integration level where a real plugin instance is started with conflicting
+ * configuration.
+ */
+
 /* Test list */
 TEST_LIST = {
     { "hex_to_id", test_hex_to_id },
@@ -2766,5 +3351,19 @@ TEST_LIST = {
       test_opentelemetry_metrics_otlp_proto_roundtrip },
     { "opentelemetry_metrics_msgpack_otlp_proto_merges_contexts",
       test_opentelemetry_metrics_msgpack_otlp_proto_merges_contexts },
+    { "opentelemetry_logs_otlp_json_body_keys_array",
+      test_opentelemetry_logs_otlp_json_body_keys_array },
+    { "opentelemetry_logs_otlp_json_body_key_attributes",
+      test_opentelemetry_logs_otlp_json_body_key_attributes },
+    { "opentelemetry_metrics_otlp_json_add_label",
+      test_opentelemetry_metrics_otlp_json_add_label },
+    { "opentelemetry_logs_otlp_json_max_resources_cap",
+      test_opentelemetry_logs_otlp_json_max_resources_cap },
+    { "opentelemetry_logs_otlp_json_max_scopes_cap",
+      test_opentelemetry_logs_otlp_json_max_scopes_cap },
+    { "opentelemetry_logs_otlp_json_body_key_dollar_prefix",
+      test_opentelemetry_logs_otlp_json_body_key_dollar_prefix },
+    { "opentelemetry_metrics_otlp_json_protobuf_default",
+      test_opentelemetry_metrics_otlp_json_protobuf_default },
     { 0 }
 };
