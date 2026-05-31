@@ -1944,6 +1944,23 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
     case STATE_SECTION_VAL:
         switch(event->type) {
         case YAML_MAPPING_START_EVENT:
+            if (state->section == SECTION_ENV) {
+                flb_error("nested maps are not allowed in env section");
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+            if (state->section != SECTION_SERVICE &&
+                state->section != SECTION_EXTENSIONS) {
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+
+            state = state_push_variant(ctx, state, 1);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            break;
         case YAML_SEQUENCE_START_EVENT:
             if (state->section == SECTION_ENV) {
                 yaml_error_event(ctx, state, event);
@@ -2292,6 +2309,21 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 break;
             }
 
+            if (state->section == SECTION_INPUT &&
+                strcmp(state->key, "telemetry") == 0) {
+                /*
+                 * Input telemetry is consumed structurally at load time. Other
+                 * nested input maps keep the legacy group behavior.
+                 */
+                state = state_push_variant(ctx, state, 1);
+
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+                break;
+            }
+
             state = state_push(ctx, STATE_GROUP_KEY);
 
             if (state == NULL) {
@@ -2462,8 +2494,9 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                     flb_error("invalid type for env entry");
                     return YAML_FAILURE;
                 }
-                if (state->section != SECTION_EXTENSIONS) {
-                    flb_error("variant values are only valid in the extensions section");
+                if (state->section != SECTION_SERVICE &&
+                    state->section != SECTION_EXTENSIONS) {
+                    flb_error("variant values are only valid in service and extensions sections");
                     return YAML_FAILURE;
                 }
 
