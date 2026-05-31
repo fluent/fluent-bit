@@ -32,6 +32,7 @@
 #include <monkey/mk_core.h>
 
 struct flb_router;
+struct flb_hash_table;
 
 #define FLB_CONFIG_FLUSH_SECS   1
 #define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
@@ -198,6 +199,17 @@ struct flb_config {
      * cmetric context created.
      */
     struct mk_list cmetrics;
+
+    /*
+     * Optional telemetry metrics with user-controlled cardinality.
+     */
+    int telemetry_metrics_logs_tag_records;
+    int telemetry_metrics_logs_tag_records_max_series;
+    int telemetry_metrics_logs_tag_records_max_tag_length;
+    size_t telemetry_metrics_logs_tag_records_series_count;
+    struct flb_hash_table *telemetry_metrics_logs_tag_records_ht;
+    pthread_mutex_t telemetry_metrics_logs_tag_records_lock;
+    int telemetry_metrics_logs_tag_records_lock_inited;
 
     /* HTTP Server */
 #ifdef FLB_HAVE_HTTP_SERVER
