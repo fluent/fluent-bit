@@ -491,6 +491,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->tag      = NULL;
         instance->tag_len  = 0;
         instance->tag_default = FLB_FALSE;
+        instance->telemetry_metrics_logs_tag_records = -1;
         instance->routable = FLB_TRUE;
         instance->data     = data;
         instance->storage  = NULL;
@@ -1575,9 +1576,16 @@ int flb_input_instance_init(struct flb_input_instance *ins,
 #ifdef FLB_HAVE_METRICS
     uint64_t ts;
     char *name;
+    int logs_tag_records_enabled;
 
     name = (char *) flb_input_name(ins);
     ts = cfl_time_now();
+
+    /* resolve effective tag-records tracking: input override wins over service */
+    logs_tag_records_enabled =
+        (ins->telemetry_metrics_logs_tag_records != -1)
+        ? ins->telemetry_metrics_logs_tag_records
+        : ctx->telemetry_metrics_logs_tag_records;
 
     /* CMetrics */
     ins->cmt = cmt_create();
@@ -1645,6 +1653,27 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                          "Retry attempts considered by the input rate gate.",
                          1, (char *[]) {"name"});
     cmt_gauge_set(ins->cmt_rate_gate_retry_attempts, ts, 0, 1, (char *[]) {name});
+    if (logs_tag_records_enabled == FLB_TRUE) {
+        /* fluentbit_input_logs_tag_records_total */
+        ins->cmt_logs_tag_records = \
+            cmt_counter_create(ins->cmt,
+                               "fluentbit", "input", "logs_tag_records_total",
+                               "Number of input log records by tag.",
+                               2, (char *[]) {"name", "tag"});
+        if (!ins->cmt_logs_tag_records) {
+            return -1;
+        }
+
+        /* fluentbit_input_logs_tag_records_untracked_total */
+        ins->cmt_logs_tag_records_untracked = \
+            cmt_counter_create(ins->cmt,
+                               "fluentbit", "input", "logs_tag_records_untracked_total",
+                               "Number of input log records not tracked by tag.",
+                               2, (char *[]) {"name", "reason"});
+        if (!ins->cmt_logs_tag_records_untracked) {
+            return -1;
+        }
+    }
 
     /* fluentbit_input_ingestion_paused */
     ins->cmt_ingestion_paused = \
