@@ -1,0 +1,23 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: error
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: bad.input.serviceonly
+      dummy: '{"message":"x"}'
+      samples: 1
+      # max_series is service-level only; setting it on an input must be
+      # rejected rather than silently accepted.
+      telemetry:
+        metrics:
+          logs:
+            tag_records:
+              enabled: true
+              max_series: 5
+
+  outputs:
+    - name: 'null'
+      match: '*'
