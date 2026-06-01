@@ -274,6 +274,20 @@ const char JSON_INT64_SCHEMA[] =
 "{\"name\":\"positive\",\"type\":\"long\"},"
 "{\"name\":\"negative\",\"type\":\"long\"}]}";
 
+const char JSON_INT_SCHEMA[] =
+"{\"type\":\"record\","
+"\"name\":\"IntRecord\","
+"\"fields\":["
+"{\"name\":\"bad\",\"type\":\"int\"}]}";
+
+const char JSON_INT_MULTI_FIELD_SCHEMA[] =
+"{\"type\":\"record\","
+"\"name\":\"IntMultiFieldRecord\","
+"\"fields\":["
+"{\"name\":\"first\",\"type\":\"int\"},"
+"{\"name\":\"bad\",\"type\":\"int\"},"
+"{\"name\":\"last\",\"type\":\"string\"}]}";
+
 void test_msgpack_to_avro_int64()
 {
     int64_t positive_expected = 4294967296LL;
@@ -314,6 +328,81 @@ void test_msgpack_to_avro_int64()
     TEST_CHECK(avro_value_get_by_name(&aobject, "negative", &test_value, NULL) == 0);
     TEST_CHECK(avro_value_get_long(&test_value, &actual) == 0);
     TEST_CHECK(actual == negative_expected);
+
+    msgpack_unpacked_destroy(&msg);
+    msgpack_sbuffer_destroy(&sbuf);
+    avro_value_decref(&aobject);
+    avro_value_iface_decref(aclass);
+    avro_schema_decref(aschema);
+}
+
+void test_msgpack_to_avro_int_range()
+{
+    uint64_t too_big = 2147483648ULL;
+    avro_value_t aobject;
+    avro_schema_t aschema;
+    avro_value_iface_t *aclass;
+    msgpack_sbuffer sbuf;
+    msgpack_packer pk;
+    msgpack_unpacked msg;
+
+    aclass = flb_avro_init(&aobject, (char *) JSON_INT_SCHEMA,
+                           strlen(JSON_INT_SCHEMA), &aschema);
+    TEST_CHECK(aclass != NULL);
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&pk, 1);
+    msgpack_pack_str(&pk, 3);
+    msgpack_pack_str_body(&pk, "bad", 3);
+    msgpack_pack_uint64(&pk, too_big);
+
+    msgpack_unpacked_init(&msg);
+    TEST_CHECK(msgpack_unpack_next(&msg, sbuf.data, sbuf.size, NULL) ==
+               MSGPACK_UNPACK_SUCCESS);
+    TEST_CHECK(flb_msgpack_to_avro(&aobject, &msg.data) == FLB_FALSE);
+
+    msgpack_unpacked_destroy(&msg);
+    msgpack_sbuffer_destroy(&sbuf);
+    avro_value_decref(&aobject);
+    avro_value_iface_decref(aclass);
+    avro_schema_decref(aschema);
+}
+
+void test_msgpack_to_avro_int_range_multi_field()
+{
+    uint64_t too_big = 2147483648ULL;
+    avro_value_t aobject;
+    avro_schema_t aschema;
+    avro_value_iface_t *aclass;
+    msgpack_sbuffer sbuf;
+    msgpack_packer pk;
+    msgpack_unpacked msg;
+
+    aclass = flb_avro_init(&aobject, (char *) JSON_INT_MULTI_FIELD_SCHEMA,
+                           strlen(JSON_INT_MULTI_FIELD_SCHEMA), &aschema);
+    TEST_CHECK(aclass != NULL);
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&pk, 3);
+    msgpack_pack_str(&pk, 5);
+    msgpack_pack_str_body(&pk, "first", 5);
+    msgpack_pack_int(&pk, 1);
+    msgpack_pack_str(&pk, 3);
+    msgpack_pack_str_body(&pk, "bad", 3);
+    msgpack_pack_uint64(&pk, too_big);
+    msgpack_pack_str(&pk, 4);
+    msgpack_pack_str_body(&pk, "last", 4);
+    msgpack_pack_str(&pk, 1);
+    msgpack_pack_str_body(&pk, "x", 1);
+
+    msgpack_unpacked_init(&msg);
+    TEST_CHECK(msgpack_unpack_next(&msg, sbuf.data, sbuf.size, NULL) ==
+               MSGPACK_UNPACK_SUCCESS);
+    TEST_CHECK(flb_msgpack_to_avro(&aobject, &msg.data) == FLB_FALSE);
 
     msgpack_unpacked_destroy(&msg);
     msgpack_sbuffer_destroy(&sbuf);
@@ -434,6 +523,9 @@ TEST_LIST = {
     { "msgpack_to_avro_basic", test_unpack_to_avro},
     { "test_parse_reordered_schema", test_parse_reordered_schema},
     { "test_msgpack_to_avro_int64", test_msgpack_to_avro_int64},
+    { "test_msgpack_to_avro_int_range", test_msgpack_to_avro_int_range},
+    { "test_msgpack_to_avro_int_range_multi_field",
+      test_msgpack_to_avro_int_range_multi_field},
     { "test_union_type_sanity", test_union_type_sanity},
     { "test_union_type_branches", test_union_type_branches},
     { 0 }
