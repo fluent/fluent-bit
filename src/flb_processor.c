@@ -622,31 +622,45 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
     int    filter_event_type;
     struct flb_filter_plugin *f = NULL;
     struct flb_filter_instance *f_ins;
+    struct flb_processor_plugin *p = NULL;
     struct flb_config *config = proc->config;
     struct flb_processor_unit *pu = NULL;
     struct flb_processor_instance *processor_instance;
 
     /*
-     * Looking the processor unit by using it's name and type, the first list we
-     * will iterate are the common pipeline filters.
+     * Native processors take precedence over filter adapters when both use
+     * the same user-facing name.
      */
-    mk_list_foreach(head, &config->filter_plugins) {
-        f = mk_list_entry(head, struct flb_filter_plugin, _head);
+    mk_list_foreach(head, &config->processor_plugins) {
+        p = mk_list_entry(head, struct flb_processor_plugin, _head);
 
-        filter_event_type = f->event_type;
-
-        if (filter_event_type == 0) {
-            filter_event_type = FLB_FILTER_LOGS;
+        if (strcasecmp(p->name, unit_name) == 0) {
+            break;
         }
 
-        /* skip filters which don't handle the required type */
-        if ((event_type & filter_event_type) != 0) {
-            if (strcmp(f->name, unit_name) == 0) {
-                break;
+        p = NULL;
+    }
+
+    /* Fall back to a filter adapter when no native processor matches. */
+    if (p == NULL) {
+        mk_list_foreach(head, &config->filter_plugins) {
+            f = mk_list_entry(head, struct flb_filter_plugin, _head);
+
+            filter_event_type = f->event_type;
+
+            if (filter_event_type == 0) {
+                filter_event_type = FLB_FILTER_LOGS;
             }
-        }
 
-        f = NULL;
+            /* skip filters which don't handle the required type */
+            if ((event_type & filter_event_type) != 0) {
+                if (strcmp(f->name, unit_name) == 0) {
+                    break;
+                }
+            }
+
+            f = NULL;
+        }
     }
 
     /* allocate and initialize processor unit context */
@@ -728,7 +742,9 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
                                                            unit_name, NULL);
 
         if (processor_instance == NULL) {
-            flb_error("[processor] error creating processor '%s': plugin doesn't exist or failed to initialize", unit_name);
+            flb_error("[processor] error creating processor '%s': "
+                      "plugin doesn't exist or failed to initialize",
+                      unit_name);
 
             pthread_mutex_destroy(&pu->lock);
             flb_sds_destroy(pu->name);
