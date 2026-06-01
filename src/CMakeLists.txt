@@ -99,6 +99,9 @@ set(src
   flb_conditionals.c
   flb_mem.c
   flb_blob_db.c
+  kubernetes/flb_kube_client.c
+  kubernetes/flb_kube_resource.c
+  kubernetes/flb_kube_meta.c
   )
 
 # Config format
