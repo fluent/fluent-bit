@@ -21,10 +21,77 @@
 #ifndef FLB_TESTS_RUNTIME_H
 #define FLB_TESTS_RUNTIME_H
 
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#include <errno.h>
+#include <process.h>
+#include <stdio.h>
+#include <time.h>
+#endif
 
 #include "../lib/acutest/acutest.h"
 #define FLB_TESTS_DATA_PATH "@FLB_TESTS_DATA_PATH@"
+
+#ifdef _WIN32
+static inline int flb_test_setenv(const char *name, const char *value, int overwrite)
+{
+    char *current;
+
+    if (!overwrite) {
+        current = getenv(name);
+        if (current != NULL) {
+            return 0;
+        }
+    }
+
+    return _putenv_s(name, value);
+}
+
+static inline int flb_test_unsetenv(const char *name)
+{
+    return _putenv_s(name, "");
+}
+
+#define setenv flb_test_setenv
+#define unsetenv flb_test_unsetenv
+
+static inline char *flb_test_mkdtemp(char *template_path)
+{
+    static unsigned int counter = 0;
+    size_t len;
+    unsigned int value;
+    unsigned int i;
+    char suffix[7];
+
+    len = strlen(template_path);
+    if (len < 6 || strcmp(template_path + len - 6, "XXXXXX") != 0) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    for (i = 0; i < 1000; i++) {
+        value = ((unsigned int) time(NULL) ^ (unsigned int) _getpid() ^ counter++) & 0xffffff;
+        snprintf(suffix, sizeof(suffix), "%06x", value);
+        memcpy(template_path + len - 6, suffix, 6);
+
+        if (_mkdir(template_path) == 0) {
+            return template_path;
+        }
+
+        if (errno != EEXIST) {
+            return NULL;
+        }
+    }
+
+    errno = EEXIST;
+    return NULL;
+}
+
+#define mkdtemp flb_test_mkdtemp
+#endif
 
 static inline int wait_for_file(char *path, 
                                 size_t minimum_size, 
