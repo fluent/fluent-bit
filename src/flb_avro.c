@@ -233,6 +233,10 @@ int msgpack2avro(avro_value_t *val, msgpack_object *o)
                 ret = flb_msgpack_to_avro(&element, &p->val);
 
                 flb_sds_destroy(key);
+
+                if (ret == FLB_FALSE) {
+                    goto msg2avro_end;
+                }
             }
         }
         break;
