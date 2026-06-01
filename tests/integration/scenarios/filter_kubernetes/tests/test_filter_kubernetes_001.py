@@ -11,8 +11,18 @@ from utils.data_utils import read_file
 from utils.test_service import FluentBitTestService
 
 
+class _KubeApiServer(http.server.ThreadingHTTPServer):
+    def __init__(self, server_address):
+        super().__init__(server_address, _KubeApiHandler)
+        self.paths = []
+        self.auth_headers = []
+
+
 class _KubeApiHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        self.server.paths.append(self.path)
+        self.server.auth_headers.append(self.headers.get("Authorization"))
+
         payload = b"{}"
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -26,13 +36,12 @@ class _KubeApiHandler(http.server.BaseHTTPRequestHandler):
 
 @contextlib.contextmanager
 def _run_kube_api_server():
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _KubeApiHandler)
-    port = server.server_address[1]
+    server = _KubeApiServer(("127.0.0.1", 0))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
     try:
-        yield port
+        yield server
     finally:
         server.shutdown()
         server.server_close()
@@ -67,6 +76,15 @@ def _write_script(tmp_path, name, line_count):
     script_file = tmp_path / name
     script_file.write_text(
         f"import sys\nsys.stdout.write('tkn\\n' * {line_count})\n",
+        encoding="utf-8",
+    )
+    return script_file
+
+
+def _write_literal_script(tmp_path, name, text):
+    script_file = tmp_path / name
+    script_file.write_text(
+        f"import sys\nsys.stdout.write({text!r})\n",
         encoding="utf-8",
     )
     return script_file
@@ -117,8 +135,10 @@ def _write_config(tmp_path, name, script_file, kube_api_port):
 @pytest.mark.skipif(sys.platform != "linux", reason="Kube_Token_Command test is Linux-only")
 def test_filter_kubernetes_token_command_accepts_multiline_output_over_8kb(tmp_path):
     script_file = _write_script(tmp_path, "token_large.py", 3000)
-    with _run_kube_api_server() as kube_api_port:
-        config_file = _write_config(tmp_path, "token_large.conf", script_file, kube_api_port)
+    with _run_kube_api_server() as kube_api:
+        config_file = _write_config(
+            tmp_path, "token_large.conf", script_file, kube_api.server_address[1]
+        )
 
         service = Service(str(config_file))
         service.start()
@@ -132,8 +152,10 @@ def test_filter_kubernetes_token_command_accepts_multiline_output_over_8kb(tmp_p
 @pytest.mark.skipif(sys.platform != "linux", reason="Kube_Token_Command test is Linux-only")
 def test_filter_kubernetes_token_command_rejects_multiline_output_over_limit(tmp_path):
     script_file = _write_script(tmp_path, "token_huge.py", 270000)
-    with _run_kube_api_server() as kube_api_port:
-        config_file = _write_config(tmp_path, "token_huge.conf", script_file, kube_api_port)
+    with _run_kube_api_server() as kube_api:
+        config_file = _write_config(
+            tmp_path, "token_huge.conf", script_file, kube_api.server_address[1]
+        )
 
         service = Service(str(config_file))
         log_text = None
@@ -146,3 +168,24 @@ def test_filter_kubernetes_token_command_rejects_multiline_output_over_limit(tmp
 
     assert "failed to run command" in log_text
     assert "kube token command test" in log_text
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Kube_Token_Command test is Linux-only")
+def test_filter_kubernetes_shared_client_sends_authorized_pod_request(tmp_path):
+    script_file = _write_literal_script(tmp_path, "token_shared.py", "shared-token")
+
+    with _run_kube_api_server() as kube_api:
+        config_file = _write_config(
+            tmp_path, "token_shared.conf", script_file, kube_api.server_address[1]
+        )
+
+        service = Service(str(config_file))
+        service.start()
+        try:
+            log_text = service.wait_for_log_contains("kube token command test", timeout=25)
+        finally:
+            service.stop()
+
+    assert "kube token command test" in log_text
+    assert "/api/v1/namespaces/default/pods/testpod" in kube_api.paths
+    assert "Bearer shared-token" in kube_api.auth_headers
