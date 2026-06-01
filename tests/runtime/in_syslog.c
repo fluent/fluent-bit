@@ -646,6 +646,7 @@ void flb_test_syslog_unix_perm()
         exit(EXIT_FAILURE);
     }
 
+#ifndef _WIN32
     if (!TEST_CHECK((sb.st_mode & S_IRWXO) == 0)) {
         TEST_MSG("Permssion(others) error. val=0x%x",sb.st_mode & S_IRWXO);
     }
@@ -655,6 +656,7 @@ void flb_test_syslog_unix_perm()
     if (!TEST_CHECK((sb.st_mode & S_IRWXU) == (S_IRUSR | S_IWUSR))) {
         TEST_MSG("Permssion(user) error. val=0x%x",sb.st_mode & S_IRWXU);
     }
+#endif
 
     test_ctx_destroy(ctx);
 }
