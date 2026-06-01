@@ -1372,6 +1372,7 @@ static int ensure_container(struct flb_azure_blob *ctx)
 static int cb_azure_blob_init(struct flb_output_instance *ins,
                               struct flb_config *config, void *data)
 {
+    int ret;
     struct flb_azure_blob *ctx = NULL;
     (void) ins;
     (void) config;
@@ -1384,8 +1385,9 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    ctx->ins = ins;
+
     if (ctx->buffering_enabled == FLB_TRUE) {
-        ctx->ins = ins;
         ctx->retry_time = 0;
 
         /* Initialize local storage */
@@ -1413,6 +1415,36 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
         ctx->timer_created = FLB_FALSE;
         ctx->timer_ms = (int) (ctx->upload_timeout / 6) * 1000;
         flb_plg_info(ctx->ins, "Using upload size %lu bytes", ctx->file_size);
+    }
+
+    /* Initialize OAuth2 context for service principal auth */
+    if (ctx->atype == AZURE_BLOB_AUTH_SERVICE_PRINCIPAL) {
+        pthread_mutex_init(&ctx->token_mutex, NULL);
+        flb_sds_t token_url;
+
+        token_url = flb_sds_create_size(256);
+        if (!token_url) {
+            flb_plg_error(ctx->ins, "failed to allocate token URL");
+            return -1;
+        }
+
+        ret = flb_sds_snprintf(&token_url, flb_sds_alloc(token_url),
+                              "%s/%s/oauth2/v2.0/token",
+                              AZURE_BLOB_DEFAULT_AUTHORITY_HOST, ctx->tenant_id);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "failed to build token URL");
+            flb_sds_destroy(token_url);
+            return -1;
+        }
+
+        ctx->o = flb_oauth2_create(ctx->config, token_url, AZURE_BLOB_TOKEN_REFRESH);
+        flb_sds_destroy(token_url);
+
+        if (!ctx->o) {
+            flb_plg_error(ctx->ins, "failed to create OAuth2 context");
+            pthread_mutex_destroy(&ctx->token_mutex);
+            return -1;
+        }
     }
 
     flb_output_set_context(ins, ctx);
@@ -2390,6 +2422,11 @@ static int cb_azure_blob_exit(void *data, struct flb_config *config)
         ctx->u = NULL;
     }
 
+    /* Destroy token mutex for service principal auth */
+    if (ctx->atype == AZURE_BLOB_AUTH_SERVICE_PRINCIPAL) {
+        pthread_mutex_destroy(&ctx->token_mutex);
+    }
+
     flb_azure_blob_conf_destroy(ctx);
     return 0;
 }
@@ -2514,13 +2551,31 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "auth_type", "key",
      0, FLB_TRUE, offsetof(struct flb_azure_blob, auth_type),
-     "Set the auth type: key or sas"
+     "Set the auth type: key, sas, or service_principal"
     },
 
     {
      FLB_CONFIG_MAP_STR, "sas_token", NULL,
      0, FLB_TRUE, offsetof(struct flb_azure_blob, sas_token),
      "Azure Blob SAS token"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "tenant_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, tenant_id),
+     "Azure AD tenant ID (required for service_principal auth)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "client_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, client_id),
+     "Azure AD client ID (required for service_principal auth)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "client_secret", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, client_secret),
+     "Azure AD client secret (required for service_principal auth)"
     },
 
     {

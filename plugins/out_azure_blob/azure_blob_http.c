@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_hmac.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_oauth2.h>
 
 #include "azure_blob.h"
 #include "azure_blob_uri.h"
@@ -36,6 +37,111 @@ static int hmac_sha256_sign(unsigned char out[32],
                            key, key_len,
                            msg, msg_len,
                            out, 32);
+}
+
+static int azb_get_oauth2_token(struct flb_azure_blob *ctx)
+{
+    int ret;
+    char *token;
+
+    flb_oauth2_payload_clear(ctx->o);
+
+    ret = flb_oauth2_payload_append(ctx->o,
+                                    "grant_type", 10,
+                                    "client_credentials", 18);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to append OAuth2 grant type");
+        return -1;
+    }
+
+    ret = flb_oauth2_payload_append(ctx->o,
+                                    "scope", 5,
+                                    AZURE_BLOB_OAUTH_SCOPE, -1);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to append OAuth2 scope");
+        return -1;
+    }
+
+    ret = flb_oauth2_payload_append(ctx->o,
+                                    "client_id", 9,
+                                    ctx->client_id, -1);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to append OAuth2 client ID");
+        return -1;
+    }
+
+    ret = flb_oauth2_payload_append(ctx->o,
+                                    "client_secret", 13,
+                                    ctx->client_secret, -1);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to append OAuth2 client secret");
+        return -1;
+    }
+
+    token = flb_oauth2_token_get(ctx->o);
+    if (!token) {
+        flb_plg_error(ctx->ins, "failed to retrieve OAuth2 access token");
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * Get the current Azure Blob bearer token as a formatted string.
+ * Acquires the token mutex, refreshes the token if expired, and returns
+ * a copy of the token string in the format "<token_type> <access_token>".
+ * The caller must destroy the returned flb_sds_t.
+ */
+static int azb_get_oauth2_authorization_header(struct flb_azure_blob *ctx,
+                                               flb_sds_t *out_auth_header)
+{
+    int ret;
+    flb_sds_t auth_header = NULL;
+
+    if (!out_auth_header) {
+        return -1;
+    }
+
+    /* Acquire token mutex */
+    ret = pthread_mutex_lock(&ctx->token_mutex);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "failed to lock token mutex");
+        return -1;
+    }
+
+    /* Check if token needs refresh */
+    if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
+        ret = azb_get_oauth2_token(ctx);
+        if (ret != 0) {
+            pthread_mutex_unlock(&ctx->token_mutex);
+            flb_plg_error(ctx->ins, "failed to refresh OAuth2 token");
+            return -1;
+        }
+    }
+
+    /* Build Authorization header while holding lock */
+    auth_header = flb_sds_create_size(flb_sds_len(ctx->o->token_type) +
+                                      flb_sds_len(ctx->o->access_token) + 2);
+    if (!auth_header) {
+        pthread_mutex_unlock(&ctx->token_mutex);
+        flb_plg_error(ctx->ins, "failed to allocate authorization header");
+        return -1;
+    }
+
+    ret = flb_sds_snprintf(&auth_header, flb_sds_alloc(auth_header),
+                          "%s %s", ctx->o->token_type, ctx->o->access_token);
+    if (ret < 0) {
+        flb_sds_destroy(auth_header);
+        pthread_mutex_unlock(&ctx->token_mutex);
+        flb_plg_error(ctx->ins, "failed to format authorization header");
+        return -1;
+    }
+
+    pthread_mutex_unlock(&ctx->token_mutex);
+
+    *out_auth_header = auth_header;
+    return 0;
 }
 
 static flb_sds_t canonical_headers(struct flb_http_client *c)
@@ -300,6 +406,7 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
                           ssize_t content_length, int blob_type,
                           int content_type, int content_encoding)
 {
+    int ret;
     int len;
     time_t now;
     struct tm tm;
@@ -358,6 +465,7 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
     /* Azure header: x-ms-version */
     flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
 
+
     if (ctx->atype == AZURE_BLOB_AUTH_KEY) {
         can_req = azb_http_canonical_request(ctx, c, content_length, content_type,
                                              content_encoding);
@@ -372,6 +480,20 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
 
         /* Release buffers */
         flb_sds_destroy(can_req);
+        flb_sds_destroy(auth);
+    }
+    else if (ctx->atype == AZURE_BLOB_AUTH_SERVICE_PRINCIPAL) {
+        /* Get OAuth2 authorization header (thread-safe) */
+        ret = azb_get_oauth2_authorization_header(ctx, &auth);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "failed to get OAuth2 authorization header");
+            return -1;
+        }
+
+        /* Azure header: authorization */
+        flb_http_add_header(c, "Authorization", 13, auth, flb_sds_len(auth));
+
+        /* Release buffer */
         flb_sds_destroy(auth);
     }
 
