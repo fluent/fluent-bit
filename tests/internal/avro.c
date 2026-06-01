@@ -25,38 +25,44 @@ const char  JSON_SINGLE_MAP_001_SCHEMA[] =
         {\"type\": \"array\", \"items\":\
              {\"type\": \"map\",\"values\": \"int\"}}}]}";
 
-msgpack_unpacked test_init(avro_value_t *aobject, avro_schema_t *aschema, const char *json_schema, const char *json_data) {
-    char *out_buf;
+msgpack_unpacked test_init(avro_value_t *aobject, avro_schema_t *aschema,
+                           const char *json_schema, const char *json_data,
+                           char **out_buf)
+{
     size_t out_size;
     int root_type;
+    size_t len;
+    char *data;
+    avro_value_iface_t  *aclass;
+    msgpack_unpacked msg;
 
-    avro_value_iface_t  *aclass = flb_avro_init(aobject, (char *)json_schema, strlen(json_schema), aschema);
+    aclass = flb_avro_init(aobject, (char *)json_schema, strlen(json_schema), aschema);
     TEST_CHECK(aclass != NULL);
 
-    char *data = mk_file_to_buffer(json_data);
+    data = mk_file_to_buffer(json_data);
     TEST_CHECK(data != NULL);
 
-    size_t len = strlen(data);
+    len = strlen(data);
 
-    TEST_CHECK(flb_pack_json(data, len, &out_buf, &out_size, &root_type, NULL) == 0);
+    TEST_CHECK(flb_pack_json(data, len, out_buf, &out_size, &root_type, NULL) == 0);
 
-    msgpack_unpacked msg;
     msgpack_unpacked_init(&msg);
-    TEST_CHECK(msgpack_unpack_next(&msg, out_buf, out_size, NULL) == MSGPACK_UNPACK_SUCCESS);
+    TEST_CHECK(msgpack_unpack_next(&msg, *out_buf, out_size, NULL) == MSGPACK_UNPACK_SUCCESS);
 
     avro_value_iface_decref(aclass);
     flb_free(data);
-    flb_free(out_buf);
 
     return msg;
 }
 /* Unpack msgpack per avro schema */
 void test_unpack_to_avro()
 {
+    char *out_buf = NULL;
     avro_value_t  aobject;
     avro_schema_t aschema;
+    msgpack_unpacked mp;
 
-    msgpack_unpacked mp = test_init(&aobject, &aschema, JSON_SINGLE_MAP_001_SCHEMA, AVRO_SINGLE_MAP1);
+    mp = test_init(&aobject, &aschema, JSON_SINGLE_MAP_001_SCHEMA, AVRO_SINGLE_MAP1, &out_buf);
 
     msgpack_object_print(stderr, mp.data);
     flb_msgpack_to_avro(&aobject, &mp.data);
@@ -142,6 +148,7 @@ void test_unpack_to_avro()
     avro_value_decref(&aobject);
     avro_schema_decref(aschema);
     msgpack_unpacked_destroy(&mp);
+    flb_free(out_buf);
 }
 
 void test_parse_reordered_schema()
@@ -155,11 +162,12 @@ void test_parse_reordered_schema()
 
     int i=0;
     for (i=0; schemas[i] != NULL ; i++) {
-
+        char *out_buf = NULL;
         avro_value_t  aobject = {0};
         avro_schema_t aschema = {0};
+        msgpack_unpacked msg;
 
-        msgpack_unpacked msg = test_init(&aobject, &aschema, schemas[i], AVRO_MULTILINE_JSON);
+        msg = test_init(&aobject, &aschema, schemas[i], AVRO_MULTILINE_JSON, &out_buf);
 
         msgpack_object_print(stderr, msg.data);
 
@@ -227,6 +235,7 @@ void test_parse_reordered_schema()
         avro_schema_decref(aschema);
         msgpack_unpacked_destroy(&msg);
         avro_value_decref(&aobject);
+        flb_free(out_buf);
     }
 
 }
@@ -428,10 +437,12 @@ const char  JSON_SINGLE_MAP_001_SCHEMA_WITH_UNION[] =
              {\"type\": \"map\",\"values\": \"int\"}}}]}";
 void test_union_type_sanity()
 {
+    char *out_buf = NULL;
     avro_value_t  aobject;
     avro_schema_t aschema;
+    msgpack_unpacked msg;
 
-    msgpack_unpacked msg = test_init(&aobject, &aschema, JSON_SINGLE_MAP_001_SCHEMA_WITH_UNION, AVRO_SINGLE_MAP1);
+    msg = test_init(&aobject, &aschema, JSON_SINGLE_MAP_001_SCHEMA_WITH_UNION, AVRO_SINGLE_MAP1, &out_buf);
 
     msgpack_object_print(stderr, msg.data);
     flb_msgpack_to_avro(&aobject, &msg.data);
@@ -487,14 +498,17 @@ void test_union_type_sanity()
     avro_value_decref(&aobject);
     avro_schema_decref(aschema);
     msgpack_unpacked_destroy(&msg);
+    flb_free(out_buf);
 }
 
 void test_union_type_branches()
 {
+    char *out_buf = NULL;
     avro_value_t  aobject;
     avro_schema_t aschema;
+    msgpack_unpacked mp;
     
-    msgpack_unpacked mp = test_init(&aobject, &aschema, JSON_SINGLE_MAP_001_SCHEMA_WITH_UNION, AVRO_SINGLE_MAP1);
+    mp = test_init(&aobject, &aschema, JSON_SINGLE_MAP_001_SCHEMA_WITH_UNION, AVRO_SINGLE_MAP1, &out_buf);
 
     flb_msgpack_to_avro(&aobject, &mp.data);
 
@@ -517,6 +531,7 @@ void test_union_type_branches()
     avro_value_decref(&aobject);
     avro_schema_decref(aschema);
     msgpack_unpacked_destroy(&mp);
+    flb_free(out_buf);
 }
 TEST_LIST = {
     /* Avro */
