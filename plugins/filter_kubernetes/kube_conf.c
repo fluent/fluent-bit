@@ -125,32 +125,11 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         }
     }
 
-    if (ctx->kube_meta_cache_ttl > 0) {
-        ctx->hash_table = flb_hash_table_create_with_ttl(ctx->kube_meta_cache_ttl,
-                                                         FLB_HASH_TABLE_EVICT_OLDER,
-                                                         FLB_HASH_TABLE_SIZE,
-                                                         FLB_HASH_TABLE_SIZE);
-    }
-    else {
-        ctx->hash_table = flb_hash_table_create(FLB_HASH_TABLE_EVICT_RANDOM,
-                                                FLB_HASH_TABLE_SIZE,
-                                                FLB_HASH_TABLE_SIZE);
-    }
-
-    if (ctx->kube_meta_namespace_cache_ttl > 0) {
-        ctx->namespace_hash_table = flb_hash_table_create_with_ttl(
-                                            ctx->kube_meta_namespace_cache_ttl,
-                                            FLB_HASH_TABLE_EVICT_OLDER,
-                                            FLB_HASH_TABLE_SIZE,
-                                            FLB_HASH_TABLE_SIZE);
-    }
-    else {
-        ctx->namespace_hash_table = flb_hash_table_create(
-                                            FLB_HASH_TABLE_EVICT_RANDOM,
-                                            FLB_HASH_TABLE_SIZE,
-                                            FLB_HASH_TABLE_SIZE);
-    }
-
+    ctx->hash_table = flb_kube_meta_cache_create(ctx->kube_meta_cache_ttl,
+                                                 FLB_HASH_TABLE_SIZE);
+    ctx->namespace_hash_table =
+        flb_kube_meta_cache_create(ctx->kube_meta_namespace_cache_ttl,
+                                   FLB_HASH_TABLE_SIZE);
 
     if (!ctx->hash_table || !ctx->namespace_hash_table) {
         flb_kube_conf_destroy(ctx);
@@ -207,13 +186,8 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
         return;
     }
 
-    if (ctx->hash_table) {
-        flb_hash_table_destroy(ctx->hash_table);
-    }
-
-    if (ctx->namespace_hash_table) {
-        flb_hash_table_destroy(ctx->namespace_hash_table);
-    }
+    flb_kube_meta_cache_destroy(ctx->hash_table);
+    flb_kube_meta_cache_destroy(ctx->namespace_hash_table);
 
     if (ctx->aws_pod_service_hash_table) {
         flb_hash_table_destroy(ctx->aws_pod_service_hash_table);
@@ -245,6 +219,10 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     }
     if (ctx->aws_pod_association_upstream) {
         flb_upstream_destroy(ctx->aws_pod_association_upstream);
+    }
+
+    if (ctx->kube_client) {
+        flb_kube_client_destroy(ctx->kube_client);
     }
 
     if (ctx->platform) {

@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_hash_table.h>
+#include <fluent-bit/flb_kubernetes.h>
 
 /*
  * Since this filter might get a high number of request per second,
@@ -51,8 +52,8 @@
 #define FLB_MERGE_BUF_SIZE  2048  /* 2KB */
 
 /* Kubernetes API server info */
-#define FLB_API_HOST  "kubernetes.default.svc"
-#define FLB_API_PORT  443
+#define FLB_API_HOST  FLB_KUBE_API_HOST
+#define FLB_API_PORT  FLB_KUBE_API_PORT
 #define FLB_API_TLS   FLB_TRUE
 
 /*
@@ -240,6 +241,7 @@ struct flb_kube {
     struct flb_hash_table *namespace_hash_table;
     struct flb_upstream *kubelet_upstream;
     struct flb_upstream *kube_api_upstream;
+    struct flb_kube_client *kube_client;
     struct flb_filter_instance *ins;
 };
 

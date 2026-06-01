@@ -24,7 +24,6 @@
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_upstream.h>
-#include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_record_accessor.h>
@@ -47,212 +46,6 @@
 #define FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY "initContainerStatuses"
 #define FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY_LEN \
     (sizeof(FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY) - 1)
-#define FLB_KUBE_TOKEN_BUF_SIZE 8192       /* 8KB */
-#define FLB_KUBE_TOKEN_MAX_SIZE (1024 * 1024) /* 1MB */
-
-static int file_to_buffer(const char *path,
-                          char **out_buf, size_t *out_size)
-{
-    int ret;
-    char *buf;
-    ssize_t bytes;
-    FILE *fp;
-    struct stat st;
-
-    if (!(fp = fopen(path, "r"))) {
-        return -1;
-    }
-
-    ret = stat(path, &st);
-    if (ret == -1) {
-        flb_errno();
-        fclose(fp);
-        return -1;
-    }
-
-    buf = flb_calloc(1, (st.st_size + 1));
-    if (!buf) {
-        flb_errno();
-        fclose(fp);
-        return -1;
-    }
-
-    bytes = fread(buf, st.st_size, 1, fp);
-    if (bytes < 1) {
-        flb_free(buf);
-        fclose(fp);
-        return -1;
-    }
-
-    fclose(fp);
-
-    *out_buf = buf;
-    *out_size = st.st_size;
-
-    return 0;
-}
-
-#ifdef FLB_HAVE_KUBE_TOKEN_COMMAND
-/* Run command to get Kubernetes authorization token */
-static int get_token_with_command(const char *command,
-                                  char **out_buf, size_t *out_size)
-{
-    FILE *fp;
-    char buf[FLB_KUBE_TOKEN_BUF_SIZE];
-    char *temp;
-    char *res;
-    size_t capacity = FLB_KUBE_TOKEN_BUF_SIZE;
-    size_t required_size;
-    size_t new_capacity;
-    size_t size = 0;
-    size_t len = 0;
-
-    fp = popen(command, "r");
-    if (fp == NULL) {
-        return -1;
-    }
-
-    res = flb_calloc(1, capacity);
-    if (!res) {
-        flb_errno();
-        pclose(fp);
-        return -1;
-    }
-
-    while (fgets(buf, sizeof(buf), fp) != NULL) {
-        len = strlen(buf);
-
-        if (len > FLB_KUBE_TOKEN_MAX_SIZE - size - 1) {
-            flb_free(res);
-            pclose(fp);
-            return -1;
-        }
-        required_size = size + len + 1;
-
-        if (required_size > capacity) {
-            new_capacity = capacity;
-
-            while (new_capacity < required_size) {
-                new_capacity *= 2;
-            }
-
-            temp = flb_realloc(res, new_capacity);
-            if (temp == NULL) {
-                flb_errno();
-                flb_free(res);
-                pclose(fp);
-                return -1;
-            }
-
-            res = temp;
-            capacity = new_capacity;
-        }
-
-        memcpy(res + size, buf, len);
-        size += len;
-        res[size] = '\0';
-    }
-
-    if (size < 1) {
-        flb_free(res);
-        pclose(fp);
-        return -1;
-    }
-
-    pclose(fp);
-
-    *out_buf = res;
-    *out_size = size;
-
-    return 0;
-}
-#endif
-
-/* Set K8s Authorization Token and get HTTP Auth Header */
-static int get_http_auth_header(struct flb_kube *ctx)
-{
-    int ret;
-    char *temp;
-    char *tk = NULL;
-    size_t tk_size = 0;
-
-    if (ctx->kube_token_command != NULL) {
-#ifdef FLB_HAVE_KUBE_TOKEN_COMMAND
-        ret = get_token_with_command(ctx->kube_token_command, &tk, &tk_size);
-#else
-        ret = -1;
-#endif
-        if (ret == -1) {
-            flb_plg_warn(ctx->ins, "failed to run command %s", ctx->kube_token_command);
-        }
-    }
-    else {
-        ret = file_to_buffer(ctx->token_file, &tk, &tk_size);
-        if (ret == -1) {
-            flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_TOKEN);
-        }
-    }
-
-    if (ret == -1 || tk == NULL) {
-        return -1;
-    }
-
-    flb_plg_info(ctx->ins, " token updated");
-    ctx->kube_token_create = time(NULL);
-
-    /* Token */
-    if (ctx->token != NULL) {
-        flb_free(ctx->token);
-    }
-    ctx->token = tk;
-    ctx->token_len = tk_size;
-
-    /* HTTP Auth Header */
-    if (ctx->auth == NULL) {
-        ctx->auth = flb_malloc(tk_size + 32);
-    }
-    else if (ctx->auth_len < tk_size + 32) {
-        temp = flb_realloc(ctx->auth, tk_size + 32);
-        if (temp == NULL) {
-            flb_free(ctx->auth);
-            ctx->auth = NULL;
-            return -1;
-        }
-        ctx->auth = temp;
-    }
-
-    if (!ctx->auth) {
-        return -1;
-    }
-    ctx->auth_len = snprintf(ctx->auth, tk_size + 32,
-                             "Bearer %s",
-                             tk);
-
-    return 0;
-}
-
-/* Refresh HTTP Auth Header if K8s Authorization Token is expired */
-static int refresh_token_if_needed(struct flb_kube *ctx)
-{
-    int expired = 0;
-    int ret;
-
-    if (ctx->kube_token_create > 0) {
-        if (time(NULL) > ctx->kube_token_create + ctx->kube_token_ttl) {
-            expired = FLB_TRUE;
-        }
-    }
-
-    if (expired || ctx->kube_token_create == 0) {
-        ret = get_http_auth_header(ctx);
-        if (ret == -1) {
-            flb_plg_warn(ctx->ins, "failed to set http auth header");
-            return -1;
-        }
-    }
-
-    return 0;
-}
 
 static void expose_k8s_meta(struct flb_kube *ctx)
 {
@@ -275,43 +68,14 @@ static void expose_k8s_meta(struct flb_kube *ctx)
 static int get_local_pod_info(struct flb_kube *ctx)
 {
     int ret;
-    char *ns;
-    size_t ns_size;
-    char *hostname;
 
-    /* Get the namespace name */
-    ret = file_to_buffer(FLB_KUBE_NAMESPACE, &ns, &ns_size);
-    if (ret == -1) {
-        /*
-         * If it fails, it's just informational, as likely the caller
-         * wanted to connect using the Proxy instead from inside a POD.
-         */
-        flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_NAMESPACE);
-        return FLB_FALSE;
-    }
-
-    /* Namespace */
-    ctx->namespace = ns;
-    ctx->namespace_len = ns_size;
-
-    /* POD Name */
-    hostname = getenv("HOSTNAME");
-    if (hostname) {
-        ctx->podname = flb_strdup(hostname);
-        ctx->podname_len = strlen(ctx->podname);
-    }
-    else {
-        char tmp[256];
-        gethostname(tmp, 256);
-        ctx->podname = flb_strdup(tmp);
-        ctx->podname_len = strlen(ctx->podname);
-    }
-
-    /* If a namespace was recognized, a token is mandatory */
-    /* Use the token to get HTTP Auth Header*/
-    ret = get_http_auth_header(ctx);
-    if (ret == -1) {
-        flb_plg_warn(ctx->ins, "failed to set http auth header");
+    ret = flb_kube_client_load_local_pod_info(ctx->kube_client,
+                                              &ctx->namespace,
+                                              &ctx->namespace_len,
+                                              &ctx->podname,
+                                              &ctx->podname_len);
+    if (ret != FLB_TRUE) {
+        flb_plg_warn(ctx->ins, "cannot load local POD info");
         return FLB_FALSE;
     }
 
@@ -379,94 +143,6 @@ static int get_meta_file_info(struct flb_kube *ctx, const char *namespace,
     return packed;
 }
 
-/* Gather metadata from HTTP Request,
- * this could send out HTTP Request either to KUBE Server API or Kubelet
- */
-static int get_meta_info_from_request(struct flb_kube *ctx,
-                                      const char *namespace,
-                                      const char *resource_type,
-                                      const char *resource_name,
-                                      char **buffer, size_t *size,
-                                      int *root_type,
-                                      char* uri,
-                                      int use_kubelet_connection)
-{
-    struct flb_http_client *c;
-    struct flb_connection *u_conn;
-    int ret;
-    size_t b_sent;
-    int packed;
-
-    if(use_kubelet_connection == FLB_TRUE) {
-        if (!ctx->kubelet_upstream) {
-            return -1;
-        }
-
-        u_conn = flb_upstream_conn_get(ctx->kubelet_upstream);
-    }
-    else {
-        if (!ctx->kube_api_upstream) {
-            return -1;
-        }
-
-        u_conn = flb_upstream_conn_get(ctx->kube_api_upstream);
-    }
-
-    if (!u_conn) {
-        if(use_kubelet_connection == FLB_TRUE) {
-            flb_plg_error(ctx->ins, "kubelet upstream connection error");
-        }
-        else {
-            flb_plg_error(ctx->ins, "kube api upstream connection error");
-        }
-        return -1;
-    }
-
-    ret = refresh_token_if_needed(ctx);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "failed to refresh token");
-        flb_upstream_conn_release(u_conn);
-        return -1;
-    }
-
-    /* Compose HTTP Client request*/
-    c = flb_http_client(u_conn, FLB_HTTP_GET,
-                        uri,
-                        NULL, 0, NULL, 0, NULL, 0);
-    flb_http_buffer_size(c, ctx->buffer_size);
-
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-    flb_http_add_header(c, "Connection", 10, "close", 5);
-    if (ctx->auth_len > 0) {
-        flb_http_add_header(c, "Authorization", 13, ctx->auth, ctx->auth_len);
-    }
-
-    ret = flb_http_do(c, &b_sent);
-    flb_plg_debug(ctx->ins, "Request (ns=%s, %s=%s) http_do=%i, "
-                  "HTTP Status: %i",
-                  namespace, resource_type, resource_name, ret, c->resp.status);
-
-    if (ret != 0 || c->resp.status != 200) {
-        if (c->resp.payload_size > 0) {
-            flb_plg_debug(ctx->ins, "HTTP response\n%s",
-                          c->resp.payload);
-        }
-        flb_http_client_destroy(c);
-        flb_upstream_conn_release(u_conn);
-        return -1;
-    }
-
-    packed = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                                   buffer, size, root_type, NULL);
-
-    /* release resources */
-    flb_http_client_destroy(c);
-    flb_upstream_conn_release(u_conn);
-
-    return packed;
-
-}
-
 /* Gather pods list information from Kubelet */
 static int get_pods_from_kubelet(struct flb_kube *ctx,
                                  const char *namespace, const char *podname,
@@ -475,7 +151,6 @@ static int get_pods_from_kubelet(struct flb_kube *ctx,
     int ret;
     int packed = -1;
     int root_type;
-    char uri[1024];
     char *buf;
     size_t size;
 
@@ -487,16 +162,11 @@ static int get_pods_from_kubelet(struct flb_kube *ctx,
                                 &root_type);
 
     if (packed == -1) {
-
-        ret = snprintf(uri, sizeof(uri) - 1, FLB_KUBELET_PODS);
-        if (ret == -1) {
-            return -1;
-        }
         flb_plg_debug(ctx->ins,
                       "Send out request to Kubelet for pods information.");
-        packed = get_meta_info_from_request(ctx, namespace, FLB_KUBE_POD, podname,
-                                            &buf, &size, &root_type, uri,
-                                            ctx->use_kubelet);
+        ret = flb_kube_resource_get_kubelet_pods(ctx->kube_client,
+                                                 &buf, &size);
+        packed = (ret == 0) ? 0 : -1;
     }
 
     /* validate pack */
@@ -517,25 +187,17 @@ int get_api_server_configmap(struct flb_kube *ctx,
 {
     int ret;
     int packed = -1;
-    int root_type;
-    char uri[1024];
     char *buf;
     size_t size;
 
     *out_buf = NULL;
     *out_size = 0;
 
-
-    ret = snprintf(uri, sizeof(uri) - 1, FLB_KUBE_API_CONFIGMAP_FMT, namespace,
-                   configmap);
-
-    if (ret < 0) {
-        return -1;
-    }
     flb_plg_debug(ctx->ins,
                   "Send out request to API Server for configmap information");
-    packed = get_meta_info_from_request(ctx, namespace, FLB_KUBE_CONFIGMAP, configmap,
-                            &buf, &size, &root_type, uri, false);
+    ret = flb_kube_resource_get_configmap(ctx->kube_client, namespace,
+                                          configmap, &buf, &size);
+    packed = (ret == 0) ? 0 : -1;
 
     /* validate pack */
     if (packed == -1) {
@@ -555,7 +217,6 @@ static int get_namespace_api_server_info(struct flb_kube *ctx, const char *names
     int ret;
     int packed = -1;
     int root_type;
-    char uri[1024];
     char *buf;
     size_t size;
 
@@ -567,16 +228,11 @@ static int get_namespace_api_server_info(struct flb_kube *ctx, const char *names
                                 &buf, &size, &root_type);
 
     if (packed == -1) {
-        ret = snprintf(uri, sizeof(uri) - 1, FLB_KUBE_API_NAMESPACE_FMT, namespace);
-
-        if (ret == -1) {
-            return -1;
-        }
         flb_plg_debug(ctx->ins,
-                      "Send out request to API Server for namespace information: %s", uri);
-        // Namespace data is only available from kuberenetes api, not kubelet
-        packed = get_meta_info_from_request(ctx, namespace, "","",
-                                            &buf, &size, &root_type, uri, FLB_FALSE);
+                      "Send out request to API Server for namespace information");
+        ret = flb_kube_resource_get_namespace(ctx->kube_client, namespace,
+                                              &buf, &size);
+        packed = (ret == 0) ? 0 : -1;
     }
 
     /* validate pack */
@@ -598,7 +254,6 @@ static int get_pod_api_server_info(struct flb_kube *ctx,
     int ret;
     int packed = -1;
     int root_type;
-    char uri[1024];
     char *buf;
     size_t size;
 
@@ -610,18 +265,11 @@ static int get_pod_api_server_info(struct flb_kube *ctx,
                                 &buf, &size, &root_type);
 
     if (packed == -1) {
-
-        ret = snprintf(uri, sizeof(uri) - 1, FLB_KUBE_API_POD_FMT, namespace,
-                       podname);
-
-        if (ret == -1) {
-            return -1;
-        }
         flb_plg_debug(ctx->ins,
                       "Send out request to API Server for pods information");
-        packed = get_meta_info_from_request(ctx, namespace, FLB_KUBE_POD, podname,
-                                            &buf, &size, &root_type, uri,
-                                            ctx->use_kubelet);
+        ret = flb_kube_resource_get_pod(ctx->kube_client, namespace, podname,
+                                        &buf, &size);
+        packed = (ret == 0) ? 0 : -1;
     }
 
     /* validate pack */
@@ -2072,125 +1720,52 @@ int flb_kube_pod_association_init(struct flb_kube *ctx, struct flb_config *confi
     return 0;
 }
 
-static int flb_kubelet_network_init(struct flb_kube *ctx, struct flb_config *config)
-{
-    int ret;
-    int io_type = FLB_IO_TCP;
-    int api_https = FLB_TRUE;
-    ctx->kubelet_upstream = NULL;
-
-    if(ctx->use_kubelet == FLB_FALSE) {
-        return 0;
-    }
-
-    // This is for unit test diagnostic purposes
-    if (ctx->meta_preload_cache_dir) {
-        api_https = FLB_FALSE;
-    }
-
-    if (api_https == FLB_TRUE) {
-        if (!ctx->tls_ca_path && !ctx->tls_ca_file) {
-            ctx->tls_ca_file  = flb_strdup(FLB_KUBE_CA);
-        }
-        ctx->kubelet_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
-                                ctx->tls_verify,
-                                ctx->tls_debug,
-                                ctx->tls_vhost,
-                                ctx->tls_ca_path,
-                                ctx->tls_ca_file,
-                                NULL, NULL, NULL);
-        if (!ctx->kubelet_tls) {
-            return -1;
-        }
-
-        if (ctx->tls_verify_hostname == FLB_TRUE) {
-            ret = flb_tls_set_verify_hostname(ctx->kubelet_tls, ctx->tls_verify_hostname);
-            if (ret == -1) {
-                flb_plg_debug(ctx->ins, "kubelet network tls set up failed for hostname verification");
-                return -1;
-            }
-        }
-
-        io_type = FLB_IO_TLS;
-    }
-
-    /* Create an Upstream context */
-    ctx->kubelet_upstream = flb_upstream_create(config,
-                                        ctx->kubelet_host,
-                                        ctx->kubelet_port,
-                                        io_type,
-                                        ctx->kubelet_tls);
-    if (!ctx->kubelet_upstream) {
-        /* note: if ctx->tls.context is set, it's destroyed upon context exit */
-        flb_plg_debug(ctx->ins, "kubelet network init create upstream failed");
-        return -1;
-    }
-
-    /* Remove async flag from upstream */
-    flb_stream_disable_async_mode(&ctx->kubelet_upstream->base);
-
-    return 0;
-}
-
 static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config)
 {
     int ret;
-    int io_type = FLB_IO_TCP;
-    int kubelet_network_init_ret = 0;
+    struct flb_kube_client_config client_config = {0};
 
-    ctx->kube_api_upstream = NULL;
     ctx->aws_pod_association_upstream = NULL;
     ctx->aws_pod_association_tls = NULL;
 
-    /* Initialize Kube API Connection */
-    if (ctx->api_https == FLB_TRUE) {
-        if (!ctx->tls_ca_path && !ctx->tls_ca_file) {
-            ctx->tls_ca_file  = flb_strdup(FLB_KUBE_CA);
-        }
-        ctx->tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
-                                  ctx->tls_verify,
-                                  ctx->tls_debug,
-                                  ctx->tls_vhost,
-                                  ctx->tls_ca_path,
-                                  ctx->tls_ca_file,
-                                  NULL, NULL, NULL);
-        if (!ctx->tls) {
-            return -1;
-        }
+    client_config.api_host = ctx->api_host;
+    client_config.api_port = ctx->api_port;
+    client_config.api_https = ctx->api_https;
+    client_config.kubelet_host = ctx->kubelet_host;
+    client_config.kubelet_port = ctx->kubelet_port;
+    client_config.kubelet_https = FLB_TRUE;
+    client_config.use_kubelet = ctx->use_kubelet;
+    client_config.tls_ca_path = ctx->tls_ca_path;
+    client_config.tls_ca_file = ctx->tls_ca_file;
+    client_config.tls_vhost = ctx->tls_vhost;
+    client_config.tls_debug = ctx->tls_debug;
+    client_config.tls_verify = ctx->tls_verify;
+    client_config.tls_verify_hostname = ctx->tls_verify_hostname;
+    client_config.token_file = ctx->token_file;
+    client_config.token_command = ctx->kube_token_command;
+    client_config.token_ttl = ctx->kube_token_ttl;
+    client_config.buffer_size = ctx->buffer_size;
 
-        if (ctx->tls_verify_hostname == FLB_TRUE) {
-            ret = flb_tls_set_verify_hostname(ctx->tls, ctx->tls_verify_hostname);
-            if (ret == -1) {
-                flb_plg_debug(ctx->ins, "network tls set up failed for hostname verification");
-                return -1;
-            }
-        }
-
-        io_type = FLB_IO_TLS;
+    /* This is for unit test diagnostic purposes. */
+    if (ctx->meta_preload_cache_dir) {
+        client_config.kubelet_https = FLB_FALSE;
     }
 
-    /* Create an Upstream context */
-    ctx->kube_api_upstream = flb_upstream_create(config,
-                                        ctx->api_host,
-                                        ctx->api_port,
-                                        io_type,
-                                        ctx->tls);
-    if (!ctx->kube_api_upstream) {
-        /* note: if ctx->tls.context is set, it's destroyed upon context exit */
-        flb_plg_debug(ctx->ins, "kube network init create upstream failed");
+    ctx->kube_client = flb_kube_client_create(config, &client_config);
+    if (ctx->kube_client == NULL) {
+        flb_plg_debug(ctx->ins, "kube network init create client failed");
         return -1;
     }
 
-    /* Remove async flag from upstream */
-    flb_stream_disable_async_mode(&ctx->kube_api_upstream->base);
-
     /* Continue the filter kubernetes plugin functionality if the pod_association fails */
     if (ctx->aws_use_pod_association) {
-        flb_kube_pod_association_init(ctx, config);
+        ret = flb_kube_pod_association_init(ctx, config);
+        if (ret == -1) {
+            flb_plg_debug(ctx->ins, "pod association network init failed");
+        }
     }
 
-    kubelet_network_init_ret = flb_kubelet_network_init(ctx, config);
-    return kubelet_network_init_ret;
+    return 0;
 }
 
 /* Initialize local context */
@@ -2211,7 +1786,11 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
     }
 
     /* Init network */
-    flb_kube_network_init(ctx, config);
+    ret = flb_kube_network_init(ctx, config);
+    if (ret == -1) {
+        flb_plg_warn(ctx->ins, "could not initialize Kubernetes network client");
+        return -1;
+    }
 
     /* Gather local info */
     ret = get_local_pod_info(ctx);

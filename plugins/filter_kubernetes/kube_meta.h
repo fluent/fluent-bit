@@ -20,6 +20,8 @@
 #ifndef FLB_FILTER_KUBE_META_H
 #define FLB_FILTER_KUBE_META_H
 
+#include <fluent-bit/flb_kubernetes.h>
+
 #include "kube_props.h"
 
 struct flb_kube;
@@ -49,17 +51,6 @@ struct flb_kube_meta {
 
     char *cache_key;
 };
-
-/* Constant Kubernetes paths */
-#define FLB_KUBE_NAMESPACE "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
-#define FLB_KUBE_TOKEN "/var/run/secrets/kubernetes.io/serviceaccount/token"
-#define FLB_KUBE_CA "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-#define FLB_KUBE_API_HOST "kubernetes.default.svc"
-#define FLB_KUBE_API_PORT 443
-#define FLB_KUBE_API_POD_FMT "/api/v1/namespaces/%s/pods/%s"
-#define FLB_KUBE_API_NAMESPACE_FMT "/api/v1/namespaces/%s"
-#define FLB_KUBE_API_CONFIGMAP_FMT "/api/v1/namespaces/%s/configmaps/%s"
-#define FLB_KUBELET_PODS "/pods"
 
 /* Constants for possible kubernetes resources */
 #define FLB_KUBE_POD "pod"
