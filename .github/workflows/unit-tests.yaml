@@ -56,6 +56,7 @@ jobs:
           - "-DFLB_SIMD=Off"
           - "-DFLB_ARROW=On"
           - "-DFLB_COMPILER_STRICT_POINTER_TYPES=On"
+          - "-DFLB_AVRO_ENCODER=On -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
         cmake_version:
           - "3.31.6"
         compiler:
@@ -75,6 +76,10 @@ jobs:
               cc: clang
               cxx: clang++
           - flb_option: "-DFLB_COMPILER_STRICT_POINTER_TYPES=On"
+            compiler:
+              cc: clang
+              cxx: clang++
+          - flb_option: "-DFLB_AVRO_ENCODER=On -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
             compiler:
               cc: clang
               cxx: clang++
