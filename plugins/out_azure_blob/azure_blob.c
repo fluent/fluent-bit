@@ -1368,6 +1368,7 @@ static int ensure_container(struct flb_azure_blob *ctx)
 
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error requesting container properties");
+        flb_http_client_destroy(c);
         flb_upstream_conn_release(u_conn);
         return FLB_FALSE;
     }
@@ -1452,7 +1453,13 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
 
     /* Initialize OAuth2 context for service principal auth */
     if (ctx->atype == AZURE_BLOB_AUTH_SERVICE_PRINCIPAL) {
-        pthread_mutex_init(&ctx->token_mutex, NULL);
+        ret = pthread_mutex_init(&ctx->token_mutex, NULL);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "failed to initialize token mutex");
+            flb_azure_blob_conf_destroy(ctx);
+            return -1;
+        }
+
         flb_sds_t token_url;
 
         token_url = flb_sds_create_size(256);
@@ -1761,7 +1768,7 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
         const char *commit_prefix = azb_commit_prefix_with_fallback(ctx, path_prefix);
 
         ret = azb_block_blob_commit_file_parts(ctx, file_id, file_path, part_ids, commit_prefix);
-        if (ret == -1) {
+        if (ret != FLB_OK) {
             flb_plg_error(ctx->ins, "cannot commit blob file parts for file id=%" PRIu64 " path=%s",
                           file_id, file_path);
         }

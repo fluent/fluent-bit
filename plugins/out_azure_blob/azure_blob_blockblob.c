@@ -326,6 +326,8 @@ int azb_block_blob_put_block_list(struct flb_azure_blob *ctx, flb_sds_t uri, flb
     /* Validate HTTP status */
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error sending block_blob");
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_RETRY;
     }
 
