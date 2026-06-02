@@ -310,9 +310,15 @@ int azb_block_blob_put_block_list(struct flb_azure_blob *ctx, flb_sds_t uri, flb
     }
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, flb_sds_len(payload),
-                          FLB_FALSE,
-                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    ret = azb_http_client_setup(ctx, c, flb_sds_len(payload),
+                                FLB_FALSE,
+                                AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "failed to setup HTTP client");
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        return FLB_RETRY;
+    }
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);

@@ -574,6 +574,27 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         return NULL;
     }
 
+    /* Set Auth type - must be parsed before remote configuration */
+    tmp = (char *) flb_output_get_property("auth_type", ins);
+    if (!tmp) {
+        ctx->atype = AZURE_BLOB_AUTH_KEY;
+    }
+    else {
+        if (strcasecmp(tmp, "key") == 0) {
+            ctx->atype = AZURE_BLOB_AUTH_KEY;
+        }
+        else if (strcasecmp(tmp, "sas") == 0) {
+            ctx->atype = AZURE_BLOB_AUTH_SAS;
+        }
+        else if (strcasecmp(tmp, "service_principal") == 0) {
+            ctx->atype = AZURE_BLOB_AUTH_SERVICE_PRINCIPAL;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid auth_type value '%s'", tmp);
+            return NULL;
+        }
+    }
+
     if (ctx->configuration_endpoint_url != NULL) {
         ret = flb_azure_blob_apply_remote_configuration(ctx);
 
@@ -605,27 +626,6 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         return NULL;
     }
 
-    /* Set Auth type */
-    tmp = (char *) flb_output_get_property("auth_type", ins);
-    if (!tmp) {
-        ctx->atype = AZURE_BLOB_AUTH_KEY;
-    }
-    else {
-        if (strcasecmp(tmp, "key") == 0) {
-            ctx->atype = AZURE_BLOB_AUTH_KEY;
-        }
-        else if (strcasecmp(tmp, "sas") == 0) {
-            ctx->atype = AZURE_BLOB_AUTH_SAS;
-        }
-        else if (strcasecmp(tmp, "service_principal") == 0) {
-            ctx->atype = AZURE_BLOB_AUTH_SERVICE_PRINCIPAL;
-        }
-        else {
-            flb_plg_error(ctx->ins, "invalid auth_type value '%s'", tmp);
-            return NULL;
-        }
-    }
-
     /* Validate auth-specific required fields */
     if (ctx->atype == AZURE_BLOB_AUTH_KEY &&
         ctx->shared_key == NULL) {
@@ -644,15 +644,15 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     }
 
     if (ctx->atype == AZURE_BLOB_AUTH_SERVICE_PRINCIPAL) {
-        if (ctx->tenant_id == NULL) {
+        if (ctx->tenant_id == NULL || flb_sds_len(ctx->tenant_id) == 0) {
             flb_plg_error(ctx->ins, "'tenant_id' is required for service_principal auth");
             return NULL;
         }
-        if (ctx->client_id == NULL) {
+        if (ctx->client_id == NULL || flb_sds_len(ctx->client_id) == 0) {
             flb_plg_error(ctx->ins, "'client_id' is required for service_principal auth");
             return NULL;
         }
-        if (ctx->client_secret == NULL) {
+        if (ctx->client_secret == NULL || flb_sds_len(ctx->client_secret) == 0) {
             flb_plg_error(ctx->ins, "'client_secret' is required for service_principal auth");
             return NULL;
         }

@@ -738,8 +738,13 @@ static int create_blob(struct flb_azure_blob *ctx, const char *path_prefix, char
     }
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, -1, FLB_TRUE,
-                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    ret = azb_http_client_setup(ctx, c, -1, FLB_TRUE,
+                                AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "failed to setup HTTP client");
+        status = FLB_RETRY;
+        goto cleanup_create;
+    }
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -817,8 +822,13 @@ static int delete_blob(struct flb_azure_blob *ctx,
     }
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, -1, FLB_TRUE,
-                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    ret = azb_http_client_setup(ctx, c, -1, FLB_TRUE,
+                                AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "failed to setup HTTP client");
+        status = FLB_RETRY;
+        goto cleanup_delete;
+    }
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -1000,8 +1010,17 @@ static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
     }
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, (ssize_t) payload_size, FLB_FALSE,
-                          content_type, content_encoding);
+    ret = azb_http_client_setup(ctx, c, (ssize_t) payload_size, FLB_FALSE,
+                                content_type, content_encoding);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "failed to setup HTTP client");
+        if (compressed == FLB_TRUE) {
+            flb_free(payload_buf);
+        }
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        return FLB_RETRY;
+    }
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -1233,8 +1252,15 @@ static int create_container(struct flb_azure_blob *ctx, char *name)
     }
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, -1, FLB_FALSE,
-                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    ret = azb_http_client_setup(ctx, c, -1, FLB_FALSE,
+                                AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "failed to setup HTTP client");
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(uri);
+        return FLB_FALSE;
+    }
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -1326,8 +1352,15 @@ static int ensure_container(struct flb_azure_blob *ctx)
     flb_http_strip_port_from_host(c);
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, -1, FLB_FALSE,
-                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    ret = azb_http_client_setup(ctx, c, -1, FLB_FALSE,
+                                AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "failed to setup HTTP client");
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(uri);
+        return FLB_FALSE;
+    }
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -1425,6 +1458,8 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
         token_url = flb_sds_create_size(256);
         if (!token_url) {
             flb_plg_error(ctx->ins, "failed to allocate token URL");
+            pthread_mutex_destroy(&ctx->token_mutex);
+            flb_azure_blob_conf_destroy(ctx);
             return -1;
         }
 
@@ -1434,6 +1469,8 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
         if (ret < 0) {
             flb_plg_error(ctx->ins, "failed to build token URL");
             flb_sds_destroy(token_url);
+            pthread_mutex_destroy(&ctx->token_mutex);
+            flb_azure_blob_conf_destroy(ctx);
             return -1;
         }
 
@@ -1443,6 +1480,7 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
         if (!ctx->o) {
             flb_plg_error(ctx->ins, "failed to create OAuth2 context");
             pthread_mutex_destroy(&ctx->token_mutex);
+            flb_azure_blob_conf_destroy(ctx);
             return -1;
         }
     }
