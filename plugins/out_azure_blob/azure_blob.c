@@ -1247,6 +1247,7 @@ static int create_container(struct flb_azure_blob *ctx, char *name)
                         NULL, 0, NULL, 0, NULL, 0);
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
+        flb_sds_destroy(uri);
         flb_upstream_conn_release(u_conn);
         return FLB_FALSE;
     }
@@ -1346,6 +1347,7 @@ static int ensure_container(struct flb_azure_blob *ctx)
                         NULL, 0, NULL, 0, NULL, 0);
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
+        flb_sds_destroy(uri);
         flb_upstream_conn_release(u_conn);
         return FLB_FALSE;
     }
@@ -1435,14 +1437,17 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
         /* validate 'total_file_size' */
         if (ctx->file_size <= 0) {
             flb_plg_error(ctx->ins, "Failed to parse upload_file_size");
+            azure_blob_store_exit(ctx);
             return -1;
         }
         if (ctx->file_size < 1000000) {
             flb_plg_error(ctx->ins, "upload_file_size must be at least 1MB");
+            azure_blob_store_exit(ctx);
             return -1;
         }
         if (ctx->file_size > MAX_FILE_SIZE) {
             flb_plg_error(ctx->ins, "Max total_file_size must be lower than %ld bytes", MAX_FILE_SIZE);
+            azure_blob_store_exit(ctx);
             return -1;
         }
         ctx->has_old_buffers = azure_blob_store_has_data(ctx);
@@ -1456,6 +1461,9 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
         ret = pthread_mutex_init(&ctx->token_mutex, NULL);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "failed to initialize token mutex");
+            if (ctx->buffering_enabled == FLB_TRUE) {
+                azure_blob_store_exit(ctx);
+            }
             flb_azure_blob_conf_destroy(ctx);
             return -1;
         }
@@ -1466,6 +1474,9 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
         if (!token_url) {
             flb_plg_error(ctx->ins, "failed to allocate token URL");
             pthread_mutex_destroy(&ctx->token_mutex);
+            if (ctx->buffering_enabled == FLB_TRUE) {
+                azure_blob_store_exit(ctx);
+            }
             flb_azure_blob_conf_destroy(ctx);
             return -1;
         }
@@ -1477,6 +1488,9 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins, "failed to build token URL");
             flb_sds_destroy(token_url);
             pthread_mutex_destroy(&ctx->token_mutex);
+            if (ctx->buffering_enabled == FLB_TRUE) {
+                azure_blob_store_exit(ctx);
+            }
             flb_azure_blob_conf_destroy(ctx);
             return -1;
         }
@@ -1487,6 +1501,9 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
         if (!ctx->o) {
             flb_plg_error(ctx->ins, "failed to create OAuth2 context");
             pthread_mutex_destroy(&ctx->token_mutex);
+            if (ctx->buffering_enabled == FLB_TRUE) {
+                azure_blob_store_exit(ctx);
+            }
             flb_azure_blob_conf_destroy(ctx);
             return -1;
         }
