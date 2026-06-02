@@ -190,7 +190,7 @@ jobs:
         uses: helm/kind-action@v1.13.0
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: v3.6.3
 
