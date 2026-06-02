@@ -164,7 +164,7 @@ jobs:
     steps:
       - name: Extract metadata from Github
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
@@ -216,7 +216,7 @@ jobs:
       version: ${{ steps.debug-meta.outputs.version }}
     steps:
       - id: debug-meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
