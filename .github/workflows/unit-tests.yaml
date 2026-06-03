@@ -118,8 +118,10 @@ jobs:
 
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          repository: calyptia/fluent-bit-ci
+          repository: fluent/fluent-bit-ci
           path: ci
+          # Last commit to master branch
+          ref: 17eb004a1b73b1c44986c20a9f4a33fc0961ca45
       - name: Setup Apache Arrow libraries for parquet (-DFLB_ARROW=On Only)
         if: matrix.flb_option == '-DFLB_ARROW=On'
         run: |
@@ -176,8 +178,10 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          repository: calyptia/fluent-bit-ci
+          repository: fluent/fluent-bit-ci
           path: ci
+          # Last commit to master branch
+          ref: 17eb004a1b73b1c44986c20a9f4a33fc0961ca45
 
       - name: ${{ matrix.flb_option }}
         run: |

@@ -12,8 +12,11 @@ jobs:
     name: PR - Hadolint
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
-      - uses: reviewdog/action-hadolint@921946a7ebaaf08ac72607bad67209f4e52b5407 # v1.50.5
+      - name: Run hadolint
+        uses: reviewdog/action-hadolint@921946a7ebaaf08ac72607bad67209f4e52b5407 # v1.50.5
         with:
           exclude: |
             packaging/testing/smoke/packages/Dockerfile.*
@@ -27,8 +30,11 @@ jobs:
       checks: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
-      - uses: reviewdog/action-shellcheck@4c07458293ac342d477251099501a718ae5ef86e # v1.32.0
+      - name: Run shellcheck
+        uses: reviewdog/action-shellcheck@4c07458293ac342d477251099501a718ae5ef86e # v1.32.0
         with:
           github_token: ${{ secrets.github_token }}
           fail_level: "warning"
@@ -49,6 +55,9 @@ jobs:
       checks: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
       - name: Run actionlint
         uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d # v1.72.0
         with:
