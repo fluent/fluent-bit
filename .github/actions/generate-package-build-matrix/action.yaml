@@ -30,6 +30,7 @@ runs:
       with:
         ref: ${{ inputs.ref }}
         path: version-check
+        persist-credentials: false
 
     - name: Determine target type
       id: determine-build-type
