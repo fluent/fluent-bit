@@ -10,6 +10,10 @@ jobs:
   hadolint-pr:
     runs-on: ubuntu-latest
     name: PR - Hadolint
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -18,6 +22,9 @@ jobs:
       - name: Run hadolint
         uses: reviewdog/action-hadolint@921946a7ebaaf08ac72607bad67209f4e52b5407 # v1.50.5
         with:
+          github_token: ${{ secrets.github_token }}
+          fail_level: "warning"
+          reporter: github-pr-review # Better annotation in PRs
           exclude: |
             packaging/testing/smoke/packages/Dockerfile.*
 
