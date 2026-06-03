@@ -34,17 +34,26 @@ jobs:
           fail_level: "warning"
           reporter: github-pr-review # Better annotation in PRs
           exclude: |
-            "*/.git/*"
-            "./cmake/sanitizers-cmake/**"
-            "./lib/**"
-            "./plugins/**"
-            "./tests/**"
+            */.git/*
+            ./cmake/sanitizers-cmake/**
+            ./lib/**
+            ./plugins/**
+            ./tests/**
 
   actionlint-pr:
     runs-on: ubuntu-latest
     name: PR - Actionlint
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Run actionlint
-        uses: rhysd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca # v1.7.12
-
+        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d # v1.72.0
+        with:
+          # Disable shellcheck as done elsewhere and speeds up process
+          actionlint_flags: -shellcheck=
+          fail_level: "warning"
+          reporter: github-pr-review # Better annotation in PRs
+          github_token: ${{ secrets.github_token }}
