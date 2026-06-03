@@ -21,6 +21,7 @@
 
 #include <stddef.h>
 #include <string.h>
+#include <stdlib.h>
 
 struct flb_time_tz_map {
     const char *windows;
@@ -502,18 +503,87 @@ static const struct flb_time_tz_map windows_iana_timezones[] = {
     { NULL, NULL, 0 }
 };
 
+
+static pthread_once_t flb_time_tz_once = PTHREAD_ONCE_INIT;
+
+static size_t tz_by_windows_count = 0;
+static size_t tz_by_iana_count = 0;
+
+static const struct flb_time_tz_map *tz_by_windows[sizeof(windows_iana_timezones) / sizeof(windows_iana_timezones[0])];
+static const struct flb_time_tz_map *tz_by_iana[sizeof(windows_iana_timezones) / sizeof(windows_iana_timezones[0])];
+
+static int compare_windows(const void *a, const void *b)
+{
+    const struct flb_time_tz_map *entry_a = *(const struct flb_time_tz_map **)a;
+    const struct flb_time_tz_map *entry_b = *(const struct flb_time_tz_map **)b;
+    return strcasecmp(entry_a->windows, entry_b->windows);
+}
+
+static int compare_iana(const void *a, const void *b)
+{
+    const struct flb_time_tz_map *entry_a = *(const struct flb_time_tz_map **)a;
+    const struct flb_time_tz_map *entry_b = *(const struct flb_time_tz_map **)b;
+    return strcmp(entry_a->iana, entry_b->iana);
+}
+
+static int compare_search_windows(const void *key, const void *member)
+{
+    const char *windows_key = (const char *)key;
+    const struct flb_time_tz_map *entry = *(const struct flb_time_tz_map **)member;
+    return strcasecmp(windows_key, entry->windows);
+}
+
+static int compare_search_iana(const void *key, const void *member)
+{
+    const char *iana_key = (const char *)key;
+    const struct flb_time_tz_map *entry = *(const struct flb_time_tz_map **)member;
+    return strcmp(iana_key, entry->iana);
+}
+
+static void flb_time_tz_init(void)
+{
+    int i, j;
+    int found;
+
+    tz_by_windows_count = 0;
+    tz_by_iana_count = 0;
+
+    for (i = 0; windows_iana_timezones[i].windows != NULL; i++) {
+        /* Add to Windows table if not already present (keeps the first/canonical entry) */
+        found = 0;
+        for (j = 0; j < tz_by_windows_count; j++) {
+            if (strcasecmp(windows_iana_timezones[i].windows, tz_by_windows[j]->windows) == 0) {
+                found = 1;
+                break;
+            }
+        }
+        if (!found) {
+            tz_by_windows[tz_by_windows_count++] = &windows_iana_timezones[i];
+        }
+
+        /* IANA zones are unique in the table, so we just add all of them */
+        tz_by_iana[tz_by_iana_count++] = &windows_iana_timezones[i];
+    }
+
+    /* Sort the arrays */
+    qsort(tz_by_windows, tz_by_windows_count, sizeof(tz_by_windows[0]), compare_windows);
+    qsort(tz_by_iana, tz_by_iana_count, sizeof(tz_by_iana[0]), compare_iana);
+}
+
 const char *flb_time_windows_zone_to_iana(const char *windows_zone)
 {
-    int i;
+    const struct flb_time_tz_map **res;
 
     if (windows_zone == NULL) {
         return NULL;
     }
 
-    for (i = 0; windows_iana_timezones[i].windows != NULL; i++) {
-        if (strcasecmp(windows_zone, windows_iana_timezones[i].windows) == 0) {
-            return windows_iana_timezones[i].iana;
-        }
+    pthread_once(&flb_time_tz_once, flb_time_tz_init);
+
+    res = bsearch(windows_zone, tz_by_windows, tz_by_windows_count,
+                  sizeof(tz_by_windows[0]), compare_search_windows);
+    if (res != NULL) {
+        return (*res)->iana;
     }
 
     return NULL;
@@ -521,16 +591,18 @@ const char *flb_time_windows_zone_to_iana(const char *windows_zone)
 
 const char *flb_time_iana_zone_to_windows(const char *iana_zone)
 {
-    int i;
+    const struct flb_time_tz_map **res;
 
     if (iana_zone == NULL) {
         return NULL;
     }
 
-    for (i = 0; windows_iana_timezones[i].iana != NULL; i++) {
-        if (strcmp(iana_zone, windows_iana_timezones[i].iana) == 0) {
-            return windows_iana_timezones[i].windows;
-        }
+    pthread_once(&flb_time_tz_once, flb_time_tz_init);
+
+    res = bsearch(iana_zone, tz_by_iana, tz_by_iana_count,
+                  sizeof(tz_by_iana[0]), compare_search_iana);
+    if (res != NULL) {
+        return (*res)->windows;
     }
 
     return NULL;
@@ -538,17 +610,19 @@ const char *flb_time_iana_zone_to_windows(const char *iana_zone)
 
 int flb_time_windows_zone_to_utc_offset(const char *windows_zone, long *offset)
 {
-    int i;
+    const struct flb_time_tz_map **res;
 
     if (windows_zone == NULL || offset == NULL) {
         return -1;
     }
 
-    for (i = 0; windows_iana_timezones[i].windows != NULL; i++) {
-        if (strcasecmp(windows_zone, windows_iana_timezones[i].windows) == 0) {
-            *offset = windows_iana_timezones[i].utc_offset;
-            return 0;
-        }
+    pthread_once(&flb_time_tz_once, flb_time_tz_init);
+
+    res = bsearch(windows_zone, tz_by_windows, tz_by_windows_count,
+                  sizeof(tz_by_windows[0]), compare_search_windows);
+    if (res != NULL) {
+        *offset = (*res)->utc_offset;
+        return 0;
     }
 
     return -1;
@@ -556,17 +630,19 @@ int flb_time_windows_zone_to_utc_offset(const char *windows_zone, long *offset)
 
 int flb_time_iana_zone_to_utc_offset(const char *iana_zone, long *offset)
 {
-    int i;
+    const struct flb_time_tz_map **res;
 
     if (iana_zone == NULL || offset == NULL) {
         return -1;
     }
 
-    for (i = 0; windows_iana_timezones[i].iana != NULL; i++) {
-        if (strcmp(iana_zone, windows_iana_timezones[i].iana) == 0) {
-            *offset = windows_iana_timezones[i].utc_offset;
-            return 0;
-        }
+    pthread_once(&flb_time_tz_once, flb_time_tz_init);
+
+    res = bsearch(iana_zone, tz_by_iana, tz_by_iana_count,
+                  sizeof(tz_by_iana[0]), compare_search_iana);
+    if (res != NULL) {
+        *offset = (*res)->utc_offset;
+        return 0;
     }
 
     return -1;
