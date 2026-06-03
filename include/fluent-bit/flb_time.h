@@ -115,6 +115,10 @@ int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj);
 int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader);
 int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
                               msgpack_object **map);
+const char *flb_time_windows_zone_to_iana(const char *windows_zone);
+const char *flb_time_iana_zone_to_windows(const char *iana_zone);
+int flb_time_windows_zone_to_utc_offset(const char *windows_zone, long *offset);
+int flb_time_iana_zone_to_utc_offset(const char *iana_zone, long *offset);
 long flb_time_tz_offset_to_second();
 
 #endif /* FLB_TIME_H */
