@@ -21,14 +21,14 @@ jobs:
         # We do not push and this allows simpler workflow running for forks too
       steps:
         - name: Checkout code
-          uses: actions/checkout@v6
+          uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
         - name: Set up Docker Buildx
-          uses: docker/setup-buildx-action@v4
+          uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
         - name: Extract metadata from Github
           id: meta
-          uses: docker/metadata-action@v5
+          uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
           with:
             images: ${{ github.repository }}/pr-${{ github.event.pull_request.number }}
             tags: |
@@ -36,7 +36,7 @@ jobs:
 
         - name: Build the multi-arch images
           id: build
-          uses: docker/build-push-action@v7
+          uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
           with:
             file: ./dockerfiles/Dockerfile
             context: .
@@ -55,7 +55,7 @@ jobs:
           shell: bash
 
         - name: Build the debug multi-arch images
-          uses: docker/build-push-action@v7
+          uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
           with:
             file: ./dockerfiles/Dockerfile
             context: .
@@ -72,7 +72,7 @@ jobs:
         contents: read
       steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Build the classic test image
         # We only want to confirm it builds with classic mode, nothing else
@@ -96,11 +96,11 @@ jobs:
         contents: read
       steps:
         - name: Checkout repository
-          uses: actions/checkout@v6
+          uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
         - name: Extract metadata from Github
           id: meta
-          uses: docker/metadata-action@v5
+          uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
           with:
             images: ${{ github.repository }}/pr-${{ github.event.pull_request.number }}
             tags: |
