@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <errno.h>
 
 #define free_temporary_buffers()                 \
     if (prot) {                                 \
@@ -54,14 +55,21 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
 {
     int i;
     int ret;
+    int copy_len;
     int key_len;
     int val_len;
+    char *end;
     int tokens_size = 32;
     const char *key;
     const char *val;
+    unsigned long long parsed_expires_in;
     jsmn_parser parser;
+    flb_sds_t new_access_token = NULL;
+    flb_sds_t new_token_type = NULL;
     jsmntok_t *t;
     jsmntok_t *tokens;
+    char tmp_num[32];
+    uint64_t new_expires_in = 0;
 
     jsmn_init(&parser);
     tokens = flb_calloc(1, sizeof(jsmntok_t) * tokens_size);
@@ -72,14 +80,14 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
 
     ret = jsmn_parse(&parser, json_data, json_size, tokens, tokens_size);
     if (ret <= 0) {
-        flb_error("[oauth2] cannot parse payload:\n%s", json_data);
+        flb_error("[oauth2] cannot parse payload (size=%zu)", json_size);
         flb_free(tokens);
         return -1;
     }
 
     t = &tokens[0];
     if (t->type != JSMN_OBJECT) {
-        flb_error("[oauth2] invalid JSON response:\n%s", json_data);
+        flb_error("[oauth2] invalid JSON response (size=%zu)", json_size);
         flb_free(tokens);
         return -1;
     }
@@ -100,6 +108,10 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
         key = json_data + t->start;
         key_len = (t->end - t->start);
 
+        if (i + 1 >= ret) {
+            break;
+        }
+
         /* Value */
         i++;
         t = &tokens[i];
@@ -107,31 +119,68 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
         val_len = (t->end - t->start);
 
         if (key_cmp(key, key_len, "access_token") == 0) {
-            ctx->access_token = flb_sds_create_len(val, val_len);
+            if (new_access_token) {
+                flb_sds_destroy(new_access_token);
+            }
+            new_access_token = flb_sds_create_len(val, val_len);
+            if (!new_access_token) {
+                flb_errno();
+                break;
+            }
         }
         else if (key_cmp(key, key_len, "token_type") == 0) {
-            ctx->token_type = flb_sds_create_len(val, val_len);
+            if (new_token_type) {
+                flb_sds_destroy(new_token_type);
+            }
+            new_token_type = flb_sds_create_len(val, val_len);
+            if (!new_token_type) {
+                flb_errno();
+                break;
+            }
         }
         else if (key_cmp(key, key_len, "expires_in") == 0) {
-            ctx->expires_in = atol(val);
+            if (val_len <= 0 || val_len >= sizeof(tmp_num)) {
+                break;
+            }
 
-            /*
-             * Our internal expiration time must be lower that the one set
-             * by the remote end-point, so we can use valid cached values
-             * if a token renewal is in place. So we decrease the expire
-             * interval -10%.
-             */
-            ctx->expires_in -= (ctx->expires_in * 0.10);
+            copy_len = val_len < (sizeof(tmp_num) - 1) ? val_len : (sizeof(tmp_num) - 1);
+            strncpy(tmp_num, val, copy_len);
+            tmp_num[copy_len] = '\0';
+
+            if (tmp_num[0] == '-') {
+                break;
+            }
+
+            errno = 0;
+            parsed_expires_in = strtoull(tmp_num, &end, 10);
+
+            if (errno != 0 || end == tmp_num || *end != '\0') {
+                break;
+            }
+
+            new_expires_in = parsed_expires_in;
+            new_expires_in -= (new_expires_in / 10);
         }
     }
 
     flb_free(tokens);
-    if (!ctx->access_token || !ctx->token_type || ctx->expires_in < 60) {
-        flb_sds_destroy(ctx->access_token);
-        flb_sds_destroy(ctx->token_type);
-        ctx->expires_in = 0;
+
+    if (!new_access_token || !new_token_type || new_expires_in <= 60) {
+        flb_sds_destroy(new_access_token);
+        flb_sds_destroy(new_token_type);
         return -1;
     }
+
+    if (ctx->access_token) {
+        flb_sds_destroy(ctx->access_token);
+    }
+    if (ctx->token_type) {
+        flb_sds_destroy(ctx->token_type);
+    }
+
+    ctx->access_token = new_access_token;
+    ctx->token_type = new_token_type;
+    ctx->expires_in = new_expires_in;
 
     return 0;
 }
