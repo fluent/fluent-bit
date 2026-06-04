@@ -2,6 +2,7 @@ import gzip
 import os
 import shutil
 import sqlite3
+import sys
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -12,6 +13,14 @@ import requests
 
 from server.http_server import data_storage, http_server_run
 from utils.test_service import FluentBitTestService
+
+
+def _timezone_available(iana_zone):
+    if sys.platform == "win32":
+        return True
+
+    tzdir = Path(os.environ.get("TZDIR", "/usr/share/zoneinfo"))
+    return (tzdir / iana_zone).exists()
 
 
 class PersistentWriter:
@@ -614,6 +623,9 @@ def test_in_tail_parser_mode_structures_records(workspace):
 
 
 def test_in_tail_parser_time_zone_generates_native_timestamp(workspace):
+    if not _timezone_available("America/New_York"):
+        pytest.skip("America/New_York zoneinfo is not available")
+
     log_file = workspace / "iana-timezone.log"
     db_path = workspace / "tail.db"
 
