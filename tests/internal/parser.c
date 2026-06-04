@@ -9,6 +9,9 @@
 
 #include <time.h>
 #include <string.h>
+#ifdef FLB_SYSTEM_WINDOWS
+#include <stdlib.h>
+#endif
 #include "flb_tests_internal.h"
 
 /* Parsers configuration */
@@ -21,6 +24,28 @@
 
 #define isleap(y) ((y) % 4 == 0 && ((y) % 400 == 0 || (y) % 100 != 0))
 #define year2sec(y) (isleap(y) ? 31622400 : 31536000)
+
+#ifdef FLB_SYSTEM_WINDOWS
+#define flb_test_tzset() _tzset()
+
+static int flb_test_setenv(const char *name, const char *value, int overwrite)
+{
+    if (overwrite == 0 && getenv(name) != NULL) {
+        return 0;
+    }
+
+    return _putenv_s(name, value);
+}
+
+static int flb_test_unsetenv(const char *name)
+{
+    return _putenv_s(name, "");
+}
+#else
+#define flb_test_tzset() tzset()
+#define flb_test_setenv(name, value, overwrite) setenv(name, value, overwrite)
+#define flb_test_unsetenv(name) unsetenv(name)
+#endif
 
 /* Timezone */
 struct tz_check {
@@ -529,14 +554,20 @@ void test_parser_time_system_timezone_midnight()
     char *orig_tz;
     struct flb_parser *parser;
     struct flb_config *config;
+#ifdef FLB_SYSTEM_WINDOWS
+    char *test_tz = "CET-1CEST,M3.5.0/2,M10.5.0/3";
+#else
+    char *test_tz = "Europe/Stockholm";
+#endif
 
     orig_tz = getenv("TZ");
     if (orig_tz != NULL) {
         orig_tz = flb_strdup(orig_tz);
     }
 
-    setenv("TZ", "Europe/Stockholm", 1);
-    tzset();
+    ret = flb_test_setenv("TZ", test_tz, 1);
+    TEST_CHECK(ret == 0);
+    flb_test_tzset();
 
     memset(&now_tm, 0, sizeof(struct tm));
     now_tm.tm_year = 2025 - 1900;
@@ -575,13 +606,13 @@ void test_parser_time_system_timezone_midnight()
     TEST_CHECK(epoch == flb_parser_tm2time(&tm, FLB_TRUE));
 
     if (orig_tz != NULL) {
-        setenv("TZ", orig_tz, 1);
+        flb_test_setenv("TZ", orig_tz, 1);
         flb_free(orig_tz);
     }
     else {
-        unsetenv("TZ");
+        flb_test_unsetenv("TZ");
     }
-    tzset();
+    flb_test_tzset();
 
     flb_parser_destroy(parser);
     flb_parser_exit(config);
