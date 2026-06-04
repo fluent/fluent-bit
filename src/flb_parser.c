@@ -44,11 +44,8 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
-
-#include <fluent-bit/flb_pthread.h>
-
-static pthread_mutex_t flb_time_zone_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 #ifdef FLB_SYSTEM_WINDOWS
 static int utf8_to_wide(const char *str, wchar_t *buf, int buf_size)
@@ -162,9 +159,71 @@ static time_t windows_tm2time_zone(const struct flb_tm *src, const char *iana_zo
 
     return timegm(&utc_tm);
 }
+
+static int windows_time2tm_zone(time_t time, const char *iana_zone,
+                                struct tm *out_tm)
+{
+    int ret;
+    const char *windows_zone;
+    struct tm utc_tm;
+    SYSTEMTIME utc_st;
+    SYSTEMTIME local_st;
+    TIME_ZONE_INFORMATION tzi;
+    DYNAMIC_TIME_ZONE_INFORMATION dtzi;
+
+    windows_zone = flb_time_iana_zone_to_windows(iana_zone);
+    if (windows_zone == NULL) {
+        return -1;
+    }
+
+    ret = windows_time_zone_lookup(windows_zone, &dtzi);
+    if (ret != 0) {
+        return -1;
+    }
+
+    gmtime_r(&time, &utc_tm);
+
+    ret = GetTimeZoneInformationForYear(utc_tm.tm_year + 1900, &dtzi, &tzi);
+    if (ret == 0) {
+        return -1;
+    }
+
+    if (windows_systemtime_from_tm(&utc_tm, &utc_st) != 0) {
+        return -1;
+    }
+
+    ret = SystemTimeToTzSpecificLocalTime(&tzi, &utc_st, &local_st);
+    if (ret == 0) {
+        return -1;
+    }
+
+    memset(out_tm, 0, sizeof(struct tm));
+    out_tm->tm_year = local_st.wYear - 1900;
+    out_tm->tm_mon = local_st.wMonth - 1;
+    out_tm->tm_mday = local_st.wDay;
+    out_tm->tm_hour = local_st.wHour;
+    out_tm->tm_min = local_st.wMinute;
+    out_tm->tm_sec = local_st.wSecond;
+
+    return 0;
+}
 #endif
 
 #ifndef FLB_SYSTEM_WINDOWS
+struct tzif_type {
+    int32_t gmtoff;
+    unsigned char isdst;
+};
+
+struct tzif {
+    int timecnt;
+    int typecnt;
+    int default_type;
+    int64_t *transitions;
+    unsigned char *transition_types;
+    struct tzif_type *types;
+};
+
 static int zoneinfo_file_exists(const char *iana_zone)
 {
     int ret;
@@ -193,6 +252,348 @@ static int zoneinfo_file_exists(const char *iana_zone)
     }
 
     return FLB_TRUE;
+}
+
+static int zoneinfo_path(const char *iana_zone, char *path, size_t path_size)
+{
+    int ret;
+    size_t len;
+    const char *tzdir;
+
+    tzdir = getenv("TZDIR");
+    if (tzdir == NULL || tzdir[0] == '\0') {
+        tzdir = "/usr/share/zoneinfo";
+    }
+
+    ret = snprintf(path, path_size, "%s/%s", tzdir, iana_zone);
+    if (ret < 0) {
+        return -1;
+    }
+
+    len = (size_t) ret;
+    if (len >= path_size) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static uint32_t read_be32(const unsigned char *buf)
+{
+    return ((uint32_t) buf[0] << 24) |
+           ((uint32_t) buf[1] << 16) |
+           ((uint32_t) buf[2] << 8) |
+           (uint32_t) buf[3];
+}
+
+static int32_t read_be32s(const unsigned char *buf)
+{
+    return (int32_t) read_be32(buf);
+}
+
+static int64_t read_be64s(const unsigned char *buf)
+{
+    uint64_t value;
+
+    value = ((uint64_t) buf[0] << 56) |
+            ((uint64_t) buf[1] << 48) |
+            ((uint64_t) buf[2] << 40) |
+            ((uint64_t) buf[3] << 32) |
+            ((uint64_t) buf[4] << 24) |
+            ((uint64_t) buf[5] << 16) |
+            ((uint64_t) buf[6] << 8) |
+            (uint64_t) buf[7];
+
+    return (int64_t) value;
+}
+
+static void tzif_destroy(struct tzif *tz)
+{
+    if (tz == NULL) {
+        return;
+    }
+
+    flb_free(tz->transitions);
+    flb_free(tz->transition_types);
+    flb_free(tz->types);
+}
+
+static int tzif_data_size(const unsigned char *header, int time_size,
+                          size_t *out_size)
+{
+    uint32_t isutcnt;
+    uint32_t isstdcnt;
+    uint32_t leapcnt;
+    uint32_t timecnt;
+    uint32_t typecnt;
+    uint32_t charcnt;
+    size_t size;
+
+    isutcnt = read_be32(header + 20);
+    isstdcnt = read_be32(header + 24);
+    leapcnt = read_be32(header + 28);
+    timecnt = read_be32(header + 32);
+    typecnt = read_be32(header + 36);
+    charcnt = read_be32(header + 40);
+
+    size = ((size_t) timecnt * (size_t) time_size) +
+           (size_t) timecnt +
+           ((size_t) typecnt * 6) +
+           (size_t) charcnt +
+           ((size_t) leapcnt * ((size_t) time_size + 4)) +
+           (size_t) isstdcnt +
+           (size_t) isutcnt;
+
+    *out_size = size;
+    return 0;
+}
+
+static int tzif_parse_data(const unsigned char *buf, size_t size,
+                           int time_size, struct tzif *tz)
+{
+    int i;
+    int type;
+    size_t off;
+    uint32_t timecnt;
+    uint32_t typecnt;
+
+    if (size < 44) {
+        return -1;
+    }
+
+    timecnt = read_be32(buf + 32);
+    typecnt = read_be32(buf + 36);
+    if (typecnt == 0 || timecnt > INT_MAX || typecnt > INT_MAX) {
+        return -1;
+    }
+
+    off = 44;
+    if (off + ((size_t) timecnt * (size_t) time_size) > size) {
+        return -1;
+    }
+
+    memset(tz, 0, sizeof(struct tzif));
+    tz->timecnt = (int) timecnt;
+    tz->typecnt = (int) typecnt;
+    tz->default_type = 0;
+
+    if (timecnt > 0) {
+        tz->transitions = flb_calloc(timecnt, sizeof(int64_t));
+        if (tz->transitions == NULL) {
+            return -1;
+        }
+    }
+
+    for (i = 0; i < (int) timecnt; i++) {
+        if (time_size == 8) {
+            tz->transitions[i] = read_be64s(buf + off);
+        }
+        else {
+            tz->transitions[i] = read_be32s(buf + off);
+        }
+        off += time_size;
+    }
+
+    if (off + timecnt > size) {
+        tzif_destroy(tz);
+        return -1;
+    }
+
+    if (timecnt > 0) {
+        tz->transition_types = flb_malloc(timecnt);
+        if (tz->transition_types == NULL) {
+            tzif_destroy(tz);
+            return -1;
+        }
+        memcpy(tz->transition_types, buf + off, timecnt);
+    }
+    off += timecnt;
+
+    if (off + ((size_t) typecnt * 6) > size) {
+        tzif_destroy(tz);
+        return -1;
+    }
+
+    tz->types = flb_calloc(typecnt, sizeof(struct tzif_type));
+    if (tz->types == NULL) {
+        tzif_destroy(tz);
+        return -1;
+    }
+
+    for (i = 0; i < (int) typecnt; i++) {
+        tz->types[i].gmtoff = read_be32s(buf + off);
+        tz->types[i].isdst = buf[off + 4];
+        off += 6;
+    }
+
+    for (i = 0; i < (int) timecnt; i++) {
+        type = tz->transition_types[i];
+        if (type < 0 || type >= (int) typecnt) {
+            tzif_destroy(tz);
+            return -1;
+        }
+    }
+
+    for (i = 0; i < (int) typecnt; i++) {
+        if (tz->types[i].isdst == 0) {
+            tz->default_type = i;
+            break;
+        }
+    }
+
+    return 0;
+}
+
+static int tzif_load(const char *iana_zone, struct tzif *tz)
+{
+    int ret;
+    char path[PATH_MAX];
+    FILE *fp;
+    long file_size;
+    size_t read_size;
+    size_t block_size;
+    unsigned char *buf;
+    const unsigned char *header;
+    const unsigned char *parse_header;
+    unsigned char version;
+
+    if (zoneinfo_path(iana_zone, path, sizeof(path)) != 0) {
+        return -1;
+    }
+
+    fp = fopen(path, "rb");
+    if (fp == NULL) {
+        return -1;
+    }
+
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return -1;
+    }
+
+    file_size = ftell(fp);
+    if (file_size <= 0) {
+        fclose(fp);
+        return -1;
+    }
+
+    rewind(fp);
+
+    buf = flb_malloc((size_t) file_size);
+    if (buf == NULL) {
+        fclose(fp);
+        return -1;
+    }
+
+    read_size = fread(buf, 1, (size_t) file_size, fp);
+    fclose(fp);
+    if (read_size != (size_t) file_size) {
+        flb_free(buf);
+        return -1;
+    }
+
+    if ((size_t) file_size < 44 || memcmp(buf, "TZif", 4) != 0) {
+        flb_free(buf);
+        return -1;
+    }
+
+    header = buf;
+    version = header[4];
+    parse_header = header;
+
+    if (version == '2' || version == '3' || version == '4') {
+        ret = tzif_data_size(header, 4, &block_size);
+        if (ret != 0 || 44 + block_size + 44 > (size_t) file_size) {
+            flb_free(buf);
+            return -1;
+        }
+
+        parse_header = buf + 44 + block_size;
+        if (memcmp(parse_header, "TZif", 4) != 0) {
+            flb_free(buf);
+            return -1;
+        }
+
+        ret = tzif_parse_data(parse_header,
+                              (size_t) file_size - (size_t) (parse_header - buf),
+                              8, tz);
+    }
+    else {
+        ret = tzif_parse_data(parse_header, (size_t) file_size, 4, tz);
+    }
+
+    flb_free(buf);
+    return ret;
+}
+
+static int tzif_type_at_utc(struct tzif *tz, int64_t utc)
+{
+    int lo;
+    int hi;
+    int mid;
+
+    if (tz->timecnt == 0 || utc < tz->transitions[0]) {
+        return tz->default_type;
+    }
+
+    lo = 0;
+    hi = tz->timecnt - 1;
+    while (lo <= hi) {
+        mid = lo + ((hi - lo) / 2);
+        if (tz->transitions[mid] <= utc) {
+            lo = mid + 1;
+        }
+        else {
+            hi = mid - 1;
+        }
+    }
+
+    return tz->transition_types[hi];
+}
+
+static time_t tzif_tm2time(struct tzif *tz, const struct flb_tm *src)
+{
+    int i;
+    int type;
+    int64_t local_epoch;
+    int64_t candidate;
+    struct tm tmp;
+
+    tmp = src->tm;
+    tmp.tm_isdst = 0;
+    local_epoch = (int64_t) timegm(&tmp);
+
+    for (i = 0; i < tz->typecnt; i++) {
+        candidate = local_epoch - (int64_t) tz->types[i].gmtoff;
+        type = tzif_type_at_utc(tz, candidate);
+        if (type >= 0 && type < tz->typecnt &&
+            tz->types[type].gmtoff == tz->types[i].gmtoff) {
+            return (time_t) candidate;
+        }
+    }
+
+    type = tzif_type_at_utc(tz, local_epoch);
+    if (type < 0 || type >= tz->typecnt) {
+        return (time_t) -1;
+    }
+
+    return (time_t) (local_epoch - (int64_t) tz->types[type].gmtoff);
+}
+
+static int tzif_time2tm(struct tzif *tz, time_t time, struct tm *out_tm)
+{
+    int type;
+    time_t local_time;
+
+    type = tzif_type_at_utc(tz, (int64_t) time);
+    if (type < 0 || type >= tz->typecnt) {
+        return -1;
+    }
+
+    local_time = time + tz->types[type].gmtoff;
+    gmtime_r(&local_time, out_tm);
+
+    return 0;
 }
 #endif
 
@@ -236,43 +637,15 @@ time_t flb_parser_tm2time_parser(const struct flb_tm *src, struct flb_parser *pa
 #ifdef FLB_SYSTEM_WINDOWS
         return windows_tm2time_zone(src, parser->time_zone);
 #else
-        char *old_tz = NULL;
-        const char *prev;
-        struct tm tmp;
+        struct tzif tz;
         time_t res;
 
-        pthread_mutex_lock(&flb_time_zone_mutex);
-
-        prev = getenv("TZ");
-        if (prev) {
-            old_tz = flb_strdup(prev);
-            if (!old_tz) {
-                pthread_mutex_unlock(&flb_time_zone_mutex);
-                return (time_t) -1;
-            }
-        }
-
-        if (setenv("TZ", parser->time_zone, 1) != 0) {
-            flb_free(old_tz);
-            pthread_mutex_unlock(&flb_time_zone_mutex);
+        if (tzif_load(parser->time_zone, &tz) != 0) {
             return (time_t) -1;
         }
 
-        tzset();
-        tmp = src->tm;
-        tmp.tm_isdst = -1;
-        res = mktime(&tmp);
-
-        if (old_tz) {
-            setenv("TZ", old_tz, 1);
-            flb_free(old_tz);
-        }
-        else {
-            unsetenv("TZ");
-        }
-        tzset();
-
-        pthread_mutex_unlock(&flb_time_zone_mutex);
+        res = tzif_tm2time(&tz, src);
+        tzif_destroy(&tz);
         return res;
 #endif
     }
@@ -1481,6 +1854,9 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
     const char *time_ptr = time_str;
     char tmp[64];
     struct tm tmy;
+#ifndef FLB_SYSTEM_WINDOWS
+    struct tzif tz;
+#endif
 
     *ns = 0;
 
@@ -1511,7 +1887,25 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
             time_now = now;
         }
 
-        if (parser->time_system_timezone == FLB_TRUE) {
+        if (parser->time_zone && parser->time_with_tz == FLB_FALSE) {
+#ifdef FLB_SYSTEM_WINDOWS
+            ret = windows_time2tm_zone(time_now, parser->time_zone, &tmy);
+            if (ret != 0) {
+                return -1;
+            }
+#else
+            ret = tzif_load(parser->time_zone, &tz);
+            if (ret != 0) {
+                return -1;
+            }
+            ret = tzif_time2tm(&tz, time_now, &tmy);
+            tzif_destroy(&tz);
+            if (ret != 0) {
+                return -1;
+            }
+#endif
+        }
+        else if (parser->time_system_timezone == FLB_TRUE) {
             localtime_r(&time_now, &tmy);
         }
         else {
