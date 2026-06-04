@@ -25,6 +25,8 @@ static inline char *event_type_to_string(enum event_type type) {
             return "accept";
         case EVENT_TYPE_CONNECT:
             return "connect";
+        case EVENT_TYPE_DNS:
+            return "dns";
         default:
             return "unknown";
     }
