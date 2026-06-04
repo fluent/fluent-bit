@@ -42,7 +42,206 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <limits.h>
+#include <stdlib.h>
 #include <string.h>
+
+#include <fluent-bit/flb_pthread.h>
+
+static pthread_mutex_t flb_time_zone_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+#ifdef FLB_SYSTEM_WINDOWS
+static int utf8_to_wide(const char *str, wchar_t *buf, int buf_size)
+{
+    int ret;
+
+    ret = MultiByteToWideChar(CP_UTF8, 0, str, -1, buf, buf_size);
+    if (ret == 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int windows_time_zone_lookup(const char *windows_zone,
+                                    DYNAMIC_TIME_ZONE_INFORMATION *dtzi)
+{
+    DWORD index;
+    DWORD ret;
+    wchar_t wide_zone[128];
+
+    if (windows_zone == NULL || dtzi == NULL) {
+        return -1;
+    }
+
+    if (utf8_to_wide(windows_zone, wide_zone,
+                     sizeof(wide_zone) / sizeof(wide_zone[0])) != 0) {
+        return -1;
+    }
+
+    for (index = 0; ; index++) {
+        memset(dtzi, 0, sizeof(DYNAMIC_TIME_ZONE_INFORMATION));
+        ret = EnumDynamicTimeZoneInformation(index, dtzi);
+        if (ret == ERROR_NO_MORE_ITEMS) {
+            break;
+        }
+        if (ret != ERROR_SUCCESS) {
+            continue;
+        }
+        if (wcscmp(dtzi->TimeZoneKeyName, wide_zone) == 0) {
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+static int windows_systemtime_from_tm(const struct tm *tm, SYSTEMTIME *st)
+{
+    int year;
+
+    year = tm->tm_year + 1900;
+    if (year < 1601 || year > 30827) {
+        return -1;
+    }
+
+    memset(st, 0, sizeof(SYSTEMTIME));
+    st->wYear = (WORD) year;
+    st->wMonth = (WORD) (tm->tm_mon + 1);
+    st->wDay = (WORD) tm->tm_mday;
+    st->wHour = (WORD) tm->tm_hour;
+    st->wMinute = (WORD) tm->tm_min;
+    st->wSecond = (WORD) tm->tm_sec;
+
+    return 0;
+}
+
+static time_t windows_tm2time_zone(const struct flb_tm *src, const char *iana_zone)
+{
+    int ret;
+    const char *windows_zone;
+    struct tm utc_tm;
+    SYSTEMTIME local_st;
+    SYSTEMTIME utc_st;
+    TIME_ZONE_INFORMATION tzi;
+    DYNAMIC_TIME_ZONE_INFORMATION dtzi;
+
+    windows_zone = flb_time_iana_zone_to_windows(iana_zone);
+    if (windows_zone == NULL) {
+        return (time_t) -1;
+    }
+
+    ret = windows_time_zone_lookup(windows_zone, &dtzi);
+    if (ret != 0) {
+        return (time_t) -1;
+    }
+
+    ret = GetTimeZoneInformationForYear(src->tm.tm_year + 1900, &dtzi, &tzi);
+    if (ret == 0) {
+        return (time_t) -1;
+    }
+
+    ret = windows_systemtime_from_tm(&src->tm, &local_st);
+    if (ret != 0) {
+        return (time_t) -1;
+    }
+
+    ret = TzSpecificLocalTimeToSystemTime(&tzi, &local_st, &utc_st);
+    if (ret == 0) {
+        return (time_t) -1;
+    }
+
+    memset(&utc_tm, 0, sizeof(struct tm));
+    utc_tm.tm_year = utc_st.wYear - 1900;
+    utc_tm.tm_mon = utc_st.wMonth - 1;
+    utc_tm.tm_mday = utc_st.wDay;
+    utc_tm.tm_hour = utc_st.wHour;
+    utc_tm.tm_min = utc_st.wMinute;
+    utc_tm.tm_sec = utc_st.wSecond;
+    utc_tm.tm_isdst = 0;
+
+    return timegm(&utc_tm);
+}
+#endif
+
+static int validate_time_zone(const char *iana_zone)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    DYNAMIC_TIME_ZONE_INFORMATION dtzi;
+#endif
+    const char *windows_zone;
+
+    if (iana_zone == NULL || iana_zone[0] == '\0') {
+        return 0;
+    }
+
+    /*
+     * Validate against Fluent Bit's built-in IANA timezone index first. On
+     * Windows the same entry also gives us the native timezone key.
+     */
+    windows_zone = flb_time_iana_zone_to_windows(iana_zone);
+    if (windows_zone == NULL) {
+        return -1;
+    }
+
+#ifdef FLB_SYSTEM_WINDOWS
+    /* Ensure the mapped native timezone is available on this Windows host. */
+    if (windows_time_zone_lookup(windows_zone, &dtzi) != 0) {
+        return -1;
+    }
+#endif
+
+    return 0;
+}
+
+time_t flb_parser_tm2time_parser(const struct flb_tm *src, struct flb_parser *parser)
+{
+    if (parser->time_zone && parser->time_with_tz == FLB_FALSE) {
+#ifdef FLB_SYSTEM_WINDOWS
+        return windows_tm2time_zone(src, parser->time_zone);
+#else
+        char *old_tz = NULL;
+        const char *prev;
+        struct tm tmp;
+        time_t res;
+
+        pthread_mutex_lock(&flb_time_zone_mutex);
+
+        prev = getenv("TZ");
+        if (prev) {
+            old_tz = flb_strdup(prev);
+            if (!old_tz) {
+                pthread_mutex_unlock(&flb_time_zone_mutex);
+                return (time_t) -1;
+            }
+        }
+
+        if (setenv("TZ", parser->time_zone, 1) != 0) {
+            flb_free(old_tz);
+            pthread_mutex_unlock(&flb_time_zone_mutex);
+            return (time_t) -1;
+        }
+
+        tzset();
+        tmp = src->tm;
+        tmp.tm_isdst = -1;
+        res = mktime(&tmp);
+
+        if (old_tz) {
+            setenv("TZ", old_tz, 1);
+            flb_free(old_tz);
+        }
+        else {
+            unsetenv("TZ");
+        }
+        tzset();
+
+        pthread_mutex_unlock(&flb_time_zone_mutex);
+        return res;
+#endif
+    }
+
+    return flb_parser_tm2time(src, parser->time_system_timezone);
+}
 
 static inline uint32_t digits10(uint64_t v) {
     if (v < 10) return 1;
@@ -140,19 +339,25 @@ static void flb_interim_parser_destroy(struct flb_parser *parser)
     if (parser->time_key) {
         flb_free(parser->time_key);
     }
+    if (parser->time_zone) {
+        flb_free(parser->time_zone);
+    }
 
     mk_list_del(&parser->_head);
     flb_free(parser);
 }
 
-struct flb_parser *flb_parser_create(const char *name, const char *format,
+struct flb_parser *flb_parser_create_with_time_zone(const char *name,
+                                     const char *format,
                                      const char *p_regex,
                                      int skip_empty,
-                                     const char *time_fmt, const char *time_key,
+                                     const char *time_fmt,
+                                     const char *time_key,
                                      const char *time_offset,
                                      int time_keep,
                                      int time_strict,
                                      int time_system_timezone,
+                                     const char *time_zone,
                                      int logfmt_no_bare_keys,
                                      struct flb_parser_types *types,
                                      int types_len,
@@ -230,6 +435,12 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     }
 
     p->name = flb_strdup(name);
+
+    if (time_zone && time_zone[0] && !time_fmt) {
+        flb_error("[parser:%s] time_zone requires time_format", name);
+        flb_interim_parser_destroy(p);
+        return NULL;
+    }
 
     if (time_fmt) {
         p->time_fmt_full = flb_strdup(time_fmt);
@@ -319,11 +530,38 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
          */
         p->time_system_timezone = time_system_timezone;
 
+        if (time_zone && time_zone[0]) {
+            if (time_system_timezone) {
+                flb_error("[parser:%s] time_zone cannot be combined with "
+                          "time_system_timezone",
+                          name);
+                flb_interim_parser_destroy(p);
+                return NULL;
+            }
+            if (time_offset && time_offset[0]) {
+                flb_error("[parser:%s] time_zone cannot be combined with "
+                          "time_offset",
+                          name);
+                flb_interim_parser_destroy(p);
+                return NULL;
+            }
+            if (validate_time_zone(time_zone) != 0) {
+                flb_error("[parser:%s] invalid time_zone '%s'", name, time_zone);
+                flb_interim_parser_destroy(p);
+                return NULL;
+            }
+            p->time_zone = flb_strdup(time_zone);
+            if (!p->time_zone) {
+                flb_interim_parser_destroy(p);
+                return NULL;
+            }
+        }
+
         /*
          * Optional fixed timezone offset, only applied if
-         * not falling back to system timezone.
+         * not falling back to system timezone or an IANA time_zone.
          */
-        if (!p->time_system_timezone && time_offset) {
+        if (!p->time_system_timezone && !p->time_zone && time_offset) {
             diff = 0;
             len = strlen(time_offset);
             ret = flb_parser_tzone_offset(time_offset, len, &diff);
@@ -347,6 +585,28 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     return p;
 }
 
+struct flb_parser *flb_parser_create(const char *name, const char *format,
+                                     const char *p_regex,
+                                     int skip_empty,
+                                     const char *time_fmt, const char *time_key,
+                                     const char *time_offset,
+                                     int time_keep,
+                                     int time_strict,
+                                     int time_system_timezone,
+                                     int logfmt_no_bare_keys,
+                                     struct flb_parser_types *types,
+                                     int types_len,
+                                     struct mk_list *decoders,
+                                     struct flb_config *config)
+{
+    return flb_parser_create_with_time_zone(name, format, p_regex, skip_empty,
+                                            time_fmt, time_key, time_offset,
+                                            time_keep, time_strict,
+                                            time_system_timezone, NULL,
+                                            logfmt_no_bare_keys, types,
+                                            types_len, decoders, config);
+}
+
 void flb_parser_destroy(struct flb_parser *parser)
 {
     int i = 0;
@@ -366,6 +626,9 @@ void flb_parser_destroy(struct flb_parser *parser)
     }
     if (parser->time_key) {
         flb_free(parser->time_key);
+    }
+    if (parser->time_zone) {
+        flb_free(parser->time_zone);
     }
     if (parser->types_len != 0) {
         for (i=0; i<parser->types_len; i++){
@@ -492,6 +755,7 @@ int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
     flb_sds_t time_fmt;
     flb_sds_t time_key;
     flb_sds_t time_offset;
+    flb_sds_t time_zone;
     flb_sds_t types_str;
     flb_sds_t tmp_str;
     int skip_empty;
@@ -513,6 +777,7 @@ int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
         time_fmt = NULL;
         time_key = NULL;
         time_offset = NULL;
+        time_zone = NULL;
         types_str = NULL;
         tmp_str = NULL;
 
@@ -582,6 +847,9 @@ int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
         /* time_offset (UTC offset) */
         time_offset = get_parser_key(config, cf, s, "time_offset");
 
+        /* time_zone (IANA name for naive timestamps) */
+        time_zone = get_parser_key(config, cf, s, "time_zone");
+
         /* logfmt_no_bare_keys */
         logfmt_no_bare_keys = FLB_FALSE;
         tmp_str = get_parser_key(config, cf, s, "logfmt_no_bare_keys");
@@ -603,10 +871,10 @@ int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
         decoders = flb_parser_decoder_list_create(s);
 
         /* Create the parser context */
-        if (!flb_parser_create(name, format, regex, skip_empty,
+        if (!flb_parser_create_with_time_zone(name, format, regex, skip_empty,
                                time_fmt, time_key, time_offset, time_keep, time_strict,
-                               time_system_timezone, logfmt_no_bare_keys, types, types_len,
-                               decoders, config)) {
+                               time_system_timezone, time_zone, logfmt_no_bare_keys,
+                               types, types_len, decoders, config)) {
             goto fconf_error;
         }
 
@@ -626,6 +894,9 @@ int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
         }
         if (time_offset) {
             flb_sds_destroy(time_offset);
+        }
+        if (time_zone) {
+            flb_sds_destroy(time_zone);
         }
         if (types_str) {
             flb_sds_destroy(types_str);
@@ -662,6 +933,9 @@ int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
     }
     if (time_offset) {
         flb_sds_destroy(time_offset);
+    }
+    if (time_zone) {
+        flb_sds_destroy(time_zone);
     }
     if (types_str) {
         flb_sds_destroy(types_str);
@@ -1275,7 +1549,7 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         }
     }
 
-    if (parser->time_with_tz == FLB_FALSE) {
+    if (parser->time_with_tz == FLB_FALSE && !parser->time_zone) {
         flb_tm_gmtoff(tm) = parser->time_offset;
     }
 
