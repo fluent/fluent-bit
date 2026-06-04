@@ -766,6 +766,61 @@ void test_parser_time_zone_iana_australia(void)
     flb_config_exit(config);
 }
 
+void test_parser_time_zone_missing_year(void)
+{
+    int ret;
+    struct flb_config *config;
+    struct flb_parser *parser;
+    struct flb_tm tm;
+    double ns;
+    time_t epoch;
+    time_t now;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    if (!config) {
+        return;
+    }
+
+    if (flb_test_timezone_available("America/New_York") == FLB_FALSE) {
+        TEST_MSG("skipped: America/New_York zoneinfo is not available");
+        flb_config_exit(config);
+        return;
+    }
+
+    parser = flb_parser_create_with_time_zone("iana_ny_no_year", "regex",
+                                              "^(?<time>.*)$",
+                                              FLB_FALSE,
+                                              "%m/%d %H:%M:%S",
+                                              "time",
+                                              NULL,
+                                              FLB_FALSE,
+                                              FLB_TRUE,
+                                              FLB_FALSE,
+                                              "America/New_York",
+                                              FLB_FALSE,
+                                              NULL, 0, NULL, config);
+    TEST_CHECK(parser != NULL);
+    if (!parser) {
+        flb_config_exit(config);
+        return;
+    }
+
+    /*
+     * 2026-01-01T04:30:00Z is still 2025-12-31 in New York. The
+     * parser must derive the missing year from the configured zone.
+     */
+    now = (time_t) 1767241800;
+    ret = flb_parser_time_lookup("12/31 23:59:00", 14, now,
+                                 parser, &tm, &ns);
+    TEST_CHECK(ret == 0);
+    epoch = flb_parser_tm2time_parser(&tm, parser);
+    TEST_CHECK(epoch == (time_t) 1767243540);
+
+    flb_parser_destroy(parser);
+    flb_config_exit(config);
+}
+
 void test_parser_time_zone_conflicts(void)
 {
     struct flb_config *config;
@@ -845,6 +900,7 @@ TEST_LIST = {
     { "time_system_timezone_midnight", test_parser_time_system_timezone_midnight},
     { "time_zone_iana", test_parser_time_zone_iana },
     { "time_zone_iana_australia", test_parser_time_zone_iana_australia },
+    { "time_zone_missing_year", test_parser_time_zone_missing_year },
     { "time_zone_conflicts", test_parser_time_zone_conflicts },
     { "mysql_unquoted" , test_mysql_unquoted },
     { 0 }
