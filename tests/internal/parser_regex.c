@@ -25,7 +25,47 @@
 #include <msgpack.h>
 #include <float.h>
 #include <math.h>
+#ifndef FLB_SYSTEM_WINDOWS
+#include <sys/stat.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <stdio.h>
+#endif
 #include "flb_tests_internal.h"
+
+static int timezone_available(const char *iana_zone)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    return FLB_TRUE;
+#else
+    int ret;
+    size_t len;
+    char path[PATH_MAX];
+    const char *tzdir;
+    struct stat st;
+
+    tzdir = getenv("TZDIR");
+    if (tzdir == NULL || tzdir[0] == '\0') {
+        tzdir = "/usr/share/zoneinfo";
+    }
+
+    ret = snprintf(path, sizeof(path), "%s/%s", tzdir, iana_zone);
+    if (ret < 0) {
+        return FLB_FALSE;
+    }
+
+    len = (size_t) ret;
+    if (len >= sizeof(path)) {
+        return FLB_FALSE;
+    }
+
+    if (stat(path, &st) != 0) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+#endif
+}
 
 static int msgpack_strncmp(char* str, size_t str_len, msgpack_object obj)
 {
@@ -499,6 +539,18 @@ void test_time_zone()
     if(!TEST_CHECK(config != NULL)) {
         TEST_MSG("flb_config_init failed");
         exit(1);
+    }
+
+    if (timezone_available("America/New_York") == FLB_FALSE) {
+        TEST_MSG("skipped: America/New_York zoneinfo is not available");
+        flb_config_exit(config);
+        return;
+    }
+
+    if (timezone_available("Australia/Sydney") == FLB_FALSE) {
+        TEST_MSG("skipped: Australia/Sydney zoneinfo is not available");
+        flb_config_exit(config);
+        return;
     }
 
     parser = flb_parser_create_with_time_zone("regex_iana_ny", "regex", regex,
