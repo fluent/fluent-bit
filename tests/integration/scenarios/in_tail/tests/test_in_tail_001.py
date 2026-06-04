@@ -613,6 +613,27 @@ def test_in_tail_parser_mode_structures_records(workspace):
     assert "offset" in record
 
 
+def test_in_tail_parser_time_zone_generates_native_timestamp(workspace):
+    log_file = workspace / "iana-timezone.log"
+    db_path = workspace / "tail.db"
+
+    write_and_sync(log_file, "07/17/2017 16:17:03 summer in new york\n")
+
+    service = Service("tail_parser_time_zone.yaml", tail_path=log_file, db_path=db_path)
+
+    try:
+        service.start()
+        records = service.wait_for_records(1)
+    finally:
+        service.stop()
+
+    record = records[0]
+    assert record["message"] == "summer in new york"
+    assert record["timestamp"] == "2017-07-17T20:17:03.000000Z"
+    assert record["file"] == str(log_file)
+    assert "offset" in record
+
+
 def test_in_tail_multiline_mode_combines_stacktrace(workspace):
     log_file = workspace / "multiline.log"
     db_path = workspace / "tail.db"
