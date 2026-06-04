@@ -48,6 +48,10 @@
 #include <string.h>
 
 #ifdef FLB_SYSTEM_WINDOWS
+struct windows_time_zone {
+    DYNAMIC_TIME_ZONE_INFORMATION dtzi;
+};
+
 static int utf8_to_wide(const char *str, wchar_t *buf, int buf_size)
 {
     int ret;
@@ -113,27 +117,37 @@ static int windows_systemtime_from_tm(const struct tm *tm, SYSTEMTIME *st)
     return 0;
 }
 
-static time_t windows_tm2time_zone(const struct flb_tm *src, const char *iana_zone)
+static int windows_time_zone_load(const char *iana_zone, struct windows_time_zone *tz)
 {
     int ret;
     const char *windows_zone;
+
+    windows_zone = flb_time_iana_zone_to_windows(iana_zone);
+    if (windows_zone == NULL) {
+        return -1;
+    }
+
+    ret = windows_time_zone_lookup(windows_zone, &tz->dtzi);
+    if (ret != 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static time_t windows_tm2time_zone(const struct flb_tm *src, struct windows_time_zone *tz)
+{
+    int ret;
     struct tm utc_tm;
     SYSTEMTIME local_st;
     SYSTEMTIME utc_st;
     TIME_ZONE_INFORMATION tzi;
-    DYNAMIC_TIME_ZONE_INFORMATION dtzi;
 
-    windows_zone = flb_time_iana_zone_to_windows(iana_zone);
-    if (windows_zone == NULL) {
+    if (tz == NULL) {
         return (time_t) -1;
     }
 
-    ret = windows_time_zone_lookup(windows_zone, &dtzi);
-    if (ret != 0) {
-        return (time_t) -1;
-    }
-
-    ret = GetTimeZoneInformationForYear(src->tm.tm_year + 1900, &dtzi, &tzi);
+    ret = GetTimeZoneInformationForYear(src->tm.tm_year + 1900, &tz->dtzi, &tzi);
     if (ret == 0) {
         return (time_t) -1;
     }
@@ -160,30 +174,22 @@ static time_t windows_tm2time_zone(const struct flb_tm *src, const char *iana_zo
     return timegm(&utc_tm);
 }
 
-static int windows_time2tm_zone(time_t time, const char *iana_zone,
+static int windows_time2tm_zone(time_t time, struct windows_time_zone *tz,
                                 struct tm *out_tm)
 {
     int ret;
-    const char *windows_zone;
     struct tm utc_tm;
     SYSTEMTIME utc_st;
     SYSTEMTIME local_st;
     TIME_ZONE_INFORMATION tzi;
-    DYNAMIC_TIME_ZONE_INFORMATION dtzi;
 
-    windows_zone = flb_time_iana_zone_to_windows(iana_zone);
-    if (windows_zone == NULL) {
-        return -1;
-    }
-
-    ret = windows_time_zone_lookup(windows_zone, &dtzi);
-    if (ret != 0) {
+    if (tz == NULL) {
         return -1;
     }
 
     gmtime_r(&time, &utc_tm);
 
-    ret = GetTimeZoneInformationForYear(utc_tm.tm_year + 1900, &dtzi, &tzi);
+    ret = GetTimeZoneInformationForYear(utc_tm.tm_year + 1900, &tz->dtzi, &tzi);
     if (ret == 0) {
         return -1;
     }
@@ -631,22 +637,58 @@ static int validate_time_zone(const char *iana_zone)
     return 0;
 }
 
+static void *time_zone_data_create(const char *iana_zone)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    struct windows_time_zone *tz;
+
+    tz = flb_calloc(1, sizeof(struct windows_time_zone));
+    if (tz == NULL) {
+        return NULL;
+    }
+
+    if (windows_time_zone_load(iana_zone, tz) != 0) {
+        flb_free(tz);
+        return NULL;
+    }
+
+    return tz;
+#else
+    struct tzif *tz;
+
+    tz = flb_calloc(1, sizeof(struct tzif));
+    if (tz == NULL) {
+        return NULL;
+    }
+
+    if (tzif_load(iana_zone, tz) != 0) {
+        flb_free(tz);
+        return NULL;
+    }
+
+    return tz;
+#endif
+}
+
+static void time_zone_data_destroy(void *data)
+{
+    if (data == NULL) {
+        return;
+    }
+
+#ifndef FLB_SYSTEM_WINDOWS
+    tzif_destroy((struct tzif *) data);
+#endif
+    flb_free(data);
+}
+
 time_t flb_parser_tm2time_parser(const struct flb_tm *src, struct flb_parser *parser)
 {
     if (parser->time_zone && parser->time_with_tz == FLB_FALSE) {
 #ifdef FLB_SYSTEM_WINDOWS
-        return windows_tm2time_zone(src, parser->time_zone);
+        return windows_tm2time_zone(src, parser->time_zone_data);
 #else
-        struct tzif tz;
-        time_t res;
-
-        if (tzif_load(parser->time_zone, &tz) != 0) {
-            return (time_t) -1;
-        }
-
-        res = tzif_tm2time(&tz, src);
-        tzif_destroy(&tz);
-        return res;
+        return tzif_tm2time(parser->time_zone_data, src);
 #endif
     }
 
@@ -751,6 +793,9 @@ static void flb_interim_parser_destroy(struct flb_parser *parser)
     }
     if (parser->time_zone) {
         flb_free(parser->time_zone);
+    }
+    if (parser->time_zone_data) {
+        time_zone_data_destroy(parser->time_zone_data);
     }
 
     mk_list_del(&parser->_head);
@@ -966,6 +1011,13 @@ struct flb_parser *flb_parser_create_with_time_zone(const char *name,
                 flb_interim_parser_destroy(p);
                 return NULL;
             }
+            p->time_zone_data = time_zone_data_create(time_zone);
+            if (p->time_zone_data == NULL) {
+                flb_error("[parser:%s] could not load time_zone '%s'",
+                          name, time_zone);
+                flb_interim_parser_destroy(p);
+                return NULL;
+            }
         }
 
         /*
@@ -1040,6 +1092,9 @@ void flb_parser_destroy(struct flb_parser *parser)
     }
     if (parser->time_zone) {
         flb_free(parser->time_zone);
+    }
+    if (parser->time_zone_data) {
+        time_zone_data_destroy(parser->time_zone_data);
     }
     if (parser->types_len != 0) {
         for (i=0; i<parser->types_len; i++){
@@ -1854,9 +1909,6 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
     const char *time_ptr = time_str;
     char tmp[64];
     struct tm tmy;
-#ifndef FLB_SYSTEM_WINDOWS
-    struct tzif tz;
-#endif
 
     *ns = 0;
 
@@ -1889,17 +1941,12 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
 
         if (parser->time_zone && parser->time_with_tz == FLB_FALSE) {
 #ifdef FLB_SYSTEM_WINDOWS
-            ret = windows_time2tm_zone(time_now, parser->time_zone, &tmy);
+            ret = windows_time2tm_zone(time_now, parser->time_zone_data, &tmy);
             if (ret != 0) {
                 return -1;
             }
 #else
-            ret = tzif_load(parser->time_zone, &tz);
-            if (ret != 0) {
-                return -1;
-            }
-            ret = tzif_time2tm(&tz, time_now, &tmy);
-            tzif_destroy(&tz);
+            ret = tzif_time2tm(parser->time_zone_data, time_now, &tmy);
             if (ret != 0) {
                 return -1;
             }

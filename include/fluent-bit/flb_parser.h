@@ -50,6 +50,7 @@ struct flb_parser {
     int time_offset;      /* fixed UTC offset */
     int time_system_timezone; /* use the system timezone as a fallback */
     char *time_zone;      /* IANA timezone for naive timestamps */
+    void *time_zone_data; /* parsed native timezone data */
     int time_keep;        /* keep time field */
     int time_strict;      /* parse time field strictly */
     int logfmt_no_bare_keys; /* in logfmt parsers, require all keys to have values */
