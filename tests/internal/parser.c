@@ -588,6 +588,174 @@ void test_parser_time_system_timezone_midnight()
     flb_config_exit(config);
 }
 
+void test_parser_time_zone_iana(void)
+{
+    int ret;
+    struct flb_config *config;
+    struct flb_parser *parser;
+    struct flb_tm tm;
+    double ns;
+    time_t epoch;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    if (!config) {
+        return;
+    }
+
+    parser = flb_parser_create_with_time_zone("iana_ny", "regex",
+                                              "^(?<time>.*)$",
+                                              FLB_FALSE,
+                                              "%m/%d/%Y %H:%M:%S",
+                                              "time",
+                                              NULL,
+                                              FLB_FALSE,
+                                              FLB_TRUE,
+                                              FLB_FALSE,
+                                              "America/New_York",
+                                              FLB_FALSE,
+                                              NULL, 0, NULL, config);
+    TEST_CHECK(parser != NULL);
+    if (!parser) {
+        flb_config_exit(config);
+        return;
+    }
+
+    ret = flb_parser_time_lookup("07/17/2017 16:17:03", 19, 0,
+                                 parser, &tm, &ns);
+    TEST_CHECK(ret == 0);
+    epoch = flb_parser_tm2time_parser(&tm, parser);
+    TEST_CHECK(epoch == (time_t) 1500322623);
+
+    ret = flb_parser_time_lookup("01/15/2017 15:00:00", 19, 0,
+                                 parser, &tm, &ns);
+    TEST_CHECK(ret == 0);
+    epoch = flb_parser_tm2time_parser(&tm, parser);
+    TEST_CHECK(epoch == (time_t) 1484510400);
+
+    flb_parser_destroy(parser);
+    flb_config_exit(config);
+}
+
+void test_parser_time_zone_iana_australia(void)
+{
+    int ret;
+    struct flb_config *config;
+    struct flb_parser *parser;
+    struct flb_tm tm;
+    double ns;
+    time_t epoch;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    if (!config) {
+        return;
+    }
+
+    parser = flb_parser_create_with_time_zone("iana_sydney", "regex",
+                                              "^(?<time>.*)$",
+                                              FLB_FALSE,
+                                              "%m/%d/%Y %H:%M:%S",
+                                              "time",
+                                              NULL,
+                                              FLB_FALSE,
+                                              FLB_TRUE,
+                                              FLB_FALSE,
+                                              "Australia/Sydney",
+                                              FLB_FALSE,
+                                              NULL, 0, NULL, config);
+    TEST_CHECK(parser != NULL);
+    if (!parser) {
+        flb_config_exit(config);
+        return;
+    }
+
+    ret = flb_parser_time_lookup("01/15/2017 15:00:00", 19, 0,
+                                 parser, &tm, &ns);
+    TEST_CHECK(ret == 0);
+    epoch = flb_parser_tm2time_parser(&tm, parser);
+    TEST_CHECK(epoch == (time_t) 1484452800);
+
+    ret = flb_parser_time_lookup("07/17/2017 16:17:03", 19, 0,
+                                 parser, &tm, &ns);
+    TEST_CHECK(ret == 0);
+    epoch = flb_parser_tm2time_parser(&tm, parser);
+    TEST_CHECK(epoch == (time_t) 1500272223);
+
+    flb_parser_destroy(parser);
+    flb_config_exit(config);
+}
+
+void test_parser_time_zone_conflicts(void)
+{
+    struct flb_config *config;
+    struct flb_parser *parser;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    if (!config) {
+        return;
+    }
+
+    parser = flb_parser_create_with_time_zone("iana_without_format", "regex",
+                                              "^(?<time>.*)$",
+                                              FLB_FALSE,
+                                              NULL,
+                                              "time",
+                                              NULL,
+                                              FLB_FALSE,
+                                              FLB_TRUE,
+                                              FLB_FALSE,
+                                              "America/New_York",
+                                              FLB_FALSE,
+                                              NULL, 0, NULL, config);
+    TEST_CHECK(parser == NULL);
+
+    parser = flb_parser_create_with_time_zone("iana_with_system_tz", "regex",
+                                              "^(?<time>.*)$",
+                                              FLB_FALSE,
+                                              "%m/%d/%Y %H:%M:%S",
+                                              "time",
+                                              NULL,
+                                              FLB_FALSE,
+                                              FLB_TRUE,
+                                              FLB_TRUE,
+                                              "America/New_York",
+                                              FLB_FALSE,
+                                              NULL, 0, NULL, config);
+    TEST_CHECK(parser == NULL);
+
+    parser = flb_parser_create_with_time_zone("iana_with_offset", "regex",
+                                              "^(?<time>.*)$",
+                                              FLB_FALSE,
+                                              "%m/%d/%Y %H:%M:%S",
+                                              "time",
+                                              "+0000",
+                                              FLB_FALSE,
+                                              FLB_TRUE,
+                                              FLB_FALSE,
+                                              "America/New_York",
+                                              FLB_FALSE,
+                                              NULL, 0, NULL, config);
+    TEST_CHECK(parser == NULL);
+
+    parser = flb_parser_create_with_time_zone("iana_invalid", "regex",
+                                              "^(?<time>.*)$",
+                                              FLB_FALSE,
+                                              "%m/%d/%Y %H:%M:%S",
+                                              "time",
+                                              NULL,
+                                              FLB_FALSE,
+                                              FLB_TRUE,
+                                              FLB_FALSE,
+                                              "America/Not_A_City",
+                                              FLB_FALSE,
+                                              NULL, 0, NULL, config);
+    TEST_CHECK(parser == NULL);
+
+    flb_config_exit(config);
+}
+
 
 TEST_LIST = {
     { "tzone_offset", test_parser_tzone_offset},
@@ -595,6 +763,9 @@ TEST_LIST = {
     { "json_time_lookup", test_json_parser_time_lookup},
     { "regex_time_lookup", test_regex_parser_time_lookup},
     { "time_system_timezone_midnight", test_parser_time_system_timezone_midnight},
+    { "time_zone_iana", test_parser_time_zone_iana },
+    { "time_zone_iana_australia", test_parser_time_zone_iana_australia },
+    { "time_zone_conflicts", test_parser_time_zone_conflicts },
     { "mysql_unquoted" , test_mysql_unquoted },
     { 0 }
 };
