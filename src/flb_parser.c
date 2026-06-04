@@ -43,6 +43,7 @@
 #include <sys/stat.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <fluent-bit/flb_pthread.h>
@@ -163,6 +164,38 @@ static time_t windows_tm2time_zone(const struct flb_tm *src, const char *iana_zo
 }
 #endif
 
+#ifndef FLB_SYSTEM_WINDOWS
+static int zoneinfo_file_exists(const char *iana_zone)
+{
+    int ret;
+    size_t len;
+    char path[PATH_MAX];
+    const char *tzdir;
+    struct stat st;
+
+    tzdir = getenv("TZDIR");
+    if (tzdir == NULL || tzdir[0] == '\0') {
+        tzdir = "/usr/share/zoneinfo";
+    }
+
+    ret = snprintf(path, sizeof(path), "%s/%s", tzdir, iana_zone);
+    if (ret < 0) {
+        return FLB_FALSE;
+    }
+
+    len = (size_t) ret;
+    if (len >= sizeof(path)) {
+        return FLB_FALSE;
+    }
+
+    if (stat(path, &st) != 0) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+#endif
+
 static int validate_time_zone(const char *iana_zone)
 {
 #ifdef FLB_SYSTEM_WINDOWS
@@ -186,6 +219,10 @@ static int validate_time_zone(const char *iana_zone)
 #ifdef FLB_SYSTEM_WINDOWS
     /* Ensure the mapped native timezone is available on this Windows host. */
     if (windows_time_zone_lookup(windows_zone, &dtzi) != 0) {
+        return -1;
+    }
+#else
+    if (zoneinfo_file_exists(iana_zone) == FLB_FALSE) {
         return -1;
     }
 #endif
@@ -546,7 +583,8 @@ struct flb_parser *flb_parser_create_with_time_zone(const char *name,
                 return NULL;
             }
             if (validate_time_zone(time_zone) != 0) {
-                flb_error("[parser:%s] invalid time_zone '%s'", name, time_zone);
+                flb_error("[parser:%s] invalid or unavailable time_zone '%s'",
+                          name, time_zone);
                 flb_interim_parser_destroy(p);
                 return NULL;
             }
