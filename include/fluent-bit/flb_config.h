@@ -87,7 +87,7 @@ struct flb_config {
     flb_pipefd_t ch_manager[2];     /* channel to administrate fluent bit     */
     flb_pipefd_t ch_notif[2];       /* channel to receive notifications       */
 
-    flb_pipefd_t ch_self_events[2]; /* channel to recieve thread tasks        */
+    flb_pipefd_t ch_self_events[2]; /* channel to receive thread tasks        */
 
     int notification_channels_initialized;
     flb_pipefd_t notification_channels[2];
