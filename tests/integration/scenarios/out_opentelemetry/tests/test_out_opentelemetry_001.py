@@ -3,10 +3,14 @@ import json
 import logging
 import os
 import socket
+import threading
 
 import requests
 import pytest
 from google.protobuf import json_format
+from h2.config import H2Configuration
+from h2.connection import H2Connection
+from h2.events import DataReceived, RequestReceived, StreamEnded
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
@@ -256,6 +260,152 @@ class Service:
             "traces": ExportTraceServiceRequest(),
         }
         return json_format.Parse(json.dumps(payload_dict), messages[signal_type])
+
+
+class IPv6Http2OtlpReceiver:
+    def __init__(self, port):
+        self.port = port
+        self.server_socket = None
+        self.thread = None
+        self.requests = []
+        self.stop_event = threading.Event()
+
+    def start(self):
+        self.server_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.bind(("::1", self.port))
+        self.server_socket.listen(5)
+        self.server_socket.settimeout(0.5)
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.stop_event.set()
+
+        if self.server_socket is not None:
+            self.server_socket.close()
+            self.server_socket = None
+
+        if self.thread is not None:
+            self.thread.join(timeout=5)
+            self.thread = None
+
+    def _serve(self):
+        while not self.stop_event.is_set():
+            try:
+                client_socket, _ = self.server_socket.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+
+            with client_socket:
+                self._handle_connection(client_socket)
+
+    def _handle_connection(self, client_socket):
+        connection = H2Connection(
+            config=H2Configuration(client_side=False, header_encoding="utf-8")
+        )
+        request = {
+            "headers": {},
+            "path": None,
+            "body": b"",
+        }
+
+        client_socket.settimeout(2)
+        connection.initiate_connection()
+        client_socket.sendall(connection.data_to_send())
+
+        while not self.stop_event.is_set():
+            try:
+                data = client_socket.recv(65535)
+            except socket.timeout:
+                continue
+
+            if not data:
+                break
+
+            for event in connection.receive_data(data):
+                if isinstance(event, RequestReceived):
+                    request["headers"] = dict(event.headers)
+                    request["path"] = request["headers"].get(":path")
+                elif isinstance(event, DataReceived):
+                    request["body"] += event.data
+                    connection.acknowledge_received_data(
+                        event.flow_controlled_length,
+                        event.stream_id,
+                    )
+                elif isinstance(event, StreamEnded):
+                    self.requests.append(request)
+                    self._send_response(connection, event.stream_id)
+                    client_socket.sendall(connection.data_to_send())
+                    return
+
+            pending = connection.data_to_send()
+            if pending:
+                client_socket.sendall(pending)
+
+    def _send_response(self, connection, stream_id):
+        body = b"{}"
+
+        connection.send_headers(
+            stream_id,
+            [
+                (":status", "200"),
+                ("content-type", "application/json"),
+                ("content-length", str(len(body))),
+            ],
+        )
+        connection.send_data(stream_id, body, end_stream=True)
+
+
+class Http2IPv6Service:
+    def __init__(self):
+        self.config_file = _repo_relative("../config", "out_otel_http2_ipv6_logs.yaml")
+        self.receiver = None
+        self.test_suite_http_port = None
+        self.service = FluentBitTestService(
+            self.config_file,
+            pre_start=self._start_receiver,
+            post_stop=self._stop_receiver,
+        )
+
+    def _start_receiver(self, service):
+        self.test_suite_http_port = service.test_suite_http_port
+        self.receiver = IPv6Http2OtlpReceiver(service.test_suite_http_port)
+        self.receiver.start()
+
+    def _stop_receiver(self, service):
+        if self.receiver is not None:
+            self.receiver.stop()
+            self.receiver = None
+
+    def start(self):
+        self.service.start()
+
+    def stop(self):
+        self.service.stop()
+
+    def wait_for_requests(self, minimum_count, timeout=10):
+        return self.service.wait_for_condition(
+            lambda: self.receiver.requests
+            if len(self.receiver.requests) >= minimum_count
+            else None,
+            timeout=timeout,
+            interval=0.5,
+            description=f"{minimum_count} IPv6 HTTP/2 OTLP requests",
+        )
+
+
+def ipv6_loopback_available():
+    sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    try:
+        sock.bind(("::1", 0))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
 
 
 def _build_resource_collision_payload(user_id, body):
@@ -619,6 +769,23 @@ def test_out_opentelemetry_grpc_custom_logs_uri():
     assert request_seen["path"] == "/custom.logs.v1.Logs/Push"
     assert request_seen["headers"]["x-grpc"] == "otlp-test"
     assert record["body"]["stringValue"] == "hello via grpc"
+
+
+def test_out_opentelemetry_http2_ipv6_authority_header():
+    if not ipv6_loopback_available():
+        pytest.skip("IPv6 loopback is not available")
+
+    service = Http2IPv6Service()
+    try:
+        service.start()
+        requests_seen = service.wait_for_requests(1, timeout=30)
+    finally:
+        service.stop()
+
+    request_seen = requests_seen[0]
+
+    assert request_seen["path"] == "/v1/logs"
+    assert request_seen["headers"][":authority"] == f"[::1]:{service.test_suite_http_port}"
 
 
 @pytest.mark.parametrize(
