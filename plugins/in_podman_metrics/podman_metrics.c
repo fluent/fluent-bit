@@ -36,7 +36,7 @@
  * that are children to root array, and in them, search for ID and name (which is also
  * an array.
  */
-static int collect_container_data(struct flb_in_metrics *ctx)
+static int collect_container_data(struct flb_in_metrics *ctx, int gather_only)
 {
     /* Buffers for reading data from JSON */
     char *buffer;
@@ -56,6 +56,8 @@ static int collect_container_data(struct flb_in_metrics *ctx)
 
     jsmn_parser p;
     jsmntok_t t[JSON_TOKENS];
+
+    struct container_id *cid;
 
     flb_utils_read_file(ctx->config, &buffer, &read_bytes);
     if (!read_bytes) {
@@ -119,11 +121,26 @@ static int collect_container_data(struct flb_in_metrics *ctx)
                     image_name[metadata_token_size] = '\0';
 
                     flb_plg_trace(ctx->ins, "Found image name %s", image_name);
-                    add_container_to_list(ctx, id, name, image_name);
+                    if (!gather_only) {
+                        add_container_to_list(ctx, id, name, image_name);
+                    }
                 }
                 else {
                     flb_plg_warn(ctx->ins, "Image name was not found for %s", id);
-                    add_container_to_list(ctx, id, name, "unknown");
+                    if (!gather_only) {
+                        add_container_to_list(ctx, id, name, "unknown");
+                    }
+                }
+
+                if (gather_only) {
+                    cid = flb_malloc(sizeof(struct container_id));
+                    if (!cid) {
+                        flb_errno();
+                        return -1;
+                    }
+                    cid->id = flb_sds_create(id);
+                    mk_list_add(&cid->_head, &ctx->ids);
+                    flb_plg_trace(ctx->ins, "Found id for gather only %s", cid->id);
                 }
                 collected_containers++;
             }
@@ -173,18 +190,55 @@ static int destroy_container_list(struct flb_in_metrics *ctx)
     struct container *cnt;
     struct net_iface *iface;
     struct sysfs_path *pth;
+    struct container_id *id;
     struct mk_list *head;
     struct mk_list *tmp;
     struct mk_list *inner_head;
     struct mk_list *inner_tmp;
+    int can_remove_stale_counters = FLB_FALSE;
+    int id_found;
+    int collected;
+
+    if (ctx->remove_stale_counters) {
+        collected = collect_container_data(ctx, FLB_TRUE);
+        if (collected == -1) {
+            flb_plg_error(ctx->ins, "Could not collect container ids");
+        }
+        else {
+            can_remove_stale_counters = FLB_TRUE;
+            flb_plg_debug(ctx->ins, "Collected %d for deletion", collected);
+        }
+    }
 
     mk_list_foreach_safe(head, tmp, &ctx->items) {
+        id_found = FLB_FALSE;
         cnt = mk_list_entry(head, struct container, _head);
         flb_plg_debug(ctx->ins, "Destroying container data (id: %s, name: %s", cnt->id, cnt->name);
+
+        /* If recreation was already triggered, there is no point in determining it again */
+        if (can_remove_stale_counters && !ctx->recreate_cmt) {
+            mk_list_foreach_safe(inner_head, inner_tmp, &ctx->ids) {
+                id = mk_list_entry(inner_head, struct container_id, _head);
+                if (strcmp(cnt->id, id->id) == 0) {
+                   id_found = FLB_TRUE;
+                   break;
+                }
+            }
+
+            if (!id_found) {
+                flb_plg_info(ctx->ins, "Counter will be removed because %s is gone", cnt->name);
+                ctx->recreate_cmt = FLB_TRUE;
+            }
+            else {
+                flb_plg_debug(ctx->ins, "No need to remove stale counters");
+            }
+        }
+
 
         flb_sds_destroy(cnt->id);
         flb_sds_destroy(cnt->name);
         flb_sds_destroy(cnt->image_name);
+
         mk_list_foreach_safe(inner_head, inner_tmp, &cnt->net_data) {
             iface = mk_list_entry(inner_head, struct net_iface, _head);
             flb_sds_destroy(iface->name);
@@ -194,6 +248,7 @@ static int destroy_container_list(struct flb_in_metrics *ctx)
         mk_list_del(&cnt->_head);
         flb_free(cnt);
     }
+    
 
     mk_list_foreach_safe(head, tmp, &ctx->sysfs_items) {
         pth = mk_list_entry(head, struct sysfs_path, _head);
@@ -202,9 +257,18 @@ static int destroy_container_list(struct flb_in_metrics *ctx)
         mk_list_del(&pth->_head);
         flb_free(pth);
     }
+
+    if (ctx->remove_stale_counters) {
+        mk_list_foreach_safe(head, tmp, &ctx->ids) {
+            id = mk_list_entry(head, struct container_id, _head);
+            flb_plg_trace(ctx->ins, "Destroying container id: %s", id->id);
+            flb_sds_destroy(id->id);
+            mk_list_del(&id->_head);
+            flb_free(id);
+        }
+    }
     return 0;
 }
-
 
 /*
  * Create counter for given metric name, using name, image name and value as counter labels. Counters
@@ -218,8 +282,8 @@ static int create_counter(struct flb_in_metrics *ctx, struct cmt_counter **count
 {
     flb_sds_t *labels;
     uint64_t fvalue = value;
-
     int label_count;
+
     if (value == UINT64_MAX) {
         flb_plg_debug(ctx->ins, "Ignoring invalid counter for %s, %s_%s_%s", name, COUNTER_PREFIX, metric_prefix, metric_name);
         return -1;
@@ -245,6 +309,12 @@ static int create_counter(struct flb_in_metrics *ctx, struct cmt_counter **count
         *counter = cmt_counter_create(ctx->ins->cmt, COUNTER_PREFIX, metric_prefix, metric_name, description, label_count, fields);
     }
 
+    if (ctx->recreate_cmt) {
+        flb_plg_debug(ctx->ins, "Recreating counter for %s, %s_%s_%s", name, COUNTER_PREFIX, metric_prefix, metric_name);
+        cmt_counter_destroy(*counter);
+        *counter = cmt_counter_create(ctx->ins->cmt, COUNTER_PREFIX, metric_prefix, metric_name, description, label_count, fields);
+    }
+
     /* Allow setting value that is not grater that current one (if, for example, memory usage stays exactly the same) */
     cmt_counter_allow_reset(*counter);
     flb_plg_debug(ctx->ins, "Set counter for %s, %s_%s_%s: %lu", name, COUNTER_PREFIX, metric_prefix, metric_name, fvalue);
@@ -267,17 +337,23 @@ static int create_gauge(struct flb_in_metrics *ctx, struct cmt_gauge **gauge, fl
 {
     flb_sds_t *labels;
     int label_count;
+    labels = (char *[]){id, name, image_name};
+    label_count = 3;
+
     if (value == UINT64_MAX) {
         flb_plg_debug(ctx->ins, "Ignoring invalid gauge for %s, %s_%s_%s", name, COUNTER_PREFIX, metric_prefix, metric_name);
         return -1;
     }
 
-    labels = (char *[]){id, name, image_name};
-    label_count = 3;
-
     /* if gauge was not yet created, it means that this function is called for the first time per counter type */
     if (*gauge == NULL) {
         flb_plg_debug(ctx->ins, "Creating gauge for %s, %s_%s_%s", name, COUNTER_PREFIX, metric_prefix, metric_name);
+        *gauge = cmt_gauge_create(ctx->ins->cmt, COUNTER_PREFIX, metric_prefix, metric_name, description, label_count, fields);
+    }
+
+    if (ctx->recreate_cmt) {
+        flb_plg_debug(ctx->ins, "Recreating gauge for %s, %s_%s_%s", name, COUNTER_PREFIX, metric_prefix, metric_name);
+        cmt_gauge_destroy(*gauge);
         *gauge = cmt_gauge_create(ctx->ins->cmt, COUNTER_PREFIX, metric_prefix, metric_name, description, label_count, fields);
     }
 
@@ -339,7 +415,12 @@ static int create_counters(struct flb_in_metrics *ctx)
                            DESCRIPTION_TX_BYTES, iface->name, iface->tx_bytes);
             create_counter(ctx, &ctx->tx_errors, cnt->id, cnt->name, cnt->image_name, COUNTER_NETWORK_PREFIX, FIELDS_METRIC_WITH_IFACE, COUNTER_TX_ERRORS,
                            DESCRIPTION_TX_ERRORS, iface->name, iface->tx_errors);
+            /* Stop recreating after first iteration, at this point we cleared all counters/gauges */
+            ctx->recreate_cmt = FLB_FALSE;
         }
+
+        // Do it again in case of previous loop not looping at all
+        ctx->recreate_cmt = FLB_FALSE;
     }
     return 0;
 }
@@ -356,7 +437,7 @@ static int scrape_metrics(struct flb_config *config, struct flb_in_metrics *ctx)
         return -1;
     }
 
-    if (collect_container_data(ctx) == -1) {
+    if (collect_container_data(ctx, FLB_FALSE) == -1) {
         flb_plg_error(ctx->ins, "Could not collect container ids");
         return -1;
     }
@@ -428,6 +509,8 @@ static int in_metrics_init(struct flb_input_instance *in, struct flb_config *con
     ctx->tx_bytes = NULL;
     ctx->tx_errors = NULL;
 
+    ctx->recreate_cmt = FLB_FALSE;
+
     if (flb_input_config_map_set(in, (void *) ctx) == -1) {
         flb_free(ctx);
         return -1;
@@ -461,6 +544,7 @@ static int in_metrics_init(struct flb_input_instance *in, struct flb_config *con
 
     mk_list_init(&ctx->items);
     mk_list_init(&ctx->sysfs_items);
+    mk_list_init(&ctx->ids);
 
     if (ctx->scrape_interval >= 2 && ctx->scrape_on_start) {
         flb_plg_info(ctx->ins, "Generating podman metrics (initial scrape)");
@@ -489,8 +573,8 @@ static int in_metrics_exit(void *data, struct flb_config *config)
         return 0;
     }
 
-    flb_sds_destroy(ctx->config);
     destroy_container_list(ctx);
+    flb_sds_destroy(ctx->config);
     flb_free(ctx);
     return 0;
 }

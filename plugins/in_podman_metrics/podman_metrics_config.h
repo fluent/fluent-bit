@@ -169,17 +169,27 @@ struct sysfs_path {
     struct mk_list  _head;
 };
 
+struct container_id {
+    flb_sds_t       id;
+    struct mk_list  _head;
+};
+
 struct flb_in_metrics {
     /* config map options */
     int scrape_on_start;
     int scrape_interval;
     flb_sds_t podman_config_path;
+    int remove_stale_counters;
+    int recreate_cmt;
 
     /* container list */
     struct mk_list items;
 
     /* sysfs path list */
     struct mk_list sysfs_items;
+
+    /* container id list */
+    struct mk_list ids;
 
     /* counters */
     struct cmt_counter *c_memory_usage;
