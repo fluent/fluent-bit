@@ -67,6 +67,7 @@ set(src
   flb_crypto.c
   flb_random.c
   flb_plugin.c
+  flb_plugin_alias.c
   flb_gzip.c
   flb_snappy.c
   flb_zstd.c

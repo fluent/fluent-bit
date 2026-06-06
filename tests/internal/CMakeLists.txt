@@ -53,6 +53,7 @@ set(UNIT_TESTS_FILES
   endianness.c
   task_map.c
   strptime.c
+  plugin_alias.c
   storage_inherit.c
   unicode.c
   opentelemetry.c

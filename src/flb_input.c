@@ -44,6 +44,7 @@
 #include <fluent-bit/flb_ring_buffer.h>
 #include <fluent-bit/flb_processor.h>
 #include <fluent-bit/flb_oauth2_jwt.h>
+#include <fluent-bit/flb_plugin_alias.h>
 
 /* input plugin macro helpers */
 #include <fluent-bit/flb_input_plugin.h>
@@ -275,6 +276,8 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
     int id;
     int ret;
     int flags = 0;
+    char *input_uri;
+    const char *input_name;
     struct mk_list *head;
     struct flb_input_plugin *plugin;
     struct flb_input_instance *instance = NULL;
@@ -289,9 +292,21 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         return NULL;
     }
 
+    input_uri = flb_plugin_alias_rewrite(FLB_PLUGIN_INPUT, input);
+    if (input_uri == FLB_PLUGIN_ALIAS_ERR) {
+        return NULL;
+    }
+
+    if (input_uri != NULL) {
+        input_name = input_uri;
+    }
+    else {
+        input_name = input;
+    }
+
     mk_list_foreach(head, &config->in_plugins) {
         plugin = mk_list_entry(head, struct flb_input_plugin, _head);
-        if (!check_protocol(plugin->name, input)) {
+        if (!check_protocol(plugin->name, input_name)) {
             plugin = NULL;
             continue;
         }
@@ -301,6 +316,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
          * requirement.
          */
         if (public_only == FLB_TRUE && plugin->flags & FLB_INPUT_PRIVATE) {
+            flb_free(input_uri);
             return NULL;
         }
 
@@ -578,6 +594,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->test_formatter.callback = plugin->test_formatter.callback;
     }
 
+    flb_free(input_uri);
     return instance;
 }
 

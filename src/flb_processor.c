@@ -35,6 +35,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_plugin.h>
+#include <fluent-bit/flb_plugin_alias.h>
 #include <cfl/cfl.h>
 
 struct flb_config_map processor_global_properties[] = {
@@ -625,6 +626,19 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
     struct flb_config *config = proc->config;
     struct flb_processor_unit *pu = NULL;
     struct flb_processor_instance *processor_instance;
+    char *rewritten_unit_name;
+    const char *effective_unit_name;
+
+    rewritten_unit_name = flb_plugin_alias_rewrite(FLB_PLUGIN_PROCESSOR, unit_name);
+    if (rewritten_unit_name == FLB_PLUGIN_ALIAS_ERR) {
+        return NULL;
+    }
+    if (rewritten_unit_name != NULL) {
+        effective_unit_name = rewritten_unit_name;
+    }
+    else {
+        effective_unit_name = unit_name;
+    }
 
     /*
      * Looking the processor unit by using it's name and type, the first list we
@@ -641,7 +655,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
 
         /* skip filters which don't handle the required type */
         if ((event_type & filter_event_type) != 0) {
-            if (strcmp(f->name, unit_name) == 0) {
+            if (strcmp(f->name, effective_unit_name) == 0) {
                 break;
             }
         }
@@ -654,16 +668,18 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
 
     if (!pu) {
         flb_errno();
+        flb_free(rewritten_unit_name);
         return NULL;
     }
 
     pu->parent = proc;
     pu->event_type = event_type;
-    pu->name = flb_sds_create(unit_name);
+    pu->name = flb_sds_create(effective_unit_name);
     pu->condition = NULL;
 
     if (!pu->name) {
         flb_free(pu);
+        flb_free(rewritten_unit_name);
         return NULL;
     }
     mk_list_init(&pu->unused_list);
@@ -673,19 +689,20 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
     if (result != 0) {
         flb_sds_destroy(pu->name);
         flb_free(pu);
-
+        flb_free(rewritten_unit_name);
         return NULL;
     }
 
     /* If we matched a pipeline filter, create the speacial processing unit for it */
     if (f) {
         /* create an instance of the filter */
-        f_ins = flb_filter_new(config, unit_name, NULL);
+        f_ins = flb_filter_new(config, effective_unit_name, NULL);
 
         if (!f_ins) {
             pthread_mutex_destroy(&pu->lock);
             flb_sds_destroy(pu->name);
             flb_free(pu);
+            flb_free(rewritten_unit_name);
 
             return NULL;
         }
@@ -701,6 +718,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
             pthread_mutex_destroy(&pu->lock);
             flb_sds_destroy(pu->name);
             flb_free(pu);
+            flb_free(rewritten_unit_name);
 
             return NULL;
         }
@@ -725,7 +743,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
         processor_instance = flb_processor_instance_create(config,
                                                            pu,
                                                            pu->event_type,
-                                                           unit_name, NULL);
+                                                           (char *) effective_unit_name, NULL);
 
         if (processor_instance == NULL) {
             flb_error("[processor] error creating processor '%s': plugin doesn't exist or failed to initialize", unit_name);
@@ -733,6 +751,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
             pthread_mutex_destroy(&pu->lock);
             flb_sds_destroy(pu->name);
             flb_free(pu);
+            flb_free(rewritten_unit_name);
 
             return NULL;
         }
@@ -757,6 +776,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
 
     pu->stage = proc->stage_count;
     proc->stage_count++;
+    flb_free(rewritten_unit_name);
 
     return pu;
 }
