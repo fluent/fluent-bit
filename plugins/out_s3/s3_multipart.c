@@ -406,13 +406,20 @@ int complete_multipart_upload(struct flb_s3 *ctx,
                               struct multipart_upload *m_upload,
                               char *pre_signed_url)
 {
-    char *body;
+    char *body = NULL;
     size_t size;
     flb_sds_t uri = NULL;
     flb_sds_t tmp;
     int ret;
     struct flb_http_client *c = NULL;
     struct flb_aws_client *s3_client;
+    flb_sds_t presigned_host = NULL;
+    const char *original_host = NULL;
+    char *original_upstream_host = NULL;
+    int original_upstream_port = 0;
+    int original_upstream_flags = 0;
+    int presigned_port = 0;
+    int result = -1;
 
     if (!m_upload->upload_id) {
         flb_plg_error(ctx->ins, "Cannot complete multipart upload for key %s: "
@@ -420,31 +427,52 @@ int complete_multipart_upload(struct flb_s3 *ctx,
         return -1;
     }
 
-    uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 11 +
-                              flb_sds_len(m_upload->upload_id));
-    if (!uri) {
-        flb_errno();
-        return -1;
-    }
-
     if (pre_signed_url != NULL) {
-        tmp = flb_sds_copy(uri, pre_signed_url, strlen(pre_signed_url));
+        ret = s3_parse_presigned_url(ctx, pre_signed_url, &presigned_host, &uri, &presigned_port);
+        if (ret != 0) {
+            return -1;
+        }
+
+        /* When using authorization_endpoint_url, the presigned URL may use a different port */
+        if (presigned_port != 0 && presigned_port != ctx->port) {
+            flb_plg_debug(ctx->ins, "Pre signed URL uses port %d (configured: %d)", presigned_port, ctx->port);
+        }
+
+        original_host = ctx->s3_client->host;
+        original_upstream_host = ctx->s3_client->upstream->tcp_host;
+        original_upstream_port = ctx->s3_client->upstream->tcp_port;
+        original_upstream_flags = ctx->s3_client->upstream->base.flags;
+        ctx->s3_client->host = presigned_host;
+        ctx->s3_client->upstream->tcp_host = presigned_host;
+        ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
+
+        /* Disable TLS for HTTP (port 80), enable for HTTPS (port 443) */
+        if (presigned_port == 80) {
+            ctx->s3_client->upstream->base.flags &= ~FLB_IO_TLS;
+        }
+
+        /* Disable keepalive to force new connection to the new host */
+        ctx->s3_client->upstream->base.flags &= ~FLB_IO_TCP_KA;
     }
     else {
+        uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 11 +
+                                  flb_sds_len(m_upload->upload_id));
+        if (!uri) {
+            flb_errno();
+            return -1;
+        }
+
         tmp = flb_sds_printf(&uri, "/%s%s?uploadId=%s", ctx->bucket,
                             m_upload->s3_key, m_upload->upload_id);
+        if (!tmp) {
+            goto cleanup;
+        }
+        uri = tmp;
     }
-
-    if (!tmp) {
-        flb_sds_destroy(uri);
-        return -1;
-    }
-    uri = tmp;
 
     ret = complete_multipart_upload_payload(ctx, m_upload, &body, &size);
     if (ret < 0) {
-        flb_sds_destroy(uri);
-        return -1;
+        goto cleanup;
     }
 
     s3_client = ctx->s3_client;
@@ -456,8 +484,9 @@ int complete_multipart_upload(struct flb_s3 *ctx,
                                               uri, body, size,
                                               NULL, 0);
     }
-    flb_sds_destroy(uri);
     flb_free(body);
+    body = NULL;
+
     if (c) {
         flb_plg_debug(ctx->ins, "CompleteMultipartUpload http status=%d",
                       c->resp.status);
@@ -468,7 +497,8 @@ int complete_multipart_upload(struct flb_s3 *ctx,
             flb_http_client_destroy(c);
             /* remove this upload from the file system */
             remove_upload_from_fs(ctx, m_upload);
-            return 0;
+            result = 0;
+            goto cleanup;
         }
         flb_aws_print_xml_error(c->resp.payload, c->resp.payload_size,
                                 "CompleteMultipartUpload", ctx->ins);
@@ -480,7 +510,26 @@ int complete_multipart_upload(struct flb_s3 *ctx,
     }
 
     flb_plg_error(ctx->ins, "CompleteMultipartUpload request failed");
-    return -1;
+    result = -1;
+
+cleanup:
+    if (body != NULL) {
+        flb_free(body);
+    }
+
+    if (original_host != NULL) {
+        ctx->s3_client->host = original_host;
+        ctx->s3_client->upstream->tcp_host = original_upstream_host;
+        ctx->s3_client->upstream->tcp_port = original_upstream_port;
+        ctx->s3_client->upstream->base.flags = original_upstream_flags;
+        flb_sds_destroy(presigned_host);
+    }
+
+    if (uri != NULL) {
+        flb_sds_destroy(uri);
+    }
+
+    return result;
 }
 
 int abort_multipart_upload(struct flb_s3 *ctx,
@@ -491,6 +540,14 @@ int abort_multipart_upload(struct flb_s3 *ctx,
     flb_sds_t tmp;
     struct flb_http_client *c = NULL;
     struct flb_aws_client *s3_client;
+    flb_sds_t presigned_host = NULL;
+    const char *original_host = NULL;
+    char *original_upstream_host = NULL;
+    int original_upstream_port = 0;
+    int original_upstream_flags = 0;
+    int presigned_port = 0;
+    int result = -1;
+    int ret;
 
     if (!m_upload->upload_id) {
         flb_plg_error(ctx->ins, "Cannot complete multipart upload for key %s: "
@@ -498,26 +555,48 @@ int abort_multipart_upload(struct flb_s3 *ctx,
         return -1;
     }
 
-    uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 11 +
-                              flb_sds_len(m_upload->upload_id));
-    if (!uri) {
-        flb_errno();
-        return -1;
-    }
-
     if (pre_signed_url != NULL) {
-        tmp = flb_sds_copy(uri, pre_signed_url, strlen(pre_signed_url));
+        ret = s3_parse_presigned_url(ctx, pre_signed_url, &presigned_host, &uri, &presigned_port);
+        if (ret != 0) {
+            return -1;
+        }
+
+        /* When using authorization_endpoint_url, the presigned URL may use a different port */
+        if (presigned_port != 0 && presigned_port != ctx->port) {
+            flb_plg_debug(ctx->ins, "Pre signed URL uses port %d (configured: %d)", presigned_port, ctx->port);
+        }
+
+        original_host = ctx->s3_client->host;
+        original_upstream_host = ctx->s3_client->upstream->tcp_host;
+        original_upstream_port = ctx->s3_client->upstream->tcp_port;
+        original_upstream_flags = ctx->s3_client->upstream->base.flags;
+        ctx->s3_client->host = presigned_host;
+        ctx->s3_client->upstream->tcp_host = presigned_host;
+        ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
+
+        /* Disable TLS for HTTP (port 80), enable for HTTPS (port 443) */
+        if (presigned_port == 80) {
+            ctx->s3_client->upstream->base.flags &= ~FLB_IO_TLS;
+        }
+
+        /* Disable keepalive to force new connection to the new host */
+        ctx->s3_client->upstream->base.flags &= ~FLB_IO_TCP_KA;
     }
     else {
+        uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 11 +
+                                  flb_sds_len(m_upload->upload_id));
+        if (!uri) {
+            flb_errno();
+            return -1;
+        }
+
         tmp = flb_sds_printf(&uri, "/%s%s?uploadId=%s", ctx->bucket,
                             m_upload->s3_key, m_upload->upload_id);
+        if (!tmp) {
+            goto abort_cleanup;
+        }
+        uri = tmp;
     }
-
-    if (!tmp) {
-        flb_sds_destroy(uri);
-        return -1;
-    }
-    uri = tmp;
 
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
@@ -528,8 +607,6 @@ int abort_multipart_upload(struct flb_s3 *ctx,
                                               uri, NULL, 0,
                                               NULL, 0);
     }
-    flb_sds_destroy(uri);
-
     if (c) {
         flb_plg_debug(ctx->ins, "AbortMultipartUpload http status=%d",
                       c->resp.status);
@@ -540,7 +617,8 @@ int abort_multipart_upload(struct flb_s3 *ctx,
             flb_http_client_destroy(c);
             /* remove this upload from the file system */
             remove_upload_from_fs(ctx, m_upload);
-            return 0;
+            result = 0;
+            goto abort_cleanup;
         }
         flb_aws_print_xml_error(c->resp.payload, c->resp.payload_size,
                                 "AbortMultipartUpload", ctx->ins);
@@ -552,7 +630,22 @@ int abort_multipart_upload(struct flb_s3 *ctx,
     }
 
     flb_plg_error(ctx->ins, "AbortMultipartUpload request failed");
-    return -1;
+    result = -1;
+
+abort_cleanup:
+    if (original_host != NULL) {
+        ctx->s3_client->host = original_host;
+        ctx->s3_client->upstream->tcp_host = original_upstream_host;
+        ctx->s3_client->upstream->tcp_port = original_upstream_port;
+        ctx->s3_client->upstream->base.flags = original_upstream_flags;
+        flb_sds_destroy(presigned_host);
+    }
+
+    if (uri != NULL) {
+        flb_sds_destroy(uri);
+    }
+
+    return result;
 }
 
 int create_multipart_upload(struct flb_s3 *ctx,
@@ -566,25 +659,54 @@ int create_multipart_upload(struct flb_s3 *ctx,
     struct flb_aws_header *headers = NULL;
     int num_headers = 0;
     int ret;
-
-    uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 8);
-    if (!uri) {
-        flb_errno();
-        return -1;
-    }
+    flb_sds_t presigned_host = NULL;
+    const char *original_host = NULL;
+    char *original_upstream_host = NULL;
+    int original_upstream_port = 0;
+    int original_upstream_flags = 0;
+    int presigned_port = 0;
 
     if (pre_signed_url != NULL) {
-        tmp = flb_sds_copy(uri, pre_signed_url, strlen(pre_signed_url));
+        ret = s3_parse_presigned_url(ctx, pre_signed_url, &presigned_host, &uri, &presigned_port);
+        if (ret != 0) {
+            return -1;
+        }
+
+        /* When using authorization_endpoint_url, the presigned URL may use a different port */
+        if (presigned_port != 0 && presigned_port != ctx->port) {
+            flb_plg_debug(ctx->ins, "Pre signed URL uses port %d (configured: %d)", presigned_port, ctx->port);
+        }
+
+        original_host = ctx->s3_client->host;
+        original_upstream_host = ctx->s3_client->upstream->tcp_host;
+        original_upstream_port = ctx->s3_client->upstream->tcp_port;
+        original_upstream_flags = ctx->s3_client->upstream->base.flags;
+        ctx->s3_client->host = presigned_host;
+        ctx->s3_client->upstream->tcp_host = presigned_host;
+        ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
+
+        /* Disable TLS for HTTP (port 80), enable for HTTPS (port 443) */
+        if (presigned_port == 80) {
+            ctx->s3_client->upstream->base.flags &= ~FLB_IO_TLS;
+        }
+
+        /* Disable keepalive to force new connection to the new host */
+        ctx->s3_client->upstream->base.flags &= ~FLB_IO_TCP_KA;
     }
     else {
-        tmp = flb_sds_printf(&uri, "/%s%s?uploads=", ctx->bucket, m_upload->s3_key);
-    }
+        uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 8);
+        if (!uri) {
+            flb_errno();
+            return -1;
+        }
 
-    if (!tmp) {
-        flb_sds_destroy(uri);
-        return -1;
+        tmp = flb_sds_printf(&uri, "/%s%s?uploads=", ctx->bucket, m_upload->s3_key);
+        if (!tmp) {
+            ret = -1;
+            goto cleanup;
+        }
+        uri = tmp;
     }
-    uri = tmp;
 
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
@@ -594,8 +716,7 @@ int create_multipart_upload(struct flb_s3 *ctx,
         ret = create_headers(ctx, NULL, &headers, &num_headers, FLB_TRUE);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create headers");
-            flb_sds_destroy(uri);
-            return -1;
+            goto cleanup;
         }
         c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
                                               uri, NULL, 0, headers, num_headers);
@@ -603,7 +724,21 @@ int create_multipart_upload(struct flb_s3 *ctx,
            flb_free(headers);
         }
     }
-    flb_sds_destroy(uri);
+    ret = -1;
+
+cleanup:
+    if (original_host != NULL) {
+        ctx->s3_client->host = original_host;
+        ctx->s3_client->upstream->tcp_host = original_upstream_host;
+        ctx->s3_client->upstream->tcp_port = original_upstream_port;
+        ctx->s3_client->upstream->base.flags = original_upstream_flags;
+        flb_sds_destroy(presigned_host);
+    }
+
+    if (uri != NULL) {
+        flb_sds_destroy(uri);
+    }
+
     if (c) {
         flb_plg_debug(ctx->ins, "CreateMultipartUpload http status=%d",
                       c->resp.status);
@@ -635,7 +770,7 @@ int create_multipart_upload(struct flb_s3 *ctx,
     }
 
     flb_plg_error(ctx->ins, "CreateMultipartUpload request failed");
-    return -1;
+    return ret;
 }
 
 /* gets the ETag value from response headers */
@@ -693,44 +828,70 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
     struct flb_aws_header *headers = NULL;
     int num_headers = 0;
     char body_md5[25];
-
-    uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 8);
-    if (!uri) {
-        flb_errno();
-        return -1;
-    }
+    flb_sds_t presigned_host = NULL;
+    const char *original_host = NULL;
+    char *original_upstream_host = NULL;
+    int original_upstream_port = 0;
+    int original_upstream_flags = 0;
+    int presigned_port = 0;
+    int result = -1;
 
     if (pre_signed_url != NULL) {
-        tmp = flb_sds_copy(uri, pre_signed_url, strlen(pre_signed_url));
+        ret = s3_parse_presigned_url(ctx, pre_signed_url, &presigned_host, &uri, &presigned_port);
+        if (ret != 0) {
+            return -1;
+        }
+
+        /* When using authorization_endpoint_url, the presigned URL may use a different port */
+        if (presigned_port != 0 && presigned_port != ctx->port) {
+            flb_plg_debug(ctx->ins, "Pre signed URL uses port %d (configured: %d)", presigned_port, ctx->port);
+        }
+
+        original_host = ctx->s3_client->host;
+        original_upstream_host = ctx->s3_client->upstream->tcp_host;
+        original_upstream_port = ctx->s3_client->upstream->tcp_port;
+        original_upstream_flags = ctx->s3_client->upstream->base.flags;
+        ctx->s3_client->host = presigned_host;
+        ctx->s3_client->upstream->tcp_host = presigned_host;
+        ctx->s3_client->upstream->tcp_port = presigned_port != 0 ? presigned_port : ctx->port;
+
+        /* Disable TLS for HTTP (port 80), enable for HTTPS (port 443) */
+        if (presigned_port == 80) {
+            ctx->s3_client->upstream->base.flags &= ~FLB_IO_TLS;
+        }
+
+        /* Disable keepalive to force new connection to the new host */
+        ctx->s3_client->upstream->base.flags &= ~FLB_IO_TCP_KA;
     }
     else {
-        tmp = flb_sds_printf(&uri, "/%s%s?partNumber=%d&uploadId=%s",
-                            ctx->bucket, m_upload->s3_key, m_upload->part_number,
-                            m_upload->upload_id);
-    }
+        uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 8);
+        if (!uri) {
+            flb_errno();
+            return -1;
+        }
 
-    if (!tmp) {
-        flb_errno();
-        flb_sds_destroy(uri);
-        return -1;
+        tmp = flb_sds_printf(&uri, "/%s%s?partNumber=%d&uploadId=%s",
+                             ctx->bucket, m_upload->s3_key, m_upload->part_number,
+                             m_upload->upload_id);
+        if (!tmp) {
+            goto cleanup;
+        }
+        uri = tmp;
     }
-    uri = tmp;
 
     memset(body_md5, 0, sizeof(body_md5));
     if (ctx->send_content_md5 == FLB_TRUE) {
         ret = get_md5_base64(body, body_size, body_md5, sizeof(body_md5));
         if (ret != 0) {
             flb_plg_error(ctx->ins, "Failed to create Content-MD5 header");
-            flb_sds_destroy(uri);
-            return -1;
+            goto cleanup;
         }
 
         num_headers = 1;
         headers = flb_malloc(sizeof(struct flb_aws_header) * num_headers);
         if (headers == NULL) {
             flb_errno();
-            flb_sds_destroy(uri);
-            return -1;
+            goto cleanup;
         }
 
         headers[0].key = "Content-MD5";
@@ -748,8 +909,11 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
                                               uri, body, body_size,
                                               headers, num_headers);
     }
-    flb_free(headers);
-    flb_sds_destroy(uri);
+    if (headers != NULL) {
+        flb_free(headers);
+        headers = NULL;
+    }
+
     if (c) {
         flb_plg_info(ctx->ins, "UploadPart http status=%d",
                       c->resp.status);
@@ -761,7 +925,7 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
                 flb_plg_debug(ctx->ins, "Raw UploadPart response: %s",
                               c->resp.payload);
                 flb_http_client_destroy(c);
-                return -1;
+                goto cleanup;
             }
             m_upload->etags[m_upload->part_number - 1] = tmp;
             flb_plg_info(ctx->ins, "Successfully uploaded part #%d "
@@ -783,7 +947,8 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
                             "could be lost, UploadId=%s, ETag=%s",
                             m_upload->upload_id, tmp);
             }
-            return 0;
+            result = 0;
+            goto cleanup;
         }
         flb_aws_print_xml_error(c->resp.payload, c->resp.payload_size,
                                 "UploadPart", ctx->ins);
@@ -795,5 +960,19 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
     }
 
     flb_plg_error(ctx->ins, "UploadPart request failed");
-    return -1;
+
+cleanup:
+    if (original_host != NULL) {
+        ctx->s3_client->host = original_host;
+        ctx->s3_client->upstream->tcp_host = original_upstream_host;
+        ctx->s3_client->upstream->tcp_port = original_upstream_port;
+        ctx->s3_client->upstream->base.flags = original_upstream_flags;
+        flb_sds_destroy(presigned_host);
+    }
+
+    if (uri != NULL) {
+        flb_sds_destroy(uri);
+    }
+
+    return result;
 }
