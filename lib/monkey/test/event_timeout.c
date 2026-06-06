@@ -15,56 +15,60 @@
  *  limitations under the License.
  */
 
-#ifndef _WIN32
-#include <unistd.h>
-#include <sys/timerfd.h>
-#endif
-
-#include <monkey/mk_lib.h>
-#include <monkey/monkey.h>
+#include <monkey/mk_core.h>
 
 #include "mk_tests.h"
 
-static void consume_timer_tick(int fd) 
+static int consume_timer_tick(int fd, uint64_t *val)
 {
-    int ret;
-    uint64_t val;
 #ifdef _WIN32
-    ret = recv(fd, &val, sizeof(val), 0);
+    return recv(fd, (char *) val, sizeof(*val), MSG_WAITALL);
 #else
-    ret = read(fd, &val, sizeof(val));
+    return read(fd, val, sizeof(*val));
 #endif
-    TEST_ASSERT(ret >= 0);
 }
-
-#ifdef _WIN32
-static void check_timer_invalidated(int fd) 
-{
-}
-#else
-static void check_timer_invalidated(int fd) 
-{
-    struct itimerspec timer_spec;
-    TEST_ASSERT(timerfd_gettime(fd, &timer_spec) == -1);
-}
-#endif
 
 void test_timeout_tick_destroy(void)
 {
+    int ret;
+    int tries;
     struct mk_event_loop *evl;
-    struct mk_event *ev;
+    struct mk_event *fired;
+    struct mk_event ev = {0};
+    uint64_t tick = 0;
     int fd;
     int timeout_interval = 1;
 
-    evl = mk_event_loop_create(1);
-    ev = mk_mem_alloc_z(sizeof(struct mk_event*));
-    fd = mk_event_timeout_create(evl, timeout_interval, 0, ev);
-    TEST_ASSERT(ev->fd == fd);
+    TEST_CHECK(mk_event_init() == 0);
 
-    consume_timer_tick(ev->fd);
-    mk_event_timeout_destroy(evl, ev);
+    evl = mk_event_loop_create(4);
+    TEST_ASSERT(evl != NULL);
 
-    check_timer_invalidated(fd);
+    fd = mk_event_timeout_create(evl, timeout_interval, 0, &ev);
+    TEST_ASSERT(fd >= 0);
+    TEST_ASSERT(ev.fd == fd);
+
+    ret = 0;
+    for (tries = 0; tries < 2 && ret == 0; tries++) {
+        ret = mk_event_wait_2(evl, 1500);
+    }
+    TEST_ASSERT(ret == 1);
+
+    fired = NULL;
+    mk_event_foreach(fired, evl) {
+        TEST_ASSERT(fired == &ev);
+        TEST_ASSERT((fired->mask & MK_EVENT_READ) != 0);
+        break;
+    }
+
+    ret = consume_timer_tick(ev.fd, &tick);
+    TEST_ASSERT(ret == sizeof(tick));
+    TEST_ASSERT(tick == 1);
+
+    ret = mk_event_timeout_destroy(evl, &ev);
+    TEST_ASSERT(ret == 0);
+
+    mk_event_loop_destroy(evl);
 }
 
 TEST_LIST = {

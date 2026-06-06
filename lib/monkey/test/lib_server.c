@@ -17,6 +17,7 @@
 
 #include <monkey/mk_lib.h>
 #include <monkey/monkey.h>
+#include <monkey/mk_net.h>
 
 #include "mk_tests.h"
 
@@ -240,6 +241,20 @@ void test_server_start_stop_single_worker(void)
     TEST_CHECK(result == TEST_SUCCESS);
 }
 
+void test_core_plain_transport_available(void)
+{
+    struct mk_plugin_network *transport;
+
+    transport = mk_net_transport_default();
+    TEST_CHECK(transport != NULL);
+    TEST_CHECK(transport->read != NULL);
+    TEST_CHECK(transport->write != NULL);
+    TEST_CHECK(transport->writev != NULL);
+    TEST_CHECK(transport->close != NULL);
+    TEST_CHECK(transport->send_file != NULL);
+    TEST_CHECK(transport->plugin == NULL);
+}
+
 void test_server_start_stop_more_workers(void) 
 {
     mk_ctx_t *srv = mk_create();
@@ -270,6 +285,10 @@ void test_server_start_stop_force_fair_balancing(void)
 }
 
 TEST_LIST = {
+    {
+        "core_plain_transport_available",
+        test_core_plain_transport_available
+    },
     { 
         "server_start_stop", 
         test_server_start_stop_single_worker 
