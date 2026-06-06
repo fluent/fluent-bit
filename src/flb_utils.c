@@ -2210,6 +2210,32 @@ static int machine_id_read_and_sanitize(char *path,
     return 0;
 }
 
+static int write_uuid_to_file(const char* filename, char* uuid)
+{
+    int fd;
+    size_t uuid_len;
+
+    if (filename == NULL || uuid == NULL) {
+        return FLB_FALSE;
+    }
+
+    /* write uuid to file */
+    fd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0600);
+    if (fd == -1) {
+        return FLB_FALSE;
+    }
+
+    uuid_len = strlen(uuid);
+
+    if (write(fd, uuid, uuid_len) != uuid_len) {
+        close(fd);
+        return FLB_FALSE;
+    }
+
+    close(fd);
+    return FLB_TRUE;
+}
+
 int flb_utils_get_machine_id(char **out_id, size_t *out_size)
 {
     int ret;
@@ -2217,6 +2243,7 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
     size_t bytes;
     char *uuid;
     int fallback = FLB_FALSE;
+    char *fallback_id_file = "/tmp/flb-machine-id";           /*should reside in current working directory*/
 
 #ifdef __linux__
     char *dbus_var = "/var/lib/dbus/machine-id";
@@ -2251,6 +2278,22 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
             return 0;
         }
     }
+
+    if (access(fallback_id_file, F_OK) == 0){
+        ret = machine_id_read_and_sanitize(fallback_id_file, &id, &bytes);
+        if (ret == 0){
+            if (bytes == 0) {
+                /* guid is somewhat corrupted */
+                fallback = FLB_TRUE;
+                goto fallback;
+            }
+        }
+
+        *out_id = id;
+        *out_size = bytes;
+        return 0;
+    }
+
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || \
       defined(__OpenBSD__) || defined(__DragonFly__)
 
@@ -2342,7 +2385,7 @@ int flb_utils_get_machine_id(char **out_id, size_t *out_size)
 #endif
 
 fallback:
-
+    
     flb_warn("falling back on random machine UUID");
 
     /* generate a random uuid */
@@ -2352,7 +2395,17 @@ fallback:
         return -1;
     }
     ret = flb_utils_uuid_v4_gen(uuid);
+    
     if (ret == 0) {
+
+        ret = write_uuid_to_file(fallback_id_file, uuid);
+        if (ret == FLB_FALSE){
+            /*
+             * writing failed, next uuid generation will be random again
+             * log a warning message and return
+             */
+            flb_warn("failed to write machine-id to file %s", fallback_id_file);
+        }
         *out_id = uuid;
         *out_size = strlen(uuid);
         if (fallback == FLB_TRUE) {
@@ -2360,7 +2413,6 @@ fallback:
         }
         return 0;
     }
-
     return -1;
 }
 
