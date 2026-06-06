@@ -17,17 +17,14 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_GPU_METRICS_COMMON_H
-#define FLB_GPU_METRICS_COMMON_H
+#ifndef FLB_GPU_METRICS_NVML_H
+#define FLB_GPU_METRICS_NVML_H
 
-#include <inttypes.h>
-#include <stddef.h>
+#include "gpu_metrics.h"
 
-struct in_gpu_metrics;
-
-int gpu_read_uint64(const char *path, uint64_t *value);
-int gpu_read_double(const char *path, double scale, double *value);
-int gpu_read_line(const char *path, char *buf, size_t size);
-int gpu_should_include_card(struct in_gpu_metrics *ctx, int card_id);
+int nvml_gpu_initialize(struct in_gpu_metrics *ctx);
+int nvml_gpu_detect_cards(struct in_gpu_metrics *ctx);
+int nvml_gpu_collect_metrics(struct in_gpu_metrics *ctx, struct gpu_card *card);
+void nvml_gpu_shutdown(struct in_gpu_metrics *ctx);
 
 #endif
