@@ -86,10 +86,35 @@ static void test_sds_cat_utf8()
     flb_sds_destroy(s);
 }
 
+static void test_sds_view()
+{
+    flb_sds_t owned;
+    flb_sds_t copied;
+    flb_sds_view_t borrowed_view;
+    flb_sds_view_t owned_view;
+    char raw_buffer[] = "borrowed-value";
+
+    borrowed_view = flb_sds_view_create(raw_buffer, strlen(raw_buffer));
+    TEST_CHECK(flb_sds_view_is_empty(borrowed_view) == FLB_FALSE);
+    copied = flb_sds_create_from_view(borrowed_view);
+    TEST_CHECK(copied != NULL);
+    TEST_CHECK(flb_sds_len(copied) == strlen(raw_buffer));
+    TEST_CHECK(strncmp(copied, raw_buffer, borrowed_view.len) == 0);
+    flb_sds_destroy(copied);
+
+    owned = flb_sds_create("owned-value");
+    TEST_CHECK(owned != NULL);
+    owned_view = flb_sds_view_create_from_sds(owned);
+    TEST_CHECK(owned_view.buf == owned);
+    TEST_CHECK(owned_view.len == flb_sds_len(owned));
+    flb_sds_destroy(owned);
+}
+
 TEST_LIST = {
     { "sds_usage" , test_sds_usage},
     { "sds_printf", test_sds_printf},
     { "sds_cat_utf8", test_sds_cat_utf8},
+    { "sds_view", test_sds_view},
     { "test_sds_printf_7143_off_by_1", test_sds_printf_7143_off_by_1},
     { 0 }
 };
