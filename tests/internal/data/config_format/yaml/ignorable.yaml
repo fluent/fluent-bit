@@ -1,0 +1,10 @@
+service:
+    flush: 1
+    log_level: info
+
+ignorable:
+    recordMetadata:
+        enabled: true
+    otlp:
+        endpoint: 127.0.0.1:4318
+        insecure: true
