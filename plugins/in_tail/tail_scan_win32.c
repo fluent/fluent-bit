@@ -109,9 +109,17 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
                                            strlen(path),
                                            &aged_out_inode) == 0) {
         if (aged_out_inode == (uint64_t) st.st_ino) {
-            flb_plg_debug(ctx->ins, "excluded=%s (ignore_active_older_files)",
-                          path);
-            return -1;
+            mtime = flb_tail_stat_mtime(&st);
+            if (mtime > 0 && (ts - ctx->ignore_older) > mtime) {
+                flb_plg_debug(ctx->ins, "excluded=%s (ignore_active_older_files)",
+                              path);
+                return -1;
+            }
+        }
+        else {
+            /* Different inode at the same path: the stored offset belongs to
+             * the old file and must not be applied to the replacement file. */
+            flb_tail_scan_unregister_ignored_file_size(ctx, path, strlen(path));
         }
 
         flb_tail_scan_unregister_aged_out_inode(ctx, path, strlen(path));
@@ -127,6 +135,11 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
             ctx,
             path,
             strlen(path));
+
+        /* Discard stale offset if the file was truncated in place. */
+        if (ignored_file_size > (ssize_t) st.st_size) {
+            ignored_file_size = -1;
+        }
     }
 
     return flb_tail_file_append(path, &st, FLB_TAIL_STATIC, ignored_file_size, ctx);
