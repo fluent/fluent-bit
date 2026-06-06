@@ -1117,6 +1117,9 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         /* fluentbit_input_bytes_total */
         cmt_counter_add(in->cmt_bytes, ts, buf_size,
                         1, (char *[]) {(char *) flb_input_name(in)});
+        if (ic->fs_backlog != FLB_TRUE) {
+            flb_input_rate_update(in, ts, ic->total_records, buf_size);
+        }
 
         /* OLD metrics */
         flb_metrics_sum(FLB_METRIC_N_RECORDS, ic->total_records, in->metrics);
@@ -2447,6 +2450,9 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
     /* Register the total into the context variable */
     in->mem_chunks_size = total;
 
+    /* Re-evaluate rate gate status first to avoid pause-state deadlocks. */
+    flb_input_rate_gate_maybe_resume(in);
+
     /*
      * After the adjustments, validate if the plugin is overlimit or paused
      * and perform further adjustments.
@@ -2454,7 +2460,8 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
     if (flb_input_chunk_is_mem_overlimit(in) == FLB_FALSE &&
         in->config->is_running == FLB_TRUE &&
         in->config->is_ingestion_active == FLB_TRUE &&
-        in->mem_buf_status == FLB_INPUT_PAUSED) {
+        in->mem_buf_status == FLB_INPUT_PAUSED &&
+        in->rate_gate_status == FLB_INPUT_RUNNING) {
         in->mem_buf_status = FLB_INPUT_RUNNING;
         if (in->p->cb_resume) {
             flb_input_resume(in);
@@ -2467,7 +2474,8 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
     if (flb_input_chunk_is_storage_overlimit(in) == FLB_FALSE &&
         in->config->is_running == FLB_TRUE &&
         in->config->is_ingestion_active == FLB_TRUE &&
-        in->storage_buf_status == FLB_INPUT_PAUSED) {
+        in->storage_buf_status == FLB_INPUT_PAUSED &&
+        in->rate_gate_status == FLB_INPUT_RUNNING) {
         in->storage_buf_status = FLB_INPUT_RUNNING;
         if (in->p->cb_resume) {
             flb_input_resume(in);
@@ -2475,6 +2483,22 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
                       flb_input_name(in),
                       ((struct flb_storage_input *)in->storage)->cio->total_chunks_up,
                       ((struct flb_storage_input *)in->storage)->cio->max_chunks_up);
+        }
+    }
+
+    /* * Check if ingestion should be resumed after rate limiting is cleared.
+     * Even if memory and storage limits are fine, we need this check to
+     * recover from a pure rate-gate pause.
+     */
+    if (in->rate_gate_status == FLB_INPUT_RUNNING &&
+        in->mem_buf_status == FLB_INPUT_RUNNING &&
+        in->storage_buf_status == FLB_INPUT_RUNNING &&
+        in->config->is_ingestion_active == FLB_TRUE) {
+
+        /* Check if the input is still internally marked as paused */
+        if (flb_input_paused(in) == FLB_TRUE) {
+            flb_input_resume(in);
+            flb_plg_info(in, "resume (rate gate limit cleared)");
         }
     }
 
@@ -2496,6 +2520,10 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i, size_t j
                  storage->cio->max_chunks_up);
         flb_input_pause(i);
         i->storage_buf_status = FLB_INPUT_PAUSED;
+        return FLB_TRUE;
+    }
+
+    if (flb_input_rate_gate_protect(i) == FLB_TRUE) {
         return FLB_TRUE;
     }
 
@@ -2709,7 +2737,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     }
 
     /* Check if the input plugin has been paused */
-    if (flb_input_buf_paused(in) == FLB_TRUE) {
+    if (flb_input_paused(in) == FLB_TRUE) {
         flb_debug("[input chunk] %s is paused, cannot append records",
                   flb_input_name(in));
         return -1;
@@ -2804,6 +2832,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         /* fluentbit_input_bytes_total */
         cmt_counter_add(in->cmt_bytes, ts, buf_size,
                         1, (char *[]) {(char *) flb_input_name(in)});
+        flb_input_rate_update(in, ts, ic->added_records, buf_size);
 
         /* OLD api */
         flb_metrics_sum(FLB_METRIC_N_RECORDS, ic->added_records, in->metrics);
@@ -3110,7 +3139,18 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
         cr = NULL;
 
         while (1) {
-            if (flb_input_buf_paused(ins) == FLB_TRUE) {
+            if (flb_input_paused(ins) == FLB_TRUE) {
+                /*
+                 * When an input is paused only by rate gate, there might be no
+                 * chunk lifecycle updates to trigger a resume re-check. Poll
+                 * it here so time-window based rate limits can recover.
+                 */
+                flb_input_rate_gate_maybe_resume(ins);
+
+                if (flb_input_paused(ins) == FLB_FALSE) {
+                    continue;
+                }
+
                 break;
             }
 
