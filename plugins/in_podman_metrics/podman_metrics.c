@@ -113,10 +113,15 @@ static int collect_container_data(struct flb_in_metrics *ctx)
                 metadata_token_start = strstr(metadata, JSON_SUBFIELD_IMAGE_NAME);
                 if (metadata_token_start) {
                     metadata_token_stop = strstr(metadata_token_start + JSON_SUBFIELD_SIZE_IMAGE_NAME+1, "\\\"");
-                    metadata_token_size = metadata_token_stop - metadata_token_start - JSON_SUBFIELD_SIZE_IMAGE_NAME;
-
-                    strncpy(image_name, metadata_token_start+JSON_SUBFIELD_SIZE_IMAGE_NAME, metadata_token_size);
-                    image_name[metadata_token_size] = '\0';
+                    if (metadata_token_stop) {
+                        metadata_token_size = metadata_token_stop - metadata_token_start - JSON_SUBFIELD_SIZE_IMAGE_NAME;
+                        strncpy(image_name, metadata_token_start+JSON_SUBFIELD_SIZE_IMAGE_NAME, metadata_token_size);
+                        image_name[metadata_token_size] = '\0';
+                    }
+                    else {
+                        strncpy(image_name, "unknown", IMAGE_NAME_SIZE - 1);
+                        image_name[sizeof("unknown") - 1] = '\0';
+                    }
 
                     flb_plg_trace(ctx->ins, "Found image name %s", image_name);
                     add_container_to_list(ctx, id, name, image_name);
@@ -225,10 +230,19 @@ static int create_counter(struct flb_in_metrics *ctx, struct cmt_counter **count
         return -1;
     }
 
-    if (strcmp(metric_name, COUNTER_CPU) == 0 || strcmp(metric_name, COUNTER_CPU_USER) == 0) {
-        fvalue = fvalue / 1000000000;
-        flb_plg_trace(ctx->ins, "Converting %s from nanoseconds to seconds (%lu -> %lu)", metric_name, value, fvalue);
-
+    if (strcmp(metric_name, COUNTER_CPU) == 0 ||
+        strcmp(metric_name, COUNTER_CPU_USER) == 0) {
+        if (ctx->cgroup_version == CGROUP_V2) {
+            /* cgroup v2 cpu.stat reports in microseconds */
+            fvalue = fvalue / 1000000;
+        }
+        else {
+            /* cgroup v1 cpuacct reports in nanoseconds */
+            fvalue = fvalue / 1000000000;
+        }
+        flb_plg_trace(ctx->ins,
+                      "Converting %s to seconds (%lu -> %lu)",
+                      metric_name, value, fvalue);
     }
 
     labels = (char *[]){id, name, image_name, interface};
