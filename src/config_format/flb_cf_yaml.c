@@ -120,6 +120,7 @@ enum state {
     STATE_SECTION,         /* top level */
     STATE_SECTION_KEY,
     STATE_SECTION_VAL,
+    STATE_SECTION_VAL_LIST,
 
     STATE_SERVICE,         /* 'service' section */
     STATE_INCLUDE,         /* 'includes' section */
@@ -268,6 +269,8 @@ static char *state_str(enum state val)
         return "section-key";
     case STATE_SECTION_VAL:
         return "section-value";
+    case STATE_SECTION_VAL_LIST:
+        return "section-value-list";
     case STATE_SERVICE:
         return "service";
     case STATE_INCLUDE:
@@ -885,6 +888,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
     char *value;
     struct flb_cf_env_var *keyval;
     char *last_included;
+    flb_sds_t normalized_key;
 
     last_included = state_get_last(ctx);
 
@@ -1952,6 +1956,75 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                     flb_error("unable to add property");
                     return YAML_FAILURE;
                 }
+            }
+
+            state = state_pop(ctx);
+
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
+
+            if (state->state != STATE_SECTION_KEY) {
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+            break;
+        case YAML_SEQUENCE_START_EVENT:
+            normalized_key = flb_cf_key_translate(conf, state->key, flb_sds_len(state->key));
+            if (normalized_key == NULL) {
+                flb_error("unable to normalize key");
+                return YAML_FAILURE;
+            }
+
+            ret = strcasecmp(normalized_key, "parsers_file");
+            flb_sds_destroy(normalized_key);
+
+            if (state->section != SECTION_SERVICE || ret != 0) {
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+
+            state = state_push_key(ctx, STATE_SECTION_VAL_LIST, state->key);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            break;
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_SECTION_VAL_LIST:
+        switch(event->type) {
+        case YAML_SCALAR_EVENT:
+            value = (char *) event->data.scalar.value;
+
+            if (state->cf_section == NULL) {
+                flb_error("no section to register key value to");
+                return YAML_FAILURE;
+            }
+
+            if (flb_cf_section_property_add(conf, state->cf_section->properties,
+                                            state->key, flb_sds_len(state->key),
+                                            value, strlen(value)) < 0) {
+                flb_error("unable to add property");
+                return YAML_FAILURE;
+            }
+            break;
+        case YAML_SEQUENCE_END_EVENT:
+            state = state_pop(ctx);
+
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
+
+            if (state->state != STATE_SECTION_VAL) {
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
             }
 
             state = state_pop(ctx);
