@@ -2009,7 +2009,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
             if (flb_cf_section_property_add(conf, state->cf_section->properties,
                                             state->key, flb_sds_len(state->key),
-                                            value, strlen(value)) < 0) {
+                                            value, strlen(value)) == NULL) {
                 flb_error("unable to add property");
                 return YAML_FAILURE;
             }
