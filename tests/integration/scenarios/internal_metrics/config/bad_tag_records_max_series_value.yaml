@@ -1,0 +1,22 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: error
+  telemetry:
+    metrics:
+      logs:
+        tag_records:
+          enabled: true
+          max_series: notanumber
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: bad.maxseries
+      dummy: '{"message":"x"}'
+      interval_sec: 0
+      interval_nsec: 200000000
+
+  outputs:
+    - name: 'null'
+      match: '*'

@@ -21,6 +21,8 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <stddef.h>
+#include <limits.h>
+#include <errno.h>
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
@@ -45,6 +47,7 @@
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/flb_bucket_queue.h>
 #include <fluent-bit/flb_router.h>
+#include <fluent-bit/flb_hash_table.h>
 
 const char *FLB_CONF_ENV_LOGLEVEL = "FLB_LOG_LEVEL";
 
@@ -174,6 +177,12 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_REJECTED_LIMIT,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, storage_rejected_limit)},
+
+    /*
+     * Telemetry tag-records metrics are configured exclusively through the
+     * nested 'telemetry' YAML block (see config_apply_telemetry_block); there
+     * is intentionally no flat dotted-key service property for them.
+     */
 
     /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
@@ -363,6 +372,32 @@ struct flb_config *flb_config_init()
     config->storage_bl_flush_on_shutdown = FLB_FALSE;
     config->storage_rejected_path = NULL;
     config->storage_rejected_limit = NULL;
+    config->telemetry_metrics_logs_tag_records = FLB_FALSE;
+    config->telemetry_metrics_logs_tag_records_max_series = 500;
+    config->telemetry_metrics_logs_tag_records_max_tag_length = 128;
+    config->telemetry_metrics_logs_tag_records_series_count = 0;
+    config->telemetry_metrics_logs_tag_records_ht =
+        flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 512, 0);
+    if (!config->telemetry_metrics_logs_tag_records_ht) {
+        flb_router_destroy(config->router);
+        if (config->kernel) {
+            flb_kernel_destroy(config->kernel);
+        }
+#ifdef FLB_HAVE_HTTP_SERVER
+        if (config->http_listen) {
+            flb_free(config->http_listen);
+        }
+
+        if (config->http_port) {
+            flb_free(config->http_port);
+        }
+#endif
+        flb_cf_destroy(cf);
+        flb_free(config);
+        return NULL;
+    }
+    pthread_mutex_init(&config->telemetry_metrics_logs_tag_records_lock, NULL);
+    config->telemetry_metrics_logs_tag_records_lock_inited = FLB_TRUE;
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
     config->json_escape_unicode = FLB_TRUE;
@@ -549,6 +584,13 @@ void flb_config_exit(struct flb_config *config)
 
     if (config->env) {
         flb_env_destroy(config->env);
+    }
+
+    if (config->telemetry_metrics_logs_tag_records_ht) {
+        flb_hash_table_destroy(config->telemetry_metrics_logs_tag_records_ht);
+    }
+    if (config->telemetry_metrics_logs_tag_records_lock_inited == FLB_TRUE) {
+        pthread_mutex_destroy(&config->telemetry_metrics_logs_tag_records_lock);
     }
 
     /* Program name */
@@ -838,6 +880,321 @@ int flb_config_set_program_name(struct flb_config *config, char *name)
     return 0;
 }
 
+/* Parse a scalar variant as a boolean (accepts bool, int, or string). */
+static int variant_as_bool(struct flb_config *config,
+                           struct cfl_variant *v, int *out)
+{
+    int ret;
+    flb_sds_t tmp;
+
+    switch (v->type) {
+    case CFL_VARIANT_BOOL:
+        *out = v->data.as_bool ? FLB_TRUE : FLB_FALSE;
+        return 0;
+    case CFL_VARIANT_INT:
+        /* only 0/1 are valid numeric booleans (reject e.g. 2 or -1) */
+        if (v->data.as_int64 != 0 && v->data.as_int64 != 1) {
+            return -1;
+        }
+        *out = v->data.as_int64 ? FLB_TRUE : FLB_FALSE;
+        return 0;
+    case CFL_VARIANT_UINT:
+        if (v->data.as_uint64 != 0 && v->data.as_uint64 != 1) {
+            return -1;
+        }
+        *out = v->data.as_uint64 ? FLB_TRUE : FLB_FALSE;
+        return 0;
+    case CFL_VARIANT_STRING:
+        tmp = flb_env_var_translate(config->env, v->data.as_string);
+        if (!tmp) {
+            return -1;
+        }
+        ret = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+        *out = ret;
+        return 0;
+    default:
+        return -1;
+    }
+}
+
+/* Parse a scalar variant as an int (accepts int, uint, or string). */
+static int variant_as_int(struct flb_config *config,
+                          struct cfl_variant *v, int *out)
+{
+    flb_sds_t tmp;
+    char *end;
+    long val;
+
+    switch (v->type) {
+    case CFL_VARIANT_INT:
+        if (v->data.as_int64 < INT_MIN || v->data.as_int64 > INT_MAX) {
+            return -1;
+        }
+        *out = (int) v->data.as_int64;
+        return 0;
+    case CFL_VARIANT_UINT:
+        if (v->data.as_uint64 > (uint64_t) INT_MAX) {
+            return -1;
+        }
+        *out = (int) v->data.as_uint64;
+        return 0;
+    case CFL_VARIANT_STRING:
+        tmp = flb_env_var_translate(config->env, v->data.as_string);
+        if (!tmp) {
+            return -1;
+        }
+        errno = 0;
+        end = NULL;
+        val = strtol(tmp, &end, 10);
+        /*
+         * Require a complete, in-range integer string: reject empty input,
+         * trailing characters (e.g. "10abc"), and overflow. A typo must not
+         * silently become 0 and disable a cardinality guard.
+         */
+        if (end == NULL || end == tmp || *end != '\0' ||
+            errno == ERANGE || val < INT_MIN || val > INT_MAX) {
+            flb_sds_destroy(tmp);
+            return -1;
+        }
+        flb_sds_destroy(tmp);
+        *out = (int) val;
+        return 0;
+    default:
+        return -1;
+    }
+}
+
+/*
+ * Reject any key in 'kvlist' that is not in the NULL-terminated 'allowed'
+ * list. This catches typos in the parent maps (e.g. 'metricz' or 'tag_record')
+ * that would otherwise look configured to the user but silently do nothing.
+ */
+static int reject_unknown_keys(struct cfl_kvlist *kvlist, const char *path,
+                               const char **allowed)
+{
+    int i;
+    int ok;
+    struct cfl_list *head;
+    struct cfl_kvpair *kv;
+
+    cfl_list_foreach(head, &kvlist->list) {
+        kv = cfl_list_entry(head, struct cfl_kvpair, _head);
+
+        ok = FLB_FALSE;
+        for (i = 0; allowed[i] != NULL; i++) {
+            if (strcasecmp(kv->key, allowed[i]) == 0) {
+                ok = FLB_TRUE;
+                break;
+            }
+        }
+
+        if (!ok) {
+            flb_error("[config] unknown '%s' option '%s'", path, kv->key);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * Navigate telemetry > metrics > logs > tag_records.
+ *
+ *   returns  1  -> '*out' is set to the tag_records node
+ *            0  -> the block stops short of tag_records (nothing to configure)
+ *           -1  -> a known intermediate node has the wrong shape, or any map
+ *                  along the path contains an unknown key (malformed)
+ *
+ * This is intentionally a nested-block-only API: there is no flat dotted-key
+ * variant (e.g. "telemetry.metrics.logs.tag_records: true" is not honored).
+ * 'telemetry' must already be validated as a map by the caller.
+ */
+static int telemetry_logs_tag_records(struct cfl_variant *telemetry,
+                                      struct cfl_variant **out)
+{
+    static const char *telemetry_keys[] = {"metrics", NULL};
+    static const char *metrics_keys[]   = {"logs", NULL};
+    static const char *logs_keys[]      = {"tag_records", NULL};
+    struct cfl_variant *metrics;
+    struct cfl_variant *logs;
+    struct cfl_variant *tag_records;
+
+    *out = NULL;
+
+    if (reject_unknown_keys(telemetry->data.as_kvlist,
+                            "telemetry", telemetry_keys) != 0) {
+        return -1;
+    }
+
+    metrics = cfl_kvlist_fetch(telemetry->data.as_kvlist, "metrics");
+    if (!metrics) {
+        return 0;
+    }
+    if (metrics->type != CFL_VARIANT_KVLIST) {
+        flb_error("[config] 'telemetry.metrics' must be a map");
+        return -1;
+    }
+
+    if (reject_unknown_keys(metrics->data.as_kvlist,
+                            "telemetry.metrics", metrics_keys) != 0) {
+        return -1;
+    }
+
+    logs = cfl_kvlist_fetch(metrics->data.as_kvlist, "logs");
+    if (!logs) {
+        return 0;
+    }
+    if (logs->type != CFL_VARIANT_KVLIST) {
+        flb_error("[config] 'telemetry.metrics.logs' must be a map");
+        return -1;
+    }
+
+    if (reject_unknown_keys(logs->data.as_kvlist,
+                            "telemetry.metrics.logs", logs_keys) != 0) {
+        return -1;
+    }
+
+    tag_records = cfl_kvlist_fetch(logs->data.as_kvlist, "tag_records");
+    if (!tag_records) {
+        return 0;
+    }
+
+    *out = tag_records;
+    return 1;
+}
+
+/* Apply a service-level 'telemetry' block (master switch + global limits). */
+static int config_apply_telemetry_block(struct flb_config *config,
+                                        struct cfl_variant *telemetry)
+{
+    int ret;
+    int b;
+    int n;
+    struct cfl_variant *tag_records;
+    struct cfl_list *head;
+    struct cfl_kvpair *kv;
+
+    if (telemetry->type != CFL_VARIANT_KVLIST) {
+        flb_error("[config] 'telemetry' must be a map");
+        return -1;
+    }
+
+    ret = telemetry_logs_tag_records(telemetry, &tag_records);
+    if (ret <= 0) {
+        /* 0 = nothing to configure, -1 = malformed (already logged) */
+        return ret;
+    }
+
+    /* tag_records is always a map; the 'enabled' key is the on/off toggle */
+    if (tag_records->type != CFL_VARIANT_KVLIST) {
+        flb_error("[config] 'telemetry.metrics.logs.tag_records' must be a map "
+                  "with an 'enabled' key");
+        return -1;
+    }
+
+    /* apply known keys, reject unknown ones (catch typos) */
+    cfl_list_foreach(head, &tag_records->data.as_kvlist->list) {
+        kv = cfl_list_entry(head, struct cfl_kvpair, _head);
+
+        if (strcasecmp(kv->key, "enabled") == 0) {
+            if (variant_as_bool(config, kv->val, &b) != 0) {
+                flb_error("[config] invalid "
+                          "'telemetry.metrics.logs.tag_records.enabled'");
+                return -1;
+            }
+            config->telemetry_metrics_logs_tag_records = b;
+        }
+        else if (strcasecmp(kv->key, "max_series") == 0) {
+            if (variant_as_int(config, kv->val, &n) != 0) {
+                flb_error("[config] invalid "
+                          "'telemetry.metrics.logs.tag_records.max_series'");
+                return -1;
+            }
+            config->telemetry_metrics_logs_tag_records_max_series = n;
+        }
+        else if (strcasecmp(kv->key, "max_tag_length") == 0) {
+            if (variant_as_int(config, kv->val, &n) != 0) {
+                flb_error("[config] invalid "
+                          "'telemetry.metrics.logs.tag_records.max_tag_length'");
+                return -1;
+            }
+            config->telemetry_metrics_logs_tag_records_max_tag_length = n;
+        }
+        else {
+            flb_error("[config] unknown "
+                      "'telemetry.metrics.logs.tag_records' option '%s'",
+                      kv->key);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * Apply an input-level 'telemetry' block. Inputs only support the 'enabled'
+ * toggle of telemetry.metrics.logs.tag_records (the global limits are
+ * service-only). tag_records is always a map, like the service section.
+ */
+static int input_apply_telemetry_block(struct flb_input_instance *ins,
+                                       struct cfl_variant *telemetry)
+{
+    int ret;
+    int b;
+    struct cfl_variant *tag_records;
+    struct cfl_variant *enabled;
+    struct cfl_list *head;
+    struct cfl_kvpair *kv;
+
+    if (telemetry->type != CFL_VARIANT_KVLIST) {
+        flb_error("[config] 'telemetry' must be a map");
+        return -1;
+    }
+
+    ret = telemetry_logs_tag_records(telemetry, &tag_records);
+    if (ret <= 0) {
+        return ret;
+    }
+
+    if (tag_records->type != CFL_VARIANT_KVLIST) {
+        flb_error("[config] 'telemetry.metrics.logs.tag_records' must be a map "
+                  "with an 'enabled' key on input '%s'", flb_input_name(ins));
+        return -1;
+    }
+
+    /* only 'enabled' is valid per input (limits are service-only) */
+    enabled = NULL;
+    cfl_list_foreach(head, &tag_records->data.as_kvlist->list) {
+        kv = cfl_list_entry(head, struct cfl_kvpair, _head);
+        if (strcasecmp(kv->key, "enabled") == 0) {
+            enabled = kv->val;
+        }
+        else {
+            flb_error("[config] 'telemetry.metrics.logs.tag_records.%s' is "
+                      "service-level only, not supported on input '%s'",
+                      kv->key, flb_input_name(ins));
+            return -1;
+        }
+    }
+
+    if (!enabled) {
+        return 0;
+    }
+
+    if (variant_as_bool(ins->config, enabled, &b) != 0) {
+        flb_error("[config] invalid 'telemetry.metrics.logs.tag_records.enabled' "
+                  "on input '%s'", flb_input_name(ins));
+        return -1;
+    }
+
+    ins->telemetry_metrics_logs_tag_records = b;
+    return 0;
+}
+
 static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, enum section_type type)
 {
     int ret;
@@ -945,6 +1302,11 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
                         val = kv->val->data.as_array->entries[i];
                         ret = flb_input_set_property(ins, kv->key, val->data.as_string);
                     }
+                } else if (kv->val->type == CFL_VARIANT_KVLIST) {
+                    /* nested map blocks: only 'telemetry' is recognized */
+                    if (strcasecmp(kv->key, "telemetry") == 0) {
+                        ret = input_apply_telemetry_block(ins, kv->val);
+                    }
                 }
             }
             else if (type == FLB_CF_FILTER) {
@@ -1021,6 +1383,42 @@ error:
     }
     return -1;
 }
+
+static int set_service_property(struct flb_config *config,
+                                struct cfl_kvpair *kv)
+{
+    if (kv->val->type == CFL_VARIANT_STRING) {
+        /*
+         * The 'telemetry' settings are configured exclusively as a nested
+         * block. Reject a bare scalar ("telemetry: x") or a flat dotted key
+         * ("telemetry.metrics.logs.tag_records: true") explicitly, instead of
+         * letting it fall through and be silently ignored as an unknown key.
+         */
+        if (strcasecmp(kv->key, "telemetry") == 0 ||
+            strncasecmp(kv->key, "telemetry.", 10) == 0) {
+            flb_error("[config] '%s' must be configured as a nested 'telemetry' "
+                      "block", kv->key);
+            return -1;
+        }
+        return flb_config_set_property(config, kv->key,
+                                       kv->val->data.as_string);
+    }
+
+    if (kv->val->type == CFL_VARIANT_KVLIST) {
+        /* nested map blocks: only 'telemetry' is recognized */
+        if (strcasecmp(kv->key, "telemetry") == 0) {
+            return config_apply_telemetry_block(config, kv->val);
+        }
+
+        flb_error("[config] unsupported nested service property '%s'", kv->key);
+        return -1;
+    }
+
+    flb_error("[config] unsupported value type for service property '%s'",
+              kv->key);
+    return -1;
+}
+
 /* Load a struct flb_config_format context into a flb_config instance */
 int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
 {
@@ -1094,7 +1492,11 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
         /* Iterate properties */
         cfl_list_foreach(chead, &s->properties->list) {
             ckv = cfl_list_entry(chead, struct cfl_kvpair, _head);
-            flb_config_set_property(config, ckv->key, ckv->val->data.as_string);
+            if (set_service_property(config, ckv) == -1) {
+                flb_error("[config] could not configure service property '%s'",
+                          ckv->key);
+                return -1;
+            }
         }
     }
 

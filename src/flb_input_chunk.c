@@ -42,6 +42,7 @@
 #include <monkey/mk_core.h>
 #include <string.h>
 #include <stdint.h>
+#include <limits.h>
 
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -55,6 +56,162 @@
 #define FLB_INPUT_CHUNK_RELEASE_SCOPE_GLOBAL 1
 
 #define FLB_INPUT_CHUNK_RAW_LOG_ROUTING      (1 << 0)
+
+static int logs_tag_records_metrics_enabled(struct flb_input_instance *in)
+{
+    if (in->telemetry_metrics_logs_tag_records != -1) {
+        return in->telemetry_metrics_logs_tag_records;
+    }
+
+    return in->config->telemetry_metrics_logs_tag_records;
+}
+
+static void update_logs_tag_records_untracked(struct flb_input_instance *in,
+                                         uint64_t ts,
+                                         size_t records,
+                                         const char *reason)
+{
+    if (!in->cmt_logs_tag_records_untracked || records == 0) {
+        return;
+    }
+
+    cmt_counter_add(in->cmt_logs_tag_records_untracked, ts, records,
+                    2, (char *[]) {(char *) flb_input_name(in),
+                                   (char *) reason});
+}
+
+static void update_logs_tag_records_metrics(struct flb_input_instance *in,
+                                       uint64_t ts,
+                                       size_t records,
+                                       const char *tag,
+                                       size_t tag_len)
+{
+    int ret;
+    int prefix_len;
+    char value = 1;
+    char prefix[32];
+    char stack_key[256];
+    char *key;
+    size_t input_name_len;
+    size_t key_len;
+    size_t out_size;
+    void *out_buf;
+    const char *input_name;
+    flb_sds_t tag_sds;
+    struct flb_config *config;
+
+    if (records == 0 || logs_tag_records_metrics_enabled(in) != FLB_TRUE) {
+        return;
+    }
+
+    if (!in->cmt_logs_tag_records || !in->cmt_logs_tag_records_untracked) {
+        return;
+    }
+
+    config = in->config;
+
+    /* Enforce the tag length limit before allocating anything */
+    if (config->telemetry_metrics_logs_tag_records_max_tag_length > 0 &&
+        tag_len > (size_t) config->telemetry_metrics_logs_tag_records_max_tag_length) {
+        update_logs_tag_records_untracked(in, ts, records, "tag_length_limit");
+        return;
+    }
+
+    input_name = flb_input_name(in);
+    input_name_len = strlen(input_name);
+
+    /*
+     * Build a NUL-free, unambiguous cardinality key using a numeric length
+     * prefix: "<name_len>:<name><tag>". The hash table stores and compares
+     * keys with NUL-terminated semantics (flb_strndup/strncmp), so the key
+     * must not contain an embedded NUL separator. The length prefix keeps the
+     * (name, tag) -> key mapping injective without relying on a delimiter byte
+     * that could legitimately appear in a name or tag.
+     */
+    prefix_len = snprintf(prefix, sizeof(prefix), "%zu:", input_name_len);
+    if (prefix_len < 0 || (size_t) prefix_len >= sizeof(prefix)) {
+        update_logs_tag_records_untracked(in, ts, records, "error");
+        return;
+    }
+
+    key_len = (size_t) prefix_len + input_name_len + tag_len;
+
+    /*
+     * The hash table API takes the key length as an int. With max_tag_length
+     * disabled (<= 0) an extremely large tag could otherwise overflow the
+     * cast, so guard the key length explicitly.
+     */
+    if (key_len > INT_MAX) {
+        update_logs_tag_records_untracked(in, ts, records, "error");
+        return;
+    }
+
+    if (key_len <= sizeof(stack_key)) {
+        key = stack_key;
+    }
+    else {
+        key = flb_malloc(key_len);
+        if (!key) {
+            flb_errno();
+            update_logs_tag_records_untracked(in, ts, records, "error");
+            return;
+        }
+    }
+
+    memcpy(key, prefix, prefix_len);
+    memcpy(key + prefix_len, input_name, input_name_len);
+    memcpy(key + prefix_len + input_name_len, tag, tag_len);
+
+    pthread_mutex_lock(&config->telemetry_metrics_logs_tag_records_lock);
+
+    ret = flb_hash_table_get(config->telemetry_metrics_logs_tag_records_ht,
+                             key, (int) key_len, &out_buf, &out_size);
+    if (ret == -1) {
+        if (config->telemetry_metrics_logs_tag_records_max_series > 0 &&
+            config->telemetry_metrics_logs_tag_records_series_count >=
+            (size_t) config->telemetry_metrics_logs_tag_records_max_series) {
+            pthread_mutex_unlock(&config->telemetry_metrics_logs_tag_records_lock);
+            if (key != stack_key) {
+                flb_free(key);
+            }
+            update_logs_tag_records_untracked(in, ts, records, "max_series");
+            return;
+        }
+
+        ret = flb_hash_table_add(config->telemetry_metrics_logs_tag_records_ht,
+                                 key, (int) key_len, &value, sizeof(value));
+        if (ret == -1) {
+            pthread_mutex_unlock(&config->telemetry_metrics_logs_tag_records_lock);
+            if (key != stack_key) {
+                flb_free(key);
+            }
+            update_logs_tag_records_untracked(in, ts, records, "error");
+            return;
+        }
+
+        config->telemetry_metrics_logs_tag_records_series_count++;
+    }
+
+    pthread_mutex_unlock(&config->telemetry_metrics_logs_tag_records_lock);
+
+    if (key != stack_key) {
+        flb_free(key);
+    }
+
+    /* cmetrics requires a NUL-terminated label value for the tag */
+    tag_sds = flb_sds_create_len(tag, tag_len);
+    if (!tag_sds) {
+        flb_errno();
+        update_logs_tag_records_untracked(in, ts, records, "error");
+        return;
+    }
+
+    cmt_counter_add(in->cmt_logs_tag_records, ts, records,
+                    2, (char *[]) {(char *) input_name,
+                                   (char *) tag_sds});
+
+    flb_sds_destroy(tag_sds);
+}
 
 struct input_chunk_raw {
     struct flb_input_instance *ins;
@@ -2800,6 +2957,10 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         /* fluentbit_input_records_total */
         cmt_counter_add(in->cmt_records, ts, ic->added_records,
                         1, (char *[]) {(char *) flb_input_name(in)});
+
+        if (event_type == FLB_INPUT_LOGS) {
+            update_logs_tag_records_metrics(in, ts, ic->added_records, tag, tag_len);
+        }
 
         /* fluentbit_input_bytes_total */
         cmt_counter_add(in->cmt_bytes, ts, buf_size,
