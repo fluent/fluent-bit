@@ -54,6 +54,7 @@ struct test_k8s_server_ctx {
     char json_input_file[1024];
     char json_input_file_to_stream[1024];
     int chunk_size;            /* send messages in http chunks of this size, if 0 send all data */
+    int watch_count;           /* number of watch requests served */
 };
 
 
@@ -160,10 +161,11 @@ static void cb_root(mk_request_t *request, void *data)
     struct test_k8s_server_ctx *server = data;
 
     if (request->query_string.data && strstr(request->query_string.data, "watch=1") != NULL) {
+        server->watch_count++;
         mk_http_status(request, 200);
         mk_http_header(request, "Content-Type", 12, JSON_CONTENT_TYPE, 16);
 
-        if(strlen(server->json_input_file_to_stream) > 0) {
+        if(server->watch_count == 1 && strlen(server->json_input_file_to_stream) > 0) {
             payload = read_file(server->json_input_file_to_stream);
             char* start = payload;
             int maxSize = server->chunk_size;
@@ -619,10 +621,57 @@ void flb_test_config_db_locking_values()
 }
 #endif
 
+/* Test with smaller chunks - splits single event into 3 chunks */
+void flb_test_events_with_3chunks()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    int trys;
+
+    int ret;
+    int num;
+    const char *filename = "eventlist_v1_with_lastTimestamp";
+    const char *stream_filename = "watch_v1_with_lastTimestamp";
+
+    clear_output_num();
+
+    /* Use 400 byte chunks to split 1176-byte JSON into 3 chunks */
+    struct test_k8s_server_ctx* k8s_server = initialize_mock_k8s_api(
+        filename, stream_filename, 400
+    );
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = (void *)k8s_server;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* waiting to flush */
+    for (trys = 0; trys < 5 && get_output_num() <= 1; trys++) {
+        flb_time_msleep(1000);
+    }
+
+    num = get_output_num();
+    if (!TEST_CHECK(num >= 2))  {
+        TEST_MSG("2 output records are expected found %d", num);
+    }
+
+    flb_time_msleep(500);
+    mock_k8s_api_destroy(k8s_server);
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     {"events_v1_with_lastTimestamp", flb_test_events_v1_with_lastTimestamp},
     {"events_v1_with_creationTimestamp", flb_test_events_v1_with_creationTimestamp},
     //{"events_v1_with_chunkedrecv", flb_test_events_with_chunkedrecv},
+    {"events_v1_with_3chunks", flb_test_events_with_3chunks},
 #ifdef FLB_HAVE_SQLDB
     {"config_db_sync_values", flb_test_config_db_sync_values},
     {"config_db_journal_mode_values", flb_test_config_db_journal_mode_values},
