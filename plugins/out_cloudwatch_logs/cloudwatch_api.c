@@ -371,20 +371,54 @@ error:
     return -1;
 }
 
+static int escape_stream_names(struct log_stream *stream,
+                               char **group_name, size_t *group_name_size,
+                               char **stream_name, size_t *stream_name_size)
+{
+    int ret;
+
+    ret = flb_utils_write_str_buf(stream->group, strlen(stream->group),
+                                  group_name, group_name_size, FLB_FALSE);
+    if (ret < 0) {
+        return -1;
+    }
+
+    ret = flb_utils_write_str_buf(stream->name, strlen(stream->name),
+                                  stream_name, stream_name_size, FLB_FALSE);
+    if (ret < 0) {
+        flb_free(*group_name);
+        *group_name = NULL;
+        return -1;
+    }
+
+    return 0;
+}
+
 /*
  * Writes the "header" for a put log events payload
  */
-static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
-                            struct log_stream *stream, int *offset)
+int flb_cloudwatch_init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
+                                    struct log_stream *stream, int *offset)
 {
+    char *group_name = NULL;
+    char *stream_name = NULL;
+    size_t group_name_size;
+    size_t stream_name_size;
     int ret;
+
+    ret = escape_stream_names(stream, &group_name, &group_name_size,
+                              &stream_name, &stream_name_size);
+    if (ret < 0) {
+        goto error;
+    }
+
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "{\"logGroupName\":\"", 17)) {
         goto error;
     }
 
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
-                      stream->group, 0)) {
+                      group_name, group_name_size)) {
         goto error;
     }
 
@@ -394,7 +428,7 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     }
 
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
-                      stream->name, 0)) {
+                      stream_name, stream_name_size)) {
         goto error;
     }
 
@@ -443,9 +477,13 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
         goto error;
     }
 
+    flb_free(group_name);
+    flb_free(stream_name);
     return 0;
 
 error:
+    flb_free(group_name);
+    flb_free(stream_name);
     return -1;
 }
 
@@ -754,13 +792,25 @@ int process_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
 
 /* Resets or inits a cw_flush struct */
 void reset_flush_buf(struct flb_cloudwatch *ctx, struct cw_flush *buf) {
+    char *group_name = NULL;
+    char *stream_name = NULL;
+    size_t group_name_size = 0;
+    size_t stream_name_size = 0;
+    int ret;
+
     buf->event_index = 0;
     buf->tmp_buf_offset = 0;
     buf->event_index = 0;
     buf->data_size = PUT_LOG_EVENTS_HEADER_LEN + PUT_LOG_EVENTS_FOOTER_LEN;
     if (buf->current_stream != NULL) {
-        buf->data_size += strlen(buf->current_stream->name);
-        buf->data_size += strlen(buf->current_stream->group);
+        ret = escape_stream_names(buf->current_stream, &group_name, &group_name_size,
+                                  &stream_name, &stream_name_size);
+        if (ret == 0) {
+            buf->data_size += group_name_size;
+            buf->data_size += stream_name_size;
+            flb_free(group_name);
+            flb_free(stream_name);
+        }
     }
 }
 
@@ -783,7 +833,7 @@ retry:
     buf->current_stream->oldest_event = 0;
 
     offset = 0;
-    ret = init_put_payload(ctx, buf, buf->current_stream, &offset);
+    ret = flb_cloudwatch_init_put_payload(ctx, buf, buf->current_stream, &offset);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to initialize PutLogEvents payload");
         return -1;
@@ -1888,6 +1938,78 @@ int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream)
     return -1;
 }
 
+flb_sds_t flb_cloudwatch_create_log_stream_body(struct log_stream *stream)
+{
+    const char *group_prefix = "{\"logGroupName\":\"";
+    const char *stream_prefix = "\",\"logStreamName\":\"";
+    const char *suffix = "\"}";
+    flb_sds_t body = NULL;
+    flb_sds_t tmp;
+    char *group_name = NULL;
+    char *stream_name = NULL;
+    size_t group_name_size = 0;
+    size_t stream_name_size = 0;
+    int ret;
+
+    ret = escape_stream_names(stream, &group_name, &group_name_size,
+                              &stream_name, &stream_name_size);
+    if (ret < 0) {
+        return NULL;
+    }
+
+    body = flb_sds_create_size(50 + group_name_size + stream_name_size);
+    if (!body) {
+        flb_errno();
+        goto error;
+    }
+
+    tmp = flb_sds_cat(body, group_prefix, strlen(group_prefix));
+    if (!tmp) {
+        flb_errno();
+        goto error;
+    }
+    body = tmp;
+
+    tmp = flb_sds_cat(body, group_name, group_name_size);
+    if (!tmp) {
+        flb_errno();
+        goto error;
+    }
+    body = tmp;
+
+    tmp = flb_sds_cat(body, stream_prefix, strlen(stream_prefix));
+    if (!tmp) {
+        flb_errno();
+        goto error;
+    }
+    body = tmp;
+
+    tmp = flb_sds_cat(body, stream_name, stream_name_size);
+    if (!tmp) {
+        flb_errno();
+        goto error;
+    }
+    body = tmp;
+
+    tmp = flb_sds_cat(body, suffix, strlen(suffix));
+    if (!tmp) {
+        flb_errno();
+        goto error;
+    }
+    body = tmp;
+
+    flb_free(group_name);
+    flb_free(stream_name);
+
+    return body;
+
+error:
+    flb_free(group_name);
+    flb_free(stream_name);
+    flb_sds_destroy(body);
+    return NULL;
+}
+
 int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream,
                       int can_retry)
 {
@@ -1895,32 +2017,16 @@ int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream,
     struct flb_http_client *c = NULL;
     struct flb_aws_client *cw_client;
     flb_sds_t body;
-    flb_sds_t tmp;
     flb_sds_t error;
     int ret;
 
     flb_plg_info(ctx->ins, "Creating log stream %s in log group %s",
                  stream->name, stream->group);
 
-    body = flb_sds_create_size(50 + strlen(stream->group) +
-                               strlen(stream->name));
+    body = flb_cloudwatch_create_log_stream_body(stream);
     if (!body) {
-        flb_sds_destroy(body);
-        flb_errno();
         return -1;
     }
-
-    /* construct CreateLogStream request body */
-    tmp = flb_sds_printf(&body,
-                         "{\"logGroupName\":\"%s\",\"logStreamName\":\"%s\"}",
-                         stream->group,
-                         stream->name);
-    if (!tmp) {
-        flb_sds_destroy(body);
-        flb_errno();
-        return -1;
-    }
-    body = tmp;
 
     cw_client = ctx->cw_client;
     if (plugin_under_test() == FLB_TRUE) {
