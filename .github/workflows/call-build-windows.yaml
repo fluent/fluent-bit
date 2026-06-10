@@ -169,6 +169,12 @@ jobs:
         with:
           args: install gzip nsis -y
 
+      - name: Get WiX Toolset w/ chocolatey
+        if: ${{ matrix.config.arch == 'amd64_arm64' }}
+        uses: crazy-max/ghaction-chocolatey@dff3862348493b11fba2fbc49147b6d2dfe09b66 # v4.0.0
+        with:
+          args: install wixtoolset -y
+
       # http://man7.org/linux/man-pages/man1/date.1.html
       - name: Get Date
         id: get-date
