@@ -47,6 +47,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     uses: ./.github/workflows/call-build-images.yaml
     with:
       version: pr-${{ github.event.pull_request.number }}
