@@ -69,6 +69,9 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                      const char *data, size_t bytes, int event_type,
                      struct flb_config *config);
 int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream, int can_retry);
+flb_sds_t flb_cloudwatch_create_log_stream_body(struct log_stream *stream);
+int flb_cloudwatch_init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
+                                    struct log_stream *stream, int *offset);
 struct log_stream *get_log_stream(struct flb_cloudwatch *ctx, flb_sds_t tag,
                                   const msgpack_object map);
 int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
@@ -76,5 +79,6 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                    size_t payload_size);
 int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream);
 int compare_events(const void *a_arg, const void *b_arg);
+void reset_flush_buf(struct flb_cloudwatch *ctx, struct cw_flush *buf);
 
 #endif
