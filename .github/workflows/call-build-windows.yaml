@@ -175,6 +175,41 @@ jobs:
         with:
           args: install wixtoolset -y
 
+      - name: Export WiX Toolset path
+        if: ${{ matrix.config.arch == 'amd64_arm64' }}
+        run: |
+          $wix = [Environment]::GetEnvironmentVariable("WIX", "Machine")
+          if (-not $wix) {
+            $wix = [Environment]::GetEnvironmentVariable("WIX", "Process")
+          }
+          if (-not $wix) {
+            $candidates = @(
+              "${env:ProgramFiles(x86)}",
+              "${env:ProgramFiles}"
+            ) | Where-Object { $_ -and (Test-Path $_) }
+            foreach ($candidate in $candidates) {
+              $wix = Get-ChildItem -Path $candidate -Directory -Filter "WiX Toolset v*" |
+                Sort-Object Name -Descending |
+                Select-Object -First 1 -ExpandProperty FullName
+              if ($wix) {
+                break
+              }
+            }
+          }
+          if (-not $wix) {
+            throw "WiX Toolset installation path could not be located"
+          }
+
+          $wixBin = Join-Path $wix "bin"
+          if (!(Test-Path (Join-Path $wixBin "candle.exe")) -or
+              !(Test-Path (Join-Path $wixBin "light.exe"))) {
+            throw "WiX Toolset candle.exe/light.exe could not be located in $wixBin"
+          }
+
+          "WIX=$wix" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $wixBin | Out-File -FilePath $env:GITHUB_PATH -Append
+        shell: pwsh
+
       # http://man7.org/linux/man-pages/man1/date.1.html
       - name: Get Date
         id: get-date
