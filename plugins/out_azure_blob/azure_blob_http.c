@@ -39,7 +39,7 @@ static int hmac_sha256_sign(unsigned char out[32],
                            out, 32);
 }
 
-static int azb_get_oauth2_token(struct flb_azure_blob *ctx)
+static int azb_get_service_principal_token(struct flb_azure_blob *ctx)
 {
     int ret;
     char *token;
@@ -112,10 +112,10 @@ static int azb_get_oauth2_authorization_header(struct flb_azure_blob *ctx,
 
     /* Check if token needs refresh */
     if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
-        ret = azb_get_oauth2_token(ctx);
+        ret = azb_get_service_principal_token(ctx);
         if (ret != 0) {
             pthread_mutex_unlock(&ctx->token_mutex);
-            flb_plg_error(ctx->ins, "failed to refresh OAuth2 token");
+            flb_plg_error(ctx->ins, "failed to refresh Service Principal OAuth2 token");
             return -1;
         }
     }
