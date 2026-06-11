@@ -3009,6 +3009,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     yaml_event_t event;
     FILE *fh;
     struct file_state fstate;
+    struct stat fallback_st;
 
     if (parent && cfg_file[0] != '/') {
 
@@ -3030,6 +3031,22 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         }
 #undef PATH_CONCAT_TEMPLATE
 
+        /*
+         * If the file does not exist relative to the including file's
+         * directory, fall back to the path as given so it resolves against
+         * the current working directory, matching classic-mode (@include)
+         * resolution.
+         */
+        if (stat(include_dir, &fallback_st) != 0 &&
+            stat(cfg_file, &fallback_st) == 0) {
+            flb_sds_destroy(include_dir);
+            include_dir = flb_sds_create(cfg_file);
+
+            if (include_dir == NULL) {
+                flb_error("unable to create filename");
+                return -1;
+            }
+        }
     }
     else {
 

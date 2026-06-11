@@ -14,6 +14,14 @@
 #include "flb_tests_internal.h"
 
 #ifdef _WIN32
+#include <direct.h>
+#define chdir _chdir
+#define getcwd _getcwd
+#else
+#include <unistd.h>
+#endif
+
+#ifdef _WIN32
 #define FLB_TESTS_CONF_PATH FLB_TESTS_DATA_PATH "\\data\\config_format\\yaml"
 #else
 #define FLB_TESTS_CONF_PATH FLB_TESTS_DATA_PATH "/data/config_format/yaml"
@@ -845,6 +853,32 @@ static void test_upstream_servers()
     flb_cf_destroy(cf);
 }
 
+/*
+ * A relative include that does not exist next to the including file must
+ * fall back to the current working directory, matching classic-mode
+ * @include resolution.
+ */
+static void test_include_cwd_fallback()
+{
+    struct flb_cf *cf;
+    char oldcwd[4096];
+
+    TEST_ASSERT(getcwd(oldcwd, sizeof(oldcwd)) != NULL);
+    TEST_ASSERT(chdir(FLB_TESTS_CONF_PATH "/cwd_fallback/workdir") == 0);
+
+    cf = flb_cf_yaml_create(NULL,
+                            FLB_TESTS_CONF_PATH "/cwd_fallback/conf/main.yaml",
+                            NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (cf) {
+        /* one input from main.yaml plus one from the included cwd_file.yaml */
+        TEST_CHECK(mk_list_size(&cf->inputs) == 2);
+        flb_cf_destroy(cf);
+    }
+
+    TEST_ASSERT(chdir(oldcwd) == 0);
+}
+
 static void test_invalid_property()
 {
     char* test_cases[] = {
@@ -886,6 +920,7 @@ TEST_LIST = {
     { "stream_processor", test_stream_processor},
     { "plugins", test_plugins},
     { "upstream_servers", test_upstream_servers},
+    { "include_cwd_fallback", test_include_cwd_fallback},
     { "invalid_input_property", test_invalid_property},
     { 0 }
 };

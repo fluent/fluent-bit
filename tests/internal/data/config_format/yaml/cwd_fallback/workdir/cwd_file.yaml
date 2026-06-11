@@ -1,0 +1,4 @@
+pipeline:
+  inputs:
+    - name: dummy
+      tag: from_cwd

@@ -1,0 +1,9 @@
+includes:
+  - cwd_file.yaml
+
+pipeline:
+  inputs:
+    - name: dummy
+  outputs:
+    - name: stdout
+      match: '*'
