@@ -902,7 +902,22 @@ static void *tls_context_create(int verify,
      *
      * https://www.openssl.org/docs/man1.0.2/man3/SSLv23_method.html
      */
-    if (mode == FLB_TLS_SERVER_MODE) {
+    if (mode == FLB_TLS_SERVER_MODE_DGRAM ||
+        mode == FLB_TLS_CLIENT_MODE_DGRAM) {
+#ifndef OPENSSL_NO_DTLS
+        if (mode == FLB_TLS_SERVER_MODE_DGRAM) {
+            ssl_ctx = SSL_CTX_new(DTLSv1_server_method());
+        }
+        else {
+            ssl_ctx = SSL_CTX_new(DTLSv1_client_method());
+        }
+#else
+        flb_error("[openssl] DTLS mode requested but this OpenSSL build "
+                  "does not provide DTLS support");
+        return NULL;
+#endif
+    }
+    else if (mode == FLB_TLS_SERVER_MODE) {
         ssl_ctx = SSL_CTX_new(SSLv23_server_method());
     }
     else {
@@ -912,6 +927,12 @@ static void *tls_context_create(int verify,
 #else
     if (mode == FLB_TLS_SERVER_MODE) {
         ssl_ctx = SSL_CTX_new(TLS_server_method());
+    }
+    else if (mode == FLB_TLS_SERVER_MODE_DGRAM) {
+        ssl_ctx = SSL_CTX_new(DTLS_server_method());
+    }
+    else if (mode == FLB_TLS_CLIENT_MODE_DGRAM) {
+        ssl_ctx = SSL_CTX_new(DTLS_client_method());
     }
     else {
         ssl_ctx = SSL_CTX_new(TLS_client_method());
@@ -1647,7 +1668,8 @@ static int tls_net_handshake(struct flb_tls *tls,
     pthread_mutex_lock(&ctx->mutex);
 
     if (!session->continuation_flag) {
-        if (tls->mode == FLB_TLS_CLIENT_MODE) {
+        if (tls->mode == FLB_TLS_CLIENT_MODE ||
+            tls->mode == FLB_TLS_CLIENT_MODE_DGRAM) {
             SSL_set_connect_state(session->ssl);
 
             if (ctx->alpn != NULL) {
@@ -1662,7 +1684,8 @@ static int tls_net_handshake(struct flb_tls *tls,
                 }
             }
         }
-        else if (tls->mode == FLB_TLS_SERVER_MODE) {
+        else if (tls->mode == FLB_TLS_SERVER_MODE ||
+                 tls->mode == FLB_TLS_SERVER_MODE_DGRAM) {
             SSL_set_accept_state(session->ssl);
         }
         else {
@@ -1696,10 +1719,12 @@ static int tls_net_handshake(struct flb_tls *tls,
 
     ERR_clear_error();
 
-    if (tls->mode == FLB_TLS_CLIENT_MODE) {
+    if (tls->mode == FLB_TLS_CLIENT_MODE ||
+        tls->mode == FLB_TLS_CLIENT_MODE_DGRAM) {
         ret = SSL_connect(session->ssl);
     }
-    else if (tls->mode == FLB_TLS_SERVER_MODE) {
+    else if (tls->mode == FLB_TLS_SERVER_MODE ||
+             tls->mode == FLB_TLS_SERVER_MODE_DGRAM) {
         ret = SSL_accept(session->ssl);
     }
 
