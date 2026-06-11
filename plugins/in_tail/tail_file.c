@@ -1232,6 +1232,9 @@ static int set_file_position(struct flb_tail_config *ctx,
                 }
                 flb_tail_db_file_offset(file, ctx);
             }
+            if (file->decompression_context == NULL) {
+                file->stream_offset = file->offset;
+            }
             return 0;
         }
     }
