@@ -1869,9 +1869,17 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
             return -1;
         }
 
-        /* Only HTTP proxy is supported for now. */
-        if (strcmp(protocol, "http") != 0) {
+        /* Only HTTP proxy is supported without TLS support. */
+        if (strcmp(protocol, "http") != 0
+#ifdef FLB_HAVE_TLS
+            && strcmp(protocol, "https") != 0
+#endif
+            ) {
+#ifdef FLB_HAVE_TLS
+            flb_error("only HTTP and HTTPS proxies are supported.");
+#else
             flb_error("only HTTP proxy is supported.");
+#endif
             goto error;
         }
 
@@ -1949,7 +1957,11 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
             }
         }
         else if (*(end + 1) == '\0') {
+#ifdef FLB_HAVE_TLS
+            port = flb_strdup(strcmp(protocol, "https") == 0 ? "443" : "80");
+#else
             port = flb_strdup("80");
+#endif
             if (!port) {
                 flb_errno();
                 goto error;
@@ -1988,7 +2000,11 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
                 goto error;
             }
 
+#ifdef FLB_HAVE_TLS
+            port = flb_strdup(strcmp(protocol, "https") == 0 ? "443" : "80");
+#else
             port = flb_strdup("80");
+#endif
             if (!port) {
                 flb_errno();
                 goto error;

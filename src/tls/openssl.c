@@ -81,6 +81,7 @@ struct tls_session {
     char alpn[FLB_TLS_ALPN_MAX_LENGTH];
     int continuation_flag;
     struct tls_context *parent;    /* parent struct tls_context ref */
+    struct tls_session *outer_session; /* outer TLS session for TLS-in-TLS (HTTPS proxy) */
 };
 
 static int host_is_ip_literal(const char *hostname, char *normalized, size_t normalized_size)
@@ -1361,10 +1362,40 @@ static void *tls_session_create(struct flb_tls *tls,
     return session;
 }
 
+/*
+ * Chain inner TLS session I/O through an outer TLS session.
+ * Used for TLS-in-TLS when connecting through an HTTPS proxy: the inner
+ * (destination) SSL object's BIO is replaced with a BIO_f_ssl wrapper
+ * around the outer (proxy) SSL object, so all inner TLS bytes flow
+ * through the already-established outer TLS tunnel.
+ */
+static int tls_session_set_outer(void *inner_ptr, void *outer_ptr)
+{
+    struct tls_session *inner = (struct tls_session *) inner_ptr;
+    struct tls_session *outer = (struct tls_session *) outer_ptr;
+    BIO *bio;
+
+    bio = BIO_new(BIO_f_ssl());
+    if (!bio) {
+        flb_error("[tls] could not create BIO for TLS-in-TLS tunnel");
+        return -1;
+    }
+
+    /*
+     * BIO_NOCLOSE: the outer SSL object must NOT be freed when this BIO
+     * is freed; we manage its lifecycle via inner->outer_session.
+     */
+    BIO_set_ssl(bio, outer->ssl, BIO_NOCLOSE);
+    SSL_set_bio(inner->ssl, bio, bio);
+    inner->outer_session = outer;
+    return 0;
+}
+
 static int tls_session_destroy(void *session)
 {
     struct tls_session *ptr = session;
     struct tls_context *ctx;
+    struct tls_context *outer_ctx;
 
     if (!ptr) {
         return 0;
@@ -1378,6 +1409,24 @@ static int tls_session_destroy(void *session)
     }
 
     SSL_free(ptr->ssl);
+
+    /*
+     * If this session was chained over an outer TLS session (HTTPS proxy),
+     * BIO_NOCLOSE ensured SSL_free above did not free the outer SSL object.
+     * Free it explicitly now, under its own context mutex.
+     */
+    if (ptr->outer_session != NULL) {
+        /* After session_set_outer(), the outer backend session is owned only
+         * by the inner session; no path should independently use it or acquire
+         * outer-context then inner-context locks for the same chained pair.
+         */
+        outer_ctx = ptr->outer_session->parent;
+        pthread_mutex_lock(&outer_ctx->mutex);
+        SSL_free(ptr->outer_session->ssl);
+        flb_free(ptr->outer_session);
+        pthread_mutex_unlock(&outer_ctx->mutex);
+    }
+
     flb_free(ptr);
 
     pthread_mutex_unlock(&ctx->mutex);
@@ -1779,6 +1828,7 @@ static struct flb_tls_backend tls_openssl = {
     .session_create       = tls_session_create,
     .session_invalidate   = tls_session_invalidate,
     .session_destroy      = tls_session_destroy,
+    .session_set_outer    = tls_session_set_outer,
     .net_read             = tls_net_read,
     .net_write            = tls_net_write,
     .net_handshake        = tls_net_handshake,
