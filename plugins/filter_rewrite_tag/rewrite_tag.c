@@ -73,6 +73,15 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
         flb_plg_error(ctx->ins, "cannot set storage.type");
     }
 
+    /* Set the storage total limit size (filesystem cap) */
+    if (ctx->emitter_storage_total_limit_size) {
+        ret = flb_input_set_property(ins, "storage.total_limit_size",
+                                     ctx->emitter_storage_total_limit_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "cannot set storage.total_limit_size");
+        }
+    }
+
     /* Initialize emitter plugin */
     ret = flb_input_instance_init(ins, ctx->config);
     if (ret == -1) {
@@ -606,6 +615,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_SIZE, "emitter_mem_buf_limit", FLB_RTAG_MEM_BUF_LIMIT_DEFAULT,
      FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_mem_buf_limit),
      "set a memory buffer limit to restrict memory usage of emitter"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "emitter_storage.total_limit_size", NULL,
+     FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_storage_total_limit_size),
+     "set the maximum disk space that the emitter can use for filesystem "
+     "buffered chunks. When this limit is reached the emitter is paused."
     },
     /* EOF */
     {0}
