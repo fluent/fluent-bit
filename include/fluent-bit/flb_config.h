@@ -78,8 +78,9 @@ struct flb_config {
     int daemon;               /* Run as a daemon ?              */
     flb_pipefd_t shutdown_fd; /* Shutdown FD, 5 seconds         */
 
-    int verbose;           /* Verbose mode (default OFF)     */
-    time_t init_time;      /* Time when Fluent Bit started   */
+    int verbose;           /* Verbose mode (default OFF)        */
+    int banner;            /* Print version banner (default ON) */
+    time_t init_time;      /* Time when Fluent Bit started      */
 
     /* Used in library mode */
     pthread_t worker;               /* worker tid */
