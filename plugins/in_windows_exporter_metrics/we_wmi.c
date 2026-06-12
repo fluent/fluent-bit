@@ -35,6 +35,7 @@ static int wmi_coinitialize(struct flb_we *ctx, char* wmi_namespace)
     HRESULT hr;
     wchar_t *wnamespace;
     BSTR bstrNamespace;
+    SYSTEM_INFO sysInfo;
     VARIANT vArch;
     VARIANT vReq;
 
@@ -74,9 +75,19 @@ static int wmi_coinitialize(struct flb_we *ctx, char* wmi_namespace)
 
     hr = CoCreateInstance(&CLSID_WbemContext, 0, CLSCTX_INPROC_SERVER, &IID_IWbemContext, (LPVOID *) &ctx->wmi_context);
     if (SUCCEEDED(hr) && ctx->wmi_context != NULL) {
+        GetNativeSystemInfo(&sysInfo);
+
         VariantInit(&vArch);
         vArch.vt = VT_I4;
-        vArch.lVal = 64;
+
+        if (sysInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64 ||
+            sysInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_ARM64) {
+            vArch.lVal = 64;
+        }
+        else {
+            vArch.lVal = 32;
+        }
+
         ctx->wmi_context->lpVtbl->SetValue(ctx->wmi_context, L"__ProviderArchitecture", 0, &vArch);
         VariantClear(&vArch);
 
