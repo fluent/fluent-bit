@@ -203,6 +203,8 @@ struct flb_cloudwatch {
     is 'd1,d2;d3', we will consider it as [[d1, d2],[d3]]*/
     struct mk_list *metric_dimensions;
 
+    int metric_storage_resolution;
+
     /* Plugin output instance reference */
     struct flb_output_instance *ins;
 
