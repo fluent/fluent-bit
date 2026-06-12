@@ -66,6 +66,13 @@ if(FLB_OUT_AZURE_BLOB)
     )
 endif()
 
+if(FLB_OUT_PGSQL)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    pgsql.c
+    )
+endif()
+
 # TLS helpers
 if(FLB_TLS)
   set(UNIT_TESTS_FILES
@@ -245,6 +252,11 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
 
       if(FLB_OUT_AZURE_BLOB AND "${source_file_we}" STREQUAL "flb-it-azure_blob_path")
         target_link_libraries(${source_file_we} flb-plugin-out_azure_blob)
+      endif()
+
+      if(FLB_OUT_PGSQL AND "${source_file_we}" STREQUAL "flb-it-pgsql")
+        target_link_libraries(${source_file_we} flb-plugin-out_pgsql)
+        target_include_directories(${source_file_we} PRIVATE ${PostgreSQL_INCLUDE_DIRS})
       endif()
 
       if(FLB_STREAM_PROCESSOR)
