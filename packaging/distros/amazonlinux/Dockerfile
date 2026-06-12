@@ -24,6 +24,7 @@ RUN yum -y update && \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs glibc-devel \
     libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
+    librabbitmq-devel \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -49,6 +50,7 @@ RUN yum -y update && \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
     libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
+    librabbitmq-devel \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -60,6 +62,8 @@ RUN yum -y update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 ARG FLB_KAFKA=Off
 ENV FLB_KAFKA=$FLB_KAFKA
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 FROM amazonlinux:2023 AS amazonlinux-2023-base
 
@@ -74,6 +78,7 @@ RUN yum -y update && \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
     libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
+    librabbitmq-devel \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -84,6 +89,8 @@ RUN yum -y update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 ARG FLB_KAFKA=On
 ENV FLB_KAFKA=$FLB_KAFKA
+ARG FLB_IN_AMQP=Off
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # hadolint ignore=DL3029
 FROM --platform=arm64 amazonlinux:2023 AS amazonlinux-2023.arm64v8-base
@@ -101,6 +108,7 @@ RUN yum -y update && \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
     libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
+    librabbitmq-devel \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -111,6 +119,8 @@ RUN yum -y update && \
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 ARG FLB_KAFKA=On
 ENV FLB_KAFKA=$FLB_KAFKA
+ARG FLB_IN_AMQP=Off
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 
 # Common build for all distributions now
@@ -152,6 +162,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
+    -DFLB_IN_AMQP="${FLB_IN_AMQP}" \
     ../
 
 VOLUME [ "/output" ]
