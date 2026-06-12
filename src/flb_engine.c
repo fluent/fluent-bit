@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_custom.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
@@ -432,6 +433,8 @@ static inline int handle_output_event(uint64_t ts,
                      flb_input_name(task->i_ins),
                      flb_output_name(ins), out_id);
         }
+
+        flb_input_chunk_release_route(task->ic, ins);
 
         cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
                       calculate_chunk_capacity_percent(ins),
