@@ -301,6 +301,7 @@ struct flb_we {
     /* WMI locator and service contexts */
     IWbemLocator *locator;
     IWbemServices *service;
+    IWbemContext *wmi_context;
 
     float windows_version;
 
