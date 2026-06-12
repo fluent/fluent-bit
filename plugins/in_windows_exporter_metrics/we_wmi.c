@@ -34,6 +34,7 @@ static int wmi_coinitialize(struct flb_we *ctx, char* wmi_namespace)
     IWbemServices *service = 0;
     HRESULT hr;
     wchar_t *wnamespace;
+    BSTR bstrNamespace;
 
     flb_plg_debug(ctx->ins, "initializing WMI instance....");
 
@@ -75,9 +76,12 @@ static int wmi_coinitialize(struct flb_we *ctx, char* wmi_namespace)
     else {
         wnamespace = we_convert_str(wmi_namespace);
     }
+
+    bstrNamespace = SysAllocString(wnamespace);
+
     /* Connect WMI server */
     hr = locator->lpVtbl->ConnectServer(locator,
-                                        wnamespace,
+                                        bstrNamespace,
                                         NULL,
                                         NULL,
                                         0,
@@ -85,6 +89,8 @@ static int wmi_coinitialize(struct flb_we *ctx, char* wmi_namespace)
                                         0,
                                         NULL,
                                         &service);
+
+    SysFreeString(bstrNamespace);
     flb_free(wnamespace);
 
     if (FAILED(hr)) {
@@ -299,6 +305,8 @@ static inline int wmi_execute_query(struct flb_we *ctx, struct wmi_query_spec *s
     char *query = NULL;
     IEnumWbemClassObject* enumerator = NULL;
     size_t size;
+    BSTR bstrLanguage;
+    BSTR bstrQuery;
 
     size = 14 + strlen(spec->wmi_counter);
     if (spec->where_clause != NULL) {
@@ -319,13 +327,19 @@ static inline int wmi_execute_query(struct flb_we *ctx, struct wmi_query_spec *s
     wquery = we_convert_str(query);
     flb_free(query);
 
+    bstrLanguage = SysAllocString(L"WQL");
+    bstrQuery = SysAllocString(wquery);
+
     hr = ctx->service->lpVtbl->ExecQuery(
             ctx->service,
-            L"WQL",
-            wquery,
+            bstrLanguage,
+            bstrQuery,
             WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
             NULL,
             &enumerator);
+
+    SysFreeString(bstrLanguage);
+    SysFreeString(bstrQuery);
 
     flb_free(wquery);
 
