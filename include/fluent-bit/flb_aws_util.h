@@ -199,7 +199,7 @@ int flb_read_file(const char *path, char **out_buf, size_t *out_size);
 
 /* Constructs S3 object key as per the format. */
 flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
-                         char *tag_delimiter, uint64_t seq_index);
+                         char *tag_delimiter, uint64_t seq_index, const char *time_offset);
 
 /* Constructs S3 object key as per the blob format. */
 flb_sds_t flb_get_s3_blob_key(const char *format, const char *tag,
@@ -212,6 +212,13 @@ flb_sds_t flb_get_s3_blob_key(const char *format, const char *tag,
  */
 size_t flb_aws_strftime_precision(char **out_buf, const char *time_format,
                                   struct flb_time *tms);
+
+
+/*
+ * Parses the time offset and returns the offset in seconds.
+ */
+size_t flb_aws_parse_tz_offset(const char *time_offset);
+
 
 #endif
 #endif /* FLB_HAVE_AWS */
