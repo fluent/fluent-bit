@@ -1,0 +1,4 @@
+service:
+  parsers_file:
+    - parsers.conf
+    - parsers-extra.conf
