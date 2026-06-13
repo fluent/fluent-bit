@@ -1031,6 +1031,43 @@ void test_parse_rejects_invalid_expires_in(void)
     }
 }
 
+void test_parse_rejects_when_adjusted_expires_in_at_skew_boundary(void)
+{
+    int ret;
+    struct flb_oauth2 ctx;
+    /* expires_in 43196 -> adjusted 43196-4319 = 38877 (> skew 38850, accepted). */
+    const char *payload_above = "{\"access_token\":\"yc-token-1\","
+                                "\"token_type\":\"Bearer\","
+                                "\"expires_in\":43196}";
+    /* expires_in 43166 -> adjusted 43166-4316 = 38850 (== skew 38850, rejected). */
+    const char *payload_at = "{\"access_token\":\"yc-token-2\","
+                             "\"token_type\":\"Bearer\","
+                             "\"expires_in\":43166}";
+
+    memset(&ctx, 0, sizeof(ctx));
+    populate_parse_ctx(&ctx, "old-token", "OldBearer", 1200);
+    ctx.refresh_skew = 38850;
+
+    ret = flb_oauth2_parse_json_response(payload_above,
+                                         strlen(payload_above), &ctx);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(strcmp(ctx.access_token, "yc-token-1") == 0);
+    TEST_CHECK(ctx.expires_in == 38877);
+    destroy_parse_ctx(&ctx);
+
+    memset(&ctx, 0, sizeof(ctx));
+    populate_parse_ctx(&ctx, "old-token", "OldBearer", 1200);
+    ctx.refresh_skew = 38850;
+
+    ret = flb_oauth2_parse_json_response(payload_at,
+                                         strlen(payload_at), &ctx);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(strcmp(ctx.access_token, "old-token") == 0);
+    TEST_CHECK(strcmp(ctx.token_type, "OldBearer") == 0);
+    TEST_CHECK(ctx.expires_in == 1200);
+    destroy_parse_ctx(&ctx);
+}
+
 void test_caching_and_refresh(void)
 {
     int ret;
@@ -1259,6 +1296,8 @@ TEST_LIST = {
     {"parse_rejects_missing_required_fields",
      test_parse_rejects_missing_required_fields},
     {"parse_rejects_invalid_expires_in", test_parse_rejects_invalid_expires_in},
+    {"parse_rejects_when_adjusted_expires_in_at_skew_boundary",
+     test_parse_rejects_when_adjusted_expires_in_at_skew_boundary},
     {"caching_and_refresh", test_caching_and_refresh},
     {"user_agent_header_optional", test_user_agent_header_optional},
     {"legacy_create_manual_payload_flow", test_legacy_create_manual_payload_flow},

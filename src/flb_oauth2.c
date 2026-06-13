@@ -32,6 +32,7 @@
 
 #include <time.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <string.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -134,6 +135,21 @@ struct flb_config_map oauth2_config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_oauth2_config, connect_timeout),
      "Connect timeout for OAuth2 token requests"
     },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.token_source", "client_credentials",
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config, token_source_str),
+     "Source of the OAuth2 access token: client_credentials or metadata"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.metadata_url", NULL,
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config, metadata_url),
+     "Metadata server URL used when token_source is 'metadata'"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.metadata_header", NULL,
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config, metadata_header),
+     "Optional HTTP header (Name: Value) attached to metadata requests"
+    },
 
     /* EOF */
     {0}
@@ -182,6 +198,7 @@ static void oauth2_apply_defaults(struct flb_oauth2_config *cfg)
 {
     cfg->enabled = FLB_FALSE;
     cfg->auth_method = FLB_OAUTH2_AUTH_METHOD_BASIC;
+    cfg->token_source = FLB_OAUTH2_TOKEN_SOURCE_CLIENT_CREDENTIALS;
     cfg->jwt_ttl = FLB_OAUTH2_DEFAULT_ASSERTION_TTL;
     cfg->refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
     cfg->timeout = 0;
@@ -198,6 +215,279 @@ static void oauth2_apply_defaults(struct flb_oauth2_config *cfg)
     cfg->jwt_cert_file = NULL;
     cfg->jwt_aud = NULL;
     cfg->jwt_header = NULL;
+    cfg->metadata_url = NULL;
+    cfg->metadata_header = NULL;
+    cfg->token_source_str = NULL;
+}
+
+/* oauth2_token_source_parse converts a textual identifier to its enum value. */
+int oauth2_token_source_parse(const char *value, int *out)
+{
+    if (!value || !out) {
+        return -1;
+    }
+
+    if (strcasecmp(value, "client_credentials") == 0) {
+        *out = FLB_OAUTH2_TOKEN_SOURCE_CLIENT_CREDENTIALS;
+        return 0;
+    }
+
+    if (strcasecmp(value, "metadata") == 0) {
+        *out = FLB_OAUTH2_TOKEN_SOURCE_METADATA;
+        return 0;
+    }
+
+    flb_error("[oauth2] unknown token_source value '%s'", value);
+    return -1;
+}
+
+/* flb_oauth2_config_resolve_token_source parses cfg->token_source_str into
+ * cfg->token_source; no-op when NULL/empty. */
+int flb_oauth2_config_resolve_token_source(struct flb_oauth2_config *cfg)
+{
+    int parsed;
+    int ret;
+
+    if (!cfg) {
+        return -1;
+    }
+
+    if (!cfg->token_source_str || flb_sds_len(cfg->token_source_str) == 0) {
+        return 0;
+    }
+
+    ret = oauth2_token_source_parse(cfg->token_source_str, &parsed);
+    if (ret != 0) {
+        flb_error("[oauth2] invalid oauth2.token_source value '%s'",
+                  cfg->token_source_str);
+        return -1;
+    }
+
+    cfg->token_source = parsed;
+    return 0;
+}
+
+/* oauth2_metadata_split_header splits "Name: Value" on the first colon and
+ * rejects CR/LF/NUL in either half. */
+int oauth2_metadata_split_header(const char *header,
+                                 flb_sds_t *name_out,
+                                 flb_sds_t *value_out)
+{
+    const char *colon;
+    const char *name_start;
+    const char *name_end;
+    const char *value_start;
+    const char *value_end;
+    const char *p;
+    char c;
+    flb_sds_t name = NULL;
+    flb_sds_t value = NULL;
+
+    if (name_out) {
+        *name_out = NULL;
+    }
+    if (value_out) {
+        *value_out = NULL;
+    }
+
+    if (!header || !name_out || !value_out) {
+        return -1;
+    }
+
+    colon = strchr(header, ':');
+    if (!colon) {
+        return -1;
+    }
+
+    name_start = header;
+    name_end = colon;
+    while (name_start < name_end) {
+        c = *name_start;
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n' &&
+            c != '\v' && c != '\f') {
+            break;
+        }
+        name_start++;
+    }
+    while (name_end > name_start) {
+        c = *(name_end - 1);
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n' &&
+            c != '\v' && c != '\f') {
+            break;
+        }
+        name_end--;
+    }
+
+    if (name_end <= name_start) {
+        return -1;
+    }
+
+    value_start = colon + 1;
+    value_end = value_start + strlen(value_start);
+    while (value_start < value_end) {
+        c = *value_start;
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n' &&
+            c != '\v' && c != '\f') {
+            break;
+        }
+        value_start++;
+    }
+    while (value_end > value_start) {
+        c = *(value_end - 1);
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n' &&
+            c != '\v' && c != '\f') {
+            break;
+        }
+        value_end--;
+    }
+
+    if (value_end <= value_start) {
+        return -1;
+    }
+
+    /* Reject CR/LF/NUL to prevent HTTP header injection. */
+    for (p = name_start; p < name_end; p++) {
+        c = *p;
+        if (c == '\r' || c == '\n' || c == '\0') {
+            return -1;
+        }
+    }
+    for (p = value_start; p < value_end; p++) {
+        c = *p;
+        if (c == '\r' || c == '\n' || c == '\0') {
+            return -1;
+        }
+    }
+
+    name = flb_sds_create_len(name_start, (int)(name_end - name_start));
+    if (!name) {
+        flb_errno();
+        return -1;
+    }
+
+    value = flb_sds_create_len(value_start, (int)(value_end - value_start));
+    if (!value) {
+        flb_errno();
+        flb_sds_destroy(name);
+        return -1;
+    }
+
+    *name_out = name;
+    *value_out = value;
+    return 0;
+}
+
+/* Wraps flb_uri_encode and additionally escapes '?', '&', '=' to prevent
+ * extra params being injected into the metadata URL. */
+static flb_sds_t oauth2_encode_query_value(const char *value, size_t len)
+{
+    size_t i;
+    size_t base_len;
+    flb_sds_t base;
+    flb_sds_t out;
+    flb_sds_t tmp;
+    char c;
+
+    base = flb_uri_encode(value, len);
+    if (!base) {
+        return NULL;
+    }
+
+    base_len = flb_sds_len(base);
+    out = flb_sds_create_size(base_len * 3);
+    if (!out) {
+        flb_errno();
+        flb_sds_destroy(base);
+        return NULL;
+    }
+
+    for (i = 0; i < base_len; i++) {
+        c = base[i];
+        if (c == '?' || c == '&' || c == '=') {
+            tmp = flb_sds_printf(&out, "%%%02X", (unsigned char) c);
+        }
+        else {
+            tmp = flb_sds_cat(out, &c, 1);
+        }
+        if (!tmp) {
+            flb_sds_destroy(base);
+            flb_sds_destroy(out);
+            return NULL;
+        }
+        out = tmp;
+    }
+
+    flb_sds_destroy(base);
+    return out;
+}
+
+/* Appends URL-encoded query params to ctx->cfg.metadata_url. */
+flb_sds_t oauth2_metadata_build_url(struct flb_oauth2 *ctx)
+{
+    int first_param;
+    flb_sds_t url = NULL;
+    flb_sds_t encoded = NULL;
+    flb_sds_t tmp = NULL;
+    const char *base;
+
+    if (!ctx) {
+        return NULL;
+    }
+
+    base = ctx->cfg.metadata_url;
+    if (!base) {
+        return NULL;
+    }
+
+    url = flb_sds_create(base);
+    if (!url) {
+        flb_errno();
+        return NULL;
+    }
+
+    if (!ctx->cfg.scope && !ctx->cfg.audience) {
+        return url;
+    }
+
+    first_param = (strchr(base, '?') == NULL);
+
+    if (ctx->cfg.scope) {
+        encoded = oauth2_encode_query_value(ctx->cfg.scope,
+                                            flb_sds_len(ctx->cfg.scope));
+        if (!encoded) {
+            flb_sds_destroy(url);
+            return NULL;
+        }
+        tmp = flb_sds_printf(&url, "%cscope=%s",
+                             first_param ? '?' : '&', encoded);
+        flb_sds_destroy(encoded);
+        encoded = NULL;
+        if (!tmp) {
+            flb_sds_destroy(url);
+            return NULL;
+        }
+        first_param = 0;
+    }
+
+    if (ctx->cfg.audience) {
+        encoded = oauth2_encode_query_value(ctx->cfg.audience,
+                                            flb_sds_len(ctx->cfg.audience));
+        if (!encoded) {
+            flb_sds_destroy(url);
+            return NULL;
+        }
+        tmp = flb_sds_printf(&url, "%caudience=%s",
+                             first_param ? '?' : '&', encoded);
+        flb_sds_destroy(encoded);
+        encoded = NULL;
+        if (!tmp) {
+            flb_sds_destroy(url);
+            return NULL;
+        }
+        first_param = 0;
+    }
+
+    return url;
 }
 
 static int oauth2_clone_config(struct flb_oauth2_config *dst,
@@ -211,6 +501,7 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
 
     dst->enabled = src->enabled;
     dst->auth_method = src->auth_method;
+    dst->token_source = src->token_source;
 
     if (src->refresh_skew > 0) {
         dst->refresh_skew = src->refresh_skew;
@@ -324,6 +615,33 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
         }
     }
 
+    if (src->metadata_url) {
+        dst->metadata_url = flb_sds_create(src->metadata_url);
+        if (!dst->metadata_url) {
+            flb_errno();
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+
+    if (src->metadata_header) {
+        dst->metadata_header = flb_sds_create(src->metadata_header);
+        if (!dst->metadata_header) {
+            flb_errno();
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+
+    if (src->token_source_str) {
+        dst->token_source_str = flb_sds_create(src->token_source_str);
+        if (!dst->token_source_str) {
+            flb_errno();
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+
     return 0;
 }
 
@@ -355,31 +673,45 @@ void flb_oauth2_config_destroy(struct flb_oauth2_config *cfg)
     cfg->jwt_aud = NULL;
     flb_sds_destroy(cfg->jwt_header);
     cfg->jwt_header = NULL;
+    flb_sds_destroy(cfg->metadata_url);
+    cfg->metadata_url = NULL;
+    flb_sds_destroy(cfg->metadata_header);
+    cfg->metadata_header = NULL;
+    flb_sds_destroy(cfg->token_source_str);
+    cfg->token_source_str = NULL;
 }
 
+/* Caller must ensure the URL selected by ctx->cfg.token_source is non-NULL. */
 static int oauth2_setup_upstream(struct flb_oauth2 *ctx,
-                                 struct flb_config *config,
-                                 const char *auth_url)
+                                 struct flb_config *config)
 {
     int ret;
+    const char *bind_url;
     char *prot = NULL;
     char *host = NULL;
     char *port = NULL;
     char *uri = NULL;
 
-    ret = flb_utils_url_split(auth_url, &prot, &host, &port, &uri);
+    if (ctx->cfg.token_source == FLB_OAUTH2_TOKEN_SOURCE_METADATA) {
+        bind_url = ctx->cfg.metadata_url;
+    }
+    else {
+        bind_url = ctx->cfg.token_url;
+    }
+
+    ret = flb_utils_url_split(bind_url, &prot, &host, &port, &uri);
     if (ret == -1) {
-        flb_error("[oauth2] invalid URL: %s", auth_url);
+        flb_error("[oauth2] invalid URL: %s", bind_url);
         goto error;
     }
 
     if (!prot || (strcmp(prot, "https") != 0 && strcmp(prot, "http") != 0)) {
-        flb_error("[oauth2] invalid endpoint protocol: %s", auth_url);
+        flb_error("[oauth2] invalid endpoint protocol: %s", bind_url);
         goto error;
     }
 
     if (!host) {
-        flb_error("[oauth2] invalid URL host: %s", auth_url);
+        flb_error("[oauth2] invalid URL host: %s", bind_url);
         goto error;
     }
 
@@ -422,10 +754,10 @@ static int oauth2_setup_upstream(struct flb_oauth2 *ctx,
     }
 
     if (strcmp(prot, "https") == 0) {
-        ctx->u = flb_upstream_create_url(config, auth_url, FLB_IO_TLS, ctx->tls);
+        ctx->u = flb_upstream_create_url(config, bind_url, FLB_IO_TLS, ctx->tls);
     }
     else {
-        ctx->u = flb_upstream_create_url(config, auth_url, FLB_IO_TCP, NULL);
+        ctx->u = flb_upstream_create_url(config, bind_url, FLB_IO_TCP, NULL);
     }
 
     if (!ctx->u) {
@@ -563,7 +895,24 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
 
     flb_free(tokens);
 
-    if (!new_access_token || !new_token_type || new_expires_in <= ctx->refresh_skew) {
+    if (!new_access_token) {
+        flb_error("[oauth2] response missing 'access_token' field");
+        flb_sds_destroy(new_token_type);
+        return -1;
+    }
+
+    if (!new_token_type) {
+        flb_error("[oauth2] response missing 'token_type' field");
+        flb_sds_destroy(new_access_token);
+        return -1;
+    }
+
+    if (new_expires_in <= ctx->refresh_skew) {
+        flb_error("[oauth2] token rejected: effective lifetime "
+                  "(%" PRIu64 "s, after 10%% safety margin) "
+                  "is not greater than refresh_skew_seconds (%d); "
+                  "reduce refresh_skew_seconds below %" PRIu64,
+                  new_expires_in, ctx->refresh_skew, new_expires_in);
         flb_sds_destroy(new_access_token);
         flb_sds_destroy(new_token_type);
         return -1;
@@ -1175,7 +1524,7 @@ static int oauth2_http_request(struct flb_oauth2 *ctx, flb_sds_t body)
     return -1;
 }
 
-static int oauth2_refresh_locked(struct flb_oauth2 *ctx)
+static int oauth2_client_credentials_refresh_locked(struct flb_oauth2 *ctx)
 {
     int ret;
     flb_sds_t body;
@@ -1190,6 +1539,155 @@ static int oauth2_refresh_locked(struct flb_oauth2 *ctx)
     flb_sds_destroy(body);
 
     return ret;
+}
+
+int oauth2_metadata_refresh_locked(struct flb_oauth2 *ctx)
+{
+    int ret;
+    int rc = -1;
+    int port_n;
+    int ipv6_enabled = FLB_FALSE;
+    size_t b_sent = 0;
+    flb_sds_t url = NULL;
+    flb_sds_t header_name = NULL;
+    flb_sds_t header_value = NULL;
+    char *prot = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *uri = NULL;
+    struct flb_connection *u_conn = NULL;
+    struct flb_http_client *c = NULL;
+
+    if (!ctx) {
+        return -1;
+    }
+
+    url = oauth2_metadata_build_url(ctx);
+    if (!url) {
+        flb_error("[oauth2] could not build metadata URL");
+        return -1;
+    }
+
+    ret = flb_utils_url_split(url, &prot, &host, &port, &uri);
+    if (ret == -1 || !host || !uri) {
+        flb_error("[oauth2] invalid metadata URL: %s", url);
+        goto cleanup;
+    }
+
+    if (ctx->cfg.metadata_header) {
+        ret = oauth2_metadata_split_header(ctx->cfg.metadata_header,
+                                           &header_name, &header_value);
+        if (ret != 0) {
+            flb_error("[oauth2] invalid metadata_header: %s",
+                      ctx->cfg.metadata_header);
+            goto cleanup;
+        }
+    }
+
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+        flb_stream_enable_flags(&ctx->u->base, FLB_IO_IPV6);
+        ipv6_enabled = FLB_TRUE;
+        u_conn = flb_upstream_conn_get(ctx->u);
+        if (!u_conn) {
+            flb_error("[oauth2] could not get upstream connection for metadata");
+            goto cleanup;
+        }
+    }
+
+    if (port) {
+        port_n = atoi(port);
+    }
+    else if (ctx->port) {
+        port_n = atoi(ctx->port);
+    }
+    else {
+        port_n = 0;
+    }
+
+    c = flb_http_client(u_conn, FLB_HTTP_GET, uri,
+                        NULL, 0,
+                        host, port_n,
+                        NULL, 0);
+    if (!c) {
+        flb_error("[oauth2] error creating HTTP client for metadata");
+        goto cleanup;
+    }
+
+    if (ctx->cfg.timeout > 0) {
+        flb_http_set_response_timeout(c, ctx->cfg.timeout);
+        flb_http_set_read_idle_timeout(c, ctx->cfg.timeout);
+    }
+
+    if (header_name && header_value) {
+        flb_http_add_header(c,
+                            header_name, flb_sds_len(header_name),
+                            header_value, flb_sds_len(header_value));
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    if (ret != 0) {
+        flb_warn("[oauth2] metadata request failed, http_do=%i", ret);
+        goto cleanup;
+    }
+
+    if (c->resp.status != 200) {
+        flb_error("[oauth2] metadata server returned HTTP %d",
+                  c->resp.status);
+        goto cleanup;
+    }
+
+    if (c->resp.payload_size == 0) {
+        flb_error("[oauth2] empty metadata response body");
+        goto cleanup;
+    }
+
+    ret = flb_oauth2_parse_json_response(c->resp.payload,
+                                         c->resp.payload_size, ctx);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    flb_info("[oauth2] access token from metadata '%s:%s' retrieved",
+             ctx->host, ctx->port);
+    rc = 0;
+
+cleanup:
+    if (c) {
+        flb_http_client_destroy(c);
+    }
+    if (u_conn) {
+        flb_upstream_conn_release(u_conn);
+    }
+    if (ipv6_enabled) {
+        flb_stream_disable_flags(&ctx->u->base, FLB_IO_IPV6);
+    }
+    flb_sds_destroy(header_name);
+    flb_sds_destroy(header_value);
+    flb_free(prot);
+    flb_free(host);
+    flb_free(port);
+    flb_free(uri);
+    flb_sds_destroy(url);
+
+    return rc;
+}
+
+int oauth2_dispatch_refresh_locked(struct flb_oauth2 *ctx)
+{
+    if (!ctx) {
+        return -1;
+    }
+
+    switch (ctx->cfg.token_source) {
+    case FLB_OAUTH2_TOKEN_SOURCE_CLIENT_CREDENTIALS:
+        return oauth2_client_credentials_refresh_locked(ctx);
+    case FLB_OAUTH2_TOKEN_SOURCE_METADATA:
+        return oauth2_metadata_refresh_locked(ctx);
+    default:
+        flb_error("[oauth2] invalid token_source enum value");
+        return -1;
+    }
 }
 
 static int oauth2_token_needs_refresh(struct flb_oauth2 *ctx, int force_refresh)
@@ -1257,10 +1755,40 @@ struct flb_oauth2 *flb_oauth2_create_from_config(struct flb_config *config,
         return NULL;
     }
 
-    if (!ctx->cfg.token_url) {
-        flb_error("[oauth2] token_url is not set");
+    /* Manual cleanup: flb_oauth2_destroy below assumes ctx->lock is initialized. */
+    ret = flb_lock_init(&ctx->lock);
+    if (ret != 0) {
+        flb_oauth2_config_destroy(&ctx->cfg);
+        flb_free(ctx);
+        return NULL;
+    }
+
+    if (flb_oauth2_config_resolve_token_source(&ctx->cfg) != 0) {
         flb_oauth2_destroy(ctx);
         return NULL;
+    }
+
+    if (ctx->cfg.token_source != FLB_OAUTH2_TOKEN_SOURCE_CLIENT_CREDENTIALS &&
+        ctx->cfg.token_source != FLB_OAUTH2_TOKEN_SOURCE_METADATA) {
+        flb_error("[oauth2] invalid token_source value: %d",
+                  ctx->cfg.token_source);
+        flb_oauth2_destroy(ctx);
+        return NULL;
+    }
+
+    if (ctx->cfg.token_source == FLB_OAUTH2_TOKEN_SOURCE_METADATA) {
+        if (!ctx->cfg.metadata_url) {
+            flb_error("[oauth2] metadata_url is not set");
+            flb_oauth2_destroy(ctx);
+            return NULL;
+        }
+    }
+    else {
+        if (!ctx->cfg.token_url) {
+            flb_error("[oauth2] token_url is not set");
+            flb_oauth2_destroy(ctx);
+            return NULL;
+        }
     }
 
     if (ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT) {
@@ -1274,7 +1802,13 @@ struct flb_oauth2 *flb_oauth2_create_from_config(struct flb_config *config,
             return NULL;
         }
     }
-    ctx->auth_url = flb_sds_create(ctx->cfg.token_url);
+
+    if (ctx->cfg.token_source == FLB_OAUTH2_TOKEN_SOURCE_METADATA) {
+        ctx->auth_url = flb_sds_create(ctx->cfg.metadata_url);
+    }
+    else {
+        ctx->auth_url = flb_sds_create(ctx->cfg.token_url);
+    }
     if (!ctx->auth_url) {
         flb_errno();
         flb_oauth2_destroy(ctx);
@@ -1293,13 +1827,7 @@ struct flb_oauth2 *flb_oauth2_create_from_config(struct flb_config *config,
         ctx->refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
     }
 
-    ret = flb_lock_init(&ctx->lock);
-    if (ret != 0) {
-        flb_oauth2_destroy(ctx);
-        return NULL;
-    }
-
-    ret = oauth2_setup_upstream(ctx, config, ctx->auth_url);
+    ret = oauth2_setup_upstream(ctx, config);
     if (ret != 0) {
         flb_oauth2_destroy(ctx);
         return NULL;
@@ -1409,7 +1937,7 @@ static int oauth2_get_token_locked(struct flb_oauth2 *ctx,
     int ret = 0;
 
     if (oauth2_token_needs_refresh(ctx, force_refresh) == FLB_TRUE) {
-        ret = oauth2_refresh_locked(ctx);
+        ret = oauth2_dispatch_refresh_locked(ctx);
         if (ret != 0) {
             return ret;
         }
