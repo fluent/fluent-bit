@@ -829,7 +829,7 @@ static int delete_blob(struct flb_azure_blob *ctx,
         goto cleanup_delete;
     }
 
-    if (c->resp.status == 201) {
+    if (c->resp.status == 202) {
         /* delete "&sig=..." in the c->uri for security */
         char *p = strstr(c->uri, "&sig=");
         if (p) {
