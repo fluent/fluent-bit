@@ -188,7 +188,7 @@ endif()
 # APP_LIBRARIES if it is really specific to OpenSSL?
 
 enable_testing()
-add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND})
+add_custom_target(nghttp2_check COMMAND ${CMAKE_CTEST_COMMAND})
 
 # openssl (for src)
 include(CheckSymbolExists)
