@@ -21,6 +21,11 @@ enum event_type {
     EVENT_TYPE_ACCEPT,
     EVENT_TYPE_CONNECT,
     EVENT_TYPE_DNS,
+    EVENT_TYPE_SCHED,
+    EVENT_TYPE_TLS_HANDSHAKE,
+    EVENT_TYPE_TLS_READ,
+    EVENT_TYPE_TLS_WRITE,
+    EVENT_TYPE_TLS_SHUTDOWN,
 };
 
 enum vfs_op {
@@ -145,6 +150,29 @@ struct dns_event {
     __u8 query_raw[DNS_QUERY_RAW_MAX];
 };
 
+struct sched_event {
+    __u32 prev_pid;
+    int prev_prio;
+    long prev_state;
+    __u32 next_pid;
+    int next_prio;
+    __u32 cpu;
+    __u64 runq_latency_ns;
+    __u8 wakeup_tracked;
+};
+
+struct tls_handshake_event {
+    __u64 ssl_ptr;
+    __s64 latency_ns;
+    int ret;
+};
+
+struct tls_io_event {
+    __u64 ssl_ptr;
+    __s64 latency_ns;
+    int ret;
+};
+
 struct event {
     enum event_type type;           // Type of event (execve, signal, mem, bind)
     struct event_common common;     // Common fields for all events
@@ -158,6 +186,9 @@ struct event {
         struct accept_event accept;
         struct connect_event connect;
         struct dns_event dns;
+        struct sched_event sched;
+        struct tls_handshake_event tls_handshake;
+        struct tls_io_event tls_io;
     } details;
 };
 

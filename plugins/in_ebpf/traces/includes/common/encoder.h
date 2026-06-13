@@ -27,6 +27,16 @@ static inline char *event_type_to_string(enum event_type type) {
             return "connect";
         case EVENT_TYPE_DNS:
             return "dns";
+        case EVENT_TYPE_SCHED:
+            return "sched";
+        case EVENT_TYPE_TLS_HANDSHAKE:
+            return "tls_handshake";
+        case EVENT_TYPE_TLS_READ:
+            return "tls_read";
+        case EVENT_TYPE_TLS_WRITE:
+            return "tls_write";
+        case EVENT_TYPE_TLS_SHUTDOWN:
+            return "tls_shutdown";
         default:
             return "unknown";
     }

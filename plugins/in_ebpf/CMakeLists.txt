@@ -26,6 +26,7 @@ add_library(gadget INTERFACE)
 target_include_directories(gadget INTERFACE ${CMAKE_SOURCE_DIR}/plugins/in_ebpf/traces/includes/external/gadget)
 
 set(LIBC_PATH "/lib64/libc.so.6")
+set(LIBSSL_PATH "/lib64/libssl.so.3")
 
 find_program(LSB_RELEASE_EXEC lsb_release)
 if (LSB_RELEASE_EXEC)
@@ -42,10 +43,13 @@ if (LSB_RELEASE_EXEC)
     # Just added for the future enhancement
     if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)")
       set(LIBC_PATH "/usr/lib/aarch64-linux-gnu/libc.so.6")
+      set(LIBSSL_PATH "/usr/lib/aarch64-linux-gnu/libssl.so.3")
     elseif (CMAKE_SIZEOF_VOID_P EQUAL 8)
       set(LIBC_PATH "/usr/lib/x86_64-linux-gnu/libc.so.6")
+      set(LIBSSL_PATH "/usr/lib/x86_64-linux-gnu/libssl.so.3")
     elseif (CMAKE_SIZEOF_VOID_P EQUAL 4)
       set(LIBC_PATH "/usr/lib/i386-linux-gnu/libc.so.6")
+      set(LIBSSL_PATH "/usr/lib/i386-linux-gnu/libssl.so.3")
     endif()
   endif()
 endif()
@@ -54,6 +58,11 @@ endif()
 configure_file(
   "${CMAKE_SOURCE_DIR}/plugins/in_ebpf/traces/malloc/bpf.c.in"
   "${CMAKE_SOURCE_DIR}/plugins/in_ebpf/traces/malloc/bpf.c"
+  )
+
+configure_file(
+  "${CMAKE_SOURCE_DIR}/plugins/in_ebpf/traces/openssl/bpf.c.in"
+  "${CMAKE_SOURCE_DIR}/plugins/in_ebpf/traces/openssl/bpf.c"
   )
 
 # Find all bpf.c files in the traces directory
