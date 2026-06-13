@@ -304,6 +304,7 @@ static int elasticsearch_format(struct flb_config *config,
     flb_sds_t out_buf;
     size_t out_buf_len = 0;
     flb_sds_t tmp_buf;
+    flb_sds_t ra_index = NULL;
     flb_sds_t id_key_str = NULL;
     // msgpack_unpacked result;
     // msgpack_object root;
@@ -358,7 +359,9 @@ static int elasticsearch_format(struct flb_config *config,
      * The header stored in 'j_index' will be used for the all records on
      * this payload.
      */
-    if (ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
+    if (ctx->logstash_format == FLB_FALSE &&
+        ctx->generate_id == FLB_FALSE &&
+        ctx->ra_index == NULL) {
         flb_time_get(&tms);
         gmtime_r(&tms.tm.tv_sec, &tm);
         strftime(index_formatted, sizeof(index_formatted) - 1,
@@ -490,6 +493,38 @@ static int elasticsearch_format(struct flb_config *config,
                      ctx->index, &tm);
             es_index = index_formatted;
         }
+        else if (ctx->ra_index) {
+            if (ra_index != NULL) {
+                flb_sds_destroy(ra_index);
+            }
+
+            ra_index = flb_ra_translate(ctx->ra_index,
+                                        (char *) tag, tag_len,
+                                        map, NULL);
+            if (!ra_index) {
+                flb_plg_warn(ctx->ins,
+                             "invalid index translation from record accessor pattern, default to default Elasticsearch index");
+                es_index = FLB_ES_DEFAULT_INDEX;
+            }
+            else {
+                es_index = ra_index;
+            }
+
+            if (ctx->suppress_type_name) {
+                index_len = flb_sds_snprintf(&j_index,
+                                             flb_sds_alloc(j_index),
+                                             ES_BULK_INDEX_FMT_WITHOUT_TYPE,
+                                             ctx->es_action,
+                                             es_index);
+            }
+            else {
+                index_len = flb_sds_snprintf(&j_index,
+                                             flb_sds_alloc(j_index),
+                                             ES_BULK_INDEX_FMT,
+                                             ctx->es_action,
+                                             es_index, ctx->type);
+            }
+        }
 
         /* Tag Key */
         if (ctx->include_tag_key == FLB_TRUE) {
@@ -511,6 +546,9 @@ static int elasticsearch_format(struct flb_config *config,
             flb_log_event_decoder_destroy(&log_decoder);
             msgpack_sbuffer_destroy(&tmp_sbuf);
             es_bulk_destroy(bulk);
+            if (ra_index != NULL) {
+                flb_sds_destroy(ra_index);
+            }
             flb_sds_destroy(j_index);
             return -1;
         }
@@ -565,6 +603,9 @@ static int elasticsearch_format(struct flb_config *config,
         if (!out_buf) {
             flb_log_event_decoder_destroy(&log_decoder);
             es_bulk_destroy(bulk);
+            if (ra_index != NULL) {
+                flb_sds_destroy(ra_index);
+            }
             flb_sds_destroy(j_index);
             return -1;
         }
@@ -594,6 +635,9 @@ static int elasticsearch_format(struct flb_config *config,
             flb_log_event_decoder_destroy(&log_decoder);
             *out_size = 0;
             es_bulk_destroy(bulk);
+            if (ra_index != NULL) {
+                flb_sds_destroy(ra_index);
+            }
             flb_sds_destroy(j_index);
             return -1;
         }
@@ -613,6 +657,9 @@ static int elasticsearch_format(struct flb_config *config,
     if (ctx->trace_output) {
         fwrite(*out_data, 1, *out_size, stdout);
         fflush(stdout);
+    }
+    if (ra_index != NULL) {
+        flb_sds_destroy(ra_index);
     }
     flb_sds_destroy(j_index);
     return 0;

@@ -126,6 +126,7 @@ struct flb_elasticsearch {
 
     /* id_key */
     flb_sds_t id_key;
+    struct flb_record_accessor *ra_index;
     struct flb_record_accessor *ra_id_key;
 
     /* include_tag_key */
