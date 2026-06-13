@@ -503,7 +503,8 @@ static int elasticsearch_format(struct flb_config *config,
                                         map, NULL);
             if (!ra_index) {
                 flb_plg_warn(ctx->ins,
-                             "invalid index translation from record accessor pattern, default to static index");
+                             "invalid index translation from record accessor pattern, default to default Elasticsearch index");
+                es_index = FLB_ES_DEFAULT_INDEX;
             }
             else {
                 es_index = ra_index;

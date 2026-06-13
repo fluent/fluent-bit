@@ -265,17 +265,16 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     if (f_index) {
         ctx->index = flb_strdup(f_index->value); /* FIXME */
     }
-    else {
-        /* Check if index has been set in the configuration */
-        if (ctx->index) {
-            /* Do we have a record accessor pattern ? */
-            if (strchr(ctx->index, '$')) {
-                ctx->ra_index = flb_ra_create(ctx->index, FLB_TRUE);
-                if (!ctx->ra_index) {
-                    flb_plg_error(ctx->ins, "invalid record accessor pattern set for 'index' property");
-                    flb_es_conf_destroy(ctx);
-                    return NULL;
-                }
+
+    /* Check if index has been set in the configuration */
+    if (ctx->index) {
+        /* Do we have a record accessor pattern ? */
+        if (strchr(ctx->index, '$')) {
+            ctx->ra_index = flb_ra_create(ctx->index, FLB_TRUE);
+            if (!ctx->ra_index) {
+                flb_plg_error(ctx->ins, "invalid record accessor pattern set for 'index' property");
+                flb_es_conf_destroy(ctx);
+                return NULL;
             }
         }
     }
