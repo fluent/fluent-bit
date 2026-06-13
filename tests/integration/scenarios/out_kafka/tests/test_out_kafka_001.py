@@ -1,6 +1,7 @@
 import json
 import os
 import struct
+import time
 from copy import deepcopy
 
 import requests
@@ -255,6 +256,157 @@ def _build_resource_collision_payload(user_id, body, schema_url=None):
     return payload
 
 
+def _build_monolithic_logs_payload(record_count):
+    body_padding = "x" * 256
+    current_time_ns = 1640995200000000000
+
+    resource_log = {
+        "resource": {
+            "attributes": [
+                {
+                    "key": "service.name",
+                    "value": {
+                        "string_value": "monolithic-payment-backend",
+                    },
+                },
+                {
+                    "key": "deployment.environment",
+                    "value": {
+                        "string_value": "production",
+                    },
+                },
+                {
+                    "key": "k8s.namespace.name",
+                    "value": {
+                        "string_value": "transactions",
+                    },
+                },
+                {
+                    "key": "cloud.region",
+                    "value": {
+                        "string_value": "eastus2",
+                    },
+                },
+            ],
+        },
+        "scope_logs": [
+            {
+                "scope": {
+                    "name": "io.opentelemetry.contrib.mongodb",
+                    "version": "1.0.0",
+                },
+                "log_records": [],
+            }
+        ],
+    }
+
+    for index in range(record_count):
+        resource_log["scope_logs"][0]["log_records"].append(
+            {
+                "time_unix_nano": str(current_time_ns - (index * 100000)),
+                "observed_time_unix_nano": str(current_time_ns),
+                "severity_number": 13,
+                "severity_text": "WARN",
+                "body": {
+                    "string_value": (
+                        "Database transaction query execution took longer than "
+                        f"expected threshold. Execution time: {120 + index}ms. "
+                        f"{body_padding}"
+                    ),
+                },
+                "attributes": [
+                    {
+                        "key": "component",
+                        "value": {
+                            "string_value": "database-proxy",
+                        },
+                    },
+                    {
+                        "key": "db.system",
+                        "value": {
+                            "string_value": "mongodb",
+                        },
+                    },
+                    {
+                        "key": "db.operation",
+                        "value": {
+                            "string_value": "findAndModify",
+                        },
+                    },
+                    {
+                        "key": "exception.type",
+                        "value": {
+                            "string_value": "com.mongodb.MongoTimeoutException",
+                        },
+                    },
+                ],
+                "dropped_attributes_count": 0,
+            }
+        )
+
+    return {
+        "resource_logs": [
+            resource_log,
+        ],
+    }
+
+
+def _build_logs_payload_with_unset_attribute_values():
+    return {
+        "resource_logs": [
+            {
+                "resource": {
+                    "attributes": [
+                        {
+                            "key": "service.name",
+                            "value": {
+                                "string_value": "unset-any-value-service",
+                            },
+                        },
+                        {
+                            "key": "resource.unset",
+                            "value": {},
+                        },
+                    ],
+                },
+                "scope_logs": [
+                    {
+                        "scope": {
+                            "name": "unset-any-value-scope",
+                            "attributes": [
+                                {
+                                    "key": "scope.unset",
+                                    "value": {},
+                                },
+                            ],
+                        },
+                        "log_records": [
+                            {
+                                "time_unix_nano": "1640995200000000000",
+                                "body": {
+                                    "string_value": "log with unset attribute values",
+                                },
+                                "attributes": [
+                                    {
+                                        "key": "record.unset",
+                                        "value": {},
+                                    },
+                                    {
+                                        "key": "record.ok",
+                                        "value": {
+                                            "string_value": "ok",
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+    }
+
+
 def _decode_kafka_payload(message, format_name, signal_type):
     if format_name == "otlp_json":
         return json.loads(message["value"].decode("utf-8"))
@@ -270,6 +422,24 @@ def _collect_resources(messages, format_name, signal_type):
         resources.extend(payload[resource_key])
 
     return resources
+
+
+def _wait_for_log_text(log_file, pattern, timeout=10):
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        try:
+            with open(log_file, "r", encoding="utf-8") as log:
+                text = log.read()
+        except FileNotFoundError:
+            text = ""
+
+        if pattern in text:
+            return text
+
+        time.sleep(0.25)
+
+    raise TimeoutError(f"Timed out waiting for log pattern {pattern!r}")
 
 
 def test_out_kafka_sends_json_payload():
@@ -369,6 +539,39 @@ def test_out_kafka_otlp_json_logs():
     assert payload["resourceLogs"]
     assert record["body"]["stringValue"] == "This is an example log message."
     assert payload["resourceLogs"][0]["resource"]["attributes"][0]["key"] == "service.name"
+
+
+def test_out_kafka_otlp_json_logs_preserves_unset_attribute_values():
+    service = Service("out_kafka_otlp_json.yaml")
+    service.start()
+    service.send_payload_dict(_build_logs_payload_with_unset_attribute_values(), "logs")
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    payload = json.loads(messages[0]["value"].decode("utf-8"))
+    resource_log = payload["resourceLogs"][0]
+    scope_log = resource_log["scopeLogs"][0]
+    record = scope_log["logRecords"][0]
+
+    resource_attrs = {
+        attr["key"]: attr["value"]
+        for attr in resource_log["resource"]["attributes"]
+    }
+    scope_attrs = {
+        attr["key"]: attr["value"]
+        for attr in scope_log["scope"]["attributes"]
+    }
+    record_attrs = {
+        attr["key"]: attr["value"]
+        for attr in record["attributes"]
+    }
+
+    assert resource_attrs["resource.unset"] == {}
+    assert scope_attrs["scope.unset"] == {}
+    assert record_attrs["record.unset"] == {}
+    assert record_attrs["record.ok"]["stringValue"] == "ok"
+    assert record["body"]["stringValue"] == "log with unset attribute values"
 
 
 def test_out_kafka_otlp_json_metrics():
@@ -699,3 +902,41 @@ def test_out_kafka_otlp_logs_partition_by_resource(format_name, config_file):
         "event-a": "user-a",
         "event-b": "user-b",
     }
+
+
+def test_out_kafka_otlp_json_partition_by_resource_keeps_monolithic_resource_valid():
+    record_count = 512
+    service = Service("out_kafka_otlp_json_partition_by_resource.yaml")
+    service.start()
+    service.send_payload_dict(_build_monolithic_logs_payload(record_count), "logs")
+
+    messages = service.wait_for_messages(1, timeout=10)
+    service.stop()
+
+    assert len(messages) == 1
+    message = messages[0]
+    payload = json.loads(message["value"].decode("utf-8"))
+    resource_logs = payload["resourceLogs"]
+
+    assert message["topic"] == "otlp-topic"
+    assert len(resource_logs) == 1
+    assert len(resource_logs[0]["scopeLogs"]) == 1
+    assert len(resource_logs[0]["scopeLogs"][0]["logRecords"]) == record_count
+    assert len(message["value"]) > 100000
+
+
+def test_out_kafka_otlp_json_partition_by_resource_rejects_oversized_message():
+    service = Service("out_kafka_otlp_json_partition_by_resource_small_message_max.yaml")
+    service.start()
+    service.send_payload_dict(_build_monolithic_logs_payload(512), "logs")
+
+    timeout = 30 if os.environ.get("VALGRIND") else 10
+    log_text = _wait_for_log_text(
+        service.flb.log_file,
+        "Broker: Message size too large",
+        timeout=timeout,
+    )
+    service.stop()
+
+    assert data_storage["messages"] == []
+    assert "could not convert partitioned OTLP logs" not in log_text
