@@ -118,7 +118,7 @@ struct flb_unicode_converter win866_converter = {
     .aliases = {"CP866", NULL},
     .desc = "Windows code pages' converters",
     .encoding = FLB_WIN866,
-    .max_width = 2,
+    .max_width = 3,
     .cb_to_utf8 = flb_win_to_utf8,
     .cb_from_utf8 = flb_utf8_to_win,
 };
