@@ -28,6 +28,7 @@
 #include <monkey/mk_thread.h>
 #include <monkey/mk_mimetype.h>
 #include <monkey/mk_http_thread.h>
+#include <monkey/mk_tls_transport.h>
 
 pthread_once_t mk_server_tls_setup_once = PTHREAD_ONCE_INIT;
 
@@ -191,7 +192,15 @@ int mk_server_setup(struct mk_server *server)
 
     /* Core and Scheduler setup */
     mk_config_start_configure(server);
+    if (server->path_conf_root != NULL && server->config == NULL) {
+        return -1;
+    }
+
     mk_config_signature(server);
+    ret = mk_tls_init(server);
+    if (ret != 0) {
+        return -1;
+    }
 
     mk_sched_init(server);
 
@@ -234,8 +243,18 @@ void mk_exit_all(struct mk_server *server)
 
     /* Continue exiting */
     mk_plugin_exit_all(server);
+    mk_tls_exit(server);
     mk_clock_exit(server);
 
     mk_sched_exit(server);
+    if (server->lib_evl != NULL) {
+        mk_event_loop_destroy(server->lib_evl);
+        server->lib_evl = NULL;
+    }
+    if (server->lib_evl_start != NULL) {
+        mk_event_loop_destroy(server->lib_evl_start);
+        server->lib_evl_start = NULL;
+    }
+    pthread_mutex_destroy(&server->vhost_fdt_mutex);
     mk_config_free_all(server);
 }
