@@ -32,8 +32,11 @@
 
 void flb_tail_scan_register_ignored_file_size(struct flb_tail_config *ctx, const char *path, size_t path_length, size_t size)
 {
-    flb_hash_table_add(ctx->ignored_file_sizes, path, path_length, (void *) size, 0);
-
+    /*
+     * Store size+1 so that an offset of zero is distinguishable from
+     * "no entry" (a stored pointer of NULL) when fetched back.
+     */
+    flb_hash_table_add(ctx->ignored_file_sizes, path, path_length, (void *)(size + 1), 0);
 }
 
 void flb_tail_scan_unregister_ignored_file_size(struct flb_tail_config *ctx, const char *path, size_t path_length)
@@ -48,10 +51,13 @@ ssize_t flb_tail_scan_fetch_ignored_file_size(struct flb_tail_config *ctx, const
     result = (ssize_t) flb_hash_table_get_ptr(ctx->ignored_file_sizes, path, path_length);
 
     if (result == 0) {
-        result = -1;
+        /* Key not found (or stored value was genuinely zero before the +1
+         * encoding was introduced — treat as absent). */
+        return -1;
     }
 
-    return result;
+    /* Undo the +1 bias applied on registration. */
+    return result - 1;
 }
 
 void flb_tail_scan_register_aged_out_inode(struct flb_tail_config *ctx,

@@ -1185,7 +1185,8 @@ static inline int flb_tail_file_exists(struct stat *st,
  * file in question.
  */
 static int set_file_position(struct flb_tail_config *ctx,
-                             struct flb_tail_file *file)
+                             struct flb_tail_file *file,
+                             int explicit_offset)
 {
     int64_t ret;
 
@@ -1237,29 +1238,37 @@ static int set_file_position(struct flb_tail_config *ctx,
     }
 #endif
 
-    if (ctx->read_from_head == FLB_TRUE) {
-        /* no need to seek, offset position is already zero */
-        return 0;
-    }
-
-    if (file->offset > 0) {
+    /* A pre-set offset (e.g. from an aged-out re-pickup) must be honoured
+     * even when read_from_head is true; the flag only governs truly new
+     * files that have no prior read position. */
+    if (explicit_offset) {
         ret = lseek(file->fd, file->offset, SEEK_SET);
 
         if (ret == -1) {
             flb_errno();
             return -1;
         }
-    }
-    else {
-        ret = lseek(file->fd, 0, SEEK_END);
 
-        if (ret == -1) {
-            flb_errno();
-            return -1;
+        if (file->decompression_context == NULL) {
+            file->stream_offset = ret;
         }
 
-        file->offset = ret;
+        return 0;
     }
+
+    if (ctx->read_from_head == FLB_TRUE) {
+        /* no need to seek, offset position is already zero */
+        return 0;
+    }
+
+    ret = lseek(file->fd, 0, SEEK_END);
+
+    if (ret == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    file->offset = ret;
 
     if (file->decompression_context == NULL) {
         file->stream_offset = ret;
@@ -1592,7 +1601,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     }
 
     /* Set the file position (database offset, head or tail) */
-    ret = set_file_position(ctx, file);
+    ret = set_file_position(ctx, file, (offset != -1));
     if (ret == -1) {
         goto err_fs_remove;
     }
@@ -2444,6 +2453,13 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
                                                       file->name,
                                                       strlen(file->name),
                                                       file->inode);
+                /* Preserve read offset for re-pickup if mtime is later refreshed.
+                 * Use flb_tail_file_db_offset() rather than file->offset so that
+                 * any buffered but unparsed bytes are not skipped on re-pickup. */
+                flb_tail_scan_register_ignored_file_size(ctx,
+                                                         file->name,
+                                                         strlen(file->name),
+                                                         flb_tail_file_db_offset(file));
                 flb_tail_file_remove(file);
                 return FLB_TRUE;
             }
