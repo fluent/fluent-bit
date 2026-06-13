@@ -524,6 +524,11 @@ static struct flb_json_mut_val *create_binary_value(struct flb_json_mut_doc *doc
 static struct flb_json_mut_val *msgpack_object_to_otlp_any_value(struct flb_json_mut_doc *doc,
                                                         msgpack_object *object);
 
+static struct flb_json_mut_val *empty_otlp_any_value(struct flb_json_mut_doc *doc)
+{
+    return flb_json_mut_obj(doc);
+}
+
 static struct flb_json_mut_val *msgpack_array_to_otlp_any_value(struct flb_json_mut_doc *doc,
                                                        msgpack_object_array *array)
 {
@@ -544,7 +549,12 @@ static struct flb_json_mut_val *msgpack_array_to_otlp_any_value(struct flb_json_
     }
 
     for (index = 0; index < array->size; index++) {
-        entry = msgpack_object_to_otlp_any_value(doc, &array->ptr[index]);
+        if (array->ptr[index].type == MSGPACK_OBJECT_NIL) {
+            entry = empty_otlp_any_value(doc);
+        }
+        else {
+            entry = msgpack_object_to_otlp_any_value(doc, &array->ptr[index]);
+        }
         if (entry == NULL || !flb_json_mut_arr_add_val(values, entry)) {
             return NULL;
         }
@@ -573,7 +583,12 @@ static struct flb_json_mut_val *msgpack_map_to_otlp_kv_array(struct flb_json_mut
         }
 
         entry = flb_json_mut_obj(doc);
-        value = msgpack_object_to_otlp_any_value(doc, &map->ptr[index].val);
+        if (map->ptr[index].val.type == MSGPACK_OBJECT_NIL) {
+            value = empty_otlp_any_value(doc);
+        }
+        else {
+            value = msgpack_object_to_otlp_any_value(doc, &map->ptr[index].val);
+        }
         if (entry == NULL || value == NULL) {
             return NULL;
         }
@@ -625,7 +640,12 @@ static struct flb_json_mut_val *msgpack_map_to_otlp_kv_array_filtered(
         }
 
         entry = flb_json_mut_obj(doc);
-        value = msgpack_object_to_otlp_any_value(doc, &map->ptr[index].val);
+        if (map->ptr[index].val.type == MSGPACK_OBJECT_NIL) {
+            value = empty_otlp_any_value(doc);
+        }
+        else {
+            value = msgpack_object_to_otlp_any_value(doc, &map->ptr[index].val);
+        }
         if (entry == NULL || value == NULL) {
             return NULL;
         }
@@ -846,6 +866,8 @@ static struct flb_json_mut_val *cfl_variant_to_otlp_any_value(struct flb_json_mu
         value = cfl_kvlist_to_otlp_any_value(doc, variant->data.as_kvlist);
         return (value != NULL &&
                 flb_json_mut_obj_add_val(doc, root, "kvlistValue", value)) ? root : NULL;
+    case CFL_VARIANT_NULL:
+        return root;
     default:
         return NULL;
     }
