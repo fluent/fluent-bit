@@ -21,10 +21,240 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_record_accessor.h>
 
+#ifndef FLB_SYSTEM_WINDOWS
+#include <errno.h>
+#include <pthread.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#endif
+
 #include "flb_tests_runtime.h"
 
 /* Include plugin header to get the flush_ctx structure definition */
 #include "../../plugins/out_forward/forward.h"
+
+#ifndef FLB_SYSTEM_WINDOWS
+struct secure_forward_server {
+    int listen_fd;
+    int port;
+    int got_ping;
+    pthread_t thread;
+};
+
+static int forward_socket_write_all(int fd, const char *buffer, size_t length)
+{
+    ssize_t bytes;
+    size_t offset;
+
+    offset = 0;
+
+    while (offset < length) {
+        bytes = write(fd, buffer + offset, length - offset);
+        if (bytes == -1) {
+            if (errno == EINTR) {
+                continue;
+            }
+
+            return -1;
+        }
+
+        if (bytes == 0) {
+            return -1;
+        }
+
+        offset += bytes;
+    }
+
+    return 0;
+}
+
+static int forward_create_listen_socket(int *out_port)
+{
+    int fd;
+    int ret;
+    int enable;
+    socklen_t length;
+    struct sockaddr_in address;
+
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd == -1) {
+        return -1;
+    }
+
+    enable = 1;
+    ret = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable));
+    if (ret == -1) {
+        close(fd);
+        return -1;
+    }
+
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(0);
+
+    if (bind(fd, (struct sockaddr *) &address, sizeof(address)) == -1) {
+        close(fd);
+        return -1;
+    }
+
+    if (listen(fd, 4) == -1) {
+        close(fd);
+        return -1;
+    }
+
+    length = sizeof(address);
+    if (getsockname(fd, (struct sockaddr *) &address, &length) == -1) {
+        close(fd);
+        return -1;
+    }
+
+    *out_port = ntohs(address.sin_port);
+
+    return fd;
+}
+
+static int forward_pack_secure_helo(msgpack_sbuffer *mp_sbuf)
+{
+    msgpack_packer mp_pck;
+
+    msgpack_sbuffer_init(mp_sbuf);
+    msgpack_packer_init(&mp_pck, mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "HELO", 4);
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str(&mp_pck, 5);
+    msgpack_pack_str_body(&mp_pck, "nonce", 5);
+    msgpack_pack_str(&mp_pck, 16);
+    msgpack_pack_str_body(&mp_pck, "0123456789abcdef", 16);
+
+    return 0;
+}
+
+static int forward_pack_oversized_pong(msgpack_sbuffer *mp_sbuf)
+{
+    char reason[900];
+    msgpack_packer mp_pck;
+
+    memset(reason, 'A', sizeof(reason));
+
+    msgpack_sbuffer_init(mp_sbuf);
+    msgpack_packer_init(&mp_pck, mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_array(&mp_pck, 5);
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "PONG", 4);
+    msgpack_pack_false(&mp_pck);
+    msgpack_pack_str(&mp_pck, sizeof(reason));
+    msgpack_pack_str_body(&mp_pck, reason, sizeof(reason));
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "host", 4);
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "desc", 4);
+
+    return 0;
+}
+
+static int forward_read_msgpack(int fd, char *buf, size_t size)
+{
+    int ret;
+    ssize_t bytes;
+    size_t off;
+    size_t buf_off;
+    msgpack_unpacked result;
+
+    buf_off = 0;
+    msgpack_unpacked_init(&result);
+
+    while (buf_off < size) {
+        bytes = read(fd, buf + buf_off, size - buf_off);
+        if (bytes <= 0) {
+            msgpack_unpacked_destroy(&result);
+            return -1;
+        }
+
+        buf_off += bytes;
+        off = 0;
+        ret = msgpack_unpack_next(&result, buf, buf_off, &off);
+        if (ret == MSGPACK_UNPACK_SUCCESS) {
+            msgpack_unpacked_destroy(&result);
+            return 0;
+        }
+
+        if (ret != MSGPACK_UNPACK_CONTINUE) {
+            msgpack_unpacked_destroy(&result);
+            return -1;
+        }
+    }
+
+    msgpack_unpacked_destroy(&result);
+    return -1;
+}
+
+static void *secure_forward_oversized_pong_server_thread(void *data)
+{
+    int ret;
+    int conn_fd;
+    fd_set read_fds;
+    struct timeval timeout;
+    char buf[1024];
+    msgpack_sbuffer helo;
+    msgpack_sbuffer pong;
+    struct secure_forward_server *server;
+
+    server = data;
+    conn_fd = -1;
+
+    FD_ZERO(&read_fds);
+    FD_SET(server->listen_fd, &read_fds);
+    timeout.tv_sec = 5;
+    timeout.tv_usec = 0;
+
+    ret = select(server->listen_fd + 1, &read_fds, NULL, NULL, &timeout);
+    if (ret <= 0) {
+        return NULL;
+    }
+
+    conn_fd = accept(server->listen_fd, NULL, NULL);
+    if (conn_fd == -1) {
+        return NULL;
+    }
+
+    if (forward_pack_secure_helo(&helo) != 0) {
+        close(conn_fd);
+        return NULL;
+    }
+
+    if (forward_socket_write_all(conn_fd, helo.data, helo.size) != 0) {
+        msgpack_sbuffer_destroy(&helo);
+        close(conn_fd);
+        return NULL;
+    }
+    msgpack_sbuffer_destroy(&helo);
+
+    if (forward_read_msgpack(conn_fd, buf, sizeof(buf)) != 0) {
+        close(conn_fd);
+        return NULL;
+    }
+    server->got_ping = FLB_TRUE;
+
+    if (forward_pack_oversized_pong(&pong) != 0) {
+        close(conn_fd);
+        return NULL;
+    }
+
+    forward_socket_write_all(conn_fd, pong.data, pong.size);
+    msgpack_sbuffer_destroy(&pong);
+    close(conn_fd);
+
+    return NULL;
+}
+#endif
 
 static void cb_check_message_mode(void *ctx, int ffd,
                                   int res_ret, void *res_data, size_t res_size,
@@ -352,6 +582,70 @@ void flb_test_forward_compat_mode()
     flb_destroy(ctx);
 }
 
+#ifndef FLB_SYSTEM_WINDOWS
+void flb_test_secure_forward_oversized_pong_reason()
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    char port[16];
+    flb_ctx_t *ctx;
+    struct secure_forward_server server;
+
+    memset(&server, 0, sizeof(server));
+    server.listen_fd = -1;
+
+    server.listen_fd = forward_create_listen_socket(&server.port);
+    TEST_CHECK(server.listen_fd != -1);
+    if (server.listen_fd == -1) {
+        return;
+    }
+
+    ret = pthread_create(&server.thread, NULL,
+                         secure_forward_oversized_pong_server_thread,
+                         &server);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        close(server.listen_fd);
+        return;
+    }
+
+    snprintf(port, sizeof(port), "%i", server.port);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "dummy", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd,
+                  "tag", "test",
+                  "samples", "1",
+                  "dummy", "{\"key\":\"value\"}",
+                  NULL);
+
+    out_ffd = flb_output(ctx, (char *) "forward", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "host", "127.0.0.1",
+                   "port", port,
+                   "shared_key", "secret",
+                   NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(1500);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    close(server.listen_fd);
+    pthread_join(server.thread, NULL);
+
+    TEST_CHECK(server.got_ping == FLB_TRUE);
+}
+#endif
+
 /* Test list */
 TEST_LIST = {
 #ifdef FLB_HAVE_RECORD_ACCESSOR
@@ -360,5 +654,9 @@ TEST_LIST = {
 #endif
     {"forward_mode"       , flb_test_forward_mode },
     {"forward_compat_mode", flb_test_forward_compat_mode },
+#ifndef FLB_SYSTEM_WINDOWS
+    {"secure_forward_oversized_pong_reason",
+     flb_test_secure_forward_oversized_pong_reason },
+#endif
     {NULL, NULL}
 };
