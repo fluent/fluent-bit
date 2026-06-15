@@ -339,22 +339,39 @@ static void secure_forward_set_ping(struct flb_forward_ping *ping,
     memset(ping, 0, sizeof(struct flb_forward_ping));
     ping->keepalive = 1; /* default, as per spec */
 
+    if (map->type != MSGPACK_OBJECT_MAP) {
+        return;
+    }
+
     for (i = 0; i < map->via.map.size; i++) {
         key = map->via.map.ptr[i].key;
         val = map->via.map.ptr[i].val;
+
+        if (key.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
 
         ptr = key.via.str.ptr;
         len = key.via.str.size;
 
         if (len == 5 && memcmp(ptr, "nonce", len) == 0) {
+            if (val.type != MSGPACK_OBJECT_STR && val.type != MSGPACK_OBJECT_BIN) {
+                continue;
+            }
             ping->nonce = val.via.bin.ptr;
             ping->nonce_len = val.via.bin.size;
         }
         else if (len == 4 && memcmp(ptr, "auth", len) == 0) {
+            if (val.type != MSGPACK_OBJECT_STR && val.type != MSGPACK_OBJECT_BIN) {
+                continue;
+            }
             ping->auth = val.via.bin.ptr;
             ping->auth_len = val.via.bin.size;
         }
         else if (len == 9 && memcmp(ptr, "keepalive", len) == 0) {
+            if (val.type != MSGPACK_OBJECT_BOOLEAN) {
+                continue;
+            }
             ping->keepalive = val.via.boolean;
         }
     }
@@ -548,7 +565,7 @@ static int secure_forward_pong(struct flb_forward *ctx, char *buf, int buf_size)
         goto error;
     }
 
-    if (strncmp(o.via.str.ptr, "PONG", 4) != 0 || o.via.str.size != 4) {
+    if (o.via.str.size != 4 || strncmp(o.via.str.ptr, "PONG", 4) != 0) {
         goto error;
     }
 
@@ -563,7 +580,17 @@ static int secure_forward_pong(struct flb_forward *ctx, char *buf, int buf_size)
     }
     else {
         o = root.via.array.ptr[2];
-        memcpy(msg, o.via.str.ptr, o.via.str.size);
+        if (o.type != MSGPACK_OBJECT_STR) {
+            goto error;
+        }
+        if (o.via.str.size >= sizeof(msg)) {
+            memcpy(msg, o.via.str.ptr, sizeof(msg) - 1);
+            msg[sizeof(msg) - 1] = '\0';
+        }
+        else {
+            memcpy(msg, o.via.str.ptr, o.via.str.size);
+            msg[o.via.str.size] = '\0';
+        }
         flb_plg_error(ctx->ins, "failed authorization: %s", msg);
     }
 
@@ -602,6 +629,12 @@ static int secure_forward_handshake(struct flb_connection *u_conn,
 
     /* Parse HELO message */
     root = result.data;
+    if (root.type != MSGPACK_OBJECT_ARRAY) {
+        flb_plg_error(ctx->ins, "Invalid HELO type message");
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
     if (root.via.array.size < 2) {
         flb_plg_error(ctx->ins, "Invalid HELO message");
         msgpack_unpacked_destroy(&result);
@@ -615,7 +648,7 @@ static int secure_forward_handshake(struct flb_connection *u_conn,
         return -1;
     }
 
-    if (strncmp(o.via.str.ptr, "HELO", 4) != 0 || o.via.str.size != 4) {
+    if (o.via.str.size != 4 || strncmp(o.via.str.ptr, "HELO", 4) != 0) {
         flb_plg_error(ctx->ins, "Invalid HELO content message");
         msgpack_unpacked_destroy(&result);
         return -1;
@@ -625,6 +658,12 @@ static int secure_forward_handshake(struct flb_connection *u_conn,
 
     /* Compose and send PING message */
     o = root.via.array.ptr[1];
+    if (o.type != MSGPACK_OBJECT_MAP) {
+        flb_plg_error(ctx->ins, "Invalid HELO options message");
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
     ret = secure_forward_ping(u_conn, o, fc, ctx);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "Failed PING");
@@ -699,8 +738,16 @@ static int forward_read_ack(struct flb_forward *ctx,
     /* Lookup ack field */
     for (i = 0; i < map.size; i++) {
         key = map.ptr[i].key;
+        if (key.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
         if (key.via.str.size == 3 && strncmp(key.via.str.ptr, "ack", 3) == 0) {
             val     = map.ptr[i].val;
+            if (val.type != MSGPACK_OBJECT_STR) {
+                goto error;
+            }
+
             ack_len = val.via.str.size;
             ack     = val.via.str.ptr;
             break;
@@ -714,15 +761,15 @@ static int forward_read_ack(struct flb_forward *ctx,
 
     if (ack_len != chunk_len) {
         flb_plg_error(ctx->ins,
-                      "ack: ack len does not match ack(%ld)(%.*s) chunk(%d)(%.*s)",
+                      "ack: ack len does not match ack(%zu)(%.*s) chunk(%d)(%.*s)",
                       ack_len, (int) ack_len, ack,
                       chunk_len, (int) chunk_len, chunk);
         goto error;
     }
 
     if (strncmp(ack, chunk, ack_len) != 0) {
-        flb_plg_error(ctx->ins, "ACK: mismatch received=%s, expected=(%.*s)",
-                      ack, chunk_len, chunk);
+        flb_plg_error(ctx->ins, "ACK: mismatch received=%.*s, expected=(%.*s)",
+                      (int) ack_len, ack, chunk_len, chunk);
         goto error;
     }
 
