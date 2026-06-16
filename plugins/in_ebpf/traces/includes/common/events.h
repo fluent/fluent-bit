@@ -157,6 +157,12 @@ struct sched_event {
     __u8 wakeup_tracked;
 };
 
+struct sched_sample {
+    enum event_type type;
+    struct event_common common;
+    struct sched_event details;
+};
+
 struct event {
     enum event_type type;           // Type of event (execve, signal, mem, bind)
     struct event_common common;     // Common fields for all events

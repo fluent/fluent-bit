@@ -8,8 +8,9 @@
 #include "handler.h"
 
 int encode_sched_event(struct flb_log_event_encoder *log_encoder,
-                       const struct event *e)
+                       const struct sched_sample *e)
 {
+    struct event ev;
     int ret;
 
     ret = flb_log_event_encoder_begin_record(log_encoder);
@@ -17,7 +18,10 @@ int encode_sched_event(struct flb_log_event_encoder *log_encoder,
         return -1;
     }
 
-    ret = encode_common_fields(log_encoder, e);
+    ev.type = e->type;
+    ev.common = e->common;
+
+    ret = encode_common_fields(log_encoder, &ev);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
@@ -28,7 +32,7 @@ int encode_sched_event(struct flb_log_event_encoder *log_encoder,
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
     }
-    ret = flb_log_event_encoder_append_body_uint32(log_encoder, e->details.sched.cpu);
+    ret = flb_log_event_encoder_append_body_uint32(log_encoder, e->details.cpu);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
@@ -39,7 +43,7 @@ int encode_sched_event(struct flb_log_event_encoder *log_encoder,
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
     }
-    ret = flb_log_event_encoder_append_body_uint32(log_encoder, e->details.sched.prev_pid);
+    ret = flb_log_event_encoder_append_body_uint32(log_encoder, e->details.prev_pid);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
@@ -50,7 +54,7 @@ int encode_sched_event(struct flb_log_event_encoder *log_encoder,
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
     }
-    ret = flb_log_event_encoder_append_body_int32(log_encoder, e->details.sched.prev_prio);
+    ret = flb_log_event_encoder_append_body_int32(log_encoder, e->details.prev_prio);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
@@ -61,7 +65,7 @@ int encode_sched_event(struct flb_log_event_encoder *log_encoder,
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
     }
-    ret = flb_log_event_encoder_append_body_int64(log_encoder, e->details.sched.prev_state);
+    ret = flb_log_event_encoder_append_body_int64(log_encoder, e->details.prev_state);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
@@ -72,7 +76,7 @@ int encode_sched_event(struct flb_log_event_encoder *log_encoder,
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
     }
-    ret = flb_log_event_encoder_append_body_uint32(log_encoder, e->details.sched.next_pid);
+    ret = flb_log_event_encoder_append_body_uint32(log_encoder, e->details.next_pid);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
@@ -83,7 +87,7 @@ int encode_sched_event(struct flb_log_event_encoder *log_encoder,
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
     }
-    ret = flb_log_event_encoder_append_body_int32(log_encoder, e->details.sched.next_prio);
+    ret = flb_log_event_encoder_append_body_int32(log_encoder, e->details.next_prio);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
@@ -94,7 +98,7 @@ int encode_sched_event(struct flb_log_event_encoder *log_encoder,
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
     }
-    ret = flb_log_event_encoder_append_body_uint64(log_encoder, e->details.sched.runq_latency_ns);
+    ret = flb_log_event_encoder_append_body_uint64(log_encoder, e->details.runq_latency_ns);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
@@ -105,7 +109,7 @@ int encode_sched_event(struct flb_log_event_encoder *log_encoder,
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
     }
-    ret = flb_log_event_encoder_append_body_boolean(log_encoder, e->details.sched.wakeup_tracked);
+    ret = flb_log_event_encoder_append_body_boolean(log_encoder, e->details.wakeup_tracked);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
@@ -123,13 +127,13 @@ int trace_sched_handler(void *ctx, void *data, size_t data_sz)
 {
     struct trace_event_context *event_ctx;
     struct flb_log_event_encoder *encoder;
-    struct event *e;
+    struct sched_sample *e;
     int ret;
 
     event_ctx = (struct trace_event_context *) ctx;
-    e = (struct event *) data;
+    e = (struct sched_sample *) data;
 
-    if (data_sz < sizeof(struct event) || e->type != EVENT_TYPE_SCHED) {
+    if (data_sz < sizeof(struct sched_sample) || e->type != EVENT_TYPE_SCHED) {
         return -1;
     }
 
@@ -137,6 +141,7 @@ int trace_sched_handler(void *ctx, void *data, size_t data_sz)
 
     ret = encode_sched_event(encoder, e);
     if (ret != 0) {
+        flb_log_event_encoder_reset(encoder);
         return -1;
     }
 
@@ -146,6 +151,7 @@ int trace_sched_handler(void *ctx, void *data, size_t data_sz)
                                encoder->output_buffer,
                                encoder->output_length);
     if (ret == -1) {
+        flb_log_event_encoder_reset(encoder);
         return -1;
     }
 

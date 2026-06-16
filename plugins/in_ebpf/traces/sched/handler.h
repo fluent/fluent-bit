@@ -7,7 +7,7 @@
 #include "common/events.h"
 
 int encode_sched_event(struct flb_log_event_encoder *log_encoder,
-                       const struct event *e);
+                       const struct sched_sample *e);
 int trace_sched_handler(void *ctx, void *data, size_t data_sz);
 
 #endif
