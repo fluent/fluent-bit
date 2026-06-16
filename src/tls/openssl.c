@@ -1395,6 +1395,13 @@ static int tls_context_reload(struct flb_tls *tls)
     old_ssl_ctx = ctx->ctx;
     ctx->ctx = new_ctx->ctx;
     new_ctx->ctx = old_ssl_ctx;
+
+    if (tls->alpn != NULL && tls->mode == FLB_TLS_SERVER_MODE) {
+        SSL_CTX_set_alpn_select_cb(ctx->ctx,
+                                   tls_context_server_alpn_select_callback,
+                                   ctx);
+    }
+
     pthread_mutex_unlock(&ctx->mutex);
 
     tls_context_destroy(new_ctx);
