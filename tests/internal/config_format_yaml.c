@@ -32,6 +32,8 @@
 #define FLB_004 FLB_TESTS_CONF_PATH "/stream_processor.yaml"
 #define FLB_005 FLB_TESTS_CONF_PATH "/plugins.yaml"
 #define FLB_006 FLB_TESTS_CONF_PATH "/upstream.yaml"
+#define FLB_PARSERS_LIST FLB_TESTS_CONF_PATH "/parsers/parsers-list.yaml"
+#define FLB_PARSERS_LIST_CAMEL_CASE FLB_TESTS_CONF_PATH "/parsers/parsers-list-camel-case.yaml"
 
 #define FLB_000_WIN FLB_TESTS_CONF_PATH "\\fluent-bit-windows.yaml"
 #define FLB_BROKEN_PLUGIN_VARIANT FLB_TESTS_CONF_PATH "/broken_plugin_variant.yaml"
@@ -320,6 +322,52 @@ static void test_parser_conf()
     flb_cf_dump(cf);
     flb_cf_destroy(cf);
     flb_config_exit(config);
+}
+
+static void test_parser_conf_list_file(char *path)
+{
+    struct flb_cf *cf;
+    struct flb_config *config;
+    int ret;
+    int cnt;
+
+    cf = flb_cf_yaml_create(NULL, path, NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    config->conf_path = flb_strdup(FLB_TESTS_CONF_PATH "/parsers/");
+
+    /* Count the parsers registered automatically by fluent-bit */
+    cnt = mk_list_size(&config->parsers);
+
+    ret = flb_config_load_config_format(config, cf);
+    if (ret != 0) {
+        exit(EXIT_FAILURE);
+    }
+
+    if (!TEST_CHECK(mk_list_size(&config->parsers) == cnt + 2)) {
+        TEST_MSG("Section number error. Got=%d expect=%d",
+                 mk_list_size(&config->parsers),
+                 cnt + 2);
+    }
+
+    flb_cf_dump(cf);
+    flb_cf_destroy(cf);
+    flb_config_exit(config);
+}
+
+static void test_parser_conf_list(void)
+{
+    test_parser_conf_list_file(FLB_PARSERS_LIST);
+}
+
+static void test_parser_conf_list_camel_case(void)
+{
+    test_parser_conf_list_file(FLB_PARSERS_LIST_CAMEL_CASE);
 }
 
 static inline int check_camel_to_snake(char *input, char *output)
@@ -880,6 +928,8 @@ TEST_LIST = {
     { "slist odd", test_slist_odd},
     { "slist even", test_slist_even},
     { "parsers file conf", test_parser_conf},
+    { "parsers file conf list", test_parser_conf_list},
+    { "parsers file conf list camel case", test_parser_conf_list_camel_case},
     { "camel_case_key", test_camel_case_key},
     { "processors", test_processors},
     { "parsers_and_multiline_parsers", test_parsers_and_multiline_parsers},
