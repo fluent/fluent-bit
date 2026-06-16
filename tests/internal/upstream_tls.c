@@ -161,12 +161,93 @@ void test_tls_session_destroy_no_double_free(void)
 #endif
 }
 
+/*
+ * CRL (tls.crl_file) dispatch. These use a mock TLS backend (same approach as
+ * the session tests above) to exercise the flb_tls_set_crl_file() wrapper
+ * without any real OpenSSL context, certificates or network I/O.
+ */
+struct crl_mock_ctx {
+    int calls;
+    int ret;          /* value the mock returns */
+};
+
+static const char *crl_mock_last_path;
+
+static int crl_mock_set_crl_file(void *ctx_backend, const char *crl_file)
+{
+    struct crl_mock_ctx *m = ctx_backend;
+
+    m->calls++;
+    crl_mock_last_path = crl_file;   /* wrapper forwards the pointer as-is */
+
+    return m->ret;
+}
+
+/* A NULL tls context must be rejected */
+void test_crl_set_null_tls(void)
+{
+    TEST_CHECK(flb_tls_set_crl_file(NULL, "x.pem") == -1);
+}
+
+/* The wrapper forwards ctx + path to the backend and propagates success */
+void test_crl_dispatch_success(void)
+{
+    struct crl_mock_ctx mock = {0};
+    struct flb_tls_backend api = {0};
+    struct flb_tls tls = {0};
+    const char *path = "/etc/crl.pem";
+
+    mock.ret = 0;
+    api.context_set_crl_file = crl_mock_set_crl_file;
+    tls.api = &api;
+    tls.ctx = &mock;
+    crl_mock_last_path = NULL;
+
+    TEST_CHECK(flb_tls_set_crl_file(&tls, path) == 0);
+    TEST_CHECK(mock.calls == 1);
+    TEST_CHECK(crl_mock_last_path == path);
+}
+
+/* The wrapper propagates a backend failure */
+void test_crl_dispatch_error(void)
+{
+    struct crl_mock_ctx mock = {0};
+    struct flb_tls_backend api = {0};
+    struct flb_tls tls = {0};
+
+    mock.ret = -1;
+    api.context_set_crl_file = crl_mock_set_crl_file;
+    tls.api = &api;
+    tls.ctx = &mock;
+
+    TEST_CHECK(flb_tls_set_crl_file(&tls, "/bad.pem") == -1);
+    TEST_CHECK(mock.calls == 1);
+}
+
+/* A backend without CRL support is a graceful no-op (backend not called) */
+void test_crl_dispatch_unsupported(void)
+{
+    struct crl_mock_ctx mock = {0};
+    struct flb_tls_backend api = {0};   /* context_set_crl_file stays NULL */
+    struct flb_tls tls = {0};
+
+    tls.api = &api;
+    tls.ctx = &mock;
+
+    TEST_CHECK(flb_tls_set_crl_file(&tls, "/whatever.pem") == 0);
+    TEST_CHECK(mock.calls == 0);
+}
+
 #endif
 
 TEST_LIST = {
 #ifdef FLB_HAVE_TLS
     {"prepare_destroy_conn_marks_tls_session_stale", test_prepare_destroy_conn_marks_tls_session_stale},
     {"tls_session_destroy_no_double_free", test_tls_session_destroy_no_double_free},
+    {"crl_set_null_tls", test_crl_set_null_tls},
+    {"crl_dispatch_success", test_crl_dispatch_success},
+    {"crl_dispatch_error", test_crl_dispatch_error},
+    {"crl_dispatch_unsupported", test_crl_dispatch_unsupported},
 #endif
     {0}
 };
