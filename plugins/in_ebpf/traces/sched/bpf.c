@@ -8,6 +8,7 @@
 
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
+#include <bpf/bpf_tracing.h>
 
 #include <gadget/buffer.h>
 #include <gadget/mntns_filter.h>
@@ -56,33 +57,41 @@ int trace_sched_wakeup_new(struct trace_event_raw_sched_wakeup_template *ctx)
     return track_wakeup((__u32) ctx->pid);
 }
 
-SEC("tracepoint/sched/sched_switch")
-int trace_sched_switch(struct trace_event_raw_sched_switch *ctx)
+SEC("tp_btf/sched_switch")
+int BPF_PROG(trace_sched_switch, bool preempt, struct task_struct *prev,
+             struct task_struct *next, unsigned int prev_state)
 {
-    struct event *event;
+    struct sched_sample *event;
     struct wakeup_info *wakeup;
     __u64 now_ns;
     __u32 next_pid = 0;
     __u32 prev_pid = 0;
     int prev_prio = 0;
-    long prev_state = 0;
     int next_prio = 0;
-    __u64 uid_gid;
     __u64 mntns_id;
+    const struct cred *next_cred;
+    __u32 uid = 0;
+    __u32 gid = 0;
 
-    bpf_core_read(&next_pid, sizeof(next_pid), &ctx->next_pid);
-    bpf_core_read(&prev_pid, sizeof(prev_pid), &ctx->prev_pid);
-    bpf_core_read(&prev_prio, sizeof(prev_prio), &ctx->prev_prio);
-    bpf_core_read(&prev_state, sizeof(prev_state), &ctx->prev_state);
-    bpf_core_read(&next_prio, sizeof(next_prio), &ctx->next_prio);
+    bpf_core_read(&next_pid, sizeof(next_pid), &next->pid);
+    bpf_core_read(&prev_pid, sizeof(prev_pid), &prev->pid);
+    bpf_core_read(&prev_prio, sizeof(prev_prio), &prev->prio);
+    bpf_core_read(&next_prio, sizeof(next_prio), &next->prio);
 
-    mntns_id = gadget_get_mntns_id();
+    if (next_pid == 0) {
+        return 0;
+    }
+
+    mntns_id = BPF_CORE_READ(next, nsproxy, mnt_ns, ns.inum);
     if (gadget_should_discard_mntns_id(mntns_id)) {
         return 0;
     }
 
-    if (next_pid == 0) {
-        return 0;
+    now_ns = bpf_ktime_get_ns();
+    next_cred = BPF_CORE_READ(next, real_cred);
+    if (next_cred) {
+        uid = BPF_CORE_READ(next_cred, uid.val);
+        gid = BPF_CORE_READ(next_cred, gid.val);
     }
 
     event = gadget_reserve_buf(&events, sizeof(*event));
@@ -90,32 +99,29 @@ int trace_sched_switch(struct trace_event_raw_sched_switch *ctx)
         return 0;
     }
 
-    now_ns = bpf_ktime_get_ns();
-    uid_gid = bpf_get_current_uid_gid();
-
     event->type = EVENT_TYPE_SCHED;
     event->common.timestamp_raw = bpf_ktime_get_boot_ns();
     event->common.pid = next_pid;
     event->common.tid = next_pid;
-    event->common.uid = (u32) uid_gid;
-    event->common.gid = (u32) (uid_gid >> 32);
+    event->common.uid = uid;
+    event->common.gid = gid;
     event->common.mntns_id = mntns_id;
-    bpf_core_read(event->common.comm, sizeof(event->common.comm), &ctx->next_comm);
+    bpf_core_read(event->common.comm, sizeof(event->common.comm), &next->comm);
 
-    event->details.sched.prev_pid = prev_pid;
-    event->details.sched.prev_prio = prev_prio;
-    event->details.sched.prev_state = prev_state;
-    event->details.sched.next_pid = next_pid;
-    event->details.sched.next_prio = next_prio;
-    event->details.sched.cpu = bpf_get_smp_processor_id();
-    event->details.sched.wakeup_tracked = 0;
-    event->details.sched.runq_latency_ns = 0;
+    event->details.prev_pid = prev_pid;
+    event->details.prev_prio = prev_prio;
+    event->details.prev_state = prev_state;
+    event->details.next_pid = next_pid;
+    event->details.next_prio = next_prio;
+    event->details.cpu = bpf_get_smp_processor_id();
+    event->details.wakeup_tracked = 0;
+    event->details.runq_latency_ns = 0;
 
     wakeup = bpf_map_lookup_elem(&wakeup_by_pid, &next_pid);
     if (wakeup) {
-        event->details.sched.wakeup_tracked = 1;
+        event->details.wakeup_tracked = 1;
         if (now_ns > wakeup->wakeup_ns) {
-            event->details.sched.runq_latency_ns = now_ns - wakeup->wakeup_ns;
+            event->details.runq_latency_ns = now_ns - wakeup->wakeup_ns;
         }
         bpf_map_delete_elem(&wakeup_by_pid, &next_pid);
     }
