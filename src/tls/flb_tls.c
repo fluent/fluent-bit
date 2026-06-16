@@ -260,6 +260,27 @@ static int tls_file_status_has_changed(struct flb_tls *tls)
     return FLB_FALSE;
 }
 
+static int tls_should_reload_context(struct flb_tls *tls)
+{
+    if (tls_file_status_has_changed(tls) == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+#if defined(FLB_SYSTEM_WINDOWS) || defined(FLB_SYSTEM_MACOS)
+    /*
+     * macOS Keychain and Windows CertStore do not expose a portable file
+     * metadata handle for us to watch. Refresh store-backed contexts before
+     * each new TLS session so rotations/imports become visible without a
+     * process restart.
+     */
+    if (tls->system_certificates_loaded == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+#endif
+
+    return FLB_FALSE;
+}
+
 static int tls_store_string(char **slot, const char *value)
 {
     char *tmp;
@@ -325,6 +346,11 @@ struct flb_tls *flb_tls_create(int mode,
     tls->mode = mode;
     tls->verify_hostname = FLB_FALSE;
     tls->system_certificates_loaded = FLB_FALSE;
+#if defined(FLB_SYSTEM_WINDOWS) || defined(FLB_SYSTEM_MACOS)
+    if (ca_path == NULL && ca_file == NULL && mode == FLB_TLS_CLIENT_MODE) {
+        tls->system_certificates_loaded = FLB_TRUE;
+    }
+#endif
 #if defined(FLB_SYSTEM_WINDOWS)
     tls->certstore_name = NULL;
     tls->use_enterprise_store = FLB_FALSE;
@@ -357,7 +383,7 @@ int flb_tls_reload_if_needed(struct flb_tls *tls)
 
     pthread_mutex_lock(&tls->reload_mutex);
 
-    if (tls_file_status_has_changed(tls) == FLB_FALSE) {
+    if (tls_should_reload_context(tls) == FLB_FALSE) {
         pthread_mutex_unlock(&tls->reload_mutex);
         return 0;
     }
@@ -503,6 +529,11 @@ int flb_tls_set_verify_client(struct flb_tls *tls, int verify_client)
     }
 
     tls->verify_client = verify_client;
+#if defined(FLB_SYSTEM_WINDOWS) || defined(FLB_SYSTEM_MACOS)
+    if (verify_client == FLB_TRUE && tls->ca_path == NULL && tls->ca_file == NULL) {
+        tls->system_certificates_loaded = FLB_TRUE;
+    }
+#endif
 
     if (tls->ctx && tls->api->context_set_verify_client) {
         return tls->api->context_set_verify_client(tls->ctx, verify_client);
