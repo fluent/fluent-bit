@@ -65,6 +65,7 @@ int BPF_PROG(trace_sched_switch, bool preempt, struct task_struct *prev,
     struct wakeup_info *wakeup;
     __u64 now_ns;
     __u32 next_pid = 0;
+    __u32 next_tid = 0;
     __u32 prev_pid = 0;
     int prev_prio = 0;
     int next_prio = 0;
@@ -73,7 +74,8 @@ int BPF_PROG(trace_sched_switch, bool preempt, struct task_struct *prev,
     __u32 uid = 0;
     __u32 gid = 0;
 
-    bpf_core_read(&next_pid, sizeof(next_pid), &next->pid);
+    bpf_core_read(&next_pid, sizeof(next_pid), &next->tgid);
+    bpf_core_read(&next_tid, sizeof(next_tid), &next->pid);
     bpf_core_read(&prev_pid, sizeof(prev_pid), &prev->pid);
     bpf_core_read(&prev_prio, sizeof(prev_prio), &prev->prio);
     bpf_core_read(&next_prio, sizeof(next_prio), &next->prio);
@@ -102,7 +104,7 @@ int BPF_PROG(trace_sched_switch, bool preempt, struct task_struct *prev,
     event->type = EVENT_TYPE_SCHED;
     event->common.timestamp_raw = bpf_ktime_get_boot_ns();
     event->common.pid = next_pid;
-    event->common.tid = next_pid;
+    event->common.tid = next_tid;
     event->common.uid = uid;
     event->common.gid = gid;
     event->common.mntns_id = mntns_id;
@@ -117,13 +119,13 @@ int BPF_PROG(trace_sched_switch, bool preempt, struct task_struct *prev,
     event->details.wakeup_tracked = 0;
     event->details.runq_latency_ns = 0;
 
-    wakeup = bpf_map_lookup_elem(&wakeup_by_pid, &next_pid);
+    wakeup = bpf_map_lookup_elem(&wakeup_by_pid, &next_tid);
     if (wakeup) {
         event->details.wakeup_tracked = 1;
         if (now_ns > wakeup->wakeup_ns) {
             event->details.runq_latency_ns = now_ns - wakeup->wakeup_ns;
         }
-        bpf_map_delete_elem(&wakeup_by_pid, &next_pid);
+        bpf_map_delete_elem(&wakeup_by_pid, &next_tid);
     }
 
     gadget_submit_buf(ctx, &events, event, sizeof(*event));
