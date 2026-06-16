@@ -20,6 +20,9 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_mem.h>
+
+#include <sys/stat.h>
 
 #include "openssl.c"
 
@@ -182,7 +185,103 @@ static inline int io_tls_event_switch(struct flb_tls_session *session,
 
 int flb_tls_load_system_certificates(struct flb_tls *tls)
 {
-    return load_system_certificates(tls->ctx);
+    int ret;
+
+    ret = load_system_certificates(tls->ctx);
+    if (ret == 0) {
+        tls->system_certificates_loaded = FLB_TRUE;
+    }
+
+    return ret;
+}
+
+static int tls_file_status_get(const char *path,
+                               struct flb_tls_file_status *status)
+{
+    struct stat st;
+
+    memset(status, 0, sizeof(struct flb_tls_file_status));
+
+    if (path == NULL) {
+        return 0;
+    }
+
+    if (stat(path, &st) != 0) {
+        status->exists = FLB_FALSE;
+        return -1;
+    }
+
+    status->exists = FLB_TRUE;
+    status->size = (uint64_t) st.st_size;
+    status->mtime = (uint64_t) st.st_mtime;
+    status->ctime = (uint64_t) st.st_ctime;
+
+    return 0;
+}
+
+static int tls_file_status_changed(const char *path,
+                                   struct flb_tls_file_status *status)
+{
+    struct flb_tls_file_status current;
+
+    if (path == NULL) {
+        return FLB_FALSE;
+    }
+
+    tls_file_status_get(path, &current);
+
+    if (current.exists != status->exists ||
+        current.size != status->size ||
+        current.mtime != status->mtime ||
+        current.ctime != status->ctime) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static void tls_file_status_refresh(struct flb_tls *tls)
+{
+    tls_file_status_get(tls->ca_path, &tls->ca_path_status);
+    tls_file_status_get(tls->ca_file, &tls->ca_file_status);
+    tls_file_status_get(tls->crt_file, &tls->crt_file_status);
+    tls_file_status_get(tls->key_file, &tls->key_file_status);
+}
+
+static int tls_file_status_has_changed(struct flb_tls *tls)
+{
+    if (tls_file_status_changed(tls->ca_path, &tls->ca_path_status) == FLB_TRUE ||
+        tls_file_status_changed(tls->ca_file, &tls->ca_file_status) == FLB_TRUE ||
+        tls_file_status_changed(tls->crt_file, &tls->crt_file_status) == FLB_TRUE ||
+        tls_file_status_changed(tls->key_file, &tls->key_file_status) == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static int tls_store_string(char **slot, const char *value)
+{
+    char *tmp;
+
+    if (*slot != NULL) {
+        flb_free(*slot);
+        *slot = NULL;
+    }
+
+    if (value == NULL) {
+        return 0;
+    }
+
+    tmp = flb_strdup(value);
+    if (tmp == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    *slot = tmp;
+
+    return 0;
 }
 
 struct flb_tls *flb_tls_create(int mode,
@@ -217,30 +316,83 @@ struct flb_tls *flb_tls_create(int mode,
         return NULL;
     }
 
+    tls->ctx = backend;
+    tls->api = &tls_openssl;
+    pthread_mutex_init(&tls->reload_mutex, NULL);
+
     tls->verify = verify;
     tls->debug = debug;
     tls->mode = mode;
     tls->verify_hostname = FLB_FALSE;
+    tls->system_certificates_loaded = FLB_FALSE;
 #if defined(FLB_SYSTEM_WINDOWS)
     tls->certstore_name = NULL;
     tls->use_enterprise_store = FLB_FALSE;
+    tls->client_thumbprints = NULL;
 #endif
 
-    if (vhost != NULL) {
-        tls->vhost = flb_strdup(vhost);
+    if (tls_store_string(&tls->vhost, vhost) != 0 ||
+        tls_store_string(&tls->ca_path, ca_path) != 0 ||
+        tls_store_string(&tls->ca_file, ca_file) != 0 ||
+        tls_store_string(&tls->crt_file, crt_file) != 0 ||
+        tls_store_string(&tls->key_file, key_file) != 0 ||
+        tls_store_string(&tls->key_passwd, key_passwd) != 0) {
+        flb_tls_destroy(tls);
+        return NULL;
     }
-    tls->ctx = backend;
 
-    tls->api = &tls_openssl;
+    tls_file_status_refresh(tls);
 
     return tls;
+}
+
+int flb_tls_reload_if_needed(struct flb_tls *tls)
+{
+    int ret;
+
+    if (tls == NULL || tls->ctx == NULL || tls->api == NULL ||
+        tls->api->context_reload == NULL) {
+        return 0;
+    }
+
+    pthread_mutex_lock(&tls->reload_mutex);
+
+    if (tls_file_status_has_changed(tls) == FLB_FALSE) {
+        pthread_mutex_unlock(&tls->reload_mutex);
+        return 0;
+    }
+
+    ret = tls->api->context_reload(tls);
+    if (ret != 0) {
+        pthread_mutex_unlock(&tls->reload_mutex);
+        flb_error("[tls] detected certificate file changes but reload failed");
+        return -1;
+    }
+
+    tls_file_status_refresh(tls);
+    pthread_mutex_unlock(&tls->reload_mutex);
+    flb_info("[tls] reloaded TLS certificate configuration");
+
+    return 1;
 }
 
 int flb_tls_set_minmax_proto(struct flb_tls *tls,
                              const char *min_version, const char *max_version)
 {
+    int ret;
+
     if (tls->ctx) {
-        return tls->api->set_minmax_proto(tls, min_version, max_version);
+        ret = tls->api->set_minmax_proto(tls, min_version, max_version);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if (tls_store_string(&tls->min_version, min_version) != 0 ||
+            tls_store_string(&tls->max_version, max_version) != 0) {
+            return -1;
+        }
+
+        return ret;
     }
 
     return 0;
@@ -248,8 +400,19 @@ int flb_tls_set_minmax_proto(struct flb_tls *tls,
 
 int flb_tls_set_ciphers(struct flb_tls *tls, const char *ciphers)
 {
+    int ret;
+
     if (tls->ctx) {
-        return tls->api->set_ciphers(tls, ciphers);
+        ret = tls->api->set_ciphers(tls, ciphers);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if (tls_store_string(&tls->ciphers, ciphers) != 0) {
+            return -1;
+        }
+
+        return ret;
     }
 
     return 0;
@@ -269,12 +432,44 @@ int flb_tls_destroy(struct flb_tls *tls)
     if (tls->vhost != NULL) {
         flb_free(tls->vhost);
     }
+    if (tls->ca_path != NULL) {
+        flb_free(tls->ca_path);
+    }
+    if (tls->ca_file != NULL) {
+        flb_free(tls->ca_file);
+    }
+    if (tls->crt_file != NULL) {
+        flb_free(tls->crt_file);
+    }
+    if (tls->key_file != NULL) {
+        flb_free(tls->key_file);
+    }
+    if (tls->key_passwd != NULL) {
+        flb_free(tls->key_passwd);
+    }
+    if (tls->alpn != NULL) {
+        flb_free(tls->alpn);
+    }
+    if (tls->min_version != NULL) {
+        flb_free(tls->min_version);
+    }
+    if (tls->max_version != NULL) {
+        flb_free(tls->max_version);
+    }
+    if (tls->ciphers != NULL) {
+        flb_free(tls->ciphers);
+    }
 
 #if defined(FLB_SYSTEM_WINDOWS)
     if (tls->certstore_name) {
         flb_free(tls->certstore_name);
     }
+    if (tls->client_thumbprints) {
+        flb_free(tls->client_thumbprints);
+    }
 #endif
+
+    pthread_mutex_destroy(&tls->reload_mutex);
 
     flb_free(tls);
 
@@ -283,8 +478,19 @@ int flb_tls_destroy(struct flb_tls *tls)
 
 int flb_tls_set_alpn(struct flb_tls *tls, const char *alpn)
 {
+    int ret;
+
     if (tls->ctx) {
-        return tls->api->context_alpn_set(tls->ctx, alpn);
+        ret = tls->api->context_alpn_set(tls->ctx, alpn);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if (tls_store_string(&tls->alpn, alpn) != 0) {
+            return -1;
+        }
+
+        return ret;
     }
 
     return 0;
@@ -319,8 +525,19 @@ int flb_tls_set_verify_hostname(struct flb_tls *tls, int verify_hostname)
 #if defined(FLB_SYSTEM_WINDOWS)
 int flb_tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name)
 {
+    int ret;
+
     if (tls) {
-        return tls->api->set_certstore_name(tls, certstore_name);
+        ret = tls->api->set_certstore_name(tls, certstore_name);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if (tls_store_string(&tls->certstore_name, certstore_name) != 0) {
+            return -1;
+        }
+
+        return ret;
     }
 
     return 0;
@@ -328,16 +545,36 @@ int flb_tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name)
 
 int flb_tls_set_use_enterprise_store(struct flb_tls *tls, int use_enterprise)
 {
+    int ret;
+
     if (tls) {
-        return tls->api->set_use_enterprise_store(tls, use_enterprise);
+        ret = tls->api->set_use_enterprise_store(tls, use_enterprise);
+        if (ret != 0) {
+            return ret;
+        }
+
+        tls->use_enterprise_store = use_enterprise;
+
+        return ret;
     }
 
     return 0;
 }
 
 int flb_tls_set_client_thumbprints(struct flb_tls *tls, const char *thumbprints) {
+    int ret;
+
     if (tls && tls->api->set_client_thumbprints) {
-        return tls->api->set_client_thumbprints(tls, thumbprints);
+        ret = tls->api->set_client_thumbprints(tls, thumbprints);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if (tls_store_string(&tls->client_thumbprints, thumbprints) != 0) {
+            return -1;
+        }
+
+        return ret;
     }
     return -1;
 }
@@ -607,6 +844,8 @@ int flb_tls_session_create(struct flb_tls *tls,
     int                     result;
     char                   *vhost;
     int                     flag;
+
+    flb_tls_reload_if_needed(tls);
 
     session = flb_calloc(1, sizeof(struct flb_tls_session));
 
