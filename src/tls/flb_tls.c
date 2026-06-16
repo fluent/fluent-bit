@@ -74,6 +74,12 @@ struct flb_config_map tls_configmap[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "tls.crl_file", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to a Certificate Revocation List (CRL) file in PEM format"
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "tls.vhost", NULL,
      0, FLB_FALSE, 0,
      "Hostname to be used for TLS SNI extension"
@@ -300,6 +306,19 @@ int flb_tls_set_verify_client(struct flb_tls *tls, int verify_client)
 
     if (tls->ctx && tls->api->context_set_verify_client) {
         return tls->api->context_set_verify_client(tls->ctx, verify_client);
+    }
+
+    return 0;
+}
+
+int flb_tls_set_crl_file(struct flb_tls *tls, const char *crl_file)
+{
+    if (!tls) {
+        return -1;
+    }
+
+    if (tls->ctx && tls->api->context_set_crl_file) {
+        return tls->api->context_set_crl_file(tls->ctx, crl_file);
     }
 
     return 0;
