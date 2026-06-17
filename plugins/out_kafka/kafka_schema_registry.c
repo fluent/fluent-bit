@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_uri.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/tls/flb_tls.h>
 
 #ifdef FLB_HAVE_AVRO_ENCODER
 #include <jansson.h>
@@ -71,8 +72,107 @@ static void schema_registry_endpoint_destroy(struct flb_kafka_schema_registry_en
         flb_upstream_destroy(endpoint->upstream);
     }
 
+#ifdef FLB_HAVE_TLS
+    flb_tls_destroy(endpoint->tls);
+#endif
+
     flb_free(endpoint);
 }
+
+#ifdef FLB_HAVE_TLS
+static int schema_registry_endpoint_tls_create(
+        struct flb_kafka_schema_registry_endpoint *endpoint,
+        struct flb_out_kafka *ctx)
+{
+    int ret;
+    const char *vhost;
+
+    vhost = ctx->ins->tls_vhost != NULL ? ctx->ins->tls_vhost : endpoint->host;
+    endpoint->tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                   ctx->ins->tls_verify,
+                                   ctx->ins->tls_debug,
+                                   vhost,
+                                   ctx->ins->tls_ca_path,
+                                   ctx->ins->tls_ca_file,
+                                   ctx->ins->tls_crt_file,
+                                   ctx->ins->tls_key_file,
+                                   ctx->ins->tls_key_passwd);
+    if (endpoint->tls == NULL) {
+        flb_plg_error(ctx->ins, "cannot create Schema Registry TLS context");
+        return -1;
+    }
+
+    if (ctx->ins->tls_verify_hostname == FLB_TRUE) {
+        ret = flb_tls_set_verify_hostname(endpoint->tls,
+                                          ctx->ins->tls_verify_hostname);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins,
+                          "cannot enable Schema Registry TLS hostname verification");
+            return -1;
+        }
+    }
+
+    if (ctx->ins->tls_min_version != NULL || ctx->ins->tls_max_version != NULL) {
+        ret = flb_tls_set_minmax_proto(endpoint->tls,
+                                       ctx->ins->tls_min_version,
+                                       ctx->ins->tls_max_version);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "cannot set Schema Registry TLS protocol version");
+            return -1;
+        }
+    }
+
+    if (ctx->ins->tls_ciphers != NULL) {
+        ret = flb_tls_set_ciphers(endpoint->tls, ctx->ins->tls_ciphers);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot set Schema Registry TLS ciphers");
+            return -1;
+        }
+    }
+
+#if defined(FLB_SYSTEM_WINDOWS)
+    if (ctx->ins->tls_win_use_enterprise_certstore) {
+        ret = flb_tls_set_use_enterprise_store(
+                endpoint->tls, ctx->ins->tls_win_use_enterprise_certstore);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins,
+                          "cannot enable Schema Registry TLS enterprise certstore");
+            return -1;
+        }
+    }
+
+    if (ctx->ins->tls_win_thumbprints != NULL) {
+        ret = flb_tls_set_client_thumbprints(endpoint->tls,
+                                             ctx->ins->tls_win_thumbprints);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins,
+                          "cannot set Schema Registry TLS client thumbprints");
+            return -1;
+        }
+    }
+
+    if (ctx->ins->tls_win_certstore_name != NULL) {
+        ret = flb_tls_set_certstore_name(endpoint->tls,
+                                         ctx->ins->tls_win_certstore_name);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins,
+                          "cannot set Schema Registry TLS certstore name");
+            return -1;
+        }
+
+        ret = flb_tls_load_system_certificates(endpoint->tls);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins,
+                          "cannot load Schema Registry TLS certstore");
+            return -1;
+        }
+    }
+#endif
+
+    return 0;
+}
+#endif
 
 static int schema_registry_endpoint_create(struct flb_out_kafka *ctx,
                                            struct flb_config *config,
@@ -85,8 +185,10 @@ static int schema_registry_endpoint_create(struct flb_out_kafka *ctx,
     char *host;
     char *port_str;
     char *uri;
+    struct flb_tls *tls;
     struct flb_kafka_schema_registry_endpoint *endpoint;
 
+    tls = NULL;
     protocol = NULL;
     host = NULL;
     port_str = NULL;
@@ -146,11 +248,21 @@ static int schema_registry_endpoint_create(struct flb_out_kafka *ctx,
     }
 
     endpoint->port = port;
+    if (io_flags == FLB_IO_TLS) {
+#ifdef FLB_HAVE_TLS
+        ret = schema_registry_endpoint_tls_create(endpoint, ctx);
+        if (ret == -1) {
+            goto cleanup;
+        }
+        tls = endpoint->tls;
+#endif
+    }
+
     endpoint->upstream = flb_upstream_create(config,
                                              endpoint->host,
                                              port,
                                              io_flags,
-                                             ctx->ins->tls);
+                                             tls);
     if (endpoint->upstream == NULL) {
         flb_plg_error(ctx->ins, "cannot create Schema Registry upstream");
         ret = -1;

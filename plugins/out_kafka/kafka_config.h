@@ -62,6 +62,9 @@ struct flb_kafka_schema_registry_endpoint {
     flb_sds_t host;
     flb_sds_t uri;
     int port;
+#ifdef FLB_HAVE_TLS
+    struct flb_tls *tls;
+#endif
     struct flb_upstream *upstream;
     struct mk_list _head;
 };
