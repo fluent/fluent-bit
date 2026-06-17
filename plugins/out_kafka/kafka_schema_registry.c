@@ -25,6 +25,9 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/tls/flb_tls.h>
 
+#include <errno.h>
+#include <stdlib.h>
+
 #ifdef FLB_HAVE_AVRO_ENCODER
 #include <jansson.h>
 #endif
@@ -77,6 +80,34 @@ static void schema_registry_endpoint_destroy(struct flb_kafka_schema_registry_en
 #endif
 
     flb_free(endpoint);
+}
+
+static int schema_registry_parse_port(struct flb_out_kafka *ctx,
+                                      char *port_str, int default_port,
+                                      int *port)
+{
+    long value;
+    char *endptr;
+
+    if (port_str == NULL) {
+        *port = default_port;
+        return 0;
+    }
+
+    errno = 0;
+    endptr = NULL;
+    value = strtol(port_str, &endptr, 10);
+
+    if (errno == ERANGE || endptr == port_str || *endptr != '\0' ||
+        value < 1 || value > 65535) {
+        flb_plg_error(ctx->ins, "invalid schema_registry_url port '%s'",
+                      port_str);
+        return -1;
+    }
+
+    *port = (int) value;
+
+    return 0;
 }
 
 #ifdef FLB_HAVE_TLS
@@ -208,12 +239,18 @@ static int schema_registry_endpoint_create(struct flb_out_kafka *ctx,
     }
 
     if (strcasecmp(protocol, "http") == 0) {
-        port = port_str != NULL ? atoi(port_str) : 80;
+        ret = schema_registry_parse_port(ctx, port_str, 80, &port);
+        if (ret == -1) {
+            goto cleanup;
+        }
         io_flags = FLB_IO_TCP;
     }
     else if (strcasecmp(protocol, "https") == 0) {
 #ifdef FLB_HAVE_TLS
-        port = port_str != NULL ? atoi(port_str) : 443;
+        ret = schema_registry_parse_port(ctx, port_str, 443, &port);
+        if (ret == -1) {
+            goto cleanup;
+        }
         io_flags = FLB_IO_TLS;
 #else
         flb_plg_error(ctx->ins, "schema_registry_url requires TLS support");
@@ -224,12 +261,6 @@ static int schema_registry_endpoint_create(struct flb_out_kafka *ctx,
     else {
         flb_plg_error(ctx->ins, "unsupported schema_registry_url protocol '%s'",
                       protocol);
-        ret = -1;
-        goto cleanup;
-    }
-
-    if (port <= 0) {
-        flb_plg_error(ctx->ins, "invalid schema_registry_url port");
         ret = -1;
         goto cleanup;
     }
@@ -361,8 +392,7 @@ int flb_kafka_schema_registry_configure(struct flb_out_kafka *ctx,
         }
     }
 
-    if (ctx->avro_fields.schema_str == NULL &&
-        ctx->avro_fields.schema_id <= 0 &&
+    if (ctx->avro_fields.schema_id <= 0 &&
         ctx->schema_registry_subject == NULL) {
         flb_plg_error(ctx->ins,
                       "schema_registry_url requires schema_id or schema_registry_subject");
