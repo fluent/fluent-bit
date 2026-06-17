@@ -3188,6 +3188,7 @@ struct flb_cf *flb_cf_yaml_create(struct flb_cf *conf, char *file_path,
                                   char *buf, size_t size)
 {
     int ret;
+    int conf_created = FLB_FALSE;
     struct local_ctx ctx;
 
     if (!conf) {
@@ -3195,6 +3196,7 @@ struct flb_cf *flb_cf_yaml_create(struct flb_cf *conf, char *file_path,
         if (!conf) {
             return NULL;
         }
+        conf_created = FLB_TRUE;
         flb_cf_set_origin_format(conf, FLB_CF_YAML);
     }
     else {
@@ -3205,7 +3207,9 @@ struct flb_cf *flb_cf_yaml_create(struct flb_cf *conf, char *file_path,
     ret = local_init(&ctx);
 
     if (ret == -1) {
-        flb_cf_destroy(conf);
+        if (conf_created == FLB_TRUE) {
+            flb_cf_destroy(conf);
+        }
         return NULL;
     }
 
@@ -3213,7 +3217,9 @@ struct flb_cf *flb_cf_yaml_create(struct flb_cf *conf, char *file_path,
     ret = read_config(conf, &ctx, NULL, file_path);
 
     if (ret == -1) {
-        flb_cf_destroy(conf);
+        if (conf_created == FLB_TRUE) {
+            flb_cf_destroy(conf);
+        }
         local_exit(&ctx);
         return NULL;
     }
