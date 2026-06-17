@@ -147,6 +147,7 @@ if(FLB_AVRO_ENCODER)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     avro.c
+    kafka_schema_registry.c
     )
 endif()
 
@@ -277,6 +278,17 @@ if(FLB_METRICS AND FLB_PROCESSOR_CUMULATIVE_TO_DELTA)
     ${CUMULATIVE_TO_DELTA_CORE_SOURCE})
   target_include_directories(flb-it-cumulative_to_delta PRIVATE
     ${CUMULATIVE_TO_DELTA_PLUGIN_DIR})
+endif()
+
+if(FLB_AVRO_ENCODER)
+  target_sources(flb-it-kafka_schema_registry PRIVATE
+    ${PROJECT_SOURCE_DIR}/plugins/out_kafka/kafka_schema_registry.c)
+  target_include_directories(flb-it-kafka_schema_registry PRIVATE
+    ${PROJECT_SOURCE_DIR}/plugins/out_kafka)
+  if(DEFINED KAFKA_INCLUDEDIR)
+    target_include_directories(flb-it-kafka_schema_registry PRIVATE
+      ${KAFKA_INCLUDEDIR}/librdkafka)
+  endif()
 endif()
 
 if(FLB_TESTS_INTERNAL_FUZZ)
