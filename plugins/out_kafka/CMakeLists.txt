@@ -1,6 +1,7 @@
 # Fluent Bit Kafka Output plugin
 set(src
   kafka_config.c
+  kafka_schema_registry.c
   kafka_topic.c
   kafka.c)
 
