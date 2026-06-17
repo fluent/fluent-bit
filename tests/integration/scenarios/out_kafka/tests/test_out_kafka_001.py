@@ -20,6 +20,7 @@ from server.schema_registry_server import (
     schema_registry_server_stop,
 )
 from utils.data_utils import read_json_file
+from utils.fluent_bit_manager import FluentBitStartupError
 from utils.test_service import FluentBitTestService
 
 
@@ -455,6 +456,44 @@ def _wait_for_log_text(log_file, pattern, timeout=10):
     raise TimeoutError(f"Timed out waiting for log pattern {pattern!r}")
 
 
+def _read_fluent_bit_log(service):
+    if not service.service.flb or not service.service.flb.log_file:
+        return ""
+
+    try:
+        with open(service.service.flb.log_file, "r", encoding="utf-8", errors="replace") as log:
+            return log.read()
+    except FileNotFoundError:
+        return ""
+
+
+def _start_or_skip_without_avro_encoder(service):
+    try:
+        service.start()
+    except FluentBitStartupError as error:
+        log_contents = _read_fluent_bit_log(service)
+        error_message = str(error)
+        unsupported_markers = [
+            "unknown configuration property 'schema_registry_url'",
+            "unknown configuration property 'schema_registry_subject'",
+            "unknown configuration property 'schema_registry_version'",
+        ]
+
+        if any(marker in log_contents or marker in error_message
+               for marker in unsupported_markers):
+            try:
+                service.stop()
+            except Exception:
+                pass
+            pytest.skip("Kafka Avro Schema Registry requires FLB_AVRO_ENCODER=On")
+
+        try:
+            service.stop()
+        except Exception:
+            pass
+        raise
+
+
 def test_out_kafka_sends_json_payload():
     service = Service("out_kafka_basic.yaml")
     service.start()
@@ -537,7 +576,7 @@ def test_out_kafka_msgpack_format_sends_msgpack_payload():
 
 def test_out_kafka_avro_resolves_schema_registry_subject():
     service = Service("out_kafka_avro_schema_registry.yaml", use_schema_registry=True)
-    service.start()
+    _start_or_skip_without_avro_encoder(service)
 
     messages = service.wait_for_messages(1)
     service.stop()
