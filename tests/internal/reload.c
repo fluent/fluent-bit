@@ -19,8 +19,9 @@
 
 #include "flb_tests_internal.h"
 
-#define FLB_YAML    FLB_TESTS_DATA_PATH "/data/reload/yaml/processor.yaml"
-#define FLB_CLASSIC FLB_TESTS_DATA_PATH "/data/reload/fluent-bit.conf"
+#define FLB_YAML                 FLB_TESTS_DATA_PATH "/data/reload/yaml/processor.yaml"
+#define FLB_YAML_MISSING_INCLUDE FLB_TESTS_DATA_PATH "/data/reload/yaml/missing_include.yaml"
+#define FLB_CLASSIC              FLB_TESTS_DATA_PATH "/data/reload/fluent-bit.conf"
 
 void test_reconstruct_cf()
 {
@@ -247,6 +248,60 @@ void test_reload_yaml()
     flb_destroy(ctx);
 }
 
+/* data/reload/yaml/missing_include.yaml */
+void test_reload_yaml_missing_include()
+{
+    struct flb_cf *cf = NULL;
+    struct flb_cf *cf_opts;
+    struct flb_cf_section *section;
+    struct cfl_variant *ret;
+    flb_ctx_t *ctx;
+    int status;
+
+    cf_opts = flb_cf_create();
+    TEST_CHECK(cf_opts != NULL);
+
+    section = flb_cf_section_create(cf_opts, "INPUT", 5);
+    TEST_CHECK(section != NULL);
+
+    ret = flb_cf_section_property_add(cf_opts, section->properties, "name", 0, "dummy", 0);
+    TEST_CHECK(ret != NULL);
+
+    ctx = flb_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("flb_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    cf = ctx->config->cf_main;
+
+    status = flb_reload_reconstruct_cf(cf_opts, cf);
+    TEST_CHECK(status == 0);
+
+    cf = flb_cf_create_from_file(cf, FLB_YAML);
+    TEST_CHECK(cf != NULL);
+
+    ctx->config->conf_path_file = flb_sds_create(FLB_YAML);
+    ctx->config->enable_hot_reload = FLB_TRUE;
+
+    status = flb_config_load_config_format(ctx->config, cf);
+    TEST_CHECK(status == 0);
+
+    status = flb_start(ctx);
+    TEST_CHECK(status == 0);
+
+    flb_sds_destroy(ctx->config->conf_path_file);
+    ctx->config->conf_path_file = flb_sds_create(FLB_YAML_MISSING_INCLUDE);
+
+    status = flb_reload(ctx, cf_opts);
+    TEST_CHECK(status == FLB_RELOAD_HALTED);
+
+    flb_cf_destroy(cf_opts);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test hot reload watchdog timeout functionality */
 #ifndef FLB_SYSTEM_WINDOWS
 void test_reload_watchdog_timeout()
@@ -394,6 +449,7 @@ TEST_LIST = {
     { "reconstruct_cf" , test_reconstruct_cf},
     { "reload"         , test_reload},
     { "reload_yaml"    , test_reload_yaml},
+    { "reload_yaml_missing_include", test_reload_yaml_missing_include},
     { "reload_watchdog_timeout", test_reload_watchdog_timeout},
     { 0 }
 };

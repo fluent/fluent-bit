@@ -32,6 +32,7 @@
 #define FLB_004 FLB_TESTS_CONF_PATH "/stream_processor.yaml"
 #define FLB_005 FLB_TESTS_CONF_PATH "/plugins.yaml"
 #define FLB_006 FLB_TESTS_CONF_PATH "/upstream.yaml"
+#define FLB_007 FLB_TESTS_CONF_PATH "/missing_include.yaml"
 
 #define FLB_000_WIN FLB_TESTS_CONF_PATH "\\fluent-bit-windows.yaml"
 #define FLB_BROKEN_PLUGIN_VARIANT FLB_TESTS_CONF_PATH "/broken_plugin_variant.yaml"
@@ -873,6 +874,23 @@ static void test_invalid_property()
     }
 }
 
+static void test_caller_owned_error()
+{
+    struct flb_cf *cf;
+    struct flb_cf *ret;
+
+    cf = flb_cf_create();
+    if (!TEST_CHECK(cf != NULL)) {
+        TEST_MSG("flb_cf_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_cf_yaml_create(cf, FLB_007, NULL, 0);
+    TEST_CHECK(ret == NULL);
+
+    flb_cf_destroy(cf);
+}
+
 TEST_LIST = {
     { "basic"    , test_basic},
     { "customs section", test_customs_section},
@@ -887,5 +905,6 @@ TEST_LIST = {
     { "plugins", test_plugins},
     { "upstream_servers", test_upstream_servers},
     { "invalid_input_property", test_invalid_property},
+    { "caller_owned_error", test_caller_owned_error},
     { 0 }
 };
