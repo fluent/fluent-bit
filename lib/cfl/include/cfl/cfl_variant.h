@@ -23,6 +23,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <inttypes.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include <cfl/cfl_sds.h>
 
 #define CFL_VARIANT_BOOL       1
 #define CFL_VARIANT_INT        2
@@ -52,6 +56,7 @@ struct cfl_variant {
      * a copy of the original data.
      */
     uint8_t referenced;
+    uint8_t owned;
 
     /* the data */
     union {

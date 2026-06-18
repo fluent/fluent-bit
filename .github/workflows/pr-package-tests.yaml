@@ -1,6 +1,9 @@
 name: PR - packaging tests run on-demand via label
 on:
-  pull_request:
+  # This workflow is label-gated and should be triggerable by maintainers on
+  # PRs where the default pull_request event cannot access the required
+  # repository permissions.
+  pull_request_target:
     types:
       - labeled
       - opened
@@ -11,14 +14,16 @@ on:
 
 # Cancel any running on push
 concurrency:
-  group: ${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   # This job provides this metadata for the other jobs to use.
   pr-package-test-build-get-meta:
     # This is a long test to run so only on-demand for certain PRs
-    if: contains(github.event.pull_request.labels.*.name, 'ok-package-test')
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'ok-package-test') &&
+      github.event.pull_request.head.repo.full_name == github.repository
     name: Get metadata to add to build
     runs-on: ubuntu-latest
     outputs:
@@ -32,17 +37,21 @@ jobs:
         run: echo "date=$(date '+%Y-%m-%d-%H_%M_%S')" >> $GITHUB_OUTPUT
 
       - name: Debug event output
-        uses: hmarr/debug-action@v3
+        uses: hmarr/debug-action@cd1afbd7852b7ad7b1b7a9a1b03efebd3b0a1820 # v3.0.0
 
   pr-container-builds:
     name: PR - container builds
     needs:
       - pr-package-test-build-get-meta
       - pr-package-test-build-generate-matrix
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     uses: ./.github/workflows/call-build-images.yaml
     with:
-      version: pr-${{ github.event.number }}
-      ref: ${{ github.ref }}
+      version: pr-${{ github.event.pull_request.number }}
+      ref: ${{ github.event.pull_request.head.sha }}
       registry: ghcr.io
       username: ${{ github.actor }}
       image: ${{ github.repository }}/pr
@@ -65,7 +74,9 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository, always latest for action
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
       # Set up the list of target to build so we can pass the JSON to the reusable job
       - uses: ./.github/actions/generate-package-build-matrix
@@ -80,8 +91,8 @@ jobs:
       - pr-package-test-build-generate-matrix
     uses: ./.github/workflows/call-build-linux-packages.yaml
     with:
-      version: pr-${{ github.event.number }}
-      ref: ${{ github.ref }}
+      version: pr-${{ github.event.pull_request.number }}
+      ref: ${{ github.event.pull_request.head.sha }}
       build_matrix: ${{ needs.pr-package-test-build-generate-matrix.outputs.build-matrix }}
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
     secrets:
@@ -93,8 +104,8 @@ jobs:
       - pr-package-test-build-get-meta
     uses: ./.github/workflows/call-build-windows.yaml
     with:
-      version: pr-${{ github.event.number }}
-      ref: ${{ github.ref }}
+      version: pr-${{ github.event.pull_request.number }}
+      ref: ${{ github.event.pull_request.head.sha }}
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
@@ -105,8 +116,8 @@ jobs:
       - pr-package-test-build-get-meta
     uses: ./.github/workflows/call-build-macos.yaml
     with:
-      version: pr-${{ github.event.number }}
-      ref: ${{ github.ref }}
+      version: pr-${{ github.event.pull_request.number }}
+      ref: ${{ github.event.pull_request.head.sha }}
       unstable: ${{ needs.pr-package-test-build-get-meta.outputs.date }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}

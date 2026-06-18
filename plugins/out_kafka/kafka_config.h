@@ -87,6 +87,8 @@ struct flb_out_kafka {
     int raw_log_key_len;
     char *raw_log_key;
 
+    int otlp_logs_partition_by_resource;
+
     /* Gelf Keys */
     struct flb_gelf_fields gelf_fields;
 

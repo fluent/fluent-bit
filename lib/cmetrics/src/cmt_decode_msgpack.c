@@ -33,6 +33,7 @@
 #include <cmetrics/cmt_mpack_utils.h>
 #include <cmetrics/cmt_atomic.h>
 
+#include <limits.h>
 
 static int create_counter_instance(struct cmt_map *map)
 {
@@ -330,6 +331,7 @@ static int unpack_label(mpack_reader_t *reader,
                         size_t index,
                         struct cfl_list *target_label_list)
 {
+    mpack_tag_t          tag;
     struct cmt_map_label *new_label;
     int                   result;
 
@@ -344,7 +346,27 @@ static int unpack_label(mpack_reader_t *reader,
         return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
     }
 
-    result = cmt_mpack_consume_string_tag(reader, &new_label->name);
+    tag = mpack_peek_tag(reader);
+    if (mpack_ok != mpack_reader_error(reader)) {
+        free(new_label);
+
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
+
+    if (mpack_tag_type(&tag) == mpack_type_nil) {
+        mpack_expect_nil(reader);
+        if (mpack_ok != mpack_reader_error(reader)) {
+            free(new_label);
+
+            return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+        }
+
+        new_label->name = NULL;
+        result = CMT_DECODE_MSGPACK_SUCCESS;
+    }
+    else {
+        result = cmt_mpack_consume_string_tag(reader, &new_label->name);
+    }
 
     if (result != CMT_DECODE_MSGPACK_SUCCESS) {
         free(new_label);
@@ -520,6 +542,11 @@ static int unpack_metric_value_type(mpack_reader_t *reader, size_t index, void *
     int result;
     struct cmt_msgpack_decode_context *decode_context;
 
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
     decode_context = (struct cmt_msgpack_decode_context *) context;
 
     result = cmt_mpack_consume_uint_tag(reader, &value);
@@ -528,6 +555,9 @@ static int unpack_metric_value_type(mpack_reader_t *reader, size_t index, void *
             value == CMT_METRIC_VALUE_UINT64 ||
             value == CMT_METRIC_VALUE_DOUBLE) {
             cmt_atomic_store(&decode_context->metric->value_type, value);
+        }
+        else {
+            result = CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
         }
     }
 
@@ -539,6 +569,11 @@ static int unpack_metric_value_int64(mpack_reader_t *reader, size_t index, void 
     int64_t value;
     int result;
     struct cmt_msgpack_decode_context *decode_context;
+
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
     result = cmt_mpack_consume_int_tag(reader, &value);
@@ -557,6 +592,11 @@ static int unpack_metric_value_uint64(mpack_reader_t *reader, size_t index, void
     uint64_t value;
     int result;
     struct cmt_msgpack_decode_context *decode_context;
+
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
     result = cmt_mpack_consume_uint_tag(reader, &value);
@@ -863,9 +903,18 @@ static int unpack_exp_histogram_scale(mpack_reader_t *reader, size_t index, void
     int64_t value;
     int result;
 
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
     decode_context = (struct cmt_msgpack_decode_context *) context;
     result = cmt_mpack_consume_int_tag(reader, &value);
     if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        if (value < INT_MIN || value > INT_MAX) {
+            return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+        }
+
         decode_context->metric->exp_hist_scale = (int32_t) value;
     }
     return result;
@@ -874,6 +923,12 @@ static int unpack_exp_histogram_scale(mpack_reader_t *reader, size_t index, void
 static int unpack_exp_histogram_zero_count(mpack_reader_t *reader, size_t index, void *context)
 {
     struct cmt_msgpack_decode_context *decode_context;
+
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
     decode_context = (struct cmt_msgpack_decode_context *) context;
     return cmt_mpack_consume_uint_tag(reader, &decode_context->metric->exp_hist_zero_count);
 }
@@ -881,6 +936,12 @@ static int unpack_exp_histogram_zero_count(mpack_reader_t *reader, size_t index,
 static int unpack_exp_histogram_zero_threshold(mpack_reader_t *reader, size_t index, void *context)
 {
     struct cmt_msgpack_decode_context *decode_context;
+
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
     decode_context = (struct cmt_msgpack_decode_context *) context;
     return cmt_mpack_consume_double_tag(reader, &decode_context->metric->exp_hist_zero_threshold);
 }
@@ -891,9 +952,18 @@ static int unpack_exp_histogram_positive_offset(mpack_reader_t *reader, size_t i
     int64_t value;
     int result;
 
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
     decode_context = (struct cmt_msgpack_decode_context *) context;
     result = cmt_mpack_consume_int_tag(reader, &value);
     if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        if (value < INT_MIN || value > INT_MAX) {
+            return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+        }
+
         decode_context->metric->exp_hist_positive_offset = (int32_t) value;
     }
     return result;
@@ -905,9 +975,18 @@ static int unpack_exp_histogram_negative_offset(mpack_reader_t *reader, size_t i
     int64_t value;
     int result;
 
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
     decode_context = (struct cmt_msgpack_decode_context *) context;
     result = cmt_mpack_consume_int_tag(reader, &value);
     if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        if (value < INT_MIN || value > INT_MAX) {
+            return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+        }
+
         decode_context->metric->exp_hist_negative_offset = (int32_t) value;
     }
     return result;
@@ -916,14 +995,36 @@ static int unpack_exp_histogram_negative_offset(mpack_reader_t *reader, size_t i
 static int unpack_exp_histogram_positive_bucket(mpack_reader_t *reader, size_t index, void *context)
 {
     struct cmt_msgpack_decode_context *decode_context;
+
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
     decode_context = (struct cmt_msgpack_decode_context *) context;
+    if (decode_context->metric->exp_hist_positive_buckets == NULL ||
+        index >= decode_context->metric->exp_hist_positive_count) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
     return cmt_mpack_consume_uint_tag(reader, &decode_context->metric->exp_hist_positive_buckets[index]);
 }
 
 static int unpack_exp_histogram_negative_bucket(mpack_reader_t *reader, size_t index, void *context)
 {
     struct cmt_msgpack_decode_context *decode_context;
+
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
     decode_context = (struct cmt_msgpack_decode_context *) context;
+    if (decode_context->metric->exp_hist_negative_buckets == NULL ||
+        index >= decode_context->metric->exp_hist_negative_count) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
     return cmt_mpack_consume_uint_tag(reader, &decode_context->metric->exp_hist_negative_buckets[index]);
 }
 
@@ -931,6 +1032,11 @@ static int unpack_exp_histogram_positive_buckets(mpack_reader_t *reader, size_t 
 {
     struct cmt_msgpack_decode_context *decode_context;
     size_t count;
+
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
     count = cmt_mpack_peek_array_length(reader);
@@ -956,6 +1062,11 @@ static int unpack_exp_histogram_negative_buckets(mpack_reader_t *reader, size_t 
 {
     struct cmt_msgpack_decode_context *decode_context;
     size_t count;
+
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
     count = cmt_mpack_peek_array_length(reader);
@@ -983,6 +1094,11 @@ static int unpack_exp_histogram_count(mpack_reader_t *reader, size_t index, void
     uint64_t                           value;
     struct cmt_msgpack_decode_context *decode_context;
 
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
     decode_context = (struct cmt_msgpack_decode_context *) context;
     result = cmt_mpack_consume_uint_tag(reader, &value);
 
@@ -998,6 +1114,11 @@ static int unpack_exp_histogram_sum_set(mpack_reader_t *reader, size_t index, vo
     struct cmt_msgpack_decode_context *decode_context;
     uint64_t value;
     int result;
+
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
     result = cmt_mpack_consume_uint_tag(reader, &value);
@@ -1015,6 +1136,11 @@ static int unpack_exp_histogram_sum(mpack_reader_t *reader, size_t index, void *
     int                                result;
     uint64_t                           value;
     struct cmt_msgpack_decode_context *decode_context;
+
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
     result = cmt_mpack_consume_uint_tag(reader, &value);
@@ -1313,6 +1439,19 @@ static int unpack_meta_type(mpack_reader_t *reader, size_t index, void *context)
     result = cmt_mpack_consume_uint_tag(reader, &value);
 
     if (CMT_DECODE_MSGPACK_SUCCESS == result) {
+        if (decode_context->map->parent != NULL) {
+            return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+        }
+
+        if (value != CMT_COUNTER &&
+            value != CMT_GAUGE &&
+            value != CMT_SUMMARY &&
+            value != CMT_HISTOGRAM &&
+            value != CMT_EXP_HISTOGRAM &&
+            value != CMT_UNTYPED) {
+            return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+        }
+
         decode_context->map->type = value;
 
         result = create_metric_instance(decode_context->map);
@@ -1337,6 +1476,12 @@ static int unpack_meta_aggregation_type(mpack_reader_t *reader, size_t index, vo
     result = cmt_mpack_consume_uint_tag(reader, &value);
 
     if (CMT_DECODE_MSGPACK_SUCCESS == result) {
+        if (value != CMT_AGGREGATION_TYPE_UNSPECIFIED &&
+            value != CMT_AGGREGATION_TYPE_DELTA &&
+            value != CMT_AGGREGATION_TYPE_CUMULATIVE) {
+            return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+        }
+
         decode_context->aggregation_type = value;
     }
 
@@ -1346,6 +1491,7 @@ static int unpack_meta_aggregation_type(mpack_reader_t *reader, size_t index, vo
 static int unpack_meta_opts(mpack_reader_t *reader, size_t index, void *context)
 {
     struct cmt_msgpack_decode_context *decode_context;
+    struct cmt_opts                   *opts;
 
     if (NULL == reader ||
         NULL == context) {
@@ -1353,6 +1499,15 @@ static int unpack_meta_opts(mpack_reader_t *reader, size_t index, void *context)
     }
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
+    opts = decode_context->map->opts;
+    if (opts == NULL ||
+        opts->ns != NULL ||
+        opts->subsystem != NULL ||
+        opts->name != NULL ||
+        opts->description != NULL ||
+        decode_context->map->unit != NULL) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
 
     return unpack_opts(reader, decode_context->map);
 }
@@ -1505,9 +1660,13 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
     result = cmt_mpack_unpack_map(reader, callbacks, context);
 
     if (CMT_DECODE_MSGPACK_SUCCESS == result) {
-	if (decode_context->map == NULL || decode_context->map->parent == NULL) {
+        if (decode_context->map == NULL ||
+            decode_context->map->parent == NULL ||
+            decode_context->map->opts == NULL ||
+            decode_context->map->opts->name == NULL ||
+            decode_context->map->opts->description == NULL) {
             return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
-	}
+        }
 
         decode_context->map->label_count = cfl_list_size(&decode_context->map->label_keys);
         if (decode_context->map->type == CMT_HISTOGRAM) {
@@ -1994,6 +2153,8 @@ int cmt_decode_msgpack_create(struct cmt **out_cmt, char *in_buf, size_t in_size
         in_size < *offset ) {
         return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
     }
+
+    *out_cmt = NULL;
 
     if (0 == in_size ||
         0 == (in_size - *offset) ) {

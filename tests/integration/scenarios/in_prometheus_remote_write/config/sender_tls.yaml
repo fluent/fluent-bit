@@ -1,0 +1,22 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: fluentbit_metrics
+      scrape_interval: 1
+      scrape_on_start: true
+
+  outputs:
+    - name: prometheus_remote_write
+      match: "*"
+      host: 127.0.0.1
+      port: ${PROM_RW_RECEIVER_PORT}
+      uri: /write
+      compression: snappy
+      tls: on
+      tls.verify: no

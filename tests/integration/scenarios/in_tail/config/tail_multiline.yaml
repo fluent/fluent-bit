@@ -1,0 +1,28 @@
+service:
+  flush: 1
+  log_level: debug
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  parsers_file: ${PARSERS_FILE_TEST}
+
+pipeline:
+  inputs:
+    - name: tail
+      tag: tail.integration
+      path: ${TAIL_TEST_PATH}
+      read_from_head: true
+      read_newly_discovered_files_from_head: true
+      refresh_interval: 1
+      rotate_wait: 6
+      multiline.parser: multiline-regex
+      path_key: file
+      offset_key: offset
+
+  outputs:
+    - name: http
+      match: tail.integration
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      uri: /data
+      format: json
+      json_date_key: false

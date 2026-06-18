@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_slist.h>
+#include <fluent-bit/flb_env.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <cfl/cfl.h>
 #include <cfl/cfl_sds.h>
@@ -172,6 +174,9 @@ enum state {
 
     /* environment variables */
     STATE_ENV,
+    STATE_ENV_LIST,
+    STATE_ENV_LIST_KEY,
+    STATE_ENV_LIST_VAL,
 
 
     STATE_STOP            /* end state */
@@ -214,6 +219,8 @@ struct parser_state {
     int allocation_flags;
 
     struct file_state *file;
+
+    struct flb_cf_env_var *env_var;
 
     struct cfl_list _head;
 };
@@ -297,6 +304,12 @@ static char *state_str(enum state val)
         return "processor";
     case STATE_ENV:
         return "env";
+    case STATE_ENV_LIST:
+        return "env-list";
+    case STATE_ENV_LIST_KEY:
+        return "env-list-key";
+    case STATE_ENV_LIST_VAL:
+        return "env-list-val";
     case STATE_PARSER:
         return "parser";
     case STATE_MULTILINE_PARSER:
@@ -690,6 +703,7 @@ static enum status state_move_into_config_group(struct parser_state *state, stru
     struct cfl_list *tmp;
     struct cfl_kvpair *kvp;
     struct cfl_variant *varr;
+    struct cfl_variant *value;
     struct cfl_array *arr;
     struct cfl_kvlist *copy;
 
@@ -723,22 +737,28 @@ static enum status state_move_into_config_group(struct parser_state *state, stru
     copy = cfl_kvlist_create();
 
     if (copy == NULL) {
-        cfl_array_destroy(arr);
         flb_error("unable to allocate kvlist");
         return YAML_FAILURE;
     }
 
     cfl_list_foreach_safe(head, tmp, &state->keyvals->list) {
         kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
+        value = cfl_kvpair_take_value(kvp);
 
-        if (cfl_kvlist_insert(copy, kvp->key, kvp->val) < 0) {
+        if (value == NULL) {
+            flb_error("unable to take kvpair value");
+            cfl_kvlist_destroy(copy);
+            return YAML_FAILURE;
+        }
+
+        if (cfl_kvlist_insert(copy, kvp->key, value) < 0) {
             flb_error("unable to insert to kvlist");
+            cfl_variant_destroy(value);
             cfl_kvlist_destroy(copy);
             return YAML_FAILURE;
         }
 
         /* ownership moved to the config group */
-        kvp->val = NULL;
         cfl_kvpair_destroy(kvp);
     }
 
@@ -753,14 +773,16 @@ static enum status state_move_into_config_group(struct parser_state *state, stru
 static enum status state_copy_into_properties(struct parser_state *state, struct flb_cf *conf, struct cfl_kvlist *properties)
 {
     struct cfl_list *head;
+    struct cfl_list *tmp;
     struct cfl_kvpair *kvp;
     struct cfl_variant *var;
+    struct cfl_variant *value;
     struct cfl_array *arr;
     size_t idx;
     size_t entry_count;
     int array_all_strings;
 
-    cfl_list_foreach(head, &state->keyvals->list) {
+    cfl_list_foreach_safe(head, tmp, &state->keyvals->list) {
         kvp = cfl_list_entry(head, struct cfl_kvpair, _head);
         switch (kvp->val->type) {
         case CFL_VARIANT_STRING:
@@ -807,27 +829,43 @@ static enum status state_copy_into_properties(struct parser_state *state, struct
                 }
             }
             else {
+                value = cfl_kvpair_take_value(kvp);
+
+                if (value == NULL) {
+                    flb_error("unable to take variant property");
+                    return YAML_FAILURE;
+                }
+
                 if (flb_cf_section_property_add_variant(conf,
                                                          properties,
                                                          kvp->key,
                                                          cfl_sds_len(kvp->key),
-                                                         kvp->val) == NULL) {
+                                                         value) == NULL) {
                     flb_error("unable to add variant property");
+                    cfl_variant_destroy(value);
                     return YAML_FAILURE;
                 }
-                kvp->val = NULL;
+                cfl_kvpair_destroy(kvp);
             }
             break;
         case CFL_VARIANT_KVLIST:
+            value = cfl_kvpair_take_value(kvp);
+
+            if (value == NULL) {
+                flb_error("unable to take variant property");
+                return YAML_FAILURE;
+            }
+
             if (flb_cf_section_property_add_variant(conf,
                                                      properties,
                                                      kvp->key,
                                                      cfl_sds_len(kvp->key),
-                                                     kvp->val) == NULL) {
+                                                     value) == NULL) {
                 flb_error("unable to add variant property");
+                cfl_variant_destroy(value);
                 return YAML_FAILURE;
             }
-            kvp->val = NULL;
+            cfl_kvpair_destroy(kvp);
             break;
         default:
             flb_error("unknown value type for properties: %d", kvp->val->type);
@@ -845,7 +883,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
     enum status status;
     int ret;
     char *value;
-    struct flb_kv *keyval;
+    struct flb_cf_env_var *keyval;
     char *last_included;
 
     last_included = state_get_last(ctx);
@@ -877,6 +915,113 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             state->state = STATE_STOP;
             break;
         default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_ENV_LIST:
+        switch (event->type) {
+        case YAML_MAPPING_START_EVENT:
+            state = state_push(ctx, STATE_ENV_LIST_KEY);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            state->env_var = flb_calloc(1, sizeof(struct flb_cf_env_var));
+            if (!state->env_var) {
+                flb_error("unable to allocate env var");
+                return YAML_FAILURE;
+            }
+            state->env_var->refresh_interval = 0;
+            break;
+        case YAML_SEQUENCE_END_EVENT:
+            state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
+            state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
+            break;
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_ENV_LIST_KEY:
+        switch(event->type) {
+        case YAML_SCALAR_EVENT:
+        {
+            char *tmp_value;
+            struct parser_state *parent = state;
+
+            tmp_value = (char *) event->data.scalar.value;
+            state = state_push_key(ctx, STATE_ENV_LIST_VAL, tmp_value);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            state->env_var = parent->env_var;
+            break;
+        }
+        case YAML_MAPPING_END_EVENT:
+            if (state->env_var && state->env_var->name) {
+                mk_list_add(&state->env_var->_head, &conf->env);
+            }
+            else if (state->env_var) {
+                if (state->env_var->name) {
+                    flb_sds_destroy(state->env_var->name);
+                }
+                if (state->env_var->value) {
+                    flb_sds_destroy(state->env_var->value);
+                }
+                if (state->env_var->uri) {
+                    flb_sds_destroy(state->env_var->uri);
+                }
+                flb_free(state->env_var);
+            }
+            state = state_pop(ctx);
+            if (state == NULL) {
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
+            break;
+        default:
+            yaml_error_event(ctx, state, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_ENV_LIST_VAL:
+        if (event->type == YAML_SCALAR_EVENT) {
+            value = (char *) event->data.scalar.value;
+            if (strcasecmp(state->key, "name") == 0) {
+                state->env_var->name = flb_sds_create(value);
+            }
+            else if (strcasecmp(state->key, "value") == 0) {
+                state->env_var->value = flb_sds_create(value);
+            }
+            else if (strcasecmp(state->key, "uri") == 0) {
+                state->env_var->uri = flb_sds_create(value);
+            }
+            else if (strcasecmp(state->key, "refresh_interval") == 0) {
+                state->env_var->refresh_interval = flb_utils_time_to_seconds(value);
+            }
+            else {
+                if (!state->env_var->name) {
+                    state->env_var->name = flb_sds_create(state->key);
+                    state->env_var->value = flb_sds_create(value);
+                }
+            }
+
+            state = state_pop(ctx);
+        }
+        else {
             yaml_error_event(ctx, state, event);
             return YAML_FAILURE;
         }
@@ -1708,6 +1853,19 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 return YAML_FAILURE;
             }
             break;
+        case YAML_SEQUENCE_START_EVENT:
+            if (state->section != SECTION_ENV) {
+                flb_error("env list is only allowed in env section");
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+
+            state = state_push(ctx, STATE_ENV_LIST);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            break;
         case YAML_MAPPING_END_EVENT:
             state = state_pop(ctx);
 
@@ -1770,9 +1928,10 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
             /* Check if the incoming k/v pair set a config environment variable */
             if (state->section == SECTION_ENV) {
-                keyval = flb_cf_env_property_add(conf,
-                                                 state->key, flb_sds_len(state->key),
-                                                 value, strlen(value));
+                keyval = flb_cf_env_var_add(conf,
+                                            state->key, flb_sds_len(state->key),
+                                            value, strlen(value),
+                                            NULL, 0, 0);
 
                 if (keyval == NULL) {
                     flb_error("unable to add key value");
@@ -2214,6 +2373,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
             if (state_variant_set_child(ctx, state, variant)) {
                 flb_error("unable to add key to list map");
+                cfl_variant_destroy(variant);
                 return YAML_FAILURE;
             }
 
@@ -2225,10 +2385,17 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
             state = state_pop(ctx);
 
+            if (state == NULL) {
+                cfl_variant_destroy(variant);
+                flb_error("no state left");
+                return YAML_FAILURE;
+            }
+
             if (state->state == STATE_PLUGIN_VAL) {
                 /* set variant to the parent state keyvals */
                 if (cfl_kvlist_insert(state->keyvals, state->key, variant) < 0) {
                     flb_error("unable to insert variant");
+                    cfl_variant_destroy(variant);
                     return YAML_FAILURE;
                 }
 
@@ -2239,11 +2406,13 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
             if (state->variant->type == CFL_VARIANT_KVLIST && state->variant_kvlist_key == NULL) {
                 flb_error("invalid state, should have a variant key");
+                cfl_variant_destroy(variant);
                 return YAML_FAILURE;
             }
 
             if (state_variant_set_child(ctx, state, variant)) {
                 flb_error("unable to add key to list map");
+                cfl_variant_destroy(variant);
                 return YAML_FAILURE;
             }
 

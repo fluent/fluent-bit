@@ -41,3 +41,7 @@ workflow/
 examples/wasi_serde_json/target/
 # WASM test data
 tests/runtime/wasm/go/*.wasm
+tests/integration/.venv/
+tests/integration/.pytest_cache/
+tests/integration/**/__pycache__/
+tests/integration/results/

@@ -1,0 +1,2 @@
+{ "index": { "_index": "new_index", "_id": "1" } }
+{ "title": "Test for creation of new_index", "description": "create the index" }

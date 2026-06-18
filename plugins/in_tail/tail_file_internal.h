@@ -116,6 +116,8 @@ struct flb_tail_file {
 
     /* database reference */
     uint64_t db_id;
+    uint64_t db_offset_marker;
+    size_t db_offset_marker_size;
 
     uint64_t hash_bits;
     flb_sds_t hash_key;

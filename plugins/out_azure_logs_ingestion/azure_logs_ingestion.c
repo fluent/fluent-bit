@@ -377,6 +377,11 @@ cleanup:
 static int cb_azure_logs_ingestion_exit(void *data, struct flb_config *config)
 {
     struct flb_az_li *ctx = data;
+
+    if (!ctx) {
+        return 0;
+    }
+
     flb_plg_debug(ctx->ins, "exiting logs ingestion plugin");
     flb_az_li_ctx_destroy(ctx);
     return 0;
@@ -398,6 +403,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "client_secret", (char *)NULL,
      0, FLB_TRUE, offsetof(struct flb_az_li, client_secret),
      "Set the client secret of the AAD application"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "auth_url", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_az_li, auth_url_override),
+     "[Optional] Override the OAuth2 token endpoint."
     },
     {
      FLB_CONFIG_MAP_STR, "dce_url", (char *)NULL,

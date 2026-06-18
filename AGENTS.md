@@ -8,6 +8,10 @@
   when the affected area is known, because the full enabled suite can be slow.
 - Run a focused integration test with
   `ctest --test-dir build -R flb-it-opentelemetry --output-on-failure`
+- Run the in-tree Python integration suite with:
+  `cd tests/integration && ./setup-venv.sh && ./run_tests.py`
+- List available Python integration scenarios with:
+  `cd tests/integration && ./run_tests.py --list`
 - Run locally with `./build/bin/fluent-bit -c conf/fluent-bit.conf`
 
 ## Project Structure & Module Organization
@@ -18,6 +22,9 @@ Fluent Bit is a C/C++ monorepo built with CMake.
 - `plugins/`: input/filter/processor/output plugins (`in_*`, `filter_*`, `processor_*`, `out_*`).
 - `lib/`: bundled libraries (e.g., `cprofiles`, `ctraces`, `cmetrics`, `chunkio`).
 - `tests/`: integration/runtime tests and fixtures.
+- `tests/integration/`: in-tree Python integration test suite for end-to-end
+  plugin and protocol validation; introduced from the original
+  `github.com/fluent/fluent-bit-test-suite` project.
 - `conf/`: sample configurations for local validation.
 
 Keep changes scoped: plugin logic in its plugin directory, shared behavior in `src/` or `lib/`.
@@ -27,6 +34,14 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 - `cmake --build build -j8`: compile Fluent Bit and tests.
 - `ctest --test-dir build --output-on-failure`: run enabled tests.
 - `ctest --test-dir build -R flb-it-opentelemetry --output-on-failure`: run a focused integration test.
+- `cd tests/integration && ./setup-venv.sh`: create the local virtualenv for
+  the Python integration suite.
+- `cd tests/integration && ./run_tests.py --list`: list available Python
+  integration scenarios.
+- `cd tests/integration && ./run_tests.py`: run the full Python integration
+  suite against `build/bin/fluent-bit`.
+- `cd tests/integration && FLUENT_BIT_BINARY=/path/to/fluent-bit ./run_tests.py`:
+  run the Python integration suite against a specific binary.
 - `./build/bin/fluent-bit -c conf/fluent-bit.conf`: run locally with a config.
 
 ## Coding Style & Naming Conventions
@@ -48,9 +63,43 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 - Add or update tests for behavior changes, especially protocol parsing and encoder/decoder paths.
 - Prefer targeted tests close to the changed module (`tests/internal`, plugin runtime tests).
 - Prefer focused `ctest -R ...` runs or specific test binaries when the touched area is known.
+- Use `tests/integration` when validating end-to-end plugin behavior, network
+  protocols, downstream request generation, or local fake-server interactions
+  that are awkward to cover in `ctest` binaries alone.
+- The Python integration suite is not part of the default CMake `ctest` targets;
+  run it explicitly from `tests/integration`.
+- Do not skip focused integration coverage for a touched component when that
+  component has a corresponding `tests/integration` scenario. Agents must run
+  the focused scenario(s) for the touched component before closing the task.
+- For touched components covered by `tests/integration`, agents must run the
+  focused scenario(s) twice:
+  - once normally to verify behavior;
+  - once with valgrind enabled to verify memory-safety behavior.
+- The default expectation for component verification is:
+  `./tests/integration/setup-venv.sh`
+  `cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On`
+  `cmake --build build -j8`
+  `tests/integration/.venv/bin/python -m pytest <focused-scenario> -q`
+  `VALGRIND=1 VALGRIND_STRICT=1 tests/integration/.venv/bin/python -m pytest <focused-scenario> -q`
 - Run broader test coverage when changing shared lifecycle, routing, storage, or accounting code.
 - Validate both success and failure paths (invalid payloads, boundary sizes, null/missing fields).
 - You can also run specific binaries from `build/bin` (e.g., `./bin/flb-it-opentelemetry`).
+- When changing code covered by `tests/integration`, agents must verify the
+  affected scenarios are valgrind-clean. Run the focused integration tests with
+  `tests/integration/run_tests.py --valgrind --valgrind-strict ...` and do not
+  stop at functional pass/fail if memory errors or leaks remain.
+- If a focused integration or valgrind run cannot be executed, agents must not
+  silently skip it. They must report the exact blocker in the final response
+  (for example: missing binary, missing Python environment, unsupported
+  scenario, missing dependency, or infrastructure failure).
+- Final task close-outs must include proof of verification:
+  - the exact focused integration command(s) run;
+  - whether valgrind was used;
+  - pass/fail status;
+  - any concrete blocker if a required run could not be completed.
+- Keep generated integration artifacts out of git. Do not commit
+  `.venv/`, `.pytest_cache/`, `results/`, or `__pycache__/` under
+  `tests/integration`.
 
 ## Commit & Pull Request Guidelines
 - Prefix commit subjects with the component/plugin name in lowercase, e.g.:
@@ -67,11 +116,70 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 - Follow observed local history style:
   - component/plugin: `component: short imperative description`
   - internal tests: `tests: internal: short imperative description`
-  - runtime tests: `tests: runtime: short imperative description`
+  - integration tests under `tests/integration/`:
+    `tests: integration: short imperative description`
+  - runtime tests/binaries outside `tests/integration/`:
+    `tests: runtime: short imperative description`
+- The repository commit-prefix linter in
+  `.github/scripts/commit_prefix_check.py` is authoritative. When its inferred
+  prefix set is narrower than a hand-written nested subject, follow the linter.
+  Examples from current repo history:
+  - `include/fluent-bit/config_format/flb_cf.h` +
+    `src/config_format/flb_cf_yaml.c` => `config_format:`
+  - `tests/internal/env.c` => `env:` or `tests:`
+  - `tests/internal/fuzzers/config_map_fuzzer.c` => `config_map_fuzzer:` or `tests:`
+  - `tests/internal/config_map.c` => `config_map:` or `tests:`
+- Agents must follow this same style when proposing commit subjects or
+  `git commit` commands; do not invent ad hoc prefixes such as `environment:`
+  when the touched files map to an existing component or test area prefix.
+- When suggesting commit commands, include DCO signing by default with
+  `git commit -s` unless the user explicitly asks otherwise.
 - Keep one interface per commit. If an interface touches both `.c` and `.h`,
   commit them together in the same commit.
+- Do not bundle different interfaces into one commit just because they support
+  the same feature. Core config-map changes, input/output/filter/custom/
+  processor plumbing, plugin changes, tests, and documentation must be split
+  into separate commits unless they are the same interface.
 - Do not mix unrelated interfaces in one commit.
+- Do not include `AGENTS.md` or other documentation updates in a code commit
+  unless the user explicitly asks for a docs+code combined commit.
 - Prefer concise one-line subjects unless extra context is required.
+- Detect and avoid bad squash commits. Do not place YAML examples, config lines,
+  or multiple subject-like prefix lines in the commit body unless they are
+  fenced code blocks.
+
+## Commit Lint Workflow
+- When the user asks for git commit commands, provide commands that also verify
+  commit-prefix lint before push or PR submission.
+- After creating a commit when the user asked for a commit, agents must run the
+  repo linter before closing the task and fix any bad commit subject
+  immediately.
+- Do not treat a local non-PR linter pass as sufficient before push. Outside
+  GitHub PR context, `.github/scripts/commit_prefix_check.py` validates only
+  `HEAD`, which can miss earlier commits in the branch.
+- Run the same checker used in CI:
+  `python .github/scripts/commit_prefix_check.py`
+- The checker requires `gitpython`. If `python -c 'import git'` fails, install
+  it before running the linter:
+  `python3 -m pip install gitpython`
+- Do not assume a generic `docs:` prefix is acceptable. Check the touched file
+  prefixes from repo history and from `.github/scripts/commit_prefix_check.py`
+  path inference before choosing a commit subject. For example, changes only to
+  `AGENTS.md` must use `agents:`, not `docs:`.
+- For pull-request-style validation, use full history and fetch the base branch
+  first, matching CI behavior:
+  `git fetch --all --prune`
+  `git fetch origin <base-branch>:origin/<base-branch>`
+- Before pushing a branch or opening/updating a PR, agents must lint the full
+  PR commit range against the base branch, not just the latest commit. Use the
+  CI-style environment when possible, for example:
+  `GITHUB_EVENT_NAME=pull_request GITHUB_BASE_REF=<base-branch> python .github/scripts/commit_prefix_check.py`
+- If a commit mixes component code and integration tests, do not assume a
+  local `HEAD`-only lint pass proves the earlier code commit is acceptable.
+  Validate the whole branch range before push/PR submission.
+- When giving commit-command sequences to the user, include a final lint step
+  that checks the PR range and mention the `gitpython` install step if it may
+  be missing locally.
 
 ## Agent Action Limits
 - Do not open issues, pull requests, or remote branches unless the user explicitly asks.

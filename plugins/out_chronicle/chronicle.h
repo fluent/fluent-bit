@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_oauth2.h>
+#include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_sds.h>
 
 /* refresh token every 50 minutes */
@@ -56,6 +57,13 @@ struct flb_chronicle_oauth_credentials {
     flb_sds_t token_uri;
 };
 
+struct flb_chronicle_label {
+    flb_sds_t key;
+    flb_sds_t value;
+    struct flb_record_accessor *ra;
+    struct mk_list _head;
+};
+
 struct flb_chronicle {
     /* credentials */
     flb_sds_t credentials_file;
@@ -72,6 +80,11 @@ struct flb_chronicle {
     flb_sds_t endpoint;
     flb_sds_t region;
     flb_sds_t log_key;
+    flb_sds_t namespace;
+    flb_sds_t namespace_key;
+    struct flb_record_accessor *namespace_ra;
+    struct mk_list *label_properties;
+    struct mk_list labels;
 
     int json_date_format;
     flb_sds_t json_date_key;

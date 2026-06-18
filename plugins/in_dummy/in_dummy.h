@@ -57,6 +57,10 @@ struct flb_dummy {
     char *ref_body_msgpack;
     size_t ref_body_msgpack_size;
 
+    /* Config map entries for dynamic templates */
+    struct flb_config_map *cm_body;
+    struct flb_config_map *cm_metadata;
+
     struct flb_log_event_encoder *encoder;
 
     struct flb_input_instance *ins;

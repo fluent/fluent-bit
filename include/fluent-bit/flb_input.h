@@ -436,6 +436,9 @@ struct flb_input_instance {
     struct cmt_counter *cmt_ring_buffer_writes;
     struct cmt_counter *cmt_ring_buffer_retries;
     struct cmt_counter *cmt_ring_buffer_retry_failures;
+    struct cmt_counter *cmt_ingress_queue_busy;
+    struct cmt_gauge   *cmt_ingress_queue_pending_events;
+    struct cmt_gauge   *cmt_ingress_queue_pending_bytes;
 
     /*
      * Indexes for generated chunks: simple hash tables that keeps the latest
@@ -749,7 +752,7 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
 
     /* Process normal properties */
     if (ins->config_map) {
-        ret = flb_config_map_set(&ins->properties, ins->config_map, context);
+        ret = flb_config_map_set(ins->config, &ins->properties, ins->config_map, context);
 
         if (ret == -1) {
             return -1;
@@ -758,7 +761,7 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
 
     /* Net properties */
     if (ins->net_config_map) {
-        ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
+        ret = flb_config_map_set(ins->config, &ins->net_properties, ins->net_config_map,
                                  &ins->net_setup);
         if (ret == -1) {
             return -1;
@@ -767,7 +770,8 @@ static inline int flb_input_config_map_set(struct flb_input_instance *ins,
 
     /* HTTP server properties */
     if (ins->http_server_config_map && ins->http_server_config) {
-        ret = flb_config_map_set(&ins->http_server_properties,
+        ret = flb_config_map_set(ins->config,
+                                 &ins->http_server_properties,
                                  ins->http_server_config_map,
                                  ins->http_server_config);
         if (ret == -1) {

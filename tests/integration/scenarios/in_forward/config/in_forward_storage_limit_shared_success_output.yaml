@@ -1,0 +1,34 @@
+service:
+  flush: 1
+  grace: 5
+  log_level: info
+  scheduler.base: 60
+  scheduler.cap: 60
+  storage.path: ${FORWARD_STORAGE_PATH}
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: forward
+      listen: 127.0.0.1
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      storage.type: filesystem
+
+  outputs:
+    - name: file
+      alias: file.1
+      match: shared.*
+      path: ${FORWARD_FILE_OUTPUT_PATH}
+      file: delivered.log
+
+    - name: http
+      alias: non_working_endpoint
+      match: shared.*
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      uri: /shared
+      format: json
+      json_date_key: false
+      retry_limit: false
+      storage.total_limit_size: 10K

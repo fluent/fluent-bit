@@ -38,7 +38,9 @@
 #include "../../plugins/in_opentelemetry/opentelemetry_logs.h"
 
 #define JSON_CONTENT_TYPE "application/json"
-#define PORT_OTEL 4318
+/* Pick a port that is not in use by other tests as well */
+/* Ensure you update data/routing/otlp_comprehensive_routing_test.yaml */
+#define PORT_OTEL 4319
 #define V1_ENDPOINT_LOGS "/v1/logs"
 #define MAX_ROUTES 32
 

@@ -769,6 +769,111 @@ static struct cfl_variant *create_duplicate_route_inputs()
 
     return cfl_variant_create_from_array(inputs);
 }
+
+static struct cfl_variant *create_mixed_instance_route_inputs()
+{
+    struct cfl_array *inputs;
+    struct cfl_array *rules;
+    struct cfl_kvlist *input;
+    struct cfl_kvlist *routes;
+    struct cfl_array *log_routes;
+    struct cfl_kvlist *route;
+    struct cfl_kvlist *condition;
+    struct cfl_kvlist *rule;
+    struct cfl_kvlist *to;
+    struct cfl_array *outputs;
+
+    inputs = cfl_array_create(3);
+    TEST_CHECK(inputs != NULL);
+    if (!inputs) {
+        return NULL;
+    }
+
+    input = cfl_kvlist_create();
+    TEST_CHECK(input != NULL);
+    if (!input) {
+        cfl_array_destroy(inputs);
+        return NULL;
+    }
+    TEST_CHECK(cfl_kvlist_insert_string(input, "name", "dummy") == 0);
+    TEST_CHECK(cfl_kvlist_insert_string(input, "alias", "dummy1") == 0);
+    TEST_CHECK(cfl_array_append(inputs, cfl_variant_create_from_kvlist(input)) == 0);
+
+    input = cfl_kvlist_create();
+    TEST_CHECK(input != NULL);
+    TEST_CHECK(cfl_kvlist_insert_string(input, "name", "dummy") == 0);
+    TEST_CHECK(cfl_kvlist_insert_string(input, "alias", "dummy2") == 0);
+    TEST_CHECK(cfl_array_append(inputs, cfl_variant_create_from_kvlist(input)) == 0);
+
+    input = cfl_kvlist_create();
+    TEST_CHECK(input != NULL);
+    TEST_CHECK(cfl_kvlist_insert_string(input, "name", "dummy") == 0);
+
+    routes = cfl_kvlist_create();
+    TEST_CHECK(routes != NULL);
+    log_routes = cfl_array_create(2);
+    TEST_CHECK(log_routes != NULL);
+
+    route = cfl_kvlist_create();
+    TEST_CHECK(route != NULL);
+    TEST_CHECK(cfl_kvlist_insert_string(route, "name", "topic1") == 0);
+
+    condition = cfl_kvlist_create();
+    TEST_CHECK(condition != NULL);
+    TEST_CHECK(cfl_kvlist_insert_string(condition, "op", "and") == 0);
+    rules = cfl_array_create(1);
+    TEST_CHECK(rules != NULL);
+    rule = cfl_kvlist_create();
+    TEST_CHECK(rule != NULL);
+    TEST_CHECK(cfl_kvlist_insert_string(rule, "field", "$topic") == 0);
+    TEST_CHECK(cfl_kvlist_insert_string(rule, "op", "eq") == 0);
+    TEST_CHECK(cfl_kvlist_insert_string(rule, "value", "topic1") == 0);
+    TEST_CHECK(cfl_array_append(rules, cfl_variant_create_from_kvlist(rule)) == 0);
+    TEST_CHECK(cfl_kvlist_insert_array(condition, "rules", rules) == 0);
+    outputs = cfl_array_create(1);
+    TEST_CHECK(outputs != NULL);
+    TEST_CHECK(cfl_kvlist_insert_kvlist(route, "condition", condition) == 0);
+
+    TEST_CHECK(cfl_array_append_string(outputs, "stdout1") == 0);
+    to = cfl_kvlist_create();
+    TEST_CHECK(to != NULL);
+    TEST_CHECK(cfl_kvlist_insert_array(to, "outputs", outputs) == 0);
+    TEST_CHECK(cfl_kvlist_insert_kvlist(route, "to", to) == 0);
+    TEST_CHECK(cfl_array_append(log_routes, cfl_variant_create_from_kvlist(route)) == 0);
+
+    route = cfl_kvlist_create();
+    TEST_CHECK(route != NULL);
+    TEST_CHECK(cfl_kvlist_insert_string(route, "name", "topic2") == 0);
+
+    condition = cfl_kvlist_create();
+    TEST_CHECK(condition != NULL);
+    TEST_CHECK(cfl_kvlist_insert_string(condition, "op", "and") == 0);
+    rules = cfl_array_create(1);
+    TEST_CHECK(rules != NULL);
+    rule = cfl_kvlist_create();
+    TEST_CHECK(rule != NULL);
+    TEST_CHECK(cfl_kvlist_insert_string(rule, "field", "$topic") == 0);
+    TEST_CHECK(cfl_kvlist_insert_string(rule, "op", "eq") == 0);
+    TEST_CHECK(cfl_kvlist_insert_string(rule, "value", "topic2") == 0);
+    TEST_CHECK(cfl_array_append(rules, cfl_variant_create_from_kvlist(rule)) == 0);
+    TEST_CHECK(cfl_kvlist_insert_array(condition, "rules", rules) == 0);
+    outputs = cfl_array_create(1);
+    TEST_CHECK(outputs != NULL);
+    TEST_CHECK(cfl_kvlist_insert_kvlist(route, "condition", condition) == 0);
+
+    TEST_CHECK(cfl_array_append_string(outputs, "stdout2") == 0);
+    to = cfl_kvlist_create();
+    TEST_CHECK(to != NULL);
+    TEST_CHECK(cfl_kvlist_insert_array(to, "outputs", outputs) == 0);
+    TEST_CHECK(cfl_kvlist_insert_kvlist(route, "to", to) == 0);
+    TEST_CHECK(cfl_array_append(log_routes, cfl_variant_create_from_kvlist(route)) == 0);
+
+    TEST_CHECK(cfl_kvlist_insert_array(routes, "logs", log_routes) == 0);
+    TEST_CHECK(cfl_kvlist_insert_kvlist(input, "routes", routes) == 0);
+    TEST_CHECK(cfl_array_append(inputs, cfl_variant_create_from_kvlist(input)) == 0);
+
+    return cfl_variant_create_from_array(inputs);
+}
 void test_router_config_parse_basic()
 {
     struct cfl_list routes;
@@ -1574,6 +1679,153 @@ void test_router_apply_config_distinct_instances_without_alias()
     flb_sds_destroy(route_two.name);
     flb_sds_destroy(route_output_one.name);
     flb_sds_destroy(route_output_two.name);
+}
+
+void test_router_apply_config_routes_bind_to_exact_section_without_alias()
+{
+    struct flb_config config;
+    struct flb_input_instance input_one;
+    struct flb_input_instance input_two;
+    struct flb_input_instance input_three;
+    struct flb_output_instance output_one;
+    struct flb_output_instance output_two;
+    struct flb_input_plugin input_plugin;
+    struct flb_output_plugin output_plugin_one;
+    struct flb_output_plugin output_plugin_two;
+    struct flb_cf *cf;
+    struct cfl_variant *inputs;
+    struct flb_input_routes *input_routes;
+    struct cfl_list *head;
+    struct flb_router_path *path;
+    int found_output_one;
+    int found_output_two;
+    int ret;
+
+    memset(&config, 0, sizeof(config));
+    mk_list_init(&config.inputs);
+    mk_list_init(&config.outputs);
+    cfl_list_init(&config.input_routes);
+
+    memset(&input_plugin, 0, sizeof(input_plugin));
+    input_plugin.name = "dummy";
+
+    memset(&input_one, 0, sizeof(input_one));
+    mk_list_init(&input_one._head);
+    cfl_list_init(&input_one.routes_direct);
+    cfl_list_init(&input_one.routes);
+    mk_list_init(&input_one.tasks);
+    mk_list_init(&input_one.chunks);
+    mk_list_init(&input_one.collectors);
+    snprintf(input_one.name, sizeof(input_one.name), "dummy.0");
+    input_one.alias = flb_sds_create("dummy1");
+    input_one.p = &input_plugin;
+    input_one.config = &config;
+    mk_list_add(&input_one._head, &config.inputs);
+
+    memset(&input_two, 0, sizeof(input_two));
+    mk_list_init(&input_two._head);
+    cfl_list_init(&input_two.routes_direct);
+    cfl_list_init(&input_two.routes);
+    mk_list_init(&input_two.tasks);
+    mk_list_init(&input_two.chunks);
+    mk_list_init(&input_two.collectors);
+    snprintf(input_two.name, sizeof(input_two.name), "dummy.1");
+    input_two.alias = flb_sds_create("dummy2");
+    input_two.p = &input_plugin;
+    input_two.config = &config;
+    mk_list_add(&input_two._head, &config.inputs);
+
+    memset(&input_three, 0, sizeof(input_three));
+    mk_list_init(&input_three._head);
+    cfl_list_init(&input_three.routes_direct);
+    cfl_list_init(&input_three.routes);
+    mk_list_init(&input_three.tasks);
+    mk_list_init(&input_three.chunks);
+    mk_list_init(&input_three.collectors);
+    snprintf(input_three.name, sizeof(input_three.name), "dummy.2");
+    input_three.p = &input_plugin;
+    input_three.config = &config;
+    mk_list_add(&input_three._head, &config.inputs);
+
+    memset(&output_plugin_one, 0, sizeof(output_plugin_one));
+    output_plugin_one.name = "stdout";
+    memset(&output_plugin_two, 0, sizeof(output_plugin_two));
+    output_plugin_two.name = "stdout";
+
+    memset(&output_one, 0, sizeof(output_one));
+    mk_list_init(&output_one._head);
+    mk_list_init(&output_one.properties);
+    mk_list_init(&output_one.net_properties);
+    snprintf(output_one.name, sizeof(output_one.name), "stdout.0");
+    output_one.alias = flb_sds_create("stdout1");
+    output_one.event_type = FLB_OUTPUT_LOGS;
+    output_one.p = &output_plugin_one;
+    mk_list_add(&output_one._head, &config.outputs);
+
+    memset(&output_two, 0, sizeof(output_two));
+    mk_list_init(&output_two._head);
+    mk_list_init(&output_two.properties);
+    mk_list_init(&output_two.net_properties);
+    snprintf(output_two.name, sizeof(output_two.name), "stdout.1");
+    output_two.alias = flb_sds_create("stdout2");
+    output_two.event_type = FLB_OUTPUT_LOGS;
+    output_two.p = &output_plugin_two;
+    mk_list_add(&output_two._head, &config.outputs);
+
+    inputs = create_mixed_instance_route_inputs();
+    TEST_CHECK(inputs != NULL);
+    if (!inputs) {
+        goto cleanup;
+    }
+
+    cf = cf_from_inputs_variant(inputs);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        cfl_variant_destroy(inputs);
+        goto cleanup;
+    }
+
+    ret = flb_router_config_parse(cf, &config.input_routes, &config);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(cfl_list_size(&config.input_routes) == 1);
+
+    input_routes = cfl_list_entry(config.input_routes.next,
+                                  struct flb_input_routes, _head);
+    TEST_CHECK(input_routes->instance == &input_three);
+    TEST_CHECK(input_routes->has_alias == FLB_FALSE);
+
+    ret = flb_router_apply_config(&config);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(cfl_list_is_empty(&input_one.routes_direct));
+    TEST_CHECK(cfl_list_is_empty(&input_two.routes_direct));
+    TEST_CHECK(cfl_list_size(&input_three.routes_direct) == 2);
+    found_output_one = FLB_FALSE;
+    found_output_two = FLB_FALSE;
+
+    cfl_list_foreach(head, &input_three.routes_direct) {
+        path = cfl_list_entry(head, struct flb_router_path, _head);
+
+        if (path->ins == &output_one) {
+            found_output_one = FLB_TRUE;
+        }
+        else if (path->ins == &output_two) {
+            found_output_two = FLB_TRUE;
+        }
+    }
+
+    TEST_CHECK(found_output_one == FLB_TRUE);
+    TEST_CHECK(found_output_two == FLB_TRUE);
+
+    flb_router_exit(&config);
+    flb_router_routes_destroy(&config.input_routes);
+    flb_cf_destroy(cf);
+    cfl_variant_destroy(inputs);
+
+cleanup:
+    flb_sds_destroy(input_one.alias);
+    flb_sds_destroy(input_two.alias);
+    flb_sds_destroy(output_one.alias);
+    flb_sds_destroy(output_two.alias);
 }
 
 void test_router_route_default_precedence()
@@ -2389,6 +2641,8 @@ TEST_LIST = {
     { "apply_config_rejects_incompatible_output_signal", test_router_apply_config_rejects_incompatible_output_signal },
     { "apply_config_uses_input_alias", test_router_apply_config_uses_input_alias },
     { "apply_config_distinct_instances_without_alias", test_router_apply_config_distinct_instances_without_alias },
+    { "apply_config_routes_bind_to_exact_section_without_alias",
+      test_router_apply_config_routes_bind_to_exact_section_without_alias },
     { "route_default_precedence", test_router_route_default_precedence },
     { "condition_eval_logs_metadata_context", test_router_condition_eval_logs_metadata_context },
     { "condition_eval_logs_group_context", test_router_condition_eval_logs_group_context },

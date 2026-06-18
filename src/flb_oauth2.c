@@ -68,6 +68,11 @@ struct flb_config_map oauth2_config_map[] = {
      "OAuth2 client_secret"
     },
     {
+     FLB_CONFIG_MAP_STR, "oauth2.user_agent", NULL,
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config, user_agent),
+     "Optional User-Agent header for OAuth2 token requests"
+    },
+    {
      FLB_CONFIG_MAP_STR, "oauth2.scope", NULL,
      0, FLB_TRUE, offsetof(struct flb_oauth2_config, scope),
      "Optional OAuth2 scope"
@@ -185,6 +190,7 @@ static void oauth2_apply_defaults(struct flb_oauth2_config *cfg)
     cfg->token_url = NULL;
     cfg->client_id = NULL;
     cfg->client_secret = NULL;
+    cfg->user_agent = NULL;
     cfg->scope = NULL;
     cfg->audience = NULL;
     cfg->resource = NULL;
@@ -237,6 +243,15 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
     if (src->client_secret) {
         dst->client_secret = flb_sds_create(src->client_secret);
         if (!dst->client_secret) {
+            flb_errno();
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+
+    if (src->user_agent) {
+        dst->user_agent = flb_sds_create(src->user_agent);
+        if (!dst->user_agent) {
             flb_errno();
             flb_oauth2_config_destroy(dst);
             return -1;
@@ -324,6 +339,8 @@ void flb_oauth2_config_destroy(struct flb_oauth2_config *cfg)
     cfg->client_id = NULL;
     flb_sds_destroy(cfg->client_secret);
     cfg->client_secret = NULL;
+    flb_sds_destroy(cfg->user_agent);
+    cfg->user_agent = NULL;
     flb_sds_destroy(cfg->scope);
     cfg->scope = NULL;
     flb_sds_destroy(cfg->audience);
@@ -1114,6 +1131,14 @@ static int oauth2_http_request(struct flb_oauth2 *ctx, flb_sds_t body)
                         FLB_OAUTH2_HTTP_ENCODING,
                         sizeof(FLB_OAUTH2_HTTP_ENCODING) - 1);
 
+    if (ctx->cfg.user_agent) {
+        flb_http_add_header(c,
+                            "User-Agent",
+                            10,
+                            ctx->cfg.user_agent,
+                            flb_sds_len(ctx->cfg.user_agent));
+    }
+
     if (ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_BASIC &&
         ctx->cfg.client_id && ctx->cfg.client_secret) {
         ret = flb_http_basic_auth(c, ctx->cfg.client_id, ctx->cfg.client_secret);
@@ -1201,6 +1226,7 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     (void) expire_sec;
 
     oauth2_apply_defaults(&cfg);
+    cfg.enabled = FLB_TRUE;
     cfg.token_url = flb_sds_create(auth_url);
     cfg.refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
 

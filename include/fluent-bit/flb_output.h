@@ -355,6 +355,7 @@ struct flb_output_instance {
 
     /* Plugin properties */
     int retry_limit;                     /* max of retries allowed       */
+    int retry_limit_is_set;              /* explicitly set by user?      */
     int use_tls;                         /* bool, try to use TLS for I/O */
     char *match;                         /* match rule for tag/routing   */
 #ifdef FLB_HAVE_REGEX
@@ -1352,7 +1353,7 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
 
     /* Process normal properties */
     if (ins->config_map) {
-        ret = flb_config_map_set(&ins->properties, ins->config_map, context);
+        ret = flb_config_map_set(ins->config, &ins->properties, ins->config_map, context);
         if (ret == -1) {
             return -1;
         }
@@ -1360,7 +1361,7 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
 
     /* Net properties */
     if (ins->net_config_map) {
-        ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
+        ret = flb_config_map_set(ins->config, &ins->net_properties, ins->net_config_map,
                                  &ins->net_setup);
         if (ret == -1) {
             return -1;
@@ -1369,7 +1370,8 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
 
     /* HTTP server properties */
     if (ins->http_server_config_map && ins->http_server_config) {
-        ret = flb_config_map_set(&ins->http_server_properties,
+        ret = flb_config_map_set(ins->config,
+                                 &ins->http_server_properties,
                                  ins->http_server_config_map,
                                  ins->http_server_config);
         if (ret == -1) {

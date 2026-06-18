@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_custom.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
@@ -433,6 +434,8 @@ static inline int handle_output_event(uint64_t ts,
                      flb_output_name(ins), out_id);
         }
 
+        flb_input_chunk_release_route(task->ic, ins);
+
         cmt_gauge_set(ins->cmt_chunk_available_capacity_percent, ts,
                       calculate_chunk_capacity_percent(ins),
                       1, (char *[]) {out_name});
@@ -688,6 +691,16 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
     /* Flush all remaining data */
     if (type == 1) {                  /* Engine type */
         if (key == FLB_ENGINE_STOP) {
+            /*
+             * Re-entering the STOP handler in flb_engine_start() would reset
+             * config->event_shutdown.status while the shutdown timerfd is
+             * still registered, so the dispatcher drops the timer and the
+             * pipeline thread busy-loops on epoll.
+             */
+            if (config->is_shutting_down) {
+                flb_debug("[engine] duplicate STOP ignored");
+                return 0;
+            }
             flb_trace("[engine] flush enqueued data");
             flb_engine_flush(config, NULL);
             return FLB_ENGINE_STOP;

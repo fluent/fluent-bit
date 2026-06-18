@@ -20,6 +20,7 @@
 #ifndef CFL_CHECKSUM_H
 #define CFL_CHECKSUM_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 uint32_t cfl_checksum_crc32c(unsigned char *buffer, size_t length);

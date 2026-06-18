@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
@@ -1700,6 +1701,110 @@ void cb_mixed_array_map_access()
     cfl_variant_destroy(vobj);
 }
 
+void cb_translate_container_map()
+{
+    char *fmt;
+    char *fmt_out;
+    flb_sds_t str;
+    struct flb_cfl_record_accessor *cra;
+    struct cfl_kvlist *kvlist = NULL;
+    struct cfl_kvlist *nested = NULL;
+    struct cfl_variant *vobj = NULL;
+
+    kvlist = cfl_kvlist_create();
+    nested = cfl_kvlist_create();
+
+    TEST_CHECK(kvlist != NULL);
+    TEST_CHECK(nested != NULL);
+    if (!kvlist || !nested) {
+        exit(EXIT_FAILURE);
+    }
+
+    cfl_kvlist_insert_string(nested, "first", "alpha");
+    cfl_kvlist_insert_string(nested, "second", "beta");
+    cfl_kvlist_insert_kvlist(kvlist, "obj", nested);
+
+    vobj = cfl_variant_create_from_kvlist(kvlist);
+    TEST_CHECK(vobj != NULL);
+    if (!vobj) {
+        exit(EXIT_FAILURE);
+    }
+
+    fmt = flb_sds_create("$obj");
+    fmt_out = "{\"first\":\"alpha\",\"second\":\"beta\"}";
+
+    cra = flb_cfl_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(cra != NULL);
+    if (!cra) {
+        exit(EXIT_FAILURE);
+    }
+
+    str = flb_cfl_ra_translate(cra, NULL, -1, *vobj, NULL);
+    TEST_CHECK(str != NULL);
+    if (!str) {
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(flb_sds_len(str) == strlen(fmt_out));
+    TEST_CHECK(memcmp(str, fmt_out, strlen(fmt_out)) == 0);
+
+    flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
+    flb_cfl_ra_destroy(cra);
+    cfl_variant_destroy(vobj);
+}
+
+void cb_strcmp_and_regex_root_key()
+{
+    int ret;
+    char *fmt;
+    struct flb_regex *regex;
+    struct flb_cfl_record_accessor *cra;
+    struct cfl_kvlist *kvlist = NULL;
+    struct cfl_variant *vobj = NULL;
+
+    kvlist = cfl_kvlist_create();
+    TEST_CHECK(kvlist != NULL);
+    if (!kvlist) {
+        exit(EXIT_FAILURE);
+    }
+
+    cfl_kvlist_insert_string(kvlist, "message", "hello world");
+
+    vobj = cfl_variant_create_from_kvlist(kvlist);
+    TEST_CHECK(vobj != NULL);
+    if (!vobj) {
+        exit(EXIT_FAILURE);
+    }
+
+    fmt = flb_sds_create("$message");
+    cra = flb_cfl_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(cra != NULL);
+    if (!cra) {
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_cfl_ra_strcmp(cra, *vobj, "hello world", 11);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_cfl_ra_strcmp(cra, *vobj, "goodbye", 7);
+    TEST_CHECK(ret != 0);
+
+    regex = flb_regex_create("hello");
+    TEST_CHECK(regex != NULL);
+    if (!regex) {
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_cfl_ra_regex_match(cra, *vobj, regex, NULL);
+    TEST_CHECK(ret > 0);
+
+    flb_regex_destroy(regex);
+    flb_sds_destroy(fmt);
+    flb_cfl_ra_destroy(cra);
+    cfl_variant_destroy(vobj);
+}
+
 TEST_LIST = {
     { "keys"                   , cb_keys},
     { "dash_key"               , cb_dash_key},
@@ -1721,5 +1826,7 @@ TEST_LIST = {
     { "direct_array_access"    , cb_direct_array_access},
     { "nested_array_access"    , cb_nested_array_access},
     { "mixed_array_map_access" , cb_mixed_array_map_access},
+    { "translate_container_map", cb_translate_container_map},
+    { "strcmp_and_regex_root_key", cb_strcmp_and_regex_root_key},
     { NULL }
 };

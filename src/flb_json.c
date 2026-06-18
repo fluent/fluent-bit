@@ -505,13 +505,24 @@ static yyjson_mut_val *msgpack_to_yyjson_mut(yyjson_mut_doc *document,
     }
 }
 
-static yyjson_mut_val *mutable_to_yyjson_mut(yyjson_mut_doc *document,
-                                             struct flb_json_mut_val *value)
+/*
+ * This limit prevents stack overflows in case mutable documents contain
+ * unexpectedly deep nesting or structural cycles.
+ */
+#define FLB_JSON_MUT_RENDER_MAX_DEPTH 1024
+
+static yyjson_mut_val *mutable_to_yyjson_mut_internal(yyjson_mut_doc *document,
+                                                      struct flb_json_mut_val *value,
+                                                      size_t depth)
 {
     struct flb_json_mut_kv    *kv_entry;
     struct flb_json_mut_entry *array_entry;
     yyjson_mut_val            *result;
     yyjson_mut_val            *item;
+
+    if (depth > FLB_JSON_MUT_RENDER_MAX_DEPTH) {
+        return NULL;
+    }
 
     switch (value->type) {
     case FLB_JSON_MUT_OBJECT:
@@ -523,7 +534,9 @@ static yyjson_mut_val *mutable_to_yyjson_mut(yyjson_mut_doc *document,
         for (kv_entry = value->data.object.head;
              kv_entry != NULL;
              kv_entry = kv_entry->next) {
-            item = mutable_to_yyjson_mut(document, kv_entry->value);
+            item = mutable_to_yyjson_mut_internal(document,
+                                                 kv_entry->value,
+                                                 depth + 1);
             if (item == NULL) {
                 return NULL;
             }
@@ -545,7 +558,9 @@ static yyjson_mut_val *mutable_to_yyjson_mut(yyjson_mut_doc *document,
         for (array_entry = value->data.array.head;
              array_entry != NULL;
              array_entry = array_entry->next) {
-            item = mutable_to_yyjson_mut(document, array_entry->value);
+            item = mutable_to_yyjson_mut_internal(document,
+                                                 array_entry->value,
+                                                 depth + 1);
             if (item == NULL || !yyjson_mut_arr_add_val(result, item)) {
                 return NULL;
             }
@@ -567,6 +582,12 @@ static yyjson_mut_val *mutable_to_yyjson_mut(yyjson_mut_doc *document,
     default:
         return NULL;
     }
+}
+
+static yyjson_mut_val *mutable_to_yyjson_mut(yyjson_mut_doc *document,
+                                             struct flb_json_mut_val *value)
+{
+    return mutable_to_yyjson_mut_internal(document, value, 0);
 }
 
 static char *render_msgpack_document_yyjson(struct flb_json_doc *document,
@@ -707,6 +728,42 @@ static struct flb_json_mut_entry *mut_array_entry_create(struct flb_json_mut_doc
     document->entries = entry;
 
     return entry;
+}
+
+static int mut_val_contains(struct flb_json_mut_val *value,
+                            struct flb_json_mut_val *target)
+{
+    struct flb_json_mut_kv    *kv_entry;
+    struct flb_json_mut_entry *array_entry;
+
+    if (value == NULL || target == NULL) {
+        return FLB_FALSE;
+    }
+
+    if (value == target) {
+        return FLB_TRUE;
+    }
+
+    if (value->type == FLB_JSON_MUT_OBJECT) {
+        for (kv_entry = value->data.object.head;
+             kv_entry != NULL;
+             kv_entry = kv_entry->next) {
+            if (mut_val_contains(kv_entry->value, target)) {
+                return FLB_TRUE;
+            }
+        }
+    }
+    else if (value->type == FLB_JSON_MUT_ARRAY) {
+        for (array_entry = value->data.array.head;
+             array_entry != NULL;
+             array_entry = array_entry->next) {
+            if (mut_val_contains(array_entry->value, target)) {
+                return FLB_TRUE;
+            }
+        }
+    }
+
+    return FLB_FALSE;
 }
 
 static struct flb_json_mut_val *copy_msgpack_to_mutable(struct flb_json_mut_doc *document,
@@ -1544,6 +1601,10 @@ int flb_json_mut_arr_add_val(struct flb_json_mut_val *array,
         return 0;
     }
 
+    if (mut_val_contains(value, array)) {
+        return 0;
+    }
+
     entry = mut_array_entry_create(array->owner, value);
     if (entry == NULL) {
         return 0;
@@ -1721,6 +1782,10 @@ static int flb_json_mut_obj_add_val_len(struct flb_json_mut_doc *document,
     }
 
     if (object->owner != document || value->owner != document) {
+        return 0;
+    }
+
+    if (mut_val_contains(value, object)) {
         return 0;
     }
 

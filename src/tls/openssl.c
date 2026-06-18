@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_str.h>
@@ -40,11 +41,15 @@
 #ifdef FLB_SYSTEM_WINDOWS
     #define strtok_r(str, delimiter, context) \
             strtok_s(str, delimiter, context)
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
     #include <wincrypt.h>
     #ifndef CERT_FIND_SHA256_HASH
         /* Older SDKs may not define this */
         #define CERT_FIND_SHA256_HASH  0x0001000d
     #endif
+#else
+    #include <arpa/inet.h>
 #endif
 
 /*
@@ -77,6 +82,83 @@ struct tls_session {
     int continuation_flag;
     struct tls_context *parent;    /* parent struct tls_context ref */
 };
+
+static int host_is_ip_literal(const char *hostname, char *normalized, size_t normalized_size)
+{
+    char buffer[256];
+    size_t hostname_len;
+    size_t lookup_len;
+    const char *lookup;
+    const char *bracket_end;
+    const char *zone_id;
+    struct in_addr addr4;
+    struct in6_addr addr6;
+    int ret;
+
+    if (hostname == NULL || hostname[0] == '\0') {
+        return FLB_FALSE;
+    }
+
+    ret = FLB_FALSE;
+    lookup = hostname;
+    hostname_len = strlen(hostname);
+
+    if (hostname[0] == '[') {
+        bracket_end = strchr(hostname + 1, ']');
+        if (bracket_end == NULL) {
+            return FLB_FALSE;
+        }
+
+        lookup = hostname + 1;
+        lookup_len = bracket_end - lookup;
+    }
+    else {
+        lookup_len = hostname_len;
+    }
+
+    zone_id = memchr(lookup, '%', lookup_len);
+    if (zone_id != NULL) {
+        lookup_len = zone_id - lookup;
+    }
+
+    if (lookup_len == 0 || lookup_len >= sizeof(buffer)) {
+        return FLB_FALSE;
+    }
+
+    memcpy(buffer, lookup, lookup_len);
+    buffer[lookup_len] = '\0';
+
+    if (inet_pton(AF_INET, buffer, &addr4) == 1) {
+        ret = FLB_TRUE;
+    }
+
+    if (inet_pton(AF_INET6, buffer, &addr6) == 1) {
+        ret = FLB_TRUE;
+    }
+
+    if (ret != FLB_TRUE) {
+        return FLB_FALSE;
+    }
+
+    if (normalized != NULL) {
+        if (normalized_size <= lookup_len) {
+            return FLB_FALSE;
+        }
+
+        memcpy(normalized, buffer, lookup_len + 1);
+    }
+
+    return FLB_TRUE;
+}
+
+static void setup_sni(struct tls_session *session, const char *hostname)
+{
+    if (host_is_ip_literal(hostname, NULL, 0) == FLB_TRUE) {
+        return;
+    }
+
+    SSL_set_tlsext_host_name(session->ssl, hostname);
+}
 
 static int tls_init(void)
 {
@@ -1521,6 +1603,8 @@ static int tls_net_write(struct flb_tls_session *session,
 int setup_hostname_validation(struct tls_session *session, const char *hostname)
 {
     X509_VERIFY_PARAM *param;
+    char normalized_ip[256];
+    int ret;
 
     param = SSL_get0_param(session->ssl);
 
@@ -1530,7 +1614,14 @@ int setup_hostname_validation(struct tls_session *session, const char *hostname)
     }
 
     X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
-    if (!X509_VERIFY_PARAM_set1_host(param, hostname, 0)) {
+    if (host_is_ip_literal(hostname, normalized_ip, sizeof(normalized_ip)) == FLB_TRUE) {
+        ret = X509_VERIFY_PARAM_set1_ip_asc(param, normalized_ip);
+    }
+    else {
+        ret = X509_VERIFY_PARAM_set1_host(param, hostname, 0);
+    }
+
+    if (!ret) {
         flb_error("[tls] error: hostname parameter vailidation is failed : %s",
                   hostname);
         return -1;
@@ -1581,10 +1672,10 @@ static int tls_net_handshake(struct flb_tls *tls,
         }
 
         if (vhost != NULL) {
-            SSL_set_tlsext_host_name(session->ssl, vhost);
+            setup_sni(session, vhost);
         }
         else if (tls->vhost) {
-            SSL_set_tlsext_host_name(session->ssl, tls->vhost);
+            setup_sni(session, tls->vhost);
         }
     }
 

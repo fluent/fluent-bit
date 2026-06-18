@@ -2001,7 +2001,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
                             ctx->tcp_host, ctx->tcp_port, c->resp.status);
             }
             /*
-             * Server-side error occured, do not reuse this connection for retry.
+             * Server-side error occurred, do not reuse this connection for retry.
              * This could be an issue of Loki gateway.
              * Rather initiate new connection.
              */

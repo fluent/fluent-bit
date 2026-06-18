@@ -76,7 +76,30 @@ static void regular_operation()
     cfl_kv_release(&entry_list);
 }
 
+static void null_inputs()
+{
+    struct cfl_kv *entry;
+
+    cfl_kv_init(NULL);
+
+    entry = cfl_kv_item_create(NULL, "key", "value");
+    TEST_CHECK(entry == NULL);
+
+    entry = cfl_kv_item_create_len(NULL, "key", 3, "value", 5);
+    TEST_CHECK(entry == NULL);
+
+    entry = cfl_kv_item_create_len(NULL, "key", 3, NULL, 1);
+    TEST_CHECK(entry == NULL);
+
+    TEST_CHECK(cfl_kv_get_key_value(NULL, NULL) == NULL);
+    TEST_CHECK(cfl_kv_get_key_value("key", NULL) == NULL);
+
+    cfl_kv_item_destroy(NULL);
+    cfl_kv_release(NULL);
+}
+
 TEST_LIST = {
     {"regular_operation",  regular_operation},
+    {"null_inputs",  null_inputs},
     { 0 }
 };

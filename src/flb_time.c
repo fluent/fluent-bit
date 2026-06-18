@@ -442,3 +442,5 @@ long flb_time_tz_offset_to_second()
 
     return diff;
 }
+
+#include "flb_time_tz.c"

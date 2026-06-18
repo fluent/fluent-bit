@@ -195,6 +195,7 @@ static int build_headers(struct flb_http_client *c,
     size_t olen;
     flb_sds_t rfc1123date;
     flb_sds_t str_hash;
+    flb_sds_t tmp_sds;
     struct tm tm = {0};
     unsigned char hmac_hash[32] = {0};
     int result;
@@ -231,13 +232,48 @@ static int build_headers(struct flb_http_client *c,
     }
 
     len = snprintf(tmp, sizeof(tmp) - 1, "%zu\n", content_length);
-    flb_sds_cat(str_hash, "POST\n", 5);
-    flb_sds_cat(str_hash, tmp, len);
-    flb_sds_cat(str_hash, "application/json\n", 17);
-    flb_sds_cat(str_hash, "x-ms-date:", 10);
-    flb_sds_cat(str_hash, rfc1123date, flb_sds_len(rfc1123date));
-    flb_sds_cat(str_hash, "\n", 1);
-    flb_sds_cat(str_hash, FLB_AZURE_RESOURCE, sizeof(FLB_AZURE_RESOURCE) - 1);
+    tmp_sds = flb_sds_cat(str_hash, "POST\n", 5);
+    if (!tmp_sds) {
+        goto concat_error;
+    }
+    str_hash = tmp_sds;
+
+    tmp_sds = flb_sds_cat(str_hash, tmp, len);
+    if (!tmp_sds) {
+        goto concat_error;
+    }
+    str_hash = tmp_sds;
+
+    tmp_sds = flb_sds_cat(str_hash, "application/json\n", 17);
+    if (!tmp_sds) {
+        goto concat_error;
+    }
+    str_hash = tmp_sds;
+
+    tmp_sds = flb_sds_cat(str_hash, "x-ms-date:", 10);
+    if (!tmp_sds) {
+        goto concat_error;
+    }
+    str_hash = tmp_sds;
+
+    tmp_sds = flb_sds_cat(str_hash, rfc1123date, flb_sds_len(rfc1123date));
+    if (!tmp_sds) {
+        goto concat_error;
+    }
+    str_hash = tmp_sds;
+
+    tmp_sds = flb_sds_cat(str_hash, "\n", 1);
+    if (!tmp_sds) {
+        goto concat_error;
+    }
+    str_hash = tmp_sds;
+
+    tmp_sds = flb_sds_cat(str_hash, FLB_AZURE_RESOURCE,
+                          sizeof(FLB_AZURE_RESOURCE) - 1);
+    if (!tmp_sds) {
+        goto concat_error;
+    }
+    str_hash = tmp_sds;
 
     /* Authorization signature */
     result = flb_hmac_simple(FLB_HASH_SHA256,
@@ -291,6 +327,12 @@ static int build_headers(struct flb_http_client *c,
     flb_free(auth);
 
     return 0;
+
+concat_error:
+    flb_sds_destroy(rfc1123date);
+    flb_sds_destroy(str_hash);
+
+    return -1;
 }
 
 static void cb_azure_flush(struct flb_event_chunk *event_chunk,

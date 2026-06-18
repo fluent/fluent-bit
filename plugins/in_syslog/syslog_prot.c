@@ -240,7 +240,7 @@ int syslog_prot_process(struct syslog_conn *conn)
                 char *sp = p;
                 size_t n = 0;
                 while (sp < end && *sp >= '0' && *sp <= '9') {
-                    if (n > SIZE_MAX / 10) {
+                    if (n >= SIZE_MAX / 10) {
                         n = SIZE_MAX;
                         break;
                     }

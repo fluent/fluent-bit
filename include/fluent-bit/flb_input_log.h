@@ -38,4 +38,11 @@ int flb_input_log_append_skip_processor_stages(struct flb_input_instance *ins,
                                                size_t tag_len,
                                                const void *buf,
                                                size_t buf_size);
+
+int flb_input_log_append_processed(struct flb_input_instance *ins,
+                                   size_t records,
+                                   const char *tag,
+                                   size_t tag_len,
+                                   const void *buf,
+                                   size_t buf_size);
 #endif

@@ -21,7 +21,10 @@ from git.exc import GitCommandError
 repo = Repo(".")
 
 # Regex patterns
-PREFIX_RE = re.compile(r"^([a-z0-9_]+:)\s+\S", re.IGNORECASE)
+PREFIX_RE = re.compile(
+    r"^([a-z0-9_]+:(?:\s+[a-z0-9_]+:)*)\s+\S",
+    re.IGNORECASE,
+)
 SIGNED_OFF_RE = re.compile(r"Signed-off-by:", re.IGNORECASE)
 FENCED_BLOCK_RE = re.compile(
     r"""
@@ -32,6 +35,15 @@ FENCED_BLOCK_RE = re.compile(
     """,
     re.DOTALL | re.VERBOSE,
 )
+
+
+def extract_subject_prefix(line: str):
+    match = PREFIX_RE.match(line)
+
+    if not match:
+        return None
+
+    return match.group(1).rstrip()
 
 def strip_fenced_code_blocks(text: str) -> str:
     """
@@ -78,6 +90,8 @@ def infer_prefix_from_paths(paths):
                 if name:
                     component_prefixes.add(f"{name}:")
                     component_prefixes.add("tests:")
+                    if p.startswith("tests/integration/"):
+                        component_prefixes.add("tests: integration:")
             else:
                 component_prefixes.add("tests:")
 
@@ -226,12 +240,11 @@ def validate_commit(commit):
     body = strip_fenced_code_blocks(body)
 
     # Subject must start with a prefix
-    subject_prefix_match = PREFIX_RE.match(first_line)
-    if not subject_prefix_match:
+    subject_prefix = extract_subject_prefix(first_line)
+    if not subject_prefix:
         return False, f"Missing prefix in commit subject: '{first_line}'"
 
-    subject_prefix = subject_prefix_match.group(1)
-
+    subject_root_prefix = subject_prefix.split()[0]
     # Run squash detection (but ignore multi-signoff errors)
     bad_squash, reason = detect_bad_squash(body)
 
@@ -282,6 +295,7 @@ def validate_commit(commit):
 
     expected_lower = {p.lower() for p in expected}
     subj_lower = subject_prefix.lower()
+    subj_root_lower = subject_root_prefix.lower()
 
 
     # ------------------------------------------------
@@ -313,17 +327,17 @@ def validate_commit(commit):
     }
 
     # Prefixes that are allowed to cover multiple subcomponents
-    umbrella_prefixes = {"lib:", "tests:", "http_server:"}
+    umbrella_prefixes = {"lib:", "tests:", "tests: integration:", "http_server:"}
 
     # If more than one non-build prefix is inferred AND the subject is not an umbrella
     # prefix, check if the subject prefix is in the expected list. If it is, allow it
     # (because the corresponding file exists). Only reject if it's not in the expected list
     # or if it's an umbrella prefix that doesn't match.
     if len(non_build_prefixes) > 1:
-        if subj_lower in umbrella_prefixes:
+        if subj_root_lower in umbrella_prefixes:
             norm_paths = [p.replace(os.sep, "/") for p in files]
 
-            if subj_lower == "lib:":
+            if subj_root_lower == "lib:":
                 if not all(p.startswith("lib/") for p in norm_paths):
                     expected_list = sorted(expected)
                     expected_str = ", ".join(expected_list)
@@ -332,7 +346,7 @@ def validate_commit(commit):
                         f"Expected one of: {expected_str}"
                     )
 
-            elif subj_lower == "tests:":
+            elif subj_root_lower == "tests:":
                 if not all(p.startswith("tests/") for p in norm_paths):
                     expected_list = sorted(expected)
                     expected_str = ", ".join(expected_list)
@@ -341,7 +355,16 @@ def validate_commit(commit):
                         f"Expected one of: {expected_str}"
                     )
 
-            elif subj_lower == "http_server:":
+            elif subj_lower == "tests: integration:":
+                if not all(p.startswith("tests/integration/") for p in norm_paths):
+                    expected_list = sorted(expected)
+                    expected_str = ", ".join(expected_list)
+                    return False, (
+                        f"Subject prefix '{subject_prefix}' does not match files changed.\n"
+                        f"Expected one of: {expected_str}"
+                    )
+
+            elif subj_root_lower == "http_server:":
                 if not all(is_http_server_interface_path(p) for p in norm_paths):
                     expected_list = sorted(expected)
                     expected_str = ", ".join(expected_list)
@@ -359,7 +382,7 @@ def validate_commit(commit):
             )
 
     # Subject prefix must be one of the expected ones
-    if subj_lower not in expected_lower:
+    if subj_lower not in expected_lower and subj_root_lower not in expected_lower:
         expected_list = sorted(expected)
         expected_str = ", ".join(expected_list)
         return False, (
@@ -370,7 +393,7 @@ def validate_commit(commit):
 
     # If build is NOT optional and build: exists among expected,
     # then subject MUST be build:
-    if not build_optional and "build:" in expected_lower and subj_lower != "build:":
+    if not build_optional and "build:" in expected_lower and subj_root_lower != "build:":
         return False, (
             f"Subject prefix '{subject_prefix}' does not match files changed.\n"
             f"Expected one of: build:"

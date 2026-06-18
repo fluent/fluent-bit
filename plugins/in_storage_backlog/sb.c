@@ -391,7 +391,8 @@ int sb_segregate_chunks(struct flb_config *config)
                     if (config->storage_del_bad_chunks) {
                         chunk_error = cio_error_get(chunk);
 
-                        if (chunk_error == CIO_ERR_BAD_FILE_SIZE ||
+                        if (chunk_error == CIO_ERR_BAD_CHECKSUM ||
+                            chunk_error == CIO_ERR_BAD_FILE_SIZE ||
                             chunk_error == CIO_ERR_BAD_LAYOUT)
                         {
                             flb_plg_error(context->ins, "discarding irrecoverable chunk %s/%s", stream->name, chunk->name);

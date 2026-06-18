@@ -35,6 +35,7 @@
 
 struct flb_http {
     int successful_response_code;
+    int enable_health_endpoint;
     flb_sds_t listen;
     flb_sds_t tcp_port;
     flb_sds_t tag_key;

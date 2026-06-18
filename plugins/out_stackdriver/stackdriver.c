@@ -246,8 +246,11 @@ static int jwt_encode(char *payload, char *secret,
     char *headers = "{\"alg\": \"RS256\", \"typ\": \"JWT\"}";
     unsigned char sha256_buf[32] = {0};
     flb_sds_t out;
+    flb_sds_t tmp;
     unsigned char sig[256] = {0};
     size_t sig_len;
+
+    sigd = NULL;
 
     buf_size = (strlen(payload) + strlen(secret)) * 2;
     buf = flb_malloc(buf_size);
@@ -275,16 +278,32 @@ static int jwt_encode(char *payload, char *secret,
     }
 
     /* Append header */
-    flb_sds_cat(out, buf, olen);
-    flb_sds_cat(out, ".", 1);
+    tmp = flb_sds_cat(out, buf, olen);
+    if (!tmp) {
+        goto error;
+    }
+    out = tmp;
+
+    tmp = flb_sds_cat(out, ".", 1);
+    if (!tmp) {
+        goto error;
+    }
+    out = tmp;
 
     /* Encode Payload */
     len = strlen(payload);
-    jwt_base64_url_encode((unsigned char *) buf, buf_size,
-                          (unsigned char *) payload, len, &olen);
+    ret = jwt_base64_url_encode((unsigned char *) buf, buf_size,
+                                (unsigned char *) payload, len, &olen);
+    if (ret == -1) {
+        goto error;
+    }
 
     /* Append Payload */
-    flb_sds_cat(out, buf, olen);
+    tmp = flb_sds_cat(out, buf, olen);
+    if (!tmp) {
+        goto error;
+    }
+    out = tmp;
 
     /* do sha256() of base64(header).base64(payload) */
     ret = flb_hash_simple(FLB_HASH_SHA256,
@@ -293,9 +312,7 @@ static int jwt_encode(char *payload, char *secret,
 
     if (ret != FLB_CRYPTO_SUCCESS) {
         flb_plg_error(ctx->ins, "error hashing token");
-        flb_free(buf);
-        flb_sds_destroy(out);
-        return -1;
+        goto error;
     }
 
     len = strlen(secret);
@@ -310,9 +327,7 @@ static int jwt_encode(char *payload, char *secret,
 
     if (ret != FLB_CRYPTO_SUCCESS) {
         flb_plg_error(ctx->ins, "error creating RSA context");
-        flb_free(buf);
-        flb_sds_destroy(out);
-        return -1;
+        goto error;
     }
 
     sigd = flb_malloc(2048);
@@ -323,10 +338,22 @@ static int jwt_encode(char *payload, char *secret,
         return -1;
     }
 
-    jwt_base64_url_encode((unsigned char *) sigd, 2048, sig, 256, &olen);
+    ret = jwt_base64_url_encode((unsigned char *) sigd, 2048, sig, 256, &olen);
+    if (ret == -1) {
+        goto error;
+    }
 
-    flb_sds_cat(out, ".", 1);
-    flb_sds_cat(out, sigd, olen);
+    tmp = flb_sds_cat(out, ".", 1);
+    if (!tmp) {
+        goto error;
+    }
+    out = tmp;
+
+    tmp = flb_sds_cat(out, sigd, olen);
+    if (!tmp) {
+        goto error;
+    }
+    out = tmp;
 
     *out_signature = out;
     *out_size = flb_sds_len(out);
@@ -335,6 +362,13 @@ static int jwt_encode(char *payload, char *secret,
     flb_free(sigd);
 
     return 0;
+
+error:
+    flb_free(buf);
+    flb_free(sigd);
+    flb_sds_destroy(out);
+
+    return -1;
 }
 
 /* Create a new oauth2 context and get a oauth2 token */
@@ -1130,6 +1164,9 @@ static int pack_resource_labels(struct flb_stackdriver *ctx,
                 } else {
                     flb_plg_warn(ctx->ins, "failed to find a corresponding entry for "
                         "resource label entry [%s=%s]", label_kv->key, label_kv->val);
+                    if (rval) {
+                        flb_ra_key_value_destroy(rval);
+                    }
                 }
                 flb_ra_destroy(ra);
             } else {
@@ -2475,6 +2512,8 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             if (log_name_extracted == FLB_TRUE) {
                 flb_sds_destroy(log_name);
             }
+
+            destroy_http_request(&http_request);
 
             flb_log_event_decoder_destroy(&log_decoder);
             msgpack_sbuffer_destroy(&mp_sbuf);

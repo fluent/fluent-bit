@@ -63,8 +63,8 @@
 /plugins/out_datadog     @nokute78 @edsiper
 /plugins/out_es          @pettitwesley @edsiper
 /plugins/out_pgsql       @sxd
-/plugins/out_stackdriver @braydonk @jefferbrecht @jeffluoo
 /plugins/out_oracle_log_analytics @hisatti77 @santhoshkvuda @palukuri @rghouzra
+/plugins/out_stackdriver @jeffluoo
 
 # AWS Plugins
 /plugins/out_s3               @fluent/aws-fluent-bit-maintainers
@@ -86,8 +86,8 @@
 
 # Google test code
 # --------------
-/tests/runtime/out_stackdriver.c @braydonk @jefferbrecht @jeffluoo
-/tests/runtime/data/stackdriver  @braydonk @jefferbrecht @jeffluoo
+/tests/runtime/out_stackdriver.c @jeffluoo
+/tests/runtime/data/stackdriver  @jeffluoo
 
 # Devcontainer
 /.devcontainer                  @patrick-stephens @niedbalski @edsiper

@@ -605,12 +605,24 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
     }
 
     for (index = 0 ; index < scope_logs->size ; index++) {
+        if (scope_logs->ptr[index].type != MSGPACK_OBJECT_MAP) {
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_SCOPELOGS_TYPE;
+            }
+            return -FLB_OTEL_LOGS_ERR_UNEXPECTED_SCOPELOGS_TYPE;
+        }
 
         /*
          * we use a temporary encoder to hold the group information, if no record entries are added
          * we will discard it.
          **/
         tmp_encoder = flb_log_event_encoder_create(encoder->format);
+        if (tmp_encoder == NULL) {
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_ENCODER_FAILURE;
+            }
+            return -FLB_OTEL_LOGS_ERR_ENCODER_FAILURE;
+        }
         flb_log_event_encoder_group_init(tmp_encoder);
 
         /* pack internal schema */
@@ -671,6 +683,7 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
         flb_log_event_encoder_body_commit_map(tmp_encoder);
 
         /* scope schemaUrl */
+        scope_schema_url = NULL;
         result = flb_otel_utils_find_map_entry_by_key(&scope_logs->ptr[index].via.map, "schemaUrl", 0, FLB_TRUE);
         if (result >= 0) {
             obj = &scope_logs->ptr[index].via.map.ptr[result].val;
@@ -691,7 +704,7 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
             }
         }
 
-        if (scope) {
+        if (scope || scope_schema_url) {
             /*
              * if the scope is found, process every expected key one by one to avoid
              * wrongly ingested items.
@@ -703,52 +716,54 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
             /* scope map value */
             flb_log_event_encoder_body_begin_map(tmp_encoder);
 
-            /* scope name */
-            result = flb_otel_utils_find_map_entry_by_key(&scope->via.map, "name", 0, FLB_TRUE);
-            if (result >= 0) {
-                obj = &scope->via.map.ptr[result].val;
-                if (obj->type == MSGPACK_OBJECT_STR) {
-                    flb_log_event_encoder_append_body_values(tmp_encoder,
-                                                             FLB_LOG_EVENT_CSTRING_VALUE("name"),
-                                                             FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(obj));
+            if (scope) {
+                /* scope name */
+                result = flb_otel_utils_find_map_entry_by_key(&scope->via.map, "name", 0, FLB_TRUE);
+                if (result >= 0) {
+                    obj = &scope->via.map.ptr[result].val;
+                    if (obj->type == MSGPACK_OBJECT_STR) {
+                        flb_log_event_encoder_append_body_values(tmp_encoder,
+                                                                 FLB_LOG_EVENT_CSTRING_VALUE("name"),
+                                                                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(obj));
+                    }
                 }
-            }
 
-            /* scope version */
-            result = flb_otel_utils_find_map_entry_by_key(&scope->via.map, "version", 0, FLB_TRUE);
-            if (result >= 0) {
-                obj = &scope->via.map.ptr[result].val;
-                if (obj->type == MSGPACK_OBJECT_STR) {
-                    flb_log_event_encoder_append_body_values(tmp_encoder,
-                                                            FLB_LOG_EVENT_CSTRING_VALUE("version"),
-                                                            FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(obj));
+                /* scope version */
+                result = flb_otel_utils_find_map_entry_by_key(&scope->via.map, "version", 0, FLB_TRUE);
+                if (result >= 0) {
+                    obj = &scope->via.map.ptr[result].val;
+                    if (obj->type == MSGPACK_OBJECT_STR) {
+                        flb_log_event_encoder_append_body_values(tmp_encoder,
+                                                                FLB_LOG_EVENT_CSTRING_VALUE("version"),
+                                                                FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(obj));
+                    }
                 }
-            }
 
-            /* scope attributes */
-            result = flb_otel_utils_find_map_entry_by_key(&scope->via.map, "attributes", 0, FLB_TRUE);
-            if (result >= 0) {
-                obj = &scope->via.map.ptr[result].val;
-                if (obj->type == MSGPACK_OBJECT_ARRAY) {
-                    flb_log_event_encoder_append_body_string(tmp_encoder, "attributes", 10);
-                    result = flb_otel_utils_json_payload_append_converted_kvlist(tmp_encoder,
-                                                                                FLB_LOG_EVENT_BODY,
-                                                                                obj);
-                    if (result != 0) {
+                /* scope attributes */
+                result = flb_otel_utils_find_map_entry_by_key(&scope->via.map, "attributes", 0, FLB_TRUE);
+                if (result >= 0) {
+                    obj = &scope->via.map.ptr[result].val;
+                    if (obj->type == MSGPACK_OBJECT_ARRAY) {
+                        flb_log_event_encoder_append_body_string(tmp_encoder, "attributes", 10);
+                        result = flb_otel_utils_json_payload_append_converted_kvlist(tmp_encoder,
+                                                                                    FLB_LOG_EVENT_BODY,
+                                                                                    obj);
+                        if (result != 0) {
+                            if (error_status) {
+                                *error_status = FLB_OTEL_LOGS_ERR_SCOPE_KVLIST;
+                            }
+                            flb_log_event_encoder_destroy(tmp_encoder);
+                            return -FLB_OTEL_LOGS_ERR_SCOPE_KVLIST;
+                        }
+                    }
+                    else {
+                        /* scope attributes must be an array per OTLP spec; return error if not */
                         if (error_status) {
                             *error_status = FLB_OTEL_LOGS_ERR_SCOPE_KVLIST;
                         }
                         flb_log_event_encoder_destroy(tmp_encoder);
                         return -FLB_OTEL_LOGS_ERR_SCOPE_KVLIST;
                     }
-                }
-                else {
-                    /* scope attributes must be an array per OTLP spec; return error if not */
-                    if (error_status) {
-                        *error_status = FLB_OTEL_LOGS_ERR_SCOPE_KVLIST;
-                    }
-                    flb_log_event_encoder_destroy(tmp_encoder);
-                    return -FLB_OTEL_LOGS_ERR_SCOPE_KVLIST;
                 }
             }
 

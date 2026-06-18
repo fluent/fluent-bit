@@ -34,21 +34,33 @@
     "  offset  INTEGER,"                                                \
     "  inode   INTEGER,"                                                \
     "  created INTEGER,"                                                \
-    "  rotated INTEGER DEFAULT 0"                                       \
+    "  rotated INTEGER DEFAULT 0,"                                      \
+    "  offset_marker INTEGER DEFAULT 0,"                                \
+    "  offset_marker_size INTEGER DEFAULT 0"                            \
     ");"
 
 #define SQL_GET_FILE                                                    \
-    "SELECT * from in_tail_files WHERE inode=@inode order by id desc;"
+    "SELECT id, name, offset, inode, offset_marker, offset_marker_size " \
+    "from in_tail_files WHERE inode=@inode order by id desc;"
 
 #define SQL_INSERT_FILE                                             \
-    "INSERT INTO in_tail_files (name, offset, inode, created)"      \
-    "  VALUES (@name, @offset, @inode, @created);"
+    "INSERT INTO in_tail_files "                                    \
+    "  (name, offset, inode, created, offset_marker, offset_marker_size)" \
+    "  VALUES (@name, @offset, @inode, @created, @offset_marker, @offset_marker_size);"
 
 #define SQL_ROTATE_FILE                                                 \
     "UPDATE in_tail_files set name=@name,rotated=1 WHERE id=@id;"
 
 #define SQL_UPDATE_OFFSET                                   \
-    "UPDATE in_tail_files set offset=@offset WHERE id=@id;"
+    "UPDATE in_tail_files set offset=@offset, "             \
+    "offset_marker=@offset_marker, "                        \
+    "offset_marker_size=@offset_marker_size WHERE id=@id;"
+
+#define SQL_ALTER_FILES_ADD_OFFSET_MARKER                           \
+    "ALTER TABLE in_tail_files ADD COLUMN offset_marker INTEGER DEFAULT 0;"
+
+#define SQL_ALTER_FILES_ADD_OFFSET_MARKER_SIZE                      \
+    "ALTER TABLE in_tail_files ADD COLUMN offset_marker_size INTEGER DEFAULT 0;"
 
 #define SQL_DELETE_FILE                                                 \
     "DELETE FROM in_tail_files WHERE id=@id;"

@@ -692,6 +692,26 @@ void test_histogram_labels()
     cmt_decode_prometheus_destroy(cmt);
 }
 
+void test_histogram_missing_le_label()
+{
+    int status;
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+
+    cmt = NULL;
+    memset(&opts, 0, sizeof(opts));
+
+    status = cmt_decode_prometheus_create(&cmt,
+            "# HELP test_histogram A histogram missing the le label.\n"
+            "# TYPE test_histogram histogram\n"
+            "test_histogram_bucket{foo=\"bar\"} 1\n"
+            "test_histogram_bucket{foo=\"baz\"} 2\n"
+            "test_histogram_sum 3.5\n"
+            "test_histogram_count 2\n", 0, &opts);
+
+    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_SYNTAX_ERROR);
+}
+
 void test_summary()
 {
     int status;
@@ -1064,8 +1084,8 @@ void test_issue_fluent_bit_6021()
         "envoy_http_downstream_cx_length_ms_bucket{le=\"60000.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
         "envoy_http_downstream_cx_length_ms_bucket{le=\"300000.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
         "envoy_http_downstream_cx_length_ms_bucket{le=\"600000.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
-        "envoy_http_downstream_cx_length_ms_bucket{le=\"1.8e+06\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
-        "envoy_http_downstream_cx_length_ms_bucket{le=\"3.6e+06\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"1800000.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"3600000.0\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
         "envoy_http_downstream_cx_length_ms_bucket{le=\"+Inf\",envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
         "envoy_http_downstream_cx_length_ms_sum{envoy_http_conn_manager_prefix=\"admin\"} 15.5 0\n"
         "envoy_http_downstream_cx_length_ms_count{envoy_http_conn_manager_prefix=\"admin\"} 1 0\n"
@@ -1086,8 +1106,8 @@ void test_issue_fluent_bit_6021()
         "envoy_http_downstream_cx_length_ms_bucket{le=\"60000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
         "envoy_http_downstream_cx_length_ms_bucket{le=\"300000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
         "envoy_http_downstream_cx_length_ms_bucket{le=\"600000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
-        "envoy_http_downstream_cx_length_ms_bucket{le=\"1.8e+06\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
-        "envoy_http_downstream_cx_length_ms_bucket{le=\"3.6e+06\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"1800000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_cx_length_ms_bucket{le=\"3600000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
         "envoy_http_downstream_cx_length_ms_bucket{le=\"+Inf\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
         "envoy_http_downstream_cx_length_ms_sum{envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
         "envoy_http_downstream_cx_length_ms_count{envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
@@ -1110,8 +1130,8 @@ void test_issue_fluent_bit_6021()
         "envoy_http_downstream_rq_time_bucket{le=\"60000.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
         "envoy_http_downstream_rq_time_bucket{le=\"300000.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
         "envoy_http_downstream_rq_time_bucket{le=\"600000.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
-        "envoy_http_downstream_rq_time_bucket{le=\"1.8e+06\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
-        "envoy_http_downstream_rq_time_bucket{le=\"3.6e+06\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"1800000.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"3600000.0\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
         "envoy_http_downstream_rq_time_bucket{le=\"+Inf\",envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
         "envoy_http_downstream_rq_time_sum{envoy_http_conn_manager_prefix=\"admin\"} 25.5 0\n"
         "envoy_http_downstream_rq_time_count{envoy_http_conn_manager_prefix=\"admin\"} 10 0\n"
@@ -1132,8 +1152,8 @@ void test_issue_fluent_bit_6021()
         "envoy_http_downstream_rq_time_bucket{le=\"60000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
         "envoy_http_downstream_rq_time_bucket{le=\"300000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
         "envoy_http_downstream_rq_time_bucket{le=\"600000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
-        "envoy_http_downstream_rq_time_bucket{le=\"1.8e+06\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
-        "envoy_http_downstream_rq_time_bucket{le=\"3.6e+06\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"1800000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
+        "envoy_http_downstream_rq_time_bucket{le=\"3600000.0\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
         "envoy_http_downstream_rq_time_bucket{le=\"+Inf\",envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
         "envoy_http_downstream_rq_time_sum{envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
         "envoy_http_downstream_rq_time_count{envoy_http_conn_manager_prefix=\"ingress_http\"} 0 0\n"
@@ -1156,8 +1176,8 @@ void test_issue_fluent_bit_6021()
         "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"60000.0\"} 1 0\n"
         "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"300000.0\"} 1 0\n"
         "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"600000.0\"} 1 0\n"
-        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"1.8e+06\"} 1 0\n"
-        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"3.6e+06\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"1800000.0\"} 1 0\n"
+        "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"3600000.0\"} 1 0\n"
         "envoy_listener_admin_downstream_cx_length_ms_bucket{le=\"+Inf\"} 1 0\n"
         "envoy_listener_admin_downstream_cx_length_ms_sum 15.5 0\n"
         "envoy_listener_admin_downstream_cx_length_ms_count 1 0\n"
@@ -1180,8 +1200,8 @@ void test_issue_fluent_bit_6021()
         "envoy_listener_downstream_cx_length_ms_bucket{le=\"60000.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
         "envoy_listener_downstream_cx_length_ms_bucket{le=\"300000.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
         "envoy_listener_downstream_cx_length_ms_bucket{le=\"600000.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
-        "envoy_listener_downstream_cx_length_ms_bucket{le=\"1.8e+06\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
-        "envoy_listener_downstream_cx_length_ms_bucket{le=\"3.6e+06\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"1800000.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
+        "envoy_listener_downstream_cx_length_ms_bucket{le=\"3600000.0\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
         "envoy_listener_downstream_cx_length_ms_bucket{le=\"+Inf\",envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
         "envoy_listener_downstream_cx_length_ms_sum{envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
         "envoy_listener_downstream_cx_length_ms_count{envoy_listener_address=\"0.0.0.0_10000\"} 0 0\n"
@@ -1204,8 +1224,8 @@ void test_issue_fluent_bit_6021()
         "envoy_listener_manager_lds_update_duration_bucket{le=\"60000.0\"} 0 0\n"
         "envoy_listener_manager_lds_update_duration_bucket{le=\"300000.0\"} 0 0\n"
         "envoy_listener_manager_lds_update_duration_bucket{le=\"600000.0\"} 0 0\n"
-        "envoy_listener_manager_lds_update_duration_bucket{le=\"1.8e+06\"} 0 0\n"
-        "envoy_listener_manager_lds_update_duration_bucket{le=\"3.6e+06\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"1800000.0\"} 0 0\n"
+        "envoy_listener_manager_lds_update_duration_bucket{le=\"3600000.0\"} 0 0\n"
         "envoy_listener_manager_lds_update_duration_bucket{le=\"+Inf\"} 0 0\n"
         "envoy_listener_manager_lds_update_duration_sum 0 0\n"
         "envoy_listener_manager_lds_update_duration_count 0 0\n"
@@ -1228,8 +1248,8 @@ void test_issue_fluent_bit_6021()
         "envoy_sds_tls_sds_update_duration_bucket{le=\"60000.0\"} 0 0\n"
         "envoy_sds_tls_sds_update_duration_bucket{le=\"300000.0\"} 0 0\n"
         "envoy_sds_tls_sds_update_duration_bucket{le=\"600000.0\"} 0 0\n"
-        "envoy_sds_tls_sds_update_duration_bucket{le=\"1.8e+06\"} 0 0\n"
-        "envoy_sds_tls_sds_update_duration_bucket{le=\"3.6e+06\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"1800000.0\"} 0 0\n"
+        "envoy_sds_tls_sds_update_duration_bucket{le=\"3600000.0\"} 0 0\n"
         "envoy_sds_tls_sds_update_duration_bucket{le=\"+Inf\"} 0 0\n"
         "envoy_sds_tls_sds_update_duration_sum 0 0\n"
         "envoy_sds_tls_sds_update_duration_count 0 0\n"
@@ -1252,8 +1272,8 @@ void test_issue_fluent_bit_6021()
         "envoy_server_initialization_time_ms_bucket{le=\"60000.0\"} 1 0\n"
         "envoy_server_initialization_time_ms_bucket{le=\"300000.0\"} 1 0\n"
         "envoy_server_initialization_time_ms_bucket{le=\"600000.0\"} 1 0\n"
-        "envoy_server_initialization_time_ms_bucket{le=\"1.8e+06\"} 1 0\n"
-        "envoy_server_initialization_time_ms_bucket{le=\"3.6e+06\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"1800000.0\"} 1 0\n"
+        "envoy_server_initialization_time_ms_bucket{le=\"3600000.0\"} 1 0\n"
         "envoy_server_initialization_time_ms_bucket{le=\"+Inf\"} 1 0\n"
         "envoy_server_initialization_time_ms_sum 30.5 0\n"
         "envoy_server_initialization_time_ms_count 1 0\n"
@@ -1712,6 +1732,7 @@ TEST_LIST = {
     {"issue_71", test_issue_71},
     {"histogram", test_histogram},
     {"histogram_labels", test_histogram_labels},
+    {"histogram_missing_le_label", test_histogram_missing_le_label},
     {"summary", test_summary},
     {"null_labels", test_null_labels},
     {"issue_fluent_bit_5541", test_issue_fluent_bit_5541},

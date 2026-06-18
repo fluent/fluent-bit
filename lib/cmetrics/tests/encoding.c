@@ -25,6 +25,7 @@
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_encode_msgpack.h>
 #include <cmetrics/cmt_decode_msgpack.h>
@@ -35,6 +36,9 @@
 #include <cmetrics/cmt_encode_influx.h>
 #include <cmetrics/cmt_encode_splunk_hec.h>
 #include <cmetrics/cmt_encode_cloudwatch_emf.h>
+
+#include <limits.h>
+#include <mpack/mpack.h>
 
 #include "cmt_tests.h"
 
@@ -331,6 +335,336 @@ void test_cmt_to_msgpack_cleanup_on_error()
     TEST_CHECK(cmt2 == NULL);
 
 #endif
+}
+
+enum malformed_msgpack_payload {
+    MSGPACK_MALFORMED_DUPLICATE_TYPE,
+    MSGPACK_MALFORMED_INVALID_AGGREGATION_TYPE,
+    MSGPACK_MALFORMED_INVALID_VALUE_TYPE,
+    MSGPACK_MALFORMED_MISSING_NAME,
+    MSGPACK_MALFORMED_MISSING_DESCRIPTION,
+    MSGPACK_MALFORMED_EXP_HIST_SCALE_OVERFLOW
+};
+
+static void pack_msgpack_context_meta(mpack_writer_t *writer)
+{
+    mpack_write_cstr(writer, "meta");
+    mpack_start_map(writer, 3);
+
+    mpack_write_cstr(writer, "cmetrics");
+    mpack_start_map(writer, 0);
+    mpack_finish_map(writer);
+
+    mpack_write_cstr(writer, "external");
+    mpack_start_map(writer, 0);
+    mpack_finish_map(writer);
+
+    mpack_write_cstr(writer, "processing");
+    mpack_start_map(writer, 1);
+    mpack_write_cstr(writer, "static_labels");
+    mpack_start_array(writer, 0);
+    mpack_finish_array(writer);
+    mpack_finish_map(writer);
+
+    mpack_finish_map(writer);
+}
+
+static void pack_msgpack_opts(mpack_writer_t *writer, int include_name)
+{
+    mpack_start_map(writer, include_name ? 5 : 4);
+
+    mpack_write_cstr(writer, "ns");
+    mpack_write_cstr(writer, "test");
+    mpack_write_cstr(writer, "ss");
+    mpack_write_cstr(writer, "msgpack");
+
+    if (include_name) {
+        mpack_write_cstr(writer, "name");
+        mpack_write_cstr(writer, "malformed");
+    }
+
+    mpack_write_cstr(writer, "desc");
+    mpack_write_cstr(writer, "malformed msgpack");
+    mpack_write_cstr(writer, "unit");
+    mpack_write_cstr(writer, "");
+
+    mpack_finish_map(writer);
+}
+
+static void pack_msgpack_opts_without_description(mpack_writer_t *writer)
+{
+    mpack_start_map(writer, 4);
+
+    mpack_write_cstr(writer, "ns");
+    mpack_write_cstr(writer, "test");
+    mpack_write_cstr(writer, "ss");
+    mpack_write_cstr(writer, "msgpack");
+    mpack_write_cstr(writer, "name");
+    mpack_write_cstr(writer, "malformed");
+    mpack_write_cstr(writer, "unit");
+    mpack_write_cstr(writer, "");
+
+    mpack_finish_map(writer);
+}
+
+static void pack_msgpack_basic_meta(mpack_writer_t *writer,
+                                    enum malformed_msgpack_payload payload_type)
+{
+    int include_name;
+
+    include_name = (payload_type != MSGPACK_MALFORMED_MISSING_NAME);
+
+    mpack_write_cstr(writer, "meta");
+
+    if (payload_type == MSGPACK_MALFORMED_DUPLICATE_TYPE) {
+        mpack_start_map(writer, 5);
+
+        mpack_write_cstr(writer, "ver");
+        mpack_write_uint(writer, MSGPACK_ENCODER_VERSION);
+        mpack_write_cstr(writer, "type");
+        mpack_write_uint(writer, CMT_COUNTER);
+        mpack_write_cstr(writer, "type");
+        mpack_write_uint(writer, CMT_GAUGE);
+    }
+    else {
+        mpack_start_map(writer, 4);
+
+        mpack_write_cstr(writer, "ver");
+        mpack_write_uint(writer, MSGPACK_ENCODER_VERSION);
+        mpack_write_cstr(writer, "type");
+        if (payload_type == MSGPACK_MALFORMED_EXP_HIST_SCALE_OVERFLOW) {
+            mpack_write_uint(writer, CMT_EXP_HISTOGRAM);
+        }
+        else {
+            mpack_write_uint(writer, CMT_COUNTER);
+        }
+    }
+
+    mpack_write_cstr(writer, "opts");
+    if (payload_type == MSGPACK_MALFORMED_MISSING_DESCRIPTION) {
+        pack_msgpack_opts_without_description(writer);
+    }
+    else {
+        pack_msgpack_opts(writer, include_name);
+    }
+
+    mpack_write_cstr(writer, "labels");
+    mpack_start_array(writer, 0);
+    mpack_finish_array(writer);
+
+    if (payload_type == MSGPACK_MALFORMED_INVALID_AGGREGATION_TYPE) {
+        mpack_write_cstr(writer, "aggregation_type");
+        mpack_write_uint(writer, 127);
+    }
+    else if (payload_type != MSGPACK_MALFORMED_EXP_HIST_SCALE_OVERFLOW) {
+        mpack_write_cstr(writer, "aggregation_type");
+        mpack_write_uint(writer, CMT_AGGREGATION_TYPE_CUMULATIVE);
+    }
+
+    mpack_finish_map(writer);
+}
+
+static void pack_msgpack_basic_value(mpack_writer_t *writer,
+                                     enum malformed_msgpack_payload payload_type)
+{
+    if (payload_type == MSGPACK_MALFORMED_EXP_HIST_SCALE_OVERFLOW) {
+        mpack_start_map(writer, 3);
+        mpack_write_cstr(writer, "ts");
+        mpack_write_uint(writer, 0);
+        mpack_write_cstr(writer, "exp_histogram");
+        mpack_start_map(writer, 10);
+        mpack_write_cstr(writer, "scale");
+        mpack_write_i64(writer, (int64_t) INT_MAX + 1);
+        mpack_write_cstr(writer, "zero_count");
+        mpack_write_uint(writer, 0);
+        mpack_write_cstr(writer, "zero_threshold");
+        mpack_write_double(writer, 0.0);
+        mpack_write_cstr(writer, "positive_offset");
+        mpack_write_int(writer, 0);
+        mpack_write_cstr(writer, "positive_buckets");
+        mpack_start_array(writer, 0);
+        mpack_finish_array(writer);
+        mpack_write_cstr(writer, "negative_offset");
+        mpack_write_int(writer, 0);
+        mpack_write_cstr(writer, "negative_buckets");
+        mpack_start_array(writer, 0);
+        mpack_finish_array(writer);
+        mpack_write_cstr(writer, "count");
+        mpack_write_uint(writer, 0);
+        mpack_write_cstr(writer, "sum_set");
+        mpack_write_uint(writer, 0);
+        mpack_write_cstr(writer, "sum");
+        mpack_write_uint(writer, 0);
+        mpack_finish_map(writer);
+        mpack_write_cstr(writer, "hash");
+        mpack_write_uint(writer, 0);
+        mpack_finish_map(writer);
+
+        return;
+    }
+
+    if (payload_type == MSGPACK_MALFORMED_INVALID_VALUE_TYPE) {
+        mpack_start_map(writer, 5);
+    }
+    else {
+        mpack_start_map(writer, 3);
+    }
+
+    mpack_write_cstr(writer, "ts");
+    mpack_write_uint(writer, 0);
+    mpack_write_cstr(writer, "value");
+    mpack_write_double(writer, 1.0);
+
+    if (payload_type == MSGPACK_MALFORMED_INVALID_VALUE_TYPE) {
+        mpack_write_cstr(writer, "value_type");
+        mpack_write_uint(writer, 127);
+        mpack_write_cstr(writer, "value_int64");
+        mpack_write_i64(writer, 1);
+    }
+
+    mpack_write_cstr(writer, "hash");
+    mpack_write_uint(writer, 0);
+    mpack_finish_map(writer);
+}
+
+static char *generate_malformed_msgpack_payload(size_t *out_size,
+                                                enum malformed_msgpack_payload payload_type)
+{
+    char *data;
+    size_t size;
+    mpack_writer_t writer;
+
+    data = NULL;
+    size = 0;
+
+    mpack_writer_init_growable(&writer, &data, &size);
+
+    mpack_start_map(&writer, 2);
+    pack_msgpack_context_meta(&writer);
+
+    mpack_write_cstr(&writer, "metrics");
+    mpack_start_array(&writer, 1);
+    mpack_start_map(&writer, 2);
+    pack_msgpack_basic_meta(&writer, payload_type);
+    mpack_write_cstr(&writer, "values");
+    mpack_start_array(&writer, 1);
+    pack_msgpack_basic_value(&writer, payload_type);
+    mpack_finish_array(&writer);
+    mpack_finish_map(&writer);
+    mpack_finish_array(&writer);
+    mpack_finish_map(&writer);
+
+    if (mpack_writer_destroy(&writer) != mpack_ok) {
+        return NULL;
+    }
+
+    *out_size = size;
+
+    return data;
+}
+
+static void assert_malformed_msgpack_rejected(enum malformed_msgpack_payload payload_type)
+{
+    int ret;
+    char *payload;
+    size_t offset;
+    size_t payload_size;
+    struct cmt *decoded;
+
+    offset = 0;
+    payload_size = 0;
+    decoded = (struct cmt *) 0x1;
+
+    payload = generate_malformed_msgpack_payload(&payload_size, payload_type);
+    TEST_CHECK(payload != NULL);
+    if (payload == NULL) {
+        return;
+    }
+
+    ret = cmt_decode_msgpack_create(&decoded, payload, payload_size, &offset);
+    TEST_CHECK(ret != CMT_DECODE_MSGPACK_SUCCESS);
+    TEST_CHECK(decoded == NULL);
+
+    cmt_encode_msgpack_destroy(payload);
+}
+
+void test_cmt_msgpack_rejects_malformed_fields()
+{
+    assert_malformed_msgpack_rejected(MSGPACK_MALFORMED_DUPLICATE_TYPE);
+    assert_malformed_msgpack_rejected(MSGPACK_MALFORMED_INVALID_AGGREGATION_TYPE);
+    assert_malformed_msgpack_rejected(MSGPACK_MALFORMED_INVALID_VALUE_TYPE);
+    assert_malformed_msgpack_rejected(MSGPACK_MALFORMED_MISSING_NAME);
+    assert_malformed_msgpack_rejected(MSGPACK_MALFORMED_MISSING_DESCRIPTION);
+    assert_malformed_msgpack_rejected(MSGPACK_MALFORMED_EXP_HIST_SCALE_OVERFLOW);
+}
+
+void test_cmt_msgpack_null_label_roundtrip()
+{
+    int ret;
+    char *mp_buf;
+    size_t mp_size;
+    size_t offset;
+    cfl_sds_t result;
+    struct cmt *cmt1;
+    struct cmt *cmt2;
+    struct cmt_counter *counter;
+
+    mp_buf = NULL;
+    mp_size = 0;
+    offset = 0;
+    result = NULL;
+    cmt2 = NULL;
+
+    cmt1 = cmt_create();
+    TEST_CHECK(cmt1 != NULL);
+    if (cmt1 == NULL) {
+        return;
+    }
+
+    counter = cmt_counter_create(cmt1, "test", "msgpack", "labels",
+                                 "testing msgpack labels",
+                                 3, (char *[]) {"A", "B", "C"});
+    TEST_CHECK(counter != NULL);
+    if (counter == NULL) {
+        cmt_destroy(cmt1);
+        return;
+    }
+
+    cmt_counter_inc(counter, 0, 3, (char *[]) {NULL, "", NULL});
+    cmt_counter_inc(counter, 0, 3, (char *[]) {NULL, "", NULL});
+    cmt_counter_inc(counter, 0, 3, (char *[]) {NULL, "b", NULL});
+    cmt_counter_inc(counter, 0, 3, (char *[]) {"a", "b", "c"});
+
+    ret = cmt_encode_msgpack_create(cmt1, &mp_buf, &mp_size);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        cmt_destroy(cmt1);
+        return;
+    }
+
+    ret = cmt_decode_msgpack_create(&cmt2, mp_buf, mp_size, &offset);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(cmt2 != NULL);
+    if (ret == 0 && cmt2 != NULL) {
+        result = cmt_encode_prometheus_create(cmt2, CMT_TRUE);
+        TEST_CHECK(result != NULL);
+
+        if (result != NULL) {
+            TEST_CHECK(strstr(result, "test_msgpack_labels{B=\"\"} 2 0\n") != NULL);
+            TEST_CHECK(strstr(result, "test_msgpack_labels{B=\"b\"} 1 0\n") != NULL);
+            TEST_CHECK(strstr(result, "test_msgpack_labels{A=\"a\",B=\"b\",C=\"c\"} 1 0\n") != NULL);
+            TEST_CHECK(strstr(result, "A=\"\"") == NULL);
+            TEST_CHECK(strstr(result, "C=\"\"") == NULL);
+        }
+    }
+
+    if (result != NULL) {
+        cfl_sds_destroy(result);
+    }
+
+    cmt_destroy(cmt1);
+    cmt_decode_msgpack_destroy(cmt2);
+    cmt_encode_msgpack_destroy(mp_buf);
 }
 
 /*
@@ -767,6 +1101,51 @@ void test_prometheus()
     printf("%s\n", text);
     TEST_CHECK(strcmp(text, out2) == 0);
     cmt_encode_prometheus_destroy(text);
+
+    cmt_destroy(cmt);
+}
+
+void test_prometheus_histogram_bucket_decimal_label()
+{
+    uint64_t ts;
+    cfl_sds_t text;
+    struct cmt *cmt;
+    struct cmt_histogram *h;
+    struct cmt_histogram_buckets *buckets;
+
+    cmt_initialize();
+
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+    if (cmt == NULL) {
+        return;
+    }
+
+    buckets = cmt_histogram_buckets_create(1, 1000000.0);
+    TEST_CHECK(buckets != NULL);
+    if (buckets == NULL) {
+        cmt_destroy(cmt);
+        return;
+    }
+
+    h = cmt_histogram_create(cmt, "cmt", "labels", "bucket", "Bucket label",
+                             buckets, 0, NULL);
+    TEST_CHECK(h != NULL);
+    if (h == NULL) {
+        cmt_destroy(cmt);
+        return;
+    }
+
+    ts = 0;
+    cmt_histogram_observe(h, ts, 42.0, 0, NULL);
+
+    text = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+    TEST_CHECK(text != NULL);
+    if (text != NULL) {
+        TEST_CHECK(strstr(text, "cmt_labels_bucket_bucket{le=\"1000000.0\"}") != NULL);
+        TEST_CHECK(strstr(text, "cmt_labels_bucket_bucket{le=\"1e+06\"}") == NULL);
+        cmt_encode_prometheus_destroy(text);
+    }
 
     cmt_destroy(cmt);
 }
@@ -1231,6 +1610,8 @@ void test_splunk_hec_summary()
 
 TEST_LIST = {
     {"cmt_msgpack_cleanup_on_error",   test_cmt_to_msgpack_cleanup_on_error},
+    {"cmt_msgpack_rejects_malformed_fields", test_cmt_msgpack_rejects_malformed_fields},
+    {"cmt_msgpack_null_label_roundtrip", test_cmt_msgpack_null_label_roundtrip},
     {"cmt_msgpack_partial_processing", test_cmt_msgpack_partial_processing},
     {"prometheus_remote_write",        test_prometheus_remote_write},
     {"prometheus_remote_write_old_cmt",test_prometheus_remote_write_with_outdated_timestamps},
@@ -1242,6 +1623,7 @@ TEST_LIST = {
     {"opentelemetry",                  test_opentelemetry},
     {"cloudwatch_emf",                 test_cloudwatch_emf},
     {"prometheus",                     test_prometheus},
+    {"prometheus_histogram_bucket_decimal_label", test_prometheus_histogram_bucket_decimal_label},
     {"text",                           test_text},
     {"influx",                         test_influx},
     {"influx_without_namespaces",      test_influx_without_namespaces},
