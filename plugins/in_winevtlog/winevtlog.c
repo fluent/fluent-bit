@@ -276,8 +276,13 @@ static int query_for_channel(const char *query, const char *channel,
     *channel_query = NULL;
 
     if (!query_is_structured_xml(query)) {
-        *channel_query = flb_sds_create(query);
-        return *channel_query == NULL ? -1 : 0;
+        if (query != NULL) {
+            *channel_query = flb_sds_create(query);
+            if (*channel_query == NULL) {
+                return -1;
+            }
+        }
+        return 0;
     }
 
     output = flb_sds_create("<QueryList>");
@@ -1178,7 +1183,11 @@ int winevtlog_try_reconnect(struct winevtlog_channel *ch, struct winevtlog_confi
         if (!wide_channel) {
             return -1;
         }
-        MultiByteToWideChar(CP_UTF8, 0, ch->name, -1, wide_channel, len);
+        if (MultiByteToWideChar(CP_UTF8, 0, ch->name, -1,
+                                wide_channel, len) == 0) {
+            flb_free(wide_channel);
+            return -1;
+        }
     }
 
     if (ch->query) {
