@@ -30,6 +30,390 @@
 static char* convert_wstr(wchar_t *wstr, UINT codePage);
 static wchar_t* convert_str(char *str);
 
+static const char *skip_spaces(const char *cursor)
+{
+    while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+        cursor++;
+    }
+
+    return cursor;
+}
+
+static char *trim_spaces(char *value)
+{
+    char *end;
+
+    value = (char *) skip_spaces(value);
+    end = value + strlen(value);
+
+    while (end > value &&
+           (*(end - 1) == ' ' || *(end - 1) == '\t' ||
+            *(end - 1) == '\r' || *(end - 1) == '\n')) {
+        end--;
+    }
+    *end = '\0';
+
+    return value;
+}
+
+static int query_is_structured_xml(const char *query)
+{
+    const unsigned char *cursor;
+
+    if (query == NULL) {
+        return FLB_FALSE;
+    }
+
+    cursor = (const unsigned char *) query;
+
+    if (strlen((const char *) cursor) >= 3 &&
+        cursor[0] == 0xef && cursor[1] == 0xbb && cursor[2] == 0xbf) {
+        cursor += 3;
+    }
+
+    cursor = (const unsigned char *) skip_spaces((const char *) cursor);
+
+    return *cursor == '<';
+}
+
+static const char *xml_tag_end(const char *tag)
+{
+    char quote = '\0';
+
+    while (*tag != '\0') {
+        if (quote != '\0') {
+            if (*tag == quote) {
+                quote = '\0';
+            }
+        }
+        else if (*tag == '\'' || *tag == '"') {
+            quote = *tag;
+        }
+        else if (*tag == '>') {
+            return tag + 1;
+        }
+        tag++;
+    }
+
+    return NULL;
+}
+
+static int xml_tag_is(const char *tag, const char *name, int closing)
+{
+    size_t name_length;
+
+    if (*tag != '<') {
+        return FLB_FALSE;
+    }
+    tag++;
+
+    if (closing) {
+        if (*tag != '/') {
+            return FLB_FALSE;
+        }
+        tag++;
+    }
+    else if (*tag == '/') {
+        return FLB_FALSE;
+    }
+
+    tag = skip_spaces(tag);
+    name_length = strlen(name);
+
+    if (strncasecmp(tag, name, name_length) != 0) {
+        return FLB_FALSE;
+    }
+
+    tag += name_length;
+    return *tag == '>' || *tag == '/' || *tag == ' ' || *tag == '\t' ||
+           *tag == '\r' || *tag == '\n';
+}
+
+static int xml_attribute(const char *tag, const char *tag_end, const char *name,
+                         const char **value, size_t *value_length)
+{
+    char quote;
+    size_t attribute_length;
+    size_t name_length;
+    const char *cursor;
+    const char *attribute;
+    const char *value_end;
+
+    name_length = strlen(name);
+    cursor = tag + 1;
+
+    if (*cursor == '/') {
+        cursor++;
+    }
+    cursor = skip_spaces(cursor);
+    while (cursor < tag_end &&
+           *cursor != ' ' && *cursor != '\t' && *cursor != '\r' &&
+           *cursor != '\n' && *cursor != '>' && *cursor != '/') {
+        cursor++;
+    }
+
+    while (cursor < tag_end && *cursor != '>' && *cursor != '/') {
+        cursor = skip_spaces(cursor);
+
+        if (cursor >= tag_end || *cursor == '>' || *cursor == '/') {
+            break;
+        }
+
+        attribute = cursor;
+        while (cursor < tag_end &&
+               *cursor != '=' && *cursor != ' ' && *cursor != '\t' &&
+               *cursor != '\r' && *cursor != '\n' &&
+               *cursor != '>' && *cursor != '/') {
+            cursor++;
+        }
+        attribute_length = cursor - attribute;
+        cursor = skip_spaces(cursor);
+
+        if (cursor >= tag_end || *cursor != '=') {
+            return FLB_FALSE;
+        }
+        cursor = skip_spaces(cursor + 1);
+        if (cursor >= tag_end || (*cursor != '\'' && *cursor != '"')) {
+            return FLB_FALSE;
+        }
+
+        quote = *cursor;
+        cursor++;
+        value_end = cursor;
+        while (value_end < tag_end && *value_end != quote) {
+            value_end++;
+        }
+        if (value_end >= tag_end) {
+            return FLB_FALSE;
+        }
+
+        if (attribute_length == name_length &&
+            strncasecmp(attribute, name, name_length) == 0) {
+            *value = cursor;
+            *value_length = value_end - *value;
+            return FLB_TRUE;
+        }
+        cursor = value_end + 1;
+    }
+
+    return FLB_FALSE;
+}
+
+static int path_matches_channel(const char *path, size_t path_length,
+                                const char *channel)
+{
+    size_t channel_length;
+
+    if (path == NULL) {
+        return FLB_FALSE;
+    }
+
+    channel_length = strlen(channel);
+    if (channel_length != path_length) {
+        return FLB_FALSE;
+    }
+
+    return strncasecmp(path, channel, path_length) == 0;
+}
+
+static const char *xml_element_end(const char *element, const char *limit,
+                                   const char *name)
+{
+    const char *cursor;
+    const char *tag_end;
+
+    tag_end = xml_tag_end(element);
+    if (tag_end == NULL || tag_end > limit) {
+        return NULL;
+    }
+
+    if (tag_end >= element + 2 && *(tag_end - 2) == '/') {
+        return tag_end;
+    }
+
+    cursor = tag_end;
+    while (cursor < limit) {
+        cursor = strchr(cursor, '<');
+        if (cursor == NULL || cursor >= limit) {
+            return NULL;
+        }
+        if (xml_tag_is(cursor, name, FLB_TRUE)) {
+            tag_end = xml_tag_end(cursor);
+            if (tag_end == NULL || tag_end > limit) {
+                return NULL;
+            }
+            return tag_end;
+        }
+        cursor++;
+    }
+
+    return NULL;
+}
+
+static int query_for_channel(const char *query, const char *channel,
+                             flb_sds_t *channel_query)
+{
+    int matches = 0;
+    int query_selects;
+    flb_sds_t output;
+    flb_sds_t query_body;
+    const char *cursor;
+    const char *query_start;
+    const char *query_open_end;
+    const char *query_close;
+    const char *query_end;
+    const char *element_start;
+    const char *element_open_end;
+    const char *element_end;
+    const char *query_path;
+    const char *element_path;
+    const char *effective_path;
+    const char *element_name;
+    size_t query_path_length;
+    size_t element_path_length;
+    size_t effective_path_length;
+
+    *channel_query = NULL;
+
+    if (!query_is_structured_xml(query)) {
+        *channel_query = flb_sds_create(query);
+        return *channel_query == NULL ? -1 : 0;
+    }
+
+    output = flb_sds_create("<QueryList>");
+    if (output == NULL) {
+        return -1;
+    }
+
+    cursor = query;
+    while ((query_start = strchr(cursor, '<')) != NULL) {
+        if (!xml_tag_is(query_start, "Query", FLB_FALSE)) {
+            cursor = query_start + 1;
+            continue;
+        }
+
+        query_open_end = xml_tag_end(query_start);
+        if (query_open_end == NULL) {
+            flb_sds_destroy(output);
+            return -1;
+        }
+
+        query_close = query_open_end;
+        while ((query_close = strchr(query_close, '<')) != NULL) {
+            if (xml_tag_is(query_close, "Query", FLB_TRUE)) {
+                break;
+            }
+            query_close++;
+        }
+        if (query_close == NULL) {
+            flb_sds_destroy(output);
+            return -1;
+        }
+
+        query_end = xml_tag_end(query_close);
+        if (query_end == NULL) {
+            flb_sds_destroy(output);
+            return -1;
+        }
+
+        query_path = NULL;
+        query_path_length = 0;
+        xml_attribute(query_start, query_open_end, "Path",
+                      &query_path, &query_path_length);
+
+        query_body = flb_sds_create_size(query_end - query_start);
+        if (query_body == NULL) {
+            flb_sds_destroy(output);
+            return -1;
+        }
+
+        query_selects = 0;
+        element_start = query_open_end;
+        while ((element_start = strchr(element_start, '<')) != NULL &&
+               element_start < query_close) {
+            if (xml_tag_is(element_start, "Select", FLB_FALSE)) {
+                element_name = "Select";
+            }
+            else if (xml_tag_is(element_start, "Suppress", FLB_FALSE)) {
+                element_name = "Suppress";
+            }
+            else {
+                element_start++;
+                continue;
+            }
+
+            element_open_end = xml_tag_end(element_start);
+            if (element_open_end == NULL || element_open_end > query_close) {
+                flb_sds_destroy(query_body);
+                flb_sds_destroy(output);
+                return -1;
+            }
+
+            element_end = xml_element_end(element_start, query_close, element_name);
+            if (element_end == NULL) {
+                flb_sds_destroy(query_body);
+                flb_sds_destroy(output);
+                return -1;
+            }
+
+            element_path = NULL;
+            element_path_length = 0;
+            if (xml_attribute(element_start, element_open_end, "Path",
+                              &element_path, &element_path_length)) {
+                effective_path = element_path;
+                effective_path_length = element_path_length;
+            }
+            else {
+                effective_path = query_path;
+                effective_path_length = query_path_length;
+            }
+
+            if (path_matches_channel(effective_path, effective_path_length, channel)) {
+                if (flb_sds_cat_safe(&query_body, element_start,
+                                     element_end - element_start) != 0) {
+                    flb_sds_destroy(query_body);
+                    flb_sds_destroy(output);
+                    return -1;
+                }
+                if (strcasecmp(element_name, "Select") == 0) {
+                    query_selects++;
+                }
+            }
+            element_start = element_end;
+        }
+
+        if (query_selects > 0) {
+            if (flb_sds_cat_safe(&output, query_start,
+                                 query_open_end - query_start) != 0 ||
+                flb_sds_cat_safe(&output, query_body,
+                                 flb_sds_len(query_body)) != 0 ||
+                flb_sds_cat_safe(&output, query_close,
+                                 query_end - query_close) != 0) {
+                flb_sds_destroy(query_body);
+                flb_sds_destroy(output);
+                return -1;
+            }
+            matches++;
+        }
+
+        flb_sds_destroy(query_body);
+        cursor = query_end;
+    }
+
+    if (matches == 0) {
+        flb_sds_destroy(output);
+        return 1;
+    }
+
+    if (flb_sds_cat_safe(&output, "</QueryList>", 12) != 0) {
+        flb_sds_destroy(output);
+        return -1;
+    }
+
+    *channel_query = output;
+    return 0;
+}
+
 static EVT_HANDLE
 create_remote_handle(struct winevtlog_session *session, DWORD *error_code)
 {
@@ -69,6 +453,7 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevt
     EVT_HANDLE remote_handle = NULL;
     void *buf;
     DWORD err = ERROR_SUCCESS;
+    int structured_query;
 
     ch = flb_calloc(1, sizeof(struct winevtlog_channel));
     if (ch == NULL) {
@@ -84,37 +469,40 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevt
     }
     ch->query = NULL;
     ch->remote = NULL;
+    structured_query = query_is_structured_xml(query);
 
     signal_event = CreateEvent(NULL, TRUE, TRUE, NULL);
 
-    // channel : To wide char
-    len = MultiByteToWideChar(CP_UTF8, 0, channel, -1, NULL, 0);
-    wide_channel = flb_malloc(sizeof(WCHAR) * len);
-    if (wide_channel == NULL) {
-        if (signal_event) {
-            CloseHandle(signal_event);
+    if (!structured_query) {
+        /* channel : To wide char */
+        len = MultiByteToWideChar(CP_UTF8, 0, channel, -1, NULL, 0);
+        wide_channel = flb_malloc(sizeof(WCHAR) * len);
+        if (wide_channel == NULL) {
+            if (signal_event) {
+                CloseHandle(signal_event);
+            }
+            flb_free(ch->name);
+            if (ch->query) {
+                flb_free(ch->query);
+            }
+            flb_free(ch);
+            return NULL;
         }
-        flb_free(ch->name);
-        if (ch->query) {
-            flb_free(ch->query);
+        if (0 == MultiByteToWideChar(CP_UTF8, 0, channel, -1, wide_channel, len)) {
+            if (signal_event) {
+                CloseHandle(signal_event);
+            }
+            flb_free(wide_channel);
+            flb_free(ch->name);
+            if (ch->query) {
+                flb_free(ch->query);
+            }
+            flb_free(ch);
+            return NULL;
         }
-        flb_free(ch);
-        return NULL;
-    }
-    if (0 == MultiByteToWideChar(CP_UTF8, 0, channel, -1, wide_channel, len)) {
-        if (signal_event) {
-            CloseHandle(signal_event);
-        }
-        flb_free(wide_channel);
-        flb_free(ch->name);
-        if (ch->query) {
-            flb_free(ch->query);
-        }
-        flb_free(ch);
-        return NULL;
     }
     if (query != NULL) {
-    // query : To wide char
+        /* query : To wide char */
         len = MultiByteToWideChar(CP_UTF8, 0, query, -1, NULL, 0);
         wide_query = flb_malloc(sizeof(WCHAR) * len);
        if (wide_query == NULL) {
@@ -173,6 +561,8 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevt
     }
 
     /* The wide_query parameter can handle NULL as `*` for retrieving all events.
+     * ChannelPath must be NULL for structured XML queries because Windows ignores
+     * it and the query itself defines all subscribed channels.
      * ref. https://learn.microsoft.com/en-us/windows/win32/api/winevt/nf-winevt-evtsubscribe
      */
     ch->subscription = EvtSubscribe(remote_handle, signal_event, wide_channel, wide_query,
@@ -779,15 +1169,17 @@ int winevtlog_try_reconnect(struct winevtlog_channel *ch, struct winevtlog_confi
     PWSTR wide_query   = NULL;
     DWORD len;
 
-    len = MultiByteToWideChar(CP_UTF8, 0, ch->name, -1, NULL, 0);
-    if (len == 0) {
-        return -1;
+    if (!query_is_structured_xml(ch->query)) {
+        len = MultiByteToWideChar(CP_UTF8, 0, ch->name, -1, NULL, 0);
+        if (len == 0) {
+            return -1;
+        }
+        wide_channel = flb_malloc(sizeof(WCHAR) * len);
+        if (!wide_channel) {
+            return -1;
+        }
+        MultiByteToWideChar(CP_UTF8, 0, ch->name, -1, wide_channel, len);
     }
-    wide_channel = flb_malloc(sizeof(WCHAR) * len);
-    if (!wide_channel) {
-        return -1;
-    }
-    MultiByteToWideChar(CP_UTF8, 0, ch->name, -1, wide_channel, len);
 
     if (ch->query) {
         len = MultiByteToWideChar(CP_UTF8, 0, ch->query, -1, NULL, 0);
@@ -1018,6 +1410,8 @@ struct mk_list *winevtlog_open_all(const char *channels, struct winevtlog_config
     char *tmp;
     char *channel;
     char *state;
+    int ret;
+    flb_sds_t channel_query;
     struct winevtlog_channel *ch;
     struct mk_list *list;
 
@@ -1037,8 +1431,27 @@ struct mk_list *winevtlog_open_all(const char *channels, struct winevtlog_config
 
     channel = strtok_s(tmp , ",", &state);
     while (channel) {
-        ch = winevtlog_subscribe(channel, ctx, NULL, ctx->event_query,
+        channel = trim_spaces(channel);
+        ret = query_for_channel(ctx->event_query, channel, &channel_query);
+        if (ret == 1) {
+            flb_plg_debug(ctx->ins,
+                          "channel '%s' is not selected by the structured query",
+                          channel);
+            channel = strtok_s(NULL, ",", &state);
+            continue;
+        }
+        else if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "could not create the event query for channel '%s'",
+                          channel);
+            flb_free(tmp);
+            winevtlog_close_all(list);
+            return NULL;
+        }
+
+        ch = winevtlog_subscribe(channel, ctx, NULL, channel_query,
                                  ctx->session);
+        flb_sds_destroy(channel_query);
         if (ch) {
             mk_list_add(&ch->_head, list);
         }
