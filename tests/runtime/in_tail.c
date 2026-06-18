@@ -36,6 +36,10 @@ Approach for this tests is basing on filter_kubernetes tests
 #include <string.h>
 #include "flb_tests_runtime.h"
 
+#ifdef FLB_HAVE_INOTIFY
+#include "../../plugins/in_tail/tail_config.h"
+#endif
+
 #define NEW_LINE "\n"
 #define PATH_SEPARATOR "/"
 
@@ -2096,6 +2100,58 @@ void flb_test_inotify_watcher_false()
     test_tail_ctx_destroy(ctx);
 }
 
+#ifdef FLB_HAVE_INOTIFY
+void flb_test_inotify_pause_collectors()
+{
+    int ret;
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+    struct flb_tail_config *tail_ctx;
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"inotify_pause_collectors.log"};
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = NULL;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    head = ctx->flb->config->inputs.next;
+    ins = mk_list_entry(head, struct flb_input_instance, _head);
+    tail_ctx = ins->context;
+
+    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_fs1, ins) == FLB_TRUE);
+    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_progress_check,
+                                           ins) == FLB_TRUE);
+
+    ret = flb_input_pause(ins);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_fs1, ins) == FLB_FALSE);
+    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_progress_check,
+                                           ins) == FLB_FALSE);
+
+    ret = flb_input_resume(ins);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_fs1, ins) == FLB_TRUE);
+    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_progress_check,
+                                           ins) == FLB_TRUE);
+
+    test_tail_ctx_destroy(ctx);
+}
+#endif
+
 #ifdef FLB_HAVE_REGEX
 void flb_test_parser()
 {
@@ -2695,6 +2751,7 @@ TEST_LIST = {
     {"ignore_active_older_files", flb_test_in_tail_ignore_active_older_files},
 #ifdef FLB_HAVE_INOTIFY
     {"inotify_watcher_false", flb_test_inotify_watcher_false},
+    {"inotify_pause_collectors", flb_test_inotify_pause_collectors},
 #endif /* FLB_HAVE_INOTIFY */
 
 #ifdef FLB_HAVE_REGEX
