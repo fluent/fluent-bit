@@ -450,11 +450,13 @@ int flb_tail_fs_inotify_init(struct flb_input_instance *in,
 void flb_tail_fs_inotify_pause(struct flb_tail_config *ctx)
 {
     flb_input_collector_pause(ctx->coll_fd_fs1, ctx->ins);
+    flb_input_collector_pause(ctx->coll_fd_progress_check, ctx->ins);
 }
 
 void flb_tail_fs_inotify_resume(struct flb_tail_config *ctx)
 {
     flb_input_collector_resume(ctx->coll_fd_fs1, ctx->ins);
+    flb_input_collector_resume(ctx->coll_fd_progress_check, ctx->ins);
 }
 
 int flb_tail_fs_inotify_add(struct flb_tail_file *file)
