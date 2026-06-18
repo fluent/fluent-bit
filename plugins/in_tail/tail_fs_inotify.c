@@ -433,7 +433,10 @@ int flb_tail_fs_inotify_init(struct flb_input_instance *in,
     }
     ctx->coll_fd_fs1 = ret;
 
-    /* Register callback to check current tail offsets */
+    /*
+     * Keep the collector ID so the recovery timer follows the inotify
+     * collector through input pause and resume transitions.
+     */
     ret = flb_input_set_collector_time(in, in_tail_progress_check_callback,
                                        ctx->progress_check_interval,
                                        ctx->progress_check_interval_nsec,
