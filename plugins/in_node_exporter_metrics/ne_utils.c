@@ -132,7 +132,6 @@ int ne_utils_file_read_uint64(struct flb_ne *ctx,
         flb_sds_destroy(p);
         return -1;
     }
-    flb_sds_destroy(p);
 
     bytes = read(fd, &tmp, sizeof(tmp));
     if (bytes == -1) {
@@ -143,9 +142,11 @@ int ne_utils_file_read_uint64(struct flb_ne *ctx,
             flb_errno();
         }
         close(fd);
+        flb_sds_destroy(p);
         return -1;
     }
     close(fd);
+    flb_sds_destroy(p);
 
     ret = ne_utils_str_to_uint64(tmp, &val);
     if (ret == -1) {
@@ -277,7 +278,6 @@ int ne_utils_file_read_sds(struct flb_ne *ctx,
         flb_sds_destroy(p);
         return -1;
     }
-    flb_sds_destroy(p);
 
     bytes = read(fd, &tmp, sizeof(tmp));
     if (bytes == -1) {
@@ -288,9 +288,11 @@ int ne_utils_file_read_sds(struct flb_ne *ctx,
             flb_errno();
         }
         close(fd);
+        flb_sds_destroy(p);
         return -1;
     }
     close(fd);
+    flb_sds_destroy(p);
 
     for (i = bytes-1; i > 0; i--) {
         if (tmp[i] != '\n' && tmp[i] != '\r') {
