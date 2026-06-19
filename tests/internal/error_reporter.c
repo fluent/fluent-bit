@@ -74,9 +74,30 @@ void test_flb_aws_error_reporter_clean() {
     flb_aws_error_reporter_destroy(error_reporter);
 }
 
+void test_flb_aws_error_reporter_write_open_failure()
+{
+    int ret;
+    struct flb_aws_error_reporter *error_reporter;
+
+    setenv(STATUS_MESSAGE_FILE_PATH_ENV,
+           "/dev/null/error.log", 1);
+
+    error_reporter = flb_aws_error_reporter_create();
+    TEST_CHECK(error_reporter != NULL);
+
+    ret = flb_aws_error_reporter_write(error_reporter, error_message_1);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(mk_list_size(&error_reporter->messages) == 0);
+    TEST_CHECK(error_reporter->file_size == 0);
+
+    flb_aws_error_reporter_destroy(error_reporter);
+}
+
 TEST_LIST = {
     { "test_flb_aws_error_reporter_create", test_flb_aws_error_reporter_create},
     {"test_flb_aws_error_reporter_write", test_flb_aws_error_reporter_write},
     {"test_flb_aws_error_reporter_clean", test_flb_aws_error_reporter_clean},
+    {"test_flb_aws_error_reporter_write_open_failure",
+     test_flb_aws_error_reporter_write_open_failure},
     { 0 }
 };
