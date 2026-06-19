@@ -552,6 +552,103 @@ static void flb_test_issue_5846()
     filter_test_destroy(ctx);
 }
 
+static void flb_test_recursion_action_drop()
+{
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    int ret;
+    int not_used = 0;
+    int bytes;
+    char *p = "[0, {\"key\":\"rewrite\"}]";
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &not_used;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+    clear_output_num();
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "Rule", "key ^(rewrite)$ rewrite false", /* recursion setting */
+                         "recursion_action", "drop",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Configure output */
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "Match", "updated",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* ingest record */
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    /* It is OK, if there is no SIGSEGV. */
+
+    filter_test_destroy(ctx);
+}
+
+#ifdef FLB_HAVE_REGEX
+static void flb_test_recursion_action_drop_regex()
+{
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    int ret;
+    int not_used = 0;
+    int bytes;
+    char *p = "[0, {\"key\":\"rewrite\"}]";
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &not_used;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+    clear_output_num();
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "Rule", "key ^(rewrite)$ rewrite false", /* recursion setting */
+                         "recursion_action", "drop_and_log",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Configure output */
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "Match_regex", "up*",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* ingest record */
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    flb_time_msleep(1000); /* waiting flush */
+
+    /* It is OK, if there is no SIGSEGV. */
+
+    filter_test_destroy(ctx);
+}
+#endif
 TEST_LIST = {
     {"matched",          flb_test_matched},
     {"not_matched",      flb_test_not_matched},
@@ -560,5 +657,9 @@ TEST_LIST = {
     {"issue_4518", flb_test_issue_4518},
     {"issue_4793", flb_test_issue_4793},
     {"sigsegv_issue_5846", flb_test_issue_5846},
+    {"recursion_action_drop", flb_test_recursion_action_drop},
+#ifdef FLB_HAVE_REGEX
+    {"recursion_action_drop_regex", flb_test_recursion_action_drop_regex},
+#endif
     {NULL, NULL}
 };
