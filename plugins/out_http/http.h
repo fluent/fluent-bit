@@ -97,7 +97,7 @@ struct flb_out_http {
     /* Allow duplicated headers */
     int allow_dup_headers;
 
-    /* Log the response paylod */
+    /* Log the response payload */
     int log_response_payload;
 
     /* Response timeout */
