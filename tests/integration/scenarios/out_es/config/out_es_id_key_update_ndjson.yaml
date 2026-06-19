@@ -1,0 +1,33 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: out_es_id_key_update_ndjson
+      dummy: >-
+        {"doc_id":"legit\"\n
+        {\"delete\":{\"_index\":\"audit-logs\",\"_id\":\"critical-audit-record-12345\"}}\n
+        {\"update\":{\"_index\":\"pad\",\"_id\":\"x",
+        "message":"unsafe update id"}
+      samples: 1
+
+    - name: dummy
+      tag: out_es_id_key_update_ndjson
+      dummy: '{"doc_id":"safe-update-id","message":"safe update id"}'
+      samples: 1
+
+  outputs:
+    - name: es
+      match: out_es_id_key_update_ndjson
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      index: fluent-bit
+      suppress_type_name: on
+      id_key: doc_id
+      write_operation: update
+      retry_limit: 0
