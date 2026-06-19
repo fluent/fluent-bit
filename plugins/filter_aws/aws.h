@@ -23,8 +23,22 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
 
+#define FLB_FILTER_AWS_PARTITION_KEY                      "partition"
+#define FLB_FILTER_AWS_PARTITION_KEY_LEN                  9
+#define FLB_FILTER_AWS_DOMAIN_KEY                         "domain"
+#define FLB_FILTER_AWS_DOMAIN_KEY_LEN                     6
+#define FLB_FILTER_AWS_REGION_KEY                         "region"
+#define FLB_FILTER_AWS_REGION_KEY_LEN                     6
 #define FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY              "az"
 #define FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY_LEN          2
+#define FLB_FILTER_AWS_AVAILABILITY_ZONE_ID_KEY           "az_id"
+#define FLB_FILTER_AWS_AVAILABILITY_ZONE_ID_KEY_LEN       5
+#define FLB_FILTER_AWS_PLACEMENT_GROUP_KEY                "placement_group"
+#define FLB_FILTER_AWS_PLACEMENT_GROUP_KEY_LEN            15
+#define FLB_FILTER_AWS_PARTITION_NUMBER_KEY               "partition_number"
+#define FLB_FILTER_AWS_PARTITION_NUMBER_KEY_LEN           16
+#define FLB_FILTER_AWS_HOST_ID_KEY                        "host_id"
+#define FLB_FILTER_AWS_HOST_ID_KEY_LEN                    7
 #define FLB_FILTER_AWS_INSTANCE_ID_KEY                    "ec2_instance_id"
 #define FLB_FILTER_AWS_INSTANCE_ID_KEY_LEN                15
 #define FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY             "aws_entity_ec2_instance_id"
@@ -33,6 +47,10 @@
 #define FLB_FILTER_AWS_INSTANCE_TYPE_KEY_LEN              17
 #define FLB_FILTER_AWS_PRIVATE_IP_KEY                     "private_ip"
 #define FLB_FILTER_AWS_PRIVATE_IP_KEY_LEN                 10
+#define FLB_FILTER_AWS_PUBLIC_IP_KEY                      "public_ip"
+#define FLB_FILTER_AWS_PUBLIC_IP_KEY_LEN                  9
+#define FLB_FILTER_AWS_IPV6_KEY                           "ipv6"
+#define FLB_FILTER_AWS_IPV6_KEY_LEN                       4
 #define FLB_FILTER_AWS_VPC_ID_KEY                         "vpc_id"
 #define FLB_FILTER_AWS_VPC_ID_KEY_LEN                     6
 #define FLB_FILTER_AWS_AMI_ID_KEY                         "ami_id"
@@ -79,9 +97,37 @@ struct flb_filter_aws {
     /* Metadata fields
      * These are queried only once; ec2 metadata is assumed to be immutable
      */
+    flb_sds_t partition;
+    size_t partition_len;
+    int partition_include;
+
+    flb_sds_t domain;
+    size_t domain_len;
+    int domain_include;
+
+    flb_sds_t region;
+    size_t region_len;
+    int region_include;
+
     flb_sds_t availability_zone;
     size_t availability_zone_len;
     int availability_zone_include;
+
+    flb_sds_t availability_zone_id;
+    size_t availability_zone_id_len;
+    int availability_zone_id_include;
+
+    flb_sds_t placement_group;
+    size_t placement_group_len;
+    int placement_group_include;
+
+    flb_sds_t partition_number;
+    size_t partition_number_len;
+    int partition_number_include;
+
+    flb_sds_t host_id;
+    size_t host_id_len;
+    int host_id_include;
 
     flb_sds_t instance_id;
     size_t instance_id_len;
@@ -94,6 +140,14 @@ struct flb_filter_aws {
     flb_sds_t private_ip;
     size_t private_ip_len;
     int private_ip_include;
+
+    flb_sds_t public_ip;
+    size_t public_ip_len;
+    int public_ip_include;
+
+    flb_sds_t ipv6;
+    size_t ipv6_len;
+    int ipv6_include;
 
     flb_sds_t vpc_id;
     size_t vpc_id_len;
@@ -141,10 +195,19 @@ struct flb_filter_aws {
 
     /* metadata group contains information for potential retries and
      * if group was already fetched successfully */
+    struct flb_filter_aws_metadata_group group_partition;
+    struct flb_filter_aws_metadata_group group_domain;
+    struct flb_filter_aws_metadata_group group_region;
     struct flb_filter_aws_metadata_group group_az;
+    struct flb_filter_aws_metadata_group group_az_id;
+    struct flb_filter_aws_metadata_group group_placement_group;
+    struct flb_filter_aws_metadata_group group_partition_number;
+    struct flb_filter_aws_metadata_group group_host_id;
     struct flb_filter_aws_metadata_group group_instance_id;
     struct flb_filter_aws_metadata_group group_instance_type;
     struct flb_filter_aws_metadata_group group_private_ip;
+    struct flb_filter_aws_metadata_group group_public_ip;
+    struct flb_filter_aws_metadata_group group_ipv6;
     struct flb_filter_aws_metadata_group group_vpc_id;
     struct flb_filter_aws_metadata_group group_ami_id;
     struct flb_filter_aws_metadata_group group_account_id;
