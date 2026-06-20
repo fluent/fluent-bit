@@ -1,0 +1,22 @@
+---
+
+stream_processor:
+  - name: create_results
+    exec: CREATE STREAM results WITH (tag='500_error') AS SELECT * FROM STREAM:tail.0 WHERE http_status=500;
+
+  - name: select_results
+    exec: SELECT * FROM STREAM:results WHERE http_status=500;
+
+service:
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: tail
+      path: test_multiline.log
+      read_from_head: true
+
+  outputs:
+    - name: stdout
+      match: '*'
+      format: json_lines

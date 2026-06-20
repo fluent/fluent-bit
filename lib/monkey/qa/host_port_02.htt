@@ -1,0 +1,25 @@
+################################################################################
+# DESCRIPTION
+#	Validation for TCP port in the Host header
+#
+# AUTHOR
+#	Eduardo Silva <edsiper@gmail.com>	
+#
+# DATE
+#	Jun 15 2012
+#
+# COMMENTS
+#       It send an invalid host TCP port, length >= 6
+# 
+################################################################################
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT
+__HEAD / $HTTPVER
+__Host: $HOST:202001
+__
+_EXPECT . "HTTP/1.1 400 Bad Request"
+_WAIT 0
+END

@@ -1,0 +1,42 @@
+diff --git a/src/asmjit/core/cpuinfo.cpp b/src/asmjit/core/cpuinfo.cpp
+index 7bf7407..ae2160b 100644
+--- a/src/asmjit/core/cpuinfo.cpp
++++ b/src/asmjit/core/cpuinfo.cpp
+@@ -9,13 +9,13 @@
+ 
+ #if !defined(_WIN32)
+   #include <errno.h>
+-  #include <sys/utsname.h>
++  //#include <sys/utsname.h>
+   #include <unistd.h>
+ #endif
+ 
+ // Required by `getauxval()` on Linux.
+ #if defined(__linux__)
+-  #include <sys/auxv.h>
++  //#include <sys/auxv.h>
+ #endif
+ 
+ //! Required to detect CPU and features on Apple platforms.
+diff --git a/src/asmjit/core/globals.cpp b/src/asmjit/core/globals.cpp
+index 2bbd0c0..e6b69e5 100644
+--- a/src/asmjit/core/globals.cpp
++++ b/src/asmjit/core/globals.cpp
+@@ -105,6 +105,8 @@ ASMJIT_FAVOR_SIZE const char* DebugUtils::errorAsString(Error err) noexcept {
+ #endif
+ }
+ 
++extern "C" int os_printf(const char *message, ...);
++
+ // DebugUtils - Debug Output
+ // =========================
+ 
+@@ -112,7 +114,7 @@ ASMJIT_FAVOR_SIZE void DebugUtils::debugOutput(const char* str) noexcept {
+ #if defined(_WIN32)
+   ::OutputDebugStringA(str);
+ #else
+-  ::fputs(str, stderr);
++  os_printf(str);
+ #endif
+ }
+ 

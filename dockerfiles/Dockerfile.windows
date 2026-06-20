@@ -1,0 +1,259 @@
+# escape=`
+
+# This Dockerfile will only build on Docker for Windows.
+#
+# If you change dependencies etc here, please also check and update
+# the other Windows build resources:
+#
+# - DEVELOPER_GUIDE.md "Windows" section
+# - appveyor.yml
+# - .github/workflows/call-build-windows.yaml
+# - dockerfiles/Dockerfile.windows
+#
+
+ARG WINDOWS_VERSION=ltsc2025
+
+# Builder Image - Windows Server Core
+FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS builder-base
+
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+# Clean up any existing temp files and create fresh temp directory
+RUN Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\Windows\Temp\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    New-Item -ItemType Directory -Path $env:TEMP -Force -ErrorAction SilentlyContinue;
+
+# Install Visual Studio Build Tools 2019 (MSVS_VERSION=16) / 2022 (MSVS_VERSION=17)
+WORKDIR /local
+ARG MSVS_VERSION="17"
+ENV MSVS_BUILD_TOOLS_VERSION="$MSVS_VERSION" `
+    MSVS_BUILD_TOOLS_DOWNLOAD_URL="https://aka.ms/vs" `
+    MSVS_HOME="C:\BuildTools"
+
+RUN $msvs_build_tools_dist_name=\"vs_buildtools.exe\"; `
+    $msvs_build_tools_dist=\"${env:TMP}\${msvs_build_tools_dist_name}\"; `
+    $msvs_build_tools_channel=\"C:\local\VisualStudio.chman\"; `
+    $msvs_build_tools_dist_url=\"${env:MSVS_BUILD_TOOLS_DOWNLOAD_URL}/${env:MSVS_BUILD_TOOLS_VERSION}/release/${msvs_build_tools_dist_name}\"; `
+    $msvs_build_tools_channel_url=\"${env:MSVS_BUILD_TOOLS_DOWNLOAD_URL}/${env:MSVS_BUILD_TOOLS_VERSION}/release/channel\"; `
+    Write-Host \"Downloading Visual Studio Build Tools...\"; `
+    Write-Host \"${msvs_build_tools_dist_url} -> ${msvs_build_tools_dist}\"; `
+    Write-Host \"${msvs_build_tools_channel_url} -> ${msvs_build_tools_channel}\"; `
+    Invoke-WebRequest -OutFile \"${msvs_build_tools_dist}\" \"${msvs_build_tools_dist_url}\"; `
+    Invoke-WebRequest -OutFile \"${msvs_build_tools_channel}\" \"${msvs_build_tools_channel_url}\"; `
+    Write-Host \"Installing Visual Studio Build Tools into ${env:MSVS_HOME}...\"; `
+    $p = Start-Process \"${msvs_build_tools_dist}\" `
+      -ArgumentList '--quiet ', '--wait ', '--norestart ', '--nocache', `
+      \"--installPath ${env:MSVS_HOME}\", `
+      \"--channelUri ${msvs_build_tools_channel}\", `
+      \"--installChannelUri ${msvs_build_tools_channel}\", `
+      '--add Microsoft.VisualStudio.Workload.VCTools', `
+      '--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64', `
+      '--add Microsoft.VisualStudio.Component.Windows10SDK.19041' `
+      -NoNewWindow -Wait -PassThru; `
+    if (${p}.ExitCode -ne 0 -and ${p}.ExitCode -ne 3010) { `
+      throw \"Visual Studio Build Tools installer failed with exit code $(${p}.ExitCode)\" `
+    }; `
+    if (-not (Test-Path \"${env:MSVS_HOME}\VC\Auxiliary\Build\vcvars64.bat\")) { `
+      throw \"Visual Studio Build Tools installation is incomplete: ${env:MSVS_HOME}\VC\Auxiliary\Build\vcvars64.bat not found\" `
+    }; `
+    Remove-Item -Force \"${msvs_build_tools_dist}\"; `
+    Remove-Item -Path \"${msvs_build_tools_channel}\" -Force;
+
+ENV CMAKE_HOME="C:\cmake"
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
+RUN if ([System.Version] \"${env:CMAKE_VERSION}\" -ge [System.Version] \"3.20.0\") { `
+      $cmake_dist_base_name=\"cmake-${env:CMAKE_VERSION}-windows-x86_64\" `
+    } else { `
+      if ([System.Version] \"${env:CMAKE_VERSION}\" -ge [System.Version] \"3.6.0\") { `
+        $cmake_dist_base_name=\"cmake-${env:CMAKE_VERSION}-win64-x64\" `
+      } else { `
+        $cmake_dist_base_name=\"cmake-${env:CMAKE_VERSION}-win32-x86\" `
+      } `
+    }; `
+    $cmake_dist_name=\"${cmake_dist_base_name}.zip\"; `
+    $cmake_dist=\"${env:TMP}\${cmake_dist_name}\"; `
+    $cmake_download_url=\"${env:CMAKE_URL}/v${env:CMAKE_VERSION}/${cmake_dist_name}\"; `
+    Write-Host \"Downloading CMake...\"; `
+    Write-Host \"${cmake_download_url} -> ${cmake_dist}\"; `
+    Invoke-WebRequest -OutFile \"${cmake_dist}\" \"${cmake_download_url}\"; `
+    $cmake_temp_dir=\"${env:TMP}\${cmake_dist_base_name}\"; `
+    Write-Host \"Extracting CMake...\"; `
+    Write-Host \"${cmake_dist} -> ${cmake_temp_dir}\"; `
+    Expand-Archive \"${cmake_dist}\" -Destination \"${env:TMP}\"; `
+    Remove-Item -Force \"${cmake_dist}\"; `
+    Write-Host \"Moving CMake...\"; `
+    Write-Host \"${cmake_temp_dir} -> ${env:CMAKE_HOME}\"; `
+    [System.IO.Directory]::Move(\"${cmake_temp_dir}\", \"${env:CMAKE_HOME}\"); `
+    $env:PATH=\"${env:PATH};${env:CMAKE_HOME}\bin\"; `
+    Write-Host \"Setting PATH...\"; `
+    Write-Host \"${env:PATH}\"; `
+    [Environment]::SetEnvironmentVariable(\"PATH\", \"${env:PATH}\", [EnvironmentVariableTarget]::Machine);
+
+ENV NINJA_HOME="C:\ninja"
+ARG NINJA_VERSION="1.13.2"
+ARG NINJA_URL="https://github.com/ninja-build/ninja/releases/download"
+
+RUN $ninja_dist_name=\"ninja-win.zip\"; `
+    $ninja_dist=\"${env:TMP}\${ninja_dist_name}\"; `
+    $ninja_download_url=\"${env:NINJA_URL}/v${env:NINJA_VERSION}/${ninja_dist_name}\"; `
+    Write-Host \"Downloading Ninja...\"; `
+    Write-Host \"${ninja_download_url} -> ${ninja_dist}\"; `
+    Invoke-WebRequest -OutFile \"${ninja_dist}\" \"${ninja_download_url}\"; `
+    New-Item -Path \"${env:NINJA_HOME}\" -ItemType \"directory\"; `
+    Write-Host \"Extracting Ninja...\"; `
+    Write-Host \"${ninja_dist} -> ${env:NINJA_HOME}\"; `
+    Expand-Archive \"${ninja_dist}\" -Destination \"${env:NINJA_HOME}\"; `
+    Remove-Item -Force \"${ninja_dist}\"; `
+    $env:PATH=\"${env:PATH};${env:NINJA_HOME}\"; `
+    Write-Host \"Setting PATH...\"; `
+    Write-Host \"${env:PATH}\"; `
+    [Environment]::SetEnvironmentVariable(\"PATH\", \"${env:PATH}\", [EnvironmentVariableTarget]::Machine);
+
+ENV WIN_FLEX_BISON_VERSION="2.5.22" `
+    WIN_FLEX_BISON_HOME="C:\WinFlexBison" `
+    WIN_FLEX_BISON_DOWNLOAD_URL="https://github.com/lexxmark/winflexbison/releases/download"
+
+RUN $win_flex_bison_dist_base_name=\"win_flex_bison-${env:WIN_FLEX_BISON_VERSION}\"; `
+    $win_flex_bison_dist_name=\"${win_flex_bison_dist_base_name}.zip\"; `
+    $win_flex_bison_dist=\"${env:TMP}\${win_flex_bison_dist_name}\"; `
+    $win_flex_bison_url=\"${env:WIN_FLEX_BISON_DOWNLOAD_URL}/v${env:WIN_FLEX_BISON_VERSION}/${win_flex_bison_dist_name}\"; `
+    Write-Host \"Downloading WinFlexBison...\"; `
+    Write-Host \"${win_flex_bison_url} -> ${win_flex_bison_dist}\"; `
+    Invoke-WebRequest -OutFile \"${win_flex_bison_dist}\" \"${win_flex_bison_url}\"; `
+    Write-Host \"Extracting WinFlexBison...\"; `
+    Write-Host \"${win_flex_bison_dist} -> ${env:WIN_FLEX_BISON_HOME}\"; `
+    Expand-Archive \"${win_flex_bison_dist}\" -Destination \"${env:WIN_FLEX_BISON_HOME}\"; `
+    Remove-Item -Force \"${win_flex_bison_dist}\"; `
+    Write-Host \"Copying...\"; `
+    Write-Host \"${env:WIN_FLEX_BISON_HOME}\win_bison.exe -> ${env:WIN_FLEX_BISON_HOME}\bison.exe\"; `
+    Copy-Item -Path \"${env:WIN_FLEX_BISON_HOME}\win_bison.exe\" \"${env:WIN_FLEX_BISON_HOME}\bison.exe\"; `
+    Write-Host \"Copying...\"; `
+    Write-Host \"${env:WIN_FLEX_BISON_HOME}\win_flex.exe -> ${env:WIN_FLEX_BISON_HOME}\flex.exe\"; `
+    Copy-Item -Path \"${env:WIN_FLEX_BISON_HOME}\win_flex.exe\" \"${env:WIN_FLEX_BISON_HOME}\flex.exe\"; `
+    $env:PATH=\"${env:PATH};${env:WIN_FLEX_BISON_HOME}\"; `
+    Write-Host \"Setting PATH...\"; `
+    Write-Host \"${env:PATH}\"; `
+    [Environment]::SetEnvironmentVariable(\"PATH\", \"${env:PATH}\", [EnvironmentVariableTarget]::Machine);
+
+# https://github.com/microsoft/vcpkg/blob/2025.10.17/scripts/bootstrap.ps1
+ENV VCPKG_VERSION=2025.10.17 `
+    VCPKG_DOWNLOAD_URL="https://github.com/microsoft/vcpkg/archive/refs/tags" `
+    VCPKG_DISABLE_METRICS="ON" `
+    VCPKG_ROOT=/dev/vcpkg
+
+WORKDIR /dev
+
+RUN $vcpkg_dist_base_name=\"vcpkg-${env:VCPKG_VERSION}\"; `
+    $vcpkg_dist=\"${env:TMP}\${vcpkg_dist_base_name}.zip\"; `
+    $vcpkg_url=\"${env:VCPKG_DOWNLOAD_URL}/${env:VCPKG_VERSION}.zip\"; `
+    Write-Host \"Downloading vcpkg...\"; `
+    Write-Host \"${vcpkg_url} -> ${vcpkg_dist}\"; `
+    Invoke-WebRequest -OutFile \"${vcpkg_dist}\" \"${vcpkg_url}\"; `
+    $vcpkg_temp_dir=\"${env:TMP}\${vcpkg_dist_base_name}\"; `
+    Write-Host \"Extracting vcpkg...\"; `
+    Write-Host \"${vcpkg_dist} -> ${vcpkg_temp_dir}\"; `
+    Expand-Archive \"${vcpkg_dist}\" -Destination \"${env:TMP}\"; `
+    Remove-Item -Force \"${vcpkg_dist}\"; `
+    $vcpkg_home_dir=\"${env:VCPKG_ROOT}\" -replace \"/\", \"\\\"; `
+    $vcpkg_home_dir=\"C:${vcpkg_home_dir}\"; `
+    Write-Host \"Moving vcpkg...\"; `
+    Write-Host \"${vcpkg_temp_dir} -> ${vcpkg_home_dir}\"; `
+    [System.IO.Directory]::Move(\"${vcpkg_temp_dir}\", \"${vcpkg_home_dir}\"); `
+    $env:PATH=\"${env:PATH};${vcpkg_home_dir}\"; `
+    Write-Host \"Setting PATH...\"; `
+    Write-Host \"${env:PATH}\"; `
+    [Environment]::SetEnvironmentVariable(\"PATH\", \"${env:PATH}\", [EnvironmentVariableTarget]::Machine); `
+    Write-Host \"Bootstrapping vcpkg...\"; `
+    & \"${vcpkg_home_dir}\bootstrap-vcpkg.bat\";
+
+# Ensure we only attempt to build release and static linking
+ENV VCPKG_BUILD_TYPE=release `
+    VCPKG_LIBRARY_LINKAGE=static `
+    VCPKG_VISUAL_STUDIO_PATH="C:\BuildTools"
+
+# Install dependencies and clean temporary files to save space
+RUN vcpkg install --recurse openssl --triplet x64-windows-static; `
+    Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\dev\vcpkg\buildtrees -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\dev\vcpkg\downloads\tools\* -Recurse -Force -ErrorAction SilentlyContinue;
+
+RUN vcpkg install --recurse libyaml --triplet x64-windows-static; `
+    Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\dev\vcpkg\buildtrees -Recurse -Force -ErrorAction SilentlyContinue;
+
+# Final vcpkg cleanup to remove all build artifacts and save space
+RUN Remove-Item -Path C:\dev\vcpkg\downloads -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\dev\vcpkg\buildtrees -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue; `
+    Remove-Item -Path C:\Windows\Temp\* -Recurse -Force -ErrorAction SilentlyContinue;
+
+FROM builder-base AS builder
+
+# Build Fluent Bit from source - context must be the root of the Git repo
+WORKDIR /src/build
+COPY . /src/
+
+ARG BUILD_PARALLEL=1
+SHELL ["cmd", "/S", "/C"]
+RUN call "%MSVS_HOME%\VC\Auxiliary\Build\vcvars64.bat" && `
+    cmake -G "Ninja" `
+      -DOPENSSL_ROOT_DIR='C:\dev\vcpkg\packages\openssl_x64-windows-static' `
+      -DFLB_LIBYAML_DIR='C:\dev\vcpkg\packages\libyaml_x64-windows-static' `
+      -DFLB_SIMD=On `
+      -DCMAKE_BUILD_TYPE=Release `
+      -DFLB_SHARED_LIB=Off `
+      -DFLB_EXAMPLES=Off `
+      -DFLB_DEBUG=Off `
+      -DFLB_RELEASE=On `
+      ..\ && `
+    cmake --build . -j "%BUILD_PARALLEL%"
+
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+WORKDIR /fluent-bit/bin
+# Set up config files and binaries in single /fluent-bit hierarchy for easy copy in later stage
+RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
+    Copy-Item -Path /src/conf/fluent-bit-win32.conf /fluent-bit/etc/fluent-bit.conf; `
+    Copy-Item -Path /src/conf/parsers.conf /fluent-bit/etc/; `
+    Copy-Item -Path /src/conf/parsers_ambassador.conf /fluent-bit/etc/; `
+    Copy-Item -Path /src/conf/parsers_java.conf /fluent-bit/etc/; `
+    Copy-Item -Path /src/conf/parsers_extra.conf /fluent-bit/etc/; `
+    Copy-Item -Path /src/conf/parsers_openstack.conf /fluent-bit/etc/; `
+    Copy-Item -Path /src/conf/parsers_cinder.conf /fluent-bit/etc/; `
+    Copy-Item -Path /src/conf/plugins.conf /fluent-bit/etc/; `
+    Copy-Item -Path /src/build/bin/fluent-bit.exe /fluent-bit/bin/;
+
+#
+# Runtime Image - Windows Server Core
+#
+FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS runtime
+
+ARG FLUENTBIT_VERSION=master
+ARG IMAGE_CREATE_DATE
+ARG IMAGE_SOURCE_REVISION
+
+# Metadata as defined in OCI image spec annotations
+# https://github.com/opencontainers/image-spec/blob/master/annotations.md
+LABEL org.opencontainers.image.title="Fluent Bit" `
+    org.opencontainers.image.description="Fluent Bit is an open source and multi-platform Log Processor and Forwarder which allows you to collect data/logs from different sources, unify and send them to multiple destinations. It's fully compatible with Docker and Kubernetes environments." `
+    org.opencontainers.image.created=$IMAGE_CREATE_DATE `
+    org.opencontainers.image.version=$FLUENTBIT_VERSION `
+    org.opencontainers.image.authors="Eduardo Silva <eduardo.silva@chronosphere.io>" `
+    org.opencontainers.image.url="https://hub.docker.com/r/fluent/fluent-bit" `
+    org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" `
+    org.opencontainers.image.vendor="Fluent Organization" `
+    org.opencontainers.image.licenses="Apache-2.0" `
+    org.opencontainers.image.source="https://github.com/fluent/fluent-bit" `
+    org.opencontainers.image.revision=$IMAGE_SOURCE_REVISION
+
+# Copy only the built artifacts from builder stage
+COPY --from=builder /fluent-bit /fluent-bit
+
+RUN setx /M PATH "%PATH%;C:\fluent-bit\bin"
+
+ENTRYPOINT [ "fluent-bit.exe" ]
+# Hadolint gets confused by Windows it seems
+# hadolint ignore=DL3025
+CMD [ "fluent-bit.exe", "-c", "/fluent-bit/etc/fluent-bit.conf" ]

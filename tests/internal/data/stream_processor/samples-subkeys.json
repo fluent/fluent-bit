@@ -1,0 +1,9 @@
+{"id": 0, "map": {"sub1": {"sub2": {"color": "blue"}}}}
+{"id": 1, "map": {"sub1": {"sub2": {"color": "red"}, "sub4": "circle"}}}
+{"id": 2, "map": {"sub1": {"sub2": 123}}}
+{"id": 3, "map": {"sub1": {"sub2": "123", "stype": "a"}, "mtype": 0}}
+{"id": 4, "map": {"color": "blue"}}
+{"id": 5, "map": {"sub1": {"sub3": "100", "stype": "a", "sub4": "circle"}, "mtype": 0}}
+{"id": 6, "map": {"sub1": {"sub3": "0.50", "stype": "b", "sub4": "rectangle"}, "mtype": 1}}
+{"id": 7, "map": {"sub1": {"sub3": "5.50", "stype": "a", "sub4": "triangle"}, "mtype": 0}}
+{"id": 8, "map": {"sub1": {"sub3": "10.50", "stype": "b", "sub4": "rectangle"}, "mtype": 2}}

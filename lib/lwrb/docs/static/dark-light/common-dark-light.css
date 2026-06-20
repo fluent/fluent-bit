@@ -1,0 +1,143 @@
+/**
+ * @license
+ * Copyright 2019 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+:root {
+  --heading-color: red;
+  --duration: 0.5s;
+  --timing: ease;
+}
+
+*,
+::before,
+::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  transition:
+    color var(--duration) var(--timing),
+    background-color var(--duration) var(--timing);
+  font-family: sans-serif;
+  font-size: 12pt;
+  background-color: var(--background-color);
+  color: var(--text-color);
+  display: flex;
+  justify-content: center;
+}
+
+main {
+  margin: 1rem;
+  max-width: 30rem;
+  position: relative;
+}
+
+h1 {
+  color: var(--heading-color);
+  text-shadow: 0.1rem 0.1rem 0.1rem var(--shadow-color);
+  transition: text-shadow var(--duration) var(--timing);
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  transition: filter var(--duration) var(--timing);
+}
+
+p {
+  line-height: 1.5;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+fieldset {
+  border: solid 0.1rem;
+  box-shadow: 0.1rem 0.1rem 0.1rem var(--shadow-color);
+  transition: box-shadow var(--duration) var(--timing);
+}
+
+div {
+  padding: 0.5rem;
+}
+
+aside {
+  position: absolute;
+  right: 0;
+  padding: 0.5rem;
+}
+
+aside:nth-of-type(1) {
+  top: 0;
+}
+
+aside:nth-of-type(2) {
+  top: 3rem;
+}
+
+aside:nth-of-type(3) {
+  top: 7rem;
+}
+
+aside:nth-of-type(4) {
+  top: 12rem;
+}
+
+#content select,
+#content button,
+#content input[type="text"],
+#content input[type="search"] {
+  width: 15rem;
+}
+
+dark-mode-toggle {
+  --dark-mode-toggle-remember-icon-checked: url("checked.svg");
+  --dark-mode-toggle-remember-icon-unchecked: url("unchecked.svg");
+  --dark-mode-toggle-remember-font: 0.75rem "Helvetica";
+  --dark-mode-toggle-legend-font: bold 0.85rem "Helvetica";
+  --dark-mode-toggle-label-font: 0.85rem "Helvetica";
+  --dark-mode-toggle-color: var(--text-color);
+  --dark-mode-toggle-background-color: none;
+
+  margin-bottom: 1.5rem;
+}
+
+#dark-mode-toggle-1 {
+  --dark-mode-toggle-dark-icon: url("sun.png");
+  --dark-mode-toggle-light-icon: url("moon.png");
+}
+
+#dark-mode-toggle-2 {
+  --dark-mode-toggle-dark-icon: url("sun.svg");
+  --dark-mode-toggle-light-icon: url("moon.svg");
+  --dark-mode-toggle-icon-size: 2rem;
+  --dark-mode-toggle-icon-filter: invert(100%);
+}
+
+#dark-mode-toggle-3,
+#dark-mode-toggle-4 {
+  --dark-mode-toggle-dark-icon: url("moon.png");
+  --dark-mode-toggle-light-icon: url("sun.png");
+}
+
+#dark-mode-toggle-3 {
+  --dark-mode-toggle-remember-filter: invert(100%);
+}
+
+#dark-mode-toggle-4 {
+  --dark-mode-toggle-active-mode-background-color: var(--accent-color);
+  --dark-mode-toggle-remember-filter: invert(100%);
+}

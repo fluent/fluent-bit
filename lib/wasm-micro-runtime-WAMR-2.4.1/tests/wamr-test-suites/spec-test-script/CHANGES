@@ -1,0 +1,5 @@
+####################
+2021-9-8
+
+Modify runtest.py from https://github.com/kanaka/wac/blob/master/runtest.py
+to enable testing spec cases with more checks and support more runtime modes.

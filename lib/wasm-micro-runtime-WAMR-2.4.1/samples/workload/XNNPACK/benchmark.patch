@@ -1,0 +1,14 @@
+diff --git include/benchmark/benchmark.h include/benchmark/benchmark.h
+index 9b54802..baa5938 100755
+--- include/benchmark/benchmark.h
++++ include/benchmark/benchmark.h
+@@ -364,7 +364,9 @@ template <class Tp>
+ inline BENCHMARK_ALWAYS_INLINE void DoNotOptimize(Tp const& value) {
+   internal::UseCharPointer(&reinterpret_cast<char const volatile&>(value));
+ }
++
+ // FIXME Add ClobberMemory() for non-gnu and non-msvc compilers
++inline BENCHMARK_ALWAYS_INLINE void ClobberMemory() { }
+ #endif
+ 
+ // This class is used for user-defined counters.

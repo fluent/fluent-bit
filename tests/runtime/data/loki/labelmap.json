@@ -1,0 +1,10 @@
+{
+  "kubernetes": {
+    "container_name": "container",
+    "pod_name": "pod",
+    "namespace_name": "namespace",
+    "labels" : {
+        "team": "team"
+    }
+  }
+}

@@ -1,0 +1,127 @@
+.TH Monkey 1 "Jul 01, 2015"
+.\" Please update the above date whenever this man page is modified.
+.SH NAME
+monkey \- Monkey HTTP Server
+.SH SYNOPSIS
+.B monkey [options]
+.SH DESCRIPTION
+\fBmonkey\fP is fast and scalable web server for Linux, OSX and FreeBSD.
+This manual page only lists the command line arguments available. For further and
+more detailed information regarding the program configuration see the Monkey manual,
+found at http://monkey-project.com/documentation .
+
+.SH OPTIONS
+This command will launch the Monkey webserver. It accepts the
+following options:
+.TP 8
+
+.B \-c, --configdir=DIR
+Allows to specify an optional configuration directory where the required
+configuration files by Monkey are located. It's expected that under this directory
+exists the files: monkey.conf, monkey.mime, plugins.load and the plugins/ directory.
+.TP 8
+
+.B \-s, --serverconf=FILE
+Overrides the default path of the 'monkey.conf' configuration file.
+.TP 8
+
+.B \-d, --daemon
+Launches the server as a daemon (background process). The default behaviour is to
+stay attached to the controlling terminal.
+.TP 8
+
+.B \-I, --pid-file=FILE
+Overrides the default path for the 'pid' file.
+.TP 8
+
+.B \-p, --port=PORT
+Specify a single listener TCP port, this option overrides the content of the
+configuration file.
+.TP 8
+
+.B \-o, --one-shot=DIR
+The one-shot mode and directory path associated, makes to serve that directory
+content as the document root of the default virtual host.
+.TP 8
+
+.B \-t, --transport=TRANSPORT
+Specify a transport layer plugin. This option overrides the configuration file
+and allows just one plugin, either 'liana' for plain sockets or 'tls' for SSL/TLS
+support (just if 'tls' plugin was compiled and available).
+.TP 8
+
+.B \-w, --workers=N
+Specify the number of worker threads that Monkey will spawn upon start. Each worker
+thread is capable to handle several connections, is suggested to spawn a worker per
+CPU core available. By default Monkey set this value to zero (--workers=0) which
+let's Monkey core to detect the number of CPU core available and spawn one worker
+per core.
+.TP 8
+
+.B \-m, --mimes-conf-file=FILE
+Specify a configuration file that holds the mime types available.
+.TP 8
+
+.B \-l, --plugins-load-conf-file=FILE
+Specify a configuration file that holds the list of dynamic plugins to load.
+.TP 8
+
+.B \-S, --sites-conf-dir=DIR
+Specify the directory path where the files that defines the virtual hosts are
+available.
+.TP 8
+
+.B \-P, --plugins-conf-dir=DIR
+Specify the directory path where the plugins can locate their configuration files.
+.TP 8
+
+.B \-b, --balancing-mode
+This option enable the OLD balancing mode when receiving connections. It means that
+for every TCP connection that arrives, the Monkey Scheduler will assign the
+connection to the least-busy worker thread.
+
+The default and new mechanism is based on the shared TCP sockets implementation,
+which let the OS Kernel to decide to which worker thread assign the new connection.
+.TP 8
+
+.B \-T, --allow-shared-sockets
+When using shared TCP sockets (no --balancing-mode), multiple instances of Monkey
+can be started. Monkey will detect if the TCP port is in use by another process,
+despite the address can be shared, Monkey will notify this and abort. This option
+let Monkey know that despites the address is shared and in-use, continue anyways.
+.TP 8
+
+.B \-b, --build
+Print build information and exit. It prints to the standard output the configure
+options, default paths, built-in plugins and others.
+.TP 8
+
+.B \-v, --version
+Prints Monkey's version and exit.
+.TP 8
+
+.B \-h, --help
+Prints this help.
+.TP 8
+
+.SH SIGNALS
+The following signals are supported by Monkey:
+.TP 8
+\fBSIGTERM\fR, Exits
+.TP 8
+\fBSIGINT\fR,  Exits
+.TP 8
+\fBSIGHUP\fR,  Exits
+.TP 8
+\fBSIGBUS\fR,  Print invalid address
+.TP 8
+\fBSIGSEGV\fR, Print invalid address
+
+.SH BUGS
+.SS Bug reports
+In general, send bug reports to the bug report mailing list at <monkey@lists.monkey-project.com>. You are requested to use a descriptive subject for your email message, perhaps parts of the error message.
+
+.SH AUTHOR
+Eduardo Silva <eduardo@monkey.io> and the rest of the Monkey Project team.
+.PP
+This manpage is maintained by the Monkey HTTP Daemon Project team.

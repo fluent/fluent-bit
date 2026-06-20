@@ -1,0 +1,146 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: compilation on nuttx
+
+on:
+  # will be triggered on PR events
+  pull_request:
+    types:
+      - opened
+      - synchronize
+    paths:
+      - ".github/workflows/compilation_on_nuttx.yml"
+      - "build-scripts/**"
+      - "core/**"
+      - "!core/deps/**"
+      - "product-mini/**"
+      - "samples/**"
+      - "!samples/workload/**"
+      - "tests/wamr-test-suites/**"
+      - "wamr-compiler/**"
+  # will be triggered on push events
+  push:
+    branches:
+      - main
+      - "dev/**"
+    paths:
+      - ".github/workflows/compilation_on_nuttx.yml"
+      - "build-scripts/**"
+      - "core/**"
+      - "!core/deps/**"
+      - "product-mini/**"
+      - "samples/**"
+      - "!samples/workload/**"
+      - "tests/wamr-test-suites/**"
+      - "wamr-compiler/**"
+  # allow to be triggered manually
+  workflow_dispatch:
+
+# Cancel any in-flight jobs for the same PR/branch so there's only one active
+# at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WASI_SDK_PATH: "/opt/wasi-sdk"
+
+permissions:
+  contents: read
+
+jobs:
+  build_iwasm_on_nuttx:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/apache/nuttx/apache-nuttx-ci-linux@sha256:d9261eacf6c6ebe656c571757751c803e8f04c3ae9b820320a5ea5dd57b7205a
+
+    strategy:
+      matrix:
+        nuttx_board_config: [
+          # x64
+          "boards/sim/sim/sim/configs/nsh",
+          # cortex-m0
+          "boards/arm/rp2040/raspberrypi-pico/configs/nsh",
+          # cortex-m7
+          "boards/arm/stm32h7/nucleo-h743zi/configs/nsh",
+          # riscv32gc
+          "boards/risc-v/qemu-rv/rv-virt/configs/nsh",
+          # riscv64gc
+          "boards/risc-v/qemu-rv/rv-virt/configs/nsh64",
+          # arm64
+          "boards/arm64/qemu/qemu-armv8a/configs/nsh",
+        ]
+
+        wamr_config_option:
+          - "CONFIG_INTERPRETERS_WAMR_AOT"
+          - "CONFIG_INTERPRETERS_WAMR_FAST"
+          - "CONFIG_INTERPRETERS_WAMR_CLASSIC"
+          - "CONFIG_INTERPRETERS_WAMR_AOT CONFIG_INTERPRETERS_WAMR_FAST"
+          - "CONFIG_INTERPRETERS_WAMR_AOT CONFIG_INTERPRETERS_WAMR_FAST CONFIG_INTERPRETERS_WAMR_LIBC_WASI"
+          - "CONFIG_INTERPRETERS_WAMR_AOT CONFIG_INTERPRETERS_WAMR_FAST CONFIG_INTERPRETERS_WAMR_LIBC_BUILTIN"
+          - "CONFIG_INTERPRETERS_WAMR_AOT CONFIG_INTERPRETERS_WAMR_CLASSIC"
+          - "CONFIG_INTERPRETERS_WAMR_AOT CONFIG_INTERPRETERS_WAMR_CLASSIC CONFIG_INTERPRETERS_WAMR_LIBC_WASI"
+          - "CONFIG_INTERPRETERS_WAMR_AOT CONFIG_INTERPRETERS_WAMR_CLASSIC CONFIG_INTERPRETERS_WAMR_LIBC_WASI"
+
+    steps:
+      - name: Checkout NuttX
+        uses: actions/checkout@v4
+        with:
+          repository: apache/nuttx
+          ref: releases/12.9
+          path: nuttx
+
+      - name: Checkout NuttX Apps
+        uses: actions/checkout@v4
+        with:
+          repository: apache/nuttx-apps
+          ref: releases/12.9
+          path: apps
+
+      - name: Checkout WAMR
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          path: apps/interpreters/wamr/wamr
+
+      - name: Configure WAMR
+        working-directory: nuttx
+        run: |
+          tools/configure.sh ${{ matrix.nuttx_board_config }}
+          kconfig-tweak --enable CONFIG_PSEUDOFS_SOFTLINKS
+          kconfig-tweak --enable CONFIG_INTERPRETERS_WAMR
+          kconfig-tweak --enable CONFIG_INTERPRETERS_IWASM_TASK
+          kconfig-tweak --set-val CONFIG_INTERPRETERS_WAMR_PRIORITY 100
+          kconfig-tweak --set-val CONFIG_INTERPRETERS_WAMR_STACKSIZE 8192
+          for x in ${{ matrix.wamr_config_option }}; do
+            kconfig-tweak --enable $x
+          done
+
+      - name: Build
+        working-directory: nuttx
+        run: make -j$(nproc) EXTRAFLAGS=-Werror
+
+      - name: Checkout Bloaty
+        uses: actions/checkout@v4
+        with:
+          repository: google/bloaty
+          submodules: recursive
+          path: bloaty
+          ref: 34f4a66559ad4938c1e629e9b5f54630b2b4d7b0
+
+      - name: Build Bloaty
+        run: |
+          cmake -Bbuild -GNinja bloaty
+          cmake --build build
+
+      - name: Size Report
+        run: |
+          echo "Build target: ${{ matrix.nuttx_board_config }}"
+          echo "WAMR build config: ${{ matrix.wamr_config_option }}"
+          echo "WAMR size:"
+          build/bloaty -d compileunits --source-filter wamr nuttx/nuttx
+          echo "libc-builtin size (if enabled):"
+          build/bloaty -d compileunits --source-filter libc-builtin nuttx/nuttx
+          echo "libc-wasi size (if enabled):"
+          build/bloaty -d compileunits --source-filter libc-wasi nuttx/nuttx

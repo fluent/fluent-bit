@@ -1,0 +1,296 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: compilation on SGX
+
+on:
+  # will be triggered on PR events
+  pull_request:
+    types:
+      - opened
+      - synchronize
+    paths:
+      - ".github/workflows/build_llvm_libraries.yml"
+      - ".github/workflows/compilation_on_sgx.yml"
+      - "build-scripts/**"
+      - "core/**"
+      - "!core/deps/**"
+      - "product-mini/**"
+      - "samples/**"
+      - "!samples/workload/**"
+      - "tests/wamr-test-suites/**"
+      - "wamr-compiler/**"
+  # will be triggered on push events
+  push:
+    branches:
+      - main
+      - "dev/**"
+    paths:
+      - ".github/workflows/build_llvm_libraries.yml"
+      - ".github/workflows/compilation_on_sgx.yml"
+      - "build-scripts/**"
+      - "core/**"
+      - "!core/deps/**"
+      - "product-mini/**"
+      - "samples/**"
+      - "!samples/workload/**"
+      - "tests/wamr-test-suites/**"
+      - "wamr-compiler/**"
+  # allow to be triggered manually
+  workflow_dispatch:
+
+# Cancel any in-flight jobs for the same PR/branch so there's only one active
+# at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # ref types enabled in wamrc by default, so we need to enable it for iwasm in AOT mode
+  AOT_BUILD_OPTIONS: "-DWAMR_BUILD_AOT=1 -DWAMR_BUILD_FAST_INTERP=0 -DWAMR_BUILD_INTERP=0 -DWAMR_BUILD_JIT=0 -DWAMR_BUILD_LAZY_JIT=0 -DWAMR_BUILD_REF_TYPES=1"
+  CLASSIC_INTERP_BUILD_OPTIONS: "-DWAMR_BUILD_AOT=0 -DWAMR_BUILD_FAST_INTERP=0 -DWAMR_BUILD_INTERP=1 -DWAMR_BUILD_JIT=0 -DWAMR_BUILD_LAZY_JIT=0"
+  FAST_INTERP_BUILD_OPTIONS: "-DWAMR_BUILD_AOT=0 -DWAMR_BUILD_FAST_INTERP=1 -DWAMR_BUILD_INTERP=1 -DWAMR_BUILD_JIT=0 -DWAMR_BUILD_LAZY_JIT=0 -DWAMR_BUILD_SIMD=0"
+  FAST_JIT_BUILD_OPTIONS: "-DWAMR_BUILD_AOT=1 -DWAMR_BUILD_FAST_INTERP=0 -DWAMR_BUILD_INTERP=1 -DWAMR_BUILD_FAST_JIT=1 -DWAMR_BUILD_JIT=0 -DWAMR_BUILD_LAZY_JIT=1"
+  LLVM_LAZY_JIT_BUILD_OPTIONS: "-DWAMR_BUILD_AOT=1 -DWAMR_BUILD_FAST_INTERP=0 -DWAMR_BUILD_INTERP=0 -DWAMR_BUILD_JIT=1 -DWAMR_BUILD_LAZY_JIT=1"
+  LLVM_EAGER_JIT_BUILD_OPTIONS: "-DWAMR_BUILD_AOT=1 -DWAMR_BUILD_FAST_INTERP=0 -DWAMR_BUILD_INTERP=0 -DWAMR_BUILD_JIT=1 -DWAMR_BUILD_LAZY_JIT=0"
+  # For Spec Test
+  DEFAULT_TEST_OPTIONS: "-s spec -x -p -b"
+  SIMD_TEST_OPTIONS: "-s spec -x -p -b -S"
+  XIP_TEST_OPTIONS: "-s spec -x -p -b -X"
+
+permissions:
+  contents: read
+
+jobs:
+  build_llvm_libraries:
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/build_llvm_libraries.yml
+    with:
+      os: ubuntu-22.04
+      arch: "X86"
+
+  build_iwasm:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        make_options_run_mode: [
+            # Running modes supported
+            $AOT_BUILD_OPTIONS,
+            $CLASSIC_INTERP_BUILD_OPTIONS,
+            $FAST_INTERP_BUILD_OPTIONS,
+            $FAST_JIT_BUILD_OPTIONS,
+            # Running modes unsupported
+            #$LLVM_LAZY_JIT_BUILD_OPTIONS,
+            #$LLVM_EAGER_JIT_BUILD_OPTIONS,
+          ]
+        make_options_feature: [
+            # Features
+            "-DWAMR_BUILD_CUSTOM_NAME_SECTION=1",
+            # doesn't support
+            # "-DWAMR_BUILD_DEBUG_AOT=1",
+            # "-DWAMR_BUILD_DEBUG_INTERP=1",
+            "-DWAMR_BUILD_DUMP_CALL_STACK=1",
+            "-DWAMR_BUILD_LIB_PTHREAD=1",
+            "-DWAMR_BUILD_LIB_WASI_THREADS=1",
+            "-DWAMR_BUILD_LOAD_CUSTOM_SECTION=1",
+            "-DWAMR_BUILD_MINI_LOADER=1",
+            "-DWAMR_BUILD_MEMORY_PROFILING=1",
+            "-DWAMR_BUILD_MULTI_MODULE=1",
+            "-DWAMR_BUILD_PERF_PROFILING=1",
+            "-DWAMR_BUILD_REF_TYPES=1",
+            "-DWAMR_BUILD_EXTENDED_CONST_EXPR=1",
+            # doesn't support
+            "-DWAMR_BUILD_SIMD=0",
+            "-DWAMR_BUILD_TAIL_CALL=1",
+            "-DWAMR_DISABLE_HW_BOUND_CHECK=1",
+            "-DWAMR_BUILD_SGX_IPFS=1",
+          ]
+        os: [ubuntu-22.04]
+        platform: [linux-sgx]
+        exclude:
+          # incompatible mode and feature
+          # MINI_LOADER only on INTERP mode
+          - make_options_run_mode: $AOT_BUILD_OPTIONS
+            make_options_feature: "-DWAMR_BUILD_MINI_LOADER=1"
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install SGX SDK and necessary libraries
+        uses: ./.github/actions/install-linux-sgx
+        with:
+          os: ${{ matrix.os }}
+
+      - name: Build iwasm
+        run: |
+          mkdir build && cd build
+          cmake .. ${{ matrix.make_options_run_mode }} ${{ matrix.make_options_feature }}
+          cmake --build . --config Release --parallel 4
+          cd ../enclave-sample
+          make
+        working-directory: product-mini/platforms/${{ matrix.platform }}
+
+  run_samples_file:
+    needs: [build_iwasm, build_llvm_libraries]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        iwasm_make_options_run_mode: [
+            # Running modes supported
+            $AOT_BUILD_OPTIONS,
+            $CLASSIC_INTERP_BUILD_OPTIONS,
+            $FAST_INTERP_BUILD_OPTIONS,
+            $FAST_JIT_BUILD_OPTIONS,
+            # Running modes unsupported
+            #$LLVM_LAZY_JIT_BUILD_OPTIONS,
+            #$LLVM_EAGER_JIT_BUILD_OPTIONS,
+          ]
+        os: [ubuntu-22.04]
+        iwasm_make_options_feature: [
+            # Features to be tested: IPFS
+            "-DWAMR_BUILD_SGX_IPFS=1",
+          ]
+        platform: [linux-sgx]
+        include:
+          - os: ubuntu-22.04
+            llvm_cache_key: ${{ needs.build_llvm_libraries.outputs.cache_key }}
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install-wasi-sdk-wabt
+        uses: ./.github/actions/install-wasi-sdk-wabt
+        with:
+          os: ${{ matrix.os }}
+
+      - name: install SGX SDK and necessary libraries
+        uses: ./.github/actions/install-linux-sgx
+        with:
+          os: ${{ matrix.os }}
+
+      - name: Build iwasm for testing samples
+        run: |
+          mkdir build && cd build
+          cmake .. ${{ matrix.iwasm_make_options_run_mode }} ${{ matrix.iwasm_make_options_feature }}
+          cmake --build . --config Release --parallel 4
+          cd ../enclave-sample
+          make
+        working-directory: product-mini/platforms/${{ matrix.platform }}
+
+      - name: Get LLVM libraries
+        if: matrix.iwasm_make_options_run_mode == '$AOT_BUILD_OPTIONS'
+        id: retrieve_llvm_libs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ./core/deps/llvm/build/bin
+            ./core/deps/llvm/build/include
+            ./core/deps/llvm/build/lib
+            ./core/deps/llvm/build/libexec
+            ./core/deps/llvm/build/share
+          key: ${{ matrix.llvm_cache_key }}
+          fail-on-cache-miss: true
+
+      - name: Build wamrc only for testing samples in aot mode
+        if: matrix.iwasm_make_options_run_mode == '$AOT_BUILD_OPTIONS'
+        run: |
+          cmake -S . -B build
+          cmake --build build --config Release --parallel 4
+          cp build/wamrc ../product-mini/platforms/${{ matrix.platform }}/enclave-sample
+        working-directory: wamr-compiler
+
+      - name: Build Sample [file]
+        run: |
+          cmake -S . -B build
+          cmake --build build --config Debug --parallel 4
+          cp build/wasm-app/file.wasm ../../product-mini/platforms/${{ matrix.platform }}/enclave-sample
+        working-directory: samples/file
+
+      - name: Test Sample [file] in non-aot mode
+        if: matrix.iwasm_make_options_run_mode != '$AOT_BUILD_OPTIONS'
+        run: |
+          source /opt/intel/sgxsdk/environment
+          ./iwasm --dir=. ./file.wasm
+        working-directory: product-mini/platforms/${{ matrix.platform }}/enclave-sample
+
+      - name: Test Sample [file] in aot mode
+        if: matrix.iwasm_make_options_run_mode == '$AOT_BUILD_OPTIONS'
+        run: |
+          source /opt/intel/sgxsdk/environment
+          ./wamrc -sgx -o ./file.aot ./file.wasm
+          ./iwasm --dir=. ./file.aot
+        working-directory: product-mini/platforms/${{ matrix.platform }}/enclave-sample
+
+  spec_test_default:
+    needs: [build_iwasm, build_llvm_libraries]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        #(workaround) disable "fast-interp" because of SIMDE
+        running_mode: ["classic-interp", "aot", "fast-jit"]
+        test_option:
+          [$DEFAULT_TEST_OPTIONS, $SIMD_TEST_OPTIONS, $XIP_TEST_OPTIONS]
+        os: [ubuntu-22.04]
+        exclude:
+          # classic-interp, fast-interp and fast-jit don't support simd
+          - running_mode: "classic-interp"
+            test_option: $SIMD_TEST_OPTIONS
+          - running_mode: "fast-interp"
+            test_option: $SIMD_TEST_OPTIONS
+          - running_mode: "fast-jit"
+            test_option: $SIMD_TEST_OPTIONS
+          # classic-interp, fast-interp and fast jit don't support XIP
+          - running_mode: "classic-interp"
+            test_option: $XIP_TEST_OPTIONS
+          - running_mode: "fast-interp"
+            test_option: $XIP_TEST_OPTIONS
+          - running_mode: "fast-jit"
+            test_option: $XIP_TEST_OPTIONS
+        include:
+          - os: ubuntu-22.04
+            llvm_cache_key: ${{ needs.build_llvm_libraries.outputs.cache_key }}
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: Get LLVM libraries
+        if: matrix.running_mode == 'aot'
+        id: retrieve_llvm_libs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ./core/deps/llvm/build/bin
+            ./core/deps/llvm/build/include
+            ./core/deps/llvm/build/lib
+            ./core/deps/llvm/build/libexec
+            ./core/deps/llvm/build/share
+          key: ${{ matrix.llvm_cache_key }}
+
+      - name: Quit if cache miss
+        if: matrix.running_mode == 'aot' && steps.retrieve_llvm_libs.outputs.cache-hit != 'true'
+        run: echo "::error::can not get prebuilt llvm libraries" && exit 1
+
+      - name: install SGX SDK and necessary libraries
+        uses: ./.github/actions/install-linux-sgx
+        with:
+          os: ${{ matrix.os }}
+
+      #workaround about a https://github.com/actions/runner-images/issues/6680#issuecomment-2640923706
+      - name: Increase swapfile
+        run: |
+          sudo swapoff -a
+          sudo fallocate -l 15G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          sudo swapon --show
+
+      - name: run spec tests
+        run: |
+          source /opt/intel/sgxsdk/environment
+          ./test_wamr.sh ${{ matrix.test_option }} -t ${{ matrix.running_mode }}
+        working-directory: ./tests/wamr-test-suites

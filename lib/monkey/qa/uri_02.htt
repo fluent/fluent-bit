@@ -1,0 +1,27 @@
+################################################################################
+# DESCRIPTION
+#	Exercise error 400	
+#
+# AUTHOR
+#	Eduardo Silva <edsiper@gmail.com>
+#
+# DATE
+#	June 23 2010
+#
+# COMMENTS
+#   Sending a bad request. This request contain double \\ and miss the protocol
+#   field.
+#   This Bug was reported by Rodrigo Escobar <ipax@dclabs.com.br>
+################################################################################
+
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT
+__GET /\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 400 Bad Request"
+_WAIT
+END

@@ -1,0 +1,42 @@
+{
+  "resource_spans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "string_value": "checkout"
+            }
+          }
+        ]
+      },
+      "scope_spans": [
+        {
+          "scope": {
+            "name": "trace-scope",
+            "version": "1.0.0"
+          },
+          "spans": [
+            {
+              "trace_id": "5b8efff798038103d269b633813fc60c",
+              "span_id": "eee19b7ec3c1b174",
+              "name": "checkout-span",
+              "kind": 2,
+              "start_time_unix_nano": "1650917400000000000",
+              "end_time_unix_nano": "1650917401000000000",
+              "attributes": [
+                {
+                  "key": "http.method",
+                  "value": {
+                    "string_value": "GET"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

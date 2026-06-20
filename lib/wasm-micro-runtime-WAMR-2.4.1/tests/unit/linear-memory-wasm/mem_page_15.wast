@@ -1,0 +1,1 @@
+(module (memory 65536 65535)) ;; Should report an error.

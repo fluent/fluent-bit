@@ -1,0 +1,181 @@
+Global Commands
+---------------
+BLOCK <name>
+Store a block of commands to call it from a CLIENT/SERVER/BLOCK
+
+CLIENT [<number of concurrent clients>]
+Client body start, close it with END and a newline
+
+DAEMON 
+Daemon body start, close it with END and a newline. 
+A daemon will not join CLIENT/SERVER and could therefore be used
+for supervisor jobs
+
+END
+Close CLIENT|SERVER body
+
+EXEC <shell command>
+Execute a shell command, attention executes will not join CLIENT/SERVER
+
+GO 
+Starts all client in sync mode
+
+INCLUDE <include file>
+Load and execute defined include file,
+current path is taken the callers current path
+
+SERVER [<SSL>:]<port> [<number of concurrent servers>]
+Server body start, close it with END and a newline,
+Do load server.cert.pem and server.key.pem if found in local directory,
+number of concurrent servers, -1 for unlimited,
+<SSL>: SSL, SSL2, SSL3, TLS
+
+SET <variable>=<value>
+Store a value in a global variable
+
+TIMEOUT <timeout in ms>
+Defines global socket timeout
+
+
+Local Commands 
+-------------
+-__ <string>
+Send <string> to the socket with a CRLF at the end of line
+
+_- <string>
+Same like __ but no CRLF at the end of line
+
+_ADD_HEADER <header> <value>
+Add additional header to received headers to force forexample chunked encoding
+
+_BPS <n>
+Send not more than defined Bytes per second
+close body with _END BPS
+
+_CALL <name of block>
+Call a defined block
+
+_CERT <cert-file> <key-file> [<ca-cert-file>]
+Sets cert for the current ssl connection, mainly used for server cert
+
+_CHUNK 
+Mark the end of a chunk block, all data after last _FLUSH are counted,
+does automatic add chunk info
+
+_CLOSE 
+Close the current connection and set the connection state to CLOSED
+
+_DEBUG <string>
+Prints to stderr for debugging reasons
+
+_DOWN 
+Shutdown listener
+
+_EXEC <shell command>
+Execute a shell command, _EXEC| will pipe the incoming stream on the
+socket in to the called shell command
+
+_EXIT [OK|FAILED]
+Exits with OK or FAILED default is FAILED
+
+_EXPECT . "[!]<regex>"
+Define what data we do or do not expect on a WAIT command.
+Negation with a leading '!' in the <regex>
+
+_FLUSH 
+Flush the cached lines, 
+the AUTO Content-Length calculation will take place here
+
+_HEADER ALLOW|FILTER <header name>
+Defines allowed headers or headers to filter,
+default all headers are allowed and no headers are filtered.
+Filter only for receive mechanisme
+
+_IF "<expression>" MATCH "[!]<regex>"
+Test if variable do or do not match the regex, close body with _END IF,
+negation with a leading '!' in the <regex>,
+<expression> must not be empty
+
+_IGNORE_ERR <regex>
+This command is Depreciated, do not use it
+Ignores errors specified in <regex>, 
+i.e. ".*" would ignore all errors, only .* is implemented
+
+_LOG_LEVEL <level>
+Level is a number 0-4
+
+_LOOP <n>
+Do loop the body <n> times,
+close body with _END LOOP
+
+_MATCH (headers|body|error) "<regex>" <variable>
+Define a regex with a match which should be stored in <variable>
+
+_MATCH EXEC "<regex>" <variable>
+_EXEC algun_comando
+(No documentado; aparece en los ejemplos de la página web)
+Hace lo mismo que _MATCH pero con la salida del comando ejecutado en _EXEC
+
+_ONLY_PRINTABLE on|off
+Replace all chars below 32 and above 127 with a space
+
+_OP <left> ADD|SUB|DIV|MUL <right> <variable>
+Store evaluated expression
+
+_PIPE [chunked [<chunk_size>]]
+Start a pipe for stream the output of EXEC to the socket stream,
+wiht optional chunk support
+
+_RAND <start> <end>
+Generates a number between <start> and <end>
+
+_RECV <bytes>|POLL
+Receive an amount of bytes, either specified by a number 
+or as much until socket timeout will in POLL mode
+
+_REQ <host> [<SSL>:]<port>[:<tag>] [<cert-file> <key-file> [<ca-cert-file>]]
+Start a request to defined host:port, with SSL support.
+Does only open a new connection if we are in connection state CLOSED
+<SSL>: SSL, SSL2, SSL3, TLS<tag>:Additional tag info do support multiple connection to one target
+<cert-file>, <key-file> and <ca-cert-file> are optional for client/server authentication
+
+_RES 
+Wait for a connection accept
+
+_SENDFILE <file>
+Send file over http
+
+_SET <variable>=<value>
+Store a value in a local variable
+
+_SH shell script line or END
+Embedded shell script within a tmp file, execute if END is found
+
+_SLEEP <milisecond>
+Sleep for defined amount of time
+
+_SOCKSTATE <variable>
+Stores connection state CLOSED or CONNECTED in the <variable>
+
+_SYNC 
+Synchronise to the next full second
+
+_TIME <variable>
+Store time in variable [ms]
+
+_TIMEOUT <miliseconds>
+Set socket timeout of current socket
+
+_UP 
+Setup listener
+
+_VERIFY_PEER 
+Gets peer cert and validate it
+
+_WAIT [<amount of bytes>]
+Wait for data and receive them.
+EXPECT and MATCH definitions will be checked here on the incoming data.
+Optional you could receive a specific amount of bytes
+
+_WHICH <variable>
+Stores the concurrency number of current thread

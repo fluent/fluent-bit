@@ -1,0 +1,27 @@
+################################################################################
+# DESCRIPTION
+#	Exercise error 505	
+#
+# AUTHOR
+#	Carlos Ghan <charlie.brown.uy@gmail.com>
+#
+# DATE
+#	June 29 2009
+#
+# COMMENTS
+#	Requesting an unsupported HTTP version should return "HTTP Version Not
+#	Supported"
+################################################################################
+
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT
+__GET / HTTP/1.9
+__Host: $HOST
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 505 HTTP Version Not Supported"
+_WAIT
+END

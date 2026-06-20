@@ -1,0 +1,10 @@
+# Monkey Plugins Loader
+# =====================
+# Monkey plugins are extended functionalities for Monkey,
+# the main directive to load a plugin is LoadPlugin plus
+# the absolute path for the desired plugin.
+#
+# Please check the following list of available plugins:
+
+[PLUGINS]
+@MK_LOAD_PLUGINS@

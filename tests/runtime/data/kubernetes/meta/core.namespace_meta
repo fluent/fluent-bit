@@ -1,0 +1,19 @@
+{
+    "apiVersion": "v1",
+    "kind": "Namespace",
+    "metadata": {
+        "annotations": {
+            "fake-annotation1": "test1",
+            "fake-annotation2": "test2"
+        },
+        "creationTimestamp": "2019-04-03T09:29:00Z",
+        "labels": {
+            "fake-namespace-label1": "label1",
+            "fake-namespace-label2": "label2"
+        },
+        "name": "core",
+        "resourceVersion": "74466568",
+        "uid": "e9f2963f-55f2-11e9-84c5-02e422b8a84b"
+    },
+    "spec": {}
+}

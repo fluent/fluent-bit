@@ -1,0 +1,38 @@
+Source: monkey
+Section: httpd
+Priority: optional
+Maintainer: Eduardo Silva <eduardo@monkey.io>
+Build-Depends: debhelper (>= 7.0.50~), autotools-dev, libpolarssl-dev
+Standards-Version: 3.9.1
+Homepage: http://monkey-project.com
+Vcs-Git: https://github.com/monkey/monkey.git
+Vcs-Browser: https://github.com/monkey/monkey
+
+Package: monkey
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Fast and lightweight Web Server for Linux.
+ Monkey HTTP Server has been designed to be very scalable with low memory
+ and CPU consumption, the perfect solution for embedded environments. It
+ also provides a flexible API and plugins interface.
+
+Package: monkey-polarssl
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, monkey
+Description: SSL transport layer for Monkey Web Server based in PolarSSL.
+ This plugin enable Monkey Web Server with SSL encryption through the third
+ party PolarSSL library.
+
+Package: monkey-dev
+Architecture: any
+Depends: ${misc:Depends}, monkey (= ${binary:Version})
+Description: Monkey HTTP Server development files
+ This package distributes the C headers files required to perform
+ the development of a Monkey plugin. This package is not related to the
+ library version of Monkey.
+
+Package: monkey-doc
+Section: doc
+Architecture: all
+Description: Monkey documentation
+ Monkey HTTP Server documentation.

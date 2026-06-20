@@ -1,0 +1,42 @@
+version: 1.0.{build}
+
+branches:
+  except:
+  - ruby-2.x
+  - onig-5.9.x-mod
+  - onig-5.9.x-mod_for_bregonig-v2
+
+environment:
+  matrix:
+  - ARCH: x64
+    PYOPT: -3
+  - ARCH: x86
+    PYOPT: -3.4-32
+
+install:
+- cmd: |-
+    rem Check environments.
+    rem path
+    rem dir C:\
+    rem dir "C:\Program Files"
+    rem dir "C:\Program Files\Microsoft SDKs\Windows"
+    rem dir "C:\Program Files (x86)"
+    rem dir "C:\Program Files (x86)\Windows Kits"
+    rem Using Windows SDK 7.1 (VC10)
+    rem "C:\Program Files\Microsoft SDKs\Windows\v7.1\Bin\SetEnv.cmd" /%ARCH% /release
+    rem Using VC12
+    "C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\vcvarsall.bat" %ARCH%
+    path
+
+build_script:
+- cmd: |-
+    nmake -f win32\Makefile
+    dir build_%ARCH%\onigmo.dll
+    \msys64\usr\bin\file build_%ARCH%\onigmo.dll
+
+test_script:
+- cmd: |-
+    py %PYOPT% -c "import locale; print(locale.getpreferredencoding())"
+    nmake -f win32\Makefile test
+
+# vim: ts=2 sw=2 sts=2 et

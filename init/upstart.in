@@ -1,0 +1,10 @@
+# fluent-bit - ligtweight log shipping for fluent
+
+description "@FLB_PROG_NAME@"
+
+# start in normal runlevels when disks are mounted and networking is available
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+respawn
+exec @CMAKE_INSTALL_FULL_BINDIR@/@FLB_OUT_NAME@ -c /@CMAKE_INSTALL_SYSCONFDIR@/@FLB_OUT_NAME@/@FLB_OUT_NAME@.conf

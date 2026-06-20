@@ -1,0 +1,29 @@
+################################################################################
+# DESCRIPTION
+#	HEAD method must return content length
+#
+# AUTHOR
+#	Eduardo Silva <edsiper@gmail.com>	
+#
+# DATE
+#	February 17 2011
+#
+# COMMENTS
+#	In some recent versions (0.12.x), the content-length is not being 
+#       sent for HEAD request method, adding this QA file to avoid regressions.
+# 
+################################################################################
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT
+__HEAD / $HTTPVER
+__Host: $HOST
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_EXPECT . "Content-Length"
+_EXPECT . "Content-Type"
+_WAIT 0
+END

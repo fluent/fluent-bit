@@ -1,0 +1,4 @@
+{"id": 22, "word1": "fluent"          , "word2": "logging"         , "bytes": 10     , "bool": true,    "usage": 230}
+{"id": 23, "word1": "fluentd"         , "word2": "rlz"             , "bytes": 10.0   , "bool": true,    "usage": 240}
+{"id": 24, "word1": "fluent-bit"      , "word3": "rlz"             , "bytes": 10     , "bool": true,    "usage": 250}
+{"id": 25, "word1": "fluent-logger"   , "word3": ""                , "bytes": 10     , "bool": true,    "usage": 260}

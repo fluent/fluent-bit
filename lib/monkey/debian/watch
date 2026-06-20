@@ -1,0 +1,2 @@
+version=3
+http://monkey-project.com/releases/([\d].*)/monkey-(.*)\.(?:zip|tgz|tbz|txz|(?:tar\.(?:gz|bz2|xz)))

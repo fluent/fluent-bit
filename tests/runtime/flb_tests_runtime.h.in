@@ -1,0 +1,52 @@
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+#ifndef FLB_TESTS_RUNTIME_H
+#define FLB_TESTS_RUNTIME_H
+
+#include <sys/stat.h>
+
+#include "../lib/acutest/acutest.h"
+#define FLB_TESTS_DATA_PATH "@FLB_TESTS_DATA_PATH@"
+
+static inline int wait_for_file(char *path, 
+                                size_t minimum_size, 
+                                int time_limit)
+{
+    int         elapsed_time;
+    struct stat file_info;
+    int         result;
+
+    for (elapsed_time = 0 ; elapsed_time < time_limit ; elapsed_time++) {
+        result = stat(path, &file_info);
+
+        if (result == 0) {
+            if (file_info.st_size >= minimum_size) {
+                break;
+            }
+        }
+
+        sleep(1);
+    }
+
+    return result;
+}
+
+#endif

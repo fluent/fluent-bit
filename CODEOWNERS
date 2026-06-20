@@ -1,0 +1,99 @@
+# Fluent Bit Code Owners
+# ----------------------
+# The following file list the code owners or responsibles for code
+# review on different components or extensions of Fluent Bit, applicable for
+# any original code author (not only maintainers).
+#
+# NOTE: if you are a original code author and you are not listed here, please
+# open a PR with the proper modification :)
+
+# Global Owners
+# -------------
+*                        @edsiper @leonardo-albertovich @cosmo0920
+
+# Build System & Portability
+# --------------------------
+/CMakeLists.txt          @fujimotos @niedbalski @patrick-stephens @celalettin1286
+/cmake/                  @fujimotos @niedbalski @patrick-stephens @celalettin1286
+
+# CI
+# -------------------------
+/.github/                @niedbalski @patrick-stephens @celalettin1286
+/appveyor.yml            @niedbalski @patrick-stephens @celalettin1286
+/dockerfiles/            @niedbalski @patrick-stephens @celalettin1286
+/packaging/              @niedbalski @patrick-stephens @celalettin1286
+/codebase-structure.svg  @niedbalski @patrick-stephens @celalettin1286
+/install.sh              @niedbalski @patrick-stephens @celalettin1286
+
+# Core: Signv4
+# ------------
+/src/flb_signv4.c        @fluent/aws-fluent-bit-maintainers
+/src/flb_lib.c           @edsiper @niedbalski
+
+# Core: AWS Auth & Utils
+# ------------
+/src/aws                 @fluent/aws-fluent-bit-maintainers
+
+# AWS header files
+/include/aws                   @fluent/aws-fluent-bit-maintainers
+/include/flb_aws_credentials.h @fluent/aws-fluent-bit-maintainers
+/include/flb_aws_util.h        @fluent/aws-fluent-bit-maintainers
+
+# Core: Stream Processor
+# ----------------
+/src/stream_processor/   @koleini
+
+# Input Plugins
+# -------------
+/plugins/in_collectd     @fujimotos
+/plugins/in_docker       @nokute78 @edsiper
+/plugins/in_dummy        @nokute78
+/plugins/in_netif        @nokute78
+/plugins/in_statsd       @fujimotos
+/plugins/in_thermal      @nokute78
+/plugins/in_winlog       @fujimotos
+
+# Filter Plugins
+# --------------
+/plugins/filter_aws      @fluent/aws-fluent-bit-maintainers
+/plugins/filter_ecs      @fluent/aws-fluent-bit-maintainers
+
+# Output Plugins
+# --------------
+/plugins/out_datadog     @nokute78 @edsiper
+/plugins/out_es          @pettitwesley @edsiper
+/plugins/out_pgsql       @sxd
+/plugins/out_stackdriver @jeffluoo
+
+# AWS Plugins
+/plugins/out_s3               @fluent/aws-fluent-bit-maintainers
+/plugins/out_cloudwatch_logs  @fluent/aws-fluent-bit-maintainers
+/plugins/out_kinesis_firehose @fluent/aws-fluent-bit-maintainers
+/plugins/out_kinesis_streams  @fluent/aws-fluent-bit-maintainers
+/plugins/out_opensearch       @fluent/aws-fluent-bit-maintainers
+
+# AWS test code
+/tests/internal/aws             @fluent/aws-fluent-bit-maintainers
+/tests/internal/aws_*           @fluent/aws-fluent-bit-maintainers
+/tests/runtime/filter_ecs.c     @fluent/aws-fluent-bit-maintainers
+/tests/runtime/filter_aws.c     @fluent/aws-fluent-bit-maintainers
+/tests/runtime/out_cloudwatch.c @fluent/aws-fluent-bit-maintainers
+/tests/runtime/out_firehose.c   @fluent/aws-fluent-bit-maintainers
+/tests/runtime/out_kinesis.c    @fluent/aws-fluent-bit-maintainers
+/tests/runtime/out_opensearch.c @fluent/aws-fluent-bit-maintainers
+/tests/runtime/out_s3.c         @fluent/aws-fluent-bit-maintainers
+
+# Google test code
+# --------------
+/tests/runtime/out_stackdriver.c @jeffluoo
+/tests/runtime/data/stackdriver  @jeffluoo
+
+# Devcontainer
+/.devcontainer                  @patrick-stephens @niedbalski @edsiper
+
+# Calyptia Fleet
+/include/fluent-bit/calyptia/ @pwhelan @alecholmes
+/plugins/custom_calyptia/     @pwhelan @alecholmes
+/plugins/custom_calyptia/     @pwhelan @alecholmes
+/plugins/out_calyptia/        @pwhelan @alecholmes
+/plugins/in_calyptia_fleet/   @pwhelan @alecholmes

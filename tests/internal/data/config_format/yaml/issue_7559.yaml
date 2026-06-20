@@ -1,0 +1,14 @@
+customs:
+  - name: calyptia
+
+pipeline:
+  inputs:
+    - name: fluentbit_metrics
+      scrape_interval: 30
+      scrape_on_start: true
+      tag: _calyptia_cloud
+service:
+  HTTP_Listen: 0.0.0.0
+  HTTP_PORT: 2020
+  HTTP_Server: 'On'
+  Log_Level: debug

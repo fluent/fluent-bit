@@ -1,0 +1,8 @@
+{ "index": { "_index": "new_index", "_id": "2" } }
+{ "title": "second doc", "description": "Description of the first document." }
+{ "index": { "_index": "new_index", "_id": "3" } }
+{ "title": "Tercero doc", "description": "Description of the second document." }
+{ "index": { "_index": "new_index", "_id": "4" } }
+{ "title": "four Doc", "description": "Description of the second document." }
+{ "index": { "_index": "new_index", "_id": "5" } }
+{ "title": "five doc", "description": "Description of the second document." }

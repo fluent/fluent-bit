@@ -1,0 +1,52 @@
+{
+  "resource_logs": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "string_value": "metadata-service"
+            }
+          }
+        ]
+      },
+      "scope_logs": [
+        {
+          "scope": {
+            "name": "metadata-scope",
+            "version": "9.9.9"
+          },
+          "log_records": [
+            {
+              "time_unix_nano": "1650917400000000000",
+              "observed_time_unix_nano": "1650917401000000000",
+              "severity_number": 13,
+              "severity_text": "WARN",
+              "trace_id": "Y1YL1NjedPrn0eQWDy7gmQ==",
+              "span_id": "JRSEKVqd9zE=",
+              "flags": 1,
+              "body": {
+                "string_value": "metadata driven log"
+              },
+              "attributes": [
+                {
+                  "key": "example_key",
+                  "value": {
+                    "string_value": "example_value"
+                  }
+                },
+                {
+                  "key": "custom_attr",
+                  "value": {
+                    "string_value": "custom_value"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

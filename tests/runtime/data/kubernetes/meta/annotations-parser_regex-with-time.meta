@@ -1,0 +1,7 @@
+{
+    "metadata": {
+        "annotations": {
+            "fluentbit.io/parser": "regex-parser-with-time"
+        }
+    }
+}

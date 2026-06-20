@@ -1,0 +1,2 @@
+usr/lib/*/librdkafka.so.*
+usr/lib/*/librdkafka++.so.*

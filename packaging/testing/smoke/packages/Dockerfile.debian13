@@ -1,0 +1,47 @@
+# For staging upgrade we use the 'official-install' as the base
+ARG STAGING_BASE=docker.io/dokken/debian-13
+
+ARG RELEASE_URL=https://packages.fluentbit.io
+ARG RELEASE_KEY=https://packages.fluentbit.io/fluentbit.key
+
+# hadolint ignore=DL3006
+FROM docker.io/dokken/debian-13 as official-install
+
+ARG RELEASE_URL
+ENV FLUENT_BIT_PACKAGES_URL=${RELEASE_URL}
+
+ARG RELEASE_KEY
+ENV FLUENT_BIT_PACKAGES_KEY=${RELEASE_KEY}
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
+RUN systemctl enable fluent-bit
+
+COPY ./test.sh /test.sh
+RUN chmod a+x /test.sh
+
+FROM official-install as staging-upgrade-prep
+RUN rm -f /etc/apt/sources.list.d/fluent-bit.list
+
+# hadolint ignore=DL3006
+FROM ${STAGING_BASE} as staging-install
+ARG STAGING_VERSION
+ENV STAGING_VERSION=${STAGING_VERSION}
+
+ARG STAGING_URL
+ENV FLUENT_BIT_PACKAGES_URL=${STAGING_URL}
+
+ARG STAGING_KEY=${STAGING_URL}/fluentbit.key
+ENV FLUENT_BIT_PACKAGES_KEY=${STAGING_KEY}
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN wget -qO - $FLUENT_BIT_PACKAGES_KEY | apt-key add -
+RUN echo "deb $FLUENT_BIT_PACKAGES_URL/debian/trixie trixie main" >> /etc/apt/sources.list
+# hadolint ignore=DL3015,DL3008,DL3009
+RUN apt-get update && apt-get install -y fluent-bit
+RUN systemctl enable fluent-bit
+
+COPY ./test.sh /test.sh
+RUN chmod a+x /test.sh
+
+FROM staging-install as staging-upgrade
