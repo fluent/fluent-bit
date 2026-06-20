@@ -603,7 +603,7 @@ static int secure_forward_handshake(struct flb_connection *u_conn,
 
     /* Parse HELO message */
     root = result.data;
-    if (root.via.array.size < 2) {
+    if (root.type != MSGPACK_OBJECT_ARRAY || root.via.array.size < 2) {
         flb_plg_error(ctx->ins, "Invalid HELO message");
         msgpack_unpacked_destroy(&result);
         return -1;
