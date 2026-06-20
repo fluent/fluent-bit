@@ -41,7 +41,10 @@ int ne_utils_file_read_sds(struct flb_ne *ctx,
                            const char *join_b,
                            flb_sds_t *str);
 
-int ne_utils_file_read_lines(struct flb_ne *ctx, const char *mount, const char *path, struct mk_list *list);
+int ne_utils_file_read_lines(struct flb_ne *ctx,
+                             const char *mount,
+                             const char *path,
+                             struct mk_list *list);
 int ne_utils_path_scan(struct flb_ne *ctx, const char *mount, const char *path,
                        int expected, struct mk_list *list);
 #endif
