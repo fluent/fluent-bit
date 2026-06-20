@@ -1,0 +1,21 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: secure.forward
+      samples: 1
+
+  outputs:
+    - name: forward
+      match: secure.forward
+      host: 127.0.0.1
+      port: ${OUT_FORWARD_INVALID_HELO_PORT}
+      empty_shared_key: true
+      self_hostname: invalid-helo-client
+      workers: 1
