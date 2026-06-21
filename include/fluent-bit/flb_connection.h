@@ -58,12 +58,26 @@ struct flb_net_setup;
 struct flb_upstream;
 struct flb_downstream;
 struct flb_tls_session;
+struct flb_connection;
+
+typedef void (*flb_connection_drop_notification_callback)(
+                 struct flb_connection *connection);
 
 /* Base network connection */
 struct flb_connection {
     struct mk_event event;
 
     void *user_data;
+    /*
+     * Optional notification invoked from prepare_destroy_conn() while the
+     * connection is still linked on busy_queue and before the event is
+     * deregistered and the file descriptor is closed.
+     *
+     * Callers may detach external state here, but must not free, destroy or
+     * unlink the connection because prepare_destroy_conn() performs the final
+     * teardown immediately after the callback returns.
+     */
+    flb_connection_drop_notification_callback drop_notification_callback;
 
     /* Socket */
     flb_sockfd_t fd;

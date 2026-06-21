@@ -2899,6 +2899,9 @@ static int flb_http_encode_basic_auth_value(cfl_sds_t *output_buffer,
                 *output_buffer = sds_result;
             }
             else {
+                cfl_sds_destroy(*output_buffer);
+                *output_buffer = NULL;
+
                 result = -1;
             }
         }
@@ -2913,7 +2916,7 @@ static int flb_http_encode_basic_auth_value(cfl_sds_t *output_buffer,
     cfl_sds_destroy(encoded_value);
     cfl_sds_destroy(raw_value);
 
-    return 0;
+    return result;
 }
 
 static int flb_http_encode_bearer_auth_value(cfl_sds_t *output_buffer,
@@ -3082,34 +3085,59 @@ int flb_http_request_set_parameters_internal(
         if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_METHOD) {
             method = va_arg(arguments, size_t);
 
-            flb_http_request_set_method(request, (int) method);
+            result = flb_http_request_set_method(request, (int) method);
+            if (result != 0) {
+                flb_debug("http request method error");
+
+                failure_detected = FLB_TRUE;
+            }
         }
         else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_HOST) {
             host = va_arg(arguments, char *);
 
-            flb_http_request_set_host(request, host);
+            result = flb_http_request_set_host(request, host);
+            if (result != 0) {
+                flb_debug("http request host error");
+
+                failure_detected = FLB_TRUE;
+            }
         }
         else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_URL) {
             url = va_arg(arguments, char *);
 
-            flb_http_request_set_url(request, url);
+            result = flb_http_request_set_url(request, url);
+            if (result != 0) {
+                flb_debug("http request URL error");
+
+                failure_detected = FLB_TRUE;
+            }
         }
         else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_URI) {
             uri = va_arg(arguments, char *);
 
-            flb_http_request_set_uri(request, uri);
+            result = flb_http_request_set_uri(request, uri);
+            if (result != 0) {
+                flb_debug("http request URI error");
+
+                failure_detected = FLB_TRUE;
+            }
         }
         else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_USER_AGENT) {
             user_agent = va_arg(arguments, char *);
 
-            flb_http_request_set_user_agent(request, user_agent);
+            result = flb_http_request_set_user_agent(request, user_agent);
+            if (result != 0) {
+                flb_debug("http request user agent error");
+
+                failure_detected = FLB_TRUE;
+            }
         }
         else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_CONTENT_TYPE) {
             content_type = va_arg(arguments, char *);
 
             result = flb_http_request_set_content_type(request, content_type);
 
-            if (request == NULL) {
+            if (result != 0) {
                 flb_debug("http request : error setting content type");
 
                 failure_detected = FLB_TRUE;
@@ -3125,8 +3153,8 @@ int flb_http_request_set_parameters_internal(
                                                body_len,
                                                compression_algorithm);
 
-            if (request == NULL) {
-                flb_debug("http request creation error");
+            if (result != 0) {
+                flb_debug("http request body error");
 
                 failure_detected = FLB_TRUE;
             }
@@ -3188,17 +3216,31 @@ int flb_http_request_set_parameters_internal(
             username = va_arg(arguments, char *);
             password = va_arg(arguments, char *);
 
-            flb_http_request_set_authorization(request,
-                                            HTTP_WWW_AUTHORIZATION_SCHEME_BASIC,
-                                            username,
-                                            password);
+            result = flb_http_request_set_authorization(
+                        request,
+                        HTTP_WWW_AUTHORIZATION_SCHEME_BASIC,
+                        username,
+                        password);
+
+            if (result != 0) {
+                flb_debug("http request basic authorization error");
+
+                failure_detected = FLB_TRUE;
+            }
         }
         else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_AUTH_BEARER_TOKEN) {
             bearer_token = va_arg(arguments, char *);
 
-            flb_http_request_set_authorization(request,
-                                            HTTP_WWW_AUTHORIZATION_SCHEME_BEARER,
-                                            bearer_token);
+            result = flb_http_request_set_authorization(
+                        request,
+                        HTTP_WWW_AUTHORIZATION_SCHEME_BEARER,
+                        bearer_token);
+
+            if (result != 0) {
+                flb_debug("http request bearer authorization error");
+
+                failure_detected = FLB_TRUE;
+            }
         }
         else if (value_type == FLB_HTTP_CLIENT_ARGUMENT_TYPE_AUTH_SIGNV4) {
             aws_region = va_arg(arguments, char *);
@@ -3209,6 +3251,12 @@ int flb_http_request_set_parameters_internal(
                                                                aws_region,
                                                                aws_service,
                                                                aws_provider);
+
+            if (result != 0) {
+                flb_debug("http request signv4 authorization error");
+
+                failure_detected = FLB_TRUE;
+            }
         }
     } while (!failure_detected &&
              value_type != FLB_HTTP_CLIENT_ARGUMENT_TYPE_TERMINATOR);

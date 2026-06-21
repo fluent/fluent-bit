@@ -1030,7 +1030,7 @@ static int flb_main_run(int argc, char **argv)
 
 #ifdef FLB_HAVE_CHUNK_TRACE
     char *trace_input = NULL;
-    char *trace_output = flb_strdup("stdout");
+    char *trace_output = NULL;
     struct mk_list *trace_props = NULL;
 #endif
 
@@ -1365,6 +1365,7 @@ static int flb_main_run(int argc, char **argv)
         if (access(cfg_file, R_OK) != 0) {
             flb_free(cfg_file);
             flb_cf_destroy(cf_opts);
+            flb_destroy(ctx);
             flb_utils_error(FLB_ERR_CFG_FILE);
         }
     }
@@ -1372,6 +1373,7 @@ static int flb_main_run(int argc, char **argv)
     if (flb_reload_reconstruct_cf(cf_opts, cf) != 0) {
         flb_free(cfg_file);
         flb_cf_destroy(cf_opts);
+        flb_destroy(ctx);
         fprintf(stderr, "reconstruct format context is failed\n");
         exit(EXIT_FAILURE);
     }
@@ -1381,12 +1383,14 @@ static int flb_main_run(int argc, char **argv)
     flb_free(cfg_file);
     if (!tmp) {
         flb_cf_destroy(cf_opts);
+        flb_destroy(ctx);
         flb_utils_error(FLB_ERR_CFG_FILE_STOP);
     }
 #else
     tmp = service_configure(cf, config, "fluent-bit.conf");
     if (!tmp) {
         flb_cf_destroy(cf_opts);
+        flb_destroy(ctx);
         flb_utils_error(FLB_ERR_CFG_FILE_STOP);
     }
 
@@ -1475,7 +1479,8 @@ static int flb_main_run(int argc, char **argv)
 
 #ifdef FLB_HAVE_CHUNK_TRACE
     if (trace_input != NULL) {
-        enable_trace_input(ctx, trace_input, NULL /* prefix ... */, trace_output, trace_props);
+        enable_trace_input(ctx, trace_input, NULL /* prefix ... */,
+                           trace_output ? trace_output : "stdout", trace_props);
     }
 #endif
 

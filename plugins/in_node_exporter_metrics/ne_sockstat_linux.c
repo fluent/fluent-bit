@@ -20,6 +20,9 @@
 #define _GNU_SOURCE
 
 #include <unistd.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <limits.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
@@ -168,6 +171,9 @@ static int sockstat_update(struct flb_ne *ctx)
     int i;
     struct flb_slist_entry *key;
     struct flb_slist_entry *val;
+    int path_len;
+    char ipv6_proc_path[PATH_MAX];
+    struct stat st;
 
     mk_list_init(&list);
     ret = ne_utils_file_read_lines(ctx->path_procfs, "/net/sockstat", &list);
@@ -296,7 +302,16 @@ static int sockstat_update(struct flb_ne *ctx)
 
     flb_slist_destroy(&list);
 
-    /* Parse IPv6 statistics */
+    /* Parse IPv6 statistics (if enabled) */
+    path_len = snprintf(ipv6_proc_path, sizeof(ipv6_proc_path), "%s%s", ctx->path_procfs, "/net/sockstat6");
+    if (path_len < 0 || path_len >= (int) sizeof(ipv6_proc_path)) {
+        return -1;
+    }
+    ret = stat(ipv6_proc_path, &st);
+    if (ret == -1 && errno == ENOENT) {
+        flb_plg_debug(ctx->ins, "cannot read %s, skip ipv6 metrics collection", ipv6_proc_path);
+        return 0;
+    }
     mk_list_init(&list);
     ret = ne_utils_file_read_lines(ctx->path_procfs, "/net/sockstat6", &list);
     if (ret != -1) {

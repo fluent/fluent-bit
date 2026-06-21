@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 
+import pytest
 import requests
 from google.protobuf import json_format
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
@@ -126,6 +127,20 @@ def _find_json_line(log_text, needle):
     raise AssertionError(f"Could not find JSON line containing {needle!r}")
 
 
+def _stdout_lines_for_tag(log_text, tag):
+    return [
+        line
+        for line in log_text.splitlines()
+        if f"] {tag}:" in line
+    ]
+
+
+def _assert_stdout_tag_contains(log_text, tag, *needles):
+    assert f"] {tag}:" in log_text, f"Could not find stdout tag {tag!r}"
+    for needle in needles:
+        assert needle in log_text
+
+
 def test_out_stdout_default_format_emits_tagged_log_line():
     service = Service("out_stdout_basic.yaml")
     service.start()
@@ -212,16 +227,15 @@ def test_out_stdout_routes_without_alias_bind_to_third_input():
     service = Service("out_stdout_routing_no_alias.yaml")
     service.start()
     service.wait_for_log_contains("[0] topic1:", timeout=10)
-    service.wait_for_log_contains("no matching route for input chunk", timeout=10)
-    log_text = service.wait_for_log_contains("tag 'firstdummy'", timeout=10)
+    log_text = service.read_log()
     service.stop()
 
     assert "connected input 'dummy.2' route 'topic1' to output 'stdout1'" in log_text
     assert "[0] topic1:" in log_text
     assert "\"topic\"=>\"topic1\"" in log_text
     assert "\"message\"=>\"custom dummy\"" in log_text
-    assert "no matching route for input chunk" in log_text
-    assert "tag 'firstdummy'" in log_text
+    assert "\"message\"=>\"custom dummy one\"" not in log_text
+    assert "\"message\"=>\"custom dummy two\"" not in log_text
 
 
 def test_out_stdout_routes_with_alias_bind_to_third_input():
@@ -234,3 +248,92 @@ def test_out_stdout_routes_with_alias_bind_to_third_input():
     assert "[0] topic1:" in log_text
     assert "\"topic\"=>\"topic1\"" in log_text
     assert "\"message\"=>\"custom dummy\"" in log_text
+
+
+def test_out_stdout_threaded_input_conditional_route_matches():
+    service = Service("out_stdout_threaded_conditional_routing.yaml")
+    service.start()
+    log_text = service.wait_for_log_contains("[0] threaded_topic1:", timeout=10)
+    service.stop()
+
+    assert "connected input 'threaded_routed_dummy' route 'threaded_topic1'" in log_text
+    assert "[0] threaded_topic1:" in log_text
+    assert "\"topic\"=>\"topic1\"" in log_text
+    assert "\"message\"=>\"threaded conditional match\"" in log_text
+    assert "conditional routing not supported for threaded inputs" not in log_text
+
+
+def test_out_stdout_threaded_input_conditional_default_route():
+    service = Service("out_stdout_threaded_conditional_default_route.yaml")
+    service.start()
+    log_text = service.wait_for_log_contains("[0] threaded_default:", timeout=10)
+    service.stop()
+
+    assert "connected input 'threaded_default_dummy' route 'threaded_topic1'" in log_text
+    assert "connected input 'threaded_default_dummy' route 'threaded_default'" in log_text
+    assert "[0] threaded_default:" in log_text
+    assert "\"message\"=>\"threaded default route\"" in log_text
+    assert "[0] threaded_topic1:" not in log_text
+    assert "conditional routing not supported for threaded inputs" not in log_text
+
+
+@pytest.mark.parametrize(
+    ("mode", "label", "config_file"),
+    [
+        (
+            "non_threaded",
+            "non threaded",
+            "out_stdout_conditional_corner_non_threaded.yaml",
+        ),
+        (
+            "threaded",
+            "threaded",
+            "out_stdout_conditional_corner_threaded.yaml",
+        ),
+    ],
+)
+def test_out_stdout_conditional_routing_corner_cases(mode, label, config_file):
+    service = Service(config_file)
+    service.start()
+    service.wait_for_log_contains(f"[0] {mode}_topic1:", timeout=10)
+    service.wait_for_log_contains(f"[0] {mode}_default:", timeout=10)
+    service.wait_for_log_contains(f"{label} unmatched without default", timeout=10)
+    log_text = service.read_log()
+    service.stop()
+
+    assert "conditional routing not supported for threaded inputs" not in log_text
+
+    _assert_stdout_tag_contains(
+        log_text,
+        f"{mode}_topic1",
+        f"\"message\"=>\"{label} processor match\"",
+        "\"topic\"=>\"topic1\"",
+    )
+    _assert_stdout_tag_contains(
+        log_text,
+        f"{mode}.processor.base",
+        f"\"message\"=>\"{label} processor match\"",
+        "\"topic\"=>\"topic1\"",
+    )
+
+    _assert_stdout_tag_contains(
+        log_text,
+        f"{mode}_default",
+        f"\"message\"=>\"{label} default fallback\"",
+        "\"topic\"=>\"topic2\"",
+    )
+    _assert_stdout_tag_contains(
+        log_text,
+        f"{mode}.default.base",
+        f"\"message\"=>\"{label} default fallback\"",
+        "\"topic\"=>\"topic2\"",
+    )
+
+    _assert_stdout_tag_contains(
+        log_text,
+        f"{mode}.miss.base",
+        f"\"message\"=>\"{label} unmatched without default\"",
+        "\"topic\"=>\"topic2\"",
+    )
+    assert _stdout_lines_for_tag(log_text, f"{mode}_default_topic1") == []
+    assert _stdout_lines_for_tag(log_text, f"{mode}_miss_topic1") == []

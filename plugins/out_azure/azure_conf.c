@@ -136,19 +136,43 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     }
 
     if (!ins->host.name) {
-        flb_sds_cat(ctx->host, ctx->customer_id,
-                    flb_sds_len(ctx->customer_id));
-        flb_sds_cat(ctx->host, FLB_AZURE_HOST, sizeof(FLB_AZURE_HOST) - 1);
+        ret = flb_sds_cat_safe(&ctx->host, ctx->customer_id,
+                               flb_sds_len(ctx->customer_id));
+        if (ret != 0) {
+            flb_azure_conf_destroy(ctx);
+            return NULL;
+        }
+
+        ret = flb_sds_cat_safe(&ctx->host, FLB_AZURE_HOST,
+                               sizeof(FLB_AZURE_HOST) - 1);
+        if (ret != 0) {
+            flb_azure_conf_destroy(ctx);
+            return NULL;
+        }
     }
     else {
         if (!strstr(ins->host.name, ctx->customer_id)) {
-            flb_sds_cat(ctx->host, ctx->customer_id,
-                        flb_sds_len(ctx->customer_id));
+            ret = flb_sds_cat_safe(&ctx->host, ctx->customer_id,
+                                   flb_sds_len(ctx->customer_id));
+            if (ret != 0) {
+                flb_azure_conf_destroy(ctx);
+                return NULL;
+            }
+
             if (ins->host.name[0] != '.') {
-                flb_sds_cat(ctx->host, ".", 1);
+                ret = flb_sds_cat_safe(&ctx->host, ".", 1);
+                if (ret != 0) {
+                    flb_azure_conf_destroy(ctx);
+                    return NULL;
+                }
             }
         }
-        flb_sds_cat(ctx->host, ins->host.name, strlen(ins->host.name));
+
+        ret = flb_sds_cat_safe(&ctx->host, ins->host.name, strlen(ins->host.name));
+        if (ret != 0) {
+            flb_azure_conf_destroy(ctx);
+            return NULL;
+        }
     }
 
 
@@ -181,9 +205,19 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
         flb_azure_conf_destroy(ctx);
         return NULL;
     }
-    flb_sds_cat(ctx->uri, FLB_AZURE_RESOURCE, sizeof(FLB_AZURE_RESOURCE) - 1);
-    flb_sds_cat(ctx->uri, FLB_AZURE_API_VERSION,
-                sizeof(FLB_AZURE_API_VERSION) - 1);
+    ret = flb_sds_cat_safe(&ctx->uri, FLB_AZURE_RESOURCE,
+                           sizeof(FLB_AZURE_RESOURCE) - 1);
+    if (ret != 0) {
+        flb_azure_conf_destroy(ctx);
+        return NULL;
+    }
+
+    ret = flb_sds_cat_safe(&ctx->uri, FLB_AZURE_API_VERSION,
+                           sizeof(FLB_AZURE_API_VERSION) - 1);
+    if (ret != 0) {
+        flb_azure_conf_destroy(ctx);
+        return NULL;
+    }
 
     flb_plg_info(ctx->ins, "customer_id='%s' host='%s:%i'",
                  ctx->customer_id, ctx->host, ctx->port);

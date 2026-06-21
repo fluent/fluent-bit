@@ -56,8 +56,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data3, size_t size3)
         return 0;
     }
     /* Set fuzzer-malloc chance of failure */
+#ifdef FLB_HAVE_TESTS_OSSFUZZ
     flb_malloc_p = 0;
     flb_malloc_mod = 25000;
+#endif
     char *input_buffer1 = get_null_terminated(30, &data3, &size3);
     if (input_buffer1 == NULL) {
         return 0;
@@ -66,15 +68,17 @@ int LLVMFuzzerTestOneInput(const uint8_t *data3, size_t size3)
 
     char *input_buffer2 = get_null_terminated(10, &data3, &size3);
     if (input_buffer2 == NULL) {
+        flb_free(input_buffer1);
         return 0;
     }
-    size_t input_buffer_len2 = strlen(input_buffer2);
 
     char *input_buffer3 = get_null_terminated(10, &data3, &size3);
     if (input_buffer3 == NULL) {
+        flb_free(input_buffer1);
+        flb_free(input_buffer2);
         return 0;
     }
-    size_t input_buffer_len3 = strlen(input_buffer3);       
+
     /* Create context, flush every second (some checks omitted here) */
     ctx = flb_create();
 
@@ -145,6 +149,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data3, size_t size3)
     /* FORCE clean up test tasks */
     mk_list_foreach_safe(head, tmp, &i_ins->tasks) {
         task = mk_list_entry(head, struct flb_task, _head);
+        if (task->users != 0 ||
+            mk_list_size(&task->retries) != 0 ||
+            mk_list_size(&task->routes) != 0) {
+            continue;
+        }
+
         flb_info("[task] cleanup test task");
         flb_task_destroy(task, FLB_TRUE);
     }
@@ -152,6 +162,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data3, size_t size3)
     /* clean up test chunks */
     mk_list_foreach_safe(head, tmp, &i_ins->chunks) {
         ic = mk_list_entry(head, struct flb_input_chunk, _head);
+        if (ic->task != NULL) {
+            continue;
+        }
+
         flb_input_chunk_destroy(ic, FLB_TRUE);
     }
     flb_free(input_buffer1);
@@ -161,4 +175,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data3, size_t size3)
     flb_time_msleep(200);
     flb_stop(ctx);
     flb_destroy(ctx);
+
+    return 0;
 }

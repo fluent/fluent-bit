@@ -56,7 +56,7 @@ jobs:
       armSupported: ${{ steps.armcheck.outputs.armSupported }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.ref }}
 
@@ -72,7 +72,7 @@ jobs:
         shell: bash
 
   call-build-windows-package:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.config.os }}
     environment: ${{ inputs.environment }}
     needs:
       - call-build-windows-get-meta
@@ -85,16 +85,19 @@ jobs:
             cmake_additional_opt: ""
             vcpkg_triplet: x86-windows-static
             cmake_version: "3.31.6"
+            os: windows-latest
           - name: "Windows 64bit"
             arch: x64
             cmake_additional_opt: ""
             vcpkg_triplet: x64-windows-static
             cmake_version: "3.31.6"
+            os: windows-latest
           - name: "Windows 64bit (Arm64)"
             arch: amd64_arm64
             cmake_additional_opt: "-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION=10.0 -DCMAKE_SYSTEM_PROCESSOR=ARM64"
             vcpkg_triplet: arm64-windows-static
             cmake_version: "3.31.6"
+            os: windows-11-arm
     permissions:
       contents: read
     # Default environment variables can be overridden below. To prevent library pollution - without this other random libraries may be found on the path leading to failures.
@@ -102,7 +105,7 @@ jobs:
       PATH: C:\ProgramData\Chocolatey\bin;c:/Program Files/Git/cmd;c:/Windows/system32;C:/Windows/System32/WindowsPowerShell/v1.0;$ENV:WIX/bin;C:/Program Files/CMake/bin;C:\vcpkg;
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.ref }}
 
@@ -195,14 +198,55 @@ jobs:
         shell: pwsh
 
       - name: Set up with Developer Command Prompt for Microsoft Visual C++
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
           arch: ${{ matrix.config.arch }}
 
       - name: Get gzip command and nsis w/ chocolatey
-        uses: crazy-max/ghaction-chocolatey@v3
+        uses: crazy-max/ghaction-chocolatey@dff3862348493b11fba2fbc49147b6d2dfe09b66 # v4.0.0
         with:
           args: install gzip nsis -y
+
+      - name: Get WiX Toolset w/ chocolatey
+        if: ${{ matrix.config.arch == 'amd64_arm64' }}
+        uses: crazy-max/ghaction-chocolatey@dff3862348493b11fba2fbc49147b6d2dfe09b66 # v4.0.0
+        with:
+          args: install wixtoolset -y
+
+      - name: Export WiX Toolset path
+        if: ${{ matrix.config.arch == 'amd64_arm64' }}
+        run: |
+          $wix = [Environment]::GetEnvironmentVariable("WIX", "Machine")
+          if (-not $wix) {
+            $wix = [Environment]::GetEnvironmentVariable("WIX", "Process")
+          }
+          if (-not $wix) {
+            $candidates = @(
+              "${env:ProgramFiles(x86)}",
+              "${env:ProgramFiles}"
+            ) | Where-Object { $_ -and (Test-Path $_) }
+            foreach ($candidate in $candidates) {
+              $wix = Get-ChildItem -Path $candidate -Directory -Filter "WiX Toolset v*" |
+                Sort-Object Name -Descending |
+                Select-Object -First 1 -ExpandProperty FullName
+              if ($wix) {
+                break
+              }
+            }
+          }
+          if (-not $wix) {
+            throw "WiX Toolset installation path could not be located"
+          }
+
+          $wixBin = Join-Path $wix "bin"
+          if (!(Test-Path (Join-Path $wixBin "candle.exe")) -or
+              !(Test-Path (Join-Path $wixBin "light.exe"))) {
+            throw "WiX Toolset candle.exe/light.exe could not be located in $wixBin"
+          }
+
+          "WIX=$wix" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $wixBin | Out-File -FilePath $env:GITHUB_PATH -Append
+        shell: pwsh
 
       # http://man7.org/linux/man-pages/man1/date.1.html
       - name: Get Date
@@ -213,7 +257,7 @@ jobs:
 
       - name: Restore cached packages of vcpkg
         id: cache-vcpkg-sources
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             C:\vcpkg\installed
@@ -239,7 +283,7 @@ jobs:
 
       - name: Save packages of vcpkg
         id: save-vcpkg-sources
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             C:\vcpkg\installed
@@ -260,7 +304,7 @@ jobs:
       - name: Upload build packages
         # Skip upload if we skipped build.
         if: ${{ matrix.config.arch != 'amd64_arm64' || needs.call-build-windows-get-meta.outputs.armSupported == 'true' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-packages-${{ matrix.config.arch }}
           path: |
@@ -281,13 +325,13 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           # Need latest for checksum packaging script
           ref: master
 
       - name: Download all artefacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: windows-packages-*
           merge-multiple: true

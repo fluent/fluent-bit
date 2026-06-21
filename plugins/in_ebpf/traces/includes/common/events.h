@@ -6,6 +6,10 @@
 
 #define TASK_COMM_LEN 16
 #define VFS_PATH_MAX 256
+#define EXECVE_ARG_MAX 3
+#define EXECVE_ARG_LEN 256
+#define DNS_NAME_MAX 128
+#define DNS_QUERY_RAW_MAX 96
 
 enum event_type {
     EVENT_TYPE_EXECVE,
@@ -16,6 +20,8 @@ enum event_type {
     EVENT_TYPE_LISTEN,
     EVENT_TYPE_ACCEPT,
     EVENT_TYPE_CONNECT,
+    EVENT_TYPE_DNS,
+    EVENT_TYPE_SCHED,
 };
 
 enum vfs_op {
@@ -48,11 +54,19 @@ struct event_common {
     char comm[TASK_COMM_LEN];
 };
 
+enum execve_stage {
+    EXECVE_STAGE_ENTER = 0,
+    EXECVE_STAGE_EXIT = 1
+};
+
 struct execve_event {
-    __u32 tpid;
+    enum execve_stage stage;
+    __u32 ppid;
     char filename[PATH_MAX];
-    char argv[256];
+    char argv[EXECVE_ARG_MAX][EXECVE_ARG_LEN];
+    char argv_last[EXECVE_ARG_LEN];
     __u32 argc;
+    int error_raw;
 };
 
 struct signal_event {
@@ -120,6 +134,35 @@ struct connect_event {
     int error_raw;
 };
 
+struct dns_event {
+    __u16 txid;
+    __u16 query_type;
+    __u8 rcode;
+    __u8 response;
+    __u16 query_raw_len;
+    __u64 latency_ns;
+    int error_raw;
+    char query[DNS_NAME_MAX];
+    __u8 query_raw[DNS_QUERY_RAW_MAX];
+};
+
+struct sched_event {
+    __u32 prev_pid;
+    int prev_prio;
+    long prev_state;
+    __u32 next_pid;
+    int next_prio;
+    __u32 cpu;
+    __u64 runq_latency_ns;
+    __u8 wakeup_tracked;
+};
+
+struct sched_sample {
+    enum event_type type;
+    struct event_common common;
+    struct sched_event details;
+};
+
 struct event {
     enum event_type type;           // Type of event (execve, signal, mem, bind)
     struct event_common common;     // Common fields for all events
@@ -132,6 +175,8 @@ struct event {
         struct listen_event listen;
         struct accept_event accept;
         struct connect_event connect;
+        struct dns_event dns;
+        struct sched_event sched;
     } details;
 };
 

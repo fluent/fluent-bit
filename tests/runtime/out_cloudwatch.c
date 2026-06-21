@@ -9,6 +9,7 @@
 #include "../../plugins/out_cloudwatch_logs/cloudwatch_api.h"
 
 #define ERROR_ALREADY_EXISTS "{\"__type\":\"ResourceAlreadyExistsException\"}"
+#define CLOUDWATCH_ERROR_NOT_FOUND "{\"__type\":\"ResourceNotFoundException\"}"
 /* not a real error code, but tests that the code can respond to any error */
 #define ERROR_UNKNOWN "{\"__type\":\"UNKNOWN\"}"
 
@@ -284,6 +285,44 @@ void flb_test_cloudwatch_error_put_log_events(void)
     flb_destroy(ctx);
 }
 
+void flb_test_cloudwatch_error_put_log_events_not_found(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* ResourceNotFoundException must follow the normal output retry path. */
+    setenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST", "true", 1);
+    setenv("TEST_PUT_LOG_EVENTS_ERROR", CLOUDWATCH_ERROR_NOT_FOUND, 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "cloudwatch_logs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "log_group_name", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "log_stream_prefix", "from-fluent-", NULL);
+    flb_output_set(ctx, out_ffd, "auto_create_group", "On", NULL);
+    flb_output_set(ctx, out_ffd, "net.keepalive", "Off", NULL);
+    flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    unsetenv("TEST_PUT_LOG_EVENTS_ERROR");
+}
+
 void flb_test_cloudwatch_put_retention_policy_success(void)
 {
     int ret;
@@ -548,6 +587,7 @@ TEST_LIST = {
     {"create_group_error", flb_test_cloudwatch_error_create_group },
     {"create_stream_error", flb_test_cloudwatch_error_create_stream },
     {"put_log_events_error", flb_test_cloudwatch_error_put_log_events },
+    {"put_log_events_not_found", flb_test_cloudwatch_error_put_log_events_not_found },
     {"put_retention_policy_success", flb_test_cloudwatch_put_retention_policy_success },
     {"already_exists_create_group_put_retention_policy", flb_test_cloudwatch_already_exists_create_group_put_retention_policy },
     {"error_put_retention_policy", flb_test_cloudwatch_error_put_retention_policy },

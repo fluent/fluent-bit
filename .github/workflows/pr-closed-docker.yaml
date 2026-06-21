@@ -12,7 +12,7 @@ jobs:
       # We may need a specific token here with `packages:admin` privileges which is not available to GITHUB_TOKEN
       packages: write
     steps:
-      - uses: vlaurin/action-ghcr-prune@v0.6.0
+      - uses: vlaurin/action-ghcr-prune@0cf7d39f88546edd31965acba78cdcb0be14d641 # v0.6.0
         with:
           organization: fluent
           container: fluent-bit/pr-${{ github.event.number }}

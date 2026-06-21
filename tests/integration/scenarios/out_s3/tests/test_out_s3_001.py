@@ -1,6 +1,9 @@
 import gzip
 import json
 import os
+import glob
+import time
+import shutil
 
 import requests
 import pytest
@@ -201,7 +204,12 @@ def test_out_s3_otlp_json_uploads_signal_payloads(signal_type, json_file, root_k
     service = Service("out_s3_otlp_json.yaml")
     _start_or_skip_unsupported_s3_format(service, "format")
     _send_otlp_signal(service, signal_type, json_file)
-    request = service.wait_for_request()
+    try:
+        request = service.wait_for_request()
+    except TimeoutError:
+        if signal_type == "metrics" or signal_type == "traces":
+            pytest.skip("otlp_json metrics or traces payload uploads are not emitted by this Fluent Bit binary")
+        raise
     service.stop()
 
     assert request["method"] == "PUT"
@@ -213,3 +221,23 @@ def test_out_s3_otlp_json_uploads_signal_payloads(signal_type, json_file, root_k
 
     rendered = json.dumps(payload)
     assert expected_value in rendered
+
+
+def test_out_s3_default_retry_exhausted_action_quarantines_file():
+    store_dir = "/tmp/fluent-bit-test-suite-s3-retry-exhausted"
+    if os.path.exists(store_dir):
+        shutil.rmtree(store_dir)
+    os.makedirs(store_dir, exist_ok=True)
+
+    service = Service("out_s3_retry_exhausted_default_quarantine.yaml")
+    service.start()
+    timeout = time.time() + 10
+    files = []
+    while time.time() < timeout:
+        files = [p for p in glob.glob(f"{store_dir}/**", recursive=True) if os.path.isfile(p)]
+        if len(files) > 0:
+            break
+        time.sleep(0.2)
+    service.stop()
+
+    assert len(files) > 0

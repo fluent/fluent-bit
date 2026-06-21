@@ -25,7 +25,12 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include <windows.h>
+#endif
+
 #define DEFAULT_BUF_SIZE 16000
+#define FLB_STDIN_WIN32_COLLECT_NSEC 100000000L
 
 /* STDIN Input configuration & context */
 struct flb_in_stdin_config {
@@ -41,6 +46,11 @@ struct flb_in_stdin_config {
     struct flb_pack_state pack_state;
     struct flb_input_instance *ins;
     struct flb_log_event_encoder *log_encoder;
+
+#ifdef FLB_SYSTEM_WINDOWS
+    HANDLE stdin_handle;
+    DWORD stdin_type;
+#endif
 };
 
 extern struct flb_input_plugin in_stdin_plugin;

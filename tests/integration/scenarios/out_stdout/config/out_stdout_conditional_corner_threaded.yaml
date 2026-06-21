@@ -1,0 +1,103 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: trace
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      alias: threaded_processor_dummy
+      threaded: true
+      tag: threaded.processor.base
+      dummy: '{"message":"threaded processor match"}'
+      samples: 1
+      processors:
+        logs:
+          - name: content_modifier
+            action: insert
+            key: topic
+            value: topic1
+      routes:
+        logs:
+          - name: threaded_processor_all
+            to:
+              outputs:
+                - stdout_all
+
+          - name: threaded_topic1
+            condition:
+              op: and
+              rules:
+                - field: $topic
+                  op: eq
+                  value: topic1
+            to:
+              outputs:
+                - stdout_topic1
+
+    - name: dummy
+      alias: threaded_default_dummy
+      threaded: true
+      tag: threaded.default.base
+      dummy: '{"message":"threaded default fallback","topic":"topic2"}'
+      samples: 1
+      routes:
+        logs:
+          - name: threaded_default_all
+            to:
+              outputs:
+                - stdout_all
+
+          - name: threaded_default_topic1
+            condition:
+              op: and
+              rules:
+                - field: $topic
+                  op: eq
+                  value: topic1
+            to:
+              outputs:
+                - stdout_topic1
+
+          - name: threaded_default
+            condition:
+              default: true
+            to:
+              outputs:
+                - stdout_default
+
+    - name: dummy
+      alias: threaded_miss_dummy
+      threaded: true
+      tag: threaded.miss.base
+      dummy: '{"message":"threaded unmatched without default","topic":"topic2"}'
+      samples: 1
+      routes:
+        logs:
+          - name: threaded_miss_all
+            to:
+              outputs:
+                - stdout_all
+
+          - name: threaded_miss_topic1
+            condition:
+              op: and
+              rules:
+                - field: $topic
+                  op: eq
+                  value: topic1
+            to:
+              outputs:
+                - stdout_topic1
+
+  outputs:
+    - name: stdout
+      alias: stdout_all
+
+    - name: stdout
+      alias: stdout_topic1
+
+    - name: stdout
+      alias: stdout_default

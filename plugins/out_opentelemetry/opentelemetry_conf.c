@@ -906,7 +906,11 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
     if (ctx->oauth2_ctx) {
         flb_oauth2_destroy(ctx->oauth2_ctx);
     }
-    flb_oauth2_config_destroy(&ctx->oauth2_config);
+    /*
+     * ctx->oauth2_config strings are populated through the output config map,
+     * so flb_config_map_destroy() owns their release. The OAuth2 runtime
+     * context clones the strings it needs.
+     */
 
     flb_free(ctx->proxy_host);
     flb_free(ctx);

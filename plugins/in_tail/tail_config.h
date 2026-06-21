@@ -73,11 +73,11 @@ struct flb_tail_config {
     int coll_fd_inactive;
     int coll_fd_dmode_flush;
     int coll_fd_mult_flush;
-    int coll_fd_progress_check;
 
     /* Backend collectors */
     int coll_fd_fs1;           /* used by fs_inotify & fs_stat */
     int coll_fd_fs2;           /* only used by fs_stat         */
+    int coll_fd_progress_check; /* inotify missed-event recovery timer */
 
     /* Configuration */
     int dynamic_tag;           /* dynamic tag ? e.g: abc.*     */

@@ -674,6 +674,222 @@ struct chronicle_entry {
     struct cfl_list _head;
 };
 
+static void chronicle_entries_destroy(struct cfl_list *entry_list)
+{
+    struct cfl_list *head;
+    struct cfl_list *tmp;
+    struct chronicle_entry *entry;
+
+    cfl_list_foreach_safe(head, tmp, entry_list) {
+        entry = cfl_list_entry(head, struct chronicle_entry, _head);
+        flb_sds_destroy(entry->log_text);
+        cfl_list_del(&entry->_head);
+        flb_free(entry);
+    }
+}
+
+struct chronicle_resolved_label {
+    flb_sds_t key;
+    flb_sds_t value;
+    struct mk_list _head;
+};
+
+static void chronicle_resolved_labels_destroy(struct mk_list *labels)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct chronicle_resolved_label *label;
+
+    mk_list_foreach_safe(head, tmp, labels) {
+        label = mk_list_entry(head, struct chronicle_resolved_label, _head);
+        mk_list_del(&label->_head);
+        flb_sds_destroy(label->key);
+        flb_sds_destroy(label->value);
+        flb_free(label);
+    }
+}
+
+static int chronicle_resolved_label_add(struct mk_list *labels,
+                                        flb_sds_t key, flb_sds_t value)
+{
+    struct chronicle_resolved_label *label;
+
+    label = flb_calloc(1, sizeof(struct chronicle_resolved_label));
+    if (!label) {
+        flb_errno();
+        return -1;
+    }
+
+    label->key = flb_sds_create(key);
+    if (!label->key) {
+        flb_free(label);
+        return -1;
+    }
+
+    label->value = flb_sds_create(value);
+    if (!label->value) {
+        flb_sds_destroy(label->key);
+        flb_free(label);
+        return -1;
+    }
+
+    mk_list_add(&label->_head, labels);
+    return 0;
+}
+
+static int chronicle_sds_equal(flb_sds_t left, flb_sds_t right)
+{
+    size_t left_len;
+    size_t right_len;
+
+    if (left == NULL && right == NULL) {
+        return FLB_TRUE;
+    }
+
+    if (left == NULL || right == NULL) {
+        return FLB_FALSE;
+    }
+
+    left_len = flb_sds_len(left);
+    right_len = flb_sds_len(right);
+
+    if (left_len != right_len) {
+        return FLB_FALSE;
+    }
+
+    if (strncmp(left, right, left_len) != 0) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
+static int chronicle_resolved_labels_match(struct mk_list *left,
+                                           struct mk_list *right)
+{
+    struct mk_list *left_head;
+    struct mk_list *right_head;
+    struct chronicle_resolved_label *left_label;
+    struct chronicle_resolved_label *right_label;
+
+    if (mk_list_size(left) != mk_list_size(right)) {
+        return FLB_FALSE;
+    }
+
+    right_head = right->next;
+    mk_list_foreach(left_head, left) {
+        if (right_head == right) {
+            return FLB_FALSE;
+        }
+
+        left_label = mk_list_entry(left_head, struct chronicle_resolved_label, _head);
+        right_label = mk_list_entry(right_head, struct chronicle_resolved_label, _head);
+
+        if (chronicle_sds_equal(left_label->key, right_label->key) == FLB_FALSE ||
+            chronicle_sds_equal(left_label->value, right_label->value) == FLB_FALSE) {
+            return FLB_FALSE;
+        }
+
+        right_head = right_head->next;
+    }
+
+    return FLB_TRUE;
+}
+
+static void chronicle_resolved_labels_move(struct mk_list *dst,
+                                           struct mk_list *src)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+
+    mk_list_foreach_safe(head, tmp, src) {
+        mk_list_del(head);
+        mk_list_add(head, dst);
+    }
+}
+
+static int chronicle_metadata_match(flb_sds_t left_namespace,
+                                    struct mk_list *left_labels,
+                                    flb_sds_t right_namespace,
+                                    struct mk_list *right_labels)
+{
+    if (chronicle_sds_equal(left_namespace, right_namespace) == FLB_FALSE) {
+        return FLB_FALSE;
+    }
+
+    return chronicle_resolved_labels_match(left_labels, right_labels);
+}
+
+static int chronicle_metadata_resolve(struct flb_chronicle *ctx,
+                                      char *tag, int tag_len,
+                                      msgpack_object map,
+                                      flb_sds_t *namespace,
+                                      struct mk_list *labels,
+                                      int *label_count)
+{
+    int ret;
+    struct mk_list *head;
+    struct flb_chronicle_label *label;
+    flb_sds_t value;
+
+    *label_count = 0;
+
+    if (ctx->namespace_ra) {
+        *namespace = flb_ra_translate_check(ctx->namespace_ra,
+                                            tag, tag_len,
+                                            map, NULL, FLB_TRUE);
+        if (!*namespace || flb_sds_len(*namespace) == 0) {
+            if (*namespace) {
+                flb_sds_destroy(*namespace);
+                *namespace = NULL;
+            }
+            if (ctx->namespace) {
+                *namespace = flb_sds_create(ctx->namespace);
+            }
+            else {
+                flb_plg_warn(ctx->ins,
+                             "namespace_key '%s' did not resolve for this batch",
+                             ctx->namespace_key);
+            }
+        }
+    }
+    else if (ctx->namespace) {
+        *namespace = flb_sds_create(ctx->namespace);
+    }
+
+    mk_list_foreach(head, &ctx->labels) {
+        label = mk_list_entry(head, struct flb_chronicle_label, _head);
+
+        if (label->ra) {
+            value = flb_ra_translate_check(label->ra,
+                                           tag, tag_len,
+                                           map, NULL, FLB_TRUE);
+            if (!value) {
+                flb_plg_warn(ctx->ins,
+                             "label '%s' did not resolve for this batch",
+                             label->key);
+                continue;
+            }
+        }
+        else {
+            value = label->value;
+        }
+
+        ret = chronicle_resolved_label_add(labels, label->key, value);
+        if (label->ra) {
+            flb_sds_destroy(value);
+        }
+
+        if (ret != 0) {
+            return -1;
+        }
+
+        (*label_count)++;
+    }
+
+    return 0;
+}
+
 static int chronicle_format(const void *data, size_t bytes,
                             const char *tag, size_t tag_len,
                             char **out_data, size_t *out_size,
@@ -687,7 +903,7 @@ static int chronicle_format(const void *data, size_t bytes,
     int ret;
     int array_size = 0;
     size_t off = 0;
-    size_t last_off = 0;
+    size_t last_off = last_offset;
     size_t alloc_size = 0;
     size_t s;
     char time_formatted[255];
@@ -702,10 +918,32 @@ static int chronicle_format(const void *data, size_t bytes,
     char *json_str;
     struct cfl_list entry_list;
     struct chronicle_entry *entry;
-    struct cfl_list *tmp;
     struct cfl_list *head;
+    struct mk_list resolved_labels;
+    struct mk_list record_labels;
+    struct mk_list *label_head;
+    struct chronicle_resolved_label *label;
+    flb_sds_t namespace = NULL;
+    flb_sds_t record_namespace = NULL;
+    int label_count = 0;
+    int record_label_count = 0;
+    int map_size = 3;
+    int metadata_resolved = FLB_FALSE;
+    size_t record_start;
+
+    if (out_data) {
+        *out_data = NULL;
+    }
+    if (out_size) {
+        *out_size = 0;
+    }
+    if (out_offset) {
+        *out_offset = last_offset;
+    }
 
     cfl_list_init(&entry_list);
+    mk_list_init(&resolved_labels);
+    mk_list_init(&record_labels);
 
     array_size = count_mp_with_threshold(last_offset, threshold, log_decoder, ctx);
 
@@ -717,13 +955,14 @@ static int chronicle_format(const void *data, size_t bytes,
     if (last_offset != 0) {
         log_decoder->offset = last_offset;
     }
+    off = last_offset;
 
     while ((ret = flb_log_event_decoder_next(
                     log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        record_start = off;
         off = log_decoder->offset;
-        alloc_size = (off - last_off) + 128; /* JSON is larger than msgpack */
-        last_off = off;
+        alloc_size = (off - record_start) + 128; /* JSON is larger than msgpack */
 
         if (ctx->log_key != NULL) {
             log_text = flb_pack_msgpack_extract_log_key(ctx, bytes, log_event, config);
@@ -757,8 +996,49 @@ static int chronicle_format(const void *data, size_t bytes,
             return -1;
         }
 
+        mk_list_init(&record_labels);
+        record_namespace = NULL;
+        record_label_count = 0;
+        ret = chronicle_metadata_resolve(ctx,
+                                         (char *) tag, tag_len,
+                                         *log_event.body,
+                                         &record_namespace,
+                                         &record_labels,
+                                         &record_label_count);
+        if (ret != 0) {
+            flb_sds_destroy(log_text);
+            chronicle_resolved_labels_destroy(&record_labels);
+            flb_sds_destroy(record_namespace);
+            chronicle_resolved_labels_destroy(&resolved_labels);
+            flb_sds_destroy(namespace);
+            chronicle_entries_destroy(&entry_list);
+            return -1;
+        }
+
+        if (metadata_resolved == FLB_FALSE) {
+            namespace = record_namespace;
+            record_namespace = NULL;
+            chronicle_resolved_labels_move(&resolved_labels, &record_labels);
+            label_count = record_label_count;
+            metadata_resolved = FLB_TRUE;
+        }
+        else if (chronicle_metadata_match(namespace, &resolved_labels,
+                                          record_namespace, &record_labels) == FLB_FALSE) {
+            flb_plg_debug(ctx->ins,
+                          "splitting Chronicle batch due to namespace or label change");
+            flb_sds_destroy(log_text);
+            chronicle_resolved_labels_destroy(&record_labels);
+            flb_sds_destroy(record_namespace);
+            last_off = record_start;
+            break;
+        }
+
+        chronicle_resolved_labels_destroy(&record_labels);
+        flb_sds_destroy(record_namespace);
+
         entry = flb_malloc(sizeof(struct chronicle_entry));
         if (!entry) {
+            flb_sds_destroy(log_text);
             continue;
         }
 
@@ -767,6 +1047,7 @@ static int chronicle_format(const void *data, size_t bytes,
         entry->timestamp = log_event.timestamp;
 
         cfl_list_add(&entry->_head, &entry_list);
+        last_off = off;
 
         if (off >= (threshold + last_offset)) {
             flb_plg_debug(ctx->ins,
@@ -780,6 +1061,8 @@ static int chronicle_format(const void *data, size_t bytes,
 
     /* If the list is empty, no records were valid. */
     if (cfl_list_is_empty(&entry_list)) {
+        chronicle_resolved_labels_destroy(&resolved_labels);
+        flb_sds_destroy(namespace);
         return -1;
     }
 
@@ -808,7 +1091,15 @@ static int chronicle_format(const void *data, size_t bytes,
      *   ]
      * }
      */
-    msgpack_pack_map(&mp_pck, 3);
+    if (namespace) {
+        map_size++;
+    }
+
+    if (label_count > 0) {
+        map_size++;
+    }
+
+    msgpack_pack_map(&mp_pck, map_size);
 
     msgpack_pack_str(&mp_pck, 11);
     msgpack_pack_str_body(&mp_pck, "customer_id", 11);
@@ -822,6 +1113,37 @@ static int chronicle_format(const void *data, size_t bytes,
     msgpack_pack_str(&mp_pck, strlen(ctx->log_type));
     msgpack_pack_str_body(&mp_pck, ctx->log_type, strlen(ctx->log_type));
 
+    if (namespace) {
+        msgpack_pack_str(&mp_pck, 9);
+        msgpack_pack_str_body(&mp_pck, "namespace", 9);
+
+        msgpack_pack_str(&mp_pck, flb_sds_len(namespace));
+        msgpack_pack_str_body(&mp_pck, namespace, flb_sds_len(namespace));
+    }
+
+    if (label_count > 0) {
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "labels", 6);
+
+        msgpack_pack_array(&mp_pck, label_count);
+
+        mk_list_foreach(label_head, &resolved_labels) {
+            label = mk_list_entry(label_head, struct chronicle_resolved_label, _head);
+
+            msgpack_pack_map(&mp_pck, 2);
+
+            msgpack_pack_str(&mp_pck, 3);
+            msgpack_pack_str_body(&mp_pck, "key", 3);
+            msgpack_pack_str(&mp_pck, flb_sds_len(label->key));
+            msgpack_pack_str_body(&mp_pck, label->key, flb_sds_len(label->key));
+
+            msgpack_pack_str(&mp_pck, 5);
+            msgpack_pack_str_body(&mp_pck, "value", 5);
+            msgpack_pack_str(&mp_pck, flb_sds_len(label->value));
+            msgpack_pack_str_body(&mp_pck, label->value, flb_sds_len(label->value));
+        }
+    }
+
     msgpack_pack_str(&mp_pck, 7);
     msgpack_pack_str_body(&mp_pck, "entries", 7);
 
@@ -829,7 +1151,7 @@ static int chronicle_format(const void *data, size_t bytes,
     msgpack_pack_array(&mp_pck, cfl_list_size(&entry_list));
 
     /* Iterate the list of valid entries and pack them */
-    cfl_list_foreach_safe(head, tmp, &entry_list) {
+    cfl_list_foreach(head, &entry_list) {
         entry = cfl_list_entry(head, struct chronicle_entry, _head);
         /*
          * Pack entries
@@ -863,16 +1185,15 @@ static int chronicle_format(const void *data, size_t bytes,
         msgpack_pack_str(&mp_pck, s);
         msgpack_pack_str_body(&mp_pck, time_formatted, s);
 
-        /* Clean up the entry now that it's packed */
-        flb_sds_destroy(entry->log_text);
-        cfl_list_del(&entry->_head);
-        flb_free(entry);
     }
 
     /* Convert from msgpack to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
                                           config->json_escape_unicode);
     msgpack_sbuffer_destroy(&mp_sbuf);
+    chronicle_resolved_labels_destroy(&resolved_labels);
+    flb_sds_destroy(namespace);
+    chronicle_entries_destroy(&entry_list);
 
     if (!out_buf) {
         flb_plg_error(ctx->ins, "error formatting JSON payload");
@@ -1161,6 +1482,21 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_STR, "log_key", NULL,
       0, FLB_TRUE, offsetof(struct flb_chronicle, log_key),
       "Set the log key"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "namespace", NULL,
+      0, FLB_TRUE, offsetof(struct flb_chronicle, namespace),
+      "Set the Chronicle namespace"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "namespace_key", NULL,
+      0, FLB_TRUE, offsetof(struct flb_chronicle, namespace_key),
+      "Record accessor for the Chronicle namespace. Falls back to namespace"
+    },
+    {
+      FLB_CONFIG_MAP_SLIST_1, "label", NULL,
+      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_chronicle, label_properties),
+      "Add a Chronicle label key/value pair. Multiple labels can be set"
     },
     /* EOF */
     {0}

@@ -3,10 +3,14 @@ import json
 import logging
 import os
 import socket
+import threading
 
 import requests
 import pytest
 from google.protobuf import json_format
+from h2.config import H2Configuration
+from h2.connection import H2Connection
+from h2.events import DataReceived, RequestReceived, StreamEnded
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
@@ -32,15 +36,22 @@ def _repo_relative(*parts):
     return os.path.abspath(os.path.join(os.path.dirname(__file__), *parts))
 
 
+def _attributes_to_dict(attributes):
+    return {
+        item["key"]: next(iter(item["value"].values()))
+        for item in attributes
+    }
+
+
 def iter_log_records(output):
     for resource_log in output.get("resourceLogs", []):
+        resource_attributes = _attributes_to_dict(
+            resource_log.get("resource", {}).get("attributes", [])
+        )
         for scope_log in resource_log.get("scopeLogs", []):
             for record in scope_log.get("logRecords", []):
-                attributes = {
-                    item["key"]: next(iter(item["value"].values()))
-                    for item in record.get("attributes", [])
-                }
-                yield record, attributes
+                attributes = _attributes_to_dict(record.get("attributes", []))
+                yield record, attributes, resource_attributes
 
 
 def iter_metric_attributes(output):
@@ -199,6 +210,21 @@ class Service:
         )
         response.raise_for_status()
 
+    def send_payload_dict(self, payload_dict, signal_type):
+        payload = self._build_signal_payload_from_dict(payload_dict, signal_type)
+        endpoints = {
+            "logs": "/v1/logs",
+            "metrics": "/v1/metrics",
+            "traces": "/v1/traces",
+        }
+        response = requests.post(
+            f"http://127.0.0.1:{self.flb_listener_port}{endpoints[signal_type]}",
+            data=payload.SerializeToString(),
+            headers={"Content-Type": "application/x-protobuf"},
+            timeout=5,
+        )
+        response.raise_for_status()
+
     def send_json_traces_payload(self, json_file):
         payload = self._build_signal_payload(json_file, "traces")
         response = requests.post(
@@ -225,6 +251,352 @@ class Service:
         return json_format.Parse(
             json.dumps(read_json_file(self._resolve_json_fixture(json_file))),
             messages[signal_type],
+        )
+
+    def _build_signal_payload_from_dict(self, payload_dict, signal_type):
+        messages = {
+            "logs": ExportLogsServiceRequest(),
+            "metrics": ExportMetricsServiceRequest(),
+            "traces": ExportTraceServiceRequest(),
+        }
+        return json_format.Parse(json.dumps(payload_dict), messages[signal_type])
+
+
+class IPv6Http2OtlpReceiver:
+    def __init__(self, port):
+        self.port = port
+        self.server_socket = None
+        self.thread = None
+        self.requests = []
+        self.stop_event = threading.Event()
+
+    def start(self):
+        self.server_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.bind(("::1", self.port))
+        self.server_socket.listen(5)
+        self.server_socket.settimeout(0.5)
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.stop_event.set()
+
+        if self.server_socket is not None:
+            self.server_socket.close()
+            self.server_socket = None
+
+        if self.thread is not None:
+            self.thread.join(timeout=5)
+            self.thread = None
+
+    def _serve(self):
+        while not self.stop_event.is_set():
+            try:
+                client_socket, _ = self.server_socket.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+
+            with client_socket:
+                self._handle_connection(client_socket)
+
+    def _handle_connection(self, client_socket):
+        connection = H2Connection(
+            config=H2Configuration(client_side=False, header_encoding="utf-8")
+        )
+        request = {
+            "headers": {},
+            "path": None,
+            "body": b"",
+        }
+
+        client_socket.settimeout(2)
+        connection.initiate_connection()
+        client_socket.sendall(connection.data_to_send())
+
+        while not self.stop_event.is_set():
+            try:
+                data = client_socket.recv(65535)
+            except socket.timeout:
+                continue
+
+            if not data:
+                break
+
+            for event in connection.receive_data(data):
+                if isinstance(event, RequestReceived):
+                    request["headers"] = dict(event.headers)
+                    request["path"] = request["headers"].get(":path")
+                elif isinstance(event, DataReceived):
+                    request["body"] += event.data
+                    connection.acknowledge_received_data(
+                        event.flow_controlled_length,
+                        event.stream_id,
+                    )
+                elif isinstance(event, StreamEnded):
+                    self.requests.append(request)
+                    self._send_response(connection, event.stream_id)
+                    client_socket.sendall(connection.data_to_send())
+                    return
+
+            pending = connection.data_to_send()
+            if pending:
+                client_socket.sendall(pending)
+
+    def _send_response(self, connection, stream_id):
+        body = b"{}"
+
+        connection.send_headers(
+            stream_id,
+            [
+                (":status", "200"),
+                ("content-type", "application/json"),
+                ("content-length", str(len(body))),
+            ],
+        )
+        connection.send_data(stream_id, body, end_stream=True)
+
+
+class Http2IPv6Service:
+    def __init__(self):
+        self.config_file = _repo_relative("../config", "out_otel_http2_ipv6_logs.yaml")
+        self.receiver = None
+        self.test_suite_http_port = None
+        self.service = FluentBitTestService(
+            self.config_file,
+            pre_start=self._start_receiver,
+            post_stop=self._stop_receiver,
+        )
+
+    def _start_receiver(self, service):
+        self.test_suite_http_port = service.test_suite_http_port
+        self.receiver = IPv6Http2OtlpReceiver(service.test_suite_http_port)
+        self.receiver.start()
+
+    def _stop_receiver(self, service):
+        if self.receiver is not None:
+            self.receiver.stop()
+            self.receiver = None
+
+    def start(self):
+        self.service.start()
+
+    def stop(self):
+        self.service.stop()
+
+    def wait_for_requests(self, minimum_count, timeout=10):
+        return self.service.wait_for_condition(
+            lambda: self.receiver.requests
+            if len(self.receiver.requests) >= minimum_count
+            else None,
+            timeout=timeout,
+            interval=0.5,
+            description=f"{minimum_count} IPv6 HTTP/2 OTLP requests",
+        )
+
+
+def ipv6_loopback_available():
+    sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    try:
+        sock.bind(("::1", 0))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
+def _build_resource_collision_payload(user_id, body):
+    return {
+        "resource_logs": [
+            {
+                "resource": {
+                    "attributes": [
+                        {
+                            "key": "user.id",
+                            "value": {
+                                "string_value": user_id,
+                            },
+                        }
+                    ],
+                },
+                "scope_logs": [
+                    {
+                        "scope": {},
+                        "log_records": [
+                            {
+                                "time_unix_nano": "1640995200000000000",
+                                "body": {
+                                    "string_value": body,
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def _build_conditional_grouped_logs_payload():
+    def resource(route_group, group_id, scopes):
+        return {
+            "schema_url": f"https://schemas.example/{route_group}",
+            "resource": {
+                "attributes": [
+                    {
+                        "key": "route_group",
+                        "value": {
+                            "string_value": route_group,
+                        },
+                    },
+                    {
+                        "key": "group_id",
+                        "value": {
+                            "string_value": group_id,
+                        },
+                    },
+                    {
+                        "key": "service_name",
+                        "value": {
+                            "string_value": f"service-{route_group}",
+                        },
+                    },
+                ],
+            },
+            "scope_logs": scopes,
+        }
+
+    def scope(scope_name, scope_version, body, flags):
+        return {
+            "schema_url": f"https://schemas.example/{scope_name}",
+            "scope": {
+                "name": scope_name,
+                "version": scope_version,
+                "attributes": [
+                    {
+                        "key": "scope_marker",
+                        "value": {
+                            "string_value": f"{scope_name}-marker",
+                        },
+                    }
+                ],
+            },
+            "log_records": [
+                {
+                    "time_unix_nano": "1640995200000000000",
+                    "body": {
+                        "string_value": body,
+                    },
+                    "flags": flags,
+                    "attributes": [
+                        {
+                            "key": "record_marker",
+                            "value": {
+                                "string_value": f"{body}-marker",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+
+    resource_logs = [
+        resource(
+            "alpha",
+            "group-alpha",
+            [
+                scope("scope-alpha-a", "1.0.0", "event-alpha-a", 1),
+                scope("scope-alpha-b", "1.1.0", "event-alpha-b", 2),
+            ],
+        ),
+        resource("beta", "group-beta", [scope("scope-beta", "2.0.0", "event-beta", 3)]),
+        resource(
+            "fallback",
+            "group-default",
+            [scope("scope-default", "3.0.0", "event-default", 4)],
+        ),
+    ]
+
+    return {"resource_logs": resource_logs}
+
+
+def _assert_log_resource_attribution(logs_seen):
+    output = json.loads(json_format.MessageToJson(logs_seen[0]))
+    records = list(iter_log_records(output))
+    body_to_user = {
+        record["body"]["stringValue"]: resource_attributes["user.id"]
+        for record, _, resource_attributes in records
+    }
+
+    assert body_to_user["event-a"] == "user-a"
+    assert body_to_user["event-b"] == "user-b"
+    assert len(output["resourceLogs"]) == 2
+
+
+def _log_payloads_by_request_path(logs_seen, requests_seen):
+    assert len(logs_seen) >= len(requests_seen)
+
+    decoded_by_path = {}
+    for log_seen in logs_seen:
+        output = json.loads(json_format.MessageToJson(log_seen))
+        resource_logs = output.get("resourceLogs", [])
+        assert len(resource_logs) == 1
+
+        resource_attributes = _attributes_to_dict(
+            resource_logs[0].get("resource", {}).get("attributes", [])
+        )
+        group_id = resource_attributes.get("group_id")
+        assert group_id is not None
+        assert group_id.startswith("group-")
+
+        path = f"/conditional/group/{group_id[6:]}"
+        assert path not in decoded_by_path
+        decoded_by_path[path] = output
+
+    payloads_by_path = {}
+    for request_seen in requests_seen:
+        path = request_seen["path"]
+        assert path in decoded_by_path
+        payloads_by_path[path] = decoded_by_path[path]
+
+    return payloads_by_path
+
+
+def _assert_grouped_resource(output, *, route_group, group_id, scopes):
+    resource_logs = output.get("resourceLogs", [])
+    assert len(resource_logs) == 1
+
+    resource_log = resource_logs[0]
+    assert resource_log["schemaUrl"] == f"https://schemas.example/{route_group}"
+
+    resource_attributes = _attributes_to_dict(
+        resource_log.get("resource", {}).get("attributes", [])
+    )
+    assert resource_attributes["route_group"] == route_group
+    assert resource_attributes["group_id"] == group_id
+    assert resource_attributes["service_name"] == f"service-{route_group}"
+
+    scope_logs = resource_log.get("scopeLogs", [])
+    assert len(scope_logs) == len(scopes)
+
+    for scope_log, expected in zip(scope_logs, scopes):
+        scope = scope_log["scope"]
+        assert scope_log["schemaUrl"] == f"https://schemas.example/{expected['name']}"
+        assert scope["name"] == expected["name"]
+        assert scope["version"] == expected["version"]
+        assert _attributes_to_dict(scope.get("attributes", []))["scope_marker"] == (
+            f"{expected['name']}-marker"
+        )
+
+        records = scope_log.get("logRecords", [])
+        assert len(records) == 1
+        assert records[0]["body"]["stringValue"] == expected["body"]
+        assert records[0]["flags"] == expected["flags"]
+        assert _attributes_to_dict(records[0].get("attributes", []))["record_marker"] == (
+            f"{expected['body']}-marker"
         )
 
 
@@ -336,7 +708,7 @@ def test_out_opentelemetry_gzip_and_logs_body_key_attributes():
 
     request_seen = requests_seen[0]
     output = json.loads(json_format.MessageToJson(logs_seen[0]))
-    record, attributes = next(iter_log_records(output))
+    record, attributes, _ = next(iter_log_records(output))
 
     assert request_seen["headers"]["Content-Encoding"] == "gzip"
     assert record["body"]["stringValue"] == "body only"
@@ -354,7 +726,7 @@ def test_out_opentelemetry_zstd_and_logs_body_key_attributes():
 
     request_seen = requests_seen[0]
     output = json.loads(json_format.MessageToJson(logs_seen[0]))
-    record, attributes = next(iter_log_records(output))
+    record, attributes, _ = next(iter_log_records(output))
 
     assert request_seen["headers"]["Content-Encoding"] == "zstd"
     assert record["body"]["stringValue"] == "zstd body"
@@ -397,6 +769,51 @@ def test_out_opentelemetry_grpc_custom_logs_uri():
     assert request_seen["path"] == "/custom.logs.v1.Logs/Push"
     assert request_seen["headers"]["x-grpc"] == "otlp-test"
     assert record["body"]["stringValue"] == "hello via grpc"
+
+
+def test_out_opentelemetry_http2_ipv6_authority_header():
+    if not ipv6_loopback_available():
+        pytest.skip("IPv6 loopback is not available")
+
+    service = Http2IPv6Service()
+    try:
+        service.start()
+        requests_seen = service.wait_for_requests(1, timeout=30)
+    finally:
+        service.stop()
+
+    request_seen = requests_seen[0]
+
+    assert request_seen["path"] == "/v1/logs"
+    assert request_seen["headers"][":authority"] == f"[::1]:{service.test_suite_http_port}"
+
+
+@pytest.mark.parametrize(
+    "config_file,receiver_mode",
+    [
+        ("out_otel_http_logs_otlp_input_slow_flush.yaml", "http"),
+        ("out_otel_grpc_logs_otlp_input_slow_flush.yaml", "grpc"),
+    ],
+    ids=["http", "grpc"],
+)
+def test_out_opentelemetry_logs_preserve_resources_across_otlp_input_requests(
+    config_file,
+    receiver_mode,
+):
+    service = Service(config_file, receiver_mode=receiver_mode)
+    service.start()
+    service.send_payload_dict(
+        _build_resource_collision_payload("user-a", "event-a"),
+        "logs",
+    )
+    service.send_payload_dict(
+        _build_resource_collision_payload("user-b", "event-b"),
+        "logs",
+    )
+    logs_seen = service.wait_for_signal("logs", minimum_count=1, timeout=10)
+    service.stop()
+
+    _assert_log_resource_attribution(logs_seen)
 
 
 def test_out_opentelemetry_metrics_uri_and_add_label():
@@ -498,7 +915,7 @@ def test_out_opentelemetry_custom_metadata_key_accessors():
 
     request_seen = requests_seen[0]
     output = json.loads(json_format.MessageToJson(logs_seen[0]))
-    record, attributes = next(iter_log_records(output))
+    record, attributes, _ = next(iter_log_records(output))
 
     assert request_seen["path"] == "/metadata/logs"
     assert record["severityText"] == "WARN"
@@ -510,6 +927,78 @@ def test_out_opentelemetry_custom_metadata_key_accessors():
     assert record["flags"] == 1
     assert attributes["example_key"] == "example_value"
     assert attributes["custom_attr"] == "custom_value"
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "out_otel_http_conditional_grouped_logs_non_threaded.yaml",
+        "out_otel_http_conditional_grouped_logs_threaded.yaml",
+    ],
+    ids=["non_threaded", "threaded"],
+)
+def test_out_opentelemetry_conditional_routing_preserves_group_metadata(config_file):
+    service = Service(config_file)
+    service.start()
+    try:
+        service.send_payload_dict(_build_conditional_grouped_logs_payload(), "logs")
+        logs_seen = list(service.wait_for_signal("logs", minimum_count=3, timeout=15))
+        requests_seen = list(service.wait_for_requests(3, timeout=15))
+    finally:
+        service.stop()
+
+    payloads_by_path = _log_payloads_by_request_path(logs_seen, requests_seen)
+    assert set(payloads_by_path) == {
+        "/conditional/group/alpha",
+        "/conditional/group/beta",
+        "/conditional/group/default",
+    }
+
+    _assert_grouped_resource(
+        payloads_by_path["/conditional/group/alpha"],
+        route_group="alpha",
+        group_id="group-alpha",
+        scopes=[
+            {
+                "name": "scope-alpha-a",
+                "version": "1.0.0",
+                "body": "event-alpha-a",
+                "flags": 1,
+            },
+            {
+                "name": "scope-alpha-b",
+                "version": "1.1.0",
+                "body": "event-alpha-b",
+                "flags": 2,
+            },
+        ],
+    )
+    _assert_grouped_resource(
+        payloads_by_path["/conditional/group/beta"],
+        route_group="beta",
+        group_id="group-beta",
+        scopes=[
+            {
+                "name": "scope-beta",
+                "version": "2.0.0",
+                "body": "event-beta",
+                "flags": 3,
+            },
+        ],
+    )
+    _assert_grouped_resource(
+        payloads_by_path["/conditional/group/default"],
+        route_group="fallback",
+        group_id="group-default",
+        scopes=[
+            {
+                "name": "scope-default",
+                "version": "3.0.0",
+                "body": "event-default",
+                "flags": 4,
+            },
+        ],
+    )
 
 
 def _wait_for_log_message(service, message, timeout=15):

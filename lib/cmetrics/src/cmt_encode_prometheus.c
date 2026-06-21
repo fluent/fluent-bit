@@ -18,6 +18,7 @@
  */
 
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_metric.h>
@@ -272,11 +273,16 @@ static int initialize_temporary_metric(struct cmt_metric *destination,
             return -1;
         }
 
-        destination_label->name = cfl_sds_create(source_label->name);
-        if (destination_label->name == NULL) {
-            free(destination_label);
-            destroy_temporary_metric_labels(destination);
-            return -1;
+        if (source_label->name == NULL) {
+            destination_label->name = NULL;
+        }
+        else {
+            destination_label->name = cfl_sds_create(source_label->name);
+            if (destination_label->name == NULL) {
+                free(destination_label);
+                destroy_temporary_metric_labels(destination);
+                return -1;
+            }
         }
 
         cfl_list_add(&destination_label->_head, &destination->labels);
@@ -295,7 +301,9 @@ static void format_metric(struct cmt *cmt,
     int i;
     int static_labels = 0;
     int defined_labels = 0;
-    struct cmt_map_label *label_k;
+    int label_key_count;
+    int label_index;
+    struct cmt_map_label *label_k = NULL;
     struct cmt_map_label *label_v;
     struct cfl_list *head;
     struct cmt_opts *opts;
@@ -309,11 +317,25 @@ static void format_metric(struct cmt *cmt,
 
     /* Static labels */
     static_labels = cmt_labels_count(cmt->static_labels);
+    label_key_count = map->label_count;
+    label_index = 0;
+    if (label_key_count > 0) {
+        label_k = cfl_list_entry_first(&map->label_keys, struct cmt_map_label, _head);
+    }
     cfl_list_foreach(head, &metric->labels) {
+        if (label_index >= label_key_count) {
+            break;
+        }
+
         label_v = cfl_list_entry(head, struct cmt_map_label, _head);
-        if (strlen(label_v->name)) {
+        if (label_k->name != NULL &&
+            label_v->name != NULL) {
             defined_labels++;
         }
+
+        label_index++;
+        label_k = cfl_list_entry_next(&label_k->_head, struct cmt_map_label,
+                                      _head, &map->label_keys);
     }
 
     if (!fmt->brace_open && (static_labels + defined_labels > 0)) {
@@ -335,11 +357,17 @@ static void format_metric(struct cmt *cmt,
         }
 
         i = 1;
+        label_index = 0;
         label_k = cfl_list_entry_first(&map->label_keys, struct cmt_map_label, _head);
         cfl_list_foreach(head, &metric->labels) {
+            if (label_index >= label_key_count) {
+                break;
+            }
+
             label_v = cfl_list_entry(head, struct cmt_map_label, _head);
 
-            if (strlen(label_v->name)) {
+            if (label_k->name != NULL &&
+                label_v->name != NULL) {
                 fmt->labels_count += add_label(buf, label_k->name, label_v->name);
                 if (i < defined_labels) {
                     cfl_sds_cat_safe(buf, ",", 1);
@@ -348,8 +376,9 @@ static void format_metric(struct cmt *cmt,
                 i++;
             }
 
+            label_index++;
             label_k = cfl_list_entry_next(&label_k->_head, struct cmt_map_label,
-                                         _head, &map->label_keys);
+                                          _head, &map->label_keys);
         }
     }
 
@@ -363,6 +392,7 @@ static void format_metric(struct cmt *cmt,
 static cfl_sds_t bucket_value_to_string(double val)
 {
     int len;
+    double parsed;
     cfl_sds_t str;
 
     str = cfl_sds_create_size(64);
@@ -371,9 +401,13 @@ static cfl_sds_t bucket_value_to_string(double val)
     }
 
     len = snprintf(str, 64, "%g", val);
+    parsed = strtod(str, NULL);
+    if (parsed != val || strchr(str, 'e') || strchr(str, 'E')) {
+        len = snprintf(str, 64, "%.17g", val);
+    }
     cfl_sds_len_set(str, len);
 
-    if (!strchr(str, '.')) {
+    if (!strchr(str, '.') && !strchr(str, 'e') && !strchr(str, 'E')) {
         cfl_sds_cat_safe(&str, ".0", 2);
     }
 

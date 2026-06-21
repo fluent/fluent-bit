@@ -56,6 +56,7 @@ jobs:
           - "-DFLB_SIMD=Off"
           - "-DFLB_ARROW=On"
           - "-DFLB_COMPILER_STRICT_POINTER_TYPES=On"
+          - "-DFLB_AVRO_ENCODER=On -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
         cmake_version:
           - "3.31.6"
         compiler:
@@ -75,6 +76,10 @@ jobs:
               cc: clang
               cxx: clang++
           - flb_option: "-DFLB_COMPILER_STRICT_POINTER_TYPES=On"
+            compiler:
+              cc: clang
+              cxx: clang++
+          - flb_option: "-DFLB_AVRO_ENCODER=On -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
             compiler:
               cc: clang
               cxx: clang++
@@ -105,16 +110,18 @@ jobs:
           sudo ln -s /usr/bin/llvm-symbolizer-12 /usr/bin/llvm-symbolizer || true
 
       - name: Install cmake
-        uses: jwlawson/actions-setup-cmake@v2
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
         with:
           cmake-version: "${{ matrix.cmake_version }}"
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          repository: calyptia/fluent-bit-ci
+          repository: fluent/fluent-bit-ci
           path: ci
+          # Last commit to master branch
+          ref: 17eb004a1b73b1c44986c20a9f4a33fc0961ca45
       - name: Setup Apache Arrow libraries for parquet (-DFLB_ARROW=On Only)
         if: matrix.flb_option == '-DFLB_ARROW=On'
         run: |
@@ -127,8 +134,10 @@ jobs:
 
       - name: ${{ matrix.compiler.cc }} & ${{ matrix.compiler.cxx }} - ${{ matrix.flb_option }}
         run: |
-          if [[ "$FLB_OPT" =~ COVERAGE ]]; then
-              # Coverage build requires larger coroutine stack.
+          if [[ "$FLB_OPT" =~ COVERAGE ||
+                "$FLB_OPT" =~ SANITIZE_ADDRESS ||
+                "$FLB_OPT" =~ SANITIZE_UNDEFINED ]]; then
+              # Coverage and sanitizer builds require larger coroutine stack.
               export FLB_OPT="${FLB_OPT} -DFLB_CORO_STACK_SIZE=4194304"
           fi
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
@@ -162,15 +171,17 @@ jobs:
       contents: read
     steps:
       - name: Install cmake
-        uses: jwlawson/actions-setup-cmake@v2
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
         with:
           cmake-version: "${{ matrix.cmake_version }}"
 
-      - uses: actions/checkout@v6
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          repository: calyptia/fluent-bit-ci
+          repository: fluent/fluent-bit-ci
           path: ci
+          # Last commit to master branch
+          ref: 17eb004a1b73b1c44986c20a9f4a33fc0961ca45
 
       - name: ${{ matrix.flb_option }}
         run: |
@@ -206,7 +217,7 @@ jobs:
 
     steps:
       - name: Checkout Fluent Bit code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup environment
         run: |
@@ -268,10 +279,10 @@ jobs:
           - riscv64
     steps:
       - name: Checkout Fluent Bit code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Prepare and build with QEMU ${{ matrix.arch }}
-        uses: uraimo/run-on-arch-action@v3
+        uses: uraimo/run-on-arch-action@f9b26e3a1a408d5fd530d20c17b9f3f4428ff8d9 # v3.1.0
         id: build-and-test-on-qemu
         with:
           arch: ${{ matrix.arch }}

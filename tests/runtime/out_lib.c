@@ -80,7 +80,7 @@ void wait_with_timeout(uint32_t timeout_ms, int *output_num)
 
         if (elapsed_time_flb > timeout_ms) {
             flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
-            // Reached timeout.
+            /* Reached timeout. */
             break;
         }
     }
@@ -437,6 +437,10 @@ static void test_max_records(void)
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    uint64_t elapsed_time_flb = 0;
     int ret;
     int num;
     char *input_json = "[1,{\"hoge\":\"moge\", \"bool\":true, \"int\":100, \"float\":-2.0}]";
@@ -475,7 +479,25 @@ static void test_max_records(void)
     }
 
     /* waiting to flush */
-    wait_with_timeout(1000, &num);
+    flb_time_get(&start_time);
+
+    while (true) {
+        num = get_output_num();
+        if (num >= expected) {
+            break;
+        }
+
+        flb_time_msleep(100);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
+
+        if (elapsed_time_flb > 1000) {
+            flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
+            /* Reached timeout. */
+            break;
+        }
+    }
 
     if (!TEST_CHECK(num == expected /* max_records */))  {
         TEST_MSG("max_records error. got=%d, expected=%d", num, expected);

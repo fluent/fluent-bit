@@ -20,6 +20,11 @@
 #ifndef CFL_OBJECT_H
 #define CFL_OBJECT_H
 
+#include <stdio.h>
+
+#include <cfl/cfl_list.h>
+#include <cfl/cfl_variant.h>
+
 enum {
     CFL_OBJECT_NONE = 0,
     CFL_OBJECT_KVLIST = 1,

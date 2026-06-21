@@ -21,13 +21,21 @@
 #define CFL_ARRAY_H
 
 #include <stdio.h>
+#include <stddef.h>
+#include <stdint.h>
+
 #include <cfl/cfl_variant.h>
+
+struct cfl_kvlist;
 
 struct cfl_array {
     int                  resizable;
     struct cfl_variant **entries;
     size_t               slot_count;
     size_t               entry_count;
+    struct cfl_variant  *owner;
+    struct cfl_array    *parent_array;
+    struct cfl_kvlist   *parent_kvlist;
 };
 
 struct cfl_array *cfl_array_create(size_t slot_count);
@@ -36,6 +44,10 @@ void cfl_array_destroy(struct cfl_array *array);
 static inline struct cfl_variant *cfl_array_fetch_by_index(struct cfl_array *array,
                                                            size_t position)
 {
+    if (array == NULL) {
+        return NULL;
+    }
+
     if (position >= array->entry_count) {
         return NULL;
     }
@@ -45,9 +57,19 @@ static inline struct cfl_variant *cfl_array_fetch_by_index(struct cfl_array *arr
 
 static inline size_t cfl_array_size(struct cfl_array *array)
 {
+    if (array == NULL) {
+        return 0;
+    }
+
     return array->entry_count;
 }
 
+/*
+ * Append APIs take ownership of the value on success. A raw array or kvlist
+ * must have one owning variant at a time. To move an existing kvpair value,
+ * detach it with cfl_kvpair_take_value() before reinserting it. Do not leave
+ * the same variant pointer attached to multiple live containers.
+ */
 int cfl_array_append(struct cfl_array *array, struct cfl_variant *value);
 int cfl_array_append_string(struct cfl_array *array, char *value);
 int cfl_array_append_string_s(struct cfl_array *array, char *str, size_t str_len, int referenced);

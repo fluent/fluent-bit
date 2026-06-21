@@ -8,12 +8,18 @@
 #include "generated/trace_bind.skel.h"
 #include "generated/trace_vfs.skel.h"
 #include "generated/trace_tcp.skel.h"
+#include "generated/trace_exec.skel.h"
+#include "generated/trace_dns.skel.h"
+#include "generated/trace_sched.skel.h"
 
 #include "bind/handler.h"
 #include "signal/handler.h"  // Include signal handler
 #include "malloc/handler.h" // Include malloc handler
 #include "vfs/handler.h"
 #include "tcp/handler.h"
+#include "exec/handler.h"
+#include "dns/handler.h"
+#include "sched/handler.h"
 
 /* Skeleton function pointer types */
 typedef void *(*trace_skel_open_func_t)(void);
@@ -66,6 +72,9 @@ DEFINE_GET_BPF_OBJECT(trace_malloc)
 DEFINE_GET_BPF_OBJECT(trace_bind)
 DEFINE_GET_BPF_OBJECT(trace_vfs)
 DEFINE_GET_BPF_OBJECT(trace_tcp)
+DEFINE_GET_BPF_OBJECT(trace_exec)
+DEFINE_GET_BPF_OBJECT(trace_dns)
+DEFINE_GET_BPF_OBJECT(trace_sched)
 
 static struct trace_registration trace_table[] = {
     REGISTER_TRACE(trace_signal, trace_signal_handler),
@@ -73,6 +82,9 @@ static struct trace_registration trace_table[] = {
     REGISTER_TRACE(trace_bind, trace_bind_handler),
     REGISTER_TRACE(trace_vfs, trace_vfs_handler),
     REGISTER_TRACE(trace_tcp, trace_tcp_handler),
+    REGISTER_TRACE(trace_exec, trace_exec_handler),
+    REGISTER_TRACE(trace_dns, trace_dns_handler),
+    REGISTER_TRACE(trace_sched, trace_sched_handler),
 };
 
 #endif // TRACE_TRACES_H
