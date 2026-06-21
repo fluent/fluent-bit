@@ -839,6 +839,15 @@ int flb_metadata_pop_from_msgpack(msgpack_object **metadata, msgpack_unpacked *u
         return -1;
     }
 
+    if (upk->data.via.array.size < 2) {
+        return -1;
+    }
+
+    if (upk->data.via.array.ptr[0].type != MSGPACK_OBJECT_ARRAY ||
+        upk->data.via.array.ptr[0].via.array.size < 2) {
+        return -1;
+    }
+
     *metadata = &upk->data.via.array.ptr[0].via.array.ptr[1];
     *map = &upk->data.via.array.ptr[1];
 
@@ -854,12 +863,12 @@ static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
     msgpack_object   o;
 
     root = result.data;
-    if (root.type != MSGPACK_OBJECT_ARRAY) {
+    if (root.type != MSGPACK_OBJECT_ARRAY || root.via.array.size < 2) {
         return -1;
     }
 
     o = root.via.array.ptr[0];
-    if (o.type != MSGPACK_OBJECT_ARRAY) {
+    if (o.type != MSGPACK_OBJECT_ARRAY || o.via.array.size != 2) {
         return -1;
     }
 
