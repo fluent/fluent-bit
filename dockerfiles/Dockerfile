@@ -146,6 +146,7 @@ RUN apt-get update && \
     libgcrypt20 \
     libzstd1 \
     liblz4-1 \
+    libxxhash0 \
     libgssapi-krb5-2 \
     libldap-2.5 \
     libgpg-error0 \
