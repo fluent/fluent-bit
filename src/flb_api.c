@@ -37,6 +37,7 @@ struct flb_api *flb_api_create()
     }
 
     api->output_get_property = flb_output_get_property;
+    api->output_get_all_properties = flb_output_get_all_properties;
     api->input_get_property = flb_input_get_property;
     api->custom_get_property = flb_custom_get_property;
 

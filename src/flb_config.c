@@ -676,6 +676,11 @@ const char *flb_config_prop_get(const char *key, struct mk_list *list)
     return flb_kv_get_key_value(key, list);
 }
 
+struct flb_kv **flb_config_prop_get_all(struct mk_list *list, int *out_count)
+{
+    return flb_kv_get_all_key_values(list, out_count);
+}
+
 static inline int prop_key_check(const char *key, const char *kv, int k_len)
 {
     size_t len;

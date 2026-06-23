@@ -1179,6 +1179,12 @@ const char *flb_output_get_property(const char *key, struct flb_output_instance 
     return flb_config_prop_get(key, &ins->properties);
 }
 
+struct flb_kv **flb_output_get_all_properties(struct flb_output_instance *ins,
+                                              int *out_count)
+{
+    return flb_config_prop_get_all(&ins->properties, out_count);
+}
+
 #ifdef FLB_HAVE_METRICS
 void *flb_output_get_cmt_instance(struct flb_output_instance *ins)
 {

@@ -1405,6 +1405,8 @@ const char *flb_output_name(struct flb_output_instance *in);
 int flb_output_set_property(struct flb_output_instance *out,
                             const char *k, const char *v);
 const char *flb_output_get_property(const char *key, struct flb_output_instance *ins);
+struct flb_kv **flb_output_get_all_properties(struct flb_output_instance *ins,
+                                              int *out_count);
 #ifdef FLB_HAVE_METRICS
 void *flb_output_get_cmt_instance(struct flb_output_instance *ins);
 #endif
