@@ -99,6 +99,34 @@ static struct flb_aws_header put_log_events_header[] = {
     },
 };
 
+static int mock_create_log_stream_calls;
+static int mock_put_log_events_calls;
+static int mock_create_log_stream_after_put_calls;
+
+void cloudwatch_mock_call_count_reset(void)
+{
+    mock_create_log_stream_calls = 0;
+    mock_put_log_events_calls = 0;
+    mock_create_log_stream_after_put_calls = 0;
+}
+
+int cloudwatch_mock_call_count_get(const char *api)
+{
+    if (strcmp(api, "CreateLogStream") == 0) {
+        return mock_create_log_stream_calls;
+    }
+    else if (strcmp(api, "PutLogEvents") == 0) {
+        return mock_put_log_events_calls;
+    }
+
+    return 0;
+}
+
+int cloudwatch_mock_create_after_put_count_get(void)
+{
+    return mock_create_log_stream_after_put_calls;
+}
+
 int plugin_under_test()
 {
     if (getenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST") != NULL) {
@@ -136,6 +164,16 @@ struct flb_http_client *mock_http_call(char *error_env_var, char *api)
     /* create an http client so that we can set the response */
     struct flb_http_client *c = NULL;
     char *error = mock_error_response(error_env_var);
+
+    if (strcmp(api, "CreateLogStream") == 0) {
+        mock_create_log_stream_calls++;
+        if (mock_put_log_events_calls > 0) {
+            mock_create_log_stream_after_put_calls++;
+        }
+    }
+    else if (strcmp(api, "PutLogEvents") == 0) {
+        mock_put_log_events_calls++;
+    }
 
     c = flb_calloc(1, sizeof(struct flb_http_client));
     if (!c) {
@@ -1573,6 +1611,11 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                                   data, bytes,
                                   config);
     }
+
+    if (buf->non_retriable_error == FLB_TRUE) {
+        return -1;
+    }
+
     /* send any remaining events */
     ret = send_log_events(ctx, buf);
     reset_flush_buf(ctx, buf);
@@ -1599,15 +1642,13 @@ struct log_stream *get_or_create_log_stream(struct flb_cloudwatch *ctx,
     now = time(NULL);
     mk_list_foreach_safe(head, tmp, &ctx->streams) {
         stream = mk_list_entry(head, struct log_stream, _head);
-        if (strcmp(stream_name, stream->name) == 0 && strcmp(group_name, stream->group) == 0) {
-            return stream;
+        if (stream->expiration < now) {
+            mk_list_del(&stream->_head);
+            log_stream_destroy(stream);
         }
-        else {
-            /* check if stream is expired, if so, clean it up */
-            if (stream->expiration < now) {
-                mk_list_del(&stream->_head);
-                log_stream_destroy(stream);
-            }
+        else if (strcmp(stream_name, stream->name) == 0 &&
+                 strcmp(group_name, stream->group) == 0) {
+            return stream;
         }
     }
 
@@ -2012,6 +2053,7 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
 
     struct flb_http_client *c = NULL;
     struct flb_aws_client *cw_client;
+    flb_sds_t error;
     int num_headers = 1;
     int retry = FLB_TRUE;
 
@@ -2066,6 +2108,20 @@ retry_request:
 
         /* Check error */
         if (c->resp.payload_size > 0) {
+            error = flb_aws_error(c->resp.payload, c->resp.payload_size);
+            if (error != NULL) {
+                if (strcmp(error, ERR_CODE_NOT_FOUND) == 0) {
+                    flb_plg_error(ctx->ins, "Log stream %s not found. "
+                                  "Rejecting the chunk without retry.",
+                                  stream->name);
+                    stream->expiration = 0;
+                    buf->non_retriable_error = FLB_TRUE;
+                    flb_sds_destroy(error);
+                    flb_http_client_destroy(c);
+                    return -1;
+                }
+                flb_sds_destroy(error);
+            }
             flb_aws_print_error(c->resp.payload, c->resp.payload_size,
                                                   "PutLogEvents", ctx->ins);
         }

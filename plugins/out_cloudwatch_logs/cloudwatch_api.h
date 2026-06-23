@@ -76,5 +76,8 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                    size_t payload_size);
 int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream);
 int compare_events(const void *a_arg, const void *b_arg);
+void cloudwatch_mock_call_count_reset(void);
+int cloudwatch_mock_call_count_get(const char *api);
+int cloudwatch_mock_create_after_put_count_get(void);
 
 #endif
