@@ -1642,15 +1642,13 @@ struct log_stream *get_or_create_log_stream(struct flb_cloudwatch *ctx,
     now = time(NULL);
     mk_list_foreach_safe(head, tmp, &ctx->streams) {
         stream = mk_list_entry(head, struct log_stream, _head);
-        if (strcmp(stream_name, stream->name) == 0 && strcmp(group_name, stream->group) == 0) {
-            return stream;
+        if (stream->expiration < now) {
+            mk_list_del(&stream->_head);
+            log_stream_destroy(stream);
         }
-        else {
-            /* check if stream is expired, if so, clean it up */
-            if (stream->expiration < now) {
-                mk_list_del(&stream->_head);
-                log_stream_destroy(stream);
-            }
+        else if (strcmp(stream_name, stream->name) == 0 &&
+                 strcmp(group_name, stream->group) == 0) {
+            return stream;
         }
     }
 
@@ -2116,6 +2114,7 @@ retry_request:
                     flb_plg_error(ctx->ins, "Log stream %s not found. "
                                   "Rejecting the chunk without retry.",
                                   stream->name);
+                    stream->expiration = 0;
                     buf->non_retriable_error = FLB_TRUE;
                     flb_sds_destroy(error);
                     flb_http_client_destroy(c);
