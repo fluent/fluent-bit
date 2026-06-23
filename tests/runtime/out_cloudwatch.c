@@ -8,7 +8,12 @@
 /* CloudWatch API constants */
 #include "../../plugins/out_cloudwatch_logs/cloudwatch_api.h"
 
-#define ERROR_ALREADY_EXISTS "{\"__type\":\"ResourceAlreadyExistsException\"}"
+#ifdef FLB_SYSTEM_WINDOWS
+#define setenv(name, value, overwrite) _putenv_s(name, value)
+#define unsetenv(name) _putenv_s(name, "")
+#endif
+
+#define CLOUDWATCH_ERROR_ALREADY_EXISTS "{\"__type\":\"ResourceAlreadyExistsException\"}"
 #define CLOUDWATCH_ERROR_NOT_FOUND "{\"__type\":\"ResourceNotFoundException\"}"
 /* not a real error code, but tests that the code can respond to any error */
 #define ERROR_UNKNOWN "{\"__type\":\"UNKNOWN\"}"
@@ -109,7 +114,7 @@ void flb_test_cloudwatch_already_exists_create_group(void)
 
     /* mocks calls- signals that we are in test mode */
     setenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_CREATE_LOG_GROUP_ERROR", ERROR_ALREADY_EXISTS, 1);
+    setenv("TEST_CREATE_LOG_GROUP_ERROR", CLOUDWATCH_ERROR_ALREADY_EXISTS, 1);
 
     ctx = flb_create();
 
@@ -146,7 +151,7 @@ void flb_test_cloudwatch_already_exists_create_stream(void)
 
     /* mocks calls- signals that we are in test mode */
     setenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_CREATE_LOG_STREAM_ERROR", ERROR_ALREADY_EXISTS, 1);
+    setenv("TEST_CREATE_LOG_STREAM_ERROR", CLOUDWATCH_ERROR_ALREADY_EXISTS, 1);
 
     ctx = flb_create();
 
@@ -292,9 +297,10 @@ void flb_test_cloudwatch_error_put_log_events_not_found(void)
     int in_ffd;
     int out_ffd;
 
-    /* ResourceNotFoundException must follow the normal output retry path. */
+    /* ResourceNotFoundException must reject the chunk without retrying it. */
     setenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST", "true", 1);
     setenv("TEST_PUT_LOG_EVENTS_ERROR", CLOUDWATCH_ERROR_NOT_FOUND, 1);
+    cloudwatch_mock_call_count_reset();
 
     ctx = flb_create();
 
@@ -319,6 +325,8 @@ void flb_test_cloudwatch_error_put_log_events_not_found(void)
 
     sleep(2);
     flb_stop(ctx);
+    TEST_CHECK(cloudwatch_mock_call_count_get("PutLogEvents") == 1);
+    TEST_CHECK(cloudwatch_mock_create_after_put_count_get() == 0);
     flb_destroy(ctx);
     unsetenv("TEST_PUT_LOG_EVENTS_ERROR");
 }
@@ -369,7 +377,7 @@ void flb_test_cloudwatch_already_exists_create_group_put_retention_policy(void)
 
     /* mocks calls- signals that we are in test mode */
     setenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_CREATE_LOG_GROUP_ERROR", ERROR_ALREADY_EXISTS, 1);
+    setenv("TEST_CREATE_LOG_GROUP_ERROR", CLOUDWATCH_ERROR_ALREADY_EXISTS, 1);
 
     /* PutRetentionPolicy is not called if the group already exists */
     setenv("TEST_PUT_RETENTION_POLICY_ERROR", ERROR_UNKNOWN, 1);
