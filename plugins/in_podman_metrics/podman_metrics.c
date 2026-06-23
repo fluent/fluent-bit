@@ -158,6 +158,10 @@ static int add_container_to_list(struct flb_in_metrics *ctx, flb_sds_t id, flb_s
     cnt->rss = UINT64_MAX;
     cnt->cpu_user = UINT64_MAX;
     cnt->cpu = UINT64_MAX;
+    cnt->disk_read_bytes = UINT64_MAX;
+    cnt->disk_write_bytes = UINT64_MAX;
+    cnt->disk_reads = UINT64_MAX;
+    cnt->disk_writes = UINT64_MAX;
 
     mk_list_init(&cnt->net_data);
 
@@ -303,6 +307,10 @@ static int create_gauge(struct flb_in_metrics *ctx, struct cmt_gauge **gauge, fl
  * - container_network_receive_errors_total
  * - container_network_transmit_bytes_total
  * - container_network_transmit_errors_total
+ * - container_disk_read_bytes_total
+ * - container_disk_write_bytes_total
+ * - container_disk_reads_total
+ * - container_disk_writes_total
  */
 static int create_counters(struct flb_in_metrics *ctx)
 {
@@ -328,6 +336,14 @@ static int create_counters(struct flb_in_metrics *ctx)
                        DESCRIPTION_CPU_USER, NULL, cnt->cpu_user);
         create_counter(ctx, &ctx->c_cpu, cnt->id, cnt->name, cnt->image_name, COUNTER_CPU_PREFIX, FIELDS_METRIC, COUNTER_CPU,
                        DESCRIPTION_CPU, NULL, cnt->cpu);
+        create_counter(ctx, &ctx->c_disk_read_bytes, cnt->id, cnt->name, cnt->image_name, COUNTER_DISK_PREFIX, FIELDS_METRIC, COUNTER_DISK_READ_BYTES,
+                       DESCRIPTION_DISK_READ_BYTES, NULL, cnt->disk_read_bytes);
+        create_counter(ctx, &ctx->c_disk_write_bytes, cnt->id, cnt->name, cnt->image_name, COUNTER_DISK_PREFIX, FIELDS_METRIC, COUNTER_DISK_WRITE_BYTES,
+                       DESCRIPTION_DISK_WRITE_BYTES, NULL, cnt->disk_write_bytes);
+        create_counter(ctx, &ctx->c_disk_reads, cnt->id, cnt->name, cnt->image_name, COUNTER_DISK_PREFIX, FIELDS_METRIC, COUNTER_DISK_READS,
+                       DESCRIPTION_DISK_READS, NULL, cnt->disk_reads);
+        create_counter(ctx, &ctx->c_disk_writes, cnt->id, cnt->name, cnt->image_name, COUNTER_DISK_PREFIX, FIELDS_METRIC, COUNTER_DISK_WRITES,
+                       DESCRIPTION_DISK_WRITES, NULL, cnt->disk_writes);
         mk_list_foreach_safe(inner_head, inner_tmp, &cnt->net_data)
         {
             iface = mk_list_entry(inner_head, struct net_iface, _head);
@@ -423,6 +439,10 @@ static int in_metrics_init(struct flb_input_instance *in, struct flb_config *con
     ctx->c_memory_limit = NULL;
     ctx->c_cpu_user = NULL;
     ctx->c_cpu = NULL;
+    ctx->c_disk_read_bytes = NULL;
+    ctx->c_disk_write_bytes = NULL;
+    ctx->c_disk_reads = NULL;
+    ctx->c_disk_writes = NULL;
     ctx->rx_bytes = NULL;
     ctx->rx_errors = NULL;
     ctx->tx_bytes = NULL;
