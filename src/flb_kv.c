@@ -161,6 +161,16 @@ const char *flb_kv_get_key_value(const char *key, struct mk_list *list)
     return NULL;
 }
 
+/*
+ * Return a heap-allocated array of pointers to every flb_kv entry in 'list',
+ * preserving insertion order. The array itself is owned by the caller and
+ * must be released with flb_free(); the flb_kv entries it points to remain
+ * owned by 'list' and are freed by flb_kv_release()/flb_kv_item_destroy().
+ *
+ * If 'out_count' is non-NULL it receives the number of entries (0 when the
+ * list is empty or NULL). Returns NULL when the list is empty, NULL, or on
+ * allocation failure.
+ */
 struct flb_kv **flb_kv_get_all_key_values(struct mk_list *list, int *out_count)
 {
     int count;

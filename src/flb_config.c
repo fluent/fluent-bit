@@ -676,6 +676,13 @@ const char *flb_config_prop_get(const char *key, struct mk_list *list)
     return flb_kv_get_key_value(key, list);
 }
 
+/*
+ * Return a heap-allocated array of pointers to every property in 'list'.
+ * The caller must release the array with flb_free(); the individual entries
+ * remain owned by the property list. 'out_count' (optional) receives the
+ * number of entries. Returns NULL on empty list, NULL input, or allocation
+ * failure. See flb_kv_get_all_key_values() for the full contract.
+ */
 struct flb_kv **flb_config_prop_get_all(struct mk_list *list, int *out_count)
 {
     return flb_kv_get_all_key_values(list, out_count);
