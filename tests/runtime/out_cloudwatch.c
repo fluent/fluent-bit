@@ -324,9 +324,15 @@ void flb_test_cloudwatch_error_put_log_events_not_found(void)
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
 
     sleep(2);
-    flb_stop(ctx);
     TEST_CHECK(cloudwatch_mock_call_count_get("PutLogEvents") == 1);
     TEST_CHECK(cloudwatch_mock_create_after_put_count_get() == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+
+    sleep(2);
+    flb_stop(ctx);
+    TEST_CHECK(cloudwatch_mock_call_count_get("PutLogEvents") == 2);
+    TEST_CHECK(cloudwatch_mock_create_after_put_count_get() == 1);
     flb_destroy(ctx);
     unsetenv("TEST_PUT_LOG_EVENTS_ERROR");
 }
