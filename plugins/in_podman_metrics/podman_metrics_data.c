@@ -133,6 +133,73 @@ uint64_t get_data_from_sysfs(struct flb_in_metrics *ctx, flb_sds_t dir, flb_sds_
 }
 
 /*
+ * Read all cgroups v2 io.stat counters in a single pass and store them in cnt.
+ * io.stat lines look like:
+ *   "8:0 rbytes=1024 wbytes=0 rios=2 wios=0 dbytes=0 dios=0"
+ * The rbytes/wbytes/rios/wios fields are summed across all block devices. On a
+ * missing or unreadable file (for example cgroups v1, where io.stat does not
+ * exist) the four counters are set to UINT64_MAX so they are treated as invalid
+ * and skipped, mirroring the other sysfs readers. An existing but empty io.stat
+ * (no I/O yet) yields 0 for each counter.
+ */
+void read_io_stat(struct flb_in_metrics *ctx, flb_sds_t dir, flb_sds_t name, struct container *cnt)
+{
+    char path[SYSFS_FILE_PATH_SIZE];
+    FILE *fp;
+    char *line = NULL;
+    char *pos;
+    size_t len = 0;
+    int i;
+    struct {
+        const char *key;
+        size_t key_len;
+        uint64_t *total;
+    } fields[] = {
+        { IO_STAT_KEY_READ_BYTES,  sizeof(IO_STAT_KEY_READ_BYTES) - 1,  &cnt->disk_read_bytes },
+        { IO_STAT_KEY_WRITE_BYTES, sizeof(IO_STAT_KEY_WRITE_BYTES) - 1, &cnt->disk_write_bytes },
+        { IO_STAT_KEY_READS,       sizeof(IO_STAT_KEY_READS) - 1,       &cnt->disk_reads },
+        { IO_STAT_KEY_WRITES,      sizeof(IO_STAT_KEY_WRITES) - 1,      &cnt->disk_writes },
+    };
+
+    cnt->disk_read_bytes = UINT64_MAX;
+    cnt->disk_write_bytes = UINT64_MAX;
+    cnt->disk_reads = UINT64_MAX;
+    cnt->disk_writes = UINT64_MAX;
+
+    if (dir == NULL) {
+        return;
+    }
+
+    snprintf(path, sizeof(path), "%s/%s", dir, name);
+
+    fp = fopen(path, "r");
+    if (!fp) {
+        flb_plg_warn(ctx->ins, "Failed to read %s", path);
+        return;
+    }
+
+    for (i = 0; i < 4; i++) {
+        *fields[i].total = 0;
+    }
+
+    while (getline(&line, &len, fp) != -1) {
+        for (i = 0; i < 4; i++) {
+            pos = line;
+            while ((pos = strstr(pos, fields[i].key)) != NULL) {
+                pos += fields[i].key_len;
+                *fields[i].total += strtoull(pos, NULL, 10);
+            }
+        }
+    }
+    flb_free(line);
+    fclose(fp);
+
+    flb_plg_debug(ctx->ins, "%s: rbytes=%lu wbytes=%lu rios=%lu wios=%lu", path,
+                  cnt->disk_read_bytes, cnt->disk_write_bytes,
+                  cnt->disk_reads, cnt->disk_writes);
+}
+
+/*
  * Check if container sysfs data is pressent in previously generated list of sysfs directories.
  * For cgroups v1, use subsystem (directory, for example memory) to search full path.
  */
@@ -367,6 +434,7 @@ int fill_counters_with_sysfs_data_v2(struct flb_in_metrics *ctx)
         cnt->memory_limit = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_MEMORY_LIMIT, NULL);
         cnt->cpu_user = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_CPU_STAT, STAT_KEY_CPU_USER);
         cnt->cpu = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_CPU_STAT, STAT_KEY_CPU);
+        read_io_stat(ctx, path, V2_SYSFS_FILE_IO_STAT, cnt);
         pid = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_PIDS, NULL);
         if (!pid || pid == UINT64_MAX) {
             pid = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_PIDS_ALT, NULL);
