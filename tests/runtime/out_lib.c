@@ -445,6 +445,9 @@ static void test_max_records(void)
     int num;
     char *input_json = "[1,{\"hoge\":\"moge\", \"bool\":true, \"int\":100, \"float\":-2.0}]";
     int size = strlen(input_json);
+    char *input_buffer;
+    int input_records = 100;
+    int input_size;
     int i;
     int unused;
     int expected = 5 /* max_records */;
@@ -473,9 +476,18 @@ static void test_max_records(void)
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    for (i=0; i<100; i++) {
-        ret = flb_lib_push(ctx->flb, ctx->i_ffd, input_json,size);
+    input_size = size * input_records;
+    input_buffer = flb_malloc(input_size);
+    TEST_CHECK(input_buffer != NULL);
+
+    if (input_buffer != NULL) {
+        for (i = 0; i < input_records; i++) {
+            memcpy(input_buffer + (i * size), input_json, size);
+        }
+
+        ret = flb_lib_push(ctx->flb, ctx->i_ffd, input_buffer, input_size);
         TEST_CHECK(ret >= 0);
+        flb_free(input_buffer);
     }
 
     /* waiting to flush */
