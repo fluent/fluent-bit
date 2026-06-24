@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_metrics_exporter.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/flb_regex.h>
 
 #include <monkey/mk_core/mk_list.h>
 
@@ -119,13 +120,26 @@ static int collect_container_data(struct flb_in_metrics *ctx)
                     image_name[metadata_token_size] = '\0';
 
                     flb_plg_trace(ctx->ins, "Found image name %s", image_name);
-                    add_container_to_list(ctx, id, name, image_name);
                 }
                 else {
                     flb_plg_warn(ctx->ins, "Image name was not found for %s", id);
-                    add_container_to_list(ctx, id, name, "unknown");
+                    strncpy(image_name, "unknown", IMAGE_NAME_SIZE - 1);
+                    image_name[sizeof("unknown") - 1] = '\0';
                 }
-                collected_containers++;
+
+                /* Optionally skip containers whose name matches the
+                 * user-provided exclude regex (e.g. pod infra/service
+                 * containers that carry no useful application metrics). */
+                if (ctx->exclude_name_regex &&
+                    flb_regex_match(ctx->exclude_name_regex,
+                                    (unsigned char *) name, strlen(name)) > 0) {
+                    flb_plg_debug(ctx->ins,
+                                  "Skipping excluded container %s", name);
+                }
+                else {
+                    add_container_to_list(ctx, id, name, image_name);
+                    collected_containers++;
+                }
             }
         }
     }
@@ -427,16 +441,32 @@ static int in_metrics_init(struct flb_input_instance *in, struct flb_config *con
     ctx->rx_errors = NULL;
     ctx->tx_bytes = NULL;
     ctx->tx_errors = NULL;
+    ctx->exclude_name_regex = NULL;
 
     if (flb_input_config_map_set(in, (void *) ctx) == -1) {
         flb_free(ctx);
         return -1;
     }
 
+    if (ctx->exclude_name_regex_text) {
+        ctx->exclude_name_regex =
+            flb_regex_create(ctx->exclude_name_regex_text);
+        if (!ctx->exclude_name_regex) {
+            flb_plg_error(ctx->ins,
+                          "could not compile exclude_name_regex '%s'",
+                          ctx->exclude_name_regex_text);
+            flb_free(ctx);
+            return -1;
+        }
+    }
+
     flb_input_set_context(in, ctx);
     coll_fd_runtime = flb_input_set_collector_time(in, cb_metrics_collect_runtime, ctx->scrape_interval, 0, config);
     if (coll_fd_runtime == -1) {
         flb_plg_error(ctx->ins, "Could not set collector for podman metrics plugin");
+        if (ctx->exclude_name_regex) {
+            flb_regex_destroy(ctx->exclude_name_regex);
+        }
         return -1;
     }
     ctx->coll_fd_runtime = coll_fd_runtime;
@@ -468,6 +498,9 @@ static int in_metrics_init(struct flb_input_instance *in, struct flb_config *con
             flb_plg_error(ctx->ins, "Could not start collector for podman metrics plugin");
             flb_sds_destroy(ctx->config);
             destroy_container_list(ctx);
+            if (ctx->exclude_name_regex) {
+                flb_regex_destroy(ctx->exclude_name_regex);
+            }
             flb_free(ctx);
             return -1;
         }
@@ -491,6 +524,9 @@ static int in_metrics_exit(void *data, struct flb_config *config)
 
     flb_sds_destroy(ctx->config);
     destroy_container_list(ctx);
+    if (ctx->exclude_name_regex) {
+        flb_regex_destroy(ctx->exclude_name_regex);
+    }
     flb_free(ctx);
     return 0;
 }
