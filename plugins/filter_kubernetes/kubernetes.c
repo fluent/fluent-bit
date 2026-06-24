@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_parser.h>
@@ -41,6 +42,7 @@
 #define MERGE_NONE        0 /* merge unescaped string in temporary buffer */
 #define MERGE_PARSED      1 /* merge parsed string (log_buf)             */
 #define MERGE_MAP         2 /* merge direct binary object (v)            */
+#define FLB_KUBE_LOCAL_LOGS_INPUT "fluentbit_logs"
 
 struct task_args {
     struct flb_kube *ctx;
@@ -623,6 +625,15 @@ static int cb_kube_filter(const void *data, size_t bytes,
         if (ctx->dummy_meta == FLB_TRUE) {
             ret = flb_kube_dummy_meta_get(&dummy_cache_buf, &cache_size);
             cache_buf = dummy_cache_buf;
+        }
+        else if (i_ins != NULL && i_ins->p != NULL &&
+                 strcmp(i_ins->p->name, FLB_KUBE_LOCAL_LOGS_INPUT) == 0) {
+            ret = flb_kube_meta_get_local(ctx,
+                                          &cache_buf, &cache_size,
+                                          &namespace_cache_buf,
+                                          &namespace_cache_size,
+                                          &meta, &props,
+                                          &namespace_meta);
         }
         else {
             /* Check if we have some cached metadata for the incoming events */

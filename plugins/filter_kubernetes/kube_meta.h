@@ -77,6 +77,13 @@ int flb_kube_meta_get(struct flb_kube *ctx,
                       struct flb_kube_meta *meta,
                       struct flb_kube_props *props,
                       struct flb_kube_meta *namespace_meta);
+int flb_kube_meta_get_local(struct flb_kube *ctx,
+                            const char **out_buf, size_t *out_size,
+                            const char **namespace_out_buf,
+                            size_t *namespace_out_size,
+                            struct flb_kube_meta *meta,
+                            struct flb_kube_props *props,
+                            struct flb_kube_meta *namespace_meta);
 int flb_kube_meta_release(struct flb_kube_meta *meta);
 int flb_kube_pod_association_init(struct flb_kube *ctx, struct flb_config *config);
 int get_api_server_configmap(struct flb_kube *ctx, const char *namespace, const char *configmap, char **out_buf, size_t *out_size);
