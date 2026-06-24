@@ -7,78 +7,10 @@
 %{
 
 #include <cmetrics/cmt_decode_prometheus.h>
-#include <stdio.h>
 
 #define STRBUF_RET \
     yylval->str = context->strbuf; \
     context->strbuf = NULL
-
-static void set_allocation_error(struct cmt_decode_prometheus_context *context)
-{
-    context->errcode = CMT_DECODE_PROMETHEUS_ALLOCATION_ERROR;
-
-    if (context->opts.errbuf != NULL && context->opts.errbuf_size > 0) {
-        snprintf(context->opts.errbuf,
-                 context->opts.errbuf_size - 1,
-                 "memory allocation failed");
-    }
-}
-
-static int reset_strbuf(struct cmt_decode_prometheus_context *context)
-{
-    if (context->strbuf != NULL) {
-        cfl_sds_destroy(context->strbuf);
-    }
-
-    context->strbuf = cfl_sds_create_size(256);
-    if (context->strbuf == NULL) {
-        set_allocation_error(context);
-
-        return -1;
-    }
-
-    return 0;
-}
-
-static int append_strbuf(struct cmt_decode_prometheus_context *context,
-                         const char *text, int length)
-{
-    cfl_sds_t result;
-
-    result = cfl_sds_cat(context->strbuf, text, length);
-    if (result == NULL) {
-        set_allocation_error(context);
-
-        return -1;
-    }
-
-    context->strbuf = result;
-
-    return 0;
-}
-
-#define STRBUF_CREATE() \
-    do { \
-        if (reset_strbuf(context) != 0) { \
-            return 0; \
-        } \
-    } while (0)
-
-#define STRBUF_APPEND(text, length) \
-    do { \
-        if (append_strbuf(context, (text), (length)) != 0) { \
-            return 0; \
-        } \
-    } while (0)
-
-#define SET_STR_TOKEN() \
-    do { \
-        yylval->str = cfl_sds_create(yytext); \
-        if (yylval->str == NULL) { \
-            set_allocation_error(context); \
-            return 0; \
-        } \
-    } while (0)
 
 %}
 
@@ -142,7 +74,7 @@ static int append_strbuf(struct cmt_decode_prometheus_context *context,
 
 <HELPTAG,TYPETAG>[^ \t]+ {
     // The next token will be the metric name
-    SET_STR_TOKEN();
+    yylval->str = cfl_sds_create(yytext);
     return YYSTATE == HELPTAG ? HELP : TYPE;
 }
 
@@ -154,7 +86,7 @@ static int append_strbuf(struct cmt_decode_prometheus_context *context,
         // separate start condition for this to handle "\\" and "\n" escapes
         // more easily.
         BEGIN(INHELPTAG);
-        STRBUF_CREATE();
+        context->strbuf = cfl_sds_create_size(256);
     }
     else {
         // For TYPETAG we enter INTYPETAG start condition to check only valid
@@ -175,17 +107,17 @@ static int append_strbuf(struct cmt_decode_prometheus_context *context,
 
 <INHELPTAG>\\n {
     // Process linefeed escape sequence
-    STRBUF_APPEND("\n", 1);
+    context->strbuf = cfl_sds_cat(context->strbuf, "\n", 1);
 }
 
 <INHELPTAG>\\\\ {
     // Process backslack escape sequence
-    STRBUF_APPEND("\\", 1);
+    context->strbuf = cfl_sds_cat(context->strbuf, "\\", 1);
 }
 
 <INHELPTAG>[^\r\n\\]+ {
     // Put everything that is not a backslash or a line feed into strbuf
-    STRBUF_APPEND(yytext, yyleng);
+    context->strbuf = cfl_sds_cat(context->strbuf, yytext, yyleng);
 }
 
 <INTYPETAG>counter {
@@ -214,23 +146,26 @@ static int append_strbuf(struct cmt_decode_prometheus_context *context,
 
 ["] {
     BEGIN(INQUOTE);
-    STRBUF_CREATE();
+    if (context->strbuf != NULL) {
+        cfl_sds_destroy(context->strbuf);
+    }
+    context->strbuf = cfl_sds_create_size(256);
 }
 
 <INQUOTE>[\\]["] {
-    STRBUF_APPEND("\"", 1);
+    context->strbuf = cfl_sds_cat(context->strbuf, "\"", 1);
 }
 
 <INQUOTE>\\n {
-    STRBUF_APPEND("\n", 1);
+    context->strbuf = cfl_sds_cat(context->strbuf, "\n", 1);
 }
 
 <INQUOTE>\\\\ {
-    STRBUF_APPEND("\\", 1);
+    context->strbuf = cfl_sds_cat(context->strbuf, "\\", 1);
 }
 
 <INQUOTE>[^\r\n\\"]+ {
-    STRBUF_APPEND(yytext, yyleng);
+    context->strbuf = cfl_sds_cat(context->strbuf, yytext, yyleng);
 }
 
 <INQUOTE>["] {
@@ -245,7 +180,7 @@ static int append_strbuf(struct cmt_decode_prometheus_context *context,
 }
 
 [a-zA-Z_][a-zA-Z_0-9]*  {
-    SET_STR_TOKEN();
+    yylval->str = cfl_sds_create(yytext);
     return IDENTIFIER;
 }
 

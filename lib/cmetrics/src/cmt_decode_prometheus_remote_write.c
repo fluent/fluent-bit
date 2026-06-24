@@ -575,13 +575,15 @@ static int decode_histogram_points(struct cmt *cmt,
 
     if (result == CMT_DECODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
         if (hist->n_negative_spans > 0) {
-            for (i = 0; i < hist->n_negative_counts; i++) {
+            for (i = 0; i < hist->n_negative_counts &&
+                        (size_t) i < histogram->buckets->count; i++) {
                 cmt_metric_hist_set(metric, hist->timestamp * 1000000,
                                     i, hist->negative_counts[i]);
             }
         }
         else if (hist->n_positive_spans > 0) {
-            for (i = 0; i < hist->n_positive_counts; i++) {
+            for (i = 0; i < hist->n_positive_counts &&
+                        (size_t) i < histogram->buckets->count; i++) {
                 cmt_metric_hist_set(metric, hist->timestamp * 1000000,
                                     i, hist->positive_counts[i]);
             }

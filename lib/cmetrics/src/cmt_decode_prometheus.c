@@ -124,16 +124,14 @@ int cmt_decode_prometheus_create(
 
     result = cmt_decode_prometheus_parse(scanner, &context);
 
-    if (context.errcode) {
-        result = context.errcode;
-        cmt_destroy(cmt);
-        reset_context(&context, true);
-    }
-    else if (result == 0) {
+    if (result == 0) {
         *out_cmt = cmt;
     }
     else {
         cmt_destroy(cmt);
+        if (context.errcode) {
+            result = context.errcode;
+        }
         reset_context(&context, true);
     }
 
