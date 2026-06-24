@@ -954,6 +954,13 @@ static struct flb_config_map config_map[] = {
      "prefix used in tag by the input plugin"
     },
 
+    /* Kubernetes Namespace file */
+    {
+     FLB_CONFIG_MAP_STR, "kube_namespace_file", FLB_KUBE_NAMESPACE,
+     0, FLB_TRUE, offsetof(struct flb_kube, namespace_file),
+     "Kubernetes namespace file"
+    },
+
     /* Kubernetes Token file */
     {
      FLB_CONFIG_MAP_STR, "kube_token_file", FLB_KUBE_TOKEN,
