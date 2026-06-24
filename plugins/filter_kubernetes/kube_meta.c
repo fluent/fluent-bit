@@ -280,17 +280,20 @@ static int get_local_pod_info(struct flb_kube *ctx)
     char *hostname;
 
     /* Get the namespace name */
-    ret = file_to_buffer(FLB_KUBE_NAMESPACE, &ns, &ns_size);
+    ret = file_to_buffer(ctx->namespace_file, &ns, &ns_size);
     if (ret == -1) {
         /*
          * If it fails, it's just informational, as likely the caller
          * wanted to connect using the Proxy instead from inside a POD.
          */
-        flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_NAMESPACE);
+        flb_plg_warn(ctx->ins, "cannot open %s", ctx->namespace_file);
         return FLB_FALSE;
     }
 
     /* Namespace */
+    while (ns_size > 0 && (ns[ns_size - 1] == '\n' || ns[ns_size - 1] == '\r')) {
+        ns[--ns_size] = '\0';
+    }
     ctx->namespace = ns;
     ctx->namespace_len = ns_size;
 
@@ -2000,6 +2003,7 @@ static int set_local_pod_meta(struct flb_kube *ctx, struct flb_kube_meta *meta)
         return -1;
     }
     meta->namespace_len = ctx->namespace_len;
+    meta->fields++;
 
     meta->podname = flb_strndup(ctx->podname, ctx->podname_len);
     if (meta->podname == NULL) {
@@ -2007,6 +2011,7 @@ static int set_local_pod_meta(struct flb_kube *ctx, struct flb_kube_meta *meta)
         return -1;
     }
     meta->podname_len = ctx->podname_len;
+    meta->fields++;
 
     n = meta->namespace_len + 1 + meta->podname_len + 1;
     meta->cache_key = flb_malloc(n);
