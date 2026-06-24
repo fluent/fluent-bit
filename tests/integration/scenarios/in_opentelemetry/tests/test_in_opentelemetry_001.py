@@ -414,6 +414,41 @@ def build_scope_schema_logs_json_payload():
     return json.dumps(payload).encode("utf-8")
 
 
+def build_histogram_json_payload(explicit_bounds, name="histogram_bounds"):
+    payload = {
+        "resourceMetrics": [
+            {
+                "resource": {
+                    "attributes": [],
+                },
+                "scopeMetrics": [
+                    {
+                        "metrics": [
+                            {
+                                "name": name,
+                                "histogram": {
+                                    "aggregationTemporality": 2,
+                                    "dataPoints": [
+                                        {
+                                            "count": "3",
+                                            "sum": 3.0,
+                                            "bucketCounts": ["1", "1", "1"],
+                                            "explicitBounds": explicit_bounds,
+                                            "timeUnixNano": "1",
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    return json.dumps(payload).encode("utf-8")
+
+
 class Service:
     def __init__(self, config_file, *, use_auth_server=False):
         # Compose the absolute path for the Fluent Bit configuration file
@@ -777,6 +812,65 @@ def test_in_opentelemetry_rejects_invalid_metrics_payload():
 
     assert response.status_code >= 400
     assert len(data_storage["metrics"]) == 0
+
+
+def test_in_opentelemetry_rejects_json_histogram_with_descending_bounds():
+    service = Service("001-fluent-bit.yaml")
+    service.start()
+
+    try:
+        response = service.send_raw_request(
+            "/v1/metrics",
+            build_histogram_json_payload([2, 1]),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert service.flb.process is not None
+        assert service.flb.process.poll() is None
+        assert len(data_storage["metrics"]) == 0
+
+        response = service.send_raw_request(
+            "/v1/metrics",
+            build_histogram_json_payload([1, 1]),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert service.flb.process is not None
+        assert service.flb.process.poll() is None
+        assert len(data_storage["metrics"]) == 0
+
+        response = service.send_raw_request(
+            "/v1/metrics",
+            build_histogram_json_payload([1, 2], name=""),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert service.flb.process is not None
+        assert service.flb.process.poll() is None
+        assert len(data_storage["metrics"]) == 0
+
+        response = service.send_raw_request(
+            "/v1/metrics",
+            build_histogram_json_payload([1, 2]),
+            content_type="application/json",
+        )
+        assert 200 <= response.status_code < 300
+
+        output = service.read_response("metrics")
+    finally:
+        service.stop()
+
+    metrics = {item["metric"]["name"]: item for item in iter_metric_entries(output)}
+    histogram = metrics["histogram_bounds"]["metric"]["histogram"]
+    histogram_datapoint = histogram["dataPoints"][0]
+
+    assert histogram_datapoint["count"] == "3"
+    assert histogram_datapoint["sum"] == 3.0
+    assert histogram_datapoint["bucketCounts"] == ["1", "1", "1"]
+    assert histogram_datapoint["explicitBounds"] == [1.0, 2.0]
 
 
 def test_in_opentelemetry_rejects_invalid_traces_payload():
