@@ -2433,8 +2433,20 @@ static inline int lookup_pod_meta(struct flb_kube *ctx,
              * the outgoing buffer and size.
              */
             flb_free(tmp_hash_meta_buf);
-            flb_hash_table_get_by_id(ctx->hash_table, id, meta->cache_key,
-                                     &hash_meta_buf, &hash_meta_size);
+            ret = flb_hash_table_get_by_id(ctx->hash_table, id,
+                                           meta->cache_key,
+                                           &hash_meta_buf, &hash_meta_size);
+            if (ret == -1) {
+                *out_buf = NULL;
+                *out_size = 0;
+                return 0;
+            }
+        }
+        else {
+            flb_free(tmp_hash_meta_buf);
+            *out_buf = NULL;
+            *out_size = 0;
+            return 0;
         }
     }
 
@@ -2449,7 +2461,13 @@ static inline int lookup_pod_meta(struct flb_kube *ctx,
     msgpack_unpacked_init(&result);
 
     /* Unpack to get the offset/bytes of the first item */
-    msgpack_unpack_next(&result, hash_meta_buf, hash_meta_size, &off);
+    ret = msgpack_unpack_next(&result, hash_meta_buf, hash_meta_size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&result);
+        *out_buf = NULL;
+        *out_size = 0;
+        return 0;
+    }
 
     /* Set the pointer and proper size for the caller */
     *out_buf = hash_meta_buf;
@@ -2537,8 +2555,20 @@ static inline int lookup_namespace_meta(struct flb_kube *ctx,
              * the outgoing buffer and size.
              */
             flb_free(tmp_hash_meta_buf);
-            flb_hash_table_get_by_id(ctx->namespace_hash_table, id, meta->cache_key,
-                                     &hash_meta_buf, &hash_meta_size);
+            ret = flb_hash_table_get_by_id(ctx->namespace_hash_table, id,
+                                           meta->cache_key,
+                                           &hash_meta_buf, &hash_meta_size);
+            if (ret == -1) {
+                *out_buf = NULL;
+                *out_size = 0;
+                return 0;
+            }
+        }
+        else {
+            flb_free(tmp_hash_meta_buf);
+            *out_buf = NULL;
+            *out_size = 0;
+            return 0;
         }
     }
 
@@ -2551,7 +2581,13 @@ static inline int lookup_namespace_meta(struct flb_kube *ctx,
     msgpack_unpacked_init(&result);
 
     /* Unpack to get the offset/bytes of the first item */
-    msgpack_unpack_next(&result, hash_meta_buf, hash_meta_size, &off);
+    ret = msgpack_unpack_next(&result, hash_meta_buf, hash_meta_size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&result);
+        *out_buf = NULL;
+        *out_size = 0;
+        return 0;
+    }
 
     /* Set the pointer and proper size for the caller */
     *out_buf = hash_meta_buf;
