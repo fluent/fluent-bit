@@ -1254,6 +1254,8 @@ void flb_test_secure_forward_oversized_pong_reason()
                    "host", "127.0.0.1",
                    "port", port,
                    "shared_key", "secret",
+                   "workers", "1",
+                   "retry_limit", "no_retries",
                    NULL);
 
     ret = flb_start(ctx);
