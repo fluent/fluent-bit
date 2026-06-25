@@ -14,6 +14,7 @@
 #include <gadget/mntns_filter.h>
 
 #include "common/events.h"
+#include "common/event_id.bpf.h"
 
 struct wakeup_info {
     __u64 wakeup_ns;
@@ -102,6 +103,7 @@ int BPF_PROG(trace_sched_switch, bool preempt, struct task_struct *prev,
     }
 
     event->type = EVENT_TYPE_SCHED;
+    generate_event_id(&event->common.event_id);
     event->common.timestamp_raw = bpf_ktime_get_boot_ns();
     event->common.pid = next_pid;
     event->common.tid = next_tid;
