@@ -20,6 +20,7 @@
 #include <gadget/types.h>
 
 #include "common/events.h"
+#include "common/event_id.bpf.h"
 
 #define MAX_ENTRIES 10240
 
@@ -75,6 +76,7 @@ static int handle_bind_exit(struct pt_regs *ctx, short ver) {
     event->common.gid = (u32)(uid_gid >> 32);
     event->common.mntns_id = mntns_id;
     event->type = EVENT_TYPE_BIND;
+    generate_event_id(&event->common.event_id);
     event->common.timestamp_raw = bpf_ktime_get_boot_ns();
     bpf_get_current_comm(&event->common.comm, sizeof(event->common.comm));
 
