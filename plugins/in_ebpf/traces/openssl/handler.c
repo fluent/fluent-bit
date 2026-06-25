@@ -7,11 +7,27 @@
 
 #include "handler.h"
 
+static int is_openssl_tls_event(enum event_type type)
+{
+    if (type == EVENT_TYPE_TLS_HANDSHAKE ||
+        type == EVENT_TYPE_TLS_READ ||
+        type == EVENT_TYPE_TLS_WRITE ||
+        type == EVENT_TYPE_TLS_SHUTDOWN) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 int encode_openssl_event(struct flb_log_event_encoder *log_encoder,
                          const struct event *ev)
 {
     int ret;
     const char *trace_name;
+
+    if (!is_openssl_tls_event(ev->type)) {
+        return -1;
+    }
 
     ret = flb_log_event_encoder_begin_record(log_encoder);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
@@ -29,18 +45,25 @@ int encode_openssl_event(struct flb_log_event_encoder *log_encoder,
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
     }
+
     if (ev->type == EVENT_TYPE_TLS_READ) {
-        ret = flb_log_event_encoder_append_body_cstring(log_encoder, "openssl_tls_read");
+        trace_name = "openssl_tls_read";
     }
     else if (ev->type == EVENT_TYPE_TLS_WRITE) {
-        ret = flb_log_event_encoder_append_body_cstring(log_encoder, "openssl_tls_write");
+        trace_name = "openssl_tls_write";
     }
     else if (ev->type == EVENT_TYPE_TLS_SHUTDOWN) {
-        ret = flb_log_event_encoder_append_body_cstring(log_encoder, "openssl_tls_shutdown");
+        trace_name = "openssl_tls_shutdown";
+    }
+    else if (ev->type == EVENT_TYPE_TLS_HANDSHAKE) {
+        trace_name = "openssl_tls_handshake";
     }
     else {
-        ret = flb_log_event_encoder_append_body_cstring(log_encoder, "openssl_tls_handshake");
+        flb_log_event_encoder_rollback_record(log_encoder);
+        return -1;
     }
+
+    ret = flb_log_event_encoder_append_body_cstring(log_encoder, trace_name);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_log_event_encoder_rollback_record(log_encoder);
         return -1;
@@ -124,10 +147,7 @@ int trace_openssl_handler(void *ctx, void *data, size_t data_sz)
         return -1;
     }
 
-    if (ev->type != EVENT_TYPE_TLS_HANDSHAKE &&
-        ev->type != EVENT_TYPE_TLS_READ &&
-        ev->type != EVENT_TYPE_TLS_WRITE &&
-        ev->type != EVENT_TYPE_TLS_SHUTDOWN) {
+    if (!is_openssl_tls_event(ev->type)) {
         return -1;
     }
 

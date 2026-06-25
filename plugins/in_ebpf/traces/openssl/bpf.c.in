@@ -24,6 +24,7 @@
 struct tls_state {
     __u64 ssl_ptr;
     __u64 start_ns;
+    __u64 bytes_ptr;
     __u32 type;
 };
 
@@ -71,6 +72,45 @@ static __always_inline int trace_tls_entry(void *ssl, __u32 type)
     return 0;
 }
 
+static __always_inline int trace_tls_entry_ex(void *ssl, __u32 type,
+                                              size_t *bytes_ptr)
+{
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    struct tls_state state = {};
+
+    state.ssl_ptr = (__u64) ssl;
+    state.start_ns = bpf_ktime_get_ns();
+    state.bytes_ptr = (__u64) bytes_ptr;
+    state.type = type;
+
+    bpf_map_update_elem(&tls_start, &pid_tgid, &state, BPF_ANY);
+    return 0;
+}
+
+static __always_inline int get_openssl_ex_ret(int ret, __u64 bytes_ptr)
+{
+    size_t byte_count = 0;
+
+    if (ret <= 0) {
+        return ret;
+    }
+
+    if (bytes_ptr == 0) {
+        return -1;
+    }
+
+    if (bpf_probe_read_user(&byte_count, sizeof(byte_count),
+                            (const void *) bytes_ptr) != 0) {
+        return -1;
+    }
+
+    if (byte_count > 0x7fffffffULL) {
+        return 0x7fffffff;
+    }
+
+    return (int) byte_count;
+}
+
 static __always_inline int trace_tls_return(struct pt_regs *ctx)
 {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
@@ -78,6 +118,7 @@ static __always_inline int trace_tls_return(struct pt_regs *ctx)
     __u64 now_ns;
     __s64 latency_ns;
     struct event *eventp;
+    int ret;
 
     state = bpf_map_lookup_elem(&tls_start, &pid_tgid);
     if (!state) {
@@ -99,19 +140,24 @@ static __always_inline int trace_tls_return(struct pt_regs *ctx)
         eventp->details.tls_handshake.ssl_ptr = state->ssl_ptr;
         eventp->details.tls_handshake.latency_ns = latency_ns;
 #if defined(__TARGET_ARCH_arm64)
-        eventp->details.tls_handshake.ret = (int) ctx->regs[0];
+        ret = (int) ctx->regs[0];
 #else
-        eventp->details.tls_handshake.ret = (int)PT_REGS_RC(ctx);
+        ret = (int) PT_REGS_RC(ctx);
 #endif
+        eventp->details.tls_handshake.ret = ret;
     }
     else {
         eventp->details.tls_io.ssl_ptr = state->ssl_ptr;
         eventp->details.tls_io.latency_ns = latency_ns;
 #if defined(__TARGET_ARCH_arm64)
-        eventp->details.tls_io.ret = (int) ctx->regs[0];
+        ret = (int) ctx->regs[0];
 #else
-        eventp->details.tls_io.ret = (int)PT_REGS_RC(ctx);
+        ret = (int) PT_REGS_RC(ctx);
 #endif
+        if (state->bytes_ptr != 0) {
+            ret = get_openssl_ex_ret(ret, state->bytes_ptr);
+        }
+        eventp->details.tls_io.ret = ret;
     }
 
     gadget_submit_buf(ctx, &events, eventp, sizeof(*eventp));
@@ -143,6 +189,19 @@ int trace_uretprobe_ssl_read(struct pt_regs *ctx)
     return trace_tls_return(ctx);
 }
 
+SEC("uprobe/@LIBSSL_PATH@:SSL_read_ex")
+int BPF_UPROBE(trace_uprobe_ssl_read_ex, void *ssl, void *buf, size_t num,
+               size_t *readbytes)
+{
+    return trace_tls_entry_ex(ssl, TLS_EVENT_READ, readbytes);
+}
+
+SEC("uretprobe/@LIBSSL_PATH@:SSL_read_ex")
+int trace_uretprobe_ssl_read_ex(struct pt_regs *ctx)
+{
+    return trace_tls_return(ctx);
+}
+
 SEC("uprobe/@LIBSSL_PATH@:SSL_write")
 int BPF_UPROBE(trace_uprobe_ssl_write, void *ssl)
 {
@@ -151,6 +210,19 @@ int BPF_UPROBE(trace_uprobe_ssl_write, void *ssl)
 
 SEC("uretprobe/@LIBSSL_PATH@:SSL_write")
 int trace_uretprobe_ssl_write(struct pt_regs *ctx)
+{
+    return trace_tls_return(ctx);
+}
+
+SEC("uprobe/@LIBSSL_PATH@:SSL_write_ex")
+int BPF_UPROBE(trace_uprobe_ssl_write_ex, void *ssl, const void *buf, size_t num,
+               size_t *written)
+{
+    return trace_tls_entry_ex(ssl, TLS_EVENT_WRITE, written);
+}
+
+SEC("uretprobe/@LIBSSL_PATH@:SSL_write_ex")
+int trace_uretprobe_ssl_write_ex(struct pt_regs *ctx)
 {
     return trace_tls_return(ctx);
 }
