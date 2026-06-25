@@ -66,6 +66,16 @@ static inline int encode_common_fields(struct flb_log_event_encoder *log_encoder
         return -1;
     }
 
+    /* Encode event ID */
+    ret = flb_log_event_encoder_append_body_cstring(log_encoder, "event_id");
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+    ret = flb_log_event_encoder_append_body_uint64(log_encoder, e->common.event_id);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
     /* Encode process ID */
     ret = flb_log_event_encoder_append_body_cstring(log_encoder, "pid");
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {

@@ -49,6 +49,7 @@ enum memop {
 };
 
 struct event_common {
+    __u64 event_id;
     __u64 timestamp_raw;
     __u32 pid;
     __u32 tid;
