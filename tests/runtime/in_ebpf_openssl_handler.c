@@ -93,7 +93,30 @@ void test_openssl_event_encoding(void)
     cleanup_test_context(ctx);
 }
 
+void test_openssl_event_encoding_rejects_unknown_type(void)
+{
+    struct test_context *ctx;
+    struct event ev = {0};
+    int ret;
+
+    ctx = init_test_context();
+    TEST_CHECK(ctx != NULL);
+
+    ev.type = EVENT_TYPE_SCHED;
+    ev.common.pid = 101;
+    ev.common.tid = 202;
+    strncpy(ev.common.comm, "openssl", sizeof(ev.common.comm));
+
+    ret = encode_openssl_event(ctx->event_ctx.log_encoder, &ev);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(ctx->event_ctx.log_encoder->output_length == 0);
+
+    cleanup_test_context(ctx);
+}
+
 TEST_LIST = {
     {"openssl_event_encoding", test_openssl_event_encoding},
+    {"openssl_event_encoding_rejects_unknown_type",
+     test_openssl_event_encoding_rejects_unknown_type},
     {NULL, NULL}
 };
