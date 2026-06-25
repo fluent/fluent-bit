@@ -26,7 +26,38 @@ add_library(gadget INTERFACE)
 target_include_directories(gadget INTERFACE ${CMAKE_SOURCE_DIR}/plugins/in_ebpf/traces/includes/external/gadget)
 
 set(LIBC_PATH "/lib64/libc.so.6")
-set(LIBSSL_PATH "/lib64/libssl.so.3")
+
+set(FLB_IN_EBPF_LIBSSL_PATH "" CACHE FILEPATH
+    "Path to libssl shared object used by eBPF OpenSSL uprobes")
+
+if (FLB_IN_EBPF_LIBSSL_PATH)
+  set(LIBSSL_PATH "${FLB_IN_EBPF_LIBSSL_PATH}")
+else()
+  find_package(OpenSSL QUIET)
+
+  if (OPENSSL_SSL_LIBRARY)
+    set(LIBSSL_PATH "${OPENSSL_SSL_LIBRARY}")
+  elseif (TARGET OpenSSL::SSL)
+    get_target_property(_libssl_path OpenSSL::SSL IMPORTED_LOCATION)
+    if (_libssl_path)
+      set(LIBSSL_PATH "${_libssl_path}")
+    endif()
+  endif()
+
+  if (NOT LIBSSL_PATH)
+    find_library(LIBSSL_PATH NAMES ssl libssl.so libssl.so.3 libssl.so.1.1)
+  endif()
+
+  if (NOT LIBSSL_PATH)
+    set(LIBSSL_PATH "/lib64/libssl.so.3")
+  endif()
+endif()
+
+if (LIBSSL_PATH MATCHES "\\.(a|lib)$")
+  message(WARNING
+          "eBPF OpenSSL uprobes resolved a static OpenSSL library: ${LIBSSL_PATH}. "
+          "Set FLB_IN_EBPF_LIBSSL_PATH to the target host libssl shared object.")
+endif()
 
 find_program(LSB_RELEASE_EXEC lsb_release)
 if (LSB_RELEASE_EXEC)
@@ -43,16 +74,15 @@ if (LSB_RELEASE_EXEC)
     # Just added for the future enhancement
     if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)")
       set(LIBC_PATH "/usr/lib/aarch64-linux-gnu/libc.so.6")
-      set(LIBSSL_PATH "/usr/lib/aarch64-linux-gnu/libssl.so.3")
     elseif (CMAKE_SIZEOF_VOID_P EQUAL 8)
       set(LIBC_PATH "/usr/lib/x86_64-linux-gnu/libc.so.6")
-      set(LIBSSL_PATH "/usr/lib/x86_64-linux-gnu/libssl.so.3")
     elseif (CMAKE_SIZEOF_VOID_P EQUAL 4)
       set(LIBC_PATH "/usr/lib/i386-linux-gnu/libc.so.6")
-      set(LIBSSL_PATH "/usr/lib/i386-linux-gnu/libssl.so.3")
     endif()
   endif()
 endif()
+
+message(STATUS "eBPF OpenSSL uprobes libssl path: ${LIBSSL_PATH}")
 
 # Generate the malloc trace from the template
 configure_file(
