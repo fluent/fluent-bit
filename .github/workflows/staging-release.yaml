@@ -1156,6 +1156,8 @@ jobs:
         id: cpr
         uses: peter-evans/create-pull-request@v8
         with:
+          branch: create-pull-request/bump-version-${{ steps.semvers.outputs.patch }}
+          branch-suffix: timestamp
           commit-message: 'release: update to ${{ steps.semvers.outputs.patch }}'
           signoff: true
           delete-branch: true
