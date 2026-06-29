@@ -48,4 +48,6 @@ void try_assign_subfield_bool(msgpack_object obj, int *subfield);
  */
 void try_assign_subfield_int(msgpack_object obj, int64_t *subfield);
 
+void pack_sds_safe(msgpack_packer *mp_pck, flb_sds_t s);
+
 #endif
