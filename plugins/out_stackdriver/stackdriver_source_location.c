@@ -37,9 +37,7 @@ void add_source_location_field(flb_sds_t *source_location_file,
 
     msgpack_pack_str(mp_pck, SOURCE_LOCATION_FILE_SIZE);
     msgpack_pack_str_body(mp_pck, SOURCE_LOCATION_FILE, SOURCE_LOCATION_FILE_SIZE);
-    msgpack_pack_str(mp_pck, flb_sds_len(*source_location_file));
-    msgpack_pack_str_body(mp_pck, *source_location_file,
-                          flb_sds_len(*source_location_file));
+    pack_sds_safe(mp_pck, *source_location_file);
 
     msgpack_pack_str(mp_pck, SOURCE_LOCATION_LINE_SIZE);
     msgpack_pack_str_body(mp_pck, SOURCE_LOCATION_LINE, SOURCE_LOCATION_LINE_SIZE);
@@ -48,9 +46,7 @@ void add_source_location_field(flb_sds_t *source_location_file,
     msgpack_pack_str(mp_pck, SOURCE_LOCATION_FUNCTION_SIZE);
     msgpack_pack_str_body(mp_pck, SOURCE_LOCATION_FUNCTION,
                           SOURCE_LOCATION_FUNCTION_SIZE);
-    msgpack_pack_str(mp_pck, flb_sds_len(*source_location_function));
-    msgpack_pack_str_body(mp_pck, *source_location_function,
-                          flb_sds_len(*source_location_function));
+    pack_sds_safe(mp_pck, *source_location_function);
 }
 
 /* Return FLB_TRUE if sourceLocation extracted */
