@@ -861,6 +861,7 @@ static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
     msgpack_object  *obj;
     struct flb_time  tms;
     msgpack_object   o;
+    int              ret;
 
     root = result.data;
     if (root.type != MSGPACK_OBJECT_ARRAY || root.via.array.size < 2) {
@@ -881,8 +882,15 @@ static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
     }
 
     /* This is a Fluent Bit record, just do the proper unpacking/printing */
-    flb_time_pop_from_msgpack(&tms, &result, &obj);
-    flb_metadata_pop_from_msgpack(&metadata, &result, &obj);
+    ret = flb_time_pop_from_msgpack(&tms, &result, &obj);
+    if (ret != 0) {
+        return -1;
+    }
+
+    ret = flb_metadata_pop_from_msgpack(&metadata, &result, &obj);
+    if (ret != 0) {
+        return -1;
+    }
 
     fprintf(stdout, "[%zd] [[%"PRId32".%09lu, ", cnt, (int32_t) tms.tm.tv_sec, tms.tm.tv_nsec);
 
