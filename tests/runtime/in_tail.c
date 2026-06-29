@@ -2289,6 +2289,28 @@ void flb_test_inotify_watcher_false()
 }
 
 #ifdef FLB_HAVE_INOTIFY
+static int wait_tail_collectors_state(struct flb_tail_config *tail_ctx,
+                                      struct flb_input_instance *ins,
+                                      int expected)
+{
+    int i;
+    int fs_running;
+    int progress_running;
+
+    for (i = 0; i < 50; i++) {
+        fs_running = flb_input_collector_running(tail_ctx->coll_fd_fs1, ins);
+        progress_running = flb_input_collector_running(tail_ctx->coll_fd_progress_check,
+                                                       ins);
+        if (fs_running == expected && progress_running == expected) {
+            return 0;
+        }
+
+        flb_time_msleep(100);
+    }
+
+    return -1;
+}
+
 void flb_test_inotify_pause_collectors()
 {
     int ret;
@@ -2335,6 +2357,54 @@ void flb_test_inotify_pause_collectors()
     TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_fs1, ins) == FLB_TRUE);
     TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_progress_check,
                                            ins) == FLB_TRUE);
+
+    test_tail_ctx_destroy(ctx);
+}
+
+void flb_test_inotify_threaded_pause_collectors()
+{
+    int ret;
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+    struct flb_tail_config *tail_ctx;
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"inotify_threaded_pause_collectors.log"};
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = NULL;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "threaded", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    head = ctx->flb->config->inputs.next;
+    ins = mk_list_entry(head, struct flb_input_instance, _head);
+    tail_ctx = ins->context;
+
+    ret = wait_tail_collectors_state(tail_ctx, ins, FLB_TRUE);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_pause(ins);
+    TEST_CHECK(ret == 0);
+    ret = wait_tail_collectors_state(tail_ctx, ins, FLB_FALSE);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_resume(ins);
+    TEST_CHECK(ret == 0);
+    ret = wait_tail_collectors_state(tail_ctx, ins, FLB_TRUE);
+    TEST_CHECK(ret == 0);
 
     test_tail_ctx_destroy(ctx);
 }
@@ -2942,6 +3012,7 @@ TEST_LIST = {
 #ifdef FLB_HAVE_INOTIFY
     {"inotify_watcher_false", flb_test_inotify_watcher_false},
     {"inotify_pause_collectors", flb_test_inotify_pause_collectors},
+    {"inotify_threaded_pause_collectors", flb_test_inotify_threaded_pause_collectors},
 #endif /* FLB_HAVE_INOTIFY */
 
 #ifdef FLB_HAVE_REGEX
