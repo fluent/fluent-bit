@@ -30,14 +30,14 @@ typedef enum {
 
 void init_http_request(struct http_request_field *http_request)
 {
-    http_request->latency = flb_sds_create("");
-    http_request->protocol = flb_sds_create("");
-    http_request->referer = flb_sds_create("");
-    http_request->remoteIp = flb_sds_create("");
-    http_request->requestMethod = flb_sds_create("");
-    http_request->requestUrl = flb_sds_create("");
-    http_request->serverIp = flb_sds_create("");
-    http_request->userAgent = flb_sds_create("");
+    http_request->latency = NULL;
+    http_request->protocol = NULL;
+    http_request->referer = NULL;
+    http_request->remoteIp = NULL;
+    http_request->requestMethod = NULL;
+    http_request->requestUrl = NULL;
+    http_request->serverIp = NULL;
+    http_request->userAgent = NULL;
 
     http_request->cacheFillBytes = 0;
     http_request->requestSize = 0;
@@ -67,7 +67,7 @@ void add_http_request_field(struct http_request_field *http_request,
     msgpack_pack_str(mp_pck, 11);
     msgpack_pack_str_body(mp_pck, "httpRequest", 11);
 
-    if (flb_sds_is_empty(http_request->latency) == FLB_TRUE) {
+    if (!http_request->latency || flb_sds_is_empty(http_request->latency) == FLB_TRUE) {
         msgpack_pack_map(mp_pck, 14);
     }
     else {
@@ -76,60 +76,44 @@ void add_http_request_field(struct http_request_field *http_request,
         msgpack_pack_str(mp_pck, HTTP_REQUEST_LATENCY_SIZE);
         msgpack_pack_str_body(mp_pck, HTTP_REQUEST_LATENCY,
                               HTTP_REQUEST_LATENCY_SIZE);
-        msgpack_pack_str(mp_pck, flb_sds_len(http_request->latency));
-        msgpack_pack_str_body(mp_pck, http_request->latency,
-                              flb_sds_len(http_request->latency));
+        pack_sds_safe(mp_pck, http_request->latency);
     }
 
     /* String sub-fields */
     msgpack_pack_str(mp_pck, HTTP_REQUEST_REQUEST_METHOD_SIZE);
     msgpack_pack_str_body(mp_pck, HTTP_REQUEST_REQUEST_METHOD,
                           HTTP_REQUEST_REQUEST_METHOD_SIZE);
-    msgpack_pack_str(mp_pck, flb_sds_len(http_request->requestMethod));
-    msgpack_pack_str_body(mp_pck, http_request->requestMethod,
-                          flb_sds_len(http_request->requestMethod));
+    pack_sds_safe(mp_pck, http_request->requestMethod);
 
     msgpack_pack_str(mp_pck, HTTP_REQUEST_REQUEST_URL_SIZE);
     msgpack_pack_str_body(mp_pck, HTTP_REQUEST_REQUEST_URL,
                           HTTP_REQUEST_REQUEST_URL_SIZE);
-    msgpack_pack_str(mp_pck, flb_sds_len(http_request->requestUrl));
-    msgpack_pack_str_body(mp_pck, http_request->requestUrl,
-                          flb_sds_len(http_request->requestUrl));
+    pack_sds_safe(mp_pck, http_request->requestUrl);
 
     msgpack_pack_str(mp_pck, HTTP_REQUEST_USER_AGENT_SIZE);
     msgpack_pack_str_body(mp_pck, HTTP_REQUEST_USER_AGENT,
                           HTTP_REQUEST_USER_AGENT_SIZE);
-    msgpack_pack_str(mp_pck, flb_sds_len(http_request->userAgent));
-    msgpack_pack_str_body(mp_pck, http_request->userAgent,
-                          flb_sds_len(http_request->userAgent));
+    pack_sds_safe(mp_pck, http_request->userAgent);
 
     msgpack_pack_str(mp_pck, HTTP_REQUEST_REMOTE_IP_SIZE);
     msgpack_pack_str_body(mp_pck, HTTP_REQUEST_REMOTE_IP,
                           HTTP_REQUEST_REMOTE_IP_SIZE);
-    msgpack_pack_str(mp_pck, flb_sds_len(http_request->remoteIp));
-    msgpack_pack_str_body(mp_pck, http_request->remoteIp,
-                          flb_sds_len(http_request->remoteIp));
+    pack_sds_safe(mp_pck, http_request->remoteIp);
 
     msgpack_pack_str(mp_pck, HTTP_REQUEST_SERVER_IP_SIZE);
     msgpack_pack_str_body(mp_pck, HTTP_REQUEST_SERVER_IP,
                           HTTP_REQUEST_SERVER_IP_SIZE);
-    msgpack_pack_str(mp_pck, flb_sds_len(http_request->serverIp));
-    msgpack_pack_str_body(mp_pck, http_request->serverIp,
-                          flb_sds_len(http_request->serverIp));
+    pack_sds_safe(mp_pck, http_request->serverIp);
 
     msgpack_pack_str(mp_pck, HTTP_REQUEST_REFERER_SIZE);
     msgpack_pack_str_body(mp_pck, HTTP_REQUEST_REFERER,
                           HTTP_REQUEST_REFERER_SIZE);
-    msgpack_pack_str(mp_pck, flb_sds_len(http_request->referer));
-    msgpack_pack_str_body(mp_pck, http_request->referer,
-                          flb_sds_len(http_request->referer));
+    pack_sds_safe(mp_pck, http_request->referer);
 
     msgpack_pack_str(mp_pck, HTTP_REQUEST_PROTOCOL_SIZE);
     msgpack_pack_str_body(mp_pck, HTTP_REQUEST_PROTOCOL,
                           HTTP_REQUEST_PROTOCOL_SIZE);
-    msgpack_pack_str(mp_pck, flb_sds_len(http_request->protocol));
-    msgpack_pack_str_body(mp_pck, http_request->protocol,
-                          flb_sds_len(http_request->protocol));
+    pack_sds_safe(mp_pck, http_request->protocol);
 
     /* Integer sub-fields */
     msgpack_pack_str(mp_pck, HTTP_REQUEST_REQUESTSIZE_SIZE);
@@ -224,7 +208,12 @@ static void validate_latency(msgpack_object_str latency_in_payload,
                 ++ j;
             }
         }
-        http_request->latency = flb_sds_copy(http_request->latency, extract_latency, j);
+        if (!http_request->latency) {
+            http_request->latency = flb_sds_create_len(extract_latency, j);
+        }
+        else {
+            http_request->latency = flb_sds_copy(http_request->latency, extract_latency, j);
+        }
     }
 }
 
