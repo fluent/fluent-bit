@@ -743,7 +743,48 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
     }
 
     if (stream->request.body == NULL) {
-        stream->request.body = cfl_sds_create_size(len);
+        /*
+         * Pre-allocate body buffer to avoid repeated reallocs as 16KB HTTP/2
+         * frames arrive. Three strategies, in priority order:
+         *   1. Content-Length header — exact size (non-gRPC HTTP/2)
+         *   2. gRPC 5-byte frame header — parse message length for exact size
+         *   3. Fallback to frame size (len) — original behavior
+         */
+        size_t initial_size;
+
+        if (stream->request.content_length > 0) {
+            initial_size = stream->request.content_length;
+        }
+        else if (len >= 5 &&
+                 stream->request.content_type != NULL &&
+                 strncmp(stream->request.content_type, "application/grpc", 16) == 0) {
+            /* gRPC length-prefixed frame: 1 byte flags + 4 bytes message length */
+            uint32_t grpc_msg_len = ((uint32_t) data[1] << 24) |
+                                    ((uint32_t) data[2] << 16) |
+                                    ((uint32_t) data[3] << 8)  |
+                                    ((uint32_t) data[4]);
+            if ((size_t) grpc_msg_len > SIZE_MAX - 5) {
+                stream->status = HTTP_STREAM_STATUS_ERROR;
+                return -1;
+            }
+            initial_size = (size_t) grpc_msg_len + 5;
+        }
+        else {
+            initial_size = len;
+        }
+
+        if (initial_size < len) {
+            stream->status = HTTP_STREAM_STATUS_ERROR;
+            return -1;
+        }
+
+        if (http2_request_body_limit_exceeded(stream, initial_size)) {
+            stream->status = HTTP_STREAM_STATUS_ERROR;
+
+            return -1;
+        }
+
+        stream->request.body = cfl_sds_create_size(initial_size);
 
         if (stream->request.body == NULL) {
             stream->status = HTTP_STREAM_STATUS_ERROR;
