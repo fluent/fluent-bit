@@ -37,8 +37,13 @@ int validate_key(msgpack_object obj, const char *str, const int size) {
 
 void try_assign_subfield_str(msgpack_object obj, flb_sds_t *subfield) {
     if (obj.type == MSGPACK_OBJECT_STR) {
-        *subfield = flb_sds_copy(*subfield, obj.via.str.ptr,
-                                 obj.via.str.size);
+        if (!*subfield) {
+            *subfield = flb_sds_create_len(obj.via.str.ptr, obj.via.str.size);
+        }
+        else {
+            *subfield = flb_sds_copy(*subfield, obj.via.str.ptr,
+                                     obj.via.str.size);
+        }
     }
 }
 
@@ -55,9 +60,25 @@ void try_assign_subfield_bool(msgpack_object obj, int *subfield) {
 
 void try_assign_subfield_int(msgpack_object obj, int64_t *subfield) {
     if (obj.type == MSGPACK_OBJECT_STR) {
-        *subfield = atoll(obj.via.str.ptr);
+        char buf[32];
+        int len = obj.via.str.size < 31 ? obj.via.str.size : 31;
+        memcpy(buf, obj.via.str.ptr, len);
+        buf[len] = '\0';
+        *subfield = atoll(buf);
     }
     else if (obj.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
         *subfield = obj.via.i64;
     }
 }
+
+void pack_sds_safe(msgpack_packer *mp_pck, flb_sds_t s) {
+    if (s) {
+        msgpack_pack_str(mp_pck, flb_sds_len(s));
+        msgpack_pack_str_body(mp_pck, s, flb_sds_len(s));
+    }
+    else {
+        msgpack_pack_str(mp_pck, 0);
+        msgpack_pack_str_body(mp_pck, "", 0);
+    }
+}
+
