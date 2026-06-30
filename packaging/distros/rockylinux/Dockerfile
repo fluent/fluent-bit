@@ -12,6 +12,9 @@ FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 # rockylinux/8 base image
 FROM rockylinux/rockylinux:8 AS rockylinux-8-base
 
+ENV CARGO_HOME="/opt/cargo"
+ARG RUST_VERSION="1.91"
+
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/Rocky-PowerTools.repo
 
@@ -21,7 +24,10 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
-    yum clean all
+    yum clean all && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
@@ -29,6 +35,9 @@ ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 # rockylinux/8.arm64v8 base image
 # hadolint ignore=DL3029
 FROM --platform=arm64 rockylinux/rockylinux:8 AS rockylinux-8.arm64v8-base
+
+ENV CARGO_HOME="/opt/cargo"
+ARG RUST_VERSION="1.91"
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -41,7 +50,10 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
-    yum clean all
+    yum clean all && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
@@ -51,6 +63,9 @@ ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
 FROM rockylinux/rockylinux:9 AS rockylinux-9-base
 
+ENV CARGO_HOME="/opt/cargo"
+ARG RUST_VERSION="1.91"
+
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
 
@@ -60,7 +75,10 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
-    yum clean all
+    yum clean all && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
@@ -68,6 +86,9 @@ ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 # rockylinux/9.arm64v8 base image
 # hadolint ignore=DL3029
 FROM --platform=arm64 rockylinux/rockylinux:9 AS rockylinux-9.arm64v8-base
+
+ENV CARGO_HOME="/opt/cargo"
+ARG RUST_VERSION="1.91"
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -80,7 +101,10 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
-    yum clean all
+    yum clean all && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
@@ -90,6 +114,9 @@ ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
 FROM rockylinux/rockylinux:10 AS rockylinux-10-base
 
+ENV CARGO_HOME="/opt/cargo"
+ARG RUST_VERSION="1.91"
+
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
 
@@ -100,7 +127,10 @@ RUN yum -y update && \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config  \
     libzstd-devel && \
-    yum clean all
+    yum clean all && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 # Use system installed libzstd library.
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=On
@@ -109,6 +139,9 @@ ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 # rockylinux/10.arm64v8 base image
 # hadolint ignore=DL3029
 FROM --platform=arm64 rockylinux/rockylinux:10 AS rockylinux-10.arm64v8-base
+
+ENV CARGO_HOME="/opt/cargo"
+ARG RUST_VERSION="1.91"
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -122,7 +155,10 @@ RUN yum -y update && \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config  \
     libzstd-devel && \
-    yum clean all
+    yum clean all && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 # Use system installed libzstd library.
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=On
@@ -137,6 +173,8 @@ FROM $BASE_BUILDER AS builder
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
+ENV CARGO_HOME="/opt/cargo" \
+    PATH="/opt/cargo/bin:${PATH}"
 
 # Docker context must be the base of the repo
 WORKDIR /source/fluent-bit/
@@ -159,6 +197,7 @@ ARG FLB_CHUNK_TRACE=On
 ARG FLB_UNICODE_ENCODER=On
 ARG FLB_KAFKA=On
 ARG FLB_OUT_PGSQL=On
+ARG FLB_OUT_ZEROBUS=On
 
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
@@ -169,6 +208,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_HTTP_SERVER="$FLB_HTTP_SERVER" \
     -DFLB_KAFKA="$FLB_KAFKA" \
     -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
+    -DFLB_OUT_ZEROBUS="${FLB_OUT_ZEROBUS}" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_JEMALLOC_OPTIONS="$FLB_JEMALLOC_OPTIONS" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
