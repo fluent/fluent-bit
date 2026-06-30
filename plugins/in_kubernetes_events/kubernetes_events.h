@@ -82,6 +82,9 @@ struct k8s_events {
     struct flb_connection *current_connection;
     struct flb_http_client *streaming_client;
 
+    /* Buffer for incomplete JSON data from chunked responses */
+    flb_sds_t chunk_buffer;
+
     /* limit for event queries */
     int limit_request;
     /* last highest seen resource_version */
