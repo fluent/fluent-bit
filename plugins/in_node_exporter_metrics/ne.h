@@ -33,9 +33,9 @@
 /* Default enabled metrics */
 
 #ifdef __linux__
-#define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,netstat,sockstat,filefd,systemd,nvme,thermal_zone,hwmon"
+#define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,netstat,sockstat,filefd,systemd,nvme,thermal_zone,hwmon,powersupplyclass"
 #elif __APPLE__
-#define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,meminfo,diskstats,uname,netdev"
+#define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,meminfo,diskstats,filesystem,uname,netdev,powersupplyclass"
 #endif
 
 /* filesystem: regex for ignoring mount points and filesystem types */
@@ -101,6 +101,22 @@ struct flb_ne {
     struct cmt_gauge *darwin_swap_used_bytes;
     struct cmt_gauge *darwin_swap_total_bytes;
     struct cmt_counter *darwin_total_bytes;
+
+    /* powersupply_darwin */
+    struct cmt_gauge *darwin_ps_current_capacity;
+    struct cmt_gauge *darwin_ps_max_capacity;
+    struct cmt_gauge *darwin_ps_design_capacity;
+    struct cmt_gauge *darwin_ps_nominal_capacity;
+    struct cmt_gauge *darwin_ps_time_to_empty;
+    struct cmt_gauge *darwin_ps_time_to_full;
+    struct cmt_gauge *darwin_ps_voltage;
+    struct cmt_gauge *darwin_ps_current;
+    struct cmt_gauge *darwin_ps_temperature;
+    struct cmt_gauge *darwin_ps_present;
+    struct cmt_gauge *darwin_ps_charging;
+    struct cmt_gauge *darwin_ps_charged;
+    struct cmt_gauge *darwin_ps_internal_failure;
+    struct cmt_gauge *darwin_ps_battery_health;
 #endif
 
     /* diskstats: abbreviation 'dt' */
@@ -141,6 +157,10 @@ struct flb_ne {
     struct cmt_gauge *darwin_noproto;
 #endif
 
+    /* powersupply_linux */
+    struct cmt_gauge *powersupply_info;
+    struct mk_list    powersupply_dynamic_metrics;
+
     /* sockstat_linux */
     struct cmt_gauge *sockstat_sockets_used;
     struct cmt_gauge *sockstat_TCP_alloc;
@@ -172,6 +192,7 @@ struct flb_ne {
     struct cmt_counter *netstat_Udp_InErrors;
     struct cmt_counter *netstat_Udp_OutDatagrams;
     struct cmt_counter *netstat_Udp_NoPorts;
+    struct mk_list      netstat_dynamic_metrics;
 
     /* time */
     struct cmt_gauge *time;

@@ -18,15 +18,15 @@
  */
 
 #ifdef __linux__
-#include "ne_filesystem_linux.c"
+#include "ne_powersupply_linux.c"
 #elif __APPLE__
-#include "ne_filesystem_darwin.c"
+#include "ne_powersupply_darwin.c"
 #else
 
 #include "ne.h"
 
-struct flb_ne_collector filesystem_collector = {
-    .name = "filesystem",
+struct flb_ne_collector powersupply_collector = {
+    .name = "powersupplyclass",
     .cb_init = NULL,
     .cb_update = NULL,
     .cb_exit = NULL
