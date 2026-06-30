@@ -14,6 +14,11 @@ import requests
 from server.http_server import data_storage, http_server_run
 from utils.test_service import FluentBitTestService
 
+skip_on_windows = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="scenario relies on POSIX rotation, symlink, permissions, or inode semantics",
+)
+
 
 def _timezone_available(iana_zone):
     if sys.platform == "win32":
@@ -434,6 +439,7 @@ def test_in_tail_existing_file_can_start_from_tail_on_startup(workspace):
     assert records[0]["offset"] > 0
 
 
+@skip_on_windows
 def test_in_tail_follows_rename_rotation(workspace):
     active_log = workspace / "app.log"
     db_path = workspace / "tail.db"
@@ -471,6 +477,7 @@ def test_in_tail_follows_rename_rotation(workspace):
         service.stop()
 
 
+@skip_on_windows
 def test_in_tail_handles_multiple_rename_rotations(workspace):
     active_log = workspace / "multi-rotate.log"
     db_path = workspace / "tail.db"
@@ -552,6 +559,7 @@ def test_in_tail_handles_copytruncate_with_stale_writer(workspace):
         service.stop()
 
 
+@skip_on_windows
 def test_in_tail_handles_symlink_target_rotation(workspace):
     target_one = workspace / "target-one.log"
     target_two = workspace / "target-two.log"
@@ -595,6 +603,7 @@ def test_in_tail_handles_symlink_target_rotation(workspace):
         service.stop()
 
 
+@skip_on_windows
 def test_in_tail_stat_backend_covers_nfs_style_polling(workspace):
     active_log = workspace / "nfs-style.log"
     db_path = workspace / "tail.db"
@@ -628,6 +637,7 @@ def test_in_tail_stat_backend_covers_nfs_style_polling(workspace):
         service.stop()
 
 
+@skip_on_windows
 def test_in_tail_db_compare_filename_replays_renamed_file_after_restart(workspace):
     source_log = workspace / "db-source.log"
     moved_log = workspace / "db-moved.log"
@@ -799,6 +809,7 @@ def test_in_tail_truncate_long_lines_emits_truncated_record_and_continues(worksp
     assert len(truncated[0]) > 0
 
 
+@skip_on_windows
 def test_in_tail_rotate_wait_keeps_old_inode_then_purges_it(workspace):
     active_log = workspace / "rotate-wait.log"
     db_path = workspace / "tail.db"
@@ -833,6 +844,7 @@ def test_in_tail_rotate_wait_keeps_old_inode_then_purges_it(workspace):
         service.stop()
 
 
+@skip_on_windows
 def test_in_tail_delete_and_recreate_same_path_is_reingested(workspace):
     active_log = workspace / "recreate.log"
     db_path = workspace / "tail.db"
@@ -859,6 +871,7 @@ def test_in_tail_delete_and_recreate_same_path_is_reingested(workspace):
         service.stop()
 
 
+@skip_on_windows
 def test_in_tail_restart_resumes_from_db_offset(workspace):
     log_file = workspace / "resume.log"
     db_path = workspace / "tail.db"
@@ -884,6 +897,7 @@ def test_in_tail_restart_resumes_from_db_offset(workspace):
         second_run.stop()
 
 
+@skip_on_windows
 def test_in_tail_copytruncate_across_restart_reads_new_content_only(workspace):
     log_file = workspace / "restart-copytruncate.log"
     archived = workspace / "restart-copytruncate.log.1"
@@ -912,6 +926,7 @@ def test_in_tail_copytruncate_across_restart_reads_new_content_only(workspace):
         second_run.stop()
 
 
+@skip_on_windows
 def test_in_tail_partial_line_across_restart_is_completed_once(workspace):
     log_file = workspace / "partial-restart.log"
     db_path = workspace / "tail.db"
@@ -937,6 +952,7 @@ def test_in_tail_partial_line_across_restart_is_completed_once(workspace):
     assert_log_set(records, ["partial line"])
 
 
+@skip_on_windows
 def test_in_tail_db_schema_upgrade_is_automatic(workspace):
     log_file = workspace / "schema-upgrade.log"
     db_path = workspace / "tail.db"
@@ -998,6 +1014,7 @@ def test_in_tail_db_schema_upgrade_is_automatic(workspace):
     assert "offset_marker_size" in columns
 
 
+@skip_on_windows
 def test_in_tail_multi_file_rapid_rotation(workspace):
     log_dir = workspace / "rapid"
     log_dir.mkdir()
@@ -1090,6 +1107,7 @@ def test_in_tail_exclude_path_skips_matching_files(workspace):
     assert records[0]["file"] == str(keep_file)
 
 
+@skip_on_windows
 def test_in_tail_ignore_older_skips_stale_files(workspace):
     stale_file = workspace / "stale.log"
     db_path = workspace / "tail.db"
@@ -1107,6 +1125,7 @@ def test_in_tail_ignore_older_skips_stale_files(workspace):
         service.stop()
 
 
+@skip_on_windows
 def test_in_tail_ignore_active_older_files_stops_following_aged_file(workspace):
     log_file = workspace / "active-aged.log"
     db_path = workspace / "tail.db"
@@ -1184,6 +1203,7 @@ def test_in_tail_generic_encoding_shiftjis(workspace):
     assert_log_set(records, [expected_text])
 
 
+@skip_on_windows
 def test_in_tail_discovers_file_after_permissions_are_restored(workspace):
     log_dir = workspace / "permissions"
     log_dir.mkdir()
