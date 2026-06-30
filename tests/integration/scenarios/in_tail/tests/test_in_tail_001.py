@@ -304,6 +304,84 @@ def test_in_tail_discovers_new_files_from_head(workspace):
         service.stop()
 
 
+def write_windows_utf8_path_config(path, tail_path, db_path):
+    path.write_text(
+        f"""service:
+  flush: 1
+  log_level: debug
+  http_server: on
+  http_port: ${{FLUENT_BIT_HTTP_MONITORING_PORT}}
+
+pipeline:
+  inputs:
+    - name: tail
+      tag: tail.integration
+      path: {tail_path}
+      windows.path_encoding: utf-8
+      read_from_head: true
+      read_newly_discovered_files_from_head: true
+      refresh_interval: 1
+      watcher_interval: 1
+      progress_check_interval: 1
+      rotate_wait: 6
+      db: {db_path}
+      db.sync: full
+      db.journal_mode: DELETE
+      db.compare_filename: true
+      path_key: file
+      offset_key: offset
+
+  outputs:
+    - name: http
+      match: tail.integration
+      host: 127.0.0.1
+      port: ${{TEST_SUITE_HTTP_PORT}}
+      uri: /data
+      format: json
+      json_date_key: false
+""",
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only path API mode")
+def test_in_tail_windows_utf8_path_encoding_discovers_unicode_file(workspace):
+    log_dir = workspace / "utf8-\u30c6\u30b9\u30c8"
+    db_path = workspace / "tail.db"
+    config_path = workspace / "tail_windows_utf8_path.yaml"
+    log_dir.mkdir()
+
+    log_file = log_dir / "\u65e5\u672c\u8a9e.log"
+    log_file.write_text("utf8-path-1\n", encoding="utf-8")
+    write_windows_utf8_path_config(config_path, log_dir / "*.log", db_path)
+
+    service = Service(
+        config_path,
+        tail_path=log_dir / "*.log",
+        db_path=db_path,
+    )
+
+    try:
+        service.start()
+        records = service.wait_for_records(1)
+    finally:
+        service.stop()
+
+    assert_log_set(records[:1], ["utf8-path-1"])
+    assert records[0]["file"] == str(log_file)
+
+    db = sqlite3.connect(db_path)
+    try:
+        row = db.execute(
+            "SELECT name FROM in_tail_files WHERE name = ?",
+            (str(log_file),),
+        ).fetchone()
+    finally:
+        db.close()
+
+    assert row == (str(log_file),)
+
+
 def test_in_tail_newly_discovered_files_can_start_from_tail(workspace):
     log_dir = workspace / "new-tail"
     log_dir.mkdir()
