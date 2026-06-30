@@ -30,7 +30,7 @@
 #include <time.h>
 #include <string.h>
 
-#include "zerobus.h"
+#include "out_zerobus.h"
 
 /*
  * Prepend "https://" to url if no scheme is present.
