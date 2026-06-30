@@ -1,0 +1,43 @@
+Copyright (2025) Databricks, Inc.
+
+This Software includes software developed at Databricks (https://www.databricks.com/) and its use is subject to the included LICENSE file.
+
+---
+
+This Software includes the following open source components:
+
+## MIT License
+
+- **tokio**: Copyright (c) 2019 Tokio Contributors (https://github.com/tokio-rs/tokio)
+- **tokio-stream**: Copyright (c) 2019 Tokio Contributors (https://github.com/tokio-rs/tokio)
+- **tokio-util**: Copyright (c) 2019 Tokio Contributors (https://github.com/tokio-rs/tokio)
+- **tonic**: Copyright (c) 2019 Lucio Franco (https://github.com/hyperium/tonic)
+- **tracing**: Copyright (c) 2019 Tokio Contributors (https://github.com/tokio-rs/tracing)
+- **async-trait**: Copyright (c) 2019 David Tolnay (https://github.com/dtolnay/async-trait)
+- **thiserror**: Copyright (c) 2019 David Tolnay (https://github.com/dtolnay/thiserror)
+- **serde**: Copyright (c) 2014 David Tolnay (https://github.com/serde-rs/serde)
+- **serde_json**: Copyright (c) 2014 David Tolnay (https://github.com/serde-rs/json)
+- **bytes**: Copyright (c) 2018 Carl Lerche (https://github.com/tokio-rs/bytes)
+- **smallvec**: Copyright (c) 2018 The Servo Project Developers (https://github.com/servo/rust-smallvec)
+- **self_cell**: Copyright (c) 2020 Lukas Bergdoll (https://github.com/Voultapher/self_cell)
+
+## Apache License 2.0
+
+- **prost**: Copyright (c) 2017 Dan Burkert (https://github.com/tokio-rs/prost)
+- **prost-types**: Copyright (c) 2017 Dan Burkert (https://github.com/tokio-rs/prost)
+- **tokio-retry**: Copyright (c) 2018 Sam Rijs (https://github.com/srijs/rust-tokio-retry)
+- **reqwest**: Copyright (c) 2016 Sean McArthur (https://github.com/seanmonstar/reqwest)
+- **hyper-http-proxy**: Copyright (c) 2019 Trent Mick (https://github.com/tafia/hyper-http-proxy)
+- **hyper-util**: Copyright (c) 2023 Sean McArthur (https://github.com/hyperium/hyper-util)
+
+## Optional: Arrow Flight support (Apache License 2.0)
+
+These components are only included when the `arrow-flight` feature is enabled:
+
+- **arrow-flight**: Copyright (c) 2020 Apache Arrow contributors (https://github.com/apache/arrow-rs)
+- **arrow-array**: Copyright (c) 2020 Apache Arrow contributors (https://github.com/apache/arrow-rs)
+- **arrow-schema**: Copyright (c) 2020 Apache Arrow contributors (https://github.com/apache/arrow-rs)
+- **arrow-ipc**: Copyright (c) 2020 Apache Arrow contributors (https://github.com/apache/arrow-rs)
+- **futures**: Copyright (c) 2016 Alex Crichton (https://github.com/rust-lang/futures-rs)
+
+For a complete list of dependencies and their licenses, see `sdk/Cargo.toml`.
