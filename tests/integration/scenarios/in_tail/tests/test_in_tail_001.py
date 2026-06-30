@@ -351,13 +351,13 @@ pipeline:
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only path API mode")
 def test_in_tail_windows_utf8_path_encoding_discovers_unicode_file(workspace):
-    log_dir = workspace / "utf8-\u30c6\u30b9\u30c8"
+    log_dir = workspace / "utf8-\U0001f600"
     db_path = workspace / "tail.db"
     config_path = workspace / "tail_windows_utf8_path.yaml"
     log_dir.mkdir()
 
-    log_file = log_dir / "\u65e5\u672c\u8a9e.log"
-    long_log_file = log_dir / (("\u754c" * 70) + ".log")
+    log_file = log_dir / "unicode-\U0001f600.log"
+    long_log_file = log_dir / (("\U0001f600" * 70) + ".log")
     log_file.write_text("utf8-path-1\n", encoding="utf-8")
     long_log_file.write_text("utf8-path-2\n", encoding="utf-8")
     write_windows_utf8_path_config(config_path, log_dir / "*.log", db_path)
