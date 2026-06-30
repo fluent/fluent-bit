@@ -109,6 +109,9 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
 #ifdef FLB_HAVE_SQLDB
     ctx->db_sync = 1;  /* sqlite sync 'normal' */
 #endif
+#ifdef FLB_SYSTEM_WINDOWS
+    ctx->windows_path_encoding = FLB_TAIL_WINDOWS_PATH_ENCODING_ANSI;
+#endif
 #ifdef FLB_HAVE_UNICODE_ENCODER
     ctx->preferred_input_encoding = FLB_UNICODE_ENCODING_UNSPECIFIED;
 #endif
@@ -195,6 +198,24 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         flb_tail_config_destroy(ctx);
         return NULL;
     }
+
+#ifdef FLB_SYSTEM_WINDOWS
+    tmp = flb_input_get_property("windows.path_encoding", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "ansi") == 0) {
+            ctx->windows_path_encoding = FLB_TAIL_WINDOWS_PATH_ENCODING_ANSI;
+        }
+        else if (strcasecmp(tmp, "utf-8") == 0 ||
+                 strcasecmp(tmp, "utf8") == 0) {
+            ctx->windows_path_encoding = FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid 'windows.path_encoding' value %s", tmp);
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+    }
+#endif
 
 #ifdef FLB_HAVE_UNICODE_ENCODER
     tmp = flb_input_get_property("unicode.encoding", ins);
