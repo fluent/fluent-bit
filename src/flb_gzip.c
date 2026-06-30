@@ -745,7 +745,7 @@ static int flb_gzip_decompressor_process_optional_headers(
     struct flb_gzip_decompression_context *inner_context;
     int                                    status;
     uint16_t                               hcrc;
-    uint16_t                               xlen;
+    size_t                                 xlen;
     uint16_t                               crc;
 
     inner_context = (struct flb_gzip_decompression_context *) \
@@ -806,6 +806,8 @@ static int flb_gzip_decompressor_process_optional_headers(
             xlen == context->input_buffer_length) {
             return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
         }
+
+        xlen++;
 
         context->read_buffer = &context->read_buffer[xlen];
         context->input_buffer_length -= xlen;
