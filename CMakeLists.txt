@@ -346,6 +346,7 @@ option(FLB_PREFER_SYSTEM_LIB_LUAJIT       "Prefer the libluajit system library" 
 option(FLB_PREFER_SYSTEM_LIB_MSGPACK      "Prefer the libmsgpack system library"      ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_NGHTTP2      "Prefer the libnghttp2 system library"      ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_SQLITE       "Prefer the libsqlite3 system library"      ${FLB_PREFER_SYSTEM_LIBS})
+option(FLB_PREFER_SYSTEM_LIB_ZEROBUS_FFI  "Prefer the Zerobus FFI system library"     ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_ZSTD         "Prefer the libzstd system library"         ${FLB_PREFER_SYSTEM_LIBS})
 
 # Enable all features
