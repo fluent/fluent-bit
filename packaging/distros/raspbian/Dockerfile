@@ -8,6 +8,8 @@ ARG BASE_BUILDER
 
 FROM balenalib/rpi-raspbian:buster AS raspbian-buster-base
 ENV DEBIAN_FRONTEND noninteractive
+ENV CARGO_HOME="/opt/cargo"
+ARG RUST_VERSION="1.91"
 
 # Builder image so dependencies can be latest, recommended and no need to wipe
 # We pin cmake to a working version (latest 3.16 triggers cmake failures for GNU C compiler detection)
@@ -19,11 +21,16 @@ RUN apt-get update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
-    apt-get install -y --reinstall lsb-base lsb-release
+    apt-get install -y --reinstall lsb-base lsb-release && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 # raspbian/bullseye base image
 FROM balenalib/rpi-raspbian:bullseye AS raspbian-bullseye-base
 ENV DEBIAN_FRONTEND noninteractive
+ENV CARGO_HOME="/opt/cargo"
+ARG RUST_VERSION="1.91"
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
@@ -32,11 +39,16 @@ RUN apt-get update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
-    apt-get install -y --reinstall lsb-base lsb-release
+    apt-get install -y --reinstall lsb-base lsb-release && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 # raspbian/bookworm base image
 FROM balenalib/rpi-raspbian:bookworm AS raspbian-bookworm-base
 ENV DEBIAN_FRONTEND noninteractive
+ENV CARGO_HOME="/opt/cargo"
+ARG RUST_VERSION="1.91"
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
@@ -45,7 +57,10 @@ RUN apt-get update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
-    apt-get install -y --reinstall lsb-base lsb-release
+    apt-get install -y --reinstall lsb-base lsb-release && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
@@ -53,6 +68,8 @@ FROM $BASE_BUILDER AS builder
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
+ENV CARGO_HOME="/opt/cargo" \
+    PATH="/opt/cargo/bin:${PATH}"
 
 # Docker context must be the base of the repo
 WORKDIR /tmp/fluent-bit/
@@ -70,6 +87,7 @@ ARG FLB_SQLDB=On
 ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
+ARG FLB_OUT_ZEROBUS=On
 ARG FLB_JEMALLOC=On
 ARG FLB_CHUNK_TRACE=On
 #Tell raspbian packages should be using armv7.
@@ -85,6 +103,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_HTTP_SERVER="$FLB_HTTP_SERVER" \
     -DFLB_OUT_KAFKA="$FLB_OUT_KAFKA" \
     -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
+    -DFLB_OUT_ZEROBUS="${FLB_OUT_ZEROBUS}" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
