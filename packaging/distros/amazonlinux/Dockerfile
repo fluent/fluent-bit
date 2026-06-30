@@ -20,7 +20,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates make bash \
     gcc gcc-c++ \
-    wget unzip systemd-devel wget flex bison \
+    systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs glibc-devel \
     libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
@@ -45,7 +45,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ make bash \
-    wget unzip systemd-devel wget flex bison \
+    systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
     libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
@@ -70,7 +70,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl-minimal ca-certificates gcc gcc-c++ make bash \
-    wget unzip systemd-devel wget flex bison \
+    systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
     libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
@@ -97,7 +97,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl-minimal ca-certificates gcc gcc-c++ make bash \
-    wget unzip systemd-devel wget flex bison \
+    systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
     libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
