@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package zeroparser.benches.supported_nullable_types;
+
+message SupportedNullableTypes {
+  bool approved = 1;
+  int32 day_num = 2;
+  int64 cost = 3;
+  float discount = 4;
+  double cost_with_discount = 5;
+  string description = 6;
+  bytes photo = 7;
+  repeated string tags = 8;
+  repeated int32 activity_ratings = 9;
+  map<int32, string> day_activities = 10;
+  map<string, string> contact_info = 11;
+  int32 byte_num = 12;
+  int32 short_num = 13;
+}

@@ -39,6 +39,7 @@ workflow/
 .vagrant/
 # examples
 examples/wasi_serde_json/target/
+lib/zerobus-ffi-1.3.0/rust/target/
 # WASM test data
 tests/runtime/wasm/go/*.wasm
 tests/integration/.venv/
