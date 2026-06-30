@@ -220,21 +220,26 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
 static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
 {
     char *star, *p0, *p1;
-    char pattern[MAX_PATH];
-    char buf[MAX_PATH];
+    char *pattern;
+    char *buf;
     int ret;
     int n_added = 0;
     time_t now;
     int64_t mtime;
+    size_t prefix_len;
+    size_t pattern_len;
+    size_t candidate_len;
     HANDLE h;
     WIN32_FIND_DATA data;
     WIN32_FIND_DATAW data_w;
     wchar_t *wide_pattern;
     char *filename;
 
-    if (strlen(path) > MAX_PATH - 1) {
-        flb_plg_error(ctx->ins, "path too long '%s'", path);
-        return -1;
+    if (ctx->windows_path_encoding != FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
+        if (strlen(path) > MAX_PATH - 1) {
+            flb_plg_error(ctx->ins, "path too long '%s'", path);
+            return -1;
+        }
     }
 
     star = strchr(path, '*');
@@ -260,8 +265,15 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
         p1++;
     }
 
-    memcpy(pattern, path, (p1 - path));
-    pattern[p1 - path] = '\0';
+    pattern_len = p1 - path;
+    pattern = flb_malloc(pattern_len + 1);
+    if (pattern == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    memcpy(pattern, path, pattern_len);
+    pattern[pattern_len] = '\0';
 
 #ifdef FLB_SYSTEM_WINDOWS
     wide_pattern = NULL;
@@ -269,6 +281,7 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
         wide_pattern = win32_utf8_to_wide(pattern);
         if (wide_pattern == NULL) {
             flb_plg_error(ctx->ins, "invalid UTF-8 path pattern '%s'", pattern);
+            flb_free(pattern);
             return -1;
         }
 
@@ -282,8 +295,11 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
     h = FindFirstFileA(pattern, &data);
 #endif
     if (h == INVALID_HANDLE_VALUE) {
+        flb_free(pattern);
         return 0;  /* none matched */
     }
+
+    flb_free(pattern);
 
     now = time(NULL);
     do {
@@ -307,22 +323,35 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
             goto next;
         }
 
-        /* Create a path (prefix + filename + suffix) */
-        memcpy(buf, path, p0 - path + 1);
-        buf[p0 - path + 1] = '\0';
+        prefix_len = p0 - path + 1;
+        candidate_len = prefix_len + strlen(filename) + strlen(p1);
 
-        if (strlen(buf) + strlen(filename) + strlen(p1) > MAX_PATH - 1) {
-            flb_plg_warn(ctx->ins, "'%s%s%s' is too long", buf, filename, p1);
+        if (ctx->windows_path_encoding != FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
+            if (candidate_len > MAX_PATH - 1) {
+                flb_plg_warn(ctx->ins, "'%.*s%s%s' is too long",
+                             (int) prefix_len, path, filename, p1);
+                goto next;
+            }
+        }
+
+        buf = flb_malloc(candidate_len + 1);
+        if (buf == NULL) {
+            flb_errno();
             goto next;
         }
-        strcat(buf, filename);
-        strcat(buf, p1);
+
+        /* Create a path (prefix + filename + suffix) */
+        memcpy(buf, path, prefix_len);
+        memcpy(buf + prefix_len, filename, strlen(filename));
+        memcpy(buf + prefix_len + strlen(filename), p1, strlen(p1));
+        buf[candidate_len] = '\0';
 
         if (strchr(p1, '*')) {
             ret = tail_scan_pattern(buf, ctx); /* recursive */
             if (ret >= 0) {
                 n_added += ret;
             }
+            flb_free(buf);
             goto next;
         }
 
@@ -331,6 +360,7 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
         if (ret == 0) {
             n_added++;
         }
+        flb_free(buf);
 
  next:
 #ifdef FLB_SYSTEM_WINDOWS

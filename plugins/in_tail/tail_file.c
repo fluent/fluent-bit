@@ -2366,8 +2366,8 @@ char *flb_tail_file_name(struct flb_tail_file *file)
             return NULL;
         }
 
-        if (wcsstr(wide_buf, L"\\\\?\\")) {
-            memmove(wide_buf, wide_buf + 4, (len + 1) * sizeof(wchar_t));
+        if (wcsncmp(wide_buf, L"\\\\?\\", 4) == 0) {
+            memmove(wide_buf, wide_buf + 4, (len - 3) * sizeof(wchar_t));
         }
 
         flb_free(buf);
