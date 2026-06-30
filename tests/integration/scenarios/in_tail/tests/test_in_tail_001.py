@@ -357,7 +357,9 @@ def test_in_tail_windows_utf8_path_encoding_discovers_unicode_file(workspace):
     log_dir.mkdir()
 
     log_file = log_dir / "\u65e5\u672c\u8a9e.log"
+    long_log_file = log_dir / (("\u754c" * 70) + ".log")
     log_file.write_text("utf8-path-1\n", encoding="utf-8")
+    long_log_file.write_text("utf8-path-2\n", encoding="utf-8")
     write_windows_utf8_path_config(config_path, log_dir / "*.log", db_path)
 
     service = Service(
@@ -368,23 +370,24 @@ def test_in_tail_windows_utf8_path_encoding_discovers_unicode_file(workspace):
 
     try:
         service.start()
-        records = service.wait_for_records(1)
+        records = service.wait_for_records(2)
     finally:
         service.stop()
 
-    assert_log_set(records[:1], ["utf8-path-1"])
-    assert records[0]["file"] == str(log_file)
+    assert_log_set(records[:2], ["utf8-path-1", "utf8-path-2"])
+    record_paths = {record["file"] for record in records[:2]}
+    assert record_paths == {str(log_file), str(long_log_file)}
 
     db = sqlite3.connect(db_path)
     try:
         row = db.execute(
-            "SELECT name FROM in_tail_files WHERE name = ?",
-            (str(log_file),),
-        ).fetchone()
+            "SELECT name FROM in_tail_files WHERE name IN (?, ?)",
+            (str(log_file), str(long_log_file)),
+        ).fetchall()
     finally:
         db.close()
 
-    assert row == (str(log_file),)
+    assert {item[0] for item in row} == {str(log_file), str(long_log_file)}
 
 
 def test_in_tail_newly_discovered_files_can_start_from_tail(workspace):
