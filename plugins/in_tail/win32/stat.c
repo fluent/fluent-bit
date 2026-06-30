@@ -80,7 +80,7 @@ static void reset_errno()
     errno = 0;
 }
 
-static void propagate_last_error_to_errno()
+void win32_propagate_last_error_to_errno(void)
 {
     DWORD error_code;
 
@@ -201,7 +201,7 @@ static int is_symlink(const char *path)
     h = FindFirstFileA(path, &data);
 
     if (h == INVALID_HANDLE_VALUE) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
 
         return 0;
     }
@@ -241,7 +241,7 @@ static int is_symlink_utf8(const char *path)
     flb_free(wide_path);
 
     if (h == INVALID_HANDLE_VALUE) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
 
         return 0;
     }
@@ -266,14 +266,14 @@ static int hstat(HANDLE h, struct win32_stat *wst)
     reset_errno();
 
     if (!GetFileInformationByHandle(h, &info)) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
 
         return -1;
     }
 
     if (!GetFileInformationByHandleEx(h, FileStandardInfo,
                                       &std, sizeof(std))) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
 
         return -1;
     }
@@ -307,7 +307,7 @@ int win32_stat(const char *path, struct win32_stat *wst)
                     NULL);          /* hTemplateFile */
 
     if (h == INVALID_HANDLE_VALUE) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
 
         return -1;
     }
@@ -345,7 +345,7 @@ int win32_stat_utf8(const char *path, struct win32_stat *wst)
     flb_free(wide_path);
 
     if (h == INVALID_HANDLE_VALUE) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
 
         return -1;
     }
@@ -375,7 +375,7 @@ int win32_lstat(const char *path, struct win32_stat *wst)
                     NULL);          /* hTemplateFile */
 
     if (h == INVALID_HANDLE_VALUE) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
 
         return -1;
     }
@@ -417,7 +417,7 @@ int win32_lstat_utf8(const char *path, struct win32_stat *wst)
     flb_free(wide_path);
 
     if (h == INVALID_HANDLE_VALUE) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
 
         return -1;
     }
@@ -445,7 +445,7 @@ int win32_fstat(int fd, struct win32_stat *wst)
     h = (HANDLE) _get_osfhandle(fd);
 
     if (h == INVALID_HANDLE_VALUE) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
 
         return -1;
     }

@@ -39,6 +39,7 @@ int win32_lstat_utf8(const char *path, struct win32_stat *wst);
 int win32_open(const char *path, int flags);
 int win32_open_utf8(const char *path, int flags);
 
+void win32_propagate_last_error_to_errno(void);
 wchar_t *win32_utf8_to_wide(const char *str);
 char *win32_wide_to_utf8(const wchar_t *str);
 char *win32_fullpath_utf8(const char *path);

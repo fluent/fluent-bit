@@ -26,6 +26,7 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <io.h>
+#include <errno.h>
 
 #include <fluent-bit/flb_mem.h>
 
@@ -60,6 +61,7 @@ int win32_open_utf8(const char *path, int flags)
 
     wide_path = win32_utf8_to_wide(path);
     if (wide_path == NULL) {
+        errno = EINVAL;
         return -1;
     }
 
@@ -70,10 +72,13 @@ int win32_open_utf8(const char *path, int flags)
                     OPEN_EXISTING,  /* dwCreationDisposition */
                     0,              /* dwFlagsAndAttributes */
                     NULL);          /* hTemplateFile */
-    flb_free(wide_path);
 
     if (h == INVALID_HANDLE_VALUE) {
+        win32_propagate_last_error_to_errno();
+        flb_free(wide_path);
         return -1;
     }
+
+    flb_free(wide_path);
     return _open_osfhandle((intptr_t) h, _O_RDONLY);
 }
