@@ -149,6 +149,7 @@ bbuf_clone(BBuf** rto, BBuf* from)
   CHECK_NULL_RETURN_MEMERR(to);
   r = BBUF_INIT(to, from->alloc);
   if (r != 0) return r;
+  if (from->used > to->alloc) return ONIGERR_MEMORY; /* bounds check: prevent heap buffer overflow (CWE-120) before xmemcpy */
   to->used = from->used;
   xmemcpy(to->p, from->p, from->used);
   return 0;
