@@ -754,7 +754,7 @@ static int process_http_chunk(struct k8s_events* ctx, struct flb_http_client *c,
         token_size = token_end - token_start;
         ret = flb_pack_json(token_start, token_size, &buf_data, &buf_size, &root_type, &consumed);
         if (ret == -1) {
-            flb_plg_debug(ctx->ins, "could not process payload, incomplete or bad formed JSON: %s",
+            flb_plg_warn(ctx->ins, "could not process payload, incomplete or bad formed JSON: %s",
                           c->resp.payload);
         }
         else {
