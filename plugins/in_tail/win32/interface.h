@@ -20,6 +20,8 @@
 #ifndef FLB_TAIL_WIN32_INTERFACE_H
 #define FLB_TAIL_WIN32_INTERFACE_H
 
+#include <wchar.h>
+
 struct win32_stat {
    uint64_t st_ino;
    uint16_t st_mode;
@@ -31,8 +33,15 @@ struct win32_stat {
 int win32_stat(const char *path, struct win32_stat *wst);
 int win32_lstat(const char *path, struct win32_stat *wst);
 int win32_fstat(int fd, struct win32_stat *wst);
+int win32_stat_utf8(const char *path, struct win32_stat *wst);
+int win32_lstat_utf8(const char *path, struct win32_stat *wst);
 
 int win32_open(const char *path, int flags);
+int win32_open_utf8(const char *path, int flags);
+
+wchar_t *win32_utf8_to_wide(const char *str);
+char *win32_wide_to_utf8(const wchar_t *str);
+char *win32_fullpath_utf8(const char *path);
 
 #define WIN32_S_IFDIR 0x1000
 #define WIN32_S_IFCHR 0x2000

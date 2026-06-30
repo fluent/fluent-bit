@@ -28,6 +28,7 @@ endif()
 if(MSVC)
   set(src
     ${src}
+    win32/path.c
     win32/stat.c
     win32/io.c
     )
