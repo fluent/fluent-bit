@@ -795,6 +795,8 @@ int flb_input_set_property(struct flb_input_instance *ins,
                            const char *k, const char *v);
 const char *flb_input_get_property(const char *key,
                                    struct flb_input_instance *ins);
+struct flb_kv **flb_input_get_all_properties(struct flb_input_instance *ins,
+                                             int *out_count);
 #ifdef FLB_HAVE_METRICS
 void *flb_input_get_cmt_instance(struct flb_input_instance *ins);
 #endif
