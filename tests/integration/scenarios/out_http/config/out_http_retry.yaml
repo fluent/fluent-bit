@@ -1,0 +1,22 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: out_http
+      dummy: '{"message":"retry me","source":"dummy"}'
+      samples: 1
+
+  outputs:
+    - name: http
+      match: out_http
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      uri: /data
+      format: json
+      json_date_key: false
+      retry_limit: 1

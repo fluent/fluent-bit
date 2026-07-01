@@ -1,0 +1,31 @@
+service:
+  flush: 1
+  log_level: debug
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: tail
+      tag: tail.integration
+      path: ${TAIL_TEST_PATH}
+      read_from_head: true
+      read_newly_discovered_files_from_head: true
+      refresh_interval: 1
+      watcher_interval: 1
+      progress_check_interval: 1
+      rotate_wait: 6
+      db: ${TAIL_TEST_DB}
+      db.sync: full
+      db.journal_mode: DELETE
+      path_key: file
+      offset_key: offset
+
+  outputs:
+    - name: http
+      match: tail.integration
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      uri: /data
+      format: json
+      json_date_key: false

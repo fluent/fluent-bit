@@ -1,0 +1,183 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: compilation on windows-latest
+
+on:
+  # will be triggered on PR events
+  pull_request:
+    types:
+      - opened
+      - synchronize
+    paths:
+      - ".github/workflows/compilation_on_windows.yml"
+      - "build-scripts/**"
+      - "core/**"
+      - "!core/deps/**"
+      - "product-mini/**"
+      - "samples/**"
+      - "!samples/workload/**"
+      - "tests/wamr-test-suites/**"
+      - "wamr-compiler/**"
+  # will be triggered on push events
+  push:
+    branches:
+      - main
+      - "dev/**"
+    paths:
+      - ".github/workflows/compilation_on_windows.yml"
+      - "build-scripts/**"
+      - "core/**"
+      - "!core/deps/**"
+      - "product-mini/**"
+      - "samples/**"
+      - "!samples/workload/**"
+      - "tests/wamr-test-suites/**"
+      - "wamr-compiler/**"
+  # allow to be triggered manually
+  workflow_dispatch:
+
+env:
+  # For Spec Test
+  DEFAULT_TEST_OPTIONS: "-s spec -b"
+  MULTI_MODULES_TEST_OPTIONS: "-s spec -b -M"
+  THREADS_TEST_OPTIONS: "-s spec -b -p"
+  WASI_TEST_OPTIONS: "-s wasi_certification -w"
+  WASI_TEST_FILTER: ${{ github.workspace }}/product-mini/platforms/windows/wasi_filtered_tests.json
+  # Used when building the WASI socket and thread tests
+  CC: ${{ github.workspace }}/wasi-sdk/bin/clang
+
+# Cancel any in-flight jobs for the same PR/branch so there's only one active
+# at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build_llvm_libraries_on_windows:
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/build_llvm_libraries.yml
+    with:
+      os: "windows-latest"
+      arch: "AArch64 ARM Mips RISCV X86"
+
+  build_iwasm:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        build_options:
+          [
+            "-DWAMR_BUILD_AOT=1 -DWAMR_BUILD_INTERP=0",
+            "-DWAMR_BUILD_AOT=0",
+            "-DWAMR_BUILD_TAIL_CALL=1",
+            "-DWAMR_BUILD_CUSTOM_NAME_SECTION=1",
+            "-DWAMR_DISABLE_HW_BOUND_CHECK=1",
+            "-DWAMR_BUILD_REF_TYPES=1",
+            "-DWAMR_BUILD_SIMD=1",
+            "-DWAMR_BUILD_DEBUG_INTERP=1",
+            "-DWAMR_BUILD_LIB_PTHREAD=1",
+            "-DWAMR_BUILD_LIB_WASI_THREADS=1",
+            "-DWAMR_BUILD_LIBC_UVWASI=0 -DWAMR_BUILD_LIBC_WASI=1",
+          ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: clone uvwasi library
+        if: ${{ !contains(matrix.build_options, '-DWAMR_BUILD_LIBC_UVWASI=0') }}
+        run: |
+          cd core/deps
+          git clone https://github.com/nodejs/uvwasi.git
+      - name: Build iwasm
+        run: |
+          cd product-mini/platforms/windows
+          mkdir build && cd build
+          cmake .. ${{ matrix.build_options }}
+          cmake --build . --config Release --parallel 4
+
+  build_wamrc:
+    needs: [build_llvm_libraries_on_windows]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            llvm_cache_key: ${{ needs.build_llvm_libraries_on_windows.outputs.cache_key }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      # since jobs.id can't contain the dot character
+      # it is hard to use `format` to assemble the cache key
+      - name: Get LLVM libraries
+        id: retrieve_llvm_libs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ./core/deps/llvm/build/bin
+            ./core/deps/llvm/build/include
+            ./core/deps/llvm/build/lib
+            ./core/deps/llvm/build/libexec
+            ./core/deps/llvm/build/share
+          key: ${{ matrix.llvm_cache_key }}
+
+      - name: Quit if cache miss
+        if: steps.retrieve_llvm_libs.outputs.cache-hit != 'true'
+        run: echo "::error::can not get prebuilt llvm libraries" && exit 1
+
+      - name: Build wamrc
+        run: |
+          cmake -S . -B build
+          cmake --build build --config Release --parallel 4
+        working-directory: wamr-compiler
+
+  test:
+    runs-on: windows-latest
+    needs: [build_iwasm, build_wamrc]
+    strategy:
+      fail-fast: false
+      matrix:
+        running_mode: ["classic-interp", "fast-interp"]
+        test_option:
+          [
+            $DEFAULT_TEST_OPTIONS,
+            $MULTI_MODULES_TEST_OPTIONS,
+            $THREADS_TEST_OPTIONS,
+            $WASI_TEST_OPTIONS,
+          ]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: download and install wasi-sdk
+        if: matrix.test_option == '$WASI_TEST_OPTIONS'
+        run: |
+          curl "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-20/wasi-sdk-20.0.m-mingw.tar.gz" -o wasi-sdk.tar.gz -L
+          mkdir wasi-sdk
+          tar -xzf wasi-sdk.tar.gz -C wasi-sdk --strip-components 1
+
+      - name: build socket api tests
+        shell: bash
+        if: matrix.test_option == '$WASI_TEST_OPTIONS'
+        run: ./build.sh
+        working-directory: ./core/iwasm/libraries/lib-socket/test/
+
+      - name: Build WASI thread tests
+        shell: bash
+        if: matrix.test_option == '$WASI_TEST_OPTIONS'
+        run: ./build.sh
+        working-directory: ./core/iwasm/libraries/lib-wasi-threads/test/
+
+      - name: install wget
+        shell: bash
+        run: choco install wget
+
+      - name: run tests
+        shell: bash
+        timeout-minutes: 20
+        run: ./test_wamr.sh ${{ matrix.test_option }} -t ${{ matrix.running_mode }}
+        working-directory: ./tests/wamr-test-suites

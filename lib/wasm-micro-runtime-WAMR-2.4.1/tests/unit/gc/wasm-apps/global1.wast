@@ -1,0 +1,91 @@
+(module
+  (type $ftype0 (func (param i32)))
+  (type $ftype1 (func (param i32 i64) (result i32)))
+  (type $ftype2 (func (param f32 f64) (result f64)))
+  (type $t0 (func (param (ref 1) (ref 2) (ref null 1) (ref null 2))))
+  (type $t1 (func (param funcref externref (ref func)(ref extern)
+                         anyref eqref arrayref i31ref
+                         (ref null 0) (ref null 2) (ref null func) (ref null extern)
+                         (ref null any) (ref null eq) (ref null i31) (ref null array)
+                         (ref 0) (ref $t0) (ref 3) (ref $t0) (ref null func)
+                         (ref null extern) (ref null 3) (ref null $t0))
+                  (result (ref null func))))
+  (type $t2 (func (param i32 i32) (result (ref null 4))))
+
+  ;; Duplicated types
+  (type $t3 (func))
+  (type $t4 (func (param (ref 1) (ref 2) (ref null 1) (ref null 2))))
+  (type $t5 (func (param funcref externref (ref func)(ref extern)
+                         anyref eqref arrayref i31ref
+                         (ref null 0) (ref null 2) (ref null func) (ref null extern)
+                         (ref null any) (ref null eq) (ref null i31) (ref null array)
+                         (ref 0) (ref $t0) (ref 3) (ref $t0) (ref null func)
+                         (ref null extern) (ref null 3) (ref null $t0))
+                  (result (ref null func))))
+  (type $t6 (func (param i32 i32) (result (ref null 4))))
+
+  (type (struct (field i8 (mut i16) (mut i32) i64 f32 f64
+                       funcref externref (ref func)(ref extern)
+                       anyref eqref arrayref i31ref
+                       (ref null 0) (ref null 2) (ref null func) (ref null extern)
+                       (ref null any) (ref null eq) (ref null i31) (ref null array)
+                       (ref 0) (ref $t0) (ref 3) (ref $t0) (ref null func)
+                       (ref null extern) (ref null 5) (ref null $t0))))
+
+  (type (struct))
+  (type (struct (field)))
+  (type (struct (field i8)))
+  (type (struct (field i8 i8 i8 i8)))
+  (type (struct (field $x1 i32) (field $y1 i32)))
+  (type (struct (field i8 i16 i32 i64 f32 f64 anyref funcref (ref 0) (ref null 1))))
+  (type (struct (field i32 i64 i8) (field) (field) (field (ref null i31) anyref)))
+  (type (struct (field $x2 i32) (field f32 f64) (field $y2 i32)))
+
+  ;; Duplicated types
+  (type (struct (field i8 (mut i16) (mut i32) i64 f32 f64
+                       funcref externref (ref func)(ref extern)
+                       anyref eqref arrayref i31ref
+                       (ref null 0) (ref null 2) (ref null func) (ref null extern)
+                       (ref null any) (ref null eq) (ref null i31) (ref null array)
+                       (ref 0) (ref $t0) (ref 3) (ref $t0) (ref null func)
+                       (ref null extern) (ref null 5) (ref null $t0))))
+
+  (type (struct))
+  (type (struct (field)))
+  (type (struct (field i8)))
+  (type (struct (field i8 i8 i8 i8)))
+  (type (struct (field $x3 i32) (field $y3 i32)))
+  (type (struct (field i8 i16 i32 i64 f32 f64 anyref funcref (ref 0) (ref null 1))))
+  (type (struct (field i32 i64 i8) (field) (field) (field (ref null i31) anyref)))
+  (type (struct (field $x4 i32) (field f32 f64) (field $y4 i32)))
+
+  (type (array i8))
+  (type (array i16))
+  (type (array i32))
+  (type (array i64))
+  (type (array f32))
+  (type (array f64))
+  (type (array anyref))
+  (type (array (ref array)))
+  (type (array (ref 0)))
+  (type (array (ref null 1)))
+  (type (array (mut i8)))
+  (type (array (mut i16)))
+  (type (array (mut i32)))
+  (type (array (mut i64)))
+  (type (array (mut i32)))
+  (type (array (mut i64)))
+  (type (array (mut anyref)))
+  (type (array (mut (ref array))))
+  (type (array (mut (ref 0))))
+  (type (array (mut (ref null i31))))
+
+  (global $g0 funcref (ref.func $f0))
+  (global $g1 externref (ref.null extern))
+  (global $g2 anyref (ref.null any))
+  (global $g3 eqref (ref.null array))
+  (global $g4 arrayref (ref.null array))
+  (global $g5 i31ref (ref.null i31))
+
+  (func $f0)
+)

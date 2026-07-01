@@ -1,0 +1,2 @@
+fluent_bit_binary: build/bin/fluent-bit
+config_path: fluent-bit.yaml

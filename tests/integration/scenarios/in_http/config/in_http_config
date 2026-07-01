@@ -1,0 +1,17 @@
+[SERVICE]
+    Flush        1
+    Log_Level    info
+    HTTP_Server  on
+    HTTP_Port    ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+[INPUT]
+    Name         http
+    Port         ${FLUENT_BIT_TEST_LISTENER_PORT}
+
+[OUTPUT]
+    Name         http
+    Match        *
+    Host         127.0.0.1
+    Port         ${TEST_SUITE_HTTP_PORT}
+    URI          /data
+    Format       json

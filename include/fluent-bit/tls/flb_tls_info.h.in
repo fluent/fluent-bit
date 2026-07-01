@@ -1,0 +1,48 @@
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2022 The Fluent Bit Authors
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+#ifndef FLB_TLS_INFO_H
+#define FLB_TLS_INFO_H
+
+#ifdef FLB_HAVE_TLS
+
+#ifdef FLB_SYSTEM_MACOS
+/* On macOS, default PEM format certificates are not provided by
+ * default. Instead, we'll generate them into:
+ * "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_SYSCONFDIR@/certs/rootcert.pem"
+ * during the building process.
+ */
+#define FLB_DEFAULT_SEARCH_CA_BUNDLE "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_SYSCONFDIR@/certs/rootcert.pem"
+#define FLB_DEFAULT_CA_DIR "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_SYSCONFDIR@/certs/"
+
+#else
+/*
+ * RHEL-family distrbutions do not provide system certificates in
+ * a format that OpenSSL's CAPath can read, but do provide a single
+ * packed cert in /etc/certs.
+ *
+ * Use the bundled cert as the default trusted CA.
+ */
+#define FLB_DEFAULT_SEARCH_CA_BUNDLE "/etc/ssl/certs/ca-bundle.crt"
+#define FLB_DEFAULT_CA_DIR "/etc/ssl/certs/"
+
+#endif /* FLB_SYSTEM_MACOS */
+
+#endif
+#endif

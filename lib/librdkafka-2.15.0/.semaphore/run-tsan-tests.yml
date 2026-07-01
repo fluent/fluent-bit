@@ -1,0 +1,54 @@
+version: v1.0
+name: run-share-consumer-tests-tsan
+
+agent:
+  machine:
+    type: s1-prod-ubuntu24-04-amd64-00
+
+execution_time_limit:
+  hours: 2
+
+global_job_config:
+  prologue:
+    commands:
+      - checkout
+      - sudo sysctl -w vm.mmap_rnd_bits=28
+      - '[[ -z "$GIT_REF" ]] || git checkout $GIT_REF'
+      - sudo apt remove -y needrestart
+      - sudo DEBIAN_FRONTEND=noninteractive apt install -y libcurl4-openssl-dev libssl-dev
+      - python3 -m pip install -U pip
+      - (cd tests && python3 -m pip install -r requirements.txt)
+      - ./dev-conf.sh tsan
+      - sem-version java 17
+      - mkdir -p artifacts
+  env_vars:
+    - name: CACHE_TAG
+      value: '7'
+    - name: KAFKA_VERSION
+      value: '4.2.0'
+
+blocks:
+  - name: 'Share consumer tests (TSAN)'
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-amd64-1
+      epilogue:
+        always:
+          commands:
+            - cp tests/tsan-share-tests.log artifacts/ || true
+            - artifact push workflow artifacts/ --destination artifacts/tsan/
+            - cache store trivup-kafka-${KAFKA_VERSION}-${CACHE_TAG} tests/tmp-KafkaCluster/KafkaCluster/KafkaBrokerApp/kafka/${KAFKA_VERSION} || true
+      jobs:
+        - name: 'Share consumer suite (TSAN)'
+          env_vars:
+            - name: TSAN_OPTIONS
+              value: 'halt_on_error=0:history_size=7:second_deadlock_stack=1:symbolize=1'
+          commands:
+            - cache restore trivup-kafka-${KAFKA_VERSION}-${CACHE_TAG}
+            - (cd tests && python3 -m trivup.clusters.KafkaCluster
+              --kraft
+              --version "${KAFKA_VERSION}"
+              --conf '["group.share.min.record.lock.duration.ms=1000"]'
+              --cmd "bash -c 'set -o pipefail; TESTS_SKIP_BEFORE=0155 make 2>&1 | tee tsan-share-tests.log'")

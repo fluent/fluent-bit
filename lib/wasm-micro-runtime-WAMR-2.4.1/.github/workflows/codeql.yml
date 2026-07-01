@@ -1,0 +1,121 @@
+# For most projects, this workflow file will not need changing; you simply need
+# to commit it to your repository.
+#
+# You may wish to alter this file to override the set of languages analyzed,
+# or to provide custom queries or build logic.
+#
+name: "CodeQL"
+
+on:
+  #pull_request:
+  #  types:
+  #    - opened
+  #  branches: '*'
+  #push:
+  #   branches: [ "main" ]
+  # midnight UTC
+  schedule:
+    - cron: '0 0 * * *'
+  # allow to be triggered manually
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    if: github.repository == 'bytecodealliance/wasm-micro-runtime'
+    name: Analyze
+    # Runner size impacts CodeQL analysis time. To learn more, please see:
+    #   - https://gh.io/recommended-hardware-resources-for-running-codeql
+    #   - https://gh.io/supported-runners-and-hardware-resources
+    #   - https://gh.io/using-larger-runners
+    # Consider using larger runners for possible analysis time improvements.
+    runs-on: ${{ (matrix.language == 'swift' && 'macos-13') || 'ubuntu-22.04' }}
+    timeout-minutes: ${{ (matrix.language == 'swift' && 120) || 360 }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'cpp' ]
+        # CodeQL supports [ 'cpp', 'csharp', 'go', 'java', 'javascript', 'python', 'ruby', 'swift' ]
+
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+
+    # Initializes the CodeQL tools for scanning.
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3.29.3
+      with:
+        languages: ${{ matrix.language }}
+
+        # For more details on CodeQL's query packs, refer to: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
+        # queries: security-extended,security-and-quality
+        queries: security-and-quality
+
+    # Command-line programs to run using the OS shell.
+    # See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
+
+    #   If the Autobuild fails above, remove it and uncomment the following three lines.
+    #   modify them (or add more) to build your code if your project, please refer to the EXAMPLE below for guidance.
+
+    - run: |
+        ./.github/scripts/codeql_buildscript.sh
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3.29.3
+      with:
+        category: "/language:${{matrix.language}}"
+        upload: false
+      id: step1
+
+    # Filter out rules with low severity or high false positve rate
+    # Also filter out warnings in third-party code
+    - name: Filter out unwanted errors and warnings
+      uses: advanced-security/filter-sarif@v1
+      with:
+        patterns: |
+          -**:cpp/path-injection
+          -**:cpp/world-writable-file-creation
+          -**:cpp/poorly-documented-function
+          -**:cpp/potentially-dangerous-function
+          -**:cpp/use-of-goto
+          -**:cpp/integer-multiplication-cast-to-long
+          -**:cpp/comparison-with-wider-type
+          -**:cpp/leap-year/*
+          -**:cpp/ambiguously-signed-bit-field
+          -**:cpp/suspicious-pointer-scaling
+          -**:cpp/suspicious-pointer-scaling-void
+          -**:cpp/unsigned-comparison-zero
+          -**/cmake*/Modules/**
+        input: ${{ steps.step1.outputs.sarif-output }}/cpp.sarif
+        output: ${{ steps.step1.outputs.sarif-output }}/cpp.sarif
+
+    - name: Upload CodeQL results to code scanning
+      uses: github/codeql-action/upload-sarif@v3.29.3
+      with:
+        sarif_file: ${{ steps.step1.outputs.sarif-output }}
+        category: "/language:${{matrix.language}}"
+
+    - name: Upload CodeQL results as an artifact
+      if: success() || failure()
+      uses: actions/upload-artifact@v4.6.2
+      with:
+        name: codeql-results
+        path: ${{ steps.step1.outputs.sarif-output }}
+        retention-days: 10
+
+    - name: Fail if an error is found
+      run: |
+        ./.github/scripts/codeql_fail_on_error.py \
+          ${{ steps.step1.outputs.sarif-output }}/cpp.sarif
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_REPOSITORY: ${{ github.repository }}

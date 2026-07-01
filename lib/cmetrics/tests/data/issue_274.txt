@@ -1,0 +1,3 @@
+# HELP node_zfs_arc_memory_available_bytes kstat.zfs.misc.arcstats.memory_available_bytes
+# TYPE node_zfs_arc_memory_available_bytes untyped
+node_zfs_arc_memory_available_bytes -8.58914944e+08

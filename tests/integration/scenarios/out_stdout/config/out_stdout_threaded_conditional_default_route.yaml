@@ -1,0 +1,47 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: trace
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      alias: filler_dummy
+      tag: filler
+      dummy: '{"message":"filler"}'
+      samples: 1
+
+    - name: dummy
+      alias: threaded_default_dummy
+      threaded: true
+      tag: threaded.default.base
+      dummy: '{"message":"threaded default route","topic":"topic2"}'
+      samples: 1
+      routes:
+        logs:
+          - name: threaded_topic1
+            condition:
+              op: and
+              rules:
+                - field: $topic
+                  op: eq
+                  value: topic1
+            to:
+              outputs:
+                - stdout1
+
+          - name: threaded_default
+            condition:
+              default: true
+            to:
+              outputs:
+                - stdout2
+
+  outputs:
+    - name: stdout
+      alias: stdout1
+
+    - name: stdout
+      alias: stdout2

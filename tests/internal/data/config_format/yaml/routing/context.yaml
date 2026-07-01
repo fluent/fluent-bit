@@ -1,0 +1,27 @@
+pipeline:
+  inputs:
+    - name: dummy
+      routes:
+        logs:
+          - name: ctx_route
+            condition:
+              rules:
+                - context: metadata
+                  field: "$['meta_key']"
+                  op: eq
+                  value: "meta"
+                - context: group_attributes
+                  field: "$['group_attr']"
+                  op: eq
+                  value: "attr"
+                - context: otel_resource_attributes
+                  field: "$['service.name']"
+                  op: eq
+                  value: "backend"
+            to:
+              outputs:
+                - name: ctx_out
+  outputs:
+    - name: null
+      alias: ctx_out
+      match: "*"

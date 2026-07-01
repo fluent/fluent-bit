@@ -1,0 +1,12 @@
+# for now, it is used to speed up wasi-nn tests only.
+# you shall adapt below rules to incoming requirements
+
+**/build
+**/tmp.*
+.*
+**/*.gguf
+
+/core/deps/
+!/core/deps/tensorflow-src
+/samples
+/tests

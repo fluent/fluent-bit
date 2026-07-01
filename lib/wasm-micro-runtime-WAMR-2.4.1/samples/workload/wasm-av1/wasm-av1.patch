@@ -1,0 +1,701 @@
+diff --git a/Makefile b/Makefile
+index c39fff6..4682d43 100644
+--- a/Makefile
++++ b/Makefile
+@@ -59,11 +59,13 @@ $(TARGET): $(DEPS) blob-api.c yuv-to-rgb.c $(EMLIBAV1)
+ 									   ]" \
+ 				blob-api.c yuv-to-rgb.c $(SRCS) $(INC) -L $(LIBDIR) -l$(LIB)
+ 
+-$(TESTTARGET): test.c $(DEPS) $(X86LIBAV1)
+-		cc -o $@ -O3 test.c $(SRCS) $(INC) -L $(X86LIBDIR) -l$(LIB)
++$(TESTTARGET): test.c $(DEPS) $(EMLIBAV1)
++		emcc -o $@.wasm -O3 test.c $(SRCS) $(INC) -L $(LIBDIR) -l$(LIB) \
++			-s TOTAL_MEMORY=104857600 -s ERROR_ON_UNDEFINED_SYMBOLS=0
+ 
+-$(TESTTARGET)g: test.c $(DEPS) $(X86LIBAV1)
+-		cc -o $@ -g test.c $(SRCS) $(INC) -L $(X86LIBDIR) -l$(LIB)
++$(TESTTARGET)g: test.c $(DEPS) $(EMLIBAV1)
++		emcc -o $@.wasm -g test.c $(SRCS) $(INC) -L $(LIBDIR) -l$(LIB) \
++			-s TOTAL_MEMORY=104857600 -s ERROR_ON_UNDEFINED_SYMBOLS=0
+ 
+ clean:
+ 		-rm $(TARGET) $(TESTTARGET) $(TESTTARGET)g
+@@ -80,7 +82,7 @@ $(EMLIBAV1): $(LIBDIR)
+ 		        -DCONFIG_RUNTIME_CPU_DETECT=0 \
+ 		        -DCONFIG_UNIT_TESTS=0 \
+ 		        -DCONFIG_WEBM_IO=0 \
+-		        -DCMAKE_TOOLCHAIN_FILE=`../../get-emcmake.sh`; \
++		        -DCMAKE_TOOLCHAIN_FILE=${EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake; \
+ 			make \
+ 		)
+ 
+diff --git a/test.c b/test.c
+index df2d44b..cb270de 100644
+--- a/test.c
++++ b/test.c
+@@ -18,6 +18,9 @@
+ 
+ #include "decode-av1-priv.h"
+ 
++size_t
++emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++
+ static void
+ dump_raw_frame(AVX_Video_Frame *avf, int id) {
+     FILE    *f;
+@@ -26,12 +29,13 @@ dump_raw_frame(AVX_Video_Frame *avf, int id) {
+     void    *buf;
+ 
+     sprintf(name, "frame%04d.yuv", id);
++    printf("writing %s ..\n", name);
+     if ((f = fopen(name, "wb")) == NULL) {
+         return;
+     }
+     buf = AVX_Video_Frame_get_buffer(avf);
+     size = AVX_Video_Frame_get_size(avf);
+-    fwrite(buf, size, 1, f);
++    emcc_fwrite(buf, size, 1, f);
+     fclose(f);
+ }
+ 
+@@ -63,9 +67,12 @@ main(int argc, char *argv[]) {
+                     static int     i = 0;
+                     
+                     ++i;
++                    printf("##decode raw frame %d\n", i);
+                     if (30 <= i && i < 40) {
+                         dump_raw_frame(af, i);
+                     }
++                    if (i >= 1000)
++                        break;
+                 }
+                 /*
+                  * Run the decoder every time, so that we keep
+diff --git a/third_party/aom/CMakeLists.txt b/third_party/aom/CMakeLists.txt
+index 9dbe301..20c7be4 100644
+--- a/third_party/aom/CMakeLists.txt
++++ b/third_party/aom/CMakeLists.txt
+@@ -56,6 +56,10 @@ option(BUILD_SHARED_LIBS "CMake should generate a shared library build." OFF)
+ 
+ project(AOM C CXX)
+ 
++set(CMAKE_C_FLAGS "-msimd128 -msse2 -msse3 -msse4.1 -msse4.2 ${CMAKE_C_FLAGS}")
++set(CMAKE_CXX_FLAGS "-msimd128 -msse2 -msse3 -msse4.1 -msse4.2 ${CMAKE_CXX_FLAGS}")
++set(CMAKE_VERBOSE_MAKEFILE on)
++
+ set(AOM_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+ set(AOM_CONFIG_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+ set(INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/include"
+@@ -347,7 +351,7 @@ if(CONFIG_AV1_DECODER AND ENABLE_EXAMPLES)
+       em_link_post_js(inspect "${AOM_ROOT}/tools/inspect-post.js")
+       # Force generation of Wasm instead of asm.js
+       append_link_flag_to_target("inspect" "-s WASM=1")
+-      append_compiler_flag("-s WASM=1")
++      append_compiler_flag("-O3 -s WASM=1 -s ERROR_ON_UNDEFINED_SYMBOLS=0")
+     endif()
+   endif()
+ 
+diff --git a/third_party/aom/aom/src/aom_codec.c b/third_party/aom/aom/src/aom_codec.c
+index dbd6fa5..a8d2a49 100644
+--- a/third_party/aom/aom/src/aom_codec.c
++++ b/third_party/aom/aom/src/aom_codec.c
+@@ -132,6 +132,7 @@ void aom_internal_error(struct aom_internal_error_info *info,
+     info->detail[sz - 1] = '\0';
+   }
+ 
++  printf("##aom internal error: %s\n", info->detail);
+   if (info->setjmp) longjmp(info->jmp, info->error_code);
+ }
+ 
+diff --git a/third_party/aom/aom_dsp/grain_table.c b/third_party/aom/aom_dsp/grain_table.c
+index 0d6a73f..4b05833 100644
+--- a/third_party/aom/aom_dsp/grain_table.c
++++ b/third_party/aom/aom_dsp/grain_table.c
+@@ -293,6 +293,9 @@ aom_codec_err_t aom_film_grain_table_read(
+   return error_info->error_code;
+ }
+ 
++size_t
++emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++
+ aom_codec_err_t aom_film_grain_table_write(
+     const aom_film_grain_table_t *t, const char *filename,
+     struct aom_internal_error_info *error_info) {
+@@ -305,7 +308,7 @@ aom_codec_err_t aom_film_grain_table_write(
+     return error_info->error_code;
+   }
+ 
+-  if (!fwrite(kFileMagic, 8, 1, file)) {
++  if (!emcc_fwrite(kFileMagic, 8, 1, file)) {
+     aom_internal_error(error_info, AOM_CODEC_ERROR,
+                        "Unable to write file magic");
+     fclose(file);
+diff --git a/third_party/aom/aomdec.c b/third_party/aom/aomdec.c
+index 4addee8..f850147 100644
+--- a/third_party/aom/aomdec.c
++++ b/third_party/aom/aomdec.c
+@@ -274,6 +274,9 @@ static void update_image_md5(const aom_image_t *img, const int planes[3],
+   }
+ }
+ 
++size_t
++emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++
+ static void write_image_file(const aom_image_t *img, const int *planes,
+                              const int num_planes, FILE *file) {
+   int i, y;
+@@ -287,7 +290,7 @@ static void write_image_file(const aom_image_t *img, const int *planes,
+     const int h = aom_img_plane_height(img, plane);
+ 
+     for (y = 0; y < h; ++y) {
+-      fwrite(buf, bytes_per_sample, w, file);
++      emcc_fwrite(buf, bytes_per_sample, w, file);
+       buf += stride;
+     }
+   }
+diff --git a/third_party/aom/aomenc.c b/third_party/aom/aomenc.c
+index 64155b0..3ed5080 100644
+--- a/third_party/aom/aomenc.c
++++ b/third_party/aom/aomenc.c
+@@ -59,9 +59,12 @@ static size_t wrap_fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
+ }
+ #define fread wrap_fread
+ 
++size_t
++emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++
+ static size_t wrap_fwrite(const void *ptr, size_t size, size_t nmemb,
+                           FILE *stream) {
+-  return fwrite(ptr, size, nmemb, stream);
++  return emcc_fwrite(ptr, size, nmemb, stream);
+ }
+ #define fwrite wrap_fwrite
+ 
+diff --git a/third_party/aom/aomstats.c b/third_party/aom/aomstats.c
+index 0cfeea2..6833776 100644
+--- a/third_party/aom/aomstats.c
++++ b/third_party/aom/aomstats.c
+@@ -80,9 +80,12 @@ void stats_close(stats_io_t *stats, int last_pass) {
+   }
+ }
+ 
++size_t
++emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++
+ void stats_write(stats_io_t *stats, const void *pkt, size_t len) {
+   if (stats->file) {
+-    (void)fwrite(pkt, 1, len, stats->file);
++    (void)emcc_fwrite(pkt, 1, len, stats->file);
+   } else {
+     if (stats->buf.sz + len > stats->buf_alloc_sz) {
+       size_t new_sz = stats->buf_alloc_sz + 64 * 1024;
+diff --git a/third_party/aom/av1/common/debugmodes.c b/third_party/aom/av1/common/debugmodes.c
+index 868f341..c44258c 100644
+--- a/third_party/aom/av1/common/debugmodes.c
++++ b/third_party/aom/av1/common/debugmodes.c
+@@ -89,10 +89,13 @@ void av1_print_modes_and_motion_vectors(AV1_COMMON *cm, const char *file) {
+   fclose(mvs);
+ }
+ 
++size_t
++emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++
+ void av1_print_uncompressed_frame_header(const uint8_t *data, int size,
+                                          const char *filename) {
+   FILE *hdrFile = fopen(filename, "w");
+-  fwrite(data, size, sizeof(uint8_t), hdrFile);
++  emcc_fwrite(data, size, sizeof(uint8_t), hdrFile);
+   fclose(hdrFile);
+ }
+ 
+diff --git a/third_party/aom/av1/encoder/encoder.c b/third_party/aom/av1/encoder/encoder.c
+index a557380..d709d26 100644
+--- a/third_party/aom/av1/encoder/encoder.c
++++ b/third_party/aom/av1/encoder/encoder.c
+@@ -2799,6 +2799,9 @@ AV1_COMP *av1_create_compressor(AV1EncoderConfig *oxcf,
+   snprintf((H) + strlen(H), sizeof(H) - strlen(H), (T), (V))
+ #endif  // CONFIG_INTERNAL_STATS
+ 
++size_t
++emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++
+ void av1_remove_compressor(AV1_COMP *cpi) {
+   AV1_COMMON *cm;
+   unsigned int i;
+@@ -2814,7 +2817,7 @@ void av1_remove_compressor(AV1_COMP *cpi) {
+     if (cpi->oxcf.pass != 1) {
+       fprintf(stderr, "Writing counts.stt\n");
+       FILE *f = fopen("counts.stt", "wb");
+-      fwrite(&aggregate_fc, sizeof(aggregate_fc), 1, f);
++      emcc_fwrite(&aggregate_fc, sizeof(aggregate_fc), 1, f);
+       fclose(f);
+     }
+ #endif  // CONFIG_ENTROPY_STATS
+@@ -3013,7 +3016,7 @@ void aom_write_yuv_frame_420(YV12_BUFFER_CONFIG *s, FILE *f) {
+   int h = s->y_height;
+ 
+   do {
+-    fwrite(src, s->y_width, 1, f);
++    emcc_fwrite(src, s->y_width, 1, f);
+     src += s->y_stride;
+   } while (--h);
+ 
+@@ -3021,7 +3024,7 @@ void aom_write_yuv_frame_420(YV12_BUFFER_CONFIG *s, FILE *f) {
+   h = s->uv_height;
+ 
+   do {
+-    fwrite(src, s->uv_width, 1, f);
++    emcc_fwrite(src, s->uv_width, 1, f);
+     src += s->uv_stride;
+   } while (--h);
+ 
+@@ -3029,7 +3032,7 @@ void aom_write_yuv_frame_420(YV12_BUFFER_CONFIG *s, FILE *f) {
+   h = s->uv_height;
+ 
+   do {
+-    fwrite(src, s->uv_width, 1, f);
++    emcc_fwrite(src, s->uv_width, 1, f);
+     src += s->uv_stride;
+   } while (--h);
+ }
+@@ -3121,7 +3124,7 @@ void aom_write_one_yuv_frame(AV1_COMMON *cm, YV12_BUFFER_CONFIG *s) {
+     uint16_t *src16 = CONVERT_TO_SHORTPTR(s->y_buffer);
+ 
+     do {
+-      fwrite(src16, s->y_width, 2, yuv_rec_file);
++      emcc_fwrite(src16, s->y_width, 2, yuv_rec_file);
+       src16 += s->y_stride;
+     } while (--h);
+ 
+@@ -3129,7 +3132,7 @@ void aom_write_one_yuv_frame(AV1_COMMON *cm, YV12_BUFFER_CONFIG *s) {
+     h = s->uv_height;
+ 
+     do {
+-      fwrite(src16, s->uv_width, 2, yuv_rec_file);
++      emcc_fwrite(src16, s->uv_width, 2, yuv_rec_file);
+       src16 += s->uv_stride;
+     } while (--h);
+ 
+@@ -3137,7 +3140,7 @@ void aom_write_one_yuv_frame(AV1_COMMON *cm, YV12_BUFFER_CONFIG *s) {
+     h = s->uv_height;
+ 
+     do {
+-      fwrite(src16, s->uv_width, 2, yuv_rec_file);
++      emcc_fwrite(src16, s->uv_width, 2, yuv_rec_file);
+       src16 += s->uv_stride;
+     } while (--h);
+ 
+@@ -3146,7 +3149,7 @@ void aom_write_one_yuv_frame(AV1_COMMON *cm, YV12_BUFFER_CONFIG *s) {
+   }
+ 
+   do {
+-    fwrite(src, s->y_width, 1, yuv_rec_file);
++    emcc_fwrite(src, s->y_width, 1, yuv_rec_file);
+     src += s->y_stride;
+   } while (--h);
+ 
+@@ -3154,7 +3157,7 @@ void aom_write_one_yuv_frame(AV1_COMMON *cm, YV12_BUFFER_CONFIG *s) {
+   h = s->uv_height;
+ 
+   do {
+-    fwrite(src, s->uv_width, 1, yuv_rec_file);
++    emcc_fwrite(src, s->uv_width, 1, yuv_rec_file);
+     src += s->uv_stride;
+   } while (--h);
+ 
+@@ -3162,7 +3165,7 @@ void aom_write_one_yuv_frame(AV1_COMMON *cm, YV12_BUFFER_CONFIG *s) {
+   h = s->uv_height;
+ 
+   do {
+-    fwrite(src, s->uv_width, 1, yuv_rec_file);
++    emcc_fwrite(src, s->uv_width, 1, yuv_rec_file);
+     src += s->uv_stride;
+   } while (--h);
+ 
+@@ -3241,16 +3244,16 @@ static int dump_one_image(AV1_COMMON *cm,
+ 
+   // --- Y ---
+   for (h = 0; h < cm->height; ++h) {
+-    fwrite(&ref_buf->y_buffer[h * ref_buf->y_stride], 1, cm->width, f_ref);
++    emcc_fwrite(&ref_buf->y_buffer[h * ref_buf->y_stride], 1, cm->width, f_ref);
+   }
+   // --- U ---
+   for (h = 0; h < (cm->height >> 1); ++h) {
+-    fwrite(&ref_buf->u_buffer[h * ref_buf->uv_stride], 1, (cm->width >> 1),
++    emcc_fwrite(&ref_buf->u_buffer[h * ref_buf->uv_stride], 1, (cm->width >> 1),
+            f_ref);
+   }
+   // --- V ---
+   for (h = 0; h < (cm->height >> 1); ++h) {
+-    fwrite(&ref_buf->v_buffer[h * ref_buf->uv_stride], 1, (cm->width >> 1),
++    emcc_fwrite(&ref_buf->v_buffer[h * ref_buf->uv_stride], 1, (cm->width >> 1),
+            f_ref);
+   }
+ 
+@@ -4692,17 +4695,17 @@ static void dump_filtered_recon_frames(AV1_COMP *cpi) {
+ 
+   // --- Y ---
+   for (h = 0; h < cm->height; ++h) {
+-    fwrite(&recon_buf->y_buffer[h * recon_buf->y_stride], 1, cm->width,
++    emcc_fwrite(&recon_buf->y_buffer[h * recon_buf->y_stride], 1, cm->width,
+            f_recon);
+   }
+   // --- U ---
+   for (h = 0; h < (cm->height >> 1); ++h) {
+-    fwrite(&recon_buf->u_buffer[h * recon_buf->uv_stride], 1, (cm->width >> 1),
++    emcc_fwrite(&recon_buf->u_buffer[h * recon_buf->uv_stride], 1, (cm->width >> 1),
+            f_recon);
+   }
+   // --- V ---
+   for (h = 0; h < (cm->height >> 1); ++h) {
+-    fwrite(&recon_buf->v_buffer[h * recon_buf->uv_stride], 1, (cm->width >> 1),
++    emcc_fwrite(&recon_buf->v_buffer[h * recon_buf->uv_stride], 1, (cm->width >> 1),
+            f_recon);
+   }
+ 
+diff --git a/third_party/aom/av1/encoder/firstpass.c b/third_party/aom/av1/encoder/firstpass.c
+index bb73fde..b963043 100644
+--- a/third_party/aom/av1/encoder/firstpass.c
++++ b/third_party/aom/av1/encoder/firstpass.c
+@@ -476,6 +476,9 @@ static double raw_motion_error_stdev(int *raw_motion_err_list,
+   return raw_err_stdev;
+ }
+ 
++size_t
++emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++
+ #define UL_INTRA_THRESH 50
+ #define INVALID_ROW -1
+ void av1_first_pass(AV1_COMP *cpi, const struct lookahead_entry *source) {
+@@ -1077,7 +1080,7 @@ void av1_first_pass(AV1_COMP *cpi, const struct lookahead_entry *source) {
+     else
+       recon_file = fopen(filename, "ab");
+ 
+-    (void)fwrite(lst_yv12->buffer_alloc, lst_yv12->frame_size, 1, recon_file);
++    (void)emcc_fwrite(lst_yv12->buffer_alloc, lst_yv12->frame_size, 1, recon_file);
+     fclose(recon_file);
+   }
+ 
+diff --git a/third_party/aom/build/cmake/aom_configure.cmake b/third_party/aom/build/cmake/aom_configure.cmake
+index 9220a32..fb8bf9f 100644
+--- a/third_party/aom/build/cmake/aom_configure.cmake
++++ b/third_party/aom/build/cmake/aom_configure.cmake
+@@ -260,7 +260,7 @@ if(MSVC)
+     add_compiler_flag_if_supported("/WX")
+   endif()
+ else()
+-  require_c_flag("-std=c99" YES)
++  #require_c_flag("-std=c99" YES)
+   add_compiler_flag_if_supported("-Wall")
+   add_compiler_flag_if_supported("-Wdisabled-optimization")
+   add_compiler_flag_if_supported("-Wextra")
+diff --git a/third_party/aom/examples/resize_util.c b/third_party/aom/examples/resize_util.c
+index 5485691..e60ed86 100644
+--- a/third_party/aom/examples/resize_util.c
++++ b/third_party/aom/examples/resize_util.c
+@@ -45,6 +45,9 @@ static int parse_dim(char *v, int *width, int *height) {
+     return 1;
+ }
+ 
++size_t
++emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++
+ int main(int argc, char *argv[]) {
+   char *fin, *fout;
+   FILE *fpin, *fpout;
+@@ -111,7 +114,7 @@ int main(int argc, char *argv[]) {
+     av1_resize_frame420(inbuf, width, inbuf_u, inbuf_v, width / 2, height,
+                         width, outbuf, target_width, outbuf_u, outbuf_v,
+                         target_width / 2, target_height, target_width);
+-    fwrite(outbuf, target_width * target_height * 3 / 2, 1, fpout);
++    emcc_fwrite(outbuf, target_width * target_height * 3 / 2, 1, fpout);
+     f++;
+   }
+   printf("%d frames processed\n", f);
+diff --git a/third_party/aom/examples/scalable_encoder.c b/third_party/aom/examples/scalable_encoder.c
+index 10d647e..fcf31e1 100644
+--- a/third_party/aom/examples/scalable_encoder.c
++++ b/third_party/aom/examples/scalable_encoder.c
+@@ -91,6 +91,9 @@ void usage_exit(void) {
+   exit(EXIT_FAILURE);
+ }
+ 
++size_t
++emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++
+ static int encode_frame(aom_codec_ctx_t *codec, aom_image_t *img,
+                         int frame_index, int flags, FILE *outfile) {
+   int got_pkts = 0;
+@@ -105,7 +108,7 @@ static int encode_frame(aom_codec_ctx_t *codec, aom_image_t *img,
+ 
+     if (pkt->kind == AOM_CODEC_CX_FRAME_PKT) {
+       const int keyframe = (pkt->data.frame.flags & AOM_FRAME_IS_KEY) != 0;
+-      if (fwrite(pkt->data.frame.buf, 1, pkt->data.frame.sz, outfile) !=
++      if (emcc_fwrite(pkt->data.frame.buf, 1, pkt->data.frame.sz, outfile) !=
+           pkt->data.frame.sz) {
+         die_codec(codec, "Failed to write compressed frame");
+       }
+diff --git a/third_party/aom/ivfenc.c b/third_party/aom/ivfenc.c
+index 80f4d14..d0e4e34 100644
+--- a/third_party/aom/ivfenc.c
++++ b/third_party/aom/ivfenc.c
+@@ -14,6 +14,9 @@
+ #include "aom/aom_encoder.h"
+ #include "aom_ports/mem_ops.h"
+ 
++size_t
++emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++
+ void ivf_write_file_header(FILE *outfile, const struct aom_codec_enc_cfg *cfg,
+                            unsigned int fourcc, int frame_cnt) {
+   char header[32];
+@@ -32,7 +35,7 @@ void ivf_write_file_header(FILE *outfile, const struct aom_codec_enc_cfg *cfg,
+   mem_put_le32(header + 24, frame_cnt);            // length
+   mem_put_le32(header + 28, 0);                    // unused
+ 
+-  fwrite(header, 1, 32, outfile);
++  emcc_fwrite(header, 1, 32, outfile);
+ }
+ 
+ void ivf_write_frame_header(FILE *outfile, int64_t pts, size_t frame_size) {
+@@ -41,12 +44,12 @@ void ivf_write_frame_header(FILE *outfile, int64_t pts, size_t frame_size) {
+   mem_put_le32(header, (int)frame_size);
+   mem_put_le32(header + 4, (int)(pts & 0xFFFFFFFF));
+   mem_put_le32(header + 8, (int)(pts >> 32));
+-  fwrite(header, 1, 12, outfile);
++  emcc_fwrite(header, 1, 12, outfile);
+ }
+ 
+ void ivf_write_frame_size(FILE *outfile, size_t frame_size) {
+   char header[4];
+ 
+   mem_put_le32(header, (int)frame_size);
+-  fwrite(header, 1, 4, outfile);
++  emcc_fwrite(header, 1, 4, outfile);
+ }
+diff --git a/third_party/aom/test/decode_perf_test.cc b/third_party/aom/test/decode_perf_test.cc
+index 3c93e7d..2d364ae 100644
+--- a/third_party/aom/test/decode_perf_test.cc
++++ b/third_party/aom/test/decode_perf_test.cc
+@@ -24,6 +24,11 @@
+ 
+ using ::testing::make_tuple;
+ 
++extern "C" {
++  size_t
++  emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++}
++
+ namespace {
+ 
+ #define VIDEO_NAME 0
+@@ -153,7 +158,7 @@ class AV1NewEncodeDecodePerfTest
+ 
+     // Write frame header and data.
+     ivf_write_frame_header(outfile_, out_frames_, pkt->data.frame.sz);
+-    ASSERT_EQ(fwrite(pkt->data.frame.buf, 1, pkt->data.frame.sz, outfile_),
++    ASSERT_EQ(emcc_fwrite(pkt->data.frame.buf, 1, pkt->data.frame.sz, outfile_),
+               pkt->data.frame.sz);
+   }
+ 
+diff --git a/third_party/aom/test/film_grain_table_test.cc b/third_party/aom/test/film_grain_table_test.cc
+index 0688146..dbb8e6b 100644
+--- a/third_party/aom/test/film_grain_table_test.cc
++++ b/third_party/aom/test/film_grain_table_test.cc
+@@ -5,6 +5,11 @@
+ #include "av1/encoder/grain_test_vectors.h"
+ #include "test/video_source.h"
+ 
++extern "C" {
++  size_t
++  emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++}
++
+ void grain_equal(const aom_film_grain_t *expected,
+                  const aom_film_grain_t *actual) {
+   EXPECT_EQ(expected->apply_grain, actual->apply_grain);
+@@ -168,7 +173,7 @@ TEST_F(FilmGrainTableIOTest, ReadTruncatedFile) {
+ 
+   std::string grain_file;
+   FILE *file = libaom_test::GetTempOutFile(&grain_file);
+-  fwrite("deadbeef", 8, 1, file);
++  emcc_fwrite("deadbeef", 8, 1, file);
+   fclose(file);
+   ASSERT_EQ(AOM_CODEC_ERROR,
+             aom_film_grain_table_read(&table, grain_file.c_str(), &error_));
+diff --git a/third_party/aom/test/resize_test.cc b/third_party/aom/test/resize_test.cc
+index e1c4e9f..9c2bce8 100644
+--- a/third_party/aom/test/resize_test.cc
++++ b/third_party/aom/test/resize_test.cc
+@@ -22,6 +22,11 @@
+ // Enable(1) or Disable(0) writing of the compressed bitstream.
+ #define WRITE_COMPRESSED_STREAM 0
+ 
++extern "C" {
++  size_t
++  emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++}
++
+ namespace {
+ 
+ #if WRITE_COMPRESSED_STREAM
+@@ -55,13 +60,13 @@ static void write_ivf_file_header(const aom_codec_enc_cfg_t *const cfg,
+   mem_put_le32(header + 24, frame_cnt);           /* length */
+   mem_put_le32(header + 28, 0);                   /* unused */
+ 
+-  (void)fwrite(header, 1, 32, outfile);
++  (void)emcc_fwrite(header, 1, 32, outfile);
+ }
+ 
+ static void write_ivf_frame_size(FILE *const outfile, const size_t size) {
+   char header[4];
+   mem_put_le32(header, static_cast<unsigned int>(size));
+-  (void)fwrite(header, 1, 4, outfile);
++  (void)emcc_fwrite(header, 1, 4, outfile);
+ }
+ 
+ static void write_ivf_frame_header(const aom_codec_cx_pkt_t *const pkt,
+@@ -76,7 +81,7 @@ static void write_ivf_frame_header(const aom_codec_cx_pkt_t *const pkt,
+   mem_put_le32(header + 4, pts & 0xFFFFFFFF);
+   mem_put_le32(header + 8, pts >> 32);
+ 
+-  (void)fwrite(header, 1, 12, outfile);
++  (void)emcc_fwrite(header, 1, 12, outfile);
+ }
+ #endif  // WRITE_COMPRESSED_STREAM
+ 
+@@ -309,7 +314,7 @@ class ResizeInternalTestLarge : public ResizeTest {
+ 
+     // Write frame header and data.
+     write_ivf_frame_header(pkt, outfile_);
+-    (void)fwrite(pkt->data.frame.buf, 1, pkt->data.frame.sz, outfile_);
++    (void)emcc_fwrite(pkt->data.frame.buf, 1, pkt->data.frame.sz, outfile_);
+   }
+ #endif
+ 
+@@ -608,7 +613,7 @@ class ResizeCspTest : public ResizeTest {
+ 
+     // Write frame header and data.
+     write_ivf_frame_header(pkt, outfile_);
+-    (void)fwrite(pkt->data.frame.buf, 1, pkt->data.frame.sz, outfile_);
++    (void)emcc_fwrite(pkt->data.frame.buf, 1, pkt->data.frame.sz, outfile_);
+   }
+ #endif
+ 
+diff --git a/third_party/aom/test/y4m_test.cc b/third_party/aom/test/y4m_test.cc
+index ad901d9..f24093f 100644
+--- a/third_party/aom/test/y4m_test.cc
++++ b/third_party/aom/test/y4m_test.cc
+@@ -19,6 +19,11 @@
+ #include "test/util.h"
+ #include "test/y4m_video_source.h"
+ 
++extern "C" {
++  size_t
++  emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++}
++
+ namespace {
+ 
+ using std::string;
+@@ -68,7 +73,7 @@ static void write_image_file(const aom_image_t *img, FILE *file) {
+         (plane ? (img->d_w + img->x_chroma_shift) >> img->x_chroma_shift
+                : img->d_w);
+     for (y = 0; y < h; ++y) {
+-      fwrite(buf, bytes_per_sample, w, file);
++      emcc_fwrite(buf, bytes_per_sample, w, file);
+       buf += stride;
+     }
+   }
+diff --git a/third_party/aom/third_party/googletest/src/googletest/src/gtest.cc b/third_party/aom/third_party/googletest/src/googletest/src/gtest.cc
+index 5a8932c..ac2c435 100644
+--- a/third_party/aom/third_party/googletest/src/googletest/src/gtest.cc
++++ b/third_party/aom/third_party/googletest/src/googletest/src/gtest.cc
+@@ -146,6 +146,11 @@
+ # define vsnprintf _vsnprintf
+ #endif  // GTEST_OS_WINDOWS
+ 
++extern "C" {
++  size_t
++  emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++}
++
+ namespace testing {
+ 
+ using internal::CountIf;
+@@ -3867,7 +3872,7 @@ class ScopedPrematureExitFile {
+       // errors are ignored as there's nothing better we can do and we
+       // don't want to fail the test because of this.
+       FILE* pfile = posix::FOpen(premature_exit_filepath, "w");
+-      fwrite("0", 1, 1, pfile);
++      emcc_fwrite("0", 1, 1, pfile);
+       fclose(pfile);
+     }
+   }
+diff --git a/third_party/aom/third_party/libwebm/mkvmuxer/mkvwriter.cc b/third_party/aom/third_party/libwebm/mkvmuxer/mkvwriter.cc
+index 84655d8..0004093 100644
+--- a/third_party/aom/third_party/libwebm/mkvmuxer/mkvwriter.cc
++++ b/third_party/aom/third_party/libwebm/mkvmuxer/mkvwriter.cc
+@@ -14,6 +14,11 @@
+ #include <share.h>  // for _SH_DENYWR
+ #endif
+ 
++extern "C" {
++  size_t
++  emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++}
++
+ namespace mkvmuxer {
+ 
+ MkvWriter::MkvWriter() : file_(NULL), writer_owns_file_(true) {}
+@@ -32,7 +37,7 @@ int32 MkvWriter::Write(const void* buffer, uint32 length) {
+   if (buffer == NULL)
+     return -1;
+ 
+-  const size_t bytes_written = fwrite(buffer, 1, length, file_);
++  const size_t bytes_written = emcc_fwrite(buffer, 1, length, file_);
+ 
+   return (bytes_written == length) ? 0 : -1;
+ }
+diff --git a/third_party/aom/tools_common.c b/third_party/aom/tools_common.c
+index 7abc20c..fbc30bc 100644
+--- a/third_party/aom/tools_common.c
++++ b/third_party/aom/tools_common.c
+@@ -185,6 +185,9 @@ const AvxInterface *get_aom_decoder_by_fourcc(uint32_t fourcc) {
+ }
+ #endif  // CONFIG_AV1_DECODER
+ 
++size_t
++emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++
+ void aom_img_write(const aom_image_t *img, FILE *file) {
+   int plane;
+ 
+@@ -197,7 +200,7 @@ void aom_img_write(const aom_image_t *img, FILE *file) {
+     int y;
+ 
+     for (y = 0; y < h; ++y) {
+-      fwrite(buf, 1, w, file);
++      emcc_fwrite(buf, 1, w, file);
+       buf += stride;
+     }
+   }
+diff --git a/third_party/aom/video_writer.c b/third_party/aom/video_writer.c
+index 4e072c7..6b1ca54 100644
+--- a/third_party/aom/video_writer.c
++++ b/third_party/aom/video_writer.c
+@@ -66,10 +66,13 @@ void aom_video_writer_close(AvxVideoWriter *writer) {
+   }
+ }
+ 
++size_t
++emcc_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
++
+ int aom_video_writer_write_frame(AvxVideoWriter *writer, const uint8_t *buffer,
+                                  size_t size, int64_t pts) {
+   ivf_write_frame_header(writer->file, pts, size);
+-  if (fwrite(buffer, 1, size, writer->file) != size) return 0;
++  if (emcc_fwrite(buffer, 1, size, writer->file) != size) return 0;
+ 
+   ++writer->frame_count;
+ 

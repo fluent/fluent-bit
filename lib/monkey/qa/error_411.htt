@@ -1,0 +1,26 @@
+################################################################################
+# DESCRIPTION
+#	Exercise error 411	
+#
+# AUTHOR
+#	Carlos Ghan <charlie.brown.uy@gmail.com>
+#
+# DATE
+#	June 29 2009
+#
+# COMMENTS
+#	A POST request without "Content-Length" should return "Length Required"	
+################################################################################
+
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT
+__POST / $HTTPVER
+__Host: $HOST
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 411 Length Required"
+_WAIT
+END

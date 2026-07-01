@@ -1,0 +1,22 @@
+# HELP prometheus_engine_query_duration_seconds Query timings
+# TYPE prometheus_engine_query_duration_seconds summary
+prometheus_engine_query_duration_seconds{slice="inner_eval",quantile="0.5"} NaN
+prometheus_engine_query_duration_seconds{slice="inner_eval",quantile="0.9"} NaN
+prometheus_engine_query_duration_seconds{slice="inner_eval",quantile="0.99"} NaN
+prometheus_engine_query_duration_seconds_sum{slice="inner_eval"} 0
+prometheus_engine_query_duration_seconds_count{slice="inner_eval"} 0
+prometheus_engine_query_duration_seconds{slice="prepare_time",quantile="0.5"} NaN
+prometheus_engine_query_duration_seconds{slice="prepare_time",quantile="0.9"} NaN
+prometheus_engine_query_duration_seconds{slice="prepare_time",quantile="0.99"} NaN
+prometheus_engine_query_duration_seconds_sum{slice="prepare_time"} 0
+prometheus_engine_query_duration_seconds_count{slice="prepare_time"} 0
+prometheus_engine_query_duration_seconds{slice="queue_time",quantile="0.5"} NaN
+prometheus_engine_query_duration_seconds{slice="queue_time",quantile="0.9"} NaN
+prometheus_engine_query_duration_seconds{slice="queue_time",quantile="0.99"} NaN
+prometheus_engine_query_duration_seconds_sum{slice="queue_time"} 0
+prometheus_engine_query_duration_seconds_count{slice="queue_time"} 0
+prometheus_engine_query_duration_seconds{slice="result_sort",quantile="0.5"} NaN
+prometheus_engine_query_duration_seconds{slice="result_sort",quantile="0.9"} NaN
+prometheus_engine_query_duration_seconds{slice="result_sort",quantile="0.99"} NaN
+prometheus_engine_query_duration_seconds_sum{slice="result_sort"} 0
+prometheus_engine_query_duration_seconds_count{slice="result_sort"} 0

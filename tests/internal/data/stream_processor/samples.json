@@ -1,0 +1,11 @@
+{"id": 0, "word1": "fluent"          , "word2": "logging"         , "bytes": 10     , "bool": true,     "usage": 10}
+{"id": 1, "word1": "fluentd"         , "word2": "rlz"             , "bytes": 10.0   , "bool": true,     "usage": 20}
+{"id": 2, "word1": "fluent-bit"      , "word3": "rlz"             , "bytes": 10     , "bool": true,     "usage": 30}
+{"id": 3, "word1": "fluent-logger"   , "word3": ""                , "bytes": 10     , "bool": true,     "usage": 40}
+{"id": 4, "word1": "forward"         , "word3": "plain"           , "bytes": 10     , "bool": true,     "usage": 50}
+{"id": 5, "word5": "forward-protocol", "word6": "secure"          , "bytes": 10     , "bool": true,     "usage": 60}
+{"id": 6, "word1": "stream"          , "word3": "processing"      , "bytes": 10.20  , "bool": false,    "usage": 70}
+{"id": 7, "word1": "edge-rocks"      , "word6": ""                , "bytes": 10     , "bool": true,     "usage": 80}
+{"id": 8, "word1": "treasure-data"   , "word3": "cncf"            , "bytes": 10     , "bool": true,     "usage": 90}
+{"id": 9, "word1": "arm"             , "word3": "linux foundation", "bytes": "10.30", "bool": false,    "usage": 100}
+{"id": 10, "word1": "fluent-bit"     , "word3": null              , "bytes": 10     , "bool": true,     "usage": 110}

@@ -1,0 +1,18 @@
+all: monkey-liana.so
+include ../Make.common
+
+CC	= @echo "  CC   $(_PATH)/$@"; $CC
+CC_QUIET= @echo -n; $CC
+AR      = @echo "  AR   $(_PATH)/$@"; $AR
+CFLAGS	= $CFLAGS
+LDFLAGS = $LDFLAGS
+DEFS    = $DEFS
+LIANA_OBJECTS = liana.o
+
+-include $(LIANA_OBJECTS:.o=.d)
+
+monkey-liana.so: $(LIANA_OBJECTS)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(DEFS) -shared -o $@ $^ -lc
+
+monkey-liana.a: $(LIANA_OBJECTS)
+	$(AR) rcs $@ $(LIANA_OBJECTS)

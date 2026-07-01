@@ -1,0 +1,71 @@
+diff --git a/test/core/linking.wast b/test/core/linking.wast
+index 994e0f4..8fbcc02 100644
+--- a/test/core/linking.wast
++++ b/test/core/linking.wast
+@@ -19,11 +19,11 @@
+ (assert_return (invoke $Nf "call") (i32.const 3))
+ (assert_return (invoke $Nf "call Mf.call") (i32.const 2))
+ 
+-(module
++(module $M1
+   (import "spectest" "print_i32" (func $f (param i32)))
+   (export "print" (func $f))
+ )
+-(register "reexport_f")
++(register "reexport_f" $M1)
+ (assert_unlinkable
+   (module (import "reexport_f" "print" (func (param i64))))
+   "incompatible import type"
+@@ -35,7 +35,6 @@
+ 
+ 
+ ;; Globals
+-
+ (module $Mg
+   (global $glob (export "glob") i32 (i32.const 42))
+   (func (export "get") (result i32) (global.get $glob))
+@@ -47,6 +46,7 @@
+ )
+ (register "Mg" $Mg)
+ 
++(; only sharing initial values
+ (module $Ng
+   (global $x (import "Mg" "glob") i32)
+   (global $mut_glob (import "Mg" "mut_glob") (mut i32))
+@@ -81,7 +81,7 @@
+ (assert_return (get $Ng "Mg.mut_glob") (i32.const 241))
+ (assert_return (invoke $Mg "get_mut") (i32.const 241))
+ (assert_return (invoke $Ng "Mg.get_mut") (i32.const 241))
+-
++;)
+ 
+ (assert_unlinkable
+   (module (import "Mg" "mut_glob" (global i32)))
+@@ -130,7 +130,7 @@
+ 
+ 
+ ;; Tables
+-
++(; no such support
+ (module $Mt
+   (type (func (result i32)))
+   (type (func))
+@@ -307,10 +307,11 @@
+   (module (table (import "Mtable_ex" "t-extern") 1 funcref))
+   "incompatible import type"
+ )
++;)
+ 
+ 
+ ;; Memories
+-
++(; no such support
+ (module $Mm
+   (memory (export "mem") 1 5)
+   (data (i32.const 10) "\00\01\02\03\04\05\06\07\08\09")
+@@ -451,3 +452,4 @@
+ 
+ (assert_return (invoke $Ms "get memory[0]") (i32.const 104))  ;; 'h'
+ (assert_return (invoke $Ms "get table[0]") (i32.const 0xdead))
++;)
+\ No newline at end of file

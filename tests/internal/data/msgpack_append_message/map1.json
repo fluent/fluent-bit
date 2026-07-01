@@ -1,0 +1,5 @@
+{"key1": 123456789,
+ "key2": 0.999887766,
+ "key3": "abcdefghijklmnopqrstuvwxyz",
+ "key4": [{"a": 10, "b": 20}, {"c": 30, "d": 40}]
+}

@@ -1,0 +1,26 @@
+service:
+    log_level: info
+    http_server: on
+    http_listen: 0.0.0.0
+    http_port: 2021
+
+
+pipeline:
+    inputs:
+      - name: random
+        tag: test-tag
+        interval_sec: 1
+
+        processors:
+          logs:
+            - name: modify
+              add: hostname monox
+
+    outputs:
+      - name: stdout
+        match: '*'
+
+        processors:
+          logs:
+            - name: modify
+              add: hostname monox

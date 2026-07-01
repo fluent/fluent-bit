@@ -1,0 +1,19 @@
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemDefinitionGroup>
+    <Link>
+      <AdditionalDependencies Condition="'$(Platform)' == 'x64'">$(MSBuildThisFileDirectory)lib\win\x64\win-x64-Release\v142\librdkafka.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(Platform)' != 'x64'">$(MSBuildThisFileDirectory)lib\win\x86\win-x86-Release\v142\librdkafka.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories Condition="'$(Platform)' == 'x64'">$(MSBuildThisFileDirectory)lib\win\x64\win-x64-Release\v142;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories Condition="'$(Platform)' != 'x64'">$(MSBuildThisFileDirectory)lib\win\x86\win-x86-Release\v142;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup Condition="'$(Platform)' == 'x64'">
+    <ReferenceCopyLocalPaths Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\*.dll" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Platform)' != 'x64'">
+    <ReferenceCopyLocalPaths Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x86\native\*.dll" />
+  </ItemGroup>
+</Project>

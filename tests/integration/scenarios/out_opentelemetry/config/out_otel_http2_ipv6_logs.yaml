@@ -1,0 +1,23 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: ipv6_http2
+      samples: 1
+      dummy: |
+        {
+          "message": "hello over ipv6 http2"
+        }
+
+  outputs:
+    - name: opentelemetry
+      match: ipv6_http2
+      host: "::1"
+      port: ${TEST_SUITE_HTTP_PORT}
+      http2: on
+      retry_limit: 1

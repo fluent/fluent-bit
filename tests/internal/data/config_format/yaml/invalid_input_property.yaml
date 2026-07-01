@@ -1,0 +1,4 @@
+pipeline:
+  inputs:
+    - name: dummy
+      log_level: thisdoesnotexist

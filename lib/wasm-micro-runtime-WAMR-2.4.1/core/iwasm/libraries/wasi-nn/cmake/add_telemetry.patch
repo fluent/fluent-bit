@@ -1,0 +1,12 @@
+diff --git a/tensorflow/lite/CMakeLists.txt b/tensorflow/lite/CMakeLists.txt
+index c71a3925ac..39591a3bd7 100644
+--- a/tensorflow/lite/CMakeLists.txt
++++ b/tensorflow/lite/CMakeLists.txt
+@@ -493,6 +493,7 @@ set(TFLITE_PROFILER_SRCS
+   ${TFLITE_SOURCE_DIR}/profiling/root_profiler.h
+   ${TFLITE_SOURCE_DIR}/profiling/root_profiler.cc
+   ${TFLITE_SOURCE_DIR}/profiling/telemetry/profiler.cc
++  ${TFLITE_SOURCE_DIR}/profiling/telemetry/telemetry.cc
+ )
+ if(CMAKE_SYSTEM_NAME MATCHES "Android")
+   list(APPEND TFLITE_PROFILER_SRCS

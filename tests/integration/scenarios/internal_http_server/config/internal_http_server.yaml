@@ -1,0 +1,21 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_listen: 127.0.0.1
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  health_check: on
+  storage.metrics: on
+  hot_reload: on
+  enable_chunk_trace: on
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: test
+      dummy: '{"message":"hello"}'
+
+  outputs:
+    - name: stdout
+      match: "*"

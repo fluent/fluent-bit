@@ -1,0 +1,27 @@
+###############################################################################
+# DESCRIPTION
+#	Server must not send connection header
+#
+# AUTHOR
+#	Eduardo Silva	<edsiper@gmail.com>
+#
+# DATE
+#	March 17 2010
+#
+# COMMENTS
+#	Do not Expect 'Connection:' from server
+###############################################################################
+
+
+INCLUDE __CONFIG
+INCLUDE __MACROS
+
+CLIENT
+_REQ $HOST $PORT
+__GET / $HTTPVER
+__Host: $HOST
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_EXPECT . "!Connection:"
+_WAIT
+END

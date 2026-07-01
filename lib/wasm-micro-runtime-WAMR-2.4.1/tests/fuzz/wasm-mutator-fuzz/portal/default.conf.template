@@ -1,0 +1,53 @@
+server {
+
+  listen 80 default_server;
+
+  location ^~ / {
+    root   /usr/share/nginx/html;
+    index  index.html index.htm;
+    try_files $uri $uri/ /index.html;
+  }
+
+  location @router {
+    rewrite ^.*$ /index.html last; # important!
+  }
+
+
+  location ~* \.(?:manifest|appcache|html?|xml|json)$ {
+
+    root   /usr/share/nginx/html;
+
+    if ($request_uri ~* .*[.](manifest|appcache|xml|json)$) {
+      add_header Cache-Control "public, max-age=2592000";
+    }
+
+    if ($request_filename ~* ^.*[.](html|htm)$) {
+      add_header Cache-Control "public, no-cache";
+    }
+
+    expires -1;
+  }
+
+  location ~* \.(?:js|css|map|jpg|png|svg|ico)$ {
+    root   /usr/share/nginx/html;
+    try_files $uri =404;
+
+    expires 1y;
+    access_log off;
+
+    add_header Cache-Control "public";
+  }
+
+  location ~ ^.+\..+$ {
+    root   /usr/share/nginx/html;
+    try_files $uri =404;
+
+    include /etc/nginx/mime.types;
+  }
+
+  error_page 500 502 503 504 /50x.html;
+
+  location = /50x.html {
+    root  /usr/share/nginx/html;
+  }
+}

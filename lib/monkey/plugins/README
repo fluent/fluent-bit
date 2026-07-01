@@ -1,0 +1,61 @@
+Monkey Plugins
+==============
+Plugins are extra features which modifies the Monkey behavior, all of them
+are shared libraries which are loaded on runtime. 
+
+Each plugin is loaded per configuration instruction and it will work on a 
+defined stage or event depending of it's type.
+
+Please review the file API.txt for more details
+
+
+
+MK_PLUGIN_STAGE_10: Server has not yet entered in the server loop, no 
+		    listeners yet available
+---------------------------------------------------------------------
+  Return Values >
+
+
+MK_PLUGIN_STAGE_20: Accepted connection has not been assigned to worker thread
+------------------------------------------------------------------------------
+   Return Values >
+
+                  * MK_PLUGIN_RET_CLOSE_CONX: The connection must be closed.
+
+
+MK_PLUGIN_STAGE_30: HTTP Request received
+-----------------------------------------
+   Return Values >
+                  * MK_PLUGIN_RET_CLOSE_CONX: The connection must be closed.
+
+
+MK_PLUGIN_STAGE_40: Object Handler
+-----------------------------------------
+   Extra functions >
+		  * _mk_plugin_stage_40_loop(): if _mk_plugin_stage_40() has
+		    returned MK_PLUGIN_RET_CONTINUE, the server will wait 
+		    for an event and call _mk_plugin_stage_40() until it 
+		    returns MK_PLUGIN_RET_END.
+
+		    Return Values >
+				* MK_PLUGIN_RET_END
+				* MK_PLUGIN_RET_CONTINUE
+
+   Return Values >
+                  * MK_PLUGIN_RET_NOT_ME: Plugin will not handle this request.
+
+                  * MK_PLUGIN_RET_END: Plugin has taken some action and 
+                    has finished the work, the handler will no take the request
+                    again.
+
+                  * MK_PLUGIN_RET_CONTINUE:: Plugin has taken some action and 
+                    will continue in the next loop.
+
+
+MK_PLUGIN_STAGE_50: Request ended
+-----------------------------------------
+
+
+MK_PLUGIN_STAGE_60: The Connection has been closed
+--------------------------------------------------
+

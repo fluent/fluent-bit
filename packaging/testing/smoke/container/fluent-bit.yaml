@@ -1,0 +1,33 @@
+---
+# Translated according to https://github.com/fluent/fluent-bit/pull/4621
+service:
+    http_server: "on"
+    Health_Check: "on"
+    log_level: debug
+
+pipeline:
+    inputs:
+        - name: random
+          tag: test
+          samples: 10
+
+    filters:
+        - name: lua
+          match: test
+          call: append_tag
+          code: |
+              function append_tag(tag, timestamp, record)
+                 new_record = record
+                 new_record["tag"] = tag
+                 return 1, timestamp, new_record
+              end
+
+        - name: expect
+          match: test
+          key_exists: tag
+          key_val_eq: tag test
+          action: exit
+
+    outputs:
+        - name: stdout
+          match: test

@@ -1,0 +1,26 @@
+################################################################################
+# DESCRIPTION
+#	POST method.
+#
+# AUTHOR
+#	Carlos Ghan	<charlie.brown.uy@gmail.com>
+#
+# DATE
+#	June 29 2009
+###############################################################################
+
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT 
+__POST / $HTTPVER
+__Host: $HOST
+__Content-Type: text/plain
+__Content-Length: AUTO 
+__Connection: close
+__
+_-someVariable=1234&daemon=monkeyd&SESSION=e1d83283d597ca88f599e34c8ef2e8c3
+_EXPECT . "HTTP/1.1 200 OK"
+_WAIT
+END

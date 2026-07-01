@@ -1,0 +1,45 @@
+###############################################################################
+# DESCRIPTION
+#	Test partial content request. Range type is equal to the file size.
+#       We expect this test to fail from server side as the file size is an
+#       invalid offset, ranges starts from byte zero.
+#
+# AUTHOR
+#	Eduardo Silva <edsiper@gmail.com>
+#
+# DATE
+#	Jun 19 2013
+#
+# COMMENTS
+#       RFC 2616 Section 10.4.17
+###############################################################################
+
+
+INCLUDE __CONFIG
+INCLUDE __MACROS
+
+# Start offset
+SET OFF_START=79718
+
+# End offset
+SET OFF_END=79718
+
+CLIENT
+_CALL INIT
+_CALL TESTDOC_GETSIZE
+
+_REQ $HOST $PORT
+__GET /img/mk_logo.png $HTTPVER
+__Host: $HOST
+__Range: bytes=${OFF_START}-${OFF_END}
+__Connection: close
+__
+
+# Content length = end_offset - start_offset + 1
+_OP $OFF_END SUB $OFF_START CLEN
+_OP $CLEN ADD 1 CLEN
+
+_EXPECT . "416 Requested Range Not Satisfiable"
+_EXPECT . "Date:"
+_WAIT
+END

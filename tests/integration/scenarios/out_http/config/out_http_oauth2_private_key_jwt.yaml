@@ -1,0 +1,28 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: out_http
+      dummy: '{"message":"hello from oauth2 jwt","source":"dummy"}'
+      samples: 1
+
+  outputs:
+    - name: http
+      match: out_http
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      uri: /data
+      format: json
+      json_date_key: false
+      oauth2.enable: true
+      oauth2.token_url: http://127.0.0.1:${TEST_SUITE_HTTP_PORT}/oauth/token
+      oauth2.client_id: client1
+      oauth2.auth_method: private_key_jwt
+      oauth2.jwt_key_file: ${PRIVATE_KEY_TEST}
+      oauth2.jwt_cert_file: ${CERTIFICATE_TEST}
+      oauth2.jwt_aud: http://127.0.0.1:${TEST_SUITE_HTTP_PORT}/oauth/token

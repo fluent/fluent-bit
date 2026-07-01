@@ -1,0 +1,35 @@
+# Copyright (C) 2019 Intel Corporation. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+version: 2
+updates:
+
+- package-ecosystem: "github-actions"
+  directory: "/"
+  schedule:
+    interval: "weekly"
+
+- package-ecosystem: "docker"
+  directory: "/.devcontainer"
+  schedule:
+    interval: "weekly"
+
+- package-ecosystem: "devcontainers"
+  directory: "/"
+  schedule:
+    interval: "weekly"
+
+- package-ecosystem: "pip"
+  directory: "/build-scripts"
+  schedule:
+    interval: "weekly"
+
+- package-ecosystem: "pip"
+  directory: "/language-bindings/python/wasm-c-api"
+  schedule:
+    interval: "weekly"
+
+- package-ecosystem: "pip"
+  directory: "/language-bindings/python/wamr-api"
+  schedule:
+    interval: "weekly"

@@ -1,0 +1,125 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+# Get URLs from:
+#   - https://github.com/WebAssembly/wasi-sdk/releases
+#   - https://github.com/WebAssembly/wabt/releases
+
+# Install WASI-SDK and WABT at /opt
+# /opt is the assumed location widely used in the project
+name: Install WASI-SDK and WABT
+
+description: A composite action to download and install wasi-sdk and wabt on Ubuntu, macOS.
+
+inputs:
+  os:
+    description: "Operating system to install on (ubuntu, macos)"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check Runner OS
+      if: ${{ !startsWith(inputs.os, 'ubuntu') && !startsWith(inputs.os, 'windows') && !startsWith(inputs.os, 'macos') }}
+      shell: bash
+      run: |
+        echo "::error title=⛔ error hint::Support Ubuntu, Windows, and macOS Only"
+        exit 1
+
+    - name: Set up wasi-sdk and wabt on Ubuntu
+      if: ${{ startsWith(inputs.os, 'ubuntu') }}
+      shell: bash
+      run: |
+        echo "Downloading wasi-sdk for Ubuntu..."
+        sudo wget -O wasi-sdk.tar.gz --progress=dot:giga https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-25/wasi-sdk-25.0-x86_64-linux.tar.gz
+
+        echo "Extracting wasi-sdk..."
+        sudo tar -xf wasi-sdk.tar.gz
+        sudo ln -sf  wasi-sdk-25.0-x86_64-linux/ wasi-sdk
+
+        echo "Downloading wabt for Ubuntu..."
+        sudo wget -O wabt.tar.gz     --progress=dot:giga https://github.com/WebAssembly/wabt/releases/download/1.0.37/wabt-1.0.37-ubuntu-20.04.tar.gz
+
+        echo "Extracting wabt..."
+        sudo tar -xf wabt.tar.gz
+        sudo ln -sf  wabt-1.0.37 wabt
+
+        /opt/wasi-sdk/bin/clang --version
+        /opt/wabt/bin/wasm-interp --version
+
+        echo "::notice::wasi-sdk-25 and wabt-1.0.37 installed on ubuntu"
+      working-directory: /opt
+
+    - name: Set up wasi-sdk and wabt on macOS-13 (intel)
+      if: ${{ inputs.os == 'macos-13' }}
+      shell: bash
+      run: |
+        echo "Downloading wasi-sdk for macOS-13..."
+        sudo wget -O wasi-sdk.tar.gz --progress=dot:giga https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-25/wasi-sdk-25.0-x86_64-macos.tar.gz
+
+        echo "Extracting wasi-sdk..."
+        sudo tar -xf wasi-sdk.tar.gz
+        sudo ln -sf  wasi-sdk-25.0-x86_64-macos wasi-sdk
+
+        echo "Downloading wabt for macOS-13..."
+        sudo wget -O wabt.tar.gz     --progress=dot:giga https://github.com/WebAssembly/wabt/releases/download/1.0.36/wabt-1.0.36-macos-12.tar.gz
+
+        echo "Extracting wabt..."
+        sudo tar -xf wabt.tar.gz
+        sudo ln -sf  wabt-1.0.36 wabt
+
+        /opt/wasi-sdk/bin/clang --version
+        /opt/wabt/bin/wasm-interp --version
+
+        echo "::notice::wasi-sdk-25 and wabt-1.0.36 installed on macos-13"
+      working-directory: /opt
+
+    - name: Set up wasi-sdk and wabt on macOS-14 (arm64)
+      if: ${{ inputs.os == 'macos-14' }}
+      shell: bash
+      run: |
+        echo "Downloading wasi-sdk for macOS-14..."
+        sudo wget -O wasi-sdk.tar.gz --progress=dot:giga https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-25/wasi-sdk-25.0-arm64-macos.tar.gz
+
+        echo "Extracting wasi-sdk..."
+        sudo tar -xf wasi-sdk.tar.gz
+        sudo ln -sf  wasi-sdk-25.0-arm64-macos wasi-sdk
+
+        echo "Downloading wabt for macOS-14..."
+        sudo wget -O wabt.tar.gz     --progress=dot:giga https://github.com/WebAssembly/wabt/releases/download/1.0.37/wabt-1.0.37-macos-14.tar.gz
+
+        echo "Extracting wabt..."
+        sudo tar -xf wabt.tar.gz
+        sudo ln -sf  wabt-1.0.37 wabt
+
+        /opt/wasi-sdk/bin/clang --version
+        /opt/wabt/bin/wasm-interp --version
+
+        echo "::notice::wasi-sdk-25 and wabt-1.0.37 installed on macos-14"
+      working-directory: /opt
+
+    - name: Set up wasi-sdk and wabt on Windows
+      if: ${{ startsWith(inputs.os, 'windows') }}
+      shell: bash
+      run: |
+        choco install -y wget
+
+        mkdir -p /opt/wasi-sdk
+        mkdir -p /opt/wabt
+
+        echo "Downloading wasi-sdk for Windows..."
+        wget -O wasi-sdk.tar.gz --progress=dot:giga https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-25/wasi-sdk-25.0-x86_64-windows.tar.gz
+
+        echo "Extracting wasi-sdk..."
+        tar --strip-components=1 -xf wasi-sdk.tar.gz -C /opt/wasi-sdk
+
+        echo "Downloading wabt for Windows..."
+        wget -O wabt.tar.gz --progress=dot:giga https://github.com/WebAssembly/wabt/releases/download/1.0.37/wabt-1.0.37-windows.tar.gz
+
+        echo "Extracting wabt..."
+        tar --strip-components=1 -xf wabt.tar.gz -C /opt/wabt
+
+        /opt/wasi-sdk/bin/clang --version
+        /opt/wabt/bin/wasm-interp --version
+
+        echo "::notice::wasi-sdk-25 and wabt-1.0.37 installed on Windows"

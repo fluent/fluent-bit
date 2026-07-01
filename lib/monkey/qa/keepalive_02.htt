@@ -1,0 +1,32 @@
+###############################################################################
+# DESCRIPTION
+#	HTTP/1.0 Request requesting Keep-Alive, we expect the server keeps the 
+#	keep-alive open and send proper header responses for that.
+#
+# AUTHOR
+#	Eduardo Silva	<edsiper@gmail.com>
+#
+# DATE
+#	December 14 2014
+#
+# COMMENTS
+#       This is a HTTP/1.0 test
+#	Do not Expect 'Connection: Close'
+#       Do     Expect 'Connection: Keep-Alive'
+###############################################################################
+
+INCLUDE __CONFIG
+INCLUDE __MACROS
+
+CLIENT
+_REQ $HOST $PORT
+__GET / $HTTPVER10
+__Host: $HOST
+__Connection: Keep-Alive
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_EXPECT . "!Connection: Closed"
+_EXPECT . "Connection: Keep-Alive"
+_WAIT
+
+END

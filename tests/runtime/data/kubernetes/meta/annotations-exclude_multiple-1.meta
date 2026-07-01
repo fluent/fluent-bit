@@ -1,0 +1,9 @@
+{
+    "metadata": {
+        "annotations": {
+            "fluentbit.io/exclude-container-1": "true",
+            "fluentbit.io/exclude_stdout-container-2": "true",
+            "fluentbit.io/exclude_stderr-container-3": "true"
+        }
+    }
+}

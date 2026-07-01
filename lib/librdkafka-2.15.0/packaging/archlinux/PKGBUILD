@@ -1,0 +1,30 @@
+pkgname=librdkafka
+pkgver=1.0.0.RC5.r11.g3cf68480
+pkgrel=1
+pkgdesc='The Apache Kafka C/C++ client library'
+url='https://github.com/confluentinc/librdkafka'
+license=('BSD')
+arch=('x86_64')
+source=('git+https://github.com/confluentinc/librdkafka#branch=master')
+sha256sums=('SKIP')
+depends=(glibc libsasl lz4 openssl zlib zstd)
+makedepends=(bash git python3)
+
+pkgver() {
+	cd "$pkgname"
+	git describe --long --tags --match "v[0-9]*" | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+}
+
+build() {
+	cd "$pkgname"
+	./configure --prefix=/usr
+	make
+}
+
+package() {
+	cd "$pkgname"
+	make install DESTDIR="$pkgdir"
+	for f in $(find -type f -name 'LICENSE*'); do
+		install -D -m0644 "$f" "$pkgdir/usr/share/licenses/$pkgname/$f"
+	done
+}

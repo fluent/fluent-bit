@@ -1,0 +1,21 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+pipeline:
+  inputs:
+    - name: splunk
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      host: 0.0.0.0
+      http2: off
+      tls: off
+      splunk_token: secret-token
+      store_token_in_metadata: true
+  outputs:
+    - name: splunk
+      match: '*'
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      tls: off
+      splunk_token: fallback-token

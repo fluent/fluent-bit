@@ -1,0 +1,24 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      samples: 1
+      dummy: |
+        {
+          "message": "hello via grpc"
+        }
+
+  outputs:
+    - name: opentelemetry
+      match: "*"
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      http2: on
+      grpc: on
+      grpc_logs_uri: /custom.logs.v1.Logs/Push
+      header: "x-grpc otlp-test"

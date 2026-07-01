@@ -1,0 +1,29 @@
+env:
+    flush_interval: 1
+
+includes:
+    - service.yaml
+
+customs:
+    - name: ${observability}
+      api_key: zyJUb2tlbklEItoiY2ZlMTcx
+
+pipeline:
+    inputs:
+        - name: tail
+          path: ./test.log
+          parser: json
+          read_from_head: true
+        - name: tail
+          path: ./test.log
+          parser: json
+          read_from_head: true
+
+    filters:
+        - name: record_modifier
+          match: "*"
+          record: powered_by calyptia
+
+    outputs:
+        - name: stdout
+          match: "*"

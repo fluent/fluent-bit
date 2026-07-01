@@ -1,0 +1,15 @@
+# The west manifest file for WAMR on Zephyr smoke test.
+#
+manifest:
+  #
+  # Please add items below based on alphabetical order
+  projects:
+    - name: zephyr
+      url: https://github.com/zephyrproject-rtos/zephyr
+      revision: v3.7.0
+      clone-depth: 1
+      path: zephyr
+      west-commands: scripts/west-commands.yml
+
+  self:
+    path: application

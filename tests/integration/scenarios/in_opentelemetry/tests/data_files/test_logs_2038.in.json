@@ -1,0 +1,23 @@
+{
+    "resource_logs": [
+        {
+            "scope_logs": [
+                {
+                    "scope": {
+                        "name": "post-2038"
+                    },
+                    "log_records": [
+                        {
+                            "time_unix_nano": "2209072510808241446",
+                            "severity_number": 9,
+                            "severity_text": "INFO",
+                            "body": {
+                                "string_value": "post-2038 timestamp"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

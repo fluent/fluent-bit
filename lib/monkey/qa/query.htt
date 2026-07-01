@@ -1,0 +1,25 @@
+################################################################################
+# DESCRIPTION
+#	A simple GET query.
+#
+# AUTHOR
+#	Carlos Ghan	<charlie.brown.uy@gmail.com>
+#
+# DATE
+#	June 29 2009
+################################################################################
+
+
+INCLUDE __CONFIG
+
+SET QUERY=server=monkeyd&version=0.10git&someVariable=someValue&num=1234
+
+CLIENT
+_REQ $HOST $PORT
+__GET /?$QUERY $HTTPVER
+__Host: $HOST
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_WAIT
+END

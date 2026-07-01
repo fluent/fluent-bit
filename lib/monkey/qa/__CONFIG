@@ -1,0 +1,10 @@
+# Global server settings
+SET HOST=localhost
+SET PORT=2001
+SET HTTPVER=HTTP/1.1
+SET HTTPVER10=HTTP/1.0
+
+SET DOC_ROOT=../htdocs
+SET TEST_DOC=index.html
+
+SET TEST_LOG_LEVEL=4

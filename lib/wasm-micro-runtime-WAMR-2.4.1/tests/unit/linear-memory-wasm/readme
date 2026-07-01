@@ -1,0 +1,2 @@
+build 64 bit target: cmake ..
+build 32 bit target: cmake .. -DWAMR_BUILD_TARGET=X86_32

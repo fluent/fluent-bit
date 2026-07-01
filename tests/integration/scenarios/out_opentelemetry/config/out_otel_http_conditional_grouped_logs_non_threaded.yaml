@@ -1,0 +1,63 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: trace
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: opentelemetry
+      alias: grouped_otel_input
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      routes:
+        logs:
+          - name: grouped_alpha
+            condition:
+              op: and
+              rules:
+                - context: otel_resource_attributes
+                  field: $route_group
+                  op: eq
+                  value: alpha
+            to:
+              outputs:
+                - otel_group_alpha
+
+          - name: grouped_beta
+            condition:
+              op: and
+              rules:
+                - context: otel_resource_attributes
+                  field: $route_group
+                  op: eq
+                  value: beta
+            to:
+              outputs:
+                - otel_group_beta
+
+          - name: grouped_default
+            condition:
+              default: true
+            to:
+              outputs:
+                - otel_group_default
+
+  outputs:
+    - name: opentelemetry
+      alias: otel_group_alpha
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      logs_uri: /conditional/group/alpha
+
+    - name: opentelemetry
+      alias: otel_group_beta
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      logs_uri: /conditional/group/beta
+
+    - name: opentelemetry
+      alias: otel_group_default
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      logs_uri: /conditional/group/default

@@ -1,0 +1,22 @@
+# Logger:
+# -------
+# This plugin allows the creation of log files for each request that arrives.
+# It uses an access and error file which are defined inside every virtual
+# host file, this section set just global directives for the plugin.
+
+[LOGGER]
+    # FlushTimeout
+    # ------------
+    # This key define in seconds, the waiting time before to flush the
+    # data to the log file.
+    # Allowed values must be greater than zero (FlushTimeout > 0).
+
+    FlushTimeout 3
+
+    # MasterLog
+    # ---------
+    # This key define a master log file which is used when Monkey runs in daemon
+    # mode, so any Monkey output (stdout) will be redirected to the file
+    # specified here. The server port will be appended to the filename.
+
+    MasterLog @MK_PATH_LOG@/master.log

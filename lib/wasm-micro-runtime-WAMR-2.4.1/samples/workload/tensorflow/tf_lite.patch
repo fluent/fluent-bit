@@ -1,0 +1,84 @@
+diff --git a/tensorflow/lite/tools/make/Makefile b/tensorflow/lite/tools/make/Makefile
+index c7ddff58440..ebfebaead35 100644
+--- a/tensorflow/lite/tools/make/Makefile
++++ b/tensorflow/lite/tools/make/Makefile
+@@ -48,11 +48,7 @@ INCLUDES += -I/usr/local/include
+ 
+ # These are the default libraries needed, but they can be added to or
+ # overridden by the platform-specific settings in target makefiles.
+-LIBS := \
+--lstdc++ \
+--lpthread \
+--lm \
+--lz \
++LIBS := -lm \
+ -ldl
+ 
+ # There are no rules for compiling objects for the host system (since we don't
+@@ -84,14 +80,24 @@ endif # ifeq ($(HOST_ARCH),$(TARGET_ARCH))
+ endif # ifeq ($(HOST_OS),$(TARGET))
+ endif
+ 
++CFLAGS+=-msimd128 -mbulk-memory -matomics
++CXXFLAGS+=-msimd128 -mbulk-memory -matomics
++
++LIBFLAGS += -s TOTAL_STACK=1048576 -s MALLOC="none" \
++            -s INITIAL_MEMORY=16777216 \
++            -s MAXIMUM_MEMORY=167772160 \
++            -s ALLOW_MEMORY_GROWTH=1 \
++            -Wl,--export=__data_end -Wl,--export=__heap_base,--shared-memory,--no-check-features \
++            -s ERROR_ON_UNDEFINED_SYMBOLS=0
++
+ # This library is the main target for this makefile. It will contain a minimal
+ # runtime that can be linked in to other programs.
+ LIB_NAME := libtensorflow-lite.a
+ 
+ # Benchmark static library and binary
+ BENCHMARK_LIB_NAME := benchmark-lib.a
+-BENCHMARK_BINARY_NAME := benchmark_model
+-BENCHMARK_PERF_OPTIONS_BINARY_NAME := benchmark_model_performance_options
++BENCHMARK_BINARY_NAME := benchmark_model.wasm
++BENCHMARK_PERF_OPTIONS_BINARY_NAME := benchmark_model_performance_options.wasm
+ 
+ # A small example program that shows how to link against the library.
+ MINIMAL_SRCS := \
+@@ -277,12 +283,16 @@ LIB_PATH := $(LIBDIR)$(LIB_NAME)
+ BENCHMARK_LIB := $(LIBDIR)$(BENCHMARK_LIB_NAME)
+ BENCHMARK_BINARY := $(BINDIR)$(BENCHMARK_BINARY_NAME)
+ BENCHMARK_PERF_OPTIONS_BINARY := $(BINDIR)$(BENCHMARK_PERF_OPTIONS_BINARY_NAME)
+-MINIMAL_BINARY := $(BINDIR)minimal
++MINIMAL_BINARY := $(BINDIR)minimal.wasm
+ LABEL_IMAGE_BINARY := $(BINDIR)label_image
+ 
+-CXX := $(CC_PREFIX)${TARGET_TOOLCHAIN_PREFIX}g++
+-CC := $(CC_PREFIX)${TARGET_TOOLCHAIN_PREFIX}gcc
+-AR := $(CC_PREFIX)${TARGET_TOOLCHAIN_PREFIX}ar
++# CXX := $(CC_PREFIX)${TARGET_TOOLCHAIN_PREFIX}g++
++# CC := $(CC_PREFIX)${TARGET_TOOLCHAIN_PREFIX}gcc
++# AR := $(CC_PREFIX)${TARGET_TOOLCHAIN_PREFIX}ar
++
++CXX := em++
++CC := emcc
++AR := emar
+ 
+ MINIMAL_OBJS := $(addprefix $(OBJDIR), \
+ $(patsubst %.cc,%.o,$(patsubst %.c,%.o,$(MINIMAL_SRCS))))
+diff --git a/tensorflow/lite/tools/make/targets/linux_makefile.inc b/tensorflow/lite/tools/make/targets/linux_makefile.inc
+index 222cef9e5ff..eea89a38f01 100644
+--- a/tensorflow/lite/tools/make/targets/linux_makefile.inc
++++ b/tensorflow/lite/tools/make/targets/linux_makefile.inc
+@@ -2,12 +2,10 @@
+ ifeq ($(TARGET), linux)
+   CXXFLAGS += \
+     -fPIC \
+-    -DGEMMLOWP_ALLOW_SLOW_SCALAR_FALLBACK \
+-    -pthread
++    -DGEMMLOWP_ALLOW_SLOW_SCALAR_FALLBACK
+   CFLAGS += \
+     -fPIC \
+-    -DGEMMLOWP_ALLOW_SLOW_SCALAR_FALLBACK \
+-    -pthread    
++    -DGEMMLOWP_ALLOW_SLOW_SCALAR_FALLBACK
+   # TODO(petewarden): In the future we may want to add architecture-specific
+   # flags like -msse4.2
+ 	LIBS += -ldl

@@ -1,0 +1,36 @@
+service:
+  log_level: debug
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: logs
+      dummy: |
+        {
+          "message": "simple log generated",
+          "logger": "my.logger",
+          "level": "INFO",
+          "hostname": "localhost",
+          "my_map_of_attributes_1": {
+            "key_1": "hello, world!",
+            "key_2": "goodbye, world!"
+          },
+          "my_map_of_maps_1": {
+            "root_key": {
+              "sub_key_1": "hello, world!",
+              "sub_key_2": "goodbye, world!"
+            }
+          }
+        }
+
+  outputs:
+    - name: loki
+      match: logs
+      host: loki
+      remove_keys: hostname,my_map_of_attributes_1,my_map_of_maps_1
+      label_keys: $level,$logger
+      labels: service_name=test
+      structured_metadata: $hostname
+      structured_metadata_map_keys: $my_map_of_attributes_1,$my_map_of_maps_1['root_key']
+      line_format: key_value
+      drop_single_key: on

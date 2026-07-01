@@ -1,0 +1,17 @@
+#
+# Copyright (c) 2021, RT-Thread Development Team
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#
+
+from building import *
+import os
+
+cwd     = GetCurrentDir()
+
+src = Glob('*.c')
+CPPPATH = [cwd]
+
+group = DefineGroup('iwasm_shared_utils', src, depend = [''], CPPPATH = CPPPATH)
+
+Return('group')

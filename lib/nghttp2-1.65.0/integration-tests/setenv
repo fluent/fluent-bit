@@ -1,0 +1,14 @@
+#!/bin/sh -e
+
+libdir="/home/runner/work/nghttp2/nghttp2/lib"
+if [ -d "$libdir/.libs" ]; then
+    libdir="$libdir/.libs"
+fi
+
+export CGO_CFLAGS="-I/home/runner/work/nghttp2/nghttp2/lib/includes -I/home/runner/work/nghttp2/nghttp2/lib/includes -g -O2"
+export CGO_CPPFLAGS=""
+export CGO_LDFLAGS="-L$libdir "
+export LD_LIBRARY_PATH="$libdir"
+export DYLD_LIBRARY_PATH="$libdir"
+export GODEBUG=cgocheck=0
+"$@"

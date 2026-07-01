@@ -1,0 +1,119 @@
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+#ifndef FLB_TESTS_RUNTIME_H
+#define FLB_TESTS_RUNTIME_H
+
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#include <errno.h>
+#include <process.h>
+#include <stdio.h>
+#include <time.h>
+#endif
+
+#include "../lib/acutest/acutest.h"
+#define FLB_TESTS_DATA_PATH "@FLB_TESTS_DATA_PATH@"
+
+#ifdef _WIN32
+static inline int flb_test_setenv(const char *name, const char *value, int overwrite)
+{
+    char *current;
+
+    if (!overwrite) {
+        current = getenv(name);
+        if (current != NULL) {
+            return 0;
+        }
+    }
+
+    return _putenv_s(name, value);
+}
+
+static inline int flb_test_unsetenv(const char *name)
+{
+    return _putenv_s(name, "");
+}
+
+#define setenv flb_test_setenv
+#define unsetenv flb_test_unsetenv
+
+static inline char *flb_test_mkdtemp(char *template_path)
+{
+    static unsigned int counter = 0;
+    size_t len;
+    unsigned int value;
+    unsigned int i;
+    char suffix[7];
+
+    len = strlen(template_path);
+    if (len < 6 || strcmp(template_path + len - 6, "XXXXXX") != 0) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    for (i = 0; i < 1000; i++) {
+        value = ((unsigned int) time(NULL) ^ (unsigned int) _getpid() ^ counter++) & 0xffffff;
+        snprintf(suffix, sizeof(suffix), "%06x", value);
+        memcpy(template_path + len - 6, suffix, 6);
+
+        if (_mkdir(template_path) == 0) {
+            return template_path;
+        }
+
+        if (errno != EEXIST) {
+            return NULL;
+        }
+    }
+
+    errno = EEXIST;
+    return NULL;
+}
+
+#define mkdtemp flb_test_mkdtemp
+#endif
+
+static inline int wait_for_file(char *path, 
+                                size_t minimum_size, 
+                                int time_limit)
+{
+    int         elapsed_time;
+    struct stat file_info;
+    int         result;
+
+    for (elapsed_time = 0 ; elapsed_time < time_limit ; elapsed_time++) {
+        result = stat(path, &file_info);
+
+        if (result == 0) {
+            if (file_info.st_size >= minimum_size) {
+                break;
+            }
+        }
+
+        sleep(1);
+    }
+
+    return result;
+}
+
+#endif

@@ -1,0 +1,28 @@
+service:
+  flush: 1
+  grace: 3
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: out_s3_retry_exhausted
+      dummy: '{"message":"retry exhausted default quarantine","source":"dummy"}'
+      samples: 1
+
+  outputs:
+    - name: s3
+      match: out_s3_retry_exhausted
+      bucket: test-bucket
+      region: us-east-1
+      endpoint: http://127.0.0.1:1
+      use_put_object: true
+      retry_limit: 1
+      total_file_size: 1M
+      upload_timeout: 1s
+      s3_key_format: /payloads/$TAG/$UUID
+      content_type: application/x-ndjson
+      store_dir: /tmp/fluent-bit-test-suite-s3-retry-exhausted
+      store_dir_limit_size: 20M

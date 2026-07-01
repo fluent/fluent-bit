@@ -1,0 +1,13 @@
+[Unit]
+Description=Monkey HTTP Server
+Requires=network.target
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=@CMAKE_INSTALL_FULL_SBINDIR@/monkey --daemon
+PIDFile=@MK_PATH_PIDPATH@/@MK_PIDFILE@
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

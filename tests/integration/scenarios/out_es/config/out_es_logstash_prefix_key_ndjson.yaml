@@ -1,0 +1,23 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: out_es_logstash_prefix_key_ndjson
+      dummy: '{"idx":"victim-index\"\n{\"delete\":{\"_index\":\"audit-logs\",\"_id\":\"critical-audit-record-12345\"}}\n{\"create\":{\"_index\":\"pad","message":"prefix injection"}'
+      samples: 1
+
+  outputs:
+    - name: es
+      match: out_es_logstash_prefix_key_ndjson
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      logstash_format: on
+      logstash_prefix_key: idx
+      suppress_type_name: on
+      retry_limit: 0

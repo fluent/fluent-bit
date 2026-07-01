@@ -1,0 +1,7 @@
+*.log
+available_pkgs
+installed_pkgs
+pkgs-*
+arts-*
+cache
+output

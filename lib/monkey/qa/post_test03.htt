@@ -1,0 +1,28 @@
+################################################################################
+# DESCRIPTION
+#	An incomplete POST request.
+#
+# AUTHOR
+#	Eduardo Silva <edsiper@gmail.com>
+#
+# DATE
+#	July 25, 2010
+#
+# COMMENTS
+# 	A POST request with missing post data, the server must close the 
+#       connection due to timeout
+################################################################################
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT 
+__POST / $HTTPVER
+__Host: $HOST
+__Content-Length: 10
+__Content-Type: text/plain
+__Connection: close
+__
+_EXPECT ERROR "End of file found\(70014\)"
+_WAIT
+END

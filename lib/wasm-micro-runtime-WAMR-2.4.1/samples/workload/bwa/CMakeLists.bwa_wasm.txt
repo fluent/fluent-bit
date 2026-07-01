@@ -1,0 +1,124 @@
+# Copyright (C) 2019 Intel Corporation. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+cmake_minimum_required (VERSION 3.14)
+
+project(bwa_wasm C)
+
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake)
+
+################ dependencies ################
+find_package(Binaryen 111 REQUIRED)
+
+################ LIBZ ################
+set(LIBZ_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../libz)
+add_library(z_wasm STATIC
+  ${LIBZ_SRC_DIR}/adler32.c
+  ${LIBZ_SRC_DIR}/compress.c
+  ${LIBZ_SRC_DIR}/crc32.c
+  ${LIBZ_SRC_DIR}/deflate.c
+  ${LIBZ_SRC_DIR}/gzclose.c
+  ${LIBZ_SRC_DIR}/gzlib.c
+  ${LIBZ_SRC_DIR}/gzread.c
+  ${LIBZ_SRC_DIR}/gzwrite.c
+  ${LIBZ_SRC_DIR}/infback.c
+  ${LIBZ_SRC_DIR}/inffast.c
+  ${LIBZ_SRC_DIR}/inflate.c
+  ${LIBZ_SRC_DIR}/inftrees.c
+  ${LIBZ_SRC_DIR}/trees.c
+  ${LIBZ_SRC_DIR}/uncompr.c
+  ${LIBZ_SRC_DIR}/zutil.c
+)
+
+set_target_properties(z_wasm PROPERTIES LINKER_LANGUAGE C)
+
+target_compile_definitions(z_wasm PRIVATE Z_HAVE_UNISTD_H _LARGEFILE64_SOURCE=1)
+
+target_compile_options(z_wasm
+  PRIVATE
+    -Wno-unused-function
+    -Wno-unused-variable
+)
+
+target_include_directories(z_wasm
+  PUBLIC
+    ${LIBZ_SRC_DIR}
+)
+
+################ BWA_WASM ################
+set(BWA_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+set(BWA_SOURCE
+  ${BWA_SRC_DIR}/utils.c
+  ${BWA_SRC_DIR}/kthread.c
+  ${BWA_SRC_DIR}/kstring.c
+  ${BWA_SRC_DIR}/ksw.c
+  ${BWA_SRC_DIR}/bwt.c
+  ${BWA_SRC_DIR}/bntseq.c
+  ${BWA_SRC_DIR}/bwa.c
+  ${BWA_SRC_DIR}/bwamem.c
+  ${BWA_SRC_DIR}/bwamem_pair.c
+  ${BWA_SRC_DIR}/bwamem_extra.c
+  ${BWA_SRC_DIR}/malloc_wrap.c
+  ${BWA_SRC_DIR}/QSufSort.c
+  ${BWA_SRC_DIR}/bwt_gen.c
+  ${BWA_SRC_DIR}/rope.c
+  ${BWA_SRC_DIR}/rle.c
+  ${BWA_SRC_DIR}/is.c
+  ${BWA_SRC_DIR}/bwtindex.c
+  ${BWA_SRC_DIR}/bwashm.c
+  ${BWA_SRC_DIR}/bwase.c
+  ${BWA_SRC_DIR}/bwaseqio.c
+  ${BWA_SRC_DIR}/bwtgap.c
+  ${BWA_SRC_DIR}/bwtaln.c
+  ${BWA_SRC_DIR}/bamlite.c
+  ${BWA_SRC_DIR}/bwape.c
+  ${BWA_SRC_DIR}/kopen.c
+  ${BWA_SRC_DIR}/pemerge.c
+  ${BWA_SRC_DIR}/maxk.c
+  ${BWA_SRC_DIR}/bwtsw2_core.c
+  ${BWA_SRC_DIR}/bwtsw2_main.c
+  ${BWA_SRC_DIR}/bwtsw2_aux.c
+  ${BWA_SRC_DIR}/bwt_lite.c
+  ${BWA_SRC_DIR}/bwtsw2_chain.c
+  ${BWA_SRC_DIR}/fastmap.c
+  ${BWA_SRC_DIR}/bwtsw2_pair.c
+  ${BWA_SRC_DIR}/main.c
+)
+
+add_executable(${PROJECT_NAME} ${BWA_SOURCE})
+
+set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME bwa.wasm)
+
+target_compile_definitions(${PROJECT_NAME}
+  PRIVATE
+    USE_MALLOC_WRAPPERS
+    __SSE__ __SSE2__ __SSE4_1__
+    _WASI_EMULATED_MMAN _WASI_EMULATED_SIGNAL _WASI_EMULATED_PROCESS_CLOCKS
+)
+
+target_compile_options(${PROJECT_NAME}
+  PRIVATE
+    -Wno-unused-function
+    -Wno-unused-variable
+    -msimd128
+)
+
+target_link_options(${PROJECT_NAME}
+  PRIVATE
+    -Wno-unused-command-line-argument
+    LINKER:--allow-undefined,--export=__heap_base,--export=__data_end
+    LINKER:-z,stack-size=1048576
+)
+
+target_link_libraries(${PROJECT_NAME} z_wasm wasi-emulated-process-clocks)
+
+add_custom_target(bwa_wasm_opt ALL
+  COMMAND
+    ${Binaryen_WASM_OPT} -Oz --enable-simd -o bwa.opt.wasm bwa.wasm
+  BYPRODUCTS
+    ${CMAKE_CURRENT_BINARY_DIR}/bwa.opt.wasm
+  WORKING_DIRECTORY
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+add_dependencies(bwa_wasm_opt ${PROJECT_NAME})

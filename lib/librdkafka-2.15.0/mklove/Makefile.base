@@ -1,0 +1,329 @@
+# Base Makefile providing various standard targets
+# Part of mklove suite but may be used independently.
+
+MKL_RED?=	\033[031m
+MKL_GREEN?=	\033[032m
+MKL_YELLOW?=	\033[033m
+MKL_BLUE?=	\033[034m
+MKL_CLR_RESET?=	\033[0m
+
+DEPS=		$(OBJS:%.o=%.d)
+
+# TOPDIR is "TOPDIR/mklove/../" i.e., TOPDIR.
+# We do it with two dir calls instead of /.. to support mklove being symlinked.
+MKLOVE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+TOPDIR = $(MKLOVE_DIR:mklove/=.)
+
+
+# Convert LIBNAME ("libxyz") to "xyz"
+LIBNAME0=$(LIBNAME:lib%=%)
+
+# Silence lousy default ARFLAGS (rv)
+ARFLAGS=
+
+ifndef MKL_MAKEFILE_CONFIG
+-include $(TOPDIR)/Makefile.config
+endif
+
+# Use C compiler as default linker.
+# C++ libraries will need to override this with CXX after
+# including Makefile.base
+CC_LD?=$(CC)
+
+_UNAME_S := $(shell uname -s)
+ifeq ($(_UNAME_S),Darwin)
+	LIBFILENAME=$(LIBNAME).$(LIBVER)$(SOLIB_EXT)
+	LIBFILENAMELINK=$(LIBNAME)$(SOLIB_EXT)
+	LIBFILENAMEDBG=$(LIBNAME)-dbg.$(LIBVER)$(SOLIB_EXT)
+	LDD_PRINT="otool -L"
+else
+	LIBFILENAME=$(LIBNAME)$(SOLIB_EXT).$(LIBVER)
+	LIBFILENAMELINK=$(LIBNAME)$(SOLIB_EXT)
+	LIBFILENAMEDBG=$(LIBNAME)-dbg$(SOLIB_EXT).$(LIBVER)
+	LDD_PRINT="ldd"
+endif
+
+# DESTDIR must be an absolute path
+ifneq ($(DESTDIR),)
+DESTDIR:=$(abspath $(DESTDIR))
+endif
+
+INSTALL?=		install
+INSTALL_PROGRAM?=	$(INSTALL)
+INSTALL_DATA?=		$(INSTALL) -m 644
+
+prefix?=	/usr/local
+exec_prefix?=	$(prefix)
+bindir?=	$(exec_prefix)/bin
+sbindir?=	$(exec_prefix)/sbin
+libexecdir?=	$(exec_prefix)/libexec/  # append PKGNAME on install
+datarootdir?=	$(prefix)/share
+datadir?=	$(datarootdir)		 # append PKGNAME on install
+sysconfdir?=	$(prefix)/etc
+sharedstatedir?=$(prefix)/com
+localestatedir?=$(prefix)/var
+runstatedir?=	$(localestatedir)/run
+includedir?=	$(prefix)/include
+docdir?=	$(datarootdir)/doc/$(PKGNAME)
+infodir?=	$(datarootdir)/info
+libdir?=	$(prefix)/lib
+localedir?=	$(datarootdir)/locale
+pkgconfigdir?=	$(libdir)/pkgconfig
+mandir?=	$(datarootdir)/man
+man1dir?=	$(mandir)/man1
+man2dir?=	$(mandir)/man2
+man3dir?=	$(mandir)/man3
+man4dir?=	$(mandir)/man4
+man5dir?=	$(mandir)/man5
+man6dir?=	$(mandir)/man6
+man7dir?=	$(mandir)/man7
+man8dir?=	$(mandir)/man8
+
+# An application Makefile should set DISABLE_LDS=y prior to
+# including Makefile.base if it does not wish to have a linker-script.
+ifeq ($(WITH_LDS)-$(DISABLE_LDS),y-)
+# linker-script file
+LIBNAME_LDS?=$(LIBNAME).lds
+endif
+
+# Checks that mklove is set up and ready for building
+mklove-check:
+	@if [ ! -f "$(TOPDIR)/Makefile.config" ]; then \
+		printf "$(MKL_RED)$(TOPDIR)/Makefile.config missing: please run ./configure$(MKL_CLR_RESET)\n" ; \
+		exit 1 ; \
+	fi
+
+%.o: %.c
+	$(CC) -MD -MP $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+%.o: %.cpp
+	$(CXX) -MD -MP $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+
+lib: $(LIBFILENAME) $(LIBNAME).a $(LIBNAME)-static.a $(LIBFILENAMELINK) lib-gen-pkg-config
+
+# Linker-script (if WITH_LDS=y): overridable by application Makefile
+$(LIBNAME_LDS):
+
+$(LIBFILENAME): $(OBJS) $(LIBNAME_LDS)
+	@printf "$(MKL_YELLOW)Creating shared library $@$(MKL_CLR_RESET)\n"
+	$(CC_LD) $(LDFLAGS) $(LIB_LDFLAGS) $(OBJS) -o $@ $(LIBS)
+	cp $@ $(LIBFILENAMEDBG)
+ifeq ($(WITH_STRIP),y)
+	$(STRIP) -S $@
+endif
+
+$(LIBNAME).a:	$(OBJS)
+	@printf "$(MKL_YELLOW)Creating static library $@$(MKL_CLR_RESET)\n"
+	$(AR) rcs$(ARFLAGS) $@ $(OBJS)
+	cp $@ $(LIBNAME)-dbg.a
+ifeq ($(WITH_STRIP),y)
+	$(STRIP) -S $@
+	$(RANLIB) $@
+endif
+
+ifeq ($(MKL_NO_SELFCONTAINED_STATIC_LIB),y)
+_STATIC_FILENAME=$(LIBNAME).a
+$(LIBNAME)-static.a:
+
+else # MKL_NO_SELFCONTAINED_STATIC_LIB
+
+ifneq ($(MKL_STATIC_LIBS),)
+_STATIC_FILENAME=$(LIBNAME)-static.a
+$(LIBNAME)-static.a: $(LIBNAME).a
+	@printf "$(MKL_YELLOW)Creating self-contained static library $@$(MKL_CLR_RESET)\n"
+ifeq ($(HAS_LIBTOOL_STATIC),y)
+	$(LIBTOOL) -static -o $@ - $(LIBNAME).a $(MKL_STATIC_LIBS)
+else ifeq ($(HAS_GNU_AR),y)
+	(_tmp=$$(mktemp arstaticXXXXXX) ; \
+	echo "CREATE $@" > $$_tmp ; \
+	for _f in $(LIBNAME).a $(MKL_STATIC_LIBS) ; do \
+		echo "ADDLIB $$_f" >> $$_tmp ; \
+	done ; \
+	echo "SAVE" >> $$_tmp ; \
+	echo "END" >> $$_tmp ; \
+	cat $$_tmp ; \
+	ar -M < $$_tmp || exit 1 ; \
+	rm $$_tmp)
+else
+	for _f in $(LIBNAME).a $(MKL_STATIC_LIBS) ; do \
+		ar -r $@ $$_f ; \
+	done
+endif
+	cp $@ $(LIBNAME)-static-dbg.a
+# The self-contained static library is always stripped, regardless
+# of --enable-strip, since otherwise it would become too big.
+	$(STRIP) -S $@
+	$(RANLIB) $@
+
+ifneq ($(MKL_DYNAMIC_LIBS),)
+	@printf "$(MKL_RED)WARNING:$(MKL_YELLOW) $@: The following libraries were not available as static libraries and need to be linked dynamically: $(MKL_DYNAMIC_LIBS)$(MKL_CLR_RESET)\n"
+endif # MKL_DYNAMIC_LIBS
+
+else # MKL_STATIC_LIBS is empty
+_STATIC_FILENAME=$(LIBNAME).a
+$(LIBNAME)-static.a: $(LIBNAME).a
+	@printf "$(MKL_RED)WARNING:$(MKL_YELLOW) $@: No static libraries available/enabled for inclusion in self-contained static library $@: this library will be identical to $(LIBNAME).a$(MKL_CLR_RESET)\n"
+ifneq ($(MKL_DYNAMIC_LIBS),)
+	@printf "$(MKL_RED)WARNING:$(MKL_YELLOW) $@: The following libraries were not available as static libraries and need to be linked dynamically: $(MKL_DYNAMIC_LIBS)$(MKL_CLR_RESET)\n"
+	cp $(LIBNAME).a $@
+	cp $(LIBNAME)-dbg.a $(LIBNAME)-static-dbg.a
+	cp $@ $(LIBNAME)-static-dbg.a
+endif # MKL_DYNAMIC_LIBS
+endif # MKL_STATIC_LIBS
+
+endif # MKL_NO_SELFCONTAINED_STATIC_LIB
+
+$(LIBFILENAMELINK): $(LIBFILENAME)
+	@printf "$(MKL_YELLOW)Creating $@ symlink$(MKL_CLR_RESET)\n"
+	rm -f "$@" && ln -s "$^" "$@"
+
+
+# pkg-config .pc file definition
+ifeq ($(GEN_PKG_CONFIG),y)
+define _PKG_CONFIG_DEF
+prefix=$(prefix)
+libdir=$(libdir)
+includedir=$(includedir)
+
+Name: $(LIBNAME)
+Description: $(MKL_APP_DESC_ONELINE)
+Version: $(MKL_APP_VERSION)
+Requires.private: $(MKL_PKGCONFIG_REQUIRES_PRIVATE)
+Cflags: -I$${includedir}
+Libs: -L$${libdir} -l$(LIBNAME0)
+Libs.private: $(MKL_PKGCONFIG_LIBS_PRIVATE)
+endef
+
+export _PKG_CONFIG_DEF
+
+define _PKG_CONFIG_STATIC_DEF
+prefix=$(prefix)
+libdir=$(libdir)
+includedir=$(includedir)
+
+Name: $(LIBNAME)-static
+Description: $(MKL_APP_DESC_ONELINE) (static)
+Version: $(MKL_APP_VERSION)
+Requires: $(MKL_PKGCONFIG_REQUIRES:rdkafka=rdkafka-static)
+Cflags: -I$${includedir}
+Libs: -L$${libdir} $${pc_sysrootdir}$${libdir}/$(_STATIC_FILENAME) $(MKL_PKGCONFIG_LIBS_PRIVATE)
+endef
+
+export _PKG_CONFIG_STATIC_DEF
+
+$(LIBNAME0).pc: $(TOPDIR)/Makefile.config
+	@printf "$(MKL_YELLOW)Generating pkg-config file $@$(MKL_CLR_RESET)\n"
+	@echo "$$_PKG_CONFIG_DEF" > $@
+
+$(LIBNAME0)-static.pc: $(TOPDIR)/Makefile.config $(LIBNAME)-static.a
+	@printf "$(MKL_YELLOW)Generating pkg-config file $@$(MKL_CLR_RESET)\n"
+	@echo "$$_PKG_CONFIG_STATIC_DEF" > $@
+
+lib-gen-pkg-config: $(LIBNAME0).pc $(LIBNAME0)-static.pc
+
+lib-clean-pkg-config:
+	rm -f $(LIBNAME0).pc $(LIBNAME0)-static.pc
+else
+lib-gen-pkg-config:
+lib-clean-pkg-config:
+endif
+
+
+$(BIN): $(OBJS)
+	@printf "$(MKL_YELLOW)Creating program $@$(MKL_CLR_RESET)\n"
+	$(CC_LD) $(CPPFLAGS) $(LDFLAGS) $(OBJS) -o $@ $(LIBS)
+
+
+file-check:
+	@printf "$(MKL_YELLOW)Checking $(LIBNAME) integrity$(MKL_CLR_RESET)\n"
+	@RET=true ; \
+	for f in $(CHECK_FILES) ; do \
+		printf "%-30s " $$f ; \
+		if [ -f "$$f" ]; then \
+			printf "$(MKL_GREEN)OK$(MKL_CLR_RESET)\n" ; \
+		else \
+			printf "$(MKL_RED)MISSING$(MKL_CLR_RESET)\n" ; \
+			RET=false ; \
+		fi ; \
+	done ; \
+	$$RET
+
+copyright-check:
+	@(_exit=0 ; \
+	  for f in $$(git ls-tree -r --name-only HEAD | \
+			egrep '\.(c|h|cpp|sh|py|pl)$$' ) ; do \
+		if [ -n "$(MKL_COPYRIGHT_SKIP)" ] && echo "$$f" | egrep -q "$(MKL_COPYRIGHT_SKIP)" ; then \
+			continue ; \
+		fi ; \
+		if ! head -40 $$f | grep -qi copyright $$f ; then \
+			echo error: Copyright missing in $$f ; \
+			_exit=1 ; \
+		fi; \
+	done ; \
+	exit $$_exit)
+
+
+lib-install:
+	@printf "$(MKL_YELLOW)Install $(LIBNAME) to $$DESTDIR$(prefix)$(MKL_CLR_RESET)\n"
+	$(INSTALL) -d $$DESTDIR$(includedir)/$(PKGNAME)
+	$(INSTALL) -d $$DESTDIR$(libdir)
+	$(INSTALL) $(HDRS) $$DESTDIR$(includedir)/$(PKGNAME)
+	$(INSTALL) $(LIBNAME).a $$DESTDIR$(libdir)
+	[ ! -f $(LIBNAME)-static.a ] || $(INSTALL) $(LIBNAME)-static.a $$DESTDIR$(libdir)
+	$(INSTALL) $(LIBFILENAME) $$DESTDIR$(libdir)
+	[ -f "$(LIBNAME0).pc" ] && ( \
+		$(INSTALL) -d $$DESTDIR$(pkgconfigdir) && \
+		$(INSTALL) -m 0644 $(LIBNAME0).pc $$DESTDIR$(pkgconfigdir) \
+	)
+	[ -f "$(LIBNAME0)-static.pc" ] && ( \
+		$(INSTALL) -d $$DESTDIR$(pkgconfigdir) && \
+		$(INSTALL) -m 0644 $(LIBNAME0)-static.pc $$DESTDIR$(pkgconfigdir) \
+	)
+	(cd $$DESTDIR$(libdir) && ln -sf $(LIBFILENAME) $(LIBFILENAMELINK))
+
+lib-uninstall:
+	@printf "$(MKL_YELLOW)Uninstall $(LIBNAME) from $$DESTDIR$(prefix)$(MKL_CLR_RESET)\n"
+	for hdr in $(HDRS) ; do \
+		rm -f $$DESTDIR$(includedir)/$(PKGNAME)/$$hdr ; done
+	rm -f $$DESTDIR$(libdir)/$(LIBNAME).a
+	rm -f $$DESTDIR$(libdir)/$(LIBNAME)-static.a
+	rm -f $$DESTDIR$(libdir)/$(LIBFILENAME)
+	rm -f $$DESTDIR$(libdir)/$(LIBFILENAMELINK)
+	rmdir $$DESTDIR$(includedir)/$(PKGNAME) || true
+	rm -f $$DESTDIR$(pkgconfigdir)/$(LIBNAME0).pc
+	rm -f $$DESTDIR$(pkgconfigdir)/$(LIBNAME0)-static.pc
+	rmdir $$DESTDIR$(pkgconfigdir) || true
+
+bin-install:
+	@printf "$(MKL_YELLOW)Install $(BIN) to $$DESTDIR$(prefix)$(MKL_CLR_RESET)\n"
+	$(INSTALL) -d $$DESTDIR$(bindir) && \
+	$(INSTALL) $(BIN) $$DESTDIR$(bindir)
+
+bin-uninstall:
+	@printf "$(MKL_YELLOW)Uninstall $(BIN) from $$DESTDIR$(prefix)$(MKL_CLR_RESET)\n"
+	rm -f $$DESTDIR$(bindir)/$(BIN)
+	rmdir $$DESTDIR$(bindir) || true
+
+doc-install: $(DOC_FILES)
+	@printf "$(MKL_YELLOW)Installing documentation to $$DESTDIR$(prefix)$(MKL_CLR_RESET)\n"
+	$(INSTALL) -d $$DESTDIR$(docdir)
+	$(INSTALL) $(DOC_FILES) $$DESTDIR$(docdir)
+
+doc-uninstall:
+	@printf "$(MKL_YELLOW)Uninstall documentation from $$DESTDIR$(prefix)$(MKL_CLR_RESET)\n"
+	for _f in $(DOC_FILES) ; do rm -f $$DESTDIR$(docdir)/$$_f ; done
+	rmdir $$DESTDIR$(docdir) || true
+
+generic-clean:
+	rm -f $(OBJS) $(DEPS)
+
+lib-clean: generic-clean lib-clean-pkg-config
+	rm -f $(LIBNAME)*.a $(LIBFILENAME) $(LIBFILENAMEDBG) \
+		$(LIBFILENAMELINK) $(LIBNAME_LDS)
+
+bin-clean: generic-clean
+	rm -f $(BIN)
+
+deps-clean:
+	rm -rf "$(MKLOVE_DIR)/deps"

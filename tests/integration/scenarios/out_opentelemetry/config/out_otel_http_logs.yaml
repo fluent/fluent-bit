@@ -1,0 +1,29 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      samples: 1
+      dummy: |
+        {
+          "message": "hello from out_opentelemetry",
+          "source": "dummy",
+          "traceid": "63560bd4d8de74fae7d1e4160f2ee099",
+          "spanid": "251484295a9df731"
+        }
+
+  outputs:
+    - name: opentelemetry
+      match: "*"
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      logs_uri: /custom/logs
+      header: "x-suite otel-test"
+      http_user: otel
+      http_passwd: secret
+      logs_trace_id_message_key: $traceid
+      logs_span_id_message_key: $spanid

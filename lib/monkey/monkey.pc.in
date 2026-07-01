@@ -1,0 +1,10 @@
+prefix=PREFIX
+libdir=LIBDIR
+includedir=INCDIR
+
+Name: Monkey
+Description: Fast embeddable web server
+Version: VERSION
+Requires: 
+Libs: -L${libdir} -lmonkey -pthread
+Cflags: -I${includedir}

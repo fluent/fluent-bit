@@ -1,0 +1,16 @@
+# refer to https://clang.llvm.org/extra/clang-tidy/checks/list.html
+
+Checks:  '-*, readability-identifier-naming, clang-analyzer-core.*,'
+WarningsAsErrors:    '-*'
+HeaderFilterRegex:   ''
+FormatStyle:         file
+InheritParentConfig: false
+AnalyzeTemporaryDtors: false
+User:                wamr
+CheckOptions:
+  - key:             readability-identifier-naming.VariableCase
+    value:           lower_case
+  - key:             readability-identifier-naming.ParameterCase
+    value:           lower_case
+  - key:             readability-identifier-naming.MacroDefinitionCase
+    value:           UPPER_CASE

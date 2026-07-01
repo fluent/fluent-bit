@@ -1,0 +1,105 @@
+.\" -*- mode: troff; coding: utf-8 -*-
+.TH "mmdblookup" "1" ""
+.SH
+NAME
+.LP
+mmdblookup - a utility to look up an IP address in a MaxMind DB file
+.SH
+SYNOPSIS
+.LP
+mmdblookup --file [FILE PATH] --ip [IP ADDRESS] [DATA PATH]
+.SH
+DESCRIPTION
+.LP
+\f(CRmmdblookup\fR looks up an IP address in the specified MaxMind DB file. The
+record for the IP address is displayed with \f(CR{}\fR to denote maps and \f(CR[]\fR to
+denote arrays. The values are followed by type annotations. This output is
+\fInot\fR JSON and is not intended to be used as such. If you need JSON, please
+see \fB\f(CRmmdbinspect\fR\fR <\fIhttps://github.com/maxmind/mmdbinspect\fR>.
+.PP
+If an IP's data entry resolves to a map or array, you can provide a lookup
+path to only show part of that data.
+.PP
+For example, given a JSON structure like this:
+.LP
+.EX
+{
+    \(dqnames\(dq: {
+        \(dqen\(dq: \(dqGermany\(dq,
+        \(dqde\(dq: \(dqDeutschland\(dq
+    },
+    \(dqcities\(dq: [ \(dqBerlin\(dq, \(dqFrankfurt\(dq ]
+}
+.EE
+.PP
+You could look up just the English name by calling mmdblookup with a lookup
+path of:
+.LP
+.EX
+mmdblookup --file ... --ip ... names en
+.EE
+.PP
+Or you could look up the second city in the list with:
+.LP
+.EX
+mmdblookup --file ... --ip ... cities 1
+.EE
+.PP
+Array numbering begins with zero (0).
+.PP
+If you do not provide a path to lookup, all of the information for a given IP
+will be shown.
+.SH
+OPTIONS
+.LP
+This application accepts the following options:
+.TP 3
+-f, --file
+The path to the MMDB file. Required.
+.TP 3
+-i, --ip
+The IP address to look up. Required.
+.TP 3
+-v, --verbose
+Turns on verbose output. Specifically, this causes this
+application to output the database metadata.
+.TP 3
+--version
+Print the program's version number and exit.
+.TP 3
+-h, -?, --help
+Show usage information.
+.SH
+BUG REPORTS AND PULL REQUESTS
+.LP
+Please report all issues to
+\fBour GitHub issue tracker\fR <\fIhttps://github.com/maxmind/libmaxminddb/issues\fR>. We
+welcome bug reports and pull requests. Please note that pull requests are
+greatly preferred over patches.
+.SH
+AUTHORS
+.LP
+This utility was written by Boris Zentner (\fIbzentner@maxmind.com\fR) and Dave
+Rolsky (\fIdrolsky@maxmind.com\fR).
+.SH
+COPYRIGHT AND LICENSE
+.LP
+Copyright 2013-2025 MaxMind, Inc.
+.PP
+Licensed under the Apache License, Version 2.0 (the \(dqLicense\(dq);
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+.LP
+.EX
+https://www.apache.org/licenses/LICENSE-2.0
+.EE
+.PP
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an \(dqAS IS\(dq BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+.SH
+SEE ALSO
+.LP
+libmaxminddb(3)

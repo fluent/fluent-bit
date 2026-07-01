@@ -1,0 +1,115 @@
+{
+  "name": "gc-aot-test-suites",
+  "description": "Test suites for GC AOT feature",
+  "sub-requirements": [
+    {
+      "req_id": 1,
+      "issue_id": "633",
+      "desciption": "Modify existing opcodes to conform to the semantics of the GC proposal when needed.",
+      "cases": [
+        {
+          "name": "local_set",
+          "description": "Test opcodes: 'WASM_OP_GET_LOCAL', 'WASM_OP_SET_LOCAL'"
+        },
+        {
+          "name": "local_tee",
+          "description": "Test opcodes: 'WASM_OP_GET_LOCAL', 'WASM_OP_TEE_LOCAL'"
+        },
+        {
+          "name": "table_init",
+          "description": "Test opcodes: 'WASM_OP_TABLE_INIT'"
+        },
+        {
+          "name": "table_grow",
+          "description": "Test opcodes: 'WASM_OP_TABLE_GROW'"
+        },
+        {
+          "name": "table_fill",
+          "description": "Test opcodes: 'WASM_OP_TABLE_FILL'"
+        },
+        {
+          "name": "call_ref",
+          "description": "Test opcodes: 'WASM_OP_CALL_REF'"
+        },
+        {
+          "name": "return_call_ref",
+          "description": "Test opcodes: 'WASM_OP_RETURN_CALL_REF'"
+        },
+        {
+          "name": "table_get",
+          "description": "Test opcodes: 'WASM_OP_TABLE_GET'"
+        },
+        {
+          "name": "table_set",
+          "description": "Test opcodes: 'WASM_OP_TABLE_SET'"
+        },
+        {
+          "name": "select",
+          "description": "Test opcodes: 'WASM_OP_SELECT_T'"
+        }
+      ]
+    },
+    {
+      "req_id": 2,
+      "issue_id": "634",
+      "desciption": "Supporting new GC opcodes(semantics of GC MVP proposal spec).",
+      "cases": [
+        {
+          "name": "ref_test",
+          "description": "Test opcodes: 'WASM_OP_TABLE_GET', 'WASM_OP_TABLE_SET', 'WASM_OP_REF_NULL', 'WASM_OP_REF_IS_NULL', 'WASM_OP_REF_TEST', 'WASM_OP_REF_TEST_NULLABLE'"
+        },
+        {
+          "name": "ref_eq",
+          "description": "Test opcodes: 'WASM_OP_REF_EQ', 'WASM_OP_GET_LOCAL'"
+        },
+        {
+          "name": "ref_cast",
+          "description": "Test opcodes: 'WASM_OP_REF_CAST', 'WASM_OP_REF_CAST_NULLABLE', 'WASM_OP_REF_AS_NON_NULL'"
+        },
+        {
+          "name": "type_subtyping",
+          "description": "Test opcodes: 'WASM_OP_CALL_INDIRECT', 'WASM_OP_REF_FUNC'"
+        },
+        {
+          "name": "array",
+          "description": "Test opcodes: 'WASM_OP_ARRAY_NEW', 'WASM_OP_ARRAY_NEW_DEFAULT', 'WASM_OP_ARRAY_NEW_FIXED', 'WASM_OP_ARRAY_NEW_DATA', 'WASM_OP_ARRAY_GET', 'WASM_OP_ARRAY_GET_S', 'WASM_OP_ARRAY_GET_U', 'WASM_OP_ARRAY_SET', 'WASM_OP_ARRAY_LEN'"
+        },
+        {
+          "name": "array_fill",
+          "description": "Test opcodes: 'WASM_OP_ARRAY_FILL'"
+        },
+        {
+          "name": "struct",
+          "description": "Test opcodes: 'WASM_OP_STRUCT_NEW', 'WASM_OP_STRUCT_NEW_DEFAULT', 'WASM_OP_STRUCT_GET', 'WASM_OP_STRUCT_GET_S', 'WASM_OP_STRUCT_GET_U', 'WASM_OP_STRUCT_SET'"
+        },
+        {
+          "name": "i31",
+          "description": "Test opcodes: 'WASM_OP_I31_NEW', 'WASM_OP_I31_GET_S', 'WASM_OP_I31_GET_U'"
+        },
+        {
+          "name": "br_on_cast",
+          "description": "Test opcodes: 'WASM_OP_BR_ON_NULL', 'WASM_OP_BR_ON_CAST'"
+        },
+        {
+          "name": "br_on_cast_fail",
+          "description": "Test opcodes: 'WASM_OP_BR_ON_NON_NULL', 'WASM_OP_BR_ON_CAST_FAIL'"
+        },
+        {
+          "name": "extern",
+          "description": "Test opcodes: 'WASM_OP_ANY_CONVERT_EXTERN', 'WASM_OP_EXTERN_CONVERT_ANY'"
+        }
+      ]
+    },
+    {
+      "req_id": 3,
+      "issue_id": "635",
+      "desciption": "Supporting new GC opcode(semantics of Binaryen GC spec).",
+      "cases": [
+        {
+          "name": "array_copy",
+          "description": "Test the opcodes: 'WASM_OP_ARRAY_COPY', 'WASM_OP_SET_LOCAL'"
+        }
+      ]
+    }
+  ]
+}
