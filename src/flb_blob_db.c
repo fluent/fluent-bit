@@ -17,10 +17,11 @@
  *  limitations under the License.
  */
 
-#ifdef FLB_HAVE_SQLDB
-
-#include <fluent-bit/flb_sqldb.h>
+#include <fluent-bit.h>
 #include <fluent-bit/flb_blob_db.h>
+
+#ifdef FLB_HAVE_SQLDB
+#include <fluent-bit/flb_sqldb.h>
 
 static int prepare_stmts(struct flb_blob_db *context)
 {
@@ -1411,6 +1412,16 @@ int flb_blob_db_close(struct flb_blob_db *context)
     return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
 }
 
+int flb_blob_db_lock(struct flb_blob_db *context)
+{
+    return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
+}
+
+int flb_blob_db_unlock(struct flb_blob_db *context)
+{
+    return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
+}
+
 int flb_blob_db_file_exists(struct flb_blob_db *context,
                             char *path,
                             uint64_t *id)
@@ -1455,6 +1466,13 @@ int flb_blob_db_file_delivery_attempts(struct flb_blob_db *context,
     return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
 }
 
+int flb_blob_file_update_remote_id(struct flb_blob_db *context,
+                                   uint64_t id,
+                                   cfl_sds_t remote_id)
+{
+    return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
+}
+
 int flb_blob_db_file_get_next_aborted(struct flb_blob_db *context,
                                       uint64_t *id,
                                       uint64_t *delivery_attempts,
@@ -1463,6 +1481,13 @@ int flb_blob_db_file_get_next_aborted(struct flb_blob_db *context,
                                       cfl_sds_t *remote_id,
                                       cfl_sds_t *file_tag,
                                       int *part_count)
+{
+    return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
+}
+
+int flb_blob_db_file_part_update_remote_id(struct flb_blob_db *context,
+                                           uint64_t id,
+                                           cfl_sds_t remote_id)
 {
     return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
 }
@@ -1512,11 +1537,11 @@ int flb_blob_db_file_part_get_next(struct flb_blob_db *context,
                                    cfl_sds_t *file_path,
                                    cfl_sds_t *destination,
                                    cfl_sds_t *remote_file_id,
-                                   cfl_sds_t *tag)
+                                   cfl_sds_t *tag,
+                                   int *part_count)
 {
     return FLB_BLOB_DB_ERROR_NO_BACKEND_AVAILABLE;
 }
-
 
 int flb_blob_db_file_part_uploaded(struct flb_blob_db *context, uint64_t id)
 {
