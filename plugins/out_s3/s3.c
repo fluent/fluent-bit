@@ -638,7 +638,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
     const char *tmp;
     struct flb_s3 *ctx = NULL;
     struct flb_aws_client_generator *generator;
-    (void) config;
     (void) data;
     char *ep;
     struct flb_split_entry *tok;
@@ -682,6 +681,13 @@ static int cb_s3_init(struct flb_output_instance *ins,
     /* initialize config map */
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
+        return -1;
+    }
+
+    if (config->fips_mode == FLB_TRUE && ctx->send_content_md5 == FLB_TRUE) {
+        flb_plg_error(ctx->ins,
+                      "send_content_md5 uses MD5 and is not available "
+                      "when FIPS_Mode is enabled");
         return -1;
     }
 
