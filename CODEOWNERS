@@ -63,6 +63,7 @@
 /plugins/out_datadog     @nokute78 @edsiper
 /plugins/out_es          @pettitwesley @edsiper
 /plugins/out_pgsql       @sxd
+/plugins/out_oracle_log_analytics @hisatti77 @santhoshkvuda @palukuri @rghouzra
 /plugins/out_stackdriver @jeffluoo
 
 # AWS Plugins
