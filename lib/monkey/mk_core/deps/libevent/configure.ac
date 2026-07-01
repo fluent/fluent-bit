@@ -220,6 +220,7 @@ LIBEVENT_OPENSSL
 
 dnl Checks for header files.
 AC_CHECK_HEADERS([ \
+  afunix.h \
   arpa/inet.h \
   fcntl.h \
   ifaddrs.h \
