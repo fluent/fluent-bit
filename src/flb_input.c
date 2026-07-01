@@ -952,6 +952,13 @@ const char *flb_input_get_property(const char *key,
     return flb_config_prop_get(key, &ins->properties);
 }
 
+/*
+* Return a heap-allocated array of pointers to every property configured on
+* 'ins'. The caller owns the array and must release it with flb_free(); the
+* underlying flb_kv entries remain owned by the input instance. 'out_count'
+* (optional) receives the number of properties. Returns NULL when the
+* instance has no properties or on allocation failure.
+*/
 struct flb_kv **flb_input_get_all_properties(struct flb_input_instance *ins,
                                              int *out_count)
 {
