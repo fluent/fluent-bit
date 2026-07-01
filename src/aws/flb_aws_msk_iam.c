@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_kafka.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/aws/flb_aws_msk_iam.h>
+#include <fluent-bit/tls/flb_tls.h>
 
 #include <fluent-bit/flb_signv4.h>
 #include <rdkafka.h>
@@ -37,11 +38,13 @@
 #include <string.h>
 #include <time.h>
 
-/* Lightweight config - NO persistent AWS provider */
+/* Lightweight config - provider manages credential caching and refresh internally */
 struct flb_aws_msk_iam {
-    struct flb_config *flb_config;  /* For creating AWS provider on-demand */
+    struct flb_config *flb_config;
     flb_sds_t region;
     flb_sds_t cluster_arn;
+    struct flb_tls *cred_tls;              /* TLS instance for AWS credentials (STS) */
+    struct flb_aws_provider *provider;     /* AWS credentials provider (created once, reused) */
 };
 
 /* Utility functions - same as before */
@@ -125,6 +128,17 @@ static int hmac_sha256_sign(unsigned char out[32],
     return 0;
 }
 
+/**
+ * Extracts the AWS region component from an ARN.
+ *
+ * Parses an ARN of the form "arn:partition:service:region:account-id/..." and returns
+ * the region substring.
+ *
+ * @param arn ARN string (expected format: "arn:partition:service:region:...")
+ * @returns Newly allocated NUL-terminated string containing the region on success;
+ *          `NULL` if the ARN is malformed or memory allocation fails. Caller is
+ *          responsible for freeing the returned string.
+ */
 static char *extract_region(const char *arn)
 {
     const char *p;
@@ -162,12 +176,22 @@ static char *extract_region(const char *arn)
     return out;
 }
 
-/* Stateless payload generator - creates AWS provider on demand */
+/**
+ * Build a Base64 URL-encoded presigned URL payload for AWS MSK IAM authentication.
+ *
+ * Given an MSK IAM configuration, target host, and AWS credentials, construct a
+ * presigned URL suitable for MSK IAM OAuth bearer tokens and return it encoded
+ * using URL-safe Base64 (no padding).
+ *
+ * @param config MSK IAM configuration containing at least a valid region.
+ * @param host DNS host name that will be used as the request target (must be non-empty).
+ * @param creds AWS credentials containing access key ID and secret access key; may include a session token.
+ * @returns A newly allocated SDS string containing the URL-safe Base64-encoded presigned URL (no padding),
+ *          or NULL on failure. The caller is responsible for destroying the returned SDS string.
 static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
-                                       const char *host)
+                                                   const char *host,
+                                                   struct flb_aws_credentials *creds)
 {
-    struct flb_aws_provider *temp_provider = NULL;
-    struct flb_aws_credentials *creds = NULL;
     flb_sds_t payload = NULL;
     int encode_result;
     char *p;
@@ -214,37 +238,17 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
         return NULL;
     }
 
-    flb_info("[aws_msk_iam] build_msk_iam_payload: generating payload for host: %s, region: %s",
-             host, config->region);
+    flb_debug("[aws_msk_iam] build_msk_iam_payload: generating payload for host: %s, region: %s",
+              host, config->region);
 
-    /* Create AWS provider on-demand */
-    temp_provider = flb_standard_chain_provider_create(config->flb_config, NULL,
-                                                      config->region, NULL, NULL,
-                                                      flb_aws_client_generator(),
-                                                      NULL);
-    if (!temp_provider) {
-        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to create AWS credentials provider");
-        return NULL;
-    }
-
-    if (temp_provider->provider_vtable->init(temp_provider) != 0) {
-        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to initialize AWS credentials provider");
-        flb_aws_provider_destroy(temp_provider);
-        return NULL;
-    }
-
-    /* Get credentials */
-    creds = temp_provider->provider_vtable->get_credentials(temp_provider);
+    /* Validate credentials */
     if (!creds) {
-        flb_error("[aws_msk_iam] build_msk_iam_payload: failed to get credentials");
-        flb_aws_provider_destroy(temp_provider);
+        flb_error("[aws_msk_iam] build_msk_iam_payload: credentials are NULL");
         return NULL;
     }
 
     if (!creds->access_key_id || !creds->secret_access_key) {
         flb_error("[aws_msk_iam] build_msk_iam_payload: incomplete credentials");
-        flb_aws_credentials_destroy(creds);
-        flb_aws_provider_destroy(temp_provider);
         return NULL;
     }
 
@@ -547,12 +551,6 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
     if (session_token_enc) {
         flb_sds_destroy(session_token_enc);
     }
-    if (creds) {
-        flb_aws_credentials_destroy(creds);
-    }
-    if (temp_provider) {
-        flb_aws_provider_destroy(temp_provider);
-    }
 
     return payload;
 
@@ -594,18 +592,27 @@ error:
     if (session_token_enc) {
         flb_sds_destroy(session_token_enc);
     }
-    if (creds) {
-        flb_aws_credentials_destroy(creds);
-    }
-    if (temp_provider) {
-        flb_aws_provider_destroy(temp_provider);
+    if (empty_payload_hex) {
+        flb_sds_destroy(empty_payload_hex);
     }
 
     return NULL;
 }
 
 
-/* Stateless callback - creates AWS provider on-demand for each refresh */
+/**
+ * Refreshes AWS MSK IAM credentials, builds an MSK IAM presigned URL payload,
+ * and supplies an OAuth bearer token to librdkafka.
+ *
+ * On success this callback sets an OAuth bearer token derived from the
+ * provider-supplied AWS credentials (token lifetime set to 15 minutes).
+ * On failure it notifies librdkafka of the token acquisition failure.
+ *
+ * @param rk Kafka client instance used to report the refreshed token or failure.
+ * @param oauthbearer_config Unused by this implementation; provided by librdkafka.
+ * @param opaque Opaque pointer expected to be a flb_kafka_opaque containing
+ *               a valid msk_iam_ctx (struct flb_aws_msk_iam *).
+ */
 static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
                                          const char *oauthbearer_config,
                                          void *opaque)
@@ -622,7 +629,6 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     struct flb_aws_msk_iam *config;
     struct flb_aws_credentials *creds = NULL;
     struct flb_kafka_opaque *kafka_opaque;
-    struct flb_aws_provider *temp_provider = NULL;
     (void) oauthbearer_config;
 
     kafka_opaque = (struct flb_kafka_opaque *) opaque;
@@ -644,43 +650,58 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         return;
     }
 
-    /* Determine host endpoint */
+    /* 
+     * Use MSK generic endpoint for IAM authentication.
+     * AWS MSK IAM supports both cluster-specific and generic regional endpoints.
+     * Generic endpoints are recommended as they work across all brokers in the region.
+     */
     if (config->cluster_arn) {
         arn_len = strlen(config->cluster_arn);
         suffix_len = strlen(s3_suffix);
         if (arn_len >= suffix_len && strcmp(config->cluster_arn + arn_len - suffix_len, s3_suffix) == 0) {
             snprintf(host, sizeof(host), "kafka-serverless.%s.amazonaws.com", config->region);
-            flb_info("[aws_msk_iam] MSK Serverless cluster, using generic endpoint: %s", host);
+            flb_debug("[aws_msk_iam] using MSK Serverless generic endpoint: %s", host);
         }
         else {
             snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", config->region);
-            flb_info("[aws_msk_iam] Regular MSK cluster, using generic endpoint: %s", host);
+            flb_debug("[aws_msk_iam] using MSK generic endpoint: %s", host);
         }
     }
     else {
         snprintf(host, sizeof(host), "kafka.%s.amazonaws.com", config->region);
-        flb_info("[aws_msk_iam] Regular MSK cluster, using generic endpoint: %s", host);
+        flb_debug("[aws_msk_iam] using MSK generic endpoint: %s", host);
     }
 
-    flb_info("[aws_msk_iam] requesting MSK IAM payload for region: %s, host: %s", config->region, host);
+    flb_debug("[aws_msk_iam] requesting MSK IAM payload for region: %s, host: %s", config->region, host);
 
-    /* Generate payload using stateless function - creates and destroys AWS provider internally */
-    payload = build_msk_iam_payload(config, host);
-    if (!payload) {
-        flb_error("[aws_msk_iam] failed to generate MSK IAM payload");
-        rd_kafka_oauthbearer_set_token_failure(rk, "payload generation failed");
+    /* 
+     * Refresh credentials before generating OAuth token.
+     * This is necessary because provider's passive refresh only triggers when
+     * get_credentials is called and detects expiration. However, OAuth tokens
+     * are refreshed every ~15 minutes while IAM credentials expire after ~1 hour.
+     * If OAuth callbacks are spaced far apart, the passive refresh may not trigger
+     * before credentials expire, causing authentication failures.
+     */
+    int rc = config->provider->provider_vtable->refresh(config->provider);
+    if (rc < 0) {
+        flb_warn("[aws_msk_iam] AWS provider refresh() failed (rc=%d), continuing to get_credentials()", rc);
+    }
+
+    /* Get credentials from provider */
+    creds = config->provider->provider_vtable->get_credentials(config->provider);
+    if (!creds) {
+        flb_error("[aws_msk_iam] failed to get AWS credentials from provider");
+        rd_kafka_oauthbearer_set_token_failure(rk, "credential retrieval failed");
         return;
     }
 
-    /* Get credentials for principal (create temporary provider just for this) */
-    temp_provider = flb_standard_chain_provider_create(config->flb_config, NULL,
-                                                      config->region, NULL, NULL,
-                                                      flb_aws_client_generator(),
-                                                      NULL);
-    if (temp_provider) {
-        if (temp_provider->provider_vtable->init(temp_provider) == 0) {
-            creds = temp_provider->provider_vtable->get_credentials(temp_provider);
-        }
+    /* Generate payload using credentials from provider */
+    payload = build_msk_iam_payload(config, host, creds);
+    if (!payload) {
+        flb_error("[aws_msk_iam] failed to generate MSK IAM payload");
+        flb_aws_credentials_destroy(creds);
+        rd_kafka_oauthbearer_set_token_failure(rk, "payload generation failed");
+        return;
     }
 
     now = time(NULL);
@@ -689,11 +710,15 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     err = rd_kafka_oauthbearer_set_token(rk,
                                         payload,
                                         md_lifetime_ms,
-                                        creds ? creds->access_key_id : "unknown",
+                                        creds->access_key_id,
                                         NULL,
                                         0,
                                         errstr,
                                         sizeof(errstr));
+
+    /* Destroy credentials immediately after use (standard pattern) */
+    flb_aws_credentials_destroy(creds);
+    creds = NULL;
 
     if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
         flb_error("[aws_msk_iam] failed to set OAuth bearer token: %s", errstr);
@@ -703,20 +728,23 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         flb_info("[aws_msk_iam] OAuth bearer token successfully set");
     }
 
-    /* Clean up everything immediately - no memory leaks possible! */
-    if (creds) {
-        flb_aws_credentials_destroy(creds);
-    }
-    if (temp_provider) {
-        flb_aws_provider_destroy(temp_provider);
-    }
-
+    /* Clean up - payload only (creds already destroyed) */
     if (payload) {
         flb_sds_destroy(payload);
     }
 }
 
-/* Register callback with lightweight config - keeps your current interface */
+/**
+ * Create and initialize an MSK IAM context, register the OAuth bearer token refresh callback,
+ * and prepare an AWS credentials provider for subsequent token refreshes.
+ *
+ * @param config Fluent Bit main configuration (used to create the AWS provider and TLS).
+ * @param kconf librdkafka configuration where the OAuth bearer token refresh callback will be set.
+ * @param cluster_arn ARN of the MSK cluster; used to extract the AWS region and validate configuration.
+ * @param opaque Opaque Kafka state object that will store the created MSK IAM context.
+ *
+ * @returns Pointer to an initialized `flb_aws_msk_iam` context on success, or `NULL` on failure.
+ */
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
                                                           const char *cluster_arn,
@@ -771,6 +799,59 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
 
     flb_info("[aws_msk_iam] extracted region: %s", ctx->region);
 
+    /* Create TLS instance for AWS credentials (STS) - CRITICAL FIX */
+    ctx->cred_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                    FLB_TRUE,
+                                    FLB_LOG_DEBUG,
+                                    NULL,  /* vhost */
+                                    NULL,  /* ca_path */
+                                    NULL,  /* ca_file */
+                                    NULL,  /* crt_file */
+                                    NULL,  /* key_file */
+                                    NULL); /* key_passwd */
+    if (!ctx->cred_tls) {
+        flb_error("[aws_msk_iam] failed to create TLS instance for AWS credentials");
+        flb_sds_destroy(ctx->region);
+        flb_sds_destroy(ctx->cluster_arn);
+        flb_free(ctx);
+        return NULL;
+    }
+
+    flb_info("[aws_msk_iam] TLS instance created for AWS credentials");
+
+    /* Create AWS provider once - will be reused for credential refresh */
+    ctx->provider = flb_standard_chain_provider_create(config,
+                                                       ctx->cred_tls,
+                                                       ctx->region,
+                                                       NULL,  /* sts_endpoint */
+                                                       NULL,  /* proxy */
+                                                       flb_aws_client_generator(),
+                                                       NULL); /* profile */
+    if (!ctx->provider) {
+        flb_error("[aws_msk_iam] failed to create AWS credentials provider");
+        flb_tls_destroy(ctx->cred_tls);
+        flb_sds_destroy(ctx->region);
+        flb_sds_destroy(ctx->cluster_arn);
+        flb_free(ctx);
+        return NULL;
+    }
+
+    /* Initialize provider in sync mode (required before event loop is available) */
+    ctx->provider->provider_vtable->sync(ctx->provider);
+    if (ctx->provider->provider_vtable->init(ctx->provider) != 0) {
+        flb_error("[aws_msk_iam] failed to initialize AWS credentials provider");
+        flb_aws_provider_destroy(ctx->provider);
+        flb_tls_destroy(ctx->cred_tls);
+        flb_sds_destroy(ctx->region);
+        flb_sds_destroy(ctx->cluster_arn);
+        flb_free(ctx);
+        return NULL;
+    }
+    /* Switch back to async mode */
+    ctx->provider->provider_vtable->async(ctx->provider);
+
+    flb_info("[aws_msk_iam] AWS credentials provider created and initialized successfully");
+
     /* Set the callback and opaque */
     rd_kafka_conf_set_oauthbearer_token_refresh_cb(kconf, oauthbearer_token_refresh_cb);
     flb_kafka_opaque_set(opaque, NULL, ctx);
@@ -781,7 +862,14 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     return ctx;
 }
 
-/* Simple destroy - just config cleanup, no AWS provider to leak! */
+/**
+ * Release all resources associated with an MSK IAM configuration.
+ *
+ * Destroys the AWS credentials provider, TLS instance used for credential retrieval,
+ * region and cluster ARN strings, and frees the context structure.
+ *
+ * @param ctx Pointer to the MSK IAM context to destroy. If NULL no action is taken.
+ */
 void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
 {
     if (!ctx) {
@@ -790,7 +878,17 @@ void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
 
     flb_info("[aws_msk_iam] destroying MSK IAM config");
 
-    /* NO AWS provider to destroy! */
+    /* Destroy AWS provider (provider manages its own credential caching) */
+    if (ctx->provider) {
+        flb_aws_provider_destroy(ctx->provider);
+    }
+
+    /* Clean up TLS instance - caller owns TLS lifecycle with flb_standard_chain_provider_create */
+    if (ctx->cred_tls) {
+        flb_tls_destroy(ctx->cred_tls);
+    }
+    
+    /* Clean up other resources */
     if (ctx->region) {
         flb_sds_destroy(ctx->region);
     }
@@ -798,4 +896,6 @@ void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
         flb_sds_destroy(ctx->cluster_arn);
     }
     flb_free(ctx);
+    
+    flb_info("[aws_msk_iam] MSK IAM config destroyed");
 }
