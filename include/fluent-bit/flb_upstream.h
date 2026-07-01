@@ -30,6 +30,10 @@
 #include <fluent-bit/flb_upstream_queue.h>
 #include <fluent-bit/flb_stream.h>
 
+#ifdef FLB_HAVE_TLS
+#include <fluent-bit/tls/flb_tls.h>
+#endif
+
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_gauge.h>
 
@@ -57,6 +61,9 @@ struct flb_upstream {
     int                        proxied_port;
     char                      *proxy_username;
     char                      *proxy_password;
+#ifdef FLB_HAVE_TLS
+    struct flb_tls            *proxy_tls_context; /* TLS context for the proxy (https proxy) */
+#endif
 
     /*
      * If an upstream context has been created in HA mode, this flag is
