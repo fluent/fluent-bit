@@ -31,7 +31,6 @@
 
 #include "azure_kusto.h"
 #include "azure_kusto_conf.h"
-#include "azure_msiauth.h"
 
 /* Constants for PCG random number generator */
 #define PCG_DEFAULT_MULTIPLIER_64  6364136223846793005ULL
@@ -825,7 +824,7 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
 
     /* Auth method validation and setup */
     if (strcasecmp(ctx->auth_type_str, "service_principal") == 0) {
-        ctx->auth_type = FLB_AZURE_KUSTO_AUTH_SERVICE_PRINCIPAL;
+        ctx->auth_type = FLB_AZURE_AUTH_SERVICE_PRINCIPAL;
         
         /* Verify required parameters for Service Principal auth */
         if (!ctx->tenant_id || !ctx->client_id || !ctx->client_secret) {
@@ -843,13 +842,13 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
         }
         
         if (strcasecmp(ctx->client_id, "system") == 0) {
-            ctx->auth_type = FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM;
+            ctx->auth_type = FLB_AZURE_AUTH_MANAGED_IDENTITY_SYSTEM;
         } else {
-            ctx->auth_type = FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_USER;
+            ctx->auth_type = FLB_AZURE_AUTH_MANAGED_IDENTITY_USER;
         }
     }
     else if (strcasecmp(ctx->auth_type_str, "workload_identity") == 0) {
-        ctx->auth_type = FLB_AZURE_KUSTO_AUTH_WORKLOAD_IDENTITY;
+        ctx->auth_type = FLB_AZURE_AUTH_WORKLOAD_IDENTITY;
         
         /* Verify required parameters for Workload Identity auth */
         if (!ctx->tenant_id || !ctx->client_id) {
@@ -860,7 +859,7 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
         
         /* Set default token file path if not specified */
         if (!ctx->workload_identity_token_file) {
-            ctx->workload_identity_token_file = flb_strdup("/var/run/secrets/azure/tokens/azure-identity-token");
+            ctx->workload_identity_token_file = flb_strdup(FLB_AZURE_WORKLOAD_IDENTITY_TOKEN_FILE);
             if (!ctx->workload_identity_token_file) {
                 flb_errno();
                 flb_plg_error(ins, "Could not allocate default workload identity token path");
@@ -897,44 +896,15 @@ struct flb_azure_kusto *flb_azure_kusto_conf_create(struct flb_output_instance *
         return NULL;
     }
 
-    /* Create oauth2 context */
-    if (ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM || 
-        ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_USER) {
-        /* MSI auth */
-        /* Construct the URL template with or without client_id for managed identity */
-        if (ctx->auth_type == FLB_AZURE_KUSTO_AUTH_MANAGED_IDENTITY_SYSTEM) {
-            ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1);
-            if (!ctx->oauth_url) {
-                flb_errno();
-                flb_azure_kusto_conf_destroy(ctx);
-                return NULL;
-            }
-            flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "", "");
-        } else {
-            /* User-assigned managed identity */
-            ctx->oauth_url = flb_sds_create_size(sizeof(FLB_AZURE_MSIAUTH_URL_TEMPLATE) - 1 +
-                                                sizeof("&client_id=") - 1 +
-                                                flb_sds_len(ctx->client_id));
-            if (!ctx->oauth_url) {
-                flb_errno();
-                flb_azure_kusto_conf_destroy(ctx);
-                return NULL;
-            }
-            flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                            FLB_AZURE_MSIAUTH_URL_TEMPLATE, "&client_id=", ctx->client_id);
-        }
-    } else {
-        /* Standard OAuth2 for service principal or workload identity */
-        ctx->oauth_url = flb_sds_create_size(sizeof(FLB_MSAL_AUTH_URL_TEMPLATE) - 1 +
-                                            flb_sds_len(ctx->tenant_id));
-        if (!ctx->oauth_url) {
-            flb_errno();
-            flb_azure_kusto_conf_destroy(ctx);
-            return NULL;
-        }
-        flb_sds_snprintf(&ctx->oauth_url, flb_sds_alloc(ctx->oauth_url),
-                        FLB_MSAL_AUTH_URL_TEMPLATE, ctx->tenant_id);
+    /* Create oauth2 context using common auth URL builder */
+    ctx->oauth_url = flb_azure_auth_build_oauth_url(ctx->auth_type,
+                                                     ctx->tenant_id,
+                                                     ctx->client_id,
+                                                     FLB_AZURE_KUSTO_RESOURCE);
+    if (!ctx->oauth_url) {
+        flb_plg_error(ctx->ins, "failed to create OAuth URL");
+        flb_azure_kusto_conf_destroy(ctx);
+        return NULL;
     }
 
     ctx->resources = flb_calloc(1, sizeof(struct flb_azure_kusto_resources));

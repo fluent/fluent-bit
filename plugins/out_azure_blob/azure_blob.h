@@ -25,6 +25,10 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_sqldb.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_azure_auth.h>
+#ifdef FLB_HAVE_TLS
+#include <fluent-bit/flb_oauth2.h>
+#endif
 
 /* Content-Type */
 #define AZURE_BLOB_CT          "Content-Type"
@@ -51,9 +55,6 @@
 #define AZURE_BLOB_APPENDBLOB 0
 #define AZURE_BLOB_BLOCKBLOB  1
 
-#define AZURE_BLOB_AUTH_KEY 0
-#define AZURE_BLOB_AUTH_SAS 1
-
 struct flb_azure_blob {
     int auto_create_container;
     int emulator_mode;
@@ -69,6 +70,13 @@ struct flb_azure_blob {
     flb_sds_t date_key;
     flb_sds_t auth_type;
     flb_sds_t sas_token;
+    
+    /* OAuth authentication fields */
+    flb_sds_t tenant_id;
+    flb_sds_t client_id;
+    flb_sds_t client_secret;
+    flb_sds_t workload_identity_token_file;
+    
     flb_sds_t database_file;
     size_t part_size;
     time_t upload_parts_timeout;
@@ -116,7 +124,7 @@ struct flb_azure_blob {
      * Internal use
      */
     int  btype;                  /* blob type */
-    int  atype;                  /* auth type */
+    flb_azure_auth_type atype;   /* auth type (uses flb_azure_auth_type enum from flb_azure_auth.h) */
     flb_sds_t real_endpoint;
     flb_sds_t base_uri;
     flb_sds_t shared_key_prefix;
@@ -124,6 +132,13 @@ struct flb_azure_blob {
     /* Shared key */
     unsigned char *decoded_sk;        /* decoded shared key */
     size_t decoded_sk_size;           /* size of decoded shared key */
+
+#ifdef FLB_HAVE_TLS
+    /* OAuth2 authentication */
+    flb_sds_t oauth_url;
+    struct flb_oauth2 *o;
+    pthread_mutex_t token_mutex;
+#endif
 
 #ifdef FLB_HAVE_SQLDB
     /*
