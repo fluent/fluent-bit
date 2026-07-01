@@ -2659,6 +2659,28 @@ static inline int flb_input_chunk_is_mem_overlimit(struct flb_input_instance *i)
     return FLB_FALSE;
 }
 
+/*
+ * Return the total bytes used by all chunks (up + down) belonging to
+ * an input instance's stream.  Used to enforce storage.total_limit_size.
+ */
+static size_t flb_input_chunk_fs_total_size(struct flb_input_instance *i)
+{
+    ssize_t bytes;
+    size_t total = 0;
+    struct cio_chunk *ch;
+    struct mk_list *head;
+    struct flb_storage_input *storage = (struct flb_storage_input *) i->storage;
+
+    mk_list_foreach(head, &storage->stream->chunks) {
+        ch = mk_list_entry(head, struct cio_chunk, _head);
+        bytes = cio_chunk_get_real_size(ch);
+        if (bytes > 0) {
+            total += bytes;
+        }
+    }
+    return total;
+}
+
 static inline int flb_input_chunk_is_storage_overlimit(struct flb_input_instance *i)
 {
     struct flb_storage_input *storage = (struct flb_storage_input *)i->storage;
@@ -2666,6 +2688,12 @@ static inline int flb_input_chunk_is_storage_overlimit(struct flb_input_instance
     if (storage->type == FLB_STORAGE_FS) {
         if (i->storage_pause_on_chunks_overlimit == FLB_TRUE) {
             if (storage->cio->total_chunks_up >= storage->cio->max_chunks_up) {
+                return FLB_TRUE;
+            }
+        }
+
+        if (i->storage_total_limit_size != (size_t) -1) {
+            if (flb_input_chunk_fs_total_size(i) >= i->storage_total_limit_size) {
                 return FLB_TRUE;
             }
         }
@@ -2748,10 +2776,21 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i, size_t j
     struct flb_storage_input *storage = i->storage;
 
     if (flb_input_chunk_is_storage_overlimit(i) == FLB_TRUE) {
-        flb_warn("[input] %s paused (storage buf overlimit %zu/%zu)",
-                 flb_input_name(i),
-                 storage->cio->total_chunks_up,
-                 storage->cio->max_chunks_up);
+        if (i->storage_total_limit_size != (size_t) -1) {
+            size_t fs_total = flb_input_chunk_fs_total_size(i);
+            if (fs_total >= i->storage_total_limit_size) {
+                flb_warn("[input] %s paused (storage total size overlimit "
+                         "%zuB/%zuB)",
+                         flb_input_name(i), fs_total,
+                         i->storage_total_limit_size);
+            }
+        }
+        else {
+            flb_warn("[input] %s paused (storage buf overlimit %zu/%zu)",
+                     flb_input_name(i),
+                     storage->cio->total_chunks_up,
+                     storage->cio->max_chunks_up);
+        }
         flb_input_pause(i);
         i->storage_buf_status = FLB_INPUT_PAUSED;
         return FLB_TRUE;

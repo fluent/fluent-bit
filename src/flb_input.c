@@ -409,6 +409,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->data     = data;
         instance->storage  = NULL;
         instance->storage_type = -1;
+        instance->storage_total_limit_size = (size_t) -1;
         instance->log_level = -1;
         instance->log_suppress_interval = -1;
         instance->runs_in_coroutine = FLB_FALSE;
@@ -917,6 +918,26 @@ int flb_input_set_property(struct flb_input_instance *ins,
             return -1;
         }
         ins->storage_pause_on_chunks_overlimit = ret;
+    }
+    else if (prop_key_check("storage.total_limit_size", k, len) == 0 && tmp) {
+        int64_t limit;
+
+        if (strcasecmp(tmp, "off") == 0 ||
+            flb_utils_bool(tmp) == FLB_FALSE) {
+            limit = -1;
+        }
+        else {
+            limit = flb_utils_size_to_bytes(tmp);
+            if (limit == -1) {
+                flb_sds_destroy(tmp);
+                return -1;
+            }
+            if (limit == 0) {
+                limit = -1;
+            }
+        }
+        flb_sds_destroy(tmp);
+        ins->storage_total_limit_size = (size_t) limit;
     }
     else {
         /*
