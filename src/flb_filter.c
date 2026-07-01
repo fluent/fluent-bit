@@ -27,6 +27,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_plugin.h>
+#include <fluent-bit/flb_plugin_alias.h>
 #include <chunkio/chunkio.h>
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -435,6 +437,8 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
                                            const char *filter, void *data)
 {
     int id;
+    char *filter_name;
+    const char *effective_filter_name;
     struct mk_list *head;
     struct flb_filter_plugin *plugin;
     struct flb_filter_instance *instance = NULL;
@@ -443,21 +447,35 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
         return NULL;
     }
 
+    filter_name = flb_plugin_alias_rewrite(FLB_PLUGIN_FILTER, filter);
+    if (filter_name == FLB_PLUGIN_ALIAS_ERR) {
+        return NULL;
+    }
+
+    if (filter_name != NULL) {
+        effective_filter_name = filter_name;
+    }
+    else {
+        effective_filter_name = filter;
+    }
+
     mk_list_foreach(head, &config->filter_plugins) {
         plugin = mk_list_entry(head, struct flb_filter_plugin, _head);
-        if (strcasecmp(plugin->name, filter) == 0) {
+        if (strcasecmp(plugin->name, effective_filter_name) == 0) {
             break;
         }
         plugin = NULL;
     }
 
     if (!plugin) {
+        flb_free(filter_name);
         return NULL;
     }
 
     instance = flb_calloc(1, sizeof(struct flb_filter_instance));
     if (!instance) {
         flb_errno();
+        flb_free(filter_name);
         return NULL;
     }
     instance->config = config;
@@ -493,6 +511,7 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
 
     mk_list_init(&instance->properties);
     mk_list_add(&instance->_head, &config->filters);
+    flb_free(filter_name);
 
     return instance;
 }
