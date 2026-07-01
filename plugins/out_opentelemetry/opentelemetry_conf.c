@@ -548,6 +548,44 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
         }
     }
 
+    ctx->use_json_encoding = FLB_FALSE;
+    tmp = flb_output_get_property("encoding", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "json") == 0) {
+            ctx->use_json_encoding = FLB_TRUE;
+        }
+        else if (strcasecmp(tmp, "protobuf") != 0) {
+            flb_plg_error(ctx->ins,
+                          "Unknown encoding value '%s'. "
+                          "Accepted values: 'protobuf' (default) or 'json'", tmp);
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    /*
+     * Per the OpenTelemetry specification, OTLP/gRPC exclusively uses protobuf
+     * encoding on the wire.  Reject the combination early so the user gets a
+     * clear error rather than silent data corruption.
+     * Reference: https://opentelemetry.io/docs/specs/otlp/#otlpgrpc
+     */
+    if (ctx->use_json_encoding && ctx->enable_grpc_flag) {
+        flb_plg_error(ctx->ins,
+                      "encoding=json is incompatible with grpc=on. "
+                      "OTLP/gRPC only supports protobuf encoding per the "
+                      "OpenTelemetry specification. "
+                      "Use encoding=json with HTTP transport (grpc=off) instead.");
+        flb_opentelemetry_context_destroy(ctx);
+        return NULL;
+    }
+
+    if (ctx->use_json_encoding) {
+        flb_plg_warn(ctx->ins,
+                     "encoding=json does not apply to profiles: profiles "
+                     "will always be exported as protobuf "
+                     "(no JSON encoder exists for cprofiles)");
+    }
+
     ctx->ra_observed_timestamp_metadata = flb_ra_create((char*)ctx->logs_observed_timestamp_metadata_key,
                                                         FLB_FALSE);
     if (ctx->ra_observed_timestamp_metadata == NULL) {

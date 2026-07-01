@@ -722,6 +722,15 @@ static void destroy_logs_resource_states(
     flb_free(states);
 }
 
+static const char *body_key_lookup_name(const char *pattern)
+{
+    if (pattern != NULL && pattern[0] == '$' && pattern[1] != '\0') {
+        return pattern + 1;
+    }
+
+    return pattern;
+}
+
 static msgpack_object *find_log_body_candidate(msgpack_object *body,
                                                const char **logs_body_keys,
                                                size_t logs_body_key_count,
@@ -729,6 +738,7 @@ static msgpack_object *find_log_body_candidate(msgpack_object *body,
                                                size_t *matched_key_length)
 {
     size_t index;
+    const char *lookup;
     msgpack_object *candidate;
 
     if (body == NULL || body->type == MSGPACK_OBJECT_NIL) {
@@ -744,13 +754,14 @@ static msgpack_object *find_log_body_candidate(msgpack_object *body,
             continue;
         }
 
-        candidate = msgpack_map_get_object(&body->via.map, logs_body_keys[index]);
+        lookup = body_key_lookup_name(logs_body_keys[index]);
+        candidate = msgpack_map_get_object(&body->via.map, lookup);
         if (candidate != NULL) {
             if (matched_key != NULL) {
-                *matched_key = logs_body_keys[index];
+                *matched_key = lookup;
             }
             if (matched_key_length != NULL) {
-                *matched_key_length = strlen(logs_body_keys[index]);
+                *matched_key_length = strlen(lookup);
             }
             return candidate;
         }
