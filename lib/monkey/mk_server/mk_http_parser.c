@@ -173,6 +173,16 @@ static inline void request_set(mk_ptr_t *ptr, struct mk_http_parser *p, char *bu
 static inline int header_cmp(const char *expected, char *value, int len)
 {
     int i = 0;
+    size_t expected_len;
+
+    if (len < 0) {
+        return -1;
+    }
+
+    expected_len = strlen(expected);
+    if ((size_t) len != expected_len) {
+        return -1;
+    }
 
     if (len >= 8) {
         if (expected[0] != tolower(value[0])) return -1;
@@ -533,6 +543,9 @@ parse_more:
     chunk_len = strtol(tmp, &ptr, 16);
     if ((errno == ERANGE && (chunk_len == LONG_MAX || chunk_len == LONG_MIN)) ||
         (errno != 0)) {
+        return MK_HTTP_PARSER_ERROR;
+    }
+    if (ptr == tmp || *ptr != '\0') {
         return MK_HTTP_PARSER_ERROR;
     }
 
