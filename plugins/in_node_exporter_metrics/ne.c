@@ -154,6 +154,10 @@ static int activate_collector(struct flb_ne *ctx, struct flb_config *config,
 
     ret = coll->cb_init(ctx);
     if (ret != 0) {
+        if (coll->cb_update && coll->coll_fd >= 0) {
+            flb_input_collector_delete(coll->coll_fd, ctx->ins);
+            coll->coll_fd = -1;
+        }
         flb_plg_error(ctx->ins, "%s init failed", name);
         return -1;
     }
@@ -524,6 +528,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "diskstats.ignore_device_regex", IGNORED_DEVICES,
      0, FLB_TRUE, offsetof(struct flb_ne, dt_regex_skip_devices_text),
      "ignore regular expression for disk devices"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "netdev.ignore_device_regex", NULL,
+     0, FLB_TRUE, offsetof(struct flb_ne, netdev_regex_skip_devices_text),
+     "ignore regular expression for network devices"
     },
 
     /* hwmon specific settings */

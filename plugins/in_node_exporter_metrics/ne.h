@@ -125,6 +125,8 @@ struct flb_ne {
 
     /* netdev */
     struct flb_hash_table *netdev_ht;
+    struct flb_regex *netdev_regex_skip_devices;
+    flb_sds_t netdev_regex_skip_devices_text;
 
 #ifdef FLB_SYSTEM_MACOS
     /* netdev_darwin */

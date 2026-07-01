@@ -63,6 +63,17 @@ static struct cmt_counter *netdev_hash_get(struct flb_ne *ctx,
     return c;
 }
 
+static int netdev_skip_device(struct flb_ne *ctx, flb_sds_t device)
+{
+    if (!ctx->netdev_regex_skip_devices) {
+        return FLB_FALSE;
+    }
+
+    return flb_regex_match(ctx->netdev_regex_skip_devices,
+                           (unsigned char *) device,
+                           flb_sds_len(device));
+}
+
 static int netdev_configure(struct flb_ne *ctx)
 {
     int ret;
@@ -291,8 +302,13 @@ static int netdev_update(struct flb_ne *ctx)
         /* sanitize device name */
         len = flb_sds_len(dev->str);
         len--;
-        flb_sds_len_set(dev->str, len - 1);
+        flb_sds_len_set(dev->str, len);
         dev->str[len] = '\0';
+
+        if (netdev_skip_device(ctx, dev->str)) {
+            flb_slist_destroy(&split_list);
+            continue;
+        }
 
         /* iterate line fields */
         n = 0;
@@ -344,8 +360,19 @@ static int netdev_update(struct flb_ne *ctx)
 
 static int ne_netdev_init(struct flb_ne *ctx)
 {
-    netdev_configure(ctx);
-    return 0;
+    if (ctx->netdev_regex_skip_devices_text) {
+        ctx->netdev_regex_skip_devices =
+            flb_regex_create(ctx->netdev_regex_skip_devices_text);
+        if (!ctx->netdev_regex_skip_devices) {
+            flb_plg_error(ctx->ins,
+                          "could not initialize regex pattern for ignored "
+                          "network devices: '%s'",
+                          ctx->netdev_regex_skip_devices_text);
+            return -1;
+        }
+    }
+
+    return netdev_configure(ctx);
 }
 
 static int ne_netdev_update(struct flb_input_instance *ins, struct flb_config *config, void *in_context)
@@ -361,6 +388,11 @@ static int ne_netdev_exit(struct flb_ne *ctx)
     if (ctx->netdev_ht) {
         flb_hash_table_destroy(ctx->netdev_ht);
     }
+
+    if (ctx->netdev_regex_skip_devices) {
+        flb_regex_destroy(ctx->netdev_regex_skip_devices);
+    }
+
     return 0;
 }
 
