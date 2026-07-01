@@ -6,6 +6,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_config.h>
 
 #include "../../plugins/out_azure_blob/azure_blob.h"
 #include "../../plugins/out_azure_blob/azure_blob_uri.h"
@@ -478,6 +479,41 @@ void test_block_blob_commit_requires_suffix(void)
     ctx_cleanup(&ctx);
 }
 
+void test_block_blob_id_uses_sha256_in_fips_mode(void)
+{
+    struct flb_config config;
+    struct flb_azure_blob ctx;
+    char *default_id;
+    char *fips_id;
+
+    memset(&config, 0, sizeof(config));
+    memset(&ctx, 0, sizeof(ctx));
+
+    ctx.config = &config;
+
+    config.fips_mode = FLB_FALSE;
+    default_id = azb_block_blob_id_blob(&ctx, "blob/path.log", 1);
+    TEST_CHECK(default_id != NULL);
+    if (default_id == NULL) {
+        return;
+    }
+
+    config.fips_mode = FLB_TRUE;
+    fips_id = azb_block_blob_id_blob(&ctx, "blob/path.log", 1);
+    TEST_CHECK(fips_id != NULL);
+    if (fips_id == NULL) {
+        flb_free(default_id);
+        return;
+    }
+
+    TEST_CHECK(strlen(default_id) == 64);
+    TEST_CHECK(strlen(fips_id) == 64);
+    TEST_CHECK(strcmp(default_id, fips_id) != 0);
+
+    flb_free(default_id);
+    flb_free(fips_id);
+}
+
 TEST_LIST = {
     {"resolve_path_basic_tag", test_resolve_path_basic_tag},
     {"resolve_path_custom_delimiter", test_resolve_path_custom_delimiter},
@@ -491,5 +527,6 @@ TEST_LIST = {
     {"commit_prefix_fallback_static_path", test_commit_prefix_fallback_static_path},
     {"uri_create_static_prefix_fallback", test_uri_create_static_prefix_fallback},
     {"block_blob_commit_requires_suffix", test_block_blob_commit_requires_suffix},
+    {"block_blob_id_uses_sha256_in_fips_mode", test_block_blob_id_uses_sha256_in_fips_mode},
     {0}
 };
