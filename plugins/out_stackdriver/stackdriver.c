@@ -672,6 +672,61 @@ static int parse_monitored_resource(struct flb_stackdriver *ctx, const void *dat
 }
 
 /*
+ * Check if the payload carries a monitored resource map that
+ * parse_monitored_resource() would consume, without packing anything
+ */
+static int payload_has_monitored_resource(const void *data, size_t bytes)
+{
+    int found = FLB_FALSE;
+    int ret;
+    msgpack_object *obj;
+    msgpack_object_kv *kv;
+    msgpack_object_kv *kvend;
+    msgpack_object_kv *p;
+    msgpack_object_kv *pend;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        return FLB_FALSE;
+    }
+
+    while (found == FLB_FALSE &&
+           flb_log_event_decoder_next(&log_decoder,
+                                      &log_event) == FLB_EVENT_DECODER_SUCCESS) {
+        obj = log_event.body;
+        kv = obj->via.map.ptr;
+        kvend = obj->via.map.ptr + obj->via.map.size;
+        for (; kv < kvend; ++kv) {
+            if (kv->val.type != MSGPACK_OBJECT_MAP ||
+                kv->key.type != MSGPACK_OBJECT_STR ||
+                strncmp(MONITORED_RESOURCE_KEY,
+                        kv->key.via.str.ptr, kv->key.via.str.size) != 0) {
+                continue;
+            }
+
+            p = kv->val.via.map.ptr;
+            pend = kv->val.via.map.ptr + kv->val.via.map.size;
+            for (; p < pend; ++p) {
+                if (p->key.type == MSGPACK_OBJECT_STR &&
+                    p->val.type == MSGPACK_OBJECT_MAP &&
+                    p->val.via.map.size > 0 &&
+                    strncmp("labels", p->key.via.str.ptr,
+                            p->key.via.str.size) == 0) {
+                    found = FLB_TRUE;
+                    break;
+                }
+            }
+        }
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+
+    return found;
+}
+
+/*
  * Given a local_resource_id, split the content using the proper separator generating
  * a linked list to store the spliited string
  */
@@ -748,8 +803,13 @@ static int extract_local_resource_id(const void *data, size_t bytes,
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         map = log_event.body->via.map;
-        local_resource_id = get_str_value_from_msgpack_map(map, LOCAL_RESOURCE_ID_KEY,
-                                                           LEN_LOCAL_RESOURCE_ID_KEY);
+        if (ctx->trust_payload_local_resource_id == FLB_TRUE) {
+            local_resource_id = get_str_value_from_msgpack_map(map, LOCAL_RESOURCE_ID_KEY,
+                                                               LEN_LOCAL_RESOURCE_ID_KEY);
+        }
+        else {
+            local_resource_id = NULL;
+        }
 
         if (local_resource_id == NULL) {
             /* if local_resource_id is not found, use the tag of the log */
@@ -1081,13 +1141,21 @@ static int process_local_resource_id(struct stackdriver_format_ctx *fmt_ctx,
     if (is_tag_match_regex(ctx, tag, tag_len) > 0) {
         ret = extract_resource_labels_from_regex(fmt_ctx, tag, tag_len, FLB_TRUE);
     }
-    else {
+    else if (ctx->trust_payload_local_resource_id == FLB_TRUE) {
         if (is_local_resource_id_match_regex(fmt_ctx) > 0) {
             ret = extract_resource_labels_from_regex(fmt_ctx, tag, tag_len, FLB_FALSE);
         }
         else {
             ret = set_monitored_resource_labels(fmt_ctx, type);
         }
+    }
+    else {
+        /*
+         * The payload cannot be trusted and the tag carries no resource
+         * labels; stackdriver_format() already fell back to the cluster
+         * scoped resource before reaching this path.
+         */
+        ret = -1;
     }
 
     return ret;
@@ -1871,6 +1939,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     char *new_trace;
     char *newtag;
     char *new_log_name;
+    const char *resource_type;
     char *operation_id;
     char *operation_producer;
     char *source_location_file;
@@ -1942,12 +2011,31 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     /* type & labels */
     msgpack_pack_map(&mp_pck, 2);
 
+    /*
+     * When the payload local_resource_id is untrusted and no trusted source
+     * of resource labels is available (tag regex, configured resource labels
+     * or a payload monitored resource), attribute the entries to the cluster
+     * scoped resource instead of forgeable namespace/pod/container labels.
+     */
+    resource_type = ctx->resource;
+    if (ctx->trust_payload_local_resource_id == FLB_FALSE &&
+        ctx->resource_type == RESOURCE_TYPE_K8S &&
+        strcmp(ctx->resource, K8S_CLUSTER) != 0 &&
+        (ctx->should_skip_resource_labels_api == FLB_TRUE ||
+         mk_list_size(&ctx->resource_labels_kvs) == 0) &&
+        payload_has_monitored_resource(data, bytes) == FLB_FALSE &&
+        is_tag_match_regex(ctx, tag, tag_len) <= 0) {
+        resource_type = K8S_CLUSTER;
+        flb_plg_debug(ctx->ins, "untrusted payload local_resource_id and tag "
+                      "without resource labels; falling back to k8s_cluster "
+                      "resource for tag %s", tag);
+    }
+
     /* type */
     msgpack_pack_str(&mp_pck, 4);
     msgpack_pack_str_body(&mp_pck, "type", 4);
-    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->resource));
-    msgpack_pack_str_body(&mp_pck, ctx->resource,
-                          flb_sds_len(ctx->resource));
+    msgpack_pack_str(&mp_pck, strlen(resource_type));
+    msgpack_pack_str_body(&mp_pck, resource_type, strlen(resource_type));
 
     msgpack_pack_str(&mp_pck, 6);
     msgpack_pack_str_body(&mp_pck, "labels", 6);
@@ -2067,7 +2155,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                 }
                 flb_mp_map_header_end(&mh);
             }
-            else if (strcmp(ctx->resource, K8S_CONTAINER) == 0) {
+            else if (strcmp(resource_type, K8S_CONTAINER) == 0) {
                 /* k8s_container resource has fields project_id, location, cluster_name,
                 *                                   namespace_name, pod_name, container_name
                 *
@@ -2144,7 +2232,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
 
                 flb_mp_map_header_end(&mh);
             }
-            else if (strcmp(ctx->resource, K8S_NODE) == 0) {
+            else if (strcmp(resource_type, K8S_NODE) == 0) {
                 /* k8s_node resource has fields project_id, location, cluster_name, node_name
                 *
                 * The local_resource_id for k8s_node is in format:
@@ -2200,7 +2288,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
 
                 flb_mp_map_header_end(&mh);
             }
-            else if (strcmp(ctx->resource, K8S_POD) == 0) {
+            else if (strcmp(resource_type, K8S_POD) == 0) {
                 /* k8s_pod resource has fields project_id, location, cluster_name,
                 *                             namespace_name, pod_name.
                 *
@@ -2267,7 +2355,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
 
                 flb_mp_map_header_end(&mh);
             }
-            else if (strcmp(ctx->resource, K8S_CLUSTER) == 0) {
+            else if (strcmp(resource_type, K8S_CLUSTER) == 0) {
                 /* k8s_cluster resource has fields project_id, location, cluster_name
                 *
                 * There is no local_resource_id for k8s_cluster as we get all info
@@ -3376,7 +3464,13 @@ static struct flb_config_map config_map[] = {
       0, FLB_TRUE, offsetof(struct flb_stackdriver, cloud_logging_base_url),
       "The base Cloud Logging API URL to use for the /v2/entries:write API request. Default: https://logging.googleapis.com"
     },
-
+    {
+      FLB_CONFIG_MAP_BOOL, "trust_payload_local_resource_id", "true",
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, trust_payload_local_resource_id),
+      "Trust the logging.googleapis.com/local_resource_id field supplied in the "
+      "log payload. When disabled and the tag carries no resource labels, "
+      "entries are attributed to the k8s_cluster resource instead"
+    },
 
     /* EOF */
     {0}
