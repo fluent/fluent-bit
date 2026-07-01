@@ -40,6 +40,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_fips.h>
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_engine_dispatch.h>
 #include <fluent-bit/flb_network.h>
@@ -916,6 +917,11 @@ int flb_engine_start(struct flb_config *config)
     ret = flb_engine_log_start(config);
     if (ret == -1) {
         fprintf(stderr, "[engine] log start failed\n");
+        return -1;
+    }
+
+    ret = flb_fips_init(config);
+    if (ret != 0) {
         return -1;
     }
 
