@@ -38,6 +38,7 @@ set(src
   flb_output.c
   flb_output_thread.c
   flb_config.c
+  flb_fips.c
   flb_config_map.c
   flb_socket.c
   flb_network.c
