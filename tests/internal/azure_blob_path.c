@@ -485,20 +485,21 @@ void test_block_blob_id_uses_sha256_in_fips_mode(void)
     struct flb_azure_blob ctx;
     char *default_id;
     char *fips_id;
+    const char *expected_id;
 
     memset(&config, 0, sizeof(config));
     memset(&ctx, 0, sizeof(ctx));
 
     ctx.config = &config;
 
-    config.fips_mode = FLB_FALSE;
+    config.fips_mode_active = FLB_FALSE;
     default_id = azb_block_blob_id_blob(&ctx, "blob/path.log", 1);
     TEST_CHECK(default_id != NULL);
     if (default_id == NULL) {
         return;
     }
 
-    config.fips_mode = FLB_TRUE;
+    config.fips_mode_active = FLB_TRUE;
     fips_id = azb_block_blob_id_blob(&ctx, "blob/path.log", 1);
     TEST_CHECK(fips_id != NULL);
     if (fips_id == NULL) {
@@ -509,6 +510,9 @@ void test_block_blob_id_uses_sha256_in_fips_mode(void)
     TEST_CHECK(strlen(default_id) == 64);
     TEST_CHECK(strlen(fips_id) == 64);
     TEST_CHECK(strcmp(default_id, fips_id) != 0);
+
+    expected_id = "NjM1NTgzYjViZjZhMDU4Y2VmNjhkMWNjMjZlM2ZmNzcuZmxiLXBhcnQuMDAwMDAx";
+    TEST_CHECK(strcmp(fips_id, expected_id) == 0);
 
     flb_free(default_id);
     flb_free(fips_id);
