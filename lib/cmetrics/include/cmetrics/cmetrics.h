@@ -80,5 +80,6 @@ struct cmt *cmt_create();
 void cmt_destroy(struct cmt *cmt);
 int cmt_label_add(struct cmt *cmt, char *key, char *val);
 char *cmt_version();
+int cmt_expire(struct cmt *cmt, uint64_t min_timestamp);
 
 #endif
