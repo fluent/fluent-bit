@@ -1,0 +1,242 @@
+// SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
+
+#include <vmlinux.h>
+
+#define _LINUX_TYPES_H
+#define _LINUX_POSIX_TYPES_H
+
+#if defined(__TARGET_ARCH_x86_64) && !defined(__TARGET_ARCH_x86)
+#define __TARGET_ARCH_x86
+#endif
+
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
+
+#include <gadget/buffer.h>
+#include <gadget/macros.h>
+#include <gadget/mntns_filter.h>
+#include <gadget/types.h>
+
+#include "common/events.h"
+
+#define MAX_ENTRIES 10240
+
+struct tls_state {
+    __u64 ssl_ptr;
+    __u64 start_ns;
+    __u64 bytes_ptr;
+    __u32 type;
+};
+
+#define TLS_EVENT_HANDSHAKE EVENT_TYPE_TLS_HANDSHAKE
+#define TLS_EVENT_READ      EVENT_TYPE_TLS_READ
+#define TLS_EVENT_WRITE     EVENT_TYPE_TLS_WRITE
+#define TLS_EVENT_SHUTDOWN  EVENT_TYPE_TLS_SHUTDOWN
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, MAX_ENTRIES);
+    __type(key, __u64);              /* pid_tgid */
+    __type(value, struct tls_state);
+} tls_start SEC(".maps");
+
+GADGET_TRACER_MAP(events, 1024 * 256);
+
+static __always_inline void fill_common(struct event *event)
+{
+    __u64 pid_tgid;
+    __u64 uid_gid;
+
+    pid_tgid = bpf_get_current_pid_tgid();
+    uid_gid = bpf_get_current_uid_gid();
+
+    event->common.timestamp_raw = bpf_ktime_get_boot_ns();
+    event->common.pid = (__u32) (pid_tgid >> 32);
+    event->common.tid = (__u32) pid_tgid;
+    event->common.uid = (__u32) uid_gid;
+    event->common.gid = (__u32) (uid_gid >> 32);
+    event->common.mntns_id = 0;
+    bpf_get_current_comm(event->common.comm, sizeof(event->common.comm));
+}
+
+static __always_inline int trace_tls_entry(void *ssl, __u32 type)
+{
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    struct tls_state state = {};
+
+    state.ssl_ptr = (__u64) ssl;
+    state.start_ns = bpf_ktime_get_ns();
+    state.type = type;
+
+    bpf_map_update_elem(&tls_start, &pid_tgid, &state, BPF_ANY);
+    return 0;
+}
+
+static __always_inline int trace_tls_entry_ex(void *ssl, __u32 type,
+                                              size_t *bytes_ptr)
+{
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    struct tls_state state = {};
+
+    state.ssl_ptr = (__u64) ssl;
+    state.start_ns = bpf_ktime_get_ns();
+    state.bytes_ptr = (__u64) bytes_ptr;
+    state.type = type;
+
+    bpf_map_update_elem(&tls_start, &pid_tgid, &state, BPF_ANY);
+    return 0;
+}
+
+static __always_inline int get_openssl_ex_ret(int ret, __u64 bytes_ptr)
+{
+    size_t byte_count = 0;
+
+    if (ret <= 0) {
+        return ret;
+    }
+
+    if (bytes_ptr == 0) {
+        return -1;
+    }
+
+    if (bpf_probe_read_user(&byte_count, sizeof(byte_count),
+                            (const void *) bytes_ptr) != 0) {
+        return -1;
+    }
+
+    if (byte_count > 0x7fffffffULL) {
+        return 0x7fffffff;
+    }
+
+    return (int) byte_count;
+}
+
+static __always_inline int trace_tls_return(struct pt_regs *ctx)
+{
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    struct tls_state *state;
+    __u64 now_ns;
+    __s64 latency_ns;
+    struct event *eventp;
+    int ret;
+
+    state = bpf_map_lookup_elem(&tls_start, &pid_tgid);
+    if (!state) {
+        return 0;
+    }
+
+    now_ns = bpf_ktime_get_ns();
+    latency_ns = (__s64)(now_ns - state->start_ns);
+
+    eventp = gadget_reserve_buf(&events, sizeof(*eventp));
+    if (!eventp) {
+        bpf_map_delete_elem(&tls_start, &pid_tgid);
+        return 0;
+    }
+
+    fill_common(eventp);
+    eventp->type = state->type;
+    if (state->type == TLS_EVENT_HANDSHAKE) {
+        eventp->details.tls_handshake.ssl_ptr = state->ssl_ptr;
+        eventp->details.tls_handshake.latency_ns = latency_ns;
+#if defined(__TARGET_ARCH_arm64)
+        ret = (int) ctx->regs[0];
+#else
+        ret = (int) PT_REGS_RC(ctx);
+#endif
+        eventp->details.tls_handshake.ret = ret;
+    }
+    else {
+        eventp->details.tls_io.ssl_ptr = state->ssl_ptr;
+        eventp->details.tls_io.latency_ns = latency_ns;
+#if defined(__TARGET_ARCH_arm64)
+        ret = (int) ctx->regs[0];
+#else
+        ret = (int) PT_REGS_RC(ctx);
+#endif
+        if (state->bytes_ptr != 0) {
+            ret = get_openssl_ex_ret(ret, state->bytes_ptr);
+        }
+        eventp->details.tls_io.ret = ret;
+    }
+
+    gadget_submit_buf(ctx, &events, eventp, sizeof(*eventp));
+    bpf_map_delete_elem(&tls_start, &pid_tgid);
+    return 0;
+}
+
+SEC("uprobe/@LIBSSL_PATH@:SSL_do_handshake")
+int BPF_UPROBE(trace_uprobe_ssl_do_handshake, void *ssl)
+{
+    return trace_tls_entry(ssl, TLS_EVENT_HANDSHAKE);
+}
+
+SEC("uretprobe/@LIBSSL_PATH@:SSL_do_handshake")
+int trace_uretprobe_ssl_do_handshake(struct pt_regs *ctx)
+{
+    return trace_tls_return(ctx);
+}
+
+SEC("uprobe/@LIBSSL_PATH@:SSL_read")
+int BPF_UPROBE(trace_uprobe_ssl_read, void *ssl)
+{
+    return trace_tls_entry(ssl, TLS_EVENT_READ);
+}
+
+SEC("uretprobe/@LIBSSL_PATH@:SSL_read")
+int trace_uretprobe_ssl_read(struct pt_regs *ctx)
+{
+    return trace_tls_return(ctx);
+}
+
+SEC("uprobe/@LIBSSL_PATH@:SSL_read_ex")
+int BPF_UPROBE(trace_uprobe_ssl_read_ex, void *ssl, void *buf, size_t num,
+               size_t *readbytes)
+{
+    return trace_tls_entry_ex(ssl, TLS_EVENT_READ, readbytes);
+}
+
+SEC("uretprobe/@LIBSSL_PATH@:SSL_read_ex")
+int trace_uretprobe_ssl_read_ex(struct pt_regs *ctx)
+{
+    return trace_tls_return(ctx);
+}
+
+SEC("uprobe/@LIBSSL_PATH@:SSL_write")
+int BPF_UPROBE(trace_uprobe_ssl_write, void *ssl)
+{
+    return trace_tls_entry(ssl, TLS_EVENT_WRITE);
+}
+
+SEC("uretprobe/@LIBSSL_PATH@:SSL_write")
+int trace_uretprobe_ssl_write(struct pt_regs *ctx)
+{
+    return trace_tls_return(ctx);
+}
+
+SEC("uprobe/@LIBSSL_PATH@:SSL_write_ex")
+int BPF_UPROBE(trace_uprobe_ssl_write_ex, void *ssl, const void *buf, size_t num,
+               size_t *written)
+{
+    return trace_tls_entry_ex(ssl, TLS_EVENT_WRITE, written);
+}
+
+SEC("uretprobe/@LIBSSL_PATH@:SSL_write_ex")
+int trace_uretprobe_ssl_write_ex(struct pt_regs *ctx)
+{
+    return trace_tls_return(ctx);
+}
+
+SEC("uprobe/@LIBSSL_PATH@:SSL_shutdown")
+int BPF_UPROBE(trace_uprobe_ssl_shutdown, void *ssl)
+{
+    return trace_tls_entry(ssl, TLS_EVENT_SHUTDOWN);
+}
+
+SEC("uretprobe/@LIBSSL_PATH@:SSL_shutdown")
+int trace_uretprobe_ssl_shutdown(struct pt_regs *ctx)
+{
+    return trace_tls_return(ctx);
+}
+
+char LICENSE[] SEC("license") = "Dual BSD/GPL";
