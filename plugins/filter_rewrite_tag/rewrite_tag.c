@@ -414,7 +414,8 @@ static int process_record(const char *tag, int tag_len, msgpack_object map,
     /* Release the tag */
     flb_sds_destroy(out_tag);
 
-    if (ret == -1) {
+    if (ret < 0) {
+        *keep = FLB_TRUE;
         return FLB_FALSE;
     }
 
