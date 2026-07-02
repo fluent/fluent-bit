@@ -11,15 +11,17 @@ if(ZEROBUS_LIB_BUILD_TARGET)
 endif()
 
 # Platform-specific linker flags required by the Rust FFI static library
-if(WIN32)
+if(FLB_SYSTEM_WINDOWS)
   target_link_libraries(flb-plugin-out_zerobus
     ws2_32 ntdll userenv advapi32 bcrypt)
-elseif(APPLE)
+elseif(FLB_SYSTEM_MACOS)
   target_link_libraries(flb-plugin-out_zerobus
     "-framework CoreFoundation"
     "-framework Security"
     -liconv)
-elseif(UNIX)
+elseif(FLB_SYSTEM_LINUX)
   target_link_libraries(flb-plugin-out_zerobus
     -ldl -lpthread -lm -lresolv -lgcc_s)
+else()
+  message(FATAL_ERROR "out_zerobus does not define linker dependencies for this platform")
 endif()
