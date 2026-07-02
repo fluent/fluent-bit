@@ -3621,7 +3621,8 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
             }
 
             if (check == FLB_TRUE) {
-                if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
+                if (strlen(ctx->log_key) == key_str_size && 
+                    strncmp(ctx->log_key, key_str, key_str_size) == 0) {
                     found = FLB_TRUE;
 
                     /*
