@@ -3,6 +3,7 @@
 # Set this to the base image to use in each case, so if we want to build for almalinux/8
 # we would set BASE_BUILDER=almalinux-8-base.
 ARG BASE_BUILDER
+ARG RUST_VERSION="1.91"
 # Lookup the name to use below but should follow the '<distro>-base' convention with slashes replaced.
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
@@ -13,7 +14,7 @@ FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 FROM almalinux:8 AS almalinux-8-base
 
 ENV CARGO_HOME="/opt/cargo"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/almalinux-powertools.repo
@@ -24,8 +25,9 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
-    yum clean all && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    yum clean all
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
@@ -37,7 +39,7 @@ ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 FROM --platform=arm64 almalinux:8 AS almalinux-8.arm64v8-base
 
 ENV CARGO_HOME="/opt/cargo"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -50,8 +52,9 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
-    yum clean all && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    yum clean all
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
@@ -64,7 +67,7 @@ ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 FROM almalinux:9 AS almalinux-9-base
 
 ENV CARGO_HOME="/opt/cargo"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/almalinux-crb.repo
@@ -75,8 +78,9 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
-    yum clean all && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    yum clean all
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
@@ -88,7 +92,7 @@ ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 FROM --platform=arm64 almalinux:9 AS almalinux-9.arm64v8-base
 
 ENV CARGO_HOME="/opt/cargo"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -101,8 +105,9 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
-    yum clean all && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    yum clean all
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
@@ -115,7 +120,7 @@ ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 FROM almalinux:10 AS almalinux-10-base
 
 ENV CARGO_HOME="/opt/cargo"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/almalinux-crb.repo
@@ -127,8 +132,9 @@ RUN yum -y update && \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
     libzstd-devel && \
-    yum clean all && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    yum clean all
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
@@ -141,7 +147,7 @@ ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 FROM --platform=arm64 almalinux:10 AS almalinux-10.arm64v8-base
 
 ENV CARGO_HOME="/opt/cargo"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -155,8 +161,9 @@ RUN yum -y update && \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
     libzstd-devel && \
-    yum clean all && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    yum clean all
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
