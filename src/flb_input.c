@@ -2484,6 +2484,17 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
 
     mk_list_foreach(head, &config->inputs) {
         ins = mk_list_entry(head, struct flb_input_instance, _head);
+
+        /*
+         * Collectors of a threaded input are registered and dispatched in the
+         * input's own thread/event loop (see flb_input_thread.c), never through
+         * this main-thread handler. Skipping them avoids a benign data race with
+         * the worker thread that concurrently initializes those collector fds.
+         */
+        if (flb_input_is_threaded(ins)) {
+            continue;
+        }
+
         mk_list_foreach(head_coll, &ins->collectors) {
             collector = mk_list_entry(head_coll, struct flb_input_collector, _head);
             if (collector->fd_event == fd) {
