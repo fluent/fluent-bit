@@ -3,13 +3,14 @@
 # Set this to the base image to use in each case, so if we want to build for ubuntu/20.04
 # we would set BASE_BUILDER=ubuntu-20.04-base.
 ARG BASE_BUILDER
+ARG RUST_VERSION="1.91"
 # Lookup the name to use below but should follow the '<distro>-base' convention with slashes replaced.
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
 FROM balenalib/rpi-raspbian:buster AS raspbian-buster-base
 ENV DEBIAN_FRONTEND noninteractive
 ENV CARGO_HOME="/opt/cargo"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 # Builder image so dependencies can be latest, recommended and no need to wipe
 # We pin cmake to a working version (latest 3.16 triggers cmake failures for GNU C compiler detection)
@@ -21,8 +22,9 @@ RUN apt-get update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
-    apt-get install -y --reinstall lsb-base lsb-release && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    apt-get install -y --reinstall lsb-base lsb-release
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
@@ -30,7 +32,7 @@ ENV PATH="${CARGO_HOME}/bin:${PATH}"
 FROM balenalib/rpi-raspbian:bullseye AS raspbian-bullseye-base
 ENV DEBIAN_FRONTEND noninteractive
 ENV CARGO_HOME="/opt/cargo"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
@@ -39,8 +41,9 @@ RUN apt-get update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
-    apt-get install -y --reinstall lsb-base lsb-release && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    apt-get install -y --reinstall lsb-base lsb-release
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
@@ -48,7 +51,7 @@ ENV PATH="${CARGO_HOME}/bin:${PATH}"
 FROM balenalib/rpi-raspbian:bookworm AS raspbian-bookworm-base
 ENV DEBIAN_FRONTEND noninteractive
 ENV CARGO_HOME="/opt/cargo"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
@@ -57,8 +60,9 @@ RUN apt-get update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
-    apt-get install -y --reinstall lsb-base lsb-release && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    apt-get install -y --reinstall lsb-base lsb-release
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 

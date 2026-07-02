@@ -3,6 +3,7 @@
 # Set this to the base image to use in each case, so if we want to build for debian/bullseye
 # we would set BASE_BUILDER=debian-bullseye-base.
 ARG BASE_BUILDER
+ARG RUST_VERSION="1.91"
 # Lookup the name to use below but should follow the '<distro>-base' convention with slashes replaced.
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
@@ -17,7 +18,7 @@ ENV DEBIAN_FRONTEND="noninteractive" \
 
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 # Patch to archive.debian.org
 # https://lists.debian.org/debian-devel-announce/2025/06/msg00001.html
@@ -36,8 +37,9 @@ RUN apt-get -qq update && \
     mkdir -p "${CMAKE_HOME}" && \
     cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
-    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1 && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
@@ -51,7 +53,7 @@ COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64
 
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 # Patch to archive.debian.org
 # https://lists.debian.org/debian-devel-announce/2025/06/msg00001.html
@@ -70,8 +72,9 @@ RUN apt-get -qq update && \
     mkdir -p "${CMAKE_HOME}" && \
     cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
-    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1 && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
@@ -83,7 +86,7 @@ ENV DEBIAN_FRONTEND="noninteractive" \
 
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 ARG BULLSEYE_SECURITY_SNAPSHOT="20260904T000000Z"
 
 # Bullseye LTS ended on 2026-08-31. Pin its security repository to an
@@ -105,8 +108,9 @@ RUN apt-get -qq update && \
     mkdir -p "${CMAKE_HOME}" && \
     cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
-    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1 && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
@@ -120,7 +124,7 @@ COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64
 
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 ARG BULLSEYE_SECURITY_SNAPSHOT="20260904T000000Z"
 
 # Bullseye LTS ended on 2026-08-31. Pin its security repository to an
@@ -142,8 +146,9 @@ RUN apt-get -qq update && \
     mkdir -p "${CMAKE_HOME}" && \
     cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
-    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1 && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
@@ -155,7 +160,7 @@ ENV DEBIAN_FRONTEND="noninteractive" \
 
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get -qq update && \
@@ -169,8 +174,9 @@ RUN apt-get -qq update && \
     mkdir -p "${CMAKE_HOME}" && \
     cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
-    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1 && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
@@ -184,7 +190,7 @@ COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64
 
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get -qq update && \
@@ -198,8 +204,9 @@ RUN apt-get -qq update && \
     mkdir -p "${CMAKE_HOME}" && \
     cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
-    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1 && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
@@ -211,7 +218,7 @@ ENV DEBIAN_FRONTEND="noninteractive" \
 
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get -qq update && \
@@ -225,8 +232,9 @@ RUN apt-get -qq update && \
     mkdir -p "${CMAKE_HOME}" && \
     cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
-    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1 && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
@@ -240,7 +248,7 @@ COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64
 
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
-ARG RUST_VERSION="1.91"
+ARG RUST_VERSION
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get -qq update && \
@@ -254,8 +262,9 @@ RUN apt-get -qq update && \
     mkdir -p "${CMAKE_HOME}" && \
     cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
-    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1 && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
