@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
+#include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_log_event_decoder.h>
@@ -91,6 +92,7 @@ static int append_options(struct flb_forward *ctx,
                           char *out_chunk)
 {
     char *chunk = NULL;
+    size_t chunk_len = 0;
     uint8_t checksum[64];
     int     result;
     struct mk_list *head;
@@ -104,8 +106,9 @@ static int append_options(struct flb_forward *ctx,
 
     if (fc->require_ack_response == FLB_TRUE) {
         /*
-         * for ack we calculate  sha512 of context, take 16 bytes,
-         * make 32 byte hex string of it
+         * The 'chunk' ack token is a Base64 representation of a 128 bits
+         * unique id: we take the first 16 bytes of the SHA512 checksum of
+         * the payload content.
          */
         result = flb_hash_simple(FLB_HASH_SHA512,
                                  data, bytes,
@@ -115,9 +118,13 @@ static int append_options(struct flb_forward *ctx,
             return -1;
         }
 
-        flb_forward_format_bin_to_hex(checksum, 16, out_chunk);
+        result = flb_base64_encode((unsigned char *) out_chunk,
+                                   FLB_FORWARD_CHUNK_TOKEN_SIZE, &chunk_len,
+                                   checksum, 16);
+        if (result != 0) {
+            return -1;
+        }
 
-        out_chunk[32] = '\0';
         chunk = (char *) out_chunk;
     }
 
@@ -126,8 +133,8 @@ static int append_options(struct flb_forward *ctx,
         flb_mp_map_header_append(&mh);
         msgpack_pack_str(mp_pck, 5);
         msgpack_pack_str_body(mp_pck, "chunk", 5);
-        msgpack_pack_str(mp_pck, 32);
-        msgpack_pack_str_body(mp_pck, out_chunk, 32);
+        msgpack_pack_str(mp_pck, chunk_len);
+        msgpack_pack_str_body(mp_pck, chunk, chunk_len);
     }
 
     /* "size": entries */
@@ -224,7 +231,7 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
     size_t off = 0;
     size_t record_size;
     char *chunk;
-    char chunk_buf[33];
+    char chunk_buf[FLB_FORWARD_CHUNK_TOKEN_SIZE] = {0};
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
     struct flb_time tm;
@@ -287,7 +294,7 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
         record_size = off - pre;
 
         if (ff) {
-            chunk = ff->checksum_hex;
+            chunk = ff->chunk_token;
         }
         else {
             chunk = chunk_buf;
@@ -407,17 +414,17 @@ static int flb_forward_format_forward_mode(struct flb_forward *ctx,
     int result;
     int entries = 0;
     char *chunk;
-    char chunk_buf[33];
+    char chunk_buf[FLB_FORWARD_CHUNK_TOKEN_SIZE] = {0};
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
-    char *transcoded_buffer;
-    size_t transcoded_length;
+    char *transcoded_buffer = NULL;
+    size_t transcoded_length = 0;
 
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     if (ff) {
-        chunk = ff->checksum_hex;
+        chunk = ff->chunk_token;
     }
     else {
         chunk = chunk_buf;
@@ -474,7 +481,7 @@ static int flb_forward_format_forward_compat_mode(struct flb_forward *ctx,
 {
     int entries = 0;
     char *chunk;
-    char chunk_buf[33];
+    char chunk_buf[FLB_FORWARD_CHUNK_TOKEN_SIZE] = {0};
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
     struct flb_log_event_decoder log_decoder;
@@ -494,7 +501,7 @@ static int flb_forward_format_forward_compat_mode(struct flb_forward *ctx,
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     if (ff) {
-        chunk = ff->checksum_hex;
+        chunk = ff->chunk_token;
     }
     else {
         chunk = chunk_buf;
