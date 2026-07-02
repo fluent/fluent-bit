@@ -1812,10 +1812,19 @@ static int pack_payload(int insert_id_extracted,
  *
  * log_errors: if FLB_TRUE, log why the record is being dropped.
  *             Set to FLB_FALSE during prescan to avoid duplicate logging.
+ *
+ * The insertId and payload labels are validated by traversing the record;
+ * the results are returned through in_status_out, insert_id_obj_out and
+ * payload_labels_ptr_out (any of which may be NULL) so the caller can reuse
+ * them instead of traversing the record again. They are only written when the
+ * record is not skipped.
  */
 static int should_skip_record(struct flb_stackdriver *ctx,
                               msgpack_object *obj,
-                              int log_errors)
+                              int log_errors,
+                              insert_id_status *in_status_out,
+                              msgpack_object *insert_id_obj_out,
+                              msgpack_object **payload_labels_ptr_out)
 {
     insert_id_status in_status;
     msgpack_object insert_id_obj;
@@ -1842,6 +1851,16 @@ static int should_skip_record(struct flb_stackdriver *ctx,
                           "dropping record");
         }
         return FLB_TRUE;
+    }
+
+    if (in_status_out != NULL) {
+        *in_status_out = in_status;
+    }
+    if (insert_id_obj_out != NULL) {
+        *insert_id_obj_out = insert_id_obj;
+    }
+    if (payload_labels_ptr_out != NULL) {
+        *payload_labels_ptr_out = payload_labels_ptr;
     }
 
     return FLB_FALSE;
@@ -1959,7 +1978,8 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        if (should_skip_record(ctx, log_event.body, FLB_FALSE) == FLB_TRUE) {
+        if (should_skip_record(ctx, log_event.body, FLB_FALSE,
+                               NULL, NULL, NULL) == FLB_TRUE) {
             array_size -= 1;
         }
     }
@@ -2393,8 +2413,13 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         obj = log_event.body;
 
-        /* Skip records with invalid fields */
-        if (should_skip_record(ctx, obj, FLB_TRUE) == FLB_TRUE) {
+        /*
+         * Skip records with invalid fields. The insertId and payload labels
+         * validated here are returned so they are not re-extracted below.
+         */
+        if (should_skip_record(ctx, obj, FLB_TRUE,
+                               &in_status, &insert_id_obj,
+                               &payload_labels_ptr) == FLB_TRUE) {
             continue;
         }
 
@@ -2462,8 +2487,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             log_name_extracted = FLB_TRUE;
         }
 
-        /* Extract insertId (INVALID case already handled by should_skip_record) */
-        in_status = validate_insert_id(&insert_id_obj, obj);
+        /*
+         * insertId was already validated and extracted by should_skip_record
+         * (the INVALID case is handled there); reuse that result.
+         */
         if (in_status == INSERTID_VALID) {
             insert_id_extracted = FLB_TRUE;
             entry_size += 1;
@@ -2512,8 +2539,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             entry_size += 1;
         }
 
-        /* Extract payload labels (non-map case already handled by should_skip_record) */
-        payload_labels_ptr = get_payload_labels(ctx, obj);
+        /*
+         * payload labels were already extracted by should_skip_record (the
+         * non-map case is handled there); reuse that result.
+         */
 
         /* Number of parsed labels */
         labels_size = mk_list_size(&ctx->config_labels);
