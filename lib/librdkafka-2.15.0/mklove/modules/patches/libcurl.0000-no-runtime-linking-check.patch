@@ -1,0 +1,11 @@
+--- a/configure	2026-05-14 23:31:11.123796321 +0200
++++ b/configure	2026-05-14 23:32:59.800743981 +0200
+@@ -36043,7 +36043,7 @@
+ 
+ 
+ 
+-    if test "$cross_compiling" != "yes"; then
++    if false; then
+ 
+             { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking runtime libs availability" >&5
+ printf %s "checking runtime libs availability... " >&6; }
