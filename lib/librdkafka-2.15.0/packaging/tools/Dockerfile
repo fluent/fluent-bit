@@ -1,3 +1,4 @@
+# hadolint global ignore=DL3003,DL3008,DL3009,DL3013,DL3042
 FROM ubuntu:24.04
 
 ARG UID
