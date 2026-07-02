@@ -1,0 +1,9 @@
+FROM alpine:3.16.9
+
+ARG UID
+
+RUN apk add bash gcc g++ make cmake git bsd-compat-headers
+RUN mkdir -p /home/user
+WORKDIR /home/user
+RUN chown -R ${UID} /home/user
+USER ${UID}
