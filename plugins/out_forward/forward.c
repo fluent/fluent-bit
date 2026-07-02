@@ -947,6 +947,20 @@ static int config_set_properties(struct flb_upstream_node *node,
         fc->password = "";
     }
 
+    /*
+     * username/password authorization is part of the secure forward
+     * handshake, which is only performed when a shared_key is set. Reject
+     * credentials that would otherwise be silently ignored.
+     */
+    if (fc->shared_key == NULL &&
+        (strlen(fc->username) > 0 || strlen(fc->password) > 0)) {
+        flb_plg_error(ctx->ins,
+                      "'username'/'password' is set but no 'shared_key' or "
+                      "'empty_shared_key' is configured: username/password "
+                      "authentication requires the secure forward handshake");
+        return -1;
+    }
+
     /* Self Hostname */
     tmp = config_get_property("self_hostname", node, ctx);
     if (tmp) {
@@ -1111,7 +1125,11 @@ static int forward_config_ha(const char *upstream_file,
         }
 
         /* Read properties into 'fc' context */
-        config_set_properties(node, fc, ctx);
+        ret = config_set_properties(node, fc, ctx);
+        if (ret == -1) {
+            forward_config_destroy(fc);
+            return -1;
+        }
 
         /* Initialize and validate forward_config context */
         ret = forward_config_init(fc, ctx);
@@ -1218,7 +1236,11 @@ static int forward_config_simple(struct flb_forward *ctx,
         flb_output_upstream_set(ctx->u, ins);
     }
     /* Read properties into 'fc' context */
-    config_set_properties(NULL, fc, ctx);
+    ret = config_set_properties(NULL, fc, ctx);
+    if (ret == -1) {
+        forward_config_destroy(fc);
+        return -1;
+    }
 
     /* Initialize and validate forward_config context */
     ret = forward_config_init(fc, ctx);
