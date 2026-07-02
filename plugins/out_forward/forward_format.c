@@ -207,7 +207,7 @@ static int append_options(struct flb_forward *ctx,
 
     flb_plg_debug(ctx->ins,
                   "send options records=%d chunk='%s'",
-                  entries, out_chunk ? out_chunk : "NULL");
+                  entries, chunk ? chunk : "NULL");
     return 0;
 }
 
@@ -449,15 +449,18 @@ static int flb_forward_format_forward_mode(struct flb_forward *ctx,
                                                   &transcoded_buffer,
                                                   &transcoded_length);
 
-            if (result == 0) {
-                entries = flb_mp_count(transcoded_buffer, transcoded_length);
-                append_options(ctx, fc, event_type, &mp_pck, entries,
-                               transcoded_buffer,
-                               transcoded_length,
-                               NULL, chunk);
-
-                free(transcoded_buffer);
+            if (result != 0) {
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                return -1;
             }
+
+            entries = flb_mp_count(transcoded_buffer, transcoded_length);
+            append_options(ctx, fc, event_type, &mp_pck, entries,
+                           transcoded_buffer,
+                           transcoded_length,
+                           NULL, chunk);
+
+            free(transcoded_buffer);
         }
         else {
             append_options(ctx, fc, event_type, &mp_pck, entries, (char *) data, bytes, NULL, chunk);
