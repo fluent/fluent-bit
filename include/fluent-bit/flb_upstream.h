@@ -41,6 +41,8 @@
  * --- flb_io.h ---
  *   #define  FLB_IO_TCP      1
  *   #define  FLB_IO_TLS      2
+ *   #define  FLB_IO_UDP     32
+ *   #define  FLB_IO_DTLS    64
  *   #define  FLB_IO_ASYNC    8
  *   #define  FLB_IO_TCP_KA  16
  * ---
