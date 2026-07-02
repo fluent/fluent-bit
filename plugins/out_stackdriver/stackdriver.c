@@ -46,6 +46,15 @@
 #include "stackdriver_helper.h"
 #include "stackdriver_resource_types.h"
 
+struct stackdriver_format_ctx {
+    struct flb_stackdriver *ctx;
+    flb_sds_t local_resource_id;
+    flb_sds_t namespace_name;
+    flb_sds_t pod_name;
+    flb_sds_t container_name;
+    flb_sds_t node_name;
+};
+
 pthread_key_t oauth2_type;
 pthread_key_t oauth2_token;
 pthread_key_t oauth2_token_expires;
@@ -718,12 +727,13 @@ static struct mk_list *parse_local_resource_id_to_list(char *local_resource_id, 
  *  - if local_resource_id is missing from the payLoad, use the tag of the log
  */
 static int extract_local_resource_id(const void *data, size_t bytes,
-                                     struct flb_stackdriver *ctx, const char *tag) {
+                                     struct stackdriver_format_ctx *fmt_ctx, const char *tag) {
     msgpack_object_map map;
     flb_sds_t local_resource_id;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
     int ret;
+    struct flb_stackdriver *ctx = fmt_ctx->ctx;
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
@@ -749,11 +759,11 @@ static int extract_local_resource_id(const void *data, size_t bytes,
         }
 
         /* we need to create up the local_resource_id from previous log */
-        if (ctx->local_resource_id) {
-            flb_sds_destroy(ctx->local_resource_id);
+        if (fmt_ctx->local_resource_id) {
+            flb_sds_destroy(fmt_ctx->local_resource_id);
         }
 
-        ctx->local_resource_id = flb_sds_create(local_resource_id);
+        fmt_ctx->local_resource_id = flb_sds_create(local_resource_id);
 
         flb_sds_destroy(local_resource_id);
 
@@ -775,7 +785,7 @@ static int extract_local_resource_id(const void *data, size_t bytes,
  *  - use the extracted local_resource_id to assign the label keys for different
  *    resource types that are specified in the configuration of stackdriver_out plugin
  */
-static int set_monitored_resource_labels(struct flb_stackdriver *ctx, char *type)
+static int set_monitored_resource_labels(struct stackdriver_format_ctx *fmt_ctx, char *type)
 {
     int ret = -1;
     int first = FLB_TRUE;
@@ -788,8 +798,9 @@ static int set_monitored_resource_labels(struct flb_stackdriver *ctx, char *type
     struct mk_list *list = NULL;
     struct mk_list *head;
     flb_sds_t new_local_resource_id;
+    struct flb_stackdriver *ctx = fmt_ctx->ctx;
 
-    if (!ctx->local_resource_id) {
+    if (!fmt_ctx->local_resource_id) {
         flb_plg_error(ctx->ins, "local_resource_is is not assigned");
         return -1;
     }
@@ -799,15 +810,19 @@ static int set_monitored_resource_labels(struct flb_stackdriver *ctx, char *type
     len_k8s_pod = sizeof(K8S_POD) - 1;
 
     prefix_len = flb_sds_len(ctx->tag_prefix);
-    if (flb_sds_casecmp(ctx->tag_prefix, ctx->local_resource_id, prefix_len) != 0) {
-        flb_plg_error(ctx->ins, "tag_prefix [%s] doesn't match the prefix of"
-                      " local_resource_id [%s]", ctx->tag_prefix,
-                      ctx->local_resource_id);
+    if (flb_sds_len(fmt_ctx->local_resource_id) < prefix_len) {
+        flb_plg_error(ctx->ins, "invalid local_resource_id");
         return -1;
     }
 
-    new_local_resource_id = flb_sds_create_len(ctx->local_resource_id,
-                                               flb_sds_len(ctx->local_resource_id));
+    if (flb_sds_casecmp(ctx->tag_prefix, fmt_ctx->local_resource_id, prefix_len) != 0) {
+        flb_plg_error(ctx->ins, "prefix doesn't match for local_resource_id %s",
+                      fmt_ctx->local_resource_id);
+        return -1;
+    }
+
+    new_local_resource_id = flb_sds_create_len(fmt_ctx->local_resource_id,
+                                               flb_sds_len(fmt_ctx->local_resource_id));
     replace_prefix_dot(new_local_resource_id, prefix_len - 1);
 
     if (strncmp(type, K8S_CONTAINER, len_k8s_container) == 0) {
@@ -826,28 +841,28 @@ static int set_monitored_resource_labels(struct flb_stackdriver *ctx, char *type
 
             /* Follow the order of fields in local_resource_id */
             if (counter == 0) {
-                if (ctx->namespace_name) {
-                    flb_sds_destroy(ctx->namespace_name);
+                if (fmt_ctx->namespace_name) {
+                    flb_sds_destroy(fmt_ctx->namespace_name);
                 }
-                ctx->namespace_name = flb_sds_create(ptr->val);
+                fmt_ctx->namespace_name = flb_sds_create(ptr->val);
             }
             else if (counter == 1) {
-                if (ctx->pod_name) {
-                    flb_sds_destroy(ctx->pod_name);
+                if (fmt_ctx->pod_name) {
+                    flb_sds_destroy(fmt_ctx->pod_name);
                 }
-                ctx->pod_name = flb_sds_create(ptr->val);
+                fmt_ctx->pod_name = flb_sds_create(ptr->val);
             }
             else if (counter == 2) {
-                if (ctx->container_name) {
-                    flb_sds_destroy(ctx->container_name);
+                if (fmt_ctx->container_name) {
+                    flb_sds_destroy(fmt_ctx->container_name);
                 }
-                ctx->container_name = flb_sds_create(ptr->val);
+                fmt_ctx->container_name = flb_sds_create(ptr->val);
             }
 
             counter++;
         }
 
-        if (!ctx->namespace_name || !ctx->pod_name || !ctx->container_name) {
+        if (!fmt_ctx->namespace_name || !fmt_ctx->pod_name || !fmt_ctx->container_name) {
             goto error;
         }
     }
@@ -865,14 +880,14 @@ static int set_monitored_resource_labels(struct flb_stackdriver *ctx, char *type
             }
 
             if (ptr != NULL) {
-                if (ctx->node_name) {
-                    flb_sds_destroy(ctx->node_name);
+                if (fmt_ctx->node_name) {
+                    flb_sds_destroy(fmt_ctx->node_name);
                 }
-                ctx->node_name = flb_sds_create(ptr->val);
+                fmt_ctx->node_name = flb_sds_create(ptr->val);
             }
         }
 
-        if (!ctx->node_name) {
+        if (!fmt_ctx->node_name) {
             goto error;
         }
     }
@@ -891,22 +906,22 @@ static int set_monitored_resource_labels(struct flb_stackdriver *ctx, char *type
 
             /* Follow the order of fields in local_resource_id */
             if (counter == 0) {
-                if (ctx->namespace_name) {
-                    flb_sds_destroy(ctx->namespace_name);
+                if (fmt_ctx->namespace_name) {
+                    flb_sds_destroy(fmt_ctx->namespace_name);
                 }
-                ctx->namespace_name = flb_sds_create(ptr->val);
+                fmt_ctx->namespace_name = flb_sds_create(ptr->val);
             }
             else if (counter == 1) {
-                if (ctx->pod_name) {
-                    flb_sds_destroy(ctx->pod_name);
+                if (fmt_ctx->pod_name) {
+                    flb_sds_destroy(fmt_ctx->pod_name);
                 }
-                ctx->pod_name = flb_sds_create(ptr->val);
+                fmt_ctx->pod_name = flb_sds_create(ptr->val);
             }
 
             counter++;
         }
 
-        if (!ctx->namespace_name || !ctx->pod_name) {
+        if (!fmt_ctx->namespace_name || !fmt_ctx->pod_name) {
             goto error;
         }
     }
@@ -928,30 +943,36 @@ static int set_monitored_resource_labels(struct flb_stackdriver *ctx, char *type
     }
 
     if (strncmp(type, K8S_CONTAINER, len_k8s_container) == 0) {
-        if (ctx->namespace_name) {
-            flb_sds_destroy(ctx->namespace_name);
+        if (fmt_ctx->namespace_name) {
+            flb_sds_destroy(fmt_ctx->namespace_name);
+            fmt_ctx->namespace_name = NULL;
         }
 
-        if (ctx->pod_name) {
-            flb_sds_destroy(ctx->pod_name);
+        if (fmt_ctx->pod_name) {
+            flb_sds_destroy(fmt_ctx->pod_name);
+            fmt_ctx->pod_name = NULL;
         }
 
-        if (ctx->container_name) {
-            flb_sds_destroy(ctx->container_name);
+        if (fmt_ctx->container_name) {
+            flb_sds_destroy(fmt_ctx->container_name);
+            fmt_ctx->container_name = NULL;
         }
     }
     else if (strncmp(type, K8S_NODE, len_k8s_node) == 0) {
-        if (ctx->node_name) {
-            flb_sds_destroy(ctx->node_name);
+        if (fmt_ctx->node_name) {
+            flb_sds_destroy(fmt_ctx->node_name);
+            fmt_ctx->node_name = NULL;
         }
     }
     else if (strncmp(type, K8S_POD, len_k8s_pod) == 0) {
-        if (ctx->namespace_name) {
-            flb_sds_destroy(ctx->namespace_name);
+        if (fmt_ctx->namespace_name) {
+            flb_sds_destroy(fmt_ctx->namespace_name);
+            fmt_ctx->namespace_name = NULL;
         }
 
-        if (ctx->pod_name) {
-            flb_sds_destroy(ctx->pod_name);
+        if (fmt_ctx->pod_name) {
+            flb_sds_destroy(fmt_ctx->pod_name);
+            fmt_ctx->pod_name = NULL;
         }
     }
 
@@ -983,21 +1004,32 @@ static int is_tag_match_regex(struct flb_stackdriver *ctx,
     return ret;
 }
 
-static int is_local_resource_id_match_regex(struct flb_stackdriver *ctx)
+static int is_local_resource_id_match_regex(struct stackdriver_format_ctx *fmt_ctx)
 {
     int ret;
     int prefix_len;
     int len_to_be_matched;
     const char *str_to_be_matcheds;
+    struct flb_stackdriver *ctx = fmt_ctx->ctx;
 
-    if (!ctx->local_resource_id) {
+    if (!fmt_ctx->local_resource_id) {
         flb_plg_warn(ctx->ins, "local_resource_id not found in the payload");
         return -1;
     }
 
     prefix_len = flb_sds_len(ctx->tag_prefix);
-    str_to_be_matcheds = ctx->local_resource_id + prefix_len;
-    len_to_be_matched = flb_sds_len(ctx->local_resource_id) - prefix_len;
+
+    /*
+     * Guard against a local_resource_id shorter than tag_prefix: slicing at
+     * prefix_len would advance the pointer past the SDS buffer and compute a
+     * negative match length. Treat it as no match.
+     */
+    if (flb_sds_len(fmt_ctx->local_resource_id) < prefix_len) {
+        return 0;
+    }
+
+    str_to_be_matcheds = fmt_ctx->local_resource_id + prefix_len;
+    len_to_be_matched = flb_sds_len(fmt_ctx->local_resource_id) - prefix_len;
 
     ret = flb_regex_match(ctx->regex,
                           (unsigned char *) str_to_be_matcheds,
@@ -1013,7 +1045,7 @@ static void cb_results(const char *name, const char *value,
  * extract_resource_labels_from_regex(4) will only be called if the
  * tag or local_resource_id field matches the regex rule
  */
-static int extract_resource_labels_from_regex(struct flb_stackdriver *ctx,
+static int extract_resource_labels_from_regex(struct stackdriver_format_ctx *fmt_ctx,
                                               const char *tag, int tag_len,
                                               int from_tag)
 {
@@ -1022,6 +1054,7 @@ static int extract_resource_labels_from_regex(struct flb_stackdriver *ctx,
     int len_to_be_matched;
     int local_resource_id_len;
     const char *str_to_be_matcheds;
+    struct flb_stackdriver *ctx = fmt_ctx->ctx;
     struct flb_regex_search result;
 
     prefix_len = flb_sds_len(ctx->tag_prefix);
@@ -1031,8 +1064,8 @@ static int extract_resource_labels_from_regex(struct flb_stackdriver *ctx,
     }
     else {
         // this will be called only if the payload contains local_resource_id
-        local_resource_id_len = flb_sds_len(ctx->local_resource_id);
-        str_to_be_matcheds = ctx->local_resource_id + prefix_len;
+        local_resource_id_len = flb_sds_len(fmt_ctx->local_resource_id);
+        str_to_be_matcheds = fmt_ctx->local_resource_id + prefix_len;
     }
 
     len_to_be_matched = local_resource_id_len - prefix_len;
@@ -1043,25 +1076,28 @@ static int extract_resource_labels_from_regex(struct flb_stackdriver *ctx,
         return -1;
     }
 
-    flb_regex_parse(ctx->regex, &result, cb_results, ctx);
+    flb_regex_parse(ctx->regex, &result, cb_results, fmt_ctx);
 
     return ret;
 }
 
-static int process_local_resource_id(struct flb_stackdriver *ctx,
+static int process_local_resource_id(struct stackdriver_format_ctx *fmt_ctx,
                                      const char *tag, int tag_len, char *type)
 {
     int ret;
+    struct flb_stackdriver *ctx = fmt_ctx->ctx;
 
     // parsing local_resource_id from tag takes higher priority
     if (is_tag_match_regex(ctx, tag, tag_len) > 0) {
-        ret = extract_resource_labels_from_regex(ctx, tag, tag_len, FLB_TRUE);
-    }
-    else if (is_local_resource_id_match_regex(ctx) > 0) {
-        ret = extract_resource_labels_from_regex(ctx, tag, tag_len, FLB_FALSE);
+        ret = extract_resource_labels_from_regex(fmt_ctx, tag, tag_len, FLB_TRUE);
     }
     else {
-        ret = set_monitored_resource_labels(ctx, type);
+        if (is_local_resource_id_match_regex(fmt_ctx) > 0) {
+            ret = extract_resource_labels_from_regex(fmt_ctx, tag, tag_len, FLB_FALSE);
+        }
+        else {
+            ret = set_monitored_resource_labels(fmt_ctx, type);
+        }
     }
 
     return ret;
@@ -1247,35 +1283,35 @@ static void pack_labels(struct flb_stackdriver *ctx,
 static void cb_results(const char *name, const char *value,
                        size_t vlen, void *data)
 {
-    struct flb_stackdriver *ctx = data;
+    struct stackdriver_format_ctx *fmt_ctx = data;
 
     if (vlen == 0) {
         return;
     }
 
     if (strcmp(name, "pod_name") == 0) {
-        if (ctx->pod_name != NULL) {
-            flb_sds_destroy(ctx->pod_name);
+        if (fmt_ctx->pod_name != NULL) {
+            flb_sds_destroy(fmt_ctx->pod_name);
         }
-        ctx->pod_name = flb_sds_create_len(value, vlen);
+        fmt_ctx->pod_name = flb_sds_create_len(value, vlen);
     }
     else if (strcmp(name, "namespace_name") == 0) {
-        if (ctx->namespace_name != NULL) {
-            flb_sds_destroy(ctx->namespace_name);
+        if (fmt_ctx->namespace_name != NULL) {
+            flb_sds_destroy(fmt_ctx->namespace_name);
         }
-        ctx->namespace_name = flb_sds_create_len(value, vlen);
+        fmt_ctx->namespace_name = flb_sds_create_len(value, vlen);
     }
     else if (strcmp(name, "container_name") == 0) {
-        if (ctx->container_name != NULL) {
-            flb_sds_destroy(ctx->container_name);
+        if (fmt_ctx->container_name != NULL) {
+            flb_sds_destroy(fmt_ctx->container_name);
         }
-        ctx->container_name = flb_sds_create_len(value, vlen);
+        fmt_ctx->container_name = flb_sds_create_len(value, vlen);
     }
     else if (strcmp(name, "node_name") == 0) {
-        if (ctx->node_name != NULL) {
-            flb_sds_destroy(ctx->node_name);
+        if (fmt_ctx->node_name != NULL) {
+            flb_sds_destroy(fmt_ctx->node_name);
         }
-        ctx->node_name = flb_sds_create_len(value, vlen);
+        fmt_ctx->node_name = flb_sds_create_len(value, vlen);
     }
 
     return;
@@ -1340,6 +1376,8 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         goto error;
     }
     ctx->token_mutex_initialized = FLB_TRUE;
+
+
 
     /* Create Upstream context for Stackdriver Logging (no oauth2 service) */
     ctx->u = flb_upstream_create_url(config, ctx->cloud_logging_write_url,
@@ -1417,6 +1455,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     return 0;
 
 error:
+
     if (ctx->token_mutex_initialized == FLB_TRUE) {
         pthread_mutex_destroy(&ctx->token_mutex);
         ctx->token_mutex_initialized = FLB_FALSE;
@@ -1509,7 +1548,7 @@ static int get_msgpack_obj(msgpack_object * subobj, const msgpack_object * o,
             continue;
         }
 
-        if (flb_sds_cmp(key, p->key.via.str.ptr, p->key.via.str.size) == 0) {
+        if (flb_sds_casecmp(key, p->key.via.str.ptr, p->key.via.str.size) == 0) {
             *subobj = p->val;
             return 0;
         }
@@ -1721,8 +1760,9 @@ static int pack_payload(int insert_id_extracted,
         }
 
         /* processing logging.googleapis.com/operation */
-        if (validate_key(kv->key, OPERATION_FIELD_IN_JSON,
-                         OPERATION_KEY_SIZE)
+        if (operation_extracted == FLB_TRUE
+            && validate_key(kv->key, OPERATION_FIELD_IN_JSON,
+                            OPERATION_KEY_SIZE)
             && kv->val.type == MSGPACK_OBJECT_MAP) {
             if (operation_extra_size > 0) {
                 msgpack_pack_object(mp_pck, kv->key);
@@ -1731,8 +1771,9 @@ static int pack_payload(int insert_id_extracted,
             continue;
         }
 
-        if (validate_key(kv->key, SOURCELOCATION_FIELD_IN_JSON,
-                         SOURCE_LOCATION_SIZE)
+        if (source_location_extracted == FLB_TRUE
+            && validate_key(kv->key, SOURCELOCATION_FIELD_IN_JSON,
+                            SOURCE_LOCATION_SIZE)
             && kv->val.type == MSGPACK_OBJECT_MAP) {
 
             if (source_location_extra_size > 0) {
@@ -1743,8 +1784,9 @@ static int pack_payload(int insert_id_extracted,
             continue;
         }
 
-        if (validate_key(kv->key, ctx->http_request_key,
-                         ctx->http_request_key_size)
+        if (http_request_extracted == FLB_TRUE
+            && validate_key(kv->key, ctx->http_request_key,
+                            ctx->http_request_key_size)
             && kv->val.type == MSGPACK_OBJECT_MAP) {
 
             if(http_request_extra_size > 0) {
@@ -1807,98 +1849,74 @@ static int pack_payload(int insert_id_extracted,
 
 static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                                     int total_records,
-                                    const char *tag, int tag_len,
+                                    char *tag, int tag_len,
                                     const void *data, size_t bytes,
                                     struct flb_config *config,
                                     int *formatted_records)
 {
-    int len;
     int ret;
-    int array_size = 0;
-    /* The default value is 3: timestamp, jsonPayload, logName. */
-    int entry_size = 3;
-    size_t s;
-    // size_t off = 0;
-    char path[PATH_MAX];
-    char time_formatted[255];
-    const char *newtag;
-    const char *new_log_name;
-    msgpack_object *obj;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
-    flb_sds_t out_buf;
-    struct flb_mp_map_header mh;
-
-    /* Parameters for project_id_key */
-    int project_id_extracted = FLB_FALSE;
-    flb_sds_t project_id_key;
-
-    /* Parameters for severity */
-    int severity_extracted = FLB_FALSE;
+    int len;
+    int entry_size;
+    int labels_size;
+    int records_count = 0;
+    int tms_status;
+    int trace_extracted;
+    int span_id_extracted;
+    int trace_sampled_extracted;
+    int trace_sampled;
+    int project_id_extracted;
+    int log_name_extracted;
+    int severity_extracted;
     severity_t severity;
-
-    /* Parameters for trace */
-    int trace_extracted = FLB_FALSE;
-    flb_sds_t trace = NULL;
-    char stackdriver_trace[PATH_MAX];
-    const char *new_trace;
-
-    /* Parameters for span id */
-    int span_id_extracted = FLB_FALSE;
-    flb_sds_t span_id;
-
-    /* Parameters for trace sampled */
-    int trace_sampled_extracted = FLB_FALSE;
-    int trace_sampled = FLB_FALSE;
-
-    /* Parameters for log name */
-    int log_name_extracted = FLB_FALSE;
-    flb_sds_t log_name = NULL;
-    flb_sds_t stream = NULL;
-    flb_sds_t stream_key;
-
-    /* Parameters for insertId */
-    msgpack_object insert_id_obj;
-    insert_id_status in_status;
+    int in_status;
     int insert_id_extracted;
-
-    /* Parameters in Operation */
-    flb_sds_t operation_id;
-    flb_sds_t operation_producer;
-    int operation_first = FLB_FALSE;
-    int operation_last = FLB_FALSE;
-    int operation_extracted = FLB_FALSE;
-    int operation_extra_size = 0;
-
-    /* Parameters for sourceLocation */
-    flb_sds_t source_location_file;
-    int64_t source_location_line = 0;
-    flb_sds_t source_location_function;
-    int source_location_extracted = FLB_FALSE;
-    int source_location_extra_size = 0;
-
-    /* Parameters for httpRequest */
-    struct http_request_field http_request;
-    int http_request_extracted = FLB_FALSE;
-    int http_request_extra_size = 0;
-
-    /* Parameters for Timestamp */
-    struct tm tm;
-    // struct flb_time tms;
-    timestamp_status tms_status;
-    /* Count number of records */
-    array_size = total_records;
-
-    if (formatted_records != NULL) {
-        *formatted_records = 0;
-    }
-
-    /* Parameters for labels */
-    msgpack_object *payload_labels_ptr;
-    int labels_size = 0;
-
+    int operation_extracted;
+    int operation_first;
+    int operation_last;
+    int operation_extra_size;
+    int source_location_extracted;
+    int source_location_extra_size;
+    int http_request_extracted;
+    int http_request_extra_size;
+    char *new_trace;
+    char *newtag;
+    char *new_log_name;
+    char *operation_id;
+    char *operation_producer;
+    char *source_location_file;
+    char *source_location_function;
+    char path[1024];
+    char time_formatted[32];
+    char stackdriver_trace[256];
+    flb_sds_t trace = NULL;
+    flb_sds_t span_id = NULL;
+    flb_sds_t project_id_key = NULL;
+    flb_sds_t log_name = NULL;
+    flb_sds_t stream_key = NULL;
+    flb_sds_t stream = NULL;
+    flb_sds_t out_buf = NULL;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
+    msgpack_object insert_id_obj;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    msgpack_object *obj;
+    msgpack_object *payload_labels_ptr = NULL;
+    struct http_request_field http_request;
+    struct flb_mp_map_header mh;
+    struct flb_mp_map_header entries_mh;
+    struct tm tm;
+    size_t s;
+    long source_location_line;
+
+    /* consolidated cleanup variables */
+    int decoder_initialized = FLB_FALSE;
+    int sbuf_initialized = FLB_FALSE;
+    struct stackdriver_format_ctx fmt_ctx;
+
+    /* Initialize fmt_ctx */
+    memset(&fmt_ctx, 0, sizeof(struct stackdriver_format_ctx));
+    fmt_ctx.ctx = ctx;
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
 
@@ -1908,39 +1926,11 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
 
         return NULL;
     }
-
-    /*
-     * Search each entry and validate insertId.
-     * Reject the entry if insertId is invalid.
-     * If all the entries are rejected, stop formatting.
-     *
-     */
-    while ((ret = flb_log_event_decoder_next(
-                    &log_decoder,
-                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        /* Extract insertId */
-        in_status = validate_insert_id(&insert_id_obj, log_event.body);
-
-        if (in_status == INSERTID_INVALID) {
-            flb_plg_error(ctx->ins,
-                          "Incorrect insertId received. InsertId should be non-empty string.");
-            array_size -= 1;
-        }
-    }
-
-    flb_log_event_decoder_destroy(&log_decoder);
-
-    /* Sounds like this should compare to -1 instead of zero */
-    if (array_size == 0) {
-        return NULL;
-    }
-
-    if (formatted_records != NULL) {
-        *formatted_records = array_size;
-    }
+    decoder_initialized = FLB_TRUE;
 
     /* Create temporal msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
+    sbuf_initialized = FLB_TRUE;
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /*
@@ -1975,11 +1965,11 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     ret = pack_resource_labels(ctx, &mh, &mp_pck, data, bytes);
     if (ret != 0) {
         if (ctx->resource_type == RESOURCE_TYPE_K8S) {
-            ret = extract_local_resource_id(data, bytes, ctx, tag);
+            ret = extract_local_resource_id(data, bytes, &fmt_ctx, tag);
             if (ret != 0) {
                 flb_plg_error(ctx->ins, "fail to construct local_resource_id");
-                msgpack_sbuffer_destroy(&mp_sbuf);
-                return NULL;
+                out_buf = NULL;
+                goto cleanup;
             }
         }
         ret = parse_monitored_resource(ctx, data, bytes, &mp_pck);
@@ -2095,12 +2085,12 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                 *    k8s_container.<namespace_name>.<pod_name>.<container_name>
                 */
 
-                ret = process_local_resource_id(ctx, tag, tag_len, K8S_CONTAINER);
+                ret = process_local_resource_id(&fmt_ctx, tag, tag_len, K8S_CONTAINER);
                 if (ret == -1) {
                     flb_plg_error(ctx->ins, "fail to extract resource labels "
                                 "for k8s_container resource type");
-                    msgpack_sbuffer_destroy(&mp_sbuf);
-                    return NULL;
+                    out_buf = NULL;
+                    goto cleanup;
                 }
 
                 flb_mp_map_header_init(&mh, &mp_pck);
@@ -2133,33 +2123,33 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                                         ctx->cluster_name, flb_sds_len(ctx->cluster_name));
                 }
 
-                if (ctx->namespace_name) {
+                if (fmt_ctx.namespace_name) {
                     flb_mp_map_header_append(&mh);
                     msgpack_pack_str(&mp_pck, 14);
                     msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
-                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_name));
+                    msgpack_pack_str(&mp_pck, flb_sds_len(fmt_ctx.namespace_name));
                     msgpack_pack_str_body(&mp_pck,
-                                        ctx->namespace_name,
-                                        flb_sds_len(ctx->namespace_name));
+                                        fmt_ctx.namespace_name,
+                                        flb_sds_len(fmt_ctx.namespace_name));
                 }
 
-                if (ctx->pod_name) {
+                if (fmt_ctx.pod_name) {
                     flb_mp_map_header_append(&mh);
                     msgpack_pack_str(&mp_pck, 8);
                     msgpack_pack_str_body(&mp_pck, "pod_name", 8);
-                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
+                    msgpack_pack_str(&mp_pck, flb_sds_len(fmt_ctx.pod_name));
                     msgpack_pack_str_body(&mp_pck,
-                                        ctx->pod_name, flb_sds_len(ctx->pod_name));
+                                        fmt_ctx.pod_name, flb_sds_len(fmt_ctx.pod_name));
                 }
 
-                if (ctx->container_name) {
+                if (fmt_ctx.container_name) {
                     flb_mp_map_header_append(&mh);
                     msgpack_pack_str(&mp_pck, 14);
                     msgpack_pack_str_body(&mp_pck, "container_name", 14);
-                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->container_name));
+                    msgpack_pack_str(&mp_pck, flb_sds_len(fmt_ctx.container_name));
                     msgpack_pack_str_body(&mp_pck,
-                                        ctx->container_name,
-                                        flb_sds_len(ctx->container_name));
+                                        fmt_ctx.container_name,
+                                        flb_sds_len(fmt_ctx.container_name));
                 }
 
                 flb_mp_map_header_end(&mh);
@@ -2171,12 +2161,12 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                 *      k8s_node.<node_name>
                 */
 
-                ret = process_local_resource_id(ctx, tag, tag_len, K8S_NODE);
+                ret = process_local_resource_id(&fmt_ctx, tag, tag_len, K8S_NODE);
                 if (ret == -1) {
                     flb_plg_error(ctx->ins, "fail to process local_resource_id from "
                                 "log entry for k8s_node");
-                    msgpack_sbuffer_destroy(&mp_sbuf);
-                    return NULL;
+                    out_buf = NULL;
+                    goto cleanup;
                 }
 
                 flb_mp_map_header_init(&mh, &mp_pck);
@@ -2209,13 +2199,13 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                                         ctx->cluster_name, flb_sds_len(ctx->cluster_name));
                 }
 
-                if (ctx->node_name) {
+                if (fmt_ctx.node_name) {
                     flb_mp_map_header_append(&mh);
                     msgpack_pack_str(&mp_pck, 9);
                     msgpack_pack_str_body(&mp_pck, "node_name", 9);
-                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->node_name));
+                    msgpack_pack_str(&mp_pck, flb_sds_len(fmt_ctx.node_name));
                     msgpack_pack_str_body(&mp_pck,
-                                        ctx->node_name, flb_sds_len(ctx->node_name));
+                                        fmt_ctx.node_name, flb_sds_len(fmt_ctx.node_name));
                 }
 
                 flb_mp_map_header_end(&mh);
@@ -2228,12 +2218,12 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                 *      k8s_pod.<namespace_name>.<pod_name>
                 */
 
-                ret = process_local_resource_id(ctx, tag, tag_len, K8S_POD);
+                ret = process_local_resource_id(&fmt_ctx, tag, tag_len, K8S_POD);
                 if (ret == -1) {
                     flb_plg_error(ctx->ins, "fail to process local_resource_id from "
                                 "log entry for k8s_pod");
-                    msgpack_sbuffer_destroy(&mp_sbuf);
-                    return NULL;
+                    out_buf = NULL;
+                    goto cleanup;
                 }
 
                 flb_mp_map_header_init(&mh, &mp_pck);
@@ -2266,23 +2256,23 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                                         ctx->cluster_name, flb_sds_len(ctx->cluster_name));
                 }
 
-                if (ctx->namespace_name) {
+                if (fmt_ctx.namespace_name) {
                     flb_mp_map_header_append(&mh);
                     msgpack_pack_str(&mp_pck, 14);
                     msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
-                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_name));
+                    msgpack_pack_str(&mp_pck, flb_sds_len(fmt_ctx.namespace_name));
                     msgpack_pack_str_body(&mp_pck,
-                                        ctx->namespace_name,
-                                        flb_sds_len(ctx->namespace_name));
+                                        fmt_ctx.namespace_name,
+                                        flb_sds_len(fmt_ctx.namespace_name));
                 }
 
-                if (ctx->pod_name) {
+                if (fmt_ctx.pod_name) {
                     flb_mp_map_header_append(&mh);
                     msgpack_pack_str(&mp_pck, 8);
                     msgpack_pack_str_body(&mp_pck, "pod_name", 8);
-                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
+                    msgpack_pack_str(&mp_pck, flb_sds_len(fmt_ctx.pod_name));
                     msgpack_pack_str_body(&mp_pck,
-                                        ctx->pod_name, flb_sds_len(ctx->pod_name));
+                                        fmt_ctx.pod_name, flb_sds_len(fmt_ctx.pod_name));
                 }
 
                 flb_mp_map_header_end(&mh);
@@ -2329,26 +2319,16 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             else {
                 flb_plg_error(ctx->ins, "unsupported resource type '%s'",
                             ctx->resource);
-                msgpack_sbuffer_destroy(&mp_sbuf);
-                return NULL;
+                out_buf = NULL;
+                goto cleanup;
             }
         }
     }
     msgpack_pack_str(&mp_pck, 7);
     msgpack_pack_str_body(&mp_pck, "entries", 7);
 
-    /* Append entries */
-    msgpack_pack_array(&mp_pck, array_size);
-
-    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
-
-    if (ret != FLB_EVENT_DECODER_SUCCESS) {
-        flb_plg_error(ctx->ins,
-                      "Log event decoder initialization error : %d", ret);
-        msgpack_sbuffer_destroy(&mp_sbuf);
-
-        return NULL;
-    }
+    /* Append entries dynamic array */
+    flb_mp_array_header_init(&entries_mh, &mp_pck);
 
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
@@ -2454,8 +2434,8 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
         operation_last = FLB_FALSE;
         operation_extra_size = 0;
         operation_extracted = extract_operation(&operation_id, &operation_producer,
-                                                &operation_first, &operation_last, obj,
-                                                &operation_extra_size);
+                                                &operation_first, &operation_last,
+                                                obj, &operation_extra_size);
 
         if (operation_extracted == FLB_TRUE) {
             entry_size += 1;
@@ -2469,8 +2449,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
         source_location_extracted = extract_source_location(&source_location_file,
                                                             &source_location_line,
                                                             &source_location_function,
-                                                            obj,
-                                                            &source_location_extra_size);
+                                                            obj, &source_location_extra_size);
 
         if (source_location_extracted == FLB_TRUE) {
             entry_size += 1;
@@ -2515,10 +2494,8 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
 
             destroy_http_request(&http_request);
 
-            flb_log_event_decoder_destroy(&log_decoder);
-            msgpack_sbuffer_destroy(&mp_sbuf);
-
-            return NULL;
+            out_buf = NULL;
+            goto cleanup;
         }
 
         /* Number of parsed labels */
@@ -2694,18 +2671,52 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
 
         msgpack_pack_str(&mp_pck, s);
         msgpack_pack_str_body(&mp_pck, time_formatted, s);
+
+        flb_mp_array_header_append(&entries_mh);
+        records_count++;
     }
 
-    flb_log_event_decoder_destroy(&log_decoder);
+    flb_mp_array_header_end(&entries_mh);
+
+    if (records_count == 0) {
+        out_buf = NULL;
+        goto cleanup;
+    }
+
+    if (formatted_records != NULL) {
+        *formatted_records = records_count;
+    }
 
     /* Convert from msgpack to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
                                           config->json_escape_unicode);
-    msgpack_sbuffer_destroy(&mp_sbuf);
-
     if (!out_buf) {
         flb_plg_error(ctx->ins, "error formatting JSON payload");
-        return NULL;
+    }
+
+cleanup:
+    if (sbuf_initialized) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+    }
+    if (decoder_initialized) {
+        flb_log_event_decoder_destroy(&log_decoder);
+    }
+
+    /* Destroy local dynamic resource strings */
+    if (fmt_ctx.local_resource_id) {
+        flb_sds_destroy(fmt_ctx.local_resource_id);
+    }
+    if (fmt_ctx.namespace_name) {
+        flb_sds_destroy(fmt_ctx.namespace_name);
+    }
+    if (fmt_ctx.pod_name) {
+        flb_sds_destroy(fmt_ctx.pod_name);
+    }
+    if (fmt_ctx.container_name) {
+        flb_sds_destroy(fmt_ctx.container_name);
+    }
+    if (fmt_ctx.node_name) {
+        flb_sds_destroy(fmt_ctx.node_name);
     }
 
     return out_buf;
@@ -3375,6 +3386,8 @@ static struct flb_config_map config_map[] = {
       0, FLB_TRUE, offsetof(struct flb_stackdriver, cloud_logging_base_url),
       "The base Cloud Logging API URL to use for the /v2/entries:write API request. Default: https://logging.googleapis.com"
     },
+
+
     /* EOF */
     {0}
 };
