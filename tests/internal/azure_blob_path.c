@@ -6,6 +6,9 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_base64.h>
 
 #include "../../plugins/out_azure_blob/azure_blob.h"
 #include "../../plugins/out_azure_blob/azure_blob_uri.h"
@@ -478,6 +481,86 @@ void test_block_blob_commit_requires_suffix(void)
     ctx_cleanup(&ctx);
 }
 
+void test_block_blob_id_uses_sha256_in_fips_mode(void)
+{
+    int i;
+    int ret;
+    int len;
+    struct flb_config config;
+    struct flb_azure_blob ctx;
+    unsigned char sha256[32] = {0};
+    char digest_hex[33] = {0};
+    char expected_plain[128];
+    char expected_id[65];
+    size_t expected_id_len;
+    char *default_id;
+    char *fips_id;
+
+    memset(&config, 0, sizeof(config));
+    memset(&ctx, 0, sizeof(ctx));
+
+    ctx.config = &config;
+
+    config.fips_mode = FLB_FALSE;
+    default_id = azb_block_blob_id_blob(&ctx, "blob/path.log", 1);
+    TEST_CHECK(default_id != NULL);
+    if (default_id == NULL) {
+        return;
+    }
+
+    config.fips_mode = FLB_TRUE;
+    fips_id = azb_block_blob_id_blob(&ctx, "blob/path.log", 1);
+    TEST_CHECK(fips_id != NULL);
+    if (fips_id == NULL) {
+        flb_free(default_id);
+        return;
+    }
+
+    TEST_CHECK(strlen(default_id) == 64);
+    TEST_CHECK(strlen(fips_id) == 64);
+    TEST_CHECK(strcmp(default_id, fips_id) != 0);
+
+    ret = flb_hash_simple(FLB_HASH_SHA256, (unsigned char *) "blob/path.log",
+                          strlen("blob/path.log"), sha256, sizeof(sha256));
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_free(default_id);
+        flb_free(fips_id);
+        return;
+    }
+
+    for (i = 0; i < 16; i++) {
+        snprintf(digest_hex + (i * 2), 3, "%02x", sha256[i]);
+    }
+
+    len = snprintf(expected_plain, sizeof(expected_plain), "%s.flb-part.%06d",
+                   digest_hex, 1);
+    TEST_CHECK(len > 0);
+    TEST_CHECK(len < sizeof(expected_plain));
+    if (len <= 0 || len >= sizeof(expected_plain)) {
+        flb_free(default_id);
+        flb_free(fips_id);
+        return;
+    }
+
+    ret = flb_base64_encode((unsigned char *) expected_id, sizeof(expected_id),
+                            &expected_id_len, (unsigned char *) expected_plain,
+                            len);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(expected_id_len == 64);
+    if (ret != 0 || expected_id_len >= sizeof(expected_id)) {
+        flb_free(default_id);
+        flb_free(fips_id);
+        return;
+    }
+
+    expected_id[expected_id_len] = '\0';
+    TEST_CHECK(strcmp(fips_id, expected_id) == 0);
+
+    flb_free(default_id);
+    flb_free(fips_id);
+}
+
 TEST_LIST = {
     {"resolve_path_basic_tag", test_resolve_path_basic_tag},
     {"resolve_path_custom_delimiter", test_resolve_path_custom_delimiter},
@@ -491,5 +574,6 @@ TEST_LIST = {
     {"commit_prefix_fallback_static_path", test_commit_prefix_fallback_static_path},
     {"uri_create_static_prefix_fallback", test_uri_create_static_prefix_fallback},
     {"block_blob_commit_requires_suffix", test_block_blob_commit_requires_suffix},
+    {"block_blob_id_uses_sha256_in_fips_mode", test_block_blob_id_uses_sha256_in_fips_mode},
     {0}
 };
