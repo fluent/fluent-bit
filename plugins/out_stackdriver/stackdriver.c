@@ -1018,6 +1018,16 @@ static int is_local_resource_id_match_regex(struct stackdriver_format_ctx *fmt_c
     }
 
     prefix_len = flb_sds_len(ctx->tag_prefix);
+
+    /*
+     * Guard against a local_resource_id shorter than tag_prefix: slicing at
+     * prefix_len would advance the pointer past the SDS buffer and compute a
+     * negative match length. Treat it as no match.
+     */
+    if (flb_sds_len(fmt_ctx->local_resource_id) < prefix_len) {
+        return 0;
+    }
+
     str_to_be_matcheds = fmt_ctx->local_resource_id + prefix_len;
     len_to_be_matched = flb_sds_len(fmt_ctx->local_resource_id) - prefix_len;
 
