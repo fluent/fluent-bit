@@ -12,9 +12,11 @@ FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 # amazonlinux/2 base image
 FROM amazonlinux:2 AS amazonlinux-2-base
 
-ENV CMAKE_HOME="/opt/cmake"
+ENV CMAKE_HOME="/opt/cmake" \
+    CARGO_HOME="/opt/cargo"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+ARG RUST_VERSION="1.91"
 
 # hadolint ignore=DL3033
 RUN yum -y update && \
@@ -29,18 +31,21 @@ RUN yum -y update && \
     mkdir -p "${CMAKE_HOME}" && \
     cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
-    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1 && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
-ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
 # amazonlinux/2.arm64v8 base image
 FROM arm64v8/amazonlinux:2 AS amazonlinux-2.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
-ENV CMAKE_HOME="/opt/cmake"
+ENV CMAKE_HOME="/opt/cmake" \
+    CARGO_HOME="/opt/cargo"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+ARG RUST_VERSION="1.91"
 
 # hadolint ignore=DL3033
 RUN yum -y update && \
@@ -54,18 +59,21 @@ RUN yum -y update && \
     mkdir -p "${CMAKE_HOME}" && \
     cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
-    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1 && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 
-ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 ARG FLB_KAFKA=Off
 ENV FLB_KAFKA=$FLB_KAFKA
 
 FROM amazonlinux:2023 AS amazonlinux-2023-base
 
-ENV CMAKE_HOME="/opt/cmake"
+ENV CMAKE_HOME="/opt/cmake" \
+    CARGO_HOME="/opt/cargo"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+ARG RUST_VERSION="1.91"
 
 # hadolint ignore=DL3033
 RUN yum -y update && \
@@ -79,9 +87,10 @@ RUN yum -y update && \
     mkdir -p "${CMAKE_HOME}" && \
     cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
-    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1 && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
-ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 ARG FLB_KAFKA=On
 ENV FLB_KAFKA=$FLB_KAFKA
 
@@ -90,9 +99,11 @@ FROM --platform=arm64 amazonlinux:2023 AS amazonlinux-2023.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
-ENV CMAKE_HOME="/opt/cmake"
+ENV CMAKE_HOME="/opt/cmake" \
+    CARGO_HOME="/opt/cargo"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+ARG RUST_VERSION="1.91"
 
 # hadolint ignore=DL3033
 RUN yum -y update && \
@@ -106,9 +117,10 @@ RUN yum -y update && \
     mkdir -p "${CMAKE_HOME}" && \
     cmake_download_url="${CMAKE_URL}/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
-    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1 && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
-ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 ARG FLB_KAFKA=On
 ENV FLB_KAFKA=$FLB_KAFKA
 
@@ -119,6 +131,8 @@ FROM $BASE_BUILDER AS builder
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
+ENV CARGO_HOME="/opt/cargo" \
+    PATH="/opt/cargo/bin:${PATH}"
 
 # Docker context must be the base of the repo
 WORKDIR /tmp/fluent-bit/
@@ -137,6 +151,7 @@ ARG FLB_SQLDB=On
 ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
+ARG FLB_OUT_ZEROBUS=On
 ARG FLB_JEMALLOC=On
 ARG FLB_CHUNK_TRACE=On
 
@@ -149,6 +164,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_HTTP_SERVER="$FLB_HTTP_SERVER" \
     -DFLB_KAFKA="$FLB_KAFKA" \
     -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
+    -DFLB_OUT_ZEROBUS="${FLB_OUT_ZEROBUS}" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
