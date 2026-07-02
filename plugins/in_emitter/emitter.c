@@ -163,14 +163,15 @@ int in_emitter_add_record(const char *tag, int tag_len,
     }
 
 
-    /* Restricted by mem_buf_limit */
-    if (flb_input_buf_paused(ctx->ins) == FLB_TRUE) {
-        flb_plg_debug(ctx->ins, "emitter memory buffer limit reached. Not accepting record.");
-        return FLB_EMITTER_BUSY;
-    }
-
     /* Use the ring buffer first if it exists */
     if (ctx->msgs) {
+        /* Restricted by mem_buf_limit */
+        if (flb_input_buf_paused(ctx->ins) == FLB_TRUE) {
+            flb_plg_debug(ctx->ins,
+                          "emitter memory buffer limit reached. Not accepting record.");
+            return FLB_EMITTER_BUSY;
+        }
+
         memset(&temporary_chunk, 0, sizeof(struct em_chunk));
 
         temporary_chunk.tag = flb_sds_create_len(tag, tag_len);
@@ -208,6 +209,16 @@ int in_emitter_add_record(const char *tag, int tag_len,
                       tag);
             return -1;
         }
+    }
+
+    /*
+     * When the emitter is paused, caller-side filters cannot ask the engine to
+     * retry the same record. Keep it in the emitter queue so the collector can
+     * ingest it after resume instead of forcing callers to drop or retag it.
+     */
+    if (flb_input_buf_paused(ctx->ins) == FLB_TRUE) {
+        flb_plg_debug(ctx->ins,
+                      "emitter memory buffer limit reached. Buffering record.");
     }
 
     /* Append raw msgpack data */
@@ -411,8 +422,7 @@ static int cb_emitter_exit(void *data, struct flb_config *config)
 
     mk_list_foreach_safe(head, tmp, &ctx->chunks) {
         echunk = mk_list_entry(head, struct em_chunk, _head);
-        mk_list_del(&echunk->_head);
-        flb_free(echunk);
+        em_chunk_destroy(echunk);
     }
 
     if (ctx->msgs) {
