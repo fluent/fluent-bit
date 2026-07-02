@@ -49,6 +49,7 @@ struct input_ref {
 
 struct flb_emitter {
     int coll_fd;                        /* collector id */
+    size_t pending_bytes;               /* bytes waiting in chunks list */
     struct mk_list chunks;              /* list of all pending chunks */
     struct flb_input_instance *ins;     /* input instance */
     struct flb_ring_buffer *msgs;       /* ring buffer for cross-thread messages */
@@ -82,12 +83,33 @@ struct em_chunk *em_chunk_create(const char *tag, int tag_len,
     return ec;
 }
 
-static void em_chunk_destroy(struct em_chunk *ec)
+static void em_chunk_destroy(struct flb_emitter *ctx, struct em_chunk *ec)
 {
+    if (ctx->pending_bytes >= ec->mp_sbuf.size) {
+        ctx->pending_bytes -= ec->mp_sbuf.size;
+    }
+    else {
+        ctx->pending_bytes = 0;
+    }
+
     mk_list_del(&ec->_head);
     flb_sds_destroy(ec->tag);
     msgpack_sbuffer_destroy(&ec->mp_sbuf);
     flb_free(ec);
+}
+
+static int is_queue_overlimit(struct flb_emitter *ctx, size_t append_size)
+{
+    if (ctx->ins->mem_buf_limit == 0) {
+        return FLB_FALSE;
+    }
+
+    if (ctx->ins->mem_chunks_size + ctx->pending_bytes + append_size >
+        ctx->ins->mem_buf_limit) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
 }
 
 int static do_in_emitter_add_record(struct em_chunk *ec,
@@ -110,10 +132,10 @@ int static do_in_emitter_add_record(struct em_chunk *ec,
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error registering chunk with tag: %s", ec->tag);
         /* Release the echunk */
-        em_chunk_destroy(ec);
+        em_chunk_destroy(ctx, ec);
         return -1;
     }
-    em_chunk_destroy(ec);
+    em_chunk_destroy(ctx, ec);
     return 0;
 }
 
@@ -131,6 +153,7 @@ int in_emitter_add_record(const char *tag, int tag_len,
     struct input_ref *i_ref;
     bool ref_found;
     struct mk_list *tmp;
+    int ret;
 
     struct em_chunk *ec;
     struct flb_emitter *ctx;
@@ -191,6 +214,12 @@ int in_emitter_add_record(const char *tag, int tag_len,
                                      sizeof(struct em_chunk));
     }
 
+    if (is_queue_overlimit(ctx, buf_size) == FLB_TRUE) {
+        flb_plg_debug(ctx->ins,
+                      "emitter memory buffer limit reached. Not accepting record.");
+        return FLB_EMITTER_BUSY;
+    }
+
     /* Check if any target chunk already exists */
     mk_list_foreach(head, &ctx->chunks) {
         ec = mk_list_entry(head, struct em_chunk, _head);
@@ -222,7 +251,12 @@ int in_emitter_add_record(const char *tag, int tag_len,
     }
 
     /* Append raw msgpack data */
-    msgpack_sbuffer_write(&ec->mp_sbuf, buf_data, buf_size);
+    ret = msgpack_sbuffer_write(&ec->mp_sbuf, buf_data, buf_size);
+    if (ret != 0) {
+        return -1;
+    }
+
+    ctx->pending_bytes += buf_size;
     return 0;
 }
 
@@ -422,7 +456,7 @@ static int cb_emitter_exit(void *data, struct flb_config *config)
 
     mk_list_foreach_safe(head, tmp, &ctx->chunks) {
         echunk = mk_list_entry(head, struct em_chunk, _head);
-        em_chunk_destroy(echunk);
+        em_chunk_destroy(ctx, echunk);
     }
 
     if (ctx->msgs) {
