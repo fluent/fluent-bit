@@ -1316,6 +1316,99 @@ static int tls_set_client_thumbprints(struct flb_tls *tls, const char *thumbprin
 
 #endif
 
+static int tls_context_reload(struct flb_tls *tls)
+{
+    SSL_CTX *old_ssl_ctx;
+    struct tls_context *ctx;
+    struct tls_context *new_ctx;
+    struct flb_tls tmp_tls;
+
+    ctx = tls->ctx;
+
+    new_ctx = tls_context_create(tls->verify,
+                                 tls->debug,
+                                 tls->mode,
+                                 tls->vhost,
+                                 tls->ca_path,
+                                 tls->ca_file,
+                                 tls->crt_file,
+                                 tls->key_file,
+                                 tls->key_passwd);
+    if (new_ctx == NULL) {
+        return -1;
+    }
+
+    tmp_tls = *tls;
+    tmp_tls.ctx = new_ctx;
+
+    if (tls->verify_client == FLB_TRUE &&
+        tls_context_set_verify_client(new_ctx, tls->verify_client) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
+    if ((tls->min_version != NULL || tls->max_version != NULL) &&
+        tls_set_minmax_proto(&tmp_tls, tls->min_version, tls->max_version) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
+    if (tls->ciphers != NULL &&
+        tls_set_ciphers(&tmp_tls, tls->ciphers) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
+    if (tls->alpn != NULL &&
+        tls_context_alpn_set(new_ctx, tls->alpn) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
+#if defined(FLB_SYSTEM_WINDOWS)
+    if (tls->certstore_name != NULL &&
+        tls_set_certstore_name(&tmp_tls, tls->certstore_name) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
+    if (tls->use_enterprise_store == FLB_TRUE &&
+        tls_set_use_enterprise_store(&tmp_tls, tls->use_enterprise_store) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
+    if (tls->client_thumbprints != NULL &&
+        tls_set_client_thumbprints(&tmp_tls, tls->client_thumbprints) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+#endif
+
+    if (tls->system_certificates_loaded == FLB_TRUE &&
+        load_system_certificates(new_ctx) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
+    pthread_mutex_lock(&ctx->mutex);
+    old_ssl_ctx = ctx->ctx;
+    ctx->ctx = new_ctx->ctx;
+    new_ctx->ctx = old_ssl_ctx;
+
+    if (tls->alpn != NULL && tls->mode == FLB_TLS_SERVER_MODE) {
+        SSL_CTX_set_alpn_select_cb(ctx->ctx,
+                                   tls_context_server_alpn_select_callback,
+                                   ctx);
+    }
+
+    pthread_mutex_unlock(&ctx->mutex);
+
+    tls_context_destroy(new_ctx);
+
+    return 0;
+}
+
 static void *tls_session_create(struct flb_tls *tls,
                                 int fd)
 {
@@ -1770,6 +1863,7 @@ static int tls_net_handshake(struct flb_tls *tls,
 static struct flb_tls_backend tls_openssl = {
     .name                 = "openssl",
     .context_create       = tls_context_create,
+    .context_reload       = tls_context_reload,
     .context_destroy      = tls_context_destroy,
     .context_alpn_set     = tls_context_alpn_set,
     .context_set_verify_client = tls_context_set_verify_client,
