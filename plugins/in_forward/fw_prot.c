@@ -557,6 +557,13 @@ static int check_ping(struct flb_input_instance *ins,
 
     /* Parse PING message */
     root = result.data;
+    if (root.type != MSGPACK_OBJECT_ARRAY) {
+        flb_plg_error(ins, "Invalid PING message");
+        flb_free(serverside);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
     if (root.via.array.size != 6) {
         flb_plg_error(ins, "Invalid PING message");
         flb_free(serverside);
