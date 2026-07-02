@@ -377,8 +377,15 @@ static void secure_forward_set_ping(struct flb_forward_ping *ping,
     }
 }
 
-static int secure_forward_hash_shared_key(struct flb_forward_config *fc,
-                                          struct flb_forward_ping *ping,
+/*
+ * Compute sha512_hex(shared_key_salt + hostname + nonce + shared_key) as
+ * defined by the Forward protocol handshake (PING and PONG digests).
+ */
+static int secure_forward_hash_key_digest(struct flb_forward_config *fc,
+                                          const char *hostname,
+                                          size_t hostname_len,
+                                          const char *nonce,
+                                          size_t nonce_len,
                                           char *buf, int buflen)
 {
     size_t             length_entries[4];
@@ -393,11 +400,11 @@ static int secure_forward_hash_shared_key(struct flb_forward_config *fc,
     data_entries[0]   = (unsigned char *) fc->shared_key_salt;
     length_entries[0] = 16;
 
-    data_entries[1]   = (unsigned char *) fc->self_hostname;
-    length_entries[1] = strlen(fc->self_hostname);
+    data_entries[1]   = (unsigned char *) hostname;
+    length_entries[1] = hostname_len;
 
-    data_entries[2]   = (unsigned char *) ping->nonce;
-    length_entries[2] = ping->nonce_len;
+    data_entries[2]   = (unsigned char *) nonce;
+    length_entries[2] = nonce_len;
 
     data_entries[3]   = (unsigned char *) fc->shared_key;
     length_entries[3] = strlen(fc->shared_key);
@@ -416,6 +423,17 @@ static int secure_forward_hash_shared_key(struct flb_forward_config *fc,
     flb_forward_format_bin_to_hex(hash, 64, buf);
 
     return 0;
+}
+
+static int secure_forward_hash_shared_key(struct flb_forward_config *fc,
+                                          struct flb_forward_ping *ping,
+                                          char *buf, int buflen)
+{
+    return secure_forward_hash_key_digest(fc,
+                                          fc->self_hostname,
+                                          strlen(fc->self_hostname),
+                                          ping->nonce, ping->nonce_len,
+                                          buf, buflen);
 }
 
 static int secure_forward_hash_password(struct flb_forward_config *fc,
@@ -457,7 +475,7 @@ static int secure_forward_hash_password(struct flb_forward_config *fc,
 }
 
 static int secure_forward_ping(struct flb_connection *u_conn,
-                               msgpack_object map,
+                               struct flb_forward_ping *ping,
                                struct flb_forward_config *fc,
                                struct flb_forward *ctx)
 {
@@ -467,22 +485,14 @@ static int secure_forward_ping(struct flb_connection *u_conn,
     char password_hexdigest[128];
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
-    struct flb_forward_ping ping;
 
-    secure_forward_set_ping(&ping, &map);
-
-    if (ping.nonce == NULL) {
-        flb_plg_error(ctx->ins, "nonce not found");
-        return -1;
-    }
-
-    if (secure_forward_hash_shared_key(fc, &ping, shared_key_hexdigest, 128)) {
+    if (secure_forward_hash_shared_key(fc, ping, shared_key_hexdigest, 128)) {
         flb_plg_error(ctx->ins, "failed to hash shared_key");
         return -1;
     }
 
-    if (ping.auth != NULL) {
-        if (secure_forward_hash_password(fc, &ping, password_hexdigest, 128)) {
+    if (ping->auth != NULL) {
+        if (secure_forward_hash_password(fc, ping, password_hexdigest, 128)) {
             flb_plg_error(ctx->ins, "failed to hash password");
             return -1;
         }
@@ -511,7 +521,7 @@ static int secure_forward_ping(struct flb_connection *u_conn,
     msgpack_pack_str_body(&mp_pck, shared_key_hexdigest, 128);
 
     /* [4] Username and password (optional) */
-    if (ping.auth != NULL) {
+    if (ping->auth != NULL) {
         msgpack_pack_str(&mp_pck, strlen(fc->username));
         msgpack_pack_str_body(&mp_pck, fc->username, strlen(fc->username));
         msgpack_pack_str(&mp_pck, 128);
@@ -536,18 +546,25 @@ static int secure_forward_ping(struct flb_connection *u_conn,
     return -1;
 }
 
-static int secure_forward_pong(struct flb_forward *ctx, char *buf, int buf_size)
+static int secure_forward_pong(struct flb_forward *ctx,
+                               struct flb_forward_config *fc,
+                               const char *nonce, size_t nonce_len,
+                               char *buf, int buf_size)
 {
     int ret;
     char msg[32] = {0};
+    char server_hexdigest[128];
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object o;
+    msgpack_object hostname;
+    msgpack_object digest;
 
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, buf, buf_size, &off);
     if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&result);
         return -1;
     }
 
@@ -556,7 +573,14 @@ static int secure_forward_pong(struct flb_forward *ctx, char *buf, int buf_size)
         goto error;
     }
 
-    if (root.via.array.size < 4) {
+    /*
+     * PONG is defined as:
+     *
+     *   [type, auth_result, reason, server_hostname, shared_key_hexdigest]
+     */
+    if (root.via.array.size != 5) {
+        flb_plg_error(ctx->ins, "invalid PONG message: expected 5 fields, "
+                      "got %i", root.via.array.size);
         goto error;
     }
 
@@ -574,11 +598,7 @@ static int secure_forward_pong(struct flb_forward *ctx, char *buf, int buf_size)
         goto error;
     }
 
-    if (o.via.boolean) {
-        msgpack_unpacked_destroy(&result);
-        return 0;
-    }
-    else {
+    if (!o.via.boolean) {
         o = root.via.array.ptr[2];
         if (o.type != MSGPACK_OBJECT_STR) {
             goto error;
@@ -592,7 +612,47 @@ static int secure_forward_pong(struct flb_forward *ctx, char *buf, int buf_size)
             msg[o.via.str.size] = '\0';
         }
         flb_plg_error(ctx->ins, "failed authorization: %s", msg);
+        goto error;
     }
+
+    /*
+     * Mutual authentication: the server must prove it holds the same
+     * shared_key by returning
+     *
+     *   sha512_hex(shared_key_salt + server_hostname + nonce + shared_key)
+     */
+    hostname = root.via.array.ptr[3];
+    if (hostname.type != MSGPACK_OBJECT_STR) {
+        flb_plg_error(ctx->ins, "invalid PONG server_hostname type");
+        goto error;
+    }
+
+    digest = root.via.array.ptr[4];
+    if (digest.type != MSGPACK_OBJECT_STR || digest.via.str.size != 128) {
+        flb_plg_error(ctx->ins, "invalid PONG shared_key_hexdigest");
+        goto error;
+    }
+
+    ret = secure_forward_hash_key_digest(fc,
+                                         hostname.via.str.ptr,
+                                         hostname.via.str.size,
+                                         nonce, nonce_len,
+                                         server_hexdigest,
+                                         sizeof(server_hexdigest));
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "failed to hash PONG shared_key");
+        goto error;
+    }
+
+    if (memcmp(server_hexdigest, digest.via.str.ptr, 128) != 0) {
+        flb_plg_error(ctx->ins,
+                      "PONG shared_key digest mismatch: "
+                      "server does not hold the same shared_key");
+        goto error;
+    }
+
+    msgpack_unpacked_destroy(&result);
+    return 0;
 
  error:
     msgpack_unpacked_destroy(&result);
@@ -605,11 +665,14 @@ static int secure_forward_handshake(struct flb_connection *u_conn,
 {
     int ret;
     char buf[1024];
+    char nonce[1024];
+    size_t nonce_len;
     size_t out_len;
     size_t off;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object o;
+    struct flb_forward_ping ping;
 
     /* Wait for server HELO */
     ret = secure_forward_read(ctx, u_conn, fc, buf, sizeof(buf) - 1, &out_len);
@@ -664,7 +727,28 @@ static int secure_forward_handshake(struct flb_connection *u_conn,
         return -1;
     }
 
-    ret = secure_forward_ping(u_conn, o, fc, ctx);
+    secure_forward_set_ping(&ping, &o);
+    if (ping.nonce == NULL) {
+        flb_plg_error(ctx->ins, "nonce not found");
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    /*
+     * Keep a copy of the HELO nonce: 'ping.nonce' points into 'buf' and
+     * the same buffer is reused below to read the PONG message. The nonce
+     * is required to validate the PONG shared_key digest.
+     */
+    if (ping.nonce_len < 0 || (size_t) ping.nonce_len > sizeof(nonce)) {
+        flb_plg_error(ctx->ins, "HELO nonce is too large (%i bytes)",
+                      ping.nonce_len);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+    nonce_len = ping.nonce_len;
+    memcpy(nonce, ping.nonce, nonce_len);
+
+    ret = secure_forward_ping(u_conn, &ping, fc, ctx);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "Failed PING");
         msgpack_unpacked_destroy(&result);
@@ -674,13 +758,13 @@ static int secure_forward_handshake(struct flb_connection *u_conn,
     /* Expect a PONG */
     ret = secure_forward_read(ctx, u_conn, fc, buf, sizeof(buf) - 1, &out_len);
     if (ret == -1) {
-        flb_plg_error(ctx->ins, "handshake error expecting HELO");
+        flb_plg_error(ctx->ins, "handshake error expecting PONG");
         msgpack_unpacked_destroy(&result);
         return -1;
     }
 
     /* Process PONG */
-    ret = secure_forward_pong(ctx, buf, out_len);
+    ret = secure_forward_pong(ctx, fc, nonce, nonce_len, buf, out_len);
     if (ret == -1) {
         msgpack_unpacked_destroy(&result);
         return -1;
