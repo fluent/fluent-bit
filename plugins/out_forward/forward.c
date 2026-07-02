@@ -1714,6 +1714,12 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
                               event_chunk->tag, flb_sds_len(event_chunk->tag),
                               event_chunk->data, event_chunk->size,
                               &out_buf, &out_size);
+    if (mode == -1) {
+        flb_plg_error(ctx->ins, "failed to format outgoing payload");
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        flb_free(flush_ctx);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
 
     /* Get a TCP connection instance */
     if (fc->unix_path == NULL) {
