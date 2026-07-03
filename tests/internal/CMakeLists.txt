@@ -25,6 +25,7 @@ set(UNIT_TESTS_FILES
   utils.c
   gzip.c
   compression.c
+  snappy.c
   zstd.c
   random.c
   thread_storage.c
