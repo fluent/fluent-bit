@@ -26,6 +26,7 @@
 
 struct flb_api {
     const char *(*output_get_property) (const char *, struct flb_output_instance *);
+    struct flb_kv **(*output_get_all_properties) (struct flb_output_instance *, int *);
     const char *(*input_get_property) (const char *, struct flb_input_instance *);
 
     void *(*output_get_cmt_instance) (struct flb_output_instance *);
