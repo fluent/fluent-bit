@@ -21,6 +21,7 @@
 #define FLB_SNAPPY_H
 
 #include <fluent-bit/flb_info.h>
+#include <cfl/cfl.h>
 #include <cfl/cfl_list.h>
 
 #include <stdio.h>
