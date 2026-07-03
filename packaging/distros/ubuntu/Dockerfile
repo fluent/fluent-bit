@@ -42,7 +42,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-# hadolint ignore=DL4001,DL4006
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -79,7 +79,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-# hadolint ignore=DL4001,DL4006
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -118,7 +118,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-# hadolint ignore=DL4001,DL4006
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -147,7 +147,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-# hadolint ignore=DL4001,DL4006
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -178,7 +178,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-# hadolint ignore=DL4001,DL4006
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -207,7 +207,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-# hadolint ignore=DL4001,DL4006
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
@@ -238,7 +238,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-# hadolint ignore=DL4001,DL4006
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
@@ -267,7 +267,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-# hadolint ignore=DL4001,DL4006
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
@@ -298,7 +298,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-# hadolint ignore=DL4001,DL4006
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
@@ -327,7 +327,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-# hadolint ignore=DL4001,DL4006
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
@@ -358,7 +358,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-# hadolint ignore=DL4001,DL4006
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
