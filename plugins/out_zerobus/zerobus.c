@@ -25,12 +25,15 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_version.h>
 
 #include <msgpack.h>
 #include <time.h>
 #include <string.h>
 
 #include "out_zerobus.h"
+
+#define ZEROBUS_USER_AGENT_APP_NAME "fluent-bit/" FLB_VERSION_STR
 
 /*
  * Prepend "https://" to url if no scheme is present.
@@ -280,6 +283,7 @@ static int cb_zerobus_init(struct flb_output_instance *ins,
     int ret;
     const char *tmp;
     struct flb_out_zerobus *ctx;
+    struct CZerobusSdkBuilder *sdk_builder;
     CResult result;
     CStreamConfigurationOptions opts;
 
@@ -336,17 +340,23 @@ static int cb_zerobus_init(struct flb_output_instance *ins,
         goto init_error;
     }
 
+    sdk_builder = zerobus_sdk_builder_new();
+    if (!sdk_builder) {
+        flb_plg_error(ins, "failed to create Zerobus SDK builder");
+        goto init_error;
+    }
+    zerobus_sdk_builder_endpoint(sdk_builder, ctx->endpoint);
+    zerobus_sdk_builder_unity_catalog_url(sdk_builder, ctx->workspace_url);
+    zerobus_sdk_builder_application_name(sdk_builder, ZEROBUS_USER_AGENT_APP_NAME);
+    if (strncmp(ctx->endpoint, "http://", 7) == 0) {
+        zerobus_sdk_builder_disable_tls(sdk_builder);
+    }
+
     memset(&result, 0, sizeof(result));
-    ctx->sdk = zerobus_sdk_new(ctx->endpoint,
-                               ctx->workspace_url,
-                               &result);
+    ctx->sdk = zerobus_sdk_builder_build(sdk_builder, &result);
     if (!ctx->sdk || !result.success) {
         log_cresult_error(ins, &result, "failed to create Zerobus SDK");
         goto init_error;
-    }
-
-    if (strncmp(ctx->endpoint, "http://", 7) == 0) {
-        zerobus_sdk_set_use_tls(ctx->sdk, false);
     }
 
     opts = zerobus_get_default_config();
