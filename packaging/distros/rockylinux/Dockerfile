@@ -19,7 +19,7 @@ ARG RUST_VERSION
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/Rocky-PowerTools.repo
 
-# hadolint ignore=DL3033
+# hadolint ignore=DL3033,DL4001,DL4006
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
@@ -27,6 +27,7 @@ RUN yum -y update && \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
@@ -46,7 +47,7 @@ COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/Rocky-PowerTools.repo
 
-# hadolint ignore=DL3033
+# hadolint ignore=DL3033,DL4001,DL4006
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
@@ -54,6 +55,7 @@ RUN yum -y update && \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
@@ -72,7 +74,7 @@ ARG RUST_VERSION
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
 
-# hadolint ignore=DL3033
+# hadolint ignore=DL3033,DL4001,DL4006
 RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
@@ -80,6 +82,7 @@ RUN yum -y update && \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
@@ -99,7 +102,7 @@ COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
 
-# hadolint ignore=DL3033
+# hadolint ignore=DL3033,DL4001,DL4006
 RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
@@ -107,6 +110,7 @@ RUN yum -y update && \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
@@ -125,7 +129,7 @@ ARG RUST_VERSION
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
 
-# hadolint ignore=DL3033
+# hadolint ignore=DL3033,DL4001,DL4006
 RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
@@ -134,6 +138,7 @@ RUN yum -y update && \
     libzstd-devel && \
     yum clean all
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
@@ -154,7 +159,7 @@ COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
 
-# hadolint ignore=DL3033
+# hadolint ignore=DL3033,DL4001,DL4006
 RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison \
@@ -163,6 +168,7 @@ RUN yum -y update && \
     libzstd-devel && \
     yum clean all
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
