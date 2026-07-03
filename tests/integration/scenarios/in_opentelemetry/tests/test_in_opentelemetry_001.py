@@ -743,6 +743,12 @@ def test_opentelemetry_to_opentelemetry_histogram_and_gauge_metrics():
     assert histogram_datapoint["explicitBounds"] == [100.0]
     assert histogram_datapoint["attributes"][0]["key"] == "http.route"
     assert histogram_datapoint["attributes"][0]["value"]["stringValue"] == "/checkout"
+    # test_metrics_002.in.json declares this histogram with
+    # aggregation_temporality=1 (DELTA). in_opentelemetry decodes it into
+    # cmetrics and out_opentelemetry re-encodes it after a round trip
+    # through Fluent Bit's internal msgpack storage; that temporality must
+    # survive the round trip unchanged.
+    assert histogram["aggregationTemporality"] == "AGGREGATION_TEMPORALITY_DELTA"
 
     assert metrics["cpu.usage"]["scope_version"] == "2.0.0"
     assert gauge_datapoint["asDouble"] == 0.82
