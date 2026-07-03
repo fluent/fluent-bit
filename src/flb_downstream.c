@@ -261,8 +261,19 @@ static inline int prepare_destroy_conn_safe(struct flb_connection *connection)
 
 static int destroy_conn(struct flb_connection *connection)
 {
-    /* Delay the destruction of busy connections */
-    if (connection->busy_flag) {
+    /*
+     * Delay the destruction if the connection is still marked busy or if
+     * there are pending events referencing it (e.g. an event still linked
+     * in the priority bucket queue after mk_event_inject). Freeing the
+     * connection while its event is queued would leave a dangling
+     * _priority_head in the bucket queue, causing a use-after-free and a
+     * stuck event that spins the input thread at 100% CPU.
+     *
+     * The connection stays in the destroy_queue and is retried on the next
+     * pending-destroy sweep, by which point the event has been drained.
+     */
+    if (connection->busy_flag ||
+        !mk_list_entry_is_orphan(&connection->event._priority_head)) {
         return 0;
     }
 
@@ -402,6 +413,18 @@ void flb_downstream_destroy(struct flb_downstream *stream)
 
         mk_list_foreach_safe(head, tmp, &stream->destroy_queue) {
             connection = mk_list_entry(head, struct flb_connection, _head);
+
+            /*
+             * This is the terminal cleanup: there is no later
+             * pending-destroy sweep. destroy_conn() defers connections
+             * whose event is still linked in the priority bucket queue, so
+             * unlink any lingering event here (the bucket queue is still
+             * alive at this point) to make sure the connection is freed
+             * instead of leaked.
+             */
+            if (!mk_list_entry_is_orphan(&connection->event._priority_head)) {
+                mk_list_del(&connection->event._priority_head);
+            }
 
             destroy_conn(connection);
         }
