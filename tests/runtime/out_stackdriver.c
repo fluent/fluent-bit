@@ -1381,6 +1381,125 @@ static void cb_check_default_labels_k8s_resource_type(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+static void cb_check_labels_not_a_map(void *ctx, int ffd,
+                                      int res_ret, void *res_data, size_t res_size,
+                                      void *data)
+{
+    /* single record with labels as string should produce no output */
+    TEST_CHECK(res_size == 0);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_batch_labels_not_a_map(void *ctx, int ffd,
+                                            int res_ret, void *res_data, size_t res_size,
+                                            void *data)
+{
+    int ret;
+
+    /* record 0 has valid labels */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['labels']['testA']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['labels']['testB']", "valB");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* record 1 (originally record 2) has no labels */
+    ret = mp_kv_exists(res_data, res_size, "$entries[1]['labels']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    /* record 1 should have the message from the third input record */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$entries[1]['jsonPayload']['message']",
+                    "valid record without labels");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* there should be no entry at index 2 (the bad record was dropped) */
+    ret = mp_kv_exists(res_data, res_size, "$entries[2]");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_batch_mixed_errors(void *ctx, int ffd,
+                                        int res_ret, void *res_data, size_t res_size,
+                                        void *data)
+{
+    int ret;
+
+    /* record 0: valid record with no special fields */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$entries[0]['jsonPayload']['message']",
+                    "valid record no special fields");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* record 1: valid record with labels (originally record 3) */
+    ret = mp_kv_exists(res_data, res_size, "$entries[1]['labels']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[1]['labels']['testA']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* there should be no entry at index 2 (2 out of 4 records dropped) */
+    ret = mp_kv_exists(res_data, res_size, "$entries[2]");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_labels_not_a_map_custom_key(void *ctx, int ffd,
+                                                  int res_ret, void *res_data, size_t res_size,
+                                                  void *data)
+{
+    /* single record with custom labels key as string should produce no output */
+    TEST_CHECK(res_size == 0);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_batch_first_record_labels_not_a_map(void *ctx, int ffd,
+                                                         int res_ret, void *res_data, size_t res_size,
+                                                         void *data)
+{
+    int ret;
+
+    /* first record was dropped, only the valid second record remains */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$entries[0]['jsonPayload']['message']",
+                    "valid second record");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* there should be no second entry */
+    ret = mp_kv_exists(res_data, res_size, "$entries[1]");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_labels_not_a_map_with_fields(void *ctx, int ffd,
+                                                   int res_ret, void *res_data, size_t res_size,
+                                                   void *data)
+{
+    /* single record with invalid labels + many extracted fields */
+    /* exercises the skip path with extracted fields present */
+    TEST_CHECK(res_size == 0);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_batch_all_labels_not_a_map(void *ctx, int ffd,
+                                                int res_ret, void *res_data, size_t res_size,
+                                                void *data)
+{
+    /* all records have invalid labels, should produce no output */
+    TEST_CHECK(res_size == 0);
+
+    flb_sds_destroy(res_data);
+}
+
 static void cb_check_resource_labels_one_field(void *ctx, int ffd,
                                 int res_ret, void *res_data, size_t res_size, void *data)
 {
@@ -5150,6 +5269,303 @@ void flb_test_custom_labels_k8s_resource_type()
     flb_destroy(ctx);
 }
 
+void flb_test_labels_not_a_map()
+{
+    int ret;
+    int size = sizeof(LABELS_NOT_A_MAP) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_labels_not_a_map,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) LABELS_NOT_A_MAP, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_batch_labels_not_a_map()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    ret = flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
+
+    /* Tail input mode */
+    in_ffd = flb_input(ctx, (char *) "tail", NULL);
+    ret = flb_input_set(ctx, in_ffd,
+                        "Path", STACKDRIVER_DATA_PATH "/stackdriver_batch_labels_not_a_map.log",
+                        "tag", "test",
+                        "read_from_head", "true",
+                        NULL);
+    TEST_CHECK_(ret == 0, "setting input options");
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    ret = flb_output_set(ctx, out_ffd,
+                        "match", "test",
+                        "resource", "gce_instance",
+                        "google_service_credentials", SERVICE_CREDENTIALS,
+                        NULL);
+    TEST_CHECK_(ret == 0, "setting output options");
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_batch_labels_not_a_map,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_batch_mixed_errors()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    ret = flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
+
+    /* Tail input mode */
+    in_ffd = flb_input(ctx, (char *) "tail", NULL);
+    ret = flb_input_set(ctx, in_ffd,
+                        "Path", STACKDRIVER_DATA_PATH "/stackdriver_batch_mixed_errors.log",
+                        "tag", "test",
+                        "read_from_head", "true",
+                        NULL);
+    TEST_CHECK_(ret == 0, "setting input options");
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    ret = flb_output_set(ctx, out_ffd,
+                        "match", "test",
+                        "resource", "gce_instance",
+                        "google_service_credentials", SERVICE_CREDENTIALS,
+                        NULL);
+    TEST_CHECK_(ret == 0, "setting output options");
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_batch_mixed_errors,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_labels_not_a_map_custom_key()
+{
+    int ret;
+    int size = sizeof(LABELS_NOT_A_MAP_CUSTOM_KEY) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output with custom labels key */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   "labels_key", "logging.googleapis.com/customlabels",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_labels_not_a_map_custom_key,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) LABELS_NOT_A_MAP_CUSTOM_KEY, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_batch_first_record_labels_not_a_map()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second */
+    ctx = flb_create();
+    ret = flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
+
+    /* Tail input mode */
+    in_ffd = flb_input(ctx, (char *) "tail", NULL);
+    ret = flb_input_set(ctx, in_ffd,
+                        "Path", STACKDRIVER_DATA_PATH "/stackdriver_batch_first_record_labels_not_a_map.log",
+                        "tag", "test",
+                        "read_from_head", "true",
+                        NULL);
+    TEST_CHECK_(ret == 0, "setting input options");
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    ret = flb_output_set(ctx, out_ffd,
+                        "match", "test",
+                        "resource", "gce_instance",
+                        "google_service_credentials", SERVICE_CREDENTIALS,
+                        NULL);
+    TEST_CHECK_(ret == 0, "setting output options");
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_batch_first_record_labels_not_a_map,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_labels_not_a_map_with_extracted_fields()
+{
+    int ret;
+    int size = sizeof(LABELS_NOT_A_MAP_WITH_FIELDS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_labels_not_a_map_with_fields,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data: invalid labels with httpRequest, operation, etc. */
+    flb_lib_push(ctx, in_ffd, (char *) LABELS_NOT_A_MAP_WITH_FIELDS, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_batch_all_records_labels_not_a_map()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second */
+    ctx = flb_create();
+    ret = flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
+
+    /* Tail input mode */
+    in_ffd = flb_input(ctx, (char *) "tail", NULL);
+    ret = flb_input_set(ctx, in_ffd,
+                        "Path", STACKDRIVER_DATA_PATH "/stackdriver_batch_all_labels_not_a_map.log",
+                        "tag", "test",
+                        "read_from_head", "true",
+                        NULL);
+    TEST_CHECK_(ret == 0, "setting input options");
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    ret = flb_output_set(ctx, out_ffd,
+                        "match", "test",
+                        "resource", "gce_instance",
+                        "google_service_credentials", SERVICE_CREDENTIALS,
+                        NULL);
+    TEST_CHECK_(ret == 0, "setting output options");
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_batch_all_labels_not_a_map,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 void flb_test_resource_k8s_container_no_local_resource_id()
 {
     int ret;
@@ -6621,6 +7037,13 @@ TEST_LIST = {
     {"config_labels_no_conflict", flb_test_config_labels_no_conflict },
     {"default_labels_k8s_resource_type", flb_test_default_labels_k8s_resource_type },
     {"custom_labels_k8s_resource_type", flb_test_custom_labels_k8s_resource_type },
+    {"labels_not_a_map", flb_test_labels_not_a_map },
+    {"batch_labels_not_a_map", flb_test_batch_labels_not_a_map },
+    {"batch_mixed_errors", flb_test_batch_mixed_errors },
+    {"labels_not_a_map_custom_key", flb_test_labels_not_a_map_custom_key },
+    {"batch_first_record_labels_not_a_map", flb_test_batch_first_record_labels_not_a_map },
+    {"labels_not_a_map_with_extracted_fields", flb_test_labels_not_a_map_with_extracted_fields },
+    {"batch_all_records_labels_not_a_map", flb_test_batch_all_records_labels_not_a_map },
 
     /* test resource labels api */
     {"resource_labels_one_field", flb_test_resource_labels_one_field },
