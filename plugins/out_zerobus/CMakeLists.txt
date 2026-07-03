@@ -19,7 +19,7 @@ elseif(FLB_SYSTEM_MACOS)
     "-framework CoreFoundation"
     "-framework Security"
     -liconv)
-elseif(UNIX)
+elseif(FLB_SYSTEM_LINUX)
   target_link_libraries(flb-plugin-out_zerobus
     -ldl -lpthread -lm -lresolv -lgcc_s)
 else()
