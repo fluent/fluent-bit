@@ -34,7 +34,7 @@ The distro packaging images run the package build from `CMD` when the container
 is run. If a registry proxy is required, make the Cargo registry configuration
 available at `docker run` time as well as during image builds.
 
-The bundled source build is supported on Unix-like systems, macOS, and Windows when a Rust
+The bundled source build is supported on Linux, macOS, and Windows when a Rust
 toolchain is available. The plugin CMake target links the platform-specific
 system libraries required by the Rust FFI for each supported target.
 
