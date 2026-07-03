@@ -28,6 +28,8 @@
 #include "fw_prot.h"
 #include "fw_conn.h"
 
+static void fw_conn_drop(struct flb_connection *connection);
+
 static int fw_conn_event_internal(struct flb_connection *connection)
 {
     int ret;
@@ -41,6 +43,15 @@ static int fw_conn_event_internal(struct flb_connection *connection)
     struct flb_in_fw_config *ctx;
 
     conn = connection->user_data;
+
+    /*
+     * The wrapper may have already been released by the engine drop
+     * notification (e.g. a queued/injected event that fires after an IO
+     * timeout closed the connection). Nothing to do in that case.
+     */
+    if (conn == NULL) {
+        return 0;
+    }
 
     ctx = conn->ctx;
 
@@ -137,6 +148,14 @@ int fw_conn_event(void *data)
     connection = (struct flb_connection *) data;
 
     conn = connection->user_data;
+
+    /*
+     * The wrapper may have already been released by the engine drop
+     * notification (e.g. an injected event firing after an IO timeout).
+     */
+    if (conn == NULL) {
+        return 0;
+    }
 
     ctx = conn->ctx;
 
@@ -249,16 +268,26 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     }
 
     mk_list_add(&conn->_head, &ctx->connections);
+
+    /*
+     * Install the drop notification callback only after all fallible setup
+     * has succeeded. If an earlier allocation or mk_event_add() fails, conn
+     * is freed and the caller releases the connection; installing the
+     * callback before that point would make prepare_destroy_conn() invoke
+     * fw_conn_drop() on the freed wrapper (use-after-free/double-free).
+     */
+    connection->drop_notification_callback = fw_conn_drop;
+
     return conn;
 }
 
-int fw_conn_del(struct fw_conn *conn)
+/*
+ * Free the plugin-side connection wrapper. This does NOT release the
+ * underlying downstream connection; the caller decides whether the engine
+ * (drop notification) or the plugin (fw_conn_del) owns that release.
+ */
+static void fw_conn_release(struct fw_conn *conn)
 {
-    /* The downstream unregisters the file descriptor from the event-loop
-     * so there's nothing to be done by the plugin
-     */
-    flb_downstream_conn_release(conn->connection);
-
     /* Release resources */
     mk_list_del(&conn->_head);
 
@@ -278,6 +307,55 @@ int fw_conn_del(struct fw_conn *conn)
     }
     flb_free(conn->buf);
     flb_free(conn);
+}
+
+/*
+ * Invoked by the engine (via prepare_destroy_conn) when the underlying
+ * connection is being destroyed out from under the plugin, e.g. on an IO
+ * timeout. Detach and free the wrapper here so it is never left in
+ * ctx->connections pointing at a freed connection, which would otherwise
+ * cause a use-after-free on the next fw_conn_del_all (shutdown/pause).
+ */
+static void fw_conn_drop(struct flb_connection *connection)
+{
+    struct fw_conn *conn;
+
+    if (connection == NULL) {
+        return;
+    }
+
+    conn = connection->user_data;
+
+    /* The engine owns the connection release from this point on */
+    connection->drop_notification_callback = NULL;
+    connection->user_data = NULL;
+
+    if (conn != NULL) {
+        conn->connection = NULL;
+        fw_conn_release(conn);
+    }
+}
+
+int fw_conn_del(struct fw_conn *conn)
+{
+    struct flb_connection *connection = conn->connection;
+
+    /*
+     * Detach the wrapper from the connection first so the drop
+     * notification callback becomes a no-op during the release below and
+     * cannot double-free the wrapper.
+     */
+    if (connection != NULL) {
+        connection->drop_notification_callback = NULL;
+        connection->user_data = NULL;
+
+        /* The downstream unregisters the file descriptor from the
+         * event-loop so there's nothing else to be done by the plugin.
+         */
+        flb_downstream_conn_release(connection);
+    }
+
+    fw_conn_release(conn);
 
     return 0;
 }
