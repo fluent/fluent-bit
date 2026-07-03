@@ -1027,6 +1027,58 @@ def test_in_forward_tls_message_mode():
     assert records[0]["message"] == "tls-message"
 
 
+def test_in_forward_tls_idle_connection_timeout_churn(monkeypatch):
+    """
+    Regression test for issue #12025.
+
+    Open many idle TLS connections so net.io_timeout expires for all of them
+    in the same downstream timeout sweep. Previously the engine could free a
+    connection while its injected teardown event was still linked in the
+    priority bucket queue (100% CPU spin / use-after-free), and the forward
+    plugin left orphaned connection wrappers that crashed on the next
+    pause/shutdown. The listener must survive and keep ingesting.
+    """
+    service = Service("in_forward_conn_churn.yaml")
+    service.start()
+
+    port = service.flb_listener_port
+    cafile = service.tls_crt_file
+
+    try:
+        for _ in range(3):
+            idle = []
+            for _ in range(30):
+                context = ssl.create_default_context(cafile=cafile)
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+                raw = socket.create_connection(("127.0.0.1", port), timeout=5)
+                tls = context.wrap_socket(raw, server_hostname="localhost")
+                idle.append(tls)
+
+            # net.io_timeout is 2s: let the whole batch time out in one sweep
+            time.sleep(4)
+
+            for tls in idle:
+                try:
+                    tls.close()
+                except OSError:
+                    pass
+
+        # The listener must still accept a fresh connection and ingest data
+        context = ssl.create_default_context(cafile=cafile)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        raw = socket.create_connection(("127.0.0.1", port), timeout=5)
+        with context.wrap_socket(raw, server_hostname="localhost") as tls:
+            tls.sendall(_message_mode_payload(TEST_TAG, {"message": "after-churn"}))
+
+        records = service.wait_for_record_count(1, timeout=15)
+    finally:
+        service.stop()
+
+    assert any(record.get("message") == "after-churn" for record in records)
+
+
 def test_in_forward_secure_forward_auth_success():
     service = Service("in_forward_secure.yaml")
     service.start()
