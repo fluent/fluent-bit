@@ -23,7 +23,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     make bash wget unzip nano vim valgrind dh-make flex bison \
@@ -42,6 +42,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4001,DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -58,7 +59,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates gcc-8 g++-8 libsystemd-dev \
     make bash wget unzip nano vim valgrind dh-make flex bison \
@@ -78,6 +79,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4001,DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -96,7 +98,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates gcc-8 g++-8 libsystemd-dev \
     make bash wget unzip nano vim valgrind dh-make flex bison \
@@ -116,6 +118,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4001,DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -130,7 +133,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     make bash wget unzip nano vim valgrind dh-make flex bison \
@@ -144,6 +147,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4001,DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -160,7 +164,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     make bash wget unzip nano vim valgrind dh-make flex bison \
@@ -174,6 +178,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4001,DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -188,7 +193,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     make bash wget unzip nano vim valgrind dh-make flex bison \
@@ -202,6 +207,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4001,DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
@@ -218,7 +224,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     make bash wget unzip nano vim valgrind dh-make flex bison \
@@ -232,6 +238,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4001,DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
@@ -246,7 +253,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     make bash wget unzip nano vim valgrind dh-make flex bison \
@@ -260,6 +267,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4001,DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
@@ -276,7 +284,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     make bash wget unzip nano vim valgrind dh-make flex bison \
@@ -290,6 +298,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4001,DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
@@ -304,7 +313,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     make bash wget unzip nano vim valgrind dh-make flex bison \
@@ -318,6 +327,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4001,DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
@@ -334,7 +344,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
     make bash wget unzip nano vim valgrind dh-make flex bison \
@@ -348,6 +358,7 @@ RUN apt-get update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4001,DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"

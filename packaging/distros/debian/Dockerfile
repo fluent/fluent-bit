@@ -25,7 +25,7 @@ ARG RUST_VERSION
 RUN sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list && \
     sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
     make bash sudo wget unzip dh-make \
@@ -39,6 +39,7 @@ RUN apt-get -qq update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -60,7 +61,7 @@ ARG RUST_VERSION
 RUN sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list && \
     sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
     make bash sudo wget unzip dh-make \
@@ -74,6 +75,7 @@ RUN apt-get -qq update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -96,7 +98,7 @@ RUN sed -i \
     /etc/apt/sources.list && \
     echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
     make bash sudo wget unzip dh-make \
@@ -110,6 +112,7 @@ RUN apt-get -qq update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -134,7 +137,7 @@ RUN sed -i \
     /etc/apt/sources.list && \
     echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
     make bash sudo wget unzip dh-make \
@@ -148,6 +151,7 @@ RUN apt-get -qq update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -162,7 +166,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
     make bash sudo wget unzip dh-make \
@@ -176,6 +180,7 @@ RUN apt-get -qq update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -192,7 +197,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
     make bash sudo wget unzip dh-make \
@@ -206,6 +211,7 @@ RUN apt-get -qq update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -220,7 +226,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
     make bash sudo wget unzip dh-make \
@@ -234,6 +240,7 @@ RUN apt-get -qq update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
@@ -250,7 +257,7 @@ ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get -qq update && \
     apt-get install -y curl ca-certificates build-essential \
     make bash sudo wget unzip dh-make \
@@ -264,6 +271,7 @@ RUN apt-get -qq update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"

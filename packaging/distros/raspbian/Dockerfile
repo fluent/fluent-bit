@@ -14,7 +14,7 @@ ARG RUST_VERSION
 
 # Builder image so dependencies can be latest, recommended and no need to wipe
 # We pin cmake to a working version (latest 3.16 triggers cmake failures for GNU C compiler detection)
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y cmake=3.13.4-1 cmake-data=3.13.4-1 \
     curl ca-certificates build-essential \
@@ -24,6 +24,7 @@ RUN apt-get update && \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
@@ -34,7 +35,7 @@ ENV DEBIAN_FRONTEND noninteractive
 ENV CARGO_HOME="/opt/cargo"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential \
     cmake make bash sudo wget unzip dh-make \
@@ -43,6 +44,7 @@ RUN apt-get update && \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
@@ -53,7 +55,7 @@ ENV DEBIAN_FRONTEND noninteractive
 ENV CARGO_HOME="/opt/cargo"
 ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential \
     cmake make bash sudo wget unzip dh-make \
@@ -62,6 +64,7 @@ RUN apt-get update && \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
+# hadolint ignore=DL4006
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
 
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
