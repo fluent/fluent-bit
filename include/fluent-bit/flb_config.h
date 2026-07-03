@@ -32,6 +32,7 @@
 #include <monkey/mk_core.h>
 
 struct flb_router;
+struct flb_kv;
 
 #define FLB_CONFIG_FLUSH_SECS   1
 #define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
@@ -341,6 +342,7 @@ struct flb_config {
 struct flb_config *flb_config_init();
 void flb_config_exit(struct flb_config *config);
 const char *flb_config_prop_get(const char *key, struct mk_list *list);
+struct flb_kv **flb_config_prop_get_all(struct mk_list *list, int *out_count);
 int flb_config_set_property(struct flb_config *config,
                             const char *k, const char *v);
 int flb_config_set_program_name(struct flb_config *config, char *name);
