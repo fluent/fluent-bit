@@ -1789,6 +1789,7 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
         flb_plg_debug(ctx->ins, "handshake status = %i", ret);
         if (ret == -1) {
             if (u_conn) {
+                flb_upstream_conn_recycle(u_conn, FLB_FALSE);
                 flb_upstream_conn_release(u_conn);
             }
 
@@ -1833,6 +1834,17 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
     }
 
     if (u_conn) {
+        if (ret != FLB_OK) {
+            /*
+             * A forward frame is written as multiple non-atomic writes
+             * (header, body, options). On failure part of it may already be
+             * on the socket, so don't return the connection to the keepalive
+             * pool: the next frame would be read as the truncated frame's
+             * missing piece and desync the receiver's msgpack stream. Force
+             * it closed so the next flush starts on a fresh connection.
+             */
+            flb_upstream_conn_recycle(u_conn, FLB_FALSE);
+        }
         flb_upstream_conn_release(u_conn);
     }
 
