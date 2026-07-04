@@ -1907,7 +1907,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     struct flb_mp_map_header entries_mh;
     struct tm tm;
     size_t s;
-    long source_location_line;
+    int64_t source_location_line;
 
     /* consolidated cleanup variables */
     int decoder_initialized = FLB_FALSE;
