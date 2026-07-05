@@ -1775,7 +1775,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 goto cleanup_msgpack;
             }
 
-            ret = msgpack_unpacker_next(unp, &result);
+            ret = msgpack_unpacker_next_with_size(unp, &result, &bytes);
         }
     }
 
