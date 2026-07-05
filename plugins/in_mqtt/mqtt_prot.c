@@ -286,6 +286,10 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
     conn->buf_pos++;
     hlen |= BUFC();
 
+    /* Move past the 2-byte topic length field before measuring how much
+     * of the frame is left for the topic itself. */
+    conn->buf_pos++;
+
     /* Validate topic length against current buffer capacity (overflow) */
     frame_avail = conn->buf_frame_end - conn->buf_pos + 1;
     if (hlen > frame_avail) {
@@ -293,7 +297,6 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
         return -1;
     }
 
-    conn->buf_pos++;
     topic     = conn->buf_pos;
     topic_len = hlen;
     conn->buf_pos += hlen;
