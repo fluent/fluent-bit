@@ -40,7 +40,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
-#include <Wincrypt.h> /* flb_io_tls.c */
+#include <wincrypt.h> /* flb_io_tls.c */
 
 #include <monkey/mk_core/mk_sleep.h>
 #include <fluent-bit/flb_dlfcn_win32.h>
@@ -56,15 +56,8 @@
 /* monkey exposes a broken vsnprintf macro. Undo it  */
 #undef vsnprintf
 
-/*
- * Windows prefer to add an underscore to each POSIX function.
- * To suppress compiler warnings, we need these trivial macros.
- */
-#define timezone _timezone
-#define tzname _tzname
-#define strcasecmp _stricmp
-#define strncasecmp _strnicmp
 #define timegm _mkgmtime
+
 
 static inline int getpagesize(void)
 {
@@ -72,6 +65,20 @@ static inline int getpagesize(void)
     GetSystemInfo(&info);
     return info.dwPageSize;
 }
+
+static inline char* realpath(char *path, char *buf)
+{
+    if (buf != NULL) {
+        return NULL;  /* Read BUGS in realpath(3) */
+    }
+    return _fullpath(NULL, path, 0);
+}
+
+#ifndef __MINGW32__
+#define timezone _timezone
+#define tzname _tzname
+#define strcasecmp _stricmp
+#define strncasecmp _strnicmp
 
 static inline struct tm *gmtime_r(const time_t *timep, struct tm *result)
 {
@@ -90,10 +97,6 @@ static inline char *ctime_r(const time_t *timep, char *result)
     return strcpy(result, tmp);
 }
 
-/*
- * We can't just define localtime_r here, since mk_core/mk_utils.c is
- * exposing a symbol with the same name inadvertently.
- */
 static struct tm *flb_localtime_r(time_t *timep, struct tm *result)
 {
     if (localtime_s(result, timep)) {
@@ -103,33 +106,40 @@ static struct tm *flb_localtime_r(time_t *timep, struct tm *result)
 }
 #define localtime_r flb_localtime_r
 
+static inline int usleep(LONGLONG usec)
+{
+    // Convert into 100ns unit.
+    return nanosleep(usec * 10);
+}
+#else /* __MINGW32__ */
+/*
+ * MinGW-w64 headers provide the POSIX functions replaced above, but the
+ * real unistd.h they ship has no BSD random()/srandom(); map them to
+ * rand()/srand() like monkey's unistd drop-in does for MSVC.
+ */
+#define random rand
+#define srandom srand
+#endif /* !__MINGW32__ */
+
 static inline char* basename(const char *path)
 {
     char drive[_MAX_DRIVE];
     char dir[_MAX_DIR];
     char fname[_MAX_FNAME];
     char ext[_MAX_EXT];
+#ifdef _MSC_VER
     static __declspec(thread) char buf[_MAX_PATH];
+#else
+    /* MinGW GCC ignores __declspec(thread); use GCC's own TLS keyword so
+     * the buffer keeps the thread-safety the MSVC build has. */
+    static __thread char buf[_MAX_PATH];
+#endif
 
     _splitpath_s(path, drive, _MAX_DRIVE, dir, _MAX_DIR,
                        fname, _MAX_FNAME, ext, _MAX_EXT);
 
     _makepath_s(buf, _MAX_PATH, "", "", fname, ext);
     return buf;
-}
-
-static inline char* realpath(char *path, char *buf)
-{
-    if (buf != NULL) {
-        return NULL;  /* Read BUGS in realpath(3) */
-    }
-    return _fullpath(NULL, path, 0);
-}
-
-static inline int usleep(LONGLONG usec)
-{
-    // Convert into 100ns unit.
-    return nanosleep(usec * 10);
 }
 #else
 #include <netdb.h>
