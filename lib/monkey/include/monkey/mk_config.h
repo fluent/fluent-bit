@@ -27,7 +27,9 @@
 #include "../../deps/rbtree/rbtree.h"
 
 #ifdef _WIN32
+#ifndef __MINGW32__
 typedef uint32_t mode_t;
+#endif
 typedef uint32_t uid_t;
 typedef uint32_t gid_t;
 #endif
