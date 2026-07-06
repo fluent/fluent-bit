@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 #include <sys/types.h>
@@ -2019,6 +2020,212 @@ static int get_and_merge_pod_meta(struct flb_kube *ctx, struct flb_kube_meta *me
 }
 
 /*
+ * Background metadata refresh (opt-in via kube_meta_cache_refresh_interval).
+ *
+ * When enabled, every pod that gets cached is tracked in ctx->refresh_pods with
+ * a private copy of its 'meta'. A periodic timer walks that list and, for each
+ * pod still present in the cache, re-fetches its metadata and replaces the cache
+ * entry in place. Because the cache only ever holds pods this instance is
+ * logging (node-local), the extra request load stays bounded to this node.
+ */
+
+struct kube_refresh_pod {
+    struct flb_kube_meta meta;   /* private deep copy, owns its strings */
+    struct mk_list _head;
+};
+
+static int kube_dup_field(char **dst, int *dst_len,
+                          const char *src, int src_len)
+{
+    if (src == NULL) {
+        *dst = NULL;
+        *dst_len = 0;
+        return 0;
+    }
+
+    *dst = flb_malloc(src_len + 1);
+    if (*dst == NULL) {
+        flb_errno();
+        return -1;
+    }
+    memcpy(*dst, src, src_len);
+    (*dst)[src_len] = '\0';
+    *dst_len = src_len;
+    return 0;
+}
+
+static int kube_meta_copy(struct flb_kube_meta *dst,
+                          const struct flb_kube_meta *src)
+{
+    memset(dst, 0, sizeof(*dst));
+    dst->fields = src->fields;
+
+    if (kube_dup_field(&dst->cluster, &dst->cluster_len,
+                       src->cluster, src->cluster_len) != 0 ||
+        kube_dup_field(&dst->namespace, &dst->namespace_len,
+                       src->namespace, src->namespace_len) != 0 ||
+        kube_dup_field(&dst->podname, &dst->podname_len,
+                       src->podname, src->podname_len) != 0 ||
+        kube_dup_field(&dst->container_name, &dst->container_name_len,
+                       src->container_name, src->container_name_len) != 0 ||
+        kube_dup_field(&dst->container_image, &dst->container_image_len,
+                       src->container_image, src->container_image_len) != 0 ||
+        kube_dup_field(&dst->docker_id, &dst->docker_id_len,
+                       src->docker_id, src->docker_id_len) != 0 ||
+        kube_dup_field(&dst->container_hash, &dst->container_hash_len,
+                       src->container_hash, src->container_hash_len) != 0 ||
+        kube_dup_field(&dst->workload, &dst->workload_len,
+                       src->workload, src->workload_len) != 0 ||
+        kube_dup_field(&dst->cache_key, &dst->cache_key_len,
+                       src->cache_key, src->cache_key_len) != 0) {
+        flb_kube_meta_release(dst);
+        return -1;
+    }
+
+    return 0;
+}
+
+/* Track a pod for background refresh (no-op if disabled or already tracked) */
+static void kube_meta_refresh_track(struct flb_kube *ctx,
+                                    struct flb_kube_meta *meta)
+{
+    struct mk_list *head;
+    struct kube_refresh_pod *rp;
+
+    if (ctx->kube_meta_cache_refresh_interval <= 0 || meta->cache_key == NULL) {
+        return;
+    }
+
+    /* Skip if this pod is already tracked */
+    mk_list_foreach(head, &ctx->refresh_pods) {
+        rp = mk_list_entry(head, struct kube_refresh_pod, _head);
+        if (rp->meta.cache_key_len == meta->cache_key_len &&
+            memcmp(rp->meta.cache_key, meta->cache_key,
+                   meta->cache_key_len) == 0) {
+            return;
+        }
+    }
+
+    rp = flb_calloc(1, sizeof(struct kube_refresh_pod));
+    if (rp == NULL) {
+        flb_errno();
+        return;
+    }
+
+    if (kube_meta_copy(&rp->meta, meta) != 0) {
+        flb_free(rp);
+        return;
+    }
+
+    mk_list_add(&rp->_head, &ctx->refresh_pods);
+}
+
+/*
+ * Periodic timer callback: refresh cached pod metadata in place. Pods no longer
+ * present in the cache (evicted or stopped logging) are dropped so the tracking
+ * list stays bounded to what is actively cached.
+ */
+static void cb_kube_meta_refresh(struct flb_config *config, void *data)
+{
+    int ret;
+    char *buf;
+    size_t size;
+    void *cached;
+    size_t cached_size;
+    int refreshed = 0;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct kube_refresh_pod *rp;
+    struct flb_kube *ctx = data;
+
+    (void) config;
+
+    mk_list_foreach_safe(head, tmp, &ctx->refresh_pods) {
+        rp = mk_list_entry(head, struct kube_refresh_pod, _head);
+
+        /* Stop tracking pods that are no longer in the cache */
+        ret = flb_hash_table_get(ctx->hash_table,
+                                 rp->meta.cache_key, rp->meta.cache_key_len,
+                                 &cached, &cached_size);
+        if (ret == -1) {
+            mk_list_del(&rp->_head);
+            flb_kube_meta_release(&rp->meta);
+            flb_free(rp);
+            continue;
+        }
+
+        /* Re-fetch metadata and update the cache entry in place */
+        buf = NULL;
+        size = 0;
+        ret = get_and_merge_pod_meta(ctx, &rp->meta, &buf, &size);
+        if (ret != -1 && buf != NULL) {
+            flb_hash_table_add(ctx->hash_table,
+                               rp->meta.cache_key, rp->meta.cache_key_len,
+                               buf, size);
+            flb_free(buf);
+            refreshed++;
+        }
+    }
+
+    if (refreshed > 0) {
+        flb_plg_debug(ctx->ins, "refreshed metadata for %d cached pod(s)",
+                      refreshed);
+    }
+}
+
+/* Create the periodic refresh timer (runs on the event-loop thread) */
+int flb_kube_meta_refresh_start(struct flb_kube *ctx)
+{
+    int ret;
+    struct flb_sched *sched;
+
+    if (ctx->kube_meta_cache_refresh_interval <= 0 ||
+        ctx->refresh_timer != NULL) {
+        return 0;
+    }
+
+    sched = flb_sched_ctx_get();
+    if (sched == NULL) {
+        flb_plg_error(ctx->ins, "could not get scheduler for metadata refresh");
+        return -1;
+    }
+
+    ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
+                                    ctx->kube_meta_cache_refresh_interval * 1000,
+                                    cb_kube_meta_refresh, ctx,
+                                    &ctx->refresh_timer);
+    if (ret < 0) {
+        flb_plg_error(ctx->ins, "could not create metadata refresh timer");
+        return -1;
+    }
+
+    flb_plg_info(ctx->ins,
+                 "background pod metadata refresh enabled (interval=%is)",
+                 ctx->kube_meta_cache_refresh_interval);
+    return 0;
+}
+
+/* Destroy the refresh timer and release all tracked pods */
+void flb_kube_meta_refresh_destroy(struct flb_kube *ctx)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct kube_refresh_pod *rp;
+
+    if (ctx->refresh_timer != NULL) {
+        flb_sched_timer_cb_destroy(ctx->refresh_timer);
+        ctx->refresh_timer = NULL;
+    }
+
+    mk_list_foreach_safe(head, tmp, &ctx->refresh_pods) {
+        rp = mk_list_entry(head, struct kube_refresh_pod, _head);
+        mk_list_del(&rp->_head);
+        flb_kube_meta_release(&rp->meta);
+        flb_free(rp);
+    }
+}
+
+/*
  * Work around kubernetes/kubernetes/issues/78479 by waiting
  * for DNS to start up.
  */
@@ -2362,6 +2569,9 @@ static inline int flb_kube_pod_meta_get(struct flb_kube *ctx,
             flb_hash_table_get_by_id(ctx->hash_table, id, meta->cache_key,
                                      &hash_meta_buf, &hash_meta_size);
         }
+
+        /* Track this pod for background metadata refresh (if enabled) */
+        kube_meta_refresh_track(ctx, meta);
     }
 
     /*
