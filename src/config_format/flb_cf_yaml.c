@@ -37,12 +37,12 @@
 #include <ctype.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#ifndef _MSC_VER
+#ifndef _WIN32
 #include <glob.h>
 #endif
 
 #ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 #include <strsafe.h>
 #define PATH_MAX MAX_PATH
 #endif
