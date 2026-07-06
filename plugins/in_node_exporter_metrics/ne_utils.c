@@ -30,12 +30,17 @@
 
 #include <glob.h>
 
-static void ne_utils_file_log(struct flb_ne *ctx, int log_level,
+static void ne_utils_file_log(struct flb_ne *ctx, int log_level, int err_num,
                               const char *operation, const char *path)
 {
     if (!ctx) {
+        errno = err_num;
         flb_errno();
         return;
+    }
+
+    if (err_num != ENOENT) {
+        log_level = FLB_LOG_ERROR;
     }
 
     switch (log_level) {
@@ -163,14 +168,14 @@ int ne_utils_file_read_uint64_at_level(struct flb_ne *ctx,
 
     fd = open(p, O_RDONLY);
     if (fd == -1) {
-        ne_utils_file_log(ctx, log_level, "open", p);
+        ne_utils_file_log(ctx, log_level, errno, "open", p);
         flb_sds_destroy(p);
         return -1;
     }
 
     bytes = read(fd, &tmp, sizeof(tmp));
     if (bytes == -1) {
-        ne_utils_file_log(ctx, log_level, "read from", p);
+        ne_utils_file_log(ctx, log_level, errno, "read from", p);
         close(fd);
         flb_sds_destroy(p);
         return -1;
@@ -311,14 +316,14 @@ int ne_utils_file_read_sds_at_level(struct flb_ne *ctx,
 
     fd = open(p, O_RDONLY);
     if (fd == -1) {
-        ne_utils_file_log(ctx, log_level, "open", p);
+        ne_utils_file_log(ctx, log_level, errno, "open", p);
         flb_sds_destroy(p);
         return -1;
     }
 
     bytes = read(fd, &tmp, sizeof(tmp));
     if (bytes == -1) {
-        ne_utils_file_log(ctx, log_level, "read from", p);
+        ne_utils_file_log(ctx, log_level, errno, "read from", p);
         close(fd);
         flb_sds_destroy(p);
         return -1;
