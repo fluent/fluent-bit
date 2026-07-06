@@ -311,6 +311,7 @@ if (FLB_STREAM_PROCESSOR)
 endif()
 
 if (FLB_SYSTEM_WINDOWS)
+  REGISTER_IN_PLUGIN("in_etw")
   REGISTER_IN_PLUGIN("in_winlog")
   REGISTER_IN_PLUGIN("in_winstat")
   REGISTER_IN_PLUGIN("in_winevtlog")

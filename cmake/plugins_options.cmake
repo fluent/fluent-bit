@@ -61,6 +61,7 @@ DEFINE_OPTION(FLB_IN_TCP                      "Enable TCP input plugin"         
 DEFINE_OPTION(FLB_IN_THERMAL                  "Enable Thermal plugin"                        ON)
 DEFINE_OPTION(FLB_IN_UDP                      "Enable UDP input plugin"                      ON)
 DEFINE_OPTION(FLB_IN_UNIX_SOCKET              "Enable Unix socket input plugin"              OFF)
+DEFINE_OPTION(FLB_IN_ETW                      "Enable Event Tracing for Windows input plugin" OFF)
 DEFINE_OPTION(FLB_IN_WINLOG                   "Enable Windows Log input plugin"              OFF)
 DEFINE_OPTION(FLB_IN_WINDOWS_EXPORTER_METRICS "Enable windows exporter metrics input plugin" ON)
 DEFINE_OPTION(FLB_IN_WINEVTLOG                "Enable Windows EvtLog input plugin"           OFF)
