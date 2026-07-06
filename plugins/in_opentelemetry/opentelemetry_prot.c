@@ -252,6 +252,9 @@ static int send_response_ng(struct flb_http_response *response,
     else if (http_status == 400) {
         flb_http_response_set_message(response, "Bad Request");
     }
+    else if (http_status == 404) {
+        flb_http_response_set_message(response, "Not Found");
+    }
 
     if (message != NULL) {
         flb_http_response_set_body(response,
@@ -828,7 +831,7 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
         grpc_request = FLB_TRUE;
     }
     else {
-        send_response_ng(response, 400, "error: invalid endpoint\n");
+        send_response_ng(response, 404, "error: invalid endpoint\n");
         return -1;
     }
 
