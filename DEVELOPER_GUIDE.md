@@ -676,6 +676,21 @@ At time of writing this workflow *does not run any of the Fluent Bit test suite*
 - so it only checks that the target branch can be compiled. To run tests, a local
 build will be required.
 
+#### Cross-compiling from Linux with MinGW
+
+Fluent Bit can also be cross-compiled for Windows from a Linux host using the
+MinGW-w64 UCRT64 toolchain, without a Windows machine or MSVC. The
+[`.github/workflows/pr-compile-check.yaml`](.github/workflows/pr-compile-check.yaml)
+`pr-compile-mingw-cross` job is the reference recipe: it runs in a Fedora
+container, installs the `ucrt64-gcc` cross toolchain, cross-builds a static
+libyaml, and then configures with
+`-DCMAKE_TOOLCHAIN_FILE=/usr/share/mingw/toolchain-ucrt64.cmake`.
+
+Cross-builds produce `bin/fluent-bit.exe` but cannot run the test suites (the
+binaries are Windows executables). Note the toolchain must target UCRT
+(`x86_64-w64-mingw32ucrt`); the older MSVCRT-based MinGW toolchains are not
+supported.
+
 #### Using Docker for Windows
 
 For Windows users with Hyper-V capable machines the simplest way to build a
