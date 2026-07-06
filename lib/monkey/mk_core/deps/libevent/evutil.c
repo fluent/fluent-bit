@@ -39,6 +39,13 @@
 #undef _WIN32_WINNT
 /* For structs needed by GetAdaptersAddresses */
 #define _WIN32_WINNT 0x0501
+#ifdef __MINGW32__
+/* MinGW-w64's sdkddkver.h rejects a _WIN32_WINNT that disagrees with
+ * NTDDI_VERSION; pin NTDDI to the same level. MSVC does not enforce this
+ * and is left unchanged. */
+#undef NTDDI_VERSION
+#define NTDDI_VERSION 0x05010000
+#endif
 #include <iphlpapi.h>
 #endif
 

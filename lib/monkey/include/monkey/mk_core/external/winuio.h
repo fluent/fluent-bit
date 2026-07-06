@@ -8,7 +8,7 @@
 #else
 #include <errno.h>
 #include <io.h>
-#include <BaseTsd.h>
+#include <basetsd.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 typedef SSIZE_T ssize_t;

@@ -7,7 +7,7 @@
 #include "libc_errno.h"
 #include "win_util.h"
 
-#include "PathCch.h"
+#include "pathcch.h"
 
 #pragma comment(lib, "Pathcch.lib")
 
@@ -1295,13 +1295,13 @@ os_readlinkat(os_file_handle handle, const char *path, char *buf,
 
         if (wbufsize >= 4 && wbuf[0] == L'\\' && wbuf[1] == L'?'
             && wbuf[2] == L'?' && wbuf[3] == L'\\') {
-            // Starts with \??\ 
+            // Starts with \??\ prefix
             if (wbufsize >= 6
                 && ((wbuf[4] >= L'A' && wbuf[4] <= L'Z')
                     || (wbuf[4] >= L'a' && wbuf[4] <= L'z'))
                 && wbuf[5] == L':' && (wbufsize == 6 || wbuf[6] == L'\\'))
                 {
-                    // \??\<drive>:\ 
+                    // \??\<drive>:\ form
                     wbuf += 4;
                     wbufsize -= 4;
                 }
@@ -1310,7 +1310,7 @@ os_readlinkat(os_file_handle handle, const char *path, char *buf,
                          && (wbuf[6] == L'C' || wbuf[6] == L'c')
                          && wbuf[7] == L'\\')
                 {
-                    // \??\UNC\<server>\<share>\ - make sure the final path looks like \\<server>\<share>\ 
+                    // \??\UNC\<server>\<share>\ - make sure the final path looks like \\<server>\<share>\ afterwards
                     wbuf += 6;
                     wbuf[0] = L'\\';
                     wbufsize -= 6;
