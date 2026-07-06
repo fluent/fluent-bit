@@ -137,7 +137,9 @@ if(FLB_SYSTEM_WINDOWS)
     ${src}
     flb_dlfcn_win32.c
     )
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W2")
+  if(MSVC)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W2")
+  endif()
 endif()
 
 if(FLB_PARSER)
@@ -288,10 +290,14 @@ check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 # Core dependencies
 if(FLB_SYSTEM_WINDOWS)
   set(FLB_DEPS
-    "ws2_32.lib"
-    "crypt32.lib"
-    "Bcrypt.lib"
-    "Shlwapi.lib"
+    # Append: the upstream plain set() discards deps recorded earlier, e.g.
+    # onigmo-static (FLB_REGEX) whose INTERFACE include dir core needs.
+    ${FLB_DEPS}
+    "ws2_32"
+    "crypt32"
+    "bcrypt"
+    "shlwapi"
+    "shell32"
     )
 else()
   set(FLB_DEPS
@@ -553,6 +559,13 @@ add_library(fluent-bit-static STATIC ${src})
 add_sanitizers(fluent-bit-static)
 target_link_libraries(fluent-bit-static ${FLB_DEPS})
 
+if(FLB_BACKTRACE)
+  # The stacktrace helpers are compiled into this library; declaring the
+  # dependency here keeps libbacktrace ordered after every occurrence of
+  # the archive on GNU ld link lines.
+  target_link_libraries(fluent-bit-static ${LIBBACKTRACE_LIBRARIES})
+endif()
+
 if(MSVC)
   # Rename the output for Windows environment to avoid naming issues
   set_target_properties(fluent-bit-static PROPERTIES OUTPUT_NAME libfluent-bit)
@@ -574,7 +587,12 @@ if(FLB_BINARY)
   endif()
   if (MSVC)
     set_target_properties(fluent-bit-bin PROPERTIES IMPORT_SUFFIX ".exe.lib")
-  endif(MSVC)
+  elseif (FLB_SYSTEM_WINDOWS)
+    # Same import-library name clash the MSVC branch above avoids, with the
+    # GNU naming: the executable's implib would otherwise collide with the
+    # shared library's libfluent-bit.dll.a.
+    set_target_properties(fluent-bit-bin PROPERTIES IMPORT_SUFFIX ".exe.a")
+  endif ()
   add_sanitizers(fluent-bit-bin)
 
   if(FLB_STATIC_CONF)
