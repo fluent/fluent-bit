@@ -27,9 +27,10 @@
 #define FLB_THREAD_POOL_STOPPED   2
 
 #include <fluent-bit/flb_info.h>
-#ifdef FLB_SYSTEM_WINDOWS
+#if defined(FLB_SYSTEM_WINDOWS) && !defined(__MINGW32__)
 #include <monkey/mk_core/external/winpthreads.h>
 #else
+/* MinGW-w64 ships a real pthread implementation (winpthreads) */
 #include <pthread.h>
 #endif
 
