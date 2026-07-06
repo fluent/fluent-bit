@@ -166,7 +166,7 @@
   #define MK_EXPORT __declspec(dllexport)
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(__MINGW32__)
     #define MK_INLINE __forceinline
 #else
     #define MK_INLINE inline __attribute__((always_inline))

@@ -28,7 +28,7 @@
 #include <chunkio/cio_info.h>
 #if defined(CIO_HAVE_BACKEND_FILESYSTEM) && defined(__EMSCRIPTEN__)
 #include <ftw.h>
-#elif defined(CIO_HAVE_BACKEND_FILESYSTEM) && !defined(_MSC_VER)
+#elif defined(CIO_HAVE_BACKEND_FILESYSTEM) && !defined(_WIN32)
 #include <fts.h>
 #endif
 
@@ -64,7 +64,7 @@ int cio_utils_recursive_delete(const char *dir)
      */
     return nftw(dir, cio_utils_remove_entry, 32, FTW_DEPTH | FTW_PHYS | FTW_MOUNT);
 }
-#elif !defined(_MSC_VER)
+#elif !defined(_WIN32)
 /*
  * Taken from StackOverflow:
  *
