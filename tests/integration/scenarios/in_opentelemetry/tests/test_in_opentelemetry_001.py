@@ -1258,6 +1258,27 @@ def test_in_opentelemetry_protocol_matrix(case, signal_type, json_input, endpoin
     assert len(response_payload) > 0
 
 
+def test_in_opentelemetry_http2_invalid_endpoint_returns_404():
+    service = Service(IN_OPENTELEMETRY_PROTOCOL_CONFIGS["http2_cleartext"])
+    service.start()
+
+    result = run_curl_request(
+        f"http://localhost:{service.flb_listener_port}/v1/invalid",
+        b"invalid payload",
+        headers=["Content-Type: application/x-protobuf"],
+        http_mode="http2-prior-knowledge",
+    )
+
+    service.stop()
+
+    assert result["status_code"] == 404
+    assert result["http_version"] == "2"
+    assert result["body"] == "error: invalid endpoint\n"
+    assert len(data_storage["logs"]) == 0
+    assert len(data_storage["metrics"]) == 0
+    assert len(data_storage["traces"]) == 0
+
+
 # This test is branch-specific coverage for the generic HTTP listener worker mode.
 # It does three things:
 # 1. enables http_server.workers on the in_opentelemetry listener,
