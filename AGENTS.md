@@ -6,6 +6,10 @@
 - Test: `ctest --test-dir build --output-on-failure`
 - Prefer targeted tests with `ctest --test-dir build -R <name> --output-on-failure`
   when the affected area is known, because the full enabled suite can be slow.
+- On Windows, do not run runtime test cases yet. Runtime tests are not supported
+  there, so skip them and report the skip instead of treating missing runtime
+  verification as a failure. Prefer filtered non-runtime CTest runs over the
+  full suite if the build tree contains runtime tests.
 - Run a focused integration test with
   `ctest --test-dir build -R flb-it-opentelemetry --output-on-failure`
 - Run the in-tree Python integration suite with:
@@ -63,6 +67,11 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 - Add or update tests for behavior changes, especially protocol parsing and encoder/decoder paths.
 - Prefer targeted tests close to the changed module (`tests/internal`, plugin runtime tests).
 - Prefer focused `ctest -R ...` runs or specific test binaries when the touched area is known.
+- Windows exception: runtime test cases are not supported on Windows yet. When
+  working on Windows, do not run `tests/runtime`, `flb-rt-*` targets, or runtime
+  CTest matches as verification. Avoid full-suite CTest runs if they would pick
+  up runtime tests. Run applicable non-runtime tests instead and state clearly
+  that runtime verification was skipped because the platform does not support it.
 - Use `tests/integration` when validating end-to-end plugin behavior, network
   protocols, downstream request generation, or local fake-server interactions
   that are awkward to cover in `ctest` binaries alone.
@@ -96,6 +105,8 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
   - the exact focused integration command(s) run;
   - whether valgrind was used;
   - pass/fail status;
+  - on Windows, any runtime test cases intentionally skipped because runtime
+    tests are not supported there;
   - any concrete blocker if a required run could not be completed.
 - Keep generated integration artifacts out of git. Do not commit
   `.venv/`, `.pytest_cache/`, `results/`, or `__pycache__/` under
@@ -255,7 +266,8 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 
 ### Testing strategy
 - Use `tests/internal` for core lifecycle/accounting logic.
-- Use `tests/runtime` for plugin-level behavior and end-to-end semantics.
+- Use `tests/runtime` for plugin-level behavior and end-to-end semantics, except
+  on Windows where runtime test cases are not supported and must be skipped.
 - Add regression tests for:
   - mixed signals
   - processor drop/modify paths
