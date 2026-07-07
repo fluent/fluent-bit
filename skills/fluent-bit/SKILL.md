@@ -31,6 +31,10 @@ change, and report exact verification.
   local conventions over new parallel logic.
 - Keep changes scoped to the affected component. Put plugin logic in its plugin
   directory; shared behavior belongs in `src/`, `include/fluent-bit/`, or `lib/`.
+- Treat bundled libraries under `lib/` as third-party or separately maintained
+  code unless the path is clearly Fluent Bit-owned. Ask for explicit user
+  confirmation before editing them, using a confirmation popup when available.
+  Keep those edits isolated and upstreamable as focused patches.
 - Fix shared helper semantics when the bug is in a helper, instead of patching
   only one visible caller.
 - Preserve real input paths. If the request asks to enrich or correct an
@@ -80,4 +84,6 @@ Final responses for implementation tasks should include:
 - Whether valgrind was used when integration coverage applies.
 - Any runtime tests skipped on Windows because runtime test cases are
   unsupported there.
+- Any bundled library patch touched, including the upstream project/path and
+  confirmation that the user approved editing it.
 - Any concrete blocker for required tests that could not run.
