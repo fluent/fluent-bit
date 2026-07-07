@@ -35,6 +35,19 @@ Fluent Bit is a C/C++ monorepo built with CMake.
 
 Keep changes scoped: plugin logic in its plugin directory, shared behavior in `src/` or `lib/`.
 
+## Bundled Library Changes
+- Treat `lib/` as bundled third-party or separately maintained code unless the
+  specific path is clearly Fluent Bit-owned.
+- Before editing bundled library code, ask for explicit user confirmation. If
+  the agent environment supports confirmation popups, use one; otherwise ask in
+  chat before writing files.
+- Prefer changes that can be sent upstream as a focused patch. Keep bundled
+  library patches isolated from Fluent Bit glue code, and document the upstream
+  project/path in the close-out.
+- Do not mix bundled library edits with unrelated Fluent Bit core, plugin,
+  documentation, or test changes in the same commit unless the user explicitly
+  asks for that structure.
+
 ## Build, Test, and Development Commands
 - `cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On`: configure with runtime + internal tests.
 - `cmake -S . -B build -DFLB_TESTS_RUNTIME=Off -DFLB_TESTS_INTERNAL=On`:
@@ -205,6 +218,7 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 - Do not open issues, pull requests, or remote branches unless the user explicitly asks.
 - Do not rewrite git history, amend commits, or force-push unless the user explicitly asks.
 - Do not revert user changes outside the requested scope.
+- Do not edit bundled libraries under `lib/` without explicit confirmation.
 - Prefer minimal patches that avoid unrelated formatting or refactoring churn.
 
 ## Agent Playbook (Pipeline Architecture Primer)

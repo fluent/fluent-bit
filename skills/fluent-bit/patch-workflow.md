@@ -10,6 +10,9 @@ Use this guide when implementing or reviewing Fluent Bit changes.
 - Trace from public configuration or input surface to the failing behavior.
 - Identify whether the problem belongs in a plugin, a shared helper, core
   runtime, a bundled library, or tests.
+- If the fix would touch bundled library code under `lib/`, get explicit user
+  confirmation before editing. Use a confirmation popup when the environment
+  supports one; otherwise ask in chat.
 
 ## Implementation Rules
 
@@ -20,6 +23,8 @@ Use this guide when implementing or reviewing Fluent Bit changes.
 - Preserve explicit zero values; use clear sentinels for unknown values.
 - Do not downgrade real I/O, parse, or lifecycle failures just to quiet logs.
 - Do not add broad refactors or formatting churn around the fix.
+- Keep bundled library edits isolated from Fluent Bit glue changes and write
+  them as upstreamable patches for the library's own project.
 - Follow Fluent Bit C style:
   - variables at function start;
   - braces for all `if`, `else`, `while`, and `do` blocks;
@@ -58,6 +63,11 @@ Common examples:
 - `engine: fix flush buffer handling`
 - `tests: internal: add parser regression coverage`
 - `tests: integration: cover schema registry resolution`
+
+For bundled library changes, keep the library patch in its own commit unless the
+user explicitly asks otherwise. Use the prefix accepted for that path by the
+repository linter, and mention the upstream project/path in the commit body when
+that context is useful.
 
 Do not invent generic prefixes when the repository linter infers a narrower
 prefix. Run the linter when creating commits:
