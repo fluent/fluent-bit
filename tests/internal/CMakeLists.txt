@@ -22,6 +22,7 @@ set(UNIT_TESTS_FILES
   gzip.c
   zstd.c
   random.c
+  thread_storage.c
   config_map.c
   mp.c
   mp_chunk_cobj.c
