@@ -6,15 +6,16 @@ This document outlines the maintenance strategy and version support for Fluent B
 
 | Branch     | Version            | Status              | Maintainer                                                  | Notes                                                              |
 |------------|--------------------|---------------------|-------------------------------------------------------------|--------------------------------------------------------------------|
-| `master`   | v5.0 (development) | Active development  | [Eduardo Silva](https://github.com/edsiper)                 | All new features and bug fixes land here first                     |
-| `4.2`      | v4.2.x             | Stable              | [Eduardo Silva](https://github.com/edsiper) [Hiroshi Hatake (@cosmo0920)](https://github.com/cosmo0920) | Current stable release series. Active development and updates. May receive minor enhancements in addition to fixes.     |
+| `master`   | v5.1 (development) | Active development  | [Eduardo Silva](https://github.com/edsiper)                 | Next minor development line. All new features and bug fixes land here first |
+| `5.0`      | v5.0.x             | Stable              | [Eduardo Silva](https://github.com/edsiper) [Hiroshi Hatake (@cosmo0920)](https://github.com/cosmo0920) | Current stable release series. Receives bug fixes, security fixes, and selected low-risk backports. |
+| `4.2`      | v4.2.x             | Maintenance only    | [Eduardo Silva](https://github.com/edsiper) [Hiroshi Hatake (@cosmo0920)](https://github.com/cosmo0920) | Critical fixes and safe backports only. Maintained until **July 30, 2026** |
 | `4.1`      | v4.1.x             | Maintenance only    | [Hiroshi Hatake (@cosmo0920)](https://github.com/cosmo0920) | Critical fixes and safe backports only. Maintained until **February 28, 2026** |
 
 ---
 
 ## Maintenance Policy
 
-Active development is currently on Fluent Bit **v5.0** (tracked in the `master` branch). The **v4.2** branch is the current stable release series and receives active updates. Previous release lines enter **maintenance mode** after the next major/minor release.
+Active development is currently on the next Fluent Bit **v5.1** line (tracked in the `master` branch). The **v5.0** branch is the current stable release series and receives stable branch updates. Previous release lines enter **maintenance mode** after the next major/minor release.
 
 ### Accepted Changes for Maintenance Branches
 
@@ -26,9 +27,13 @@ Active development is currently on Fluent Bit **v5.0** (tracked in the `master` 
 
 Maintenance releases continue on an as-needed basis depending on urgency and impact.
 
-### v4.2 Stable Series
+### v5.0 Stable Series
 
-**v4.2** is the current stable release series and receives active development, bug fixes, and security updates. This is the recommended version for production use.
+**v5.0** is the current stable release series and receives bug fixes, security updates, and selected low-risk backports. This is the recommended version for production use.
+
+### v4.2 Maintenance
+
+**v4.2** has entered **maintenance mode** and receives critical fixes and safe backports until **July 30, 2026** (as specified in [SECURITY.md](SECURITY.md)).
 
 ### v4.1 Maintenance
 
@@ -44,11 +49,12 @@ Maintenance releases continue on an as-needed basis depending on urgency and imp
 
 ## How to Contribute to Maintained Versions
 
-If you're submitting a fix or feature relevant to a stable or maintenance branch (v4.2 or v4.1):
+If you're submitting a fix or feature relevant to a stable or maintenance branch (v5.0, v4.2, or v4.1):
 
 - Open your PR against the `master` branch
-- Add a note in the PR or issue: `Target: v4.2` or `Target: v4.1`
+- Add a note in the PR or issue: `Target: v5.0`, `Target: v4.2`, or `Target: v4.1`
 - Tag the branch maintainer to request backport consideration:
+  - For v5.0: [@edsiper](https://github.com/edsiper) [@cosmo0920](https://github.com/cosmo0920)
   - For v4.2: [@edsiper](https://github.com/edsiper) [@cosmo0920](https://github.com/cosmo0920)
   - For v4.1: [@cosmo0920](https://github.com/cosmo0920)
 
