@@ -2,14 +2,16 @@
 
 ## Preferred Commands
 - Configure: `cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On`
+- Configure on Windows:
+  `cmake -S . -B build -DFLB_TESTS_RUNTIME=Off -DFLB_TESTS_INTERNAL=On`
 - Build: `cmake --build build -j8`
 - Test: `ctest --test-dir build --output-on-failure`
 - Prefer targeted tests with `ctest --test-dir build -R <name> --output-on-failure`
   when the affected area is known, because the full enabled suite can be slow.
 - On Windows, do not run runtime test cases yet. Runtime tests are not supported
   there, so skip them and report the skip instead of treating missing runtime
-  verification as a failure. Prefer filtered non-runtime CTest runs over the
-  full suite if the build tree contains runtime tests.
+  verification as a failure. Configure with `-DFLB_TESTS_RUNTIME=Off` and
+  prefer filtered non-runtime CTest runs over the full suite.
 - Run a focused integration test with
   `ctest --test-dir build -R flb-it-opentelemetry --output-on-failure`
 - Run the in-tree Python integration suite with:
@@ -35,6 +37,8 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 
 ## Build, Test, and Development Commands
 - `cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On`: configure with runtime + internal tests.
+- `cmake -S . -B build -DFLB_TESTS_RUNTIME=Off -DFLB_TESTS_INTERNAL=On`:
+  configure on Windows, where runtime tests are unsupported.
 - `cmake --build build -j8`: compile Fluent Bit and tests.
 - `ctest --test-dir build --output-on-failure`: run enabled tests.
 - `ctest --test-dir build -R flb-it-opentelemetry --output-on-failure`: run a focused integration test.
@@ -69,9 +73,10 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 - Prefer focused `ctest -R ...` runs or specific test binaries when the touched area is known.
 - Windows exception: runtime test cases are not supported on Windows yet. When
   working on Windows, do not run `tests/runtime`, `flb-rt-*` targets, or runtime
-  CTest matches as verification. Avoid full-suite CTest runs if they would pick
-  up runtime tests. Run applicable non-runtime tests instead and state clearly
-  that runtime verification was skipped because the platform does not support it.
+  CTest matches as verification. Configure with `-DFLB_TESTS_RUNTIME=Off` so
+  unsupported runtime targets are not built. Run applicable non-runtime tests
+  instead and state clearly that runtime verification was skipped because the
+  platform does not support it.
 - Use `tests/integration` when validating end-to-end plugin behavior, network
   protocols, downstream request generation, or local fake-server interactions
   that are awkward to cover in `ctest` binaries alone.
@@ -90,6 +95,9 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
   `cmake --build build -j8`
   `tests/integration/.venv/bin/python -m pytest <focused-scenario> -q`
   `VALGRIND=1 VALGRIND_STRICT=1 tests/integration/.venv/bin/python -m pytest <focused-scenario> -q`
+- On Windows, replace the configure command above with:
+  `cmake -S . -B build -DFLB_TESTS_RUNTIME=Off -DFLB_TESTS_INTERNAL=On`
+  and skip runtime test cases because they are not supported there.
 - Run broader test coverage when changing shared lifecycle, routing, storage, or accounting code.
 - Validate both success and failure paths (invalid payloads, boundary sizes, null/missing fields).
 - You can also run specific binaries from `build/bin` (e.g., `./bin/flb-it-opentelemetry`).
@@ -178,7 +186,8 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
   path inference before choosing a commit subject. For example, changes only to
   `AGENTS.md` must use `agents:`, not `docs:`.
 - For pull-request-style validation, use full history and fetch the base branch
-  first, matching CI behavior:
+  first, matching CI behavior. This is required because the checker can fall
+  back to validating only `HEAD` when the base ref is unavailable:
   `git fetch --all --prune`
   `git fetch origin <base-branch>:origin/<base-branch>`
 - Before pushing a branch or opening/updating a PR, agents must lint the full
