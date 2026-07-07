@@ -1453,8 +1453,8 @@ if(NOT FLB_POSIX_TLS)
   check_c_source_compiles("
    __thread int a;
    int main() {
-       __tls_get_addr(0);
-       return 0;
+       a = 1;
+       return a - 1;
    }" FLB_HAVE_C_TLS)
   if(FLB_HAVE_C_TLS)
     FLB_DEFINITION(FLB_HAVE_C_TLS)
