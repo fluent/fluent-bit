@@ -25,13 +25,13 @@ if(FLB_PARSER)
     )
 endif()
 
-if(MSVC)
+if(WIN32)
   set(src
     ${src}
     win32/stat.c
     win32/io.c
     )
-  FLB_PLUGIN(in_tail "${src}" "Shlwapi")
+  FLB_PLUGIN(in_tail "${src}" "shlwapi")
 else()
   FLB_PLUGIN(in_tail "${src}" "")
 endif()
