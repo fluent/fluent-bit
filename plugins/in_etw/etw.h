@@ -71,11 +71,16 @@ struct flb_etw {
     TRACEHANDLE session;
     TRACEHANDLE trace;
     CRITICAL_SECTION handle_lock;
+    pthread_mutex_t startup_lock;
+    pthread_cond_t startup_cond;
 
     LONG exiting;
     LONG paused;
     LONG append_errors;
     LONG query_errors;
+    int startup_sync_initialized;
+    int startup_done;
+    int startup_status;
     int thread_created;
     int loss_metrics_collector_id;
     pthread_t thread;

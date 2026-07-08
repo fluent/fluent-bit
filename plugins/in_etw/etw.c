@@ -392,7 +392,12 @@ static char *wide_to_utf8(const WCHAR *str, int bytes, int *out_len)
     }
 
     buf[size] = '\0';
-    *out_len = size;
+    if (wide_len == -1) {
+        *out_len = size - 1;
+    }
+    else {
+        *out_len = size;
+    }
 
     return buf;
 }
@@ -1007,10 +1012,46 @@ static void etw_close_trace(struct flb_etw *ctx)
 
 static ULONG etw_stop_session_by_name(struct flb_etw *ctx)
 {
-    return ControlTraceW(0,
-                         ctx->session_name_wide,
-                         ctx->properties,
-                         EVENT_TRACE_CONTROL_STOP);
+    ULONG status;
+    EVENT_TRACE_PROPERTIES *properties;
+
+    properties = create_trace_properties(ctx);
+    if (properties == NULL) {
+        return ERROR_NOT_ENOUGH_MEMORY;
+    }
+
+    status = ControlTraceW(0,
+                           ctx->session_name_wide,
+                           properties,
+                           EVENT_TRACE_CONTROL_STOP);
+    flb_free(properties);
+
+    return status;
+}
+
+static void etw_signal_startup(struct flb_etw *ctx, int status)
+{
+    pthread_mutex_lock(&ctx->startup_lock);
+    if (!ctx->startup_done) {
+        ctx->startup_status = status;
+        ctx->startup_done = FLB_TRUE;
+        pthread_cond_signal(&ctx->startup_cond);
+    }
+    pthread_mutex_unlock(&ctx->startup_lock);
+}
+
+static int etw_wait_startup(struct flb_etw *ctx)
+{
+    int status;
+
+    pthread_mutex_lock(&ctx->startup_lock);
+    while (!ctx->startup_done) {
+        pthread_cond_wait(&ctx->startup_cond, &ctx->startup_lock);
+    }
+    status = ctx->startup_status;
+    pthread_mutex_unlock(&ctx->startup_lock);
+
+    return status;
 }
 
 static void etw_disable_provider(struct flb_etw *ctx, TRACEHANDLE session)
@@ -1112,6 +1153,7 @@ static void *etw_worker(void *data)
             flb_plg_error(ctx->ins, "StartTrace failed for session '%S' (status=%lu)",
                           ctx->session_name_wide, status);
         }
+        etw_signal_startup(ctx, -1);
         return NULL;
     }
 
@@ -1129,6 +1171,7 @@ static void *etw_worker(void *data)
         if (status != ERROR_SUCCESS) {
             flb_plg_error(ctx->ins, "EnableTraceEx2 failed (status=%lu)", status);
             etw_stop_session(ctx);
+            etw_signal_startup(ctx, -1);
             return NULL;
         }
     }
@@ -1145,8 +1188,11 @@ static void *etw_worker(void *data)
     if (trace == INVALID_PROCESSTRACE_HANDLE) {
         flb_plg_error(ctx->ins, "OpenTrace failed (error=%lu)", GetLastError());
         etw_stop_session(ctx);
+        etw_signal_startup(ctx, -1);
         return NULL;
     }
+
+    etw_signal_startup(ctx, 0);
 
     status = ProcessTrace(&trace, 1, NULL, NULL);
     if (status != ERROR_SUCCESS && !InterlockedCompareExchange(&ctx->exiting, 0, 0)) {
@@ -1181,6 +1227,11 @@ static void etw_config_destroy(struct flb_etw *ctx)
 
     if (ctx->properties != NULL) {
         flb_free(ctx->properties);
+    }
+
+    if (ctx->startup_sync_initialized) {
+        pthread_cond_destroy(&ctx->startup_cond);
+        pthread_mutex_destroy(&ctx->startup_lock);
     }
 
     DeleteCriticalSection(&ctx->handle_lock);
@@ -1377,6 +1428,22 @@ static int in_etw_init(struct flb_input_instance *in,
     ctx->loss_metrics_collector_id = -1;
     InitializeCriticalSection(&ctx->handle_lock);
 
+    ret = pthread_mutex_init(&ctx->startup_lock, NULL);
+    if (ret != 0) {
+        DeleteCriticalSection(&ctx->handle_lock);
+        flb_free(ctx);
+        return -1;
+    }
+
+    ret = pthread_cond_init(&ctx->startup_cond, NULL);
+    if (ret != 0) {
+        pthread_mutex_destroy(&ctx->startup_lock);
+        DeleteCriticalSection(&ctx->handle_lock);
+        flb_free(ctx);
+        return -1;
+    }
+    ctx->startup_sync_initialized = FLB_TRUE;
+
     ret = flb_input_config_map_set(in, ctx);
     if (ret == -1) {
         etw_config_destroy(ctx);
@@ -1458,11 +1525,6 @@ static int in_etw_init(struct flb_input_instance *in,
 
     flb_input_set_context(in, ctx);
 
-    if (configure_loss_metrics(ctx, config) != 0) {
-        etw_config_destroy(ctx);
-        return -1;
-    }
-
     ret = pthread_create(&ctx->thread, NULL, etw_worker, ctx);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "could not create ETW worker thread");
@@ -1470,6 +1532,16 @@ static int in_etw_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->thread_created = FLB_TRUE;
+
+    if (etw_wait_startup(ctx) != 0) {
+        etw_config_destroy(ctx);
+        return -1;
+    }
+
+    if (configure_loss_metrics(ctx, config) != 0) {
+        etw_config_destroy(ctx);
+        return -1;
+    }
 
     return 0;
 }
