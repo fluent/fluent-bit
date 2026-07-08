@@ -35,6 +35,14 @@
 #define FLB_IN_ETW_DEFAULT_MIN_BUFFERS  "4"
 #define FLB_IN_ETW_DEFAULT_MAX_BUFFERS  "32"
 #define FLB_IN_ETW_DEFAULT_FLUSH_TIMER  "1"
+#define FLB_IN_ETW_DEFAULT_STALE_ACTION "stop"
+#define FLB_IN_ETW_DEFAULT_SESSION_TYPE "provider"
+
+#define FLB_IN_ETW_SESSION_PROVIDER     0
+#define FLB_IN_ETW_SESSION_SYSTEM       1
+
+#define FLB_IN_ETW_STALE_ACTION_STOP    0
+#define FLB_IN_ETW_STALE_ACTION_FAIL    1
 
 struct flb_etw {
     flb_sds_t provider_guid_str;
@@ -42,15 +50,21 @@ struct flb_etw {
     flb_sds_t session_name;
     flb_sds_t match_any_keyword_str;
     flb_sds_t match_all_keyword_str;
+    flb_sds_t stale_session_action_str;
+    flb_sds_t session_type_str;
+    flb_sds_t kernel_flags_str;
     int level;
     int buffer_size;
     int minimum_buffers;
     int maximum_buffers;
     int flush_timer;
+    int stale_session_action;
+    int session_type;
 
     GUID provider_guid;
     ULONGLONG match_any_keyword;
     ULONGLONG match_all_keyword;
+    ULONG kernel_flags;
     GUID session_guid;
     WCHAR *session_name_wide;
     EVENT_TRACE_PROPERTIES *properties;
