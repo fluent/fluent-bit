@@ -28,7 +28,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_kv.h>
 
-#ifndef _MSC_VER
+#ifndef _WIN32
 #include <sys/utsname.h>
 #endif
 
@@ -107,7 +107,7 @@ static void print_properties(struct mk_list *props)
     }
 }
 
-#ifdef _MSC_VER
+#ifdef _WIN32
 /* A definition table of SYSTEM_INFO.wProcessorArchitecture.
  *
  * This is a streight-forward translation of the official manual.
@@ -188,7 +188,7 @@ int flb_sosreport(struct flb_config *config)
     printf("    Built Flags\t\t%s\n", FLB_INFO_FLAGS);
     printf("\n");
 
-#ifndef _MSC_VER
+#ifndef _WIN32
     struct utsname uts;
     uname(&uts);
 
