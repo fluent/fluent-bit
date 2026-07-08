@@ -609,20 +609,37 @@ static void pack_related_activity_id(msgpack_packer *mp_pck, PEVENT_RECORD recor
 
 static TRACEHANDLE etw_exchange_trace(struct flb_etw *ctx, TRACEHANDLE value)
 {
-    return (TRACEHANDLE) InterlockedExchange64((volatile LONG64 *) &ctx->trace,
-                                               (LONG64) value);
+    TRACEHANDLE previous;
+
+    EnterCriticalSection(&ctx->handle_lock);
+    previous = ctx->trace;
+    ctx->trace = value;
+    LeaveCriticalSection(&ctx->handle_lock);
+
+    return previous;
 }
 
 static TRACEHANDLE etw_exchange_session(struct flb_etw *ctx, TRACEHANDLE value)
 {
-    return (TRACEHANDLE) InterlockedExchange64((volatile LONG64 *) &ctx->session,
-                                               (LONG64) value);
+    TRACEHANDLE previous;
+
+    EnterCriticalSection(&ctx->handle_lock);
+    previous = ctx->session;
+    ctx->session = value;
+    LeaveCriticalSection(&ctx->handle_lock);
+
+    return previous;
 }
 
 static TRACEHANDLE etw_get_session(struct flb_etw *ctx)
 {
-    return (TRACEHANDLE) InterlockedCompareExchange64((volatile LONG64 *) &ctx->session,
-                                                      0, 0);
+    TRACEHANDLE session;
+
+    EnterCriticalSection(&ctx->handle_lock);
+    session = ctx->session;
+    LeaveCriticalSection(&ctx->handle_lock);
+
+    return session;
 }
 
 static int etw_update_loss_metrics(struct flb_etw *ctx)
@@ -832,9 +849,14 @@ static void etw_stop_session(struct flb_etw *ctx)
 static ULONG etw_start_session(struct flb_etw *ctx)
 {
     ULONG status;
+    TRACEHANDLE session;
 
-    status = StartTraceW(&ctx->session, ctx->session_name_wide, ctx->properties);
+    session = 0;
+    status = StartTraceW(&session, ctx->session_name_wide, ctx->properties);
     if (status != ERROR_ALREADY_EXISTS) {
+        if (status == ERROR_SUCCESS) {
+            etw_exchange_session(ctx, session);
+        }
         return status;
     }
 
@@ -850,12 +872,20 @@ static ULONG etw_start_session(struct flb_etw *ctx)
         return ERROR_ALREADY_EXISTS;
     }
 
-    return StartTraceW(&ctx->session, ctx->session_name_wide, ctx->properties);
+    session = 0;
+    status = StartTraceW(&session, ctx->session_name_wide, ctx->properties);
+    if (status == ERROR_SUCCESS) {
+        etw_exchange_session(ctx, session);
+    }
+
+    return status;
 }
 
 static void *etw_worker(void *data)
 {
     ULONG status;
+    TRACEHANDLE session;
+    TRACEHANDLE trace;
     EVENT_TRACE_LOGFILEW logfile;
     struct flb_etw *ctx;
 
@@ -875,7 +905,9 @@ static void *etw_worker(void *data)
         return NULL;
     }
 
-    status = EnableTraceEx2(ctx->session,
+    session = etw_get_session(ctx);
+
+    status = EnableTraceEx2(session,
                             &ctx->provider_guid,
                             EVENT_CONTROL_CODE_ENABLE_PROVIDER,
                             (UCHAR) ctx->level,
@@ -896,14 +928,15 @@ static void *etw_worker(void *data)
     logfile.EventRecordCallback = etw_event_callback;
     logfile.Context = ctx;
 
-    etw_exchange_trace(ctx, OpenTraceW(&logfile));
-    if (ctx->trace == INVALID_PROCESSTRACE_HANDLE) {
+    trace = OpenTraceW(&logfile);
+    etw_exchange_trace(ctx, trace);
+    if (trace == INVALID_PROCESSTRACE_HANDLE) {
         flb_plg_error(ctx->ins, "OpenTrace failed (error=%lu)", GetLastError());
         etw_stop_session(ctx);
         return NULL;
     }
 
-    status = ProcessTrace(&ctx->trace, 1, NULL, NULL);
+    status = ProcessTrace(&trace, 1, NULL, NULL);
     if (status != ERROR_SUCCESS && !InterlockedCompareExchange(&ctx->exiting, 0, 0)) {
         flb_plg_error(ctx->ins, "ProcessTrace failed (status=%lu)", status);
     }
@@ -937,6 +970,8 @@ static void etw_config_destroy(struct flb_etw *ctx)
     if (ctx->properties != NULL) {
         flb_free(ctx->properties);
     }
+
+    DeleteCriticalSection(&ctx->handle_lock);
 
     flb_free(ctx);
 }
@@ -1088,6 +1123,7 @@ static int in_etw_init(struct flb_input_instance *in,
     ctx->ins = in;
     ctx->trace = INVALID_PROCESSTRACE_HANDLE;
     ctx->loss_metrics_collector_id = -1;
+    InitializeCriticalSection(&ctx->handle_lock);
 
     ret = flb_input_config_map_set(in, ctx);
     if (ret == -1) {

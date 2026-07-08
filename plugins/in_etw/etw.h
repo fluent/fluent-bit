@@ -56,6 +56,7 @@ struct flb_etw {
     EVENT_TRACE_PROPERTIES *properties;
     TRACEHANDLE session;
     TRACEHANDLE trace;
+    CRITICAL_SECTION handle_lock;
 
     LONG exiting;
     LONG paused;
