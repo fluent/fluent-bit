@@ -1287,6 +1287,10 @@ void test_json_pack_token_count_overflow()
     flb_pack_state_reset(&state);
 }
 
+/* defined in src/flb_pack.c, not part of the installed headers */
+int flb_metadata_pop_from_msgpack(msgpack_object **metadata, msgpack_unpacked *upk,
+                                  msgpack_object **map);
+
 /* flb_metadata_pop_from_msgpack must reject record arrays that are shorter
  * than 2 elements or whose first element is a short array, instead of reading
  * via.array.ptr[1] out of bounds. */

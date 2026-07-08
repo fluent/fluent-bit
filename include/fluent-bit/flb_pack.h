@@ -104,8 +104,6 @@ int flb_pack_to_json_format_type(const char *str);
 int flb_pack_to_json_date_type(const char *str);
 
 void flb_pack_print(const char *data, size_t bytes);
-int flb_metadata_pop_from_msgpack(msgpack_object **metadata, msgpack_unpacked *upk,
-                                  msgpack_object **map);
 int flb_msgpack_to_json(char *json_str, size_t str_len,
                         const msgpack_object *obj,
                         int escape_unicode);
