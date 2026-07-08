@@ -907,6 +907,11 @@ static int etw_loss_metrics_collect(struct flb_input_instance *in,
     struct flb_etw *ctx;
 
     ctx = data;
+    if (InterlockedCompareExchange(&ctx->paused, 0, 0) ||
+        InterlockedCompareExchange(&ctx->exiting, 0, 0)) {
+        return 0;
+    }
+
     etw_update_loss_metrics(ctx);
 
     return 0;
@@ -926,8 +931,11 @@ static VOID WINAPI etw_event_callback(PEVENT_RECORD record)
         return;
     }
 
+    EnterCriticalSection(&ctx->callback_lock);
+
     if (InterlockedCompareExchange(&ctx->paused, 0, 0) ||
         InterlockedCompareExchange(&ctx->exiting, 0, 0)) {
+        LeaveCriticalSection(&ctx->callback_lock);
         return;
     }
 
@@ -998,6 +1006,7 @@ static VOID WINAPI etw_event_callback(PEVENT_RECORD record)
     }
 
     msgpack_sbuffer_destroy(&mp_sbuf);
+    LeaveCriticalSection(&ctx->callback_lock);
 }
 
 static void etw_close_trace(struct flb_etw *ctx)
@@ -1195,7 +1204,9 @@ static void *etw_worker(void *data)
     etw_signal_startup(ctx, 0);
 
     status = ProcessTrace(&trace, 1, NULL, NULL);
-    if (status != ERROR_SUCCESS && !InterlockedCompareExchange(&ctx->exiting, 0, 0)) {
+    if (status != ERROR_SUCCESS &&
+        !InterlockedCompareExchange(&ctx->paused, 0, 0) &&
+        !InterlockedCompareExchange(&ctx->exiting, 0, 0)) {
         flb_plg_error(ctx->ins, "ProcessTrace failed (status=%lu)", status);
     }
 
@@ -1208,18 +1219,66 @@ static void *etw_worker(void *data)
     return NULL;
 }
 
+static void etw_reset_startup(struct flb_etw *ctx)
+{
+    pthread_mutex_lock(&ctx->startup_lock);
+    ctx->startup_done = FLB_FALSE;
+    ctx->startup_status = 0;
+    pthread_mutex_unlock(&ctx->startup_lock);
+}
+
+static int etw_start_worker(struct flb_etw *ctx)
+{
+    int ret;
+
+    if (ctx->thread_created) {
+        return 0;
+    }
+
+    etw_reset_startup(ctx);
+
+    ret = pthread_create(&ctx->thread, NULL, etw_worker, ctx);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "could not create ETW worker thread");
+        return -1;
+    }
+    ctx->thread_created = FLB_TRUE;
+
+    if (etw_wait_startup(ctx) != 0) {
+        pthread_join(ctx->thread, NULL);
+        ctx->thread_created = FLB_FALSE;
+        return -1;
+    }
+
+    return 0;
+}
+
+static void etw_stop_worker(struct flb_etw *ctx, int exiting)
+{
+    if (!ctx->thread_created) {
+        return;
+    }
+
+    if (exiting) {
+        InterlockedExchange(&ctx->exiting, 1);
+    }
+
+    EnterCriticalSection(&ctx->callback_lock);
+    LeaveCriticalSection(&ctx->callback_lock);
+
+    etw_close_trace(ctx);
+    etw_stop_session(ctx);
+    pthread_join(ctx->thread, NULL);
+    ctx->thread_created = FLB_FALSE;
+}
+
 static void etw_config_destroy(struct flb_etw *ctx)
 {
     if (ctx == NULL) {
         return;
     }
 
-    if (ctx->thread_created) {
-        InterlockedExchange(&ctx->exiting, 1);
-        etw_close_trace(ctx);
-        etw_stop_session(ctx);
-        pthread_join(ctx->thread, NULL);
-    }
+    etw_stop_worker(ctx, FLB_TRUE);
 
     if (ctx->session_name_wide != NULL) {
         flb_free(ctx->session_name_wide);
@@ -1235,6 +1294,7 @@ static void etw_config_destroy(struct flb_etw *ctx)
     }
 
     DeleteCriticalSection(&ctx->handle_lock);
+    DeleteCriticalSection(&ctx->callback_lock);
 
     flb_free(ctx);
 }
@@ -1427,9 +1487,11 @@ static int in_etw_init(struct flb_input_instance *in,
     ctx->trace = INVALID_PROCESSTRACE_HANDLE;
     ctx->loss_metrics_collector_id = -1;
     InitializeCriticalSection(&ctx->handle_lock);
+    InitializeCriticalSection(&ctx->callback_lock);
 
     ret = pthread_mutex_init(&ctx->startup_lock, NULL);
     if (ret != 0) {
+        DeleteCriticalSection(&ctx->callback_lock);
         DeleteCriticalSection(&ctx->handle_lock);
         flb_free(ctx);
         return -1;
@@ -1438,6 +1500,7 @@ static int in_etw_init(struct flb_input_instance *in,
     ret = pthread_cond_init(&ctx->startup_cond, NULL);
     if (ret != 0) {
         pthread_mutex_destroy(&ctx->startup_lock);
+        DeleteCriticalSection(&ctx->callback_lock);
         DeleteCriticalSection(&ctx->handle_lock);
         flb_free(ctx);
         return -1;
@@ -1525,15 +1588,7 @@ static int in_etw_init(struct flb_input_instance *in,
 
     flb_input_set_context(in, ctx);
 
-    ret = pthread_create(&ctx->thread, NULL, etw_worker, ctx);
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "could not create ETW worker thread");
-        etw_config_destroy(ctx);
-        return -1;
-    }
-    ctx->thread_created = FLB_TRUE;
-
-    if (etw_wait_startup(ctx) != 0) {
+    if (etw_start_worker(ctx) != 0) {
         etw_config_destroy(ctx);
         return -1;
     }
@@ -1555,6 +1610,7 @@ static void in_etw_pause(void *data, struct flb_config *config)
     if (ctx->loss_metrics_collector_id >= 0) {
         flb_input_collector_pause(ctx->loss_metrics_collector_id, ctx->ins);
     }
+    etw_stop_worker(ctx, FLB_FALSE);
 }
 
 static void in_etw_resume(void *data, struct flb_config *config)
@@ -1563,6 +1619,11 @@ static void in_etw_resume(void *data, struct flb_config *config)
 
     ctx = data;
     InterlockedExchange(&ctx->paused, 0);
+    if (etw_start_worker(ctx) != 0) {
+        InterlockedExchange(&ctx->paused, 1);
+        return;
+    }
+
     if (ctx->loss_metrics_collector_id >= 0) {
         flb_input_collector_resume(ctx->loss_metrics_collector_id, ctx->ins);
     }
