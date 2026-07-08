@@ -35,6 +35,13 @@
 #define FLB_TLS_WANT_READ   -0x7e4
 #define FLB_TLS_WANT_WRITE  -0x7e6
 
+/*
+ * Maximum consecutive WANT_READ/WANT_WRITE retries before treating the
+ * connection as stale. Prevents a dead TLS connection from spinning the
+ * engine thread in a tight yield/resume loop (see #9927).
+ */
+#define FLB_TLS_WANT_READ_MAX_RETRIES  800
+
 /* Cert Flags */
 #define FLB_TLS_CA_ROOT          1
 #define FLB_TLS_CERT             2

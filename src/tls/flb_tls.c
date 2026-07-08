@@ -17,6 +17,8 @@
  *  limitations under the License.
  */
 
+#include <errno.h>
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_socket.h>
@@ -393,10 +395,27 @@ int flb_tls_net_read_async(struct flb_coro *co,
     struct mk_event event_backup;
     struct flb_tls *tls;
     int             ret;
+    int             want_read_retries;
 
     tls = session->tls;
 
     event_restore_needed = FLB_FALSE;
+
+    /*
+     * Track consecutive SSL_ERROR_WANT_READ iterations with no progress.
+     * When a TLS connection's underlying socket continuously reports
+     * EPOLLIN but SSL_read() returns WANT_READ (no actual TLS data),
+     * the coroutine bounces between yield and resume in a tight loop,
+     * monopolizing the engine thread and starving all other processing
+     * (output flushes, timers, new connections).
+     *
+     * This happens when a dead TCP connection stays ESTABLISHED but
+     * has no TLS records to deliver — the kernel signals "readable"
+     * but OpenSSL needs more data.
+     *
+     * See: https://github.com/fluent/fluent-bit/issues/9927
+     */
+    want_read_retries = 0;
 
     io_tls_backup_event(session->connection, &event_backup);
 
@@ -404,6 +423,22 @@ int flb_tls_net_read_async(struct flb_coro *co,
     ret = tls->api->net_read(session, buf, len);
 
     if (ret == FLB_TLS_WANT_READ) {
+        want_read_retries++;
+
+        if (want_read_retries > FLB_TLS_WANT_READ_MAX_RETRIES) {
+            flb_warn("[tls] connection #%i exceeded maximum read retries (%i), "
+                     "closing stale connection",
+                     session->connection->fd,
+                     FLB_TLS_WANT_READ_MAX_RETRIES);
+
+            session->connection->coroutine = NULL;
+            session->connection->net_error = ETIMEDOUT;
+
+            io_tls_restore_event(session->connection, &event_backup);
+
+            return -1;
+        }
+
         event_restore_needed = FLB_TRUE;
 
         session->connection->coroutine = co;
@@ -414,6 +449,8 @@ int flb_tls_net_read_async(struct flb_coro *co,
         goto retry_read;
     }
     else if (ret == FLB_TLS_WANT_WRITE) {
+        /* Progress on a different axis, reset the read retry counter */
+        want_read_retries = 0;
         event_restore_needed = FLB_TRUE;
 
         session->connection->coroutine = co;
@@ -500,11 +537,13 @@ int flb_tls_net_write_async(struct flb_coro *co,
     size_t          total;
     int             ret;
     struct flb_tls *tls;
+    int             want_retries;
 
     total = 0;
     tls = session->tls;
 
     event_restore_needed = FLB_FALSE;
+    want_retries = 0;
 
     io_tls_backup_event(session->connection, &event_backup);
 
@@ -516,6 +555,23 @@ retry_write:
                               len - total);
 
     if (ret == FLB_TLS_WANT_WRITE) {
+        want_retries++;
+
+        if (want_retries > FLB_TLS_WANT_READ_MAX_RETRIES) {
+            flb_warn("[tls] connection #%i exceeded maximum write retries (%i), "
+                     "closing stale connection",
+                     session->connection->fd,
+                     FLB_TLS_WANT_READ_MAX_RETRIES);
+
+            session->connection->coroutine = NULL;
+            session->connection->net_error = ETIMEDOUT;
+            *out_len = total;
+
+            io_tls_restore_event(session->connection, &event_backup);
+
+            return -1;
+        }
+
         event_restore_needed = FLB_TRUE;
 
         io_tls_event_switch(session, MK_EVENT_WRITE);
@@ -525,6 +581,23 @@ retry_write:
         goto retry_write;
     }
     else if (ret == FLB_TLS_WANT_READ) {
+        want_retries++;
+
+        if (want_retries > FLB_TLS_WANT_READ_MAX_RETRIES) {
+            flb_warn("[tls] connection #%i exceeded maximum write retries (%i), "
+                     "closing stale connection",
+                     session->connection->fd,
+                     FLB_TLS_WANT_READ_MAX_RETRIES);
+
+            session->connection->coroutine = NULL;
+            session->connection->net_error = ETIMEDOUT;
+            *out_len = total;
+
+            io_tls_restore_event(session->connection, &event_backup);
+
+            return -1;
+        }
+
         event_restore_needed = FLB_TRUE;
 
         io_tls_event_switch(session, MK_EVENT_READ);
