@@ -71,6 +71,7 @@ struct flb_etw {
     TRACEHANDLE session;
     TRACEHANDLE trace;
     CRITICAL_SECTION handle_lock;
+    CRITICAL_SECTION callback_lock;
     pthread_mutex_t startup_lock;
     pthread_cond_t startup_cond;
 
