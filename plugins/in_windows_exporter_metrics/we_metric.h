@@ -82,7 +82,7 @@ struct we_perflib_metric_source {
 
 void we_deinitialize_perflib_metric_sources(struct we_perflib_metric_source *sources);
 int we_initialize_perflib_metric_sources(
-    struct flb_hash                  *lookup_table,
+    struct flb_hash_table            *lookup_table,
     struct we_perflib_metric_source **out_sources,
     struct we_perflib_metric_source  *in_sources);
 
@@ -90,7 +90,7 @@ int we_initialize_perflib_metric_sources(
 void we_deinitialize_perflib_metric_specs(struct we_perflib_metric_spec *specs);
 int we_initialize_perflib_metric_specs(
     struct cmt                     *context,
-    struct flb_hash                *lookup_table,
+    struct flb_hash_table          *lookup_table,
     char                           *namespace,
     char                           *subsystem,
     struct we_perflib_metric_spec **out_specs,
