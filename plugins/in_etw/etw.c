@@ -28,6 +28,7 @@
 
 #include <cmetrics/cmt_gauge.h>
 #include <msgpack.h>
+#include <ctype.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -38,6 +39,14 @@
 
 #define FLB_IN_ETW_UNIX_EPOCH_IN_100NS 116444736000000000ULL
 #define FLB_IN_ETW_PROVIDER_MAP_SIZE   14
+#define FLB_IN_ETW_DEFAULT_KERNEL_FLAGS "process,thread,image_load"
+
+static const GUID flb_etw_system_trace_control_guid = {
+    0x9e814aad,
+    0x3204,
+    0x11d2,
+    {0x9a, 0x82, 0x00, 0x60, 0x08, 0xa8, 0x69, 0x39}
+};
 
 static void pack_cstr(msgpack_packer *mp_pck, const char *str)
 {
@@ -130,6 +139,194 @@ static int parse_uint64(const char *str, ULONGLONG *out)
     }
 
     *out = value;
+
+    return 0;
+}
+
+static char *trim_token(char *str)
+{
+    char *end;
+
+    while (isspace((unsigned char) *str)) {
+        str++;
+    }
+
+    if (*str == '\0') {
+        return str;
+    }
+
+    end = str + strlen(str) - 1;
+    while (end > str && isspace((unsigned char) *end)) {
+        *end = '\0';
+        end--;
+    }
+
+    return str;
+}
+
+static int has_empty_csv_token(const char *str)
+{
+    const char *p;
+    int has_token;
+
+    has_token = FLB_FALSE;
+    for (p = str; *p != '\0'; p++) {
+        if (*p == ',') {
+            if (has_token == FLB_FALSE) {
+                return FLB_TRUE;
+            }
+            has_token = FLB_FALSE;
+            continue;
+        }
+
+        if (!isspace((unsigned char) *p)) {
+            has_token = FLB_TRUE;
+        }
+    }
+
+    return has_token == FLB_FALSE;
+}
+
+static int parse_session_type(struct flb_etw *ctx)
+{
+    if (ctx->session_type_str == NULL ||
+        strcasecmp(ctx->session_type_str, "provider") == 0) {
+        ctx->session_type = FLB_IN_ETW_SESSION_PROVIDER;
+        return 0;
+    }
+
+    if (strcasecmp(ctx->session_type_str, "system") == 0) {
+        ctx->session_type = FLB_IN_ETW_SESSION_SYSTEM;
+        return 0;
+    }
+
+    flb_plg_error(ctx->ins,
+                  "invalid session_type '%s' (expected 'provider' or 'system')",
+                  ctx->session_type_str);
+
+    return -1;
+}
+
+static int parse_stale_session_action(struct flb_etw *ctx)
+{
+    if (ctx->stale_session_action_str == NULL ||
+        strcasecmp(ctx->stale_session_action_str, "stop") == 0) {
+        ctx->stale_session_action = FLB_IN_ETW_STALE_ACTION_STOP;
+        return 0;
+    }
+
+    if (strcasecmp(ctx->stale_session_action_str, "fail") == 0) {
+        ctx->stale_session_action = FLB_IN_ETW_STALE_ACTION_FAIL;
+        return 0;
+    }
+
+    flb_plg_error(ctx->ins,
+                  "invalid stale_session_action '%s' (expected 'stop' or 'fail')",
+                  ctx->stale_session_action_str);
+
+    return -1;
+}
+
+static int kernel_flag_from_name(const char *name, ULONG *flag)
+{
+    if (strcasecmp(name, "process") == 0) {
+        *flag = EVENT_TRACE_FLAG_PROCESS;
+        return 0;
+    }
+
+    if (strcasecmp(name, "thread") == 0) {
+        *flag = EVENT_TRACE_FLAG_THREAD;
+        return 0;
+    }
+
+    if (strcasecmp(name, "image_load") == 0 ||
+        strcasecmp(name, "image") == 0) {
+        *flag = EVENT_TRACE_FLAG_IMAGE_LOAD;
+        return 0;
+    }
+
+    if (strcasecmp(name, "cswitch") == 0 ||
+        strcasecmp(name, "context_switch") == 0) {
+        *flag = EVENT_TRACE_FLAG_CSWITCH;
+        return 0;
+    }
+
+    if (strcasecmp(name, "disk_io") == 0 ||
+        strcasecmp(name, "disk") == 0) {
+        *flag = EVENT_TRACE_FLAG_DISK_IO;
+        return 0;
+    }
+
+    if (strcasecmp(name, "tcpip") == 0 ||
+        strcasecmp(name, "network_tcpip") == 0) {
+        *flag = EVENT_TRACE_FLAG_NETWORK_TCPIP;
+        return 0;
+    }
+
+    return -1;
+}
+
+static int parse_kernel_flags(struct flb_etw *ctx)
+{
+    ULONG flag;
+    ULONGLONG numeric_flags;
+    char *tmp;
+    char *token;
+    char *context;
+
+    if (ctx->session_type != FLB_IN_ETW_SESSION_SYSTEM) {
+        return 0;
+    }
+
+    if (parse_uint64(ctx->kernel_flags_str, &numeric_flags) == 0) {
+        if (numeric_flags > ULONG_MAX) {
+            flb_plg_error(ctx->ins, "kernel_flags numeric value is too large");
+            return -1;
+        }
+        if (numeric_flags == 0) {
+            flb_plg_error(ctx->ins, "kernel_flags must enable at least one flag");
+            return -1;
+        }
+        ctx->kernel_flags = (ULONG) numeric_flags;
+        return 0;
+    }
+
+    if (has_empty_csv_token(ctx->kernel_flags_str)) {
+        flb_plg_error(ctx->ins, "kernel_flags contains an empty token");
+        return -1;
+    }
+
+    tmp = flb_strdup(ctx->kernel_flags_str);
+    if (tmp == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    token = strtok_s(tmp, ",", &context);
+    while (token != NULL) {
+        token = trim_token(token);
+        if (token[0] == '\0') {
+            flb_plg_error(ctx->ins, "kernel_flags contains an empty token");
+            flb_free(tmp);
+            return -1;
+        }
+
+        if (kernel_flag_from_name(token, &flag) != 0) {
+            flb_plg_error(ctx->ins, "unknown kernel_flags token '%s'", token);
+            flb_free(tmp);
+            return -1;
+        }
+
+        ctx->kernel_flags |= flag;
+        token = strtok_s(NULL, ",", &context);
+    }
+
+    flb_free(tmp);
+
+    if (ctx->kernel_flags == 0) {
+        flb_plg_error(ctx->ins, "kernel_flags must enable at least one flag");
+        return -1;
+    }
 
     return 0;
 }
@@ -287,10 +484,19 @@ static EVENT_TRACE_PROPERTIES *create_trace_properties(struct flb_etw *ctx)
     }
 
     props->Wnode.BufferSize = (ULONG) props_size;
-    props->Wnode.Guid = ctx->session_guid;
+    if (ctx->session_type == FLB_IN_ETW_SESSION_SYSTEM) {
+        props->Wnode.Guid = flb_etw_system_trace_control_guid;
+    }
+    else {
+        props->Wnode.Guid = ctx->session_guid;
+    }
     props->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
     props->Wnode.ClientContext = 2;
     props->LogFileMode = EVENT_TRACE_REAL_TIME_MODE;
+    if (ctx->session_type == FLB_IN_ETW_SESSION_SYSTEM) {
+        props->LogFileMode |= EVENT_TRACE_SYSTEM_LOGGER_MODE;
+        props->EnableFlags = ctx->kernel_flags;
+    }
     props->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
     if (ctx->buffer_size > 0) {
         props->BufferSize = (ULONG) ctx->buffer_size;
@@ -811,7 +1017,7 @@ static void etw_disable_provider(struct flb_etw *ctx, TRACEHANDLE session)
 {
     ULONG status;
 
-    if (session == 0) {
+    if (session == 0 || ctx->session_type == FLB_IN_ETW_SESSION_SYSTEM) {
         return;
     }
 
@@ -860,6 +1066,10 @@ static ULONG etw_start_session(struct flb_etw *ctx)
         return status;
     }
 
+    if (ctx->stale_session_action == FLB_IN_ETW_STALE_ACTION_FAIL) {
+        return ERROR_ALREADY_EXISTS;
+    }
+
     flb_plg_warn(ctx->ins,
                  "ETW session '%S' already exists; stopping stale session and retrying",
                  ctx->session_name_wide);
@@ -905,20 +1115,22 @@ static void *etw_worker(void *data)
         return NULL;
     }
 
-    session = etw_get_session(ctx);
+    if (ctx->session_type == FLB_IN_ETW_SESSION_PROVIDER) {
+        session = etw_get_session(ctx);
 
-    status = EnableTraceEx2(session,
-                            &ctx->provider_guid,
-                            EVENT_CONTROL_CODE_ENABLE_PROVIDER,
-                            (UCHAR) ctx->level,
-                            ctx->match_any_keyword,
-                            ctx->match_all_keyword,
-                            0,
-                            NULL);
-    if (status != ERROR_SUCCESS) {
-        flb_plg_error(ctx->ins, "EnableTraceEx2 failed (status=%lu)", status);
-        etw_stop_session(ctx);
-        return NULL;
+        status = EnableTraceEx2(session,
+                                &ctx->provider_guid,
+                                EVENT_CONTROL_CODE_ENABLE_PROVIDER,
+                                (UCHAR) ctx->level,
+                                ctx->match_any_keyword,
+                                ctx->match_all_keyword,
+                                0,
+                                NULL);
+        if (status != ERROR_SUCCESS) {
+            flb_plg_error(ctx->ins, "EnableTraceEx2 failed (status=%lu)", status);
+            etw_stop_session(ctx);
+            return NULL;
+        }
     }
 
     memset(&logfile, 0, sizeof(logfile));
@@ -986,6 +1198,15 @@ static int configure_provider(struct flb_etw *ctx)
 
     have_guid = ctx->provider_guid_str != NULL && ctx->provider_guid_str[0] != '\0';
     have_name = ctx->provider_name != NULL && ctx->provider_name[0] != '\0';
+
+    if (ctx->session_type == FLB_IN_ETW_SESSION_SYSTEM) {
+        if (have_guid || have_name) {
+            flb_plg_error(ctx->ins,
+                          "provider_guid/provider_name cannot be used with session_type system");
+            return -1;
+        }
+        return 0;
+    }
 
     if (!have_guid && !have_name) {
         flb_plg_error(ctx->ins, "either provider_guid or provider_name must be set");
@@ -1060,6 +1281,36 @@ static int configure_session_properties(struct flb_etw *ctx)
     return 0;
 }
 
+static int configure_session_name(struct flb_etw *ctx)
+{
+    if (ctx->session_type != FLB_IN_ETW_SESSION_SYSTEM) {
+        return 0;
+    }
+
+    if (ctx->session_name == NULL ||
+        strcmp(ctx->session_name, FLB_IN_ETW_DEFAULT_SESSION_NAME) == 0 ||
+        strcmp(ctx->session_name, KERNEL_LOGGER_NAMEA) == 0) {
+        return 0;
+    }
+
+    flb_plg_error(ctx->ins,
+                  "session_type system requires session_name '%s'",
+                  KERNEL_LOGGER_NAMEA);
+
+    return -1;
+}
+
+static const char *effective_session_name(struct flb_etw *ctx)
+{
+    if (ctx->session_type == FLB_IN_ETW_SESSION_SYSTEM &&
+        ctx->session_name != NULL &&
+        strcmp(ctx->session_name, FLB_IN_ETW_DEFAULT_SESSION_NAME) == 0) {
+        return KERNEL_LOGGER_NAMEA;
+    }
+
+    return ctx->session_name;
+}
+
 static int configure_loss_metrics(struct flb_etw *ctx, struct flb_config *config)
 {
     int ret;
@@ -1112,6 +1363,7 @@ static int in_etw_init(struct flb_input_instance *in,
 {
     HRESULT hres;
     int ret;
+    const char *session_name;
     struct flb_etw *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_etw));
@@ -1127,6 +1379,16 @@ static int in_etw_init(struct flb_input_instance *in,
 
     ret = flb_input_config_map_set(in, ctx);
     if (ret == -1) {
+        etw_config_destroy(ctx);
+        return -1;
+    }
+
+    if (parse_session_type(ctx) != 0) {
+        etw_config_destroy(ctx);
+        return -1;
+    }
+
+    if (parse_stale_session_action(ctx) != 0) {
         etw_config_destroy(ctx);
         return -1;
     }
@@ -1151,7 +1413,17 @@ static int in_etw_init(struct flb_input_instance *in,
         return -1;
     }
 
+    if (parse_kernel_flags(ctx) != 0) {
+        etw_config_destroy(ctx);
+        return -1;
+    }
+
     if (configure_session_properties(ctx) != 0) {
+        etw_config_destroy(ctx);
+        return -1;
+    }
+
+    if (configure_session_name(ctx) != 0) {
         etw_config_destroy(ctx);
         return -1;
     }
@@ -1161,10 +1433,11 @@ static int in_etw_init(struct flb_input_instance *in,
         return -1;
     }
 
-    ctx->session_name_wide = utf8_to_wide(ctx->session_name);
+    session_name = effective_session_name(ctx);
+    ctx->session_name_wide = utf8_to_wide(session_name);
     if (ctx->session_name_wide == NULL) {
         flb_plg_error(ctx->ins, "could not convert session_name '%s' to UTF-16",
-                      ctx->session_name);
+                      session_name);
         etw_config_destroy(ctx);
         return -1;
     }
@@ -1247,7 +1520,21 @@ static struct flb_config_map config_map[] = {
     {
       FLB_CONFIG_MAP_STR, "session_name", FLB_IN_ETW_DEFAULT_SESSION_NAME,
       0, FLB_TRUE, offsetof(struct flb_etw, session_name),
-      "ETW real-time session name"
+      "ETW real-time session name. When session_type is system and this value "
+      "is left as the default, the plugin uses the Windows kernel logger "
+      "session name 'NT Kernel Logger'."
+    },
+    {
+      FLB_CONFIG_MAP_STR, "session_type", FLB_IN_ETW_DEFAULT_SESSION_TYPE,
+      0, FLB_TRUE, offsetof(struct flb_etw, session_type_str),
+      "ETW session type: provider for a real-time provider consumer, or system "
+      "for a system logger session using kernel_flags."
+    },
+    {
+      FLB_CONFIG_MAP_STR, "stale_session_action", FLB_IN_ETW_DEFAULT_STALE_ACTION,
+      0, FLB_TRUE, offsetof(struct flb_etw, stale_session_action_str),
+      "Action when the ETW session already exists: stop stops the existing "
+      "session and retries; fail returns an error without stopping it."
     },
     {
       FLB_CONFIG_MAP_INT, "level", FLB_IN_ETW_DEFAULT_LEVEL,
@@ -1263,6 +1550,13 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_STR, "match_all_keyword", FLB_IN_ETW_DEFAULT_MATCH_ALL,
       0, FLB_TRUE, offsetof(struct flb_etw, match_all_keyword_str),
       "ETW MatchAllKeyword mask"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "kernel_flags", FLB_IN_ETW_DEFAULT_KERNEL_FLAGS,
+      0, FLB_TRUE, offsetof(struct flb_etw, kernel_flags_str),
+      "Comma-separated kernel flags used with session_type system. Supported "
+      "names: process, thread, image_load, cswitch, tcpip, disk_io. A numeric "
+      "EVENT_TRACE_FLAG_* mask is also accepted."
     },
     {
       FLB_CONFIG_MAP_INT, "buffer_size", FLB_IN_ETW_DEFAULT_BUFFER_SIZE,
