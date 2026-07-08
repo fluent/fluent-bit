@@ -656,7 +656,7 @@ static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *
         mk_list_foreach(head, &ctx->auth_tokens) {
             splunk_token = mk_list_entry(head, struct flb_splunk_tokens, _head);
             if (flb_sds_len(authorization) != splunk_token->length) {
-                ret = SPLUNK_AUTH_UNAUTHORIZED;
+                ret = SPLUNK_AUTH_INVALID_AUTHORIZATION;
                 continue;
             }
 
@@ -669,7 +669,7 @@ static int validate_auth_header(struct flb_splunk *ctx, struct mk_http_request *
             }
         }
 
-        ret = SPLUNK_AUTH_UNAUTHORIZED;
+        ret = SPLUNK_AUTH_INVALID_AUTHORIZATION;
         flb_sds_destroy(authorization);
         return ret;
     }
@@ -989,7 +989,7 @@ int splunk_prot_handle(struct flb_splunk *ctx, struct splunk_conn *conn,
         if (ret == SPLUNK_AUTH_MISSING_CRED) {
             flb_plg_warn(ctx->ins, "missing credentials in request headers");
         }
-        else if (ret == SPLUNK_AUTH_UNAUTHORIZED) {
+        else if (ret == SPLUNK_AUTH_INVALID_AUTHORIZATION) {
             flb_plg_warn(ctx->ins, "wrong credentials in request headers");
         }
 
