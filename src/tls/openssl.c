@@ -62,7 +62,7 @@
  */
 #define OPENSSL_1_1_0 0x010100000L
 
-#ifdef _MSC_VER
+#ifdef _WIN32
 #define WINDOWS_ROOT_LOOKUP_INTERVAL_MS 60000
 #endif
 
@@ -551,7 +551,7 @@ static int tls_context_set_crl_file(void *ctx_backend, const char *crl_file)
     return 0;
 }
 
-#ifdef _MSC_VER
+#ifdef _WIN32
 /* Parse certstore_name prefix like
  *
  *   "My"                        -> no prefix, leave location untouched
@@ -1073,7 +1073,7 @@ static int load_system_certificates(struct tls_context *ctx)
     (void) ca_file;
 
     /* For Windows use specific API to read the certs store */
-#ifdef _MSC_VER
+#ifdef _WIN32
     return windows_load_system_certificates(ctx);
 #elif defined(__APPLE__)
     return macos_load_system_certificates(ctx);
@@ -1132,7 +1132,7 @@ static void *tls_context_create_with_ca(int verify,
     int ret;
     SSL_CTX *ssl_ctx;
     struct tls_context *ctx;
-#ifdef _MSC_VER
+#ifdef _WIN32
     const char *auto_root_update;
 #endif
     char err_buf[256];
@@ -1215,7 +1215,7 @@ static void *tls_context_create_with_ca(int verify,
     ctx->mode = mode;
     ctx->alpn = NULL;
     ctx->debug_level = debug;
-#ifdef _MSC_VER
+#ifdef _WIN32
     auto_root_update = getenv("FLB_WINDOWS_AUTO_ROOT_UPDATE");
     ctx->auto_root_update = auto_root_update == NULL || flb_utils_bool(auto_root_update) == FLB_TRUE;
 #endif
@@ -1711,7 +1711,7 @@ static void *tls_session_create(struct flb_tls *tls,
     struct tls_session *session;
     struct tls_context *ctx = tls->ctx;
     SSL *ssl;
-#ifdef _MSC_VER
+#ifdef _WIN32
     DWORD status;
 #endif
 
@@ -1736,7 +1736,7 @@ static void *tls_session_create(struct flb_tls *tls,
     session->ssl = ssl;
     session->fd = fd;
     SSL_set_fd(ssl, fd);
-#ifdef _MSC_VER
+#ifdef _WIN32
     if (ctx->root_worker != NULL && WaitForSingleObject(ctx->root_worker, 0) == WAIT_OBJECT_0) {
         if (GetExitCodeThread(ctx->root_worker, &status)) {
             if (status == 0) {
