@@ -1,0 +1,105 @@
+version: v1.0
+name: run-share-consumer-tests-with-sasl
+
+agent:
+  machine:
+    type: s1-prod-ubuntu24-04-amd64-00
+
+execution_time_limit:
+  hours: 3
+
+global_job_config:
+  prologue:
+    commands:
+      - checkout
+      - '[[ -z "$GIT_REF" ]] || git checkout $GIT_REF'
+      - sudo apt remove -y needrestart
+      - sudo DEBIAN_FRONTEND=noninteractive apt install -y valgrind libcurl4-openssl-dev libssl-dev
+      - python3 -m pip install -U pip
+      - python3 -m pip -V
+      - (cd tests && python3 -m pip install -r requirements.txt)
+      - ./configure --install-deps --enable-werror --enable-devel
+      - make -j all
+      - make -j -C tests build
+      - sem-version java 17
+  env_vars:
+    - name: CACHE_TAG
+      value: '7'
+
+blocks:
+  - name: "Run SASL tests (x86_64)"
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-amd64-1
+      prologue:
+        commands:
+          - if [[ "$TEST_ARCHES" != *"x86_64"* ]]; then exit 0; fi
+      jobs:
+        - name: "SASL PLAINTEXT cluster (x86_64)"
+          env_vars:
+            - name: TEST_SSL
+              value: "False"
+          commands:
+            - if [[ "$TEST_TYPE" != *"plaintext"* ]]; then exit 0; fi
+            - 'export TEST_TRIVUP_PARAMETERS=''--conf ["connections.max.reauth.ms=10000"]'''
+            - 'if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then export TEST_TRIVUP_PARAMETERS=''--oidc --conf ["connections.max.reauth.ms=10000"]''; fi'
+            - if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then cache restore trivup-kafka-oidc-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG}; fi
+            - if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then (cd tests && echo "TESTS=0126 make 2>&1; exit" | python3 interactive_broker_version.py --kraft --sasl OAUTHBEARER --oauthbearer-method OIDC $([ "$TEST_SSL" = "True" ] && echo --ssl) ${TEST_KAFKA_GIT_REF:-4.3.0}) 2>&1 | tee /tmp/0126.log; if grep -qE "TEST FAILURE|timed out|test-runner.*FAILED|run_par.*Error" /tmp/0126.log; then echo "OIDC tests (0126) FAILED"; exit 1; else echo "OIDC tests (0126) PASSED"; fi; fi
+            - if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then cache store trivup-kafka-oidc-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG} tests/tmp/LibrdkafkaTestCluster/KafkaBrokerApp/kafka/${TEST_KAFKA_GIT_REF:-4.3.0}; fi
+            - cache restore trivup-kafka-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG}
+            - export TESTS=0022,0128,0135,0142 && ./tests/run-all-tests.sh
+            - cache store trivup-kafka-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG} tests/tmp-KafkaCluster/KafkaCluster/KafkaBrokerApp/kafka/${TEST_KAFKA_GIT_REF:-4.3.0}
+        - name: "SASL SSL cluster (x86_64)"
+          env_vars:
+            - name: TEST_SSL
+              value: "True"
+          commands:
+            - if [[ "$TEST_TYPE" != *"ssl"* ]]; then exit 0; fi
+            - 'export TEST_TRIVUP_PARAMETERS=''--conf ["connections.max.reauth.ms=10000"]'''
+            - 'if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then export TEST_TRIVUP_PARAMETERS=''--oidc --conf ["connections.max.reauth.ms=10000"]''; fi'
+            - if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then cache restore trivup-kafka-oidc-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG}; fi
+            - if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then (cd tests && echo "TESTS=0126 make 2>&1; exit" | python3 interactive_broker_version.py --kraft --sasl OAUTHBEARER --oauthbearer-method OIDC $([ "$TEST_SSL" = "True" ] && echo --ssl) ${TEST_KAFKA_GIT_REF:-4.3.0}) 2>&1 | tee /tmp/0126.log; if grep -qE "TEST FAILURE|timed out|test-runner.*FAILED|run_par.*Error" /tmp/0126.log; then echo "OIDC tests (0126) FAILED"; exit 1; else echo "OIDC tests (0126) PASSED"; fi; fi
+            - if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then cache store trivup-kafka-oidc-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG} tests/tmp/LibrdkafkaTestCluster/KafkaBrokerApp/kafka/${TEST_KAFKA_GIT_REF:-4.3.0}; fi
+            - cache restore trivup-kafka-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG}
+            - export TESTS=0022,0128,0135,0142 && ./tests/run-all-tests.sh
+            - cache store trivup-kafka-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG} tests/tmp-KafkaCluster/KafkaCluster/KafkaBrokerApp/kafka/${TEST_KAFKA_GIT_REF:-4.3.0}
+  - name: "Run SASL tests (aarch64)"
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-arm64-1
+      prologue:
+        commands:
+          - if [[ "$TEST_ARCHES" != *"aarch64"* ]]; then exit 0; fi
+      jobs:
+        - name: "SASL PLAINTEXT cluster (aarch64)"
+          env_vars:
+            - name: TEST_SSL
+              value: "False"
+          commands:
+            - if [[ "$TEST_TYPE" != *"plaintext"* ]]; then exit 0; fi
+            - 'export TEST_TRIVUP_PARAMETERS=''--conf ["connections.max.reauth.ms=10000"]'''
+            - 'if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then export TEST_TRIVUP_PARAMETERS=''--oidc --conf ["connections.max.reauth.ms=10000"]''; fi'
+            - if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then cache restore trivup-kafka-oidc-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG}; fi
+            - if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then (cd tests && echo "TESTS=0126 make 2>&1; exit" | python3 interactive_broker_version.py --kraft --sasl OAUTHBEARER --oauthbearer-method OIDC $([ "$TEST_SSL" = "True" ] && echo --ssl) ${TEST_KAFKA_GIT_REF:-4.3.0}) 2>&1 | tee /tmp/0126.log; if grep -qE "TEST FAILURE|timed out|test-runner.*FAILED|run_par.*Error" /tmp/0126.log; then echo "OIDC tests (0126) FAILED"; exit 1; else echo "OIDC tests (0126) PASSED"; fi; fi
+            - if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then cache store trivup-kafka-oidc-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG} tests/tmp/LibrdkafkaTestCluster/KafkaBrokerApp/kafka/${TEST_KAFKA_GIT_REF:-4.3.0}; fi
+            - cache restore trivup-kafka-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG}
+            - export TESTS=0022,0128,0135,0142 && ./tests/run-all-tests.sh
+            - cache store trivup-kafka-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG} tests/tmp-KafkaCluster/KafkaCluster/KafkaBrokerApp/kafka/${TEST_KAFKA_GIT_REF:-4.3.0}
+        - name: "SASL SSL cluster (aarch64)"
+          env_vars:
+            - name: TEST_SSL
+              value: "True"
+          commands:
+            - if [[ "$TEST_TYPE" != *"ssl"* ]]; then exit 0; fi
+            - 'export TEST_TRIVUP_PARAMETERS=''--conf ["connections.max.reauth.ms=10000"]'''
+            - 'if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then export TEST_TRIVUP_PARAMETERS=''--oidc --conf ["connections.max.reauth.ms=10000"]''; fi'
+            - if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then cache restore trivup-kafka-oidc-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG}; fi
+            - if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then (cd tests && echo "TESTS=0126 make 2>&1; exit" | python3 interactive_broker_version.py --kraft --sasl OAUTHBEARER --oauthbearer-method OIDC $([ "$TEST_SSL" = "True" ] && echo --ssl) ${TEST_KAFKA_GIT_REF:-4.3.0}) 2>&1 | tee /tmp/0126.log; if grep -qE "TEST FAILURE|timed out|test-runner.*FAILED|run_par.*Error" /tmp/0126.log; then echo "OIDC tests (0126) FAILED"; exit 1; else echo "OIDC tests (0126) PASSED"; fi; fi
+            - if [[ "$TEST_SASL" == "OAUTHBEARER" ]]; then cache store trivup-kafka-oidc-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG} tests/tmp/LibrdkafkaTestCluster/KafkaBrokerApp/kafka/${TEST_KAFKA_GIT_REF:-4.3.0}; fi
+            - cache restore trivup-kafka-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG}
+            - export TESTS=0022,0128,0135,0142 && ./tests/run-all-tests.sh
+            - cache store trivup-kafka-${TEST_KAFKA_GIT_REF:-4.3.0}-${CACHE_TAG} tests/tmp-KafkaCluster/KafkaCluster/KafkaBrokerApp/kafka/${TEST_KAFKA_GIT_REF:-4.3.0}

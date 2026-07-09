@@ -251,6 +251,204 @@ def maybe_read_prometheus_metric_value(metrics_text, metric_name, input_name):
     except AssertionError:
         return None
 
+
+def build_resource_collision_logs_payload(user_id, body, schema_url=None):
+    payload = {
+        "resourceLogs": [
+            {
+                "resource": {
+                    "attributes": [
+                        {
+                            "key": "user.id",
+                            "value": {
+                                "stringValue": user_id,
+                            },
+                        }
+                    ],
+                },
+                "scopeLogs": [
+                    {
+                        "scope": {},
+                        "logRecords": [
+                            {
+                                "timeUnixNano": "1640995200000000000",
+                                "body": {
+                                    "stringValue": body,
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    if schema_url is not None:
+        payload["resourceLogs"][0]["schemaUrl"] = schema_url
+
+    return json_format.Parse(json.dumps(payload), ExportLogsServiceRequest()).SerializeToString()
+
+
+def build_resource_collision_logs_json_payload(user_id, body, schema_url=None):
+    payload = {
+        "resourceLogs": [
+            {
+                "resource": {
+                    "attributes": [
+                        {
+                            "key": "user.id",
+                            "value": {
+                                "stringValue": user_id,
+                            },
+                        }
+                    ],
+                },
+                "scopeLogs": [
+                    {
+                        "scope": {},
+                        "logRecords": [
+                            {
+                                "timeUnixNano": "1640995200000000000",
+                                "body": {
+                                    "stringValue": body,
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    if schema_url is not None:
+        payload["resourceLogs"][0]["schemaUrl"] = schema_url
+
+    return json.dumps(payload).encode("utf-8")
+
+
+def build_scope_schema_logs_payload():
+    payload = {
+        "resourceLogs": [
+            {
+                "resource": {
+                    "attributes": [
+                        {
+                            "key": "service.name",
+                            "value": {
+                                "stringValue": "scope-schema-service",
+                            },
+                        }
+                    ],
+                },
+                "scopeLogs": [
+                    {
+                        "schemaUrl": "scope-schema-a",
+                        "logRecords": [
+                            {
+                                "timeUnixNano": "1640995200000000000",
+                                "body": {
+                                    "stringValue": "event-a",
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "logRecords": [
+                            {
+                                "timeUnixNano": "1640995200000000000",
+                                "body": {
+                                    "stringValue": "event-b",
+                                },
+                            }
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+
+    return json_format.Parse(json.dumps(payload), ExportLogsServiceRequest()).SerializeToString()
+
+
+def build_scope_schema_logs_json_payload():
+    payload = {
+        "resourceLogs": [
+            {
+                "resource": {
+                    "attributes": [
+                        {
+                            "key": "service.name",
+                            "value": {
+                                "stringValue": "scope-schema-service",
+                            },
+                        }
+                    ],
+                },
+                "scopeLogs": [
+                    {
+                        "schemaUrl": "scope-schema-a",
+                        "logRecords": [
+                            {
+                                "timeUnixNano": "1640995200000000000",
+                                "body": {
+                                    "stringValue": "event-a",
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "logRecords": [
+                            {
+                                "timeUnixNano": "1640995200000000000",
+                                "body": {
+                                    "stringValue": "event-b",
+                                },
+                            }
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+
+    return json.dumps(payload).encode("utf-8")
+
+
+def build_histogram_json_payload(explicit_bounds, name="histogram_bounds"):
+    payload = {
+        "resourceMetrics": [
+            {
+                "resource": {
+                    "attributes": [],
+                },
+                "scopeMetrics": [
+                    {
+                        "metrics": [
+                            {
+                                "name": name,
+                                "histogram": {
+                                    "aggregationTemporality": 2,
+                                    "dataPoints": [
+                                        {
+                                            "count": "3",
+                                            "sum": 3.0,
+                                            "bucketCounts": ["1", "1", "1"],
+                                            "explicitBounds": explicit_bounds,
+                                            "timeUnixNano": "1",
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    return json.dumps(payload).encode("utf-8")
+
+
 class Service:
     def __init__(self, config_file, *, use_auth_server=False):
         # Compose the absolute path for the Fluent Bit configuration file
@@ -616,6 +814,65 @@ def test_in_opentelemetry_rejects_invalid_metrics_payload():
     assert len(data_storage["metrics"]) == 0
 
 
+def test_in_opentelemetry_rejects_json_histogram_with_descending_bounds():
+    service = Service("001-fluent-bit.yaml")
+    service.start()
+
+    try:
+        response = service.send_raw_request(
+            "/v1/metrics",
+            build_histogram_json_payload([2, 1]),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert service.flb.process is not None
+        assert service.flb.process.poll() is None
+        assert len(data_storage["metrics"]) == 0
+
+        response = service.send_raw_request(
+            "/v1/metrics",
+            build_histogram_json_payload([1, 1]),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert service.flb.process is not None
+        assert service.flb.process.poll() is None
+        assert len(data_storage["metrics"]) == 0
+
+        response = service.send_raw_request(
+            "/v1/metrics",
+            build_histogram_json_payload([1, 2], name=""),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert service.flb.process is not None
+        assert service.flb.process.poll() is None
+        assert len(data_storage["metrics"]) == 0
+
+        response = service.send_raw_request(
+            "/v1/metrics",
+            build_histogram_json_payload([1, 2]),
+            content_type="application/json",
+        )
+        assert 200 <= response.status_code < 300
+
+        output = service.read_response("metrics")
+    finally:
+        service.stop()
+
+    metrics = {item["metric"]["name"]: item for item in iter_metric_entries(output)}
+    histogram = metrics["histogram_bounds"]["metric"]["histogram"]
+    histogram_datapoint = histogram["dataPoints"][0]
+
+    assert histogram_datapoint["count"] == "3"
+    assert histogram_datapoint["sum"] == 3.0
+    assert histogram_datapoint["bucketCounts"] == ["1", "1", "1"]
+    assert histogram_datapoint["explicitBounds"] == [1.0, 2.0]
+
+
 def test_in_opentelemetry_rejects_invalid_traces_payload():
     service = Service("001-fluent-bit.yaml")
     service.start()
@@ -642,6 +899,116 @@ def test_in_opentelemetry_stdout_otlp_json_logs():
     assert records[0]["record"]["severityText"] == "INFO"
     assert records[0]["record"]["timeUnixNano"] == "1650917400000000000"
     assert records[0]["resource_attributes"]["service.name"] == "example-service"
+
+
+def test_in_opentelemetry_stdout_otlp_json_logs_preserve_resources_across_requests():
+    service = Service("stdout-otlp-json-slow-flush.yaml")
+    service.start()
+
+    response = service.send_raw_request(
+        "/v1/logs",
+        build_resource_collision_logs_payload("user-a", "event-a"),
+    )
+    assert 200 <= response.status_code < 300
+
+    response = service.send_raw_request(
+        "/v1/logs",
+        build_resource_collision_logs_payload("user-b", "event-b"),
+    )
+    assert 200 <= response.status_code < 300
+
+    output = read_stdout_otlp_json(service, "resourceLogs", timeout=10)
+    service.stop()
+
+    records = list(iter_log_records(output))
+    body_to_user = {
+        record["body"]: record["resource_attributes"]["user.id"]
+        for record in records
+    }
+
+    assert body_to_user["event-a"] == "user-a"
+    assert body_to_user["event-b"] == "user-b"
+    assert len(output["resourceLogs"]) == 2
+
+
+@pytest.mark.parametrize(
+    "content_type,payload_builder",
+    [
+        ("application/x-protobuf", build_resource_collision_logs_payload),
+        ("application/json", build_resource_collision_logs_json_payload),
+    ],
+)
+def test_in_opentelemetry_stdout_otlp_json_logs_preserve_resource_schema_urls(
+    content_type,
+    payload_builder,
+):
+    service = Service("stdout-otlp-json-slow-flush.yaml")
+    service.start()
+
+    response = service.send_raw_request(
+        "/v1/logs",
+        payload_builder("same-user", "event-a", "schema-a"),
+        content_type=content_type,
+    )
+    assert 200 <= response.status_code < 300
+
+    response = service.send_raw_request(
+        "/v1/logs",
+        payload_builder("same-user", "event-b", "schema-b"),
+        content_type=content_type,
+    )
+    assert 200 <= response.status_code < 300
+
+    output = read_stdout_otlp_json(service, "resourceLogs", timeout=10)
+    service.stop()
+
+    body_to_schema_url = {
+        record["body"]["stringValue"]: resource_log["schemaUrl"]
+        for resource_log in output["resourceLogs"]
+        for scope_log in resource_log["scopeLogs"]
+        for record in scope_log["logRecords"]
+    }
+
+    assert body_to_schema_url["event-a"] == "schema-a"
+    assert body_to_schema_url["event-b"] == "schema-b"
+    assert len(output["resourceLogs"]) == 2
+
+
+@pytest.mark.parametrize(
+    "content_type,payload_builder",
+    [
+        ("application/x-protobuf", build_scope_schema_logs_payload),
+        ("application/json", build_scope_schema_logs_json_payload),
+    ],
+)
+def test_in_opentelemetry_stdout_otlp_json_logs_preserve_scope_schema_urls(
+    content_type,
+    payload_builder,
+):
+    service = Service("stdout-otlp-json-slow-flush.yaml")
+    service.start()
+    try:
+        response = service.send_raw_request(
+            "/v1/logs",
+            payload_builder(),
+            content_type=content_type,
+        )
+        assert 200 <= response.status_code < 300
+
+        output = read_stdout_otlp_json(service, "resourceLogs", timeout=10)
+    finally:
+        service.stop()
+
+    assert len(output["resourceLogs"]) == 1
+    scope_by_body = {
+        record["body"]["stringValue"]: scope_log
+        for resource_log in output["resourceLogs"]
+        for scope_log in resource_log["scopeLogs"]
+        for record in scope_log["logRecords"]
+    }
+
+    assert scope_by_body["event-a"]["schemaUrl"] == "scope-schema-a"
+    assert "schemaUrl" not in scope_by_body["event-b"]
 
 
 def test_in_opentelemetry_stdout_otlp_json_metrics():
@@ -889,6 +1256,27 @@ def test_in_opentelemetry_protocol_matrix(case, signal_type, json_input, endpoin
     assert result["status_code"] == 201
     assert result["http_version"] == case["expected_http_version"]
     assert len(response_payload) > 0
+
+
+def test_in_opentelemetry_http2_invalid_endpoint_returns_404():
+    service = Service(IN_OPENTELEMETRY_PROTOCOL_CONFIGS["http2_cleartext"])
+    service.start()
+
+    result = run_curl_request(
+        f"http://localhost:{service.flb_listener_port}/v1/invalid",
+        b"invalid payload",
+        headers=["Content-Type: application/x-protobuf"],
+        http_mode="http2-prior-knowledge",
+    )
+
+    service.stop()
+
+    assert result["status_code"] == 404
+    assert result["http_version"] == "2"
+    assert result["body"] == "error: invalid endpoint\n"
+    assert len(data_storage["logs"]) == 0
+    assert len(data_storage["metrics"]) == 0
+    assert len(data_storage["traces"]) == 0
 
 
 # This test is branch-specific coverage for the generic HTTP listener worker mode.

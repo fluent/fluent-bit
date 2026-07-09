@@ -3195,9 +3195,20 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
     struct cmt_summary                                 *summary;
     int                                                 result;
     struct cfl_list                                     *head;
+    size_t                                              label_name_count;
+    size_t                                              label_name_index;
+    size_t                                              sample_label_count;
+
+    sample_label_count = 0;
+    cfl_list_foreach(head, &sample->labels) {
+        label_value = cfl_list_entry(head, struct cmt_map_label, _head);
+        if (label_value->name != NULL) {
+            sample_label_count++;
+        }
+    }
 
     attribute_count = cfl_list_size(&context->cmt->static_labels->list) +
-                      cfl_list_size(&sample->labels);
+                      sample_label_count;
     start_timestamp = 0;
 
     if (cmt_metric_has_start_timestamp(sample)) {
@@ -3361,10 +3372,43 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
         }
     }
 
-    label_name = cfl_list_entry_first(&map->label_keys, struct cmt_map_label, _head);
+    label_name_count = map->label_count;
+    if (sample_label_count > label_name_count) {
+        destroy_data_point(data_point, map->type);
 
+        return CMT_ENCODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+    }
+
+    if (label_name_count > 0) {
+        label_name = cfl_list_entry_first(&map->label_keys, struct cmt_map_label, _head);
+    }
+
+    label_name_index = 0;
     cfl_list_foreach(head, &sample->labels) {
         label_value = cfl_list_entry(head, struct cmt_map_label, _head);
+
+        if (label_value->name == NULL) {
+            label_name_index++;
+            if (label_name_index < label_name_count) {
+                label_name = cfl_list_entry_next(&label_name->_head,
+                                                 struct cmt_map_label,
+                                                 _head, &map->label_keys);
+            }
+
+            continue;
+        }
+
+        if (label_name_index >= label_name_count) {
+            destroy_data_point(data_point, map->type);
+
+            return CMT_ENCODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+        }
+
+        if (label_name->name == NULL) {
+            destroy_data_point(data_point, map->type);
+
+            return CMT_ENCODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+        }
 
         attribute = initialize_string_attribute(label_name->name,
                                                 label_value->name);
@@ -3387,8 +3431,11 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
             return result;
         }
 
-        label_name = cfl_list_entry_next(&label_name->_head, struct cmt_map_label,
-                                        _head, &map->label_keys);
+        label_name_index++;
+        if (label_name_index < label_name_count) {
+            label_name = cfl_list_entry_next(&label_name->_head, struct cmt_map_label,
+                                             _head, &map->label_keys);
+        }
     }
 
     apply_data_point_metadata_from_otlp_context(context->cmt, map, sample, data_point);

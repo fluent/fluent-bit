@@ -129,7 +129,12 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
     cfl_list_foreach(head, &map->label_keys) {
         label = cfl_list_entry(head, struct cmt_map_label, _head);
 
-        mpack_write_cstr(writer, label->name);
+        if (label->name != NULL) {
+            mpack_write_cstr(writer, label->name);
+        }
+        else {
+            mpack_write_nil(writer);
+        }
     }
     mpack_finish_array(writer);
 

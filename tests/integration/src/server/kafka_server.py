@@ -54,7 +54,10 @@ def _recv_exact(sock, size):
     remaining = size
 
     while remaining > 0:
-        chunk = sock.recv(remaining)
+        try:
+            chunk = sock.recv(remaining)
+        except ConnectionResetError:
+            return None
         if not chunk:
             return None
         chunks.append(chunk)

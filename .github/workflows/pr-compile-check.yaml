@@ -19,13 +19,13 @@ jobs:
     timeout-minutes: 30
     steps:
     - name: Checkout Fluent Bit code
-      uses: actions/checkout@v6
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v4
+      uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
     - name: Attempt to build current source for CentOS 7
-      uses: docker/build-push-action@v7
+      uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
       with:
         context: .
         file: ./dockerfiles/Dockerfile.centos7
@@ -78,12 +78,12 @@ jobs:
             pushd /tmp/libbacktrace/build && ../configure && make && sudo make install && popd
 
       - name: Install cmake
-        uses: jwlawson/actions-setup-cmake@v2
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
         with:
           cmake-version: "${{ matrix.cmake_version }}"
 
       - name: Checkout Fluent Bit code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: ${{ matrix.compiler.cc }} & ${{ matrix.compiler.cxx }} - ${{ matrix.flb_option }}
         run: |
@@ -141,12 +141,12 @@ jobs:
           sudo apt-get install -y libzstd-dev librdkafka-dev
 
       - name: Install cmake
-        uses: jwlawson/actions-setup-cmake@v2
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
         with:
           cmake-version: "${{ matrix.cmake_version }}"
 
       - name: Checkout Fluent Bit code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Compile w/ CXX support
         run: |

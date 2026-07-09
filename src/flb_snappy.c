@@ -166,16 +166,25 @@ int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
     offset = 0;
 
     while (offset < in_len && result == 0) {
+        if (offset + 4 > in_len) {
+            result = -2;
+            break;
+        }
+
         frame_buffer = &in_data[offset];
 
         frame_type    = *((uint8_t *) &frame_buffer[0]);
 
-        frame_length  = *((uint32_t *) &frame_buffer[1]);
-        frame_length &= 0x00FFFFFF;
+        frame_length  = ((uint32_t)((unsigned char) frame_buffer[1]))       |
+                        ((uint32_t)((unsigned char) frame_buffer[2]) << 8)  |
+                        ((uint32_t)((unsigned char) frame_buffer[3]) << 16);
 
         frame_body    = &frame_buffer[4];
 
         if (frame_length > FLB_SNAPPY_FRAME_SIZE_LIMIT) {
+            result = -2;
+        }
+        else if (offset + 4 + frame_length > in_len) {
             result = -2;
         }
         else if (frame_type == FLB_SNAPPY_FRAME_TYPE_STREAM_IDENTIFIER) {
@@ -192,6 +201,11 @@ int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
             }
         }
         else if (frame_type == FLB_SNAPPY_FRAME_TYPE_COMPRESSED_DATA) {
+            if (frame_length < sizeof(uint32_t)) {
+                result = -2;
+                break;
+            }
+
             chunk = (struct flb_snappy_data_chunk * ) \
                         flb_calloc(1, sizeof(struct flb_snappy_data_chunk));
 
@@ -234,6 +248,11 @@ int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
             }
         }
         else if (frame_type == FLB_SNAPPY_FRAME_TYPE_UNCOMPRESSED_DATA) {
+            if (frame_length < sizeof(uint32_t)) {
+                result = -2;
+                break;
+            }
+
             chunk = (struct flb_snappy_data_chunk *) \
                         flb_calloc(1, sizeof(struct flb_snappy_data_chunk));
 

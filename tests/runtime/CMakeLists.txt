@@ -27,6 +27,10 @@ endmacro()
 FLB_RT_CORE_TEST(FLB_COROUTINE_TIMEOUT    "core-timeout.c")
 FLB_RT_CORE_TEST(FLB_INTERNAL_LOGGER      "core_internal_logger.c")
 FLB_RT_CORE_TEST(FLB_DOWNSTREAM_ACCEPT_TIMEOUT "core_accept_timeout.c")
+# Uses POSIX alarm()/sigaction() for a watchdog; skip on Windows.
+if(NOT FLB_SYSTEM_WINDOWS)
+  FLB_RT_CORE_TEST(FLB_CORE_SHUTDOWN_SPIN   "core_shutdown_spin.c")
+endif()
 FLB_RT_CORE_TEST(1 "http_client_chunked.c")
 
 FLB_RT_TEST(FLB_CHUNK_TRACE "core_chunk_trace.c")
@@ -171,10 +175,31 @@ if(FLB_IN_EBPF)
         "../../plugins/in_ebpf/traces/tcp/handler.c"
     )
 
+    add_ebpf_handler_test(
+        "exec"
+        "in_ebpf_exec_handler.c"
+        "../../plugins/in_ebpf/traces/exec/handler.c"
+    )
+
+    add_ebpf_handler_test(
+        "openssl"
+        "in_ebpf_openssl_handler.c"
+        "../../plugins/in_ebpf/traces/openssl/handler.c"
+    )
+
+    add_ebpf_handler_test(
+        "sched"
+        "in_ebpf_sched_handler.c"
+        "../../plugins/in_ebpf/traces/sched/handler.c"
+    )
+
     add_dependencies(flb-rt-in_ebpf_bind_handler fluent-bit-static)
     add_dependencies(flb-rt-in_ebpf_signal_handler fluent-bit-static)
     add_dependencies(flb-rt-in_ebpf_malloc_handler fluent-bit-static)
     add_dependencies(flb-rt-in_ebpf_tcp_handler fluent-bit-static)
+    add_dependencies(flb-rt-in_ebpf_exec_handler fluent-bit-static)
+    add_dependencies(flb-rt-in_ebpf_openssl_handler fluent-bit-static)
+    add_dependencies(flb-rt-in_ebpf_sched_handler fluent-bit-static)
 
 endif()
 
@@ -231,6 +256,7 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_HTTP             "out_http.c")
   FLB_RT_TEST(FLB_OUT_KAFKA            "out_kafka.c")
   FLB_RT_TEST(FLB_OUT_LIB              "out_lib.c")
+  FLB_RT_TEST(FLB_OUT_LOGDNA           "out_logdna.c")
   FLB_RT_TEST(FLB_OUT_LOKI             "out_loki.c")
   FLB_RT_TEST(FLB_OUT_NULL             "out_null.c")
   FLB_RT_TEST(FLB_OUT_PLOT             "out_plot.c")
@@ -257,6 +283,9 @@ if(FLB_IN_LIB)
     FLB_RT_TEST(FLB_OUT_FILE              "out_file.c")
   endif()
   FLB_RT_TEST(FLB_OUT_S3                "out_s3.c")
+  if (FLB_IN_OPENTELEMETRY AND FLB_OUT_S3)
+    FLB_RT_TEST(FLB_OUT_S3              "out_s3_otlp_json.c")
+  endif()
   FLB_RT_TEST(FLB_OUT_TD                "out_td.c")
   FLB_RT_TEST(FLB_OUT_INFLUXDB          "out_influxdb.c")
   FLB_RT_TEST(FLB_OUT_CHRONICLE         "out_chronicle.c")

@@ -120,11 +120,16 @@ static struct cmt_metric *map_metric_create(uint64_t hash,
         }
 
         name = labels_val[i];
-        label->name = cfl_sds_create(name);
-        if (!label->name) {
-            cmt_errno();
-            free(label);
-            goto error;
+        if (name == NULL) {
+            label->name = NULL;
+        }
+        else {
+            label->name = cfl_sds_create(name);
+            if (!label->name) {
+                cmt_errno();
+                free(label);
+                goto error;
+            }
         }
         cfl_list_add(&label->_head, &metric->labels);
     }

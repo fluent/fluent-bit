@@ -36,9 +36,10 @@
 /* Return the newest metrics buffer */
 static struct flb_hs_buf *metrics_get_latest(struct flb_hs *hs)
 {
-    if (hs->metrics_v2.raw_data == NULL) {
+    if (flb_hs_buf_acquire(&hs->metrics_v2, FLB_FALSE, FLB_TRUE) != 0) {
         return NULL;
     }
+
     return &hs->metrics_v2;
 }
 
@@ -59,7 +60,6 @@ static int cb_metrics_prometheus(struct flb_hs *hs,
         return flb_http_response_commit(response);
     }
 
-    buf->users++;
     cmt = (struct cmt *) buf->raw_data;
 
     /* convert CMetrics to text */
@@ -97,7 +97,6 @@ static int cb_metrics(struct flb_hs *hs,
         return flb_http_response_commit(response);
     }
 
-    buf->users++;
     cmt = (struct cmt *) buf->raw_data;
 
     /* convert CMetrics to text */

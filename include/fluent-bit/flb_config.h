@@ -257,6 +257,7 @@ struct flb_config {
     /* DLQ for non-retriable output failures */
     int   storage_keep_rejected;     /* 0/1 */
     char *storage_rejected_path;     /* relative to storage_path, default "rejected" */
+    char *storage_rejected_limit;    /* maximum total bytes in DLQ stream */
     void *storage_rejected_stream;  /* NULL until first use */
 
     /* Embedded SQL Database support (SQLite3) */
@@ -423,6 +424,7 @@ enum conf_type {
 /* Storage DLQ */
 #define FLB_CONF_STORAGE_KEEP_REJECTED "storage.keep.rejected"
 #define FLB_CONF_STORAGE_REJECTED_PATH "storage.rejected.path"
+#define FLB_CONF_STORAGE_REJECTED_LIMIT "storage.rejected.limit"
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"

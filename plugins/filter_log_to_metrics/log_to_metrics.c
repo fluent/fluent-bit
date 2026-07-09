@@ -621,6 +621,7 @@ static int set_buckets(struct log_to_metrics_ctx *ctx,
 static void cb_send_metric_chunk(struct flb_config *config, void *data)
 {
     int ret;
+    int appended = FLB_FALSE;
     struct log_to_metrics_ctx *ctx = data;
 
     /* Check that metric context is not empty */
@@ -630,9 +631,12 @@ static void cb_send_metric_chunk(struct flb_config *config, void *data)
 
     if (ctx->new_data) {
         ret = flb_input_metrics_append(ctx->input_ins, ctx->tag,
-            strlen(ctx->tag), ctx->cmt);
+                                       strlen(ctx->tag), ctx->cmt);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "could not append metrics");
+        }
+        else {
+            appended = FLB_TRUE;
         }
     }
 
@@ -643,7 +647,9 @@ static void cb_send_metric_chunk(struct flb_config *config, void *data)
             flb_sched_timer_cb_disable(ctx->timer);
         }
     }
-    ctx->new_data = FLB_FALSE;
+    if (appended) {
+        ctx->new_data = FLB_FALSE;
+    }
 }
 
 static int cb_log_to_metrics_init(struct flb_filter_instance *f_ins,
@@ -1124,7 +1130,9 @@ static int cb_log_to_metrics_filter(const void *data, size_t bytes,
                 }
             }
             else {
-                ctx->new_data = FLB_TRUE;
+                if (ret == 0) {
+                    ctx->new_data = FLB_TRUE;
+                }
             }
         }
         else if (ret == GREP_RET_EXCLUDE) {

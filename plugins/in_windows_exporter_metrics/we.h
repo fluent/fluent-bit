@@ -31,6 +31,8 @@
 
 #include <windows.h>
 #include <wbemidl.h>
+#include <pdh.h>
+#include <pdhmsg.h>
 
 #include "we_metric.h"
 
@@ -248,6 +250,40 @@ struct we_wmi_tcp_counters {
     struct cmt_gauge            *segments_sent_total;
 };
 
+struct we_performancecounter_definition {
+    char             *name;
+    char             *path;
+    wchar_t          *path_w;
+    struct cmt_gauge *metric;
+    int               has_wildcard;
+    int               warned_expand_failure;
+    int               warned_no_instances;
+    struct mk_list    _head;
+};
+
+struct we_performancecounter_counter {
+    struct we_performancecounter_definition *definition;
+    char             *name;
+    char             *path;
+    wchar_t          *path_w;
+    char             *instance;
+    char             *label_values[1];
+    PDH_HCOUNTER      handle;
+    struct cmt_gauge *metric;
+    int               label_count;
+    int               valid;
+    int               seen_valid;
+    int               stale;
+    struct mk_list    _head;
+};
+
+struct we_performancecounter_counters {
+    PDH_HQUERY    query;
+    int           operational;
+    struct mk_list definitions;
+    struct mk_list counters;
+};
+
 struct we_os_counters {
     struct cmt_gauge *info;
     struct cmt_gauge *users;
@@ -286,6 +322,7 @@ struct flb_we {
     char *raw_service_exclude;
     char *raw_allowing_process;
     char *raw_denying_process;
+    struct mk_list *raw_performance_counters;
     char *service_include_buffer;
     int   service_include_buffer_size;
     char *service_exclude_buffer;
@@ -301,6 +338,7 @@ struct flb_we {
     /* WMI locator and service contexts */
     IWbemLocator *locator;
     IWbemServices *service;
+    IWbemContext *wmi_context;
 
     float windows_version;
 
@@ -323,6 +361,7 @@ struct flb_we {
     int wmi_paging_file_scrape_interval;
     int wmi_process_scrape_interval;
     int wmi_tcp_scrape_interval;
+    int performancecounter_scrape_interval;
 
     int coll_cpu_fd;                                    /* collector fd (cpu)    */
     int coll_net_fd;                                    /* collector fd (net)  */
@@ -339,6 +378,7 @@ struct flb_we {
     int coll_wmi_paging_file_fd;                        /* collector fd (wmi_paging_file) */
     int coll_wmi_process_fd;                            /* collector fd (wmi_process) */
     int coll_wmi_tcp_fd;                                /* collector fd (wmi_tcp) */
+    int coll_performancecounter_fd;                      /* collector fd (performancecounter) */
 
     /*
      * Metrics Contexts
@@ -360,6 +400,7 @@ struct flb_we {
     struct we_wmi_paging_file_counters *wmi_paging_file;
     struct we_wmi_process_counters *wmi_process;
     struct we_wmi_tcp_counters *wmi_tcp;
+    struct we_performancecounter_counters *performancecounter;
 };
 
 typedef int (*collector_cb)(struct flb_we *);

@@ -48,6 +48,7 @@
 #define FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY_LEN \
     (sizeof(FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY) - 1)
 #define FLB_KUBE_TOKEN_BUF_SIZE 8192       /* 8KB */
+#define FLB_KUBE_TOKEN_MAX_SIZE (1024 * 1024) /* 1MB */
 
 static int file_to_buffer(const char *path,
                           char **out_buf, size_t *out_size)
@@ -100,6 +101,9 @@ static int get_token_with_command(const char *command,
     char buf[FLB_KUBE_TOKEN_BUF_SIZE];
     char *temp;
     char *res;
+    size_t capacity = FLB_KUBE_TOKEN_BUF_SIZE;
+    size_t required_size;
+    size_t new_capacity;
     size_t size = 0;
     size_t len = 0;
 
@@ -108,7 +112,7 @@ static int get_token_with_command(const char *command,
         return -1;
     }
 
-    res = flb_calloc(1, FLB_KUBE_TOKEN_BUF_SIZE);
+    res = flb_calloc(1, capacity);
     if (!res) {
         flb_errno();
         pclose(fp);
@@ -117,21 +121,39 @@ static int get_token_with_command(const char *command,
 
     while (fgets(buf, sizeof(buf), fp) != NULL) {
         len = strlen(buf);
-        if (len >= FLB_KUBE_TOKEN_BUF_SIZE - 1) {
-            temp = flb_realloc(res, (FLB_KUBE_TOKEN_BUF_SIZE + size) * 2);
+
+        if (len > FLB_KUBE_TOKEN_MAX_SIZE - size - 1) {
+            flb_free(res);
+            pclose(fp);
+            return -1;
+        }
+        required_size = size + len + 1;
+
+        if (required_size > capacity) {
+            new_capacity = capacity;
+
+            while (new_capacity < required_size) {
+                new_capacity *= 2;
+            }
+
+            temp = flb_realloc(res, new_capacity);
             if (temp == NULL) {
                 flb_errno();
                 flb_free(res);
                 pclose(fp);
                 return -1;
             }
+
             res = temp;
+            capacity = new_capacity;
         }
-        strcpy(res + size, buf);
+
+        memcpy(res + size, buf, len);
         size += len;
+        res[size] = '\0';
     }
 
-    if (strlen(res) < 1) {
+    if (size < 1) {
         flb_free(res);
         pclose(fp);
         return -1;
@@ -140,7 +162,7 @@ static int get_token_with_command(const char *command,
     pclose(fp);
 
     *out_buf = res;
-    *out_size = strlen(res);
+    *out_size = size;
 
     return 0;
 }
@@ -169,8 +191,13 @@ static int get_http_auth_header(struct flb_kube *ctx)
         if (ret == -1) {
             flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_TOKEN);
         }
-        flb_plg_info(ctx->ins, " token updated");
     }
+
+    if (ret == -1 || tk == NULL) {
+        return -1;
+    }
+
+    flb_plg_info(ctx->ins, " token updated");
     ctx->kube_token_create = time(NULL);
 
     /* Token */
@@ -253,17 +280,20 @@ static int get_local_pod_info(struct flb_kube *ctx)
     char *hostname;
 
     /* Get the namespace name */
-    ret = file_to_buffer(FLB_KUBE_NAMESPACE, &ns, &ns_size);
+    ret = file_to_buffer(ctx->namespace_file, &ns, &ns_size);
     if (ret == -1) {
         /*
          * If it fails, it's just informational, as likely the caller
          * wanted to connect using the Proxy instead from inside a POD.
          */
-        flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_NAMESPACE);
+        flb_plg_warn(ctx->ins, "cannot open %s", ctx->namespace_file);
         return FLB_FALSE;
     }
 
     /* Namespace */
+    while (ns_size > 0 && (ns[ns_size - 1] == '\n' || ns[ns_size - 1] == '\r')) {
+        ns[--ns_size] = '\0';
+    }
     ctx->namespace = ns;
     ctx->namespace_len = ns_size;
 
@@ -1924,6 +1954,85 @@ static inline int extract_pod_meta(struct flb_kube *ctx,
     return 0;
 }
 
+static int set_local_namespace_meta(struct flb_kube *ctx,
+                                    struct flb_kube_meta *meta)
+{
+    int n;
+
+    memset(meta, '\0', sizeof(struct flb_kube_meta));
+
+    if (ctx->namespace == NULL) {
+        return -1;
+    }
+
+    meta->namespace = flb_strndup(ctx->namespace, ctx->namespace_len);
+    if (meta->namespace == NULL) {
+        flb_errno();
+        return -1;
+    }
+    meta->namespace_len = ctx->namespace_len;
+
+    n = meta->namespace_len + 1;
+    meta->cache_key = flb_malloc(n);
+    if (meta->cache_key == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    memcpy(meta->cache_key, meta->namespace, meta->namespace_len);
+    meta->cache_key[meta->namespace_len] = '\0';
+    meta->cache_key_len = meta->namespace_len;
+
+    return 0;
+}
+
+static int set_local_pod_meta(struct flb_kube *ctx, struct flb_kube_meta *meta)
+{
+    int n;
+    size_t off = 0;
+
+    memset(meta, '\0', sizeof(struct flb_kube_meta));
+
+    if (ctx->namespace == NULL || ctx->podname == NULL) {
+        return -1;
+    }
+
+    meta->namespace = flb_strndup(ctx->namespace, ctx->namespace_len);
+    if (meta->namespace == NULL) {
+        flb_errno();
+        return -1;
+    }
+    meta->namespace_len = ctx->namespace_len;
+    meta->fields++;
+
+    meta->podname = flb_strndup(ctx->podname, ctx->podname_len);
+    if (meta->podname == NULL) {
+        flb_errno();
+        return -1;
+    }
+    meta->podname_len = ctx->podname_len;
+    meta->fields++;
+
+    n = meta->namespace_len + 1 + meta->podname_len + 1;
+    meta->cache_key = flb_malloc(n);
+    if (meta->cache_key == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    memcpy(meta->cache_key, meta->namespace, meta->namespace_len);
+    off = meta->namespace_len;
+
+    meta->cache_key[off++] = ':';
+    memcpy(meta->cache_key + off, meta->podname, meta->podname_len);
+    off += meta->podname_len;
+
+    meta->cache_key[off] = '\0';
+    meta->cache_key_len = off;
+
+    return 0;
+}
+
 /*
  * Given a fixed meta data (namespace), get API server information
  * and merge buffers.
@@ -2287,12 +2396,10 @@ int flb_kube_dummy_meta_get(char **out_buf, size_t *out_size)
     return 0;
 }
 
-static inline int flb_kube_pod_meta_get(struct flb_kube *ctx,
-                      const char *tag, int tag_len,
-                      const char *data, size_t data_size,
-                      const char **out_buf, size_t *out_size,
-                      struct flb_kube_meta *meta,
-                      struct flb_kube_props *props)
+static inline int lookup_pod_meta(struct flb_kube *ctx,
+                                  const char **out_buf, size_t *out_size,
+                                  struct flb_kube_meta *meta,
+                                  struct flb_kube_props *props)
 {
     int id;
     int ret;
@@ -2301,12 +2408,6 @@ static inline int flb_kube_pod_meta_get(struct flb_kube *ctx,
     size_t off = 0;
     size_t hash_meta_size;
     msgpack_unpacked result;
-
-    /* Get metadata from tag or record (cache key is the important one) */
-    ret = extract_pod_meta(ctx, tag, tag_len, data, data_size, meta);
-    if (ret != 0) {
-        return -1;
-    }
 
     /* Check if we have some data associated to the cache key */
     ret = flb_hash_table_get(ctx->hash_table,
@@ -2332,8 +2433,20 @@ static inline int flb_kube_pod_meta_get(struct flb_kube *ctx,
              * the outgoing buffer and size.
              */
             flb_free(tmp_hash_meta_buf);
-            flb_hash_table_get_by_id(ctx->hash_table, id, meta->cache_key,
-                                     &hash_meta_buf, &hash_meta_size);
+            ret = flb_hash_table_get_by_id(ctx->hash_table, id,
+                                           meta->cache_key,
+                                           &hash_meta_buf, &hash_meta_size);
+            if (ret == -1) {
+                *out_buf = NULL;
+                *out_size = 0;
+                return 0;
+            }
+        }
+        else {
+            flb_free(tmp_hash_meta_buf);
+            *out_buf = NULL;
+            *out_size = 0;
+            return 0;
         }
     }
 
@@ -2348,7 +2461,13 @@ static inline int flb_kube_pod_meta_get(struct flb_kube *ctx,
     msgpack_unpacked_init(&result);
 
     /* Unpack to get the offset/bytes of the first item */
-    msgpack_unpack_next(&result, hash_meta_buf, hash_meta_size, &off);
+    ret = msgpack_unpack_next(&result, hash_meta_buf, hash_meta_size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&result);
+        *out_buf = NULL;
+        *out_size = 0;
+        return 0;
+    }
 
     /* Set the pointer and proper size for the caller */
     *out_buf = hash_meta_buf;
@@ -2367,9 +2486,40 @@ static inline int flb_kube_pod_meta_get(struct flb_kube *ctx,
     return 0;
 }
 
-static inline int flb_kube_namespace_meta_get(struct flb_kube *ctx,
+static inline int flb_kube_pod_meta_get(struct flb_kube *ctx,
                       const char *tag, int tag_len,
                       const char *data, size_t data_size,
+                      const char **out_buf, size_t *out_size,
+                      struct flb_kube_meta *meta,
+                      struct flb_kube_props *props)
+{
+    int ret;
+
+    /* Get metadata from tag or record (cache key is the important one) */
+    ret = extract_pod_meta(ctx, tag, tag_len, data, data_size, meta);
+    if (ret != 0) {
+        return -1;
+    }
+
+    return lookup_pod_meta(ctx, out_buf, out_size, meta, props);
+}
+
+static inline int flb_kube_local_pod_meta_get(struct flb_kube *ctx,
+                      const char **out_buf, size_t *out_size,
+                      struct flb_kube_meta *meta,
+                      struct flb_kube_props *props)
+{
+    int ret;
+
+    ret = set_local_pod_meta(ctx, meta);
+    if (ret != 0) {
+        return -1;
+    }
+
+    return lookup_pod_meta(ctx, out_buf, out_size, meta, props);
+}
+
+static inline int lookup_namespace_meta(struct flb_kube *ctx,
                       const char **out_buf, size_t *out_size,
                       struct flb_kube_meta *meta)
 {
@@ -2380,12 +2530,6 @@ static inline int flb_kube_namespace_meta_get(struct flb_kube *ctx,
     size_t off = 0;
     size_t hash_meta_size;
     msgpack_unpacked result;
-
-    /* Get metadata from tag or record (cache key is the important one) */
-    ret = extract_namespace_meta(ctx, tag, tag_len, data, data_size, meta);
-    if (ret != 0) {
-        return -1;
-    }
 
     /* Check if we have some data associated to the cache key */
     ret = flb_hash_table_get(ctx->namespace_hash_table,
@@ -2411,8 +2555,20 @@ static inline int flb_kube_namespace_meta_get(struct flb_kube *ctx,
              * the outgoing buffer and size.
              */
             flb_free(tmp_hash_meta_buf);
-            flb_hash_table_get_by_id(ctx->namespace_hash_table, id, meta->cache_key,
-                                     &hash_meta_buf, &hash_meta_size);
+            ret = flb_hash_table_get_by_id(ctx->namespace_hash_table, id,
+                                           meta->cache_key,
+                                           &hash_meta_buf, &hash_meta_size);
+            if (ret == -1) {
+                *out_buf = NULL;
+                *out_size = 0;
+                return 0;
+            }
+        }
+        else {
+            flb_free(tmp_hash_meta_buf);
+            *out_buf = NULL;
+            *out_size = 0;
+            return 0;
         }
     }
 
@@ -2425,7 +2581,13 @@ static inline int flb_kube_namespace_meta_get(struct flb_kube *ctx,
     msgpack_unpacked_init(&result);
 
     /* Unpack to get the offset/bytes of the first item */
-    msgpack_unpack_next(&result, hash_meta_buf, hash_meta_size, &off);
+    ret = msgpack_unpack_next(&result, hash_meta_buf, hash_meta_size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&result);
+        *out_buf = NULL;
+        *out_size = 0;
+        return 0;
+    }
 
     /* Set the pointer and proper size for the caller */
     *out_buf = hash_meta_buf;
@@ -2434,6 +2596,37 @@ static inline int flb_kube_namespace_meta_get(struct flb_kube *ctx,
     msgpack_unpacked_destroy(&result);
 
     return 0;
+}
+
+static inline int flb_kube_namespace_meta_get(struct flb_kube *ctx,
+                      const char *tag, int tag_len,
+                      const char *data, size_t data_size,
+                      const char **out_buf, size_t *out_size,
+                      struct flb_kube_meta *meta)
+{
+    int ret;
+
+    /* Get metadata from tag or record (cache key is the important one) */
+    ret = extract_namespace_meta(ctx, tag, tag_len, data, data_size, meta);
+    if (ret != 0) {
+        return -1;
+    }
+
+    return lookup_namespace_meta(ctx, out_buf, out_size, meta);
+}
+
+static inline int flb_kube_local_namespace_meta_get(struct flb_kube *ctx,
+                      const char **out_buf, size_t *out_size,
+                      struct flb_kube_meta *meta)
+{
+    int ret;
+
+    ret = set_local_namespace_meta(ctx, meta);
+    if (ret != 0) {
+        return -1;
+    }
+
+    return lookup_namespace_meta(ctx, out_buf, out_size, meta);
 }
 
 int flb_kube_meta_get(struct flb_kube *ctx,
@@ -2462,6 +2655,35 @@ int flb_kube_meta_get(struct flb_kube *ctx,
 
     // If we get metadata from either namespace or pod info, return success
     if( ret_pod_meta == 0 || ret_namespace_meta == 0) {
+        return 0;
+    }
+
+    return -1;
+}
+
+int flb_kube_meta_get_local(struct flb_kube *ctx,
+                            const char **out_buf, size_t *out_size,
+                            const char **namespace_out_buf,
+                            size_t *namespace_out_size,
+                            struct flb_kube_meta *meta,
+                            struct flb_kube_props *props,
+                            struct flb_kube_meta *namespace_meta)
+{
+    int ret_namespace_meta = -1;
+    int ret_pod_meta = -1;
+
+    if (ctx->namespace_labels == FLB_TRUE || ctx->namespace_annotations == FLB_TRUE) {
+        ret_namespace_meta = flb_kube_local_namespace_meta_get(ctx, namespace_out_buf,
+                                                               namespace_out_size,
+                                                               namespace_meta);
+    }
+
+    if (ctx->namespace_metadata_only == FLB_FALSE) {
+        ret_pod_meta = flb_kube_local_pod_meta_get(ctx, out_buf, out_size,
+                                                   meta, props);
+    }
+
+    if (ret_pod_meta == 0 || ret_namespace_meta == 0) {
         return 0;
     }
 

@@ -60,7 +60,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.ref }}
 
@@ -68,7 +68,7 @@ jobs:
       # E.g. if we build version 1.9.2 we want to tag with 1.9.2 and 1.9.
       - name: Determine major version tag
         id: determine-major-version
-        uses: frabert/replace-string-action@v2.5
+        uses: frabert/replace-string-action@fc6c5eb9238279ae230de582075b1a29f93cfa6b # v2.5.2
         with:
           pattern: '^(\d+\.\d+).*$'
           string: ${{ inputs.version }}
@@ -98,16 +98,16 @@ jobs:
     runs-on: ${{ (contains(matrix.platform, 'arm') && 'ubuntu-22.04-arm') || 'ubuntu-latest' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.ref }}
           token: ${{ secrets.token }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ${{ inputs.registry }}
           username: ${{ github.actor }}
@@ -115,7 +115,7 @@ jobs:
 
       - name: Build and push by digest the standard ${{ matrix.target }} image
         id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           # Use path context rather than Git context as we want local files
           file: ./dockerfiles/Dockerfile
@@ -141,7 +141,7 @@ jobs:
         shell: bash
 
       - name: Upload ${{ matrix.target }} digest
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ matrix.target }}-digests-${{ (contains(matrix.platform, 'arm/v7') && 'arm-v7') || matrix.platform }}
           path: /tmp/digests/*
@@ -164,7 +164,7 @@ jobs:
     steps:
       - name: Extract metadata from Github
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
@@ -173,17 +173,17 @@ jobs:
             raw,latest
 
       - name: Download production digests
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: production-digests-*
           path: /tmp/production-digests
           merge-multiple: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ${{ inputs.registry }}
           username: ${{ github.actor }}
@@ -216,7 +216,7 @@ jobs:
       version: ${{ steps.debug-meta.outputs.version }}
     steps:
       - id: debug-meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
@@ -225,17 +225,17 @@ jobs:
             raw,latest-debug
 
       - name: Download debug digests
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: debug-digests-*
           path: /tmp/debug-digests
           merge-multiple: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ${{ inputs.registry }}
           username: ${{ github.actor }}
@@ -265,7 +265,7 @@ jobs:
       packages: read
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -278,7 +278,7 @@ jobs:
         shell: bash
 
       - name: Upload the schema
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           path: ./fluent-bit-schema*.json
           name: fluent-bit-schema-${{ inputs.version }}
@@ -297,14 +297,14 @@ jobs:
       packages: read
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
           password: ${{ secrets.token }}
 
       - name: Trivy - multi-arch
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}"
           format: "table"
@@ -314,7 +314,7 @@ jobs:
           severity: "CRITICAL,HIGH"
 
       - name: Dockle - multi-arch
-        uses: hands-lab/dockle-action@v1
+        uses: hands-lab/dockle-action@083a964bbcffa92bdd5f85fe3672da5d81ae1a57 # v1
         with:
           image: "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}"
           exit-code: "1"
@@ -337,7 +337,7 @@ jobs:
     environment: ${{ inputs.environment }}
     steps:
       - name: Install cosign
-        uses: sigstore/cosign-installer@v2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Cosign keyless signing using Rektor public transparency log
         # This step uses the identity token to provision an ephemeral certificate
@@ -399,7 +399,7 @@ jobs:
       IMAGE: ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.ref }}
 
@@ -407,7 +407,7 @@ jobs:
       #   uses: docker/setup-buildx-action@v4
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}

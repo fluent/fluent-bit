@@ -772,6 +772,7 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
                                        char *file_path, char *buf, size_t size)
 {
     int ret;
+    int cf_created = FLB_FALSE;
     struct local_ctx ctx;
     ino_t ino_table[FLB_CF_FILE_NUM_LIMIT];
     int ino_num = 0;
@@ -781,13 +782,14 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
         if (!cf) {
             return NULL;
         }
+        cf_created = FLB_TRUE;
 
         flb_cf_set_origin_format(cf, FLB_CF_CLASSIC);
     }
 
     ret = local_init(&ctx, file_path);
     if (ret != 0) {
-        if (cf) {
+        if (cf_created == FLB_TRUE) {
             flb_cf_destroy(cf);
         }
         return NULL;
@@ -798,7 +800,9 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
     local_exit(&ctx);
 
     if (ret == -1) {
-        flb_cf_destroy(cf);
+        if (cf_created == FLB_TRUE) {
+            flb_cf_destroy(cf);
+        }
         if (ino_num >= FLB_CF_FILE_NUM_LIMIT) {
             flb_error("Too many config files. Limit = %d", FLB_CF_FILE_NUM_LIMIT);
         }

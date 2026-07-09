@@ -215,7 +215,7 @@ static int netstat_update(struct flb_ne *ctx)
     int prev_proto;
 
     mk_list_init(&list);
-    ret = ne_utils_file_read_lines(ctx->path_procfs, "/net/snmp", &list);
+    ret = ne_utils_file_read_lines(ctx, ctx->path_procfs, "/net/snmp", &list);
     if (ret == -1) {
         return -1;
     }

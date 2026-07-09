@@ -10,30 +10,66 @@ jobs:
   hadolint-pr:
     runs-on: ubuntu-latest
     name: PR - Hadolint
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
     steps:
-      - uses: actions/checkout@v6
-        # Ignores do not work: https://github.com/reviewdog/action-hadolint/issues/35 is resolved
-      - uses: reviewdog/action-hadolint@v1
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
+
+      - name: Run hadolint
+        uses: reviewdog/action-hadolint@1b2cfa6ba72072ad35158d7ff3aa49bbdc03506d # v1.51.0
+        with:
+          github_token: ${{ secrets.github_token }}
+          fail_level: "warning"
+          reporter: github-pr-review # Better annotation in PRs
           exclude: |
             packaging/testing/smoke/packages/Dockerfile.*
 
   shellcheck-pr:
     runs-on: ubuntu-latest
     name: PR - Shellcheck
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: ludeeus/action-shellcheck@master
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ignore_paths: cmake/sanitizers-cmake lib plugins tests
+          persist-credentials: false
+
+      - name: Run shellcheck
+        uses: reviewdog/action-shellcheck@4c07458293ac342d477251099501a718ae5ef86e # v1.32.0
+        with:
+          github_token: ${{ secrets.github_token }}
+          fail_level: "warning"
+          reporter: github-pr-review # Better annotation in PRs
+          exclude: |
+            */.git/*
+            ./cmake/sanitizers-cmake/**
+            ./lib/**
+            ./plugins/**
+            ./tests/**
 
   actionlint-pr:
     runs-on: ubuntu-latest
     name: PR - Actionlint
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
     steps:
-      - uses: actions/checkout@v6
-      - run: |
-          echo "::add-matcher::.github/actionlint-matcher.json"
-          bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
-          ./actionlint -color -shellcheck=
-        shell: bash
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Run actionlint
+        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d # v1.72.0
+        with:
+          # Disable shellcheck as done elsewhere and speeds up process
+          actionlint_flags: -shellcheck=
+          fail_level: "warning"
+          reporter: github-pr-review # Better annotation in PRs
+          github_token: ${{ secrets.github_token }}

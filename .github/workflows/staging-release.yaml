@@ -65,7 +65,7 @@ jobs:
         RELEASE_VERSION: ${{ github.event.inputs.version }}
 
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
   staging-release-generate-package-matrix:
     name: Get package matrix
@@ -75,7 +75,7 @@ jobs:
       rpm-build-matrix: ${{ steps.get-matrix.outputs.rpm-build-matrix }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup runner
         run: |
@@ -128,7 +128,7 @@ jobs:
         echo "::endgroup::"
 
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
     - name: Setup runner
       run: |
@@ -138,7 +138,7 @@ jobs:
 
     - name: Import GPG key for signing
       id: import_gpg
-      uses: crazy-max/ghaction-import-gpg@v7
+      uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7.0.0
       with:
         gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
         passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
@@ -218,7 +218,7 @@ jobs:
         echo "::endgroup::"
 
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
     - name: Setup runner
       run: |
@@ -244,7 +244,7 @@ jobs:
 
     - name: Import GPG key for signing
       id: import_gpg
-      uses: crazy-max/ghaction-import-gpg@v7
+      uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7.0.0
       with:
         gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
         passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
@@ -331,7 +331,7 @@ jobs:
     steps:
     - name: Import GPG key for signing
       id: import_gpg
-      uses: crazy-max/ghaction-import-gpg@v7
+      uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7.0.0
       with:
         gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
         passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
@@ -369,7 +369,7 @@ jobs:
       contents: read
     steps:
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
     - name: Sync packages from buckets on S3
       run: |
@@ -493,13 +493,13 @@ jobs:
     steps:
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -615,7 +615,7 @@ jobs:
             runs_on: windows-2025
     steps:
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -642,7 +642,7 @@ jobs:
         shell: bash
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -669,16 +669,16 @@ jobs:
       GHCR_RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
     steps:
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -732,7 +732,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install cosign
-        uses: sigstore/cosign-installer@v2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Get public key and add to S3 bucket
         # Only run if we have a key defined
@@ -763,7 +763,7 @@ jobs:
       - staging-release-yum-packages
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Test release packages
         run: |
@@ -785,7 +785,7 @@ jobs:
       - staging-release-images
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Test containers
         run: |
@@ -806,7 +806,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Release 2.0 - not latest
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         if: startsWith(inputs.version, '2.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -818,7 +818,7 @@ jobs:
           make_latest: false
 
       - name: Release 2.1 - not latest
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         if: startsWith(inputs.version, '2.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -830,7 +830,7 @@ jobs:
           make_latest: false
 
       - name: Release 3.0 - not latest
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         if: startsWith(inputs.version, '3.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -842,7 +842,7 @@ jobs:
           make_latest: false
 
       - name: Release 3.1 - not latest
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         if: startsWith(inputs.version, '3.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -854,7 +854,7 @@ jobs:
           make_latest: false
 
       - name: Release 3.2 - not latest
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         if: startsWith(inputs.version, '3.2')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -866,7 +866,7 @@ jobs:
           make_latest: false
 
       - name: Release 4.0 - not latest
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         if: startsWith(inputs.version, '4.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -878,7 +878,7 @@ jobs:
           make_latest: false
 
       - name: Release 4.1 - not latest
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         if: startsWith(inputs.version, '4.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -890,7 +890,7 @@ jobs:
           make_latest: false
 
       - name: Release 4.2 - not latest
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         if: startsWith(inputs.version, '4.2')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -902,7 +902,7 @@ jobs:
           make_latest: false
           
       - name: Release 5.0 and latest
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         if: startsWith(inputs.version, '5.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -974,7 +974,7 @@ jobs:
     steps:
       - name: Release 2.0 - not latest
         if: startsWith(inputs.version, '2.0')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: fluent/fluent-bit-docs
           ref: 2.0
@@ -982,7 +982,7 @@ jobs:
 
       - name: Release 2.1 - not latest
         if: startsWith(inputs.version, '2.1')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: fluent/fluent-bit-docs
           ref: 2.1
@@ -990,7 +990,7 @@ jobs:
 
       - name: Release 2.2 - not latest
         if: startsWith(inputs.version, '2.2')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: fluent/fluent-bit-docs
           ref: 2.2
@@ -998,7 +998,7 @@ jobs:
 
       - name: Release 3.0 - not latest
         if: startsWith(inputs.version, '3.0')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: fluent/fluent-bit-docs
           ref: 3.0
@@ -1006,7 +1006,7 @@ jobs:
 
       - name: Release 3.1 - not latest
         if: startsWith(inputs.version, '3.1')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: fluent/fluent-bit-docs
           ref: 3.1
@@ -1014,7 +1014,7 @@ jobs:
 
       - name: Release 3.2 - not latest
         if: startsWith(inputs.version, '3.2')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: fluent/fluent-bit-docs
           token: ${{ secrets.GH_PA_TOKEN }}
@@ -1022,7 +1022,7 @@ jobs:
 
       - name: Release 4.0 - not latest
         if: startsWith(inputs.version, '4.0')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: fluent/fluent-bit-docs
           token: ${{ secrets.GH_PA_TOKEN }}
@@ -1030,7 +1030,7 @@ jobs:
 
       - name: Release 4.1 - not latest
         if: startsWith(inputs.version, '4.1')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: fluent/fluent-bit-docs
           token: ${{ secrets.GH_PA_TOKEN }}
@@ -1038,7 +1038,7 @@ jobs:
 
       - name: Release 4.2 - not latest
         if: startsWith(inputs.version, '4.2')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: fluent/fluent-bit-docs
           token: ${{ secrets.GH_PA_TOKEN }}
@@ -1046,7 +1046,7 @@ jobs:
 
       - name: Release 5.0 and latest
         if: startsWith(inputs.version, '5.0')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: fluent/fluent-bit-docs
           token: ${{ secrets.GH_PA_TOKEN }}
@@ -1075,7 +1075,7 @@ jobs:
 
       - name: Raise docs PR
         id: cpr
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           commit-message: 'release: update to v${{ inputs.version }}'
           signoff: true
@@ -1109,68 +1109,68 @@ jobs:
     steps:
       - name: Release 2.0
         if: startsWith(inputs.version, '2.0')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: 2.0
 
       - name: Release 2.1
         if: startsWith(inputs.version, '2.1')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: 2.1
 
       - name: Release 2.2
         if: startsWith(inputs.version, '2.2')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: 2.2
 
       - name: Release 3.0
         if: startsWith(inputs.version, '3.0')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: 3.0
 
       - name: Release 3.1
         if: startsWith(inputs.version, '3.1')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: 3.1
 
       - name: Release 3.2
         if: startsWith(inputs.version, '3.2')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: 3.2
 
       - name: Release 4.0
         if: startsWith(inputs.version, '4.0')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: '4.0'
 
       - name: Release 4.1
         if: startsWith(inputs.version, '4.1')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: 4.1
 
       - name: Release 4.2
         if: startsWith(inputs.version, '4.2')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: '4.2'
 
       - name: Release 5.0
         if: startsWith(inputs.version, '5.0')
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: master
           
       # Get the new version to use
       - name: 'Get next minor version'
         id: semvers
-        uses: "WyriHaximus/github-action-next-semvers@v1"
+        uses: "WyriHaximus/github-action-next-semvers@18aa9ed4152808ab99b88d71f5481e41f8d89930" # v1.2.1
         with:
           version: ${{ inputs.version }}
           strict: true
@@ -1184,8 +1184,10 @@ jobs:
 
       - name: Raise FB PR to update version
         id: cpr
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          branch: create-pull-request/bump-version-${{ steps.semvers.outputs.patch }}
+          branch-suffix: timestamp
           commit-message: 'release: update to ${{ steps.semvers.outputs.patch }}'
           signoff: true
           delete-branch: true

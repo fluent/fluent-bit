@@ -36,6 +36,10 @@ Approach for this tests is basing on filter_kubernetes tests
 #include <string.h>
 #include "flb_tests_runtime.h"
 
+#ifdef FLB_HAVE_INOTIFY
+#include "../../plugins/in_tail/tail_config.h"
+#endif
+
 #define NEW_LINE "\n"
 #define PATH_SEPARATOR "/"
 
@@ -324,6 +328,35 @@ void wait_num_with_timeout(uint32_t timeout_ms, int *output_num)
         *output_num = get_output_num();
 
         if (*output_num > 0) {
+            break;
+        }
+
+        flb_time_msleep(100);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
+
+        if (elapsed_time_flb > timeout_ms) {
+            flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
+            /* Reached timeout. */
+            break;
+        }
+    }
+}
+
+void wait_expected_num_with_timeout(uint32_t timeout_ms, int expected_num, int *output_num)
+{
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    uint64_t elapsed_time_flb = 0;
+
+    flb_time_get(&start_time);
+
+    while (true) {
+        *output_num = get_output_num();
+
+        if (*output_num >= expected_num) {
             break;
         }
 
@@ -1066,13 +1099,10 @@ void flb_test_in_tail_truncate_long_lines()
     flb_ctx_t    *ctx = NULL;
     int in_ffd, out_ffd;
     char path[PATH_MAX];
-    struct tail_test_result result = {0};
     int fd;
 
     const char *target = "truncate_long_lines_basic";
     int nExpected = 3;              /* before + truncated long line + after */
-    int nExpectedNotMatched = 0;    /* unused */
-    int nExpectedLines = 0;         /* unused */
 
     struct flb_lib_out_cb cb;
     int unused = 0;
@@ -1128,7 +1158,7 @@ void flb_test_in_tail_truncate_long_lines()
     ret = flb_start(ctx);
     TEST_CHECK_(ret == 0, "starting engine");
 
-    wait_num_with_timeout(5000, &num);
+    wait_expected_num_with_timeout(5000, nExpected, &num);
 
     num = get_output_num();
     TEST_CHECK(num == nExpected);
@@ -2012,6 +2042,194 @@ void flb_test_in_tail_ignore_active_older_files()
     test_tail_ctx_destroy(ctx);
 }
 
+/*
+ * Verify that a file excluded by ignore_active_older_files is re-picked up
+ * once its mtime is refreshed by a new write.
+ *
+ * Sequence:
+ *   1. Write msg1  → engine reads it (count = 1)
+ *   2. Wait 4 s    → purge fires (rotate_wait=1s), file is >2s old; inode
+ *                    registered as aged-out and file removed from monitoring
+ *   3. Write msg2  → mtime is now fresh
+ *   4. Wait 3 s    → scan fires (refresh_interval=1s), sees fresh mtime;
+ *                    unregisters aged-out entry and re-adds file at the
+ *                    stored offset (file->offset saved at age-out time);
+ *                    engine reads only msg2 (count += 1)
+ *   5. Assert count == 2
+ */
+void flb_test_in_tail_ignore_active_older_files_reread_on_update()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"source_file_reread.log"};
+    char *path = "source_file_reread.log";
+    char *msg = "TEST LINE";
+    const int expected = 2;
+    const int expected_before_rotate = 1;
+    int ret;
+    int num;
+    int unused;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->o_ffd,
+                        "path",                               path,
+                        "ignore_older",                      "2s",
+                        "rotate_wait",                       "1s",
+                        "refresh_interval",                  "1s",
+                        "read_newly_discovered_files_from_head", "false",
+                        "ignore_active_older_files",         "on",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /* Write first message and allow it to be flushed */
+    ret = write_msg(ctx, msg, strlen(msg));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /* Wait until msg1 is consumed before starting the aging clock. */
+    wait_expected_num_with_timeout(5000, expected_before_rotate, &num);
+    if (!TEST_CHECK(num == expected_before_rotate)) {
+        TEST_MSG("msg1 not consumed in time. got=%d", num);
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /*
+     * Wait long enough for the purge callback (rotate_wait=1s) to fire and
+     * detect that the file's mtime is older than ignore_older=2s, which
+     * removes the file from monitoring and registers its inode as aged-out.
+     */
+    flb_time_msleep(4000);
+
+    /* Append new content: this updates mtime so the file is no longer old */
+    ret = write_msg(ctx, msg, strlen(msg));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /*
+     * Wait for the scan callback (refresh_interval=1s) to re-evaluate the
+     * aged-out entry, find the fresh mtime, unregister the entry, and
+     * re-add the file.  The file is re-added at the stored offset (the read
+     * position saved when the file was aged out), so only msg2 — the content
+     * that refreshed the mtime — is flushed (count += 1).
+     */
+    wait_expected_num_with_timeout(5000, expected, &num);
+
+    if (!TEST_CHECK(num == expected)) {
+        TEST_MSG("output num error. expect=%d got=%d", expected, num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
+void flb_test_in_tail_ignore_active_older_files_reread_on_update_default_read_from_head()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"source_file_reread_default.log"};
+    char *path = "source_file_reread_default.log";
+    char *msg = "TEST LINE";
+    const int expected = 2;
+    const int expected_before_rotate = 1;
+    int ret;
+    int num;
+    int unused;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    /*
+     * Do not set read_newly_discovered_files_from_head — leave it at its
+     * default (true).  The fix in set_file_position must honour the saved
+     * offset even when ctx->read_from_head is true, so only msg2 is flushed
+     * on re-pickup rather than replaying msg1 from the start.
+     */
+    ret = flb_input_set(ctx->flb, ctx->o_ffd,
+                        "path",                      path,
+                        "ignore_older",              "2s",
+                        "rotate_wait",               "1s",
+                        "refresh_interval",          "1s",
+                        "ignore_active_older_files", "on",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /* Write first message and allow it to be flushed */
+    ret = write_msg(ctx, msg, strlen(msg));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /* Wait until msg1 is consumed before starting the aging clock. */
+    wait_expected_num_with_timeout(5000, expected_before_rotate, &num);
+    if (!TEST_CHECK(num == expected_before_rotate)) {
+        TEST_MSG("msg1 not consumed in time. got=%d", num);
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /*
+     * Wait long enough for the purge callback (rotate_wait=1s) to fire and
+     * age out the file.
+     */
+    flb_time_msleep(4000);
+
+    /* Append new content: updates mtime so the file is no longer old */
+    ret = write_msg(ctx, msg, strlen(msg));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /*
+     * The scan callback re-adds the file from the stored offset.  With the
+     * default read_newly_discovered_files_from_head=true, set_file_position
+     * must still seek to the saved offset so msg1 is not replayed.
+     * Total expected: 1 (msg1) + 1 (msg2) = 2.
+     */
+    wait_expected_num_with_timeout(5000, expected, &num);
+
+    if (!TEST_CHECK(num == expected)) {
+        TEST_MSG("output num error. expect=%d got=%d", expected, num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
 void flb_test_inotify_watcher_false()
 {
     struct flb_lib_out_cb cb_data;
@@ -2069,6 +2287,128 @@ void flb_test_inotify_watcher_false()
 
     test_tail_ctx_destroy(ctx);
 }
+
+#ifdef FLB_HAVE_INOTIFY
+static int wait_tail_collectors_state(struct flb_tail_config *tail_ctx,
+                                      struct flb_input_instance *ins,
+                                      int expected)
+{
+    int i;
+    int fs_running;
+    int progress_running;
+
+    for (i = 0; i < 50; i++) {
+        fs_running = flb_input_collector_running(tail_ctx->coll_fd_fs1, ins);
+        progress_running = flb_input_collector_running(tail_ctx->coll_fd_progress_check,
+                                                       ins);
+        if (fs_running == expected && progress_running == expected) {
+            return 0;
+        }
+
+        flb_time_msleep(100);
+    }
+
+    return -1;
+}
+
+void flb_test_inotify_pause_collectors()
+{
+    int ret;
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+    struct flb_tail_config *tail_ctx;
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"inotify_pause_collectors.log"};
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = NULL;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    head = ctx->flb->config->inputs.next;
+    ins = mk_list_entry(head, struct flb_input_instance, _head);
+    tail_ctx = ins->context;
+
+    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_fs1, ins) == FLB_TRUE);
+    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_progress_check,
+                                           ins) == FLB_TRUE);
+
+    ret = flb_input_pause(ins);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_fs1, ins) == FLB_FALSE);
+    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_progress_check,
+                                           ins) == FLB_FALSE);
+
+    ret = flb_input_resume(ins);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_fs1, ins) == FLB_TRUE);
+    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_progress_check,
+                                           ins) == FLB_TRUE);
+
+    test_tail_ctx_destroy(ctx);
+}
+
+void flb_test_inotify_threaded_pause_collectors()
+{
+    int ret;
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+    struct flb_tail_config *tail_ctx;
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"inotify_threaded_pause_collectors.log"};
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = NULL;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "threaded", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    head = ctx->flb->config->inputs.next;
+    ins = mk_list_entry(head, struct flb_input_instance, _head);
+    tail_ctx = ins->context;
+
+    ret = wait_tail_collectors_state(tail_ctx, ins, FLB_TRUE);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_pause(ins);
+    TEST_CHECK(ret == 0);
+    ret = wait_tail_collectors_state(tail_ctx, ins, FLB_FALSE);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_resume(ins);
+    TEST_CHECK(ret == 0);
+    ret = wait_tail_collectors_state(tail_ctx, ins, FLB_TRUE);
+    TEST_CHECK(ret == 0);
+
+    test_tail_ctx_destroy(ctx);
+}
+#endif
 
 #ifdef FLB_HAVE_REGEX
 void flb_test_parser()
@@ -2667,8 +3007,12 @@ TEST_LIST = {
     {"skip_empty_lines_crlf", flb_test_skip_empty_lines_crlf},
     {"ignore_older", flb_test_ignore_older},
     {"ignore_active_older_files", flb_test_in_tail_ignore_active_older_files},
+    {"ignore_active_older_files_reread_on_update", flb_test_in_tail_ignore_active_older_files_reread_on_update},
+    {"ignore_active_older_files_reread_on_update_default_read_from_head", flb_test_in_tail_ignore_active_older_files_reread_on_update_default_read_from_head},
 #ifdef FLB_HAVE_INOTIFY
     {"inotify_watcher_false", flb_test_inotify_watcher_false},
+    {"inotify_pause_collectors", flb_test_inotify_pause_collectors},
+    {"inotify_threaded_pause_collectors", flb_test_inotify_threaded_pause_collectors},
 #endif /* FLB_HAVE_INOTIFY */
 
 #ifdef FLB_HAVE_REGEX

@@ -41,6 +41,8 @@
 #include <ctraces/ctraces.h>
 #include <ctraces/ctr_decode_msgpack.h>
 
+#include <cfl/cfl_hash.h>
+
 #include <msgpack.h>
 #include <fluent-bit/flb_json.h>
 
@@ -50,12 +52,14 @@
 
 struct otlp_logs_scope_state {
     int64_t         scope_id;
+    uint64_t        scope_hash;
     struct flb_json_mut_val *scope_log;
     struct flb_json_mut_val *log_records;
 };
 
 struct otlp_logs_resource_state {
     int64_t                             resource_id;
+    uint64_t                            resource_hash;
     struct flb_json_mut_val                     *resource_log;
     struct flb_json_mut_val                     *scope_logs;
     struct otlp_logs_scope_state       *scopes;
@@ -68,6 +72,99 @@ struct otlp_metrics_scope_state {
 
 static msgpack_object *msgpack_map_get_object(msgpack_object_map *map,
                                               const char *key);
+
+static uint64_t msgpack_object_hash(msgpack_object *object)
+{
+    uint64_t        hash;
+    msgpack_sbuffer buffer;
+    msgpack_packer  packer;
+
+    if (object == NULL) {
+        return cfl_hash_64bits("null", 4);
+    }
+
+    msgpack_sbuffer_init(&buffer);
+    msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
+
+    if (msgpack_pack_object(&packer, *object) != 0) {
+        msgpack_sbuffer_destroy(&buffer);
+        return 0;
+    }
+
+    hash = cfl_hash_64bits(buffer.data, buffer.size);
+    msgpack_sbuffer_destroy(&buffer);
+
+    return hash;
+}
+
+static uint64_t msgpack_object_pair_hash(msgpack_object *left,
+                                         msgpack_object *right)
+{
+    uint64_t        hash;
+    msgpack_sbuffer buffer;
+    msgpack_packer  packer;
+
+    msgpack_sbuffer_init(&buffer);
+    msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
+
+    if (msgpack_pack_array(&packer, 2) != 0) {
+        msgpack_sbuffer_destroy(&buffer);
+        return 0;
+    }
+
+    if (left == NULL) {
+        msgpack_pack_nil(&packer);
+    }
+    else if (msgpack_pack_object(&packer, *left) != 0) {
+        msgpack_sbuffer_destroy(&buffer);
+        return 0;
+    }
+
+    if (right == NULL) {
+        msgpack_pack_nil(&packer);
+    }
+    else if (msgpack_pack_object(&packer, *right) != 0) {
+        msgpack_sbuffer_destroy(&buffer);
+        return 0;
+    }
+
+    hash = cfl_hash_64bits(buffer.data, buffer.size);
+    msgpack_sbuffer_destroy(&buffer);
+
+    return hash;
+}
+
+static msgpack_object *resource_schema_url_object(msgpack_object *resource_object,
+                                                  msgpack_object *resource_body)
+{
+    msgpack_object *schema_url;
+
+    if (resource_body != NULL && resource_body->type == MSGPACK_OBJECT_MAP) {
+        schema_url = msgpack_map_get_object(&resource_body->via.map, "schema_url");
+        if (schema_url != NULL) {
+            return schema_url;
+        }
+    }
+
+    if (resource_object != NULL && resource_object->type == MSGPACK_OBJECT_MAP) {
+        schema_url = msgpack_map_get_object(&resource_object->via.map, "schema_url");
+        if (schema_url != NULL) {
+            return schema_url;
+        }
+    }
+
+    return NULL;
+}
+
+static uint64_t resource_identity_hash(msgpack_object *resource_object,
+                                       msgpack_object *resource_body)
+{
+    msgpack_object *schema_url;
+
+    schema_url = resource_schema_url_object(resource_object, resource_body);
+
+    return msgpack_object_pair_hash(resource_object, schema_url);
+}
 
 static void set_result(int *result, int value)
 {
@@ -427,6 +524,11 @@ static struct flb_json_mut_val *create_binary_value(struct flb_json_mut_doc *doc
 static struct flb_json_mut_val *msgpack_object_to_otlp_any_value(struct flb_json_mut_doc *doc,
                                                         msgpack_object *object);
 
+static struct flb_json_mut_val *empty_otlp_any_value(struct flb_json_mut_doc *doc)
+{
+    return flb_json_mut_obj(doc);
+}
+
 static struct flb_json_mut_val *msgpack_array_to_otlp_any_value(struct flb_json_mut_doc *doc,
                                                        msgpack_object_array *array)
 {
@@ -447,7 +549,12 @@ static struct flb_json_mut_val *msgpack_array_to_otlp_any_value(struct flb_json_
     }
 
     for (index = 0; index < array->size; index++) {
-        entry = msgpack_object_to_otlp_any_value(doc, &array->ptr[index]);
+        if (array->ptr[index].type == MSGPACK_OBJECT_NIL) {
+            entry = empty_otlp_any_value(doc);
+        }
+        else {
+            entry = msgpack_object_to_otlp_any_value(doc, &array->ptr[index]);
+        }
         if (entry == NULL || !flb_json_mut_arr_add_val(values, entry)) {
             return NULL;
         }
@@ -476,7 +583,12 @@ static struct flb_json_mut_val *msgpack_map_to_otlp_kv_array(struct flb_json_mut
         }
 
         entry = flb_json_mut_obj(doc);
-        value = msgpack_object_to_otlp_any_value(doc, &map->ptr[index].val);
+        if (map->ptr[index].val.type == MSGPACK_OBJECT_NIL) {
+            value = empty_otlp_any_value(doc);
+        }
+        else {
+            value = msgpack_object_to_otlp_any_value(doc, &map->ptr[index].val);
+        }
         if (entry == NULL || value == NULL) {
             return NULL;
         }
@@ -528,7 +640,12 @@ static struct flb_json_mut_val *msgpack_map_to_otlp_kv_array_filtered(
         }
 
         entry = flb_json_mut_obj(doc);
-        value = msgpack_object_to_otlp_any_value(doc, &map->ptr[index].val);
+        if (map->ptr[index].val.type == MSGPACK_OBJECT_NIL) {
+            value = empty_otlp_any_value(doc);
+        }
+        else {
+            value = msgpack_object_to_otlp_any_value(doc, &map->ptr[index].val);
+        }
         if (entry == NULL || value == NULL) {
             return NULL;
         }
@@ -749,6 +866,8 @@ static struct flb_json_mut_val *cfl_variant_to_otlp_any_value(struct flb_json_mu
         value = cfl_kvlist_to_otlp_any_value(doc, variant->data.as_kvlist);
         return (value != NULL &&
                 flb_json_mut_obj_add_val(doc, root, "kvlistValue", value)) ? root : NULL;
+    case CFL_VARIANT_NULL:
+        return root;
     default:
         return NULL;
     }
@@ -890,12 +1009,14 @@ static msgpack_object *msgpack_map_get_object(msgpack_object_map *map,
 static struct otlp_logs_resource_state *find_logs_resource_state(
     struct otlp_logs_resource_state *states,
     size_t state_count,
-    int64_t resource_id)
+    int64_t resource_id,
+    uint64_t resource_hash)
 {
     size_t index;
 
     for (index = 0; index < state_count; index++) {
-        if (states[index].resource_id == resource_id) {
+        if (states[index].resource_id == resource_id &&
+            states[index].resource_hash == resource_hash) {
             return &states[index];
         }
     }
@@ -905,12 +1026,14 @@ static struct otlp_logs_resource_state *find_logs_resource_state(
 
 static struct otlp_logs_scope_state *find_logs_scope_state(
     struct otlp_logs_resource_state *resource,
-    int64_t scope_id)
+    int64_t scope_id,
+    uint64_t scope_hash)
 {
     size_t index;
 
     for (index = 0; index < resource->scope_count; index++) {
-        if (resource->scopes[index].scope_id == scope_id) {
+        if (resource->scopes[index].scope_id == scope_id &&
+            resource->scopes[index].scope_hash == scope_hash) {
             return &resource->scopes[index];
         }
     }
@@ -1036,6 +1159,7 @@ static struct otlp_logs_resource_state *append_logs_resource_state(
     struct otlp_logs_resource_state **states,
     size_t *state_count,
     int64_t resource_id,
+    uint64_t resource_hash,
     msgpack_object *resource_object,
     msgpack_object *resource_body)
 {
@@ -1060,16 +1184,14 @@ static struct otlp_logs_resource_state *append_logs_resource_state(
         return NULL;
     }
 
-    if (resource_body != NULL && resource_body->type == MSGPACK_OBJECT_MAP) {
-        schema_url = msgpack_map_get_object(&resource_body->via.map, "schema_url");
-        if (schema_url != NULL && schema_url->type == MSGPACK_OBJECT_STR) {
-            if (!flb_json_mut_obj_add_strncpy(doc,
-                                            resource_log,
-                                            "schemaUrl",
-                                            schema_url->via.str.ptr,
-                                            schema_url->via.str.size)) {
-                return NULL;
-            }
+    schema_url = resource_schema_url_object(resource_object, resource_body);
+    if (schema_url != NULL && schema_url->type == MSGPACK_OBJECT_STR) {
+        if (!flb_json_mut_obj_add_strncpy(doc,
+                                          resource_log,
+                                          "schemaUrl",
+                                          schema_url->via.str.ptr,
+                                          schema_url->via.str.size)) {
+            return NULL;
         }
     }
 
@@ -1086,6 +1208,7 @@ static struct otlp_logs_resource_state *append_logs_resource_state(
     memset(state, 0, sizeof(struct otlp_logs_resource_state));
 
     state->resource_id = resource_id;
+    state->resource_hash = resource_hash;
     state->resource_log = resource_log;
     state->scope_logs = scope_logs;
 
@@ -1098,6 +1221,7 @@ static struct otlp_logs_scope_state *append_logs_scope_state(
     struct flb_json_mut_doc *doc,
     struct otlp_logs_resource_state *resource_state,
     int64_t scope_id,
+    uint64_t scope_hash,
     msgpack_object *scope_object)
 {
     struct otlp_logs_scope_state *new_scopes;
@@ -1147,6 +1271,7 @@ static struct otlp_logs_scope_state *append_logs_scope_state(
     memset(state, 0, sizeof(struct otlp_logs_scope_state));
 
     state->scope_id = scope_id;
+    state->scope_hash = scope_hash;
     state->scope_log = scope_log;
     state->log_records = log_records;
 
@@ -1163,15 +1288,23 @@ static int ensure_default_logs_scope_state(
     struct otlp_logs_resource_state **current_resource,
     struct otlp_logs_scope_state **current_scope)
 {
+    uint64_t resource_hash;
+    uint64_t scope_hash;
+
+    resource_hash = resource_identity_hash(NULL, NULL);
+    scope_hash = msgpack_object_hash(NULL);
+
     *current_resource = find_logs_resource_state(*resource_states,
                                                  *resource_state_count,
-                                                 0);
+                                                 0,
+                                                 resource_hash);
     if (*current_resource == NULL) {
         *current_resource = append_logs_resource_state(doc,
                                                        resource_logs,
                                                        resource_states,
                                                        resource_state_count,
                                                        0,
+                                                       resource_hash,
                                                        NULL,
                                                        NULL);
         if (*current_resource == NULL) {
@@ -1179,11 +1312,12 @@ static int ensure_default_logs_scope_state(
         }
     }
 
-    *current_scope = find_logs_scope_state(*current_resource, 0);
+    *current_scope = find_logs_scope_state(*current_resource, 0, scope_hash);
     if (*current_scope == NULL) {
         *current_scope = append_logs_scope_state(doc,
                                                  *current_resource,
                                                  0,
+                                                 scope_hash,
                                                  NULL);
         if (*current_scope == NULL) {
             return -1;
@@ -1483,6 +1617,8 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
     msgpack_object                  *group_metadata;
     msgpack_object                  *resource_object;
     msgpack_object                  *scope_object;
+    uint64_t                         resource_hash;
+    uint64_t                         scope_hash;
     flb_sds_t                        json;
     struct flb_log_event             event;
     struct flb_log_event_decoder     decoder;
@@ -1600,15 +1736,20 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
                 scope_object = msgpack_map_get_object(&group_body->via.map, "scope");
             }
 
+            resource_hash = resource_identity_hash(resource_object, group_body);
+            scope_hash = msgpack_object_hash(scope_object);
+
             current_resource = find_logs_resource_state(resource_states,
                                                         resource_state_count,
-                                                        resource_id);
+                                                        resource_id,
+                                                        resource_hash);
             if (current_resource == NULL) {
                 current_resource = append_logs_resource_state(doc,
                                                               resource_logs,
                                                               &resource_states,
                                                               &resource_state_count,
                                                               resource_id,
+                                                              resource_hash,
                                                               resource_object,
                                                               group_body);
                 if (current_resource == NULL) {
@@ -1620,11 +1761,14 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
                 }
             }
 
-            current_scope = find_logs_scope_state(current_resource, scope_id);
+            current_scope = find_logs_scope_state(current_resource,
+                                                  scope_id,
+                                                  scope_hash);
             if (current_scope == NULL) {
                 current_scope = append_logs_scope_state(doc,
                                                         current_resource,
                                                         scope_id,
+                                                        scope_hash,
                                                         scope_object);
                 if (current_scope == NULL) {
                     flb_log_event_decoder_destroy(&decoder);
