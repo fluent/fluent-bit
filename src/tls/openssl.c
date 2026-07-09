@@ -1498,6 +1498,23 @@ static int tls_net_read(struct flb_tls_session *session,
 
             ret = -1;
         }
+        else if (ret == SSL_ERROR_ZERO_RETURN) {
+            flb_debug("[tls] connection closed by the remote peer "
+                      "(close_notify)");
+
+            /*
+             * The peer performed a clean TLS shutdown, so this session
+             * is finished. Flag the connection as errored so it is not
+             * reused: a reused session would keep hitting the cached
+             * shutdown state and fail every subsequent read identically.
+             * For a pooled upstream connection this makes
+             * flb_upstream_conn_release() destroy it instead of
+             * returning it to the keepalive pool.
+             */
+            session->connection->net_error = ECONNRESET;
+
+            ret = -1;
+        }
         else if (ret < 0) {
             err_code = ERR_get_error();
 
@@ -1577,6 +1594,23 @@ static int tls_net_write(struct flb_tls_session *session,
              */
 
             session->connection->net_error = errno;
+
+            ret = -1;
+        }
+        else if (ssl_ret == SSL_ERROR_ZERO_RETURN) {
+            flb_debug("[tls] connection closed by the remote peer "
+                      "(close_notify)");
+
+            /*
+             * The peer performed a clean TLS shutdown, so this session
+             * is finished. Flag the connection as errored so it is not
+             * reused: a reused session would keep hitting the cached
+             * shutdown state and fail every subsequent operation
+             * identically. For a pooled upstream connection this makes
+             * flb_upstream_conn_release() destroy it instead of
+             * returning it to the keepalive pool.
+             */
+            session->connection->net_error = ECONNRESET;
 
             ret = -1;
         }
