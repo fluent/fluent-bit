@@ -246,6 +246,9 @@ struct flb_config *flb_config_init()
         return NULL;
     }
 
+    /* Prepare worker TLS before any config-time logging checks. */
+    flb_worker_init(config);
+
     MK_EVENT_ZERO(&config->ch_event);
     MK_EVENT_ZERO(&config->event_flush);
     MK_EVENT_ZERO(&config->event_shutdown);
@@ -477,9 +480,6 @@ struct flb_config *flb_config_init()
     /* Ignore SIGPIPE */
     signal(SIGPIPE, SIG_IGN);
 #endif
-
-    /* Prepare worker interface */
-    flb_worker_init(config);
 
 #ifdef FLB_HAVE_REGEX
     /* Regex support */
