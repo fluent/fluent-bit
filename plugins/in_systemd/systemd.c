@@ -33,6 +33,11 @@
 #define pack_uint16(buf, d) _msgpack_store16(buf, (uint16_t) d)
 #define pack_uint32(buf, d) _msgpack_store32(buf, (uint32_t) d)
 
+/* FLUENT_BIT_PARSER journal field: "FLUENT_BIT_PARSER=<parser_name>" */
+#define FLUENT_BIT_PARSER_FIELD      "FLUENT_BIT_PARSER"
+#define FLUENT_BIT_PARSER_FIELD_LEN  17
+#define FLUENT_BIT_PARSER_PREFIX_LEN 18  /* includes the '=' separator */
+
 /* tag composer */
 static int tag_compose(const char *tag, const char *unit_name,
                        int unit_size, char **out_buf, size_t *out_size)
@@ -186,6 +191,15 @@ static int append_enumerate_data(struct flb_systemd_config *ctx, struct cfl_kvli
     return ret;
 }
 
+/*
+ * Process a single journal field (key=value).
+ *
+ * Return values:
+ *   0  : success, field stored in kvlist
+ *  -1  : error or metadata-only field (skip, don't count)
+ *  -2  : malformed field, no '=' separator found (skip)
+ *  -3  : parsed content available in out_buf/out_size (caller must repack)
+ */
 static int systemd_enumerate_data_store(struct flb_config *config,
                                         struct flb_input_instance *ins,
                                         void *plugin_context,
@@ -222,12 +236,13 @@ static int systemd_enumerate_data_store(struct flb_config *config,
 
     /* Skip FLUENT_BIT_PARSER field - it's metadata, not log content
      * Return -1 so it doesn't count toward max_fields */
-    if (strncmp(key, "FLUENT_BIT_PARSER", key_len) == 0) {
+    if (key_len == FLUENT_BIT_PARSER_FIELD_LEN &&
+        strncmp(key, FLUENT_BIT_PARSER_FIELD, FLUENT_BIT_PARSER_FIELD_LEN) == 0) {
         return -1;
     }
 
     /* If this is MESSAGE field and parser is specified, apply parser */
-    if (parser && strncmp(key, "MESSAGE", key_len) == 0) {
+    if (parser && key_len == 7 && strncmp(key, "MESSAGE", 7) == 0) {
         val = sep + 1;
         len = length - (sep - key) - 1;
         int ret_parser = flb_parser_do(parser, val, len, out_buf, out_size, out_time);
@@ -344,7 +359,7 @@ static int in_systemd_collect(struct flb_input_instance *ins,
     long nsec;
     uint64_t usec;
     size_t length;
-    size_t plength;
+    size_t plength = 0;
     const char *key;
 #ifdef FLB_HAVE_SQLDB
     char *cursor = NULL;
@@ -426,9 +441,10 @@ static int in_systemd_collect(struct flb_input_instance *ins,
 
         /* Find the parser, if specified */
         parser = NULL;
-        ret = sd_journal_get_data(ctx->j, "FLUENT_BIT_PARSER", &data, &length);
+        ret = sd_journal_get_data(ctx->j, FLUENT_BIT_PARSER_FIELD, &data, &length);
         if (ret == 0) {
-            name = flb_strndup((const char *)(data+18), length-18);
+            name = flb_strndup((const char *)(data + FLUENT_BIT_PARSER_PREFIX_LEN),
+                               length - FLUENT_BIT_PARSER_PREFIX_LEN);
             if (name == NULL) {
                 flb_plg_error(ctx->ins, "failed to allocate parser name");
             }
@@ -523,6 +539,12 @@ static int in_systemd_collect(struct flb_input_instance *ins,
             }
             else if (ret == -3) {
                 /* Parsed content - add it to encoder as msgpack */
+                if (pbuf == NULL) {
+                    flb_plg_warn(ctx->ins,
+                                 "parser returned success but NULL buffer");
+                    skip_entries++;
+                    continue;
+                }
                 ret = flb_systemd_repack_map(ctx->log_encoder, pbuf, plength);
                 flb_free(pbuf);
                 pbuf = NULL;
@@ -778,6 +800,9 @@ static int cb_systemd_format_test(struct flb_config *config,
     struct cfl_list *kvs = NULL;
     struct cfl_split_entry *cur = NULL;
     struct cfl_kvlist *kvlist = NULL;
+    struct flb_parser *parser = NULL;
+    void *pbuf = NULL;
+    size_t plength = 0;
     const char *keys;
 
     ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
@@ -799,15 +824,45 @@ static int cb_systemd_format_test(struct flb_config *config,
         goto split_error;
     }
 
+    /*
+     * First pass: look for a FLUENT_BIT_PARSER field so we can resolve the
+     * parser before processing the remaining fields (mirrors what
+     * in_systemd_collect does with sd_journal_get_data).
+     */
+    parser = NULL;
+    cfl_list_foreach(head, kvs) {
+        cur = cfl_list_entry(head, struct cfl_split_entry, _head);
+        if (cur->len > FLUENT_BIT_PARSER_PREFIX_LEN &&
+            strncmp(cur->value, FLUENT_BIT_PARSER_FIELD "=",
+                    FLUENT_BIT_PARSER_PREFIX_LEN) == 0) {
+            char *pname = flb_strndup(
+                cur->value + FLUENT_BIT_PARSER_PREFIX_LEN,
+                cur->len   - FLUENT_BIT_PARSER_PREFIX_LEN);
+            if (pname) {
+                parser = flb_parser_get(pname, config);
+                flb_free(pname);
+            }
+            break;
+        }
+    }
+
+    /* Second pass: enumerate all fields */
     cfl_list_foreach(head, kvs) {
         cur = cfl_list_entry(head, struct cfl_split_entry, _head);
         ret = systemd_enumerate_data_store(config, ctx->ins,
                                            (void *)ctx, (void *)kvlist,
                                            cur->value, cur->len,
-                                           NULL, NULL, NULL, &tm);
+                                           parser, &pbuf, &plength, &tm);
 
         if (ret == -2 || ret == -1) {
             continue;
+        }
+        else if (ret == -3) {
+            if (pbuf != NULL) {
+                ret = flb_systemd_repack_map(ctx->log_encoder, pbuf, plength);
+                flb_free(pbuf);
+                pbuf = NULL;
+            }
         }
     }
 
