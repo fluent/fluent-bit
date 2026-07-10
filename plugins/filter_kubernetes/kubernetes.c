@@ -130,7 +130,7 @@ static int merge_log_handler(msgpack_object o,
 {
     int ret;
     int new_size;
-    int root_type;
+    int root_type = FLB_PACK_JSON_UNDEFINED;
     int records = 0;
     char *tmp;
 
