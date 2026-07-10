@@ -346,6 +346,13 @@ int flb_log_event_encoder_set_timestamp(struct flb_log_event_encoder *context,
                                         struct flb_time *timestamp)
 {
     if (timestamp != NULL) {
+        if (flb_time_is_valid_eventtime(timestamp) != FLB_TRUE &&
+            !(timestamp->tm.tv_nsec == 0 &&
+              (timestamp->tm.tv_sec == FLB_LOG_EVENT_GROUP_START ||
+               timestamp->tm.tv_sec == FLB_LOG_EVENT_GROUP_END))) {
+            return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+        }
+
         flb_time_copy(&context->timestamp, timestamp);
     }
     else {
