@@ -29,6 +29,7 @@
 #include <cmetrics/cmt_gauge.h>
 #include <msgpack.h>
 #include <ctype.h>
+#include <errno.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -89,20 +90,21 @@ static int parse_guid(const char *str, GUID *guid)
     unsigned int d2;
     unsigned int d3;
     unsigned int d4[8];
+    char trailing;
     int ret;
 
     ret = sscanf(str,
-                 "{%8x-%4x-%4x-%2x%2x-%2x%2x%2x%2x%2x%2x}",
+                 "{%8x-%4x-%4x-%2x%2x-%2x%2x%2x%2x%2x%2x}%c",
                  &d1, &d2, &d3,
                  &d4[0], &d4[1], &d4[2], &d4[3],
-                 &d4[4], &d4[5], &d4[6], &d4[7]);
+                 &d4[4], &d4[5], &d4[6], &d4[7], &trailing);
 
     if (ret != 11) {
         ret = sscanf(str,
-                     "%8x-%4x-%4x-%2x%2x-%2x%2x%2x%2x%2x%2x",
+                     "%8x-%4x-%4x-%2x%2x-%2x%2x%2x%2x%2x%2x%c",
                      &d1, &d2, &d3,
                      &d4[0], &d4[1], &d4[2], &d4[3],
-                     &d4[4], &d4[5], &d4[6], &d4[7]);
+                     &d4[4], &d4[5], &d4[6], &d4[7], &trailing);
     }
 
     if (ret != 11) {
@@ -129,12 +131,13 @@ static int parse_uint64(const char *str, ULONGLONG *out)
     char *end;
     unsigned long long value;
 
-    if (str == NULL || str[0] == '\0') {
+    if (str == NULL || str[0] == '\0' || str[0] == '-') {
         return -1;
     }
 
+    errno = 0;
     value = strtoull(str, &end, 0);
-    if (end == str || *end != '\0') {
+    if (end == str || *end != '\0' || errno == ERANGE) {
         return -1;
     }
 
@@ -418,6 +421,46 @@ static void pack_wide_string(msgpack_packer *mp_pck, const WCHAR *str, int bytes
     flb_free(utf8);
 }
 
+static int pack_bounded_wide_string(msgpack_packer *mp_pck, const WCHAR *str,
+                                    size_t bytes)
+{
+    size_t chars;
+    size_t len;
+    int utf8_len;
+    char *utf8;
+
+    if (bytes > INT_MAX || bytes < sizeof(WCHAR)) {
+        return -1;
+    }
+
+    chars = bytes / sizeof(WCHAR);
+    for (len = 0; len < chars; len++) {
+        if (str[len] == L'\0') {
+            break;
+        }
+    }
+
+    if (len == chars) {
+        return -1;
+    }
+
+    if (len == 0) {
+        msgpack_pack_str(mp_pck, 0);
+        return 0;
+    }
+
+    utf8 = wide_to_utf8(str, (int) (len * sizeof(WCHAR)), &utf8_len);
+    if (utf8 == NULL) {
+        return -1;
+    }
+
+    msgpack_pack_str(mp_pck, utf8_len);
+    msgpack_pack_str_body(mp_pck, utf8, utf8_len);
+    flb_free(utf8);
+
+    return 0;
+}
+
 static int resolve_provider_name(struct flb_etw *ctx, const WCHAR *name, GUID *guid)
 {
     ULONG size;
@@ -564,11 +607,18 @@ static void pack_filetime_value(msgpack_packer *mp_pck, const FILETIME *filetime
     msgpack_pack_uint64(mp_pck, unix_100ns / 10000000ULL);
 }
 
-static int pack_nil_if_property_too_small(msgpack_packer *mp_pck, ULONG size,
-                                          size_t expected)
+static int pack_non_scalar_property_value(msgpack_packer *mp_pck,
+                                          const BYTE *buf,
+                                          ULONG size, size_t expected)
 {
     if (size < expected) {
         msgpack_pack_nil(mp_pck);
+        return FLB_TRUE;
+    }
+
+    if (size > expected) {
+        msgpack_pack_bin(mp_pck, size);
+        msgpack_pack_bin_body(mp_pck, buf, size);
         return FLB_TRUE;
     }
 
@@ -591,57 +641,57 @@ static void pack_property_value(msgpack_packer *mp_pck, USHORT in_type,
         msgpack_pack_str_body(mp_pck, (char *) buf, len);
         break;
     case TDH_INTYPE_INT8:
-        if (pack_nil_if_property_too_small(mp_pck, size, sizeof(INT8))) {
+        if (pack_non_scalar_property_value(mp_pck, buf, size, sizeof(INT8))) {
             break;
         }
         msgpack_pack_int8(mp_pck, *((INT8 *) buf));
         break;
     case TDH_INTYPE_UINT8:
-        if (pack_nil_if_property_too_small(mp_pck, size, sizeof(UINT8))) {
+        if (pack_non_scalar_property_value(mp_pck, buf, size, sizeof(UINT8))) {
             break;
         }
         msgpack_pack_uint8(mp_pck, *((UINT8 *) buf));
         break;
     case TDH_INTYPE_INT16:
-        if (pack_nil_if_property_too_small(mp_pck, size, sizeof(INT16))) {
+        if (pack_non_scalar_property_value(mp_pck, buf, size, sizeof(INT16))) {
             break;
         }
         msgpack_pack_int16(mp_pck, *((INT16 *) buf));
         break;
     case TDH_INTYPE_UINT16:
-        if (pack_nil_if_property_too_small(mp_pck, size, sizeof(UINT16))) {
+        if (pack_non_scalar_property_value(mp_pck, buf, size, sizeof(UINT16))) {
             break;
         }
         msgpack_pack_uint16(mp_pck, *((UINT16 *) buf));
         break;
     case TDH_INTYPE_INT32:
-        if (pack_nil_if_property_too_small(mp_pck, size, sizeof(INT32))) {
+        if (pack_non_scalar_property_value(mp_pck, buf, size, sizeof(INT32))) {
             break;
         }
         msgpack_pack_int32(mp_pck, *((INT32 *) buf));
         break;
     case TDH_INTYPE_UINT32:
     case TDH_INTYPE_HEXINT32:
-        if (pack_nil_if_property_too_small(mp_pck, size, sizeof(UINT32))) {
+        if (pack_non_scalar_property_value(mp_pck, buf, size, sizeof(UINT32))) {
             break;
         }
         msgpack_pack_uint32(mp_pck, *((UINT32 *) buf));
         break;
     case TDH_INTYPE_INT64:
-        if (pack_nil_if_property_too_small(mp_pck, size, sizeof(INT64))) {
+        if (pack_non_scalar_property_value(mp_pck, buf, size, sizeof(INT64))) {
             break;
         }
         msgpack_pack_int64(mp_pck, *((INT64 *) buf));
         break;
     case TDH_INTYPE_UINT64:
     case TDH_INTYPE_HEXINT64:
-        if (pack_nil_if_property_too_small(mp_pck, size, sizeof(UINT64))) {
+        if (pack_non_scalar_property_value(mp_pck, buf, size, sizeof(UINT64))) {
             break;
         }
         msgpack_pack_uint64(mp_pck, *((UINT64 *) buf));
         break;
     case TDH_INTYPE_BOOLEAN:
-        if (pack_nil_if_property_too_small(mp_pck, size, sizeof(BOOL))) {
+        if (pack_non_scalar_property_value(mp_pck, buf, size, sizeof(BOOL))) {
             break;
         }
         if (*((BOOL *) buf)) {
@@ -652,25 +702,25 @@ static void pack_property_value(msgpack_packer *mp_pck, USHORT in_type,
         }
         break;
     case TDH_INTYPE_FLOAT:
-        if (pack_nil_if_property_too_small(mp_pck, size, sizeof(float))) {
+        if (pack_non_scalar_property_value(mp_pck, buf, size, sizeof(float))) {
             break;
         }
         msgpack_pack_float(mp_pck, *((float *) buf));
         break;
     case TDH_INTYPE_DOUBLE:
-        if (pack_nil_if_property_too_small(mp_pck, size, sizeof(double))) {
+        if (pack_non_scalar_property_value(mp_pck, buf, size, sizeof(double))) {
             break;
         }
         msgpack_pack_double(mp_pck, *((double *) buf));
         break;
     case TDH_INTYPE_GUID:
-        if (pack_nil_if_property_too_small(mp_pck, size, sizeof(GUID))) {
+        if (pack_non_scalar_property_value(mp_pck, buf, size, sizeof(GUID))) {
             break;
         }
         pack_guid_value(mp_pck, (GUID *) buf);
         break;
     case TDH_INTYPE_FILETIME:
-        if (pack_nil_if_property_too_small(mp_pck, size, sizeof(FILETIME))) {
+        if (pack_non_scalar_property_value(mp_pck, buf, size, sizeof(FILETIME))) {
             break;
         }
         pack_filetime_value(mp_pck, (FILETIME *) buf);
@@ -700,7 +750,8 @@ static void pack_property_value(msgpack_packer *mp_pck, USHORT in_type,
 }
 
 static void pack_payload_property(msgpack_packer *mp_pck, PEVENT_RECORD record,
-                                  TRACE_EVENT_INFO *info, ULONG index)
+                                  TRACE_EVENT_INFO *info, ULONG info_size,
+                                  ULONG index)
 {
     ULONG size;
     TDHSTATUS status;
@@ -710,6 +761,12 @@ static void pack_payload_property(msgpack_packer *mp_pck, PEVENT_RECORD record,
 
     prop = &info->EventPropertyInfoArray[index];
     if (prop->Flags & PropertyStruct) {
+        msgpack_pack_nil(mp_pck);
+        return;
+    }
+
+    if (prop->NameOffset == 0 ||
+        prop->NameOffset > info_size - sizeof(WCHAR)) {
         msgpack_pack_nil(mp_pck);
         return;
     }
@@ -752,6 +809,7 @@ static void pack_payload(msgpack_packer *mp_pck, PEVENT_RECORD record)
     EVENT_PROPERTY_INFO *prop;
     WCHAR *name;
     char fallback[32];
+    size_t property_info_size;
 
     size = 0;
     status = TdhGetEventInformation(record, 0, NULL, NULL, &size);
@@ -774,19 +832,36 @@ static void pack_payload(msgpack_packer *mp_pck, PEVENT_RECORD record)
         return;
     }
 
+    if (size < offsetof(TRACE_EVENT_INFO, EventPropertyInfoArray)) {
+        flb_free(info);
+        msgpack_pack_map(mp_pck, 0);
+        return;
+    }
+
+    property_info_size = (size - offsetof(TRACE_EVENT_INFO, EventPropertyInfoArray)) /
+                         sizeof(EVENT_PROPERTY_INFO);
+    if (info->TopLevelPropertyCount > property_info_size) {
+        flb_free(info);
+        msgpack_pack_map(mp_pck, 0);
+        return;
+    }
+
     msgpack_pack_map(mp_pck, info->TopLevelPropertyCount);
     for (i = 0; i < info->TopLevelPropertyCount; i++) {
         prop = &info->EventPropertyInfoArray[i];
-        if (prop->NameOffset > 0) {
+        if (prop->NameOffset > 0 &&
+            prop->NameOffset <= size - sizeof(WCHAR)) {
             name = (WCHAR *) ((char *) info + prop->NameOffset);
-            pack_wide_string(mp_pck, name, 0);
-        }
-        else {
-            snprintf(fallback, sizeof(fallback), "property_%lu", i);
-            pack_cstr(mp_pck, fallback);
+            if (pack_bounded_wide_string(mp_pck, name,
+                                         size - prop->NameOffset) == 0) {
+                pack_payload_property(mp_pck, record, info, size, i);
+                continue;
+            }
         }
 
-        pack_payload_property(mp_pck, record, info, i);
+        snprintf(fallback, sizeof(fallback), "property_%lu", i);
+        pack_cstr(mp_pck, fallback);
+        pack_payload_property(mp_pck, record, info, size, i);
     }
 
     flb_free(info);
@@ -857,13 +932,15 @@ static int etw_update_loss_metrics(struct flb_etw *ctx)
 {
     ULONG status;
     TRACEHANDLE session;
+    EVENT_TRACE_PROPERTIES *properties;
     uint64_t timestamp;
+    ULONG events_lost;
+    ULONG realtime_buffers_lost;
     char *name;
     LONG query_errors;
 
     if (ctx->cmt_events_lost == NULL ||
-        ctx->cmt_realtime_buffers_lost == NULL ||
-        ctx->properties == NULL) {
+        ctx->cmt_realtime_buffers_lost == NULL) {
         return 0;
     }
 
@@ -872,11 +949,17 @@ static int etw_update_loss_metrics(struct flb_etw *ctx)
         return 0;
     }
 
+    properties = create_trace_properties(ctx);
+    if (properties == NULL) {
+        return -1;
+    }
+
     status = ControlTraceW(session,
                            ctx->session_name_wide,
-                           ctx->properties,
+                           properties,
                            EVENT_TRACE_CONTROL_QUERY);
     if (status != ERROR_SUCCESS) {
+        flb_free(properties);
         query_errors = InterlockedIncrement(&ctx->query_errors);
         if (query_errors == 1 || query_errors % 1000 == 0) {
             flb_plg_warn(ctx->ins,
@@ -886,16 +969,20 @@ static int etw_update_loss_metrics(struct flb_etw *ctx)
         return -1;
     }
 
+    events_lost = properties->EventsLost;
+    realtime_buffers_lost = properties->RealTimeBuffersLost;
+    flb_free(properties);
+
     name = (char *) flb_input_name(ctx->ins);
     timestamp = cfl_time_now();
 
     cmt_gauge_set(ctx->cmt_events_lost,
                   timestamp,
-                  (double) ctx->properties->EventsLost,
+                  (double) events_lost,
                   1, (char *[]) {name});
     cmt_gauge_set(ctx->cmt_realtime_buffers_lost,
                   timestamp,
-                  (double) ctx->properties->RealTimeBuffersLost,
+                  (double) realtime_buffers_lost,
                   1, (char *[]) {name});
 
     return 0;
@@ -995,12 +1082,13 @@ static VOID WINAPI etw_event_callback(PEVENT_RECORD record)
     pack_cstr(&mp_pck, "payload");
     pack_payload(&mp_pck, record);
 
-    ret = flb_input_log_append(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    if (ret == -1) {
+    ret = flb_input_ingress_queue_log(ctx->ins, NULL, 0,
+                                      mp_sbuf.data, mp_sbuf.size);
+    if (ret != 0) {
         append_errors = InterlockedIncrement(&ctx->append_errors);
         if (append_errors == 1 || append_errors % 1000 == 0) {
             flb_plg_warn(ctx->ins,
-                         "failed to append ETW event record (%ld failures)",
+                         "failed to enqueue ETW event record (%ld failures)",
                          append_errors);
         }
     }
@@ -1088,17 +1176,28 @@ static void etw_stop_session(struct flb_etw *ctx)
 {
     TRACEHANDLE session;
     ULONG status;
+    EVENT_TRACE_PROPERTIES *properties;
+
+    properties = create_trace_properties(ctx);
+    if (properties == NULL) {
+        flb_plg_warn(ctx->ins, "could not allocate ETW stop properties");
+        return;
+    }
 
     session = etw_exchange_session(ctx, 0);
-    if (session != 0 && ctx->properties != NULL) {
-        etw_disable_provider(ctx, session);
-        status = ControlTraceW(session,
-                               ctx->session_name_wide,
-                               ctx->properties,
-                               EVENT_TRACE_CONTROL_STOP);
-        if (status != ERROR_SUCCESS && status != ERROR_WMI_INSTANCE_NOT_FOUND) {
-            flb_plg_warn(ctx->ins, "ControlTrace stop failed (status=%lu)", status);
-        }
+    if (session == 0) {
+        flb_free(properties);
+        return;
+    }
+
+    etw_disable_provider(ctx, session);
+    status = ControlTraceW(session,
+                           ctx->session_name_wide,
+                           properties,
+                           EVENT_TRACE_CONTROL_STOP);
+    flb_free(properties);
+    if (status != ERROR_SUCCESS && status != ERROR_WMI_INSTANCE_NOT_FOUND) {
+        flb_plg_warn(ctx->ins, "ControlTrace stop failed (status=%lu)", status);
     }
 }
 
@@ -1106,9 +1205,16 @@ static ULONG etw_start_session(struct flb_etw *ctx)
 {
     ULONG status;
     TRACEHANDLE session;
+    EVENT_TRACE_PROPERTIES *properties;
 
     session = 0;
-    status = StartTraceW(&session, ctx->session_name_wide, ctx->properties);
+    properties = create_trace_properties(ctx);
+    if (properties == NULL) {
+        return ERROR_NOT_ENOUGH_MEMORY;
+    }
+
+    status = StartTraceW(&session, ctx->session_name_wide, properties);
+    flb_free(properties);
     if (status != ERROR_ALREADY_EXISTS) {
         if (status == ERROR_SUCCESS) {
             etw_exchange_session(ctx, session);
@@ -1133,7 +1239,13 @@ static ULONG etw_start_session(struct flb_etw *ctx)
     }
 
     session = 0;
-    status = StartTraceW(&session, ctx->session_name_wide, ctx->properties);
+    properties = create_trace_properties(ctx);
+    if (properties == NULL) {
+        return ERROR_NOT_ENOUGH_MEMORY;
+    }
+
+    status = StartTraceW(&session, ctx->session_name_wide, properties);
+    flb_free(properties);
     if (status == ERROR_SUCCESS) {
         etw_exchange_session(ctx, session);
     }
@@ -1163,6 +1275,7 @@ static void *etw_worker(void *data)
                           ctx->session_name_wide, status);
         }
         etw_signal_startup(ctx, -1);
+        InterlockedExchange(&ctx->worker_finished, 1);
         return NULL;
     }
 
@@ -1181,6 +1294,7 @@ static void *etw_worker(void *data)
             flb_plg_error(ctx->ins, "EnableTraceEx2 failed (status=%lu)", status);
             etw_stop_session(ctx);
             etw_signal_startup(ctx, -1);
+            InterlockedExchange(&ctx->worker_finished, 1);
             return NULL;
         }
     }
@@ -1198,6 +1312,7 @@ static void *etw_worker(void *data)
         flb_plg_error(ctx->ins, "OpenTrace failed (error=%lu)", GetLastError());
         etw_stop_session(ctx);
         etw_signal_startup(ctx, -1);
+        InterlockedExchange(&ctx->worker_finished, 1);
         return NULL;
     }
 
@@ -1216,6 +1331,8 @@ static void *etw_worker(void *data)
         etw_stop_session(ctx);
     }
 
+    InterlockedExchange(&ctx->worker_finished, 1);
+
     return NULL;
 }
 
@@ -1232,10 +1349,16 @@ static int etw_start_worker(struct flb_etw *ctx)
     int ret;
 
     if (ctx->thread_created) {
-        return 0;
+        if (!InterlockedCompareExchange(&ctx->worker_finished, 0, 0)) {
+            return 0;
+        }
+
+        pthread_join(ctx->thread, NULL);
+        ctx->thread_created = FLB_FALSE;
     }
 
     etw_reset_startup(ctx);
+    InterlockedExchange(&ctx->worker_finished, 0);
 
     ret = pthread_create(&ctx->thread, NULL, etw_worker, ctx);
     if (ret != 0) {
@@ -1282,10 +1405,6 @@ static void etw_config_destroy(struct flb_etw *ctx)
 
     if (ctx->session_name_wide != NULL) {
         flb_free(ctx->session_name_wide);
-    }
-
-    if (ctx->properties != NULL) {
-        flb_free(ctx->properties);
     }
 
     if (ctx->startup_sync_initialized) {
@@ -1580,13 +1699,14 @@ static int in_etw_init(struct flb_input_instance *in,
         return -1;
     }
 
-    ctx->properties = create_trace_properties(ctx);
-    if (ctx->properties == NULL) {
+    flb_input_set_context(in, ctx);
+
+    ret = flb_input_ingress_enable(in);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "could not enable ETW ingress queue");
         etw_config_destroy(ctx);
         return -1;
     }
-
-    flb_input_set_context(in, ctx);
 
     if (etw_start_worker(ctx) != 0) {
         etw_config_destroy(ctx);
