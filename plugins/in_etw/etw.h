@@ -67,7 +67,6 @@ struct flb_etw {
     ULONG kernel_flags;
     GUID session_guid;
     WCHAR *session_name_wide;
-    EVENT_TRACE_PROPERTIES *properties;
     TRACEHANDLE session;
     TRACEHANDLE trace;
     CRITICAL_SECTION handle_lock;
@@ -77,6 +76,7 @@ struct flb_etw {
 
     LONG exiting;
     LONG paused;
+    LONG worker_finished;
     LONG append_errors;
     LONG query_errors;
     int startup_sync_initialized;
