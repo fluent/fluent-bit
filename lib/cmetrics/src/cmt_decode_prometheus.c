@@ -124,16 +124,18 @@ int cmt_decode_prometheus_create(
 
     result = cmt_decode_prometheus_parse(scanner, &context);
 
+    if (context.errcode) {
+        result = context.errcode;
+    }
+
     if (result == 0) {
         *out_cmt = cmt;
     }
     else {
         cmt_destroy(cmt);
-        if (context.errcode) {
-            result = context.errcode;
-        }
-        reset_context(&context, true);
     }
+
+    reset_context(&context, true);
 
     cmt_decode_prometheus__delete_buffer(buf, scanner);
     cmt_decode_prometheus_lex_destroy(scanner);
@@ -1224,6 +1226,9 @@ static int cmt_decode_prometheus_error(void *yyscanner,
                                        struct cmt_decode_prometheus_context *context,
                                        const char *msg)
 {
-    report_error(context, CMT_DECODE_PROMETHEUS_SYNTAX_ERROR, msg);
+    if (!context->errcode) {
+        report_error(context, CMT_DECODE_PROMETHEUS_SYNTAX_ERROR, msg);
+    }
+
     return 0;
 }

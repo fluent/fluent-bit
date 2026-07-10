@@ -1,0 +1,22 @@
+# This image is used only to verify that cmetrics builds on CentOS 7.
+FROM centos:7
+
+RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\/mirrorlist.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo && \
+    sed -i -e "s/^#baseurl=http:\/\/mirror.centos.org/baseurl=http:\/\/vault.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo && \
+    yum -y update && \
+    yum install -y ca-certificates gcc gcc-c++ make wget libcurl-devel && \
+    yum clean all
+
+ARG CMAKE_VERSION="3.20.0"
+
+RUN wget -q "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh" \
+        -O /tmp/cmake-installer.sh && \
+    chmod +x /tmp/cmake-installer.sh && \
+    /tmp/cmake-installer.sh --skip-license --prefix=/usr/local && \
+    rm -f /tmp/cmake-installer.sh
+
+COPY . /src/
+WORKDIR /src/build
+
+RUN cmake -DCMT_TESTS=On -DCMT_DEV=On .. && \
+    cmake --build . -j "$(getconf _NPROCESSORS_ONLN)"
