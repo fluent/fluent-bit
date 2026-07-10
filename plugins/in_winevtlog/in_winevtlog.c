@@ -171,6 +171,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->ins = in;
+    mk_list_init(&ctx->event_templates);
 
     ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
 
@@ -205,6 +206,21 @@ static int in_winevtlog_init(struct flb_input_instance *in,
             flb_free(ctx);
             return -1;
         }
+    }
+
+    if (ctx->event_data_as_map && ctx->event_template_cache_size < 1) {
+        flb_plg_error(in,
+                      "event_template_cache_size must be greater than zero when "
+                      "event_data_as_map is enabled");
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+        flb_free(ctx);
+        return -1;
+    }
+
+    if (ctx->event_data_as_map) {
+        flb_plg_debug(in,
+                      "EventData named maps enabled; template cache size=%d",
+                      ctx->event_template_cache_size);
     }
 
     if (ctx->backoff_multiplier_str && ctx->backoff_multiplier_str[0] != '\0') {
@@ -351,6 +367,26 @@ static int in_winevtlog_init(struct flb_input_instance *in,
         }
     }
 
+    if (ctx->event_data_as_map) {
+        ctx->event_template_cache = flb_hash_table_create(
+                FLB_HASH_TABLE_EVICT_NONE,
+                (size_t) ctx->event_template_cache_size,
+                ctx->event_template_cache_size);
+        if (ctx->event_template_cache == NULL) {
+            flb_plg_error(ctx->ins, "could not create the event template cache");
+            if (ctx->db) {
+                flb_sqldb_close(ctx->db);
+            }
+            winevtlog_close_all(ctx->active_channel);
+            if (ctx->session) {
+                in_winevtlog_session_destroy(ctx->session);
+            }
+            flb_log_event_encoder_destroy(ctx->log_encoder);
+            flb_free(ctx);
+            return -1;
+        }
+    }
+
     /* Set the context */
     flb_input_set_context(in, ctx);
 
@@ -443,6 +479,7 @@ static int in_winevtlog_exit(void *data, struct flb_config *config)
     if (ctx->session) {
         in_winevtlog_session_destroy(ctx->session);
     }
+    winevtlog_event_template_cache_destroy(ctx);
     flb_free(ctx);
 
     return 0;
@@ -473,6 +510,16 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_BOOL, "string_inserts", "true",
       0, FLB_TRUE, offsetof(struct winevtlog_config, string_inserts),
       "Whether to include StringInserts in output records"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "event_data_as_map", "false",
+      0, FLB_TRUE, offsetof(struct winevtlog_config, event_data_as_map),
+      "Emit EventData as a named map using provider metadata instead of StringInserts"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "event_template_cache_size", "256",
+      0, FLB_TRUE, offsetof(struct winevtlog_config, event_template_cache_size),
+      "Maximum number of provider event templates cached for event_data_as_map"
     },
     {
       FLB_CONFIG_MAP_BOOL, "read_existing_events", "false",

@@ -725,6 +725,149 @@ static int pack_sid(struct winevtlog_config *ctx, PSID sid, int extract_sid)
 #undef MAX_NAME
 }
 
+static int pack_event_value(struct winevtlog_config *ctx, PEVT_VARIANT value)
+{
+    if (value->Type & EVT_VARIANT_TYPE_ARRAY) {
+        return -1;
+    }
+
+    switch (value->Type & EVT_VARIANT_TYPE_MASK) {
+    case EvtVarTypeNull:
+        return pack_nullstr(ctx);
+    case EvtVarTypeString:
+        if (pack_wstr(ctx, value->StringVal)) {
+            return pack_nullstr(ctx);
+        }
+        return FLB_EVENT_ENCODER_SUCCESS;
+    case EvtVarTypeAnsiString:
+        if (pack_astr(ctx, value->AnsiStringVal)) {
+            return pack_nullstr(ctx);
+        }
+        return FLB_EVENT_ENCODER_SUCCESS;
+    case EvtVarTypeSByte:
+        return flb_log_event_encoder_append_body_int8(ctx->log_encoder,
+                                                       value->SByteVal);
+    case EvtVarTypeByte:
+        return flb_log_event_encoder_append_body_uint8(ctx->log_encoder,
+                                                        value->ByteVal);
+    case EvtVarTypeInt16:
+        return flb_log_event_encoder_append_body_int16(ctx->log_encoder,
+                                                        value->Int16Val);
+    case EvtVarTypeUInt16:
+        return flb_log_event_encoder_append_body_uint16(ctx->log_encoder,
+                                                         value->UInt16Val);
+    case EvtVarTypeInt32:
+        return flb_log_event_encoder_append_body_int32(ctx->log_encoder,
+                                                        value->Int32Val);
+    case EvtVarTypeUInt32:
+        return flb_log_event_encoder_append_body_uint32(ctx->log_encoder,
+                                                         value->UInt32Val);
+    case EvtVarTypeInt64:
+        return flb_log_event_encoder_append_body_int64(ctx->log_encoder,
+                                                        value->Int64Val);
+    case EvtVarTypeUInt64:
+        return flb_log_event_encoder_append_body_uint64(ctx->log_encoder,
+                                                         value->UInt64Val);
+    case EvtVarTypeSingle:
+        return flb_log_event_encoder_append_body_double(ctx->log_encoder,
+                                                         value->SingleVal);
+    case EvtVarTypeDouble:
+        return flb_log_event_encoder_append_body_double(ctx->log_encoder,
+                                                         value->DoubleVal);
+    case EvtVarTypeBoolean:
+        return flb_log_event_encoder_append_body_boolean(ctx->log_encoder,
+                                                          (int) value->BooleanVal);
+    case EvtVarTypeGuid:
+        if (pack_guid(ctx, value->GuidVal)) {
+            return pack_nullstr(ctx);
+        }
+        return FLB_EVENT_ENCODER_SUCCESS;
+    case EvtVarTypeSizeT:
+        return flb_log_event_encoder_append_body_uint64(ctx->log_encoder,
+                                                         value->SizeTVal);
+    case EvtVarTypeFileTime:
+        if (pack_filetime(ctx, value->FileTimeVal)) {
+            return pack_nullstr(ctx);
+        }
+        return FLB_EVENT_ENCODER_SUCCESS;
+    case EvtVarTypeSysTime:
+        if (pack_systemtime(ctx, value->SysTimeVal)) {
+            return pack_nullstr(ctx);
+        }
+        return FLB_EVENT_ENCODER_SUCCESS;
+    case EvtVarTypeSid:
+        if (pack_sid(ctx, value->SidVal, FLB_FALSE)) {
+            return pack_nullstr(ctx);
+        }
+        return FLB_EVENT_ENCODER_SUCCESS;
+    case EvtVarTypeHexInt32:
+        if (pack_hex32(ctx, value->Int32Val)) {
+            return pack_nullstr(ctx);
+        }
+        return FLB_EVENT_ENCODER_SUCCESS;
+    case EvtVarTypeHexInt64:
+        if (pack_hex64(ctx, value->Int64Val)) {
+            return pack_nullstr(ctx);
+        }
+        return FLB_EVENT_ENCODER_SUCCESS;
+    case EvtVarTypeEvtXml:
+        if (pack_wstr(ctx, value->XmlVal)) {
+            return pack_nullstr(ctx);
+        }
+        return FLB_EVENT_ENCODER_SUCCESS;
+    case EvtVarTypeBinary:
+        if (pack_binary(ctx, value->BinaryVal, value->Count)) {
+            return pack_nullstr(ctx);
+        }
+        return FLB_EVENT_ENCODER_SUCCESS;
+    default:
+        return flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "?");
+    }
+}
+
+static int event_data_map_is_compatible(
+        struct winevtlog_event_template *event_template,
+        PEVT_VARIANT values, UINT count)
+{
+    UINT index;
+
+    if (event_template == NULL || !event_template->valid ||
+        event_template->data_count != count) {
+        return FLB_FALSE;
+    }
+
+    for (index = 0; index < count; index++) {
+        if (values[index].Type & EVT_VARIANT_TYPE_ARRAY) {
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
+static int pack_event_data_map(struct winevtlog_config *ctx,
+                               struct winevtlog_event_template *event_template,
+                               PEVT_VARIANT values, UINT count)
+{
+    int ret;
+    UINT index;
+
+    ret = flb_log_event_encoder_body_begin_map(ctx->log_encoder);
+
+    for (index = 0; ret == FLB_EVENT_ENCODER_SUCCESS && index < count; index++) {
+        ret = pack_wstr(ctx, event_template->data_names[index]);
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = pack_event_value(ctx, &values[index]);
+        }
+    }
+
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_body_commit_map(ctx->log_encoder);
+    }
+
+    return ret;
+}
+
 static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT values, DWORD count)
 {
     int i;
@@ -737,98 +880,9 @@ static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT value
             continue;
         }
 
-        switch (values[i].Type & EVT_VARIANT_TYPE_MASK) {
-        case EvtVarTypeNull:
-            pack_nullstr(ctx);
-            break;
-        case EvtVarTypeString:
-            if (pack_wstr(ctx, values[i].StringVal)) {
-                pack_nullstr(ctx);
-            }
-            break;
-        case EvtVarTypeAnsiString:
-            if (pack_astr(ctx, values[i].AnsiStringVal)) {
-                pack_nullstr(ctx);
-            }
-            break;
-        case EvtVarTypeSByte:
-            flb_log_event_encoder_append_body_int8(ctx->log_encoder, values[i].SByteVal);
-            break;
-        case EvtVarTypeByte:
-            flb_log_event_encoder_append_body_uint8(ctx->log_encoder, values[i].ByteVal);
-            break;
-        case EvtVarTypeInt16:
-            flb_log_event_encoder_append_body_int16(ctx->log_encoder, values[i].Int16Val);
-            break;
-        case EvtVarTypeUInt16:
-            flb_log_event_encoder_append_body_uint16(ctx->log_encoder, values[i].UInt16Val);
-            break;
-        case EvtVarTypeInt32:
-            flb_log_event_encoder_append_body_int32(ctx->log_encoder, values[i].Int32Val);
-            break;
-        case EvtVarTypeUInt32:
-            flb_log_event_encoder_append_body_uint32(ctx->log_encoder, values[i].UInt32Val);
-            break;
-        case EvtVarTypeInt64:
-            flb_log_event_encoder_append_body_int64(ctx->log_encoder, values[i].Int64Val);
-            break;
-        case EvtVarTypeUInt64:
-            flb_log_event_encoder_append_body_uint64(ctx->log_encoder, values[i].UInt64Val);
-            break;
-        case EvtVarTypeSingle:
-            flb_log_event_encoder_append_body_double(ctx->log_encoder, values[i].SingleVal);
-            break;
-        case EvtVarTypeDouble:
-            flb_log_event_encoder_append_body_double(ctx->log_encoder, values[i].DoubleVal);
-            break;
-        case EvtVarTypeBoolean:
-            flb_log_event_encoder_append_body_boolean(ctx->log_encoder, (int) values[i].BooleanVal);
-            break;
-        case EvtVarTypeGuid:
-            if (pack_guid(ctx, values[i].GuidVal)) {
-                pack_nullstr(ctx);
-            }
-            break;
-        case EvtVarTypeSizeT:
-            flb_log_event_encoder_append_body_uint64(ctx->log_encoder, values[i].SizeTVal);
-            break;
-        case EvtVarTypeFileTime:
-            if (pack_filetime(ctx, values[i].FileTimeVal)) {
-                pack_nullstr(ctx);
-            }
-            break;
-        case EvtVarTypeSysTime:
-            if (pack_systemtime(ctx, values[i].SysTimeVal)) {
-                pack_nullstr(ctx);
-            }
-            break;
-        case EvtVarTypeSid:
-            if (pack_sid(ctx, values[i].SidVal, FLB_FALSE)) {
-                pack_nullstr(ctx);
-            }
-            break;
-        case EvtVarTypeHexInt32:
-            if (pack_hex32(ctx, values[i].Int32Val)) {
-                pack_nullstr(ctx);
-            }
-            break;
-        case EvtVarTypeHexInt64:
-            if (pack_hex64(ctx, values[i].Int64Val)) {
-                pack_nullstr(ctx);
-            }
-            break;
-        case EvtVarTypeEvtXml:
-            if (pack_wstr(ctx, values[i].XmlVal)) {
-                pack_nullstr(ctx);
-            }
-            break;
-        case EvtVarTypeBinary:
-            if (pack_binary(ctx, values[i].BinaryVal, values[i].Count)) {
-                pack_nullstr(ctx);
-            }
-            break;
-        default:
-            flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "?");
+        ret = pack_event_value(ctx, &values[i]);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            ret = pack_nullstr(ctx);
         }
     }
 
@@ -838,8 +892,42 @@ static void pack_string_inserts(struct winevtlog_config *ctx, PEVT_VARIANT value
 
 }
 
+static int pack_event_data(struct winevtlog_config *ctx,
+                           struct winevtlog_event_template *event_template,
+                           PEVT_VARIANT string_inserts, UINT count_inserts)
+{
+    int ret;
+
+    if (ctx->event_data_as_map &&
+        event_data_map_is_compatible(event_template, string_inserts,
+                                     count_inserts)) {
+        ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder,
+                                                        "EventData");
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = pack_event_data_map(ctx, event_template, string_inserts,
+                                      count_inserts);
+        }
+        if (ret != FLB_EVENT_ENCODER_SUCCESS || !ctx->string_inserts) {
+            return ret;
+        }
+    }
+
+    if (ctx->string_inserts || ctx->event_data_as_map) {
+        ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder,
+                                                        "StringInserts");
+        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+            pack_string_inserts(ctx, string_inserts, count_inserts);
+        }
+        return ret;
+    }
+
+    return FLB_EVENT_ENCODER_SUCCESS;
+}
+
 void winevtlog_pack_xml_event(WCHAR *system_xml, WCHAR *message,
-                              PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
+                              PEVT_VARIANT string_inserts, UINT count_inserts,
+                              struct winevtlog_event_template *event_template,
+                              struct winevtlog_channel *ch,
                               struct winevtlog_config *ctx)
 {
     int ret;
@@ -863,10 +951,9 @@ void winevtlog_pack_xml_event(WCHAR *system_xml, WCHAR *message,
         pack_nullstr(ctx);
     }
 
-    if (ctx->string_inserts) {
-        ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "StringInserts");
-
-        pack_string_inserts(ctx, string_inserts, count_inserts);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = pack_event_data(ctx, event_template, string_inserts,
+                              count_inserts);
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -876,6 +963,7 @@ void winevtlog_pack_xml_event(WCHAR *system_xml, WCHAR *message,
 
 void winevtlog_pack_text_event(PEVT_VARIANT system, WCHAR *message,
                                PEVT_VARIANT string_inserts, UINT count_inserts,
+                               struct winevtlog_event_template *event_template,
                                struct winevtlog_channel *ch, struct winevtlog_config *ctx)
 {
     int ret;
@@ -1099,16 +1187,10 @@ void winevtlog_pack_text_event(PEVT_VARIANT system, WCHAR *message,
         ret = flb_log_event_encoder_append_body_string(ctx->log_encoder, text, out_len);
     }
 
-    /* StringInserts must not be embedded in the key=value text payload. When both
-     * render_event_as_text and string_inserts are enabled, we expose inserts as a
-     * structured field under the "StringInserts" key to preserve record-level
-     * fidelity and avoid mixing formats in TextFormat output.
-     */
-    if (ret == FLB_EVENT_ENCODER_SUCCESS && ctx->string_inserts) {
-        ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "StringInserts");
-        if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-            pack_string_inserts(ctx, string_inserts, count_inserts);
-        }
+    /* Event data remains structured instead of being embedded in TextFormat. */
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = pack_event_data(ctx, event_template, string_inserts,
+                              count_inserts);
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -1119,16 +1201,12 @@ void winevtlog_pack_text_event(PEVT_VARIANT system, WCHAR *message,
 }
 
 void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
-                          PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
+                          PEVT_VARIANT string_inserts, UINT count_inserts,
+                          struct winevtlog_event_template *event_template,
+                          struct winevtlog_channel *ch,
                           struct winevtlog_config *ctx)
 {
     int ret;
-    size_t len;
-    int count = 19;
-
-    if (ctx->string_inserts) {
-        count++;
-    }
 
     ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
@@ -1314,11 +1392,9 @@ void winevtlog_pack_event(PEVT_VARIANT system, WCHAR *message,
         pack_nullstr(ctx);
     }
 
-    /* String Inserts */
-    if (ctx->string_inserts) {
-        ret = flb_log_event_encoder_append_body_cstring(ctx->log_encoder, "StringInserts");
-
-        pack_string_inserts(ctx, string_inserts, count_inserts);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = pack_event_data(ctx, event_template, string_inserts,
+                              count_inserts);
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
