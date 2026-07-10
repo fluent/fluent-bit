@@ -2011,6 +2011,9 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
     UINT count_inserts = 0;
     DWORD i = 0;
     int rc = 0;
+    int render_user_data;
+
+    render_user_data = ctx->string_inserts || ctx->event_data_as_map;
 
     while (winevtlog_next(ch, hit_threshold)) {
         for (i = 0; i < ch->count; i++) {
@@ -2037,9 +2040,11 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
                                                                        ch->remote, ctx);
                     }
                 }
-                if (get_string_inserts(ch->events[i], &string_inserts,
-                                       &count_inserts,
-                                       &string_inserts_size) && system_xml) {
+                if (render_user_data) {
+                    get_string_inserts(ch->events[i], &string_inserts,
+                                       &count_inserts, &string_inserts_size);
+                }
+                if (system_xml) {
                     /* Calculate allocated size: XML + system + message + inserts. */
                     read_size += (system_xml_size + system_size + message_size +
                                   string_inserts_size);
@@ -2061,9 +2066,11 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
                     event_template = winevtlog_event_template_get(rendered_system,
                                                                    ch->remote, ctx);
                 }
-                if (get_string_inserts(ch->events[i], &string_inserts,
-                                       &count_inserts,
-                                       &string_inserts_size) && rendered_system) {
+                if (render_user_data) {
+                    get_string_inserts(ch->events[i], &string_inserts,
+                                       &count_inserts, &string_inserts_size);
+                }
+                if (rendered_system) {
                     /* Calculate allocated size: system + message + inserts. */
                     read_size += (system_size + message_size + string_inserts_size);
                     winevtlog_pack_text_event(rendered_system, message, string_inserts,
@@ -2084,9 +2091,11 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
                     event_template = winevtlog_event_template_get(rendered_system,
                                                                    ch->remote, ctx);
                 }
-                if (get_string_inserts(ch->events[i], &string_inserts,
-                                       &count_inserts,
-                                       &string_inserts_size) && rendered_system) {
+                if (render_user_data) {
+                    get_string_inserts(ch->events[i], &string_inserts,
+                                       &count_inserts, &string_inserts_size);
+                }
+                if (rendered_system) {
                     /* Calculate allocated size: system + message + inserts. */
                     read_size += (system_size + message_size + string_inserts_size);
                     winevtlog_pack_event(rendered_system, message, string_inserts,
