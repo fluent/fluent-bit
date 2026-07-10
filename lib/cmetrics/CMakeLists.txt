@@ -5,8 +5,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # CMetrics Version
 set(CMT_VERSION_MAJOR  2)
-set(CMT_VERSION_MINOR  1)
-set(CMT_VERSION_PATCH  5)
+set(CMT_VERSION_MINOR  2)
+set(CMT_VERSION_PATCH  0)
 set(CMT_VERSION_STR "${CMT_VERSION_MAJOR}.${CMT_VERSION_MINOR}.${CMT_VERSION_PATCH}")
 
 # Include helpers
@@ -45,9 +45,12 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   set(CMT_SYSTEM_WINDOWS On)
   add_definitions(-DCMT_SYSTEM_WINDOWS)
 
-  # Disable unistd.h for flex/bison
-  CMT_DEFINITION(YY_NO_UNISTD_H)
-  message(STATUS "Specifying YY_NO_UNISTD_H")
+  # Disable unistd.h for flex/bison on MSVC only: MinGW provides a real
+  # unistd.h, and without it the generated lexer has no isatty declaration.
+  if(MSVC)
+    CMT_DEFINITION(YY_NO_UNISTD_H)
+    message(STATUS "Specifying YY_NO_UNISTD_H")
+  endif()
 endif()
 
 # Define macro to identify macOS system

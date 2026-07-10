@@ -1710,6 +1710,20 @@ void test_issue_fluent_bit_9267()
     cfl_sds_destroy(in_buf);
 }
 
+// reproduces https://github.com/fluent/cmetrics/issues/274
+void test_issue_274()
+{
+    int status;
+    struct cmt *cmt;
+    cfl_sds_t in_buf = read_file(CMT_TESTS_DATA_PATH "/issue_274.txt");
+    size_t in_size = cfl_sds_len(in_buf);
+
+    status = cmt_decode_prometheus_create(&cmt, in_buf, in_size, NULL);
+    TEST_CHECK(status == 0);
+    cfl_sds_destroy(in_buf);
+    cmt_decode_prometheus_destroy(cmt);
+}
+
 TEST_LIST = {
     {"header_help", test_header_help},
     {"header_type", test_header_type},
@@ -1744,5 +1758,6 @@ TEST_LIST = {
     {"histogram_different_label_count", test_histogram_different_label_count},
     {"issue_fluent_bit_6534", test_issue_fluent_bit_6534},
     {"issue_fluent_bit_9267", test_issue_fluent_bit_9267},
+    {"issue_274", test_issue_274},
     { 0 }
 };

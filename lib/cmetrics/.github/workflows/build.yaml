@@ -38,50 +38,25 @@ jobs:
   build-centos:
     name: CentOS 7 build to confirm no issues once used downstream
     runs-on: ubuntu-latest
-    container: centos:7
-    env:
-      # workaround required for checkout@v3, https://github.com/actions/checkout/issues/1590
-      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+    permissions:
+      contents: read
     steps:
-      - name: Set up base image dependencies
-        run: |
-          sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\/mirrorlist.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
-          sed -i -e "s/^#baseurl=http:\/\/mirror.centos.org/baseurl=http:\/\/vault.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
-          yum -y update
-          yum install -y ca-certificates gcc gcc-c++ git make wget
-          yum install -y epel-release
-          yum install -y libcurl-devel
+      - name: Check out the repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
 
-        shell: bash
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
-      - name: Install CMake 3.20.0
-        run: |
-          CMAKE_VERSION=3.20.0
-          wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh
-          chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh
-          ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local
-          ln -sf /usr/local/bin/cmake /usr/bin/cmake
-          cmake --version
-
-      - name: Clone repo without submodules (1.8.3 version of Git)
-        run: |
-          git clone https://github.com/fluent/cmetrics.git
-        shell: bash
-
-      - name: Check out the branch (1.8.3 version of Git)
-        env:
-          BRANCH_NAME: ${{ github.head_ref }}
-        run: |
-          git checkout "$BRANCH_NAME"
-          git submodule update --init --recursive
-        shell: bash
-        working-directory: cmetrics
-
-      - name: Run compilation
-        run: |
-          cmake -DCMT_TESTS=on -DCMT_DEV=on .
-          make
-        working-directory: cmetrics
+      - name: Build sources on CentOS 7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./dockerfiles/Dockerfile.centos7
+          push: false
+          load: false
+          provenance: false
 
   build-debian:
     name: Debian Buster build to confirm no issues once used downstream

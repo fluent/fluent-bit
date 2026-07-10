@@ -15,6 +15,8 @@ set(UNIT_TESTS_FILES
   filter.c
   exp_histogram.c
   msgpack_abi.c
+  msgpack_temporality.c
+  expire.c
   )
 
 if (CMT_BUILD_PROMETHEUS_TEXT_DECODER)
