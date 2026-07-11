@@ -8,6 +8,9 @@ on:
       - master
     types: [opened, reopened, synchronize]
 
+permissions:
+  contents: read
+
 jobs:
   build-windows:
     name: Build sources on amd64 for ${{ matrix.os }}
@@ -17,7 +20,7 @@ jobs:
       matrix:
         os: [windows-latest, windows-2022]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Build on ${{ matrix.os }} with MSVC
         run: |
           .\scripts\win_build.bat
@@ -33,12 +36,12 @@ jobs:
       matrix:
         os: [windows-latest, windows-2022]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Get dependencies w/ chocolatey
-        uses: crazy-max/ghaction-chocolatey@v3
+        uses: crazy-max/ghaction-chocolatey@dfdcf5bba9c0a16358a21c13a06ec5c89024b3ac # v4
         with:
           args: install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
-      - uses: msys2/setup-msys2@v2
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
         with:
           update: true
           msystem: UCRT64
@@ -126,7 +129,7 @@ jobs:
           # Confirm CMake installation
           /usr/local/bin/cmake --version
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Run compilation
         run: |
@@ -142,9 +145,9 @@ jobs:
         os: [ubuntu-latest]
         compiler: [ gcc, clang ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@v3.0.1
+        uses: uraimo/run-on-arch-action@f9b26e3a1a408d5fd530d20c17b9f3f4428ff8d9 # v3.1.0
         with:
           arch: aarch64
           distro: ubuntu_latest
@@ -152,16 +155,15 @@ jobs:
             apt-get update && \
             apt-get install -y --no-install-recommends \
             build-essential \
+            clang \
             cmake \
             file \
             make
-            export CC=${{ env.compiler }}
+            export CC=${{ matrix.compiler }}
+            "$CC" --version
             cmake -DCFL_TESTS=On .
             make all
             CTEST_OUTPUT_ON_FAILURE=1 make test
-        env:
-          CC: ${{ matrix.compiler }}
-
   build-unix-amd64:
     name: Build sources on amd64 for ${{ matrix.os }} - ${{ matrix.compiler }}
     runs-on: ${{ matrix.os }}
@@ -171,7 +173,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         compiler: [ gcc, clang ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
         run: |
           echo "CC = $CC, CXX = $CXX"
@@ -180,6 +182,125 @@ jobs:
           CTEST_OUTPUT_ON_FAILURE=1 make test
         env:
           CC: ${{ matrix.compiler }}
+
+  build-c-dialects:
+    name: Build sources with GNU ${{ matrix.standard }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        standard: [99, 17]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Configure, build, and test
+        run: |
+          cmake -S . -B build \
+            -DCFL_TESTS=On \
+            -DCMAKE_C_STANDARD=${{ matrix.standard }} \
+            -DCMAKE_C_STANDARD_REQUIRED=On \
+            -DCMAKE_C_EXTENSIONS=On
+          cmake --build build -j2
+          ctest --test-dir build --output-on-failure
+
+  build-downstream:
+    name: Build downstream consumer ${{ matrix.consumer }}
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        consumer: [cmetrics, cprofiles, ctraces, fluent-bit]
+    steps:
+      - name: Check out CFL
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          path: cfl
+      - name: Check out ${{ matrix.consumer }}
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: fluent/${{ matrix.consumer }}
+          path: consumer
+          submodules: recursive
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bison flex libssl-dev libyaml-dev
+      - name: Report bundled CFL version
+        shell: bash
+        run: |
+          version_from()
+          {
+              local cmake_file="$1"
+              local major
+              local minor
+              local patch
+
+              major=$(sed -n 's/^set(CFL_VERSION_MAJOR  *\([0-9][0-9]*\)).*/\1/p' "$cmake_file")
+              minor=$(sed -n 's/^set(CFL_VERSION_MINOR  *\([0-9][0-9]*\)).*/\1/p' "$cmake_file")
+              patch=$(sed -n 's/^set(CFL_VERSION_PATCH  *\([0-9][0-9]*\)).*/\1/p' "$cmake_file")
+              echo "${major}.${minor}.${patch}"
+          }
+
+          cfl_version=$(version_from cfl/CMakeLists.txt)
+          bundled_version=$(version_from consumer/lib/cfl/CMakeLists.txt)
+          echo "CFL under test: ${cfl_version}" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ matrix.consumer }} bundled CFL: ${bundled_version}" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$cfl_version" != "$bundled_version" ]]; then
+              echo "::warning::${{ matrix.consumer }} bundles CFL ${bundled_version}; current CFL is ${cfl_version}"
+          fi
+      - name: Replace bundled CFL with the version under test
+        run: |
+          rm -rf consumer/lib/cfl
+          mkdir -p consumer/lib/cfl
+          git -C cfl archive HEAD | tar -x -C consumer/lib/cfl
+      - name: Configure ${{ matrix.consumer }}
+        shell: bash
+        run: |
+          case "${{ matrix.consumer }}" in
+              cmetrics)
+                  cmake -S consumer -B build -DCMT_TESTS=On
+                  ;;
+              cprofiles)
+                  cmake -S consumer -B build -DCPROF_TESTS=On
+                  ;;
+              ctraces)
+                  cmake -S consumer -B build -DCTR_TESTS=On
+                  ;;
+              fluent-bit)
+                  cmake -S consumer -B build \
+                    -DFLB_ALL=Off \
+                    -DFLB_EXAMPLES=Off \
+                    -DFLB_SHARED_LIB=Off \
+                    -DFLB_PROCESSOR_CONTENT_MODIFIER=On \
+                    -DFLB_PROCESSOR_METRICS_SELECTOR=On \
+                    -DFLB_PROCESSOR_SQL=On \
+                    -DFLB_PROCESSOR_SAMPLING=On
+                  ;;
+          esac
+      - name: Build ${{ matrix.consumer }}
+        run: cmake --build build -j2
+      - name: Test ${{ matrix.consumer }}
+        if: matrix.consumer != 'fluent-bit'
+        run: ctest --test-dir build --output-on-failure
+
+  build-installed-consumer:
+    name: Build an installed CFL consumer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Build and install CFL
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/install"
+          cmake --build build -j2
+          cmake --install build
+      - name: Build and run the external consumer
+        run: |
+          cmake -S tests/installed_consumer -B consumer-build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$PWD/install"
+          cmake --build consumer-build -j2
+          ./consumer-build/cfl-installed-consumer
 
   build-analysis-tests:
     name: Build with various code analysis tools
@@ -197,11 +318,11 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: true
 
-      - uses: docker://lpenz/ghaction-cmake:0.19
+      - uses: docker://lpenz/ghaction-cmake@sha256:b59f08ebbbae1ed35650f774e3f2fd77e9c56e10cc841349d923ab4b65724aed
         with:
           pre_command: |
             CMAKE_VERSION=3.20.0
@@ -230,12 +351,15 @@ jobs:
       - build-debian
       - build-unix-arm64
       - build-unix-amd64
+      - build-c-dialects
+      - build-downstream
+      - build-installed-consumer
       - build-analysis-tests
     name: Required checks complete
     runs-on: ubuntu-latest
     permissions: {}
     steps:
     - name: Decide whether the needed jobs succeeded or failed
-      uses: re-actors/alls-green@release/v1
+      uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # release/v1
       with:
         jobs: ${{ toJSON(needs) }}
