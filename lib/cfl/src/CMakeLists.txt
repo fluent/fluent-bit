@@ -10,6 +10,7 @@ set(src
   cfl_object.c
   cfl_array.c
   cfl_variant.c
+  cfl_arena.c
   cfl_container.c
   cfl_checksum.c
   cfl_utils.c
@@ -80,7 +81,11 @@ set(src
 
 # Static Library
 add_library(cfl-static STATIC ${src})
-target_link_libraries(cfl-static PRIVATE xxhash)
+set_target_properties(cfl-static PROPERTIES
+  C_STANDARD ${CMAKE_C_STANDARD}
+  C_STANDARD_REQUIRED On
+  C_EXTENSIONS On)
+target_link_libraries(cfl-static PUBLIC xxhash)
 
 if(CFL_ATOMIC_NEEDS_LIBATOMIC)
   target_link_libraries(cfl-static PUBLIC atomic)
@@ -104,3 +109,9 @@ install(TARGETS cfl-static
   LIBRARY DESTINATION ${CFL_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CFL_INSTALL_LIBDIR}
   COMPONENT library)
+
+if(CFL_BUNDLED_XXHASH AND CFL_INSTALL_BUNDLED_XXHASH_HEADERS)
+  install(TARGETS xxhash
+    ARCHIVE DESTINATION ${CFL_INSTALL_LIBDIR}
+    COMPONENT library)
+endif()

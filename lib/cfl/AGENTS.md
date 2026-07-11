@@ -55,6 +55,18 @@ before closing changes that touch shared code or public APIs.
 - If a relevant test cannot be run, report the exact blocker in the final
   response.
 
+## Downstream Impact Validation
+- For every modified CFL function, inspect callers in CFL, Fluent Bit,
+  cmetrics, ctraces, and cprofiles before closing the change.
+- Check for side effects from changes to signatures, return values, error
+  handling, ownership, object lifetime, allocation behavior, and mutation
+  semantics.
+- Distinguish production callers from bundled CFL source and test copies when
+  reporting impact.
+- Run relevant downstream builds or tests when a change can affect an existing
+  caller. If a downstream checkout or required test is unavailable, report the
+  exact validation gap.
+
 ## Commit & Pull Request Guidelines
 - Follow observed local history style:
   `component: short imperative description`
