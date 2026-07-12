@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_log_event_encoder.h>
@@ -25,9 +26,74 @@
 #include <fluent-bit/flb_opentelemetry.h>
 #include <fluent-otel-proto/fluent-otel.h>
 
+#include <cfl/cfl_arena.h>
 
 #include "opentelemetry.h"
 #include "opentelemetry_utils.h"
+
+#define OTEL_PROTOBUF_ARENA_MIN_PAYLOAD_SIZE 65536
+#define OTEL_PROTOBUF_ARENA_INITIAL_CHUNK_SIZE 4096
+#define OTEL_PROTOBUF_ARENA_MAX_CHUNK_SIZE 65536
+
+static void *protobuf_arena_chunk_malloc(void *context, size_t size)
+{
+    (void) context;
+
+    return flb_malloc(size);
+}
+
+static void protobuf_arena_chunk_free(void *context, void *pointer)
+{
+    (void) context;
+
+    flb_free(pointer);
+}
+
+static void *protobuf_arena_alloc(void *allocator_data, size_t size)
+{
+    struct cfl_arena *arena;
+
+    arena = allocator_data;
+    if (size == 0) {
+        size = 1;
+    }
+
+    return cfl_arena_malloc(arena, size);
+}
+
+static void protobuf_arena_free(void *allocator_data, void *pointer)
+{
+    (void) allocator_data;
+    (void) pointer;
+}
+
+static struct cfl_arena *protobuf_arena_create(void)
+{
+    struct cfl_arena_options options;
+
+    cfl_arena_options_init(&options);
+    options.chunk_size = OTEL_PROTOBUF_ARENA_INITIAL_CHUNK_SIZE;
+    options.maximum_chunk_size = OTEL_PROTOBUF_ARENA_MAX_CHUNK_SIZE;
+    options.malloc_fn = protobuf_arena_chunk_malloc;
+    options.free_fn = protobuf_arena_chunk_free;
+
+    return cfl_arena_create_with_options(&options);
+}
+
+static Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest *
+protobuf_logs_unpack(ProtobufCAllocator *allocator, size_t size, const uint8_t *data)
+{
+    return opentelemetry__proto__collector__logs__v1__export_logs_service_request__unpack(
+        allocator, size, data);
+}
+
+static void protobuf_logs_free(
+    Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest *logs,
+    ProtobufCAllocator *allocator)
+{
+    opentelemetry__proto__collector__logs__v1__export_logs_service_request__free_unpacked(
+        logs, allocator);
+}
 
 /*
  * OTLP encoding functions to pack the log records as msgpack
@@ -327,9 +393,12 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
     int log_record_index;
     char *logs_body_key;
     int scope_has_schema_url;
+    struct cfl_arena *protobuf_arena;
     struct flb_mp_map_header mh;
     struct flb_mp_map_header mh_tmp;
     struct flb_time tm;
+    ProtobufCAllocator arena_allocator;
+    ProtobufCAllocator *protobuf_allocator;
 
     msgpack_packer *mp_pck;
     msgpack_packer *mp_pck_meta;
@@ -347,9 +416,22 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
 
     mp_pck = &encoder->body.packer;
     mp_pck_meta = &encoder->metadata.packer;
+    input_logs = NULL;
+    protobuf_arena = NULL;
+    protobuf_allocator = NULL;
+
+    if (in_size >= OTEL_PROTOBUF_ARENA_MIN_PAYLOAD_SIZE) {
+        protobuf_arena = protobuf_arena_create();
+        if (protobuf_arena != NULL) {
+            arena_allocator.alloc = protobuf_arena_alloc;
+            arena_allocator.free = protobuf_arena_free;
+            arena_allocator.allocator_data = protobuf_arena;
+            protobuf_allocator = &arena_allocator;
+        }
+    }
 
     /* unpack logs from protobuf payload */
-    input_logs = opentelemetry__proto__collector__logs__v1__export_logs_service_request__unpack(NULL, in_size, in_buf);
+    input_logs = protobuf_logs_unpack(protobuf_allocator, in_size, in_buf);
     if (input_logs == NULL) {
         flb_plg_warn(ctx->ins, "failed to unpack input logs from OpenTelemetry payload");
         ret = -1;
@@ -673,9 +755,9 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
 
  binary_payload_to_msgpack_end:
     if (input_logs) {
-        opentelemetry__proto__collector__logs__v1__export_logs_service_request__free_unpacked(
-                                            input_logs, NULL);
+        protobuf_logs_free(input_logs, protobuf_allocator);
     }
+    cfl_arena_destroy(protobuf_arena);
 
     if (ret != 0) {
         return -1;
