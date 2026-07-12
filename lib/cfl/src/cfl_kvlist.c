@@ -99,7 +99,7 @@ struct cfl_kvlist *cfl_kvlist_create_in(struct cfl_arena *arena)
         list = malloc(sizeof(struct cfl_kvlist));
     }
     else {
-        list = cfl_arena_alloc(arena, sizeof(struct cfl_kvlist));
+        list = cfl_arena_malloc(arena, sizeof(struct cfl_kvlist));
     }
     if (list == NULL) {
         cfl_report_runtime_error();

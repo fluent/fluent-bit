@@ -99,7 +99,7 @@ static cfl_sds_t sds_alloc(struct cfl_arena *arena, size_t size)
             buf = cfl_arena_alloc_external(arena, allocation_size);
         }
         else {
-            buf = cfl_arena_alloc(arena, allocation_size);
+            buf = cfl_arena_malloc(arena, allocation_size);
         }
     }
     if (!buf) {

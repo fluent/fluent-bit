@@ -63,10 +63,7 @@ static size_t record_payload_size(const char *distribution,
 
 static uint64_t wall_nanoseconds(void)
 {
-    struct timespec now;
-
-    timespec_get(&now, TIME_UTC);
-    return ((uint64_t) now.tv_sec * 1000000000ULL) + now.tv_nsec;
+    return cfl_time_now();
 }
 
 static struct cfl_kvlist *create_record(struct cfl_arena *arena,

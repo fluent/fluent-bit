@@ -6,7 +6,9 @@
 int main(void)
 {
     int result;
+    char *request_name;
     uint64_t hash;
+    struct cfl_arena *arena;
     struct cfl_array *array;
 
     result = cfl_init();
@@ -35,6 +37,19 @@ int main(void)
     if (hash == 0) {
         return 1;
     }
+
+    arena = cfl_arena_create(0);
+    if (arena == NULL) {
+        return 1;
+    }
+
+    request_name = cfl_arena_strndup(arena, "installed", 9);
+    if (request_name == NULL || strcmp(request_name, "installed") != 0) {
+        cfl_arena_destroy(arena);
+        return 1;
+    }
+
+    cfl_arena_destroy(arena);
 
     return 0;
 }

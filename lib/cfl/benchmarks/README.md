@@ -10,6 +10,18 @@ build-bench/benchmarks/cfl-benchmark-variant-arena heap 1000 1000
 build-bench/benchmarks/cfl-benchmark-variant-arena arena 1000 1000 8192
 ```
 
+Compare fixed 4 KiB chunks with optional 4-to-64 KiB geometric growth:
+
+```sh
+build-bench/benchmarks/cfl-benchmark-variant-arena arena 1000 1000 4096
+build-bench/benchmarks/cfl-benchmark-variant-arena arena-grow 1000 1000 4096 65536
+```
+
+The geometric mode exercises the public arena options used by request-lifetime
+encoder workloads. Compare elapsed time, peak RSS, reserved bytes, used bytes,
+and slack with a representative graph; fewer chunk allocations can trade CPU
+time for retained capacity.
+
 The tool reports elapsed time, peak RSS, glibc heap usage, and arena
 reserved/used bytes. Use `perf stat` for CPU and allocator-independent memory
 events:
