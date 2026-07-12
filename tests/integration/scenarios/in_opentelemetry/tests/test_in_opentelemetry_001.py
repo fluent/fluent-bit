@@ -678,6 +678,49 @@ def test_opentelemetry_to_opentelemetry_basic_log():
         assert item["record_attributes"]["example_key"] == "example_value"
 
 
+def test_in_opentelemetry_large_protobuf_logs():
+    service = Service("001-fluent-bit.yaml")
+    source = ExportLogsServiceRequest()
+    source.ParseFromString(service.build_otel_payload("test_logs_001.in.json", "logs"))
+
+    payload = ExportLogsServiceRequest()
+    payload.CopyFrom(source)
+    source_records = list(source.resource_logs[0].scope_logs[0].log_records)
+
+    while payload.ByteSize() < 128 * 1024:
+        payload.resource_logs[0].scope_logs[0].log_records.extend(source_records)
+
+    expected_record_count = sum(
+        len(scope_logs.log_records)
+        for resource_logs in payload.resource_logs
+        for scope_logs in resource_logs.scope_logs
+    )
+
+    service.start()
+    try:
+        logs_before = len(data_storage["logs"])
+        response = service.send_raw_request("/v1/logs", payload.SerializeToString())
+
+        assert response.status_code == 201
+        received_record_count = service.service.wait_for_condition(
+            lambda: count if (
+                count := sum(
+                    len(scope_logs.log_records)
+                    for received in data_storage["logs"][logs_before:]
+                    for resource_logs in received.resource_logs
+                    for scope_logs in resource_logs.scope_logs
+                )
+            ) >= expected_record_count else None,
+            timeout=20,
+            interval=0.25,
+            description="all large protobuf log records",
+        )
+    finally:
+        service.stop()
+
+    assert received_record_count == expected_record_count
+
+
 # Start a Fluent Bit Pipeline with Dummy message and then it gets handle by OpenTelemetry output, the config
 # aims to populate traceId and spanId fields with the values from the Dummy message.
 #
@@ -797,10 +840,14 @@ def test_opentelemetry_to_opentelemetry_parent_child_traces():
 def test_in_opentelemetry_rejects_invalid_logs_payload():
     service = Service("001-fluent-bit.yaml")
     service.start()
-    response = service.send_raw_request("/v1/logs", b"not-a-valid-otlp-payload")
-    service.stop()
+    try:
+        small_response = service.send_raw_request("/v1/logs", b"not-a-valid-otlp-payload")
+        large_response = service.send_raw_request("/v1/logs", b"\x80" * (64 * 1024))
+    finally:
+        service.stop()
 
-    assert response.status_code >= 400
+    assert small_response.status_code >= 400
+    assert large_response.status_code >= 400
     assert len(data_storage["logs"]) == 0
 
 
