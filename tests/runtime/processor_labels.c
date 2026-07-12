@@ -61,8 +61,9 @@ static int cb_insert_labels(void *record, size_t size, void *data)
     text = cmt_encode_text_create(cmt);
     TEST_CHECK(text != NULL);
 
-    TEST_CHECK(count_metrics_matches(text, "static=\"ok\"") == 9);
-    TEST_CHECK(count_metrics_matches(text, "dynamic=\"test\"") == 9);
+    /* 3 counters, 1 gauge, 2 summaries, and 2 histograms */
+    TEST_CHECK(count_metrics_matches(text, "static=\"ok\"") == 8);
+    TEST_CHECK(count_metrics_matches(text, "dynamic=\"test\"") == 8);
 
     if (record) {
         flb_free(record);
@@ -270,11 +271,11 @@ static int cb_upsert_labels(void *record, size_t size, void *data)
     text = cmt_encode_text_create(cmt);
     TEST_CHECK(text != NULL);
 
-    /* it should only update the metrics which contains a label with the name 'hostname' */
-    TEST_CHECK(count_metrics_matches(text, "hostname=\"updated-2\"") == 8);
+    /* The unlabeled counter has no existing hostname label to update. */
+    TEST_CHECK(count_metrics_matches(text, "hostname=\"updated-2\"") == 7);
 
-    /* now check the updated value of 'app' which should include the dynamic tag */
-    TEST_CHECK(count_metrics_matches(text, "dynamic-host=\"test\"") == 9);
+    /* All eight legitimate samples receive the new dynamic label. */
+    TEST_CHECK(count_metrics_matches(text, "dynamic-host=\"test\"") == 8);
     if (record) {
         flb_free(record);
     }
