@@ -6,8 +6,6 @@
 #include <cfl/cfl_arena.h>
 
 void *cfl_arena_alloc(struct cfl_arena *arena, size_t size);
-void *cfl_arena_calloc(struct cfl_arena *arena,
-                       size_t count, size_t size);
 void *cfl_arena_alloc_external(struct cfl_arena *arena,
                                size_t size);
 void cfl_arena_free_external(struct cfl_arena *arena,

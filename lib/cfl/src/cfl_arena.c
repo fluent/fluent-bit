@@ -50,13 +50,30 @@ struct cfl_arena {
     size_t external_cache_bytes;
     size_t external_cache_limit;
     size_t chunk_size;
+    size_t maximum_chunk_size;
+    size_t next_chunk_size;
     size_t bytes_reserved;
     size_t bytes_used;
     size_t large_object_threshold;
     void *free_variants;
     void *free_kvpairs;
     void *free_sds[CFL_ARENA_SDS_CLASS_COUNT];
+    cfl_arena_malloc_fn malloc_fn;
+    cfl_arena_free_fn free_fn;
+    void *allocator_context;
 };
+
+static void *arena_default_malloc(void *context, size_t size)
+{
+    (void) context;
+    return malloc(size);
+}
+
+static void arena_default_free(void *context, void *pointer)
+{
+    (void) context;
+    free(pointer);
+}
 
 static void arena_chunks_destroy(struct cfl_arena *arena)
 {
@@ -66,7 +83,7 @@ static void arena_chunks_destroy(struct cfl_arena *arena)
     chunk = arena->head;
     while (chunk != NULL) {
         next = chunk->next;
-        free(chunk);
+        arena->free_fn(arena->allocator_context, chunk);
         chunk = next;
     }
 
@@ -88,7 +105,7 @@ static void arena_external_destroy(struct cfl_arena *arena)
         arena->bytes_reserved -= allocation->size +
                                  sizeof(struct cfl_arena_external);
         arena->bytes_used -= allocation->size;
-        free(allocation);
+        arena->free_fn(arena->allocator_context, allocation);
         allocation = next;
     }
     arena->external = NULL;
@@ -99,7 +116,7 @@ static void arena_external_destroy(struct cfl_arena *arena)
             next = allocation->next;
             arena->bytes_reserved -= allocation->size +
                                      sizeof(struct cfl_arena_external);
-            free(allocation);
+            arena->free_fn(arena->allocator_context, allocation);
             allocation = next;
         }
         arena->external_cache[index] = NULL;
@@ -112,7 +129,7 @@ static void arena_external_destroy(struct cfl_arena *arena)
         next = allocation->next;
         arena->bytes_reserved -= allocation->size +
                                  sizeof(struct cfl_arena_external);
-        free(allocation);
+        arena->free_fn(arena->allocator_context, allocation);
         allocation = next;
     }
     arena->external_exact_cache = NULL;
@@ -126,18 +143,81 @@ struct cfl_arena *cfl_arena_create(size_t chunk_size)
 struct cfl_arena *cfl_arena_create_ex(size_t chunk_size,
                                       size_t large_object_threshold)
 {
+    struct cfl_arena_options options;
+
+    cfl_arena_options_init(&options);
+    options.chunk_size = chunk_size;
+    options.large_object_threshold = large_object_threshold;
+
+    return cfl_arena_create_with_options(&options);
+}
+
+void cfl_arena_options_init(struct cfl_arena_options *options)
+{
+    if (options == NULL) {
+        return;
+    }
+
+    memset(options, 0, sizeof(struct cfl_arena_options));
+    options->struct_size = sizeof(struct cfl_arena_options);
+}
+
+struct cfl_arena *cfl_arena_create_with_options(
+    const struct cfl_arena_options *options)
+{
     struct cfl_arena *arena;
+    size_t chunk_size;
+    size_t maximum_chunk_size;
+    size_t large_object_threshold;
+    cfl_arena_malloc_fn malloc_fn;
+    cfl_arena_free_fn free_fn;
+    void *allocator_context;
+
+    if (options == NULL ||
+        options->struct_size <
+        offsetof(struct cfl_arena_options, allocator_context) +
+        sizeof(options->allocator_context)) {
+        return NULL;
+    }
+
+    if ((options->malloc_fn == NULL) != (options->free_fn == NULL)) {
+        return NULL;
+    }
+
+    chunk_size = options->chunk_size;
+    maximum_chunk_size = options->maximum_chunk_size;
+    large_object_threshold = options->large_object_threshold;
+    malloc_fn = options->malloc_fn;
+    free_fn = options->free_fn;
+    allocator_context = options->allocator_context;
 
     if (chunk_size == 0) {
         chunk_size = CFL_ARENA_DEFAULT_CHUNK_SIZE;
     }
+    if (maximum_chunk_size == 0) {
+        maximum_chunk_size = chunk_size;
+    }
+    if (maximum_chunk_size < chunk_size) {
+        return NULL;
+    }
+    if (malloc_fn == NULL) {
+        malloc_fn = arena_default_malloc;
+        free_fn = arena_default_free;
+        allocator_context = NULL;
+    }
 
-    arena = calloc(1, sizeof(struct cfl_arena));
+    arena = malloc_fn(allocator_context, sizeof(struct cfl_arena));
     if (arena == NULL) {
         return NULL;
     }
+    memset(arena, 0, sizeof(struct cfl_arena));
 
     arena->chunk_size = chunk_size;
+    arena->maximum_chunk_size = maximum_chunk_size;
+    arena->next_chunk_size = chunk_size;
+    arena->malloc_fn = malloc_fn;
+    arena->free_fn = free_fn;
+    arena->allocator_context = allocator_context;
     if (large_object_threshold == 0) {
         large_object_threshold = chunk_size / 2;
         if (large_object_threshold == 0) {
@@ -162,7 +242,7 @@ void cfl_arena_destroy(struct cfl_arena *arena)
 
     arena_external_destroy(arena);
     arena_chunks_destroy(arena);
-    free(arena);
+    arena->free_fn(arena->allocator_context, arena);
 }
 
 void cfl_arena_reset(struct cfl_arena *arena)
@@ -190,12 +270,13 @@ void cfl_arena_reset(struct cfl_arena *arena)
 
     arena->bytes_used = 0;
     arena->current = arena->head;
+    arena->next_chunk_size = arena->chunk_size;
     arena->free_variants = NULL;
     arena->free_kvpairs = NULL;
     memset(arena->free_sds, 0, sizeof(arena->free_sds));
 }
 
-void *cfl_arena_alloc(struct cfl_arena *arena, size_t size)
+void *cfl_arena_malloc(struct cfl_arena *arena, size_t size)
 {
     struct cfl_arena_chunk *chunk;
     size_t alignment;
@@ -229,7 +310,7 @@ void *cfl_arena_alloc(struct cfl_arena *arena, size_t size)
         chunk = chunk->next;
     }
 
-    capacity = arena->chunk_size;
+    capacity = arena->next_chunk_size;
     if (capacity < size) {
         capacity = size;
     }
@@ -237,7 +318,8 @@ void *cfl_arena_alloc(struct cfl_arena *arena, size_t size)
         return NULL;
     }
 
-    chunk = malloc(sizeof(struct cfl_arena_chunk) + capacity);
+    chunk = arena->malloc_fn(arena->allocator_context,
+                             sizeof(struct cfl_arena_chunk) + capacity);
     if (chunk == NULL) {
         return NULL;
     }
@@ -251,7 +333,22 @@ void *cfl_arena_alloc(struct cfl_arena *arena, size_t size)
                              sizeof(struct cfl_arena_chunk);
     arena->bytes_used += size;
 
+    if (capacity == arena->next_chunk_size &&
+        arena->next_chunk_size < arena->maximum_chunk_size) {
+        if (arena->next_chunk_size > arena->maximum_chunk_size / 2) {
+            arena->next_chunk_size = arena->maximum_chunk_size;
+        }
+        else {
+            arena->next_chunk_size *= 2;
+        }
+    }
+
     return chunk->data;
+}
+
+void *cfl_arena_alloc(struct cfl_arena *arena, size_t size)
+{
+    return cfl_arena_malloc(arena, size);
 }
 
 void *cfl_arena_calloc(struct cfl_arena *arena,
@@ -265,9 +362,44 @@ void *cfl_arena_calloc(struct cfl_arena *arena,
     }
 
     total = count * size;
-    result = cfl_arena_alloc(arena, total);
+    result = cfl_arena_malloc(arena, total);
     if (result != NULL) {
         memset(result, 0, total);
+    }
+
+    return result;
+}
+
+void *cfl_arena_memdup(struct cfl_arena *arena,
+                       const void *source, size_t size)
+{
+    void *result;
+
+    if (source == NULL || size == 0) {
+        return NULL;
+    }
+
+    result = cfl_arena_malloc(arena, size);
+    if (result != NULL) {
+        memcpy(result, source, size);
+    }
+
+    return result;
+}
+
+char *cfl_arena_strndup(struct cfl_arena *arena,
+                        const char *source, size_t length)
+{
+    char *result;
+
+    if (source == NULL || length == SIZE_MAX) {
+        return NULL;
+    }
+
+    result = cfl_arena_malloc(arena, length + 1);
+    if (result != NULL) {
+        memcpy(result, source, length);
+        result[length] = '\0';
     }
 
     return result;
@@ -310,7 +442,7 @@ void cfl_arena_external_cache_limit_set(struct cfl_arena *arena,
             arena->external_cache_bytes -= allocation->size;
             arena->bytes_reserved -= allocation->size +
                                      sizeof(struct cfl_arena_external);
-            free(allocation);
+            arena->free_fn(arena->allocator_context, allocation);
         }
     }
 
@@ -321,7 +453,7 @@ void cfl_arena_external_cache_limit_set(struct cfl_arena *arena,
         arena->external_cache_bytes -= allocation->size;
         arena->bytes_reserved -= allocation->size +
                                  sizeof(struct cfl_arena_external);
-        free(allocation);
+        arena->free_fn(arena->allocator_context, allocation);
     }
 }
 
@@ -401,8 +533,9 @@ void *cfl_arena_alloc_external(struct cfl_arena *arena,
     }
 
     if (allocation == NULL) {
-        allocation = malloc(sizeof(struct cfl_arena_external) +
-                            allocation_size);
+        allocation = arena->malloc_fn(
+            arena->allocator_context,
+            sizeof(struct cfl_arena_external) + allocation_size);
         if (allocation == NULL) {
             return NULL;
         }
@@ -466,7 +599,7 @@ void cfl_arena_free_external(struct cfl_arena *arena,
     else {
         arena->bytes_reserved -= allocation->size +
                                  sizeof(struct cfl_arena_external);
-        free(allocation);
+        arena->free_fn(arena->allocator_context, allocation);
     }
 }
 

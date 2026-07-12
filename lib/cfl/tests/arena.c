@@ -17,6 +17,193 @@ struct test_alignment_probe {
     union test_max_align value;
 };
 
+struct test_allocator_context {
+    size_t allocation_count;
+    size_t free_count;
+    size_t fail_after;
+    size_t allocation_sizes[8];
+};
+
+static void *test_allocator_malloc(void *data, size_t size)
+{
+    void *result;
+    struct test_allocator_context *context;
+
+    context = data;
+    if (context->allocation_count >= context->fail_after) {
+        return NULL;
+    }
+
+    result = malloc(size);
+    if (result != NULL) {
+        if (context->allocation_count < 8) {
+            context->allocation_sizes[context->allocation_count] = size;
+        }
+        context->allocation_count++;
+    }
+
+    return result;
+}
+
+static void test_allocator_free(void *data, void *pointer)
+{
+    struct test_allocator_context *context;
+
+    context = data;
+    context->free_count++;
+    free(pointer);
+}
+
+static void public_raw_allocations(void)
+{
+    unsigned char *zeroed;
+    unsigned char source[] = {0x01, 0x02, 0x03, 0x04};
+    unsigned char *copy;
+    char *string;
+    void *pointer;
+    size_t alignment;
+    size_t index;
+    struct cfl_arena *arena;
+
+    arena = cfl_arena_create(128);
+    TEST_CHECK(arena != NULL);
+    alignment = offsetof(struct test_alignment_probe, value);
+
+    for (index = 1; index <= 64; index++) {
+        pointer = cfl_arena_malloc(arena, index);
+        TEST_CHECK(pointer != NULL);
+        TEST_CHECK((uintptr_t) pointer % alignment == 0);
+    }
+
+    zeroed = cfl_arena_calloc(arena, 8, sizeof(unsigned char));
+    TEST_CHECK(zeroed != NULL);
+    for (index = 0; index < 8; index++) {
+        TEST_CHECK(zeroed[index] == 0);
+    }
+
+    copy = cfl_arena_memdup(arena, source, sizeof(source));
+    TEST_CHECK(copy != NULL);
+    TEST_CHECK(memcmp(copy, source, sizeof(source)) == 0);
+
+    string = cfl_arena_strndup(arena, "arena-data", 5);
+    TEST_CHECK(string != NULL);
+    TEST_CHECK(strcmp(string, "arena") == 0);
+    string = cfl_arena_strndup(arena, "", 0);
+    TEST_CHECK(string != NULL);
+    TEST_CHECK(string[0] == '\0');
+
+    cfl_arena_destroy(arena);
+}
+
+static void public_raw_allocation_failures(void)
+{
+    size_t used;
+    struct cfl_arena *arena;
+
+    arena = cfl_arena_create(128);
+    TEST_CHECK(arena != NULL);
+    used = cfl_arena_bytes_used(arena);
+
+    TEST_CHECK(cfl_arena_malloc(NULL, 1) == NULL);
+    TEST_CHECK(cfl_arena_malloc(arena, 0) == NULL);
+    TEST_CHECK(cfl_arena_malloc(arena, SIZE_MAX) == NULL);
+    TEST_CHECK(cfl_arena_calloc(arena, SIZE_MAX, 2) == NULL);
+    TEST_CHECK(cfl_arena_calloc(arena, 0, 1) == NULL);
+    TEST_CHECK(cfl_arena_memdup(arena, NULL, 1) == NULL);
+    TEST_CHECK(cfl_arena_memdup(arena, "x", 0) == NULL);
+    TEST_CHECK(cfl_arena_strndup(arena, NULL, 0) == NULL);
+    TEST_CHECK(cfl_arena_strndup(arena, "x", SIZE_MAX) == NULL);
+    TEST_CHECK(cfl_arena_bytes_used(arena) == used);
+
+    cfl_arena_destroy(arena);
+}
+
+static void options_growth_and_callbacks(void)
+{
+    char payload[2048];
+    cfl_sds_t value;
+    void *pointer;
+    struct cfl_arena *arena;
+    struct cfl_arena_options options;
+    struct test_allocator_context context;
+
+    memset(&context, 0, sizeof(context));
+    context.fail_after = SIZE_MAX;
+    cfl_arena_options_init(&options);
+    options.chunk_size = 64;
+    options.maximum_chunk_size = 256;
+    options.malloc_fn = test_allocator_malloc;
+    options.free_fn = test_allocator_free;
+    options.allocator_context = &context;
+
+    arena = cfl_arena_create_with_options(&options);
+    TEST_CHECK(arena != NULL);
+    TEST_CHECK(context.allocation_count == 1);
+
+    pointer = cfl_arena_malloc(arena, 48);
+    TEST_CHECK(pointer != NULL);
+    pointer = cfl_arena_malloc(arena, 48);
+    TEST_CHECK(pointer != NULL);
+    pointer = cfl_arena_malloc(arena, 96);
+    TEST_CHECK(pointer != NULL);
+    TEST_CHECK(context.allocation_count == 4);
+    TEST_CHECK(context.allocation_sizes[1] < context.allocation_sizes[2]);
+    TEST_CHECK(context.allocation_sizes[2] < context.allocation_sizes[3]);
+
+    cfl_arena_reset(arena);
+    TEST_CHECK(cfl_arena_bytes_used(arena) == 0);
+    pointer = cfl_arena_malloc(arena, 48);
+    TEST_CHECK(pointer != NULL);
+
+    memset(payload, 'x', sizeof(payload));
+    value = cfl_sds_create_len_in(arena, payload, (int) sizeof(payload));
+    TEST_CHECK(value != NULL);
+    cfl_sds_destroy(value);
+
+    cfl_arena_destroy(arena);
+    TEST_CHECK(context.free_count == context.allocation_count);
+
+    options.maximum_chunk_size = 32;
+    TEST_CHECK(cfl_arena_create_with_options(&options) == NULL);
+    options.maximum_chunk_size = 64;
+    options.free_fn = NULL;
+    TEST_CHECK(cfl_arena_create_with_options(&options) == NULL);
+    TEST_CHECK(cfl_arena_create_with_options(NULL) == NULL);
+    options.free_fn = test_allocator_free;
+    options.struct_size = offsetof(struct cfl_arena_options,
+                                   allocator_context);
+    TEST_CHECK(cfl_arena_create_with_options(&options) == NULL);
+}
+
+static void callback_allocation_failure(void)
+{
+    void *pointer;
+    struct cfl_arena *arena;
+    struct cfl_arena_options options;
+    struct test_allocator_context context;
+
+    memset(&context, 0, sizeof(context));
+    context.fail_after = 0;
+    cfl_arena_options_init(&options);
+    options.chunk_size = 64;
+    options.malloc_fn = test_allocator_malloc;
+    options.free_fn = test_allocator_free;
+    options.allocator_context = &context;
+    TEST_CHECK(cfl_arena_create_with_options(&options) == NULL);
+
+    context.fail_after = 1;
+    arena = cfl_arena_create_with_options(&options);
+    TEST_CHECK(arena != NULL);
+    TEST_CHECK(cfl_arena_malloc(arena, 1) == NULL);
+    TEST_CHECK(cfl_arena_bytes_used(arena) == 0);
+
+    context.fail_after = SIZE_MAX;
+    pointer = cfl_arena_malloc(arena, 1);
+    TEST_CHECK(pointer != NULL);
+    cfl_arena_destroy(arena);
+    TEST_CHECK(context.free_count == context.allocation_count);
+}
+
 static void arena_build_and_destroy(void)
 {
     struct cfl_arena *arena;
@@ -290,6 +477,9 @@ static void bound_external_rounding_and_cache(void)
     payload_size = 1024 * 1024;
     payload = malloc(payload_size);
     TEST_CHECK(payload != NULL);
+    if (payload == NULL) {
+        return;
+    }
     memset(payload, 'x', payload_size);
 
     arena = cfl_arena_create(8192);
@@ -340,6 +530,10 @@ static void reclaim_failed_variant_construction(void)
 }
 
 TEST_LIST = {
+    {"public_raw_allocations", public_raw_allocations},
+    {"public_raw_allocation_failures", public_raw_allocation_failures},
+    {"options_growth_and_callbacks", options_growth_and_callbacks},
+    {"callback_allocation_failure", callback_allocation_failure},
     {"arena_build_and_destroy", arena_build_and_destroy},
     {"arena_reset", arena_reset},
     {"reject_cross_arena_values", reject_cross_arena_values},

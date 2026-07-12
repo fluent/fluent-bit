@@ -25,7 +25,8 @@ smaller interface.
 - Intrusive lists and lightweight string key/value entries.
 - Portable 64-bit atomics and time helpers.
 - xxHash wrappers and CRC32C checksums.
-- Optional arenas for allocation-heavy, bounded object graphs.
+- Optional arenas for allocation-heavy, bounded object graphs and arbitrary
+  request-lifetime objects.
 - CMake support for embedding, installation, tests, and benchmarks.
 
 ## Core data structures

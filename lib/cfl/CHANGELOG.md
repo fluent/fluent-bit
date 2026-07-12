@@ -2,6 +2,11 @@
 
 This file records the notable changes in each CFL release.
 
+## Unreleased
+
+- Added public request-lifetime arena allocation, duplication helpers,
+  allocator callbacks, and optional bounded geometric chunk growth.
+
 ## 1.0.0 - 2026-07-11
 
 The first stable CFL release establishes the variant, container, utility, and

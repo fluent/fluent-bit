@@ -1,8 +1,9 @@
 # CFL arena allocator
 
 `cfl_arena` is an optional allocator for CFL variants, arrays, key/value lists,
-kvpairs, and owned SDS strings. It reduces allocator traffic when an application
-constructs, mutates, and discards a complete object graph as one unit.
+kvpairs, owned SDS strings, and arbitrary request-lifetime objects. It reduces
+allocator traffic when an application constructs, mutates, and discards a
+complete object graph as one unit.
 
 The normal CFL constructors remain heap-backed. Arena use is explicit and does
 not change existing callers.
@@ -40,8 +41,19 @@ struct cfl_arena;
 struct cfl_arena *cfl_arena_create(size_t chunk_size);
 struct cfl_arena *cfl_arena_create_ex(size_t chunk_size,
                                       size_t large_object_threshold);
+void cfl_arena_options_init(struct cfl_arena_options *options);
+struct cfl_arena *cfl_arena_create_with_options(
+    const struct cfl_arena_options *options);
 void cfl_arena_destroy(struct cfl_arena *arena);
 void cfl_arena_reset(struct cfl_arena *arena);
+
+void *cfl_arena_malloc(struct cfl_arena *arena, size_t size);
+void *cfl_arena_calloc(struct cfl_arena *arena,
+                       size_t count, size_t size);
+void *cfl_arena_memdup(struct cfl_arena *arena,
+                       const void *source, size_t size);
+char *cfl_arena_strndup(struct cfl_arena *arena,
+                        const char *source, size_t length);
 
 size_t cfl_arena_bytes_reserved(struct cfl_arena *arena);
 size_t cfl_arena_bytes_used(struct cfl_arena *arena);
@@ -56,6 +68,69 @@ size_t cfl_arena_external_cache_bytes(struct cfl_arena *arena);
 Passing zero as `chunk_size` selects the default chunk size. With
 `cfl_arena_create_ex()`, a zero large-object threshold selects the default
 policy derived from the chunk size.
+
+## Raw request-lifetime allocation
+
+Raw allocation supports objects that do not have CFL-specific constructors,
+including temporary encoder trees:
+
+```c
+struct request_state *state;
+char *name;
+
+state = cfl_arena_calloc(arena, 1, sizeof(*state));
+name = cfl_arena_strndup(arena, input_name, input_name_length);
+if (state == NULL || name == NULL) {
+    /* The arena remains valid and can still be reset or destroyed. */
+}
+```
+
+Raw pointers cannot be freed individually. They remain valid until the arena
+is reset or destroyed. Returned pointers are aligned for CFL-supported
+fundamental C types, including `long double`, pointers, and 64-bit integers.
+
+The raw allocation rules are:
+
+- `cfl_arena_malloc()` returns uninitialized storage.
+- `cfl_arena_calloc()` checks multiplication overflow and zeroes the result.
+- `cfl_arena_memdup()` copies an exact number of bytes.
+- `cfl_arena_strndup()` appends a null terminator to the requested prefix.
+- Zero-sized `malloc`, `calloc`, and `memdup` requests return `NULL`.
+- `strndup` accepts a zero length and returns an allocated empty string.
+- A null source, arithmetic overflow, invalid arena, or allocation failure
+  returns `NULL`.
+- Failure leaves the arena usable and does not define `errno`.
+
+## Growth and allocator options
+
+Existing constructors retain fixed-size chunks. Optional geometric growth and
+allocator callbacks are configured through an initialized options structure:
+
+```c
+struct cfl_arena_options options;
+
+cfl_arena_options_init(&options);
+options.chunk_size = 4096;
+options.maximum_chunk_size = 65536;
+options.malloc_fn = application_malloc;
+options.free_fn = application_free;
+options.allocator_context = application_context;
+
+arena = cfl_arena_create_with_options(&options);
+```
+
+The first normal chunk uses `chunk_size`. Later chunks double in size until
+`maximum_chunk_size`; a request larger than the current chunk size receives a
+dedicated chunk large enough for that request. A zero maximum selects fixed
+growth, making the maximum equal to the initial chunk size. A maximum smaller
+than the initial size is invalid.
+
+The callback pair is optional, but callers must provide both callbacks or
+neither. Callbacks allocate and release the arena context, normal chunks,
+external allocations, and cached external allocations. The allocation callback
+must return storage with normal `malloc` alignment. CFL implements zeroing and
+does not require `calloc` or `realloc` callbacks. `struct_size` must be set by
+`cfl_arena_options_init()` so future CFL versions can extend the structure.
 
 ## Arena-aware constructors
 
@@ -168,9 +243,10 @@ allocation.
 
 ## Large values and external caching
 
-Small and medium allocations come from arena chunks. Allocations at or above
-the large-object threshold use separately tracked external storage so unusually
-large values do not consume the remainder of a normal chunk.
+Raw allocations and small CFL objects come from arena chunks. Raw requests
+larger than the active chunk receive a dedicated chunk. The large-object
+threshold applies to arena-aware owned SDS values, which use separately tracked
+external storage so unusually large strings do not consume normal chunks.
 
 Reusable external buffers may remain cached after reset. Configure the maximum
 cached capacity with:

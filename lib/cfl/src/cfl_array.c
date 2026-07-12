@@ -49,7 +49,7 @@ struct cfl_array *cfl_array_create_in(struct cfl_arena *arena,
         array = malloc(sizeof(struct cfl_array));
     }
     else {
-        array = cfl_arena_alloc(arena, sizeof(struct cfl_array));
+        array = cfl_arena_malloc(arena, sizeof(struct cfl_array));
     }
     if (array == NULL) {
         cfl_errno();
@@ -222,7 +222,7 @@ int cfl_array_append(struct cfl_array *array,
                 tmp = realloc(array->entries, new_size);
             }
             else {
-                tmp = cfl_arena_alloc(array->arena, new_size);
+                tmp = cfl_arena_malloc(array->arena, new_size);
                 if (tmp != NULL) {
                     memcpy(tmp, array->entries,
                            array->entry_count * sizeof(void *));
