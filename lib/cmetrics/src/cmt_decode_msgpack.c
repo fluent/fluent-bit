@@ -1336,6 +1336,8 @@ static int unpack_metric_array_entry(mpack_reader_t *reader, size_t index, void 
             else if (decode_context->map->type == CMT_SUMMARY) {
                 cmt_atomic_store(&decode_context->map->metric.sum_quantiles_set, cmt_atomic_load(&metric->sum_quantiles_set));
                 decode_context->map->metric.sum_quantiles = metric->sum_quantiles;
+                decode_context->map->metric.sum_quantiles_count =
+                    metric->sum_quantiles_count;
                 cmt_atomic_store(&decode_context->map->metric.sum_count,
                                  cmt_atomic_load(&metric->sum_count));
                 cmt_atomic_store(&decode_context->map->metric.sum_sum,

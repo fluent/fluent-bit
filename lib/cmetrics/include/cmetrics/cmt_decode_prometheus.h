@@ -68,6 +68,7 @@ struct cmt_decode_prometheus_context_metric {
     size_t label_count;
     cfl_sds_t labels[CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT];
     struct cfl_list samples;
+    char *name_buf;
 };
 
 struct cmt_decode_prometheus_parse_opts {

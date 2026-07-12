@@ -16,6 +16,7 @@ set(UNIT_TESTS_FILES
   exp_histogram.c
   msgpack_abi.c
   msgpack_temporality.c
+  format_conversion.c
   expire.c
   )
 
