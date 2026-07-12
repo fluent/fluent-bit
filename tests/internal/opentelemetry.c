@@ -2474,6 +2474,7 @@ void test_opentelemetry_logs_otlp_proto_from_plain_logs()
     struct flb_log_event_encoder encoder;
     struct flb_opentelemetry_otlp_logs_options options;
     Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest *decoded;
+    char empty_binary[] = {(char) 0xc4, 0x00};
 
     timestamp.tm.tv_sec = 1640995200;
     timestamp.tm.tv_nsec = 0;
@@ -2499,7 +2500,10 @@ void test_opentelemetry_logs_otlp_proto_from_plain_logs()
     ret = flb_log_event_encoder_append_body_values(
             &encoder,
             FLB_LOG_EVENT_CSTRING_VALUE("message"),
-            FLB_LOG_EVENT_CSTRING_VALUE("hello from dummy"));
+            FLB_LOG_EVENT_CSTRING_VALUE("hello from dummy"),
+            FLB_LOG_EVENT_CSTRING_VALUE("empty_binary"),
+            FLB_LOG_EVENT_MSGPACK_RAW_VALUE(empty_binary,
+                                            sizeof(empty_binary)));
     TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         flb_log_event_encoder_destroy(&encoder);
@@ -2514,6 +2518,7 @@ void test_opentelemetry_logs_otlp_proto_from_plain_logs()
 
     memset(&options, 0, sizeof(options));
     options.logs_require_otel_metadata = FLB_FALSE;
+    options.logs_body_key_attributes = FLB_TRUE;
 
     actual = flb_opentelemetry_logs_to_otlp_proto(encoder.output_buffer,
                                                   encoder.output_length,
@@ -2539,6 +2544,15 @@ void test_opentelemetry_logs_otlp_proto_from_plain_logs()
                    OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE);
         TEST_CHECK(strcmp(decoded->resource_logs[0]->scope_logs[0]->log_records[0]->body->string_value,
                           "hello from dummy") == 0);
+        TEST_CHECK(decoded->resource_logs[0]->scope_logs[0]->log_records[0]->n_attributes == 1);
+        TEST_CHECK(strcmp(decoded->resource_logs[0]->scope_logs[0]->log_records[0]
+                              ->attributes[0]->key,
+                          "empty_binary") == 0);
+        TEST_CHECK(decoded->resource_logs[0]->scope_logs[0]->log_records[0]
+                       ->attributes[0]->value->value_case ==
+                   OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BYTES_VALUE);
+        TEST_CHECK(decoded->resource_logs[0]->scope_logs[0]->log_records[0]
+                       ->attributes[0]->value->bytes_value.len == 0);
         opentelemetry__proto__collector__logs__v1__export_logs_service_request__free_unpacked(decoded,
                                                                                                NULL);
     }
