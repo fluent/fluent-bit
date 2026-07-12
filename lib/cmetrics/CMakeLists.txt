@@ -6,7 +6,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # CMetrics Version
 set(CMT_VERSION_MAJOR  2)
 set(CMT_VERSION_MINOR  2)
-set(CMT_VERSION_PATCH  0)
+set(CMT_VERSION_PATCH  1)
 set(CMT_VERSION_STR "${CMT_VERSION_MAJOR}.${CMT_VERSION_MINOR}.${CMT_VERSION_PATCH}")
 
 # Include helpers
@@ -63,17 +63,14 @@ if(NOT MSVC)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 endif()
 
-# Define __CMT_FILENAME__ consistently across Operating Systems
-if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__CMT_FILENAME__='\"$$(subst ${CMAKE_SOURCE_DIR}/,,$$(abspath $$<))\"'")
-else()
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__CMT_FILENAME__=__FILE__")
-endif()
+# Define __CMT_FILENAME__
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__CMT_FILENAME__=__FILE__")
 
 # Configuration options
 option(CMT_DEV                       "Enable development mode"                    No)
 option(CMT_DEBUG                     "Enable debug mode"                          No)
 option(CMT_TESTS                     "Enable unit testing"                        No)
+option(CMT_BENCHMARKS                "Build performance benchmarks"               No)
 option(CMT_INSTALL_TARGETS           "Enable subdirectory library installations" Yes)
 option(CMT_PROMETHEUS_TEXT_DECODER   "Enable prometheus text format decoder (requires Flex/Bison)" Yes)
 
@@ -301,6 +298,10 @@ endif()
 # Source code
 add_subdirectory(include)
 add_subdirectory(src)
+
+if(CMT_BENCHMARKS)
+  add_subdirectory(benchmarks)
+endif()
 
 # Tests
 if(CMT_TESTS)

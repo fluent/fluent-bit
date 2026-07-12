@@ -79,7 +79,7 @@ void test_header_help()
     TEST_CHECK(f->context.metric.type == 0);
     cfl_sds_destroy(f->context.metric.name_orig);
     cfl_sds_destroy(f->context.metric.docstring);
-    free(f->context.metric.ns);
+    free(f->context.metric.name_buf);
 
     destroy(f);
 }
@@ -97,7 +97,7 @@ void test_header_type()
     TEST_CHECK(f->context.metric.type == COUNTER);
     TEST_CHECK(f->context.metric.docstring == NULL);
     cfl_sds_destroy(f->context.metric.name_orig);
-    free(f->context.metric.ns);
+    free(f->context.metric.name_buf);
 
     destroy(f);
 }
@@ -118,7 +118,7 @@ void test_header_help_type()
     TEST_CHECK(f->context.metric.type == SUMMARY);
     cfl_sds_destroy(f->context.metric.name_orig);
     cfl_sds_destroy(f->context.metric.docstring);
-    free(f->context.metric.ns);
+    free(f->context.metric.name_buf);
 
     destroy(f);
 }
@@ -139,9 +139,67 @@ void test_header_type_help()
     TEST_CHECK(f->context.metric.type == GAUGE);
     cfl_sds_destroy(f->context.metric.name_orig);
     cfl_sds_destroy(f->context.metric.docstring);
-    free(f->context.metric.ns);
+    free(f->context.metric.name_buf);
 
     destroy(f);
+}
+
+void test_metric_name_ownership()
+{
+    struct fixture *f;
+
+    f = init(START_HEADER, "# TYPE metric counter\n");
+    TEST_ASSERT(parse(f) == 0);
+    TEST_CHECK(strcmp(f->context.metric.ns, "") == 0);
+    TEST_CHECK(strcmp(f->context.metric.subsystem, "") == 0);
+    TEST_CHECK(strcmp(f->context.metric.name, "metric") == 0);
+    TEST_CHECK(f->context.metric.name_buf != NULL);
+    cfl_sds_destroy(f->context.metric.name_orig);
+    free(f->context.metric.name_buf);
+    destroy(f);
+
+    f = init(START_HEADER, "# TYPE namespace_metric counter\n");
+    TEST_ASSERT(parse(f) == 0);
+    TEST_CHECK(strcmp(f->context.metric.ns, "namespace") == 0);
+    TEST_CHECK(strcmp(f->context.metric.subsystem, "") == 0);
+    TEST_CHECK(strcmp(f->context.metric.name, "metric") == 0);
+    TEST_CHECK(f->context.metric.name_buf == f->context.metric.ns);
+    cfl_sds_destroy(f->context.metric.name_orig);
+    free(f->context.metric.name_buf);
+    destroy(f);
+}
+
+void test_metric_name_ownership_resets()
+{
+    int status;
+    struct cmt *cmt = NULL;
+    const char *input =
+        "# TYPE metric gauge\n"
+        "metric 1\n"
+        "# TYPE namespace_metric gauge\n"
+        "namespace_metric 2\n"
+        "# TYPE namespace_subsystem_metric gauge\n"
+        "namespace_subsystem_metric 3\n";
+
+    status = cmt_decode_prometheus_create(&cmt, input, 0, NULL);
+    TEST_ASSERT(status == CMT_DECODE_PROMETHEUS_SUCCESS);
+    TEST_ASSERT(cmt != NULL);
+    cmt_decode_prometheus_destroy(cmt);
+}
+
+void test_metric_name_ownership_error_cleanup()
+{
+    int status;
+    struct cmt *cmt = NULL;
+
+    status = cmt_decode_prometheus_create(&cmt,
+            "# TYPE metric counter\nmetric {key=", 0, NULL);
+    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_SYNTAX_ERROR);
+
+    status = cmt_decode_prometheus_create(&cmt,
+            "# TYPE namespace_subsystem_metric counter\n"
+            "namespace_subsystem_metric {key=", 0, NULL);
+    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_SYNTAX_ERROR);
 }
 
 struct cmt_decode_prometheus_context_sample *add_empty_sample(struct fixture *f)
@@ -1729,6 +1787,9 @@ TEST_LIST = {
     {"header_type", test_header_type},
     {"header_help_type", test_header_help_type},
     {"header_type_help", test_header_type_help},
+    {"metric_name_ownership", test_metric_name_ownership},
+    {"metric_name_ownership_resets", test_metric_name_ownership_resets},
+    {"metric_name_ownership_error_cleanup", test_metric_name_ownership_error_cleanup},
     {"labels", test_labels},
     {"labels_trailing_comma", test_labels_trailing_comma},
     {"sample", test_sample},

@@ -43,12 +43,23 @@ struct cmt_map {
     int label_count;            /* Number of labels */
     struct cfl_list label_keys;  /* Linked list of labels */
     void *parent;
+
+    /* Internal lock. Keep this after the established public fields. */
+    uint64_t metric_lock;
+    struct cfl_list *metric_buckets;
+    size_t metric_bucket_count;
+    size_t indexed_metric_count;
+    /* Most recently created metric; only changed with the metric list. */
+    struct cmt_metric *last_metric;
 };
 
 struct cmt_map *cmt_map_create(int type, struct cmt_opts *opts,
                                int count, char **labels, void *parent);
 void cmt_map_destroy(struct cmt_map *map);
 
+/* Concurrent lookups and metric creation are serialized internally. The
+ * returned metric remains caller-usable only while the map is not expired or
+ * destroyed. */
 struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map,
                                       int labels_count, char **labels_val,
                                       int write_op);
@@ -57,6 +68,7 @@ int cmt_map_metric_get_val(struct cmt_opts *opts, struct cmt_map *map,
                            double *out_val);
 void cmt_map_metric_destroy(struct cmt_metric *metric);
 
+/* Expiration requires external coordination with metric users. */
 void cmt_map_metrics_expire(struct cmt_map *, uint64_t);
 
 void destroy_label_list(struct cfl_list *label_list);

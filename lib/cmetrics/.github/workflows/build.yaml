@@ -59,15 +59,12 @@ jobs:
           provenance: false
 
   build-debian:
-    name: Debian Buster build to confirm no issues once used downstream
+    name: Debian Bookworm build to confirm no issues once used downstream
     runs-on: ubuntu-latest
-    container: debian:buster
+    container: debian:bookworm
     steps:
       - name: Set up base image dependencies
         run: |
-          # Update sources to use archive.debian.org (Buster reached end-of-life)
-          sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list
-          sed -i 's/security.debian.org/archive.debian.org/g' /etc/apt/sources.list
           apt-get update
           apt-get install -y build-essential wget make gcc g++ git libcurl4-openssl-dev
 
