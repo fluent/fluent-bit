@@ -88,7 +88,11 @@ static flb_sds_t read_file(const char *filename)
     int ret;
     flb_sds_t payload = NULL;
 
+#ifdef FLB_SYSTEM_WINDOWS
+    fd = open(filename, O_RDONLY | O_BINARY, 0);
+#else
     fd = open(filename, O_RDONLY, 0);
+#endif
     if (fd != -1) {
         if (fstat(fd, &sb) == 0) {
             payload = flb_sds_create_size(sb.st_size+1);
@@ -285,7 +289,7 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
     TEST_CHECK(flb_input_set(ctx->flb, i_ffd, 
               "kube_url", kube_url,
               "kube_token_file", KUBE_TOKEN_FILE,
-              "kube_retention_time", "365000d",
+              "kube_retention_time", "3650d",
               "tls", "off",
               "interval_sec", "1",
               "interval_nsec", "0",
@@ -340,7 +344,7 @@ static struct test_ctx *test_ctx_create_with_config(struct flb_lib_out_cb *data,
     ret = flb_input_set(ctx->flb, i_ffd,
                         "kube_url", kube_url,
                         "kube_token_file", KUBE_TOKEN_FILE,
-                        "kube_retention_time", "365000d",
+                        "kube_retention_time", "3650d",
                         "tls", "off",
                         "interval_sec", "1",
                         "interval_nsec", "0",
