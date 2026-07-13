@@ -759,6 +759,11 @@ static int read_label_map_path_file(struct flb_output_instance *ins, flb_sds_t p
     struct stat st;
     size_t file_size;
     size_t ret_size;
+    const char *file_mode = "r";
+
+#ifdef FLB_SYSTEM_WINDOWS
+    file_mode = "rb";
+#endif
 
     ret = access(path, R_OK);
     if (ret < 0) {
@@ -775,7 +780,7 @@ static int read_label_map_path_file(struct flb_output_instance *ins, flb_sds_t p
     }
     file_size = st.st_size;
 
-    fp = fopen(path, "r");
+    fp = fopen(path, file_mode);
     if (fp == NULL) {
         flb_plg_error(ins, "can't open %s", path);
         return -1;
