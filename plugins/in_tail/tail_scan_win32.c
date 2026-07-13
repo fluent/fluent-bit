@@ -48,7 +48,8 @@ static int tail_is_excluded(char *path, struct flb_tail_config *ctx)
 
     mk_list_foreach(head, ctx->exclude_list) {
         pattern = mk_list_entry(head, struct flb_slist_entry, _head);
-        if (PathMatchSpecA(path, pattern->str)) {
+        if (PathMatchSpecA(path, pattern->str) ||
+            PathMatchSpecA(PathFindFileNameA(path), pattern->str)) {
             return FLB_TRUE;
         }
     }
