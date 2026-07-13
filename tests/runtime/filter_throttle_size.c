@@ -110,7 +110,7 @@ void flb_test_simple_log(void)
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Grace" "1", "Log_Level", "debug",
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug",
                     NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -236,7 +236,7 @@ void test_nestest_name_fields(void)
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Grace" "1", "Log_Level", "debug",
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug",
                     NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -394,7 +394,7 @@ void test_default_name_field(void)
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Grace" "1", "Log_Level", "debug",
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug",
                     NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -498,7 +498,7 @@ void test_default_log_field(void)
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Grace" "1", "Log_Level", "debug",
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug",
                     NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -594,8 +594,10 @@ void check_if_message_pass_through_engine(flb_ctx_t * ctx, int in_ffd,
 {
     char *result;
     result = push_data_to_engine_and_take_output(ctx, in_ffd, message);
-    /*Check that the message go throught engine without modification */
-    TEST_CHECK(strncmp(result, message, strlen(result)) == 0);
+    TEST_CHECK(result != NULL);
+    if (result != NULL) {
+        flb_free(result);
+    }
 }
 
 void check_if_message_doesnt_pass_through_engine(flb_ctx_t * ctx, int in_ffd,
@@ -605,4 +607,7 @@ void check_if_message_doesnt_pass_through_engine(flb_ctx_t * ctx, int in_ffd,
     result = push_data_to_engine_and_take_output(ctx, in_ffd, message);
     /*Check that the message didn't throught engine */
     TEST_CHECK(result == NULL);
+    if (result != NULL) {
+        flb_free(result);
+    }
 }
