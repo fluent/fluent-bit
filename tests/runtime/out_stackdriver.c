@@ -21,6 +21,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_compat.h>
 
 #include "flb_tests_runtime.h"
 
@@ -45,6 +47,81 @@
 #include "data/stackdriver/stackdriver_test_timestamp.h"
 #include "data/stackdriver/stackdriver_test_monitored_resource.h"
 #include "data/stackdriver/stackdriver_test_payload.h"
+
+#define STACKDRIVER_TEST_WAIT_STEP_MS  10
+#define STACKDRIVER_TEST_TIMEOUT_MS  2000
+
+typedef void (*stackdriver_test_callback)(void *, int, int, void *, size_t, void *);
+
+static pthread_mutex_t stackdriver_test_mutex = PTHREAD_MUTEX_INITIALIZER;
+static stackdriver_test_callback stackdriver_formatter_callback;
+static void *stackdriver_formatter_callback_data;
+static int stackdriver_formatter_complete;
+
+static void cb_stackdriver_formatter(void *ctx, int ffd, int res_ret,
+                                     void *res_data, size_t res_size, void *data)
+{
+    stackdriver_test_callback callback;
+    void *callback_data;
+
+    (void) data;
+
+    pthread_mutex_lock(&stackdriver_test_mutex);
+    callback = stackdriver_formatter_callback;
+    callback_data = stackdriver_formatter_callback_data;
+    pthread_mutex_unlock(&stackdriver_test_mutex);
+
+    callback(ctx, ffd, res_ret, res_data, res_size, callback_data);
+
+    pthread_mutex_lock(&stackdriver_test_mutex);
+    stackdriver_formatter_complete = FLB_TRUE;
+    pthread_mutex_unlock(&stackdriver_test_mutex);
+}
+
+static int stackdriver_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
+                                       stackdriver_test_callback callback,
+                                       void *callback_data, void *test_ctx)
+{
+    pthread_mutex_lock(&stackdriver_test_mutex);
+    stackdriver_formatter_callback = callback;
+    stackdriver_formatter_callback_data = callback_data;
+    stackdriver_formatter_complete = FLB_FALSE;
+    pthread_mutex_unlock(&stackdriver_test_mutex);
+
+    return flb_output_set_test(ctx, ffd, test_name,
+                               cb_stackdriver_formatter, NULL, test_ctx);
+}
+
+static void stackdriver_wait_for_formatter(void)
+{
+    int complete;
+    uint64_t elapsed_ms;
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+
+    complete = FLB_FALSE;
+    elapsed_ms = 0;
+    flb_time_get(&start_time);
+
+    /* Preserve the bounded fallback for cases that do not invoke the callback. */
+    while (elapsed_ms < STACKDRIVER_TEST_TIMEOUT_MS) {
+        pthread_mutex_lock(&stackdriver_test_mutex);
+        complete = stackdriver_formatter_complete;
+        pthread_mutex_unlock(&stackdriver_test_mutex);
+
+        if (complete == FLB_TRUE) {
+            break;
+        }
+
+        flb_time_msleep(STACKDRIVER_TEST_WAIT_STEP_MS);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_ms = flb_time_to_nanosec(&diff_time) / 1000000;
+    }
+}
+
+#define flb_output_set_test stackdriver_output_set_test
 
 /*
  * Fluent Bit Stackdriver plugin, always set as payload a JSON strings contained in a
@@ -2405,9 +2482,9 @@ void flb_test_monitored_resource_common()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2433,7 +2510,7 @@ void flb_test_monitored_resource_common()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) MONITORED_RESOURCE_COMMON_CASE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -2446,9 +2523,9 @@ void flb_test_monitored_resource_priority_higher_than_local_resource_id()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2476,7 +2553,7 @@ void flb_test_monitored_resource_priority_higher_than_local_resource_id()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_LOCAL_RESOURCE_ID, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -2489,9 +2566,9 @@ void flb_test_monitored_resource_priority_higher_than_gce_instance()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2517,7 +2594,7 @@ void flb_test_monitored_resource_priority_higher_than_gce_instance()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_GCE_INSTANCE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -2530,9 +2607,9 @@ void flb_test_resource_global()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2558,7 +2635,7 @@ void flb_test_resource_global()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -2571,9 +2648,9 @@ void flb_test_trace_no_autoformat()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2599,7 +2676,7 @@ void flb_test_trace_no_autoformat()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) TRACE_COMMON_CASE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -2612,9 +2689,9 @@ void flb_test_trace_stackdriver_autoformat()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2641,7 +2718,7 @@ void flb_test_trace_stackdriver_autoformat()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) TRACE_COMMON_CASE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -2654,9 +2731,9 @@ void flb_test_span_id()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2681,7 +2758,7 @@ void flb_test_span_id()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) SPAN_ID_COMMON_CASE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -2694,9 +2771,9 @@ void flb_test_trace_sampled_true()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2721,7 +2798,7 @@ void flb_test_trace_sampled_true()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) TRACE_SAMPLED_CASE_TRUE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -2734,9 +2811,9 @@ void flb_test_trace_sampled_false()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2761,7 +2838,7 @@ void flb_test_trace_sampled_false()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) TRACE_SAMPLED_CASE_FALSE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -2774,9 +2851,9 @@ void flb_test_set_metadata_server()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2802,7 +2879,7 @@ void flb_test_set_metadata_server()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -2815,9 +2892,9 @@ void flb_test_project_id_override()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2843,7 +2920,7 @@ void flb_test_project_id_override()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) LOG_NAME_PROJECT_ID_OVERRIDE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -2856,9 +2933,9 @@ void flb_test_project_id_no_override()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2883,7 +2960,7 @@ void flb_test_project_id_no_override()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) LOG_NAME_PROJECT_ID_NO_OVERRIDE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -2896,9 +2973,9 @@ void flb_test_log_name_override()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2924,7 +3001,7 @@ void flb_test_log_name_override()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) LOG_NAME_OVERRIDE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -2937,9 +3014,9 @@ void flb_test_log_name_no_override()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2965,7 +3042,7 @@ void flb_test_log_name_no_override()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) LOG_NAME_NO_OVERRIDE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -2979,9 +3056,9 @@ void flb_test_resource_global_custom_prefix()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3008,7 +3085,7 @@ void flb_test_resource_global_custom_prefix()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3021,9 +3098,9 @@ void flb_test_resource_generic_node_creds()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3052,7 +3129,7 @@ void flb_test_resource_generic_node_creds()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3065,9 +3142,9 @@ void flb_test_resource_generic_node_metadata()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3095,7 +3172,7 @@ void flb_test_resource_generic_node_metadata()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3108,9 +3185,9 @@ void flb_test_resource_generic_task_creds()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3140,7 +3217,7 @@ void flb_test_resource_generic_task_creds()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3153,9 +3230,9 @@ void flb_test_resource_generic_task_metadata()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3184,7 +3261,7 @@ void flb_test_resource_generic_task_metadata()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3197,9 +3274,9 @@ void flb_test_resource_gce_instance()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3224,7 +3301,7 @@ void flb_test_resource_gce_instance()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3237,9 +3314,9 @@ void flb_test_insert_id_common_case()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3264,7 +3341,7 @@ void flb_test_insert_id_common_case()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) INSERTID_COMMON_CASE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3277,9 +3354,9 @@ void flb_test_empty_insert_id()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3304,7 +3381,7 @@ void flb_test_empty_insert_id()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) EMPTY_INSERTID, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3317,9 +3394,9 @@ void flb_test_insert_id_incorrect_type()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3344,7 +3421,7 @@ void flb_test_insert_id_incorrect_type()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) INSERTID_INCORRECT_TYPE_INT, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3357,9 +3434,9 @@ void flb_test_operation_common()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3384,7 +3461,7 @@ void flb_test_operation_common()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) OPERATION_COMMON_CASE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3397,9 +3474,9 @@ void flb_test_empty_operation()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3424,7 +3501,7 @@ void flb_test_empty_operation()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) EMPTY_OPERATION, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3437,9 +3514,9 @@ void flb_test_operation_in_string()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3464,7 +3541,7 @@ void flb_test_operation_in_string()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) OPERATION_IN_STRING, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3477,9 +3554,9 @@ void flb_test_operation_partial_subfields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3504,7 +3581,7 @@ void flb_test_operation_partial_subfields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) PARTIAL_SUBFIELDS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3517,9 +3594,9 @@ void flb_test_operation_incorrect_type_subfields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3544,7 +3621,7 @@ void flb_test_operation_incorrect_type_subfields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) SUBFIELDS_IN_INCORRECT_TYPE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3557,9 +3634,9 @@ void flb_test_operation_extra_subfields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3584,7 +3661,7 @@ void flb_test_operation_extra_subfields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) EXTRA_SUBFIELDS_EXISTED, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3597,9 +3674,9 @@ void flb_test_resource_k8s_container_common()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3627,7 +3704,7 @@ void flb_test_resource_k8s_container_common()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_COMMON, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3644,9 +3721,9 @@ void flb_test_resource_k8s_container_multi_tag_value()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3672,7 +3749,9 @@ void flb_test_resource_k8s_container_multi_tag_value()
     TEST_CHECK(ret == 0);
 
     /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_COMMON_DIFF_TAGS, size_one);
+    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_COMMON, size_one);
+
+    stackdriver_wait_for_formatter();
 
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
@@ -3683,7 +3762,7 @@ void flb_test_resource_k8s_container_multi_tag_value()
     flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_COMMON_DIFF_TAGS, size_two);
 
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3700,7 +3779,7 @@ void flb_test_resource_k8s_container_concurrency()
     char tag[32];
 
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     for (k = 0; k < 5; k++) {
         in_ffd[k] = flb_input(ctx, (char *) "lib", NULL);
@@ -3746,9 +3825,9 @@ void flb_test_resource_k8s_container_custom_tag_prefix()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3777,7 +3856,7 @@ void flb_test_resource_k8s_container_custom_tag_prefix()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3790,9 +3869,9 @@ void flb_test_resource_k8s_container_custom_tag_prefix_with_dot()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3821,7 +3900,7 @@ void flb_test_resource_k8s_container_custom_tag_prefix_with_dot()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3834,9 +3913,9 @@ void flb_test_resource_k8s_container_default_tag_regex()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3866,7 +3945,7 @@ void flb_test_resource_k8s_container_default_tag_regex()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3879,9 +3958,9 @@ void flb_test_resource_k8s_container_custom_k8s_regex()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3911,7 +3990,7 @@ void flb_test_resource_k8s_container_custom_k8s_regex()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3924,9 +4003,9 @@ void flb_test_resource_k8s_container_custom_k8s_regex_custom_prefix()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -3957,7 +4036,7 @@ void flb_test_resource_k8s_container_custom_k8s_regex_custom_prefix()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -3970,9 +4049,9 @@ void flb_test_resource_k8s_cluster_no_local_resource_id()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4000,7 +4079,7 @@ void flb_test_resource_k8s_cluster_no_local_resource_id()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_CLUSTER_NO_LOCAL_RESOURCE_ID, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4014,9 +4093,9 @@ void flb_test_resource_k8s_node_common()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4044,7 +4123,7 @@ void flb_test_resource_k8s_node_common()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_NODE_COMMON, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4057,9 +4136,9 @@ void flb_test_resource_k8s_pod_common()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4087,7 +4166,7 @@ void flb_test_resource_k8s_pod_common()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_POD_COMMON, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4100,9 +4179,9 @@ void flb_test_default_labels()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4128,7 +4207,7 @@ void flb_test_default_labels()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4141,9 +4220,9 @@ void flb_test_custom_labels()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4170,7 +4249,7 @@ void flb_test_custom_labels()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) CUSTOM_LABELS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4183,9 +4262,9 @@ void flb_test_config_labels_conflict()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4212,7 +4291,7 @@ void flb_test_config_labels_conflict()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4225,9 +4304,9 @@ void flb_test_config_labels_no_conflict()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4254,7 +4333,7 @@ void flb_test_config_labels_no_conflict()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4267,9 +4346,9 @@ void flb_test_default_labels_k8s_resource_type()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4297,7 +4376,7 @@ void flb_test_default_labels_k8s_resource_type()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS_K8S_RESOURCE_TYPE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4310,9 +4389,9 @@ void flb_test_resource_labels_one_field()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4338,7 +4417,7 @@ void flb_test_resource_labels_one_field()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4351,9 +4430,9 @@ void flb_test_resource_labels_plaintext()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4379,7 +4458,7 @@ void flb_test_resource_labels_plaintext()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4392,9 +4471,9 @@ void flb_test_resource_labels_multiple_fields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4420,7 +4499,7 @@ void flb_test_resource_labels_multiple_fields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) MULTIPLE_FIELDS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4433,9 +4512,9 @@ void flb_test_resource_labels_nested_fields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4461,7 +4540,7 @@ void flb_test_resource_labels_nested_fields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) NESTED_FIELDS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4474,9 +4553,9 @@ void flb_test_resource_labels_layered_nested_fields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4503,7 +4582,7 @@ void flb_test_resource_labels_layered_nested_fields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) LAYERED_NESTED_FIELDS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4516,9 +4595,9 @@ void flb_test_resource_labels_original_does_not_exist()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4544,7 +4623,7 @@ void flb_test_resource_labels_original_does_not_exist()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4557,9 +4636,9 @@ void flb_test_resource_labels_nested_original_does_not_exist()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4585,7 +4664,7 @@ void flb_test_resource_labels_nested_original_does_not_exist()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4598,9 +4677,9 @@ void flb_test_resource_labels_nested_original_partially_exists()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4626,7 +4705,7 @@ void flb_test_resource_labels_nested_original_partially_exists()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) NESTED_FIELDS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4639,9 +4718,9 @@ void flb_test_resource_labels_one_field_with_spaces()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4667,7 +4746,7 @@ void flb_test_resource_labels_one_field_with_spaces()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4680,9 +4759,9 @@ void flb_test_resource_labels_multiple_fields_with_spaces()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4708,7 +4787,7 @@ void flb_test_resource_labels_multiple_fields_with_spaces()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) MULTIPLE_FIELDS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4721,9 +4800,9 @@ void flb_test_resource_labels_empty_input()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4749,7 +4828,7 @@ void flb_test_resource_labels_empty_input()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4762,9 +4841,9 @@ void flb_test_resource_labels_duplicate_assignment()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4790,7 +4869,7 @@ void flb_test_resource_labels_duplicate_assignment()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) MULTIPLE_FIELDS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4803,9 +4882,9 @@ void flb_test_resource_labels_project_id_not_overridden()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4831,7 +4910,7 @@ void flb_test_resource_labels_project_id_not_overridden()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4844,9 +4923,9 @@ void flb_test_resource_labels_has_priority()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4876,7 +4955,7 @@ void flb_test_resource_labels_has_priority()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4889,9 +4968,9 @@ void flb_test_resource_labels_fallsback_when_required_not_specified()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4920,7 +4999,7 @@ void flb_test_resource_labels_fallsback_when_required_not_specified()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_COMMON, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4933,9 +5012,9 @@ void flb_test_resource_labels_fallsback_when_required_partially_specified()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -4964,7 +5043,7 @@ void flb_test_resource_labels_fallsback_when_required_partially_specified()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_COMMON, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -4977,9 +5056,9 @@ void flb_test_resource_labels_k8s_container()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5007,7 +5086,7 @@ void flb_test_resource_labels_k8s_container()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5020,9 +5099,9 @@ void flb_test_resource_labels_k8s_node()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5050,7 +5129,7 @@ void flb_test_resource_labels_k8s_node()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5063,9 +5142,9 @@ void flb_test_resource_labels_k8s_pod()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5093,7 +5172,7 @@ void flb_test_resource_labels_k8s_pod()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5106,9 +5185,9 @@ void flb_test_resource_labels_generic_node()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5136,7 +5215,7 @@ void flb_test_resource_labels_generic_node()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5149,9 +5228,9 @@ void flb_test_resource_labels_generic_task()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5179,7 +5258,7 @@ void flb_test_resource_labels_generic_task()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) ONE_FIELD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5192,9 +5271,9 @@ void flb_test_custom_labels_k8s_resource_type()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5223,7 +5302,7 @@ void flb_test_custom_labels_k8s_resource_type()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) CUSTOM_LABELS_K8S_RESOURCE_TYPE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5236,9 +5315,9 @@ void flb_test_resource_k8s_container_no_local_resource_id()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5267,7 +5346,7 @@ void flb_test_resource_k8s_container_no_local_resource_id()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5280,9 +5359,9 @@ void flb_test_resource_k8s_node_no_local_resource_id()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5310,7 +5389,7 @@ void flb_test_resource_k8s_node_no_local_resource_id()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_NODE_NO_LOCAL_RESOURCE_ID, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5323,9 +5402,9 @@ void flb_test_resource_k8s_node_custom_k8s_regex_with_dot()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5354,7 +5433,7 @@ void flb_test_resource_k8s_node_custom_k8s_regex_with_dot()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_NODE_LOCAL_RESOURCE_ID_WITH_DOT, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5367,9 +5446,9 @@ void flb_test_resource_k8s_node_custom_k8s_regex_with_long_tag()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5398,7 +5477,7 @@ void flb_test_resource_k8s_node_custom_k8s_regex_with_long_tag()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_NODE_LOCAL_RESOURCE_ID_WITH_DOT, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5411,9 +5490,9 @@ void flb_test_resource_k8s_pod_no_local_resource_id()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5441,7 +5520,7 @@ void flb_test_resource_k8s_pod_no_local_resource_id()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_POD_NO_LOCAL_RESOURCE_ID, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5453,9 +5532,9 @@ void flb_test_multi_entries_severity()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    ret = flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    ret = flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
     TEST_CHECK_(ret == 0, "setting service options");
 
     /* Tail input mode */
@@ -5486,7 +5565,7 @@ void flb_test_multi_entries_severity()
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5499,9 +5578,9 @@ void flb_test_source_location_common_case()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5526,7 +5605,7 @@ void flb_test_source_location_common_case()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_COMMON_CASE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5539,9 +5618,9 @@ void flb_test_source_location_line_in_string()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5566,7 +5645,7 @@ void flb_test_source_location_line_in_string()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_COMMON_CASE_LINE_IN_STRING, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5579,9 +5658,9 @@ void flb_test_source_location_line_invalid_string()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5606,7 +5685,7 @@ void flb_test_source_location_line_invalid_string()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_COMMON_CASE_LINE_INVALID_STRING, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5619,9 +5698,9 @@ void flb_test_empty_source_location()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5646,7 +5725,7 @@ void flb_test_empty_source_location()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) EMPTY_SOURCELOCATION, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5659,9 +5738,9 @@ void flb_test_source_location_in_string()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5686,7 +5765,7 @@ void flb_test_source_location_in_string()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_IN_STRING, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5699,9 +5778,9 @@ void flb_test_source_location_partial_subfields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5726,7 +5805,7 @@ void flb_test_source_location_partial_subfields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) PARTIAL_SOURCELOCATION, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5739,9 +5818,9 @@ void flb_test_source_location_incorrect_type_subfields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5766,7 +5845,7 @@ void flb_test_source_location_incorrect_type_subfields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_SUBFIELDS_IN_INCORRECT_TYPE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5779,9 +5858,9 @@ void flb_test_source_location_extra_subfields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5806,7 +5885,7 @@ void flb_test_source_location_extra_subfields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_EXTRA_SUBFIELDS_EXISTED, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5819,9 +5898,9 @@ void flb_test_http_request_common_case()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5846,7 +5925,7 @@ void flb_test_http_request_common_case()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_COMMON_CASE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5859,9 +5938,9 @@ void flb_test_empty_http_request()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5886,7 +5965,7 @@ void flb_test_empty_http_request()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) EMPTY_HTTPREQUEST, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5899,9 +5978,9 @@ void flb_test_http_request_in_string()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5926,7 +6005,7 @@ void flb_test_http_request_in_string()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_IN_STRING, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5939,9 +6018,9 @@ void flb_test_http_request_partial_subfields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -5966,7 +6045,7 @@ void flb_test_http_request_partial_subfields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) PARTIAL_HTTPREQUEST, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -5979,9 +6058,9 @@ void flb_test_http_request_incorrect_type_subfields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6006,7 +6085,7 @@ void flb_test_http_request_incorrect_type_subfields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_SUBFIELDS_IN_INCORRECT_TYPE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6019,9 +6098,9 @@ void flb_test_http_request_extra_subfields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6046,7 +6125,7 @@ void flb_test_http_request_extra_subfields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_EXTRA_SUBFIELDS_EXISTED, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6059,9 +6138,9 @@ void flb_test_http_request_latency_common_case()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6086,7 +6165,7 @@ void flb_test_http_request_latency_common_case()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_LATENCY_COMMON_CASE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6099,9 +6178,9 @@ void flb_test_http_request_latency_invalid_spaces()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6126,7 +6205,7 @@ void flb_test_http_request_latency_invalid_spaces()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_LATENCY_INVALID_SPACES, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6139,9 +6218,9 @@ void flb_test_http_request_latency_invalid_string()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6166,7 +6245,7 @@ void flb_test_http_request_latency_invalid_string()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_LATENCY_INVALID_STRING, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6179,9 +6258,9 @@ void flb_test_http_request_latency_invalid_end()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6206,7 +6285,7 @@ void flb_test_http_request_latency_invalid_end()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_LATENCY_INVALID_END, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6219,9 +6298,9 @@ void flb_test_timestamp_format_object_common()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6246,7 +6325,7 @@ void flb_test_timestamp_format_object_common()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) TIMESTAMP_FORMAT_OBJECT_COMMON_CASE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6259,9 +6338,9 @@ void flb_test_timestamp_format_object_not_a_map()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6286,7 +6365,7 @@ void flb_test_timestamp_format_object_not_a_map()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) TIMESTAMP_FORMAT_OBJECT_NOT_A_MAP, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6299,9 +6378,9 @@ void flb_test_timestamp_format_object_missing_subfield()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6326,7 +6405,7 @@ void flb_test_timestamp_format_object_missing_subfield()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) TIMESTAMP_FORMAT_OBJECT_MISSING_SUBFIELD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6339,9 +6418,9 @@ void flb_test_timestamp_format_object_incorrect_subfields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6366,7 +6445,7 @@ void flb_test_timestamp_format_object_incorrect_subfields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) TIMESTAMP_FORMAT_OBJECT_INCORRECT_TYPE_SUBFIELDS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6379,9 +6458,9 @@ void flb_test_timestamp_format_duo_fields_common_case()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6406,7 +6485,7 @@ void flb_test_timestamp_format_duo_fields_common_case()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) TIMESTAMP_FORMAT_DUO_FIELDS_COMMON_CASE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6419,9 +6498,9 @@ void flb_test_timestamp_format_duo_fields_missing_nanos()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6446,7 +6525,7 @@ void flb_test_timestamp_format_duo_fields_missing_nanos()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) TIMESTAMP_FORMAT_DUO_FIELDS_MISSING_NANOS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6459,9 +6538,9 @@ void flb_test_timestamp_format_duo_fields_incorrect_type()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6486,7 +6565,7 @@ void flb_test_timestamp_format_duo_fields_incorrect_type()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) TIMESTAMP_FORMAT_DUO_FIELDS_INCORRECT_TYPE, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6499,9 +6578,9 @@ void flb_test_string_text_payload_with_matched_text_payload_key()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6527,7 +6606,7 @@ void flb_test_string_text_payload_with_matched_text_payload_key()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) STRING_TEXT_PAYLOAD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6540,9 +6619,9 @@ void flb_test_string_text_payload_with_mismatched_text_payload_key()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6568,7 +6647,7 @@ void flb_test_string_text_payload_with_mismatched_text_payload_key()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) STRING_TEXT_PAYLOAD, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6581,9 +6660,9 @@ void flb_test_string_text_payload_with_residual_fields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6609,7 +6688,7 @@ void flb_test_string_text_payload_with_residual_fields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) STRING_TEXT_PAYLOAD_WITH_RESIDUAL_FIELDS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -6622,9 +6701,9 @@ void flb_test_non_scalar_payload_with_residual_fields()
     int in_ffd;
     int out_ffd;
 
-    /* Create context, flush every second (some checks omitted here) */
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
     ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -6650,7 +6729,7 @@ void flb_test_non_scalar_payload_with_residual_fields()
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) NON_SCALAR_PAYLOAD_WITH_RESIDUAL_FIELDS, size);
 
-    sleep(2);
+    stackdriver_wait_for_formatter();
     flb_stop(ctx);
     flb_destroy(ctx);
 }
