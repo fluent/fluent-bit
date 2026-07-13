@@ -1,0 +1,11 @@
+service:
+  log_level: debug
+  flush: 1
+pipeline:
+  inputs:
+    - name: dummy
+      tag: test
+      invalid_property_that_does_not_exist: some_value
+  outputs:
+    - name: stdout
+      match: '*'
