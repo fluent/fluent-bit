@@ -33,6 +33,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_network.h>
 #include <monkey/mk_core.h>
 #include "flb_tests_runtime.h"
 
@@ -42,16 +43,18 @@
 #define MOCK_VALID_JWT "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3QiLCJ0eXAiOiJKV1QifQ.eyJleHAiOjE4OTM0NTYwMDAsImlzcyI6Imlzc3VlciIsImF1ZCI6ImF1ZGllbmNlIiwiYXpwIjoiY2xpZW50MSJ9.TqWs06LUpQa0FGLejnOkWAD6v562d5CUh2NwsJ7iAuae9-WNFBKU6mP1zAaoafla6o5npee7RfbSzZNFI4PKhqAj69789JjAYV7IW-GSuMwJejHdVOWmCc5lmcZPH0EVxEkHA6lFQxYQwDCrfQ8Sd4Q3vYCV6sLPENcuNpQi9ytjVjaZs_7ONH2oA-sZ7EUchqJJoIBPfjit2yYsq9NeemxCzYMtngiC-IX12eEfaQ1cVYPIjhhN_NaMvapznp-BW4gnXkNoAZ1S-p1axWWY-6UgRdMYOr0Hy5PHQ9fCuHJ6Z-blYdtuGavCUGHK5ghX-JdH1WJ51F89992dQ5yF_w"
 
 struct jwks_mock_server {
-    int listen_fd;
+    flb_sockfd_t listen_fd;
     int port;
     int stop;
     pthread_t thread;
 };
 
-static void jwks_mock_send_response(int fd)
+static void jwks_mock_send_response(flb_sockfd_t fd)
 {
     char buffer[2048];
     int len;
+    int sent;
+    int total;
 
     len = snprintf(buffer, sizeof(buffer),
              "HTTP/1.1 200 OK\r\n"
@@ -64,7 +67,14 @@ static void jwks_mock_send_response(int fd)
     printf("jwks_mock_send_response: Sending %d bytes (Content-Length: %zu)\n", len, strlen(MOCK_JWKS_BODY));
     fflush(stdout);
 
-    send(fd, buffer, len, 0);
+    total = 0;
+    while (total < len) {
+        sent = send(fd, buffer + total, len - total, 0);
+        if (sent <= 0) {
+            break;
+        }
+        total += sent;
+    }
 }
 
 static void *jwks_mock_server_thread(void *data)
@@ -72,35 +82,46 @@ static void *jwks_mock_server_thread(void *data)
     struct jwks_mock_server *server = (struct jwks_mock_server *) data;
     fd_set rfds;
     struct timeval tv;
-    int client_fd;
+    flb_sockfd_t client_fd;
+    char request[2048];
+    int total;
+    int bytes;
 
-    client_fd = -1;
+    client_fd = FLB_INVALID_SOCKET;
     while (!server->stop) {
         FD_ZERO(&rfds);
         FD_SET(server->listen_fd, &rfds);
         tv.tv_sec = 0;
         tv.tv_usec = 200000;
 
-        if (select(server->listen_fd + 1, &rfds, NULL, NULL, &tv) <= 0) {
+        if (select((int) (server->listen_fd + 1), &rfds, NULL, NULL, &tv) <= 0) {
             continue;
         }
 
         client_fd = accept(server->listen_fd, NULL, NULL);
-        if (client_fd < 0) {
+        if (client_fd == FLB_INVALID_SOCKET) {
             continue;
         }
 
-        jwks_mock_send_response(client_fd);
+        flb_net_socket_blocking(client_fd);
 
-        /* Graceful TCP close to prevent RST on Windows */
-        shutdown(client_fd, 1); /* 1 = SD_SEND / SHUT_WR */
-        {
-            char dummy[1024];
-            while (recv(client_fd, dummy, sizeof(dummy), 0) > 0) {
-                /* read until EOF */
+        memset(request, 0, sizeof(request));
+        total = 0;
+        while (total < sizeof(request) - 1) {
+            bytes = recv(client_fd, request + total,
+                         (int) (sizeof(request) - 1 - total), 0);
+            if (bytes <= 0) {
+                break;
+            }
+
+            total += bytes;
+            request[total] = '\0';
+            if (strstr(request, "\r\n\r\n") != NULL) {
+                break;
             }
         }
 
+        jwks_mock_send_response(client_fd);
         flb_socket_close(client_fd);
     }
 
@@ -115,6 +136,7 @@ static int jwks_mock_server_start(struct jwks_mock_server *server)
     int flags;
 
     memset(server, 0, sizeof(struct jwks_mock_server));
+    server->listen_fd = FLB_INVALID_SOCKET;
 
 #ifdef _WIN32
     {
@@ -123,7 +145,7 @@ static int jwks_mock_server_start(struct jwks_mock_server *server)
     }
 #endif
     server->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server->listen_fd < 0) {
+    if (server->listen_fd == FLB_INVALID_SOCKET) {
 #ifdef _WIN32
         fprintf(stderr, "socket failed with WSAGetLastError: %d\n", WSAGetLastError());
 #else
@@ -195,13 +217,14 @@ static int jwks_mock_server_start(struct jwks_mock_server *server)
 
 static void jwks_mock_server_stop(struct jwks_mock_server *server)
 {
-    if (server->listen_fd <= 0) {
+    if (server->listen_fd == FLB_INVALID_SOCKET) {
         return;
     }
 
     server->stop = 1;
     pthread_join(server->thread, NULL);
     flb_socket_close(server->listen_fd);
+    server->listen_fd = FLB_INVALID_SOCKET;
 }
 
 struct http_client_ctx {
