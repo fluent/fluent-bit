@@ -131,7 +131,7 @@ static int msgpack_strncmp(char* str, size_t str_len, msgpack_object obj)
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
         {
             long long val = strtoll(str, NULL, 10);
-            if (val == (unsigned long)obj.via.i64) {
+            if (val == obj.via.i64) {
                 ret = 0;
             }
         }
