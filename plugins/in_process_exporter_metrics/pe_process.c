@@ -1175,6 +1175,13 @@ static int process_update(struct flb_pe *ctx)
 
     flb_slist_destroy(&procfs_list);
 
+    /*
+     * Purge metric label-sets for processes that were not seen in this
+     * collection pass.  Any cmt_metric whose timestamp is older than ts
+     * (captured before the scan) belongs to a process that no longer exists.
+     */
+    cmt_expire(ctx->cmt, ts);
+
     return 0;
 }
 
