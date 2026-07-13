@@ -54,8 +54,13 @@ static int file_to_buffer(const char *path,
     ssize_t bytes;
     FILE *fp;
     struct stat st;
+    const char *file_mode = "r";
 
-    if (!(fp = fopen(path, "r"))) {
+#ifdef FLB_SYSTEM_WINDOWS
+    file_mode = "rb";
+#endif
+
+    if (!(fp = fopen(path, file_mode))) {
         return -1;
     }
 
@@ -303,7 +308,7 @@ static bool check_event_is_filtered(struct k8s_events *ctx, msgpack_object *obj,
     flb_sds_t uid;
     uint64_t resource_version;
 
-    outdated = cfl_time_now() - (ctx->retention_time * 1000000000L);
+    outdated = cfl_time_now() - ((uint64_t) ctx->retention_time * 1000000000ULL);
     if (flb_time_to_nanosec(event_time) < outdated) {
         flb_plg_debug(ctx->ins, "Item is older than retention_time: %" PRIu64 " < %" PRIu64,
                       flb_time_to_nanosec(event_time), outdated);
@@ -655,7 +660,8 @@ static int k8s_events_cleanup_db(struct flb_input_instance *ins,
         FLB_INPUT_RETURN(0);
     }
 
-    retention_time_ago = cfl_time_now() - (ctx->retention_time * 1000000000L);
+    retention_time_ago = cfl_time_now() -
+                         ((uint64_t) ctx->retention_time * 1000000000ULL);
     sqlite3_bind_int64(ctx->stmt_delete_old_kubernetes_events,
                         1, (int64_t)retention_time_ago);
     ret = sqlite3_step(ctx->stmt_delete_old_kubernetes_events);
