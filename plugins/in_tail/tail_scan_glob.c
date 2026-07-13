@@ -212,12 +212,16 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
             flb_plg_error(ctx->ins, "no memory space available");
             return -1;
         case GLOB_ABORTED:
-            flb_plg_error(ctx->ins, "read error, check permissions: %s", path);
+            if (!ctx->ignore_missing_paths) {
+                flb_plg_error(ctx->ins, "read error, check permissions: %s", path);
+            }
             return -1;
         case GLOB_NOMATCH:
             ret = stat(path, &st);
             if (ret == -1) {
-                flb_plg_debug(ctx->ins, "cannot read info from: %s", path);
+                if (!ctx->ignore_missing_paths) {
+                    flb_plg_debug(ctx->ins, "cannot read info from: %s", path);
+                }
             }
             else {
                 ret = access(path, R_OK);
