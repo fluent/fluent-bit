@@ -58,8 +58,13 @@ static int file_to_buffer(const char *path,
     ssize_t bytes;
     FILE *fp;
     struct stat st;
+    const char *file_mode = "r";
 
-    if (!(fp = fopen(path, "r"))) {
+#ifdef FLB_SYSTEM_WINDOWS
+    file_mode = "rb";
+#endif
+
+    if (!(fp = fopen(path, file_mode))) {
         return -1;
     }
 
@@ -337,7 +342,12 @@ static int get_meta_file_info(struct flb_kube *ctx, const char *namespace,
     struct stat sb;
     int packed = -1;
     int ret;
+    int open_flags = O_RDONLY;
     char uri[1024];
+
+#ifdef FLB_SYSTEM_WINDOWS
+    open_flags |= O_BINARY;
+#endif
 
     if (ctx->meta_preload_cache_dir && namespace) {
 
@@ -350,7 +360,7 @@ static int get_meta_file_info(struct flb_kube *ctx, const char *namespace,
                     ctx->meta_preload_cache_dir, namespace);
         }
         if (ret > 0) {
-            fd = open(uri, O_RDONLY, 0);
+            fd = open(uri, open_flags, 0);
             if (fd != -1) {
                 if (fstat(fd, &sb) == 0) {
                     payload = flb_malloc(sb.st_size);
