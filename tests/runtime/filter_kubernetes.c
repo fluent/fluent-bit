@@ -73,6 +73,13 @@ char kube_test_id[64];
 #define KUBE_PORT        "8002"
 #define KUBE_URL         "http://" KUBE_IP ":" KUBE_PORT
 #define DPATH            FLB_TESTS_DATA_PATH "/data/kubernetes"
+#ifdef _WIN32
+#define KUBE_TAG_REGEX   "^.*[\\\\/]log[\\\\/](?:[^\\\\/]+[\\\\/])?" \
+                         "(?<namespace>.+)_(?<pod>.+)_(?<container>.+)\\.log$"
+#else
+#define KUBE_TAG_REGEX   "^" DPATH "/log/(?:[^/]+/)?" \
+                         "(?<namespace>.+)_(?<pod>.+)_(?<container>.+)\\.log$"
+#endif
 
 static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
 {
@@ -81,13 +88,18 @@ static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
     char *buf;
     FILE *fp;
     struct stat st;
+    const char *file_mode = "r";
+
+#ifdef FLB_SYSTEM_WINDOWS
+    file_mode = "rb";
+#endif
 
     ret = stat(path, &st);
     if (ret == -1) {
         return -1;
     }
 
-    fp = fopen(path, "r");
+    fp = fopen(path, file_mode);
     if (!fp) {
         return -1;
     }
@@ -263,7 +275,7 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
         TEST_CHECK_(in_ffd >= 0, "initialising input");
         ret = flb_input_set(ctx.flb, in_ffd,
                             "Tag", "kube.<namespace>.<pod>.<container>",
-                            "Tag_Regex", "^" DPATH "/log/(?:[^/]+/)?(?<namespace>.+)_(?<pod>.+)_(?<container>.+)\\.log$",
+                            "Tag_Regex", KUBE_TAG_REGEX,
                             "Path", path,
                             "Parser", "docker",
                             "Docker_Mode", "On",
