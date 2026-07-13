@@ -225,9 +225,9 @@ void do_test_records(char *system, void (*records_cb)(struct callback_records *)
         flb_time_msleep(1000);
     }
 
-    records_cb(records);
-
     flb_stop(ctx);
+
+    records_cb(records);
 
     for (idx = 0; idx < records->num_records; idx++) {
         flb_lib_free(records->records[idx].data);
@@ -293,9 +293,9 @@ void do_test_records_single(char *system, void (*records_cb)(struct callback_rec
     /* 4 sec passed. It must have flushed */
     flb_time_msleep(5000);
 
-    records_cb(records);
-
     flb_stop(ctx);
+
+    records_cb(records);
 
     for (i = 0; i < records->num_records; i++) {
         flb_lib_free(records->records[i].data);
@@ -355,9 +355,9 @@ void do_test_records_wait_time(char *system, int wait_time, void (*records_cb)(s
     /* Set wait_time plus 2 sec passed. It must have flushed */
     flb_time_msleep((wait_time + 2) * 1000);
 
-    records_cb(records);
-
     flb_stop(ctx);
+
+    records_cb(records);
 
     for (i = 0; i < records->num_records; i++) {
         flb_lib_free(records->records[i].data);
