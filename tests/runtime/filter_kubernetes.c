@@ -8,7 +8,9 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #ifdef _WIN32
     #define TIME_EPSILON_MS 30
 #else
