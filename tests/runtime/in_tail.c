@@ -231,6 +231,9 @@ static struct test_tail_ctx *test_tail_ctx_create(struct flb_lib_out_cb *data,
 
     /* open() flags */
     o_flags = O_RDWR | O_CREAT;
+#ifdef FLB_SYSTEM_WINDOWS
+    o_flags |= O_BINARY;
+#endif
 
     if (paths != NULL) {
         ctx->fds = flb_malloc(sizeof(int) * path_num);
@@ -433,13 +436,18 @@ static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
     char *buf;
     FILE *fp;
     struct stat st;
+    const char *file_mode = "r";
+
+#ifdef FLB_SYSTEM_WINDOWS
+    file_mode = "rb";
+#endif
 
     ret = stat(path, &st);
     if (ret == -1) {
         return -1;
     }
 
-    fp = fopen(path, "r");
+    fp = fopen(path, file_mode);
     if (!fp) {
         return -1;
     }
