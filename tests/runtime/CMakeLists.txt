@@ -336,15 +336,31 @@ configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h"
   )
 
+set(FLB_RT_SIMPLE_SYSTEMS_TESTS
+  in_cpu.c
+  in_disk.c
+  in_dummy.c
+  in_head.c
+  in_mem.c
+  in_proc.c
+  in_random.c
+  )
+
 foreach(source_file ${CHECK_PROGRAMS})
   get_filename_component(o_source_file_we ${source_file} NAME_WE)
   set(source_file_we flb-rt-${o_source_file_we})
   if(FLB_WITHOUT_${source_file_we})
     message("Skipping test ${source_file_we}")
   else()
+    set(resolved_source_file ${source_file})
+    list(FIND FLB_RT_SIMPLE_SYSTEMS_TESTS ${source_file} simple_systems_test)
+    if(NOT simple_systems_test EQUAL -1)
+      set(resolved_source_file in_simple_systems.c)
+    endif()
+
     add_executable(
       ${source_file_we}
-      ${source_file}
+      ${resolved_source_file}
       )
     add_sanitizers(${source_file_we})
     if(MSVC AND o_source_file_we STREQUAL "filter_aws")
