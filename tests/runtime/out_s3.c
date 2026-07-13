@@ -119,6 +119,23 @@ static int ensure_test_directory(const char *path)
 #endif
 }
 
+static char *create_test_store_directory(const char *postfix)
+{
+    char *store_dir;
+
+    store_dir = flb_test_tmpdir_cat(postfix);
+    if (store_dir == NULL) {
+        return NULL;
+    }
+
+    if (mkdtemp(store_dir) == NULL) {
+        flb_free(store_dir);
+        return NULL;
+    }
+
+    return store_dir;
+}
+
 void flb_test_s3_multipart_success(void)
 {
     int ret;
@@ -127,9 +144,13 @@ void flb_test_s3_multipart_success(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
-    char store_dir[] = "/tmp/flb-s3-test-multipart-XXXXXX";
+    char *store_dir;
 
-    TEST_CHECK(mkdtemp(store_dir) != NULL);
+    store_dir = create_test_store_directory("/flb-s3-test-multipart-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
 
     /* mocks calls- signals that we are in test mode */
     setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
@@ -168,6 +189,7 @@ void flb_test_s3_multipart_success(void)
     unsetenv("TEST_UploadPart_CALL_COUNT");
     unsetenv("TEST_CompleteMultipartUpload_CALL_COUNT");
     unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_free(store_dir);
 }
 
 void flb_test_s3_putobject_success(void)
@@ -225,7 +247,13 @@ void flb_test_s3_putobject_error(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
-    char store_dir[] = "/tmp/flb-s3-test-putobj-XXXXXX";
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-s3-test-putobj-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
 
     /* mocks calls- signals that we are in test mode */
     setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
@@ -266,6 +294,7 @@ void flb_test_s3_putobject_error(void)
     unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
     unsetenv("TEST_PUT_OBJECT_ERROR");
     unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_free(store_dir);
 
 }
 
@@ -277,9 +306,13 @@ void flb_test_s3_create_upload_error(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
-    char store_dir[] = "/tmp/flb-s3-test-XXXXXX";
+    char *store_dir;
 
-    TEST_CHECK(mkdtemp(store_dir) != NULL);
+    store_dir = create_test_store_directory("/flb-s3-test-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
 
     /* mocks calls- signals that we are in test mode */
     setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
@@ -325,6 +358,7 @@ void flb_test_s3_create_upload_error(void)
     unsetenv("TEST_UploadPart_CALL_COUNT");
     unsetenv("TEST_CompleteMultipartUpload_CALL_COUNT");
     unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_free(store_dir);
 }
 
 void flb_test_s3_upload_part_error(void)
@@ -335,9 +369,13 @@ void flb_test_s3_upload_part_error(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
-    char store_dir[] = "/tmp/flb-s3-test-part-err-XXXXXX";
+    char *store_dir;
 
-    TEST_CHECK(mkdtemp(store_dir) != NULL);
+    store_dir = create_test_store_directory("/flb-s3-test-part-err-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
 
     /* mocks calls- signals that we are in test mode */
     setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
@@ -383,6 +421,7 @@ void flb_test_s3_upload_part_error(void)
     unsetenv("TEST_UploadPart_CALL_COUNT");
     unsetenv("TEST_CompleteMultipartUpload_CALL_COUNT");
     unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_free(store_dir);
 }
 
 void flb_test_s3_complete_upload_error(void)
@@ -393,9 +432,13 @@ void flb_test_s3_complete_upload_error(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
-    char store_dir[] = "/tmp/flb-s3-test-uplaod-err-XXXXXX";
+    char *store_dir;
 
-    TEST_CHECK(mkdtemp(store_dir) != NULL);
+    store_dir = create_test_store_directory("/flb-s3-test-upload-err-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
 
     /* mocks calls- signals that we are in test mode */
     setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
@@ -437,6 +480,7 @@ void flb_test_s3_complete_upload_error(void)
     unsetenv("TEST_UploadPart_CALL_COUNT");
     unsetenv("TEST_CompleteMultipartUpload_CALL_COUNT");
     unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_free(store_dir);
 }
 
 void flb_test_s3_compression_gzip(void)
@@ -732,9 +776,13 @@ void flb_test_s3_preserve_data_ordering(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
-    char store_dir[] = "/tmp/flb-s3-test-ordering-XXXXXX";
+    char *store_dir;
 
-    TEST_CHECK(mkdtemp(store_dir) != NULL);
+    store_dir = create_test_store_directory("/flb-s3-test-ordering-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
 
     setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
@@ -772,6 +820,7 @@ void flb_test_s3_preserve_data_ordering(void)
     flb_destroy(ctx);
     unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
     unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_free(store_dir);
 }
 
 
@@ -786,9 +835,13 @@ void flb_test_s3_putobject_retry_limit_semantics(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
-    char store_dir[] = "/tmp/flb-s3-test-retry-XXXXXX";
+    char *store_dir;
 
-    TEST_CHECK(mkdtemp(store_dir) != NULL);
+    store_dir = create_test_store_directory("/flb-s3-test-retry-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
 
     /* Use mocks without flush bypass so the plugin's internal retry runs */
     setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
@@ -841,6 +894,7 @@ void flb_test_s3_putobject_retry_limit_semantics(void)
     unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
     unsetenv("TEST_PUT_OBJECT_ERROR");
     unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_free(store_dir);
 }
 
 /*
@@ -854,9 +908,13 @@ void flb_test_s3_default_retry_limit(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
-    char store_dir[] = "/tmp/flb-s3-test-default-XXXXXX";
+    char *store_dir;
 
-    TEST_CHECK(mkdtemp(store_dir) != NULL);
+    store_dir = create_test_store_directory("/flb-s3-test-default-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
 
     setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
     setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
@@ -903,6 +961,7 @@ void flb_test_s3_default_retry_limit(void)
     unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
     unsetenv("TEST_PUT_OBJECT_ERROR");
     unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_free(store_dir);
 }
 
 void flb_test_s3_default_retry_exhausted_action_quarantine(void)
