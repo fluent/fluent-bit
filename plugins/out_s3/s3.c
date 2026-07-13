@@ -57,7 +57,11 @@ FLB_TLS_DEFINE(struct worker_info, s3_worker_info);
 #ifdef FLB_SYSTEM_WINDOWS
 static int setenv(const char *name, const char *value, int overwrite)
 {
-    return SetEnvironmentVariableA(name, value);
+    if (overwrite == 0 && getenv(name) != NULL) {
+        return 0;
+    }
+
+    return _putenv_s(name, value);
 }
 #endif
 
@@ -389,6 +393,37 @@ static flb_sds_t concat_path(char *p1, char *p2)
     dir = tmp;
 
     return dir;
+}
+
+static flb_sds_t create_buffer_path(struct flb_s3 *ctx)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    char *temp_dir;
+    flb_sds_t dir;
+    flb_sds_t tmp;
+
+    if (strcmp(ctx->store_dir, "/tmp/fluent-bit/s3") == 0) {
+        temp_dir = getenv("TEMP");
+        if (temp_dir == NULL) {
+            temp_dir = getenv("TMP");
+        }
+
+        if (temp_dir != NULL) {
+            dir = flb_sds_create_size(64);
+            tmp = flb_sds_printf(&dir, "%s/fluent-bit/s3/%s",
+                                 temp_dir, ctx->bucket);
+            if (tmp == NULL) {
+                flb_errno();
+                flb_sds_destroy(dir);
+                return NULL;
+            }
+
+            return tmp;
+        }
+    }
+#endif
+
+    return concat_path(ctx->store_dir, ctx->bucket);
 }
 
 /* Reads in index value from metadata file and sets seq_index to value */
@@ -769,7 +804,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
      * We append the bucket name to the dir, to support multiple instances
      * of this plugin using the same buffer dir
      */
-    tmp_sds = concat_path(ctx->store_dir, ctx->bucket);
+    tmp_sds = create_buffer_path(ctx);
     if (!tmp_sds) {
         flb_plg_error(ctx->ins, "Could not construct buffer path");
         return -1;
