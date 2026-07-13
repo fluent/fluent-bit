@@ -19,7 +19,7 @@ static void set_allocation_error(struct cmt_decode_prometheus_context *context)
 
     if (context->opts.errbuf != NULL && context->opts.errbuf_size > 0) {
         snprintf(context->opts.errbuf,
-                 context->opts.errbuf_size - 1,
+                 context->opts.errbuf_size,
                  "memory allocation failed");
     }
 }

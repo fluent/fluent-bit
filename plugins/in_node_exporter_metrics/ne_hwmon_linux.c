@@ -185,14 +185,14 @@ static void hwmon_process_sensor(struct flb_ne *ctx, const char *chip_path,
     }
 
     /* read input value */
-    ret = ne_utils_file_read_uint64(ctx->path_sysfs, sensor_path,
+    ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs, sensor_path,
                                     NULL, NULL, &val);
     if (ret != 0) {
         return;
     }
 
     snprintf(label_name, sizeof(label_name) - 1, "%s_label", sensor_name);
-    if (ne_utils_file_read_sds(ctx->path_sysfs, chip_path,
+    if (ne_utils_file_read_sds(ctx, ctx->path_sysfs, chip_path,
                                label_name, NULL, &label) == 0) {
         sensor_label = label;
     }
@@ -206,7 +206,7 @@ static void hwmon_process_sensor(struct flb_ne *ctx, const char *chip_path,
                       2, (char *[]) {(char *) chip_name, (char *) sensor_label});
 
         snprintf(file_tmp, sizeof(file_tmp) - 1, "%s_max", sensor_name);
-        if (ne_utils_file_read_uint64(ctx->path_sysfs, chip_path,
+        if (ne_utils_file_read_uint64(ctx, ctx->path_sysfs, chip_path,
                                        file_tmp, NULL, &val) == 0) {
             cmt_gauge_set(ctx->hwmon_temp_max_celsius, tstamp,
                           ((double) val) / 1000.0,
@@ -214,7 +214,7 @@ static void hwmon_process_sensor(struct flb_ne *ctx, const char *chip_path,
         }
 
         snprintf(file_tmp, sizeof(file_tmp) - 1, "%s_crit", sensor_name);
-        if (ne_utils_file_read_uint64(ctx->path_sysfs, chip_path,
+        if (ne_utils_file_read_uint64(ctx, ctx->path_sysfs, chip_path,
                                        file_tmp, NULL, &val) == 0) {
             cmt_gauge_set(ctx->hwmon_temp_crit_celsius, tstamp,
                           ((double) val) / 1000.0,
@@ -269,7 +269,7 @@ static int ne_hwmon_update(struct flb_input_instance *ins,
     mk_list_foreach(head, &hwmons) {
         entry = mk_list_entry(head, struct flb_slist_entry, _head);
 
-        if (ne_utils_file_read_sds(ctx->path_sysfs, entry->str,
+        if (ne_utils_file_read_sds(ctx, ctx->path_sysfs, entry->str,
                                    "name", NULL, &chip) != 0) {
             continue;
         }

@@ -641,6 +641,8 @@ static void cb_check_k8s_container_resource(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+
+
 static void cb_check_k8s_container_resource_diff_tag(void *ctx, int ffd,
                                                      int res_ret, void *res_data, size_t res_size,
                                                      void *data)
@@ -1722,6 +1724,30 @@ static void cb_check_source_location_common_case_line_in_string(void *ctx, int f
     /* check `sourceLocation` has been removed from jsonPayload */
     ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/sourceLocation']");
     TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_source_location_line_invalid_string(void *ctx, int ffd,
+                                                         int res_ret, void *res_data, size_t res_size,
+                                                         void *data)
+{
+    int ret;
+
+    /* sourceLocation_file */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['file']", "test_file");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /*
+     * line is "123abc": a malformed integer string must be rejected and leave
+     * the field at its default (0) rather than being partially parsed to 123
+     */
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['sourceLocation']['line']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* sourceLocation_function */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['function']", "test_function");
+    TEST_CHECK(ret == FLB_TRUE);
 
     flb_sds_destroy(res_data);
 }
@@ -3626,6 +3652,8 @@ void flb_test_resource_k8s_container_common()
     flb_destroy(ctx);
 }
 
+
+
 void flb_test_resource_k8s_container_multi_tag_value()
 {
     int ret;
@@ -3679,6 +3707,56 @@ void flb_test_resource_k8s_container_multi_tag_value()
     flb_stop(ctx);
     flb_destroy(ctx);
 }
+
+void flb_test_resource_k8s_container_concurrency()
+{
+    int ret;
+    int i;
+    int k;
+    flb_ctx_t *ctx;
+    int in_ffd[5];
+    int out_ffd;
+    char payload[512];
+    char tag[32];
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    for (k = 0; k < 5; k++) {
+        in_ffd[k] = flb_input(ctx, (char *) "lib", NULL);
+        snprintf(tag, sizeof(tag), "test.%d", k);
+        flb_input_set(ctx, in_ffd[k], "tag", tag, NULL);
+    }
+
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test.*",
+                   "resource", "k8s_container",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "k8s_cluster_name", "test_cluster_name",
+                   "k8s_cluster_location", "test_cluster_location",
+                   "workers", "2",
+                   NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    for (i = 0; i < 500; i++) {
+        for (k = 0; k < 5; k++) {
+            snprintf(payload, sizeof(payload),
+                     "[1591649196, {"
+                     "\"message\": \"concurrency_test_inp%d_rec%d\","
+                     "\"logging.googleapis.com/local_resource_id\": \"k8s_container.ns_%d.pod_%d.ctr_%d\""
+                     "}]", k, i, i + (k * 1000), i + (k * 1000), i + (k * 1000));
+            flb_lib_push(ctx, in_ffd[k], payload, strlen(payload));
+        }
+    }
+
+    sleep(4);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 
 void flb_test_resource_k8s_container_custom_tag_prefix()
 {
@@ -5513,6 +5591,46 @@ void flb_test_source_location_line_in_string()
     flb_destroy(ctx);
 }
 
+void flb_test_source_location_line_invalid_string()
+{
+    int ret;
+    int size = sizeof(SOURCELOCATION_COMMON_CASE_LINE_INVALID_STRING) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_source_location_line_invalid_string,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_COMMON_CASE_LINE_INVALID_STRING, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 void flb_test_empty_source_location()
 {
     int ret;
@@ -6764,6 +6882,7 @@ TEST_LIST = {
     /* test sourceLocation */
     {"sourceLocation_common_case", flb_test_source_location_common_case},
     {"sourceLocation_line_in_string", flb_test_source_location_line_in_string},
+    {"sourceLocation_line_invalid_string", flb_test_source_location_line_invalid_string},
     {"empty_sourceLocation", flb_test_empty_source_location},
     {"sourceLocation_not_a_map", flb_test_source_location_in_string},
     {"sourceLocation_partial_subfields", flb_test_source_location_partial_subfields},
@@ -6777,8 +6896,10 @@ TEST_LIST = {
 
     /* test k8s */
     {"resource_k8s_container_common", flb_test_resource_k8s_container_common },
+
     {"resource_k8s_container_no_local_resource_id", flb_test_resource_k8s_container_no_local_resource_id },
     {"resource_k8s_container_multi_tag_value", flb_test_resource_k8s_container_multi_tag_value } ,
+    {"resource_k8s_container_concurrency", flb_test_resource_k8s_container_concurrency },
     {"resource_k8s_container_custom_tag_prefix", flb_test_resource_k8s_container_custom_tag_prefix },
     {"resource_k8s_container_custom_tag_prefix_with_dot", flb_test_resource_k8s_container_custom_tag_prefix_with_dot },
     {"resource_k8s_container_default_tag_regex", flb_test_resource_k8s_container_default_tag_regex },

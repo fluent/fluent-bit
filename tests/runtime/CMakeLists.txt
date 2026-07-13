@@ -182,6 +182,12 @@ if(FLB_IN_EBPF)
     )
 
     add_ebpf_handler_test(
+        "openssl"
+        "in_ebpf_openssl_handler.c"
+        "../../plugins/in_ebpf/traces/openssl/handler.c"
+    )
+
+    add_ebpf_handler_test(
         "sched"
         "in_ebpf_sched_handler.c"
         "../../plugins/in_ebpf/traces/sched/handler.c"
@@ -192,6 +198,7 @@ if(FLB_IN_EBPF)
     add_dependencies(flb-rt-in_ebpf_malloc_handler fluent-bit-static)
     add_dependencies(flb-rt-in_ebpf_tcp_handler fluent-bit-static)
     add_dependencies(flb-rt-in_ebpf_exec_handler fluent-bit-static)
+    add_dependencies(flb-rt-in_ebpf_openssl_handler fluent-bit-static)
     add_dependencies(flb-rt-in_ebpf_sched_handler fluent-bit-static)
 
 endif()

@@ -20,12 +20,51 @@
 
 #include <fluent-bit.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/flb_downstream.h>
+#include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_thread_storage.h>
 #include "flb_tests_runtime.h"
 
+#include <stdlib.h>
+
 #define DPATH_LOKI FLB_TESTS_DATA_PATH "/data/loki"
+#define LOKI_TENANT_POLICY_HOST "127.0.0.1"
+#define LOKI_TENANT_SPLIT_PORT "18083"
+#define LOKI_TENANT_POLICY_SUCCESS_PORT "18084"
+#define LOKI_TENANT_POLICY_ERROR_PORT "18085"
 
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 int num_output = 0;
+static flb_sds_t tenant_headers[4];
+static flb_sds_t tenant_payloads[4];
+static int tenant_request_count = 0;
+static int tenant_policy_request_count = 0;
+static int tenant_policy_a_count = 0;
+static int tenant_policy_b_count = 0;
+static int tenant_policy_fail_tenant_a = FLB_FALSE;
+
+struct tenant_policy_server {
+    struct flb_http_server server;
+    struct flb_net_setup net_setup;
+    struct mk_event_loop *event_loop;
+    pthread_t thread;
+    int thread_started;
+    int stop;
+};
+
+static int tenant_policy_server_should_stop(struct tenant_policy_server *mock)
+{
+    int stop;
+
+    pthread_mutex_lock(&result_mutex);
+    stop = mock->stop;
+    pthread_mutex_unlock(&result_mutex);
+
+    return stop;
+}
+
 static int get_output_num()
 {
     int ret;
@@ -46,6 +85,240 @@ static void set_output_num(int num)
 static void clear_output_num()
 {
     set_output_num(0);
+}
+
+static void clear_tenant_requests()
+{
+    int i;
+
+    pthread_mutex_lock(&result_mutex);
+    for (i = 0; i < 4; i++) {
+        if (tenant_headers[i]) {
+            flb_sds_destroy(tenant_headers[i]);
+            tenant_headers[i] = NULL;
+        }
+        if (tenant_payloads[i]) {
+            flb_sds_destroy(tenant_payloads[i]);
+            tenant_payloads[i] = NULL;
+        }
+    }
+    tenant_request_count = 0;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static int get_tenant_request_count()
+{
+    int ret;
+
+    pthread_mutex_lock(&result_mutex);
+    ret = tenant_request_count;
+    pthread_mutex_unlock(&result_mutex);
+
+    return ret;
+}
+
+static void clear_tenant_policy_requests()
+{
+    pthread_mutex_lock(&result_mutex);
+    tenant_policy_request_count = 0;
+    tenant_policy_a_count = 0;
+    tenant_policy_b_count = 0;
+    tenant_policy_fail_tenant_a = FLB_FALSE;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static int get_tenant_policy_request_count()
+{
+    int ret;
+
+    pthread_mutex_lock(&result_mutex);
+    ret = tenant_policy_request_count;
+    pthread_mutex_unlock(&result_mutex);
+
+    return ret;
+}
+
+static int get_tenant_policy_a_count()
+{
+    int ret;
+
+    pthread_mutex_lock(&result_mutex);
+    ret = tenant_policy_a_count;
+    pthread_mutex_unlock(&result_mutex);
+
+    return ret;
+}
+
+static int get_tenant_policy_b_count()
+{
+    int ret;
+
+    pthread_mutex_lock(&result_mutex);
+    ret = tenant_policy_b_count;
+    pthread_mutex_unlock(&result_mutex);
+
+    return ret;
+}
+
+static void set_tenant_policy_fail_tenant_a(int fail)
+{
+    pthread_mutex_lock(&result_mutex);
+    tenant_policy_fail_tenant_a = fail;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static int cb_loki_tenant_policy_server(struct flb_http_request *request,
+                                        struct flb_http_response *response)
+{
+    int status = 200;
+    int slot;
+    int fail_tenant_a;
+    char *tenant;
+
+    tenant = flb_http_request_get_header(request, "x-scope-orgid");
+
+    pthread_mutex_lock(&result_mutex);
+    slot = tenant_request_count;
+    if (slot < 4) {
+        if (tenant != NULL) {
+            tenant_headers[slot] = flb_sds_create("X-Scope-OrgID: ");
+            if (tenant_headers[slot] != NULL) {
+                tenant_headers[slot] = flb_sds_cat(tenant_headers[slot],
+                                                   tenant, strlen(tenant));
+            }
+        }
+
+        if (request->body != NULL) {
+            tenant_payloads[slot] = flb_sds_create_len(request->body,
+                                                       cfl_sds_len(request->body));
+        }
+        tenant_request_count++;
+    }
+
+    tenant_policy_request_count++;
+    fail_tenant_a = tenant_policy_fail_tenant_a;
+    if (tenant != NULL && strcmp(tenant, "tenant-a") == 0) {
+        tenant_policy_a_count++;
+        if (fail_tenant_a == FLB_TRUE) {
+            status = 400;
+        }
+    }
+    else if (tenant != NULL && strcmp(tenant, "tenant-b") == 0) {
+        tenant_policy_b_count++;
+    }
+    pthread_mutex_unlock(&result_mutex);
+
+    if (status == 400) {
+        return flb_hs_response_send_string(response, status,
+                                           FLB_HS_CONTENT_TYPE_OTHER,
+                                           "bad tenant");
+    }
+
+    return flb_hs_response_send_string(response, status,
+                                       FLB_HS_CONTENT_TYPE_OTHER,
+                                       "ok");
+}
+
+static void *tenant_policy_server_loop(void *data)
+{
+    struct mk_event *event;
+    struct tenant_policy_server *mock = data;
+
+    flb_engine_evl_set(mock->event_loop);
+
+    while (tenant_policy_server_should_stop(mock) == FLB_FALSE) {
+        mk_event_wait_2(mock->event_loop, 100);
+
+        mk_event_foreach(event, mock->event_loop) {
+            if (event->type == FLB_ENGINE_EV_CUSTOM) {
+                event->handler(event);
+            }
+        }
+
+        if (mock->server.downstream != NULL) {
+            flb_downstream_conn_pending_destroy(mock->server.downstream);
+        }
+    }
+
+    return NULL;
+}
+
+static int start_tenant_policy_server(struct tenant_policy_server *mock,
+                                      const char *port,
+                                      struct flb_config *config)
+{
+    int ret;
+    struct flb_http_server_options options;
+
+    memset(mock, 0, sizeof(struct tenant_policy_server));
+
+    flb_http_server_options_init(&options);
+    flb_net_setup_init(&mock->net_setup);
+
+    mock->event_loop = mk_event_loop_create(256);
+    if (mock->event_loop == NULL) {
+        return -1;
+    }
+
+    options.protocol_version = HTTP_PROTOCOL_VERSION_11;
+    options.request_callback = cb_loki_tenant_policy_server;
+    options.address = (char *) LOKI_TENANT_POLICY_HOST;
+    options.port = (unsigned short) atoi(port);
+    options.networking_flags = 0;
+    options.networking_setup = &mock->net_setup;
+    options.event_loop = mock->event_loop;
+    options.system_context = config;
+    options.use_caller_event_loop = FLB_TRUE;
+
+    ret = flb_http_server_init_with_options(&mock->server, &options);
+    if (ret != 0) {
+        mk_event_loop_destroy(mock->event_loop);
+        mock->event_loop = NULL;
+        return -1;
+    }
+
+    ret = flb_http_server_start(&mock->server);
+    if (ret != 0) {
+        flb_http_server_destroy(&mock->server);
+        mk_event_loop_destroy(mock->event_loop);
+        mock->event_loop = NULL;
+        return -1;
+    }
+
+    mock->stop = FLB_FALSE;
+    mock->thread_started = FLB_FALSE;
+    ret = pthread_create(&mock->thread, NULL, tenant_policy_server_loop, mock);
+    if (ret != 0) {
+        flb_http_server_stop(&mock->server);
+        flb_http_server_destroy(&mock->server);
+        mk_event_loop_destroy(mock->event_loop);
+        mock->event_loop = NULL;
+        return -1;
+    }
+    mock->thread_started = FLB_TRUE;
+
+    flb_time_msleep(500);
+
+    return 0;
+}
+
+static void stop_tenant_policy_server(struct tenant_policy_server *mock)
+{
+    if (mock->event_loop == NULL) {
+        return;
+    }
+
+    pthread_mutex_lock(&result_mutex);
+    mock->stop = FLB_TRUE;
+    pthread_mutex_unlock(&result_mutex);
+
+    if (mock->thread_started == FLB_TRUE) {
+        pthread_join(mock->thread, NULL);
+    }
+    flb_http_server_stop(&mock->server);
+    flb_http_server_destroy(&mock->server);
+    mk_event_loop_destroy(mock->event_loop);
+    mock->event_loop = NULL;
 }
 
 #define JSON_BASIC "[12345678, {\"key\":\"value\"}]"
@@ -690,6 +963,231 @@ void flb_test_remove_keys_workers()
     flb_destroy(ctx);
 }
 
+static int check_tenant_request(char *tenant, char *present, char *absent)
+{
+    int i;
+
+    for (i = 0; i < tenant_request_count; i++) {
+        if (tenant_headers[i] == NULL || tenant_payloads[i] == NULL) {
+            continue;
+        }
+
+        if (strstr(tenant_headers[i], tenant) == NULL) {
+            continue;
+        }
+
+        if (!TEST_CHECK(strstr(tenant_payloads[i], present) != NULL)) {
+            TEST_MSG("payload for %s did not contain %s: %s",
+                     tenant, present, tenant_payloads[i]);
+            return -1;
+        }
+
+        if (!TEST_CHECK(strstr(tenant_payloads[i], absent) == NULL)) {
+            TEST_MSG("payload for %s contained %s: %s",
+                     tenant, absent, tenant_payloads[i]);
+            return -1;
+        }
+
+        return 0;
+    }
+
+    TEST_CHECK(0);
+    TEST_MSG("no request found for tenant %s", tenant);
+
+    return -1;
+}
+
+void flb_test_tenant_id_key_splits_requests()
+{
+    int ret;
+    int tries;
+    int in_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+    struct tenant_policy_server mock_server;
+    char *tenant_a = "[12345678, {\"tenant_id\":\"tenant-a\",\"msg\":\"msg-a\"}]";
+    char *tenant_b = "[12345679, {\"tenant_id\":\"tenant-b\",\"msg\":\"msg-b\"}]";
+
+    clear_tenant_requests();
+    clear_tenant_policy_requests();
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error",
+                    NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "loki", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "test",
+                         "host", LOKI_TENANT_POLICY_HOST,
+                         "port", LOKI_TENANT_SPLIT_PORT,
+                         "tenant_id_key", "tenant_id",
+                         "remove_keys", "tenant_id",
+                         "net.keepalive", "off",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    ret = start_tenant_policy_server(&mock_server, LOKI_TENANT_SPLIT_PORT,
+                                     ctx->config);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_lib_push(ctx, in_ffd, tenant_a, strlen(tenant_a));
+    TEST_CHECK(ret >= 0);
+    ret = flb_lib_push(ctx, in_ffd, tenant_b, strlen(tenant_b));
+    TEST_CHECK(ret >= 0);
+
+    for (tries = 0; tries < 20 && get_tenant_request_count() < 2; tries++) {
+        flb_time_msleep(500);
+    }
+
+    if (!TEST_CHECK(get_tenant_request_count() == 2)) {
+        TEST_MSG("expected 2 requests, got %d", get_tenant_request_count());
+    }
+
+    pthread_mutex_lock(&result_mutex);
+    check_tenant_request("X-Scope-OrgID: tenant-a", "msg-a", "msg-b");
+    check_tenant_request("X-Scope-OrgID: tenant-b", "msg-b", "msg-a");
+    pthread_mutex_unlock(&result_mutex);
+
+    flb_stop(ctx);
+    stop_tenant_policy_server(&mock_server);
+    flb_destroy(ctx);
+    clear_tenant_requests();
+    clear_tenant_policy_requests();
+}
+
+static void run_tenant_id_key_partial_handling(char *mode,
+                                               char *port,
+                                               int expect_retry)
+{
+    int ret;
+    int tries;
+    int in_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+    struct tenant_policy_server mock_server;
+    char *tenant_a = "[12345678, {\"tenant_id\":\"tenant-a\",\"msg\":\"msg-a\"}]";
+    char *tenant_b = "[12345679, {\"tenant_id\":\"tenant-b\",\"msg\":\"msg-b\"}]";
+
+    clear_tenant_requests();
+    clear_tenant_policy_requests();
+    set_tenant_policy_fail_tenant_a(FLB_TRUE);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error",
+                    "scheduler.base", "1",
+                    "scheduler.cap", "1",
+                    NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "loki", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "test",
+                         "host", LOKI_TENANT_POLICY_HOST,
+                         "port", port,
+                         "tenant_id_key", "tenant_id",
+                         "tenant_id_key_error_handling", mode,
+                         "remove_keys", "tenant_id",
+                         "Retry_Limit", "1",
+                         "net.keepalive", "off",  /* Prevent mock server 10s timeout races */
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    ret = start_tenant_policy_server(&mock_server, port, ctx->config);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_lib_push(ctx, in_ffd, tenant_a, strlen(tenant_a));
+    TEST_CHECK(ret >= 0);
+    ret = flb_lib_push(ctx, in_ffd, tenant_b, strlen(tenant_b));
+    TEST_CHECK(ret >= 0);
+
+    for (tries = 0; tries < 40 && get_tenant_policy_request_count() < 2; tries++) {
+        flb_time_msleep(500);
+    }
+
+    if (!TEST_CHECK(get_tenant_policy_request_count() >= 2)) {
+        TEST_MSG("expected at least 2 requests, got %d",
+                 get_tenant_policy_request_count());
+    }
+
+    if (!TEST_CHECK(get_tenant_policy_a_count() >= 1)) {
+        TEST_MSG("expected tenant-a request, got %d",
+                 get_tenant_policy_a_count());
+    }
+
+    if (!TEST_CHECK(get_tenant_policy_b_count() >= 1)) {
+        TEST_MSG("expected tenant-b request after tenant-a failure, got %d",
+                 get_tenant_policy_b_count());
+    }
+
+    if (expect_retry == FLB_TRUE) {
+        for (tries = 0;
+             tries < 40 && get_tenant_policy_request_count() < 4;
+             tries++) {
+            flb_time_msleep(500);
+        }
+
+        if (!TEST_CHECK(get_tenant_policy_request_count() >= 4)) {
+            TEST_MSG("expected retry requests, got %d",
+                     get_tenant_policy_request_count());
+        }
+
+        if (!TEST_CHECK(get_tenant_policy_a_count() >= 2)) {
+            TEST_MSG("expected tenant-a retry, got %d",
+                     get_tenant_policy_a_count());
+        }
+
+        if (!TEST_CHECK(get_tenant_policy_b_count() >= 2)) {
+            TEST_MSG("expected tenant-b duplicate on retry, got %d",
+                     get_tenant_policy_b_count());
+        }
+    }
+    else {
+        flb_time_msleep(2500);  /* > one retry window with scheduler.base/cap = 1 */
+
+        if (!TEST_CHECK(get_tenant_policy_request_count() == 2)) {
+            TEST_MSG("expected no retry requests, got %d",
+                     get_tenant_policy_request_count());
+        }
+    }
+
+    flb_stop(ctx);
+    stop_tenant_policy_server(&mock_server);
+    flb_destroy(ctx);
+    clear_tenant_requests();
+    clear_tenant_policy_requests();
+}
+
+void flb_test_tenant_id_key_partial_success()
+{
+    run_tenant_id_key_partial_handling("partial_success",
+                                       LOKI_TENANT_POLICY_SUCCESS_PORT,
+                                       FLB_FALSE);
+}
+
+void flb_test_tenant_id_key_partial_error()
+{
+    run_tenant_id_key_partial_handling("partial_error",
+                                       LOKI_TENANT_POLICY_ERROR_PORT,
+                                       FLB_TRUE);
+}
+
 static void cb_check_label_map_path(void *ctx, int ffd,
                                     int res_ret, void *res_data, size_t res_size,
                                     void *data)
@@ -1019,6 +1517,9 @@ TEST_LIST = {
     {"labels_ra"              , flb_test_labels_ra },
     {"remove_keys"            , flb_test_remove_keys },
     {"remove_keys_workers"    , flb_test_remove_keys_workers },
+    {"tenant_id_key_splits_requests", flb_test_tenant_id_key_splits_requests },
+    {"tenant_id_key_partial_success", flb_test_tenant_id_key_partial_success },
+    {"tenant_id_key_partial_error", flb_test_tenant_id_key_partial_error },
     {"basic"                  , flb_test_basic },
     {"labels"                 , flb_test_labels },
     {"label_keys"             , flb_test_label_keys },

@@ -9,8 +9,8 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  5)
-set(FLB_VERSION_MINOR  0)
-set(FLB_VERSION_PATCH  8)
+set(FLB_VERSION_MINOR  1)
+set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -1453,8 +1453,8 @@ if(NOT FLB_POSIX_TLS)
   check_c_source_compiles("
    __thread int a;
    int main() {
-       __tls_get_addr(0);
-       return 0;
+       a = 1;
+       return a - 1;
    }" FLB_HAVE_C_TLS)
   if(FLB_HAVE_C_TLS)
     FLB_DEFINITION(FLB_HAVE_C_TLS)

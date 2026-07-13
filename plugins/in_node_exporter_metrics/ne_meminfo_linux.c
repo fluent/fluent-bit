@@ -53,7 +53,7 @@ static int meminfo_configure(struct flb_ne *ctx)
     mk_list_init(&list);
     mk_list_init(&split_list);
 
-    ret = ne_utils_file_read_lines(ctx->path_procfs, "/meminfo", &list);
+    ret = ne_utils_file_read_lines(ctx, ctx->path_procfs, "/meminfo", &list);
     if (ret == -1) {
         return -1;
     }
@@ -206,7 +206,7 @@ static int meminfo_update(struct flb_ne *ctx)
     struct flb_slist_entry *entry;
 
     mk_list_init(&list);
-    ret = ne_utils_file_read_lines(ctx->path_procfs, "/meminfo", &list);
+    ret = ne_utils_file_read_lines(ctx, ctx->path_procfs, "/meminfo", &list);
     if (ret == -1) {
         return -1;
     }

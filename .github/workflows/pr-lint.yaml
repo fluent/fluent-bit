@@ -20,7 +20,7 @@ jobs:
           persist-credentials: false
 
       - name: Run hadolint
-        uses: reviewdog/action-hadolint@921946a7ebaaf08ac72607bad67209f4e52b5407 # v1.50.5
+        uses: reviewdog/action-hadolint@1b2cfa6ba72072ad35158d7ff3aa49bbdc03506d # v1.51.0
         with:
           github_token: ${{ secrets.github_token }}
           fail_level: "warning"

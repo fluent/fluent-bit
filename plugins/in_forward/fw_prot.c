@@ -550,6 +550,13 @@ static int check_ping(struct flb_input_instance *ins,
 
     /* Parse PING message */
     root = result.data;
+    if (root.type != MSGPACK_OBJECT_ARRAY) {
+        flb_plg_error(ins, "Invalid PING message");
+        flb_free(serverside);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
     if (root.via.array.size != 6) {
         flb_plg_error(ins, "Invalid PING message");
         flb_free(serverside);
@@ -1749,7 +1756,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 goto cleanup_msgpack;
             }
 
-            ret = msgpack_unpacker_next(unp, &result);
+            ret = msgpack_unpacker_next_with_size(unp, &result, &bytes);
         }
     }
 

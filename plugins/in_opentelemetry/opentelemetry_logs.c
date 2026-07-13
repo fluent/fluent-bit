@@ -567,12 +567,20 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
 
                 if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                     if (log_records[log_record_index]->time_unix_nano > 0) {
-                        flb_time_from_uint64(&tm, log_records[log_record_index]->time_unix_nano);
-                        ret = flb_log_event_encoder_set_timestamp(encoder, &tm);
+                        ret = flb_time_from_uint64(
+                                &tm,
+                                log_records[log_record_index]->time_unix_nano);
+                        if (ret == 0) {
+                            ret = flb_log_event_encoder_set_timestamp(encoder, &tm);
+                        }
                     }
                     else if (log_records[log_record_index]->observed_time_unix_nano > 0) {
-                        flb_time_from_uint64(&tm, log_records[log_record_index]->observed_time_unix_nano);
-                        ret = flb_log_event_encoder_set_timestamp(encoder, &tm);
+                        ret = flb_time_from_uint64(
+                                &tm,
+                                log_records[log_record_index]->observed_time_unix_nano);
+                        if (ret == 0) {
+                            ret = flb_log_event_encoder_set_timestamp(encoder, &tm);
+                        }
                     }
                     else {
                         flb_time_get(&tm);

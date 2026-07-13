@@ -1,17 +1,23 @@
 cmake_minimum_required(VERSION 3.20)
 project(cfl C)
+if(NOT DEFINED CMAKE_C_STANDARD)
+  set(CMAKE_C_STANDARD 99)
+endif()
+set(CMAKE_C_STANDARD_REQUIRED On)
+set(CMAKE_C_EXTENSIONS On)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # C Floppy Version
-set(CFL_VERSION_MAJOR  0)
-set(CFL_VERSION_MINOR  7)
-set(CFL_VERSION_PATCH  1)
+set(CFL_VERSION_MAJOR  1)
+set(CFL_VERSION_MINOR  0)
+set(CFL_VERSION_PATCH  0)
 set(CFL_VERSION_STR    "${CFL_VERSION_MAJOR}.${CFL_VERSION_MINOR}.${CFL_VERSION_PATCH}")
 
 # Configuration options
 option(CFL_DEV                            "Enable development mode"                    No)
 option(CFL_TESTS                          "Enable unit testing"                        No)
+option(CFL_BENCHMARKS                     "Build benchmark tools"                      No)
 option(CFL_INSTALL_BUNDLED_XXHASH_HEADERS "Enable bundled xxHash headers installation" Yes)
 
 if(CFL_DEV)
@@ -39,15 +45,6 @@ endif()
 if(NOT MSVC)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 endif()
-
-# Define __FILENAME__ consistently across Operating Systems
-if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$$(subst ${CMAKE_SOURCE_DIR}/,,$$(abspath $$<))\"'")
-else()
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
-endif()
-
-
 
 # timespec_get() support
 check_c_source_compiles("
@@ -118,6 +115,7 @@ include_directories(
 # xxHash
 if(NOT TARGET xxhash)
   # Do something when target found
+  set(CFL_BUNDLED_XXHASH On)
   set(XXHASH_BUILD_ENABLE_INLINE_API OFF)
   set(XXHASH_BUILD_XXHSUM OFF)
   set(BUILD_SHARED_LIBS OFF)
@@ -144,6 +142,10 @@ set(CFL_BUILD_DIR "${CFL_ROOT}/build")
 add_subdirectory(include)
 add_subdirectory(src)
 
+if(CFL_BENCHMARKS)
+  add_subdirectory(benchmarks)
+endif()
+
 # Tests
 if(CFL_TESTS)
   enable_testing()
@@ -156,8 +158,8 @@ endif()
 set(CPACK_PACKAGE_VERSION ${CFL_VERSION_STR})
 set(CPACK_PACKAGE_NAME "cfl")
 set(CPACK_PACKAGE_RELEASE 1)
-set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@calyptia.com>")
-set(CPACK_PACKAGE_VENDOR "Calyptia")
+set(CPACK_PACKAGE_CONTACT "Eduardo Silva <edsiper@gmail.com>")
+set(CPACK_PACKAGE_VENDOR "Fluent Project")
 set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/")
 

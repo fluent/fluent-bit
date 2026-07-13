@@ -198,6 +198,65 @@ def test_in_splunk_accepts_missing_authorization_header_by_default():
     assert result["status_code"] == 200
 
 
+SPLUNK_HEC_TOKEN = "11111111-1111-1111-1111-111111111111"
+SPLUNK_HEC_ENDPOINT = "/services/collector/event"
+
+
+SPLUNK_AUTH_CASES = [
+    {
+        "id": "valid_token",
+        "headers": [
+            f"Authorization: Splunk {SPLUNK_HEC_TOKEN}",
+            "Content-Type: application/json",
+        ],
+        "status_code": 200,
+        "body": SUCCESS_BODY,
+    },
+    {
+        "id": "invalid_token",
+        "headers": [
+            "Authorization: Splunk 99999999-0000-0000-0000-000000000000",
+            "Content-Type: application/json",
+        ],
+        "status_code": 403,
+        "body": '{"text":"Invalid token","code":4}',
+    },
+    {
+        "id": "malformed_authorization",
+        "headers": [
+            f"Authorization: {SPLUNK_HEC_TOKEN}",
+            "Content-Type: application/json",
+        ],
+        "status_code": 401,
+        "body": '{"text":"Invalid authorization","code":3}',
+    },
+    {
+        "id": "missing_authorization",
+        "headers": ["Content-Type: application/json"],
+        "status_code": 401,
+        "body": '{"text":"Token is required","code":2}',
+    },
+]
+
+
+@pytest.mark.parametrize("case", SPLUNK_AUTH_CASES, ids=[case["id"] for case in SPLUNK_AUTH_CASES])
+def test_in_splunk_hec_auth_status_codes(case):
+    service = Service("splunk_http1_token_auth.yaml")
+    service.start()
+
+    result = run_curl_request(
+        f"http://localhost:{service.flb_listener_port}{SPLUNK_HEC_ENDPOINT}",
+        json.dumps({"event": "x"}),
+        headers=case["headers"],
+        http_mode="http1.1",
+    )
+
+    service.stop()
+
+    assert result["status_code"] == case["status_code"]
+    assert result["body"] == case["body"]
+
+
 def test_in_splunk_to_out_splunk_prefers_configured_output_token():
     service = ForwardingService("in_splunk_to_out_splunk.yaml")
     service.start()

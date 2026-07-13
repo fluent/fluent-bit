@@ -28,18 +28,23 @@
 int ne_utils_str_to_double(char *str, double *out_val);
 int ne_utils_str_to_uint64(char *str, uint64_t *out_val);
 
-int ne_utils_file_read_uint64(const char *mount,
+int ne_utils_file_read_uint64(struct flb_ne *ctx,
+                              const char *mount,
                               const char *path,
                               const char *join_a, const char *join_b,
                               uint64_t *out_val);
 
-int ne_utils_file_read_sds(const char *mount,
+int ne_utils_file_read_sds(struct flb_ne *ctx,
+                           const char *mount,
                            const char *path,
                            const char *join_a,
                            const char *join_b,
                            flb_sds_t *str);
 
-int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list *list);
+int ne_utils_file_read_lines(struct flb_ne *ctx,
+                             const char *mount,
+                             const char *path,
+                             struct mk_list *list);
 int ne_utils_path_scan(struct flb_ne *ctx, const char *mount, const char *path,
                        int expected, struct mk_list *list);
 #endif

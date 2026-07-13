@@ -8,7 +8,12 @@
 /* CloudWatch API constants */
 #include "../../plugins/out_cloudwatch_logs/cloudwatch_api.h"
 
-#define ERROR_ALREADY_EXISTS "{\"__type\":\"ResourceAlreadyExistsException\"}"
+#ifdef FLB_SYSTEM_WINDOWS
+#define setenv(name, value, overwrite) _putenv_s(name, value)
+#define unsetenv(name) _putenv_s(name, "")
+#endif
+
+#define CLOUDWATCH_ERROR_ALREADY_EXISTS "{\"__type\":\"ResourceAlreadyExistsException\"}"
 #define CLOUDWATCH_ERROR_NOT_FOUND "{\"__type\":\"ResourceNotFoundException\"}"
 /* not a real error code, but tests that the code can respond to any error */
 #define ERROR_UNKNOWN "{\"__type\":\"UNKNOWN\"}"
@@ -109,7 +114,7 @@ void flb_test_cloudwatch_already_exists_create_group(void)
 
     /* mocks calls- signals that we are in test mode */
     setenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_CREATE_LOG_GROUP_ERROR", ERROR_ALREADY_EXISTS, 1);
+    setenv("TEST_CREATE_LOG_GROUP_ERROR", CLOUDWATCH_ERROR_ALREADY_EXISTS, 1);
 
     ctx = flb_create();
 
@@ -146,7 +151,7 @@ void flb_test_cloudwatch_already_exists_create_stream(void)
 
     /* mocks calls- signals that we are in test mode */
     setenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_CREATE_LOG_STREAM_ERROR", ERROR_ALREADY_EXISTS, 1);
+    setenv("TEST_CREATE_LOG_STREAM_ERROR", CLOUDWATCH_ERROR_ALREADY_EXISTS, 1);
 
     ctx = flb_create();
 
@@ -292,9 +297,10 @@ void flb_test_cloudwatch_error_put_log_events_not_found(void)
     int in_ffd;
     int out_ffd;
 
-    /* ResourceNotFoundException must follow the normal output retry path. */
+    /* ResourceNotFoundException must reject the chunk without retrying it. */
     setenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST", "true", 1);
     setenv("TEST_PUT_LOG_EVENTS_ERROR", CLOUDWATCH_ERROR_NOT_FOUND, 1);
+    cloudwatch_mock_call_count_reset();
 
     ctx = flb_create();
 
@@ -318,7 +324,15 @@ void flb_test_cloudwatch_error_put_log_events_not_found(void)
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
 
     sleep(2);
+    TEST_CHECK(cloudwatch_mock_call_count_get("PutLogEvents") == 1);
+    TEST_CHECK(cloudwatch_mock_create_after_put_count_get() == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+
+    sleep(2);
     flb_stop(ctx);
+    TEST_CHECK(cloudwatch_mock_call_count_get("PutLogEvents") == 2);
+    TEST_CHECK(cloudwatch_mock_create_after_put_count_get() == 1);
     flb_destroy(ctx);
     unsetenv("TEST_PUT_LOG_EVENTS_ERROR");
 }
@@ -369,7 +383,7 @@ void flb_test_cloudwatch_already_exists_create_group_put_retention_policy(void)
 
     /* mocks calls- signals that we are in test mode */
     setenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_CREATE_LOG_GROUP_ERROR", ERROR_ALREADY_EXISTS, 1);
+    setenv("TEST_CREATE_LOG_GROUP_ERROR", CLOUDWATCH_ERROR_ALREADY_EXISTS, 1);
 
     /* PutRetentionPolicy is not called if the group already exists */
     setenv("TEST_PUT_RETENTION_POLICY_ERROR", ERROR_UNKNOWN, 1);
@@ -437,6 +451,85 @@ void flb_test_cloudwatch_error_put_retention_policy(void)
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
+}
+
+void flb_test_cloudwatch_create_stream_escapes_json(void)
+{
+    struct log_stream stream;
+    flb_sds_t body;
+    char *expected;
+    int ret;
+
+    memset(&stream, 0, sizeof(struct log_stream));
+    stream.group = flb_sds_create("fluent");
+    stream.name = flb_sds_create("systemd-fsck@dev-disk-by\\x2dlabel-BOOT.service");
+    TEST_CHECK(stream.group != NULL);
+    TEST_CHECK(stream.name != NULL);
+
+    if (stream.group && stream.name) {
+        body = flb_cloudwatch_create_log_stream_body(&stream);
+        TEST_CHECK(body != NULL);
+
+        if (body) {
+            expected = "{\"logGroupName\":\"fluent\","
+                       "\"logStreamName\":\"systemd-fsck@dev-disk-by\\\\x2dlabel-BOOT.service\"}";
+            ret = strcmp(body, expected);
+            TEST_CHECK(ret == 0);
+            flb_sds_destroy(body);
+        }
+    }
+
+    flb_sds_destroy(stream.group);
+    flb_sds_destroy(stream.name);
+}
+
+void flb_test_cloudwatch_put_events_escapes_stream_name(void)
+{
+    struct flb_cloudwatch ctx;
+    struct log_stream stream;
+    struct cw_flush buf;
+    char out_buf[512];
+    char *expected_stream_name;
+    char *expected;
+    int offset;
+    int ret;
+
+    memset(&ctx, 0, sizeof(struct flb_cloudwatch));
+    memset(&stream, 0, sizeof(struct log_stream));
+    memset(&buf, 0, sizeof(struct cw_flush));
+
+    stream.group = flb_sds_create("fluent");
+    stream.name = flb_sds_create("systemd-fsck@dev-disk-by\\x2dlabel-BOOT.service");
+    TEST_CHECK(stream.group != NULL);
+    TEST_CHECK(stream.name != NULL);
+
+    if (stream.group && stream.name) {
+        offset = 0;
+        buf.out_buf = out_buf;
+        buf.out_buf_size = sizeof(out_buf);
+        buf.current_stream = &stream;
+
+        ret = flb_cloudwatch_init_put_payload(&ctx, &buf, &stream, &offset);
+        TEST_CHECK(ret == 0);
+
+        if (ret == 0) {
+            expected = "{\"logGroupName\":\"fluent\","
+                       "\"logStreamName\":\"systemd-fsck@dev-disk-by\\\\x2dlabel-BOOT.service\","
+                       "\"logEvents\":[";
+            TEST_CHECK(offset == strlen(expected));
+            TEST_CHECK(strncmp(out_buf, expected, offset) == 0);
+        }
+
+        expected_stream_name = "systemd-fsck@dev-disk-by\\\\x2dlabel-BOOT.service";
+        reset_flush_buf(&ctx, &buf);
+        TEST_CHECK(buf.data_size == PUT_LOG_EVENTS_HEADER_LEN +
+                                    PUT_LOG_EVENTS_FOOTER_LEN +
+                                    strlen("fluent") +
+                                    strlen(expected_stream_name));
+    }
+
+    flb_sds_destroy(stream.group);
+    flb_sds_destroy(stream.name);
 }
 
 /* Helper function to create a large JSON message of specified size */
@@ -591,6 +684,8 @@ TEST_LIST = {
     {"put_retention_policy_success", flb_test_cloudwatch_put_retention_policy_success },
     {"already_exists_create_group_put_retention_policy", flb_test_cloudwatch_already_exists_create_group_put_retention_policy },
     {"error_put_retention_policy", flb_test_cloudwatch_error_put_retention_policy },
+    {"create_stream_escapes_json", flb_test_cloudwatch_create_stream_escapes_json },
+    {"put_events_escapes_stream_name", flb_test_cloudwatch_put_events_escapes_stream_name },
     {"event_size_at_limit", flb_test_cloudwatch_event_size_at_limit },
     {"event_size_over_limit", flb_test_cloudwatch_event_size_over_limit },
     {"event_truncation_with_backslash", flb_test_cloudwatch_event_truncation_with_backslash },

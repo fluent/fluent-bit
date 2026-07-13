@@ -157,7 +157,7 @@ jobs:
           arch: ${{ matrix.config.arch }}
 
       - name: Get gzip command w/ chocolatey
-        uses: crazy-max/ghaction-chocolatey@dff3862348493b11fba2fbc49147b6d2dfe09b66 # v4.0.0
+        uses: crazy-max/ghaction-chocolatey@dfdcf5bba9c0a16358a21c13a06ec5c89024b3ac # v4.1.0
         with:
           args: install gzip -y
 
@@ -170,7 +170,7 @@ jobs:
 
       - name: Restore cached packages of vcpkg
         id: cache-unit-test-vcpkg-sources
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             C:\vcpkg\installed
@@ -196,7 +196,7 @@ jobs:
 
       - name: Save packages of vcpkg
         id: save-vcpkg-sources
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             C:\vcpkg\installed

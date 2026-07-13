@@ -213,6 +213,71 @@ void test_msgpack_to_time_eventtime()
     msgpack_unpacked_destroy(&result);
 }
 
+void test_eventtime_boundaries()
+{
+    struct flb_time tm;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_unpacked result;
+    msgpack_object tm_obj;
+    uint32_t value[2];
+    int ret;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    value[0] = htonl(UINT32_MAX - 2);
+    value[1] = htonl(999999999);
+    msgpack_pack_ext(&mp_pck, 8, 0);
+    msgpack_pack_ext_body(&mp_pck, value, sizeof(value));
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, NULL);
+    tm_obj = result.data;
+    ret = flb_time_msgpack_to_time(&tm, &tm_obj);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(tm.tm.tv_sec == (time_t) (UINT32_MAX - 2));
+    TEST_CHECK(tm.tm.tv_nsec == 999999999);
+    msgpack_unpacked_destroy(&result);
+
+    msgpack_sbuffer_clear(&mp_sbuf);
+    value[0] = htonl(2209072510U);
+    value[1] = htonl(808241446);
+    msgpack_pack_ext(&mp_pck, 8, 0);
+    msgpack_pack_ext_body(&mp_pck, value, sizeof(value));
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, NULL);
+    tm_obj = result.data;
+    ret = flb_time_msgpack_to_time(&tm, &tm_obj);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(tm.tm.tv_sec == (time_t) 2209072510U);
+    TEST_CHECK(tm.tm.tv_nsec == 808241446);
+    msgpack_unpacked_destroy(&result);
+
+    msgpack_sbuffer_clear(&mp_sbuf);
+    value[0] = htonl(2209072510U);
+    value[1] = htonl(1000000000U);
+    msgpack_pack_ext(&mp_pck, 8, 0);
+    msgpack_pack_ext_body(&mp_pck, value, sizeof(value));
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, NULL);
+    tm_obj = result.data;
+    ret = flb_time_msgpack_to_time(&tm, &tm_obj);
+    TEST_CHECK(ret != 0);
+    msgpack_unpacked_destroy(&result);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+}
+
+void test_from_uint64_post_2038()
+{
+    struct flb_time tm;
+    int ret;
+
+    ret = flb_time_from_uint64(&tm, UINT64_C(2209072510808241446));
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(tm.tm.tv_sec == (time_t) 2209072510U);
+    TEST_CHECK(tm.tm.tv_nsec == 808241446);
+}
+
 void test_msgpack_to_time_invalid()
 {
     struct flb_time tm;
@@ -472,6 +537,8 @@ TEST_LIST = {
     { "msgpack_to_time_int"           , test_msgpack_to_time_int},
     { "msgpack_to_time_double"        , test_msgpack_to_time_double},
     { "msgpack_to_time_eventtime"     , test_msgpack_to_time_eventtime},
+    { "eventtime_boundaries"          , test_eventtime_boundaries},
+    { "from_uint64_post_2038"         , test_from_uint64_post_2038},
     { "msgpack_to_time_invalid"       , test_msgpack_to_time_invalid},
     { "append_to_msgpack_eventtime"   , test_append_to_msgpack_eventtime},
     { "windows_zone_to_iana"          , test_windows_zone_to_iana},

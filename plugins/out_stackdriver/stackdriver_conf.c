@@ -980,13 +980,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
         flb_sds_destroy(ctx->metadata_server);
     }
 
-    if (ctx->resource_type == RESOURCE_TYPE_K8S){
-        flb_sds_destroy(ctx->namespace_name);
-        flb_sds_destroy(ctx->pod_name);
-        flb_sds_destroy(ctx->container_name);
-        flb_sds_destroy(ctx->node_name);
-        flb_sds_destroy(ctx->local_resource_id);
-    }
+
 
     if (ctx->metadata_server_auth) {
         flb_sds_destroy(ctx->zone);
@@ -1035,6 +1029,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
 
     flb_kv_release(&ctx->config_labels);
     flb_kv_release(&ctx->resource_labels_kvs);
+
     if (ctx->token_mutex_initialized) {
         pthread_mutex_destroy(&ctx->token_mutex);
     }

@@ -73,7 +73,30 @@ static void clear_output_num()
 struct str_list {
     size_t size;
     char **lists;
+    int *matches;
+    int require_json_array;
+    char *joined;
 };
+
+static int validate_json_array_payload(flb_sds_t out_line, struct str_list *l)
+{
+    size_t len;
+
+    len = flb_sds_len(out_line);
+    if (!TEST_CHECK(len >= 2 && out_line[0] == '[' && out_line[len - 1] == ']')) {
+        TEST_MSG("expected JSON array payload, got: %s", out_line);
+        return -1;
+    }
+
+    if (l->joined != NULL && strstr(out_line, l->lists[0]) != NULL &&
+        strstr(out_line, l->lists[1]) != NULL &&
+        !TEST_CHECK(strstr(out_line, l->joined) != NULL)) {
+        TEST_MSG("expected JSON array separator, got: %s", out_line);
+        return -1;
+    }
+
+    return 0;
+}
 
 /* Callback to check expected results */
 static void cb_check_str_list(void *ctx, int ffd, int res_ret, 
@@ -100,8 +123,19 @@ static void cb_check_str_list(void *ctx, int ffd, int res_ret,
         return;
     }
 
+    if (l->require_json_array) {
+        validate_json_array_payload(out_line, l);
+    }
+
     for (i=0; i<l->size; i++) {
         p = strstr(out_line, l->lists[i]);
+        if (l->matches != NULL) {
+            if (p != NULL) {
+                l->matches[i]++;
+            }
+            continue;
+        }
+
         if (!TEST_CHECK(p != NULL)) {
             TEST_MSG("  Got   :%s\n  expect:%s", out_line, l->lists[i]);
         }
@@ -109,6 +143,21 @@ static void cb_check_str_list(void *ctx, int ffd, int res_ret,
     set_output_num(num+1);
 
     flb_sds_destroy(out_line);
+}
+
+static int check_str_list_matches(struct str_list *l)
+{
+    int ret = 0;
+    size_t i;
+
+    for (i=0; i<l->size; i++) {
+        if (!TEST_CHECK(l->matches[i] > 0)) {
+            TEST_MSG("missing expected output: %s", l->lists[i]);
+            ret = -1;
+        }
+    }
+
+    return ret;
 }
 
 static int msgpack_strncmp(char* str, size_t str_len, msgpack_object obj)
@@ -138,7 +187,7 @@ static int msgpack_strncmp(char* str, size_t str_len, msgpack_object obj)
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
         {
             long long val = strtoll(str, NULL, 10);
-            if (val == (unsigned long)obj.via.i64) {
+            if (val == obj.via.i64) {
                 ret = 0;
             }
         }
@@ -447,10 +496,18 @@ void flb_test_format_json()
     char *buf2 = "[2, {\"msg\":\"hello world\"}]";
     size_t size2 = strlen(buf2);
 
-    char *expected_strs[] = {"[{\"date\":1.0,\"msg\":\"hello world\"},{\"date\":2.0,\"msg\":\"hello world\"}]"};
+    int matches[] = {0, 0};
+    char *expected_strs[] = {
+        "{\"date\":1.0,\"msg\":\"hello world\"}",
+        "{\"date\":2.0,\"msg\":\"hello world\"}"
+    };
+    char *joined = "{\"date\":1.0,\"msg\":\"hello world\"},{\"date\":2.0,\"msg\":\"hello world\"}";
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
+                                .matches = &matches[0],
+                                .require_json_array = FLB_TRUE,
+                                .joined = joined,
     };
 
     clear_output_num();
@@ -489,6 +546,7 @@ void flb_test_format_json()
     if (!TEST_CHECK(num > 0))  {
         TEST_MSG("no outputs");
     }
+    check_str_list_matches(&expected);
 
     test_ctx_destroy(ctx);
 }

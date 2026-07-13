@@ -348,10 +348,67 @@ static void flb_test_heavy_input_pause_emitter()
         TEST_MSG("callback is not invoked");
     }
 
-    /* Input should be paused since Mem_Buf_Limit is small size.
-     * So got is less than heavy_loop.
+    /*
+     * Input should be paused since Mem_Buf_Limit is small size. Retagged
+     * records accepted within the emitter budget should drain, but the
+     * emitter must stop accepting before the full unbounded stream is queued.
      */
     if(!TEST_CHECK(heavy_loop > got)) {
+        TEST_MSG("expect: %d got: %d", heavy_loop, got);
+    }
+
+    filter_test_destroy(ctx);
+}
+
+static void flb_test_busy_emitter_keeps_original()
+{
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    int ret;
+    int not_used = 0;
+    int bytes;
+    int heavy_loop = 100000;
+    int got;
+    char p[256];
+    int i;
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &not_used;
+
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+    clear_output_num();
+
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "Rule", "$key ^(rewrite)$ updated false",
+                         "Emitter_Mem_Buf_Limit", "1kb",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "Match", "*",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_service_set(ctx->flb, "Log_Level", "Off", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    for (i = 0; i < heavy_loop; i++) {
+        memset(p, '\0', sizeof(p));
+        snprintf(p, sizeof(p), "[%d, {\"val\": \"%d\",\"key\": \"rewrite\"}]", i, i);
+        bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, strlen(p));
+        TEST_CHECK(bytes == strlen(p));
+    }
+
+    flb_time_msleep(1500);
+    got = get_output_num();
+
+    if (!TEST_CHECK(got == heavy_loop)) {
         TEST_MSG("expect: %d got: %d", heavy_loop, got);
     }
 
@@ -557,6 +614,7 @@ TEST_LIST = {
     {"not_matched",      flb_test_not_matched},
     {"keep_true",        flb_test_keep_true},
     {"heavy_input_pause_emitter", flb_test_heavy_input_pause_emitter},
+    {"busy_emitter_keeps_original", flb_test_busy_emitter_keeps_original},
     {"issue_4518", flb_test_issue_4518},
     {"issue_4793", flb_test_issue_4793},
     {"sigsegv_issue_5846", flb_test_issue_5846},

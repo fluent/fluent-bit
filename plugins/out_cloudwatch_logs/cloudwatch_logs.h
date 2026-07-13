@@ -106,6 +106,9 @@ struct cw_flush {
 
     /* current log stream that we are sending records too */
     struct log_stream *current_stream;
+
+    /* marks a delivery failure that must not be retried */
+    int non_retriable_error;
 };
 
 struct cw_event {

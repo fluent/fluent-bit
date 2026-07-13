@@ -22,6 +22,7 @@ set(UNIT_TESTS_FILES
   gzip.c
   zstd.c
   random.c
+  thread_storage.c
   config_map.c
   mp.c
   mp_chunk_cobj.c
@@ -37,6 +38,7 @@ set(UNIT_TESTS_FILES
   flb_event_loop.c
   ring_buffer.c
   regex.c
+  scheduler.c
   parser_json.c
   parser_ltsv.c
   parser_regex.c

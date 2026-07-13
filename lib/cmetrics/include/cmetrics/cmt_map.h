@@ -57,6 +57,9 @@ int cmt_map_metric_get_val(struct cmt_opts *opts, struct cmt_map *map,
                            double *out_val);
 void cmt_map_metric_destroy(struct cmt_metric *metric);
 
+void cmt_map_metrics_expire(struct cmt_map *, uint64_t);
+
 void destroy_label_list(struct cfl_list *label_list);
+
 
 #endif
