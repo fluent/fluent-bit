@@ -969,8 +969,8 @@ static int cb_syslog_exit(void *data, struct flb_config *config)
         flb_upstream_destroy(ctx->u);
     }
 
-    if (ctx->fd > 0) {
-        close(ctx->fd);
+    if (ctx->fd != FLB_INVALID_SOCKET) {
+        flb_socket_close(ctx->fd);
     }
 
     flb_syslog_config_destroy(ctx);
