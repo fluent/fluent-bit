@@ -3,6 +3,11 @@
 #include "flb_tests_runtime.h"
 
 #define DPATH_PROM_TEXTFILE FLB_TESTS_DATA_PATH "/data/prometheus_textfile"
+#ifdef _WIN32
+#define PROM_TEXTFILE_GLOB DPATH_PROM_TEXTFILE "\\*.prom"
+#else
+#define PROM_TEXTFILE_GLOB DPATH_PROM_TEXTFILE "/*.prom"
+#endif
 
 static pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int num_output = 0;
@@ -86,7 +91,7 @@ static void test_prometheus_textfile(void)
     TEST_CHECK(ctx->i_ffd >= 0);
     ret = flb_input_set(ctx->flb, ctx->i_ffd,
                         "scrape_interval", "1s",
-                        "path", DPATH_PROM_TEXTFILE "/metrics.prom",
+                        "path", PROM_TEXTFILE_GLOB,
                         NULL);
     TEST_CHECK(ret == 0);
 
