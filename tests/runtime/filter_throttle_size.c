@@ -579,12 +579,19 @@ void test_default_log_field(void)
 char *push_data_to_engine_and_take_output(flb_ctx_t * ctx, int in_ffd,
                                           char *message)
 {
-    char *result = NULL;
     int bytes;
+    int attempts;
+    char *result = NULL;
+
     /*Push the message into the engine */
     bytes = flb_lib_push(ctx, in_ffd, (void *) message, strlen(message));
-    WAIT_FOR_FLUSH              /*wait the output data to be flushed */
-        result = get_output();  /*get the output message */
+    for (attempts = 0; attempts < 15; attempts++) {
+        flb_time_msleep(100);
+        result = get_output();
+        if (result != NULL) {
+            break;
+        }
+    }
     TEST_CHECK(bytes == strlen(message));       /*Chech if all of the message was proceesed */
     return result;
 }
