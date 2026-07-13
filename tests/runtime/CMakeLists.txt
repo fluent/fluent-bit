@@ -66,7 +66,9 @@ if(FLB_OUT_LIB)
   FLB_RT_TEST(FLB_IN_FLUENTBIT_METRICS "in_fluentbit_metrics.c")
   FLB_RT_TEST(FLB_IN_PROMETHEUS_TEXTFILE "in_prometheus_textfile.c")
   FLB_RT_TEST(FLB_IN_KUBERNETES_EVENTS "in_kubernetes_events.c")
-  FLB_RT_TEST(FLB_IN_OPENTELEMETRY "in_opentelemetry_routing.c")
+  if(FLB_HAVE_LIBYAML)
+    FLB_RT_TEST(FLB_IN_OPENTELEMETRY "in_opentelemetry_routing.c")
+  endif()
   if (FLB_IN_SYSTEMD)
     FLB_RT_TEST(FLB_IN_SYSTEMD        "in_systemd.c")
   endif ()
@@ -319,7 +321,16 @@ if(FLB_HAVE_SYSTEMD)
     set(SYSTEMD_LIB, "systemd")
 endif()
 
-set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+if(FLB_SYSTEM_WINDOWS)
+  set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_BINARY_DIR})
+  file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/data"
+       DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+  configure_file("${PROJECT_SOURCE_DIR}/conf/parsers.conf"
+                 "${CMAKE_CURRENT_BINARY_DIR}/data/common/parsers.conf"
+                 COPYONLY)
+else()
+  set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h.in"
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h"
@@ -336,6 +347,9 @@ foreach(source_file ${CHECK_PROGRAMS})
       ${source_file}
       )
     add_sanitizers(${source_file_we})
+    if(MSVC AND o_source_file_we STREQUAL "filter_aws")
+      target_compile_options(${source_file_we} PRIVATE /Zc:preprocessor)
+    endif()
     target_link_libraries(${source_file_we}
       fluent-bit-static
       ${CMAKE_THREAD_LIBS_INIT}
