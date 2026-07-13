@@ -34,7 +34,49 @@ Approach for this tests is basing on filter_kubernetes tests
 #include <sys/types.h>
 #include <fcntl.h>
 #include <string.h>
+#ifdef _WIN32
+#include <io.h>
+#include <sys/utime.h>
+#endif
 #include "flb_tests_runtime.h"
+
+#ifdef _WIN32
+#define fsync _commit
+#ifndef S_IRUSR
+#define S_IRUSR _S_IREAD
+#endif
+#ifndef S_IWUSR
+#define S_IWUSR _S_IWRITE
+#endif
+#ifndef S_IRGRP
+#define S_IRGRP 0
+#endif
+#ifndef S_IWGRP
+#define S_IWGRP 0
+#endif
+#ifndef S_IRWXU
+#define S_IRWXU (S_IRUSR | S_IWUSR)
+#endif
+#ifndef AT_FDCWD
+#define AT_FDCWD -100
+#endif
+
+static int flb_test_utimensat(int dirfd, const char *path,
+                              const struct timespec times[2], int flags)
+{
+    struct _utimbuf tm;
+
+    (void) dirfd;
+    (void) flags;
+
+    tm.actime = times[0].tv_sec;
+    tm.modtime = times[1].tv_sec;
+
+    return _utime(path, &tm);
+}
+
+#define utimensat flb_test_utimensat
+#endif
 
 #ifdef FLB_HAVE_INOTIFY
 #include "../../plugins/in_tail/tail_config.h"
@@ -375,8 +417,12 @@ void wait_expected_num_with_timeout(uint32_t timeout_ms, int expected_num, int *
 
 static inline int64_t set_result(int64_t v)
 {
+#ifdef _WIN32
+    return InterlockedExchange64((volatile LONG64 *)&result_time, v);
+#else
     int64_t old = __sync_lock_test_and_set(&result_time, v);
     return old;
+#endif
 }
 
 
