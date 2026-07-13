@@ -273,6 +273,7 @@ static void test_ctx_destroy(struct test_ctx *ctx)
 
 void flb_test_format_msgpack()
 {
+    int attempts;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -313,8 +314,12 @@ void flb_test_format_msgpack()
     ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf1, size1);
     TEST_CHECK(ret >= 0);
 
-    /* waiting to flush */
-    flb_time_msleep(500);
+    for (attempts = 0; attempts < 50; attempts++) {
+        if (get_output_num() == expected.size / 2) {
+            break;
+        }
+        flb_time_msleep(100);
+    }
 
     num = get_output_num();
     if (!TEST_CHECK(num == expected.size / 2))  {
