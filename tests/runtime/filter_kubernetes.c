@@ -11,11 +11,8 @@
 #ifndef _WIN32
 #include <unistd.h>
 #endif
-#ifdef _WIN32
-    #define TIME_EPSILON_MS 30
-#else
-    #define TIME_EPSILON_MS 10
-#endif
+#define KUBE_TEST_WAIT_STEP_MS  10
+#define KUBE_TEST_TIMEOUT_MS  5000
 
 struct kube_test {
     flb_ctx_t *flb;
@@ -32,7 +29,7 @@ struct local_logs_result {
     int nMatched;
 };
 
-void wait_with_timeout(uint32_t timeout_ms, struct kube_test_result *result, int nExpected)
+static void wait_with_timeout(uint32_t timeout_ms, int *matched, int expected)
 {
     struct flb_time start_time;
     struct flb_time end_time;
@@ -42,18 +39,17 @@ void wait_with_timeout(uint32_t timeout_ms, struct kube_test_result *result, int
     flb_time_get(&start_time);
 
     while (true) {
-        if (result->nMatched == nExpected) {
+        if (*matched >= expected) {
             break;
         }
 
-        flb_time_msleep(100);
+        flb_time_msleep(KUBE_TEST_WAIT_STEP_MS);
         flb_time_get(&end_time);
         flb_time_diff(&end_time, &start_time, &diff_time);
         elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
 
-        if (elapsed_time_flb > timeout_ms - TIME_EPSILON_MS) {
+        if (elapsed_time_flb >= timeout_ms) {
             flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
-            // Reached timeout.
             break;
         }
     }
@@ -260,7 +256,7 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     }
 
     ret = flb_service_set(ctx.flb,
-                          "Flush", "1",
+                          "Flush", "0.2",
                           "Grace", "1",
                           "Log_Level", "error",
                           "Parsers_File", DPATH "/parsers.conf",
@@ -375,13 +371,8 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     }
 #endif
 
-    /* Poll for up to 2 seconds or until we got a match */
-    for (ret = 0; ret < 2000 && result.nMatched == 0; ret++) {
-        usleep(1000);
-    }
-
     /* Wait until matching nExpected results */
-    wait_with_timeout(5000, &result, nExpected);
+    wait_with_timeout(KUBE_TEST_TIMEOUT_MS, &result.nMatched, nExpected);
 
     TEST_CHECK(result.nMatched == nExpected);
     TEST_MSG("result.nMatched: %i\nnExpected: %i", result.nMatched, nExpected);
@@ -445,7 +436,7 @@ static void flb_test_local_fluentbit_logs()
     TEST_CHECK_(ret == 0, "setting HOSTNAME");
 
     ret = flb_service_set(ctx.flb,
-                          "Flush", "1",
+                          "Flush", "0.2",
                           "Grace", "1",
                           "Log_Level", "info",
                           NULL);
@@ -486,9 +477,7 @@ static void flb_test_local_fluentbit_logs()
         goto exit;
     }
 
-    for (ret = 0; ret < 5000 && result.nMatched == 0; ret++) {
-        usleep(1000);
-    }
+    wait_with_timeout(KUBE_TEST_TIMEOUT_MS, &result.nMatched, 1);
 
     TEST_CHECK(result.nMatched == 1);
     TEST_MSG("result.nMatched: %i\nnExpected: 1", result.nMatched);
