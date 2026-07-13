@@ -1631,7 +1631,9 @@ void flb_test_udp_mode_rejects_tls()
         TEST_MSG("expected startup failure for mode=udp with tls=on");
     }
 
-    test_ctx_destroy(ctx);
+    /* flb_start failed, so there is no running engine to stop. */
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
 }
 
 TEST_LIST = {
