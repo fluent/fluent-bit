@@ -198,6 +198,7 @@ static struct test_context * update_config_dir(struct test_context * t_ctx, cons
     return NULL;
 }
 
+#ifndef FLB_SYSTEM_WINDOWS
 static void test_calyptia_machine_id_generation() {
     struct test_context *t_ctx = init_test_context();
     TEST_CHECK(t_ctx != NULL);
@@ -278,10 +279,13 @@ static void test_calyptia_machine_id_generation() {
     flb_sds_destroy(machine_id);
     cleanup_test_context(t_ctx);
 }
+#endif
 
 /* Define test list */
 TEST_LIST = {
     {"set_fleet_input_properties", test_set_fleet_input_properties},
+#ifndef FLB_SYSTEM_WINDOWS
     {"machine_id_generation", test_calyptia_machine_id_generation},
+#endif
     {NULL, NULL}
 };
