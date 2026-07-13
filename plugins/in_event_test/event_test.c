@@ -128,9 +128,9 @@ static int cb_collector_time(struct flb_input_instance *ins,
      * to our local pipe.
      */
     val = 1;
-    ret = write(ctx->pipe[1], &val, sizeof(val));
+    ret = flb_pipe_w(ctx->pipe[1], &val, sizeof(val));
     if (ret == -1) {
-        flb_errno();
+        flb_pipe_error();
         set_unit_test_status(ctx, 0, STATUS_ERROR);
         flb_engine_exit(config);
     }
@@ -144,13 +144,13 @@ static int cb_collector_fd(struct flb_input_instance *ins,
                            struct flb_config *config, void *in_context)
 {
     uint64_t val = 0;
-    size_t bytes;
+    ssize_t bytes;
     struct unit_test *ut;
     struct event_test *ctx = (struct event_test *) in_context;
 
-    bytes = read(ctx->pipe[0], &val, sizeof(val));
+    bytes = flb_pipe_r(ctx->pipe[0], &val, sizeof(val));
     if (bytes <= 0) {
-        flb_errno();
+        flb_pipe_error();
         set_unit_test_status(ctx, 1, STATUS_ERROR);
         flb_engine_exit(config);
     }
