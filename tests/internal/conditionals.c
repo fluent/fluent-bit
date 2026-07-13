@@ -367,7 +367,7 @@ void test_condition_equals()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_EQ,
                                     "error", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -383,7 +383,7 @@ void test_condition_equals()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_EQ,
                                     "error", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -408,7 +408,7 @@ void test_condition_numeric()
     TEST_CHECK(flb_condition_add_rule(cond, "$count", FLB_RULE_OP_GT,
                                     &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -425,7 +425,7 @@ void test_condition_numeric()
     TEST_CHECK(flb_condition_add_rule(cond, "$count", FLB_RULE_OP_LT,
                                     &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -448,7 +448,7 @@ void test_condition_not_equals()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_NEQ,
                                     "error", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -464,7 +464,7 @@ void test_condition_not_equals()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_NEQ,
                                     "error", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -488,7 +488,7 @@ void test_condition_in()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_IN,
                                     (void *)values, 3, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -504,7 +504,7 @@ void test_condition_in()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_IN,
                                     (void *)values, 3, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -528,7 +528,7 @@ void test_condition_not_in()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_NOT_IN,
                                     (void *)values, 3, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -544,7 +544,7 @@ void test_condition_not_in()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_NOT_IN,
                                     (void *)values, 3, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -569,7 +569,7 @@ void test_condition_and()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_NEQ,
                                     "info", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -587,7 +587,7 @@ void test_condition_and()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_NEQ,
                                     "info", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -612,7 +612,7 @@ void test_condition_or()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_EQ,
                                     "warn", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -630,7 +630,7 @@ void test_condition_or()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_EQ,
                                     "warn", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -650,7 +650,7 @@ void test_condition_empty()
     cond = flb_condition_create(FLB_COND_OP_AND);
     TEST_CHECK(cond != NULL);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -659,7 +659,7 @@ void test_condition_empty()
     cond = flb_condition_create(FLB_COND_OP_OR);
     TEST_CHECK(cond != NULL);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -682,7 +682,7 @@ void test_condition_regex()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_REGEX,
                                     "^/api/.*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -698,7 +698,7 @@ void test_condition_regex()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_REGEX,
                                     "^/api/.*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -714,7 +714,7 @@ void test_condition_regex()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_REGEX,
                                     "^/api/.*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -731,7 +731,7 @@ void test_condition_invalid_expressions()
     TEST_CHECK(record_data != NULL);
 
     /* Test NULL condition */
-    result = flb_condition_evaluate(NULL, &record_data->chunk);
+    result = flb_condition_evaluate(NULL, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     /* Test NULL record with AND condition */
@@ -741,7 +741,7 @@ void test_condition_invalid_expressions()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_EQ,
                                     "error", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, NULL);
+    result = flb_condition_evaluate(cond, NULL, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);  /* NULL record should fail condition */
 
     flb_condition_destroy(cond);
@@ -755,7 +755,7 @@ void test_condition_invalid_expressions()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_EQ,
                                     "warn", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, NULL);
+    result = flb_condition_evaluate(cond, NULL, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);  /* NULL record should fail condition */
 
     flb_condition_destroy(cond);
@@ -764,7 +764,7 @@ void test_condition_invalid_expressions()
     cond = flb_condition_create(FLB_COND_OP_AND);
     TEST_CHECK(cond != NULL);
 
-    result = flb_condition_evaluate(cond, NULL);
+    result = flb_condition_evaluate(cond, NULL, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);  /* NULL record should fail even with empty condition */
 
     flb_condition_destroy(cond);
@@ -782,7 +782,7 @@ void test_condition_invalid_expressions()
     cond = flb_condition_create(999);  /* Invalid operator */
     TEST_CHECK(cond != NULL);  /* Should still create but with default op */
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);  /* Default AND behavior */
 
     flb_condition_destroy(cond);
@@ -833,7 +833,7 @@ void test_condition_metadata()
     TEST_CHECK(flb_condition_add_rule(cond, "$streamName", FLB_RULE_OP_EQ,
                                     "production", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -850,7 +850,7 @@ void test_condition_metadata()
     TEST_CHECK(flb_condition_add_rule(cond, "$streamName", FLB_RULE_OP_EQ,
                                     "production", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -869,7 +869,7 @@ void test_condition_metadata()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_EQ,
                                     "error", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -893,7 +893,7 @@ void test_condition_missing_values()
     TEST_CHECK(flb_condition_add_rule(cond, "$non_existent", FLB_RULE_OP_IN,
                                     (void *)values, 3, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);  /* Missing field should return false */
 
     flb_condition_destroy(cond);
@@ -909,7 +909,7 @@ void test_condition_missing_values()
     TEST_CHECK(flb_condition_add_rule(cond, "$stream", FLB_RULE_OP_EQ,
                                     "production", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);  /* Missing metadata should return false */
 
     flb_condition_destroy(cond);
@@ -925,7 +925,7 @@ void test_condition_missing_values()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_NOT_IN,
                                     (void *)values, 3, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);  /* Present value not in array should return true */
 
     flb_condition_destroy(cond);
@@ -941,7 +941,7 @@ void test_condition_missing_values()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_NOT_IN,
                                     (void *)values, 3, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);  /* Present value in array should return false */
 
     flb_condition_destroy(cond);
@@ -967,7 +967,7 @@ void test_condition_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$count", FLB_RULE_OP_GT,
                                     &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);  /* Non-numeric string should fail comparison */
 
     flb_condition_destroy(cond);
@@ -983,7 +983,7 @@ void test_condition_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$level", FLB_RULE_OP_IN,
                                     (void *)values, 4, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);  /* Empty string should match empty string in array */
 
     flb_condition_destroy(cond);
@@ -999,7 +999,7 @@ void test_condition_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_REGEX,
                                     "^/api/v1/users\\[[0-9]+\\]$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1018,7 +1018,7 @@ void test_condition_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$non_existent", FLB_RULE_OP_EQ,
                                     "non-empty", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);  /* Should fail because both conditions are false */
 
     flb_condition_destroy(cond);
@@ -1048,7 +1048,7 @@ void test_condition_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$non_existent", FLB_RULE_OP_EQ,
                                     "production", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);  /* Should fail because metadata field is missing */
 
     flb_condition_destroy(cond);
@@ -1074,7 +1074,7 @@ void test_condition_numeric_edge_cases()
                                   &val, 0, RECORD_CONTEXT_BODY);
     TEST_CHECK(result == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -1092,7 +1092,7 @@ void test_condition_numeric_edge_cases()
                                  &val, 0, RECORD_CONTEXT_BODY);
     TEST_CHECK(result == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1110,7 +1110,7 @@ void test_condition_numeric_edge_cases()
                                  &val, 0, RECORD_CONTEXT_BODY);
     TEST_CHECK(result == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1128,7 +1128,7 @@ void test_condition_numeric_edge_cases()
                                  &val, 0, RECORD_CONTEXT_BODY);
     TEST_CHECK(result == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -1146,7 +1146,7 @@ void test_condition_numeric_edge_cases()
                                  &val, 0, RECORD_CONTEXT_BODY);
     TEST_CHECK(result == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1164,7 +1164,7 @@ void test_condition_numeric_edge_cases()
                                  &val, 0, RECORD_CONTEXT_BODY);
     TEST_CHECK(result == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1181,7 +1181,7 @@ void test_condition_numeric_edge_cases()
                                  "0", 0, RECORD_CONTEXT_BODY);
     TEST_CHECK(result == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1198,7 +1198,7 @@ void test_condition_numeric_edge_cases()
                                  "-0", 0, RECORD_CONTEXT_BODY);
     TEST_CHECK(result == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1221,7 +1221,7 @@ void test_condition_not_regex()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
                                     "^/api/.*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1237,7 +1237,7 @@ void test_condition_not_regex()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
                                     "^/api/.*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -1253,7 +1253,7 @@ void test_condition_not_regex()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
                                     "^/api/.*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1269,7 +1269,7 @@ void test_condition_not_regex()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
                                     "^/api/v[0-9]+/.*\\.(json|xml)$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1305,7 +1305,7 @@ void test_condition_not_regex_multiple()
     TEST_CHECK(flb_condition_add_rule(cond, "$user_agent", FLB_RULE_OP_NOT_REGEX,
                                     ".*[Bb]ot.*", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);  /* Both conditions should be true */
 
     flb_condition_destroy(cond);
@@ -1328,7 +1328,7 @@ void test_condition_not_regex_multiple()
     TEST_CHECK(flb_condition_add_rule(cond, "$method", FLB_RULE_OP_EQ,
                                     "GET", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);  /* First condition is true */
 
     flb_condition_destroy(cond);
@@ -1354,7 +1354,7 @@ void test_condition_not_regex_multiple()
     TEST_CHECK(flb_condition_add_rule(cond, "$url", FLB_RULE_OP_NOT_REGEX,
                                     "\\.(jpg|png|gif|css|js)$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);  /* All conditions should be true */
 
     flb_condition_destroy(cond);
@@ -1377,7 +1377,7 @@ void test_condition_not_regex_multiple()
     TEST_CHECK(flb_condition_add_rule(cond, "$log_level", FLB_RULE_OP_NOT_REGEX,
                                     "^(DEBUG|INFO)$", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1406,7 +1406,7 @@ void test_condition_not_regex_multiple()
     TEST_CHECK(flb_condition_add_rule(cond, "$response_time", FLB_RULE_OP_LT,
                                     &threshold, 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1429,7 +1429,7 @@ void test_condition_not_regex_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
                                     "^/api/[a-z]+/[a-z]+$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);  /* Should be true since Unicode chars don't match [a-z] */
 
     flb_condition_destroy(cond);
@@ -1450,7 +1450,7 @@ void test_condition_not_regex_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
                                     "^a{1024}$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);  /* Should be true since string is 1023 'a's, not 1024 */
 
     flb_condition_destroy(cond);
@@ -1467,7 +1467,7 @@ void test_condition_not_regex_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
                                     "^\\s+$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);  /* Should be false since pattern matches whitespace */
 
     flb_condition_destroy(cond);
@@ -1483,7 +1483,7 @@ void test_condition_not_regex_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
                                     "^before$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);  /* Should be true since "beforeafter" doesn't match "^before$" */
 
     flb_condition_destroy(cond);
@@ -1499,7 +1499,7 @@ void test_condition_not_regex_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
                                     "^[A-Z]:\\\\.*$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);  /* Should be false since pattern matches Windows path */
 
     flb_condition_destroy(cond);
@@ -1515,7 +1515,7 @@ void test_condition_not_regex_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
                                     "a{4}b", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);  /* Should be true since pattern doesn't match */
 
     flb_condition_destroy(cond);
@@ -1540,7 +1540,7 @@ void test_condition_not_regex_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
                                     "^$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);  /* Should be false since empty string matches ^$ */
 
     flb_condition_destroy(cond);
@@ -1556,7 +1556,7 @@ void test_condition_not_regex_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$path", FLB_RULE_OP_NOT_REGEX,
                                     "^[a-zA-Z]+$", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);  /* Should be true since non-ASCII doesn't match [a-zA-Z] */
 
     flb_condition_destroy(cond);
@@ -1581,7 +1581,7 @@ void test_condition_gte_lte()
     TEST_CHECK(flb_condition_add_rule(cond, "$cpu_usage", FLB_RULE_OP_GTE,
                                     &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1598,7 +1598,7 @@ void test_condition_gte_lte()
     TEST_CHECK(flb_condition_add_rule(cond, "$cpu_usage", FLB_RULE_OP_GTE,
                                     &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1615,7 +1615,7 @@ void test_condition_gte_lte()
     TEST_CHECK(flb_condition_add_rule(cond, "$cpu_usage", FLB_RULE_OP_GTE,
                                     &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -1632,7 +1632,7 @@ void test_condition_gte_lte()
     TEST_CHECK(flb_condition_add_rule(cond, "$memory_usage", FLB_RULE_OP_LTE,
                                     &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1649,7 +1649,7 @@ void test_condition_gte_lte()
     TEST_CHECK(flb_condition_add_rule(cond, "$memory_usage", FLB_RULE_OP_LTE,
                                     &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1666,7 +1666,7 @@ void test_condition_gte_lte()
     TEST_CHECK(flb_condition_add_rule(cond, "$memory_usage", FLB_RULE_OP_LTE,
                                     &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -1694,7 +1694,7 @@ void test_condition_gte_lte_multiple()
     TEST_CHECK(flb_condition_add_rule(cond, "$ready_replicas", FLB_RULE_OP_LTE,
                                     &val2, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);  /* 3 replicas is within [2, 5] */
 
     flb_condition_destroy(cond);
@@ -1714,7 +1714,7 @@ void test_condition_gte_lte_multiple()
     TEST_CHECK(flb_condition_add_rule(cond, "$requested_cpu", FLB_RULE_OP_LTE,
                                     &val2, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);  /* 1.5 CPU is neither >= 2.0 nor <= 1.0 */
 
     flb_condition_destroy(cond);
@@ -1734,7 +1734,7 @@ void test_condition_gte_lte_multiple()
     TEST_CHECK(flb_condition_add_rule(cond, "$namespace", FLB_RULE_OP_EQ,
                                     "production", 0, RECORD_CONTEXT_METADATA) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1759,7 +1759,7 @@ void test_condition_gte_lte_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$pod_status", FLB_RULE_OP_GTE,
                                     &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_FALSE);
 
     flb_condition_destroy(cond);
@@ -1776,7 +1776,7 @@ void test_condition_gte_lte_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$cpu_limit", FLB_RULE_OP_GTE,
                                     &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1793,7 +1793,7 @@ void test_condition_gte_lte_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$memory_request", FLB_RULE_OP_GTE,
                                     &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1810,7 +1810,7 @@ void test_condition_gte_lte_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$current_replicas", FLB_RULE_OP_GTE,
                                     &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
 
     flb_condition_destroy(cond);
@@ -1827,8 +1827,91 @@ void test_condition_gte_lte_border_cases()
     TEST_CHECK(flb_condition_add_rule(cond, "$desired_replicas", FLB_RULE_OP_LTE,
                                     &val, 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
 
-    result = flb_condition_evaluate(cond, &record_data->chunk);
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
     TEST_CHECK(result == FLB_TRUE);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+}
+
+/*
+ * Verify that condition rules can reference the chunk tag through the $TAG
+ * record accessor. The tag is supplied to flb_condition_evaluate() and must
+ * be threaded down to the record accessor translation.
+ */
+void test_condition_tag_accessor()
+{
+    struct test_record *record_data;
+    struct flb_condition *cond;
+    const char *tag = "kube.apps.frontend";
+    int result;
+
+    /* Exact match on $TAG */
+    record_data = create_test_record("level", "info");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+    TEST_CHECK(flb_condition_add_rule(cond, "$TAG", FLB_RULE_OP_EQ,
+                                    "kube.apps.frontend", 0,
+                                    RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk, tag, strlen(tag));
+    TEST_CHECK(result == FLB_TRUE);
+    TEST_MSG("$TAG equality against '%s' should match", tag);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Regex match on $TAG */
+    record_data = create_test_record("level", "info");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+    TEST_CHECK(flb_condition_add_rule(cond, "$TAG", FLB_RULE_OP_REGEX,
+                                    "^kube\\.apps\\..*$", 0,
+                                    RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk, tag, strlen(tag));
+    TEST_CHECK(result == FLB_TRUE);
+    TEST_MSG("$TAG regex should match '%s'", tag);
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* Non-matching tag must fail */
+    record_data = create_test_record("level", "info");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+    TEST_CHECK(flb_condition_add_rule(cond, "$TAG", FLB_RULE_OP_EQ,
+                                    "kube.apps.frontend", 0,
+                                    RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk,
+                                    "kube.system.kubelet",
+                                    strlen("kube.system.kubelet"));
+    TEST_CHECK(result == FLB_FALSE);
+    TEST_MSG("$TAG equality should not match a different tag");
+
+    flb_condition_destroy(cond);
+    destroy_test_record(record_data);
+
+    /* A $TAG rule with no tag available (NULL) must not match */
+    record_data = create_test_record("level", "info");
+    TEST_CHECK(record_data != NULL);
+
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    TEST_CHECK(cond != NULL);
+    TEST_CHECK(flb_condition_add_rule(cond, "$TAG", FLB_RULE_OP_EQ,
+                                    "kube.apps.frontend", 0,
+                                    RECORD_CONTEXT_BODY) == FLB_TRUE);
+
+    result = flb_condition_evaluate(cond, &record_data->chunk, NULL, 0);
+    TEST_CHECK(result == FLB_FALSE);
+    TEST_MSG("$TAG rule should not match when no tag is supplied");
 
     flb_condition_destroy(cond);
     destroy_test_record(record_data);
@@ -1855,5 +1938,6 @@ TEST_LIST = {
     {"gte_lte", test_condition_gte_lte},
     {"gte_lte_multiple", test_condition_gte_lte_multiple},
     {"gte_lte_border_cases", test_condition_gte_lte_border_cases},
+    {"tag_accessor", test_condition_tag_accessor},
     {NULL, NULL}
 };
