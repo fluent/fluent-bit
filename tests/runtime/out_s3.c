@@ -1,5 +1,6 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 #include <fluent-bit.h>
+#include <fluent-bit/flb_time.h>
 #include "flb_tests_runtime.h"
 #include "../include/flb_tests_tmpdir.h"
 #include <errno.h>
@@ -13,6 +14,10 @@
 
 /* Test data */
 #include "data/td/json_td.h" /* JSON_TD */
+
+#define S3_TEST_UPLOAD_TIMEOUT  "1s"
+#define S3_TEST_WAIT_STEP_MS      10
+#define S3_TEST_WAIT_TIMEOUT_MS 5000
 
 /* not a real error code, but tests that the code can respond to any error */
 #define ERROR_ACCESS_DENIED "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
@@ -87,6 +92,55 @@ static int count_files_recursive(const char *path)
     closedir(dir);
     return total;
 #endif
+}
+
+static int get_s3_call_count(const char *api)
+{
+    char name[64];
+    char *value;
+
+    snprintf(name, sizeof(name), "TEST_%s_CALL_COUNT", api);
+    value = getenv(name);
+
+    return value ? atoi(value) : 0;
+}
+
+static void wait_for_s3_call_count(const char *api, int expected)
+{
+    uint64_t elapsed_ms;
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+
+    elapsed_ms = 0;
+    flb_time_get(&start_time);
+
+    while (get_s3_call_count(api) < expected &&
+           elapsed_ms < S3_TEST_WAIT_TIMEOUT_MS) {
+        flb_time_msleep(S3_TEST_WAIT_STEP_MS);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_ms = flb_time_to_nanosec(&diff_time) / 1000000;
+    }
+}
+
+static void wait_for_file_count(const char *path, int expected)
+{
+    uint64_t elapsed_ms;
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+
+    elapsed_ms = 0;
+    flb_time_get(&start_time);
+
+    while (count_files_recursive(path) < expected &&
+           elapsed_ms < S3_TEST_WAIT_TIMEOUT_MS) {
+        flb_time_msleep(S3_TEST_WAIT_STEP_MS);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_ms = flb_time_to_nanosec(&diff_time) / 1000000;
+    }
 }
 
 static int ensure_test_directory(const char *path)
@@ -166,7 +220,7 @@ void flb_test_s3_multipart_success(void)
     flb_output_set(ctx, out_ffd,"match", "*", NULL);
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
-    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd,"store_dir", store_dir, NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
@@ -175,7 +229,7 @@ void flb_test_s3_multipart_success(void)
 
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
 
-    sleep(10);
+    wait_for_s3_call_count("CompleteMultipartUpload", 1);
 
     call_count_str = getenv("TEST_CompleteMultipartUpload_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
@@ -217,7 +271,7 @@ void flb_test_s3_putobject_success(void)
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
-    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -226,7 +280,7 @@ void flb_test_s3_putobject_success(void)
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
 
 
-    sleep(10);
+    wait_for_s3_call_count("PutObject", 1);
 
     call_count_str = getenv("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
@@ -272,7 +326,7 @@ void flb_test_s3_putobject_error(void)
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
-    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd,"store_dir", store_dir, NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
@@ -282,7 +336,7 @@ void flb_test_s3_putobject_error(void)
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
 
 
-    sleep(10);
+    wait_for_s3_call_count("PutObject", 1);
 
     call_count_str = getenv("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
@@ -329,7 +383,7 @@ void flb_test_s3_create_upload_error(void)
     flb_output_set(ctx, out_ffd,"match", "*", NULL);
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
-    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd,"store_dir", store_dir, NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
@@ -338,7 +392,7 @@ void flb_test_s3_create_upload_error(void)
 
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
 
-    sleep(10);
+    wait_for_s3_call_count("CreateMultipartUpload", 1);
 
     call_count_str = getenv("TEST_CreateMultipartUpload_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
@@ -392,7 +446,7 @@ void flb_test_s3_upload_part_error(void)
     flb_output_set(ctx, out_ffd,"match", "*", NULL);
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
-    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd,"store_dir", store_dir, NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
@@ -401,7 +455,7 @@ void flb_test_s3_upload_part_error(void)
 
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
 
-    sleep(10);
+    wait_for_s3_call_count("UploadPart", 1);
 
     call_count_str = getenv("TEST_UploadPart_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
@@ -455,7 +509,7 @@ void flb_test_s3_complete_upload_error(void)
     flb_output_set(ctx, out_ffd,"match", "*", NULL);
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
-    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd,"store_dir", store_dir, NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
@@ -464,7 +518,7 @@ void flb_test_s3_complete_upload_error(void)
 
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
 
-    sleep(10);
+    wait_for_s3_call_count("CompleteMultipartUpload", 2);
 
     call_count_str = getenv("TEST_CompleteMultipartUpload_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
@@ -507,7 +561,7 @@ void flb_test_s3_compression_gzip(void)
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"compression", "gzip", NULL);
-    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -515,7 +569,7 @@ void flb_test_s3_compression_gzip(void)
 
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
 
-    sleep(10);
+    wait_for_s3_call_count("CompleteMultipartUpload", 1);
 
     call_count_str = getenv("TEST_CompleteMultipartUpload_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
@@ -557,7 +611,7 @@ void flb_test_s3_compression_gzip_putobject(void)
     flb_output_set(ctx, out_ffd,"compression", "gzip", NULL);
     flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
-    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -565,7 +619,7 @@ void flb_test_s3_compression_gzip_putobject(void)
 
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
 
-    sleep(10);
+    wait_for_s3_call_count("PutObject", 1);
 
     call_count_str = getenv("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
@@ -602,7 +656,7 @@ void flb_test_s3_compression_zstd(void)
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"compression", "zstd", NULL);
-    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -610,7 +664,7 @@ void flb_test_s3_compression_zstd(void)
 
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
 
-    sleep(10);
+    wait_for_s3_call_count("CompleteMultipartUpload", 1);
 
     call_count_str = getenv("TEST_CompleteMultipartUpload_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
@@ -652,7 +706,7 @@ void flb_test_s3_compression_zstd_putobject(void)
     flb_output_set(ctx, out_ffd,"compression", "zstd", NULL);
     flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
-    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -660,7 +714,7 @@ void flb_test_s3_compression_zstd_putobject(void)
 
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
 
-    sleep(10);
+    wait_for_s3_call_count("PutObject", 1);
 
     call_count_str = getenv("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
@@ -697,7 +751,7 @@ void flb_test_s3_compression_snappy(void)
     flb_output_set(ctx, out_ffd,"region", "us-west-2", NULL);
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"compression", "snappy", NULL);
-    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -705,7 +759,7 @@ void flb_test_s3_compression_snappy(void)
 
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
 
-    sleep(10);
+    wait_for_s3_call_count("CompleteMultipartUpload", 1);
 
     call_count_str = getenv("TEST_CompleteMultipartUpload_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
@@ -747,7 +801,7 @@ void flb_test_s3_compression_snappy_putobject(void)
     flb_output_set(ctx, out_ffd,"compression", "snappy", NULL);
     flb_output_set(ctx, out_ffd,"use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd,"total_file_size", "5M", NULL);
-    flb_output_set(ctx, out_ffd,"upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd,"upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -755,7 +809,7 @@ void flb_test_s3_compression_snappy_putobject(void)
 
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
 
-    sleep(10);
+    wait_for_s3_call_count("PutObject", 1);
 
     call_count_str = getenv("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
@@ -800,7 +854,7 @@ void flb_test_s3_preserve_data_ordering(void)
     flb_output_set(ctx, out_ffd, "use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd, "total_file_size", "5M", NULL);
     flb_output_set(ctx, out_ffd, "preserve_data_ordering", "true", NULL);
-    flb_output_set(ctx, out_ffd, "upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
     flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
 
@@ -809,7 +863,7 @@ void flb_test_s3_preserve_data_ordering(void)
 
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
 
-    sleep(10);
+    wait_for_s3_call_count("PutObject", 1);
 
     call_count_str = getenv("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
@@ -860,7 +914,7 @@ void flb_test_s3_putobject_retry_limit_semantics(void)
     flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd, "use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd, "total_file_size", "5M", NULL);
-    flb_output_set(ctx, out_ffd, "upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
     flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
 
@@ -870,15 +924,9 @@ void flb_test_s3_putobject_retry_limit_semantics(void)
     /* Reset counter after startup so we only count test-driven attempts */
     unsetenv("TEST_PutObject_CALL_COUNT");
 
-    /*
-     * Push 1 chunk then wait for upload_timeout (6s) + 2 timer ticks (1s each).
-     * Chunk must age past upload_timeout before cb_s3_upload will attempt it.
-     * Tick after ~6s: PutObject attempt 1 fails (failures=1)
-     * Tick after ~7s: failures(1) not > retry_limit(1), attempt 2 fails (failures=2)
-     * Next tick: failures(2) > retry_limit(1), chunk discarded
-     */
+    /* Wait until the initial attempt and one retry have run. */
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
-    sleep(10);
+    wait_for_s3_call_count("PutObject", 2);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -932,7 +980,7 @@ void flb_test_s3_default_retry_limit(void)
     flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd, "use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd, "total_file_size", "5M", NULL);
-    flb_output_set(ctx, out_ffd, "upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
     /* No Retry_Limit — should default to 5 (MAX_UPLOAD_ERRORS) */
 
@@ -941,12 +989,9 @@ void flb_test_s3_default_retry_limit(void)
 
     unsetenv("TEST_PutObject_CALL_COUNT");
 
-    /*
-     * Push 1 chunk, wait for upload_timeout (6s) + 6 timer ticks (1s each).
-     * Default retry_limit=5: 1 initial attempt + 5 retries = 6 PutObject calls.
-     */
+    /* Wait for the initial attempt and all five default retries. */
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
-    sleep(14);
+    wait_for_s3_call_count("PutObject", 6);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -972,6 +1017,7 @@ void flb_test_s3_default_retry_exhausted_action_quarantine(void)
     int out_ffd;
     int file_count;
     char postfix[128];
+    char quarantine_dir[2048];
     char *store_dir;
 
     snprintf(postfix, sizeof(postfix),
@@ -979,6 +1025,8 @@ void flb_test_s3_default_retry_exhausted_action_quarantine(void)
     store_dir = flb_test_tmpdir_cat(postfix);
     TEST_CHECK(store_dir != NULL);
     TEST_CHECK(ensure_test_directory(store_dir) == 0);
+    snprintf(quarantine_dir, sizeof(quarantine_dir),
+             "%s/fluent/quarantine", store_dir);
 
     setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
     setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
@@ -996,7 +1044,7 @@ void flb_test_s3_default_retry_exhausted_action_quarantine(void)
     flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd, "use_put_object", "true", NULL);
     flb_output_set(ctx, out_ffd, "total_file_size", "5M", NULL);
-    flb_output_set(ctx, out_ffd, "upload_timeout", "6s", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
     flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
     /* do not set retry_exhausted_action to validate default behavior */
@@ -1006,14 +1054,15 @@ void flb_test_s3_default_retry_exhausted_action_quarantine(void)
 
     unsetenv("TEST_PutObject_CALL_COUNT");
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
-    sleep(10);
+    wait_for_s3_call_count("PutObject", 2);
+    wait_for_file_count(quarantine_dir, 1);
 
-    file_count = count_files_recursive(store_dir);
+    file_count = count_files_recursive(quarantine_dir);
     flb_stop(ctx);
     flb_destroy(ctx);
 
     TEST_CHECK_(file_count > 0,
-                "Expected quarantined file(s) in store_dir, got %d",
+                "Expected quarantined file(s), got %d",
                 file_count);
 
     unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
