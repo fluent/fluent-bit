@@ -1,0 +1,16 @@
+service:
+  log_level: debug
+  flush: 1
+pipeline:
+  inputs:
+    - name: dummy
+      dummy: '{"message": "test message"}'
+      tag: test
+      processors:
+        logs:
+          - name: non_existent_processor
+            action: invalid
+
+  outputs:
+    - name: stdout
+      match: '*'
