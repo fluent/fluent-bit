@@ -68,6 +68,13 @@ static struct prom_scrape *prom_scrape_create(struct flb_input_instance *ins,
         flb_free(ctx);
         return NULL;
     }
+
+    if (flb_input_upstream_set(upstream, ins) != 0) {
+        flb_plg_error(ins, "network upstream setup failed");
+        flb_upstream_destroy(upstream);
+        flb_free(ctx);
+        return NULL;
+    }
     ctx->upstream = upstream;
 
     return ctx;
