@@ -1138,8 +1138,14 @@ skip_size_validation:
     ctx->provider->provider_vtable->init(ctx->provider);
 
     ctx->timer_created = FLB_FALSE;
-    ctx->timer_ms = (int) (ctx->upload_timeout / 6) * 1000;
-    if (s3_plugin_under_test() == FLB_FALSE) {
+    if (s3_plugin_under_test() == FLB_TRUE) {
+        ctx->timer_ms = (int) (ctx->upload_timeout * 1000 / 6);
+        if (ctx->timer_ms < 100) {
+            ctx->timer_ms = 100;
+        }
+    }
+    else {
+        ctx->timer_ms = (int) (ctx->upload_timeout / 6) * 1000;
         if (ctx->timer_ms > UPLOAD_TIMER_MAX_WAIT) {
             ctx->timer_ms = UPLOAD_TIMER_MAX_WAIT;
         }
