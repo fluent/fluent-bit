@@ -627,7 +627,8 @@ static void run_tls_crl_client(const char *client_cert, const char *client_key,
      * handshake. Under TLS 1.3 the client is authenticated after the
      * handshake completes (post-handshake auth).
      */
-    flb_tls_set_minmax_proto(tls, "TLSv1.2", "TLSv1.2");
+    ret = flb_tls_set_minmax_proto(tls, "TLSv1.2", "TLSv1.2");
+    TEST_CHECK(ret == 0);
 
     upstream = flb_upstream_create(ctx->flb->config,
                                    DEFAULT_HOST,

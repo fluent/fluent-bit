@@ -1685,7 +1685,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
 
         if (ins->tls_crl_file != NULL) {
             ret = flb_tls_set_crl_file(ins->tls, ins->tls_crl_file);
-            if (ret == -1) {
+            if (ret != 0) {
                 flb_error("[input %s] error setting up TLS CRL file",
                           ins->name);
 
