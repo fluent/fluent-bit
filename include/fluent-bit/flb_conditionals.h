@@ -97,11 +97,19 @@ int flb_condition_add_rule(struct flb_condition *cond,
 
 void flb_condition_destroy(struct flb_condition *cond);
 
-/* Evaluation function */
+/*
+ * Evaluation functions.
+ *
+ * tag/tag_len reference the tag of the chunk being evaluated so that rules
+ * using the $TAG record accessor can be resolved. Callers that have no tag
+ * available (e.g. the router, which matches by tag natively) may pass NULL/0.
+ */
 int flb_condition_evaluate_ex(struct flb_condition *cond,
                              void *ctx,
-                             flb_condition_get_variant_fn get_variant);
+                             flb_condition_get_variant_fn get_variant,
+                             const char *tag, int tag_len);
 int flb_condition_evaluate(struct flb_condition *cond,
-                          struct flb_mp_chunk_record *record);
+                          struct flb_mp_chunk_record *record,
+                          const char *tag, int tag_len);
 
 #endif /* FLB_CONDITIONS_H */

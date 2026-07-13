@@ -56,6 +56,10 @@ struct flb_mp_chunk_cobj {
 
     /* Condition for filtering records during processing */
     struct flb_condition *condition;
+
+    /* Tag of the chunk being processed, so conditions can reference $TAG */
+    const char *tag;
+    int tag_len;
 };
 
 
