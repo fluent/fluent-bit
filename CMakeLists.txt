@@ -816,6 +816,7 @@ add_subdirectory(${FLB_PATH_LIB_JSMN})
 # Runtime Tests (filter_kubernetes) requires HTTP Server
 if(FLB_TESTS_RUNTIME)
   FLB_OPTION(FLB_HTTP_SERVER  ON)
+  FLB_OPTION(FLB_IN_EVENT_TEST ON)
 endif()
 
 # Monkey Core Library
