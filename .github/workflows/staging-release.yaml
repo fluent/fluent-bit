@@ -806,7 +806,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Release 2.0 - not latest
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         if: startsWith(inputs.version, '2.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -818,7 +818,7 @@ jobs:
           make_latest: false
 
       - name: Release 2.1 - not latest
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         if: startsWith(inputs.version, '2.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -830,7 +830,7 @@ jobs:
           make_latest: false
 
       - name: Release 3.0 - not latest
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         if: startsWith(inputs.version, '3.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -842,7 +842,7 @@ jobs:
           make_latest: false
 
       - name: Release 3.1 - not latest
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         if: startsWith(inputs.version, '3.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -854,7 +854,7 @@ jobs:
           make_latest: false
 
       - name: Release 3.2 - not latest
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         if: startsWith(inputs.version, '3.2')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -866,7 +866,7 @@ jobs:
           make_latest: false
 
       - name: Release 4.0 - not latest
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         if: startsWith(inputs.version, '4.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -878,7 +878,7 @@ jobs:
           make_latest: false
 
       - name: Release 4.1 - not latest
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         if: startsWith(inputs.version, '4.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -890,7 +890,7 @@ jobs:
           make_latest: false
 
       - name: Release 4.2 - not latest
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         if: startsWith(inputs.version, '4.2')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -902,7 +902,7 @@ jobs:
           make_latest: false
           
       - name: Release 5.0 and latest
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         if: startsWith(inputs.version, '5.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
