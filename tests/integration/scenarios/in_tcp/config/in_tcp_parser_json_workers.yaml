@@ -4,19 +4,22 @@ service:
   log_level: info
   http_server: on
   http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  parsers_file: ${PARSERS_FILE_TEST}
 
 pipeline:
   inputs:
-    - name: http
+    - name: tcp
+      tag: target_input
       listen: 127.0.0.1
       port: ${FLUENT_BIT_TEST_LISTENER_PORT}
-      http_server.idle_timeout: 2s
-      http_server.max_connections: 1
-      http_server.workers: 2
+      format: none
+      separator: "\\n"
+      parser: json
+      workers: 4
 
   outputs:
     - name: http
-      match: "*"
+      match: target_input
       host: 127.0.0.1
       port: ${TEST_SUITE_HTTP_PORT}
       uri: /data

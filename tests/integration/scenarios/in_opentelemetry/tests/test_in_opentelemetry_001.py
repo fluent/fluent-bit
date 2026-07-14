@@ -1565,3 +1565,37 @@ def test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit():
         "fluentbit_input_http_server_ingress_queue_pending_bytes",
         "opentelemetry.0",
     ) == 0
+
+
+def test_in_opentelemetry_http_workers_account_metrics_payload_bytes():
+    service = Service(IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_CONFIG)
+    small_payload = service.build_otel_payload("test_metrics_001.in.json", "metrics")
+
+    small_request = ExportMetricsServiceRequest()
+    small_request.ParseFromString(small_payload)
+
+    large_request = ExportMetricsServiceRequest()
+    for _ in range(16):
+        large_request.resource_metrics.extend(small_request.resource_metrics)
+
+    large_payload = large_request.SerializeToString()
+
+    assert len(small_payload) < 2000
+    assert len(large_payload) > 2000
+
+    service.start()
+    service.wait_for_log_message("with 4 workers", timeout=10)
+    metrics_before = len(data_storage["metrics"])
+
+    try:
+        success_response = service.send_raw_request("/v1/metrics", small_payload)
+        assert success_response.status_code == 201
+        service.wait_for_signal_count("metrics", metrics_before + 1, timeout=10)
+
+        failure_response = service.send_raw_request("/v1/metrics", large_payload)
+        assert failure_response.status_code == 503
+        assert "deferred ingress queue is full" in failure_response.text
+    finally:
+        service.stop()
+
+    assert len(data_storage["metrics"]) == metrics_before + 1
