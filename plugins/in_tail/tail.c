@@ -577,8 +577,8 @@ static struct flb_config_map config_map[] = {
      "files matching a certain criteria, e.g: 'exclude_path *.gz,*.zip'"
     },
     {
-     FLB_CONFIG_MAP_BOOL, "ignore_missing_paths", "false",
-     0, FLB_TRUE, offsetof(struct flb_tail_config, ignore_missing_paths),
+     FLB_CONFIG_MAP_BOOL, "ignore_unavailable", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, ignore_unavailable),
      "Do not search directories that do not exist for files."
     },
     {

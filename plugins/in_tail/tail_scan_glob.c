@@ -183,7 +183,6 @@ static inline int do_glob(const char *pattern, int flags,
     return ret;
 }
 
-
 /* Scan a path, register the entries and return how many */
 static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
 {
@@ -212,16 +211,23 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
             flb_plg_error(ctx->ins, "no memory space available");
             return -1;
         case GLOB_ABORTED:
-            if (!ctx->ignore_missing_paths) {
-                flb_plg_error(ctx->ins, "read error, check permissions: %s", path);
+            if (errno == EACCES) {
+                flb_plg_error(ctx->ins, "NO read access for path: %s", path);
+            } else if (!ctx->ignore_unavailable) {
+                switch (errno) {
+                    case ENOENT:
+                        flb_plg_warn(ctx->ins, "No such file at path: %s", path);
+                    case ENOTDIR:
+                        flb_plg_error(ctx->ins, "Not directory at path: %s", path);
+                    default:
+                        flb_plg_error(ctx->ins, "Unable to read path: %s", path);
+                }
             }
             return -1;
         case GLOB_NOMATCH:
             ret = stat(path, &st);
             if (ret == -1) {
-                if (!ctx->ignore_missing_paths) {
-                    flb_plg_debug(ctx->ins, "cannot read info from: %s", path);
-                }
+                flb_plg_debug(ctx->ins, "cannot read info from: %s", path);
             }
             else {
                 ret = access(path, R_OK);
