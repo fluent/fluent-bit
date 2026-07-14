@@ -7,16 +7,17 @@ service:
 
 pipeline:
   inputs:
-    - name: http
+    - name: forward
       listen: 127.0.0.1
       port: ${FLUENT_BIT_TEST_LISTENER_PORT}
-      http_server.idle_timeout: 2s
-      http_server.max_connections: 1
-      http_server.workers: 2
+      tls: on
+      tls.crt_file: ${CERTIFICATE_TEST}
+      tls.key_file: ${PRIVATE_KEY_TEST}
+      workers: 4
 
   outputs:
     - name: http
-      match: "*"
+      match: test
       host: 127.0.0.1
       port: ${TEST_SUITE_HTTP_PORT}
       uri: /data
