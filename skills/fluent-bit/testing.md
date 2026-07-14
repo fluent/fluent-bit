@@ -18,26 +18,45 @@ ctest --test-dir build -R <name> --output-on-failure
 - Run broader tests when changing shared lifecycle, routing, storage, task,
   scheduler, or accounting behavior.
 
-## Windows Runtime Test Exception
+## Windows Runtime Test Support
 
-Runtime test cases are not supported on Windows yet. On Windows, do not run
-`tests/runtime`, `flb-rt-*` targets, or CTest filters that select runtime test
-cases as verification. Run applicable non-runtime tests instead, such as focused
-internal tests or build-only checks, and report the skip explicitly. Configure
-with runtime tests disabled so unsupported runtime targets are not built:
+The latest master revision supports building and running runtime tests on
+Windows. Initialize the appropriate MSVC environment, enable runtime tests, and
+run the focused target or CTest match for the affected component:
+
+- use `VsDevCmd.bat -arch=x64` for x64;
+- use `VsDevCmd.bat -arch=x86` for x86;
+- use an ARM64-capable native or cross-build Developer Command Prompt for
+  ARM64. For a cross-build, add `-DCMAKE_SYSTEM_NAME=Windows`,
+  `-DCMAKE_SYSTEM_VERSION=10.0`, and `-DCMAKE_SYSTEM_PROCESSOR=ARM64`.
 
 ```sh
-cmake -S . -B build -DFLB_TESTS_RUNTIME=Off -DFLB_TESTS_INTERNAL=On
-cmake --build build -j8
-ctest --test-dir build -R <non-runtime-name> --output-on-failure
+cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On
+cmake --build build --target <flb-rt-target>
+ctest --test-dir build -R '^<flb-rt-target>$' --output-on-failure
 ```
+
+The Windows unit-test CI workflow in
+`.github/workflows/call-windows-unit-tests.yaml` enables runtime tests only for
+x64. Its x86 and ARM64 jobs deliberately use `FLB_TESTS_RUNTIME=Off` to control
+GitHub Actions running time. This restriction applies only to that CI workflow.
+Do not use it to skip runtime-test builds or execution by local agents or AI
+cloud builders.
+
+When a cross-built target cannot execute on the current host, report that
+concrete host/toolchain limitation. Do not substitute the GitHub Actions
+running-time policy as the reason for skipping it.
+
+Use `ctest --test-dir build -N` only to inspect registration. It does not prove
+that a runtime executable was built or passed; confirm the target build and run
+the focused test before claiming runtime verification.
 
 ## Integration Test Expectations
 
 If a touched component has a focused `tests/integration` scenario, run it before
 closing the task. Run it once normally and once with valgrind when possible.
 
-Default verification shape for non-Windows platforms:
+Default verification shape for supported platforms, including Windows:
 
 ```sh
 ./tests/integration/setup-venv.sh
@@ -48,8 +67,9 @@ VALGRIND=1 VALGRIND_STRICT=1 \
   tests/integration/.venv/bin/python -m pytest <focused-scenario> -q
 ```
 
-On Windows, replace the configure command with the
-`-DFLB_TESTS_RUNTIME=Off` variant above and do not run runtime test cases.
+On Windows, keep `FLB_TESTS_RUNTIME=On` and run relevant focused runtime cases.
+Valgrind is normally unavailable on Windows, so report that blocker
+explicitly when the required memory-safety run cannot be performed.
 
 Equivalent run-test wrapper shape:
 
@@ -70,7 +90,6 @@ blocker, such as:
 - unavailable scenario;
 - missing `valgrind`;
 - network restriction during dependency setup;
-- Windows runtime test skip because runtime tests are not supported there;
 - infrastructure failure unrelated to the patch.
 
 ## Useful Validation Habits
@@ -93,6 +112,5 @@ Include exact commands and outcomes:
 Verification:
 - PASS: cmake --build build -j8 --target <target>
 - PASS: ctest --test-dir build -R '<regex>' --output-on-failure
-- SKIPPED: runtime tests on Windows because runtime test cases are unsupported
 - BLOCKED: VALGRIND=1 ... failed because valgrind is not installed
 ```
