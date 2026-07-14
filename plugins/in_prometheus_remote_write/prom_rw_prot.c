@@ -74,14 +74,10 @@ static int process_payload_metrics_ng(struct flb_prom_remote_write *ctx,
         return 400;
     }
 
-    result = prom_rw_ingest_metrics(ctx, NULL, 0, context);
+    result = prom_rw_ingest_metrics(ctx, NULL, 0, context,
+                                    cfl_sds_len(request->body));
 
-    if (prom_rw_uses_worker_ingress_queue(ctx)) {
-        if (result != 0 && result != FLB_INPUT_INGRESS_BUSY) {
-            cmt_decode_prometheus_remote_write_destroy(context);
-        }
-    }
-    else {
+    if (!prom_rw_uses_worker_ingress_queue(ctx)) {
         cmt_decode_prometheus_remote_write_destroy(context);
     }
 
