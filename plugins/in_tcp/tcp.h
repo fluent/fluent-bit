@@ -27,10 +27,13 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_network.h>
 #ifdef FLB_HAVE_PARSER
 #include <fluent-bit/flb_parser.h>
 #endif
 #include <msgpack.h>
+
+struct flb_downstream_worker_runtime;
 
 struct flb_in_tcp_config {
     flb_sds_t format_name;             /* Data format name */
@@ -51,10 +54,28 @@ struct flb_in_tcp_config {
     void *parser;
 #endif
     int collector_id;                  /* Listener collector id       */
+    int workers;                       /* Listener worker count       */
+    int worker_id;                     /* Worker id                   */
+    int use_ingress_queue;             /* Queue records to main loop  */
+    int listener_registered;           /* Listener event registered   */
+    struct mk_event listener_event;    /* Worker listener event       */
+    struct mk_event_loop *event_loop;  /* Worker event loop           */
+    struct flb_net_setup net_setup;    /* Worker network setup        */
     struct flb_downstream *downstream; /* Client manager */
     struct mk_list connections;        /* List of active connections  */
     struct flb_input_instance *ins;    /* Input plugin instace        */
     struct flb_log_event_encoder *log_encoder;
+    struct flb_downstream_worker_runtime *runtime;
 };
+
+static inline int tcp_ingest_logs(struct flb_in_tcp_config *ctx,
+                                  const void *buf, size_t buf_size)
+{
+    if (ctx->use_ingress_queue == FLB_TRUE) {
+        return flb_input_ingress_queue_log(ctx->ins, NULL, 0, buf, buf_size);
+    }
+
+    return flb_input_log_append(ctx->ins, NULL, 0, buf, buf_size);
+}
 
 #endif
