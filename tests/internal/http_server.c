@@ -356,6 +356,79 @@ void test_http_server_worker_exit_runs_on_worker_thread()
     test_http_server_network_cleanup();
 }
 
+void test_http_server_single_managed_worker_start()
+{
+    int port;
+    int ret;
+    struct flb_config *config;
+    struct flb_net_setup net_setup;
+    struct flb_http_server server;
+    struct flb_http_server_options options;
+    struct test_http_server_context context;
+
+    ret = test_http_server_network_init();
+    if (ret != 0) {
+        return;
+    }
+
+    config = flb_config_init();
+    if (!TEST_CHECK(config != NULL)) {
+        test_http_server_network_cleanup();
+        return;
+    }
+
+    test_http_server_context_init(&context);
+    context.expected_idle_timeout = HTTP_SERVER_DEFAULT_IDLE_TIMEOUT;
+
+    port = test_http_server_reserve_port();
+    if (!TEST_CHECK(port > 0)) {
+        test_http_server_context_destroy(&context);
+        flb_config_exit(config);
+        test_http_server_network_cleanup();
+        return;
+    }
+
+    flb_net_setup_init(&net_setup);
+    flb_http_server_options_init(&options);
+
+    options.protocol_version = HTTP_PROTOCOL_VERSION_AUTODETECT;
+    options.request_callback = test_http_server_request_handler;
+    options.user_data = &context;
+    options.address = (char *) TEST_HTTP_SERVER_HOST;
+    options.port = port;
+    options.networking_flags = FLB_IO_TCP;
+    options.networking_setup = &net_setup;
+    options.system_context = config;
+    options.workers = 1;
+    options.use_caller_event_loop = FLB_FALSE;
+    options.cb_worker_init = test_http_server_worker_init;
+    options.cb_worker_exit = test_http_server_worker_exit;
+
+    ret = flb_http_server_init_with_options(&server, &options);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        TEST_CHECK(server.reuse_port == FLB_FALSE);
+
+        ret = flb_http_server_start(&server);
+        TEST_CHECK(ret == 0);
+        if (ret == 0) {
+            TEST_CHECK(context.init_calls == 1);
+            TEST_CHECK(context.idle_timeout_mismatches == 0);
+        }
+
+        flb_http_server_destroy(&server);
+
+        if (ret == 0) {
+            TEST_CHECK(context.exit_calls == 1);
+            TEST_CHECK(context.exit_thread_mismatches == 0);
+        }
+    }
+
+    test_http_server_context_destroy(&context);
+    flb_config_exit(config);
+    test_http_server_network_cleanup();
+}
+
 void test_http_server_workers_reject_distinct_ephemeral_ports()
 {
     int ret;
@@ -616,6 +689,8 @@ TEST_LIST = {
     { "http_server_managed_worker_contract", test_http_server_managed_worker_contract },
     { "http_server_worker_exit_runs_on_worker_thread",
       test_http_server_worker_exit_runs_on_worker_thread },
+    { "http_server_single_managed_worker_start",
+      test_http_server_single_managed_worker_start },
     { "http_server_workers_reject_distinct_ephemeral_ports",
       test_http_server_workers_reject_distinct_ephemeral_ports },
     { "http_server_idle_timeout_applies_to_networking_setup",
