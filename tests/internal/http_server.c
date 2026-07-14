@@ -22,6 +22,8 @@ struct test_http_server_context {
     int exit_calls;
     int request_calls;
     int exit_thread_mismatches;
+    int expected_idle_timeout;
+    int idle_timeout_mismatches;
     struct flb_http_server *initialized_servers[TEST_HTTP_SERVER_WORKERS];
     pthread_t initialized_threads[TEST_HTTP_SERVER_WORKERS];
 };
@@ -45,6 +47,11 @@ static int test_http_server_worker_init(struct flb_http_server *server, void *da
     context = data;
 
     pthread_mutex_lock(&context->lock);
+
+    if (server->networking_setup == NULL ||
+        server->networking_setup->io_timeout != context->expected_idle_timeout) {
+        context->idle_timeout_mismatches++;
+    }
 
     if (context->init_calls < TEST_HTTP_SERVER_WORKERS) {
         context->initialized_servers[context->init_calls] = server;
@@ -127,6 +134,30 @@ static void test_http_server_network_cleanup(void)
 #ifdef FLB_SYSTEM_WINDOWS
     WSACleanup();
 #endif
+}
+
+static int test_http_server_reserve_port(void)
+{
+    int ret;
+    socklen_t address_length;
+    flb_sockfd_t socket_fd;
+    struct sockaddr_in address;
+
+    socket_fd = flb_net_server("0", TEST_HTTP_SERVER_HOST,
+                               FLB_NETWORK_DEFAULT_BACKLOG_SIZE, FLB_FALSE);
+    if (socket_fd == FLB_INVALID_SOCKET) {
+        return -1;
+    }
+
+    memset(&address, 0, sizeof(address));
+    address_length = sizeof(address);
+    ret = getsockname(socket_fd, (struct sockaddr *) &address, &address_length);
+    flb_socket_close(socket_fd);
+    if (ret != 0) {
+        return -1;
+    }
+
+    return ntohs(address.sin_port);
 }
 
 void test_http_server_options_defaults()
@@ -250,6 +281,7 @@ void test_http_server_managed_worker_contract()
 
 void test_http_server_worker_exit_runs_on_worker_thread()
 {
+    int port;
     int ret;
     struct flb_config *config;
     struct flb_net_setup net_setup;
@@ -269,6 +301,15 @@ void test_http_server_worker_exit_runs_on_worker_thread()
     }
 
     test_http_server_context_init(&context);
+    context.expected_idle_timeout = HTTP_SERVER_DEFAULT_IDLE_TIMEOUT;
+
+    port = test_http_server_reserve_port();
+    if (!TEST_CHECK(port > 0)) {
+        test_http_server_context_destroy(&context);
+        flb_config_exit(config);
+        test_http_server_network_cleanup();
+        return;
+    }
 
     flb_net_setup_init(&net_setup);
     flb_http_server_options_init(&options);
@@ -277,7 +318,7 @@ void test_http_server_worker_exit_runs_on_worker_thread()
     options.request_callback = test_http_server_request_handler;
     options.user_data = &context;
     options.address = (char *) TEST_HTTP_SERVER_HOST;
-    options.port = 0;
+    options.port = port;
     options.networking_flags = FLB_IO_TCP;
     options.networking_setup = &net_setup;
     options.system_context = config;
@@ -289,6 +330,7 @@ void test_http_server_worker_exit_runs_on_worker_thread()
     TEST_CHECK(ret == 0);
     if (ret == 0) {
         ret = flb_http_server_start(&server);
+#if defined(SO_REUSEPORT) && !defined(FLB_SYSTEM_WINDOWS)
         TEST_CHECK(ret == 0);
 
         if (ret == 0) {
@@ -298,13 +340,61 @@ void test_http_server_worker_exit_runs_on_worker_thread()
 
             TEST_CHECK(context.exit_calls == TEST_HTTP_SERVER_WORKERS);
             TEST_CHECK(context.exit_thread_mismatches == 0);
+            TEST_CHECK(context.idle_timeout_mismatches == 0);
         }
         else {
             flb_http_server_destroy(&server);
         }
+#else
+        TEST_CHECK(ret != 0);
+        flb_http_server_destroy(&server);
+#endif
     }
 
     test_http_server_context_destroy(&context);
+    flb_config_exit(config);
+    test_http_server_network_cleanup();
+}
+
+void test_http_server_workers_reject_distinct_ephemeral_ports()
+{
+    int ret;
+    struct flb_config *config;
+    struct flb_net_setup net_setup;
+    struct flb_http_server server;
+    struct flb_http_server_options options;
+
+    ret = test_http_server_network_init();
+    if (ret != 0) {
+        return;
+    }
+
+    config = flb_config_init();
+    if (!TEST_CHECK(config != NULL)) {
+        test_http_server_network_cleanup();
+        return;
+    }
+
+    flb_net_setup_init(&net_setup);
+    flb_http_server_options_init(&options);
+
+    options.protocol_version = HTTP_PROTOCOL_VERSION_AUTODETECT;
+    options.request_callback = test_http_server_request_handler;
+    options.address = (char *) TEST_HTTP_SERVER_HOST;
+    options.port = 0;
+    options.networking_flags = FLB_IO_TCP;
+    options.networking_setup = &net_setup;
+    options.system_context = config;
+    options.workers = 2;
+
+    ret = flb_http_server_init_with_options(&server, &options);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        ret = flb_http_server_start(&server);
+        TEST_CHECK(ret != 0);
+        flb_http_server_destroy(&server);
+    }
+
     flb_config_exit(config);
     test_http_server_network_cleanup();
 }
@@ -391,13 +481,12 @@ void test_http_server_explicit_network_timeout_is_preserved()
 
 void test_http_server_multi_worker_disabled_idle_timeout_is_preserved()
 {
+    int port;
     struct flb_config *config;
     struct flb_net_setup net_setup;
     struct flb_http_server server;
     struct flb_http_server_options options;
-    const struct flb_net_setup *worker0_net_setup;
-    const struct flb_net_setup *worker1_net_setup;
-    const struct flb_net_setup *worker2_net_setup;
+    struct test_http_server_context context;
     int ret;
 
     ret = test_http_server_network_init();
@@ -413,20 +502,34 @@ void test_http_server_multi_worker_disabled_idle_timeout_is_preserved()
 
     flb_net_setup_init(&net_setup);
     flb_http_server_options_init(&options);
+    test_http_server_context_init(&context);
+    context.expected_idle_timeout = 0;
+
+    port = test_http_server_reserve_port();
+    if (!TEST_CHECK(port > 0)) {
+        test_http_server_context_destroy(&context);
+        flb_config_exit(config);
+        test_http_server_network_cleanup();
+        return;
+    }
 
     options.protocol_version = HTTP_PROTOCOL_VERSION_AUTODETECT;
     options.request_callback = test_http_server_request_handler;
     options.address = (char *) TEST_HTTP_SERVER_HOST;
-    options.port = 0;
+    options.port = port;
     options.networking_flags = FLB_IO_TCP;
     options.networking_setup = &net_setup;
     options.system_context = config;
     options.workers = 2;
     options.idle_timeout = 0;
+    options.user_data = &context;
+    options.cb_worker_init = test_http_server_worker_init;
+    options.cb_worker_exit = test_http_server_worker_exit;
 
     ret = flb_http_server_init_with_options(&server, &options);
     TEST_CHECK(ret == 0);
     if (ret != 0) {
+        test_http_server_context_destroy(&context);
         flb_config_exit(config);
         test_http_server_network_cleanup();
         return;
@@ -436,6 +539,7 @@ void test_http_server_multi_worker_disabled_idle_timeout_is_preserved()
     TEST_CHECK(net_setup.io_timeout == 0);
 
     ret = flb_http_server_start(&server);
+#if defined(SO_REUSEPORT) && !defined(FLB_SYSTEM_WINDOWS)
     TEST_CHECK(ret == 0);
     if (ret != 0) {
         flb_http_server_destroy(&server);
@@ -444,18 +548,17 @@ void test_http_server_multi_worker_disabled_idle_timeout_is_preserved()
         return;
     }
 
-    worker0_net_setup = flb_http_server_runtime_worker_net_setup_get(&server, 0);
-    worker1_net_setup = flb_http_server_runtime_worker_net_setup_get(&server, 1);
-    worker2_net_setup = flb_http_server_runtime_worker_net_setup_get(&server, 2);
-
-    if (TEST_CHECK(worker0_net_setup != NULL) &&
-        TEST_CHECK(worker1_net_setup != NULL) &&
-        TEST_CHECK(worker2_net_setup == NULL)) {
-        TEST_CHECK(worker0_net_setup->io_timeout == 0);
-        TEST_CHECK(worker1_net_setup->io_timeout == 0);
-    }
+    TEST_CHECK(context.init_calls == TEST_HTTP_SERVER_WORKERS);
+    TEST_CHECK(context.idle_timeout_mismatches == 0);
 
     flb_http_server_destroy(&server);
+    TEST_CHECK(context.exit_calls == TEST_HTTP_SERVER_WORKERS);
+    TEST_CHECK(context.exit_thread_mismatches == 0);
+#else
+    TEST_CHECK(ret != 0);
+    flb_http_server_destroy(&server);
+#endif
+    test_http_server_context_destroy(&context);
     flb_config_exit(config);
     test_http_server_network_cleanup();
 }
@@ -513,6 +616,8 @@ TEST_LIST = {
     { "http_server_managed_worker_contract", test_http_server_managed_worker_contract },
     { "http_server_worker_exit_runs_on_worker_thread",
       test_http_server_worker_exit_runs_on_worker_thread },
+    { "http_server_workers_reject_distinct_ephemeral_ports",
+      test_http_server_workers_reject_distinct_ephemeral_ports },
     { "http_server_idle_timeout_applies_to_networking_setup",
       test_http_server_idle_timeout_applies_to_networking_setup },
     { "http_server_explicit_network_timeout_is_preserved",
