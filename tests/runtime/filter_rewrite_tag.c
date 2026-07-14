@@ -77,6 +77,31 @@ static int get_output_num()
     return ret;
 }
 
+static void wait_for_output_num(uint32_t timeout_ms, int expected_num, int *output_num)
+{
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    uint64_t elapsed_time_ms = 0;
+
+    flb_time_get(&start_time);
+
+    while (elapsed_time_ms < timeout_ms) {
+        *output_num = get_output_num();
+
+        if (*output_num >= expected_num) {
+            return;
+        }
+
+        flb_time_msleep(100);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_time_ms = flb_time_to_nanosec(&diff_time) / 1000000;
+    }
+
+    *output_num = get_output_num();
+}
+
 static struct filter_test *filter_test_create(struct flb_lib_out_cb *data)
 {
     int i_ffd;
@@ -405,8 +430,7 @@ static void flb_test_busy_emitter_keeps_original()
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(1500);
-    got = get_output_num();
+    wait_for_output_num(30000, heavy_loop, &got);
 
     if (!TEST_CHECK(got == heavy_loop)) {
         TEST_MSG("expect: %d got: %d", heavy_loop, got);
