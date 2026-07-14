@@ -873,19 +873,24 @@ int flb_input_ingress_enable(struct flb_input_instance *ins);
 int flb_input_ingress_queue_log(struct flb_input_instance *ins,
                                 const char *tag, size_t tag_len,
                                 const void *buf, size_t buf_size);
+/* The take and decoded-signal queue functions always consume their payload. */
 int flb_input_ingress_queue_log_take(struct flb_input_instance *ins,
                                      const char *tag, size_t tag_len,
                                      void *buf, size_t buf_size,
                                      size_t allocation_size);
 int flb_input_ingress_queue_metrics(struct flb_input_instance *ins,
                                     const char *tag, size_t tag_len,
-                                    struct cmt *cmt);
+                                    struct cmt *cmt, size_t payload_size);
+int flb_input_ingress_queue_metrics_list(struct flb_input_instance *ins,
+                                         const char *tag, size_t tag_len,
+                                         struct cfl_list *contexts,
+                                         size_t payload_size);
 int flb_input_ingress_queue_traces(struct flb_input_instance *ins,
                                    const char *tag, size_t tag_len,
-                                   struct ctrace *ctr);
+                                   struct ctrace *ctr, size_t payload_size);
 int flb_input_ingress_queue_profiles(struct flb_input_instance *ins,
                                      const char *tag, size_t tag_len,
-                                     struct cprof *profile);
+                                     struct cprof *profile, size_t payload_size);
 
 
 /* processors */
