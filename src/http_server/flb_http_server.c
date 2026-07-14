@@ -563,7 +563,7 @@ static int flb_http_server_worker_initialize(struct flb_downstream_worker *worke
     memcpy(&context->net_setup,
            parent->networking_setup,
            sizeof(struct flb_net_setup));
-    context->net_setup.share_port = FLB_TRUE;
+    context->net_setup.share_port = parent->reuse_port;
 
     flb_http_server_options_init(&options);
 
@@ -585,7 +585,7 @@ static int flb_http_server_worker_initialize(struct flb_downstream_worker *worke
     options.connection_counter = parent->connection_counter;
     options.workers = 1;
     options.use_caller_event_loop = FLB_TRUE;
-    options.reuse_port = FLB_TRUE;
+    options.reuse_port = parent->reuse_port;
     options.cb_worker_init = parent->cb_worker_init;
     options.cb_worker_exit = parent->cb_worker_exit;
 
