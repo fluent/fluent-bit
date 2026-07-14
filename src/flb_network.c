@@ -239,6 +239,8 @@ int flb_net_socket_share_port(flb_sockfd_t fd)
     }
 #else
     (void) fd;
+    flb_error("shared listener ports are not supported on this platform");
+    return -1;
 #endif
 
     return 0;
@@ -1689,8 +1691,9 @@ flb_sockfd_t flb_net_server(const char *port, const char *listen_addr,
             continue;
         }
 
-        if (share_port) {
-            flb_net_socket_share_port(fd);
+        if (share_port && flb_net_socket_share_port(fd) == -1) {
+            flb_socket_close(fd);
+            continue;
         }
 
         flb_net_socket_tcp_nodelay(fd);
@@ -1763,8 +1766,9 @@ flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr, int s
             continue;
         }
 
-        if (share_port) {
-            flb_net_socket_share_port(fd);
+        if (share_port && flb_net_socket_share_port(fd) == -1) {
+            flb_socket_close(fd);
+            continue;
         }
 
         ret = flb_net_bind_udp(fd, rp->ai_addr, rp->ai_addrlen);
@@ -1820,8 +1824,9 @@ flb_sockfd_t flb_net_server_unix(const char *listen_path,
 
         strncpy(address.sun_path, listen_path, sizeof(address.sun_path));
 
-        if (share_port) {
-            flb_net_socket_share_port(fd);
+        if (share_port && flb_net_socket_share_port(fd) == -1) {
+            flb_socket_close(fd);
+            return -1;
         }
 
         if (stream_mode) {
