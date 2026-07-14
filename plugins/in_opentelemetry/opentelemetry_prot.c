@@ -537,26 +537,38 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
     }
 
     if (result == CMT_DECODE_OPENTELEMETRY_SUCCESS) {
+        if (opentelemetry_uses_worker_ingress_queue(ctx)) {
+            result = flb_input_ingress_queue_metrics_list(ctx->ins,
+                                                          tag,
+                                                          cfl_sds_len(tag),
+                                                          &decoded_contexts,
+                                                          payload_size);
+            if (result == FLB_INPUT_INGRESS_BUSY) {
+                return FLB_INPUT_INGRESS_BUSY;
+            }
+            else if (result != 0) {
+                flb_plg_debug(ctx->ins,
+                              "could not queue metrics contexts : %d", result);
+                return -1;
+            }
+
+            return 0;
+        }
+
         cfl_list_foreach_safe(iterator, tmp, &decoded_contexts) {
             context = cfl_list_entry(iterator, struct cmt, _head);
-
-            if (opentelemetry_uses_worker_ingress_queue(ctx)) {
-                cfl_list_del(&context->_head);
-            }
 
             result = opentelemetry_ingest_metrics(ctx,
                                                   tag,
                                                   cfl_sds_len(tag),
-                                                  context);
+                                                  context,
+                                                  payload_size);
 
             if (result == FLB_INPUT_INGRESS_BUSY) {
                 cmt_decode_opentelemetry_destroy(&decoded_contexts);
                 return FLB_INPUT_INGRESS_BUSY;
             }
             else if (result != 0) {
-                if (opentelemetry_uses_worker_ingress_queue(ctx)) {
-                    cmt_destroy(context);
-                }
                 flb_plg_debug(ctx->ins, "could not ingest metrics context : %d", result);
             }
         }
@@ -644,9 +656,7 @@ static int ingest_profiles_context_as_log_entry(struct flb_opentelemetry *ctx,
                                              encoder->output_buffer,
                                              encoder->output_length,
                                              allocation_size);
-        if (ret == 0 || ret == FLB_INPUT_INGRESS_BUSY) {
-            flb_log_event_encoder_claim_internal_buffer_ownership(encoder);
-        }
+        flb_log_event_encoder_claim_internal_buffer_ownership(encoder);
     }
     else {
         ret = opentelemetry_ingest_logs(ctx,
@@ -717,10 +727,10 @@ static int process_payload_profiles_ng(struct flb_opentelemetry *ctx,
             ret = opentelemetry_ingest_profiles(ctx,
                                                 tag,
                                                 flb_sds_len(tag),
-                                                profiles_context);
+                                                profiles_context,
+                                                payload_size);
 
-            if (ret != FLB_INPUT_INGRESS_BUSY &&
-                (ret != 0 || !opentelemetry_uses_worker_ingress_queue(ctx))) {
+            if (!opentelemetry_uses_worker_ingress_queue(ctx)) {
                 cprof_decode_opentelemetry_destroy(profiles_context);
             }
         }

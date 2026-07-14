@@ -857,9 +857,7 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
                                                  encoder->output_buffer,
                                                  encoder->output_length,
                                                  allocation_size);
-            if (ret == 0 || ret == FLB_INPUT_INGRESS_BUSY) {
-                flb_log_event_encoder_claim_internal_buffer_ownership(encoder);
-            }
+            flb_log_event_encoder_claim_internal_buffer_ownership(encoder);
         }
         else {
             ret = opentelemetry_ingest_logs(ctx,

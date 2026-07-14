@@ -90,10 +90,12 @@ static inline int opentelemetry_ingest_logs_take(struct flb_opentelemetry *ctx,
 static inline int opentelemetry_ingest_metrics(struct flb_opentelemetry *ctx,
                                                const char *tag,
                                                size_t tag_len,
-                                               struct cmt *cmt)
+                                               struct cmt *cmt,
+                                               size_t payload_size)
 {
     if (opentelemetry_uses_worker_ingress_queue(ctx)) {
-        return flb_input_ingress_queue_metrics(ctx->ins, tag, tag_len, cmt);
+        return flb_input_ingress_queue_metrics(ctx->ins, tag, tag_len,
+                                               cmt, payload_size);
     }
 
     return flb_input_metrics_append(ctx->ins, tag, tag_len, cmt);
@@ -102,10 +104,12 @@ static inline int opentelemetry_ingest_metrics(struct flb_opentelemetry *ctx,
 static inline int opentelemetry_ingest_traces(struct flb_opentelemetry *ctx,
                                               const char *tag,
                                               size_t tag_len,
-                                              struct ctrace *ctr)
+                                              struct ctrace *ctr,
+                                              size_t payload_size)
 {
     if (opentelemetry_uses_worker_ingress_queue(ctx)) {
-        return flb_input_ingress_queue_traces(ctx->ins, tag, tag_len, ctr);
+        return flb_input_ingress_queue_traces(ctx->ins, tag, tag_len,
+                                              ctr, payload_size);
     }
 
     return flb_input_trace_append(ctx->ins, tag, tag_len, ctr);
@@ -114,10 +118,12 @@ static inline int opentelemetry_ingest_traces(struct flb_opentelemetry *ctx,
 static inline int opentelemetry_ingest_profiles(struct flb_opentelemetry *ctx,
                                                 const char *tag,
                                                 size_t tag_len,
-                                                struct cprof *profile)
+                                                struct cprof *profile,
+                                                size_t payload_size)
 {
     if (opentelemetry_uses_worker_ingress_queue(ctx)) {
-        return flb_input_ingress_queue_profiles(ctx->ins, tag, tag_len, profile);
+        return flb_input_ingress_queue_profiles(ctx->ins, tag, tag_len,
+                                                profile, payload_size);
     }
 
     return flb_input_profiles_append(ctx->ins, tag, tag_len, profile);
