@@ -88,7 +88,7 @@ struct flb_tail_config {
     long refresh_interval_nsec;/* nanoseconds to re-scan       */
     int read_newly_discovered_files_from_head; /* read new files from head after startup */
     int read_from_head;        /* read new files from head     */
-    int ignore_unavailable;  /* Ignore directory paths that do not exist */
+    int ignore_unavailable;    /* gnore unavailable paths during scanning */
     int rotate_wait;           /* sec to wait on rotated files */
     int watcher_interval;      /* watcher interval             */
     int ignore_older;          /* ignore fields older than X seconds */

@@ -212,25 +212,26 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
             return -1;
         case GLOB_ABORTED:
             if (errno == EACCES) {
-                flb_plg_error(ctx->ins, "NO read access for path: %s", path);
-            } else if (!ctx->ignore_unavailable) {
-                switch (errno) {
-                    case ENOENT:
-                        flb_plg_warn(ctx->ins, "No such file at path: %s", path);
-                        break;
-                    case ENOTDIR:
-                        flb_plg_error(ctx->ins, "Not directory at path: %s", path);
-                        break;
-                    default:
-                        flb_plg_error(ctx->ins, "Unable to read path: %s", path);
-                        break;
+                flb_plg_error(ctx->ins, "No read access for path: %s", path);
+            } else if (errno == ENOENT || errno == ENOTDIR) {
+                if (!ctx->ignore_unavailable) {
+                    flb_plg_error(ctx->ins, "%s at path: %s", 
+                                    (errno == ENOENT) ? "No such file" : "Not a directory",
+                                    path);
                 }
+            } else {
+                flb_plg_error(ctx->ins, "Unable to scan path (system error: %s): %s",
+                            strerror(errno), path);
             }
             return -1;
         case GLOB_NOMATCH:
             ret = stat(path, &st);
             if (ret == -1) {
-                flb_plg_debug(ctx->ins, "cannot read info from: %s", path);
+                if (errno == ENOTDIR && !ctx->ignore_unavailable) {
+                    flb_plg_error(ctx->ins, "Not a directory at path: %s", path);
+                } else {
+                    flb_plg_debug(ctx->ins, "cannot read info from: %s", path);
+                }
             }
             else {
                 ret = access(path, R_OK);
