@@ -251,6 +251,12 @@ jobs:
 
       - name: Run unit tests for Fluent Bit packages (x86, x64, and ARM64)
         run: |
-            ctest --build-run-dir "$PWD" --output-on-failure
+            $nparallel = 1
+            if ('${{ matrix.config.runtime_tests }}' -eq 'On') {
+              $nparallel = [Math]::Min([Environment]::ProcessorCount, 8)
+            }
+
+            Write-Host "Running CTest with parallel level $nparallel"
+            ctest --parallel $nparallel --build-run-dir "$PWD" --output-on-failure
         shell: pwsh
         working-directory: build
