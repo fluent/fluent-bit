@@ -52,16 +52,20 @@ struct flb_input_ingress_event {
             void   *buf;
             size_t  size;
         } log;
-        struct cmt    *metrics;
         struct ctrace *traces;
         struct cprof  *profiles;
     } data;
 
+    struct cfl_list metrics;
     struct mk_list _head;
 };
 
 static void flb_input_ingress_event_destroy(struct flb_input_ingress_event *event)
 {
+    struct cfl_list *iterator;
+    struct cfl_list *tmp;
+    struct cmt *context;
+
     if (event == NULL) {
         return;
     }
@@ -80,8 +84,10 @@ static void flb_input_ingress_event_destroy(struct flb_input_ingress_event *even
         }
     }
     else if (event->type == FLB_INPUT_INGRESS_METRICS) {
-        if (event->data.metrics != NULL) {
-            cmt_destroy(event->data.metrics);
+        cfl_list_foreach_safe(iterator, tmp, &event->metrics) {
+            context = cfl_list_entry(iterator, struct cmt, _head);
+            cfl_list_del(&context->_head);
+            cmt_destroy(context);
         }
     }
     else if (event->type == FLB_INPUT_INGRESS_TRACES) {
@@ -107,42 +113,14 @@ static size_t flb_input_ingress_event_size(struct flb_input_ingress_event *event
     return event->size;
 }
 
-static size_t flb_input_ingress_estimate_metrics_size(struct cmt *cmt)
+static size_t flb_input_ingress_signal_size(size_t payload_size)
 {
-    if (cmt == NULL) {
-        return 0;
+    if (payload_size > 0) {
+        return payload_size;
     }
 
-    /* Deferred worker ingress must not touch complex decoded signal objects
-     * beyond ownership transfer. Conservative accounting is safer here than
-     * re-encoding on the worker thread. 64 KiB is an intentionally coarse
-     * upper-bound for typical decoded signal objects; tune it only after
-     * profiling real workloads shows that this safety margin is too strict or
-     * too loose for queue backpressure.
-     */
-    return 64 * 1024;
-}
-
-static size_t flb_input_ingress_estimate_traces_size(struct ctrace *ctr)
-{
-    if (ctr == NULL) {
-        return 0;
-    }
-
-    /* Keep trace accounting aligned with the conservative signal estimate
-     * used for metrics/profiles to avoid worker-side re-encoding.
-     */
-    return 64 * 1024;
-}
-
-static size_t flb_input_ingress_estimate_profiles_size(struct cprof *profile)
-{
-    if (profile == NULL) {
-        return 0;
-    }
-
-    /* Keep profile accounting aligned with the conservative signal estimate
-     * used for metrics/traces to avoid worker-side re-encoding.
+    /* Callers should provide the source payload size. Keep a non-zero fallback
+     * for producers that legitimately build a signal without a wire payload.
      */
     return 64 * 1024;
 }
@@ -185,6 +163,29 @@ static void flb_input_ingress_update_metrics(struct flb_input_instance *ins)
     }
 }
 
+static int flb_input_ingress_busy(struct flb_input_instance *ins,
+                                  struct flb_input_ingress_event *event)
+{
+    struct cmt_counter *counter;
+    flb_sds_t input_name;
+
+    counter = ins->cmt_ingress_queue_busy;
+    input_name = NULL;
+
+    if (counter != NULL) {
+        input_name = flb_sds_create(flb_input_name(ins));
+    }
+
+    if (counter != NULL && input_name != NULL) {
+        cmt_counter_add(counter, cfl_time_now(), 1, 1, (char *[]) {input_name});
+        flb_sds_destroy(input_name);
+    }
+
+    flb_input_ingress_event_destroy(event);
+
+    return FLB_INPUT_INGRESS_BUSY;
+}
+
 static int flb_input_ingress_enqueue(struct flb_input_instance *ins,
                                      struct flb_input_ingress_event *event)
 {
@@ -193,8 +194,6 @@ static int flb_input_ingress_enqueue(struct flb_input_instance *ins,
     int should_signal;
     int wait_result;
     struct timespec deadline;
-    struct cmt_counter *cmt_ingress_queue_busy;
-    flb_sds_t input_name;
 
     if (ins == NULL || event == NULL || ins->ingress_queue_enabled != FLB_TRUE) {
         flb_input_ingress_event_destroy(event);
@@ -206,6 +205,12 @@ static int flb_input_ingress_enqueue(struct flb_input_instance *ins,
 
     pthread_mutex_lock(&ins->ingress_queue_lock);
 
+    if (ins->ingress_queue_byte_limit > 0 &&
+        event_size > ins->ingress_queue_byte_limit) {
+        pthread_mutex_unlock(&ins->ingress_queue_lock);
+        return flb_input_ingress_busy(ins, event);
+    }
+
     while (ins->ingress_queue_enabled == FLB_TRUE) {
         queue_is_full = FLB_FALSE;
 
@@ -214,9 +219,12 @@ static int flb_input_ingress_enqueue(struct flb_input_instance *ins,
             queue_is_full = FLB_TRUE;
         }
 
-        if (ins->ingress_queue_byte_limit > 0 &&
-            ins->ingress_queue_pending_bytes + event_size > ins->ingress_queue_byte_limit) {
-            queue_is_full = FLB_TRUE;
+        if (ins->ingress_queue_byte_limit > 0) {
+            if (event_size > ins->ingress_queue_byte_limit ||
+                ins->ingress_queue_pending_bytes >
+                    ins->ingress_queue_byte_limit - event_size) {
+                queue_is_full = FLB_TRUE;
+            }
         }
 
         if (queue_is_full == FLB_FALSE) {
@@ -240,26 +248,13 @@ static int flb_input_ingress_enqueue(struct flb_input_instance *ins,
                                              &ins->ingress_queue_lock,
                                              &deadline);
         if (wait_result == ETIMEDOUT) {
-            cmt_ingress_queue_busy = ins->cmt_ingress_queue_busy;
-            input_name = NULL;
-
-            if (cmt_ingress_queue_busy != NULL) {
-                input_name = flb_sds_create(flb_input_name(ins));
-            }
-
             pthread_mutex_unlock(&ins->ingress_queue_lock);
-
-            if (cmt_ingress_queue_busy != NULL && input_name != NULL) {
-                cmt_counter_add(cmt_ingress_queue_busy,
-                                cfl_time_now(),
-                                1,
-                                1, (char *[]) {input_name});
-                flb_sds_destroy(input_name);
-            }
-
+            return flb_input_ingress_busy(ins, event);
+        }
+        else if (wait_result != 0) {
+            pthread_mutex_unlock(&ins->ingress_queue_lock);
             flb_input_ingress_event_destroy(event);
-
-            return FLB_INPUT_INGRESS_BUSY;
+            return -1;
         }
     }
 
@@ -304,6 +299,7 @@ static struct flb_input_ingress_event *flb_input_ingress_event_create(
     }
 
     event->type = type;
+    cfl_list_init(&event->metrics);
     mk_list_entry_init(&event->_head);
 
     if (tag != NULL && tag_len > 0) {
@@ -334,13 +330,16 @@ static int flb_input_ingress_collector(struct flb_input_instance *ins,
                                        struct flb_config *config,
                                        void *context)
 {
+    int append_result;
     int result;
-    int queue_was_full;
     size_t pending_events;
     size_t pending_bytes;
     struct mk_list *head;
     struct mk_list *tmp;
     struct mk_list queue;
+    struct cfl_list *iterator;
+    struct cfl_list *list_tmp;
+    struct cmt *metrics_context;
     struct flb_input_ingress_event *event;
 
     (void) config;
@@ -360,15 +359,6 @@ static int flb_input_ingress_collector(struct flb_input_instance *ins,
 
         pending_events = ins->ingress_queue_pending_events;
         pending_bytes = ins->ingress_queue_pending_bytes;
-        queue_was_full = FLB_FALSE;
-
-        if ((ins->ingress_queue_event_limit > 0 &&
-             pending_events >= ins->ingress_queue_event_limit) ||
-            (ins->ingress_queue_byte_limit > 0 &&
-             pending_bytes >= ins->ingress_queue_byte_limit)) {
-            queue_was_full = FLB_TRUE;
-        }
-
         mk_list_foreach_safe(head, tmp, &ins->ingress_queue) {
             mk_list_del(head);
             mk_list_add(head, &queue);
@@ -379,7 +369,7 @@ static int flb_input_ingress_collector(struct flb_input_instance *ins,
         ins->ingress_queue_signal_pending = FLB_FALSE;
         flb_input_ingress_update_metrics(ins);
 
-        if (queue_was_full == FLB_TRUE) {
+        if (pending_events > 0 || pending_bytes > 0) {
             pthread_cond_broadcast(&ins->ingress_queue_space_available);
         }
 
@@ -398,10 +388,20 @@ static int flb_input_ingress_collector(struct flb_input_instance *ins,
                                               event->data.log.size);
             }
             else if (event->type == FLB_INPUT_INGRESS_METRICS) {
-                result = flb_input_metrics_append(ins,
-                                                  event->tag,
-                                                  event->tag != NULL ? flb_sds_len(event->tag) : 0,
-                                                  event->data.metrics);
+                result = 0;
+                cfl_list_foreach_safe(iterator, list_tmp, &event->metrics) {
+                    metrics_context = cfl_list_entry(iterator, struct cmt, _head);
+                    cfl_list_del(&metrics_context->_head);
+                    append_result = flb_input_metrics_append(
+                                        ins,
+                                        event->tag,
+                                        event->tag != NULL ? flb_sds_len(event->tag) : 0,
+                                        metrics_context);
+                    cmt_destroy(metrics_context);
+                    if (append_result != 0) {
+                        result = append_result;
+                    }
+                }
             }
             else if (event->type == FLB_INPUT_INGRESS_TRACES) {
                 result = flb_input_trace_append(ins,
@@ -565,6 +565,9 @@ int flb_input_ingress_queue_log_take(struct flb_input_instance *ins,
     struct flb_input_ingress_event *event;
 
     if (buf == NULL || buf_size == 0) {
+        if (buf != NULL) {
+            flb_free(buf);
+        }
         return -1;
     }
 
@@ -587,7 +590,8 @@ int flb_input_ingress_queue_log_take(struct flb_input_instance *ins,
 int flb_input_ingress_queue_metrics(struct flb_input_instance *ins,
                                     const char *tag,
                                     size_t tag_len,
-                                    struct cmt *cmt)
+                                    struct cmt *cmt,
+                                    size_t payload_size)
 {
     struct flb_input_ingress_event *event;
 
@@ -595,14 +599,54 @@ int flb_input_ingress_queue_metrics(struct flb_input_instance *ins,
         return -1;
     }
 
-    /* Ownership of 'cmt' is transferred to the ingress queue on success. */
+    /* The ingress queue consumes 'cmt' on every return path. */
     event = flb_input_ingress_event_create(FLB_INPUT_INGRESS_METRICS, tag, tag_len);
     if (event == NULL) {
+        cmt_destroy(cmt);
         return -1;
     }
 
-    event->data.metrics = cmt;
-    event->size = flb_input_ingress_estimate_metrics_size(cmt);
+    if (!cfl_list_entry_is_orphan(&cmt->_head)) {
+        cfl_list_del(&cmt->_head);
+    }
+    cfl_list_add(&cmt->_head, &event->metrics);
+    event->size = flb_input_ingress_signal_size(payload_size);
+
+    return flb_input_ingress_enqueue(ins, event);
+}
+
+int flb_input_ingress_queue_metrics_list(struct flb_input_instance *ins,
+                                         const char *tag,
+                                         size_t tag_len,
+                                         struct cfl_list *contexts,
+                                         size_t payload_size)
+{
+    struct cfl_list *iterator;
+    struct cfl_list *tmp;
+    struct cmt *context;
+    struct flb_input_ingress_event *event;
+
+    if (contexts == NULL || cfl_list_is_empty(contexts)) {
+        return -1;
+    }
+
+    event = flb_input_ingress_event_create(FLB_INPUT_INGRESS_METRICS,
+                                           tag, tag_len);
+    if (event == NULL) {
+        cfl_list_foreach_safe(iterator, tmp, contexts) {
+            context = cfl_list_entry(iterator, struct cmt, _head);
+            cfl_list_del(&context->_head);
+            cmt_destroy(context);
+        }
+        return -1;
+    }
+
+    cfl_list_foreach_safe(iterator, tmp, contexts) {
+        context = cfl_list_entry(iterator, struct cmt, _head);
+        cfl_list_del(&context->_head);
+        cfl_list_add(&context->_head, &event->metrics);
+    }
+    event->size = flb_input_ingress_signal_size(payload_size);
 
     return flb_input_ingress_enqueue(ins, event);
 }
@@ -610,7 +654,8 @@ int flb_input_ingress_queue_metrics(struct flb_input_instance *ins,
 int flb_input_ingress_queue_traces(struct flb_input_instance *ins,
                                    const char *tag,
                                    size_t tag_len,
-                                   struct ctrace *ctr)
+                                   struct ctrace *ctr,
+                                   size_t payload_size)
 {
     struct flb_input_ingress_event *event;
 
@@ -618,14 +663,15 @@ int flb_input_ingress_queue_traces(struct flb_input_instance *ins,
         return -1;
     }
 
-    /* Ownership of 'ctr' is transferred to the ingress queue on success. */
+    /* The ingress queue consumes 'ctr' on every return path. */
     event = flb_input_ingress_event_create(FLB_INPUT_INGRESS_TRACES, tag, tag_len);
     if (event == NULL) {
+        ctr_destroy(ctr);
         return -1;
     }
 
     event->data.traces = ctr;
-    event->size = flb_input_ingress_estimate_traces_size(ctr);
+    event->size = flb_input_ingress_signal_size(payload_size);
 
     return flb_input_ingress_enqueue(ins, event);
 }
@@ -633,7 +679,8 @@ int flb_input_ingress_queue_traces(struct flb_input_instance *ins,
 int flb_input_ingress_queue_profiles(struct flb_input_instance *ins,
                                      const char *tag,
                                      size_t tag_len,
-                                     struct cprof *profile)
+                                     struct cprof *profile,
+                                     size_t payload_size)
 {
     struct flb_input_ingress_event *event;
 
@@ -641,14 +688,15 @@ int flb_input_ingress_queue_profiles(struct flb_input_instance *ins,
         return -1;
     }
 
-    /* Ownership of 'profile' is transferred to the ingress queue on success. */
+    /* The ingress queue consumes 'profile' on every return path. */
     event = flb_input_ingress_event_create(FLB_INPUT_INGRESS_PROFILES, tag, tag_len);
     if (event == NULL) {
+        cprof_destroy(profile);
         return -1;
     }
 
     event->data.profiles = profile;
-    event->size = flb_input_ingress_estimate_profiles_size(profile);
+    event->size = flb_input_ingress_signal_size(payload_size);
 
     return flb_input_ingress_enqueue(ins, event);
 }
