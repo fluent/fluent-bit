@@ -37,18 +37,21 @@ jobs:
           - name: "Windows 32bit"
             arch: x86
             cmake_additional_opt: ""
+            runtime_tests: "Off"
             vcpkg_triplet: x86-windows-static
             cmake_version: "3.31.6"
             os: windows-latest
           - name: "Windows 64bit"
             arch: x64
             cmake_additional_opt: ""
+            runtime_tests: "On"
             vcpkg_triplet: x64-windows-static
             cmake_version: "3.31.6"
             os: windows-latest
           - name: "Windows 64bit (Arm64)"
             arch: amd64_arm64
             cmake_additional_opt: "-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION=10.0 -DCMAKE_SYSTEM_PROCESSOR=ARM64"
+            runtime_tests: "Off"
             vcpkg_triplet: arm64-windows-static
             cmake_version: "3.31.6"
             os: windows-11-arm
@@ -207,6 +210,7 @@ jobs:
         run: |
           cmake -G "NMake Makefiles" `
             -D FLB_TESTS_INTERNAL=On `
+            -D FLB_TESTS_RUNTIME=${{ matrix.config.runtime_tests }} `
             -D FLB_NIGHTLY_BUILD='${{ inputs.unstable }}' `
             -D OPENSSL_ROOT_DIR='C:\vcpkg\installed\${{ matrix.config.vcpkg_triplet }}' `
             ${{ matrix.config.cmake_additional_opt }} `
