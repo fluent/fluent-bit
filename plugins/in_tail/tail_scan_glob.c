@@ -217,10 +217,13 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
                 switch (errno) {
                     case ENOENT:
                         flb_plg_warn(ctx->ins, "No such file at path: %s", path);
+                        break;
                     case ENOTDIR:
                         flb_plg_error(ctx->ins, "Not directory at path: %s", path);
+                        break;
                     default:
                         flb_plg_error(ctx->ins, "Unable to read path: %s", path);
+                        break;
                 }
             }
             return -1;
