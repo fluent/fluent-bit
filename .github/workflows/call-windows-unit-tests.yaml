@@ -218,6 +218,7 @@ jobs:
             -D FLB_WITHOUT_flb-rt-out_elasticsearch=On `
             -D FLB_WITHOUT_flb-rt-out_td=On `
             -D FLB_WITHOUT_flb-rt-out_forward=On `
+            -D FLB_WITHOUT_flb-rt-filter_rewrite_tag=On `
             -D FLB_WITHOUT_flb-rt-in_disk=On `
             -D FLB_WITHOUT_flb-rt-in_proc=On `
             -D FLB_WITHOUT_flb-it-unit_sizes=On `
