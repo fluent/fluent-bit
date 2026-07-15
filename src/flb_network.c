@@ -141,6 +141,7 @@ void flb_net_setup_init(struct flb_net_setup *net)
     net->dns_resolver = NULL;
     net->dns_prefer_ipv4 = FLB_FALSE;
     net->dns_prefer_ipv6 = FLB_FALSE;
+    net->share_port = FLB_FALSE;
     net->keepalive = FLB_TRUE;
     net->keepalive_idle_timeout = 30;
     net->keepalive_max_recycle = 0;
