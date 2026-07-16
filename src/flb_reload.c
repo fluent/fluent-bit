@@ -595,6 +595,19 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         return FLB_RELOAD_HALTED;
     }
 
+    if (new_config->fips_mode != old_config->fips_mode) {
+        if (file != NULL) {
+            flb_sds_destroy(file);
+        }
+        flb_cf_destroy(new_cf);
+        flb_destroy(new_ctx);
+        old_config->hot_reloading = FLB_FALSE;
+
+        flb_error("[reload] security.fips_mode cannot be changed by hot reload");
+        flb_reload_watchdog_cleanup(watchdog_ctx);
+        return FLB_RELOAD_HALTED;
+    }
+
     /* Validate plugin properites before fluent-bit stops the old context. */
     ret = flb_reload_property_check_all(new_config);
     if (ret != 0) {
