@@ -1023,6 +1023,16 @@ static int process_upload_queue(struct flb_gcs *ctx)
     int ret;
     time_t now;
 
+    /*
+     * Uploads can yield while waiting for network I/O. Do not let the periodic
+     * timer re-enter this function and process the same queue entry while an
+     * output flush is still handling it.
+     */
+    if (ctx->upload_queue_processing == FLB_TRUE) {
+        return 0;
+    }
+    ctx->upload_queue_processing = FLB_TRUE;
+
     mk_list_foreach_safe(head, tmp, &ctx->upload_queue) {
         entry = mk_list_entry(head, struct upload_queue, _head);
         now = time(NULL);
@@ -1062,6 +1072,7 @@ static int process_upload_queue(struct flb_gcs *ctx)
         }
     }
 
+    ctx->upload_queue_processing = FLB_FALSE;
     return 0;
 }
 
