@@ -4,6 +4,7 @@ import os
 import time
 
 import requests
+import pytest
 
 from server.http_server import (
     configure_http_response,
@@ -13,6 +14,7 @@ from server.http_server import (
     server_instances,
 )
 from utils.test_service import FluentBitTestService
+from utils.fluent_bit_manager import FluentBitManager, FluentBitStartupError
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +213,51 @@ def test_out_http_oauth2_basic_adds_bearer_token():
     assert "grant_type=client_credentials" in token_request["raw_data"]
     assert "scope=logs.write" in token_request["raw_data"]
     assert data_request["headers"].get("Authorization") == "Bearer oauth-access-token"
+
+
+@pytest.mark.parametrize("expires_in", [30, None])
+def test_out_http_oauth2_accepts_short_or_missing_token_lifetime(expires_in):
+    body = {"access_token": "oauth-access-token", "token_type": "Bearer"}
+    if expires_in is not None:
+        body["expires_in"] = expires_in
+
+    service = Service("out_http_oauth2_basic.yaml")
+    service.start()
+    configure_http_response(status_code=200, body={"status": "received"})
+    configure_oauth_token_response(status_code=200, body=body)
+
+    requests_seen = service.wait_for_requests(2)
+    service.stop()
+
+    data_request = next(request for request in requests_seen if request["path"] == "/data")
+    assert data_request["headers"].get("Authorization") == "Bearer oauth-access-token"
+
+
+@pytest.mark.parametrize(
+    "config_file, plugin_type, plugin_name",
+    [
+        ("unsupported_oauth2_input.yaml", "input", "elasticsearch"),
+        ("unsupported_oauth2_output.yaml", "output", "stdout"),
+    ],
+)
+def test_oauth2_properties_fail_for_unsupported_plugins(
+    config_file, plugin_type, plugin_name
+):
+    config_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../config", config_file)
+    )
+    manager = FluentBitManager(config_path)
+
+    with pytest.raises(FluentBitStartupError):
+        try:
+            manager.start()
+        finally:
+            manager.stop()
+
+    with open(manager.log_file, encoding="utf-8") as log_file:
+        log_text = log_file.read()
+
+    assert f"{plugin_type} plugin '{plugin_name}' does not support OAuth2" in log_text
 
 
 def test_out_http_oauth2_private_key_jwt_adds_bearer_token():
