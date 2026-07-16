@@ -47,6 +47,10 @@ int flb_hash_init(struct flb_hash *context, int hash_type)
         return FLB_CRYPTO_INVALID_ARGUMENT;
     }
 
+    context->backend_context = NULL;
+    context->digest_size = 0;
+    context->last_error = 0;
+
     digest_algorithm = flb_crypto_get_digest_algorithm_instance_by_id(hash_type);
 
     if (digest_algorithm == NULL) {
@@ -65,6 +69,8 @@ int flb_hash_init(struct flb_hash *context, int hash_type)
 
     if (result == 0) {
         context->last_error = ERR_get_error();
+        EVP_MD_CTX_destroy(context->backend_context);
+        context->backend_context = NULL;
 
         return FLB_CRYPTO_BACKEND_ERROR;
     }
