@@ -59,6 +59,11 @@ oauth_token_response = {
         "expires_in": 300,
     },
 }
+jwks_response = {
+    "status_code": 200,
+    "body": MOCK_JWKS_BODY,
+    "content_type": "application/json",
+}
 logger = logging.getLogger(__name__)
 server_thread = None
 server_instances = []
@@ -114,6 +119,13 @@ def reset_http_server_state():
             },
         }
     )
+    jwks_response.update(
+        {
+            "status_code": 200,
+            "body": MOCK_JWKS_BODY,
+            "content_type": "application/json",
+        }
+    )
 
 
 def configure_http_response(*, status_code=UNSET, body=UNSET, content_type=UNSET,
@@ -162,6 +174,15 @@ def configure_oauth_token_response(*, status_code=UNSET, body=UNSET,
         oauth_token_response["fragment_delay_seconds"] = fragment_delay_seconds
     if hang_after_fragment_index is not UNSET:
         oauth_token_response["hang_after_fragment_index"] = hang_after_fragment_index
+
+
+def configure_jwks_response(*, status_code=UNSET, body=UNSET, content_type=UNSET):
+    if status_code is not UNSET:
+        jwks_response["status_code"] = status_code
+    if body is not UNSET:
+        jwks_response["body"] = body
+    if content_type is not UNSET:
+        jwks_response["content_type"] = content_type
 
 
 def _stream_fragments(config):
@@ -272,7 +293,13 @@ def receive_splunk_hec():
 
 @app.route('/jwks', methods=['GET'])
 def jwks():
-    return jsonify(MOCK_JWKS_BODY), 200
+    body = jwks_response["body"]
+    status_code = jwks_response["status_code"]
+
+    if isinstance(body, (dict, list)):
+        return jsonify(body), status_code
+
+    return Response(body, status=status_code, content_type=jwks_response["content_type"])
 
 
 @app.route('/oauth/token', methods=['POST'])

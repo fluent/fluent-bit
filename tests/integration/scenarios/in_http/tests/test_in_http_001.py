@@ -7,7 +7,7 @@ import time
 import pytest
 import requests
 
-from server.http_server import data_storage, http_server_run
+from server.http_server import configure_jwks_response, data_storage, http_server_run
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
 from utils.test_service import FluentBitTestService
 
@@ -227,6 +227,36 @@ def test_in_http_oauth2_accepts_valid_jwt():
     assert result["status_code"] == 201
     assert len(forwarded_payloads) == 1
     assert forwarded_payloads[0][0]["message"] == "Este es un mensaje de prueba"
+
+
+def test_in_http_oauth2_keeps_cached_keys_after_bad_jwks_refresh():
+    service = Service("in_http_oauth2_refresh.yaml")
+    service.start()
+    headers = [
+        "Content-Type: application/json",
+        f"Authorization: Bearer {MOCK_VALID_JWT}",
+    ]
+
+    first_result = run_curl_request(
+        f"http://localhost:{service.flb_listener_port}/",
+        create_payload("sample_data.json"),
+        headers=headers,
+        http_mode="http1.1",
+    )
+
+    configure_jwks_response(body="{malformed", content_type="application/json")
+    time.sleep(1.2)
+
+    second_result = run_curl_request(
+        f"http://localhost:{service.flb_listener_port}/",
+        create_payload("sample_data.json"),
+        headers=headers,
+        http_mode="http1.1",
+    )
+    service.stop()
+
+    assert first_result["status_code"] == 201
+    assert second_result["status_code"] == 201
 
 
 class Service:
