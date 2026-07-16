@@ -93,6 +93,7 @@ struct flb_gcs {
     time_t upload_timeout;
     int retry_time;
     int upload_queue_success;
+    int upload_queue_processing;
     int timer_created;
     int timer_ms;
 
