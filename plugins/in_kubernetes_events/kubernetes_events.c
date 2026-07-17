@@ -179,6 +179,7 @@ static int refresh_token_if_needed(struct k8s_events *ctx)
 static msgpack_object *record_get_field_ptr(msgpack_object *obj, const char *fieldname)
 {
     int i;
+    size_t field_len;
     msgpack_object *k;
     msgpack_object *v;
 
@@ -186,13 +187,21 @@ static msgpack_object *record_get_field_ptr(msgpack_object *obj, const char *fie
         return NULL;
     }
 
+    field_len = strlen(fieldname);
+
     for (i = 0; i < obj->via.map.size; i++) {
         k = &obj->via.map.ptr[i].key;
         if (k->type != MSGPACK_OBJECT_STR) {
             continue;
         }
 
-        if (strncmp(k->via.str.ptr, fieldname, strlen(fieldname)) == 0) {
+        /*
+         * msgpack keys are not NUL terminated. Compare the length first so
+         * strncmp() cannot read past via.str.size, and so a key that merely
+         * shares a prefix with fieldname is not treated as a match.
+         */
+        if (k->via.str.size == field_len &&
+            strncmp(k->via.str.ptr, fieldname, field_len) == 0) {
             v = &obj->via.map.ptr[i].val;
             return v;
         }
@@ -218,6 +227,8 @@ static int record_get_field_sds(msgpack_object *obj, const char *fieldname, flb_
 
 static int record_get_field_time(msgpack_object *obj, const char *fieldname, struct flb_time *val)
 {
+    char buf[40];
+    size_t len;
     msgpack_object *v;
     struct flb_tm tm = { 0 };
 
@@ -229,7 +240,19 @@ static int record_get_field_time(msgpack_object *obj, const char *fieldname, str
         return -1;
     }
 
-    if (flb_strptime(v->via.str.ptr, "%Y-%m-%dT%H:%M:%SZ", &tm) == NULL) {
+    /*
+     * msgpack strings are not NUL terminated; flb_strptime() scans until the
+     * format is satisfied, so copy into a bounded, terminated buffer to keep
+     * it from reading past via.str.size. A valid RFC3339 timestamp fits.
+     */
+    len = v->via.str.size;
+    if (len == 0 || len > sizeof(buf) - 1) {
+        return -2;
+    }
+    memcpy(buf, v->via.str.ptr, len);
+    buf[len] = '\0';
+
+    if (flb_strptime(buf, "%Y-%m-%dT%H:%M:%SZ", &tm) == NULL) {
         return -2;
     }
 
@@ -251,8 +274,23 @@ static int record_get_field_uint64(msgpack_object *obj, const char *fieldname, u
 
     /* attempt to parse string as number... */
     if (v->type == MSGPACK_OBJECT_STR) {
-        *val = strtoul(v->via.str.ptr, &end, 10);
-        if (end == NULL || (end < v->via.str.ptr + v->via.str.size)) {
+        char buf[32];
+        size_t len = v->via.str.size;
+
+        /*
+         * msgpack strings are not NUL terminated; strtoul() scans until a
+         * non-digit, so copy into a bounded, terminated buffer to keep it
+         * from reading past via.str.size. No uint64 needs more than 20
+         * characters, so anything that does not fit cannot be a full number.
+         */
+        if (len == 0 || len > sizeof(buf) - 1) {
+            return -1;
+        }
+        memcpy(buf, v->via.str.ptr, len);
+        buf[len] = '\0';
+
+        *val = strtoul(buf, &end, 10);
+        if (end != buf + len) {
             return -1;
         }
         return 0;
@@ -535,7 +573,7 @@ static int process_event_list(struct k8s_events *ctx, char *in_data, size_t in_s
             continue;
         }
 
-        if (strncmp(k.via.str.ptr, "items", 5) == 0) {
+        if (k.via.str.size == 5 && strncmp(k.via.str.ptr, "items", 5) == 0) {
             items = &root.via.map.ptr[i].val;
             if (items->type != MSGPACK_OBJECT_ARRAY) {
                 flb_plg_error(ctx->ins, "Cannot unpack items");
@@ -543,7 +581,7 @@ static int process_event_list(struct k8s_events *ctx, char *in_data, size_t in_s
             }
         }
 
-        if (strncmp(k.via.str.ptr, "metadata", 8) == 0) {
+        if (k.via.str.size == 8 && strncmp(k.via.str.ptr, "metadata", 8) == 0) {
             metadata = &root.via.map.ptr[i].val;
             if (metadata->type != MSGPACK_OBJECT_MAP) {
                 flb_plg_error(ctx->ins, "Cannot unpack metadata");
