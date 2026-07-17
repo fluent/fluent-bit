@@ -328,7 +328,8 @@ static int append_buffer_records_to_encoder(struct flb_log_event_encoder *encode
 }
 
 static int evaluate_condition_for_log_event(struct flb_condition *condition,
-                                            struct flb_log_event *log_event)
+                                            struct flb_log_event *log_event,
+                                            const char *tag, int tag_len)
 {
     int ret;
     struct flb_mp_chunk_record record = {0};
@@ -344,7 +345,7 @@ static int evaluate_condition_for_log_event(struct flb_condition *condition,
         return FLB_FALSE;
     }
 
-    ret = flb_condition_evaluate(condition, &record);
+    ret = flb_condition_evaluate(condition, &record, tag, tag_len);
 
     cfl_object_destroy(record.cobj_record);
     cfl_object_destroy(record.cobj_metadata);
@@ -393,7 +394,8 @@ static int run_filter_with_condition(struct flb_filter_instance *f_ins,
 
     while ((ret = flb_log_event_decoder_next(&decoder, &log_event)) ==
            FLB_EVENT_DECODER_SUCCESS) {
-        condition_match = evaluate_condition_for_log_event(condition, &log_event);
+        condition_match = evaluate_condition_for_log_event(condition, &log_event,
+                                                           tag, tag_len);
 
         if (condition_match == FLB_FALSE) {
             ret = append_raw_record_to_encoder(&final_encoder,
@@ -1531,6 +1533,10 @@ int flb_processor_run(struct flb_processor *proc,
                         flb_debug("[processor] no condition set for processor unit (pu=%s)", pu->name);
                     }
 
+                    /* Expose the chunk tag so conditions can reference $TAG */
+                    chunk_cobj->tag = tag;
+                    chunk_cobj->tag_len = tag_len;
+
                     /* Invoke processor plugin callback */
                     ret = p_ins->p->cb_process_logs(p_ins, chunk_cobj, tag, tag_len);
                     if (ret != FLB_PROCESSOR_SUCCESS) {
@@ -1541,6 +1547,8 @@ int flb_processor_run(struct flb_processor *proc,
 
                     /* Clear the condition after processing */
                     chunk_cobj->condition = NULL;
+                    chunk_cobj->tag = NULL;
+                    chunk_cobj->tag_len = 0;
                     finalize = FLB_FALSE;
 
                     /* is this processing_unit the last one from the list ? */

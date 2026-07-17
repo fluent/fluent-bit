@@ -1803,7 +1803,8 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
         /* If there's a condition, check if the record matches */
         if (condition != NULL && record != NULL) {
             flb_trace("[mp] evaluating condition for record");
-            ret = flb_condition_evaluate(condition, record);
+            ret = flb_condition_evaluate(condition, record,
+                                         chunk_cobj->tag, chunk_cobj->tag_len);
             flb_trace("[mp] condition evaluation result: %s", ret ? "TRUE" : "FALSE");
             if (ret == FLB_FALSE) {
                 flb_trace("[mp] record didn't match condition, skipping");
@@ -1828,7 +1829,8 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
         /* If there's a condition, check if the record matches */
         if (condition != NULL && record != NULL) {
             flb_trace("[mp] evaluating condition for next record");
-            ret = flb_condition_evaluate(condition, record);
+            ret = flb_condition_evaluate(condition, record,
+                                         chunk_cobj->tag, chunk_cobj->tag_len);
             flb_trace("[mp] next record condition evaluation result: %s", ret ? "TRUE" : "FALSE");
             if (ret == FLB_FALSE) {
                 flb_trace("[mp] next record didn't match condition, skipping");
@@ -1852,7 +1854,8 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
         /* If there's a condition, check if the record matches */
         if (condition != NULL && record != NULL) {
             flb_trace("[mp] evaluating condition for first record");
-            ret = flb_condition_evaluate(condition, record);
+            ret = flb_condition_evaluate(condition, record,
+                                         chunk_cobj->tag, chunk_cobj->tag_len);
             flb_trace("[mp] first record condition evaluation result: %s", ret ? "TRUE" : "FALSE");
             if (ret == FLB_FALSE) {
                 flb_trace("[mp] first record didn't match condition, skipping");

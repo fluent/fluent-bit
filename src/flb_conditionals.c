@@ -278,7 +278,8 @@ void flb_condition_destroy(struct flb_condition *cond)
 }
 
 static int evaluate_rule(struct flb_condition_rule *rule,
-                         struct cfl_variant *record_variant)
+                         struct cfl_variant *record_variant,
+                         const char *tag, int tag_len)
 {
     flb_sds_t str_val;
     int i;
@@ -291,7 +292,8 @@ static int evaluate_rule(struct flb_condition_rule *rule,
     }
 
     flb_trace("[condition] evaluating rule with record accessor");
-    str_val = flb_cfl_ra_translate(rule->ra, NULL, 0, *record_variant, NULL);
+    str_val = flb_cfl_ra_translate(rule->ra, (char *) tag, tag_len,
+                                   *record_variant, NULL);
     if (!str_val) {
         flb_trace("[condition] record accessor translation failed");
         return FLB_FALSE;
@@ -362,7 +364,8 @@ static int evaluate_rule(struct flb_condition_rule *rule,
 
 int flb_condition_evaluate_ex(struct flb_condition *cond,
                               void *ctx,
-                              flb_condition_get_variant_fn get_variant)
+                              flb_condition_get_variant_fn get_variant,
+                              const char *tag, int tag_len)
 {
     struct mk_list *head;
     struct flb_condition_rule *rule;
@@ -406,7 +409,7 @@ int flb_condition_evaluate_ex(struct flb_condition *cond,
         }
 
         flb_trace("[condition] evaluating rule against record");
-        result = evaluate_rule(rule, record_variant);
+        result = evaluate_rule(rule, record_variant, tag, tag_len);
         flb_trace("[condition] rule evaluation result: %d", result);
 
         if (cond->op == FLB_COND_OP_AND && result == FLB_FALSE) {
@@ -438,7 +441,8 @@ int flb_condition_evaluate_ex(struct flb_condition *cond,
 }
 
 int flb_condition_evaluate(struct flb_condition *cond,
-                           struct flb_mp_chunk_record *record)
+                           struct flb_mp_chunk_record *record,
+                           const char *tag, int tag_len)
 {
     if (!cond) {
         return FLB_TRUE;
@@ -448,5 +452,6 @@ int flb_condition_evaluate(struct flb_condition *cond,
         return FLB_FALSE;
     }
 
-    return flb_condition_evaluate_ex(cond, record, default_get_record_variant);
+    return flb_condition_evaluate_ex(cond, record, default_get_record_variant,
+                                     tag, tag_len);
 }

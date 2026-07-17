@@ -304,7 +304,7 @@ int flb_condition_eval_logs(struct flb_event_chunk *chunk,
     cfl_list_foreach(head, &context->chunk_cobj->records) {
         record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
 
-        if (flb_condition_evaluate_ex(compiled, record, route_logs_get_variant) == FLB_TRUE) {
+        if (flb_condition_evaluate_ex(compiled, record, route_logs_get_variant, NULL, 0) == FLB_TRUE) {
             result = FLB_TRUE;
             break;
         }
@@ -432,7 +432,7 @@ int flb_router_condition_evaluate_record(struct flb_route *route,
         return FLB_FALSE;
     }
 
-    return flb_condition_evaluate_ex(compiled, record, route_logs_get_variant);
+    return flb_condition_evaluate_ex(compiled, record, route_logs_get_variant, NULL, 0);
 }
 
 static int parse_rule_operator(const flb_sds_t op_str,
