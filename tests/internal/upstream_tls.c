@@ -10,6 +10,10 @@
 
 #include "flb_tests_internal.h"
 
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+
 #ifdef FLB_HAVE_TLS
 
 #ifdef FLB_SYSTEM_WINDOWS
@@ -20,6 +24,72 @@ struct test_backend_ctx {
     int invalidate_calls;
     int destroy_calls;
 };
+
+static int copy_file(const char *src, const char *dst)
+{
+    FILE *in;
+    FILE *out;
+    char buf[4096];
+    size_t bytes;
+
+    in = fopen(src, "rb");
+    if (in == NULL) {
+        return -1;
+    }
+
+    out = fopen(dst, "wb");
+    if (out == NULL) {
+        fclose(in);
+        return -1;
+    }
+
+    while ((bytes = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, bytes, out) != bytes) {
+            fclose(out);
+            fclose(in);
+            return -1;
+        }
+    }
+
+    if (ferror(in)) {
+        fclose(out);
+        fclose(in);
+        return -1;
+    }
+
+    fclose(out);
+    fclose(in);
+
+    return 0;
+}
+
+static int append_file(const char *path, const char *data)
+{
+    FILE *out;
+
+    out = fopen(path, "ab");
+    if (out == NULL) {
+        return -1;
+    }
+
+    if (fwrite(data, 1, strlen(data), out) != strlen(data)) {
+        fclose(out);
+        return -1;
+    }
+
+    fclose(out);
+
+    return 0;
+}
+
+static int reload_mutation_count;
+
+static int test_reload_and_mutate_key(struct flb_tls *tls)
+{
+    reload_mutation_count++;
+
+    return append_file(tls->key_file, "\n");
+}
 
 static void test_session_invalidate(void *session)
 {
@@ -161,12 +231,178 @@ void test_tls_session_destroy_no_double_free(void)
 #endif
 }
 
+void test_tls_reload_when_certificate_file_changes(void)
+{
+    int ret;
+    char src_crt[4096];
+    char src_key[4096];
+    char *dst_crt;
+    char *dst_key;
+    struct flb_tls *tls;
+
+    snprintf(src_crt, sizeof(src_crt), "%sdata/tls/certificate.pem",
+             FLB_TESTS_DATA_PATH);
+    snprintf(src_key, sizeof(src_key), "%sdata/tls/private_key.pem",
+             FLB_TESTS_DATA_PATH);
+
+    dst_crt = flb_test_tmpdir_cat("/flb_tls_reload_certificate.pem");
+    dst_key = flb_test_tmpdir_cat("/flb_tls_reload_private_key.pem");
+    TEST_CHECK(dst_crt != NULL);
+    TEST_CHECK(dst_key != NULL);
+
+    TEST_CHECK(copy_file(src_crt, dst_crt) == 0);
+    TEST_CHECK(copy_file(src_key, dst_key) == 0);
+
+    tls = flb_tls_create(FLB_TLS_SERVER_MODE,
+                         FLB_TRUE,
+                         0,
+                         NULL,
+                         NULL,
+                         NULL,
+                         dst_crt,
+                         dst_key,
+                         NULL);
+    TEST_CHECK(tls != NULL);
+
+    TEST_CHECK(flb_tls_reload_if_needed(tls) == 0);
+
+    TEST_CHECK(append_file(dst_key, "\n") == 0);
+    ret = flb_tls_reload_if_needed(tls);
+    TEST_CHECK(ret == 1);
+
+    flb_tls_destroy(tls);
+    remove(dst_crt);
+    remove(dst_key);
+    flb_free(dst_crt);
+    flb_free(dst_key);
+}
+
+#ifdef FLB_SYSTEM_LINUX
+void test_tls_reload_when_certificate_file_is_replaced(void)
+{
+    char src_crt[4096];
+    char src_key[4096];
+    char *dst_crt;
+    char *dst_key;
+    char *replacement_key;
+    struct stat st;
+    struct flb_tls *tls;
+
+    snprintf(src_crt, sizeof(src_crt), "%sdata/tls/certificate.pem",
+             FLB_TESTS_DATA_PATH);
+    snprintf(src_key, sizeof(src_key), "%sdata/tls/private_key.pem",
+             FLB_TESTS_DATA_PATH);
+
+    dst_crt = flb_test_tmpdir_cat("/flb_tls_replace_certificate.pem");
+    dst_key = flb_test_tmpdir_cat("/flb_tls_replace_private_key.pem");
+    replacement_key = flb_test_tmpdir_cat("/flb_tls_replacement_private_key.pem");
+    TEST_CHECK(dst_crt != NULL);
+    TEST_CHECK(dst_key != NULL);
+    TEST_CHECK(replacement_key != NULL);
+
+    TEST_CHECK(copy_file(src_crt, dst_crt) == 0);
+    TEST_CHECK(copy_file(src_key, dst_key) == 0);
+    TEST_CHECK(copy_file(src_key, replacement_key) == 0);
+
+    tls = flb_tls_create(FLB_TLS_SERVER_MODE,
+                         FLB_TRUE,
+                         0,
+                         NULL,
+                         NULL,
+                         NULL,
+                         dst_crt,
+                         dst_key,
+                         NULL);
+    TEST_CHECK(tls != NULL);
+
+    TEST_CHECK(rename(replacement_key, dst_key) == 0);
+    TEST_CHECK(stat(dst_key, &st) == 0);
+
+    /* Make the inode the only observable difference from the cached status. */
+    tls->key_file_status.size = (uint64_t) st.st_size;
+    tls->key_file_status.device = (uint64_t) st.st_dev;
+    tls->key_file_status.mtime = (uint64_t) st.st_mtime;
+    tls->key_file_status.ctime = (uint64_t) st.st_ctime;
+    tls->key_file_status.mtime_nsec = (uint64_t) st.st_mtim.tv_nsec;
+    tls->key_file_status.ctime_nsec = (uint64_t) st.st_ctim.tv_nsec;
+
+    TEST_CHECK(tls->key_file_status.inode != (uint64_t) st.st_ino);
+    TEST_CHECK(flb_tls_reload_if_needed(tls) == 1);
+
+    flb_tls_destroy(tls);
+    remove(dst_crt);
+    remove(dst_key);
+    remove(replacement_key);
+    flb_free(dst_crt);
+    flb_free(dst_key);
+    flb_free(replacement_key);
+}
+#endif
+
+void test_tls_reload_does_not_hide_concurrent_file_change(void)
+{
+    char src_crt[4096];
+    char src_key[4096];
+    char *dst_crt;
+    char *dst_key;
+    struct flb_tls_backend test_backend = {0};
+    struct flb_tls_backend *openssl_backend;
+    struct flb_tls *tls;
+
+    snprintf(src_crt, sizeof(src_crt), "%sdata/tls/certificate.pem",
+             FLB_TESTS_DATA_PATH);
+    snprintf(src_key, sizeof(src_key), "%sdata/tls/private_key.pem",
+             FLB_TESTS_DATA_PATH);
+
+    dst_crt = flb_test_tmpdir_cat("/flb_tls_concurrent_certificate.pem");
+    dst_key = flb_test_tmpdir_cat("/flb_tls_concurrent_private_key.pem");
+    TEST_CHECK(dst_crt != NULL);
+    TEST_CHECK(dst_key != NULL);
+
+    TEST_CHECK(copy_file(src_crt, dst_crt) == 0);
+    TEST_CHECK(copy_file(src_key, dst_key) == 0);
+
+    tls = flb_tls_create(FLB_TLS_SERVER_MODE,
+                         FLB_TRUE,
+                         0,
+                         NULL,
+                         NULL,
+                         NULL,
+                         dst_crt,
+                         dst_key,
+                         NULL);
+    TEST_CHECK(tls != NULL);
+
+    openssl_backend = tls->api;
+    test_backend.context_reload = test_reload_and_mutate_key;
+    tls->api = &test_backend;
+    reload_mutation_count = 0;
+
+    TEST_CHECK(append_file(dst_key, "\n") == 0);
+    TEST_CHECK(flb_tls_reload_if_needed(tls) == 1);
+    TEST_CHECK(flb_tls_reload_if_needed(tls) == 1);
+    TEST_CHECK(reload_mutation_count == 2);
+
+    tls->api = openssl_backend;
+    flb_tls_destroy(tls);
+    remove(dst_crt);
+    remove(dst_key);
+    flb_free(dst_crt);
+    flb_free(dst_key);
+}
+
 #endif
 
 TEST_LIST = {
 #ifdef FLB_HAVE_TLS
     {"prepare_destroy_conn_marks_tls_session_stale", test_prepare_destroy_conn_marks_tls_session_stale},
     {"tls_session_destroy_no_double_free", test_tls_session_destroy_no_double_free},
+    {"tls_reload_when_certificate_file_changes", test_tls_reload_when_certificate_file_changes},
+#ifdef FLB_SYSTEM_LINUX
+    {"tls_reload_when_certificate_file_is_replaced", test_tls_reload_when_certificate_file_is_replaced},
+#endif
+    {"tls_reload_does_not_hide_concurrent_file_change",
+     test_tls_reload_does_not_hide_concurrent_file_change},
 #endif
     {0}
 };
