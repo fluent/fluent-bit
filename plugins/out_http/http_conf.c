@@ -367,8 +367,10 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
                 return NULL;
             }
         }
-        else if (!ctx->oauth2_config.client_secret) {
-            flb_plg_error(ctx->ins, "oauth2 basic/post require client_secret");
+        else if (!ctx->oauth2_config.client_secret &&
+                 !ctx->oauth2_config.client_secret_file) {
+            flb_plg_error(ctx->ins, "oauth2 basic/post require client_secret "
+                          "or client_secret_file");
             flb_http_conf_destroy(ctx);
             return NULL;
         }
