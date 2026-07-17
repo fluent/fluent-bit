@@ -746,7 +746,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "oauth2.client_secret_file", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.client_secret_file),
-     "Path to a file containing the OAuth2 client_secret (re-read when it changes)"
+     "Optional OAuth2 client_secret file path"
     },
     {
      FLB_CONFIG_MAP_STR, "oauth2.user_agent", NULL,

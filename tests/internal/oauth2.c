@@ -548,12 +548,6 @@ static struct flb_oauth2 *create_oauth_ctx(struct flb_config *config,
     return create_oauth_ctx_with_user_agent(config, server, refresh_skew, NULL);
 }
 
-/*
- * Create an OAuth2 context using the POST auth method so the client_secret is
- * carried in the token request body (captured by the mock server), which lets
- * the tests assert the exact secret value that was used. Either or both of
- * inline_secret and secret_file may be provided.
- */
 static struct flb_oauth2 *create_oauth_ctx_secret_file(struct flb_config *config,
                                                        struct oauth2_mock_server *server,
                                                        const char *secret_file,
@@ -1309,7 +1303,6 @@ void test_private_key_jwt_x5t_header(void)
     flb_config_exit(config);
 }
 
-/* AC2/AC4: secret read from a file is used, with trailing newlines trimmed. */
 void test_client_secret_from_file(void)
 {
     int ret;
@@ -1355,7 +1348,6 @@ void test_client_secret_from_file(void)
     flb_config_exit(config);
 }
 
-/* AC3: rewriting the file yields the new secret on the next refresh. */
 void test_client_secret_file_change_detection(void)
 {
     int ret;
@@ -1418,7 +1410,6 @@ void test_client_secret_file_change_detection(void)
     flb_config_exit(config);
 }
 
-/* AC5: context creation succeeds with only client_secret_file (no inline secret). */
 void test_client_secret_file_only_validation(void)
 {
     int ret;
@@ -1448,7 +1439,6 @@ void test_client_secret_file_only_validation(void)
     flb_config_exit(config);
 }
 
-/* Confirmed decision: when both are set, client_secret_file wins. */
 void test_client_secret_file_precedence(void)
 {
     int ret;
@@ -1493,7 +1483,6 @@ void test_client_secret_file_precedence(void)
     flb_config_exit(config);
 }
 
-/* AC6: missing or empty (newline-only) file fails cleanly at creation. */
 void test_client_secret_file_errors(void)
 {
     int ret;
