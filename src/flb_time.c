@@ -421,6 +421,10 @@ int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
         return -1;
     }
 
+    if (upk->data.via.array.size < 2) {
+        return -1;
+    }
+
     obj = upk->data.via.array.ptr[0];
 
     if (obj.type == MSGPACK_OBJECT_ARRAY) {

@@ -1287,6 +1287,75 @@ void test_json_pack_token_count_overflow()
     flb_pack_state_reset(&state);
 }
 
+/* defined in src/flb_pack.c, not part of the installed headers */
+int flb_metadata_pop_from_msgpack(msgpack_object **metadata, msgpack_unpacked *upk,
+                                  msgpack_object **map);
+
+/* flb_metadata_pop_from_msgpack must reject record arrays that are shorter
+ * than 2 elements or whose first element is a short array, instead of reading
+ * via.array.ptr[1] out of bounds. */
+static void metadata_pop_from_array(const char *data, size_t size, int expect)
+{
+    msgpack_object *metadata;
+    msgpack_object *map;
+    msgpack_unpacked result;
+    int ret;
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, data, size, NULL);
+
+    ret = flb_metadata_pop_from_msgpack(&metadata, &result, &map);
+    if (!TEST_CHECK(ret == expect)) {
+        TEST_MSG("got %d, expect %d", ret, expect);
+    }
+
+    msgpack_unpacked_destroy(&result);
+}
+
+void test_metadata_pop_from_msgpack_short_array()
+{
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+
+    /* empty array: [] */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_array(&mp_pck, 0);
+    metadata_pop_from_array(mp_sbuf.data, mp_sbuf.size, -1);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    /* single element: [ [meta, ...] ] */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_array(&mp_pck, 1);
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_int(&mp_pck, 0);
+    msgpack_pack_map(&mp_pck, 0);
+    metadata_pop_from_array(mp_sbuf.data, mp_sbuf.size, -1);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    /* first element is a short array: [ [ts], map ] */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_array(&mp_pck, 1);
+    msgpack_pack_int(&mp_pck, 0);
+    msgpack_pack_map(&mp_pck, 0);
+    metadata_pop_from_array(mp_sbuf.data, mp_sbuf.size, -1);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    /* valid record: [ [ts, meta], map ] */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_int(&mp_pck, 0);
+    msgpack_pack_map(&mp_pck, 0);
+    msgpack_pack_map(&mp_pck, 0);
+    metadata_pop_from_array(mp_sbuf.data, mp_sbuf.size, 0);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
@@ -1318,5 +1387,8 @@ TEST_LIST = {
     { "json_pack_surrogate_pairs", test_json_pack_surrogate_pairs},
     { "json_pack_surrogate_pairs_with_replacement", test_json_pack_surrogate_pairs_with_replacement},
     { "json_pack_token_count_overflow", test_json_pack_token_count_overflow},
+
+    /* msgpack record array bounds */
+    { "metadata_pop_from_msgpack_short_array", test_metadata_pop_from_msgpack_short_array},
     { 0 }
 };

@@ -531,8 +531,59 @@ void test_iana_zone_to_utc_offset()
     }
 }
 
+/* flb_time_pop_from_msgpack must reject record arrays shorter than 2
+ * elements instead of reading via.array.ptr[0]/ptr[1] out of bounds. */
+static void pop_from_array(const char *data, size_t size, int expect)
+{
+    struct flb_time tm;
+    msgpack_object *map;
+    msgpack_unpacked result;
+    int ret;
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, data, size, NULL);
+
+    ret = flb_time_pop_from_msgpack(&tm, &result, &map);
+    if (!TEST_CHECK(ret == expect)) {
+        TEST_MSG("got %d, expect %d", ret, expect);
+    }
+
+    msgpack_unpacked_destroy(&result);
+}
+
+void test_pop_from_msgpack_short_array()
+{
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+
+    /* empty array: [] */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_array(&mp_pck, 0);
+    pop_from_array(mp_sbuf.data, mp_sbuf.size, -1);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    /* single element: [ timestamp ] */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_array(&mp_pck, 1);
+    msgpack_pack_int(&mp_pck, SEC_32BIT);
+    pop_from_array(mp_sbuf.data, mp_sbuf.size, -1);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    /* valid record: [ timestamp, map ] */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_int(&mp_pck, SEC_32BIT);
+    msgpack_pack_map(&mp_pck, 0);
+    pop_from_array(mp_sbuf.data, mp_sbuf.size, 0);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+}
+
 TEST_LIST = {
     { "flb_time_to_nanosec"           , test_to_nanosec},
+    { "pop_from_msgpack_short_array"  , test_pop_from_msgpack_short_array},
     { "flb_time_append_to_mpack_v1"   , test_append_to_mpack_v1},
     { "msgpack_to_time_int"           , test_msgpack_to_time_int},
     { "msgpack_to_time_double"        , test_msgpack_to_time_double},
