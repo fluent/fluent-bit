@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
+#include <fluent-bit/flb_compat.h>
 
 #include <time.h>
 #include <errno.h>
@@ -36,6 +37,8 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <limits.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include <openssl/bio.h>
 #include <openssl/x509.h>
@@ -66,6 +69,11 @@ struct flb_config_map oauth2_config_map[] = {
      FLB_CONFIG_MAP_STR, "oauth2.client_secret", NULL,
      0, FLB_TRUE, offsetof(struct flb_oauth2_config, client_secret),
      "OAuth2 client_secret"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.client_secret_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config, client_secret_file),
+     "Path to a file containing the OAuth2 client_secret (re-read when it changes)"
     },
     {
      FLB_CONFIG_MAP_STR, "oauth2.user_agent", NULL,
@@ -190,6 +198,7 @@ static void oauth2_apply_defaults(struct flb_oauth2_config *cfg)
     cfg->token_url = NULL;
     cfg->client_id = NULL;
     cfg->client_secret = NULL;
+    cfg->client_secret_file = NULL;
     cfg->user_agent = NULL;
     cfg->scope = NULL;
     cfg->audience = NULL;
@@ -243,6 +252,15 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
     if (src->client_secret) {
         dst->client_secret = flb_sds_create(src->client_secret);
         if (!dst->client_secret) {
+            flb_errno();
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+
+    if (src->client_secret_file) {
+        dst->client_secret_file = flb_sds_create(src->client_secret_file);
+        if (!dst->client_secret_file) {
             flb_errno();
             flb_oauth2_config_destroy(dst);
             return -1;
@@ -339,6 +357,8 @@ void flb_oauth2_config_destroy(struct flb_oauth2_config *cfg)
     cfg->client_id = NULL;
     flb_sds_destroy(cfg->client_secret);
     cfg->client_secret = NULL;
+    flb_sds_destroy(cfg->client_secret_file);
+    cfg->client_secret_file = NULL;
     flb_sds_destroy(cfg->user_agent);
     cfg->user_agent = NULL;
     flb_sds_destroy(cfg->scope);
@@ -1175,10 +1195,103 @@ static int oauth2_http_request(struct flb_oauth2 *ctx, flb_sds_t body)
     return -1;
 }
 
+/*
+ * Read the client_secret from a file, trimming trailing CR/LF characters.
+ * Returns 0 and a newly-allocated flb_sds_t in *out on success, -1 otherwise.
+ */
+static int oauth2_read_secret_file(const char *path, flb_sds_t *out)
+{
+    int ret;
+    size_t len;
+    size_t size = 0;
+    char *buf = NULL;
+
+    ret = flb_utils_read_file((char *) path, &buf, &size);
+    if (ret != 0 || !buf) {
+        flb_error("[oauth2] cannot read client_secret_file '%s'", path);
+        return -1;
+    }
+
+    /* trim trailing new lines */
+    for (len = size; len > 0; len--) {
+        if (buf[len - 1] != '\n' && buf[len - 1] != '\r') {
+            break;
+        }
+    }
+
+    if (len == 0) {
+        flb_free(buf);
+        flb_error("[oauth2] client_secret_file '%s' is empty", path);
+        return -1;
+    }
+
+    *out = flb_sds_create_len(buf, len);
+    flb_free(buf);
+
+    if (!*out) {
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * Reload client_secret from client_secret_file when the file's mtime changed
+ * (or on first load, since the tracked mtime starts at 0). On success the new
+ * value replaces ctx->cfg.client_secret. No-op when client_secret_file is unset.
+ */
+static int oauth2_refresh_client_secret_from_file(struct flb_oauth2 *ctx)
+{
+    int ret;
+    struct stat st;
+    flb_sds_t secret = NULL;
+
+    if (!ctx->cfg.client_secret_file) {
+        return 0;
+    }
+
+    ret = stat(ctx->cfg.client_secret_file, &st);
+    if (ret != 0) {
+        flb_errno();
+        flb_error("[oauth2] cannot stat client_secret_file '%s'",
+                  ctx->cfg.client_secret_file);
+        return -1;
+    }
+
+    /* only reload when the file changed since the last load */
+    if (st.st_mtime == ctx->client_secret_file_mtime) {
+        return 0;
+    }
+
+    ret = oauth2_read_secret_file(ctx->cfg.client_secret_file, &secret);
+    if (ret != 0) {
+        return -1;
+    }
+
+    if (ctx->cfg.client_secret) {
+        flb_sds_destroy(ctx->cfg.client_secret);
+    }
+    ctx->cfg.client_secret = secret;
+    ctx->client_secret_file_mtime = st.st_mtime;
+
+    return 0;
+}
+
 static int oauth2_refresh_locked(struct flb_oauth2 *ctx)
 {
     int ret;
     flb_sds_t body;
+
+    /*
+     * Pick up a rotated secret file before building the request so both the
+     * POST body and the BASIC auth header use the current value.
+     */
+    ret = oauth2_refresh_client_secret_from_file(ctx);
+    if (ret != 0) {
+        flb_error("[oauth2] could not refresh client_secret from file");
+        return -1;
+    }
 
     body = oauth2_build_body(ctx);
     if (!body) {
@@ -1274,6 +1387,27 @@ struct flb_oauth2 *flb_oauth2_create_from_config(struct flb_config *config,
             return NULL;
         }
     }
+
+    /*
+     * When a client_secret_file is configured, load it now so failures are
+     * surfaced at context creation. If both client_secret and
+     * client_secret_file are set, the file takes precedence.
+     */
+    if (ctx->cfg.client_secret_file) {
+        if (ctx->cfg.client_secret) {
+            flb_debug("[oauth2] both client_secret and client_secret_file are "
+                      "set; client_secret_file takes precedence");
+        }
+
+        ret = oauth2_refresh_client_secret_from_file(ctx);
+        if (ret != 0) {
+            flb_error("[oauth2] failed to load client_secret_file '%s'",
+                      ctx->cfg.client_secret_file);
+            flb_oauth2_destroy(ctx);
+            return NULL;
+        }
+    }
+
     ctx->auth_url = flb_sds_create(ctx->cfg.token_url);
     if (!ctx->auth_url) {
         flb_errno();

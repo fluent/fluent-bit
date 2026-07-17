@@ -42,6 +42,7 @@ struct flb_oauth2_config {
     flb_sds_t token_url;
     flb_sds_t client_id;
     flb_sds_t client_secret;
+    flb_sds_t client_secret_file;
     flb_sds_t user_agent;
     flb_sds_t scope;
     flb_sds_t audience;
@@ -75,6 +76,7 @@ struct flb_oauth2 {
     int payload_manual;
     flb_lock_t lock;
     time_t expires_at;
+    time_t client_secret_file_mtime; /* last-loaded mtime of client_secret_file */
     int refresh_skew;
 
     /* Token info after successful auth */
