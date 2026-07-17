@@ -95,11 +95,23 @@ size_t flb_decompression_context_get_available_space(
 int flb_decompression_context_resize_buffer(
         struct flb_decompression_context *context, size_t new_size)
 {
-    void *new_buffer_address;
+    void   *new_buffer_address;
+    size_t  read_buffer_offset;
+
+    /*
+     * The unconsumed bytes start at read_buffer, which may sit at a non-zero
+     * offset inside input_buffer. get_available_space() and get_append_buffer()
+     * both account for that offset, so the allocation has to reserve room for
+     * it too. Reallocating to just new_size leaves the usable region after
+     * read_buffer short by read_buffer_offset bytes, and the following append
+     * at get_append_buffer() then writes past the end of the buffer.
+     */
+    read_buffer_offset = (uintptr_t) context->read_buffer -
+                         (uintptr_t) context->input_buffer;
 
     if (new_size > context->input_buffer_length) {
         new_buffer_address = flb_realloc(context->input_buffer,
-                                         new_size);
+                                         read_buffer_offset + new_size);
 
         if (new_buffer_address == NULL) {
             return FLB_DECOMPRESSOR_FAILURE;
@@ -111,8 +123,9 @@ int flb_decompression_context_resize_buffer(
                                           (uintptr_t) context->input_buffer) +
                                          (uintptr_t) new_buffer_address);
             context->input_buffer = (uint8_t *) new_buffer_address;
-            context->input_buffer_size = new_size;
         }
+
+        context->input_buffer_size = read_buffer_offset + new_size;
     }
     else if (new_size < context->input_buffer_length) {
         return FLB_DECOMPRESSOR_FAILURE;

@@ -21,6 +21,7 @@ set(UNIT_TESTS_FILES
   utils.c
   gzip.c
   zstd.c
+  compression.c
   random.c
   thread_storage.c
   config_map.c
