@@ -37,6 +37,7 @@ Approach for this tests is basing on filter_kubernetes tests
 #ifdef _WIN32
 #include <io.h>
 #include <sys/utime.h>
+#include "../../plugins/in_tail/win32/interface.h"
 #endif
 #include "flb_tests_runtime.h"
 
@@ -1630,6 +1631,25 @@ void flb_test_exclude_path()
     test_tail_ctx_destroy(ctx);
 }
 
+#ifdef _WIN32
+void flb_test_windows_extended_path_prefixes(void)
+{
+    size_t length;
+    wchar_t local_path[] = L"\\\\?\\C:\\logs\\unicode.log";
+    wchar_t unc_path[] = L"\\\\?\\UNC\\server\\share\\unicode.log";
+    const wchar_t expected_local_path[] = L"C:\\logs\\unicode.log";
+    const wchar_t expected_unc_path[] = L"\\\\server\\share\\unicode.log";
+
+    length = win32_remove_extended_path_prefix(local_path, wcslen(local_path));
+    TEST_CHECK(length == wcslen(expected_local_path));
+    TEST_CHECK(wcscmp(local_path, expected_local_path) == 0);
+
+    length = win32_remove_extended_path_prefix(unc_path, wcslen(unc_path));
+    TEST_CHECK(length == wcslen(expected_unc_path));
+    TEST_CHECK(wcscmp(unc_path, expected_unc_path) == 0);
+}
+#endif
+
 void flb_test_offset_key()
 {
     struct flb_lib_out_cb cb_data;
@@ -3055,6 +3075,9 @@ TEST_LIST = {
     {"path_comma", flb_test_path_comma},
     {"path_key", flb_test_path_key},
     {"exclude_path", flb_test_exclude_path},
+#ifdef _WIN32
+    {"windows_extended_path_prefixes", flb_test_windows_extended_path_prefixes},
+#endif
     {"offset_key", flb_test_offset_key},
     {"multiline_offset_key", flb_test_multiline_offset_key},
     {"skip_empty_lines", flb_test_skip_empty_lines},
