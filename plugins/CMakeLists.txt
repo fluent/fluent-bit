@@ -492,10 +492,11 @@ if(EXT_FILTER_PLUGINS)
   endforeach()
 endif()
 
-# Generate the header from the template
+# Keep the generated plugin registry local to each build configuration.
+file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/generated/include/fluent-bit")
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_plugins.h.in"
-  "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_plugins.h"
+  "${PROJECT_BINARY_DIR}/generated/include/fluent-bit/flb_plugins.h"
   )
 
 set(FLB_PLUGINS "${flb_plugins}" PARENT_SCOPE)
