@@ -96,6 +96,9 @@ static void test_http_server_options(void)
 
     out = flb_output_get_instance(ctx->config, out_ffd);
     TEST_CHECK(out != NULL);
+    TEST_CHECK(out->tp_workers == 1);
+    TEST_CHECK(out->is_threaded == FLB_TRUE);
+    TEST_CHECK(out->tp != NULL);
 
     prom_ctx = out->context;
     TEST_CHECK(prom_ctx != NULL);
