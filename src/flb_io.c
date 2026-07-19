@@ -47,6 +47,13 @@
 #include <limits.h>
 #include <assert.h>
 
+#ifdef FLB_SYSTEM_WINDOWS
+#define poll WSAPoll
+#include <winsock2.h>
+#else
+#include <sys/poll.h>
+#endif
+
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
@@ -248,6 +255,7 @@ static int fd_io_write(int fd, struct sockaddr_storage *address,
 {
     int ret;
     int tries = 0;
+    struct pollfd poll_fd;
     size_t total = 0;
 
     while (total < len) {
@@ -262,14 +270,20 @@ static int fd_io_write(int fd, struct sockaddr_storage *address,
 
         if (ret == -1) {
             if (FLB_WOULDBLOCK()) {
-                /*
-                 * FIXME: for now we are handling this in a very lazy way,
-                 * just sleep for a second and retry (for a max of 30 tries).
-                 */
-                sleep(1);
+                poll_fd.fd = fd;
+                poll_fd.events = POLLOUT;
+                poll_fd.revents = 0;
+                ret = poll(&poll_fd, 1, 1000);
+
+#ifndef FLB_SYSTEM_WINDOWS
+                if (ret < 0 && errno == EINTR) {
+                    continue;
+                }
+#endif
+
                 tries++;
 
-                if (tries == 30) {
+                if (ret < 0 || tries == 30) {
                     /* Since we're aborting after 30 failures we want the
                      * caller to know how much data we were able to send
                      */
