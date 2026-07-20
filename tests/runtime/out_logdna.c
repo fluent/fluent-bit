@@ -50,7 +50,8 @@ static void clear_output_num()
 
 /*
  * Test: primary keys (meta, level, app) are promoted to top-level fields
- * and excluded from the "line" JSON string (no duplication).
+ * and excluded from the "line" value (no duplication). With a string
+ * "message" field present, line is the plain text message.
  */
 #define JSON_WITH_PRIMARY_KEYS \
     "[12345678, {\"message\":\"hello world\"," \
@@ -75,7 +76,7 @@ static void cb_check_non_duplication(void *ctx, int ffd, int res_ret,
         TEST_MSG("missing top-level app: %s", json);
     }
 
-    /* Primary keys must NOT appear inside the line value (escaped) */
+    /* Primary keys must NOT appear inside the line value (escaped JSON) */
     if (!TEST_CHECK(strstr(json, "\\\"meta\\\":") == NULL)) {
         TEST_MSG("meta duplicated in line: %s", json);
     }
@@ -86,9 +87,12 @@ static void cb_check_non_duplication(void *ctx, int ffd, int res_ret,
         TEST_MSG("app duplicated in line: %s", json);
     }
 
-    /* Non-primary key must be in line value (escaped) */
-    if (!TEST_CHECK(strstr(json, "\\\"message\\\":") != NULL)) {
-        TEST_MSG("message missing from line: %s", json);
+    /* message is used as plain-text line, not re-serialized as JSON */
+    if (!TEST_CHECK(strstr(json, "\"line\":\"hello world\"") != NULL)) {
+        TEST_MSG("message not used as line: %s", json);
+    }
+    if (!TEST_CHECK(strstr(json, "\\\"message\\\":") == NULL)) {
+        TEST_MSG("message should not be JSON-escaped in line: %s", json);
     }
 
     set_output_num(get_output_num() + 1);
@@ -116,7 +120,6 @@ void flb_test_non_duplication()
     flb_output_set(ctx, out_ffd,
                    "match", "test",
                    "api_key", "test-key",
-                   "exclude_promoted_keys", "true",
                    NULL);
 
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
@@ -141,16 +144,15 @@ void flb_test_non_duplication()
 }
 
 /*
- * Test: all non-primary keys are preserved in the "line" body;
- * all primary keys are promoted. No data is lost.
+ * Test: without message/log, non-primary keys are preserved in the "line"
+ * JSON body; all primary keys are promoted. No data is lost.
  */
 #define JSON_ALL_KEYS \
-    "[12345678, {\"message\":\"hello\"," \
+    "[12345678, {\"host\":\"server1\"," \
     "\"meta\":{\"foo\":\"bar\"}," \
     "\"level\":\"info\"," \
     "\"app\":\"myapp\"," \
     "\"file\":\"test.log\"," \
-    "\"host\":\"server1\"," \
     "\"custom\":\"data\"}]"
 
 static void cb_check_data_completeness(void *ctx, int ffd, int res_ret,
@@ -174,9 +176,6 @@ static void cb_check_data_completeness(void *ctx, int ffd, int res_ret,
     }
 
     /* All non-primary keys in line body (escaped) */
-    if (!TEST_CHECK(strstr(json, "\\\"message\\\":") != NULL)) {
-        TEST_MSG("message missing from line: %s", json);
-    }
     if (!TEST_CHECK(strstr(json, "\\\"host\\\":") != NULL)) {
         TEST_MSG("host missing from line: %s", json);
     }
@@ -217,7 +216,6 @@ void flb_test_data_completeness()
     flb_output_set(ctx, out_ffd,
                    "match", "test",
                    "api_key", "test-key",
-                   "exclude_promoted_keys", "true",
                    NULL);
 
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
@@ -263,6 +261,11 @@ static void cb_check_severity(void *ctx, int ffd, int res_ret,
         TEST_MSG("severity duplicated in line: %s", json);
     }
 
+    /* message used as plain-text line */
+    if (!TEST_CHECK(strstr(json, "\"line\":\"hello\"") != NULL)) {
+        TEST_MSG("message not used as line: %s", json);
+    }
+
     set_output_num(get_output_num() + 1);
     flb_sds_destroy(json);
 }
@@ -288,7 +291,6 @@ void flb_test_severity_promoted_as_level()
     flb_output_set(ctx, out_ffd,
                    "match", "test",
                    "api_key", "test-key",
-                   "exclude_promoted_keys", "true",
                    NULL);
 
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
@@ -341,12 +343,9 @@ static void cb_check_level_and_severity(void *ctx, int ffd, int res_ret,
         TEST_MSG("severity duplicated in line: %s", json);
     }
 
-    /* Non-primary keys preserved in line */
-    if (!TEST_CHECK(strstr(json, "\\\"message\\\":") != NULL)) {
-        TEST_MSG("message missing from line: %s", json);
-    }
-    if (!TEST_CHECK(strstr(json, "\\\"host\\\":") != NULL)) {
-        TEST_MSG("host missing from line: %s", json);
+    /* message preferred as plain-text line */
+    if (!TEST_CHECK(strstr(json, "\"line\":\"hello\"") != NULL)) {
+        TEST_MSG("message not used as line: %s", json);
     }
 
     set_output_num(get_output_num() + 1);
@@ -374,7 +373,6 @@ void flb_test_level_and_severity()
     flb_output_set(ctx, out_ffd,
                    "match", "test",
                    "api_key", "test-key",
-                   "exclude_promoted_keys", "true",
                    NULL);
 
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
@@ -412,6 +410,10 @@ static void cb_check_default_app(void *ctx, int ffd, int res_ret,
 
     if (!TEST_CHECK(strstr(json, "\"app\":\"Fluent Bit\"") != NULL)) {
         TEST_MSG("default app not set: %s", json);
+    }
+
+    if (!TEST_CHECK(strstr(json, "\"line\":\"hello\"") != NULL)) {
+        TEST_MSG("message not used as line: %s", json);
     }
 
     set_output_num(get_output_num() + 1);
@@ -463,11 +465,11 @@ void flb_test_default_app()
 }
 
 /*
- * Test: record with no primary keys — all fields go into line,
- * only default app appears at top level.
+ * Test: record with no primary keys — default app at top level;
+ * remaining fields go into line JSON body.
  */
 #define JSON_NO_PRIMARY_KEYS \
-    "[12345678, {\"message\":\"hello\",\"host\":\"server1\"}]"
+    "[12345678, {\"host\":\"server1\",\"custom\":\"data\"}]"
 
 static void cb_check_no_primary_keys(void *ctx, int ffd, int res_ret,
                                       void *res_data, size_t res_size,
@@ -481,11 +483,11 @@ static void cb_check_no_primary_keys(void *ctx, int ffd, int res_ret,
     }
 
     /* All keys in line body */
-    if (!TEST_CHECK(strstr(json, "\\\"message\\\":") != NULL)) {
-        TEST_MSG("message missing from line: %s", json);
-    }
     if (!TEST_CHECK(strstr(json, "\\\"host\\\":") != NULL)) {
         TEST_MSG("host missing from line: %s", json);
+    }
+    if (!TEST_CHECK(strstr(json, "\\\"custom\\\":") != NULL)) {
+        TEST_MSG("custom missing from line: %s", json);
     }
 
     /* No meta or level at top level (they aren't in the record) */
@@ -533,6 +535,149 @@ void flb_test_no_primary_keys()
     flb_lib_push(ctx, in_ffd,
                  (char *) JSON_NO_PRIMARY_KEYS,
                  sizeof(JSON_NO_PRIMARY_KEYS) - 1);
+
+    sleep(2);
+
+    if (!TEST_CHECK(get_output_num() > 0)) {
+        TEST_MSG("formatter callback was not invoked");
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+/*
+ * Test: "log" key is used as line when "message" is absent.
+ */
+#define JSON_LOG_KEY \
+    "[12345678, {\"log\":\"from log field\"," \
+    "\"meta\":{\"env\":\"dev\"}," \
+    "\"level\":\"info\"}]"
+
+static void cb_check_log_key_as_line(void *ctx, int ffd, int res_ret,
+                                     void *res_data, size_t res_size,
+                                     void *data)
+{
+    flb_sds_t json = res_data;
+
+    if (!TEST_CHECK(strstr(json, "\"line\":\"from log field\"") != NULL)) {
+        TEST_MSG("log key not used as line: %s", json);
+    }
+    if (!TEST_CHECK(strstr(json, "\"meta\":") != NULL)) {
+        TEST_MSG("missing top-level meta: %s", json);
+    }
+    if (!TEST_CHECK(strstr(json, "\\\"meta\\\":") == NULL)) {
+        TEST_MSG("meta duplicated in line: %s", json);
+    }
+    if (!TEST_CHECK(strstr(json, "\\\"log\\\":") == NULL)) {
+        TEST_MSG("log should not be JSON-escaped in line: %s", json);
+    }
+
+    set_output_num(get_output_num() + 1);
+    flb_sds_destroy(json);
+}
+
+void flb_test_log_key_as_line()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd;
+
+    clear_output_num();
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "logdna", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "api_key", "test-key",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_log_key_as_line, NULL, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd,
+                 (char *) JSON_LOG_KEY,
+                 sizeof(JSON_LOG_KEY) - 1);
+
+    sleep(2);
+
+    if (!TEST_CHECK(get_output_num() > 0)) {
+        TEST_MSG("formatter callback was not invoked");
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+/*
+ * Test: when both message and log are present, message wins.
+ */
+#define JSON_MESSAGE_AND_LOG \
+    "[12345678, {\"message\":\"from message\"," \
+    "\"log\":\"from log\"}]"
+
+static void cb_check_message_preferred(void *ctx, int ffd, int res_ret,
+                                       void *res_data, size_t res_size,
+                                       void *data)
+{
+    flb_sds_t json = res_data;
+
+    if (!TEST_CHECK(strstr(json, "\"line\":\"from message\"") != NULL)) {
+        TEST_MSG("message should be preferred over log: %s", json);
+    }
+    if (!TEST_CHECK(strstr(json, "\"line\":\"from log\"") == NULL)) {
+        TEST_MSG("log should not be used when message is present: %s", json);
+    }
+
+    set_output_num(get_output_num() + 1);
+    flb_sds_destroy(json);
+}
+
+void flb_test_message_preferred_over_log()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd;
+
+    clear_output_num();
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "logdna", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "api_key", "test-key",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_message_preferred, NULL, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd,
+                 (char *) JSON_MESSAGE_AND_LOG,
+                 sizeof(JSON_MESSAGE_AND_LOG) - 1);
 
     sleep(2);
 
@@ -612,9 +757,15 @@ void flb_test_payload_structure()
 }
 
 /*
- * Test: backward compatibility — when exclude_promoted_keys is not set
- * (default false), promoted keys ARE present in the line body.
+ * Test: legacy mode — when exclude_promoted_keys is false and there is no
+ * message/log text field, promoted keys ARE present in the line body.
  */
+#define JSON_LEGACY_FULL_RECORD \
+    "[12345678, {\"host\":\"server1\"," \
+    "\"meta\":{\"source\":\"test\"}," \
+    "\"level\":\"info\"," \
+    "\"app\":\"myapp\"}]"
+
 static void cb_check_backward_compat(void *ctx, int ffd, int res_ret,
                                       void *res_data, size_t res_size,
                                       void *data)
@@ -668,6 +819,7 @@ void flb_test_backward_compat()
     flb_output_set(ctx, out_ffd,
                    "match", "test",
                    "api_key", "test-key",
+                   "exclude_promoted_keys", "false",
                    NULL);
 
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
@@ -678,8 +830,8 @@ void flb_test_backward_compat()
     TEST_CHECK(ret == 0);
 
     flb_lib_push(ctx, in_ffd,
-                 (char *) JSON_WITH_PRIMARY_KEYS,
-                 sizeof(JSON_WITH_PRIMARY_KEYS) - 1);
+                 (char *) JSON_LEGACY_FULL_RECORD,
+                 sizeof(JSON_LEGACY_FULL_RECORD) - 1);
 
     sleep(2);
 
@@ -749,6 +901,8 @@ TEST_LIST = {
     {"level_and_severity",         flb_test_level_and_severity},
     {"default_app",                flb_test_default_app},
     {"no_primary_keys",            flb_test_no_primary_keys},
+    {"log_key_as_line",            flb_test_log_key_as_line},
+    {"message_preferred_over_log", flb_test_message_preferred_over_log},
     {"payload_structure",          flb_test_payload_structure},
     {"backward_compat",            flb_test_backward_compat},
     {"lifecycle",                  flb_test_lifecycle},

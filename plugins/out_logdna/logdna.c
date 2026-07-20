@@ -31,6 +31,8 @@
 #define LOGDNA_SEVERITY_KEY "severity"
 #define LOGDNA_FILE_KEY "file"
 #define LOGDNA_APP_KEY "app"
+#define LOGDNA_MESSAGE_KEY "message"
+#define LOGDNA_LOG_KEY "log"
 
 static inline int primary_key_check(msgpack_object k, char *name, int len)
 {
@@ -47,6 +49,44 @@ static inline int primary_key_check(msgpack_object k, char *name, int len)
     }
 
     return FLB_FALSE;
+}
+
+/*
+ * Prefer a dedicated text field for the ingest "line" value.
+ * Look up "message" first, then "log". Only string values are accepted.
+ */
+static msgpack_object *record_find_line_text(msgpack_object *map)
+{
+    int i;
+    msgpack_object k;
+    msgpack_object *message = NULL;
+    msgpack_object *log_val = NULL;
+
+    if (map->type != MSGPACK_OBJECT_MAP) {
+        return NULL;
+    }
+
+    for (i = 0; i < map->via.map.size; i++) {
+        k = map->via.map.ptr[i].key;
+        if (primary_key_check(k, LOGDNA_MESSAGE_KEY,
+                              sizeof(LOGDNA_MESSAGE_KEY) - 1) == FLB_TRUE) {
+            if (map->via.map.ptr[i].val.type == MSGPACK_OBJECT_STR) {
+                message = &map->via.map.ptr[i].val;
+            }
+        }
+        else if (primary_key_check(k, LOGDNA_LOG_KEY,
+                                   sizeof(LOGDNA_LOG_KEY) - 1) == FLB_TRUE) {
+            if (map->via.map.ptr[i].val.type == MSGPACK_OBJECT_STR) {
+                log_val = &map->via.map.ptr[i].val;
+            }
+        }
+    }
+
+    if (message) {
+        return message;
+    }
+
+    return log_val;
 }
 
 /*
@@ -182,10 +222,13 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
     int len;
     int total_lines;
     int array_size = 0;
+    int use_line_text;
+    int build_line_map;
     off_t map_off;
     size_t off;
     char *line_json;
     flb_sds_t json;
+    msgpack_object *line_text;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_line_pck;
@@ -226,13 +269,16 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
         msgpack_pack_map(&mp_pck, array_size);
 
         /*
-         * Append primary keys found, the return value is the number of appended
-         * keys to the record, we use that to adjust the map header size.
-         *
-         * When exclude_promoted_keys is enabled, non-primary keys are packed
-         * into mp_line_sbuf for use as the "line" body.
+         * Prefer a dedicated message/log string as the "line" text.
+         * Otherwise, when exclude_promoted_keys is enabled, serialize only
+         * non-primary keys so promoted fields are not duplicated inside line.
          */
-        if (ctx->exclude_promoted_keys) {
+        line_text = record_find_line_text(log_event.body);
+        use_line_text = (line_text != NULL) ? FLB_TRUE : FLB_FALSE;
+        build_line_map = (use_line_text == FLB_FALSE &&
+                          ctx->exclude_promoted_keys) ? FLB_TRUE : FLB_FALSE;
+
+        if (build_line_map) {
             msgpack_sbuffer_init(&mp_line_sbuf);
             msgpack_packer_init(&mp_line_pck, &mp_line_sbuf,
                                 msgpack_sbuffer_write);
@@ -255,7 +301,14 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
         msgpack_pack_str(&mp_pck, 4);
         msgpack_pack_str_body(&mp_pck, "line", 4);
 
-        if (ctx->exclude_promoted_keys) {
+        if (use_line_text) {
+            /* Plain text of the log line (Mezmo ingest "line" field) */
+            msgpack_pack_str(&mp_pck, line_text->via.str.size);
+            msgpack_pack_str_body(&mp_pck,
+                                  line_text->via.str.ptr,
+                                  line_text->via.str.size);
+        }
+        else if (build_line_map) {
             msgpack_unpacked_init(&mp_line_result);
             off = 0;
             msgpack_unpack_next(&mp_line_result,
@@ -266,16 +319,21 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
 
             msgpack_unpacked_destroy(&mp_line_result);
             msgpack_sbuffer_destroy(&mp_line_sbuf);
+
+            len = strlen(line_json);
+            msgpack_pack_str(&mp_pck, len);
+            msgpack_pack_str_body(&mp_pck, line_json, len);
+            flb_free(line_json);
         }
         else {
+            /* Legacy: serialize the full record into line */
             line_json = flb_msgpack_to_json_str(1024, log_event.body,
                                                 config->json_escape_unicode);
+            len = strlen(line_json);
+            msgpack_pack_str(&mp_pck, len);
+            msgpack_pack_str_body(&mp_pck, line_json, len);
+            flb_free(line_json);
         }
-
-        len = strlen(line_json);
-        msgpack_pack_str(&mp_pck, len);
-        msgpack_pack_str_body(&mp_pck, line_json, len);
-        flb_free(line_json);
 
         /* Adjust map header size */
         flb_mp_set_map_header_size(mp_sbuf.data + map_off, array_size);
@@ -663,9 +721,11 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_BOOL, "exclude_promoted_keys", "false",
+     FLB_CONFIG_MAP_BOOL, "exclude_promoted_keys", "true",
      0, FLB_TRUE, offsetof(struct flb_logdna, exclude_promoted_keys),
-     "Exclude promoted keys (meta, level, severity (promoted as level), app, file) from the line body"
+     "Exclude promoted keys (meta, level, severity (promoted as level), app, file) "
+     "from the line body when no message/log text field is used. "
+     "When a string message or log key is present, that value is used as line."
     },
 
     /* EOF */
