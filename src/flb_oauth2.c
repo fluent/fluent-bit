@@ -1247,6 +1247,11 @@ static int oauth2_refresh_client_secret_from_file(struct flb_oauth2 *ctx)
     struct stat st;
     flb_sds_t secret = NULL;
 
+    if (ctx->cfg.auth_method != FLB_OAUTH2_AUTH_METHOD_BASIC &&
+        ctx->cfg.auth_method != FLB_OAUTH2_AUTH_METHOD_POST) {
+        return 0;
+    }
+
     if (!ctx->cfg.client_secret_file) {
         return 0;
     }
