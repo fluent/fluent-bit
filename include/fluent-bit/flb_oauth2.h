@@ -76,7 +76,6 @@ struct flb_oauth2 {
     int payload_manual;
     flb_lock_t lock;
     time_t expires_at;
-    time_t client_secret_file_mtime; /* last-loaded mtime of client_secret_file */
     int refresh_skew;
 
     /* Token info after successful auth */

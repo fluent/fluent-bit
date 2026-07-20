@@ -29,7 +29,6 @@
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
-#include <fluent-bit/flb_compat.h>
 
 #include <time.h>
 #include <errno.h>
@@ -37,8 +36,6 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <limits.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 
 #include <openssl/bio.h>
 #include <openssl/x509.h>
@@ -1237,14 +1234,14 @@ static int oauth2_read_secret_file(const char *path, flb_sds_t *out)
 }
 
 /*
- * Reload client_secret from client_secret_file when the file's mtime changed
- * (or on first load, since the tracked mtime starts at 0). On success the new
- * value replaces ctx->cfg.client_secret. No-op when client_secret_file is unset.
+ * Load client_secret from client_secret_file, replacing the current value. The
+ * file is re-read on every refresh so a rotated secret is always picked up,
+ * independent of filesystem mtime resolution. No-op for auth methods that do
+ * not use client_secret, or when client_secret_file is unset.
  */
 static int oauth2_refresh_client_secret_from_file(struct flb_oauth2 *ctx)
 {
     int ret;
-    struct stat st;
     flb_sds_t secret = NULL;
 
     if (ctx->cfg.auth_method != FLB_OAUTH2_AUTH_METHOD_BASIC &&
@@ -1253,19 +1250,6 @@ static int oauth2_refresh_client_secret_from_file(struct flb_oauth2 *ctx)
     }
 
     if (!ctx->cfg.client_secret_file) {
-        return 0;
-    }
-
-    ret = stat(ctx->cfg.client_secret_file, &st);
-    if (ret != 0) {
-        flb_errno();
-        flb_error("[oauth2] cannot stat client_secret_file '%s'",
-                  ctx->cfg.client_secret_file);
-        return -1;
-    }
-
-    /* only reload when the file changed since the last load */
-    if (st.st_mtime == ctx->client_secret_file_mtime) {
         return 0;
     }
 
@@ -1278,7 +1262,6 @@ static int oauth2_refresh_client_secret_from_file(struct flb_oauth2 *ctx)
         flb_sds_destroy(ctx->cfg.client_secret);
     }
     ctx->cfg.client_secret = secret;
-    ctx->client_secret_file_mtime = st.st_mtime;
 
     return 0;
 }

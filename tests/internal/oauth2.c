@@ -1385,12 +1385,6 @@ void test_client_secret_file_change_detection(void)
     TEST_CHECK(ret == 0);
     TEST_CHECK(strcmp(value, "secret-v1") == 0);
 
-    /*
-     * Ensure the filesystem mtime advances (>= 1s resolution) before the
-     * rewrite so the change is detected on the next refresh.
-     */
-    sleep(2);
-
     ret = write_text_file(secret_path, "secret-v2\n");
     TEST_CHECK(ret == 0);
 
