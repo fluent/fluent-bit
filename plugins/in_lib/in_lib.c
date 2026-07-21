@@ -75,7 +75,7 @@ static int in_lib_collect(struct flb_input_instance *ins,
 
             perror("read");
             flb_pipe_error();
-            if (errno == -EPIPE) {
+            if (errno == EPIPE) {
                 return -1;
             }
             return 0;
