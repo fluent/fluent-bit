@@ -91,11 +91,14 @@ if (FLB_CUSTOM_CALYPTIA)
         get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
 
         set(TEST_TARGET "flb-rt-${TEST_NAME}")
-        add_executable(${TEST_TARGET}
-            ${TEST_SOURCE}
-            "../../plugins/custom_calyptia/calyptia.c"
-            "../../plugins/in_calyptia_fleet/in_calyptia_fleet.c"
-        )
+        add_executable(${TEST_TARGET} ${TEST_SOURCE})
+
+        if("${FLB_TEST_LINK_LIBRARY}" STREQUAL "fluent-bit-static")
+            target_sources(${TEST_TARGET} PRIVATE
+                "../../plugins/custom_calyptia/calyptia.c"
+                "../../plugins/in_calyptia_fleet/in_calyptia_fleet.c"
+            )
+        endif()
 
         target_link_libraries(${TEST_TARGET}
             ${CALYPTIA_TEST_LINK_LIBS}
