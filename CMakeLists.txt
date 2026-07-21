@@ -1531,6 +1531,14 @@ else()
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
+if(MSVC)
+  # Some tests access plugin-private state that is not exported from fluent-bit.dll.
+  # Keep one copy of that state by linking the test and plugin code statically.
+  set(FLB_TEST_LINK_LIBRARY fluent-bit-static)
+else()
+  set(FLB_TEST_LINK_LIBRARY fluent-bit-shared)
+endif()
+
 add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)
