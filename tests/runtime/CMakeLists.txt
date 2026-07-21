@@ -76,7 +76,7 @@ endif()
 
 if (FLB_CUSTOM_CALYPTIA)
     set(CALYPTIA_TEST_LINK_LIBS
-        fluent-bit-shared
+        ${FLB_TEST_LINK_LIBRARY}
         ${CMAKE_THREAD_LIBS_INIT}
     )
 
@@ -106,7 +106,7 @@ if (FLB_CUSTOM_CALYPTIA)
                  WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
 
         set_tests_properties(${TEST_TARGET} PROPERTIES LABELS "runtime")
-        add_dependencies(${TEST_TARGET} fluent-bit-shared)
+        add_dependencies(${TEST_TARGET} ${FLB_TEST_LINK_LIBRARY})
     endforeach()
 endif()
 
@@ -117,7 +117,7 @@ if(FLB_IN_EBPF)
     )
 
     set(EBPF_TEST_LINK_LIBS
-        fluent-bit-shared
+        ${FLB_TEST_LINK_LIBRARY}
         ${CMAKE_THREAD_LIBS_INIT}
         ${SYSTEMD_LIB}
         -lbpf
@@ -195,13 +195,13 @@ if(FLB_IN_EBPF)
         "../../plugins/in_ebpf/traces/sched/handler.c"
     )
 
-    add_dependencies(flb-rt-in_ebpf_bind_handler fluent-bit-shared)
-    add_dependencies(flb-rt-in_ebpf_signal_handler fluent-bit-shared)
-    add_dependencies(flb-rt-in_ebpf_malloc_handler fluent-bit-shared)
-    add_dependencies(flb-rt-in_ebpf_tcp_handler fluent-bit-shared)
-    add_dependencies(flb-rt-in_ebpf_exec_handler fluent-bit-shared)
-    add_dependencies(flb-rt-in_ebpf_openssl_handler fluent-bit-shared)
-    add_dependencies(flb-rt-in_ebpf_sched_handler fluent-bit-shared)
+    add_dependencies(flb-rt-in_ebpf_bind_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_signal_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_malloc_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_tcp_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_exec_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_openssl_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_sched_handler ${FLB_TEST_LINK_LIBRARY})
 
 endif()
 
@@ -367,7 +367,7 @@ foreach(source_file ${CHECK_PROGRAMS})
       target_compile_options(${source_file_we} PRIVATE /Zc:preprocessor)
     endif()
     target_link_libraries(${source_file_we}
-      fluent-bit-shared
+      ${FLB_TEST_LINK_LIBRARY}
       ${CMAKE_THREAD_LIBS_INIT}
       ${SYSTEMD_LIB}
       )
