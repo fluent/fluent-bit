@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -86,10 +87,6 @@ static int in_lib_collect(struct flb_input_instance *ins,
 
         ctx->buf_len += bytes;
         total_bytes += bytes;
-
-#ifndef FLB_SYSTEM_WINDOWS
-        break;
-#endif
     }
 
     flb_plg_trace(ctx->ins, "in_lib read() = %i", total_bytes);
@@ -110,7 +107,10 @@ static int in_lib_collect(struct flb_input_instance *ins,
         flb_pack_state_init(&ctx->state);
         return -1;
     }
-    ctx->buf_len = 0;
+    ctx->buf_len -= ctx->state.last_byte;
+    memmove(ctx->buf_data,
+            ctx->buf_data + ctx->state.last_byte,
+            ctx->buf_len);
 
     dec_ret = flb_log_event_decoder_init(&decoder, pack, out_size);
     if (dec_ret != FLB_EVENT_DECODER_SUCCESS) {
@@ -242,7 +242,6 @@ static int in_lib_init(struct flb_input_instance *in,
     }
     ctx->fd = in->channel[0];
 
-#ifdef FLB_SYSTEM_WINDOWS
     ret = flb_pipe_set_nonblocking(ctx->fd);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not set input channel to nonblocking mode");
@@ -251,7 +250,6 @@ static int in_lib_init(struct flb_input_instance *in,
         flb_free(ctx);
         return -1;
     }
-#endif
 
     /* Set the context */
     flb_input_set_context(in, ctx);
