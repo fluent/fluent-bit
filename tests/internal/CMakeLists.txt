@@ -246,7 +246,9 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
         target_link_libraries(${source_file_we} flb-aws)
       endif()
 
-      if(FLB_OUT_AZURE_BLOB AND "${source_file_we}" STREQUAL "flb-it-azure_blob_path")
+      if(FLB_OUT_AZURE_BLOB AND
+         "${source_file_we}" STREQUAL "flb-it-azure_blob_path" AND
+         "${FLB_TEST_LINK_LIBRARY}" STREQUAL "fluent-bit-static")
         target_link_libraries(${source_file_we} flb-plugin-out_azure_blob)
       endif()
 
