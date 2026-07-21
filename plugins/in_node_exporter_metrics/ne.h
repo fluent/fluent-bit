@@ -33,7 +33,7 @@
 /* Default enabled metrics */
 
 #ifdef __linux__
-#define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,netstat,sockstat,filefd,systemd,nvme,thermal_zone,hwmon"
+#define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,timex,loadavg,vmstat,netdev,netstat,sockstat,filefd,systemd,nvme,thermal_zone,hwmon"
 #elif __APPLE__
 #define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,meminfo,diskstats,uname,netdev"
 #endif
@@ -175,6 +175,25 @@ struct flb_ne {
 
     /* time */
     struct cmt_gauge *time;
+
+    /* timex */
+    struct cmt_gauge   *timex_offset;
+    struct cmt_gauge   *timex_freq;
+    struct cmt_gauge   *timex_maxerror;
+    struct cmt_gauge   *timex_esterror;
+    struct cmt_gauge   *timex_status;
+    struct cmt_gauge   *timex_constant;
+    struct cmt_gauge   *timex_tick;
+    struct cmt_gauge   *timex_pps_freq;
+    struct cmt_gauge   *timex_jitter;
+    struct cmt_gauge   *timex_shift;
+    struct cmt_gauge   *timex_stabil;
+    struct cmt_counter *timex_jitcnt;
+    struct cmt_counter *timex_calcnt;
+    struct cmt_counter *timex_errcnt;
+    struct cmt_counter *timex_stbcnt;
+    struct cmt_gauge   *timex_tai;
+    struct cmt_gauge   *timex_sync_status;
 
     /* loadavg */
     struct cmt_gauge *lavg_1;
