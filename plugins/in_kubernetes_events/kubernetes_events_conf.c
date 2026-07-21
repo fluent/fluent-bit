@@ -158,6 +158,9 @@ struct k8s_events *k8s_events_conf_create(struct flb_input_instance *ins)
     pthread_mutexattr_init(&attr);
     pthread_mutex_init(&ctx->lock, &attr);
 
+    /* Initialize buffer for incomplete chunk data */
+    ctx->chunk_buffer = NULL;
+
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -326,43 +329,58 @@ void k8s_events_conf_destroy(struct k8s_events *ctx)
 
     if (ctx->ra_resource_version) {
         flb_ra_destroy(ctx->ra_resource_version);
+        ctx->ra_resource_version = NULL;
+    }
+
+    if (ctx->chunk_buffer) {
+        flb_sds_destroy(ctx->chunk_buffer);
+        ctx->chunk_buffer = NULL;
     }
 
     if(ctx->streaming_client) {
         flb_http_client_destroy(ctx->streaming_client);
+        ctx->streaming_client = NULL;
     }
 
     if(ctx->current_connection) {
         flb_upstream_conn_release(ctx->current_connection);
+        ctx->current_connection = NULL;
     }
 
     if (ctx->upstream) {
         flb_upstream_destroy(ctx->upstream);
+        ctx->upstream = NULL;
     }
 
     if (ctx->encoder) {
         flb_log_event_encoder_destroy(ctx->encoder);
+        ctx->encoder = NULL;
     }
 
     if (ctx->api_host) {
         flb_free(ctx->api_host);
+        ctx->api_host = NULL;
     }
     if (ctx->token) {
         flb_free(ctx->token);
+        ctx->token = NULL;
     }
     if (ctx->auth) {
         flb_free(ctx->auth);
+        ctx->auth = NULL;
     }
 
 #ifdef FLB_HAVE_TLS
     if (ctx->tls) {
         flb_tls_destroy(ctx->tls);
+        ctx->tls = NULL;
     }
 #endif
 
 #ifdef FLB_HAVE_SQLDB
     if (ctx->db) {
         flb_kubernetes_event_db_close(ctx->db);
+        ctx->db = NULL;
     }
 #endif
 
