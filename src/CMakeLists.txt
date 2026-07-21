@@ -524,8 +524,9 @@ set(flb_rc_files
 endif()
 
 # Shared Library
-if(FLB_SHARED_LIB OR FLB_TESTS_RUNTIME OR FLB_TESTS_INTERNAL OR
-   FLB_TESTS_INTERNAL_FUZZ)
+if(FLB_SHARED_LIB OR
+   (NOT MSVC AND
+    (FLB_TESTS_RUNTIME OR FLB_TESTS_INTERNAL OR FLB_TESTS_INTERNAL_FUZZ)))
   add_library(fluent-bit-shared SHARED ${src})
   add_sanitizers(fluent-bit-shared)
   set_target_properties(fluent-bit-shared
