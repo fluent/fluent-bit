@@ -1531,9 +1531,9 @@ else()
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
-if(MSVC)
-  # Some tests access plugin-private state that is not exported from fluent-bit.dll.
-  # Keep one copy of that state by linking the test and plugin code statically.
+if(MSVC OR FLB_JEMALLOC)
+  # MSVC tests need plugin-private symbols that are not exported from fluent-bit.dll.
+  # Jemalloc must not be embedded in both the test executable and shared library.
   set(FLB_TEST_LINK_LIBRARY fluent-bit-static)
 else()
   set(FLB_TEST_LINK_LIBRARY fluent-bit-shared)
