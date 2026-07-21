@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_mp_chunk.h>
+#include <fluent-bit/flb_conditionals.h>
 
 #include <cfl/cfl_kvlist.h>
 
@@ -412,8 +413,149 @@ cleanup:
 }
 
 
+/*
+ * Regression test for the condition-filtering path of
+ * flb_mp_chunk_cobj_record_next().
+ *
+ * When a processor condition is attached to a chunk, records that do not match
+ * the condition are skipped. This used to be implemented with tail recursion:
+ * every non-matching record made the function call itself to advance to the
+ * next one, so the recursion depth grew proportionally to the number of
+ * records. A large run of non-matching records (a common case for a condition
+ * that filters out most of a chunk) could therefore exhaust the stack.
+ *
+ * This test builds a chunk with many records where only a few match the
+ * condition, including a long trailing run of non-matching records, and
+ * verifies that exactly the matching records are returned and the iteration
+ * terminates cleanly.
+ */
+void record_next_condition_filter()
+{
+    struct flb_log_event_encoder *builder = NULL;
+    struct flb_log_event_encoder *chunk_encoder = NULL;
+    struct flb_log_event_decoder decoder;
+    struct flb_mp_chunk_cobj *chunk = NULL;
+    struct flb_mp_chunk_record *record = NULL;
+    struct flb_condition *cond = NULL;
+    struct flb_time ts;
+    int decoder_ready = FLB_FALSE;
+    int ret;
+    int i;
+    int matched = 0;
+    int expected = 0;
+    const int total = 20000;
+    const int stride = 5000;
+
+    builder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (!TEST_CHECK(builder != NULL)) {
+        return;
+    }
+
+    flb_time_set(&ts, 1700000000, 0);
+
+    /*
+     * Records where (i % stride == 0) carry match="yes", the rest match="no".
+     * With total=20000 and stride=5000 this yields matches at i = 0, 5000,
+     * 10000, 15000, each separated by a long run of non-matching records and
+     * followed by a long trailing run that does not match.
+     */
+    for (i = 0; i < total; i++) {
+        const char *value = (i % stride == 0) ? "yes" : "no";
+
+        if (i % stride == 0) {
+            expected++;
+        }
+
+        ret = flb_log_event_encoder_begin_record(builder);
+        if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+            goto cleanup;
+        }
+
+        ret = flb_log_event_encoder_set_timestamp(builder, &ts);
+        if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+            goto cleanup;
+        }
+
+        ret = flb_log_event_encoder_append_body_values(
+                builder,
+                FLB_LOG_EVENT_CSTRING_VALUE("match"),
+                FLB_LOG_EVENT_CSTRING_VALUE(value));
+        if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+            goto cleanup;
+        }
+
+        ret = flb_log_event_encoder_commit_record(builder);
+        if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+            goto cleanup;
+        }
+    }
+
+    ret = flb_log_event_decoder_init(&decoder,
+                                     builder->output_buffer,
+                                     builder->output_length);
+    if (!TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS)) {
+        goto cleanup;
+    }
+    decoder_ready = FLB_TRUE;
+
+    chunk_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (!TEST_CHECK(chunk_encoder != NULL)) {
+        goto cleanup;
+    }
+
+    chunk = flb_mp_chunk_cobj_create(chunk_encoder, &decoder);
+    if (!TEST_CHECK(chunk != NULL)) {
+        goto cleanup;
+    }
+
+    /* Only records whose body has match == "yes" should be returned */
+    cond = flb_condition_create(FLB_COND_OP_AND);
+    if (!TEST_CHECK(cond != NULL)) {
+        goto cleanup;
+    }
+
+    if (!TEST_CHECK(flb_condition_add_rule(cond, "$match", FLB_RULE_OP_EQ,
+                                           "yes", 0,
+                                           RECORD_CONTEXT_BODY) == FLB_TRUE)) {
+        goto cleanup;
+    }
+
+    /* The chunk borrows the condition; it does not take ownership of it */
+    chunk->condition = cond;
+
+    while ((ret = flb_mp_chunk_cobj_record_next(chunk, &record)) ==
+           FLB_MP_CHUNK_RECORD_OK) {
+        matched++;
+    }
+
+    TEST_CHECK(ret == FLB_MP_CHUNK_RECORD_EOF);
+    TEST_MSG("expected FLB_MP_CHUNK_RECORD_EOF, got ret=%d", ret);
+
+    TEST_CHECK(matched == expected);
+    TEST_MSG("expected %d matching records, got %d", expected, matched);
+
+cleanup:
+    if (chunk) {
+        flb_mp_chunk_cobj_destroy(chunk);
+    }
+    if (cond) {
+        flb_condition_destroy(cond);
+    }
+    if (chunk_encoder) {
+        flb_log_event_encoder_destroy(chunk_encoder);
+    }
+    if (decoder_ready == FLB_TRUE) {
+        flb_log_event_decoder_destroy(&decoder);
+    }
+    if (builder) {
+        flb_log_event_encoder_destroy(builder);
+    }
+}
+
+
 TEST_LIST = {
     { "decoder_groups_cobj", decoder_groups_cobj },
+    { "record_next_condition_filter", record_next_condition_filter },
     { 0 }
 };
 
