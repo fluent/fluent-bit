@@ -54,6 +54,10 @@ int mqtt_conn_event(void *data)
                                 (void *) &conn->buf[conn->buf_len],
                                 available);
 
+        if (flb_io_net_is_retry(bytes)) {
+            return 0;
+        }
+
         if (bytes > 0) {
             conn->buf_len += bytes;
             flb_plg_trace(ctx->ins, "[fd=%i] read()=%i bytes",
