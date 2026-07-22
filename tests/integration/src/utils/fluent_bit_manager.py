@@ -193,8 +193,11 @@ class FluentBitManager:
 
         pid = self.target_pid or self.process.pid
         return_code = self.process.poll()
-        if self.process.poll() is None:
+        supervisor_running = self.process.poll() is None
+        if supervisor_running or (leaks_enabled() and self.target_pid):
             self.send_signal(signal.SIGTERM)
+
+        if supervisor_running:
             try:
                 timeout = LEAKS_EXIT_TIMEOUT if leaks_enabled() else 10
                 return_code = self.process.wait(timeout=timeout)
