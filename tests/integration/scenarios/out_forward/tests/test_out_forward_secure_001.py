@@ -12,6 +12,7 @@ from server.forward_server import (
 )
 from utils.data_utils import read_file
 from utils.fluent_bit_manager import FluentBitManager
+from utils.memory_check import memory_check_enabled
 from utils.network import find_available_port, wait_for_port_to_be_free
 
 
@@ -113,7 +114,7 @@ class SecureForwardChain:
             forward_server_stop()
             wait_for_port_to_be_free(
                 self.receiver_port,
-                timeout=10 if os.environ.get("VALGRIND") else 5,
+                timeout=10 if memory_check_enabled() else 5,
             )
             self._restore_env()
 
@@ -152,7 +153,7 @@ def test_out_forward_secure_handshake_delivers_records():
     try:
         _send_message(chain.sender_port, "secure-forward-e2e")
         messages = chain.wait_for_forward_messages(
-            1, timeout=20 if os.environ.get("VALGRIND") else 10
+            1, timeout=20 if memory_check_enabled() else 10
         )
         handshakes = chain.wait_for_handshakes(1)
     finally:

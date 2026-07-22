@@ -21,15 +21,19 @@ def _maybe_reexec_in_venv() -> None:
     if not VENV_PYTHON.is_file():
         return
 
-    current = Path(sys.executable).resolve()
-    target = VENV_PYTHON.resolve()
+    current_prefix = Path(sys.prefix).resolve()
+    target_prefix = VENV_PYTHON.parent.parent.resolve()
 
-    if current == target:
+    if current_prefix == target_prefix:
         return
 
     env = os.environ.copy()
     env[REEXEC_ENV] = "1"
-    os.execve(str(target), [str(target), str(Path(__file__).resolve()), *sys.argv[1:]], env)
+    os.execve(
+        str(VENV_PYTHON),
+        [str(VENV_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]],
+        env,
+    )
 
 
 _maybe_reexec_in_venv()
@@ -256,6 +260,16 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         help="Run with VALGRIND=1 and VALGRIND_STRICT=1.",
     )
     parser.add_argument(
+        "--leaks",
+        action="store_true",
+        help="Run on macOS with LEAKS=1.",
+    )
+    parser.add_argument(
+        "--leaks-strict",
+        action="store_true",
+        help="Run on macOS with LEAKS=1 and LEAKS_STRICT=1.",
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Use quieter pytest output; checkbox progress still renders.",
@@ -265,7 +279,14 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         action="store_true",
         help="Keep pytest live logs enabled instead of the cleaner wrapper view.",
     )
-    return parser.parse_known_args(argv)
+    args, passthrough = parser.parse_known_args(argv)
+
+    valgrind_requested = args.valgrind or args.valgrind_strict
+    leaks_requested = args.leaks or args.leaks_strict
+    if valgrind_requested and leaks_requested:
+        parser.error("Valgrind and macOS leaks cannot be enabled together")
+
+    return args, passthrough
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -279,6 +300,10 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["VALGRIND"] = "1"
     if args.valgrind_strict:
         os.environ["VALGRIND_STRICT"] = "1"
+    if args.leaks or args.leaks_strict:
+        os.environ["LEAKS"] = "1"
+    if args.leaks_strict:
+        os.environ["LEAKS_STRICT"] = "1"
 
     if args.list_only:
         collector = CollectPlugin()

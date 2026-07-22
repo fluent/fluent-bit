@@ -19,6 +19,8 @@ import opentelemetry.proto.collector
 import pytest
 import requests
 
+from utils.memory_check import memory_check_enabled
+
 VENDORED_OTEL_PROTO_ROOT = Path(__file__).resolve().parents[3] / "vendor"
 VENDORED_OTEL_PACKAGE_ROOT = VENDORED_OTEL_PROTO_ROOT / "opentelemetry"
 VENDORED_OTEL_PROTO_PACKAGE_ROOT = VENDORED_OTEL_PACKAGE_ROOT / "proto"
@@ -1646,7 +1648,7 @@ def test_in_forward_storage_limit_multi_output_prefers_deletable_solo_chunk():
 
 def test_in_forward_storage_limit_shared_success_route_deletes_old_chunk():
     service = StorageLimitService("in_forward_storage_limit_shared_success_output.yaml")
-    timeout = 30 if os.environ.get("VALGRIND") else 10
+    timeout = 30 if memory_check_enabled() else 10
     service.start()
 
     try:
