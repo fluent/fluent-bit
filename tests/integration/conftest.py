@@ -19,7 +19,7 @@ import yaml
 import logging
 import pytest
 
-from utils.fluent_bit_manager import fluent_bit_binary_version, parse_fluent_bit_version
+from utils.fluent_bit_manager import fluent_bit_binary_version
 from utils.test_service import stop_active_services
 
 # Configure logging
@@ -51,41 +51,9 @@ def pytest_configure(config):
 
 
 @pytest.hookimpl(tryfirst=True)
-def pytest_collection_modifyitems(config, items):
-    selected_version = fluent_bit_binary_version()
-
-    if selected_version is None:
-        return
-
-    for item in items:
-        marker = item.get_closest_marker("requires_fluent_bit")
-        if marker is None:
-            continue
-
-        if len(marker.args) != 1:
-            raise pytest.UsageError(
-                "requires_fluent_bit expects one minimum version argument"
-            )
-
-        required_text = str(marker.args[0])
-        required_version = parse_fluent_bit_version(required_text)
-        if required_version is None:
-            raise pytest.UsageError(
-                f"invalid requires_fluent_bit version: {required_text}"
-            )
-
-        if selected_version < required_version:
-            selected_text = ".".join(str(component) for component in selected_version)
-            item.add_marker(pytest.mark.skip(
-                reason=(
-                    f"requires Fluent Bit {required_text} or newer; "
-                    f"selected binary is {selected_text}"
-                )
-            ))
-
-@pytest.hookimpl(tryfirst=True)
 def pytest_sessionstart(session):
     logger.info("Starting pytest session")
+    fluent_bit_binary_version()
     #flb = FluentBitManager(GLOBAL_CONFIG['fluent_bit']['config_path'])
     #flb = FluentBitManager()
 

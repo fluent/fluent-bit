@@ -45,6 +45,7 @@ LEAKS_EXEC_SCRIPT = (
 
 logger = logging.getLogger(__name__)
 FLUENT_BIT_VERSION_PATTERN = re.compile(r"(?:Fluent Bit\s+)?v?(\d+)\.(\d+)\.(\d+)")
+_BINARY_VERSION_INFO_CACHE = {}
 
 class FluentBitStartupError(RuntimeError):
     pass
@@ -76,8 +77,11 @@ def parse_fluent_bit_version(version_text):
     return tuple(int(component) for component in match.groups())
 
 
-def fluent_bit_binary_version(binary_path=None):
+def _read_binary_version_info(binary_path=None):
     resolved_path = _resolve_binary_path(binary_path)
+
+    if resolved_path in _BINARY_VERSION_INFO_CACHE:
+        return _BINARY_VERSION_INFO_CACHE[resolved_path]
 
     try:
         result = subprocess.run(
@@ -89,7 +93,23 @@ def fluent_bit_binary_version(binary_path=None):
     except OSError:
         return None
 
-    return parse_fluent_bit_version(f"{result.stdout}\n{result.stderr}")
+    output = result.stdout.strip().splitlines()
+    if not output:
+        return None
+
+    version = output[0].replace("Fluent Bit ", "").strip()
+    commit = output[1].replace("Git commit: ", "").strip() if len(output) > 1 else "unknown"
+    version_info = (version, commit)
+    _BINARY_VERSION_INFO_CACHE[resolved_path] = version_info
+    return version_info
+
+
+def fluent_bit_binary_version(binary_path=None):
+    version_info = _read_binary_version_info(binary_path)
+    if version_info is None:
+        return None
+
+    return parse_fluent_bit_version(version_info[0])
 
 
 def fluent_bit_binary_supports_config_property(property_name, binary_path=None):
@@ -371,20 +391,13 @@ class FluentBitManager:
         self.process.wait(timeout=5)
 
     def get_version_info(self):
-        try:
-            result = subprocess.run(
-                [self.binary_absolute_path, '--version'],
-                capture_output=True,
-                text=True,
-                check=True,
+        version_info = _read_binary_version_info(self.binary_absolute_path)
+        if version_info is None:
+            raise FluentBitStartupError(
+                f"Unable to execute Fluent Bit binary {self.binary_absolute_path}"
             )
-            output = result.stdout.strip().split('\n')
-            version = output[0].replace('Fluent Bit ', '').strip()
-            commit = output[1].strip().replace('Git commit: ', '') if len(output) > 1 else "unknown"
-            return version, commit
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            logger.error("Error running Fluent Bit: %s", e)
-            raise FluentBitStartupError(f"Unable to execute Fluent Bit binary {self.binary_absolute_path}") from e
+
+        return version_info
 
     def create_results_directory(self, base_dir=None):
         if base_dir is None:
