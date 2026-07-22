@@ -1096,19 +1096,19 @@ static int process_update(struct flb_pe *ctx)
 
             /* Memory */
             if (ctx->enabled_flag & METRIC_MEMORY) {
-                /* Memory Size */
                 entry = flb_slist_entry_get(&split_list, 20);
                 tmp = entry->str;
-                /* Collect the number of Virtual Memory per process */
+                /* Collect the number of Virtual Memory per process. This is already being reported in bytes*/
                 if (pe_utils_str_to_uint64(tmp, &val) != -1) {
                     cmt_gauge_set(ctx->memory_bytes, ts, val, 4, (char *[]){ name, pid_str, ppid_str, "virtual_memory" });
                 }
 
                 entry = flb_slist_entry_get(&split_list, 21);
                 tmp = entry->str;
-                /* Collect the number of RSS per process */
-                if (pe_utils_str_to_uint64(tmp, &val) != -1) {
-                    cmt_gauge_set(ctx->memory_bytes, ts, val, 4, (char *[]){ name, pid_str, ppid_str, "rss" });
+                /* The metrics reports the number of pages. So we have to convert by also using the size of the page */
+                if (ctx->page_size > 0 && pe_utils_str_to_uint64(tmp, &val) != -1) {
+                    cmt_gauge_set(ctx->memory_bytes, ts, val * ctx->page_size,
+                                  4, (char *[]){ name, pid_str, ppid_str, "rss" });
                 }
 
                 /* Major Page Faults */
