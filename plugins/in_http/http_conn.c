@@ -107,6 +107,10 @@ static int http_conn_event(void *data)
                                 (void *) &conn->buf_data[conn->buf_len],
                                 available);
 
+        if (flb_io_net_is_retry(bytes)) {
+            return 0;
+        }
+
         if (bytes <= 0) {
             flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
             http_conn_del(conn);
