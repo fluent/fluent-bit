@@ -3589,9 +3589,12 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     int alloc_error = 0;
     struct flb_s3 *ctx = out_context;
     char *val_buf;
+    char *tmp_buf;
     char *key_str = NULL;
     size_t key_str_size = 0;
     size_t msgpack_size = bytes + bytes / 4;
+    size_t new_size;
+    size_t avail;
     size_t val_offset = 0;
     flb_sds_t out_buf;
     msgpack_object map;
@@ -3683,10 +3686,33 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                         val_offset++;
                     }
                     else {
-                        ret = flb_msgpack_to_json(val_buf + val_offset,
-                                                  msgpack_size - val_offset, &val,
-                                                  config->json_escape_unicode);
-                        if (ret < 0) {
+                        /*
+                         * Serialize the value as JSON, growing the scratch
+                         * buffer and retrying if it does not fit, so an
+                         * oversized value is neither truncated nor dropped.
+                         */
+                        ret = -1;
+                        while (1) {
+                            avail = msgpack_size - val_offset;
+                            if (avail > 1) {
+                                ret = flb_msgpack_to_json(val_buf + val_offset,
+                                                          avail, &val,
+                                                          config->json_escape_unicode);
+                                if (ret > 0) {
+                                    break;
+                                }
+                            }
+                            new_size = msgpack_size * 2;
+                            tmp_buf = flb_realloc(val_buf, new_size);
+                            if (tmp_buf == NULL) {
+                                flb_errno();
+                                alloc_error = 1;
+                                break;
+                            }
+                            val_buf = tmp_buf;
+                            msgpack_size = new_size;
+                        }
+                        if (alloc_error == 1) {
                             break;
                         }
                         val_offset += ret;
@@ -3712,6 +3738,15 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     }
 
     flb_log_event_decoder_destroy(&log_decoder);
+
+    /*
+     * If the scratch buffer could not be grown mid-chunk, do not return a
+     * partial payload: fail so the chunk can be retried as a whole.
+     */
+    if (alloc_error == 1) {
+        flb_free(val_buf);
+        return NULL;
+    }
 
     /* If nothing was read, destroy buffer */
     if (val_offset == 0) {
