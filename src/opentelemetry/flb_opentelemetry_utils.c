@@ -168,6 +168,10 @@ int flb_otel_utils_json_payload_get_wrapped_value(msgpack_object *wrapper,
             map = &kv_value->via.map;
 
             if (map->size == 1) {
+                if (map->ptr[0].key.type != MSGPACK_OBJECT_STR) {
+                    return -3;
+                }
+
                 kv_value = &map->ptr[0].val;
                 kv_key = &map->ptr[0].key.via.str;
 
@@ -179,6 +183,11 @@ int flb_otel_utils_json_payload_get_wrapped_value(msgpack_object *wrapper,
 
         if (internal_type == MSGPACK_OBJECT_ARRAY &&
             kv_value->type != MSGPACK_OBJECT_ARRAY) {
+            return -2;
+        }
+        else if (internal_type == MSGPACK_OBJECT_MAP &&
+                 kv_value->type != MSGPACK_OBJECT_ARRAY &&
+                 kv_value->type != MSGPACK_OBJECT_MAP) {
             return -2;
         }
 
@@ -335,9 +344,21 @@ int flb_otel_utils_json_payload_append_unwrapped_value(
                                                          value);
         }
         else if (type == MSGPACK_OBJECT_MAP) {
-            result = flb_otel_utils_json_payload_append_converted_kvlist(encoder,
-                                                          target_field,
-                                                          value);
+            if (value->type == MSGPACK_OBJECT_ARRAY) {
+                result = flb_otel_utils_json_payload_append_converted_kvlist(
+                            encoder,
+                            target_field,
+                            value);
+            }
+            else if (value->type == MSGPACK_OBJECT_MAP) {
+                result = flb_otel_utils_json_payload_append_converted_map(
+                            encoder,
+                            target_field,
+                            value);
+            }
+            else {
+                return -2;
+            }
         }
         else {
             return -2;
@@ -369,6 +390,11 @@ int flb_otel_utils_json_payload_append_converted_map(
     int                 result;
     size_t              index;
     msgpack_object_map *map;
+
+    if (encoder == NULL || object == NULL ||
+        object->type != MSGPACK_OBJECT_MAP) {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+    }
 
     map = &object->via.map;
 
@@ -419,6 +445,11 @@ int flb_otel_utils_json_payload_append_converted_array(struct flb_log_event_enco
     size_t                index;
     msgpack_object_array *array;
 
+    if (encoder == NULL || object == NULL ||
+        object->type != MSGPACK_OBJECT_ARRAY) {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+    }
+
     array = &object->via.array;
 
     result = flb_log_event_encoder_begin_array(encoder, target_field);
@@ -457,6 +488,11 @@ int flb_otel_utils_json_payload_append_converted_kvlist(
     size_t                index;
     msgpack_object_array *array;
     msgpack_object_map   *entry;
+
+    if (encoder == NULL || object == NULL ||
+        object->type != MSGPACK_OBJECT_ARRAY) {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+    }
 
     array = &object->via.array;
 
