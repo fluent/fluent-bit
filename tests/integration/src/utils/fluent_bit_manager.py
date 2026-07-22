@@ -19,6 +19,7 @@ import logging
 import os
 import platform
 from pathlib import Path
+import re
 import signal
 import shutil
 import subprocess
@@ -43,6 +44,7 @@ LEAKS_EXEC_SCRIPT = (
 )
 
 logger = logging.getLogger(__name__)
+FLUENT_BIT_VERSION_PATTERN = re.compile(r"(?:Fluent Bit\s+)?v?(\d+)\.(\d+)\.(\d+)")
 
 class FluentBitStartupError(RuntimeError):
     pass
@@ -64,6 +66,30 @@ def _default_binary_path():
 def _resolve_binary_path(binary_path=None):
     selected_path = binary_path or os.environ.get(ENV_FLB_BINARY_PATH) or _default_binary_path()
     return shutil.which(selected_path) or os.path.abspath(selected_path)
+
+
+def parse_fluent_bit_version(version_text):
+    match = FLUENT_BIT_VERSION_PATTERN.search(version_text)
+    if not match:
+        return None
+
+    return tuple(int(component) for component in match.groups())
+
+
+def fluent_bit_binary_version(binary_path=None):
+    resolved_path = _resolve_binary_path(binary_path)
+
+    try:
+        result = subprocess.run(
+            [resolved_path, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+
+    return parse_fluent_bit_version(f"{result.stdout}\n{result.stderr}")
 
 
 def fluent_bit_binary_supports_config_property(property_name, binary_path=None):

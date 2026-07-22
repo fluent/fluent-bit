@@ -23,8 +23,10 @@ import requests
 from src.utils import fluent_bit_manager as manager_module
 from src.utils.fluent_bit_manager import ENV_FLB_BINARY_PATH
 from src.utils.fluent_bit_manager import FluentBitManager
+from src.utils.fluent_bit_manager import fluent_bit_binary_version
 from src.utils.fluent_bit_manager import fluent_bit_binary_supports_config_property
 from src.utils.fluent_bit_manager import fluent_bit_input_supports_config_property
+from src.utils.fluent_bit_manager import parse_fluent_bit_version
 
 
 def test_binary_path_uses_environment_override(monkeypatch):
@@ -100,6 +102,34 @@ def test_input_capability_rejects_property_from_other_plugins(monkeypatch, tmp_p
     assert fluent_bit_input_supports_config_property(
         "tail", "inotify_watcher", str(binary_path)
     ) is False
+
+
+@pytest.mark.parametrize(
+    "version_text,expected",
+    [
+        ("Fluent Bit v5.1.0", (5, 1, 0)),
+        ("Fluent Bit 5.0.9\nGit commit: abc", (5, 0, 9)),
+        ("v6.2.1-dev", (6, 2, 1)),
+        ("unknown", None),
+    ],
+)
+def test_parse_fluent_bit_version(version_text, expected):
+    assert parse_fluent_bit_version(version_text) == expected
+
+
+def test_fluent_bit_binary_version_uses_selected_binary(monkeypatch, tmp_path):
+    binary_path = tmp_path / "fluent-bit"
+    binary_path.write_bytes(b"binary")
+    binary_path.chmod(0o755)
+    result = Mock(stdout="Fluent Bit v5.1.0", stderr="")
+
+    def fake_run(command, **kwargs):
+        assert command == [str(binary_path), "--version"]
+        return result
+
+    monkeypatch.setattr(manager_module.subprocess, "run", fake_run)
+
+    assert fluent_bit_binary_version(str(binary_path)) == (5, 1, 0)
 
 
 def test_send_signal_raises_when_process_is_missing():
