@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_coro.h>
+#include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_pthread.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -34,8 +35,8 @@
 #define FLB_TLS_CLIENT   "Fluent Bit"
 
 /* TLS backend return status on read/write */
-#define FLB_TLS_WANT_READ   -0x7e4
-#define FLB_TLS_WANT_WRITE  -0x7e6
+#define FLB_TLS_WANT_READ   FLB_IO_WANT_READ
+#define FLB_TLS_WANT_WRITE  FLB_IO_WANT_WRITE
 
 /* Cert Flags */
 #define FLB_TLS_CA_ROOT          1
