@@ -27,10 +27,6 @@ int find_map_entry_by_key(msgpack_object_map *map,
                           size_t match_index,
                           int case_insensitive);
 
-int json_payload_get_wrapped_value(msgpack_object *wrapper,
-                                   msgpack_object **value,
-                                   int            *type);
-
 int opentelemetry_is_grpc_content_type(const char *content_type);
 int opentelemetry_is_json_content_type(const char *content_type);
 int opentelemetry_is_protobuf_content_type(const char *content_type);
