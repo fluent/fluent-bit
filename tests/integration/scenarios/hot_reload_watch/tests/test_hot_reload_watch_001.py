@@ -74,8 +74,10 @@ class Service:
             if getattr(self, "flb", None) is not None and self.flb.process is not None:
                 self.flb.stop()
         finally:
-            stop_otlp_server()
-            shutil.rmtree(self.runtime_dir, ignore_errors=True)
+            try:
+                stop_otlp_server()
+            finally:
+                shutil.rmtree(self.runtime_dir, ignore_errors=True)
 
     def wait_for_log_count(self, expected_count, timeout=15):
         start_time = time.time()
@@ -102,6 +104,21 @@ class Service:
 def assert_reload_result(service):
     service.wait_for_log_count(2)
     assert service.read_message(1) == "after"
+
+
+def test_cleanup_removes_runtime_dir_when_otlp_stop_fails(monkeypatch):
+    service = Service("fluent-bit-before.yaml", "fluent-bit-after.yaml")
+    runtime_dir = service.runtime_dir
+
+    def fail_to_stop_otlp_server():
+        raise RuntimeError("OTLP server did not stop")
+
+    monkeypatch.setitem(globals(), "stop_otlp_server", fail_to_stop_otlp_server)
+
+    with pytest.raises(RuntimeError, match="OTLP server did not stop"):
+        service.stop()
+
+    assert not os.path.exists(runtime_dir)
 
 
 def test_hot_reload_watch_yaml_config_change():
