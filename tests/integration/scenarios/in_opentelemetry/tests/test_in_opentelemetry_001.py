@@ -919,7 +919,44 @@ def test_in_opentelemetry_rejects_invalid_logs_payload():
     assert len(data_storage["logs"]) == 0
 
 
-def test_in_opentelemetry_handles_json_logs_with_non_array_array_value():
+@pytest.mark.parametrize(
+    ("body", "expected_status", "expected_body"),
+    [
+        pytest.param(
+            {"arrayValue": {"values": "not-an-array"}},
+            400,
+            None,
+            id="array-value",
+        ),
+        pytest.param(
+            {"arrayValue": {"value": []}},
+            400,
+            None,
+            id="array-value-invalid-values-key",
+        ),
+        pytest.param(
+            {"kvlistValue": {"values": "not-a-kvlist"}},
+            400,
+            None,
+            id="kvlist-value",
+        ),
+        pytest.param(
+            {"kvlistValue": {}},
+            201,
+            {"kvlistValue": {"values": []}},
+            id="map-form-kvlist-value",
+        ),
+        pytest.param(
+            {"arrayValue": {}},
+            201,
+            {"arrayValue": {"values": []}},
+            id="empty-array-value",
+        ),
+    ],
+)
+def test_in_opentelemetry_handles_json_logs_with_invalid_any_value_container(
+    body, expected_status, expected_body
+):
     payload = {
         "resourceLogs": [
             {
@@ -927,11 +964,7 @@ def test_in_opentelemetry_handles_json_logs_with_non_array_array_value():
                     {
                         "logRecords": [
                             {
-                                "body": {
-                                    "arrayValue": {
-                                        "values": "not-an-array",
-                                    },
-                                },
+                                "body": body,
                             }
                         ],
                     }
@@ -950,9 +983,19 @@ def test_in_opentelemetry_handles_json_logs_with_non_array_array_value():
             content_type="application/json",
         )
 
-        assert response.status_code == 201
+        assert response.status_code == expected_status
         assert service.flb.process is not None
         assert service.flb.process.poll() is None
+
+        if expected_body is None:
+            with pytest.raises(TimeoutError):
+                read_stdout_otlp_json(service, "resourceLogs", timeout=2)
+        else:
+            output = read_stdout_otlp_json(service, "resourceLogs")
+            records = list(iter_log_records(output))
+
+            assert len(records) == 1
+            assert records[0]["record"]["body"] == expected_body
     finally:
         service.stop()
 
