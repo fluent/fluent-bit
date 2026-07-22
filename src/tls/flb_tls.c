@@ -162,7 +162,7 @@ static inline int io_tls_event_switch(struct flb_tls_session *session,
     event = &session->connection->event;
     event_loop = session->connection->evl;
 
-    if ((event->mask & mask) == 0) {
+    if ((event->mask & (MK_EVENT_READ | MK_EVENT_WRITE)) != mask) {
         ret = mk_event_add(event_loop,
                            event->fd,
                            FLB_ENGINE_EV_THREAD,
@@ -345,12 +345,19 @@ int flb_tls_set_client_thumbprints(struct flb_tls *tls, const char *thumbprints)
 
 int flb_tls_net_read(struct flb_tls_session *session, void *buf, size_t len)
 {
+    int             event_driven;
     time_t          timeout_timestamp;
     time_t          current_timestamp;
     struct flb_tls *tls;
     int             ret;
 
     tls = session->tls;
+    event_driven = FLB_FALSE;
+
+    if (session->connection->type == FLB_DOWNSTREAM_CONNECTION &&
+        MK_EVENT_IS_REGISTERED((&session->connection->event))) {
+        event_driven = FLB_TRUE;
+    }
 
     if (session->connection->net->io_timeout > 0) {
         timeout_timestamp = time(NULL) + session->connection->net->io_timeout;
@@ -365,6 +372,14 @@ int flb_tls_net_read(struct flb_tls_session *session, void *buf, size_t len)
     current_timestamp = time(NULL);
 
     if (ret == FLB_TLS_WANT_READ) {
+        if (event_driven) {
+            if (io_tls_event_switch(session, MK_EVENT_READ) == -1) {
+                return -1;
+            }
+
+            return FLB_TLS_WANT_READ;
+        }
+
         if (timeout_timestamp > 0 &&
             timeout_timestamp <= current_timestamp) {
             return ret;
@@ -373,12 +388,24 @@ int flb_tls_net_read(struct flb_tls_session *session, void *buf, size_t len)
         goto retry_read;
     }
     else if (ret == FLB_TLS_WANT_WRITE) {
+        if (event_driven) {
+            if (io_tls_event_switch(session, MK_EVENT_READ | MK_EVENT_WRITE) == -1) {
+                return -1;
+            }
+
+            return FLB_TLS_WANT_WRITE;
+        }
+
         goto retry_read;
     }
     else if (ret < 0) {
         return -1;
     }
     else if (ret == 0) {
+        return -1;
+    }
+
+    if (event_driven && io_tls_event_switch(session, MK_EVENT_READ) == -1) {
         return -1;
     }
 
