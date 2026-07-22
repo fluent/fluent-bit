@@ -62,6 +62,10 @@ static int fw_conn_event_internal(struct flb_connection *connection)
             flb_plg_trace(ctx->ins, "handshake status = %d", conn->handshake_status);
 
             ret = fw_prot_secure_forward_handshake(ctx->ins, conn);
+            if (flb_io_net_is_retry(ret)) {
+                return 0;
+            }
+
             if (ret == -1) {
                 flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
                 fw_conn_del(conn);
@@ -107,6 +111,10 @@ static int fw_conn_event_internal(struct flb_connection *connection)
         bytes = flb_io_net_read(connection,
                                 (void *) &conn->buf[conn->buf_len],
                                 available);
+
+        if (flb_io_net_is_retry(bytes)) {
+            return 0;
+        }
 
         if (bytes > 0) {
             read_bytes = (size_t) bytes;

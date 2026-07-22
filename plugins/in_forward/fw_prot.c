@@ -140,38 +140,46 @@ static inline void print_msgpack_error_code(struct flb_input_instance *in,
 
 /* Read a secure forward msgpack message for handshake */
 static int secure_forward_read(struct flb_input_instance *in,
-                               struct flb_connection *connection,
-                               char *buf, size_t size, size_t *out_len)
+                               struct fw_conn *conn, size_t size,
+                               size_t *out_len)
 {
     int ret;
     size_t off;
     size_t avail;
-    size_t buf_off = 0;
     msgpack_unpacked result;
 
     msgpack_unpacked_init(&result);
     while (1) {
-        avail = size - buf_off;
-        if (avail < 1) {
+        if (conn->buf_len >= size) {
             goto error;
         }
 
+        avail = size - conn->buf_len;
+
         /* Read the message */
-        ret = flb_io_net_read(connection, buf + buf_off, size - buf_off);
+        ret = flb_io_net_read(conn->connection,
+                              conn->buf + conn->buf_len, avail);
+        if (flb_io_net_is_retry(ret)) {
+            msgpack_unpacked_destroy(&result);
+            return ret;
+        }
+
         if (ret <= 0) {
             flb_plg_debug(in, "read %d byte(s)", ret);
             goto error;
         }
-        buf_off += ret;
+        conn->buf_len += ret;
 
         /* Validate */
         off = 0;
-        ret = msgpack_unpack_next(&result, buf, buf_off, &off);
+        ret = msgpack_unpack_next(&result, conn->buf, conn->buf_len, &off);
         switch (ret) {
         case MSGPACK_UNPACK_SUCCESS:
             msgpack_unpacked_destroy(&result);
-            *out_len = buf_off;
+            *out_len = conn->buf_len;
             return 0;
+        case MSGPACK_UNPACK_CONTINUE:
+            break;
         default:
             print_msgpack_error_code(in, ret, "handshake");
             goto error;
@@ -179,6 +187,7 @@ static int secure_forward_read(struct flb_input_instance *in,
     }
 
  error:
+    conn->buf_len = 0;
     msgpack_unpacked_destroy(&result);
     return -1;
 }
@@ -506,7 +515,6 @@ static int check_ping(struct flb_input_instance *ins,
                       flb_sds_t *out_shared_key_salt)
 {
     int ret;
-    char buf[1024];
     size_t out_len;
     size_t off;
     msgpack_unpacked result;
@@ -531,7 +539,12 @@ static int check_ping(struct flb_input_instance *ins,
     }
 
     /* Wait for client PING */
-    ret = secure_forward_read(ins, conn->connection, buf, sizeof(buf) - 1, &out_len);
+    ret = secure_forward_read(ins, conn, 1023, &out_len);
+    if (flb_io_net_is_retry(ret)) {
+        flb_free(serverside);
+        return ret;
+    }
+
     if (ret == -1) {
         flb_free(serverside);
         flb_plg_error(ins, "handshake error expecting PING");
@@ -541,7 +554,8 @@ static int check_ping(struct flb_input_instance *ins,
     /* Unpack message and validate */
     off = 0;
     msgpack_unpacked_init(&result);
-    ret = msgpack_unpack_next(&result, buf, out_len, &off);
+    ret = msgpack_unpack_next(&result, conn->buf, out_len, &off);
+    conn->buf_len = 0;
     if (ret != MSGPACK_UNPACK_SUCCESS) {
         flb_free(serverside);
         print_msgpack_error_code(ins, ret, "PING");
@@ -1206,6 +1220,11 @@ int fw_prot_secure_forward_handshake(struct flb_input_instance *ins,
     reason = flb_sds_create_size(32);
     flb_plg_debug(ins, "protocol: checking PING");
     ping_ret = check_ping(ins, conn, &shared_key_salt);
+    if (flb_io_net_is_retry(ping_ret)) {
+        flb_sds_destroy(reason);
+        return ping_ret;
+    }
+
     if (ping_ret == -1) {
         flb_plg_error(ins, "handshake error checking PING");
 
