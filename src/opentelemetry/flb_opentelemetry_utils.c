@@ -164,10 +164,6 @@ int flb_otel_utils_json_payload_get_wrapped_value(msgpack_object *wrapper,
             *type  = internal_type;
         }
 
-        if (value != NULL) {
-            *value = kv_value;
-        }
-
         if (kv_value->type == MSGPACK_OBJECT_MAP) {
             map = &kv_value->via.map;
 
@@ -175,15 +171,19 @@ int flb_otel_utils_json_payload_get_wrapped_value(msgpack_object *wrapper,
                 kv_value = &map->ptr[0].val;
                 kv_key = &map->ptr[0].key.via.str;
 
-                if (strncasecmp(kv_key->ptr, "values", kv_key->size) == 0) {
-                    if (value != NULL) {
-                        *value = kv_value;
-                    }
-                }
-                else {
+                if (strncasecmp(kv_key->ptr, "values", kv_key->size) != 0) {
                     return -3;
                 }
             }
+        }
+
+        if (internal_type == MSGPACK_OBJECT_ARRAY &&
+            kv_value->type != MSGPACK_OBJECT_ARRAY) {
+            return -2;
+        }
+
+        if (value != NULL) {
+            *value = kv_value;
         }
     }
     else {
