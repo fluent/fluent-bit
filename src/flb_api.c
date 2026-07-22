@@ -50,6 +50,9 @@ struct flb_api *flb_api_create()
     api->output_log_check = flb_output_log_check;
     api->custom_log_check = flb_custom_log_check;
 
+    api->output_get_all_properties = flb_output_get_all_properties;
+    api->input_get_all_properties = flb_input_get_all_properties;
+
     return api;
 }
 

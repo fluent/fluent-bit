@@ -1179,6 +1179,19 @@ const char *flb_output_get_property(const char *key, struct flb_output_instance 
     return flb_config_prop_get(key, &ins->properties);
 }
 
+/*
+ * Return a heap-allocated array of pointers to every property configured on
+ * 'ins'. The caller owns the array and must release it with flb_free(); the
+ * underlying flb_kv entries remain owned by the output instance. 'out_count'
+ * (optional) receives the number of properties. Returns NULL when the
+ * instance has no properties or on allocation failure.
+ */
+struct flb_kv **flb_output_get_all_properties(struct flb_output_instance *ins,
+                                              int *out_count)
+{
+    return flb_config_prop_get_all(&ins->properties, out_count);
+}
+
 #ifdef FLB_HAVE_METRICS
 void *flb_output_get_cmt_instance(struct flb_output_instance *ins)
 {
