@@ -237,6 +237,10 @@ static int flb_http_server_session_read(struct flb_http_server_session *session)
                              (void *) session->read_buffer,
                              session->read_buffer_size);
 
+    if (flb_io_net_is_retry(result)) {
+        return 0;
+    }
+
     if (result <= 0) {
         return -1;
     }
