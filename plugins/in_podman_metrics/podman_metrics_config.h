@@ -174,6 +174,8 @@ struct flb_in_metrics {
     int scrape_on_start;
     int scrape_interval;
     flb_sds_t podman_config_path;
+    flb_sds_t exclude_name_regex_text;
+    struct flb_regex *exclude_name_regex;
 
     /* container list */
     struct mk_list items;
