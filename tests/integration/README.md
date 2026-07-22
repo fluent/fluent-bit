@@ -568,6 +568,20 @@ Run tests with a simple checkbox progress view:
 ./tests/fluent-bit-test-suite/run_tests.py
 ```
 
+Run test files in parallel with pytest-xdist:
+
+```bash
+./tests/integration/run_tests.py -n 4 --dist loadfile
+```
+
+Use file-level distribution because tests in the same module can share helper
+servers and in-memory capture state. For macOS memory checks, begin with two
+workers to limit simultaneous `leaks` processes:
+
+```bash
+./tests/integration/run_tests.py --leaks-strict -n 2 --dist loadfile
+```
+
 Run a subset:
 
 ```bash
