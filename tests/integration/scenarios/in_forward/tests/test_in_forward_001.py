@@ -184,7 +184,17 @@ class StorageLimitService(Service):
         if not stream_dir.exists():
             return []
 
-        return [path.read_bytes() for path in stream_dir.rglob("*.flb") if path.is_file()]
+        contents = []
+
+        for path in stream_dir.rglob("*.flb"):
+            try:
+                if path.is_file():
+                    contents.append(path.read_bytes())
+            except FileNotFoundError:
+                # Chunk eviction can remove a file between discovery and open.
+                continue
+
+        return contents
 
     def file_output_contents(self):
         output_dir = Path(self.file_output_path)
