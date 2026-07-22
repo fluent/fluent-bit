@@ -91,6 +91,24 @@ def fluent_bit_binary_supports_config_property(property_name, binary_path=None):
     return property_marker.encode("utf-8") in binary_contents
 
 
+def fluent_bit_input_supports_config_property(plugin_name, property_name, binary_path=None):
+    resolved_path = _resolve_binary_path(binary_path)
+    property_marker = property_name.lower()
+
+    try:
+        result = subprocess.run(
+            [resolved_path, "-i", plugin_name, "-h"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+
+    help_output = f"{result.stdout}\n{result.stderr}".lower()
+    return property_marker in help_output
+
+
 class FluentBitManager:
     def __init__(self, config_path=None, binary_path=None):
         logger.info(f"config path {config_path}")
