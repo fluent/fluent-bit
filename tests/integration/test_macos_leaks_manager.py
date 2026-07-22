@@ -90,9 +90,9 @@ def test_leaks_supervisor_signals_fluent_bit_target(monkeypatch, tmp_path):
     assert manager.target_pid == 4321
     assert popen_calls[0]["command"] == [
         "/usr/bin/leaks",
-        "--quiet",
-        "--fullStacks",
-        "--atExit",
+        "-quiet",
+        "-fullStacks",
+        "-atExit",
         "--",
         "/bin/sh",
         "-c",
@@ -158,6 +158,22 @@ def test_leaks_rejects_non_macos_host(monkeypatch):
 
     with pytest.raises(FluentBitStartupError, match="only supported on macOS"):
         manager._build_leaks_command(["/tmp/fluent-bit"])
+
+
+def test_leaks_target_pid_timeout_force_stops_supervisor(monkeypatch, tmp_path):
+    process = FakeProcess()
+    monkeypatch.setenv("LEAKS", "1")
+    monkeypatch.setattr(manager_module, "LEAKS_TARGET_PID_TIMEOUT", 0)
+
+    manager = FluentBitManager("/tmp/fluent-bit.yaml", "/tmp/fluent-bit")
+    manager.process = process
+    manager.leaks_target_pid_file = str(tmp_path / "missing.pid")
+    manager.leaks_log_file = str(tmp_path / "leaks.log")
+
+    with pytest.raises(FluentBitStartupError, match="Timed out waiting"):
+        manager._wait_for_leaks_target_pid()
+
+    assert process.killed is True
 
 
 def test_results_directories_are_unique_for_concurrent_supervisors(tmp_path):

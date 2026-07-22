@@ -312,7 +312,7 @@ class FluentBitManager:
 
     def trigger_http_reload(self):
         url = f"http://127.0.0.1:{self.http_monitoring_port}/api/v2/reload"
-        response = requests.post(url)
+        response = requests.post(url, timeout=0.5)
         response.raise_for_status()
         return response.json()
 
@@ -340,9 +340,9 @@ class FluentBitManager:
 
         return [
             leaks_binary,
-            "--quiet",
-            "--fullStacks",
-            "--atExit",
+            "-quiet",
+            "-fullStacks",
+            "-atExit",
             "--",
             "/bin/sh",
             "-c",
@@ -371,6 +371,7 @@ class FluentBitManager:
                 )
             time.sleep(0.05)
 
+        self._force_stop()
         raise FluentBitStartupError(
             f"Timed out waiting for the Fluent Bit PID from leaks. See {self.leaks_log_file}"
         )

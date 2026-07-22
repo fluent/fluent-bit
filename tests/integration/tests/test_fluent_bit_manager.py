@@ -167,8 +167,9 @@ def test_trigger_http_reload_posts_to_reload_endpoint(monkeypatch):
     response.json.return_value = {"reload": "done"}
     response.raise_for_status.return_value = None
 
-    def fake_post(url):
+    def fake_post(url, timeout):
         assert url == "http://127.0.0.1:2020/api/v2/reload"
+        assert timeout == 0.5
         return response
 
     monkeypatch.setattr(manager_module.requests, "post", fake_post)
