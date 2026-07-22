@@ -265,6 +265,10 @@ def _xdist_uses_multiple_workers(passthrough: list[str]) -> bool:
     return False
 
 
+def _memory_check_environment_enabled(variable_name: str) -> bool:
+    return bool(os.environ.get(variable_name))
+
+
 def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(
         description="List and run the Fluent Bit Python test suite with a simple checkbox progress view."
@@ -299,8 +303,16 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     )
     args, passthrough = parser.parse_known_args(argv)
 
-    valgrind_requested = args.valgrind or args.valgrind_strict
-    leaks_requested = args.leaks or args.leaks_strict
+    valgrind_requested = (
+        args.valgrind
+        or args.valgrind_strict
+        or _memory_check_environment_enabled("VALGRIND")
+    )
+    leaks_requested = (
+        args.leaks
+        or args.leaks_strict
+        or _memory_check_environment_enabled("LEAKS")
+    )
     if valgrind_requested and leaks_requested:
         parser.error("Valgrind and macOS leaks cannot be enabled together")
     if leaks_requested and _xdist_uses_multiple_workers(passthrough):
