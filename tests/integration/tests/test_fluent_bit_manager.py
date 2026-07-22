@@ -132,6 +132,20 @@ def test_fluent_bit_binary_version_uses_selected_binary(monkeypatch, tmp_path):
     assert fluent_bit_binary_version(str(binary_path)) == (5, 1, 0)
 
 
+def test_fluent_bit_binary_version_is_cached(monkeypatch, tmp_path):
+    binary_path = tmp_path / "fluent-bit"
+    binary_path.write_bytes(b"binary")
+    binary_path.chmod(0o755)
+    result = Mock(stdout="Fluent Bit v5.1.0\nGit commit: abc123", stderr="")
+    run = Mock(return_value=result)
+    monkeypatch.setattr(manager_module.subprocess, "run", run)
+
+    assert fluent_bit_binary_version(str(binary_path)) == (5, 1, 0)
+    manager = FluentBitManager("/tmp/fluent-bit.yaml", binary_path=str(binary_path))
+    assert manager.get_version_info() == ("v5.1.0", "abc123")
+    run.assert_called_once()
+
+
 def test_send_signal_raises_when_process_is_missing():
     manager = FluentBitManager("/tmp/fluent-bit.yaml")
 
