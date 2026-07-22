@@ -48,8 +48,11 @@ static int tenant_policy_fail_tenant_a = FLB_FALSE;
 struct tenant_policy_server {
     struct flb_http_server server;
     struct flb_net_setup net_setup;
+    struct flb_config *config;
     struct mk_event_loop *event_loop;
     pthread_t thread;
+    int server_initialized;
+    int server_started;
     int thread_started;
     int stop;
 };
@@ -243,9 +246,40 @@ static void *tenant_policy_server_loop(void *data)
     return NULL;
 }
 
+static void stop_tenant_policy_server(struct tenant_policy_server *mock)
+{
+    if (mock->thread_started == FLB_TRUE) {
+        pthread_mutex_lock(&result_mutex);
+        mock->stop = FLB_TRUE;
+        pthread_mutex_unlock(&result_mutex);
+
+        pthread_join(mock->thread, NULL);
+        mock->thread_started = FLB_FALSE;
+    }
+
+    if (mock->server_started == FLB_TRUE) {
+        flb_http_server_stop(&mock->server);
+        mock->server_started = FLB_FALSE;
+    }
+
+    if (mock->server_initialized == FLB_TRUE) {
+        flb_http_server_destroy(&mock->server);
+        mock->server_initialized = FLB_FALSE;
+    }
+
+    if (mock->event_loop != NULL) {
+        mk_event_loop_destroy(mock->event_loop);
+        mock->event_loop = NULL;
+    }
+
+    if (mock->config != NULL) {
+        flb_config_exit(mock->config);
+        mock->config = NULL;
+    }
+}
+
 static int start_tenant_policy_server(struct tenant_policy_server *mock,
-                                      const char *port,
-                                      struct flb_config *config)
+                                      const char *port)
 {
     int ret;
     struct flb_http_server_options options;
@@ -255,8 +289,14 @@ static int start_tenant_policy_server(struct tenant_policy_server *mock,
     flb_http_server_options_init(&options);
     flb_net_setup_init(&mock->net_setup);
 
+    mock->config = flb_config_init();
+    if (mock->config == NULL) {
+        return -1;
+    }
+
     mock->event_loop = mk_event_loop_create(256);
     if (mock->event_loop == NULL) {
+        stop_tenant_policy_server(mock);
         return -1;
     }
 
@@ -267,32 +307,27 @@ static int start_tenant_policy_server(struct tenant_policy_server *mock,
     options.networking_flags = 0;
     options.networking_setup = &mock->net_setup;
     options.event_loop = mock->event_loop;
-    options.system_context = config;
+    options.system_context = mock->config;
     options.use_caller_event_loop = FLB_TRUE;
 
     ret = flb_http_server_init_with_options(&mock->server, &options);
     if (ret != 0) {
-        mk_event_loop_destroy(mock->event_loop);
-        mock->event_loop = NULL;
+        stop_tenant_policy_server(mock);
         return -1;
     }
+    mock->server_initialized = FLB_TRUE;
 
     ret = flb_http_server_start(&mock->server);
     if (ret != 0) {
-        flb_http_server_destroy(&mock->server);
-        mk_event_loop_destroy(mock->event_loop);
-        mock->event_loop = NULL;
+        stop_tenant_policy_server(mock);
         return -1;
     }
+    mock->server_started = FLB_TRUE;
 
     mock->stop = FLB_FALSE;
-    mock->thread_started = FLB_FALSE;
     ret = pthread_create(&mock->thread, NULL, tenant_policy_server_loop, mock);
     if (ret != 0) {
-        flb_http_server_stop(&mock->server);
-        flb_http_server_destroy(&mock->server);
-        mk_event_loop_destroy(mock->event_loop);
-        mock->event_loop = NULL;
+        stop_tenant_policy_server(mock);
         return -1;
     }
     mock->thread_started = FLB_TRUE;
@@ -300,25 +335,6 @@ static int start_tenant_policy_server(struct tenant_policy_server *mock,
     flb_time_msleep(500);
 
     return 0;
-}
-
-static void stop_tenant_policy_server(struct tenant_policy_server *mock)
-{
-    if (mock->event_loop == NULL) {
-        return;
-    }
-
-    pthread_mutex_lock(&result_mutex);
-    mock->stop = FLB_TRUE;
-    pthread_mutex_unlock(&result_mutex);
-
-    if (mock->thread_started == FLB_TRUE) {
-        pthread_join(mock->thread, NULL);
-    }
-    flb_http_server_stop(&mock->server);
-    flb_http_server_destroy(&mock->server);
-    mk_event_loop_destroy(mock->event_loop);
-    mock->event_loop = NULL;
 }
 
 #define JSON_BASIC "[12345678, {\"key\":\"value\"}]"
@@ -1035,8 +1051,7 @@ void flb_test_tenant_id_key_splits_requests()
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    ret = start_tenant_policy_server(&mock_server, LOKI_TENANT_SPLIT_PORT,
-                                     ctx->config);
+    ret = start_tenant_policy_server(&mock_server, LOKI_TENANT_SPLIT_PORT);
     TEST_CHECK(ret == 0);
 
     ret = flb_lib_push(ctx, in_ffd, tenant_a, strlen(tenant_a));
@@ -1109,7 +1124,7 @@ static void run_tenant_id_key_partial_handling(char *mode,
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    ret = start_tenant_policy_server(&mock_server, port, ctx->config);
+    ret = start_tenant_policy_server(&mock_server, port);
     TEST_CHECK(ret == 0);
 
     ret = flb_lib_push(ctx, in_ffd, tenant_a, strlen(tenant_a));
