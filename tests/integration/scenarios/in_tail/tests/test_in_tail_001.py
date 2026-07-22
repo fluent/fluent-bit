@@ -1047,7 +1047,7 @@ def test_in_tail_ignore_older_skips_stale_files(workspace):
         service.stop()
 
 
-def test_in_tail_ignore_active_older_files_stops_following_aged_file(workspace):
+def test_in_tail_ignore_active_older_files_resumes_updated_file(workspace):
     log_file = workspace / "active-aged.log"
     db_path = workspace / "tail.db"
 
@@ -1063,9 +1063,11 @@ def test_in_tail_ignore_active_older_files_stops_following_aged_file(workspace):
         time.sleep(4)
         service.assert_no_new_records_for(1, quiet_period=4)
         write_and_sync(log_file, "second-line\n")
-        service.assert_no_new_records_for(1, quiet_period=4)
+        records = service.wait_for_records(2, timeout=20)
     finally:
         service.stop()
+
+    assert_log_set(records, ["first-line", "second-line"])
 
 
 def test_in_tail_docker_mode_parses_and_flushes_docker_json_stream(workspace):
