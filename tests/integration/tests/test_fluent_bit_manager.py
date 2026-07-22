@@ -24,6 +24,7 @@ from src.utils import fluent_bit_manager as manager_module
 from src.utils.fluent_bit_manager import ENV_FLB_BINARY_PATH
 from src.utils.fluent_bit_manager import FluentBitManager
 from src.utils.fluent_bit_manager import fluent_bit_binary_supports_config_property
+from src.utils.fluent_bit_manager import fluent_bit_input_supports_config_property
 
 
 def test_binary_path_uses_environment_override(monkeypatch):
@@ -69,6 +70,35 @@ def test_binary_capability_rejects_missing_config_property(monkeypatch, tmp_path
 
     assert fluent_bit_binary_supports_config_property(
         "hot_reload.watch", str(binary_path)
+    ) is False
+
+
+def test_input_capability_detects_plugin_config_property(monkeypatch, tmp_path):
+    binary_path = tmp_path / "fluent-bit"
+    binary_path.write_bytes(b"binary")
+    binary_path.chmod(0o755)
+    result = Mock(stdout="workers  Set the number of listener workers", stderr="")
+
+    def fake_run(command, **kwargs):
+        assert command == [str(binary_path), "-i", "forward", "-h"]
+        return result
+
+    monkeypatch.setattr(manager_module.subprocess, "run", fake_run)
+
+    assert fluent_bit_input_supports_config_property(
+        "forward", "workers", str(binary_path)
+    ) is True
+
+
+def test_input_capability_rejects_property_from_other_plugins(monkeypatch, tmp_path):
+    binary_path = tmp_path / "fluent-bit"
+    binary_path.write_bytes(b"binary containing inotify_watcher elsewhere")
+    binary_path.chmod(0o755)
+    result = Mock(stdout="path  Path to tail", stderr="")
+    monkeypatch.setattr(manager_module.subprocess, "run", lambda *args, **kwargs: result)
+
+    assert fluent_bit_input_supports_config_property(
+        "tail", "inotify_watcher", str(binary_path)
     ) is False
 
 

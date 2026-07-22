@@ -12,7 +12,16 @@ import pytest
 import requests
 
 from server.http_server import data_storage, http_server_run
+from utils.fluent_bit_manager import fluent_bit_input_supports_config_property
 from utils.test_service import FluentBitTestService
+
+
+POLLING_CONFIGS = {
+    "tail_ignore_active_older.yaml",
+    "tail_ignore_older.yaml",
+    "tail_stat.yaml",
+    "tail_stat_db_compare_filename.yaml",
+}
 
 
 def _timezone_available(iana_zone):
@@ -44,6 +53,7 @@ class PersistentWriter:
 
 class Service:
     def __init__(self, config_file, *, tail_path, db_path):
+        self.config_name = config_file
         self.config_file = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../config", config_file)
         )
@@ -84,6 +94,14 @@ class Service:
             pass
 
     def start(self):
+        if (self.config_name in POLLING_CONFIGS and
+                not fluent_bit_input_supports_config_property(
+                    "tail", "inotify_watcher"
+                )):
+            pytest.skip(
+                "tail.inotify_watcher is not supported by the selected Fluent Bit binary"
+            )
+
         self.service.start()
         self.flb = self.service.flb
 

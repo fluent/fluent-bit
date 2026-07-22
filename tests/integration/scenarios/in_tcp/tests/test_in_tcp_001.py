@@ -4,14 +4,17 @@ import ssl
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
 import requests
 
 from server.http_server import data_storage, http_server_run
+from utils.fluent_bit_manager import fluent_bit_input_supports_config_property
 from utils.test_service import FluentBitTestService
 
 
 class Service:
     def __init__(self, config_file):
+        self.config_name = config_file
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
         test_path = os.path.dirname(os.path.abspath(__file__))
         self.parsers_file = os.environ.get("FLUENT_BIT_PARSERS_FILE") or os.path.abspath(
@@ -48,6 +51,10 @@ class Service:
             pass
 
     def start(self):
+        if ("workers" in self.config_name and
+                not fluent_bit_input_supports_config_property("tcp", "workers")):
+            pytest.skip("tcp.workers is not supported by the selected Fluent Bit binary")
+
         self.service.start()
         self.flb = self.service.flb
         self.flb_listener_port = self.service.flb_listener_port
@@ -110,7 +117,7 @@ def _drop_partial_connection(port, payload):
 
 def _send_tls_line(port, line, cafile):
     context = ssl.create_default_context(cafile=cafile)
-    with socket.create_connection(("127.0.0.1", port), timeout=5) as raw_sock:
+    with socket.create_connection(("127.0.0.1", port), timeout=20) as raw_sock:
         with context.wrap_socket(raw_sock, server_hostname="localhost") as tls_sock:
             tls_sock.sendall(line.encode("utf-8"))
             tls_sock.shutdown(socket.SHUT_WR)

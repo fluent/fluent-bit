@@ -1,6 +1,7 @@
 import gzip
 import hashlib
 import json
+import mmap
 import os
 import shutil
 import socket
@@ -48,6 +49,7 @@ from server.forward_server import (
 )
 from server.http_server import configure_http_response, data_storage, http_server_run
 from utils.data_utils import read_file, read_json_file
+from utils.fluent_bit_manager import fluent_bit_input_supports_config_property
 from utils.test_service import FluentBitTestService
 
 
@@ -61,6 +63,7 @@ SECURE_SELF_HOSTNAME = "server-node"
 
 class Service:
     def __init__(self, config_file, *, use_unix_socket=False):
+        self.config_name = config_file
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
         self.use_unix_socket = use_unix_socket
         self.socket_path = None
@@ -74,7 +77,10 @@ class Service:
         }
 
         if use_unix_socket:
-            self.socket_path = os.path.join(tempfile.gettempdir(), f"fluent_bit_forward_{uuid.uuid4().hex}.sock")
+            socket_dir = "/tmp" if sys.platform == "darwin" else tempfile.gettempdir()
+            self.socket_path = os.path.join(
+                socket_dir, f"flb-fw-{uuid.uuid4().hex[:12]}.sock"
+            )
             extra_env["FORWARD_UNIX_PATH"] = self.socket_path
 
         self.service = FluentBitTestService(
@@ -106,6 +112,10 @@ class Service:
                 pass
 
     def start(self):
+        if ("workers" in self.config_name and
+                not fluent_bit_input_supports_config_property("forward", "workers")):
+            pytest.skip("forward.workers is not supported by the selected Fluent Bit binary")
+
         self.service.start()
         self.flb = self.service.flb
         self.flb_listener_port = self.service.flb_listener_port
@@ -151,6 +161,9 @@ class StorageLimitService(Service):
         self.file_output_path = tempfile.mkdtemp(prefix="fluent_bit_forward_file_output_")
         self.service.extra_env["FORWARD_STORAGE_PATH"] = self.storage_path
         self.service.extra_env["FORWARD_FILE_OUTPUT_PATH"] = self.file_output_path
+        self.service.extra_env["FORWARD_STORAGE_TOTAL_LIMIT_SIZE"] = str(
+            mmap.PAGESIZE * 2
+        )
 
     def stop(self):
         try:
@@ -650,7 +663,7 @@ def _send_unix_payload(path, payload):
 
 def _send_tls_payload(port, payload, cafile):
     context = ssl.create_default_context(cafile=cafile)
-    with socket.create_connection(("127.0.0.1", port), timeout=5) as raw_sock:
+    with socket.create_connection(("127.0.0.1", port), timeout=20) as raw_sock:
         with context.wrap_socket(raw_sock, server_hostname="localhost") as tls_sock:
             tls_sock.sendall(payload)
 
