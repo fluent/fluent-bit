@@ -575,11 +575,15 @@ Run test files in parallel with pytest-xdist:
 ```
 
 Use file-level distribution because tests in the same module can share helper
-servers and in-memory capture state. For macOS memory checks, begin with two
-workers to limit simultaneous `leaks` processes:
+servers and in-memory capture state.
+
+Do not combine macOS `leaks` checks with multiple xdist workers. Concurrent
+`leaks` processes can fail to acquire Mach task ports. Run functional tests in
+parallel, then run memory verification serially:
 
 ```bash
-./tests/integration/run_tests.py --leaks-strict -n 2 --dist loadfile
+./tests/integration/run_tests.py -n 4 --dist loadfile
+./tests/integration/run_tests.py --leaks-strict
 ```
 
 Run a subset:

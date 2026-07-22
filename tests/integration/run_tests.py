@@ -247,6 +247,24 @@ def print_collected_tests(nodeids: list[str]) -> None:
             print(f"  [ ] {short_name_from_nodeid(nodeid)}")
 
 
+def _xdist_uses_multiple_workers(passthrough: list[str]) -> bool:
+    for index, argument in enumerate(passthrough):
+        worker_count = None
+
+        if argument in ("-n", "--numprocesses"):
+            if index + 1 < len(passthrough):
+                worker_count = passthrough[index + 1]
+        elif argument.startswith("--numprocesses="):
+            worker_count = argument.split("=", 1)[1]
+        elif argument.startswith("-n") and len(argument) > 2:
+            worker_count = argument[2:]
+
+        if worker_count is not None:
+            return worker_count not in ("0", "1")
+
+    return False
+
+
 def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(
         description="List and run the Fluent Bit Python test suite with a simple checkbox progress view."
@@ -285,6 +303,11 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     leaks_requested = args.leaks or args.leaks_strict
     if valgrind_requested and leaks_requested:
         parser.error("Valgrind and macOS leaks cannot be enabled together")
+    if leaks_requested and _xdist_uses_multiple_workers(passthrough):
+        parser.error(
+            "macOS leaks checks require one pytest worker because concurrent "
+            "leaks processes can fail to acquire Mach task ports"
+        )
 
     return args, passthrough
 

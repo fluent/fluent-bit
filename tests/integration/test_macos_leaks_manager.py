@@ -132,6 +132,26 @@ def test_leaks_strict_fails_when_leaks_reports_leak(monkeypatch, tmp_path):
         manager.stop()
 
 
+def test_leaks_supervisor_failure_still_terminates_target(monkeypatch):
+    process = FakeProcess(return_code=255)
+    process.returncode = 255
+    delivered_signals = []
+    monkeypatch.setenv("LEAKS", "1")
+    monkeypatch.setattr(
+        manager_module.os,
+        "kill",
+        lambda pid, signal_number: delivered_signals.append((pid, signal_number)),
+    )
+
+    manager = FluentBitManager("/tmp/fluent-bit.yaml", "/tmp/fluent-bit")
+    manager.process = process
+    manager.target_pid = 4321
+
+    manager.stop()
+
+    assert delivered_signals == [(4321, signal.SIGTERM)]
+
+
 def test_leaks_rejects_non_macos_host(monkeypatch):
     monkeypatch.setattr(manager_module.platform, "system", lambda: "Linux")
     manager = FluentBitManager("/tmp/fluent-bit.yaml", "/tmp/fluent-bit")
