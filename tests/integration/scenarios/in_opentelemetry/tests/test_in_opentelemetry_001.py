@@ -851,7 +851,24 @@ def test_in_opentelemetry_rejects_invalid_logs_payload():
     assert len(data_storage["logs"]) == 0
 
 
-def test_in_opentelemetry_handles_json_logs_with_non_array_array_value():
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(
+            {"arrayValue": {"values": "not-an-array"}},
+            id="array-value",
+        ),
+        pytest.param(
+            {"kvlistValue": {"values": "not-a-kvlist"}},
+            id="kvlist-value",
+        ),
+        pytest.param(
+            {"kvlistValue": {}},
+            id="map-form-kvlist-value",
+        ),
+    ],
+)
+def test_in_opentelemetry_handles_json_logs_with_invalid_any_value_container(body):
     payload = {
         "resourceLogs": [
             {
@@ -859,11 +876,7 @@ def test_in_opentelemetry_handles_json_logs_with_non_array_array_value():
                     {
                         "logRecords": [
                             {
-                                "body": {
-                                    "arrayValue": {
-                                        "values": "not-an-array",
-                                    },
-                                },
+                                "body": body,
                             }
                         ],
                     }
