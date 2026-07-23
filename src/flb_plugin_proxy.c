@@ -361,6 +361,7 @@ static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
     out->proxy = proxy;
     out->flags = def->flags;
     out->name  = flb_strdup(def->name);
+    out->config_map = def->config_map;
 
     /* If event_type is unset (0) then default to logs (this is the current behavior) */
     if (def->event_type == 0) {
@@ -404,6 +405,7 @@ static int flb_proxy_register_input(struct flb_plugin_proxy *proxy,
     in->flags = def->flags | FLB_INPUT_THREADED;
     in->name  = flb_strdup(def->name);
     in->description = def->description;
+    in->config_map = def->config_map;
 
     mk_list_add(&in->_head, &config->in_plugins);
 
@@ -505,6 +507,7 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
      * - plugin type (or proxy type, e.g: Golang)
      * - plugin name
      * - plugin description
+     * - plugin's configuration 
      */
 
     /* Do the registration */
