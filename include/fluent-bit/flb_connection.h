@@ -157,6 +157,7 @@ struct flb_connection {
     struct flb_coro *event_coroutine;
     flb_connection_event_callback event_callback;
     int event_wakeup_pending;
+    int event_release_pending;
 
     /* Per-connection I/O flags */
     int flags;
