@@ -15,7 +15,7 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update && \
     apt-get install -y cmake=3.13.4-1 cmake-data=3.13.4-1 \
     curl ca-certificates build-essential \
-    make bash sudo wget unzip dh-make \
+    make bash sudo dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
@@ -28,7 +28,7 @@ ENV DEBIAN_FRONTEND noninteractive
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential \
-    cmake make bash sudo wget unzip dh-make \
+    cmake make bash sudo dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
@@ -41,7 +41,7 @@ ENV DEBIAN_FRONTEND noninteractive
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential \
-    cmake make bash sudo wget unzip dh-make \
+    cmake make bash sudo dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
