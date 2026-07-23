@@ -661,11 +661,9 @@ static void in_fw_pause(void *data, struct flb_config *config)
             return;
         }
 
-        if (ctx->state == FW_INSTANCE_STATE_RUNNING) {
-            fw_conn_del_all(ctx);
-        }
-
+        ctx->state = FW_INSTANCE_STATE_PAUSED;
         ctx->is_paused = FLB_TRUE;
+        fw_conn_del_all(ctx);
         ret = pthread_mutex_unlock(&ctx->conn_mutex);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "cannot unlock collector mutex");

@@ -249,22 +249,10 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     conn->compression_type = FLB_COMPRESSION_ALGORITHM_NONE;
     conn->d_ctx = NULL;
 
-    /* Run TLS connection callbacks in a downstream-owned coroutine. */
-    if (connection->tls_session != NULL) {
-        ret = flb_downstream_conn_event_register(connection,
-                                                 fw_conn_event,
-                                                 MK_EVENT_READ);
-    }
-    else {
-        connection->event.type = FLB_ENGINE_EV_CUSTOM;
-        connection->event.handler = fw_conn_event;
-
-        ret = mk_event_add(flb_engine_evl_get(),
-                           connection->fd,
-                           FLB_ENGINE_EV_CUSTOM,
-                           MK_EVENT_READ,
-                           &connection->event);
-    }
+    /* Run connection callbacks in a downstream-owned coroutine. */
+    ret = flb_downstream_conn_event_register(connection,
+                                             fw_conn_event,
+                                             MK_EVENT_READ);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not register new connection");
         if (conn->helo != NULL) {
@@ -339,6 +327,7 @@ static void fw_conn_drop(struct flb_connection *connection)
     connection->user_data = NULL;
 
     if (conn != NULL) {
+        flb_plg_trace(conn->ctx->ins, "drop connection fd=%i", connection->fd);
         conn->connection = NULL;
         fw_conn_release(conn);
     }
