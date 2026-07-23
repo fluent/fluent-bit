@@ -7,6 +7,7 @@ if(NOT DEFINED FLB_PATH_ROOT_BINARY_DIR)
 endif()
 
 include_directories(
+  ${FLB_PATH_ROOT_BINARY_DIR}/generated/include
   ${FLB_PATH_ROOT_SOURCE}/include/
   ${FLB_PATH_ROOT_SOURCE}/lib/
 
