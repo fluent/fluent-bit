@@ -124,6 +124,18 @@ struct flb_config_map upstream_net[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "net.http_proxy", NULL,
+     0, FLB_TRUE, offsetof(struct flb_net_setup, http_proxy),
+     "Set the http proxy"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "net.no_proxy", NULL,
+     0, FLB_TRUE, offsetof(struct flb_net_setup, no_proxy),
+     "Set no proxy domains (FQDN)"
+    },
+
+    {
      FLB_CONFIG_MAP_INT, "net.keepalive_max_recycle", "2000",
      0, FLB_TRUE, offsetof(struct flb_net_setup, keepalive_max_recycle),
      "Set maximum number of times a keepalive connection can be used "
@@ -207,6 +219,16 @@ struct mk_list *flb_upstream_get_config_map(struct flb_config *config)
             if (strcmp(upstream_net[config_index].name,
                        "net.dns.prefer_ipv6") == 0) {
                 upstream_net[config_index].def_value = "true";
+            }
+        }
+        if (config->http_proxy != NULL) {
+            if (strcmp(upstream_net[config_index].name, "http_proxy") == 0) {
+                upstream_net[config_index].def_value = config->http_proxy;
+            }
+        }
+        if (config->no_proxy != NULL) {
+            if (strcmp(upstream_net[config_index].name, "no_proxy") == 0) {
+                upstream_net[config_index].def_value = config->http_proxy;
             }
         }
     }
