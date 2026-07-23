@@ -31,6 +31,9 @@
 
 struct flb_connection;
 
+#define FLB_DOWNSTREAM_CONN_RELEASED  0
+#define FLB_DOWNSTREAM_CONN_DEFERRED  1
+
 /* Downstream handler */
 struct flb_downstream {
     struct flb_stream      base;
@@ -83,6 +86,15 @@ void flb_downstream_pause(struct flb_downstream *stream);
 void flb_downstream_resume(struct flb_downstream *stream);
 
 int flb_downstream_conn_release(struct flb_connection *connection);
+
+/*
+ * The callback and any ingestion it invokes run on config->coro_stack_size.
+ * Callers must size that stack for their complete callback path.
+ */
+int flb_downstream_conn_event_register(struct flb_connection *connection,
+                                       int (*callback)(void *data),
+                                       int mask);
+void flb_downstream_conn_event_resume(struct flb_connection *connection);
 
 int flb_downstream_conn_pending_destroy_list(struct mk_list *list);
 int flb_downstream_conn_pending_destroy(struct flb_downstream *stream);
