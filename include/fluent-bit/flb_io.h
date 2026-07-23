@@ -39,6 +39,15 @@
 /* Other features */
 #define FLB_IO_IPV6       32  /* network I/O uses IPv6                  */
 
+/* Retryable network I/O results */
+#define FLB_IO_WANT_READ   -0x7e4
+#define FLB_IO_WANT_WRITE  -0x7e6
+
+static inline int flb_io_net_is_retry(ssize_t result)
+{
+    return result == FLB_IO_WANT_READ || result == FLB_IO_WANT_WRITE;
+}
+
 struct flb_connection;
 
 int flb_io_net_accept(struct flb_connection *connection,
