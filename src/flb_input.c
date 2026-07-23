@@ -771,7 +771,14 @@ int flb_input_set_property(struct flb_input_instance *ins,
         }
         kv->val = tmp;
     }
-    else if (strncasecmp("oauth2", k, 6) == 0 && tmp) {
+    else if (strncasecmp("oauth2.", k, 7) == 0 && tmp) {
+        if ((ins->p->flags & FLB_INPUT_OAUTH2_JWT) == 0) {
+            flb_error("[config] input plugin '%s' does not support OAuth2 JWT validation",
+                      ins->p->name);
+            flb_sds_destroy(tmp);
+            return -1;
+        }
+
         kv = flb_kv_item_create(&ins->oauth2_jwt_properties, (char *) k, NULL);
         if (!kv) {
             if (tmp) {
@@ -1331,6 +1338,12 @@ int flb_input_oauth2_jwt_property_check(struct flb_input_instance *ins,
      * it might receive OAuth2 JWT settings.
      */
     if (mk_list_size(&ins->oauth2_jwt_properties) > 0) {
+        if ((ins->p->flags & FLB_INPUT_OAUTH2_JWT) == 0) {
+            flb_error("[config] input plugin '%s' does not support OAuth2 JWT validation",
+                      ins->p->name);
+            return -1;
+        }
+
         ret = flb_config_map_properties_check(ins->p->name,
                                               &ins->oauth2_jwt_properties,
                                               ins->oauth2_jwt_config_map);

@@ -1,0 +1,12 @@
+service:
+  flush: 1
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: elasticsearch
+      oauth2.validate: true
+
+  outputs:
+    - name: 'null'
+      match: '*'

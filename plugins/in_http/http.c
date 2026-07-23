@@ -192,5 +192,6 @@ struct flb_input_plugin in_http_plugin = {
     .cb_resume    = NULL,
     .cb_exit      = in_http_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_NET_SERVER | FLB_INPUT_HTTP_SERVER | FLB_IO_OPT_TLS
+    .flags        = FLB_INPUT_NET_SERVER | FLB_INPUT_HTTP_SERVER |
+                    FLB_INPUT_OAUTH2_JWT | FLB_IO_OPT_TLS
 };

@@ -469,6 +469,7 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
     jsmntok_t *tokens;
     char tmp_num[32];
     uint64_t new_expires_in = 0;
+    int expires_in_present = FLB_FALSE;
 
     jsmn_init(&parser);
     tokens = flb_calloc(1, sizeof(jsmntok_t) * tokens_size);
@@ -537,6 +538,8 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
             }
         }
         else if (key_cmp(key, key_len, "expires_in") == 0) {
+            expires_in_present = FLB_TRUE;
+
             if (val_len <= 0 || val_len >= sizeof(tmp_num)) {
                 break;
             }
@@ -557,16 +560,20 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
             }
 
             new_expires_in = parsed_expires_in;
-            new_expires_in -= (new_expires_in / 10);
         }
     }
 
     flb_free(tokens);
 
-    if (!new_access_token || !new_token_type || new_expires_in <= ctx->refresh_skew) {
+    if (!new_access_token || !new_token_type ||
+        (expires_in_present == FLB_TRUE && new_expires_in == 0)) {
         flb_sds_destroy(new_access_token);
         flb_sds_destroy(new_token_type);
         return -1;
+    }
+
+    if (expires_in_present == FLB_FALSE) {
+        new_expires_in = FLB_OAUTH2_DEFAULT_EXPIRES;
     }
 
     oauth2_reset_state(ctx);
@@ -1195,6 +1202,7 @@ static int oauth2_refresh_locked(struct flb_oauth2 *ctx)
 static int oauth2_token_needs_refresh(struct flb_oauth2 *ctx, int force_refresh)
 {
     time_t now;
+    time_t refresh_skew;
 
     if (force_refresh) {
         return FLB_TRUE;
@@ -1210,7 +1218,12 @@ static int oauth2_token_needs_refresh(struct flb_oauth2 *ctx, int force_refresh)
         return FLB_TRUE;
     }
 
-    if (now >= (ctx->expires_at - ctx->refresh_skew)) {
+    refresh_skew = ctx->refresh_skew;
+    if (ctx->expires_in <= (uint64_t) refresh_skew) {
+        refresh_skew = ctx->expires_in / 10;
+    }
+
+    if (now >= (ctx->expires_at - refresh_skew)) {
         return FLB_TRUE;
     }
 

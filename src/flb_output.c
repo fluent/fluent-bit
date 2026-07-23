@@ -976,7 +976,14 @@ int flb_output_set_property(struct flb_output_instance *ins,
         }
         kv->val = tmp;
     }
-    else if (strncasecmp("oauth2", k, 6) == 0 && tmp) {
+    else if (strncasecmp("oauth2.", k, 7) == 0 && tmp) {
+        if ((ins->p->flags & FLB_OUTPUT_OAUTH2_CLIENT) == 0) {
+            flb_error("[config] output plugin '%s' does not support OAuth2 authentication",
+                      ins->p->name);
+            flb_sds_destroy(tmp);
+            return -1;
+        }
+
         kv = flb_kv_item_create(&ins->oauth2_properties, (char *) k, NULL);
         if (!kv) {
             if (tmp) {
@@ -1234,6 +1241,12 @@ int flb_output_oauth2_property_check(struct flb_output_instance *ins,
      * it might receive OAuth2 settings.
      */
     if (mk_list_size(&ins->oauth2_properties) > 0) {
+        if ((ins->p->flags & FLB_OUTPUT_OAUTH2_CLIENT) == 0) {
+            flb_error("[config] output plugin '%s' does not support OAuth2 authentication",
+                      ins->p->name);
+            return -1;
+        }
+
         ret = flb_config_map_properties_check(ins->p->name,
                                               &ins->oauth2_properties,
                                               ins->oauth2_config_map);
