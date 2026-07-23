@@ -30,12 +30,12 @@
 #include <ctype.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#ifndef _MSC_VER
+#ifndef _WIN32
 #include <glob.h>
 #endif
 
 #ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 #include <strsafe.h>
 #define PATH_MAX MAX_PATH
 #endif
@@ -280,7 +280,7 @@ static int local_init(struct local_ctx *ctx, char *file)
     char *p;
 
     if (file) {
-#ifdef _MSC_VER
+#ifdef _WIN32
         p = _fullpath(path, file, PATH_MAX + 1);
 #else
         p = realpath(file, path);
@@ -294,7 +294,7 @@ static int local_init(struct local_ctx *ctx, char *file)
 #endif
 
     /* lookup path ending and truncate */
-#ifdef _MSC_VER
+#ifdef _WIN32
     end = strrchr(path, '\\');
 #else
     end = strrchr(path, '/');

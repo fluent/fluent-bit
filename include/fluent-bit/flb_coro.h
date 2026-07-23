@@ -38,6 +38,11 @@
 
 #include <stdlib.h>
 #include <limits.h>
+
+/* MinGW-w64's winpthreads does not define PTHREAD_STACK_MIN */
+#ifndef PTHREAD_STACK_MIN
+#define PTHREAD_STACK_MIN 16384
+#endif
 #include <libco.h>
 
 #ifdef FLB_HAVE_VALGRIND

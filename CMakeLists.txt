@@ -85,6 +85,20 @@ if (MSVC)
   add_compile_options(/MT)
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
+  if (MINGW)
+    # MinGW-w64 headers only declare the POSIX thread-safe time functions
+    # (gmtime_r and friends) when the feature test macro is set.
+    add_definitions(-D_POSIX_THREAD_SAFE_FUNCTIONS=200112L)
+
+    # The Winsock APIs take 'char *' buffers where POSIX takes 'void *',
+    # which trips -Wincompatible-pointer-types across the code base. MSVC
+    # reports the same mismatches as warnings; keep GCC (>= 14 makes them
+    # errors by default) at warning level too unless the strict option is
+    # enabled explicitly.
+    if(NOT FLB_COMPILER_STRICT_POINTER_TYPES)
+      add_compile_options(-Wno-error=incompatible-pointer-types)
+    endif()
+  endif()
   if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # Prevent the toolchain from emitting an executable stack on Linux targets,
     # which triggers kernel warnings (e.g. "started with executable stack") and
@@ -570,7 +584,7 @@ endif()
 
 # Harden release binary against security vulnerabilities
 if(FLB_SECURITY STREQUAL "On" OR (FLB_SECURITY STREQUAL "ReleaseOnly" AND FLB_RELEASE))
-  if (NOT MSVC)
+  if (NOT WIN32)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-z,relro,-z,now")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-z,noexecstack")
     if(NOT FLB_SMALL)
@@ -866,8 +880,10 @@ if(FLB_TLS)
   option(ENABLE_PROGRAMS OFF)
   option(INSTALL_MBEDTLS_HEADERS OFF)
 
-  # Link OpenSSL statically on Windows.
-  if (FLB_SYSTEM_WINDOWS)
+  # Link OpenSSL statically on MSVC Windows builds only.
+  # MinGW cross-compiles use dynamic OpenSSL to avoid GNU ld link-order issues
+  # with static archives that have cascading system library dependencies.
+  if (FLB_SYSTEM_WINDOWS AND MSVC)
     set(OPENSSL_USE_STATIC_LIBS ON)
     set(OPENSSL_MSVC_STATIC_RT  ON)
   endif()
@@ -1139,7 +1155,9 @@ check_c_source_compiles("
       close(sock);
       return 0;
   }" FLB_HAVE_UNIX_SOCKET)
-if(FLB_HAVE_UNIX_SOCKET)
+if(FLB_HAVE_UNIX_SOCKET AND NOT FLB_SYSTEM_WINDOWS)
+  # MinGW headers can satisfy the sys/un.h probe, but the Windows unix
+  # socket paths are untested; keep feature parity with MSVC builds.
   FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
 endif()
 
@@ -1171,7 +1189,10 @@ if(FLB_CONFIG_YAML)
       set(LIBYAML_LIBRARY_DIRS "${FLB_LIBYAML_DIR}/lib")
       set(LIBYAML_INCLUDEDIR "${FLB_LIBYAML_DIR}/include")
       message(STATUS "specified libyaml dir: ${FLB_LIBYAML_DIR}")
-      if (MSVC)
+      if (FLB_SYSTEM_WINDOWS)
+        # FLB_LIBYAML_DIR on Windows carries a static libyaml (the MSVC CI
+        # uses vcpkg static triplets, MinGW cross-builds a static libyaml),
+        # so keep <yaml.h> from declaring dllimport symbols.
         FLB_DEFINITION(YAML_DECLARE_STATIC)
       endif ()
       set(FLB_HAVE_LIBYAML 1)
@@ -1234,7 +1255,9 @@ if (FLB_BENCHMARKS)
 endif()
 
 # Build tools/xxd-c
-add_subdirectory(tools/xxd-c)
+if(NOT CMAKE_CROSSCOMPILING)
+  add_subdirectory(tools/xxd-c)
+endif()
 
 # Static configuration generator (using xxd-c)
 if(FLB_STATIC_CONF)
@@ -1257,13 +1280,29 @@ if(FLB_PROXY_GO)
   FLB_DEFINITION(FLB_HAVE_PROXY_GO)
 endif()
 
+if("${GNU_HOST}" STREQUAL "" AND CMAKE_CROSSCOMPILING
+   AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    # Derive the autoconf host triple from the cross compiler so the
+    # external autotools sub-builds (libbacktrace, jemalloc) configure for
+    # the target instead of silently building host objects.
+    get_filename_component(FLB_C_COMPILER_NAME "${CMAKE_C_COMPILER}" NAME)
+    string(REGEX REPLACE "-gcc(-[0-9.]+)?$" "" GNU_HOST "${FLB_C_COMPILER_NAME}")
+    if(GNU_HOST STREQUAL FLB_C_COMPILER_NAME)
+        # Compiler name carries no triple prefix; leave GNU_HOST unset.
+        set(GNU_HOST "")
+    endif()
+endif()
+
 if("${GNU_HOST}" STREQUAL "")
     set(AUTOCONF_HOST_OPT "")
 else()
     set(AUTOCONF_HOST_OPT "--host=${GNU_HOST}")
 endif()
 
-if(CMAKE_GENERATOR MATCHES "Ninja" AND NOT FLB_SYSTEM_WINDOWS)
+# The $(MAKE) escape only exists in the Make-family generators; under Ninja
+# the external autotools sub-builds always run with plain make on the build
+# host, including when cross-compiling for a Windows target.
+if(CMAKE_GENERATOR MATCHES "Ninja")
   set(EXTERNAL_BUILD_TOOL "make")
 else()
   set(EXTERNAL_BUILD_TOOL "$(MAKE)")
@@ -1333,6 +1372,12 @@ if(FLB_REGEX)
   endif()
   add_subdirectory(${FLB_PATH_LIB_ONIGMO} EXCLUDE_FROM_ALL)
   target_include_directories(onigmo-static INTERFACE ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_ONIGMO})
+  if(CMAKE_CROSSCOMPILING AND WIN32)
+    # Onigmo's configure_file(config.h.cmake config.h) misdetects when cross
+    # compiling; overwrite it with the prebuilt Windows config it ships.
+    file(COPY ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_ONIGMO}/win32/config.h
+         DESTINATION ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_ONIGMO}/)
+  endif()
 endif()
 
 # tutf8e (UTF8 Encoding)

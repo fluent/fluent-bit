@@ -17,7 +17,7 @@
  *  limitations under the License.
  */
 
-#include <Windows.h>
+#include <windows.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <fcntl.h>

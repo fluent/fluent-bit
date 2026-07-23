@@ -42,8 +42,10 @@
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
 #define strerror_r(errno,buf,len) strerror_s(buf,len,errno)
 
+#ifndef __MINGW32__
 typedef SSIZE_T ssize_t;
 typedef unsigned mode_t;
+#endif
 
 static inline char* dirname(const char *path)
 {

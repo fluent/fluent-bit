@@ -435,7 +435,7 @@ CHECK_TYPE_SIZE("off_t" EVENT__SIZEOF_OFF_T LANGUAGE C)
 
 # Winssck.
 if (_MSC_VER)
-    list(APPEND CMAKE_EXTRA_INCLUDE_FILES BaseTsd.h)
+    list(APPEND CMAKE_EXTRA_INCLUDE_FILES basetsd.h)
 endif()
 CHECK_TYPE_SIZE("ssize_t" EVENT__SIZEOF_SSIZE_T_LOWER LANGUAGE C)
 CHECK_TYPE_SIZE("SSIZE_T" EVENT__SIZEOF_SSIZE_T_UPPER LANGUAGE C)
@@ -786,6 +786,13 @@ else (EVENT__BUILD_SHARED_LIBRARIES)
   set(EVENT__LIBRARY_TYPE STATIC)
 endif (EVENT__BUILD_SHARED_LIBRARIES)
 
+if(MINGW)
+  # MinGW-w64 declares strtok_r in <string.h>, but libevent's WIN32 function
+  # check (CheckFunctionExistsEx.c takes the function's address) only sees the
+  # force-included winsock headers, so it mis-detects strtok_r as absent and
+  # then defines a conflicting static strtok_r in evdns.c. Set it explicitly.
+  set(EVENT__HAVE_STRTOK_R 1)
+endif()
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/event-config.h.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/include/event2/event-config.h
@@ -822,6 +829,14 @@ add_library(event ${EVENT__LIBRARY_TYPE}
     ${HDR_PUBLIC}
     ${SRC_CORE}
     ${SRC_EXTRA})
+
+if(WIN32)
+    # Record the winsock dependency on the static archives too, so
+    # consumers order -lws2_32 after them (GNU ld resolves left to right).
+    target_link_libraries(event_core ${LIB_PLATFORM})
+    target_link_libraries(event_extra ${LIB_PLATFORM})
+    target_link_libraries(event ${LIB_PLATFORM})
+endif()
 
 if (EVENT__BUILD_SHARED_LIBRARIES)
     # Prepare static library to be linked to tests that need hidden symbols

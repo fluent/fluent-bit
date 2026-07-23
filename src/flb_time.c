@@ -75,7 +75,7 @@ int flb_time_get(struct flb_time *tm)
 /* A portable function to sleep N msec */
 int flb_time_msleep(uint32_t ms)
 {
-#ifdef _MSC_VER
+#ifdef _WIN32
     Sleep((DWORD) ms);
     return 0;
 #else

@@ -654,7 +654,7 @@ static void flb_signal_handler(int signal)
 }
 
 #ifdef FLB_SYSTEM_WINDOWS
-#include <ConsoleApi.h>
+#include <consoleapi.h>
 
 static flb_ctx_t *handler_ctx = NULL;
 static struct flb_cf *handler_opts = NULL;

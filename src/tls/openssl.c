@@ -455,7 +455,7 @@ static int tls_context_set_verify_client(void *ctx_backend, int verify_client)
     return 0;
 }
 
-#ifdef _MSC_VER
+#ifdef _WIN32
 /* Parse certstore_name prefix like
  *
  *   "My"                        -> no prefix, leave location untouched
@@ -826,7 +826,7 @@ static int load_system_certificates(struct tls_context *ctx)
     (void) ca_file;
 
     /* For Windows use specific API to read the certs store */
-#ifdef _MSC_VER
+#ifdef _WIN32
     return windows_load_system_certificates(ctx);
 #elif defined(__APPLE__)
     return macos_load_system_certificates(ctx);
