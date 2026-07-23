@@ -127,31 +127,37 @@ static inline void io_tls_backup_event(struct flb_connection *connection,
     }
 }
 
-static inline void io_tls_restore_event(struct flb_connection *connection,
-                                        struct mk_event *backup)
+static inline int io_tls_restore_event(struct flb_connection *connection,
+                                       struct mk_event *backup)
 {
     int result;
 
-    if (connection != NULL && backup != NULL) {
-        if (MK_EVENT_IS_REGISTERED((&connection->event))) {
-            result = mk_event_del(connection->evl, &connection->event);
+    if (connection == NULL || backup == NULL) {
+        return -1;
+    }
 
-            assert(result == 0);
-        }
-
-        if (MK_EVENT_IS_REGISTERED(backup)) {
-            connection->event.priority = backup->priority;
-            connection->event.handler = backup->handler;
-
-            result = mk_event_add(connection->evl,
-                                  connection->fd,
-                                  backup->type,
-                                  backup->mask,
-                                  &connection->event);
-
-            assert(result == 0);
+    if (MK_EVENT_IS_REGISTERED((&connection->event))) {
+        result = mk_event_del(connection->evl, &connection->event);
+        if (result == -1) {
+            return -1;
         }
     }
+
+    if (MK_EVENT_IS_REGISTERED(backup)) {
+        connection->event.priority = backup->priority;
+        connection->event.handler = backup->handler;
+
+        result = mk_event_add(connection->evl,
+                              connection->fd,
+                              backup->type,
+                              backup->mask,
+                              &connection->event);
+        if (result == -1) {
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
 
@@ -718,7 +724,11 @@ int flb_tls_net_read_async(struct flb_coro *co,
 
         session->connection->coroutine = co;
 
-        io_tls_event_switch(session, MK_EVENT_READ);
+        ret = io_tls_event_switch(session, MK_EVENT_READ);
+        if (ret == -1) {
+            goto read_finished;
+        }
+
         flb_coro_yield(co, FLB_FALSE);
 
         if (session->connection->net_error != -1) {
@@ -733,7 +743,11 @@ int flb_tls_net_read_async(struct flb_coro *co,
 
         session->connection->coroutine = co;
 
-        io_tls_event_switch(session, MK_EVENT_WRITE);
+        ret = io_tls_event_switch(session, MK_EVENT_WRITE);
+        if (ret == -1) {
+            goto read_finished;
+        }
+
         flb_coro_yield(co, FLB_FALSE);
 
         if (session->connection->net_error != -1) {
@@ -764,7 +778,9 @@ read_finished:
          * the same event.
          */
 
-        io_tls_restore_event(session->connection, &event_backup);
+        if (io_tls_restore_event(session->connection, &event_backup) == -1) {
+            ret = -1;
+        }
     }
 
     return ret;
@@ -836,7 +852,13 @@ retry_write:
     if (ret == FLB_TLS_WANT_WRITE) {
         event_restore_needed = FLB_TRUE;
 
-        io_tls_event_switch(session, MK_EVENT_WRITE);
+        ret = io_tls_event_switch(session, MK_EVENT_WRITE);
+        if (ret == -1) {
+            session->connection->coroutine = NULL;
+            *out_len = total;
+            io_tls_restore_event(session->connection, &event_backup);
+            return -1;
+        }
 
         flb_coro_yield(co, FLB_FALSE);
 
@@ -852,7 +874,13 @@ retry_write:
     else if (ret == FLB_TLS_WANT_READ) {
         event_restore_needed = FLB_TRUE;
 
-        io_tls_event_switch(session, MK_EVENT_READ);
+        ret = io_tls_event_switch(session, MK_EVENT_READ);
+        if (ret == -1) {
+            session->connection->coroutine = NULL;
+            *out_len = total;
+            io_tls_restore_event(session->connection, &event_backup);
+            return -1;
+        }
 
         flb_coro_yield(co, FLB_FALSE);
 
@@ -882,7 +910,15 @@ retry_write:
     total += ret;
 
     if (total < len) {
-        io_tls_event_switch(session, MK_EVENT_WRITE);
+        event_restore_needed = FLB_TRUE;
+
+        ret = io_tls_event_switch(session, MK_EVENT_WRITE);
+        if (ret == -1) {
+            session->connection->coroutine = NULL;
+            *out_len = total;
+            io_tls_restore_event(session->connection, &event_backup);
+            return -1;
+        }
 
         flb_coro_yield(co, FLB_FALSE);
 
@@ -915,7 +951,9 @@ retry_write:
          * the same event.
          */
 
-        io_tls_restore_event(session->connection, &event_backup);
+        if (io_tls_restore_event(session->connection, &event_backup) == -1) {
+            return -1;
+        }
     }
 
     return total;
@@ -1096,7 +1134,10 @@ cleanup:
          * the same event.
          */
 
-        io_tls_restore_event(session->connection, &event_backup);
+        if (io_tls_restore_event(session->connection, &event_backup) == -1 &&
+            result == 0) {
+            result = -1;
+        }
     }
 
     if (result != 0) {
