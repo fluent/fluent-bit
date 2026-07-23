@@ -1151,7 +1151,106 @@ static void flb_test_systemd_logs()
 }
 #endif
 
+/*
+ * Exercise kube_meta_cache_refresh_interval end to end without any network:
+ * with use_tag_for_meta the metadata is derived from the record tag, so a pod
+ * is cached (and tracked for refresh) on the first record, the background timer
+ * re-derives and updates the cache entry in place, and the second record is
+ * still enriched. This validates the track -> timer -> refresh -> cleanup path.
+ */
+static int refresh_enriched = 0;
+
+static int cb_refresh_enriched(void *record, size_t size, void *data)
+{
+    (void) data;
+    if (record != NULL && strstr(record, "refreshpod") != NULL) {
+        refresh_enriched++;
+    }
+    if (size > 0) {
+        flb_free(record);
+    }
+    return 0;
+}
+
+static void flb_test_kube_meta_cache_refresh(void)
+{
+    int i;
+    int ret;
+    int in_ffd;
+    int filter_ffd;
+    int out_ffd;
+    flb_ctx_t *flb;
+    struct flb_lib_out_cb cb_data;
+    const char *rec = "[0, {\"log\":\"hello\"}]";
+
+    refresh_enriched = 0;
+
+    flb = flb_create();
+    TEST_CHECK(flb != NULL);
+    if (!flb) {
+        return;
+    }
+
+    ret = flb_service_set(flb,
+                          "Flush", "1",
+                          "Grace", "1",
+                          "Log_Level", "error",
+                          "Parsers_File", DPATH "/parsers.conf",
+                          NULL);
+    TEST_CHECK(ret == 0);
+
+    in_ffd = flb_input(flb, "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(flb, in_ffd, "Tag", "kube.default.refreshpod.con", NULL);
+
+    filter_ffd = flb_filter(flb, "kubernetes", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(flb, filter_ffd,
+                         "Match", "kube.*",
+                         "Use_Tag_For_Meta", "On",
+                         "Regex_Parser", "kubernetes-tag",
+                         "Kube_Tag_Prefix", "kube.",
+                         "kube_meta_cache_refresh_interval", "1",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    cb_data.cb = cb_refresh_enriched;
+    cb_data.data = NULL;
+    out_ffd = flb_output(flb, "lib", (void *) &cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(flb, out_ffd, "Match", "kube.*", "format", "json", NULL);
+
+    ret = flb_start(flb);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(flb);
+        return;
+    }
+
+    /* First record: cache miss -> pod tracked for refresh -> enriched */
+    flb_lib_push(flb, in_ffd, rec, strlen(rec));
+    for (i = 0; i < 30 && refresh_enriched < 1; i++) {
+        flb_time_msleep(100);
+    }
+    TEST_CHECK_(refresh_enriched >= 1, "first record should be enriched");
+
+    /* Let the background refresh timer fire a couple of times (interval = 1s) */
+    flb_time_msleep(2500);
+
+    /* Second record: cache hit (entry refreshed in place) -> still enriched */
+    flb_lib_push(flb, in_ffd, rec, strlen(rec));
+    for (i = 0; i < 30 && refresh_enriched < 2; i++) {
+        flb_time_msleep(100);
+    }
+    TEST_CHECK_(refresh_enriched >= 2,
+                "second record should be enriched after refresh");
+
+    flb_stop(flb);
+    flb_destroy(flb);
+}
+
 TEST_LIST = {
+    {"kube_meta_cache_refresh", flb_test_kube_meta_cache_refresh},
     {"kube_core_base", flb_test_core_base},
     {"kube_core_no_meta", flb_test_core_no_meta},
     {"kube_core_unescaping_text", flb_test_core_unescaping_text},

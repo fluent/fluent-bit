@@ -98,6 +98,8 @@ struct service_attributes {
 
 };
 
+struct flb_sched_timer;
+
 /* Filter context */
 struct flb_kube {
     /* Configuration parameters */
@@ -197,6 +199,7 @@ struct flb_kube {
 
     int kube_meta_cache_ttl;
     int kube_meta_namespace_cache_ttl;
+    int kube_meta_cache_refresh_interval;
 
     /* Configuration used for enabling pod to service name mapping*/
     int aws_use_pod_association;
@@ -242,6 +245,17 @@ struct flb_kube {
     struct flb_upstream *kubelet_upstream;
     struct flb_upstream *kube_api_upstream;
     struct flb_filter_instance *ins;
+
+    /*
+     * Optional background refresh of cached pod metadata. When
+     * kube_meta_cache_refresh_interval > 0, a periodic timer re-fetches
+     * metadata for the pods tracked in 'refresh_pods' and updates the cache
+     * entries in place, so in-place label/annotation changes on long-lived,
+     * stable-named pods (e.g. StatefulSet members) are eventually reflected.
+     * Disabled by default (interval == 0).
+     */
+    struct mk_list refresh_pods;
+    struct flb_sched_timer *refresh_timer;
 };
 
 struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,

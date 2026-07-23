@@ -53,6 +53,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
     }
     ctx->config = config;
     ctx->ins = ins;
+    mk_list_init(&ctx->refresh_pods);
 
     /* Set config_map properties in our local context */
     ret = flb_filter_config_map_set(ins, (void *) ctx);
@@ -206,6 +207,9 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     if (ctx == NULL) {
         return;
     }
+
+    /* Stop background refresh timer and release tracked pods */
+    flb_kube_meta_refresh_destroy(ctx);
 
     if (ctx->hash_table) {
         flb_hash_table_destroy(ctx->hash_table);

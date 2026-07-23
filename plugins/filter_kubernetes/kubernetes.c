@@ -621,6 +621,14 @@ static int cb_kube_filter(const void *data, size_t bytes,
     (void) i_ins;
     (void) config;
 
+    /*
+     * Lazily create the background metadata refresh timer. This runs from the
+     * filter callback so the event-loop scheduler is available.
+     */
+    if (ctx->kube_meta_cache_refresh_interval > 0 && ctx->refresh_timer == NULL) {
+        flb_kube_meta_refresh_start(ctx);
+    }
+
     if (ctx->use_journal == FLB_FALSE || ctx->dummy_meta == FLB_TRUE) {
         if (ctx->dummy_meta == FLB_TRUE) {
             ret = flb_kube_dummy_meta_get(&dummy_cache_buf, &cache_size);
@@ -1146,6 +1154,18 @@ static struct flb_config_map config_map[] = {
      "By default, it is set to 15m and cached entries will be evicted after 15m."
      "Setting this to 0 will disable the cache TTL and "
      "will evict entries once the cache reaches capacity."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "kube_meta_cache_refresh_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_kube, kube_meta_cache_refresh_interval),
+     "interval to proactively refresh cached pod metadata in the background. "
+     "By default it is set to 0 which disables the feature and preserves the "
+     "existing behavior. When set to a time interval, for example 60 or 60s, a "
+     "periodic timer re-fetches metadata for the pods currently in the cache and "
+     "updates the entries in place, so in-place label and annotation changes on "
+     "long-lived, stable-named pods (such as StatefulSet members) are eventually "
+     "reflected without needing a restart. The refresh only touches pods already "
+     "cached on this node, so the added request load stays bounded."
     },
 
     /*
