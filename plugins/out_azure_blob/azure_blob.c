@@ -738,8 +738,13 @@ static int create_blob(struct flb_azure_blob *ctx, const char *path_prefix, char
     }
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, -1, FLB_TRUE,
-                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    ret = azb_http_client_setup(ctx, c, -1, FLB_TRUE,
+                                AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to setup HTTP client for create_append_blob");
+        status = FLB_RETRY;
+        goto cleanup_create;
+    }
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -817,8 +822,13 @@ static int delete_blob(struct flb_azure_blob *ctx,
     }
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, -1, FLB_TRUE,
-                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    ret = azb_http_client_setup(ctx, c, -1, FLB_TRUE,
+                                AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to setup HTTP client for delete_blob");
+        status = FLB_RETRY;
+        goto cleanup_delete;
+    }
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -1000,8 +1010,17 @@ static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
     }
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, (ssize_t) payload_size, FLB_FALSE,
-                          content_type, content_encoding);
+    ret = azb_http_client_setup(ctx, c, (ssize_t) payload_size, FLB_FALSE,
+                                content_type, content_encoding);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to setup HTTP client for http_send_blob");
+        flb_http_client_destroy(c);
+        if (compressed == FLB_TRUE) {
+            flb_free(payload_buf);
+        }
+        flb_upstream_conn_release(u_conn);
+        return FLB_RETRY;
+    }
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -1233,8 +1252,15 @@ static int create_container(struct flb_azure_blob *ctx, char *name)
     }
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, -1, FLB_FALSE,
-                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    ret = azb_http_client_setup(ctx, c, -1, FLB_FALSE,
+                                AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to setup HTTP client for create_container");
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(uri);
+        return FLB_FALSE;
+    }
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -1326,8 +1352,15 @@ static int ensure_container(struct flb_azure_blob *ctx)
     flb_http_strip_port_from_host(c);
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, -1, FLB_FALSE,
-                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    ret = azb_http_client_setup(ctx, c, -1, FLB_FALSE,
+                                AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to setup HTTP client for container_check");
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(uri);
+        return FLB_FALSE;
+    }
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -2514,13 +2547,38 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "auth_type", "key",
      0, FLB_TRUE, offsetof(struct flb_azure_blob, auth_type),
-     "Set the auth type: key or sas"
+     "Set the auth type: key, sas, service_principal, managed_identity, or workload_identity"
     },
 
     {
      FLB_CONFIG_MAP_STR, "sas_token", NULL,
      0, FLB_TRUE, offsetof(struct flb_azure_blob, sas_token),
      "Azure Blob SAS token"
+    },
+
+    /* OAuth authentication parameters */
+    {
+     FLB_CONFIG_MAP_STR, "tenant_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, tenant_id),
+     "Azure AD tenant ID (required for service_principal and workload_identity auth)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "client_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, client_id),
+     "Azure AD client ID / Application ID (required for OAuth-based authentication)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "client_secret", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, client_secret),
+     "Azure AD client secret (required for service_principal auth)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "workload_identity_token_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, workload_identity_token_file),
+     "Path to workload identity token file (for workload_identity auth)"
     },
 
     {

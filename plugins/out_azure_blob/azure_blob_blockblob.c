@@ -67,7 +67,7 @@ flb_sds_t azb_block_blob_blocklist_uri(struct flb_azure_blob *ctx,
         flb_sds_printf(&uri, "/%s?comp=blocklist", name);
     }
 
-    if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
+    if (ctx->atype == FLB_AZURE_AUTH_SAS && ctx->sas_token) {
         flb_sds_printf(&uri, "&%s", ctx->sas_token);
     }
 
@@ -124,7 +124,7 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx,
         }
     }
 
-    if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
+    if (ctx->atype == FLB_AZURE_AUTH_SAS && ctx->sas_token) {
         flb_sds_printf(&uri, "&%s", ctx->sas_token);
     }
 
@@ -165,7 +165,7 @@ flb_sds_t azb_block_blob_uri_commit(struct flb_azure_blob *ctx,
         flb_sds_printf(&uri, "/%s.%s.%" PRIu64 "%s?comp=blocklist", tag, str, ms, ext);
     }
 
-    if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
+    if (ctx->atype == FLB_AZURE_AUTH_SAS && ctx->sas_token) {
         flb_sds_printf(&uri, "&%s", ctx->sas_token);
     }
 
@@ -310,9 +310,15 @@ int azb_block_blob_put_block_list(struct flb_azure_blob *ctx, flb_sds_t uri, flb
     }
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, flb_sds_len(payload),
-                          FLB_FALSE,
-                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    ret = azb_http_client_setup(ctx, c, flb_sds_len(payload),
+                                FLB_FALSE,
+                                AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to setup HTTP client for block_blob_commit");
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        return FLB_RETRY;
+    }
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -320,6 +326,8 @@ int azb_block_blob_put_block_list(struct flb_azure_blob *ctx, flb_sds_t uri, flb
     /* Validate HTTP status */
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error sending block_blob");
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_RETRY;
     }
 
