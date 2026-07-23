@@ -46,7 +46,6 @@ void pgsql_conf_destroy(struct flb_pgsql_config *ctx)
 static int cb_pgsql_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
 {
-
     struct flb_pgsql_config *ctx;
     size_t str_len;
     PGresult *res;
@@ -65,6 +64,13 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
     }
 
     ctx->ins = ins;
+
+#ifdef FLB_SYSTEM_WINDOWS
+    if (!loadPqDll(ctx->ins)) {
+        flb_errno();
+        return -1;
+    }
+#endif
 
     /* Database host */
     ctx->db_hostname = flb_strdup(ins->host.name);
@@ -376,6 +382,10 @@ static int cb_pgsql_exit(void *data, struct flb_config *config)
     }
 
     pgsql_conf_destroy(ctx);
+
+#ifdef FLB_SYSTEM_WINDOWS
+    freePqDll();
+#endif
 
     return 0;
 }
