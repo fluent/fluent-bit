@@ -1292,7 +1292,12 @@ int flb_engine_start(struct flb_config *config)
                 if (connection->coroutine) {
                     flb_trace("[engine] resuming coroutine=%p", connection->coroutine);
 
-                    flb_coro_resume(connection->coroutine);
+                    if (connection->event_coroutine != NULL) {
+                        flb_downstream_conn_event_resume(connection);
+                    }
+                    else {
+                        flb_coro_resume(connection->coroutine);
+                    }
                 }
             }
             else if (event->type == FLB_ENGINE_EV_OUTPUT) {

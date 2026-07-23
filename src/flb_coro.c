@@ -23,12 +23,11 @@
 
 FLB_TLS_DEFINE(struct flb_coro, flb_coro_key);
 
-static pthread_mutex_t coro_mutex_init;
+static pthread_mutex_t coro_mutex_init = PTHREAD_MUTEX_INITIALIZER;
 
 void flb_coro_init()
 {
     FLB_TLS_INIT(flb_coro_key);
-    pthread_mutex_init(&coro_mutex_init, NULL);
 }
 
 void flb_coro_thread_init()

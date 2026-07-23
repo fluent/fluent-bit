@@ -20,6 +20,9 @@
 #include <cfl/cfl_atomic.h>
 
 #include <fluent-bit/flb_downstream_worker.h>
+#include <fluent-bit/flb_connection.h>
+#include <fluent-bit/flb_coro.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
@@ -203,6 +206,26 @@ static int downstream_worker_control_event(struct flb_downstream_worker *worker)
     return 0;
 }
 
+static void downstream_worker_dispatch_event(struct mk_event *event)
+{
+    struct flb_connection *connection;
+
+    if (event->type == FLB_ENGINE_EV_CUSTOM) {
+        event->handler(event);
+    }
+    else if (event->type == FLB_ENGINE_EV_THREAD) {
+        connection = (struct flb_connection *) event;
+        if (connection->coroutine != NULL) {
+            if (connection->event_coroutine != NULL) {
+                flb_downstream_conn_event_resume(connection);
+            }
+            else {
+                flb_coro_resume(connection->coroutine);
+            }
+        }
+    }
+}
+
 static void *downstream_worker_thread(void *data)
 {
     int ret;
@@ -234,6 +257,7 @@ static void *downstream_worker_thread(void *data)
 
     flb_engine_evl_init();
     flb_engine_evl_set(worker->event_loop);
+    flb_coro_thread_init();
     flb_net_dns_ctx_set(&dns_ctx);
 
     ret = runtime->cb_init(worker, runtime->parent, &worker->context);
@@ -266,9 +290,7 @@ signal_and_exit:
 
         {
             mk_event_foreach(event, worker->event_loop) {
-                if (event->type == FLB_ENGINE_EV_CUSTOM) {
-                    event->handler(event);
-                }
+                downstream_worker_dispatch_event(event);
             }
         }
 
