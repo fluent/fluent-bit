@@ -736,6 +736,15 @@ static struct flb_config_map config_map[] = {
      "set to false to use file stat watcher instead of inotify."
     },
 #endif
+#ifdef FLB_SYSTEM_WINDOWS
+    {
+     FLB_CONFIG_MAP_STR, "windows.path_encoding", "ansi",
+     0, FLB_FALSE, 0,
+     "Windows-only path encoding mode. Use 'utf-8' to treat paths as UTF-8 "
+     "and call Windows wide-character file APIs. The default 'ansi' mode "
+     "keeps the legacy active ANSI code page behavior."
+    },
+#endif
 #ifdef FLB_HAVE_REGEX
     {
      FLB_CONFIG_MAP_STR, "parser", NULL,
