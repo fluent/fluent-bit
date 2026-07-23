@@ -136,6 +136,38 @@ int flb_io_net_connect(struct flb_connection *connection,
     }
 
     if (connection->upstream->proxied_host) {
+#ifdef FLB_HAVE_TLS
+        /*
+         * When the proxy URL uses https://, the connection to the proxy
+         * itself must be TLS-wrapped before the HTTP CONNECT tunnel is
+         * established.  Use the dedicated proxy TLS context which carries
+         * the proxy hostname as the SNI (vhost).
+         */
+        if (connection->upstream->proxy_tls_context != NULL) {
+            ret = flb_tls_session_create(connection->upstream->proxy_tls_context,
+                                         connection,
+                                         coro);
+            if (ret != 0) {
+                flb_debug("[http_client] proxy TLS handshake failed for %s:%i",
+                          connection->upstream->tcp_host,
+                          connection->upstream->tcp_port);
+                flb_socket_close(fd);
+                connection->fd = -1;
+                connection->event.fd = -1;
+                return -1;
+            }
+            /*
+             * Ensure all I/O (the CONNECT request and any subsequent
+             * data) is routed through the proxy TLS session.  This is
+             * necessary when the ultimate destination is plain HTTP:
+             * the stream's FLB_IO_TLS flag is not set for such upstreams,
+             * but flb_io_net_write/read check that flag to decide whether
+             * to use connection->tls_session.  For HTTPS destinations the
+             * flag is already set so this is a no-op.
+             */
+            flb_stream_enable_flags(connection->stream, FLB_IO_TLS);
+        }
+#endif
         ret = flb_http_client_proxy_connect(connection);
 
         if (ret == -1) {

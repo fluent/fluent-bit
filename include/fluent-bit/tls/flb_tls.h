@@ -88,6 +88,14 @@ struct flb_tls_backend {
     void (*session_invalidate) (void *);
     int (*session_destroy) (void *);
     const char *(*session_alpn_get) (void *);
+    /*
+     * Chain an inner TLS session's I/O through an outer TLS session.
+     * Used for TLS-in-TLS when connecting through an HTTPS proxy: after
+     * HTTP CONNECT is established over the proxy TLS, the destination TLS
+     * handshake data must be sent through (and encrypted by) the proxy TLS.
+     * Optional: may be NULL if the backend does not support it.
+     */
+    int (*session_set_outer) (void *inner, void *outer);
 
     /* I/O */
     int (*net_read) (struct flb_tls_session *, void *, size_t);
