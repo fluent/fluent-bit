@@ -2543,6 +2543,17 @@ int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *in
         mk_list_add(&u->base._head, &ins->upstreams);
     }
 
+    /*
+     * Mirror flb_output_upstream_set(): the 'net.keepalive' setting only
+     * takes effect on new connections if the FLB_IO_TCP_KA stream flag is
+     * also set, since flb_upstream_conn_get() derives a connection's
+     * initial recycle state from flb_stream_is_keepalive() (the flag),
+     * not from net.keepalive (the config value) directly.
+     */
+    if (ins->net_setup.keepalive == FLB_TRUE) {
+        flb_stream_enable_flags(&u->base, FLB_IO_TCP_KA);
+    }
+
     /* Set networking options 'net.*' received through instance properties */
     memcpy(&u->base.net, &ins->net_setup, sizeof(struct flb_net_setup));
 
