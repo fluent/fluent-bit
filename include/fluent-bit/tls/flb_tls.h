@@ -47,6 +47,8 @@
 #define FLB_TLS_CLIENT_MODE 0
 #define FLB_TLS_SERVER_MODE 1
 
+#define FLB_TLS_DEFAULT_IO_TIMEOUT_S 60
+
 struct flb_tls;
 struct flb_connection;
 
