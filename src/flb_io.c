@@ -45,7 +45,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
-#include <assert.h>
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
@@ -302,31 +301,37 @@ static FLB_INLINE void net_io_backup_event(struct flb_connection *connection,
     }
 }
 
-static FLB_INLINE void net_io_restore_event(struct flb_connection *connection,
-                                            struct mk_event *backup)
+static FLB_INLINE int net_io_restore_event(struct flb_connection *connection,
+                                           struct mk_event *backup)
 {
     int result;
 
-    if (connection != NULL && backup != NULL) {
-        if (MK_EVENT_IS_REGISTERED((&connection->event))) {
-            result = mk_event_del(connection->evl, &connection->event);
+    if (connection == NULL || backup == NULL) {
+        return -1;
+    }
 
-            assert(result == 0);
-        }
-
-        if (MK_EVENT_IS_REGISTERED(backup)) {
-            connection->event.priority = backup->priority;
-            connection->event.handler = backup->handler;
-
-            result = mk_event_add(connection->evl,
-                                  connection->fd,
-                                  backup->type,
-                                  backup->mask,
-                                  &connection->event);
-
-            assert(result == 0);
+    if (MK_EVENT_IS_REGISTERED((&connection->event))) {
+        result = mk_event_del(connection->evl, &connection->event);
+        if (result == -1) {
+            return -1;
         }
     }
+
+    if (MK_EVENT_IS_REGISTERED(backup)) {
+        connection->event.priority = backup->priority;
+        connection->event.handler = backup->handler;
+
+        result = mk_event_add(connection->evl,
+                              connection->fd,
+                              backup->type,
+                              backup->mask,
+                              &connection->event);
+        if (result == -1) {
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
 /*
@@ -415,6 +420,13 @@ retry:
              */
             connection->coroutine = NULL;
 
+            if (connection->net_error != -1) {
+                *out_len = total;
+                net_io_restore_event(connection, &event_backup);
+
+                return -1;
+            }
+
             /* Save events mask since mk_event_del() will reset it */
             mask = connection->event.mask;
 
@@ -476,6 +488,8 @@ retry:
     total += bytes;
     if (total < len) {
         if ((connection->event.mask & MK_EVENT_WRITE) == 0) {
+            event_restore_needed = FLB_TRUE;
+
             ret = mk_event_add(connection->evl,
                                connection->fd,
                                FLB_ENGINE_EV_THREAD,
@@ -506,6 +520,13 @@ retry:
          */
         connection->coroutine = NULL;
 
+        if (connection->net_error != -1) {
+            *out_len = total;
+            net_io_restore_event(connection, &event_backup);
+
+            return -1;
+        }
+
         goto retry;
     }
 
@@ -520,7 +541,12 @@ retry:
          * the same event.
          */
 
-        net_io_restore_event(connection, &event_backup);
+        ret = net_io_restore_event(connection, &event_backup);
+        if (ret == -1) {
+            *out_len = total;
+
+            return -1;
+        }
     }
 
     *out_len = total;
@@ -635,6 +661,12 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
              */
             connection->coroutine = NULL;
 
+            if (connection->net_error != -1) {
+                net_io_restore_event(connection, &event_backup);
+
+                return -1;
+            }
+
             goto retry_read;
         }
         else {
@@ -658,7 +690,9 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
          * the same event.
          */
 
-        net_io_restore_event(connection, &event_backup);
+        if (net_io_restore_event(connection, &event_backup) == -1) {
+            return -1;
+        }
     }
 
     return ret;
