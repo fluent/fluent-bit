@@ -31,6 +31,7 @@
 #include <openssl/err.h>
 #include <openssl/opensslv.h>
 #include <openssl/x509v3.h>
+#include <openssl/pem.h>
 
 #ifdef FLB_SYSTEM_MACOS
 #include <Security/Security.h>
@@ -455,6 +456,67 @@ static int tls_context_set_verify_client(void *ctx_backend, int verify_client)
     return 0;
 }
 
+static int tls_context_set_crl_file(void *ctx_backend, const char *crl_file)
+{
+    struct tls_context *ctx = ctx_backend;
+    X509_STORE *store;
+    X509_CRL *crl;
+    BIO *bio;
+    char err_buf[256];
+    int loaded = 0;
+
+    if (crl_file == NULL) {
+        return 0;
+    }
+
+    pthread_mutex_lock(&ctx->mutex);
+
+    store = SSL_CTX_get_cert_store(ctx->ctx);
+    if (store == NULL) {
+        flb_error("[tls] could not retrieve certificate store for CRL");
+        pthread_mutex_unlock(&ctx->mutex);
+        return -1;
+    }
+
+    bio = BIO_new_file(crl_file, "r");
+    if (bio == NULL) {
+        ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf) - 1);
+        flb_error("[tls] crl_file '%s': %s", crl_file, err_buf);
+        pthread_mutex_unlock(&ctx->mutex);
+        return -1;
+    }
+
+    while ((crl = PEM_read_bio_X509_CRL(bio, NULL, NULL, NULL)) != NULL) {
+        if (X509_STORE_add_crl(store, crl) != 1) {
+            ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf) - 1);
+            flb_warn("[tls] could not add CRL from '%s': %s", crl_file, err_buf);
+        }
+        else {
+            loaded++;
+        }
+        X509_CRL_free(crl);
+    }
+    BIO_free(bio);
+
+    // PEM_read_bio_X509_CRL leaves a benign EOF error on the stack
+    ERR_clear_error();
+
+    if (loaded == 0) {
+        flb_error("[tls] no CRL entries loaded from '%s'", crl_file);
+        pthread_mutex_unlock(&ctx->mutex);
+        return -1;
+    }
+
+    X509_STORE_set_flags(store,
+                         X509_V_FLAG_CRL_CHECK | X509_V_FLAG_CRL_CHECK_ALL);
+
+    pthread_mutex_unlock(&ctx->mutex);
+
+    flb_debug("[tls] loaded %i CRL entrie(s) from '%s'", loaded, crl_file);
+
+    return 0;
+}
+
 #ifdef _MSC_VER
 /* Parse certstore_name prefix like
  *
@@ -715,7 +777,7 @@ static int windows_load_system_certificates(struct tls_context *ctx)
         return -1;
     }
 
-    flb_debug("[tls] successfully loaded certificates from windows system %s store.", 
+    flb_debug("[tls] successfully loaded certificates from windows system %s store.",
               configured_name);
     return 0;
 }
@@ -1229,7 +1291,7 @@ static unsigned char *hex_to_bytes(const char *hex, size_t *out_len) {
     return buf;
 }
 
-static int windows_set_allowed_thumbprints(struct tls_context *ctx, const char *thumbprints) 
+static int windows_set_allowed_thumbprints(struct tls_context *ctx, const char *thumbprints)
 {
     char *token_ctx = NULL, *tok = NULL;
     size_t cap = 4, count = 0;
@@ -1807,6 +1869,7 @@ static struct flb_tls_backend tls_openssl = {
     .context_destroy      = tls_context_destroy,
     .context_alpn_set     = tls_context_alpn_set,
     .context_set_verify_client = tls_context_set_verify_client,
+    .context_set_crl_file = tls_context_set_crl_file,
     .session_alpn_get     = tls_session_alpn_get,
     .set_minmax_proto     = tls_set_minmax_proto,
     .set_ciphers          = tls_set_ciphers,

@@ -193,6 +193,9 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
     if (ins->tls_key_passwd) {
         flb_sds_destroy(ins->tls_key_passwd);
     }
+    if (ins->tls_crl_file) {
+        flb_sds_destroy(ins->tls_crl_file);
+    }
     if (ins->tls_min_version) {
         flb_sds_destroy(ins->tls_min_version);
     }
@@ -811,6 +814,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->tls_crt_file          = NULL;
     instance->tls_key_file          = NULL;
     instance->tls_key_passwd        = NULL;
+    instance->tls_crl_file          = NULL;
 # if defined(FLB_SYSTEM_WINDOWS)
     instance->tls_win_certstore_name = NULL;
     instance->tls_win_use_enterprise_certstore = FLB_FALSE;
@@ -1057,6 +1061,9 @@ int flb_output_set_property(struct flb_output_instance *ins,
     }
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.key_passwd", &ins->tls_key_passwd, tmp);
+    }
+    else if (prop_key_check("tls.crl_file", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.crl_file", &ins->tls_crl_file, tmp);
     }
     else if (prop_key_check("tls.min_version", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.min_version", &ins->tls_min_version, tmp);
@@ -1584,6 +1591,16 @@ int flb_output_init_all(struct flb_config *config)
                 ret = flb_tls_set_ciphers(ins->tls, ins->tls_ciphers);
                 if (ret != 0) {
                     flb_error("[output %s] error setting up TLS ciphers up to TLSv1.2",
+                              ins->name);
+                    flb_output_instance_destroy(ins);
+                    return -1;
+                }
+            }
+
+            if (ins->tls_crl_file != NULL) {
+                ret = flb_tls_set_crl_file(ins->tls, ins->tls_crl_file);
+                if (ret != 0) {
+                    flb_error("[output %s] error setting up TLS CRL file",
                               ins->name);
                     flb_output_instance_destroy(ins);
                     return -1;
