@@ -30,7 +30,7 @@
 #define FLB_ECS_FILTER_PORT                       "51678"
 #define FLB_ECS_FILTER_CLUSTER_PATH               "/v1/metadata"
 #define FLB_ECS_FILTER_TASK_PATH_FORMAT           "/v1/tasks?dockerid=%s"
-#define FLB_ECS_FILTER_METADATA_RETRIES           "2"
+#define FLB_ECS_FILTER_METADATA_RETRIES           "3"
 
 /*
  * Kubernetes recommends not running more than 110 pods per node
@@ -49,20 +49,28 @@ struct flb_ecs_metadata_key {
     struct mk_list _head;
 };
 
+/* metadata processed into KV pair ready to add to log record */
+struct flb_ecs_metadata_keypair {
+    /* key is just a reference to the flb_ecs_metadata_key.key */
+    flb_sds_t key;
+    flb_sds_t val;
+
+    struct mk_list _head;
+};
+
 struct flb_ecs_metadata_buffer {
     /* msgpack_sbuffer */
     char *buf;
     size_t size;
 
-    /* unpacked object to use with flb_ra_translate */
-    msgpack_unpacked unpacked;
-    msgpack_object obj;
-    int free_packer;
-
     /* the hash table only stores a pointer- we need the list to track and free these */
     struct mk_list _head;
     /* we clean up the memory for these once ecs_meta_cache_ttl has expired */
     time_t last_used_time;
+
+    /* List of processed metadata keys and values */
+    struct mk_list metadata_keypairs;
+    int keypairs_len;
 
     /* 
      * To remove from the hash table on TTL expiration, we need the ID 
