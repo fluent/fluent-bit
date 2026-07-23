@@ -225,9 +225,7 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     conn->helo       = helo;
 
     /* Set data for the event-loop */
-    connection->user_data     = conn;
-    connection->event.type    = FLB_ENGINE_EV_CUSTOM;
-    connection->event.handler = fw_conn_event;
+    connection->user_data = conn;
 
     /* Connection info */
     conn->ctx     = ctx;
@@ -251,12 +249,22 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     conn->compression_type = FLB_COMPRESSION_ALGORITHM_NONE;
     conn->d_ctx = NULL;
 
-    /* Register instance into the event loop */
-    ret = mk_event_add(flb_engine_evl_get(),
-                       connection->fd,
-                       FLB_ENGINE_EV_CUSTOM,
-                       MK_EVENT_READ,
-                       &connection->event);
+    /* Run TLS connection callbacks in a downstream-owned coroutine. */
+    if (connection->tls_session != NULL) {
+        ret = flb_downstream_conn_event_register(connection,
+                                                 fw_conn_event,
+                                                 MK_EVENT_READ);
+    }
+    else {
+        connection->event.type = FLB_ENGINE_EV_CUSTOM;
+        connection->event.handler = fw_conn_event;
+
+        ret = mk_event_add(flb_engine_evl_get(),
+                           connection->fd,
+                           FLB_ENGINE_EV_CUSTOM,
+                           MK_EVENT_READ,
+                           &connection->event);
+    }
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not register new connection");
         if (conn->helo != NULL) {
@@ -338,21 +346,22 @@ static void fw_conn_drop(struct flb_connection *connection)
 
 int fw_conn_del(struct fw_conn *conn)
 {
+    int ret;
     struct flb_connection *connection = conn->connection;
 
     /*
-     * Detach the wrapper from the connection first so the drop
-     * notification callback becomes a no-op during the release below and
-     * cannot double-free the wrapper.
+     * Downstream may need to wake a callback suspended in asynchronous I/O
+     * before releasing it. Keep the wrapper alive until that callback
+     * unwinds; the drop notification owns wrapper cleanup in both the
+     * immediate and deferred paths.
      */
     if (connection != NULL) {
-        connection->drop_notification_callback = NULL;
-        connection->user_data = NULL;
+        ret = flb_downstream_conn_release(connection);
+        if (ret == FLB_DOWNSTREAM_CONN_DEFERRED) {
+            return 0;
+        }
 
-        /* The downstream unregisters the file descriptor from the
-         * event-loop so there's nothing else to be done by the plugin.
-         */
-        flb_downstream_conn_release(connection);
+        return 0;
     }
 
     fw_conn_release(conn);
