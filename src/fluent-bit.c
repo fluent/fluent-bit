@@ -60,6 +60,7 @@
 #include <fluent-bit/flb_reload.h>
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/flb_supervisor.h>
+#include <fluent-bit/flb_fips.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -92,6 +93,7 @@ struct flb_stacktrace flb_st;
 #endif
 
 #define FLB_LONG_SUPERVISOR            (1024 + 5)
+#define FLB_LONG_ENABLE_FIPS           (1024 + 6)
 
 #define FLB_HELP_TEXT    0
 #define FLB_HELP_JSON    1
@@ -173,6 +175,7 @@ static void flb_help(int rc, struct flb_config *config)
     print_opt("-q, --quiet", "quiet mode");
     print_opt("-S, --sosreport", "support report for Enterprise customers");
     print_opt("-Y, --enable-hot-reload", "enable for hot reloading");
+    print_opt("    --enable-fips", "require OpenSSL FIPS mode at startup");
     print_opt("-W, --disable-thread-safety-on-hot-reloading", "disable thread safety on hot reloading");
     print_opt("-V, --version", "show version number");
     print_opt("-h, --help", "print this help");
@@ -1079,6 +1082,7 @@ static int flb_main_run(int argc, char **argv)
         { "http_port",       required_argument, NULL, 'P' },
 #endif
         { "enable-hot-reload",     no_argument, NULL, 'Y' },
+        { "enable-fips",           no_argument, NULL, FLB_LONG_ENABLE_FIPS },
 #ifdef FLB_SYSTEM_WINDOWS
         { "windows_maxstdio",      required_argument, NULL, 'M' },
 #endif
@@ -1300,6 +1304,10 @@ static int flb_main_run(int argc, char **argv)
         case 'Y':
             flb_cf_section_property_add(cf_opts, service->properties, FLB_CONF_STR_HOT_RELOAD, 0, "on", 0);
             break;
+        case FLB_LONG_ENABLE_FIPS:
+            flb_cf_section_property_add(cf_opts, service->properties,
+                                        FLB_CONF_STR_FIPS_MODE, 0, "on", 0);
+            break;
         case 'W':
             flb_cf_section_property_add(cf_opts, service->properties,
                                         FLB_CONF_STR_HOT_RELOAD_ENSURE_THREAD_SAFETY, 0, "off", 0);
@@ -1410,6 +1418,12 @@ static int flb_main_run(int argc, char **argv)
     if (config->flush <= (double) 0.0) {
         flb_cf_destroy(cf_opts);
         flb_utils_error(FLB_ERR_CFG_FLUSH);
+    }
+
+    if (flb_fips_init(config) != 0) {
+        flb_cf_destroy(cf_opts);
+        flb_destroy(ctx);
+        return -1;
     }
 
     /* debug or trace */

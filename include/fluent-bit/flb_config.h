@@ -291,6 +291,9 @@ struct flb_config {
     int enable_chunk_trace;
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
+    int fips_mode;
+    int fips_mode_active;
+
     int enable_hot_reload;
     int ensure_thread_safety_on_hot_reloading;
     unsigned int hot_reloaded_count;
@@ -378,6 +381,7 @@ enum conf_type {
 #define FLB_CONF_STR_STREAMS_FILE "Streams_File"
 #define FLB_CONF_STR_STREAMS_STR_CONV "sp.convert_from_str_to_num"
 #define FLB_CONF_STR_CONV_NAN     "json.convert_nan_to_null"
+#define FLB_CONF_STR_FIPS_MODE    "security.fips_mode"
 
 /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER

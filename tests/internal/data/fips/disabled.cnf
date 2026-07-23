@@ -1,0 +1,4 @@
+# Intentionally empty OpenSSL initialization for non-FIPS test processes.
+openssl_conf = openssl_init
+
+[openssl_init]
