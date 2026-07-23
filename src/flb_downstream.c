@@ -577,7 +577,13 @@ int flb_downstream_conn_event_register(struct flb_connection *connection,
     struct flb_config *config;
 
     if (connection == NULL || callback == NULL ||
+        (mask & (MK_EVENT_READ | MK_EVENT_WRITE)) == 0 ||
         connection->type != FLB_DOWNSTREAM_CONNECTION) {
+        return -1;
+    }
+
+    if (connection->stream->transport != FLB_TRANSPORT_TCP &&
+        connection->stream->transport != FLB_TRANSPORT_UNIX_STREAM) {
         return -1;
     }
 
