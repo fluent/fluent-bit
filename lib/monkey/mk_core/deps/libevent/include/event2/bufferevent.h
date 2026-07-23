@@ -30,8 +30,9 @@
 /**
    @file event2/bufferevent.h
 
-  Functions for buffering data for network sending or receiving.  Bufferevents
-  are higher level than evbuffers: each has an underlying evbuffer for reading
+  @brief Functions for buffering data for network sending or receiving.
+
+  Bufferevents are higher level than evbuffers: each has an underlying evbuffer for reading
   and one for writing, and callbacks that are invoked under certain
   circumstances.
 
@@ -176,7 +177,7 @@ enum bufferevent_options {
 /**
   Create a new socket bufferevent over an existing socket.
 
-  @param base the event base to associate with the new bufferevent.
+  @param base the event base to associate with the new bufferevent. base must not be NULL.
   @param fd the file descriptor from which data is read and written to.
 	    This file descriptor is not allowed to be a pipe(2).
 	    It is safe to set the fd to -1, so long as you later
@@ -209,7 +210,7 @@ struct bufferevent *bufferevent_socket_new(struct event_base *base, evutil_socke
    @return 0 on success, -1 on failure.
  */
 EVENT2_EXPORT_SYMBOL
-int bufferevent_socket_connect(struct bufferevent *, const struct sockaddr *, int);
+int bufferevent_socket_connect(struct bufferevent *bufev, const struct sockaddr *addr, int socklen);
 
 struct evdns_base;
 /**
@@ -227,6 +228,26 @@ struct evdns_base;
    @param port The port to connect to on the resolved address.
    @return 0 if successful, -1 on failure.
 
+   @see bufferevent_socket_connect_hostname_hints()
+ */
+EVENT2_EXPORT_SYMBOL
+int bufferevent_socket_connect_hostname(struct bufferevent *bufev,
+    struct evdns_base *evdns_base, int family, const char *hostname, int port);
+
+/**
+   Resolve the hostname 'hostname' and connect to it as with
+   bufferevent_socket_connect().
+
+   @param bufev An existing bufferevent allocated with bufferevent_socket_new()
+   @param evdns_base Optionally, an evdns_base to use for resolving hostnames
+      asynchronously. May be set to NULL for a blocking resolve.
+   @param hints_in points to an addrinfo structure that specifies criteria for
+      selecting the socket address structures to be used
+   @param hostname The hostname to resolve; see below for notes on recognized
+      formats
+   @param port The port to connect to on the resolved address.
+   @return 0 if successful, -1 on failure.
+
    Recognized hostname formats are:
 
        www.example.com	(hostname)
@@ -239,8 +260,9 @@ struct evdns_base;
    what you want.
  */
 EVENT2_EXPORT_SYMBOL
-int bufferevent_socket_connect_hostname(struct bufferevent *,
-    struct evdns_base *, int, const char *, int);
+int bufferevent_socket_connect_hostname_hints(struct bufferevent *bufev,
+    struct evdns_base *evdns_base, const struct evutil_addrinfo *hints_in, const char *hostname, int port);
+
 
 /**
    Return the error code for the last failed DNS lookup attempt made by
@@ -258,7 +280,7 @@ int bufferevent_socket_get_dns_error(struct bufferevent *bev);
 
   NOTE that only socket bufferevents support this function.
 
-  @param base an event_base returned by event_init()
+  @param base an event_base returned by event_base_new()
   @param bufev a bufferevent struct returned by bufferevent_new()
      or bufferevent_socket_new()
   @return 0 if successful, or -1 if an error occurred
@@ -299,7 +321,7 @@ int bufferevent_get_priority(const struct bufferevent *bufev);
   If there is pending data to write on the bufferevent, it probably won't be
   flushed before the bufferevent is freed.
 
-  @param bufev the bufferevent structure to be freed.
+  @param bufev the bufferevent structure to be freed. bufev must not be NULL.
   */
 EVENT2_EXPORT_SYMBOL
 void bufferevent_free(struct bufferevent *bufev);
@@ -308,7 +330,7 @@ void bufferevent_free(struct bufferevent *bufev);
 /**
   Changes the callbacks for a bufferevent.
 
-  @param bufev the bufferevent object for which to change callbacks
+  @param bufev the bufferevent object for which to change callbacks. bufev must not be NULL.
   @param readcb callback to invoke when there is data to be read, or NULL if
 	 no callback is desired
   @param writecb callback to invoke when the file descriptor is ready for
@@ -356,8 +378,20 @@ EVENT2_EXPORT_SYMBOL
 int bufferevent_setfd(struct bufferevent *bufev, evutil_socket_t fd);
 
 /**
+  Replaces the file descriptor on which the bufferevent operates.
+  Not supported for all bufferevent types.
+
+  Unlike bufferevent_setfd() it will close previous file descriptor (if any).
+
+  @param bufev the bufferevent object for which to change the file descriptor
+  @param fd the file descriptor to operate on
+*/
+EVENT2_EXPORT_SYMBOL
+int bufferevent_replacefd(struct bufferevent *bufev, evutil_socket_t fd);
+
+/**
    Returns the file descriptor associated with a bufferevent, or -1 if
-   no file descriptor is associated with the bufferevent.
+   no file descriptor is associated with the bufferevent. bufev must not be NULL.
  */
 EVENT2_EXPORT_SYMBOL
 evutil_socket_t bufferevent_getfd(struct bufferevent *bufev);
@@ -408,7 +442,8 @@ int bufferevent_write_buffer(struct bufferevent *bufev, struct evbuffer *buf);
   @param bufev the bufferevent to be read from
   @param data pointer to a buffer that will store the data
   @param size the size of the data buffer, in bytes
-  @return the amount of data read, in bytes.
+  @return the amount of data read, in bytes. If 0 is returned, it is possible
+  that there is no data in the buffer or that the read failed.
  */
 EVENT2_EXPORT_SYMBOL
 size_t bufferevent_read(struct bufferevent *bufev, void *data, size_t size);
@@ -429,7 +464,7 @@ int bufferevent_read_buffer(struct bufferevent *bufev, struct evbuffer *buf);
 
    The user MUST NOT set the callback on this buffer.
 
-   @param bufev the bufferevent from which to get the evbuffer
+   @param bufev the bufferevent from which to get the evbuffer. bufev must not be NULL.
    @return the evbuffer object for the input buffer
  */
 
@@ -444,7 +479,7 @@ struct evbuffer *bufferevent_get_input(struct bufferevent *bufev);
    When filters are being used, the filters need to be manually
    triggered if the output buffer was manipulated.
 
-   @param bufev the bufferevent from which to get the evbuffer
+   @param bufev the bufferevent from which to get the evbuffer. bufev must not be NULL.
    @return the evbuffer object for the output buffer
  */
 
@@ -454,7 +489,7 @@ struct evbuffer *bufferevent_get_output(struct bufferevent *bufev);
 /**
   Enable a bufferevent.
 
-  @param bufev the bufferevent to be enabled
+  @param bufev the bufferevent to be enabled. bufev must not be NULL.
   @param event any combination of EV_READ | EV_WRITE.
   @return 0 if successful, or -1 if an error occurred
   @see bufferevent_disable()
@@ -465,7 +500,7 @@ int bufferevent_enable(struct bufferevent *bufev, short event);
 /**
   Disable a bufferevent.
 
-  @param bufev the bufferevent to be disabled
+  @param bufev the bufferevent to be disabled. bufev must not be NULL.
   @param event any combination of EV_READ | EV_WRITE.
   @return 0 if successful, or -1 if an error occurred
   @see bufferevent_enable()
@@ -491,7 +526,7 @@ short bufferevent_get_enabled(struct bufferevent *bufev);
 
   (In other words, if reading or writing is disabled, or if the
   bufferevent's read or write operation has been suspended because
-  there's no data to write, or not enough banwidth, or so on, the
+  there's no data to write, or not enough bandwidth, or so on, the
   timeout isn't active.  The timeout only becomes active when we we're
   willing to actually read or write.)
 
@@ -518,13 +553,16 @@ int bufferevent_set_timeouts(struct bufferevent *bufev,
   On input, a bufferevent does not invoke the user read callback unless
   there is at least low watermark data in the buffer.	If the read buffer
   is beyond the high watermark, the bufferevent stops reading from the network.
+  But be aware that bufferevent input/read buffer can overrun high watermark
+  limit (typical example is openssl bufferevent), so you should not relay in
+  this.
 
   On output, the user write callback is invoked whenever the buffered data
   falls below the low watermark.  Filters that write to this bufev will try
   not to write more bytes to this buffer than the high watermark would allow,
   except when flushing.
 
-  @param bufev the bufferevent to be modified
+  @param bufev the bufferevent to be modified. bufev must not be NULL.
   @param events EV_READ, EV_WRITE or both
   @param lowmark the lower watermark to set
   @param highmark the high watermark to set
@@ -566,7 +604,7 @@ void bufferevent_unlock(struct bufferevent *bufev);
 /**
  * Public interface to manually increase the reference count of a bufferevent
  * this is useful in situations where a user may reference the bufferevent
- * somewhere eles (unknown to libevent)
+ * somewhere else (unknown to libevent)
  *
  * @param bufev the bufferevent to increase the refcount on
  *
@@ -799,7 +837,7 @@ void ev_token_bucket_cfg_free(struct ev_token_bucket_cfg *cfg);
    They are: socket-based bufferevents (normal and IOCP-based), and SSL-based
    bufferevents.
 
-   Return 0 on sucess, -1 on failure.
+   Return 0 on success, -1 on failure.
  */
 EVENT2_EXPORT_SYMBOL
 int bufferevent_set_rate_limit(struct bufferevent *bev,
@@ -850,7 +888,7 @@ int bufferevent_rate_limit_group_set_cfg(
 
    The default min-share is currently 64 bytes.
 
-   Returns 0 on success, -1 on faulre.
+   Returns 0 on success, -1 on failure.
  */
 EVENT2_EXPORT_SYMBOL
 int bufferevent_rate_limit_group_set_min_share(
@@ -887,6 +925,8 @@ int bufferevent_remove_from_rate_limit_group(struct bufferevent *bev);
    Set to 0 for a reasonable default.
 
    Return 0 on success and -1 on failure.
+
+   @see evbuffer_set_max_read()
  */
 EVENT2_EXPORT_SYMBOL
 int bufferevent_set_max_single_read(struct bufferevent *bev, size_t size);

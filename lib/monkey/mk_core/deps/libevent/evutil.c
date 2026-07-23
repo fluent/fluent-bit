@@ -24,24 +24,41 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef _WIN32
+#ifndef _WIN32_WINNT
+/* For structs needed by GetAdaptersAddresses and AI_NUMERICSERV */
+#define _WIN32_WINNT 0x0600
+#endif
+#define WIN32_LEAN_AND_MEAN
+#endif
+
 #include "event2/event-config.h"
 #include "evconfig-private.h"
 
 #ifdef _WIN32
 #include <winsock2.h>
+#include <winerror.h>
 #include <ws2tcpip.h>
-#define WIN32_LEAN_AND_MEAN
+#ifdef _MSC_VER /* mstcpip.h is missing on MinGW */
+#include <mstcpip.h> /* for SIO_KEEPALIVE_VALS and tcp_keepalive struct */
+#endif
+#ifdef EVENT__HAVE_AFUNIX_H
+#include <afunix.h>
+#endif
 #include <windows.h>
-#undef WIN32_LEAN_AND_MEAN
 #include <io.h>
 #include <tchar.h>
 #include <process.h>
-#undef _WIN32_WINNT
-/* For structs needed by GetAdaptersAddresses */
-#define _WIN32_WINNT 0x0501
 #include <iphlpapi.h>
+#include <netioapi.h>
 #endif
 
+#ifdef EVENT__HAVE_SYS_AUXV_H
+#include <sys/auxv.h> // for getauxval()
+#endif
+#ifdef EVENT__HAVE_SYS_PARAM_H
+#include <sys/param.h>
+#endif
 #include <sys/types.h>
 #ifdef EVENT__HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
@@ -73,6 +90,9 @@
 #endif
 #include <time.h>
 #include <sys/stat.h>
+#ifndef _WIN32
+#include <net/if.h>
+#endif
 #ifdef EVENT__HAVE_IFADDRS_H
 #include <ifaddrs.h>
 #endif
@@ -93,12 +113,30 @@
 #define read _read
 #define close _close
 #ifndef fstat
+// i64 suffix is for 64-bit filesize support
 #define fstat _fstati64
 #endif
 #ifndef stat
 #define stat _stati64
 #endif
 #define mode_t int
+#endif
+
+#if defined(_WIN32) && !defined(SIO_KEEPALIVE_VALS)
+#define SIO_KEEPALIVE_VALS    _WSAIOW(IOC_VENDOR,4)
+struct tcp_keepalive {
+  u_long onoff;
+  u_long keepalivetime;
+  u_long keepaliveinterval;
+};
+#endif
+
+#ifndef O_RDONLY
+#define O_RDONLY _O_RDONLY
+#endif
+
+#ifdef EVENT__HAVE_AFUNIX_H
+int have_working_afunix_ = -1;
 #endif
 
 int
@@ -126,6 +164,14 @@ evutil_open_closeonexec_(const char *pathname, int flags, unsigned mode)
 	return fd;
 }
 
+ev_off_t evutil_fd_filesize(evutil_socket_t fd)
+{
+	struct stat st;
+	if (fstat(fd, &st) < 0)
+		return -1;
+	return st.st_size;
+}
+
 /**
    Read the contents of 'filename' into a newly allocated NUL-terminated
    string.  Set *content_out to hold this string, and *len_out to hold its
@@ -140,10 +186,11 @@ int
 evutil_read_file_(const char *filename, char **content_out, size_t *len_out,
     int is_binary)
 {
-	int fd, r;
-	struct stat st;
+	int fd;
+	ev_ssize_t r;
+	ev_off_t length;
 	char *mem;
-	size_t read_so_far=0;
+	size_t read_so_far = 0;
 	int mode = O_RDONLY;
 
 	EVUTIL_ASSERT(content_out);
@@ -159,12 +206,12 @@ evutil_read_file_(const char *filename, char **content_out, size_t *len_out,
 	fd = evutil_open_closeonexec_(filename, mode, 0);
 	if (fd < 0)
 		return -1;
-	if (fstat(fd, &st) || st.st_size < 0 ||
-	    st.st_size > EV_SSIZE_MAX-1 ) {
+	length = evutil_fd_filesize(fd);
+	if (length < 0 || length > EV_SSIZE_MAX-1) {
 		close(fd);
 		return -2;
 	}
-	mem = mm_malloc((size_t)st.st_size + 1);
+	mem = mm_malloc(length + 1);
 	if (!mem) {
 		close(fd);
 		return -2;
@@ -175,11 +222,10 @@ evutil_read_file_(const char *filename, char **content_out, size_t *len_out,
 #else
 #define N_TO_READ(x) (x)
 #endif
-	while ((r = read(fd, mem+read_so_far, N_TO_READ(st.st_size - read_so_far))) > 0) {
+	while ((r = read(fd, mem+read_so_far, N_TO_READ(length - read_so_far))) > 0) {
 		read_so_far += r;
-		if (read_so_far >= (size_t)st.st_size)
+		if (read_so_far >= (size_t)length)
 			break;
-		EVUTIL_ASSERT(read_so_far < (size_t)st.st_size);
 	}
 	close(fd);
 	if (r < 0) {
@@ -193,69 +239,108 @@ evutil_read_file_(const char *filename, char **content_out, size_t *len_out,
 	return 0;
 }
 
-int
-evutil_socketpair(int family, int type, int protocol, evutil_socket_t fd[2])
+#ifdef _WIN32
+
+static int
+create_tmpfile(WCHAR tmpfile[MAX_PATH])
 {
-#ifndef _WIN32
-	return socketpair(family, type, protocol, fd);
-#else
-	return evutil_ersatz_socketpair_(family, type, protocol, fd);
-#endif
+	WCHAR short_path[MAX_PATH] = {0};
+	WCHAR long_path[MAX_PATH] = {0};
+	WCHAR prefix[4] = {0};
+	// GetTempFileNameW() uses up to the first three characters of the prefix
+	// and windows filesystems are case-insensitive
+	const WCHAR *base32set = L"abcdefghijklmnopqrstuvwxyz012345";
+	ev_uint16_t rnd;
+
+	evutil_secure_rng_get_bytes(&rnd, sizeof(rnd));
+	prefix[0] = base32set[(rnd      ) & 31];
+	prefix[1] = base32set[(rnd >>  5) & 31];
+	prefix[2] = base32set[(rnd >> 10) & 31];
+	prefix[3] = '\0';
+
+	GetTempPathW(MAX_PATH, short_path);
+	GetLongPathNameW(short_path, long_path, MAX_PATH);
+	if (!GetTempFileNameW(long_path, prefix, 0, tmpfile)) {
+		event_warnx("GetTempFileName failed: %d", EVUTIL_SOCKET_ERROR());
+		return -1;
+	}
+	return 0;
 }
 
+#ifdef EVENT__HAVE_AFUNIX_H
+/* Test whether Unix domain socket works.
+ * Return 1 if it works, otherwise 0 		*/
 int
-evutil_ersatz_socketpair_(int family, int type, int protocol,
+evutil_check_working_afunix_()
+{
+	/* Windows 10 began to support Unix domain socket. Let's just try
+	 * socket(AF_UNIX, , ) and fall back to socket(AF_INET, , ).
+	 * https://devblogs.microsoft.com/commandline/af_unix-comes-to-windows/
+	 */
+	evutil_socket_t sd = -1;
+	if (have_working_afunix_ < 0) {
+		if ((sd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+			have_working_afunix_ = 0;
+		} else {
+			have_working_afunix_ = 1;
+			evutil_closesocket(sd);
+		}
+	}
+	return have_working_afunix_;
+}
+
+/* XXX Copy from evutil_ersatz_socketpair_() */
+static int
+evutil_win_socketpair_afunix(int family, int type, int protocol,
     evutil_socket_t fd[2])
 {
-	/* This code is originally from Tor.  Used with permission. */
-
-	/* This socketpair does not work when localhost is down. So
-	 * it's really not the same thing at all. But it's close enough
-	 * for now, and really, when localhost is down sometimes, we
-	 * have other problems too.
-	 */
-#ifdef _WIN32
+#undef ERR
 #define ERR(e) WSA##e
-#else
-#define ERR(e) e
-#endif
 	evutil_socket_t listener = -1;
 	evutil_socket_t connector = -1;
 	evutil_socket_t acceptor = -1;
-	struct sockaddr_in listen_addr;
-	struct sockaddr_in connect_addr;
+
+	struct sockaddr_un listen_addr;
+	struct sockaddr_un connect_addr;
+	WCHAR tmp_file[MAX_PATH] = {0};
+	char tmp_file_utf8[MAX_PATH] = {0};
+
 	ev_socklen_t size;
 	int saved_errno = -1;
-	int family_test;
-	
-	family_test = family != AF_INET;
-#ifdef AF_UNIX
-	family_test = family_test && (family != AF_UNIX);
-#endif
-	if (protocol || family_test) {
-		EVUTIL_SET_SOCKET_ERROR(ERR(EAFNOSUPPORT));
-		return -1;
-	}
-	
+
 	if (!fd) {
 		EVUTIL_SET_SOCKET_ERROR(ERR(EINVAL));
 		return -1;
 	}
 
-	listener = socket(AF_INET, type, 0);
+	listener = socket(family, type, 0);
 	if (listener < 0)
 		return -1;
 	memset(&listen_addr, 0, sizeof(listen_addr));
-	listen_addr.sin_family = AF_INET;
-	listen_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-	listen_addr.sin_port = 0;	/* kernel chooses port.	 */
+
+	if (create_tmpfile(tmp_file)) {
+		goto tidy_up_and_fail;
+	}
+	DeleteFileW(tmp_file);
+
+	/* Windows requires `sun_path` to be encoded by UTF-8 */
+	WideCharToMultiByte(
+		CP_UTF8, 0, tmp_file, MAX_PATH, tmp_file_utf8, MAX_PATH, NULL, NULL);
+
+	listen_addr.sun_family = AF_UNIX;
+	if (strlcpy(listen_addr.sun_path, tmp_file_utf8, UNIX_PATH_MAX) >=
+		UNIX_PATH_MAX) {
+		event_warnx("Temp file name is too long");
+		goto tidy_up_and_fail;
+	}
+
 	if (bind(listener, (struct sockaddr *) &listen_addr, sizeof (listen_addr))
 		== -1)
 		goto tidy_up_and_fail;
 	if (listen(listener, 1) == -1)
 		goto tidy_up_and_fail;
 
-	connector = socket(AF_INET, type, 0);
+	connector = socket(family, type, 0);
 	if (connector < 0)
 		goto tidy_up_and_fail;
 
@@ -265,8 +350,7 @@ evutil_ersatz_socketpair_(int family, int type, int protocol,
 	size = sizeof(connect_addr);
 	if (getsockname(listener, (struct sockaddr *) &connect_addr, &size) == -1)
 		goto tidy_up_and_fail;
-	if (size != sizeof (connect_addr))
-		goto abort_tidy_up_and_fail;
+
 	if (connect(connector, (struct sockaddr *) &connect_addr,
 				sizeof(connect_addr)) == -1)
 		goto tidy_up_and_fail;
@@ -281,11 +365,12 @@ evutil_ersatz_socketpair_(int family, int type, int protocol,
 	   two sockets.	 */
 	if (getsockname(connector, (struct sockaddr *) &connect_addr, &size) == -1)
 		goto tidy_up_and_fail;
-	if (size != sizeof (connect_addr)
-		|| listen_addr.sin_family != connect_addr.sin_family
-		|| listen_addr.sin_addr.s_addr != connect_addr.sin_addr.s_addr
-		|| listen_addr.sin_port != connect_addr.sin_port)
+
+	if (size != sizeof(connect_addr) ||
+	    listen_addr.sun_family != connect_addr.sun_family ||
+	    evutil_ascii_strcasecmp(listen_addr.sun_path, connect_addr.sun_path))
 		goto abort_tidy_up_and_fail;
+
 	evutil_closesocket(listener);
 	fd[0] = connector;
 	fd[1] = acceptor;
@@ -303,11 +388,47 @@ evutil_ersatz_socketpair_(int family, int type, int protocol,
 		evutil_closesocket(connector);
 	if (acceptor != -1)
 		evutil_closesocket(acceptor);
+	if (tmp_file[0])
+		DeleteFileW(tmp_file);
 
 	EVUTIL_SET_SOCKET_ERROR(saved_errno);
 	return -1;
 #undef ERR
 }
+#endif
+
+static int
+evutil_win_socketpair(int family, int type, int protocol,
+    evutil_socket_t fd[2])
+{
+#ifdef EVENT__HAVE_AFUNIX_H
+	/* The family only support AF_UNIX and AF_INET */
+	if (protocol || (family != AF_UNIX && family != AF_INET)) {
+		EVUTIL_SET_SOCKET_ERROR(WSAEAFNOSUPPORT);
+		return -1;
+	}
+	if (evutil_check_working_afunix_()) {
+		/* If the AF_UNIX socket works, we will change the family to
+		 * AF_UNIX forcely. */
+		family = AF_UNIX;
+		if (type != SOCK_STREAM) {
+			/* Win10 does not support AF_UNIX socket of a type other
+			 * than SOCK_STREAM still now. */
+			EVUTIL_SET_SOCKET_ERROR(WSAEAFNOSUPPORT);
+			return -1;
+		}
+	} else {
+		/* If the AF_UNIX socket does not work, we will change the
+		 * family to AF_INET forcely. */
+		family = AF_INET;
+	}
+	if (family == AF_UNIX)
+		return evutil_win_socketpair_afunix(family, type, protocol, fd);
+
+#endif
+	return evutil_ersatz_socketpair_(family, type, protocol, fd);
+}
+#endif
 
 int
 evutil_make_socket_nonblocking(evutil_socket_t fd)
@@ -316,7 +437,7 @@ evutil_make_socket_nonblocking(evutil_socket_t fd)
 	{
 		unsigned long nonblocking = 1;
 		if (ioctlsocket(fd, FIONBIO, &nonblocking) == SOCKET_ERROR) {
-			event_sock_warn(fd, "fcntl(%d, F_GETFL)", (int)fd);
+			event_sock_warn(fd, "ioctlsocket(%d, FIONBIO, &%lu)", (int)fd, (unsigned long)nonblocking);
 			return -1;
 		}
 	}
@@ -374,15 +495,70 @@ evutil_make_listen_socket_reuseable(evutil_socket_t sock)
 int
 evutil_make_listen_socket_reuseable_port(evutil_socket_t sock)
 {
-#if defined __linux__ && defined(SO_REUSEPORT)
-	int one = 1;
-	/* REUSEPORT on Linux 3.9+ means, "Multiple servers (processes or
-	 * threads) can bind to the same port if they each set the option. */
-	return setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, (void*) &one,
-	    (ev_socklen_t)sizeof(one));
+#if defined(__FreeBSD__) && __FreeBSD__ >= 12 && defined(SO_REUSEPORT_LB)
+	/* FreeBSD 12 introduced a new socket option named SO_REUSEPORT_LB
+	 * with the capability of load balancing, it's the equivalent of
+	 * the SO_REUSEPORTs on Linux and DragonFlyBSD. */
+	int enabled = 1;
+	return setsockopt(sock, SOL_SOCKET, SO_REUSEPORT_LB, (void*)&enabled,
+	    (ev_socklen_t)sizeof(enabled));
+#elif (defined(__linux__) || \
+      defined(_AIX73) || \
+      (defined(__DragonFly__) && __DragonFly_version >= 300600) || \
+      (defined(EVENT__SOLARIS_11_4) && EVENT__SOLARIS_11_4)) && \
+      defined(SO_REUSEPORT)
+	int enabled = 1;
+	/* SO_REUSEPORT on Linux 3.9+ means, "Multiple servers (processes or
+	 * threads) can bind to the same port if they each set the option".
+	 * In addition, the SO_REUSEPORT implementation distributes connections
+	 * or datagrams evenly across all of the threads (or processes).
+	 *
+	 * DragonFlyBSD 3.6.0 extended SO_REUSEPORT to distribute workload to
+	 * available sockets, which make it the same as Linux's SO_REUSEPORT.
+	 *
+	 * AIX 7.2.5 added the feature that would add the capability to distribute
+	 * incoming connections across all listening ports for SO_REUSEPORT.
+	 *
+	 * Solaris 11 supported SO_REUSEPORT, but it's implemented only for
+	 * binding to the same address and port, without load balancing.
+	 * Solaris 11.4 extended SO_REUSEPORT with the capability of load balancing.
+	 */
+	return setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, (void*)&enabled,
+	    (ev_socklen_t)sizeof(enabled));
 #else
-	return 0;
+	/* SO_REUSEPORTs on macOS and other BSDs only enable duplicate address and
+	 * port bindings, load balancing is not included. Therefore, only the last
+	 * socket that binds to a given address and port will receive all the traffic,
+	 * which means that incoming connections/datagrams will be shifted from the
+	 * old thread (or process) to the new one. That's not what we want, so we fail
+	 * this operation on these systems to indicate that SO_REUSEPORT without load
+	 * balancing is not supported. Otherwise, the callers would expected the load
+	 * balancing capability when they get 0 as the return value of this function.
+	 */
+	return -1;
 #endif
+}
+
+int
+evutil_make_listen_socket_ipv6only(evutil_socket_t sock)
+{
+#if defined(IPV6_V6ONLY)
+	int one = 1;
+	return setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (void*) &one,
+	    (ev_socklen_t)sizeof(one));
+#endif
+	return 0;
+}
+
+int
+evutil_make_listen_socket_not_ipv6only(evutil_socket_t sock)
+{
+#if defined(IPV6_V6ONLY)
+	int zero = 0;
+	return setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (void *)&zero,
+		(ev_socklen_t)sizeof(zero));
+#endif
+	return 0;
 }
 
 int
@@ -392,9 +568,9 @@ evutil_make_tcp_listen_socket_deferred(evutil_socket_t sock)
 	int one = 1;
 
 	/* TCP_DEFER_ACCEPT tells the kernel to call defer accept() only after data
-	 * has arrived and ready to read */ 
+	 * has arrived and ready to read */
 	return setsockopt(sock, IPPROTO_TCP, TCP_DEFER_ACCEPT, &one,
-		(ev_socklen_t)sizeof(one)); 
+		(ev_socklen_t)sizeof(one));
 #endif
 	return 0;
 }
@@ -595,44 +771,56 @@ evutil_socket_finished_connecting_(evutil_socket_t fd)
    set by evutil_check_interfaces. */
 static int have_checked_interfaces, had_ipv4_address, had_ipv6_address;
 
-/* Macro: True iff the IPv4 address 'addr', in host order, is in 127.0.0.0/8
- */
-#define EVUTIL_V4ADDR_IS_LOCALHOST(addr) (((addr)>>24) == 127)
+/* True iff the IPv4 address 'addr', in host order, is in 127.0.0.0/8 */
+static inline int evutil_v4addr_is_localhost(ev_uint32_t addr)
+{ return addr>>24 == 127; }
 
-/* Macro: True iff the IPv4 address 'addr', in host order, is a class D
- * (multiclass) address.
- */
-#define EVUTIL_V4ADDR_IS_CLASSD(addr) ((((addr)>>24) & 0xf0) == 0xe0)
+/* True iff the IPv4 address 'addr', in host order, is link-local
+ * 169.254.0.0/16 (RFC3927) */
+static inline int evutil_v4addr_is_linklocal(ev_uint32_t addr)
+{ return ((addr & 0xffff0000U) == 0xa9fe0000U); }
+
+/* True iff the IPv4 address 'addr', in host order, is a class D
+ * (multiclass) address.  */
+static inline int evutil_v4addr_is_classd(ev_uint32_t addr)
+{ return ((addr>>24) & 0xf0) == 0xe0; }
+
+int
+evutil_v4addr_is_local_(const struct in_addr *in)
+{
+	const ev_uint32_t addr = ntohl(in->s_addr);
+	return addr == INADDR_ANY ||
+		evutil_v4addr_is_localhost(addr) ||
+		evutil_v4addr_is_linklocal(addr) ||
+		evutil_v4addr_is_classd(addr);
+}
+int
+evutil_v6addr_is_local_(const struct in6_addr *in)
+{
+	static const char ZEROES[] =
+		"\x00\x00\x00\x00\x00\x00\x00\x00"
+		"\x00\x00\x00\x00\x00\x00\x00\x00";
+
+	const unsigned char *addr = (const unsigned char *)in->s6_addr;
+	return !memcmp(addr, ZEROES, 8) ||
+		((addr[0] & 0xfe) == 0xfc) ||
+		(addr[0] == 0xfe && (addr[1] & 0xc0) == 0x80) ||
+		(addr[0] == 0xfe && (addr[1] & 0xc0) == 0xc0) ||
+		(addr[0] == 0xff);
+}
 
 static void
 evutil_found_ifaddr(const struct sockaddr *sa)
 {
-	const char ZEROES[] = "\x00\x00\x00\x00\x00\x00\x00\x00"
-	    "\x00\x00\x00\x00\x00\x00\x00\x00";
-
 	if (sa->sa_family == AF_INET) {
 		const struct sockaddr_in *sin = (struct sockaddr_in *)sa;
-		ev_uint32_t addr = ntohl(sin->sin_addr.s_addr);
-		if (addr == 0 ||
-		    EVUTIL_V4ADDR_IS_LOCALHOST(addr) ||
-		    EVUTIL_V4ADDR_IS_CLASSD(addr)) {
-			/* Not actually a usable external address. */
-		} else {
+		if (!evutil_v4addr_is_local_(&sin->sin_addr)) {
 			event_debug(("Detected an IPv4 interface"));
 			had_ipv4_address = 1;
 		}
 	} else if (sa->sa_family == AF_INET6) {
 		const struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)sa;
-		const unsigned char *addr =
-		    (unsigned char*)sin6->sin6_addr.s6_addr;
-		if (!memcmp(addr, ZEROES, 8) ||
-		    ((addr[0] & 0xfe) == 0xfc) ||
-		    (addr[0] == 0xfe && (addr[1] & 0xc0) == 0x80) ||
-		    (addr[0] == 0xfe && (addr[1] & 0xc0) == 0xc0) ||
-		    (addr[0] == 0xff)) {
-			/* This is a reserved, ipv4compat, ipv4map, loopback,
-			 * link-local, multicast, or unspecified address. */
-		} else {
+		if (!evutil_v6addr_is_local_(&sin6->sin6_addr)) {
 			event_debug(("Detected an IPv6 interface"));
 			had_ipv6_address = 1;
 		}
@@ -670,7 +858,7 @@ evutil_check_ifaddrs(void)
 	   "GetAdaptersInfo", but that's deprecated; let's just try
 	   GetAdaptersAddresses and fall back to connect+getsockname.
 	*/
-	HMODULE lib = evutil_load_windows_system_library_(TEXT("ihplapi.dll"));
+	HMODULE lib = evutil_load_windows_system_library_(TEXT("iphlpapi.dll"));
 	GetAdaptersAddresses_fn_t fn;
 	ULONG size, res;
 	IP_ADAPTER_ADDRESSES *addresses = NULL, *address;
@@ -727,7 +915,7 @@ done:
 /* Test whether we have an ipv4 interface and an ipv6 interface.  Return 0 if
  * the test seemed successful. */
 static int
-evutil_check_interfaces(int force_recheck)
+evutil_check_interfaces(void)
 {
 	evutil_socket_t fd = -1;
 	struct sockaddr_in sin, sin_out;
@@ -735,8 +923,11 @@ evutil_check_interfaces(int force_recheck)
 	ev_socklen_t sin_out_len = sizeof(sin_out);
 	ev_socklen_t sin6_out_len = sizeof(sin6_out);
 	int r;
-	if (have_checked_interfaces && !force_recheck)
+	if (have_checked_interfaces)
 		return 0;
+
+	/* From this point on we have done the ipv4/ipv6 interface check */
+	have_checked_interfaces = 1;
 
 	if (evutil_check_ifaddrs() == 0) {
 		/* Use a nice sane interface, if this system has one. */
@@ -963,6 +1154,7 @@ evutil_getaddrinfo_common_(const char *nodename, const char *servname,
     struct evutil_addrinfo *hints, struct evutil_addrinfo **res, int *portnum)
 {
 	int port = 0;
+	unsigned int if_index;
 	const char *pname;
 
 	if (nodename == NULL && servname == NULL)
@@ -1036,10 +1228,12 @@ evutil_getaddrinfo_common_(const char *nodename, const char *servname,
 	if (hints->ai_family == PF_INET6 || hints->ai_family == PF_UNSPEC) {
 		struct sockaddr_in6 sin6;
 		memset(&sin6, 0, sizeof(sin6));
-		if (1==evutil_inet_pton(AF_INET6, nodename, &sin6.sin6_addr)) {
+		if (1 == evutil_inet_pton_scope(
+			AF_INET6, nodename, &sin6.sin6_addr, &if_index)) {
 			/* Got an ipv6 address. */
 			sin6.sin6_family = AF_INET6;
 			sin6.sin6_port = htons(port);
+			sin6.sin6_scope_id = if_index;
 			*res = evutil_new_addrinfo_((struct sockaddr*)&sin6,
 			    sizeof(sin6), hints);
 			if (!*res)
@@ -1053,7 +1247,7 @@ evutil_getaddrinfo_common_(const char *nodename, const char *servname,
 		struct sockaddr_in sin;
 		memset(&sin, 0, sizeof(sin));
 		if (1==evutil_inet_pton(AF_INET, nodename, &sin.sin_addr)) {
-			/* Got an ipv6 address. */
+			/* Got an ipv4 address. */
 			sin.sin_family = AF_INET;
 			sin.sin_port = htons(port);
 			*res = evutil_new_addrinfo_((struct sockaddr*)&sin,
@@ -1205,8 +1399,7 @@ evutil_adjust_hints_for_addrconfig_(struct evutil_addrinfo *hints)
 		return;
 	if (hints->ai_family != PF_UNSPEC)
 		return;
-	if (!have_checked_interfaces)
-		evutil_check_interfaces(0);
+	evutil_check_interfaces();
 	if (had_ipv4_address && !had_ipv6_address) {
 		hints->ai_family = PF_INET;
 	} else if (!had_ipv4_address && had_ipv6_address) {
@@ -1340,6 +1533,14 @@ apply_socktype_protocol_hack(struct evutil_addrinfo *ai)
 		ai->ai_protocol = IPPROTO_TCP;
 		ai_new->ai_socktype = SOCK_DGRAM;
 		ai_new->ai_protocol = IPPROTO_UDP;
+		ai_new->ai_flags = EVUTIL_AI_LIBEVENT_ALLOCATED;
+		if (ai_new->ai_canonname != NULL) {
+			ai_new->ai_canonname = mm_strdup(ai_new->ai_canonname);
+			if (ai_new->ai_canonname == NULL) {
+				mm_free(ai_new);
+				return -1;
+			}
+		}
 
 		ai_new->ai_next = ai->ai_next;
 		ai->ai_next = ai_new;
@@ -1543,11 +1744,33 @@ void
 evutil_freeaddrinfo(struct evutil_addrinfo *ai)
 {
 #ifdef EVENT__HAVE_GETADDRINFO
-	if (!(ai->ai_flags & EVUTIL_AI_LIBEVENT_ALLOCATED)) {
-		freeaddrinfo(ai);
-		return;
+	struct evutil_addrinfo *ai_prev = NULL;
+	struct evutil_addrinfo *ai_temp = ai;
+	/* Linked list may be the result of a native getaddrinfo() call plus
+	 * locally allocated nodes, Before releasing it using freeaddrinfo(),
+	 * these custom structs need to be freed separately.
+	 */
+	while (ai_temp) {
+		struct evutil_addrinfo *next = ai_temp->ai_next;
+		if (ai_temp->ai_flags & EVUTIL_AI_LIBEVENT_ALLOCATED) {
+			/* Remove this node from the linked list */
+			if (ai_temp->ai_canonname)
+				mm_free(ai_temp->ai_canonname);
+			mm_free(ai_temp);
+			if (ai_prev == NULL) {
+				ai = next;
+			} else {
+				ai_prev->ai_next = next;
+			}
+
+		} else {
+			ai_prev = ai_temp;
+		}
+		ai_temp = next;
 	}
-#endif
+	if (ai != NULL)
+		freeaddrinfo(ai);
+#else
 	while (ai) {
 		struct evutil_addrinfo *next = ai->ai_next;
 		if (ai->ai_canonname)
@@ -1555,6 +1778,30 @@ evutil_freeaddrinfo(struct evutil_addrinfo *ai)
 		mm_free(ai);
 		ai = next;
 	}
+#endif
+}
+
+struct evutil_addrinfo *
+evutil_dup_addrinfo_(struct evutil_addrinfo *ai)
+{
+	struct evutil_addrinfo *first = NULL;
+	struct evutil_addrinfo *prev = NULL;
+	for (; ai; ai = ai->ai_next) {
+		int len = sizeof(struct evutil_addrinfo) + ai->ai_addrlen;
+		struct evutil_addrinfo *n = mm_calloc(1, len);
+		memcpy(n, ai, len);
+		if (ai->ai_canonname) {
+			n->ai_canonname = mm_strdup(ai->ai_canonname);
+		}
+		n->ai_addr = (struct sockaddr*)(((char*)n) + sizeof(struct evutil_addrinfo));
+		if (!first) {
+			first = n;
+		} else {
+			prev->ai_next = n;
+		}
+		prev = n;
+	}
+	return first;
 }
 
 static evdns_getaddrinfo_fn evdns_getaddrinfo_impl = NULL;
@@ -1571,6 +1818,23 @@ evutil_set_evdns_getaddrinfo_cancel_fn_(evdns_getaddrinfo_cancel_fn fn)
 {
 	if (!evdns_getaddrinfo_cancel_impl)
 		evdns_getaddrinfo_cancel_impl = fn;
+}
+
+static const char *evutil_custom_resolvconf_filename = NULL;
+
+void
+evutil_set_resolvconf_filename_(const char *filename)
+{
+	evutil_custom_resolvconf_filename = filename;
+}
+
+const char *
+evutil_resolvconf_filename_(void)
+{
+	if (evutil_custom_resolvconf_filename)
+		return evutil_custom_resolvconf_filename;
+
+	return "/etc/resolv.conf";
 }
 
 /* Internal helper function: act like evdns_getaddrinfo if dns_base is set;
@@ -1852,7 +2116,10 @@ evutil_vsnprintf(char *buf, size_t buflen, const char *format, va_list ap)
 #else
 	r = vsnprintf(buf, buflen, format, ap);
 #endif
-	buf[buflen-1] = '\0';
+	// If r >= buflen, the output is truncated, and it is manually guaranteed to end with '\0'
+	if (r >= 0 && (size_t)r >= buflen) {
+		buf[buflen - 1] = '\0';
+	}
 	return r;
 }
 
@@ -1953,6 +2220,42 @@ evutil_inet_ntop(int af, const void *src, char *dst, size_t len)
 		return NULL;
 	}
 #endif
+}
+
+int
+evutil_inet_pton_scope(int af, const char *src, void *dst, unsigned *indexp)
+{
+	int r;
+	unsigned if_index;
+	char *check, *tmp_src;
+	const char *scope;
+
+	*indexp = 0; /* Reasonable default */
+
+	/* Bail out if not IPv6 */
+	if (af != AF_INET6)
+		return evutil_inet_pton(af, src, dst);
+
+	scope = strchr(src, '%');
+
+	/* Bail out if no zone ID */
+	if (scope == NULL)
+		return evutil_inet_pton(af, src, dst);
+
+	if_index = if_nametoindex(scope + 1);
+	if (if_index == 0) {
+		if_index = strtoul(scope + 1, &check, 10);
+		if (check[0] != '\0')
+			return 0;
+	}
+	*indexp = if_index;
+	if (!(tmp_src = mm_strdup(src))) {
+		return -1;
+	}
+	tmp_src[scope - src] = '\0';
+	r = evutil_inet_pton(af, tmp_src, dst);
+	mm_free(tmp_src);
+	return r;
 }
 
 int
@@ -2071,6 +2374,7 @@ int
 evutil_parse_sockaddr_port(const char *ip_as_string, struct sockaddr *out, int *outlen)
 {
 	int port;
+	unsigned int if_index;
 	char buf[128];
 	const char *cp, *addr_part, *port_part;
 	int is_ipv6;
@@ -2140,11 +2444,13 @@ evutil_parse_sockaddr_port(const char *ip_as_string, struct sockaddr *out, int *
 #endif
 		sin6.sin6_family = AF_INET6;
 		sin6.sin6_port = htons(port);
-		if (1 != evutil_inet_pton(AF_INET6, addr_part, &sin6.sin6_addr))
+		if (1 != evutil_inet_pton_scope(
+			AF_INET6, addr_part, &sin6.sin6_addr, &if_index)) {
 			return -1;
+		}
 		if ((int)sizeof(sin6) > *outlen)
 			return -1;
-		memset(out, 0, *outlen);
+		sin6.sin6_scope_id = if_index;
 		memcpy(out, &sin6, sizeof(sin6));
 		*outlen = sizeof(sin6);
 		return 0;
@@ -2163,7 +2469,6 @@ evutil_parse_sockaddr_port(const char *ip_as_string, struct sockaddr *out, int *
 			return -1;
 		if ((int)sizeof(sin) > *outlen)
 			return -1;
-		memset(out, 0, *outlen);
 		memcpy(out, &sin, sizeof(sin));
 		*outlen = sizeof(sin);
 		return 0;
@@ -2297,7 +2602,7 @@ static const unsigned char EVUTIL_TOLOWER_TABLE[256] = {
 #define IMPL_CTYPE_FN(name)						\
 	int EVUTIL_##name##_(char c) {					\
 		ev_uint8_t u = c;					\
-		return !!(EVUTIL_##name##_TABLE[(u >> 5) & 7] & (1 << (u & 31))); \
+		return !!(EVUTIL_##name##_TABLE[(u >> 5) & 7] & (1U << (u & 31))); \
 	}
 IMPL_CTYPE_FN(ISALPHA)
 IMPL_CTYPE_FN(ISALNUM)
@@ -2347,6 +2652,25 @@ int evutil_ascii_strncasecmp(const char *s1, const char *s2, size_t n)
 	return 0;
 }
 
+const char* evutil_ascii_strcasestr(const char* s, const char *find)
+{
+	char c, sc;
+	size_t len;
+
+	if ((c = *find++) != 0) {
+		c = EVUTIL_TOLOWER_(c);
+		len = strlen(find);
+		do {
+			do {
+				if ((sc = *s++) == 0)
+					return (NULL);
+			} while ((char)EVUTIL_TOLOWER_(sc) != c);
+		} while (evutil_ascii_strncasecmp(s, find, len) != 0);
+		s--;
+	}
+	return s;
+}
+
 void
 evutil_rtrim_lws_(char *str)
 {
@@ -2373,6 +2697,8 @@ evutil_issetugid(void)
 {
 #ifdef EVENT__HAVE_ISSETUGID
 	return issetugid();
+#elif defined(EVENT__HAVE_SYS_AUXV_H) && defined(AT_SECURE)
+	return getauxval(AT_SECURE);
 #else
 
 #ifdef EVENT__HAVE_GETEUID
@@ -2459,8 +2785,10 @@ evutil_memclear_(void *mem, size_t len)
 int
 evutil_sockaddr_is_loopback_(const struct sockaddr *addr)
 {
-	static const char LOOPBACK_S6[16] =
-	    "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1";
+	static const char LOOPBACK_S6[16] = {
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 1
+	};
 	if (addr->sa_family == AF_INET) {
 		struct sockaddr_in *sin = (struct sockaddr_in *)addr;
 		return (ntohl(sin->sin_addr.s_addr) & 0xff000000) == 0x7f000000;
@@ -2549,6 +2877,176 @@ evutil_socket_(int domain, int type, int protocol)
 	return r;
 }
 
+int
+evutil_socketpair(int family, int type, int protocol, evutil_socket_t fd[2])
+{
+	int ret = 0;
+	int sock_type = type;
+	(void) sock_type;
+	/* SOCK_NONBLOCK and SOCK_CLOEXEC are UNIX-specific. Therefore, the predefined and
+	 * platform-independent macros EVUTIL_SOCK_NONBLOCK and EVUTIL_SOCK_CLOEXEC are used
+	 * in type argument as combination while SOCK_NONBLOCK and SOCK_CLOEXEC are used for
+	 * distinguishing platforms.
+	 */
+#ifndef SOCK_NONBLOCK
+	type &= ~EVUTIL_SOCK_NONBLOCK;
+#endif
+#ifndef SOCK_CLOEXEC
+	type &= ~EVUTIL_SOCK_CLOEXEC;
+#endif
+#if defined(_WIN32)
+	ret = evutil_win_socketpair(family, type, protocol, fd);
+#elif defined(EVENT__HAVE_SOCKETPAIR)
+	ret = socketpair(family, type, protocol, fd);
+#else
+	ret = evutil_ersatz_socketpair_(family, type, protocol, fd);
+#endif
+	if (ret)
+		return ret;
+#ifndef SOCK_NONBLOCK
+	if (sock_type & EVUTIL_SOCK_NONBLOCK) {
+		if ((ret = evutil_fast_socket_nonblocking(fd[0]))) {
+			evutil_closesocket(fd[0]);
+			evutil_closesocket(fd[1]);
+			return ret;
+		}
+		if ((ret = evutil_fast_socket_nonblocking(fd[1]))) {
+			evutil_closesocket(fd[0]);
+			evutil_closesocket(fd[1]);
+			return ret;
+		}
+	}
+#endif
+#ifndef SOCK_CLOEXEC
+	if (sock_type & EVUTIL_SOCK_CLOEXEC) {
+		if ((ret = evutil_fast_socket_closeonexec(fd[0]))) {
+			evutil_closesocket(fd[0]);
+			evutil_closesocket(fd[1]);
+			return ret;
+		}
+		if ((ret = evutil_fast_socket_closeonexec(fd[1]))) {
+			evutil_closesocket(fd[0]);
+			evutil_closesocket(fd[1]);
+			return ret;
+		}
+	}
+#endif
+	return ret;
+}
+
+int
+evutil_ersatz_socketpair_(int family, int type, int protocol,
+    evutil_socket_t fd[2])
+{
+	/* This code is originally from Tor.  Used with permission. */
+
+	/* This socketpair does not work when localhost is down. So
+	 * it's really not the same thing at all. But it's close enough
+	 * for now, and really, when localhost is down sometimes, we
+	 * have other problems too.
+	 */
+#undef ERR
+#ifdef _WIN32
+#define ERR(e) WSA##e
+#else
+#define ERR(e) e
+#endif
+	evutil_socket_t listener = -1;
+	evutil_socket_t connector = -1;
+	evutil_socket_t acceptor = -1;
+	struct sockaddr_in listen_addr;
+	struct sockaddr_in connect_addr;
+	ev_socklen_t size;
+	int saved_errno = -1;
+	int family_test;
+
+	family_test = family != AF_INET;
+#ifdef AF_UNIX
+	family_test = family_test && (family != AF_UNIX);
+#endif
+	if (protocol || family_test) {
+		EVUTIL_SET_SOCKET_ERROR(ERR(EAFNOSUPPORT));
+		return -1;
+	}
+
+	if (!fd) {
+		EVUTIL_SET_SOCKET_ERROR(ERR(EINVAL));
+		return -1;
+	}
+
+	listener = socket(AF_INET, type, 0);
+	if (listener < 0)
+		return -1;
+	memset(&listen_addr, 0, sizeof(listen_addr));
+	listen_addr.sin_family = AF_INET;
+	listen_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	listen_addr.sin_port = 0;	/* kernel chooses port.	 */
+	if (bind(listener, (struct sockaddr *) &listen_addr, sizeof (listen_addr))
+		== -1)
+		goto tidy_up_and_fail;
+	if (listen(listener, 1) == -1)
+		goto tidy_up_and_fail;
+
+	connector = socket(AF_INET, type, 0);
+	if (connector < 0)
+		goto tidy_up_and_fail;
+
+	memset(&connect_addr, 0, sizeof(connect_addr));
+
+	/* We want to find out the port number to connect to.  */
+	size = sizeof(connect_addr);
+	if (getsockname(listener, (struct sockaddr *) &connect_addr, &size) == -1)
+		goto tidy_up_and_fail;
+	if (size != sizeof(connect_addr))
+		goto abort_tidy_up_and_fail;
+	if (connect(connector, (struct sockaddr *) &connect_addr,
+				sizeof(connect_addr)) == -1) {
+		/* It's OK for a non-blocking socket to get an EINPROGRESS from connect(). */
+		int err = evutil_socket_geterror(connector);
+		if (!(EVUTIL_ERR_CONNECT_RETRIABLE(err) && type & EVUTIL_SOCK_NONBLOCK))
+			goto tidy_up_and_fail;
+	}
+
+	size = sizeof(listen_addr);
+	do {
+		acceptor = accept(listener, (struct sockaddr *) &listen_addr, &size);
+	} while(acceptor < 0 && EVUTIL_ERR_ACCEPT_RETRIABLE(errno) && type & EVUTIL_SOCK_NONBLOCK);
+	if (acceptor < 0)
+		goto tidy_up_and_fail;
+	if (size != sizeof(listen_addr))
+		goto abort_tidy_up_and_fail;
+	/* Now check we are talking to ourself by matching port and host on the
+	   two sockets.	 */
+	if (getsockname(connector, (struct sockaddr *) &connect_addr, &size) == -1)
+		goto tidy_up_and_fail;
+	if (size != sizeof (connect_addr)
+		|| listen_addr.sin_family != connect_addr.sin_family
+		|| listen_addr.sin_addr.s_addr != connect_addr.sin_addr.s_addr
+		|| listen_addr.sin_port != connect_addr.sin_port)
+		goto abort_tidy_up_and_fail;
+	evutil_closesocket(listener);
+	fd[0] = connector;
+	fd[1] = acceptor;
+
+	return 0;
+
+ abort_tidy_up_and_fail:
+	saved_errno = ERR(ECONNABORTED);
+ tidy_up_and_fail:
+	if (saved_errno < 0)
+		saved_errno = EVUTIL_SOCKET_ERROR();
+	if (listener != -1)
+		evutil_closesocket(listener);
+	if (connector != -1)
+		evutil_closesocket(connector);
+	if (acceptor != -1)
+		evutil_closesocket(acceptor);
+
+	EVUTIL_SET_SOCKET_ERROR(saved_errno);
+	return -1;
+#undef ERR
+}
+
 /* Internal wrapper around 'accept' or 'accept4' to provide Linux-style
  * support for syscall-saving methods where available.
  *
@@ -2593,7 +3091,7 @@ evutil_accept4_(evutil_socket_t sockfd, struct sockaddr *addr,
 }
 
 /* Internal function: Set fd[0] and fd[1] to a pair of fds such that writes on
- * fd[0] get read from fd[1].  Make both fds nonblocking and close-on-exec.
+ * fd[1] get read from fd[0].  Make both fds nonblocking and close-on-exec.
  * Return 0 on success, -1 on failure.
  */
 int
@@ -2601,7 +3099,7 @@ evutil_make_internal_pipe_(evutil_socket_t fd[2])
 {
 	/*
 	  Making the second socket nonblocking is a bit subtle, given that we
-	  ignore any EAGAIN returns when writing to it, and you don't usally
+	  ignore any EAGAIN returns when writing to it, and you don't usually
 	  do that for a nonblocking socket. But if the kernel gives us EAGAIN,
 	  then there's no need to add any more data to the buffer, since
 	  the main thread is already either about to wake up and drain it,
@@ -2629,25 +3127,16 @@ evutil_make_internal_pipe_(evutil_socket_t fd[2])
 	}
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(EVENT__HAVE_AFUNIX_H)
 #define LOCAL_SOCKETPAIR_AF AF_INET
 #else
 #define LOCAL_SOCKETPAIR_AF AF_UNIX
 #endif
-	if (evutil_socketpair(LOCAL_SOCKETPAIR_AF, SOCK_STREAM, 0, fd) == 0) {
-		if (evutil_fast_socket_nonblocking(fd[0]) < 0 ||
-		    evutil_fast_socket_nonblocking(fd[1]) < 0 ||
-		    evutil_fast_socket_closeonexec(fd[0]) < 0 ||
-		    evutil_fast_socket_closeonexec(fd[1]) < 0) {
-			evutil_closesocket(fd[0]);
-			evutil_closesocket(fd[1]);
-			fd[0] = fd[1] = -1;
-			return -1;
-		}
-		return 0;
+	if (evutil_socketpair(LOCAL_SOCKETPAIR_AF, SOCK_STREAM|EVUTIL_SOCK_CLOEXEC|EVUTIL_SOCK_NONBLOCK, 0, fd)) {
+		fd[0] = fd[1] = -1;
+		return -1;
 	}
-	fd[0] = fd[1] = -1;
-	return -1;
+	return 0;
 }
 
 /* Wrapper around eventfd on systems that provide it.  Unlike the system
@@ -2690,4 +3179,198 @@ evutil_free_globals_(void)
 {
 	evutil_free_secure_rng_globals_();
 	evutil_free_sock_err_globals();
+}
+
+#if (defined(EVENT__SOLARIS_11_4) && !EVENT__SOLARIS_11_4) || \
+    (defined(__DragonFly__) && __DragonFly_version < 500702) || \
+    (defined(_WIN32) && !defined(TCP_KEEPIDLE))
+/* DragonFlyBSD <500702, Solaris <11.4, and Windows <10.0.16299
+ * require millisecond units for TCP keepalive options. */
+#define EVENT_KEEPALIVE_FACTOR(x) (x *= 1000)
+#else
+#define EVENT_KEEPALIVE_FACTOR(x)
+#endif
+int
+evutil_set_tcp_keepalive(evutil_socket_t fd, int on, int timeout)
+{
+	int idle;
+	int intvl;
+	int cnt;
+
+	/* Prevent compiler from complaining unused variables warnings. */
+	(void) idle;
+	(void) intvl;
+	(void) cnt;
+
+	if (timeout <= 0)
+		return 0;
+
+#ifdef _WIN32
+	if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (const char*)&on, sizeof(on)))
+#else
+	if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof(on)))
+#endif
+		return -1;
+	if (!on)
+		return 0;
+
+#ifdef _WIN32
+	idle = timeout;
+	intvl = idle/3;
+	if (intvl == 0)
+		intvl = 1;
+
+	EVENT_KEEPALIVE_FACTOR(idle);
+	EVENT_KEEPALIVE_FACTOR(intvl);
+
+	/* The three options TCP_KEEPIDLE, TCP_KEEPINTVL and TCP_KEEPCNT are not available until
+	 * Windows 10 version 1709, but let's gamble here.
+	 */
+#if defined(TCP_KEEPIDLE) && defined(TCP_KEEPINTVL) && defined(TCP_KEEPCNT)
+	if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, (const char*)&idle, sizeof(idle)))
+		return -1;
+
+	if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, (const char*)&intvl, sizeof(intvl)))
+		return -1;
+
+	cnt = 3;
+	if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, (const char*)&cnt, sizeof(cnt)))
+		return -1;
+
+	/* For those versions prior to Windows 10 version 1709, we fall back to SIO_KEEPALIVE_VALS.
+	 * The SIO_KEEPALIVE_VALS IOCTL is supported on Windows 2000 and later versions of the operating system. */
+#elif defined(SIO_KEEPALIVE_VALS)
+	struct tcp_keepalive keepalive;
+	keepalive.onoff = on;
+	keepalive.keepalivetime = idle;
+	keepalive.keepaliveinterval = intvl;
+	/* On Windows Vista and later, the number of keep-alive probes (data retransmissions)
+	 * is set to 10 and cannot be changed.
+	 * On Windows Server 2003, Windows XP, and Windows 2000, the default setting for
+	 * number of keep-alive probes is 5 and cannot be changed programmatically.
+	 */
+	DWORD dummy;
+	if (WSAIoctl(fd, SIO_KEEPALIVE_VALS, (LPVOID) &keepalive, sizeof(keepalive), NULL, 0, &dummy, NULL, NULL))
+		return -1;
+#endif
+
+#else /* !_WIN32 */
+
+#ifdef __sun
+	/* The implementation of TCP keep-alive on Solaris/SmartOS is a bit unusual
+	 * compared to other Unix-like systems.
+	 * Thus, we need to specialize it on Solaris.
+	 *
+	 * There are two keep-alive mechanisms on Solaris:
+	 * - By default, the first keep-alive probe is sent out after a TCP connection is idle for two hours.
+	 * If the peer does not respond to the probe within eight minutes, the TCP connection is aborted.
+	 * You can alter the interval for sending out the first probe using the socket option TCP_KEEPALIVE_THRESHOLD
+	 * in milliseconds or TCP_KEEPIDLE in seconds.
+	 * The system default is controlled by the TCP ndd parameter tcp_keepalive_interval. The minimum value is ten seconds.
+	 * The maximum is ten days, while the default is two hours. If you receive no response to the probe,
+	 * you can use the TCP_KEEPALIVE_ABORT_THRESHOLD socket option to change the time threshold for aborting a TCP connection.
+	 * The option value is an unsigned integer in milliseconds. The value zero indicates that TCP should never time out and
+	 * abort the connection when probing. The system default is controlled by the TCP ndd parameter tcp_keepalive_abort_interval.
+	 * The default is eight minutes.
+	 *
+	 * - The second implementation is activated if socket option TCP_KEEPINTVL and/or TCP_KEEPCNT are set.
+	 * The time between each consequent probes is set by TCP_KEEPINTVL in seconds.
+	 * The minimum value is ten seconds. The maximum is ten days, while the default is two hours.
+	 * The TCP connection will be aborted after certain amount of probes, which is set by TCP_KEEPCNT, without receiving response.
+	 */
+
+	idle = timeout;
+	/* Kernel expects at least 10 seconds. */
+	if (idle < 10)
+		idle = 10;
+	/* Kernel expects at most 10 days. */
+	if (idle > 10*24*60*60)
+		idle = 10*24*60*60;
+
+	EVENT_KEEPALIVE_FACTOR(idle);
+
+	/* `TCP_KEEPIDLE`, `TCP_KEEPINTVL`, and `TCP_KEEPCNT` were not available on Solaris
+	 * until version 11.4, but let's gamble here.
+	 */
+#if defined(TCP_KEEPIDLE) && defined(TCP_KEEPINTVL) && defined(TCP_KEEPCNT)
+	if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle)))
+		return -1;
+
+	intvl = idle/3;
+	/* Kernel expects at least 10 seconds. */
+	if (intvl < 10)
+		intvl = 10;
+	EVENT_KEEPALIVE_FACTOR(intvl);
+	if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl)))
+		return -1;
+
+	cnt = 3;
+	if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt)))
+		return -1;
+#else
+	/* Fall back to the first implementation of tcp-alive mechanism for older Solaris,
+	 * simulate the tcp-alive mechanism on other platforms via `TCP_KEEPALIVE_THRESHOLD` + `TCP_KEEPALIVE_ABORT_THRESHOLD`.
+	 */
+	if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE_THRESHOLD, &idle, sizeof(idle)))
+		return -1;
+
+	/* Note that the consequent probes will not be sent at equal intervals on Solaris,
+	 * but will be sent using the exponential backoff algorithm.
+	 */
+	int time_to_abort = idle;
+	if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE_ABORT_THRESHOLD, &time_to_abort, sizeof(time_to_abort)))
+		return -1;
+#endif
+
+#else /* !__sun */
+
+	idle = timeout;
+	EVENT_KEEPALIVE_FACTOR(idle);
+#ifdef TCP_KEEPIDLE
+	if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle)))
+		return -1;
+#elif defined(TCP_KEEPALIVE)
+	/* Darwin/macOS uses TCP_KEEPALIVE in place of TCP_KEEPIDLE. */
+	if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE, &idle, sizeof(idle)))
+		return -1;
+#endif
+
+#ifdef TCP_KEEPINTVL
+	/* Set the interval between individual keep-alive probes as timeout / 3
+	 * and the maximum number of keepalive probes as 3 to make it double timeout
+	 * before aborting a dead connection.
+	 */
+	intvl = timeout/3;
+	if (intvl == 0)
+		intvl = 1;
+	EVENT_KEEPALIVE_FACTOR(intvl);
+	if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl)))
+		return -1;
+#endif
+
+#ifdef TCP_KEEPCNT
+	/* Set the maximum number of keepalive probes as 3 to collaborate with
+	 * TCP_KEEPINTVL, see the previous comment.
+	 */
+	cnt = 3;
+	if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt)))
+		return -1;
+#endif
+
+#endif /* !__sun */
+
+#endif /* !_WIN32 */
+
+	return 0;
+}
+
+const char * evutil_strsignal(int sig)
+{
+#if !defined(EVENT__HAVE_STRSIGNAL)
+	static char buf[10];
+	evutil_snprintf(buf, 10, "%d", sig);
+	return buf;
+#else
+	return strsignal(sig);
+#endif
 }

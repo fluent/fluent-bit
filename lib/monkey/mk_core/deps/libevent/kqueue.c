@@ -37,6 +37,7 @@
 #endif
 #include <sys/queue.h>
 #include <sys/event.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,7 +51,10 @@
 /* Some platforms apparently define the udata field of struct kevent as
  * intptr_t, whereas others define it as void*.  There doesn't seem to be an
  * easy way to tell them apart via autoconf, so we need to use OS macros. */
-#if defined(EVENT__HAVE_INTTYPES_H) && !defined(__OpenBSD__) && !defined(__FreeBSD__) && !defined(__darwin__) && !defined(__APPLE__) && !defined(__CloudABI__)
+#if defined(__NetBSD__)
+#define PTR_TO_UDATA(x) ((__typeof__(((struct kevent *)0)->udata))(x))
+#define INT_TO_UDATA(x) ((__typeof__(((struct kevent *)0)->udata))(intptr_t)(x))
+#elif defined(EVENT__HAVE_INTTYPES_H) && !defined(__OpenBSD__) && !defined(__FreeBSD__) && !defined(__darwin__) && !defined(__APPLE__) && !defined(__CloudABI__)
 #define PTR_TO_UDATA(x)	((intptr_t)(x))
 #define INT_TO_UDATA(x) ((intptr_t)(x))
 #else
@@ -62,6 +66,7 @@
 #include "log-internal.h"
 #include "evmap-internal.h"
 #include "event2/thread.h"
+#include "event2/util.h"
 #include "evthread-internal.h"
 #include "changelist-internal.h"
 
@@ -70,9 +75,6 @@
 #define NEVENT		64
 
 struct kqop {
-	struct kevent *changes;
-	int changes_size;
-
 	struct kevent *events;
 	int events_size;
 	int kq;
@@ -133,26 +135,23 @@ kq_init(struct event_base *base)
 	kqueueop->pid = getpid();
 
 	/* Initialize fields */
-	kqueueop->changes = mm_calloc(NEVENT, sizeof(struct kevent));
-	if (kqueueop->changes == NULL)
-		goto err;
 	kqueueop->events = mm_calloc(NEVENT, sizeof(struct kevent));
 	if (kqueueop->events == NULL)
 		goto err;
-	kqueueop->events_size = kqueueop->changes_size = NEVENT;
+	kqueueop->events_size = NEVENT;
 
 	/* Check for Mac OS X kqueue bug. */
-	memset(&kqueueop->changes[0], 0, sizeof kqueueop->changes[0]);
-	kqueueop->changes[0].ident = -1;
-	kqueueop->changes[0].filter = EVFILT_READ;
-	kqueueop->changes[0].flags = EV_ADD;
+	memset(&kqueueop->events[0], 0, sizeof kqueueop->events[0]);
+	kqueueop->events[0].ident = -1;
+	kqueueop->events[0].filter = EVFILT_READ;
+	kqueueop->events[0].flags = EV_ADD;
 	/*
 	 * If kqueue works, then kevent will succeed, and it will
 	 * stick an error in events[0].  If kqueue is broken, then
 	 * kevent will fail.
 	 */
 	if (kevent(kq,
-		kqueueop->changes, 1, kqueueop->events, NEVENT, NULL) != 1 ||
+		kqueueop->events, 1, kqueueop->events, NEVENT, NULL) != 1 ||
 	    (int)kqueueop->events[0].ident != -1 ||
 	    !(kqueueop->events[0].flags & EV_ERROR)) {
 		event_warn("%s: detected broken kqueue; not using.", __func__);
@@ -197,6 +196,29 @@ kq_setup_kevent(struct kevent *out, evutil_socket_t fd, int filter, short change
 }
 
 static int
+kq_grow_events(struct kqop *kqop)
+{
+	size_t new_size;
+	struct kevent *new_events;
+
+	if (kqop->events_size > INT_MAX / 2 ||
+	    (size_t)kqop->events_size * 2 > EV_SIZE_MAX / sizeof(struct kevent)) {
+		event_warnx("%s: int overflow", __func__);
+		return -1;
+	}
+
+	new_size = kqop->events_size * 2;
+	new_events = mm_realloc(kqop->events, new_size * sizeof(struct kevent));
+	if (new_events == NULL) {
+		event_warn("%s: realloc", __func__);
+		return -1;
+	}
+	kqop->events = new_events;
+	kqop->events_size = new_size;
+	return 0;
+}
+
+static int
 kq_build_changes_list(const struct event_changelist *changelist,
     struct kqop *kqop)
 {
@@ -206,57 +228,32 @@ kq_build_changes_list(const struct event_changelist *changelist,
 	for (i = 0; i < changelist->n_changes; ++i) {
 		struct event_change *in_ch = &changelist->changes[i];
 		struct kevent *out_ch;
-		if (n_changes >= kqop->changes_size - 1) {
-			int newsize = kqop->changes_size * 2;
-			struct kevent *newchanges;
-
-			newchanges = mm_realloc(kqop->changes,
-			    newsize * sizeof(struct kevent));
-			if (newchanges == NULL) {
-				event_warn("%s: realloc", __func__);
-				return (-1);
-			}
-			kqop->changes = newchanges;
-			kqop->changes_size = newsize;
-		}
 		if (in_ch->read_change) {
-			out_ch = &kqop->changes[n_changes++];
+			out_ch = &kqop->events[n_changes++];
 			kq_setup_kevent(out_ch, in_ch->fd, EVFILT_READ,
 			    in_ch->read_change);
+			if (n_changes == kqop->events_size && kq_grow_events(kqop)) {
+				return -1;
+			}
 		}
 		if (in_ch->write_change) {
-			out_ch = &kqop->changes[n_changes++];
+			out_ch = &kqop->events[n_changes++];
 			kq_setup_kevent(out_ch, in_ch->fd, EVFILT_WRITE,
 			    in_ch->write_change);
+			if (n_changes == kqop->events_size && kq_grow_events(kqop)) {
+				return -1;
+			}
 		}
 	}
 	return n_changes;
 }
 
 static int
-kq_grow_events(struct kqop *kqop, size_t new_size)
-{
-	struct kevent *newresult;
-
-	newresult = mm_realloc(kqop->events,
-	    new_size * sizeof(struct kevent));
-
-	if (newresult) {
-		kqop->events = newresult;
-		kqop->events_size = new_size;
-		return 0;
-	} else {
-		return -1;
-	}
-}
-
-static int
 kq_dispatch(struct event_base *base, struct timeval *tv)
 {
 	struct kqop *kqop = base->evbase;
-	struct kevent *events = kqop->events;
-	struct kevent *changes;
 	struct timespec ts, *ts_p = NULL;
+	struct kevent *events;
 	int i, n_changes, res;
 
 	if (tv != NULL) {
@@ -265,47 +262,27 @@ kq_dispatch(struct event_base *base, struct timeval *tv)
 		ts_p = &ts;
 	}
 
-	/* Build "changes" from "base->changes" */
-	EVUTIL_ASSERT(kqop->changes);
+	/* Build the changelist of kevent() from "base->changelist" */
+	EVUTIL_ASSERT(kqop->events);
 	n_changes = kq_build_changes_list(&base->changelist, kqop);
 	if (n_changes < 0)
 		return -1;
 
 	event_changelist_remove_all_(&base->changelist, base);
 
-	/* steal the changes array in case some broken code tries to call
-	 * dispatch twice at once. */
-	changes = kqop->changes;
-	kqop->changes = NULL;
-
-	/* Make sure that 'events' is at least as long as the list of changes:
-	 * otherwise errors in the changes can get reported as a -1 return
-	 * value from kevent() rather than as EV_ERROR events in the events
-	 * array.
-	 *
-	 * (We could instead handle -1 return values from kevent() by
-	 * retrying with a smaller changes array or a larger events array,
-	 * but this approach seems less risky for now.)
-	 */
-	if (kqop->events_size < n_changes) {
-		int new_size = kqop->events_size;
-		do {
-			new_size *= 2;
-		} while (new_size < n_changes);
-
-		kq_grow_events(kqop, new_size);
-		events = kqop->events;
-	}
+	/* Offload the events array before calling kevent() to register and
+	 * retrieve events in case some broken code tries to call dispatch
+	 * while there is already one on the fly. */
+	events = kqop->events;
+	kqop->events = NULL;
 
 	EVBASE_RELEASE_LOCK(base, th_base_lock);
-
-	res = kevent(kqop->kq, changes, n_changes,
-	    events, kqop->events_size, ts_p);
-
+	res = kevent(kqop->kq, events, n_changes, events, kqop->events_size, ts_p);
 	EVBASE_ACQUIRE_LOCK(base, th_base_lock);
 
-	EVUTIL_ASSERT(kqop->changes == NULL);
-	kqop->changes = changes;
+	EVUTIL_ASSERT(kqop->events == NULL);
+	/* Reinstate the events array to provision the next dispatch. */
+	kqop->events = events;
 
 	if (res == -1) {
 		if (errno != EINTR) {
@@ -407,9 +384,10 @@ kq_dispatch(struct event_base *base, struct timeval *tv)
 	}
 
 	if (res == kqop->events_size) {
-		/* We used all the events space that we have. Maybe we should
-		   make it bigger. */
-		kq_grow_events(kqop, kqop->events_size * 2);
+		/* We've used up all the events space in this round.
+		 * Try to double the size of the eventlist for next round. */
+		if (kq_grow_events(kqop) < 0)
+			return -1;
 	}
 
 	return (0);
@@ -418,8 +396,6 @@ kq_dispatch(struct event_base *base, struct timeval *tv)
 static void
 kqop_free(struct kqop *kqop)
 {
-	if (kqop->changes)
-		mm_free(kqop->changes);
 	if (kqop->events)
 		mm_free(kqop->events);
 	if (kqop->kq >= 0 && kqop->pid == getpid())
@@ -499,11 +475,16 @@ kq_sig_del(struct event_base *base, int nsignal, short old, short events, void *
 }
 
 
-/* OSX 10.6 and FreeBSD 8.1 add support for EVFILT_USER, which we can use
- * to wake up the event loop from another thread. */
+/* OSX 10.6, FreeBSD 8.1, DragonFlyBSD 4.0 and NetBSD 10.0 added support for EVFILT_USER,
+ * which we can use to wake up the event loop from another thread. */
 
-/* Magic number we use for our filter ID. */
-#define NOTIFY_IDENT 42
+/* Magic number we use for our filter ID.
+ *
+ * This is a made-up value, so it can be any integer within the range of type uintptr_t,
+ * it's used in conjunction with filter as a (ident, filter) pair to identify a event entry.
+ * We use 0 for consistency with other mainstream networking libraries.
+ */
+#define NOTIFY_IDENT 0
 
 int
 event_kq_add_notify_event_(struct event_base *base)

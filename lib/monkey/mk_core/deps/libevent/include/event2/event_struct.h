@@ -126,9 +126,12 @@ struct event {
 	/* for managing timeouts */
 	union {
 		TAILQ_ENTRY(event) ev_next_with_common_timeout;
-		int min_heap_idx;
+		size_t min_heap_idx;
 	} ev_timeout_pos;
 	evutil_socket_t ev_fd;
+
+	short ev_events;
+	short ev_res;		/* result passed to event callback */
 
 	struct event_base *ev_base;
 
@@ -148,8 +151,7 @@ struct event {
 		} ev_signal;
 	} ev_;
 
-	short ev_events;
-	short ev_res;		/* result passed to event callback */
+
 	struct timeval ev_timeout;
 };
 
