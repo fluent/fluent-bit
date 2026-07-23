@@ -543,6 +543,28 @@ int flb_task_map_get_task_id(struct flb_config *config) {
     return map_get_task_id(config);
 }
 
+/*
+ * Several routes may resolve to the same output instance (e.g. distinct
+ * conditional routes merging into one output). Each route is evaluated
+ * independently, but a task must carry at most one route per output so the
+ * chunk is flushed and accounted for exactly once.
+ */
+static int task_route_exists(struct flb_task *task,
+                             struct flb_output_instance *out)
+{
+    struct mk_list *head;
+    struct flb_task_route *route;
+
+    mk_list_foreach(head, &task->routes) {
+        route = mk_list_entry(head, struct flb_task_route, _head);
+        if (route->out == out) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 /* Create an engine task to handle the output plugin flushing work */
 struct flb_task *flb_task_create(uint64_t ref_id,
                                  const char *buf,
@@ -700,6 +722,11 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                     for (stored_match_index = 0;
                          stored_match_index < stored_match_count;
                          stored_match_index++) {
+                        if (task_route_exists(task,
+                                              stored_matches[stored_match_index])) {
+                            continue;
+                        }
+
                         route = flb_calloc(1, sizeof(struct flb_task_route));
                         if (!route) {
                             flb_errno();
@@ -797,6 +824,14 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                                             o_ins->config->router) == 0) {
                     continue;
                 }
+            }
+
+            /*
+             * Multiple matching routes can point at the same output; only add
+             * one task route per output so the chunk is not flushed twice.
+             */
+            if (task_route_exists(task, o_ins)) {
+                continue;
             }
 
             route = flb_calloc(1, sizeof(struct flb_task_route));
