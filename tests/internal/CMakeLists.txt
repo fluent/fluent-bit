@@ -76,6 +76,7 @@ if(FLB_TLS)
     upstream_tls.c
     oauth2_jwt.c
     oauth2.c
+    oauth2_metadata.c
     )
 endif()
 
