@@ -928,6 +928,47 @@ void test_json_pack_nan()
     flb_pack_init(&config);
 }
 
+/*
+ * flb_msgpack_to_json() must report a buffer overflow as a negative value
+ * (not 0), so fixed-buffer callers can tell truncation apart from a
+ * successful zero-length write.
+ */
+void test_json_pack_truncation()
+{
+    int ret;
+    char small[4];
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    msgpack_object obj;
+    msgpack_zone mempool;
+    msgpack_unpack_return unpack_ret;
+
+    /* a value whose JSON form does not fit in the destination buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_double(&mp_pck, 123456789.0);
+    msgpack_zone_init(&mempool, 2048);
+    unpack_ret = msgpack_unpack(mp_sbuf.data, mp_sbuf.size, NULL, &mempool, &obj);
+    if (!TEST_CHECK(unpack_ret == MSGPACK_UNPACK_SUCCESS)) {
+        TEST_MSG("msgpack_unpack failed: %d", unpack_ret);
+        msgpack_zone_destroy(&mempool);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return;
+    }
+
+    ret = flb_msgpack_to_json(small, sizeof(small), &obj, FLB_TRUE);
+    if (!TEST_CHECK(ret < 0)) {
+        TEST_MSG("truncation must return a negative value, got %d", ret);
+    }
+
+    /* a zero-capacity buffer must be rejected, not wrapped to SIZE_MAX */
+    ret = flb_msgpack_to_json(small, 0, &obj, FLB_TRUE);
+    TEST_CHECK(ret < 0);
+
+    msgpack_zone_destroy(&mempool);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+}
+
 static int check_msgpack_val(msgpack_object obj, int expected_type, char *expected_val)
 {
     int len;
@@ -1303,6 +1344,7 @@ TEST_LIST = {
     { "json_pack_bug342"   , test_json_pack_bug342},
     { "json_pack_bug1278"  , test_json_pack_bug1278},
     { "json_pack_nan"      , test_json_pack_nan},
+    { "json_pack_truncation", test_json_pack_truncation},
     { "json_pack_bug5336"  , test_json_pack_bug5336},
     { "json_pack_empty_array", test_json_pack_empty_array},
     { "json_date_iso8601" , test_json_date_iso8601},
