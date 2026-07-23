@@ -345,6 +345,12 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
 #ifdef FLB_HAVE_AVRO_ENCODER
     else if (ctx->format == FLB_KAFKA_FMT_AVRO) {
 
+        ret = flb_kafka_schema_registry_resolve(ctx);
+        if (ret != FLB_OK) {
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return ret;
+        }
+
         flb_plg_debug(ctx->ins, "avro schema ID:%d:\n", ctx->avro_fields.schema_id);
         flb_plg_debug(ctx->ins, "avro schema string:%s:\n", ctx->avro_fields.schema_str);
 
@@ -1497,6 +1503,76 @@ static struct flb_config_map config_map[] = {
     0, FLB_TRUE, offsetof(struct flb_out_kafka, avro_fields) + offsetof(struct flb_avro_fields, schema_id),
     "Set AVRO schema ID."
    },
+   {
+    FLB_CONFIG_MAP_STR, "schema_registry_url", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_url),
+    "Set the Confluent Schema Registry base URL for AVRO schemas."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "schema.registry.url", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_url),
+    "Set the Confluent Schema Registry base URL for AVRO schemas."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "schema_registry_subject", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_subject),
+    "Set the Confluent Schema Registry subject for AVRO schemas."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "schema.registry.subject", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_subject),
+    "Set the Confluent Schema Registry subject for AVRO schemas."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "schema_registry_version", "latest",
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_version),
+    "Set the Confluent Schema Registry subject version for AVRO schemas."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "schema.registry.version", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_version),
+    "Set the Confluent Schema Registry subject version for AVRO schemas."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "schema_registry_http_user", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_http_user),
+    "Set the Confluent Schema Registry HTTP basic authentication user."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "schema.registry.http.user", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_http_user),
+    "Set the Confluent Schema Registry HTTP basic authentication user."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "schema_registry_http_passwd", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_http_passwd),
+    "Set the Confluent Schema Registry HTTP basic authentication password."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "schema.registry.http.password", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_http_passwd),
+    "Set the Confluent Schema Registry HTTP basic authentication password."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "schema_registry_bearer_token", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_bearer_token),
+    "Set the Confluent Schema Registry bearer token."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "schema.registry.bearer.token", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_bearer_token),
+    "Set the Confluent Schema Registry bearer token."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "schema_registry_framing", "cp1",
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_framing),
+    "Set the Schema Registry serializer framing. Only cp1 is supported."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "serializer.framing", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_framing),
+    "Set the Schema Registry serializer framing. Only cp1 is supported."
+   },
 #endif
    {
     FLB_CONFIG_MAP_STR, "topics", (char *)NULL,
@@ -1556,6 +1632,6 @@ struct flb_output_plugin out_kafka_plugin = {
     .cb_flush     = cb_kafka_flush,
     .cb_exit      = cb_kafka_exit,
     .config_map   = config_map,
-    .flags        = 0,
+    .flags        = FLB_IO_OPT_TLS,
     .event_type   = FLB_OUTPUT_LOGS
 };

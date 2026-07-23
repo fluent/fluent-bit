@@ -27,6 +27,7 @@
 #endif
 
 #include <fluent-bit/flb_kafka.h>
+#include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/aws/flb_aws_msk_iam.h>
 
 #define FLB_KAFKA_FMT_JSON            0
@@ -55,6 +56,19 @@
 #define FLB_JSON_DATE_ISO8601     1
 #define FLB_JSON_DATE_ISO8601_NS  2
 #define FLB_JSON_DATE_ISO8601_FMT "%Y-%m-%dT%H:%M:%S"
+
+#ifdef FLB_HAVE_AVRO_ENCODER
+struct flb_kafka_schema_registry_endpoint {
+    flb_sds_t host;
+    flb_sds_t uri;
+    int port;
+#ifdef FLB_HAVE_TLS
+    struct flb_tls *tls;
+#endif
+    struct flb_upstream *upstream;
+    struct mk_list _head;
+};
+#endif
 
 struct flb_kafka_topic {
     int name_len;
@@ -127,6 +141,18 @@ struct flb_out_kafka {
     // flb_sds_t avro_schema_str;
     // flb_sds_t avro_schema_id;
     struct flb_avro_fields avro_fields;
+
+    /* Optional Confluent Schema Registry resolver for Avro schemas */
+    flb_sds_t schema_registry_url;
+    flb_sds_t schema_registry_subject;
+    flb_sds_t schema_registry_version;
+    flb_sds_t schema_registry_http_user;
+    flb_sds_t schema_registry_http_passwd;
+    flb_sds_t schema_registry_bearer_token;
+    flb_sds_t schema_registry_framing;
+    int schema_registry_endpoint_count;
+    int schema_registry_endpoint_index;
+    struct mk_list schema_registry_endpoints;
 #endif
 
 #ifdef FLB_HAVE_AWS_MSK_IAM
@@ -146,5 +172,15 @@ struct flb_out_kafka {
 struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
                                            struct flb_config *config);
 int flb_out_kafka_destroy(struct flb_out_kafka *ctx);
+
+#ifdef FLB_HAVE_AVRO_ENCODER
+int flb_kafka_schema_registry_configure(struct flb_out_kafka *ctx,
+                                        struct flb_config *config);
+int flb_kafka_schema_registry_resolve(struct flb_out_kafka *ctx);
+int flb_kafka_schema_registry_parse_response(struct flb_out_kafka *ctx,
+                                             const char *payload,
+                                             size_t payload_size);
+void flb_kafka_schema_registry_destroy(struct flb_out_kafka *ctx);
+#endif
 
 #endif
