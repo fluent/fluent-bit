@@ -30,6 +30,7 @@
 #define MOCK_BODY_SIZE 16384
 #define TEST_CERT_FILENAME "oauth2_private_key_jwt_test_cert.pem"
 #define TEST_KEY_FILENAME  "oauth2_private_key_jwt_test_key.pem"
+#define TEST_SECRET_FILENAME "oauth2_client_secret_file_test.txt"
 
 static const char *TEST_PRIVATE_KEY_PEM =
 "-----BEGIN PRIVATE KEY-----\n"
@@ -547,6 +548,36 @@ static struct flb_oauth2 *create_oauth_ctx(struct flb_config *config,
     return create_oauth_ctx_with_user_agent(config, server, refresh_skew, NULL);
 }
 
+static struct flb_oauth2 *create_oauth_ctx_secret_file(struct flb_config *config,
+                                                       struct oauth2_mock_server *server,
+                                                       const char *secret_file,
+                                                       const char *inline_secret)
+{
+    struct flb_oauth2_config cfg;
+    struct flb_oauth2 *ctx;
+
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.enabled = FLB_TRUE;
+    cfg.token_url = flb_sds_create_size(64);
+    cfg.auth_method = FLB_OAUTH2_AUTH_METHOD_POST;
+    cfg.refresh_skew = 58;
+    cfg.client_id = flb_sds_create("id");
+    if (inline_secret) {
+        cfg.client_secret = flb_sds_create(inline_secret);
+    }
+    if (secret_file) {
+        cfg.client_secret_file = flb_sds_create(secret_file);
+    }
+
+    flb_sds_printf(&cfg.token_url, "http://127.0.0.1:%d/token", server->port);
+
+    ctx = flb_oauth2_create_from_config(config, &cfg);
+
+    flb_oauth2_config_destroy(&cfg);
+
+    return ctx;
+}
+
 void test_user_agent_header_optional(void)
 {
     int ret;
@@ -634,6 +665,27 @@ static int write_text_file(const char *path, const char *content)
     fclose(fp);
 
     if (written != expected) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int test_secret_file_path(char *path, size_t path_size)
+{
+    char *tmpdir;
+    int ret;
+
+    tmpdir = flb_test_env_tmpdir();
+    TEST_CHECK(tmpdir != NULL);
+    if (!tmpdir) {
+        return -1;
+    }
+
+    ret = snprintf(path, path_size, "%s/%s.%d",
+                   tmpdir, TEST_SECRET_FILENAME, (int) getpid());
+    flb_free(tmpdir);
+    if (ret < 0 || (size_t) ret >= path_size) {
         return -1;
     }
 
@@ -1251,6 +1303,213 @@ void test_private_key_jwt_x5t_header(void)
     flb_config_exit(config);
 }
 
+void test_client_secret_from_file(void)
+{
+    int ret;
+    char secret_path[256];
+    char value[128];
+    flb_sds_t token = NULL;
+    struct flb_config *config;
+    struct flb_oauth2 *ctx;
+    struct oauth2_mock_server server;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+
+    ret = test_secret_file_path(secret_path, sizeof(secret_path));
+    TEST_CHECK(ret == 0);
+
+    ret = write_text_file(secret_path, "filesecret\n");
+    TEST_CHECK(ret == 0);
+
+    ret = oauth2_mock_server_start(&server, 3600, 0);
+    TEST_CHECK(ret == 0);
+
+    ctx = create_oauth_ctx_secret_file(config, &server, secret_path, NULL);
+    TEST_CHECK(ctx != NULL);
+
+#ifdef FLB_SYSTEM_MACOS
+    ret = oauth2_mock_server_wait_ready(&server);
+    TEST_CHECK(ret == 0);
+#endif
+
+    ret = flb_oauth2_get_access_token(ctx, &token, FLB_FALSE);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(token != NULL);
+
+    ret = extract_form_value(server.latest_token_request, "client_secret",
+                             value, sizeof(value));
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(strcmp(value, "filesecret") == 0);
+
+    flb_oauth2_destroy(ctx);
+    oauth2_mock_server_stop(&server);
+    unlink(secret_path);
+    flb_config_exit(config);
+}
+
+void test_client_secret_file_change_detection(void)
+{
+    int ret;
+    char secret_path[256];
+    char value[128];
+    flb_sds_t token = NULL;
+    struct flb_config *config;
+    struct flb_oauth2 *ctx;
+    struct oauth2_mock_server server;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+
+    ret = test_secret_file_path(secret_path, sizeof(secret_path));
+    TEST_CHECK(ret == 0);
+
+    ret = write_text_file(secret_path, "secret-v1\n");
+    TEST_CHECK(ret == 0);
+
+    ret = oauth2_mock_server_start(&server, 3600, 0);
+    TEST_CHECK(ret == 0);
+
+    ctx = create_oauth_ctx_secret_file(config, &server, secret_path, NULL);
+    TEST_CHECK(ctx != NULL);
+
+#ifdef FLB_SYSTEM_MACOS
+    ret = oauth2_mock_server_wait_ready(&server);
+    TEST_CHECK(ret == 0);
+#endif
+
+    ret = flb_oauth2_get_access_token(ctx, &token, FLB_FALSE);
+    TEST_CHECK(ret == 0);
+    ret = extract_form_value(server.latest_token_request, "client_secret",
+                             value, sizeof(value));
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(strcmp(value, "secret-v1") == 0);
+
+    ret = write_text_file(secret_path, "secret-v2\n");
+    TEST_CHECK(ret == 0);
+
+    /* Force a refresh; the reload happens inside oauth2_refresh_locked. */
+    flb_oauth2_invalidate_token(ctx);
+
+    ret = flb_oauth2_get_access_token(ctx, &token, FLB_FALSE);
+    TEST_CHECK(ret == 0);
+    ret = extract_form_value(server.latest_token_request, "client_secret",
+                             value, sizeof(value));
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(strcmp(value, "secret-v2") == 0);
+
+    flb_oauth2_destroy(ctx);
+    oauth2_mock_server_stop(&server);
+    unlink(secret_path);
+    flb_config_exit(config);
+}
+
+void test_client_secret_file_only_validation(void)
+{
+    int ret;
+    char secret_path[256];
+    struct flb_config *config;
+    struct flb_oauth2 *ctx;
+    struct oauth2_mock_server server;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+
+    ret = test_secret_file_path(secret_path, sizeof(secret_path));
+    TEST_CHECK(ret == 0);
+
+    ret = write_text_file(secret_path, "only-file-secret\n");
+    TEST_CHECK(ret == 0);
+
+    ret = oauth2_mock_server_start(&server, 3600, 0);
+    TEST_CHECK(ret == 0);
+
+    ctx = create_oauth_ctx_secret_file(config, &server, secret_path, NULL);
+    TEST_CHECK(ctx != NULL);
+
+    flb_oauth2_destroy(ctx);
+    oauth2_mock_server_stop(&server);
+    unlink(secret_path);
+    flb_config_exit(config);
+}
+
+void test_client_secret_file_precedence(void)
+{
+    int ret;
+    char secret_path[256];
+    char value[128];
+    flb_sds_t token = NULL;
+    struct flb_config *config;
+    struct flb_oauth2 *ctx;
+    struct oauth2_mock_server server;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+
+    ret = test_secret_file_path(secret_path, sizeof(secret_path));
+    TEST_CHECK(ret == 0);
+
+    ret = write_text_file(secret_path, "file-wins\n");
+    TEST_CHECK(ret == 0);
+
+    ret = oauth2_mock_server_start(&server, 3600, 0);
+    TEST_CHECK(ret == 0);
+
+    ctx = create_oauth_ctx_secret_file(config, &server, secret_path,
+                                       "inline-secret");
+    TEST_CHECK(ctx != NULL);
+
+#ifdef FLB_SYSTEM_MACOS
+    ret = oauth2_mock_server_wait_ready(&server);
+    TEST_CHECK(ret == 0);
+#endif
+
+    ret = flb_oauth2_get_access_token(ctx, &token, FLB_FALSE);
+    TEST_CHECK(ret == 0);
+    ret = extract_form_value(server.latest_token_request, "client_secret",
+                             value, sizeof(value));
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(strcmp(value, "file-wins") == 0);
+
+    flb_oauth2_destroy(ctx);
+    oauth2_mock_server_stop(&server);
+    unlink(secret_path);
+    flb_config_exit(config);
+}
+
+void test_client_secret_file_errors(void)
+{
+    int ret;
+    char secret_path[256];
+    struct flb_config *config;
+    struct flb_oauth2 *ctx;
+    struct oauth2_mock_server server;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+
+    ret = oauth2_mock_server_start(&server, 3600, 0);
+    TEST_CHECK(ret == 0);
+
+    ret = test_secret_file_path(secret_path, sizeof(secret_path));
+    TEST_CHECK(ret == 0);
+
+    /* Nonexistent file -> creation fails. */
+    unlink(secret_path);
+    ctx = create_oauth_ctx_secret_file(config, &server, secret_path, NULL);
+    TEST_CHECK(ctx == NULL);
+
+    /* Empty (newline-only) file -> creation fails. */
+    ret = write_text_file(secret_path, "\n\n");
+    TEST_CHECK(ret == 0);
+    ctx = create_oauth_ctx_secret_file(config, &server, secret_path, NULL);
+    TEST_CHECK(ctx == NULL);
+
+    oauth2_mock_server_stop(&server);
+    unlink(secret_path);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
     {"parse_refreshes_token_transactionally",
      test_parse_refreshes_token_transactionally},
@@ -1264,5 +1523,12 @@ TEST_LIST = {
     {"legacy_create_manual_payload_flow", test_legacy_create_manual_payload_flow},
     {"private_key_jwt_body", test_private_key_jwt_body},
     {"private_key_jwt_x5t_header", test_private_key_jwt_x5t_header},
+    {"client_secret_from_file", test_client_secret_from_file},
+    {"client_secret_file_change_detection",
+     test_client_secret_file_change_detection},
+    {"client_secret_file_only_validation",
+     test_client_secret_file_only_validation},
+    {"client_secret_file_precedence", test_client_secret_file_precedence},
+    {"client_secret_file_errors", test_client_secret_file_errors},
     {0}
 };
