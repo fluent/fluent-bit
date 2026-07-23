@@ -607,6 +607,9 @@ static struct flb_http_client *make_event_watch_api_request(struct k8s_events *c
     }
 
     flb_sds_printf(&url, "?watch=1&resourceVersion=%" PRIu64, max_resource_version);
+    if (ctx->watch_timeout > 0) {
+        flb_sds_printf(&url, "&timeoutSeconds=%d", ctx->watch_timeout);
+    }
     flb_plg_info(ctx->ins, "Requesting %s", url);
     c = flb_http_client(ctx->current_connection, FLB_HTTP_GET, url,
                         NULL, 0, ctx->api_host, ctx->api_port, NULL, 0);
@@ -870,6 +873,9 @@ static int check_and_init_stream(struct k8s_events *ctx)
         goto failure;
     }
     initialize_http_client(ctx->streaming_client, ctx);
+    if (ctx->watch_timeout > 0) {
+        flb_http_set_read_idle_timeout(ctx->streaming_client, ctx->watch_timeout);
+    }
 
     /* Watch will stream chunked json data, so we only send
      * the http request, then use flb_http_get_response_data
@@ -1011,6 +1017,13 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
       0, FLB_TRUE, offsetof(struct k8s_events, interval_nsec),
       "Set the polling interval for each channel (sub seconds)"
+    },
+
+    {
+      FLB_CONFIG_MAP_TIME, "kube_watch_timeout", DEFAULT_WATCH_TIMEOUT,
+      0, FLB_TRUE, offsetof(struct k8s_events, watch_timeout),
+      "Set the maximum Kubernetes watch duration and client read idle timeout. "
+      "Set to 0 to disable the timeout"
     },
 
     /* TLS: set debug 'level' */
