@@ -222,6 +222,8 @@ void flb_test_s3_multipart_success(void)
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd,"store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd,"s3_object_tag", "key1", "value1", NULL);
+    flb_output_set(ctx, out_ffd,"s3_object_tag", "key2", "value2", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -511,6 +513,7 @@ void flb_test_s3_complete_upload_error(void)
     flb_output_set(ctx, out_ffd,"bucket", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
     flb_output_set(ctx, out_ffd,"store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd,"s3_object_tag", "key", "value with spaces", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
