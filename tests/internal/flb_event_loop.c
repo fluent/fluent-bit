@@ -27,6 +27,7 @@
 #endif
 
 #define TIMER_COARSE_EPSION_MS 300
+#define LOOP_SIZE 3
 
 struct test_evl_context {
     struct mk_event_loop *evl;
@@ -583,10 +584,77 @@ void event_loop_stress_priority_add_delete()
 #endif
 }
 
+void test_inject_event_priority_loop()
+{
+    int i;
+    int iter;
+    struct mk_event priority_0_events[LOOP_SIZE];
+    struct mk_event priority_2_events[LOOP_SIZE];
+    struct mk_event injected_event;
+    struct mk_event *event;
+    struct test_evl_context *ctx = evl_context_create();
+
+    /* add priority 0 events to the event loop */
+    for (i = 0; i < LOOP_SIZE; i++) {
+        test_timeout_create(ctx->evl, 0, 0, &priority_0_events[i]);
+        priority_0_events[i].priority = 0;
+    }
+
+    /* add priority 2 events to the event loop */
+    for (i = 0; i < LOOP_SIZE; i++) {
+        test_timeout_create(ctx->evl, 0, 0, &priority_2_events[i]);
+        priority_2_events[i].priority = 2;
+    }
+
+    /* create priority 1 event that we will inject */
+    MK_EVENT_ZERO(&injected_event);
+    injected_event._priority_head.next = NULL;
+    injected_event._priority_head.prev = NULL;
+    injected_event.priority = 1;
+
+    usleep(400000);
+    mk_event_wait_2(ctx->evl, 0);
+
+    do {
+        iter = 0;
+        /* first loop, event priorities: {0, 0, 0, 2, 2, 2} */
+        flb_event_priority_live_foreach(event, ctx->bktq, ctx->evl, LOOP_SIZE) {
+            if (iter == 0) {
+                /* inject an event, new priorities: {0, 0, 0, 1, 2, 2, 2} */
+                mk_event_inject(ctx->evl, &injected_event, MK_EVENT_READ, FLB_TRUE);
+            }
+            /* delete event */
+            test_timeout_destroy(ctx->evl, event);
+
+            iter++;
+        }
+    } while(0);
+
+    do {
+        iter = 0;
+        /* second loop, event priorities: {1, 2, 2, 2} */
+        flb_event_priority_live_foreach(event, ctx->bktq, ctx->evl, LOOP_SIZE + 1) {
+            if (iter == 0) {
+                TEST_CHECK(event->priority == 1);
+                TEST_MSG("Expected injected event with priority 1, "
+                         "got event with priority %i instead",
+                         event->priority);
+            }
+            /* delete event */
+            test_timeout_destroy(ctx->evl, event);
+
+            iter++;
+        }
+    } while(0);
+
+    evl_context_destroy(ctx);
+}
+
 TEST_LIST = {
     {"test_simple_timeout_1000ms", test_simple_timeout_1000ms},
     {"test_non_blocking_and_blocking_timeout", test_non_blocking_and_blocking_timeout},
     {"test_infinite_wait", test_infinite_wait},
     {"event_loop_stress_priority_add_delete", event_loop_stress_priority_add_delete},
+    {"test_inject_event_priority_loop", test_inject_event_priority_loop},
     { 0 }
 };
