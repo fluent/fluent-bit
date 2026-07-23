@@ -33,6 +33,8 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_thread_storage.h>
 
+static inline int prepare_destroy_conn_safe(struct flb_connection *connection);
+
 static void flb_downstream_conn_event_coro(void)
 {
     struct flb_coro *coro;
@@ -48,6 +50,16 @@ static void flb_downstream_conn_event_coro(void)
         connection->event_callback(connection);
 
         connection->busy_flag = FLB_FALSE;
+
+        /*
+         * A pause or shutdown can be requested recursively while ingestion
+         * is still using the plugin wrapper. Defer the drop notification
+         * until the complete callback has unwound.
+         */
+        if (connection->event_release_pending == FLB_TRUE) {
+            connection->event_release_pending = FLB_FALSE;
+            prepare_destroy_conn_safe(connection);
+        }
 
         if (connection->fd == FLB_INVALID_SOCKET) {
             connection->coroutine = NULL;
@@ -348,6 +360,8 @@ static int destroy_conn(struct flb_connection *connection, int force)
     }
 
     if (connection->event_coroutine != NULL) {
+        flb_trace("[downstream] destroy event coroutine for connection #%i",
+                  connection->fd);
         flb_coro_destroy(connection->event_coroutine);
         connection->event_coroutine = NULL;
         connection->coroutine = NULL;
@@ -546,10 +560,14 @@ int flb_downstream_conn_release(struct flb_connection *connection)
     flb_stream_acquire_lock(connection->stream, FLB_TRUE);
 
     if (connection->event_coroutine != NULL &&
-        connection->busy_flag == FLB_TRUE &&
-        flb_coro_get() != connection->event_coroutine) {
-        wake_event_coroutine(connection, ECANCELED);
-        resume = flb_stream_is_thread_safe(connection->stream);
+        connection->busy_flag == FLB_TRUE) {
+        connection->event_release_pending = FLB_TRUE;
+
+        if (flb_coro_get() != connection->event_coroutine) {
+            wake_event_coroutine(connection, ECANCELED);
+            resume = flb_stream_is_thread_safe(connection->stream);
+        }
+
         ret = FLB_DOWNSTREAM_CONN_DEFERRED;
     }
     else {
@@ -616,6 +634,9 @@ int flb_downstream_conn_event_register(struct flb_connection *connection,
     connection->event_callback = callback;
     connection->coroutine = coro;
     flb_connection_enable_flags(connection, FLB_IO_ASYNC);
+
+    flb_trace("[downstream] register event coroutine for connection #%i",
+              connection->fd);
 
     previous_coro = flb_coro_get();
     flb_coro_resume(coro);
