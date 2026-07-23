@@ -2430,6 +2430,10 @@ static int cb_worker_exit(void *data, struct flb_config *config)
     struct worker_info *info;
     struct flb_azure_blob *ctx = data;
 
+    if (!ctx) {
+        return 0;
+    }
+
     flb_plg_info(ctx->ins, "initializing worker");
 
     info = FLB_TLS_GET(worker_info);
