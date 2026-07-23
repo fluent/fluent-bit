@@ -271,6 +271,13 @@ struct flb_input_instance {
     int storage_pause_on_chunks_overlimit;
 
     /*
+     * Optional limit for total filesystem storage (bytes). When set,
+     * the input is paused once the sum of all its chunk sizes on disk
+     * reaches this threshold.  -1 means unlimited (default).
+     */
+    size_t storage_total_limit_size;
+
+    /*
      * Input network info:
      *
      * An input plugin can be specified just using it shortname or using the
