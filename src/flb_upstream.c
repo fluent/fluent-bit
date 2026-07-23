@@ -363,7 +363,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 }
 
 /*
- * Checks whehter a destinate URL should be proxied.
+ * Checks whether a destinate URL should be proxied.
  */
 int flb_upstream_needs_proxy(const char *host, const char *proxy,
                              const char *no_proxy)
@@ -400,9 +400,34 @@ int flb_upstream_needs_proxy(const char *host, const char *proxy,
     ret = FLB_TRUE;
     mk_list_foreach(head, &no_proxy_list) {
         e = mk_list_entry(head, struct flb_slist_entry, _head);
-         if (strcmp(host, e->str) == 0) {
+        if (strcmp(host, e->str) == 0) {
             ret = FLB_FALSE;
             break;
+        }
+        /*
+         * Check if host matches the proxy entry which is in form of
+         * ".partial.domain.name" or "partial.domain.name"
+         */
+        int proxy_length = strlen(e->str);
+        int host_length = strlen(host);
+        if (host_length > proxy_length) {
+            char *host_suffix;
+            host_suffix = flb_malloc(proxy_length);
+            sprintf(host_suffix, "%s", host + (host_length - proxy_length));
+            if (strcmp(host_suffix, e->str) == 0) {
+                if (strcmp(".", e->str[0]) == 0) {
+                    /* Proxy entry starts with "." and it matches in host */
+                    ret = FLB_FALSE;
+                    flb_free(host_suffix);
+                    break;
+                } else if (host[host_length - proxy_length - 1] == '.') {
+                    /* Proxy entry does not start with "." so ensure host has a "." before the proxy entry */
+                    ret = FLB_FALSE;
+                    flb_free(host_suffix);
+                    break;
+                }
+            }
+            flb_free(host_suffix);
         }
     }
 
