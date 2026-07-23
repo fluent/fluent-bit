@@ -280,6 +280,9 @@ def run_grpc_server(port=4317, *, use_tls=False, tls_crt_file=None, tls_key_file
 def stop_otlp_server():
     global grpc_server_instance
     global http_server_instance
+    global server_thread
+
+    stop_event = None
 
     shutdown_flag.set()
 
@@ -288,8 +291,18 @@ def stop_otlp_server():
         http_server_instance = None
 
     if grpc_server_instance is not None:
-        grpc_server_instance.stop(grace=0)
+        stop_event = grpc_server_instance.stop(grace=0)
         grpc_server_instance = None
+
+    if stop_event is not None:
+        stop_event.wait(timeout=5)
+
+    if server_thread is not None and server_thread is not threading.current_thread():
+        server_thread.join(timeout=5)
+        if server_thread.is_alive():
+            raise RuntimeError("OTLP server thread did not stop")
+
+    server_thread = None
 
 
 def otlp_server_run(port, *, use_tls=False, tls_crt_file=None, tls_key_file=None, use_grpc=False):

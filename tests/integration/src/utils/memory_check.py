@@ -1,6 +1,6 @@
 #  Fluent Bit
 #  ==========
-#  Copyright (C) 2024 The Fluent Bit Authors
+#  Copyright (C) 2015-2026 The Fluent Bit Authors
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -14,10 +14,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-[pytest]
-testpaths = scenarios
-pythonpath = . src
-log_cli = 1
-log_cli_level = INFO
-log_cli_format = %(asctime)s - %(levelname)s - %(message)s
-log_cli_date_format = %Y-%m-%d %H:%M:%S
+import os
+
+
+def valgrind_enabled():
+    return bool(os.environ.get("VALGRIND"))
+
+
+def leaks_enabled():
+    return bool(os.environ.get("LEAKS"))
+
+
+def memory_check_enabled():
+    return valgrind_enabled() or leaks_enabled()

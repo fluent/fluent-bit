@@ -10,6 +10,7 @@ from server.forward_server import (
     forward_server_stop,
 )
 from utils.fluent_bit_manager import FluentBitManager
+from utils.memory_check import memory_check_enabled
 from utils.network import find_available_port, wait_for_port_to_be_free
 
 
@@ -66,7 +67,8 @@ class FluentBitForwardChain:
                 self.receiver.stop()
         finally:
             forward_server_stop()
-            wait_for_port_to_be_free(self.capture_port, timeout=10 if os.environ.get("VALGRIND") else 5)
+            timeout = 10 if memory_check_enabled() else 5
+            wait_for_port_to_be_free(self.capture_port, timeout=timeout)
             self._restore_env()
 
     def wait_for_forward_messages(self, minimum_count, timeout=10):
@@ -162,7 +164,8 @@ def _capture_record(sender_config_file, message):
 
     try:
         _send_log_event_with_metadata(service.sender_port, message)
-        messages = service.wait_for_forward_messages(1, timeout=20 if os.environ.get("VALGRIND") else 10)
+        timeout = 20 if memory_check_enabled() else 10
+        messages = service.wait_for_forward_messages(1, timeout=timeout)
     finally:
         service.stop()
 

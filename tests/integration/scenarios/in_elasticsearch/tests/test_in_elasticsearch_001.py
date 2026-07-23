@@ -36,6 +36,10 @@ IN_ELASTICSEARCH_SMALL_BUFFER_REGRESSION_CASES = [
     },
 ]
 
+# A deliberately truncated response can surface as an HTTP/2 framing error (16),
+# a send error (55), or a receive error (56), depending on curl and the protocol.
+SMALL_BUFFER_CURL_EXIT_CODES = {0, 16, 55, 56}
+
 
 def parse_single_item_response(response_text):
     payload = json.loads(response_text)
@@ -325,7 +329,7 @@ def test_in_elasticsearch_bulk_small_status_buffer_does_not_crash(case):
     # The regression condition is process termination from a reachable double-free.
     # Response formatting can still vary under constrained buffer settings, but the
     # parser must not take down the process.
-    assert curl_result.returncode in {0, 55, 56}
+    assert curl_result.returncode in SMALL_BUFFER_CURL_EXIT_CODES
     assert health_result["status_code"] == 200
 
 

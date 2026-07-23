@@ -1,6 +1,6 @@
 #  Fluent Bit
 #  ==========
-#  Copyright (C) 2024 The Fluent Bit Authors
+#  Copyright (C) 2015-2026 The Fluent Bit Authors
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -14,10 +14,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-[pytest]
-testpaths = scenarios
-pythonpath = . src
-log_cli = 1
-log_cli_level = INFO
-log_cli_format = %(asctime)s - %(levelname)s - %(message)s
-log_cli_date_format = %Y-%m-%d %H:%M:%S
+
+def assert_leaks_clean(return_code, log_path):
+    if return_code == 0:
+        return
+
+    if return_code == 1:
+        problem = "memory leaks were detected"
+    else:
+        problem = f"the leaks command failed with exit code {return_code}"
+
+    raise AssertionError(f"macOS leaks check failed: {problem}. See {log_path}")

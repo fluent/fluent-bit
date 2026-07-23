@@ -1349,12 +1349,13 @@ def test_in_opentelemetry_http_workers_mixed_signal_matrix(case):
         ("metrics", "test_metrics_001.in.json", "/v1/metrics"),
         ("traces", "test_traces_001.in.json", "/v1/traces"),
     ]
+    worker_count = 4
     repeats_per_signal = 4
     total_requests = len(request_plan) * repeats_per_signal
 
     service = Service(IN_OPENTELEMETRY_WORKER_PROTOCOL_CONFIGS[case["config_key"]])
     service.start()
-    service.wait_for_log_message("with 4 workers", timeout=10)
+    service.wait_for_log_message(f"with {worker_count} workers", timeout=10)
 
     scheme = "https" if case["use_tls"] else "http"
     request_jobs = []
@@ -1377,7 +1378,7 @@ def test_in_opentelemetry_http_workers_mixed_signal_matrix(case):
             ca_cert_path=service.tls_crt_file if case["use_tls"] else None,
         )
 
-    with ThreadPoolExecutor(max_workers=total_requests) as executor:
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
         results = list(executor.map(send_job, request_jobs))
 
     for result in results:

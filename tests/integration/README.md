@@ -42,7 +42,7 @@ It starts a real Fluent Bit process, drives real network traffic into it, captur
 - downstream request generation
 - exporter endpoint output
 - negative-path handling
-- memory diagnostics through optional Valgrind execution
+- memory diagnostics through optional Valgrind or macOS `leaks` execution
 
 The suite is designed as a reusable tool for testing Fluent Bit plugins and protocol behavior with deterministic local infrastructure.
 
@@ -60,6 +60,7 @@ It provides:
 - bounded waits instead of ad hoc sleeps
 - per-run logs and result directories
 - optional Valgrind wrapping and parsing
+- optional macOS `leaks --atExit` supervision with graceful shutdown
 
 That makes it useful both for plugin development and for runtime regression testing.
 
@@ -85,7 +86,7 @@ That makes it useful both for plugin development and for runtime regression test
                     | start/stop binary
                     | logs/results
                     | readiness
-                    | valgrind integration
+                    | memory diagnostics
                     +----------+-----------+
                                |
                                v
@@ -108,7 +109,7 @@ That makes it useful both for plugin development and for runtime regression test
 - starts Fluent Bit with a scenario config
 - captures logs in a per-run results directory
 - exposes monitoring-based readiness checks
-- supports `VALGRIND=1`
+- supports `VALGRIND=1` and macOS `LEAKS=1`
 
 [`src/utils/test_service.py`](src/utils/test_service.py)
 
@@ -567,6 +568,24 @@ Run tests with a simple checkbox progress view:
 ./tests/fluent-bit-test-suite/run_tests.py
 ```
 
+Run test files in parallel with pytest-xdist:
+
+```bash
+./tests/integration/run_tests.py -n 4 --dist loadfile
+```
+
+Use file-level distribution because tests in the same module can share helper
+servers and in-memory capture state.
+
+Do not combine macOS `leaks` checks with multiple xdist workers. Concurrent
+`leaks` processes can fail to acquire Mach task ports. Run functional tests in
+parallel, then run memory verification serially:
+
+```bash
+./tests/integration/run_tests.py -n 4 --dist loadfile
+./tests/integration/run_tests.py --leaks-strict
+```
+
 Run a subset:
 
 ```bash
@@ -592,3 +611,36 @@ Require Valgrind-clean runs:
 VALGRIND=1 VALGRIND_STRICT=1 \
 ./tests/fluent-bit-test-suite/.venv/bin/pytest -q tests/fluent-bit-test-suite
 ```
+
+Run a focused scenario with macOS `leaks`:
+
+```bash
+./tests/integration/run_tests.py --leaks \
+    scenarios/out_stdout/tests/test_out_stdout_001.py \
+    -k default_format
+```
+
+Fail the test when `leaks` detects unreachable allocations or encounters a
+profiling error:
+
+```bash
+./tests/integration/run_tests.py --leaks-strict \
+    scenarios/out_stdout/tests/test_out_stdout_001.py \
+    -k default_format
+```
+
+The equivalent environment variables are `LEAKS=1` and
+`LEAKS_STRICT=1`. Each Fluent Bit run writes a `leaks.log` report under
+`tests/integration/results/`.
+
+The harness launches `leaks --atExit` as a supervisor and records the PID of
+its Fluent Bit child. During teardown it sends `SIGTERM` to Fluent Bit, waits
+for normal engine shutdown, and then waits for `leaks` to finish its report.
+Do not signal the `leaks` supervisor directly because that can prevent report
+generation.
+
+The macOS runner must allow `/usr/bin/leaks` to acquire the Fluent Bit Mach
+task port. Debug builds may need to be signed with the
+`com.apple.security.get-task-allow` entitlement. The `leaks` tool detects
+unreachable allocations; use AddressSanitizer or malloc diagnostics for
+invalid accesses and heap corruption.
