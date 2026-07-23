@@ -653,6 +653,37 @@ def _send_tls_payload(port, payload, cafile):
             tls_sock.sendall(payload)
 
 
+def _create_tls_memory_bio_client(port, cafile):
+    context = ssl.create_default_context(cafile=cafile)
+    incoming = ssl.MemoryBIO()
+    outgoing = ssl.MemoryBIO()
+    tls = context.wrap_bio(incoming, outgoing, server_hostname="localhost")
+    raw_sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+
+    while True:
+        try:
+            tls.do_handshake()
+            break
+        except ssl.SSLWantReadError:
+            encrypted = outgoing.read()
+            if encrypted:
+                raw_sock.sendall(encrypted)
+
+            encrypted = raw_sock.recv(65536)
+            assert encrypted
+            incoming.write(encrypted)
+        except ssl.SSLWantWriteError:
+            encrypted = outgoing.read()
+            if encrypted:
+                raw_sock.sendall(encrypted)
+
+    encrypted = outgoing.read()
+    if encrypted:
+        raw_sock.sendall(encrypted)
+
+    return raw_sock, tls, outgoing
+
+
 def _recv_msgpack_value(sock):
     sock.settimeout(5)
     data = sock.recv(4096)
@@ -1086,6 +1117,196 @@ def test_in_forward_tls_message_mode():
         service.stop()
 
     assert records[0]["message"] == "tls-message"
+
+
+@pytest.mark.parametrize(
+    "config_file,worker_log",
+    [
+        ("in_forward_tls.yaml", None),
+        ("in_forward_tls_threaded.yaml", None),
+        ("in_forward_tls_workers.yaml", "with 4 workers"),
+    ],
+)
+def test_in_forward_tls_partial_record_keeps_listener_responsive(config_file, worker_log):
+    service = Service(config_file)
+    service.start()
+
+    partial_sock = None
+
+    try:
+        if worker_log is not None:
+            service.wait_for_log_message(worker_log, timeout=10)
+
+        partial_payload = _message_mode_payload(TEST_TAG, {"message": "partial-tls-record"})
+        partial_sock, tls, outgoing = _create_tls_memory_bio_client(
+            service.flb_listener_port,
+            service.tls_crt_file,
+        )
+
+        tls.write(partial_payload)
+        encrypted_payload = outgoing.read()
+        assert len(encrypted_payload) > 1
+
+        partial_sock.sendall(encrypted_payload[:-1])
+        time.sleep(0.5)
+
+        responsive_payload = _message_mode_payload(
+            TEST_TAG,
+            {"message": "second-connection-remains-responsive"},
+        )
+        _send_tls_payload(
+            service.flb_listener_port,
+            responsive_payload,
+            service.tls_crt_file,
+        )
+        records = service.wait_for_record_count(1, timeout=10)
+
+        assert records[0]["message"] == "second-connection-remains-responsive"
+
+        partial_sock.sendall(encrypted_payload[-1:])
+        records = service.wait_for_record_count(2, timeout=10)
+    finally:
+        if partial_sock is not None:
+            partial_sock.close()
+        service.stop()
+
+    assert any(record.get("message") == "partial-tls-record" for record in records)
+
+
+def test_in_forward_tls_eof_and_protocol_error_keep_listener_responsive():
+    service = Service("in_forward_tls.yaml")
+    service.start()
+
+    try:
+        eof_sock, _, _ = _create_tls_memory_bio_client(
+            service.flb_listener_port,
+            service.tls_crt_file,
+        )
+        eof_sock.close()
+
+        error_sock, _, _ = _create_tls_memory_bio_client(
+            service.flb_listener_port,
+            service.tls_crt_file,
+        )
+        error_sock.sendall(b"\x17\x03\x03\x00\x06broken")
+        error_sock.close()
+
+        payload = _message_mode_payload(TEST_TAG, {"message": "after-tls-errors"})
+        _send_tls_payload(service.flb_listener_port, payload, service.tls_crt_file)
+        records = service.wait_for_record_count(1, timeout=10)
+    finally:
+        service.stop()
+
+    assert records[0]["message"] == "after-tls-errors"
+
+
+def test_in_forward_tls_partial_record_shutdown_is_clean():
+    service = Service("in_forward_tls.yaml")
+    service.start()
+    process = service.flb.process
+
+    partial_sock = None
+
+    try:
+        payload = _message_mode_payload(TEST_TAG, {"message": "shutdown-partial"})
+        partial_sock, tls, outgoing = _create_tls_memory_bio_client(
+            service.flb_listener_port,
+            service.tls_crt_file,
+        )
+        tls.write(payload)
+        encrypted_payload = outgoing.read()
+        assert len(encrypted_payload) > 1
+        partial_sock.sendall(encrypted_payload[:-1])
+        time.sleep(0.5)
+    finally:
+        service.stop()
+        if partial_sock is not None:
+            partial_sock.close()
+
+    assert process.returncode == 0
+
+
+def test_in_forward_tls_partial_record_pause_and_shutdown_is_clean():
+    service = Service("in_forward_tls_pause.yaml")
+    service.start()
+    process = service.flb.process
+
+    partial_sock = None
+
+    try:
+        log_file = service.service.flb.log_file
+        destroyed_before_pause = read_file(log_file).count("[coro] destroy coroutine")
+
+        partial_payload = _message_mode_payload(TEST_TAG, {"message": "pause-partial"})
+        partial_sock, tls, outgoing = _create_tls_memory_bio_client(
+            service.flb_listener_port,
+            service.tls_crt_file,
+        )
+        tls.write(partial_payload)
+        encrypted_payload = outgoing.read()
+        assert len(encrypted_payload) > 1
+        partial_sock.sendall(encrypted_payload[:-1])
+
+        large_payload = _message_mode_payload(
+            TEST_TAG,
+            {"message": "trigger-pause", "payload": "x" * 4096},
+        )
+        _send_tls_payload(service.flb_listener_port, large_payload, service.tls_crt_file)
+        service.wait_for_log_contains("paused (mem buf overlimit", timeout=10)
+        service.service.wait_for_condition(
+            lambda: read_file(log_file)
+            if read_file(log_file).count("[coro] destroy coroutine")
+            >= destroyed_before_pause + 2
+            else None,
+            timeout=10,
+            interval=0.2,
+            description="paused Forward TLS coroutines to unwind",
+        )
+    finally:
+        service.stop()
+        if partial_sock is not None:
+            partial_sock.close()
+
+    assert process.returncode == 0
+
+
+def test_in_forward_tls_worker_idle_timeout_wakes_coroutine():
+    service = Service("in_forward_tls_workers_timeout.yaml")
+    service.start()
+
+    partial_sock = None
+
+    try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
+
+        payload = _message_mode_payload(TEST_TAG, {"message": "worker-timeout"})
+        partial_sock, tls, outgoing = _create_tls_memory_bio_client(
+            service.flb_listener_port,
+            service.tls_crt_file,
+        )
+        tls.write(payload)
+        encrypted_payload = outgoing.read()
+        assert len(encrypted_payload) > 1
+        partial_sock.sendall(encrypted_payload[:-1])
+
+        service.wait_for_log_contains("timed out after 2 seconds (IO timeout)", timeout=10)
+
+        responsive_payload = _message_mode_payload(
+            TEST_TAG,
+            {"message": "after-worker-timeout"},
+        )
+        _send_tls_payload(
+            service.flb_listener_port,
+            responsive_payload,
+            service.tls_crt_file,
+        )
+        records = service.wait_for_record_count(1, timeout=10)
+    finally:
+        if partial_sock is not None:
+            partial_sock.close()
+        service.stop()
+
+    assert records[0]["message"] == "after-worker-timeout"
 
 
 def test_in_forward_tls_idle_connection_timeout_churn(monkeypatch):
