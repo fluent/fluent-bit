@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_atomic.h>
 #include <msgpack.h>
 
 static int id_exists(int id, struct flb_metrics *metrics)
@@ -181,7 +182,12 @@ int flb_metrics_sum(int id, size_t val, struct flb_metrics *metrics)
         return -1;
     }
 
-    m->val += val;
+    /*
+     * The counter is summed from the owning input/output worker thread while the
+     * metrics exporter reads it from the main engine thread; use a relaxed
+     * atomic so the access is well defined (see flb_metrics_dump_values()).
+     */
+    flb_atomic_fetch_add(&m->val, val);
     return 0;
 }
 
@@ -214,7 +220,7 @@ int flb_metrics_print(struct flb_metrics *metrics)
 
     mk_list_foreach(head, &metrics->list) {
         m = mk_list_entry(head, struct flb_metric, _head);
-        printf(", '%s' => %lu", m->title, m->val);
+        printf(", '%s' => %lu", m->title, (unsigned long) flb_atomic_load(&m->val));
     }
     printf("\n");
 
@@ -240,7 +246,7 @@ int flb_metrics_dump_values(char **out_buf, size_t *out_size,
         m = mk_list_entry(head, struct flb_metric, _head);
         msgpack_pack_str(&mp_pck, flb_sds_len(m->title));
         msgpack_pack_str_body(&mp_pck, m->title, flb_sds_len(m->title));
-        msgpack_pack_uint64(&mp_pck, m->val);
+        msgpack_pack_uint64(&mp_pck, flb_atomic_load(&m->val));
     }
 
     *out_buf  = mp_sbuf.data;
