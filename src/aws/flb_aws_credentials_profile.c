@@ -643,6 +643,19 @@ end:
     return result;
 }
 
+/**
+ * Load AWS credentials for the given profile from the shared credentials file.
+ *
+ * Allocates and fills a flb_aws_credentials structure pointed to by `*creds` when a matching
+ * profile is found in the file at `credentials_path`. On failure the function frees any
+ * allocated resources and sets `*creds` to NULL.
+ *
+ * @param credentials_path Path to the shared credentials file.
+ * @param profile Name of the profile to load.
+ * @param creds Output pointer that will receive an allocated credentials structure on success.
+ * @param debug_only If non-zero, suppresses warning-level messages in favor of debug-level logging.
+ * @return `0` on success (credentials populated in `*creds`), `-1` on failure (`*creds` is set to NULL).
+ */
 static int get_shared_credentials(char* credentials_path,
                                   char* profile,
                                   struct flb_aws_credentials** creds,
@@ -663,8 +676,7 @@ static int get_shared_credentials(char* credentials_path,
 
     if (flb_read_file(credentials_path, &buf, &size) < 0) {
         if (errno == ENOENT) {
-            AWS_CREDS_ERROR_OR_DEBUG(debug_only, "Shared credentials file %s does not exist",
-                                     credentials_path);
+            AWS_CREDS_DEBUG("Shared credentials file %s does not exist", credentials_path);
         } else {
             flb_errno();
             AWS_CREDS_ERROR_OR_DEBUG(debug_only, "Could not read shared credentials file %s",
