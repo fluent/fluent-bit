@@ -20,6 +20,7 @@ set(UNIT_TESTS_FILES
   http_client.c
   utils.c
   gzip.c
+  snappy.c
   zstd.c
   random.c
   thread_storage.c
