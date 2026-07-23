@@ -411,6 +411,11 @@ int flb_tls_net_read_async(struct flb_coro *co,
         io_tls_event_switch(session, MK_EVENT_READ);
         flb_coro_yield(co, FLB_FALSE);
 
+        if (session->connection->net_error != -1) {
+            ret = -1;
+            goto read_finished;
+        }
+
         goto retry_read;
     }
     else if (ret == FLB_TLS_WANT_WRITE) {
@@ -421,18 +426,21 @@ int flb_tls_net_read_async(struct flb_coro *co,
         io_tls_event_switch(session, MK_EVENT_WRITE);
         flb_coro_yield(co, FLB_FALSE);
 
+        if (session->connection->net_error != -1) {
+            ret = -1;
+            goto read_finished;
+        }
+
         goto retry_read;
     }
-    else
-    {
-        /* We want this field to hold NULL at all times unless we are explicitly
-         * waiting to be resumed.
-         */
-        session->connection->coroutine = NULL;
+read_finished:
+    /* We want this field to hold NULL at all times unless we are explicitly
+     * waiting to be resumed.
+     */
+    session->connection->coroutine = NULL;
 
-        if (ret <= 0) {
-            ret = -1;
-        }
+    if (ret <= 0) {
+        ret = -1;
     }
 
     if (event_restore_needed) {
@@ -522,6 +530,13 @@ retry_write:
 
         flb_coro_yield(co, FLB_FALSE);
 
+        if (session->connection->net_error != -1) {
+            session->connection->coroutine = NULL;
+            *out_len = total;
+            io_tls_restore_event(session->connection, &event_backup);
+            return -1;
+        }
+
         goto retry_write;
     }
     else if (ret == FLB_TLS_WANT_READ) {
@@ -530,6 +545,13 @@ retry_write:
         io_tls_event_switch(session, MK_EVENT_READ);
 
         flb_coro_yield(co, FLB_FALSE);
+
+        if (session->connection->net_error != -1) {
+            session->connection->coroutine = NULL;
+            *out_len = total;
+            io_tls_restore_event(session->connection, &event_backup);
+            return -1;
+        }
 
         goto retry_write;
     }
@@ -553,6 +575,13 @@ retry_write:
         io_tls_event_switch(session, MK_EVENT_WRITE);
 
         flb_coro_yield(co, FLB_FALSE);
+
+        if (session->connection->net_error != -1) {
+            session->connection->coroutine = NULL;
+            *out_len = total;
+            io_tls_restore_event(session->connection, &event_backup);
+            return -1;
+        }
 
         goto retry_write;
     }
