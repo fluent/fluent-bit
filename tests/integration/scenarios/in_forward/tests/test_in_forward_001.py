@@ -653,6 +653,37 @@ def _send_tls_payload(port, payload, cafile):
             tls_sock.sendall(payload)
 
 
+def _create_tls_memory_bio_client(port, cafile):
+    context = ssl.create_default_context(cafile=cafile)
+    incoming = ssl.MemoryBIO()
+    outgoing = ssl.MemoryBIO()
+    tls = context.wrap_bio(incoming, outgoing, server_hostname="localhost")
+    raw_sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+
+    while True:
+        try:
+            tls.do_handshake()
+            break
+        except ssl.SSLWantReadError:
+            encrypted = outgoing.read()
+            if encrypted:
+                raw_sock.sendall(encrypted)
+
+            encrypted = raw_sock.recv(65536)
+            assert encrypted
+            incoming.write(encrypted)
+        except ssl.SSLWantWriteError:
+            encrypted = outgoing.read()
+            if encrypted:
+                raw_sock.sendall(encrypted)
+
+    encrypted = outgoing.read()
+    if encrypted:
+        raw_sock.sendall(encrypted)
+
+    return raw_sock, tls, outgoing
+
+
 def _recv_msgpack_value(sock):
     sock.settimeout(5)
     data = sock.recv(4096)
@@ -1086,6 +1117,49 @@ def test_in_forward_tls_message_mode():
         service.stop()
 
     assert records[0]["message"] == "tls-message"
+
+
+def test_in_forward_tls_partial_record_does_not_block_other_connections():
+    service = Service("in_forward_tls.yaml")
+    service.start()
+
+    partial_sock = None
+
+    try:
+        partial_payload = _message_mode_payload(TEST_TAG, {"message": "partial-tls-record"})
+        partial_sock, tls, outgoing = _create_tls_memory_bio_client(
+            service.flb_listener_port,
+            service.tls_crt_file,
+        )
+
+        tls.write(partial_payload)
+        encrypted_payload = outgoing.read()
+        assert len(encrypted_payload) > 1
+
+        partial_sock.sendall(encrypted_payload[:-1])
+        time.sleep(0.5)
+
+        responsive_payload = _message_mode_payload(
+            TEST_TAG,
+            {"message": "second-connection-remains-responsive"},
+        )
+        _send_tls_payload(
+            service.flb_listener_port,
+            responsive_payload,
+            service.tls_crt_file,
+        )
+        records = service.wait_for_record_count(1, timeout=10)
+
+        assert records[0]["message"] == "second-connection-remains-responsive"
+
+        partial_sock.sendall(encrypted_payload[-1:])
+        records = service.wait_for_record_count(2, timeout=10)
+    finally:
+        if partial_sock is not None:
+            partial_sock.close()
+        service.stop()
+
+    assert any(record.get("message") == "partial-tls-record" for record in records)
 
 
 def test_in_forward_tls_idle_connection_timeout_churn(monkeypatch):
