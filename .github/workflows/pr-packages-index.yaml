@@ -1,0 +1,40 @@
+name: Test packages index generator
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+    paths:
+      - 'packaging/generate-packages-index.sh'
+      - 'packaging/build-catalog.awk'
+      - 'packaging/testing/test-packages-index.sh'
+      - 'packaging/testing/generate-preview-from-s3.sh'
+      - '.github/workflows/pr-packages-index.yaml'
+      - '.github/workflows/staging-release.yaml'
+
+  workflow_dispatch:
+
+jobs:
+  test-packages-index:
+    name: Run packages index tests
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Fluent Bit code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq tree
+        shell: bash
+
+      - name: Run packages index tests
+        run: |
+          ./packaging/testing/test-packages-index.sh
+        shell: bash
