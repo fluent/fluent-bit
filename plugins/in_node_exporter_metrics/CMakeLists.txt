@@ -20,6 +20,7 @@ set(src
   ne_config.c
   ne_systemd.c
   ne_thermalzone.c
+  ne_powersupply.c
   ne.c
   )
 
