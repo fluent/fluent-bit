@@ -6,9 +6,12 @@
 
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 int num_invoked = 0;
+static const char *callback_error = NULL;
+
 static int get_output_invoked()
 {
     int ret;
+
     pthread_mutex_lock(&result_mutex);
     ret = num_invoked;
     pthread_mutex_unlock(&result_mutex);
@@ -16,16 +19,62 @@ static int get_output_invoked()
     return ret;
 }
 
-static void set_output_invoked(int num)
+static int increment_output_invoked()
+{
+    int ret;
+
+    pthread_mutex_lock(&result_mutex);
+    num_invoked++;
+    ret = num_invoked;
+    pthread_mutex_unlock(&result_mutex);
+
+    return ret;
+}
+
+static void set_callback_error(const char *message)
 {
     pthread_mutex_lock(&result_mutex);
-    num_invoked = num;
+    if (callback_error == NULL) {
+        callback_error = message;
+    }
     pthread_mutex_unlock(&result_mutex);
 }
 
 static void clear_output_invoked()
 {
-    set_output_invoked(0);
+    pthread_mutex_lock(&result_mutex);
+    num_invoked = 0;
+    callback_error = NULL;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static void check_callback_error()
+{
+    const char *message;
+
+    pthread_mutex_lock(&result_mutex);
+    message = callback_error;
+    pthread_mutex_unlock(&result_mutex);
+
+    if (!TEST_CHECK(message == NULL)) {
+        TEST_MSG("%s", message);
+    }
+}
+
+static void stop_and_check(flb_ctx_t *ctx, int expected_invocations)
+{
+    int invocations;
+
+    flb_stop(ctx);
+
+    invocations = get_output_invoked();
+    if (!TEST_CHECK(invocations == expected_invocations)) {
+        TEST_MSG("got %d formatter callbacks, expected %d",
+                 invocations, expected_invocations);
+    }
+    check_callback_error();
+
+    flb_destroy(ctx);
 }
 
 static void cb_check_format_no_log_key(void *ctx, int ffd,
@@ -35,33 +84,38 @@ static void cb_check_format_no_log_key(void *ctx, int ffd,
     char *out_json = res_data;
     char *p;
 
-    set_output_invoked(1);
+    if (res_ret != 0 || out_json == NULL) {
+        set_callback_error("formatter returned an error or no output");
+        flb_sds_destroy(res_data);
+        return;
+    }
 
     p = strstr(out_json, "\"customer_id\":\"test-customer\"");
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Expected customer_id not found. Got: %s", out_json);
+    if (p == NULL) {
+        set_callback_error("expected customer_id was not found");
     }
 
     p = strstr(out_json, "\"log_type\":\"TEST_LOG\"");
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Expected log_type not found. Got: %s", out_json);
+    if (p == NULL) {
+        set_callback_error("expected log_type was not found");
     }
 
     p = strstr(out_json, "\"entries\":[");
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Entries array not found. Got: %s", out_json);
+    if (p == NULL) {
+        set_callback_error("entries array was not found");
     }
 
     p = strstr(out_json, "\"log_text\":\"{\\\"message\\\":\\\"hello world\\\"}\"");
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Expected log_text not found. Got: %s", out_json);
+    if (p == NULL) {
+        set_callback_error("expected log_text was not found");
     }
 
     p = strstr(out_json, "\"ts_rfc3339\":");
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Expected ts_rfc3339 key not found. Got: %s", out_json);
+    if (p == NULL) {
+        set_callback_error("expected ts_rfc3339 key was not found");
     }
 
+    increment_output_invoked();
     flb_sds_destroy(res_data);
 }
 
@@ -76,16 +130,21 @@ static void cb_check_format_with_log_key(void *ctx, int ffd,
         return;
     }
 
-    set_output_invoked(1);
+    if (res_ret != 0) {
+        set_callback_error("formatter returned an error");
+    }
 
     p = strstr(out_json, "\"log_text\":\"This is the target message.\"");
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Expected log_text with specific value not found. Got: %s", out_json);
+    if (p == NULL) {
+        set_callback_error("expected log_text value was not found");
     }
 
     p = strstr(out_json, "other_key");
-    TEST_CHECK(p == NULL);
+    if (p != NULL) {
+        set_callback_error("unexpected other_key was found");
+    }
 
+    increment_output_invoked();
     flb_sds_destroy(res_data);
 }
 
@@ -96,18 +155,23 @@ static void cb_check_format_multiple_records(void *ctx, int ffd,
     char *out_json = res_data;
     char *p1, *p2;
 
-    set_output_invoked(1);
+    if (res_ret != 0 || out_json == NULL) {
+        set_callback_error("formatter returned an error or no output");
+        flb_sds_destroy(res_data);
+        return;
+    }
 
     p1 = strstr(out_json, "\"log_text\":\"{\\\"message\\\":\\\"record one\\\"}\"");
-    if (!TEST_CHECK(p1 != NULL)) {
-        TEST_MSG("First record not found. Got: %s", out_json);
+    if (p1 == NULL) {
+        set_callback_error("first record was not found");
     }
 
     p2 = strstr(out_json, "\"log_text\":\"{\\\"message\\\":\\\"record two\\\"}\"");
-    if (!TEST_CHECK(p2 != NULL)) {
-        TEST_MSG("Second record not found. Got: %s", out_json);
+    if (p2 == NULL) {
+        set_callback_error("second record was not found");
     }
 
+    increment_output_invoked();
     flb_sds_destroy(res_data);
 }
 
@@ -118,16 +182,23 @@ static void cb_check_format_partially_succeeded_records(void *ctx, int ffd,
     char *out_json = res_data;
     char *p1, *p2;
 
-    set_output_invoked(1);
+    if (res_ret != 0 || out_json == NULL) {
+        set_callback_error("formatter returned an error or no output");
+        flb_sds_destroy(res_data);
+        return;
+    }
 
     p1 = strstr(out_json, "\"log_text\":\"record one\"");
-    if (!TEST_CHECK(p1 != NULL)) {
-        TEST_MSG("Expected log_text with specific value not found. Got: %s", out_json);
+    if (p1 == NULL) {
+        set_callback_error("expected log_text value was not found");
     }
 
     p2 = strstr(out_json, "\"test\"");
-    TEST_CHECK(p2 == NULL);
+    if (p2 != NULL) {
+        set_callback_error("unexpected test field was found");
+    }
 
+    increment_output_invoked();
     flb_sds_destroy(res_data);
 }
 
@@ -138,38 +209,43 @@ static void cb_check_format_namespace_and_labels(void *ctx, int ffd,
     char *out_json = res_data;
     char *p;
 
-    set_output_invoked(1);
+    if (res_ret != 0 || out_json == NULL) {
+        set_callback_error("formatter returned an error or no output");
+        flb_sds_destroy(res_data);
+        return;
+    }
 
     p = strstr(out_json, "\"namespace\":\"tenant-a\"");
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Expected namespace not found. Got: %s", out_json);
+    if (p == NULL) {
+        set_callback_error("expected namespace was not found");
     }
 
     p = strstr(out_json, "\"labels\":[");
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Expected labels array not found. Got: %s", out_json);
+    if (p == NULL) {
+        set_callback_error("expected labels array was not found");
     }
 
     p = strstr(out_json, "\"key\":\"env\"");
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Expected static label key not found. Got: %s", out_json);
+    if (p == NULL) {
+        set_callback_error("expected static label key was not found");
     }
 
     p = strstr(out_json, "\"value\":\"production\"");
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Expected static label value not found. Got: %s", out_json);
+    if (p == NULL) {
+        set_callback_error("expected static label value was not found");
     }
 
     p = strstr(out_json, "\"key\":\"cluster_name\"");
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Expected dynamic label key not found. Got: %s", out_json);
+    if (p == NULL) {
+        set_callback_error("expected dynamic label key was not found");
     }
 
     p = strstr(out_json, "\"value\":\"blue\"");
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Expected dynamic label value not found. Got: %s", out_json);
+    if (p == NULL) {
+        set_callback_error("expected dynamic label value was not found");
     }
 
+    increment_output_invoked();
     flb_sds_destroy(res_data);
 }
 
@@ -180,21 +256,28 @@ static void cb_check_format_namespace_fallback_and_missing_label(void *ctx, int 
     char *out_json = res_data;
     char *p;
 
-    set_output_invoked(1);
+    if (res_ret != 0 || out_json == NULL) {
+        set_callback_error("formatter returned an error or no output");
+        flb_sds_destroy(res_data);
+        return;
+    }
 
     p = strstr(out_json, "\"namespace\":\"fallback-namespace\"");
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Expected fallback namespace not found. Got: %s", out_json);
+    if (p == NULL) {
+        set_callback_error("expected fallback namespace was not found");
     }
 
     p = strstr(out_json, "\"key\":\"missing\"");
-    TEST_CHECK(p == NULL);
-
-    p = strstr(out_json, "\"log_text\":\"{\\\"message\\\":\\\"hello world\\\"}\"");
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Expected log_text not found. Got: %s", out_json);
+    if (p != NULL) {
+        set_callback_error("unexpected missing label was found");
     }
 
+    p = strstr(out_json, "\"log_text\":\"{\\\"message\\\":\\\"hello world\\\"}\"");
+    if (p == NULL) {
+        set_callback_error("expected log_text was not found");
+    }
+
+    increment_output_invoked();
     flb_sds_destroy(res_data);
 }
 
@@ -206,49 +289,63 @@ static void cb_check_format_split_on_metadata_change(void *ctx, int ffd,
     char *p;
     int invocation;
 
-    invocation = get_output_invoked() + 1;
-    set_output_invoked(invocation);
+    if (res_ret != 0 || out_json == NULL) {
+        set_callback_error("formatter returned an error or no output");
+        flb_sds_destroy(res_data);
+        return;
+    }
+
+    invocation = increment_output_invoked();
 
     if (invocation == 1) {
         p = strstr(out_json, "\"namespace\":\"tenant-a\"");
-        if (!TEST_CHECK(p != NULL)) {
-            TEST_MSG("Expected first namespace not found. Got: %s", out_json);
+        if (p == NULL) {
+            set_callback_error("expected first namespace was not found");
         }
 
         p = strstr(out_json, "\"value\":\"blue\"");
-        if (!TEST_CHECK(p != NULL)) {
-            TEST_MSG("Expected first dynamic label value not found. Got: %s", out_json);
+        if (p == NULL) {
+            set_callback_error("expected first dynamic label value was not found");
         }
 
         p = strstr(out_json, "\"log_text\":\"{\\\"message\\\":\\\"record one\\\"");
-        if (!TEST_CHECK(p != NULL)) {
-            TEST_MSG("Expected first record not found. Got: %s", out_json);
+        if (p == NULL) {
+            set_callback_error("expected first record was not found");
         }
 
         p = strstr(out_json, "tenant-b");
-        TEST_CHECK(p == NULL);
+        if (p != NULL) {
+            set_callback_error("unexpected second namespace was found");
+        }
 
         p = strstr(out_json, "green");
-        TEST_CHECK(p == NULL);
+        if (p != NULL) {
+            set_callback_error("unexpected second dynamic label value was found");
+        }
 
         p = strstr(out_json, "record two");
-        TEST_CHECK(p == NULL);
+        if (p != NULL) {
+            set_callback_error("unexpected second record was found");
+        }
     }
     else if (invocation == 2) {
         p = strstr(out_json, "\"namespace\":\"tenant-b\"");
-        if (!TEST_CHECK(p != NULL)) {
-            TEST_MSG("Expected second namespace not found. Got: %s", out_json);
+        if (p == NULL) {
+            set_callback_error("expected second namespace was not found");
         }
 
         p = strstr(out_json, "\"value\":\"green\"");
-        if (!TEST_CHECK(p != NULL)) {
-            TEST_MSG("Expected second dynamic label value not found. Got: %s", out_json);
+        if (p == NULL) {
+            set_callback_error("expected second dynamic label value was not found");
         }
 
         p = strstr(out_json, "\"log_text\":\"{\\\"message\\\":\\\"record two\\\"");
-        if (!TEST_CHECK(p != NULL)) {
-            TEST_MSG("Expected second record not found. Got: %s", out_json);
+        if (p == NULL) {
+            set_callback_error("expected second record was not found");
         }
+    }
+    else {
+        set_callback_error("formatter was invoked more than twice");
     }
 
     flb_sds_destroy(res_data);
@@ -284,9 +381,7 @@ void test_format_no_log_key()
 
     sleep(1);
 
-    TEST_CHECK(get_output_invoked() == 1);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    stop_and_check(ctx, 1);
 }
 
 void test_format_with_log_key_found()
@@ -322,9 +417,7 @@ void test_format_with_log_key_found()
 
     sleep(1);
 
-    TEST_CHECK(get_output_invoked() == 1);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    stop_and_check(ctx, 1);
 }
 
 void test_format_with_log_key_not_found()
@@ -358,9 +451,7 @@ void test_format_with_log_key_not_found()
 
     sleep(1);
 
-    TEST_CHECK(get_output_invoked() == 0);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    stop_and_check(ctx, 0);
 }
 
 
@@ -399,9 +490,7 @@ void test_format_multiple_records()
 
     sleep(1);
 
-    TEST_CHECK(get_output_invoked() == 1);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    stop_and_check(ctx, 1);
 }
 
 void test_format_partially_suceeded_records()
@@ -440,9 +529,7 @@ void test_format_partially_suceeded_records()
 
     sleep(1);
 
-    TEST_CHECK(get_output_invoked() == 1);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    stop_and_check(ctx, 1);
 }
 
 void test_format_namespace_and_labels()
@@ -483,9 +570,7 @@ void test_format_namespace_and_labels()
 
     sleep(1);
 
-    TEST_CHECK(get_output_invoked() == 1);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    stop_and_check(ctx, 1);
 }
 
 void test_format_namespace_fallback_and_missing_label()
@@ -524,9 +609,7 @@ void test_format_namespace_fallback_and_missing_label()
 
     sleep(1);
 
-    TEST_CHECK(get_output_invoked() == 1);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    stop_and_check(ctx, 1);
 }
 
 void test_format_split_on_metadata_change()
@@ -573,9 +656,7 @@ void test_format_split_on_metadata_change()
 
     sleep(1);
 
-    TEST_CHECK(get_output_invoked() == 1);
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    stop_and_check(ctx, 1);
 }
 
 
