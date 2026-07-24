@@ -207,6 +207,7 @@ static void cb_check_msgpack_kv(void *ctx, int ffd, int res_ret,
     int map_size;
     int i_list;
     int matches = 0;
+    msgpack_unpack_return unpack_result = MSGPACK_UNPACK_CONTINUE;
 
     if (res_data == NULL) {
         set_callback_error("formatter returned no output");
@@ -224,7 +225,12 @@ static void cb_check_msgpack_kv(void *ctx, int ffd, int res_ret,
 
     /* Iterate each item array and apply rules */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, res_data, res_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while (off < res_size) {
+        unpack_result = msgpack_unpack_next(&result, res_data, res_size, &off);
+        if (unpack_result != MSGPACK_UNPACK_SUCCESS) {
+            break;
+        }
+
         obj = result.data;
         /*
         msgpack_object_print(stdout, obj);
@@ -255,7 +261,23 @@ static void cb_check_msgpack_kv(void *ctx, int ffd, int res_ret,
         }
     }
 
-    add_output_num(matches);
+    if (unpack_result == MSGPACK_UNPACK_PARSE_ERROR) {
+        set_callback_error("formatter output contained invalid MessagePack");
+    }
+    else if (unpack_result == MSGPACK_UNPACK_NOMEM_ERROR) {
+        set_callback_error("could not unpack formatter output");
+    }
+    else if (unpack_result == MSGPACK_UNPACK_CONTINUE && res_size != 0) {
+        set_callback_error("formatter output contained incomplete MessagePack");
+    }
+    else if (unpack_result != MSGPACK_UNPACK_SUCCESS &&
+             unpack_result != MSGPACK_UNPACK_CONTINUE) {
+        set_callback_error("formatter output returned an unexpected unpack result");
+    }
+    else {
+        add_output_num(matches);
+    }
+
     msgpack_unpacked_destroy(&result);
 }
 
