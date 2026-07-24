@@ -127,6 +127,7 @@ endif()
 if(FLB_METRICS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
+    input_rate_gate.c
     metrics.c
     cumulative_to_delta.c
     )

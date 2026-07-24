@@ -1352,12 +1352,14 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         cio_chunk_write_at(chunk, offset, NULL, 0);
     }
 
+#ifdef FLB_HAVE_METRICS
     if (ic->event_type == FLB_INPUT_LOGS) {
         ic->total_records = flb_mp_count_log_records(buf_data, offset);
     }
     else {
         ic->total_records = records;
     }
+#endif
 
     /* Update metrics */
 #ifdef FLB_HAVE_METRICS
@@ -1372,6 +1374,9 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         /* fluentbit_input_bytes_total */
         cmt_counter_add(in->cmt_bytes, ts, buf_size,
                         1, (char *[]) {(char *) flb_input_name(in)});
+        if (ic->fs_backlog != FLB_TRUE) {
+            flb_input_rate_update(in, ts, ic->total_records, buf_size);
+        }
 
         /* OLD metrics */
         flb_metrics_sum(FLB_METRIC_N_RECORDS, ic->total_records, in->metrics);
@@ -2697,6 +2702,11 @@ size_t flb_input_chunk_total_size(struct flb_input_instance *in)
  */
 size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
 {
+    int mem_limit_cleared;
+#ifdef FLB_HAVE_METRICS
+    int rate_gate_was_paused;
+#endif
+    int storage_limit_cleared;
     size_t total;
 
     /* Gather total number of enqueued bytes */
@@ -2704,6 +2714,12 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
 
     /* Register the total into the context variable */
     in->mem_chunks_size = total;
+
+    mem_limit_cleared = FLB_FALSE;
+#ifdef FLB_HAVE_METRICS
+    rate_gate_was_paused = (in->rate_gate_status == FLB_INPUT_PAUSED);
+#endif
+    storage_limit_cleared = FLB_FALSE;
 
     /*
      * After the adjustments, validate if the plugin is overlimit or paused
@@ -2714,25 +2730,43 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
         in->config->is_ingestion_active == FLB_TRUE &&
         in->mem_buf_status == FLB_INPUT_PAUSED) {
         in->mem_buf_status = FLB_INPUT_RUNNING;
-        if (in->p->cb_resume) {
-            flb_input_resume(in);
-            flb_info("[input] %s resume (mem buf overlimit - buf size %zuB now below limit %zuB)",
-                      flb_input_name(in),
-                      in->mem_chunks_size,
-                      in->mem_buf_limit);
-        }
+        mem_limit_cleared = FLB_TRUE;
     }
     if (flb_input_chunk_is_storage_overlimit(in) == FLB_FALSE &&
         in->config->is_running == FLB_TRUE &&
         in->config->is_ingestion_active == FLB_TRUE &&
         in->storage_buf_status == FLB_INPUT_PAUSED) {
         in->storage_buf_status = FLB_INPUT_RUNNING;
-        if (in->p->cb_resume) {
-            flb_input_resume(in);
+        storage_limit_cleared = FLB_TRUE;
+    }
+
+#ifdef FLB_HAVE_METRICS
+    /* Clear each pause reason independently before deciding whether to resume. */
+    flb_input_rate_gate_maybe_resume(in);
+#endif
+
+    if ((mem_limit_cleared == FLB_TRUE || storage_limit_cleared == FLB_TRUE) &&
+#ifdef FLB_HAVE_METRICS
+        rate_gate_was_paused == FLB_FALSE &&
+        in->rate_gate_status == FLB_INPUT_RUNNING &&
+#endif
+        in->mem_buf_status == FLB_INPUT_RUNNING &&
+        in->storage_buf_status == FLB_INPUT_RUNNING &&
+        in->config->is_running == FLB_TRUE &&
+        in->config->is_ingestion_active == FLB_TRUE) {
+        flb_input_resume(in);
+
+        if (mem_limit_cleared == FLB_TRUE) {
+            flb_info("[input] %s resume (mem buf overlimit - buf size %zuB now below limit %zuB)",
+                     flb_input_name(in),
+                     in->mem_chunks_size,
+                     in->mem_buf_limit);
+        }
+        else {
             flb_info("[input] %s resume (storage buf overlimit %zu/%zu)",
-                      flb_input_name(in),
-                      ((struct flb_storage_input *)in->storage)->cio->total_chunks_up,
-                      ((struct flb_storage_input *)in->storage)->cio->max_chunks_up);
+                     flb_input_name(in),
+                     ((struct flb_storage_input *) in->storage)->cio->total_chunks_up,
+                     ((struct flb_storage_input *) in->storage)->cio->max_chunks_up);
         }
     }
 
@@ -2756,6 +2790,12 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i, size_t j
         i->storage_buf_status = FLB_INPUT_PAUSED;
         return FLB_TRUE;
     }
+
+#ifdef FLB_HAVE_METRICS
+    if (flb_input_rate_gate_protect(i) == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+#endif
 
     if (storage->type == FLB_STORAGE_FS) {
         return FLB_FALSE;
@@ -2913,7 +2953,10 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
                                   const char *tag, size_t tag_len,
                                   const void *buf, size_t buf_size)
 {
-    int ret, total_records_start;
+    int ret;
+#ifdef FLB_HAVE_METRICS
+    int total_records_start;
+#endif
     int set_down = FLB_FALSE;
     int min;
     int new_chunk = FLB_FALSE;
@@ -2967,7 +3010,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     }
 
     /* Check if the input plugin has been paused */
-    if (flb_input_buf_paused(in) == FLB_TRUE) {
+    if (flb_input_paused(in) == FLB_TRUE) {
         flb_debug("[input chunk] %s is paused, cannot append records",
                   flb_input_name(in));
         return -1;
@@ -3032,6 +3075,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         pre_real_size = flb_input_chunk_get_real_size(ic);
     }
 
+#ifdef FLB_HAVE_METRICS
     /*
      * Set total_records based on the caller-provided count. For log chunks,
      * recover from callers that pass 0 by deriving the logical record count
@@ -3044,6 +3088,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     total_records_start = ic->total_records;
     ic->added_records =  n_records;
     ic->total_records += n_records;
+#endif
 
 #ifdef FLB_HAVE_CHUNK_TRACE
     flb_chunk_trace_do_input(ic);
@@ -3062,6 +3107,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         /* fluentbit_input_bytes_total */
         cmt_counter_add(in->cmt_bytes, ts, buf_size,
                         1, (char *[]) {(char *) flb_input_name(in)});
+        flb_input_rate_update(in, ts, ic->added_records, buf_size);
 
         /* OLD api */
         flb_metrics_sum(FLB_METRIC_N_RECORDS, ic->added_records, in->metrics);
@@ -3100,6 +3146,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         flb_free(filtered_data_buffer);
     }
 
+#ifdef FLB_HAVE_METRICS
     /*
      * If the write failed, then we did not add any records. Reset
      * the record counters to reflect this.
@@ -3108,6 +3155,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         ic->added_records = 0;
         ic->total_records = total_records_start;
     }
+#endif
 
     if (ret == -1) {
         flb_error("[input chunk] error writing data from %s instance",
@@ -3368,7 +3416,7 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
         cr = NULL;
 
         while (1) {
-            if (flb_input_buf_paused(ins) == FLB_TRUE) {
+            if (flb_input_paused(ins) == FLB_TRUE) {
                 break;
             }
 
