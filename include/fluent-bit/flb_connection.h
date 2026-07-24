@@ -36,13 +36,14 @@
 
 /* FLB_CONNECTION_MAX_LABEL_LENGTH is the maximum length of
  * any of the following variants plus an optional colon if
- * the spec includes a port number :
+ * the spec includes a port number, as well as enclosing
+ * square brackets for IPv6 addresses :
  *
- * udp://
- * tcp://
- * unix://
+ * udp://  (6 for prefix + 1 for colon + 2 for brackets = 9 total)
+ * tcp://  (6 for prefix + 1 for colon + 2 for brackets = 9 total)
+ * unix:// (7 for prefix)
  */
-#define FLB_CONNECTION_MAX_LABEL_LENGTH 7
+#define FLB_CONNECTION_MAX_LABEL_LENGTH 9
 
 #define FLB_CONNECTION_MAX_IPV4_ADDRESS_LENGTH 15
 #define FLB_CONNECTION_MAX_IPV6_ADDRESS_LENGTH 39

@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <string.h>
 
 #include <fluent-bit/flb_connection.h>
 #include <fluent-bit/flb_upstream.h>
@@ -89,17 +90,23 @@ static void compose_user_friendly_remote_host(struct flb_connection *connection)
 
     connection_type = connection->stream->transport;
 
-    if (connection_type == FLB_TRANSPORT_TCP) {
+    if (connection_type == FLB_TRANSPORT_TCP ||
+        connection_type == FLB_TRANSPORT_UDP) {
+        const char *fmt;
+
+        /* If the address is an IPv6 literal, we need to
+         * enclose the address in square brackets.
+         */
+        if (strchr(connection->remote_host, ':') != NULL) {
+            fmt = "%s://[%s]:%u";
+        }
+        else {
+            fmt = "%s://%s:%u";
+        }
         snprintf(connection->user_friendly_remote_host,
                  sizeof(connection->user_friendly_remote_host),
-                 "tcp://%s:%u",
-                 connection->remote_host,
-                 connection->remote_port);
-    }
-    else if (connection_type == FLB_TRANSPORT_UDP) {
-        snprintf(connection->user_friendly_remote_host,
-                 sizeof(connection->user_friendly_remote_host),
-                 "udp://%s:%u",
+                 fmt,
+                 connection_type == FLB_TRANSPORT_TCP ? "tcp" : "udp",
                  connection->remote_host,
                  connection->remote_port);
     }
