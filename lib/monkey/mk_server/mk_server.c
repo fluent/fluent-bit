@@ -29,6 +29,7 @@
 #include <monkey/mk_core.h>
 #include <monkey/mk_fifo.h>
 #include <monkey/mk_http_thread.h>
+#include <monkey/mk_tls_transport.h>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -124,7 +125,7 @@ struct mk_sched_conn *mk_server_listen_handler(struct mk_sched_worker *sched,
 
 error:
     if (client_fd != -1) {
-        listener->network->network->close(listener->network, client_fd);
+        listener->network->close(listener->network->plugin, client_fd);
     }
 
     return NULL;
@@ -174,7 +175,6 @@ struct mk_list *mk_server_listen_init(struct mk_server *server)
     struct mk_event *event;
     struct mk_server_listen *listener;
     struct mk_sched_handler *protocol;
-    struct mk_plugin *plugin;
     struct mk_config_listener *listen;
 
     if (!server) {
@@ -234,15 +234,14 @@ struct mk_list *mk_server_listen_init(struct mk_server *server)
                 listener->protocol = protocol;
             }
 #endif
-            listener->network = mk_plugin_cap(MK_CAP_SOCK_PLAIN, server);
+            listener->network = mk_net_transport_default();
 
             if (listen->flags & MK_CAP_SOCK_TLS) {
-                plugin = mk_plugin_cap(MK_CAP_SOCK_TLS, server);
-                if (!plugin) {
+                if (!mk_tls_enabled()) {
                     mk_err("SSL/TLS not supported");
                     exit(EXIT_FAILURE);
                 }
-                listener->network = plugin;
+                listener->network = mk_tls_transport();
             }
 
             mk_list_add(&listener->_head, listeners);
@@ -515,7 +514,15 @@ void mk_server_worker_loop(struct mk_server *server)
 
                 if (event->mask & MK_EVENT_WRITE) {
                     MK_TRACE("[FD %i] Event WRITE", event->fd);
-                    ret = mk_sched_event_write(conn, sched, server);
+                    if (mk_channel_is_empty(&conn->channel) == 0 &&
+                        mk_net_transport_event_interest(conn->net,
+                                                        event->fd,
+                                                        MK_EVENT_READ) == MK_EVENT_WRITE) {
+                        ret = mk_sched_event_read(conn, sched, server);
+                    }
+                    else {
+                        ret = mk_sched_event_write(conn, sched, server);
+                    }
                 }
 
                 if (event->mask & MK_EVENT_READ) {

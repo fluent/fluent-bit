@@ -24,6 +24,7 @@ if (CMAKE_SYSTEM_NAME MATCHES "Windows")
   set(src
     ${src}
     "external/winpthreads.c"
+    "mk_win32_socketpair.c"
     )
   add_subdirectory(deps/)
 else()
@@ -123,6 +124,21 @@ check_c_source_compiles("
      return epoll_create(1);
   }" HAVE_EPOLL)
 
+if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+  check_c_source_compiles("
+    #include <winsock2.h>
+    #include <afunix.h>
+    int main() {
+       struct sockaddr_un addr;
+       addr.sun_family = AF_UNIX;
+       return 0;
+    }" MK_HAVE_AFUNIX_H)
+
+  if (MK_HAVE_AFUNIX_H)
+    MK_DEFINITION(MK_HAVE_AFUNIX_H)
+  endif()
+endif()
+
 if (MK_EVENT_LOOP_SELECT)
   if (NOT HAVE_SELECT)
     message(FATAL_ERROR "Event loop backend > select(2) not available")
@@ -209,6 +225,10 @@ configure_file(
 
 add_library(mk_core STATIC ${src})
 target_link_libraries(mk_core ${CMAKE_THREAD_LIBS_INIT})
+
+if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+  target_link_libraries(mk_core ws2_32)
+endif()
 
 if (MK_EVENT_LOOP_LIBEVENT)
   target_link_libraries(mk_core event)
