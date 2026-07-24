@@ -36,9 +36,12 @@ struct test_ctx {
 
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 int num_output = 0;
+static const char *callback_error = NULL;
+
 static int get_output_num()
 {
     int ret;
+
     pthread_mutex_lock(&result_mutex);
     ret = num_output;
     pthread_mutex_unlock(&result_mutex);
@@ -46,16 +49,48 @@ static int get_output_num()
     return ret;
 }
 
-static void set_output_num(int num)
+static void increment_output_num()
 {
     pthread_mutex_lock(&result_mutex);
-    num_output = num;
+    num_output++;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static void add_output_num(int num)
+{
+    pthread_mutex_lock(&result_mutex);
+    num_output += num;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static void set_callback_error(const char *message)
+{
+    pthread_mutex_lock(&result_mutex);
+    if (callback_error == NULL) {
+        callback_error = message;
+    }
     pthread_mutex_unlock(&result_mutex);
 }
 
 static void clear_output_num()
 {
-    set_output_num(0);
+    pthread_mutex_lock(&result_mutex);
+    num_output = 0;
+    callback_error = NULL;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static void check_callback_error()
+{
+    const char *message;
+
+    pthread_mutex_lock(&result_mutex);
+    message = callback_error;
+    pthread_mutex_unlock(&result_mutex);
+
+    if (!TEST_CHECK(message == NULL)) {
+        TEST_MSG("%s", message);
+    }
 }
 
 struct str_list {
@@ -69,38 +104,32 @@ static void cb_check_str_list(void *ctx, int ffd, int res_ret,
 {
     char *p;
     flb_sds_t out_line = res_data;
-    int num = get_output_num();
     size_t i;
     struct str_list *l = (struct str_list *)data;
 
-    if (!TEST_CHECK(res_data != NULL)) {
-        TEST_MSG("res_data is NULL");
+    if (res_data == NULL) {
+        set_callback_error("formatter returned no output");
         return;
     }
 
-    if (!TEST_CHECK(l != NULL)) {
-        TEST_MSG("l is NULL");
+    if (l == NULL) {
+        set_callback_error("formatter callback data is NULL");
         flb_sds_destroy(out_line);
         return;
     }
 
-    if(!TEST_CHECK(res_ret == 0)) {
-        TEST_MSG("callback ret=%d", res_ret);
-    }
-    if (!TEST_CHECK(res_data != NULL)) {
-        TEST_MSG("res_data is NULL");
-        flb_sds_destroy(out_line);
-        return;
+    if (res_ret != 0) {
+        set_callback_error("formatter returned an error");
     }
 
-    for (i=0; i<l->size; i++) {
+    for (i = 0; i < l->size; i++) {
         p = strstr(out_line, l->lists[i]);
-        if (!TEST_CHECK(p != NULL)) {
-            TEST_MSG("  Got   :%s\n  expect:%s", out_line, l->lists[i]);
+        if (p == NULL) {
+            set_callback_error("formatter output did not contain an expected string");
         }
     }
-    set_output_num(num+1);
 
+    increment_output_num();
     flb_sds_destroy(out_line);
 }
 
@@ -177,38 +206,48 @@ static void cb_check_msgpack_kv(void *ctx, int ffd, int res_ret,
     int i_map;
     int map_size;
     int i_list;
-    int num = get_output_num();
+    int matches = 0;
+    msgpack_unpack_return unpack_result = MSGPACK_UNPACK_CONTINUE;
 
-    if (!TEST_CHECK(res_data != NULL)) {
-        TEST_MSG("res_data is NULL");
+    if (res_data == NULL) {
+        set_callback_error("formatter returned no output");
         return;
     }
 
-    if (!TEST_CHECK(data != NULL)) {
-        flb_error("data is NULL");
+    if (data == NULL) {
+        set_callback_error("formatter callback data is NULL");
         return;
+    }
+
+    if (res_ret != 0) {
+        set_callback_error("formatter returned an error");
     }
 
     /* Iterate each item array and apply rules */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, res_data, res_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while (off < res_size) {
+        unpack_result = msgpack_unpack_next(&result, res_data, res_size, &off);
+        if (unpack_result != MSGPACK_UNPACK_SUCCESS) {
+            break;
+        }
+
         obj = result.data;
         /*
         msgpack_object_print(stdout, obj);
         */
         if (obj.type != MSGPACK_OBJECT_ARRAY || obj.via.array.size != 2) {
-            flb_error("array error. type = %d", obj.type);
+            set_callback_error("formatter output contained an invalid record");
             continue;
         }
         obj = obj.via.array.ptr[1];
         if (obj.type != MSGPACK_OBJECT_MAP) {
-            flb_error("map error. type = %d", obj.type);
+            set_callback_error("formatter output record was not a map");
             continue;
         }
         map_size = obj.via.map.size;
         for (i_map=0; i_map<map_size; i_map++) {
             if (obj.via.map.ptr[i_map].key.type != MSGPACK_OBJECT_STR) {
-                flb_error("key is not string. type =%d", obj.via.map.ptr[i_map].key.type);
+                set_callback_error("formatter output map key was not a string");
                 continue;
             }
             for (i_list=0; i_list< l->size/2; i_list++)  {
@@ -216,16 +255,30 @@ static void cb_check_msgpack_kv(void *ctx, int ffd, int res_ret,
                                     obj.via.map.ptr[i_map].key) == 0 &&
                     msgpack_strncmp(l->lists[i_list*2+1], strlen(l->lists[i_list*2+1]),
                                     obj.via.map.ptr[i_map].val) == 0) {
-                    num++;
+                    matches++;
                 }
             }
         }
     }
-    set_output_num(num);
+
+    if (unpack_result == MSGPACK_UNPACK_PARSE_ERROR) {
+        set_callback_error("formatter output contained invalid MessagePack");
+    }
+    else if (unpack_result == MSGPACK_UNPACK_NOMEM_ERROR) {
+        set_callback_error("could not unpack formatter output");
+    }
+    else if (unpack_result == MSGPACK_UNPACK_CONTINUE && res_size != 0) {
+        set_callback_error("formatter output contained incomplete MessagePack");
+    }
+    else if (unpack_result != MSGPACK_UNPACK_SUCCESS &&
+             unpack_result != MSGPACK_UNPACK_CONTINUE) {
+        set_callback_error("formatter output returned an unexpected unpack result");
+    }
+    else {
+        add_output_num(matches);
+    }
 
     msgpack_unpacked_destroy(&result);
-
-    return ;
 }
 
 static struct test_ctx *test_ctx_create()
@@ -267,6 +320,7 @@ static void test_ctx_destroy(struct test_ctx *ctx)
 
     sleep(1);
     flb_stop(ctx->flb);
+    check_callback_error();
     flb_destroy(ctx->flb);
     flb_free(ctx);
 }
@@ -1047,11 +1101,8 @@ void flb_test_json_date_format_java_sql_timestamp()
 
 int callback_test(void* data, size_t size, void* cb_data)
 {
-    int num;
-
     if (size > 0) {
-        num = get_output_num();
-        set_output_num(num+1);
+        increment_output_num();
     }
     return 0;
 }
