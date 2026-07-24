@@ -359,6 +359,65 @@ jobs:
           AWS_RELEASE_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
       shell: bash
 
+  staging-release-packages-index:
+    name: Update packages index
+    runs-on: ubuntu-22.04
+    environment: release
+    needs:
+      - staging-release-apt-packages
+      - staging-release-yum-packages
+      - staging-release-update-non-linux-s3
+      - staging-release-update-base-s3
+    permissions:
+      contents: read
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        persist-credentials: false
+
+    - name: Setup runner
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq tree
+      shell: bash
+
+    - name: Generate packages index
+      run: |
+        mkdir -p packaging/catalog
+        ./packaging/generate-packages-index.sh
+      env:
+        BASE_PATH: packaging/catalog
+        BASE_URL: https://packages.fluentbit.io
+        AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
+        AWS_S3_REMOTE_DISCOVERY: true
+        AWS_S3_NO_SIGN_REQUEST: false
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: us-east-1
+      shell: bash
+
+    - name: Upload packages index to S3
+      run: |
+        BUCKET="s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}"
+        aws s3 cp packaging/catalog/index.html "$BUCKET/index.html" \
+          --content-type "text/html; charset=utf-8" \
+          --cache-control "public, max-age=300" \
+          --no-progress
+        aws s3 cp packaging/catalog/versions.json "$BUCKET/versions.json" \
+          --content-type "application/json" \
+          --cache-control "public, max-age=300" \
+          --no-progress
+        aws s3 cp packaging/catalog/latest-version.txt "$BUCKET/latest-version.txt" \
+          --content-type "text/plain; charset=utf-8" \
+          --cache-control "public, max-age=300" \
+          --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: us-east-1
+      shell: bash
+
   staging-release-source-s3:
     name: S3 - update source bucket
     runs-on: ubuntu-22.04
