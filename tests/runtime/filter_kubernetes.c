@@ -499,6 +499,75 @@ exit:
     flb_destroy(ctx.flb);
 }
 
+static void flb_test_pod_association_multiple_instances()
+{
+    int ret;
+    int in_ffd;
+    int filter_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+
+    ctx = flb_create();
+    TEST_CHECK_(ctx != NULL, "initialising service");
+    if (!ctx) {
+        return;
+    }
+
+    ret = flb_service_set(ctx,
+                          "Flush", "0.2",
+                          "Grace", "1",
+                          "Log_Level", "error",
+                          NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
+
+    in_ffd = flb_input(ctx, "dummy", NULL);
+    TEST_CHECK_(in_ffd >= 0, "initialising input");
+    ret = flb_input_set(ctx, in_ffd,
+                        "Tag", "application.test",
+                        "Samples", "1",
+                        NULL);
+    TEST_CHECK_(ret == 0, "setting input options");
+
+    filter_ffd = flb_filter(ctx, "kubernetes", NULL);
+    TEST_CHECK_(filter_ffd >= 0, "initialising first filter");
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "application.*",
+                         "Dummy_Meta", "On",
+                         "Use_Pod_Association", "On",
+                         "AWS_Pod_Service_Preload_Cache_Dir",
+                         DPATH "/pod-service",
+                         "AWS_Pod_Service_Map_Refresh_Interval", "1",
+                         NULL);
+    TEST_CHECK_(ret == 0, "setting first filter options");
+
+    filter_ffd = flb_filter(ctx, "kubernetes", NULL);
+    TEST_CHECK_(filter_ffd >= 0, "initialising second filter");
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "dataplane.*",
+                         "Dummy_Meta", "On",
+                         "Use_Pod_Association", "On",
+                         "AWS_Pod_Service_Preload_Cache_Dir",
+                         DPATH "/pod-service",
+                         "AWS_Pod_Service_Map_Refresh_Interval", "1",
+                         NULL);
+    TEST_CHECK_(ret == 0, "setting second filter options");
+
+    out_ffd = flb_output(ctx, "null", NULL);
+    TEST_CHECK_(out_ffd >= 0, "initialising output");
+    ret = flb_output_set(ctx, out_ffd, "Match", "*", NULL);
+    TEST_CHECK_(ret == 0, "setting output options");
+
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret == 0, "starting engine");
+    if (ret == 0) {
+        flb_time_msleep(100);
+        ret = flb_stop(ctx);
+        TEST_CHECK_(ret == 0, "stopping engine");
+    }
+
+    flb_destroy(ctx);
+}
+
 
 #define flb_test_core(target, suffix, nExpected) \
     kube_test("core/" target, KUBE_TAIL, suffix, nExpected, NULL);
@@ -1159,6 +1228,7 @@ TEST_LIST = {
     {"kube_core_base_with_namespace_labels_and_annotations", flb_test_core_base_with_namespace_labels_and_annotations},
     {"kube_core_base_with_owner_references", flb_test_core_base_with_owner_references},
     {"kube_local_fluentbit_logs", flb_test_local_fluentbit_logs},
+    {"kube_pod_association_multiple_instances", flb_test_pod_association_multiple_instances},
     {"kube_options_use-kubelet_enabled_json", flb_test_options_use_kubelet_enabled_json},
     {"kube_options_use-kubelet_disabled_json", flb_test_options_use_kubelet_disabled_json},
     {"kube_options_merge_log_enabled_text", flb_test_options_merge_log_enabled_text},
