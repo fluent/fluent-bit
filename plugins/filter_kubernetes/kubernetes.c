@@ -282,6 +282,7 @@ static int cb_kube_init(struct flb_filter_instance *f_ins,
         if (ret != 0) {
             flb_plg_error(ctx->ins,
                           "Failed to initialize pod service map mutex");
+            flb_kube_conf_destroy(ctx);
             return -1;
         }
 
@@ -290,6 +291,7 @@ static int cb_kube_init(struct flb_filter_instance *f_ins,
             flb_plg_error(ctx->ins,
                           "Failed to initialize pod service map condition");
             pthread_mutex_destroy(&ctx->aws_pod_service_mutex);
+            flb_kube_conf_destroy(ctx);
             return -1;
         }
         ctx->aws_pod_service_sync_initialized = FLB_TRUE;
