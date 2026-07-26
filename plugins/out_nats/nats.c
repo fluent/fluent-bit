@@ -173,14 +173,33 @@ static void cb_nats_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
-    /* Before to flush the content check if we need to start the handshake */
-    ret = flb_io_net_write(u_conn,
-                           NATS_CONNECT,
-                           sizeof(NATS_CONNECT) - 1,
-                           &bytes_sent);
-    if (ret == -1) {
-        flb_upstream_conn_release(u_conn);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+    /*
+     * Send the NATS CONNECT handshake only once per connection instead of
+     * on every flush: sending it again on a recycled keepalive connection
+     * is redundant, the server only needs it right after the TCP connection
+     * is established.
+     *
+     * The handshake state is tracked in the connection's own user_data
+     * field (unused for upstream connections): connections are zeroed on
+     * creation, so a fresh connection always runs the handshake, while a
+     * recycled one keeps the mark and skips it. A connection that fails an
+     * I/O operation is destroyed by the upstream layer rather than
+     * recycled, and the keepalive queue destroys connections dropped by
+     * the server, so no stale mark can ever skip the handshake on a new
+     * connection.
+     */
+    if (u_conn->user_data == NULL) {
+        ret = flb_io_net_write(u_conn,
+                               NATS_CONNECT,
+                               sizeof(NATS_CONNECT) - 1,
+                               &bytes_sent);
+        if (ret == -1) {
+            flb_upstream_conn_release(u_conn);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        flb_plg_debug(ctx->ins, "sent NATS CONNECT handshake");
+        u_conn->user_data = u_conn;
     }
 
     /* Convert original Fluent Bit MsgPack format to JSON */
