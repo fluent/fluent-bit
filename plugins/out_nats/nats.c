@@ -193,7 +193,8 @@ static void cb_nats_flush(struct flb_event_chunk *event_chunk,
                                NATS_CONNECT,
                                sizeof(NATS_CONNECT) - 1,
                                &bytes_sent);
-        if (ret == -1) {
+        if (ret == -1 || bytes_sent != sizeof(NATS_CONNECT) - 1) {
+            /* an incomplete CONNECT leaves the protocol stream misaligned */
             flb_upstream_conn_release(u_conn);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
@@ -233,7 +234,11 @@ static void cb_nats_flush(struct flb_event_chunk *event_chunk,
     flb_sds_destroy(json_msg);
 
     ret = flb_io_net_write(u_conn, request, req_len, &bytes_sent);
-    if (ret == -1) {
+    if (ret == -1 || bytes_sent != (size_t) req_len) {
+        /* an incomplete PUB leaves the protocol stream misaligned: the
+         * server would parse the next frame in the middle of this one */
+        flb_plg_error(ctx->ins, "PUB write incomplete (%zu/%d bytes)",
+                      ret == -1 ? 0 : bytes_sent, req_len);
         flb_errno();
         flb_free(request);
         flb_upstream_conn_release(u_conn);
