@@ -966,6 +966,95 @@ def test_in_forward_workers_concurrent_message_mode_records():
     assert values == list(range(total_records))
 
 
+def test_in_forward_workers_forward_mode_batch():
+    total_records = 256
+    chunk = "workers-forward-batch-001"
+    service = Service("in_forward_workers.yaml")
+    service.start()
+
+    try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
+        payload = _pack_obj([
+            TEST_TAG,
+            [
+                [
+                    TEST_TS,
+                    {"message": f"forward-batch-{index}", "value": index},
+                ]
+                for index in range(total_records)
+            ],
+            {"chunk": chunk},
+        ])
+        with socket.create_connection(
+            ("127.0.0.1", service.flb_listener_port), timeout=5
+        ) as sock:
+            sock.sendall(payload)
+            ack = _recv_msgpack_value(sock)
+        records = service.wait_for_record_count(total_records, timeout=20)
+    finally:
+        service.stop()
+
+    assert ack == {"ack": chunk}
+    assert len(records) == total_records
+    assert [record["value"] for record in records[:total_records]] == list(
+        range(total_records)
+    )
+
+
+def test_in_forward_workers_forward_mode_batch_respects_ingress_queue_byte_limit():
+    total_records = 8
+    chunk = "workers-forward-limited-batch-001"
+    service = Service("in_forward_workers_tiny_ingress_queue.yaml")
+    service.start()
+
+    try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
+        payload = _pack_obj([
+            TEST_TAG,
+            [
+                [
+                    TEST_TS,
+                    {"message": f"limited-batch-{index}", "value": index},
+                ]
+                for index in range(total_records)
+            ],
+            {"chunk": chunk},
+        ])
+        with socket.create_connection(
+            ("127.0.0.1", service.flb_listener_port), timeout=5
+        ) as sock:
+            sock.sendall(payload)
+            ack = _recv_msgpack_value(sock)
+        records = service.wait_for_record_count(total_records, timeout=20)
+    finally:
+        service.stop()
+
+    assert ack == {"ack": chunk}
+    assert len(records) == total_records
+    assert [record["value"] for record in records] == list(range(total_records))
+
+
+def test_in_forward_workers_forward_mode_preserves_valid_prefix():
+    service = Service("in_forward_workers.yaml")
+    service.start()
+
+    try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
+        payload = _pack_obj([
+            TEST_TAG,
+            [
+                [TEST_TS, {"message": "valid-prefix"}],
+                [TEST_TS],
+            ],
+        ])
+        _send_tcp_payload(service.flb_listener_port, payload)
+        records = service.wait_for_record_count(1, timeout=20)
+    finally:
+        service.stop()
+
+    assert records[0]["message"] == "valid-prefix"
+
+
 def test_in_forward_workers_drop_partial_connections_and_continue():
     dropped_connections = 8
     valid_records = 8
