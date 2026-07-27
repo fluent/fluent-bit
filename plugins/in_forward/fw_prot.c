@@ -948,13 +948,10 @@ static int get_options_chunk(msgpack_object *arr, int expected, int *idx)
     return 0;
 }
 
-static int fw_process_forward_mode_entry(
-                struct fw_conn *conn,
-                const char *tag, int tag_len,
-                msgpack_object *entry,
-                int chunk_id)
+static int fw_encode_forward_mode_entry(struct fw_conn *conn,
+                                        msgpack_object *entry)
 {
-    int                  result;
+    int result;
     struct flb_log_event event;
 
     result = flb_event_decoder_decode_object(conn->ctx->log_decoder,
@@ -985,21 +982,149 @@ static int fw_process_forward_mode_entry(
         result = flb_log_event_encoder_commit_record(conn->ctx->log_encoder);
     }
 
-    if (result == FLB_EVENT_ENCODER_SUCCESS) {
-        result = fw_ingest_logs(conn->ctx, tag, tag_len,
-                                conn->ctx->log_encoder->output_buffer,
-                                conn->ctx->log_encoder->output_length);
-    }
-
-    flb_log_event_encoder_reset(conn->ctx->log_encoder);
-
     if (result != FLB_EVENT_ENCODER_SUCCESS) {
-        flb_plg_warn(conn->ctx->ins, "Event decoder failure : %d", result);
+        flb_plg_warn(conn->ctx->ins, "event decoder or encoder failure: %d", result);
 
         return -1;
     }
 
     return 0;
+}
+
+static int fw_ingest_forward_mode_chunk(struct fw_conn *conn,
+                                        const char *tag, size_t tag_len,
+                                        const void *buffer, size_t length)
+{
+    int result;
+    struct flb_input_instance *ins;
+    struct flb_in_fw_config *ctx;
+
+    ctx = conn->ctx;
+    ins = ctx->ins;
+
+    do {
+        result = fw_ingest_logs(ctx, tag, tag_len, buffer, length);
+    } while (result == FLB_INPUT_INGRESS_BUSY &&
+             ins->ingress_queue_enabled == FLB_TRUE &&
+             ins->config->is_ingestion_active == FLB_TRUE &&
+             ctx->is_paused == FLB_FALSE &&
+             (ins->ingress_queue_byte_limit == 0 ||
+              length <= ins->ingress_queue_byte_limit));
+
+    return result;
+}
+
+static int fw_ingest_forward_mode_batch(struct fw_conn *conn,
+                                        const char *tag, size_t tag_len,
+                                        const void *buffer, size_t length)
+{
+    int decode_result;
+    int ingest_result;
+    size_t batch_length;
+    size_t byte_limit;
+    const char *batch;
+    struct flb_log_event event;
+    struct flb_log_event_decoder decoder;
+
+    byte_limit = conn->ctx->ins->ingress_queue_byte_limit;
+
+    if (byte_limit == 0 || length <= byte_limit) {
+        return fw_ingest_forward_mode_chunk(conn, tag, tag_len, buffer, length);
+    }
+
+    decode_result = flb_log_event_decoder_init(&decoder, (char *) buffer, length);
+    if (decode_result != FLB_EVENT_DECODER_SUCCESS) {
+        return -1;
+    }
+
+    batch = NULL;
+    batch_length = 0;
+    ingest_result = 0;
+
+    while ((decode_result = flb_log_event_decoder_next(&decoder, &event)) ==
+           FLB_EVENT_DECODER_SUCCESS) {
+        if (batch_length > 0 &&
+            (batch_length > byte_limit ||
+             decoder.record_length > byte_limit - batch_length)) {
+            ingest_result = fw_ingest_forward_mode_chunk(
+                                conn, tag, tag_len, batch, batch_length);
+            if (ingest_result != 0) {
+                break;
+            }
+
+            batch_length = 0;
+        }
+
+        if (batch_length == 0) {
+            batch = decoder.record_base;
+        }
+
+        batch_length += decoder.record_length;
+    }
+
+    if (ingest_result == 0) {
+        decode_result = flb_log_event_decoder_get_last_result(&decoder);
+
+        if (decode_result != FLB_EVENT_DECODER_SUCCESS) {
+            ingest_result = -1;
+        }
+        else if (batch_length > 0) {
+            ingest_result = fw_ingest_forward_mode_chunk(
+                                conn, tag, tag_len, batch, batch_length);
+        }
+    }
+
+    flb_log_event_decoder_destroy(&decoder);
+
+    return ingest_result;
+}
+
+static int fw_process_forward_mode(struct fw_conn *conn,
+                                   const char *tag, size_t tag_len,
+                                   msgpack_object *entries)
+{
+    int encode_result;
+    int ingest_result;
+    size_t index;
+    struct flb_log_event_encoder *encoder;
+
+    encoder = conn->ctx->log_encoder;
+    flb_log_event_encoder_reset(encoder);
+
+    encode_result = 0;
+
+    for (index = 0;
+         index < entries->via.array.size && encode_result == 0;
+         index++) {
+        encode_result = fw_encode_forward_mode_entry(
+                            conn,
+                            &entries->via.array.ptr[index]);
+    }
+
+    ingest_result = 0;
+
+    /*
+     * Preserve the existing partial-frame behavior: entries encoded before a
+     * malformed entry are ingested before the connection is rejected.
+     */
+    if (encoder->output_length > 0) {
+        ingest_result = fw_ingest_forward_mode_batch(
+                            conn,
+                            tag,
+                            tag_len,
+                            encoder->output_buffer,
+                            encoder->output_length);
+    }
+
+    flb_log_event_encoder_reset(encoder);
+
+    if (ingest_result != 0) {
+        flb_plg_warn(conn->ctx->ins,
+                     "could not ingest Forward mode batch: %d", ingest_result);
+        return -1;
+    }
+
+    return encode_result;
 }
 
 static int fw_process_message_mode_entry(
@@ -1282,7 +1407,6 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     int contain_options = FLB_FALSE;
     int chunk_id = -1;
     int metadata_id = -1;
-    size_t index = 0;
     const char *stag;
     flb_sds_t out_tag = NULL;
     size_t bytes;
@@ -1478,19 +1602,12 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                     return -1;
                 }
 
-                /* Process array */
-                ret = 0;
-
-                for(index = 0 ;
-                    index < entry.via.array.size &&
-                    ret == 0 ;
-                    index++) {
-                    ret = fw_process_forward_mode_entry(
-                            conn,
-                            out_tag, flb_sds_len(out_tag),
-                            &entry.via.array.ptr[index],
-                            chunk_id);
-                }
+                /* Encode and ingest the complete Forward mode frame. */
+                ret = fw_process_forward_mode(
+                          conn,
+                          out_tag,
+                          flb_sds_len(out_tag),
+                          &entry);
 
                 if (ret == 0 && chunk_id != -1) {
                     msgpack_object options;
