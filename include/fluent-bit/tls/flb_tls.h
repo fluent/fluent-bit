@@ -95,6 +95,7 @@ struct flb_tls_backend {
     /* Additional settings */
     int (*context_alpn_set) (void *, const char *);
     int (*context_set_verify_client) (void *, int);
+    int (*context_set_crl_file) (void *, const char *);
 
     /* TLS Protocol version */
     int (*set_minmax_proto) (struct flb_tls *tls, const char *, const char *);
@@ -170,6 +171,7 @@ int flb_tls_reload_if_needed(struct flb_tls *tls);
 
 int flb_tls_set_alpn(struct flb_tls *tls, const char *alpn);
 int flb_tls_set_verify_client(struct flb_tls *tls, int verify_client);
+int flb_tls_set_crl_file(struct flb_tls *tls, const char *crl_file);
 
 int flb_tls_set_verify_hostname(struct flb_tls *tls, int verify_hostname);
 #if defined(FLB_SYSTEM_WINDOWS)
