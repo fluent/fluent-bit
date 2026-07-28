@@ -112,8 +112,8 @@ static void append_headers(struct flb_http_client *c,
 /*
  * Reads ctx->http_bearer_token_file fresh (no caching), trims trailing whitespace/newlines,
  * and sets the Authorization: Bearer header on the given HTTP client. Returns 0 on
- * success, -1 on read failure or empty-after-trim content (error already logged, path
- * and reason only, never token content).
+ * success, -1 on read failure, empty-after-trim content, or header-construction failure
+ * (error already logged, path and reason only, never token content).
  */
 static int http_bearer_token_file_auth(struct flb_out_http *ctx,
                                        struct flb_http_client *c)
@@ -145,8 +145,14 @@ static int http_bearer_token_file_auth(struct flb_out_http *ctx,
         return -1;
     }
 
-    flb_http_bearer_auth(c, bearer_buf);
+    ret = flb_http_bearer_auth(c, bearer_buf);
     flb_free(bearer_buf);
+
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "could not set Authorization header from "
+                      "http_bearer_token_file '%s'", ctx->http_bearer_token_file);
+        return -1;
+    }
 
     return 0;
 }
