@@ -1706,6 +1706,30 @@ static void cb_check_source_location_common_case_line_in_string(void *ctx, int f
     flb_sds_destroy(res_data);
 }
 
+static void cb_check_source_location_line_invalid_string(void *ctx, int ffd,
+                                                         int res_ret, void *res_data, size_t res_size,
+                                                         void *data)
+{
+    int ret;
+
+    /* sourceLocation_file */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['file']", "test_file");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /*
+     * line is "123abc": a malformed integer string must be rejected and leave
+     * the field at its default (0) rather than being partially parsed to 123
+     */
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['sourceLocation']['line']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* sourceLocation_function */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['function']", "test_function");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
 static void cb_check_empty_source_location(void *ctx, int ffd,
                                            int res_ret, void *res_data, size_t res_size,
                                            void *data)
@@ -5493,6 +5517,46 @@ void flb_test_source_location_line_in_string()
     flb_destroy(ctx);
 }
 
+void flb_test_source_location_line_invalid_string()
+{
+    int ret;
+    int size = sizeof(SOURCELOCATION_COMMON_CASE_LINE_INVALID_STRING) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_source_location_line_invalid_string,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_COMMON_CASE_LINE_INVALID_STRING, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 void flb_test_empty_source_location()
 {
     int ret;
@@ -6588,6 +6652,7 @@ TEST_LIST = {
     /* test sourceLocation */
     {"sourceLocation_common_case", flb_test_source_location_common_case},
     {"sourceLocation_line_in_string", flb_test_source_location_line_in_string},
+    {"sourceLocation_line_invalid_string", flb_test_source_location_line_invalid_string},
     {"empty_sourceLocation", flb_test_empty_source_location},
     {"sourceLocation_not_a_map", flb_test_source_location_in_string},
     {"sourceLocation_partial_subfields", flb_test_source_location_partial_subfields},
