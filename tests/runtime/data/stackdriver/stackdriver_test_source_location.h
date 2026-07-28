@@ -20,6 +20,17 @@
         "}"     \
 	"}]"
 
+#define SOURCELOCATION_COMMON_CASE_LINE_INVALID_STRING	"["		\
+	"1591111124,"			\
+	"{"				\
+        "\"logging.googleapis.com/sourceLocation\": "		\
+        "{"            \
+            "\"file\": \"test_file\","          \
+            "\"line\": \"123abc\","      \
+            "\"function\": \"test_function\""      \
+        "}"     \
+	"}]"
+
 #define EMPTY_SOURCELOCATION	"["		\
 	"1591111124,"			\
 	"{"				\
