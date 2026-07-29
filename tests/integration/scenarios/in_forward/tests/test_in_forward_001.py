@@ -750,11 +750,23 @@ def _send_forward_payload(service, payload, use_tls):
 
 def _recv_msgpack_value(sock):
     sock.settimeout(5)
-    data = sock.recv(4096)
-    assert data
-    value, offset = _unpack_obj(data, 0)
-    assert offset == len(data)
-    return value
+    data = bytearray()
+
+    while True:
+        chunk = sock.recv(4096)
+        assert chunk
+        data.extend(chunk)
+
+        try:
+            value, offset = _unpack_obj(data, 0)
+        except IndexError:
+            continue
+
+        if offset > len(data):
+            continue
+
+        assert offset == len(data)
+        return value
 
 
 def _decode_str_like(raw):
@@ -1048,10 +1060,13 @@ def test_in_forward_workers_forward_mode_preserves_valid_prefix():
             ],
         ])
         _send_tcp_payload(service.flb_listener_port, payload)
-        records = service.wait_for_record_count(1, timeout=20)
+        service.wait_for_log_message("event decoder or encoder failure", timeout=20)
+        service.wait_for_record_count(1, timeout=20)
     finally:
         service.stop()
 
+    records = service.flattened_records()
+    assert len(records) == 1
     assert records[0]["message"] == "valid-prefix"
 
 
