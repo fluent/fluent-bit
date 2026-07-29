@@ -2816,6 +2816,8 @@ static struct parser_state *state_push_variant(struct local_ctx *ctx,
           return NULL;
       }
 
+      cfl_array_resizable(array, CFL_TRUE);
+
       variant = cfl_variant_create_from_array(array);
 
       if (variant == NULL) {
