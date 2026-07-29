@@ -721,6 +721,74 @@ def test_in_opentelemetry_large_protobuf_logs():
     assert received_record_count == expected_record_count
 
 
+def test_in_opentelemetry_batched_protobuf_logs_with_workers():
+    service = Service(IN_OPENTELEMETRY_WORKER_PROTOCOL_CONFIGS["http1_cleartext"])
+    source = ExportLogsServiceRequest()
+    source.ParseFromString(service.build_otel_payload("test_logs_001.in.json", "logs"))
+
+    payload = ExportLogsServiceRequest()
+    payload.CopyFrom(source)
+    source_records = list(source.resource_logs[0].scope_logs[0].log_records)
+
+    while payload.ByteSize() < 16 * 1024:
+        payload.resource_logs[0].scope_logs[0].log_records.extend(source_records)
+
+    assert payload.ByteSize() < 64 * 1024
+
+    expected_record_count = sum(
+        len(scope_logs.log_records)
+        for resource_logs in payload.resource_logs
+        for scope_logs in resource_logs.scope_logs
+    )
+
+    service.start()
+    try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
+        logs_before = len(data_storage["logs"])
+        response = service.send_raw_request("/v1/logs", payload.SerializeToString())
+
+        assert response.status_code == 201
+        received_record_count = service.service.wait_for_condition(
+            lambda: count if (
+                count := sum(
+                    len(scope_logs.log_records)
+                    for received in data_storage["logs"][logs_before:]
+                    for resource_logs in received.resource_logs
+                    for scope_logs in resource_logs.scope_logs
+                )
+            ) >= expected_record_count else None,
+            timeout=20,
+            interval=0.25,
+            description="all batched protobuf log records",
+        )
+
+        metrics_text = service.service.wait_for_condition(
+            lambda: (
+                metrics if maybe_read_prometheus_metric_value(
+                    metrics,
+                    "fluentbit_input_records_total",
+                    "opentelemetry.0",
+                ) is not None and maybe_read_prometheus_metric_value(
+                    metrics,
+                    "fluentbit_input_records_total",
+                    "opentelemetry.0",
+                ) >= expected_record_count else None
+            ) if (metrics := service.scrape_prometheus_metrics()) else None,
+            timeout=10,
+            interval=0.25,
+            description="protobuf input record accounting",
+        )
+    finally:
+        service.stop()
+
+    assert received_record_count == expected_record_count
+    assert read_prometheus_metric_value(
+        metrics_text,
+        "fluentbit_input_records_total",
+        "opentelemetry.0",
+    ) == expected_record_count
+
+
 # Start a Fluent Bit Pipeline with Dummy message and then it gets handle by OpenTelemetry output, the config
 # aims to populate traceId and spanId fields with the values from the Dummy message.
 #
