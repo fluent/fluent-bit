@@ -417,7 +417,7 @@ static int netstat_update(struct flb_ne *ctx)
     flb_slist_destroy(&list);
 
     mk_list_init(&list);
-    ret = ne_utils_file_read_lines(ctx->path_procfs, "/net/netstat", &list);
+    ret = ne_utils_file_read_lines(ctx, ctx->path_procfs, "/net/netstat", &list);
     if (ret == 0) {
         prev_line = NULL;
         prev_proto = NETSTAT_PROTO_NONE;
@@ -457,7 +457,7 @@ static int netstat_update(struct flb_ne *ctx)
     flb_slist_destroy(&list);
 
     mk_list_init(&list);
-    ret = ne_utils_file_read_lines(ctx->path_procfs, "/net/snmp6", &list);
+    ret = ne_utils_file_read_lines(ctx, ctx->path_procfs, "/net/snmp6", &list);
     if (ret == 0) {
         mk_list_foreach(head, &list) {
             int i;
