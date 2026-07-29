@@ -651,6 +651,7 @@ static int ingest_profiles_context_as_log_entry(struct flb_opentelemetry *ctx,
         }
 
         ret = opentelemetry_ingest_logs_take(ctx,
+                                             0,
                                              tag,
                                              flb_sds_len(tag),
                                              encoder->output_buffer,

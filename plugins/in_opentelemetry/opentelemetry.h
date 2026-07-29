@@ -69,6 +69,7 @@ static inline int opentelemetry_ingest_logs(struct flb_opentelemetry *ctx,
 }
 
 static inline int opentelemetry_ingest_logs_take(struct flb_opentelemetry *ctx,
+                                                 size_t records,
                                                  const char *tag,
                                                  size_t tag_len,
                                                  void *buf,
@@ -76,12 +77,18 @@ static inline int opentelemetry_ingest_logs_take(struct flb_opentelemetry *ctx,
                                                  size_t allocation_size)
 {
     if (opentelemetry_uses_worker_ingress_queue(ctx)) {
-        return flb_input_ingress_queue_log_take(ctx->ins,
-                                                tag,
-                                                tag_len,
-                                                buf,
-                                                buf_size,
-                                                allocation_size);
+        return flb_input_ingress_queue_log_take_records(ctx->ins,
+                                                        records,
+                                                        tag,
+                                                        tag_len,
+                                                        buf,
+                                                        buf_size,
+                                                        allocation_size);
+    }
+
+    if (records > 0) {
+        return flb_input_log_append_records(ctx->ins, records,
+                                            tag, tag_len, buf, buf_size);
     }
 
     return flb_input_log_append(ctx->ins, tag, tag_len, buf, buf_size);
