@@ -30,7 +30,45 @@
 #include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_connection.h>
 #include <fluent-bit/flb_config_map.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_thread_storage.h>
+
+static inline int prepare_destroy_conn_safe(struct flb_connection *connection);
+
+static void flb_downstream_conn_event_coro(void)
+{
+    struct flb_coro *coro;
+    struct flb_connection *connection;
+
+    coro = flb_coro_get();
+    connection = coro->data;
+
+    while (FLB_TRUE) {
+        flb_coro_yield(coro, FLB_FALSE);
+
+        connection->busy_flag = FLB_TRUE;
+        connection->event_callback(connection);
+
+        connection->busy_flag = FLB_FALSE;
+
+        /*
+         * A pause or shutdown can be requested recursively while ingestion
+         * is still using the plugin wrapper. Defer the drop notification
+         * until the complete callback has unwound.
+         */
+        if (connection->event_release_pending == FLB_TRUE) {
+            connection->event_release_pending = FLB_FALSE;
+            prepare_destroy_conn_safe(connection);
+        }
+
+        if (connection->fd == FLB_INVALID_SOCKET) {
+            connection->coroutine = NULL;
+        }
+        else {
+            connection->coroutine = coro;
+        }
+    }
+}
 
 /* Config map for Downstream networking setup */
 struct flb_config_map downstream_net[] = {
@@ -270,22 +308,63 @@ static inline int prepare_destroy_conn_safe(struct flb_connection *connection)
     return result;
 }
 
-static int destroy_conn(struct flb_connection *connection)
+static void shutdown_connection(struct flb_connection *connection)
+{
+    if (connection->fd != FLB_INVALID_SOCKET &&
+        connection->shutdown_flag == FLB_FALSE) {
+        shutdown(connection->fd, SHUT_RDWR);
+        connection->shutdown_flag = FLB_TRUE;
+    }
+}
+
+static int wake_event_coroutine(struct flb_connection *connection, int error)
+{
+    int ret;
+
+    connection->net_error = error;
+    connection->event_wakeup_pending = FLB_TRUE;
+    shutdown_connection(connection);
+
+    /* Thread-owned streams are resumed directly after their lock is released. */
+    if (flb_stream_is_thread_safe(connection->stream)) {
+        return 0;
+    }
+
+    if (!MK_EVENT_IS_REGISTERED((&connection->event))) {
+        return 0;
+    }
+
+    ret = mk_event_inject(connection->evl,
+                          &connection->event,
+                          connection->event.mask,
+                          FLB_TRUE);
+    if (ret == -1) {
+        flb_warn("[downstream] could not inject wake-up event for connection #%i",
+                 connection->fd);
+    }
+
+    return ret;
+}
+
+static int destroy_conn(struct flb_connection *connection, int force)
 {
     /*
-     * Delay the destruction if the connection is still marked busy or if
-     * there are pending events referencing it (e.g. an event still linked
-     * in the priority bucket queue after mk_event_inject). Freeing the
-     * connection while its event is queued would leave a dangling
-     * _priority_head in the bucket queue, causing a use-after-free and a
-     * stuck event that spins the input thread at 100% CPU.
-     *
-     * The connection stays in the destroy_queue and is retried on the next
-     * pending-destroy sweep, by which point the event has been drained.
+     * Normal sweeps defer destruction while a callback or injected event can
+     * still reference the connection. Terminal downstream teardown owns the
+     * event loop and coroutine stacks, so it must release them immediately.
      */
-    if (connection->busy_flag ||
-        !mk_list_entry_is_orphan(&connection->event._priority_head)) {
+    if (force == FLB_FALSE &&
+        (connection->busy_flag ||
+         !mk_list_entry_is_orphan(&connection->event._priority_head))) {
         return 0;
+    }
+
+    if (connection->event_coroutine != NULL) {
+        flb_trace("[downstream] destroy event coroutine for connection #%i",
+                  connection->fd);
+        flb_coro_destroy(connection->event_coroutine);
+        connection->event_coroutine = NULL;
+        connection->coroutine = NULL;
     }
 
     if (connection->tls_session != NULL) {
@@ -425,19 +504,13 @@ void flb_downstream_destroy(struct flb_downstream *stream)
         mk_list_foreach_safe(head, tmp, &stream->destroy_queue) {
             connection = mk_list_entry(head, struct flb_connection, _head);
 
-            /*
-             * This is the terminal cleanup: there is no later
-             * pending-destroy sweep. destroy_conn() defers connections
-             * whose event is still linked in the priority bucket queue, so
-             * unlink any lingering event here (the bucket queue is still
-             * alive at this point) to make sure the connection is freed
-             * instead of leaked.
-             */
+            /* No event may retain a connection after terminal cleanup. */
             if (!mk_list_entry_is_orphan(&connection->event._priority_head)) {
                 mk_list_del(&connection->event._priority_head);
             }
 
-            destroy_conn(connection);
+            destroy_conn(connection,
+                         connection->event_coroutine != NULL);
         }
 
         /* If the simulated UDP connection reference is set then
@@ -480,7 +553,152 @@ void flb_downstream_destroy(struct flb_downstream *stream)
 
 int flb_downstream_conn_release(struct flb_connection *connection)
 {
-    return prepare_destroy_conn_safe(connection);
+    int ret;
+    int resume;
+
+    resume = FLB_FALSE;
+    flb_stream_acquire_lock(connection->stream, FLB_TRUE);
+
+    if (connection->event_coroutine != NULL &&
+        connection->busy_flag == FLB_TRUE) {
+        connection->event_release_pending = FLB_TRUE;
+
+        if (flb_coro_get() != connection->event_coroutine) {
+            wake_event_coroutine(connection, ECANCELED);
+            resume = flb_stream_is_thread_safe(connection->stream);
+        }
+
+        ret = FLB_DOWNSTREAM_CONN_DEFERRED;
+    }
+    else {
+        prepare_destroy_conn(connection);
+        ret = FLB_DOWNSTREAM_CONN_RELEASED;
+    }
+
+    flb_stream_release_lock(connection->stream);
+
+    if (resume == FLB_TRUE) {
+        flb_downstream_conn_event_resume(connection);
+    }
+
+    return ret;
+}
+
+int flb_downstream_conn_event_register(struct flb_connection *connection,
+                                       flb_connection_event_callback callback,
+                                       int mask)
+{
+    int ret;
+    size_t stack_size;
+    struct flb_coro *coro;
+    struct flb_coro *previous_coro;
+    struct flb_config *config;
+
+    if (connection == NULL || callback == NULL ||
+        (mask & (MK_EVENT_READ | MK_EVENT_WRITE)) == 0 ||
+        connection->type != FLB_DOWNSTREAM_CONNECTION) {
+        return -1;
+    }
+
+    if (connection->stream->transport != FLB_TRANSPORT_TCP &&
+        connection->stream->transport != FLB_TRANSPORT_UNIX_STREAM) {
+        return -1;
+    }
+
+    config = connection->stream->config;
+    if (config == NULL || connection->event_coroutine != NULL) {
+        return -1;
+    }
+
+    coro = flb_coro_create(connection);
+    if (coro == NULL) {
+        return -1;
+    }
+
+    coro->caller = co_active();
+    coro->callee = co_create(config->coro_stack_size,
+                             flb_downstream_conn_event_coro,
+                             &stack_size);
+    if (coro->callee == NULL) {
+        flb_coro_destroy(coro);
+        return -1;
+    }
+
+#ifdef FLB_HAVE_VALGRIND
+    coro->valgrind_stack_id = VALGRIND_STACK_REGISTER(
+                                  coro->callee,
+                                  ((char *) coro->callee) + stack_size);
+#endif
+
+    connection->event_coroutine = coro;
+    connection->event_callback = callback;
+    connection->coroutine = coro;
+    flb_connection_enable_flags(connection, FLB_IO_ASYNC);
+
+    flb_trace("[downstream] register event coroutine for connection #%i",
+              connection->fd);
+
+    previous_coro = flb_coro_get();
+    flb_coro_resume(coro);
+    flb_coro_set(previous_coro);
+
+    ret = mk_event_add(connection->evl,
+                       connection->fd,
+                       FLB_ENGINE_EV_THREAD,
+                       mask,
+                       &connection->event);
+    if (ret == -1) {
+        flb_connection_disable_flags(connection, FLB_IO_ASYNC);
+        connection->event_callback = NULL;
+        connection->event_coroutine = NULL;
+        connection->coroutine = NULL;
+        flb_coro_destroy(coro);
+        return -1;
+    }
+
+    return 0;
+}
+
+void flb_downstream_conn_event_resume(struct flb_connection *connection)
+{
+    struct flb_coro *previous_coro;
+
+    previous_coro = flb_coro_get();
+    connection->event_wakeup_pending = FLB_FALSE;
+    flb_coro_resume(connection->event_coroutine);
+    flb_coro_set(previous_coro);
+}
+
+static void resume_pending_event_coroutines(struct flb_downstream *stream)
+{
+    struct flb_connection *connection;
+    struct mk_list *head;
+
+    while (FLB_TRUE) {
+        connection = NULL;
+
+        flb_stream_acquire_lock(&stream->base, FLB_TRUE);
+
+        mk_list_foreach(head, &stream->busy_queue) {
+            connection = mk_list_entry(head, struct flb_connection, _head);
+
+            if (connection->event_coroutine != NULL &&
+                connection->event_wakeup_pending == FLB_TRUE) {
+                connection->event_wakeup_pending = FLB_FALSE;
+                break;
+            }
+
+            connection = NULL;
+        }
+
+        flb_stream_release_lock(&stream->base);
+
+        if (connection == NULL) {
+            break;
+        }
+
+        flb_downstream_conn_event_resume(connection);
+    }
 }
 
 int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream)
@@ -490,7 +708,7 @@ int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream)
     const char            *reason;
     struct mk_list        *s_head;
     int                    drop;
-    int                  inject;
+    int                    inject;
     struct mk_list        *tmp;
     time_t                 now;
 
@@ -545,22 +763,38 @@ int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream)
                 }
             }
 
-            inject = FLB_FALSE;
-            if (connection->event.status != MK_EVENT_NONE) {
-                inject = FLB_TRUE;
+            if (connection->event_coroutine != NULL &&
+                MK_EVENT_IS_REGISTERED((&connection->event))) {
+                wake_event_coroutine(connection, ETIMEDOUT);
             }
-            connection->net_error = ETIMEDOUT;
-            prepare_destroy_conn(connection);
-            if (inject == FLB_TRUE) {
-                mk_event_inject(connection->evl,
-                                &connection->event,
-                                connection->event.mask,
-                                FLB_TRUE);
+            else {
+                connection->net_error = ETIMEDOUT;
+                inject = FLB_FALSE;
+                if (connection->event.status != MK_EVENT_NONE) {
+                    inject = FLB_TRUE;
+                }
+
+                prepare_destroy_conn(connection);
+                if (inject == FLB_TRUE) {
+                    mk_event_inject(connection->evl,
+                                    &connection->event,
+                                    connection->event.mask,
+                                    FLB_TRUE);
+                }
             }
         }
     }
 
     flb_stream_release_lock(&stream->base);
+
+    /*
+     * Worker and threaded-input streams own their event loop. Resume timeout
+     * wakeups here, after releasing the stream lock, so a maintenance callback
+     * cannot leave an injected event to be overwritten by the next wait.
+     */
+    if (flb_stream_is_thread_safe(&stream->base)) {
+        resume_pending_event_coroutines(stream);
+    }
 
     return 0;
 }
@@ -591,7 +825,7 @@ int flb_downstream_conn_pending_destroy(struct flb_downstream *stream)
     mk_list_foreach_safe(head, tmp, &stream->destroy_queue) {
         connection = mk_list_entry(head, struct flb_connection, _head);
 
-        destroy_conn(connection);
+        destroy_conn(connection, FLB_FALSE);
     }
 
     flb_stream_release_lock(&stream->base);

@@ -5,6 +5,7 @@ import threading
 
 import pytest
 
+from utils.memory_check import memory_check_enabled
 from utils.test_service import FluentBitTestService
 
 
@@ -83,7 +84,7 @@ class Service:
         self.service.stop()
 
     def wait_for_requests(self, minimum_count, timeout=10):
-        if os.environ.get("VALGRIND"):
+        if memory_check_enabled():
             timeout = max(timeout * 3, 30)
 
         return self.service.wait_for_condition(
@@ -96,7 +97,7 @@ class Service:
         )
 
     def wait_for_action_lines(self, minimum_count, timeout=10):
-        if os.environ.get("VALGRIND"):
+        if memory_check_enabled():
             timeout = max(timeout * 3, 30)
 
         return self.service.wait_for_condition(

@@ -13,6 +13,7 @@ from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTrace
 
 from server.kafka_server import data_storage, kafka_server_run, kafka_server_stop
 from utils.data_utils import read_json_file
+from utils.memory_check import memory_check_enabled
 from utils.test_service import FluentBitTestService
 
 
@@ -930,7 +931,7 @@ def test_out_kafka_otlp_json_partition_by_resource_rejects_oversized_message():
     service.start()
     service.send_payload_dict(_build_monolithic_logs_payload(512), "logs")
 
-    timeout = 30 if os.environ.get("VALGRIND") else 10
+    timeout = 30 if memory_check_enabled() else 10
     log_text = _wait_for_log_text(
         service.flb.log_file,
         "Broker: Message size too large",

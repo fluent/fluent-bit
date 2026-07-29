@@ -31,7 +31,12 @@
 #include "opentelemetry.h"
 #include "opentelemetry_utils.h"
 
-#define OTEL_PROTOBUF_ARENA_MIN_PAYLOAD_SIZE 65536
+/*
+ * Small requests use protobuf-c's default allocator to avoid reserving an
+ * arena chunk. Realistic batched requests use the arena to amortize the large
+ * number of short-lived allocations performed by protobuf-c.
+ */
+#define OTEL_PROTOBUF_ARENA_MIN_PAYLOAD_SIZE 8192
 #define OTEL_PROTOBUF_ARENA_INITIAL_CHUNK_SIZE 4096
 #define OTEL_PROTOBUF_ARENA_MAX_CHUNK_SIZE 65536
 
@@ -384,7 +389,8 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
                                      struct flb_log_event_encoder *encoder,
                                      char *tag, size_t tag_len,
                                      uint8_t *in_buf,
-                                     size_t in_size)
+                                     size_t in_size,
+                                     size_t *record_count)
 {
     int ret = 0;
     int len;
@@ -419,6 +425,7 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
     input_logs = NULL;
     protobuf_arena = NULL;
     protobuf_allocator = NULL;
+    *record_count = 0;
 
     if (in_size >= OTEL_PROTOBUF_ARENA_MIN_PAYLOAD_SIZE) {
         protobuf_arena = protobuf_arena_create();
@@ -741,6 +748,9 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
 
                 if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                     ret = flb_log_event_encoder_commit_record(encoder);
+                    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+                        (*record_count)++;
+                    }
                 }
                 else {
                     flb_plg_error(ctx->ins, "marshalling error");
@@ -782,11 +792,13 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
     char *buf;
     uint8_t *payload;
     uint64_t payload_size;
+    size_t record_count;
     struct flb_log_event_encoder *encoder;
 
     buf = (char *) data;
     payload = data;
     payload_size = size;
+    record_count = 0;
 
     /* Detect the type of payload */
     if (content_type) {
@@ -814,7 +826,8 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
     if (is_proto == FLB_TRUE) {
         ret = binary_payload_to_msgpack(ctx, encoder,
                                         tag, tag_len,
-                                        (uint8_t *) payload, payload_size);
+                                        (uint8_t *) payload, payload_size,
+                                        &record_count);
         if (ret < 0) {
             flb_plg_error(ctx->ins, "failed to process logs from protobuf payload");
         }
@@ -852,6 +865,7 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
             }
 
             ret = opentelemetry_ingest_logs_take(ctx,
+                                                 record_count,
                                                  tag,
                                                  flb_sds_len(tag),
                                                  encoder->output_buffer,

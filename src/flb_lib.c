@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_fips.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_filter.h>
@@ -940,8 +941,15 @@ int static do_start(flb_ctx_t *ctx)
 
     /* set context as the last active one */
 
-    /* spawn worker thread */
     config = ctx->config;
+
+    /* OpenSSL default properties must be configured before worker threads start. */
+    ret = flb_fips_init(config);
+    if (ret != 0) {
+        return -1;
+    }
+
+    /* spawn worker thread */
     ret = mk_utils_worker_spawn(flb_lib_worker, ctx, &tid);
     if (ret == -1) {
         return -1;

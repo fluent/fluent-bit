@@ -374,6 +374,7 @@ if(FLB_ALL)
   # Output plugins
   set(FLB_OUT_ES          1)
   set(FLB_OUT_FORWARD     1)
+  set(FLB_OUT_GCS         1)
   set(FLB_OUT_GELF        1)
   set(FLB_OUT_HTTP        1)
   set(FLB_OUT_NATS        1)
@@ -1531,6 +1532,14 @@ else()
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
+if(MSVC OR FLB_JEMALLOC)
+  # MSVC tests need plugin-private symbols that are not exported from fluent-bit.dll.
+  # Jemalloc must not be embedded in both the test executable and shared library.
+  set(FLB_TEST_LINK_LIBRARY fluent-bit-static)
+else()
+  set(FLB_TEST_LINK_LIBRARY fluent-bit-shared)
+endif()
+
 add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)

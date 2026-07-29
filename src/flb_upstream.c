@@ -292,6 +292,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
                                          struct flb_tls *tls)
 {
     int ret;
+    int transport;
     char *proxy_protocol = NULL;
     char *proxy_host = NULL;
     char *proxy_port = NULL;
@@ -307,16 +308,22 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 
     u->base.dynamically_allocated = FLB_TRUE;
 
+    transport = FLB_TRANSPORT_TCP;
+    if ((flags & FLB_IO_UDP) || (flags & FLB_IO_DTLS)) {
+        transport = FLB_TRANSPORT_UDP;
+    }
+
     flb_stream_setup(&u->base,
                      FLB_UPSTREAM,
-                     FLB_TRANSPORT_TCP,
+                     transport,
                      flags,
                      tls,
                      config,
                      NULL);
 
     /* Set upstream to the http_proxy if it is specified. */
-    if (flb_upstream_needs_proxy(host, config->http_proxy, config->no_proxy) == FLB_TRUE) {
+    if (transport == FLB_TRANSPORT_TCP &&
+        flb_upstream_needs_proxy(host, config->http_proxy, config->no_proxy) == FLB_TRUE) {
         flb_debug("[upstream] config->http_proxy: %s", config->http_proxy);
         ret = flb_utils_proxy_url_split(config->http_proxy, &proxy_protocol,
                                         &proxy_username, &proxy_password,

@@ -86,6 +86,12 @@
 #define STAT_KEY_CPU                    "usage_usec"
 #define STAT_KEY_CPU_USER               "user_usec"
 
+/* Field tokens in cgroups v2 io.stat (per block device, summed across devices) */
+#define IO_STAT_KEY_READ_BYTES          "rbytes="
+#define IO_STAT_KEY_WRITE_BYTES         "wbytes="
+#define IO_STAT_KEY_READS               "rios="
+#define IO_STAT_KEY_WRITES              "wios="
+
 /* Static lists of fields in counters or gauges */
 #define FIELDS_METRIC                  (char*[3]){"id", "name", "image" }
 #define FIELDS_METRIC_WITH_IFACE       (char*[4]){"id", "name", "image", "interface" }
@@ -107,6 +113,7 @@
 #define V2_SYSFS_FILE_CPU_STAT         "cpu.stat"
 #define V2_SYSFS_FILE_PIDS             "cgroup.procs"
 #define V2_SYSFS_FILE_PIDS_ALT         "containers/cgroup.procs"
+#define V2_SYSFS_FILE_IO_STAT          "io.stat"
 
 /* Values used to construct counters/gauges names and descriptions */
 #define COUNTER_PREFIX                  "container"
@@ -138,6 +145,16 @@
 #define COUNTER_TX_ERRORS               "transmit_errors_total"
 #define DESCRIPTION_TX_ERRORS           "Network transmitedd errors"
 
+#define COUNTER_DISK_PREFIX             "disk"
+#define COUNTER_DISK_READ_BYTES         "read_bytes_total"
+#define DESCRIPTION_DISK_READ_BYTES     "Container block I/O bytes read"
+#define COUNTER_DISK_WRITE_BYTES        "write_bytes_total"
+#define DESCRIPTION_DISK_WRITE_BYTES    "Container block I/O bytes written"
+#define COUNTER_DISK_READS              "reads_total"
+#define DESCRIPTION_DISK_READS          "Container block I/O reads completed"
+#define COUNTER_DISK_WRITES             "writes_total"
+#define DESCRIPTION_DISK_WRITES         "Container block I/O writes completed"
+
 
 struct net_iface {
     flb_sds_t       name;
@@ -160,6 +177,10 @@ struct container {
     uint64_t        cpu;
     uint64_t        cpu_user;
     uint64_t        rss;
+    uint64_t        disk_read_bytes;
+    uint64_t        disk_write_bytes;
+    uint64_t        disk_reads;
+    uint64_t        disk_writes;
 
     struct mk_list  net_data;
 };
@@ -192,6 +213,10 @@ struct flb_in_metrics {
     struct cmt_counter *rx_errors;
     struct cmt_counter *tx_bytes;
     struct cmt_counter *tx_errors;
+    struct cmt_counter *c_disk_read_bytes;
+    struct cmt_counter *c_disk_write_bytes;
+    struct cmt_counter *c_disk_reads;
+    struct cmt_counter *c_disk_writes;
 
     /* cgroup version used by host */
     int cgroup_version;

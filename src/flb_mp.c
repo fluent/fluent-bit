@@ -1688,182 +1688,200 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
     struct flb_condition *condition = NULL;
 
     *out_record = NULL;
-    bytes = chunk_cobj->log_decoder->length - chunk_cobj->log_decoder->offset;
 
     /* Check if we have a condition */
     condition = chunk_cobj->condition;
 
     /*
-     * if there are remaining decoder bytes, keep iterating msgpack and populate
-     * the cobj list. Otherwise it means all the content is ready as a chunk_cobj_record.
+     * Iterate until a record that matches the condition (if one is configured)
+     * is found, or until the end of the chunk is reached.
+     *
+     * This was previously implemented with tail recursion: whenever a record
+     * did not match the condition, the function called itself to advance to the
+     * next record. With a large run of non-matching records (for example a
+     * condition that filters out most of a chunk) the recursion depth grew
+     * proportionally to the number of records and could exhaust the stack. An
+     * explicit loop keeps the stack usage constant.
      */
-    if (bytes > 0) {
-        record = flb_mp_chunk_record_create(chunk_cobj);
-        if (!record) {
-            return FLB_MP_CHUNK_RECORD_ERROR;
-        }
+    while (1) {
+        /*
+         * if there are remaining decoder bytes, keep iterating msgpack and
+         * populate the cobj list. Otherwise it means all the content is ready
+         * as a chunk_cobj_record.
+         */
+        bytes = chunk_cobj->log_decoder->length - chunk_cobj->log_decoder->offset;
 
-        ret = flb_log_event_decoder_next(chunk_cobj->log_decoder, &record->event);
-        if (ret != FLB_EVENT_DECODER_SUCCESS) {
-            flb_free(record);
-            return -1;
-        }
-
-        record->cobj_metadata = flb_mp_object_to_cfl(record->event.metadata);
-        if (!record->cobj_metadata) {
-            flb_free(record);
-            return FLB_MP_CHUNK_RECORD_ERROR;
-        }
-
-        record->cobj_record = flb_mp_object_to_cfl(record->event.body);
-        if (!record->cobj_record) {
-            cfl_object_destroy(record->cobj_metadata);
-            flb_free(record);
-            return -1;
-        }
-
-        ret = flb_log_event_decoder_get_record_type(&record->event, &record_type);
-        if (ret != FLB_EVENT_DECODER_SUCCESS) {
-            cfl_object_destroy(record->cobj_record);
-            cfl_object_destroy(record->cobj_metadata);
-            flb_free(record);
-            return FLB_MP_CHUNK_RECORD_ERROR;
-        }
-
-        record->owns_group_metadata = FLB_FALSE;
-        record->owns_group_attributes = FLB_FALSE;
-
-        if (record_type == FLB_LOG_EVENT_GROUP_START) {
-            if (record->cobj_metadata) {
-                record->cobj_group_metadata = record->cobj_metadata;
-                record->owns_group_metadata = FLB_TRUE;
-            }
-            if (record->cobj_record) {
-                record->cobj_group_attributes = record->cobj_record;
-                record->owns_group_attributes = FLB_TRUE;
+        if (bytes > 0) {
+            record = flb_mp_chunk_record_create(chunk_cobj);
+            if (!record) {
+                return FLB_MP_CHUNK_RECORD_ERROR;
             }
 
-            chunk_cobj->active_group_metadata = record->cobj_group_metadata;
-            chunk_cobj->active_group_attributes = record->cobj_group_attributes;
-        }
-        else if (record_type == FLB_LOG_EVENT_GROUP_END) {
-            record->cobj_group_metadata = chunk_cobj->active_group_metadata;
-            record->cobj_group_attributes = chunk_cobj->active_group_attributes;
+            ret = flb_log_event_decoder_next(chunk_cobj->log_decoder, &record->event);
+            if (ret != FLB_EVENT_DECODER_SUCCESS) {
+                flb_free(record);
+                return -1;
+            }
 
-            chunk_cobj->active_group_metadata = NULL;
-            chunk_cobj->active_group_attributes = NULL;
-        }
-        else {
-            record->cobj_group_metadata = chunk_cobj->active_group_metadata;
-            record->cobj_group_attributes = chunk_cobj->active_group_attributes;
-        }
+            record->cobj_metadata = flb_mp_object_to_cfl(record->event.metadata);
+            if (!record->cobj_metadata) {
+                flb_free(record);
+                return FLB_MP_CHUNK_RECORD_ERROR;
+            }
 
-        if (!record->cobj_group_metadata &&
-            record->event.group_metadata &&
-            (record->event.group_metadata->type == MSGPACK_OBJECT_MAP ||
-             record->event.group_metadata->type == MSGPACK_OBJECT_ARRAY)) {
-            record->cobj_group_metadata = flb_mp_object_to_cfl(record->event.group_metadata);
-            if (!record->cobj_group_metadata) {
-                if (record->owns_group_attributes && record->cobj_group_attributes) {
-                    cfl_object_destroy(record->cobj_group_attributes);
-                }
+            record->cobj_record = flb_mp_object_to_cfl(record->event.body);
+            if (!record->cobj_record) {
+                cfl_object_destroy(record->cobj_metadata);
+                flb_free(record);
+                return -1;
+            }
+
+            ret = flb_log_event_decoder_get_record_type(&record->event, &record_type);
+            if (ret != FLB_EVENT_DECODER_SUCCESS) {
                 cfl_object_destroy(record->cobj_record);
                 cfl_object_destroy(record->cobj_metadata);
                 flb_free(record);
                 return FLB_MP_CHUNK_RECORD_ERROR;
             }
-            record->owns_group_metadata = FLB_TRUE;
-            if (!chunk_cobj->active_group_metadata) {
+
+            record->owns_group_metadata = FLB_FALSE;
+            record->owns_group_attributes = FLB_FALSE;
+
+            if (record_type == FLB_LOG_EVENT_GROUP_START) {
+                if (record->cobj_metadata) {
+                    record->cobj_group_metadata = record->cobj_metadata;
+                    record->owns_group_metadata = FLB_TRUE;
+                }
+                if (record->cobj_record) {
+                    record->cobj_group_attributes = record->cobj_record;
+                    record->owns_group_attributes = FLB_TRUE;
+                }
+
                 chunk_cobj->active_group_metadata = record->cobj_group_metadata;
-            }
-        }
-
-        if (!record->cobj_group_attributes &&
-            record->event.group_attributes &&
-            (record->event.group_attributes->type == MSGPACK_OBJECT_MAP ||
-             record->event.group_attributes->type == MSGPACK_OBJECT_ARRAY)) {
-            record->cobj_group_attributes = flb_mp_object_to_cfl(record->event.group_attributes);
-            if (!record->cobj_group_attributes) {
-                if (record->owns_group_metadata && record->cobj_group_metadata) {
-                    cfl_object_destroy(record->cobj_group_metadata);
-                }
-                cfl_object_destroy(record->cobj_record);
-                cfl_object_destroy(record->cobj_metadata);
-                flb_free(record);
-                return FLB_MP_CHUNK_RECORD_ERROR;
-            }
-            record->owns_group_attributes = FLB_TRUE;
-            if (!chunk_cobj->active_group_attributes) {
                 chunk_cobj->active_group_attributes = record->cobj_group_attributes;
             }
-        }
+            else if (record_type == FLB_LOG_EVENT_GROUP_END) {
+                record->cobj_group_metadata = chunk_cobj->active_group_metadata;
+                record->cobj_group_attributes = chunk_cobj->active_group_attributes;
 
-        cfl_list_add(&record->_head, &chunk_cobj->records);
-
-        /* If there's a condition, check if the record matches */
-        if (condition != NULL && record != NULL) {
-            flb_trace("[mp] evaluating condition for record");
-            ret = flb_condition_evaluate(condition, record);
-            flb_trace("[mp] condition evaluation result: %s", ret ? "TRUE" : "FALSE");
-            if (ret == FLB_FALSE) {
-                flb_trace("[mp] record didn't match condition, skipping");
-                /* Record doesn't match the condition, continue to next record */
-                return flb_mp_chunk_cobj_record_next(chunk_cobj, out_record);
+                chunk_cobj->active_group_metadata = NULL;
+                chunk_cobj->active_group_attributes = NULL;
             }
-            flb_trace("[mp] record matched condition, processing");
-        }
-
-        ret = FLB_MP_CHUNK_RECORD_OK;
-    }
-    else if (chunk_cobj->record_pos != NULL) {
-        /* is the actual record the last one ? */
-        if (chunk_cobj->record_pos == cfl_list_entry_last(&chunk_cobj->records, struct flb_mp_chunk_record, _head)) {
-            chunk_cobj->record_pos = NULL;
-            return FLB_MP_CHUNK_RECORD_EOF;
-        }
-
-        record = cfl_list_entry_next(&chunk_cobj->record_pos->_head, struct flb_mp_chunk_record,
-                                    _head, &chunk_cobj->records);
-
-        /* If there's a condition, check if the record matches */
-        if (condition != NULL && record != NULL) {
-            flb_trace("[mp] evaluating condition for next record");
-            ret = flb_condition_evaluate(condition, record);
-            flb_trace("[mp] next record condition evaluation result: %s", ret ? "TRUE" : "FALSE");
-            if (ret == FLB_FALSE) {
-                flb_trace("[mp] next record didn't match condition, skipping");
-                /* Record doesn't match the condition, set as current and try again */
-                chunk_cobj->record_pos = record;
-                return flb_mp_chunk_cobj_record_next(chunk_cobj, out_record);
+            else {
+                record->cobj_group_metadata = chunk_cobj->active_group_metadata;
+                record->cobj_group_attributes = chunk_cobj->active_group_attributes;
             }
-            flb_trace("[mp] next record matched condition, processing");
-        }
 
-        ret = FLB_MP_CHUNK_RECORD_OK;
-    }
-    else {
-        if (cfl_list_size(&chunk_cobj->records) == 0) {
-            return FLB_MP_CHUNK_RECORD_EOF;
-        }
-
-        /* check if we are the last in the list */
-        record = cfl_list_entry_first(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
-
-        /* If there's a condition, check if the record matches */
-        if (condition != NULL && record != NULL) {
-            flb_trace("[mp] evaluating condition for first record");
-            ret = flb_condition_evaluate(condition, record);
-            flb_trace("[mp] first record condition evaluation result: %s", ret ? "TRUE" : "FALSE");
-            if (ret == FLB_FALSE) {
-                flb_trace("[mp] first record didn't match condition, skipping");
-                /* Record doesn't match the condition, set as current and try again */
-                chunk_cobj->record_pos = record;
-                return flb_mp_chunk_cobj_record_next(chunk_cobj, out_record);
+            if (!record->cobj_group_metadata &&
+                record->event.group_metadata &&
+                (record->event.group_metadata->type == MSGPACK_OBJECT_MAP ||
+                 record->event.group_metadata->type == MSGPACK_OBJECT_ARRAY)) {
+                record->cobj_group_metadata = flb_mp_object_to_cfl(record->event.group_metadata);
+                if (!record->cobj_group_metadata) {
+                    if (record->owns_group_attributes && record->cobj_group_attributes) {
+                        cfl_object_destroy(record->cobj_group_attributes);
+                    }
+                    cfl_object_destroy(record->cobj_record);
+                    cfl_object_destroy(record->cobj_metadata);
+                    flb_free(record);
+                    return FLB_MP_CHUNK_RECORD_ERROR;
+                }
+                record->owns_group_metadata = FLB_TRUE;
+                if (!chunk_cobj->active_group_metadata) {
+                    chunk_cobj->active_group_metadata = record->cobj_group_metadata;
+                }
             }
-            flb_trace("[mp] first record matched condition, processing");
+
+            if (!record->cobj_group_attributes &&
+                record->event.group_attributes &&
+                (record->event.group_attributes->type == MSGPACK_OBJECT_MAP ||
+                 record->event.group_attributes->type == MSGPACK_OBJECT_ARRAY)) {
+                record->cobj_group_attributes = flb_mp_object_to_cfl(record->event.group_attributes);
+                if (!record->cobj_group_attributes) {
+                    if (record->owns_group_metadata && record->cobj_group_metadata) {
+                        cfl_object_destroy(record->cobj_group_metadata);
+                    }
+                    cfl_object_destroy(record->cobj_record);
+                    cfl_object_destroy(record->cobj_metadata);
+                    flb_free(record);
+                    return FLB_MP_CHUNK_RECORD_ERROR;
+                }
+                record->owns_group_attributes = FLB_TRUE;
+                if (!chunk_cobj->active_group_attributes) {
+                    chunk_cobj->active_group_attributes = record->cobj_group_attributes;
+                }
+            }
+
+            cfl_list_add(&record->_head, &chunk_cobj->records);
+
+            /* If there's a condition, check if the record matches */
+            if (condition != NULL && record != NULL) {
+                flb_trace("[mp] evaluating condition for record");
+                ret = flb_condition_evaluate(condition, record);
+                flb_trace("[mp] condition evaluation result: %s", ret ? "TRUE" : "FALSE");
+                if (ret == FLB_FALSE) {
+                    flb_trace("[mp] record didn't match condition, skipping");
+                    /* Record doesn't match the condition, continue to next record */
+                    continue;
+                }
+                flb_trace("[mp] record matched condition, processing");
+            }
+
+            ret = FLB_MP_CHUNK_RECORD_OK;
+        }
+        else if (chunk_cobj->record_pos != NULL) {
+            /* is the actual record the last one ? */
+            if (chunk_cobj->record_pos == cfl_list_entry_last(&chunk_cobj->records, struct flb_mp_chunk_record, _head)) {
+                chunk_cobj->record_pos = NULL;
+                return FLB_MP_CHUNK_RECORD_EOF;
+            }
+
+            record = cfl_list_entry_next(&chunk_cobj->record_pos->_head, struct flb_mp_chunk_record,
+                                        _head, &chunk_cobj->records);
+
+            /* If there's a condition, check if the record matches */
+            if (condition != NULL && record != NULL) {
+                flb_trace("[mp] evaluating condition for next record");
+                ret = flb_condition_evaluate(condition, record);
+                flb_trace("[mp] next record condition evaluation result: %s", ret ? "TRUE" : "FALSE");
+                if (ret == FLB_FALSE) {
+                    flb_trace("[mp] next record didn't match condition, skipping");
+                    /* Record doesn't match the condition, set as current and try again */
+                    chunk_cobj->record_pos = record;
+                    continue;
+                }
+                flb_trace("[mp] next record matched condition, processing");
+            }
+
+            ret = FLB_MP_CHUNK_RECORD_OK;
+        }
+        else {
+            if (cfl_list_size(&chunk_cobj->records) == 0) {
+                return FLB_MP_CHUNK_RECORD_EOF;
+            }
+
+            /* check if we are the last in the list */
+            record = cfl_list_entry_first(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
+
+            /* If there's a condition, check if the record matches */
+            if (condition != NULL && record != NULL) {
+                flb_trace("[mp] evaluating condition for first record");
+                ret = flb_condition_evaluate(condition, record);
+                flb_trace("[mp] first record condition evaluation result: %s", ret ? "TRUE" : "FALSE");
+                if (ret == FLB_FALSE) {
+                    flb_trace("[mp] first record didn't match condition, skipping");
+                    /* Record doesn't match the condition, set as current and try again */
+                    chunk_cobj->record_pos = record;
+                    continue;
+                }
+                flb_trace("[mp] first record matched condition, processing");
+            }
+
+            ret = FLB_MP_CHUNK_RECORD_OK;
         }
 
-        ret = FLB_MP_CHUNK_RECORD_OK;
+        /* A matching record (or the next record) was found; stop iterating. */
+        break;
     }
 
     chunk_cobj->record_pos = record;

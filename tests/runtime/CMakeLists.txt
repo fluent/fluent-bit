@@ -76,7 +76,7 @@ endif()
 
 if (FLB_CUSTOM_CALYPTIA)
     set(CALYPTIA_TEST_LINK_LIBS
-        fluent-bit-static
+        ${FLB_TEST_LINK_LIBRARY}
         ${CMAKE_THREAD_LIBS_INIT}
     )
 
@@ -91,11 +91,14 @@ if (FLB_CUSTOM_CALYPTIA)
         get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
 
         set(TEST_TARGET "flb-rt-${TEST_NAME}")
-        add_executable(${TEST_TARGET}
-            ${TEST_SOURCE}
-            "../../plugins/custom_calyptia/calyptia.c"
-            "../../plugins/in_calyptia_fleet/in_calyptia_fleet.c"
-        )
+        add_executable(${TEST_TARGET} ${TEST_SOURCE})
+
+        if("${FLB_TEST_LINK_LIBRARY}" STREQUAL "fluent-bit-static")
+            target_sources(${TEST_TARGET} PRIVATE
+                "../../plugins/custom_calyptia/calyptia.c"
+                "../../plugins/in_calyptia_fleet/in_calyptia_fleet.c"
+            )
+        endif()
 
         target_link_libraries(${TEST_TARGET}
             ${CALYPTIA_TEST_LINK_LIBS}
@@ -106,7 +109,7 @@ if (FLB_CUSTOM_CALYPTIA)
                  WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
 
         set_tests_properties(${TEST_TARGET} PROPERTIES LABELS "runtime")
-        add_dependencies(${TEST_TARGET} fluent-bit-static)
+        add_dependencies(${TEST_TARGET} ${FLB_TEST_LINK_LIBRARY})
     endforeach()
 endif()
 
@@ -117,7 +120,7 @@ if(FLB_IN_EBPF)
     )
 
     set(EBPF_TEST_LINK_LIBS
-        fluent-bit-static
+        ${FLB_TEST_LINK_LIBRARY}
         ${CMAKE_THREAD_LIBS_INIT}
         ${SYSTEMD_LIB}
         -lbpf
@@ -195,13 +198,13 @@ if(FLB_IN_EBPF)
         "../../plugins/in_ebpf/traces/sched/handler.c"
     )
 
-    add_dependencies(flb-rt-in_ebpf_bind_handler fluent-bit-static)
-    add_dependencies(flb-rt-in_ebpf_signal_handler fluent-bit-static)
-    add_dependencies(flb-rt-in_ebpf_malloc_handler fluent-bit-static)
-    add_dependencies(flb-rt-in_ebpf_tcp_handler fluent-bit-static)
-    add_dependencies(flb-rt-in_ebpf_exec_handler fluent-bit-static)
-    add_dependencies(flb-rt-in_ebpf_openssl_handler fluent-bit-static)
-    add_dependencies(flb-rt-in_ebpf_sched_handler fluent-bit-static)
+    add_dependencies(flb-rt-in_ebpf_bind_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_signal_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_malloc_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_tcp_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_exec_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_openssl_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_sched_handler ${FLB_TEST_LINK_LIBRARY})
 
 endif()
 
@@ -285,6 +288,7 @@ if(FLB_IN_LIB)
     FLB_RT_TEST(FLB_OUT_FILE              "out_file.c")
   endif()
   FLB_RT_TEST(FLB_OUT_S3                "out_s3.c")
+  FLB_RT_TEST(FLB_OUT_GCS               "out_gcs.c")
   if (FLB_IN_OPENTELEMETRY AND FLB_OUT_S3)
     FLB_RT_TEST(FLB_OUT_S3              "out_s3_otlp_json.c")
   endif()
@@ -367,7 +371,7 @@ foreach(source_file ${CHECK_PROGRAMS})
       target_compile_options(${source_file_we} PRIVATE /Zc:preprocessor)
     endif()
     target_link_libraries(${source_file_we}
-      fluent-bit-static
+      ${FLB_TEST_LINK_LIBRARY}
       ${CMAKE_THREAD_LIBS_INIT}
       ${SYSTEMD_LIB}
       )

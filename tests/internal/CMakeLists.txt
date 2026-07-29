@@ -10,6 +10,7 @@ set(UNIT_TESTS_FILES
   hmac.c
   crypto.c
   hash.c
+  fips.c
   kv.c
   slist.c
   router.c
@@ -56,10 +57,12 @@ set(UNIT_TESTS_FILES
   endianness.c
   task_map.c
   strptime.c
+  plugin_alias.c
   storage_inherit.c
   unicode.c
   opentelemetry.c
   storage_dlq.c
+  engine_adaptive_flush.c
 )
 
 if(FLB_OUT_AZURE_BLOB)
@@ -195,6 +198,7 @@ if(FLB_RIPSER)
 endif()
 
 set(UNIT_TESTS_DATA
+  data/fips/disabled.cnf
   data/tls/certificate.pem
   data/tls/private_key.pem
   data/pack/json_single_map_001.json
@@ -246,7 +250,9 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
         target_link_libraries(${source_file_we} flb-aws)
       endif()
 
-      if(FLB_OUT_AZURE_BLOB AND "${source_file_we}" STREQUAL "flb-it-azure_blob_path")
+      if(FLB_OUT_AZURE_BLOB AND
+         "${source_file_we}" STREQUAL "flb-it-azure_blob_path" AND
+         "${FLB_TEST_LINK_LIBRARY}" STREQUAL "fluent-bit-static")
         target_link_libraries(${source_file_we} flb-plugin-out_azure_blob)
       endif()
 
@@ -254,7 +260,7 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
         target_link_libraries(${source_file_we} flb-sp)
       endif()
 
-      target_link_libraries(${source_file_we} fluent-bit-static cfl-static)
+      target_link_libraries(${source_file_we} ${FLB_TEST_LINK_LIBRARY} cfl-static)
 
       if(FLB_AVRO_ENCODER)
         target_link_libraries(${source_file_we} avro-static jansson)
@@ -269,6 +275,49 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
 endfunction(prepare_unit_tests)
 
 prepare_unit_tests(flb-it- "${UNIT_TESTS_FILES}")
+
+option(FLB_TESTS_FIPS_ENABLED "Run tests that require an installed OpenSSL FIPS provider" OFF)
+if(TARGET flb-it-fips)
+  if(FLB_OUT_S3)
+    target_compile_definitions(flb-it-fips PRIVATE FLB_TEST_FIPS_S3)
+  endif()
+
+  set(FLB_TEST_FIPS_DISABLED_CONFIG
+      "${CMAKE_CURRENT_BINARY_DIR}/data/fips/disabled.cnf")
+  set(FLB_TEST_FIPS_MISSING_MODULES
+      "${CMAKE_CURRENT_BINARY_DIR}/data/fips/missing-modules")
+  set(FLB_TEST_FIPS_UNAVAILABLE_ENV
+      "FLB_TEST_FIPS_MODE=unavailable"
+      "OPENSSL_CONF=${FLB_TEST_FIPS_DISABLED_CONFIG}"
+      "OPENSSL_MODULES=${FLB_TEST_FIPS_MISSING_MODULES}")
+  set(FLB_TEST_FIPS_DISABLED_ENV
+      "FLB_TEST_FIPS_MODE=disabled"
+      "OPENSSL_CONF=${FLB_TEST_FIPS_DISABLED_CONFIG}"
+      "OPENSSL_MODULES=${FLB_TEST_FIPS_MISSING_MODULES}")
+
+  set_tests_properties(flb-it-fips PROPERTIES
+    ENVIRONMENT "${FLB_TEST_FIPS_DISABLED_ENV}")
+
+  add_test(NAME flb-it-fips-unavailable
+    COMMAND $<TARGET_FILE:flb-it-fips>)
+  set_tests_properties(flb-it-fips-unavailable PROPERTIES
+    LABELS "internal"
+    ENVIRONMENT "${FLB_TEST_FIPS_UNAVAILABLE_ENV}")
+
+  if(FLB_TESTS_FIPS_ENABLED)
+    add_test(NAME flb-it-fips-enabled
+      COMMAND $<TARGET_FILE:flb-it-fips>)
+    set_tests_properties(flb-it-fips-enabled PROPERTIES
+      LABELS "internal"
+      ENVIRONMENT "FLB_TEST_FIPS_MODE=enabled")
+
+    add_test(NAME flb-it-fips-preenabled
+      COMMAND $<TARGET_FILE:flb-it-fips>)
+    set_tests_properties(flb-it-fips-preenabled PROPERTIES
+      LABELS "internal"
+      ENVIRONMENT "FLB_TEST_FIPS_MODE=preenabled")
+  endif()
+endif()
 
 if(FLB_METRICS AND FLB_PROCESSOR_CUMULATIVE_TO_DELTA)
   set(CUMULATIVE_TO_DELTA_PLUGIN_DIR

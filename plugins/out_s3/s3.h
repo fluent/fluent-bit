@@ -27,6 +27,11 @@
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_blob_db.h>
 
+/* S3 output format types */
+#define FLB_S3_FORMAT_JSON_LINES  0
+#define FLB_S3_FORMAT_PARQUET     100
+#define FLB_S3_FORMAT_ARROW       101
+
 /* Upload data to S3 in 5MB chunks */
 #define MIN_CHUNKED_UPLOAD_SIZE 5242880
 #define MAX_CHUNKED_UPLOAD_SIZE 50000000
@@ -127,6 +132,7 @@ struct flb_s3 {
     int static_file_path;
     int retry_exhausted_action;
     int compression;
+    int s3_format;
     int port;
     int insecure;
     size_t store_dir_limit_size;

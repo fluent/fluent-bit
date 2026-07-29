@@ -162,20 +162,26 @@ int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const c
     int len;
     int olen;
     const char *s, *e, *u;
+    const char *separator;
 
     memset(host, '\0', sizeof(struct flb_net_host));
 
     olen = strlen(address);
-    if (olen == strlen(plugin_name)) {
-        return 0;
+    separator = strstr(address, "://");
+    if (separator != NULL && separator != address) {
+        s = separator + 3;
     }
+    else {
+        if (olen == strlen(plugin_name)) {
+            return 0;
+        }
 
-    len = strlen(plugin_name) + 3;
-    if (olen < len) {
-        return -1;
+        len = strlen(plugin_name) + 3;
+        if (olen < len) {
+            return -1;
+        }
+        s = address + len;
     }
-
-    s = address + len;
     if (*s == '[') {
         /* IPv6 address (RFC 3986) */
         e = strchr(++s, ']');

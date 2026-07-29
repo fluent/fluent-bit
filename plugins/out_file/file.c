@@ -23,7 +23,9 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_record_accessor.h>
 #include <msgpack.h>
 
 #include <ctype.h>
@@ -54,15 +56,34 @@
 #define FLB_PATH_SEPARATOR "/"
 #endif
 
+#define FLB_OUT_FILE_DEFAULT_MAX_DYNAMIC_FILES  1024
+
+enum {
+    FLB_OUT_FILE_ACTION_ERROR,
+    FLB_OUT_FILE_ACTION_DROP,
+    FLB_OUT_FILE_ACTION_FALLBACK
+};
+
 struct flb_file_conf {
     const char *out_path;
     const char *out_file;
+    const char *fallback_path;
+    const char *fallback_file;
+    const char *on_missing_field;
+    const char *on_limit_reached;
     const char *delimiter;
     const char *label_delimiter;
     const char *template;
     int format;
     int csv_column_names;
     int mkdir;
+    int max_dynamic_files;
+    int missing_field_action;
+    int limit_reached_action;
+    int dynamic_destination;
+    struct flb_record_accessor *ra_path;
+    struct flb_record_accessor *ra_file;
+    struct flb_hash_table *dynamic_files;
     struct flb_output_instance *ins;
 };
 
@@ -175,13 +196,259 @@ static int sanitize_tag_name(const char *tag, char *buf, size_t size)
     return 0;
 }
 
+static void file_conf_destroy(struct flb_file_conf *ctx)
+{
+    if (ctx == NULL) {
+        return;
+    }
+
+    if (ctx->ra_path != NULL) {
+        flb_ra_destroy(ctx->ra_path);
+    }
+
+    if (ctx->ra_file != NULL) {
+        flb_ra_destroy(ctx->ra_file);
+    }
+
+    if (ctx->dynamic_files != NULL) {
+        flb_hash_table_destroy(ctx->dynamic_files);
+    }
+
+    flb_free(ctx);
+}
+
+static int parse_dynamic_action(struct flb_file_conf *ctx,
+                                const char *name,
+                                const char *value)
+{
+    if (strcasecmp(value, "error") == 0) {
+        return FLB_OUT_FILE_ACTION_ERROR;
+    }
+    else if (strcasecmp(value, "drop") == 0) {
+        return FLB_OUT_FILE_ACTION_DROP;
+    }
+    else if (strcasecmp(value, "fallback") == 0) {
+        return FLB_OUT_FILE_ACTION_FALLBACK;
+    }
+
+    flb_plg_error(ctx->ins, "invalid %s value '%s', expected error, drop or fallback",
+                  name, value);
+
+    return -1;
+}
+
+static int validate_dynamic_file(const char *file)
+{
+    const unsigned char *p;
+
+    if (file == NULL || file[0] == '\0' ||
+        strcmp(file, ".") == 0 || strcmp(file, "..") == 0) {
+        return -1;
+    }
+
+    for (p = (const unsigned char *) file; *p != '\0'; p++) {
+        if (*p == '/' || *p == '\\' || *p == ':' || *p == '*' || *p == '?' ||
+            *p == '"' || *p == '<' || *p == '>' || *p == '|' ||
+            *p < 0x20 || *p == 0x7f) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int validate_dynamic_path(const char *path)
+{
+    size_t component_length;
+    const unsigned char *p;
+    const unsigned char *component;
+
+    if (path == NULL || path[0] == '\0') {
+        return -1;
+    }
+
+    p = (const unsigned char *) path;
+    while (*p != '\0') {
+        if (*p < 0x20 || *p == 0x7f) {
+            return -1;
+        }
+
+        while (*p == '/' || *p == '\\') {
+            p++;
+        }
+
+        component = p;
+        while (*p != '\0' && *p != '/' && *p != '\\') {
+            if (*p < 0x20 || *p == 0x7f) {
+                return -1;
+            }
+            p++;
+        }
+
+        component_length = p - component;
+        if ((component_length == 1 && component[0] == '.') ||
+            (component_length == 2 && component[0] == '.' && component[1] == '.')) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int compose_output_file(const char *path,
+                               const char *file,
+                               char *output,
+                               size_t output_size)
+{
+    int ret;
+
+    if (path != NULL) {
+        ret = snprintf(output, output_size, "%s" FLB_PATH_SEPARATOR "%s", path, file);
+    }
+    else {
+        ret = snprintf(output, output_size, "%s", file);
+    }
+
+    if (ret < 0 || (size_t) ret >= output_size) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int use_fallback_destination(struct flb_file_conf *ctx,
+                                    char *output,
+                                    size_t output_size)
+{
+    if (ctx->fallback_file == NULL) {
+        return -1;
+    }
+
+    return compose_output_file(ctx->fallback_path, ctx->fallback_file,
+                               output, output_size);
+}
+
+static int apply_destination_action(struct flb_file_conf *ctx,
+                                    int action,
+                                    const char *reason,
+                                    char *output,
+                                    size_t output_size)
+{
+    if (action == FLB_OUT_FILE_ACTION_DROP) {
+        flb_plg_warn(ctx->ins, "dropping record: %s", reason);
+        return 1;
+    }
+
+    if (action == FLB_OUT_FILE_ACTION_FALLBACK) {
+        if (use_fallback_destination(ctx, output, output_size) == 0) {
+            return 0;
+        }
+        flb_plg_error(ctx->ins, "cannot apply fallback destination: %s", reason);
+        return -1;
+    }
+
+    flb_plg_error(ctx->ins, "%s", reason);
+    return -1;
+}
+
+static int resolve_dynamic_destination(struct flb_file_conf *ctx,
+                                       const char *tag,
+                                       msgpack_object map,
+                                       char *output,
+                                       size_t output_size,
+                                       int *new_destination)
+{
+    int ret;
+    char sanitized_tag[PATH_MAX];
+    void *stored_value;
+    size_t stored_size;
+    flb_sds_t dynamic_path = NULL;
+    flb_sds_t dynamic_file = NULL;
+    const char *path;
+    const char *file;
+
+    *new_destination = FLB_FALSE;
+    path = ctx->out_path;
+    file = ctx->out_file;
+
+    if (ctx->ra_path != NULL) {
+        dynamic_path = flb_ra_translate_check(ctx->ra_path,
+                                              (char *) tag, strlen(tag),
+                                              map, NULL, FLB_TRUE);
+        if (dynamic_path == NULL) {
+            return apply_destination_action(ctx, ctx->missing_field_action,
+                                            "record accessor field missing from path",
+                                            output, output_size);
+        }
+        path = dynamic_path;
+    }
+
+    if (ctx->ra_file != NULL) {
+        dynamic_file = flb_ra_translate_check(ctx->ra_file,
+                                              (char *) tag, strlen(tag),
+                                              map, NULL, FLB_TRUE);
+        if (dynamic_file == NULL) {
+            flb_sds_destroy(dynamic_path);
+            return apply_destination_action(ctx, ctx->missing_field_action,
+                                            "record accessor field missing from file",
+                                            output, output_size);
+        }
+        file = dynamic_file;
+    }
+    else if (file == NULL) {
+        ret = sanitize_tag_name(tag, sanitized_tag, sizeof(sanitized_tag));
+        if (ret != 0) {
+            flb_sds_destroy(dynamic_path);
+            return -1;
+        }
+        file = sanitized_tag;
+    }
+
+    if ((ctx->ra_path != NULL && validate_dynamic_path(path) != 0) ||
+        (ctx->ra_file != NULL && validate_dynamic_file(file) != 0)) {
+        flb_sds_destroy(dynamic_path);
+        flb_sds_destroy(dynamic_file);
+        return apply_destination_action(ctx, ctx->missing_field_action,
+                                        "unsafe dynamic output destination",
+                                        output, output_size);
+    }
+
+    ret = compose_output_file(path, file, output, output_size);
+    flb_sds_destroy(dynamic_path);
+    flb_sds_destroy(dynamic_file);
+    if (ret != 0) {
+        return -1;
+    }
+
+    if (ctx->dynamic_files == NULL) {
+        return 0;
+    }
+
+    ret = flb_hash_table_get(ctx->dynamic_files, output, strlen(output),
+                             &stored_value, &stored_size);
+    if (ret >= 0) {
+        return 0;
+    }
+
+    if (ctx->dynamic_files->total_count >= ctx->max_dynamic_files) {
+        return apply_destination_action(ctx, ctx->limit_reached_action,
+                                        "max_dynamic_files limit reached",
+                                        output, output_size);
+    }
+
+    *new_destination = FLB_TRUE;
+    return 0;
+}
+
 
 static int cb_file_init(struct flb_output_instance *ins,
                         struct flb_config *config,
                         void *data)
 {
     int ret;
+    int table_size;
     const char *tmp;
+    const char *accessor;
     char *ret_str;
     (void) config;
     (void) data;
@@ -197,11 +464,80 @@ static int cb_file_init(struct flb_output_instance *ins,
     ctx->delimiter = NULL;
     ctx->label_delimiter = NULL;
     ctx->template = NULL;
+    ctx->max_dynamic_files = FLB_OUT_FILE_DEFAULT_MAX_DYNAMIC_FILES;
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
-        flb_free(ctx);
+        file_conf_destroy(ctx);
         return -1;
+    }
+
+    ctx->missing_field_action = parse_dynamic_action(ctx, "on_missing_field",
+                                                     ctx->on_missing_field);
+    ctx->limit_reached_action = parse_dynamic_action(ctx, "on_limit_reached",
+                                                     ctx->on_limit_reached);
+    if (ctx->missing_field_action < 0 || ctx->limit_reached_action < 0 ||
+        ctx->max_dynamic_files < 0) {
+        file_conf_destroy(ctx);
+        return -1;
+    }
+
+    if ((ctx->missing_field_action == FLB_OUT_FILE_ACTION_FALLBACK ||
+         ctx->limit_reached_action == FLB_OUT_FILE_ACTION_FALLBACK) &&
+        ctx->fallback_file == NULL) {
+        flb_plg_error(ctx->ins, "fallback_file is required for fallback actions");
+        file_conf_destroy(ctx);
+        return -1;
+    }
+
+    if (ctx->out_path != NULL && strchr(ctx->out_path, '$') != NULL) {
+        accessor = strchr(ctx->out_path, '$');
+        if (accessor == ctx->out_path) {
+            flb_plg_error(ctx->ins,
+                          "dynamic 'path' must include a static prefix before record accessors");
+            file_conf_destroy(ctx);
+            return -1;
+        }
+
+        ctx->ra_path = flb_ra_create((char *) ctx->out_path, FLB_TRUE);
+        if (ctx->ra_path == NULL) {
+            flb_plg_error(ctx->ins, "invalid record accessor pattern set for 'path'");
+            file_conf_destroy(ctx);
+            return -1;
+        }
+        ctx->dynamic_destination = FLB_TRUE;
+    }
+
+    if (ctx->out_file != NULL && strchr(ctx->out_file, '$') != NULL) {
+        ctx->ra_file = flb_ra_create((char *) ctx->out_file, FLB_TRUE);
+        if (ctx->ra_file == NULL) {
+            flb_plg_error(ctx->ins, "invalid record accessor pattern set for 'file'");
+            file_conf_destroy(ctx);
+            return -1;
+        }
+        ctx->dynamic_destination = FLB_TRUE;
+    }
+
+    if (ctx->dynamic_destination == FLB_TRUE && ctx->fallback_file == NULL) {
+        flb_plg_error(ctx->ins,
+                      "fallback_file is required when dynamic destinations are configured");
+        file_conf_destroy(ctx);
+        return -1;
+    }
+
+    if (ctx->dynamic_destination == FLB_TRUE && ctx->max_dynamic_files > 0) {
+        table_size = ctx->max_dynamic_files;
+        if (table_size > 128) {
+            table_size = 128;
+        }
+
+        ctx->dynamic_files = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE,
+                                                   table_size,
+                                                   ctx->max_dynamic_files);
+        if (ctx->dynamic_files == NULL) {
+            file_conf_destroy(ctx);
+            return -1;
+        }
     }
 
     /* Optional, file format */
@@ -235,7 +571,7 @@ static int cb_file_init(struct flb_output_instance *ins,
         }
         else {
             flb_plg_error(ctx->ins, "unknown format %s. abort.", tmp);
-            flb_free(ctx);
+            file_conf_destroy(ctx);
             return -1;
         }
     }
@@ -582,6 +918,157 @@ static int mkpath(struct flb_output_instance *ins, const char *dir)
 #endif
 }
 
+static FILE *open_output_file(struct flb_file_conf *ctx, const char *output)
+{
+    int ret;
+    FILE *fp;
+    char *output_copy;
+
+    fp = fopen(output, "ab+");
+    if (ctx->mkdir == FLB_TRUE && fp == NULL && errno == ENOENT) {
+        output_copy = strdup(output);
+        if (output_copy != NULL) {
+#ifdef FLB_SYSTEM_WINDOWS
+            PathRemoveFileSpecA(output_copy);
+            ret = mkpath(ctx->ins, output_copy);
+#else
+            ret = mkpath(ctx->ins, dirname(output_copy));
+#endif
+            free(output_copy);
+            if (ret == 0) {
+                fp = fopen(output, "ab+");
+            }
+        }
+    }
+
+    return fp;
+}
+
+static int write_log_record(FILE *fp,
+                            long *file_pos,
+                            struct flb_event_chunk *event_chunk,
+                            struct flb_log_event *log_event,
+                            struct flb_file_conf *ctx,
+                            struct flb_config *config)
+{
+    int column_names;
+    char *buf;
+
+    switch (ctx->format) {
+    case FLB_OUT_FILE_FMT_JSON:
+        buf = flb_msgpack_to_json_str(128, log_event->body,
+                                      config->json_escape_unicode);
+        if (buf == NULL) {
+            return FLB_RETRY;
+        }
+
+        fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
+                event_chunk->tag,
+                (uint64_t) log_event->timestamp.tm.tv_sec,
+                log_event->timestamp.tm.tv_nsec,
+                buf);
+        flb_free(buf);
+        break;
+    case FLB_OUT_FILE_FMT_CSV:
+        if (ctx->csv_column_names == FLB_TRUE && *file_pos == 0) {
+            column_names = FLB_TRUE;
+            *file_pos = 1;
+        }
+        else {
+            column_names = FLB_FALSE;
+        }
+        csv_output(fp, column_names, &log_event->timestamp, log_event->body, ctx);
+        break;
+    case FLB_OUT_FILE_FMT_LTSV:
+        ltsv_output(fp, &log_event->timestamp, log_event->body, ctx);
+        break;
+    case FLB_OUT_FILE_FMT_PLAIN:
+        plain_output(fp, log_event->body, 128, config->json_escape_unicode);
+        break;
+    case FLB_OUT_FILE_FMT_TEMPLATE:
+        template_output(fp, &log_event->timestamp, log_event->body, ctx);
+        break;
+    }
+
+    return FLB_OK;
+}
+
+static int flush_dynamic_logs(struct flb_event_chunk *event_chunk,
+                              struct flb_file_conf *ctx,
+                              struct flb_config *config,
+                              char *output,
+                              size_t output_size,
+                              struct flb_log_event_decoder *log_decoder,
+                              struct flb_log_event *log_event)
+{
+    int ret;
+    int new_destination;
+    FILE *fp;
+    long file_pos;
+
+    ret = flb_log_event_decoder_init(log_decoder,
+                                     (char *) event_chunk->data,
+                                     event_chunk->size);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "Log event decoder initialization error : %d", ret);
+        return FLB_ERROR;
+    }
+
+    while ((ret = flb_log_event_decoder_next(log_decoder,
+                                              log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        ret = resolve_dynamic_destination(ctx, event_chunk->tag, *log_event->body,
+                                          output, output_size, &new_destination);
+        if (ret == 1) {
+            continue;
+        }
+        else if (ret != 0) {
+            flb_log_event_decoder_destroy(log_decoder);
+            return FLB_ERROR;
+        }
+
+        fp = open_output_file(ctx, output);
+        if (fp == NULL) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "error opening: %s", output);
+            flb_log_event_decoder_destroy(log_decoder);
+            return FLB_ERROR;
+        }
+
+        if (new_destination == FLB_TRUE) {
+            ret = flb_hash_table_add(ctx->dynamic_files, output, strlen(output), "", 0);
+            if (ret < 0) {
+                fclose(fp);
+                flb_log_event_decoder_destroy(log_decoder);
+                return FLB_ERROR;
+            }
+        }
+
+        file_pos = ftell(fp);
+        if (ctx->format == FLB_OUT_FILE_FMT_MSGPACK) {
+            if (fwrite(log_decoder->record_base, 1, log_decoder->record_length, fp) !=
+                log_decoder->record_length) {
+                fclose(fp);
+                flb_log_event_decoder_destroy(log_decoder);
+                return FLB_RETRY;
+            }
+        }
+        else {
+            ret = write_log_record(fp, &file_pos, event_chunk, log_event, ctx, config);
+            if (ret != FLB_OK) {
+                fclose(fp);
+                flb_log_event_decoder_destroy(log_decoder);
+                return ret;
+            }
+        }
+
+        fclose(fp);
+    }
+
+    flb_log_event_decoder_destroy(log_decoder);
+
+    return FLB_OK;
+}
+
 static void cb_file_flush(struct flb_event_chunk *event_chunk,
                           struct flb_output_flush *out_flush,
                           struct flb_input_instance *ins,
@@ -606,8 +1093,25 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
 
     (void) config;
 
+    if (ctx->dynamic_destination == FLB_TRUE &&
+        event_chunk->type != FLB_INPUT_METRICS) {
+        ret = flush_dynamic_logs(event_chunk, ctx, config,
+                                 out_file, sizeof(out_file),
+                                 &log_decoder, &log_event);
+        FLB_OUTPUT_RETURN(ret);
+    }
+
+    if (ctx->dynamic_destination == FLB_TRUE &&
+        event_chunk->type == FLB_INPUT_METRICS) {
+        ret = use_fallback_destination(ctx, out_file, sizeof(out_file));
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "dynamic path and file record accessors are unsupported for metrics");
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+    }
     /* Set the right output file */
-    if (ctx->out_file == NULL) {
+    else if (ctx->out_file == NULL) {
         ret = sanitize_tag_name(event_chunk->tag,
                                 sanitized_tag,
                                 sizeof(sanitized_tag));
@@ -618,7 +1122,7 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
         }
     }
 
-    if (ctx->out_path) {
+    if (ctx->dynamic_destination == FLB_FALSE && ctx->out_path) {
         if (ctx->out_file) {
             snprintf(out_file, sizeof(out_file) , "%s" FLB_PATH_SEPARATOR "%s",
                      ctx->out_path, ctx->out_file);
@@ -628,7 +1132,7 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
                      ctx->out_path, sanitized_tag);
         }
     }
-    else {
+    else if (ctx->dynamic_destination == FLB_FALSE) {
         if (ctx->out_file) {
             snprintf(out_file, PATH_MAX, "%s", ctx->out_file);
         }
@@ -781,7 +1285,7 @@ static int cb_file_exit(void *data, struct flb_config *config)
         return 0;
     }
 
-    flb_free(ctx);
+    file_conf_destroy(ctx);
     return 0;
 }
 
@@ -790,14 +1294,45 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "path", NULL,
      0, FLB_TRUE, offsetof(struct flb_file_conf, out_path),
-     "Absolute path to store the files. This parameter is optional"
+     "Absolute path to store the files. Log record accessor expressions are supported, "
+     "and dynamic paths must retain a static prefix"
     },
 
     {
      FLB_CONFIG_MAP_STR, "file", NULL,
      0, FLB_TRUE, offsetof(struct flb_file_conf, out_file),
      "Name of the target file to write the records. If 'path' is specified, "
-     "the value is prefixed"
+     "the value is prefixed. Log record accessor expressions are supported"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "max_dynamic_files", "1024",
+     0, FLB_TRUE, offsetof(struct flb_file_conf, max_dynamic_files),
+     "Maximum number of distinct record-accessor destinations. Set to 0 for unlimited"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "on_missing_field", "error",
+     0, FLB_TRUE, offsetof(struct flb_file_conf, on_missing_field),
+     "Action for missing or unsafe dynamic destination values: error, drop or fallback"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "on_limit_reached", "error",
+     0, FLB_TRUE, offsetof(struct flb_file_conf, on_limit_reached),
+     "Action when max_dynamic_files would be exceeded: error, drop or fallback"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "fallback_path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_file_conf, fallback_path),
+     "Static output path used when a configured fallback action is applied"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "fallback_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_file_conf, fallback_file),
+     "Static output file used when a configured fallback action is applied"
     },
 
     {
