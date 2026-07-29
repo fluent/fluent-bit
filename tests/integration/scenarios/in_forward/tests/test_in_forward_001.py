@@ -1672,8 +1672,15 @@ def test_in_forward_tls_workers_drop_bad_handshakes_and_continue():
     assert values == list(range(valid_records))
 
 
-def test_in_forward_secure_forward_auth_success():
-    service = Service("in_forward_secure.yaml")
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "in_forward_secure.yaml",
+        "in_forward_secure_small_buffer.yaml",
+    ],
+)
+def test_in_forward_secure_forward_auth_success(config_file):
+    service = Service(config_file)
     service.start()
 
     try:
