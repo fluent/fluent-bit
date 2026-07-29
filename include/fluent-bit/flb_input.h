@@ -878,6 +878,11 @@ int flb_input_ingress_queue_log_take(struct flb_input_instance *ins,
                                      const char *tag, size_t tag_len,
                                      void *buf, size_t buf_size,
                                      size_t allocation_size);
+int flb_input_ingress_queue_log_take_records(struct flb_input_instance *ins,
+                                             size_t records,
+                                             const char *tag, size_t tag_len,
+                                             void *buf, size_t buf_size,
+                                             size_t allocation_size);
 int flb_input_ingress_queue_metrics(struct flb_input_instance *ins,
                                     const char *tag, size_t tag_len,
                                     struct cmt *cmt, size_t payload_size);
