@@ -5,6 +5,7 @@ import os
 import shutil
 import socket
 import ssl
+import struct
 import subprocess
 import sys
 import tempfile
@@ -648,6 +649,53 @@ def _send_tls_payload(port, payload, cafile):
             tls_sock.sendall(payload)
 
 
+def _create_tls_memory_bio_client(port, cafile):
+    context = ssl.create_default_context(cafile=cafile)
+    incoming = ssl.MemoryBIO()
+    outgoing = ssl.MemoryBIO()
+    tls = context.wrap_bio(incoming, outgoing, server_hostname="localhost")
+    raw_sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+
+    while True:
+        try:
+            tls.do_handshake()
+            break
+        except ssl.SSLWantReadError:
+            encrypted = outgoing.read()
+            if encrypted:
+                raw_sock.sendall(encrypted)
+
+            encrypted = raw_sock.recv(65536)
+            assert encrypted
+            incoming.write(encrypted)
+        except ssl.SSLWantWriteError:
+            encrypted = outgoing.read()
+            if encrypted:
+                raw_sock.sendall(encrypted)
+
+    encrypted = outgoing.read()
+    if encrypted:
+        raw_sock.sendall(encrypted)
+
+    return raw_sock, tls, outgoing
+
+
+def _reset_tls_connection(port, cafile):
+    raw_sock, tls, outgoing = _create_tls_memory_bio_client(port, cafile)
+
+    tls.write(b"\x91")
+    wire_payload = outgoing.read()
+    raw_sock.sendall(wire_payload[:-1])
+    time.sleep(1)
+
+    raw_sock.setsockopt(
+        socket.SOL_SOCKET,
+        socket.SO_LINGER,
+        struct.pack("ii", 1, 0),
+    )
+    raw_sock.close()
+
+
 def _recv_msgpack_value(sock):
     sock.settimeout(5)
     data = sock.recv(4096)
@@ -1025,6 +1073,35 @@ def test_in_forward_tls_message_mode():
         service.stop()
 
     assert records[0]["message"] == "tls-message"
+
+
+def test_in_forward_tls_syscall_error_preserves_errno():
+    service = Service("in_forward_tls.yaml")
+    service.start()
+
+    try:
+        _reset_tls_connection(
+            service.flb_listener_port,
+            service.tls_crt_file,
+        )
+        log_text = service.wait_for_log_contains("[tls] syscall error:", timeout=10)
+
+        payload = _message_mode_payload(
+            TEST_TAG,
+            {"message": "after-tls-reset"},
+        )
+        _send_tls_payload(service.flb_listener_port, payload, service.tls_crt_file)
+        records = service.wait_for_record_count(1, timeout=10)
+    finally:
+        service.stop()
+
+    assert "Connection reset by peer" in log_text
+    assert "Inappropriate ioctl for device" not in log_text
+    assert not any(
+        "openssl.c:" in line and "errno=" in line
+        for line in log_text.splitlines()
+    )
+    assert records[0]["message"] == "after-tls-reset"
 
 
 def test_in_forward_tls_idle_connection_timeout_churn(monkeypatch):
