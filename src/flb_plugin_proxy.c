@@ -450,6 +450,7 @@ static int flb_proxy_register_custom(struct flb_plugin_proxy *proxy,
     custom->flags = def->flags;
     custom->name  = flb_strdup(def->name);
     custom->description = def->description;
+    custom->config_map = def->config_map;
     mk_list_add(&custom->_head, &config->custom_plugins);
 
     /*
@@ -507,7 +508,7 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
      * - plugin type (or proxy type, e.g: Golang)
      * - plugin name
      * - plugin description
-     * - plugin's configuration 
+     * - plugin configuration 
      */
 
     /* Do the registration */
