@@ -165,7 +165,7 @@ static inline int io_tls_event_switch(struct flb_tls_session *session,
     if ((event->mask & (MK_EVENT_READ | MK_EVENT_WRITE)) != mask) {
         ret = mk_event_add(event_loop,
                            event->fd,
-                           FLB_ENGINE_EV_THREAD,
+                           event->type,
                            mask, event);
 
         event->priority = FLB_ENGINE_PRIORITY_CONNECT;
@@ -175,6 +175,8 @@ static inline int io_tls_event_switch(struct flb_tls_session *session,
 
             return -1;
         }
+
+        event->mask = mask;
     }
 
     return 0;
