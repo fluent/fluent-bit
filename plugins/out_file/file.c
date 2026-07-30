@@ -42,6 +42,7 @@
 #endif
 
 #include "file.h"
+#include "file_rotate.h"
 
 #ifdef FLB_SYSTEM_WINDOWS
 #define NEWLINE "\r\n"
@@ -77,6 +78,12 @@ struct flb_file_conf {
     int format;
     int csv_column_names;
     int mkdir;
+    /* rotation */
+    int rotate;
+    size_t rotate_max_size;
+    int rotate_max_files;
+    int rotate_gzip;
+    struct file_rotate_ctx *rotation;
     int max_dynamic_files;
     int missing_field_action;
     int limit_reached_action;
@@ -213,6 +220,8 @@ static void file_conf_destroy(struct flb_file_conf *ctx)
     if (ctx->dynamic_files != NULL) {
         flb_hash_table_destroy(ctx->dynamic_files);
     }
+
+    file_rotate_destroy(ctx->rotation);
 
     flb_free(ctx);
 }
@@ -591,6 +600,14 @@ static int cb_file_init(struct flb_output_instance *ins,
     /* Set the context */
     flb_output_set_context(ins, ctx);
 
+    ctx->rotation = file_rotate_create(ins, ctx->rotate, ctx->rotate_max_size,
+                                       ctx->rotate_max_files,
+                                       ctx->rotate_gzip);
+    if (ctx->rotation == NULL) {
+        file_conf_destroy(ctx);
+        return -1;
+    }
+
     return 0;
 }
 
@@ -944,6 +961,18 @@ static FILE *open_output_file(struct flb_file_conf *ctx, const char *output)
     return fp;
 }
 
+/*
+ * Counterpart of open_output_file(): refresh the rotation size accounting,
+ * close the handle and release the rotation entry. Tolerates a NULL entry when
+ * rotation is disabled.
+ */
+static void close_output_file(FILE *fp, struct file_rotate_entry *entry)
+{
+    file_rotate_update(entry, fp);
+    fclose(fp);
+    file_rotate_release(entry);
+}
+
 static int write_log_record(FILE *fp,
                             long *file_pos,
                             struct flb_event_chunk *event_chunk,
@@ -1005,6 +1034,7 @@ static int flush_dynamic_logs(struct flb_event_chunk *event_chunk,
     int new_destination;
     FILE *fp;
     long file_pos;
+    struct file_rotate_entry *rot_entry = NULL;
 
     ret = flb_log_event_decoder_init(log_decoder,
                                      (char *) event_chunk->data,
@@ -1026,10 +1056,16 @@ static int flush_dynamic_logs(struct flb_event_chunk *event_chunk,
             return FLB_ERROR;
         }
 
+        if (file_rotate_acquire(ctx->rotation, output, &rot_entry) != 0) {
+            flb_log_event_decoder_destroy(log_decoder);
+            return FLB_ERROR;
+        }
+
         fp = open_output_file(ctx, output);
         if (fp == NULL) {
             flb_errno();
             flb_plg_error(ctx->ins, "error opening: %s", output);
+            file_rotate_release(rot_entry);
             flb_log_event_decoder_destroy(log_decoder);
             return FLB_ERROR;
         }
@@ -1037,7 +1073,7 @@ static int flush_dynamic_logs(struct flb_event_chunk *event_chunk,
         if (new_destination == FLB_TRUE) {
             ret = flb_hash_table_add(ctx->dynamic_files, output, strlen(output), "", 0);
             if (ret < 0) {
-                fclose(fp);
+                close_output_file(fp, rot_entry);
                 flb_log_event_decoder_destroy(log_decoder);
                 return FLB_ERROR;
             }
@@ -1047,7 +1083,7 @@ static int flush_dynamic_logs(struct flb_event_chunk *event_chunk,
         if (ctx->format == FLB_OUT_FILE_FMT_MSGPACK) {
             if (fwrite(log_decoder->record_base, 1, log_decoder->record_length, fp) !=
                 log_decoder->record_length) {
-                fclose(fp);
+                close_output_file(fp, rot_entry);
                 flb_log_event_decoder_destroy(log_decoder);
                 return FLB_RETRY;
             }
@@ -1055,13 +1091,13 @@ static int flush_dynamic_logs(struct flb_event_chunk *event_chunk,
         else {
             ret = write_log_record(fp, &file_pos, event_chunk, log_event, ctx, config);
             if (ret != FLB_OK) {
-                fclose(fp);
+                close_output_file(fp, rot_entry);
                 flb_log_event_decoder_destroy(log_decoder);
                 return ret;
             }
         }
 
-        fclose(fp);
+        close_output_file(fp, rot_entry);
     }
 
     flb_log_event_decoder_destroy(log_decoder);
@@ -1090,6 +1126,7 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
     char* out_file_copy;
+    struct file_rotate_entry *rot_entry = NULL;
 
     (void) config;
 
@@ -1141,6 +1178,10 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
         }
     }
 
+    if (file_rotate_acquire(ctx->rotation, out_file, &rot_entry) != 0) {
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
     /* Open output file with default name as the Tag */
     fp = fopen(out_file, "ab+");
     if (ctx->mkdir == FLB_TRUE && fp == NULL && errno == ENOENT) {
@@ -1161,6 +1202,7 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
     if (fp == NULL) {
         flb_errno();
         flb_plg_error(ctx->ins, "error opening: %s", out_file);
+        file_rotate_release(rot_entry);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
@@ -1174,7 +1216,7 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
     if (event_chunk->type == FLB_INPUT_METRICS) {
         print_metrics_text(ctx->ins, fp,
                            event_chunk->data, event_chunk->size);
-        fclose(fp);
+        close_output_file(fp, rot_entry);
         FLB_OUTPUT_RETURN(FLB_OK);
     }
 
@@ -1191,13 +1233,13 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
                          event_chunk->size - off, fp);
             if (ret < 0) {
                 flb_errno();
-                fclose(fp);
+                close_output_file(fp, rot_entry);
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
             total += ret;
         } while (total < event_chunk->size);
 
-        fclose(fp);
+        close_output_file(fp, rot_entry);
         FLB_OUTPUT_RETURN(FLB_OK);
     }
 
@@ -1209,7 +1251,7 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
         flb_plg_error(ctx->ins,
                       "Log event decoder initialization error : %d", ret);
 
-        fclose(fp);
+        close_output_file(fp, rot_entry);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
@@ -1236,7 +1278,7 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
             }
             else {
                 flb_log_event_decoder_destroy(&log_decoder);
-                fclose(fp);
+                close_output_file(fp, rot_entry);
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
             break;
@@ -1272,7 +1314,7 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
 
     flb_log_event_decoder_destroy(&log_decoder);
 
-    fclose(fp);
+    close_output_file(fp, rot_entry);
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }
@@ -1371,6 +1413,30 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "mkdir", "false",
      0, FLB_TRUE, offsetof(struct flb_file_conf, mkdir),
      "Recursively create output directory if it does not exist. Permissions set to 0755"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "rotate", "false",
+     0, FLB_TRUE, offsetof(struct flb_file_conf, rotate),
+     "Enable size based rotation of the output file"
+    },
+
+    {
+     FLB_CONFIG_MAP_SIZE, "rotate_max_size", "100M",
+     0, FLB_TRUE, offsetof(struct flb_file_conf, rotate_max_size),
+     "Rotate the output file once it has reached this size"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "rotate_max_files", "7",
+     0, FLB_TRUE, offsetof(struct flb_file_conf, rotate_max_files),
+     "Number of rotated files to keep"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "rotate_gzip", "true",
+     0, FLB_TRUE, offsetof(struct flb_file_conf, rotate_gzip),
+     "Compress rotated files with gzip"
     },
 
     /* EOF */
