@@ -132,6 +132,7 @@ struct flb_tls {
     char *crt_file;                   /* Certificate               */
     char *key_file;                   /* Cert Key                  */
     char *key_passwd;                 /* Cert Key Password         */
+    char *crl_file;                   /* Certificate revocation list */
     char *alpn;                       /* ALPN protocol list        */
     char *min_version;                /* Minimum TLS version       */
     char *max_version;                /* Maximum TLS version       */

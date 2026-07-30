@@ -1448,6 +1448,12 @@ static int tls_context_reload(struct flb_tls *tls)
         return -1;
     }
 
+    if (tls->crl_file != NULL &&
+        tls_context_set_crl_file(new_ctx, tls->crl_file) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
 #if defined(FLB_SYSTEM_WINDOWS)
     if (tls->certstore_name != NULL &&
         tls_set_certstore_name(&tmp_tls, tls->certstore_name) != 0) {
