@@ -707,6 +707,20 @@ def _send_corrupted_tls_record(port, cafile):
     return raw_sock
 
 
+def _send_tls_close_notify(port, cafile):
+    raw_sock, tls, outgoing = _create_tls_memory_bio_client(port, cafile)
+
+    try:
+        tls.unwrap()
+    except ssl.SSLWantReadError:
+        pass
+
+    wire_payload = outgoing.read()
+    assert wire_payload
+    raw_sock.sendall(wire_payload)
+    raw_sock.close()
+
+
 def _recv_msgpack_value(sock):
     sock.settimeout(5)
     data = sock.recv(4096)
@@ -1143,6 +1157,31 @@ def test_in_forward_tls_protocol_error_is_reported():
     assert "bad record mac" in log_text.lower()
     assert "unknown error" not in log_text
     assert records[0]["message"] == "after-tls-protocol-error"
+
+
+def test_in_forward_tls_close_notify_is_not_an_error():
+    service = Service("in_forward_tls.yaml")
+    service.start()
+
+    try:
+        _send_tls_close_notify(
+            service.flb_listener_port,
+            service.tls_crt_file,
+        )
+        time.sleep(1)
+
+        payload = _message_mode_payload(
+            TEST_TAG,
+            {"message": "after-tls-close-notify"},
+        )
+        _send_tls_payload(service.flb_listener_port, payload, service.tls_crt_file)
+        records = service.wait_for_record_count(1, timeout=10)
+        log_text = read_file(service.service.flb.log_file)
+    finally:
+        service.stop()
+
+    assert "[tls] unknown error (ssl_error=6)" not in log_text
+    assert records[0]["message"] == "after-tls-close-notify"
 
 
 def test_in_forward_tls_idle_connection_timeout_churn(monkeypatch):
