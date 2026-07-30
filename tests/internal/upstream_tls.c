@@ -4,6 +4,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_conn.h>
 #include <fluent-bit/flb_connection.h>
+#include <fluent-bit/flb_engine_macros.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/tls/flb_tls.h>
@@ -20,6 +21,23 @@ struct test_backend_ctx {
     int invalidate_calls;
     int destroy_calls;
 };
+
+static int test_event_handler(void *data)
+{
+    (void) data;
+
+    return 0;
+}
+
+static int test_net_read_want_write(struct flb_tls_session *session,
+                                    void *buffer, size_t length)
+{
+    (void) session;
+    (void) buffer;
+    (void) length;
+
+    return FLB_TLS_WANT_WRITE;
+}
 
 static void test_session_invalidate(void *session)
 {
@@ -161,12 +179,70 @@ void test_tls_session_destroy_no_double_free(void)
 #endif
 }
 
+void test_tls_read_retry_preserves_custom_event(void)
+{
+    int ret;
+    char buffer[1];
+    flb_pipefd_t socket_pair[2];
+    struct mk_event_loop *event_loop;
+    struct flb_tls_backend backend_api = {0};
+    struct flb_tls tls_context = {0};
+    struct flb_tls_session tls_session = {0};
+    struct flb_connection connection = {0};
+    struct flb_net_setup net_setup = {0};
+
+#ifdef FLB_SYSTEM_WINDOWS
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
+
+    TEST_CHECK(flb_pipe_create(socket_pair) == 0);
+
+    event_loop = mk_event_loop_create(8);
+    TEST_CHECK(event_loop != NULL);
+
+    MK_EVENT_NEW(&connection.event);
+    connection.fd = socket_pair[0];
+    connection.evl = event_loop;
+    connection.type = FLB_DOWNSTREAM_CONNECTION;
+    connection.net = &net_setup;
+    connection.event.handler = test_event_handler;
+
+    ret = mk_event_add(event_loop,
+                       connection.fd,
+                       FLB_ENGINE_EV_CUSTOM,
+                       MK_EVENT_READ,
+                       &connection.event);
+    TEST_CHECK(ret == 0);
+
+    backend_api.net_read = test_net_read_want_write;
+    tls_context.api = &backend_api;
+    tls_session.tls = &tls_context;
+    tls_session.connection = &connection;
+
+    ret = flb_tls_net_read(&tls_session, buffer, sizeof(buffer));
+    TEST_CHECK(ret == FLB_TLS_WANT_WRITE);
+    TEST_CHECK(connection.event.type == FLB_ENGINE_EV_CUSTOM);
+    TEST_CHECK(connection.event.handler == test_event_handler);
+    TEST_CHECK(connection.event.mask == (MK_EVENT_READ | MK_EVENT_WRITE));
+
+    TEST_CHECK(mk_event_del(event_loop, &connection.event) == 0);
+    mk_event_loop_destroy(event_loop);
+    flb_pipe_close(socket_pair[0]);
+    flb_pipe_close(socket_pair[1]);
+
+#ifdef FLB_SYSTEM_WINDOWS
+    WSACleanup();
+#endif
+}
+
 #endif
 
 TEST_LIST = {
 #ifdef FLB_HAVE_TLS
     {"prepare_destroy_conn_marks_tls_session_stale", test_prepare_destroy_conn_marks_tls_session_stale},
     {"tls_session_destroy_no_double_free", test_tls_session_destroy_no_double_free},
+    {"tls_read_retry_preserves_custom_event", test_tls_read_retry_preserves_custom_event},
 #endif
     {0}
 };
