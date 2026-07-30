@@ -108,6 +108,12 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
 
 int flb_upstream_destroy(struct flb_upstream *u);
 
+#ifdef FLB_HAVE_TLS
+int flb_upstream_proxy_tls_setup(struct flb_upstream *u,
+                                 int verify, int verify_hostname,
+                                 const char *ca_path, const char *ca_file);
+#endif
+
 int flb_upstream_set_property(struct flb_config *config,
                               struct flb_net_setup *net, char *k, char *v);
 int flb_upstream_is_async(struct flb_upstream *u);
