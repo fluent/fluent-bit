@@ -1556,10 +1556,34 @@ static const char *tls_session_alpn_get(void *session_)
     return backend_session->alpn;
 }
 
+static void tls_log_syscall_error(int io_ret, int saved_errno)
+{
+    unsigned long err_code;
+    char err_buf[256];
+
+    err_code = ERR_get_error();
+
+    if (err_code != 0) {
+        ERR_error_string_n(err_code, err_buf, sizeof(err_buf) - 1);
+        flb_error("[tls] error: %s", err_buf);
+    }
+    else if (saved_errno != 0) {
+        flb_error("[tls] syscall error: %s", strerror(saved_errno));
+    }
+    else if (io_ret == 0) {
+        flb_error("[tls] error: unexpected EOF");
+    }
+    else {
+        flb_error("[tls] syscall error without error code");
+    }
+}
+
 static int tls_net_read(struct flb_tls_session *session,
                         void *buf, size_t len)
 {
     int ret;
+    int ssl_ret;
+    int saved_errno;
     unsigned long err_code;
     char err_buf[256];
     struct tls_context *ctx;
@@ -1579,40 +1603,32 @@ static int tls_net_read(struct flb_tls_session *session,
 
     ERR_clear_error();
 
+    errno = 0;
     ret = SSL_read(backend_session->ssl, buf, len);
+    saved_errno = errno;
 
     if (ret <= 0) {
-        ret = SSL_get_error(backend_session->ssl, ret);
+        ssl_ret = SSL_get_error(backend_session->ssl, ret);
 
-        if (ret == SSL_ERROR_WANT_READ) {
+        if (ssl_ret == SSL_ERROR_WANT_READ) {
             ret = FLB_TLS_WANT_READ;
         }
-        else if (ret == SSL_ERROR_WANT_WRITE) {
+        else if (ssl_ret == SSL_ERROR_WANT_WRITE) {
             ret = FLB_TLS_WANT_WRITE;
         }
-        else if (ret == SSL_ERROR_SYSCALL) {
-            flb_errno();
-
-            err_code = ERR_get_error();
-
-            if (err_code != 0) {
-                ERR_error_string_n(err_code, err_buf, sizeof(err_buf)-1);
-                flb_error("[tls] syscall error: %s", err_buf);
-            }
-            else {
-                flb_error("[tls] syscall error: %s", strerror(errno));
-            }
+        else if (ssl_ret == SSL_ERROR_SYSCALL) {
+            tls_log_syscall_error(ret, saved_errno);
 
             /* According to the documentation these are non-recoverable
              * errors so we don't need to screen them before saving them
              * to the net_error field.
              */
 
-            session->connection->net_error = errno;
+            session->connection->net_error = saved_errno;
 
             ret = -1;
         }
-        else if (ret == SSL_ERROR_ZERO_RETURN) {
+        else if (ssl_ret == SSL_ERROR_ZERO_RETURN) {
             flb_debug("[tls] connection closed by the remote peer "
                       "(close_notify)");
 
@@ -1629,7 +1645,7 @@ static int tls_net_read(struct flb_tls_session *session,
 
             ret = -1;
         }
-        else if (ret < 0) {
+        else if (ssl_ret < 0) {
             err_code = ERR_get_error();
 
             if (err_code != 0) {
@@ -1637,7 +1653,7 @@ static int tls_net_read(struct flb_tls_session *session,
                 flb_error("[tls] error: %s", err_buf);
             }
             else {
-                flb_error("[tls] error: %s", strerror(errno));
+                flb_error("[tls] error: %s", strerror(saved_errno));
             }
         }
         else {
@@ -1654,6 +1670,7 @@ static int tls_net_write(struct flb_tls_session *session,
 {
     int ret;
     int ssl_ret;
+    int saved_errno;
     unsigned long err_code;
     char err_buf[256];
     size_t total = 0;
@@ -1673,9 +1690,11 @@ static int tls_net_write(struct flb_tls_session *session,
 
     ERR_clear_error();
 
+    errno = 0;
     ret = SSL_write(backend_session->ssl,
                     (unsigned char *) data + total,
                     len - total);
+    saved_errno = errno;
 
     if (ret <= 0) {
         ssl_ret = SSL_get_error(backend_session->ssl, ret);
@@ -1687,27 +1706,14 @@ static int tls_net_write(struct flb_tls_session *session,
             ret = FLB_TLS_WANT_READ;
         }
         else if (ssl_ret == SSL_ERROR_SYSCALL) {
-            err_code = ERR_get_error();
-
-            if (err_code == 0) {
-                if (ret == 0) {
-                    flb_debug("[tls] connection closed");
-                }
-                else {
-                    flb_error("[tls] syscall error: %s", strerror(errno));
-                }
-            }
-            else {
-                ERR_error_string_n(err_code, err_buf, sizeof(err_buf) - 1);
-                flb_error("[tls] syscall error: %s", err_buf);
-            }
+            tls_log_syscall_error(ret, saved_errno);
 
             /* According to the documentation these are non-recoverable
              * errors so we don't need to screen them before saving them
              * to the net_error field.
              */
 
-            session->connection->net_error = errno;
+            session->connection->net_error = saved_errno;
 
             ret = -1;
         }
