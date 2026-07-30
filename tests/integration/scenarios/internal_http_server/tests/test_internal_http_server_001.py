@@ -1,8 +1,10 @@
 import concurrent.futures
 import os
+import socket
 import subprocess
 
 import pytest
+from utils.fluent_bit_manager import FluentBitManager, FluentBitStartupError
 from utils.http_matrix import curl_supports_http2, run_curl_request
 from utils.test_service import FluentBitTestService
 
@@ -146,3 +148,28 @@ def test_internal_http_server_http2_subset():
             assert result["http_version"] == "2"
     finally:
         service.stop()
+
+
+def test_internal_http_server_bind_failure_fails_startup(monkeypatch):
+    config_file = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../config/internal_http_server.yaml")
+    )
+    holder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    holder.bind(("127.0.0.1", 0))
+    port = holder.getsockname()[1]
+    fluent_bit = FluentBitManager(config_file)
+
+    monkeypatch.setenv("FLUENT_BIT_HTTP_MONITORING_PORT", str(port))
+
+    def use_occupied_monitoring_port(_env_var_name, starting_port=0):
+        fluent_bit.http_monitoring_port = str(port)
+
+    fluent_bit.set_http_monitoring_port = use_occupied_monitoring_port
+
+    try:
+        with pytest.raises(FluentBitStartupError, match="exited early with code"):
+            fluent_bit.start()
+        assert fluent_bit.process.returncode != 0
+    finally:
+        holder.close()
+        fluent_bit.stop()
