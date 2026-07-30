@@ -498,7 +498,7 @@ static int tls_context_set_crl_file(void *ctx_backend, const char *crl_file)
     }
     BIO_free(bio);
 
-    // PEM_read_bio_X509_CRL leaves a benign EOF error on the stack
+    /* PEM_read_bio_X509_CRL leaves a benign EOF error on the stack */
     ERR_clear_error();
 
     if (loaded == 0) {
@@ -507,8 +507,15 @@ static int tls_context_set_crl_file(void *ctx_backend, const char *crl_file)
         return -1;
     }
 
-    X509_STORE_set_flags(store,
-                         X509_V_FLAG_CRL_CHECK | X509_V_FLAG_CRL_CHECK_ALL);
+    if (X509_STORE_set_flags(store,
+                             X509_V_FLAG_CRL_CHECK |
+                             X509_V_FLAG_CRL_CHECK_ALL) != 1) {
+        ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf) - 1);
+        flb_error("[tls] could not enable CRL checking for '%s': %s",
+                  crl_file, err_buf);
+        pthread_mutex_unlock(&ctx->mutex);
+        return -1;
+    }
 
     pthread_mutex_unlock(&ctx->mutex);
 
