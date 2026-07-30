@@ -1322,7 +1322,16 @@ int flb_engine_start(struct flb_config *config)
     if (config->http_server == FLB_TRUE) {
         config->http_ctx = flb_hs_create(config->http_listen, config->http_port,
                                          config);
-        flb_hs_start(config->http_ctx);
+        if (!config->http_ctx) {
+            flb_error("[engine] could not initialize HTTP server");
+            return -1;
+        }
+
+        ret = flb_hs_start(config->http_ctx);
+        if (ret != 0) {
+            flb_error("[engine] could not start HTTP server");
+            return -1;
+        }
     }
 #endif
 
