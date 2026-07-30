@@ -39,6 +39,9 @@ struct flb_api {
      * input/output definitions. */
     const char *(*custom_get_property) (const char *, struct flb_custom_instance *);
     int (*custom_log_check) (struct flb_custom_instance *, int);
+
+    struct flb_kv **(*output_get_all_properties) (struct flb_output_instance *, int *);
+    struct flb_kv **(*input_get_all_properties) (struct flb_input_instance *, int *);
 };
 
 #ifdef FLB_CORE
