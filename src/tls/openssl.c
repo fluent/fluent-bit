@@ -1500,6 +1500,9 @@ static int tls_net_read(struct flb_tls_session *session,
         else if (ssl_ret == SSL_ERROR_WANT_WRITE) {
             ret = FLB_TLS_WANT_WRITE;
         }
+        else if (ssl_ret == SSL_ERROR_ZERO_RETURN) {
+            ret = -1;
+        }
         else if (ssl_ret == SSL_ERROR_SYSCALL) {
             tls_log_io_error(ssl_ret, saved_errno);
 
@@ -1566,6 +1569,9 @@ static int tls_net_write(struct flb_tls_session *session,
         }
         else if (ssl_ret == SSL_ERROR_WANT_READ) {
             ret = FLB_TLS_WANT_READ;
+        }
+        else if (ssl_ret == SSL_ERROR_ZERO_RETURN) {
+            ret = -1;
         }
         else if (ssl_ret == SSL_ERROR_SYSCALL) {
             tls_log_io_error(ssl_ret, saved_errno);
