@@ -395,6 +395,16 @@ struct flb_output_instance {
     int tls_win_use_enterprise_certstore;    /* Use enterprise CertStore */
     char *tls_win_thumbprints;               /* CertStore Thumbprints (Windows) */
 # endif
+
+    /*
+     * HTTPS proxy TLS settings: independent from the destination tls.*
+     * settings above, since the proxy leg and the destination leg are
+     * different TLS peers.
+     */
+    int tls_proxy_verify;                /* Verify proxy cert (default: true) */
+    int tls_proxy_verify_hostname;       /* Verify proxy hostname (default: true) */
+    char *tls_proxy_ca_path;             /* Path to CA certs for proxy verification */
+    char *tls_proxy_ca_file;             /* CA root cert for proxy verification */
 #endif
 
     /*
