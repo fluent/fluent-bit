@@ -399,6 +399,52 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     return u;
 }
 
+#ifdef FLB_HAVE_TLS
+/*
+ * Reconfigure the HTTPS proxy TLS context (if any) created by
+ * flb_upstream_create() using caller-provided verification settings. This is
+ * intentionally independent from the destination TLS context: proxy and
+ * destination are different TLS peers and must not share ca_file/ca_path/
+ * verify settings.
+ *
+ * If the upstream has no proxy_tls_context (no HTTPS proxy in effect), this
+ * is a no-op.
+ */
+int flb_upstream_proxy_tls_setup(struct flb_upstream *u,
+                                 int verify, int verify_hostname,
+                                 const char *ca_path, const char *ca_file)
+{
+    struct flb_tls *tls;
+
+    if (!u || !u->proxy_tls_context) {
+        return 0;
+    }
+
+    /*
+     * u->tcp_host already holds the proxy hostname at this point (set by
+     * flb_upstream_create() when a proxy is in effect), so reuse it as the
+     * SNI vhost for the rebuilt context.
+     */
+    tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                         verify, 0,
+                         u->tcp_host,
+                         ca_path, ca_file,
+                         NULL, NULL, NULL);
+    if (!tls) {
+        flb_error("[upstream] could not reconfigure TLS context for HTTPS proxy %s",
+                  u->tcp_host);
+        return -1;
+    }
+
+    flb_tls_set_verify_hostname(tls, verify_hostname);
+
+    flb_tls_destroy(u->proxy_tls_context);
+    u->proxy_tls_context = tls;
+
+    return 0;
+}
+#endif
+
 /*
  * Checks whehter a destinate URL should be proxied.
  */
