@@ -326,7 +326,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     }
 
     if (ctx->logstash_prefix_key) {
-        if (ctx->logstash_prefix_key[0] != '$') {
+        if (strchr(ctx->logstash_prefix_key, '$') == NULL) {
             len = flb_sds_len(ctx->logstash_prefix_key);
             buf = flb_malloc(len + 2);
             if (!buf) {
