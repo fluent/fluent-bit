@@ -726,6 +726,17 @@ def _reset_tls_connection(port, cafile):
     raw_sock.close()
 
 
+def _send_corrupted_tls_record(port, cafile):
+    raw_sock, tls, outgoing = _create_tls_memory_bio_client(port, cafile)
+
+    tls.write(b"\x91")
+    wire_payload = bytearray(outgoing.read())
+    wire_payload[-1] ^= 1
+    raw_sock.sendall(wire_payload)
+
+    return raw_sock
+
+
 def _create_partial_forward_client(service, payload, use_tls):
     if use_tls:
         sock, tls, outgoing = _create_tls_memory_bio_client(
@@ -1456,6 +1467,36 @@ def test_in_forward_tls_syscall_error_preserves_errno():
         for line in log_text.splitlines()
     )
     assert records[0]["message"] == "after-tls-reset"
+
+
+def test_in_forward_tls_protocol_error_is_reported():
+    service = Service("in_forward_tls.yaml")
+    protocol_sock = None
+    service.start()
+
+    try:
+        protocol_sock = _send_corrupted_tls_record(
+            service.flb_listener_port,
+            service.tls_crt_file,
+        )
+        log_text = service.wait_for_log_contains("[tls] error:", timeout=10)
+        protocol_sock.close()
+        protocol_sock = None
+
+        payload = _message_mode_payload(
+            TEST_TAG,
+            {"message": "after-tls-protocol-error"},
+        )
+        _send_forward_payload(service, payload, True)
+        records = service.wait_for_record_count(1, timeout=10)
+    finally:
+        if protocol_sock is not None:
+            protocol_sock.close()
+        service.stop()
+
+    assert "bad record mac" in log_text.lower()
+    assert "unknown error" not in log_text
+    assert records[0]["message"] == "after-tls-protocol-error"
 
 
 @pytest.mark.parametrize(
