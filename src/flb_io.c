@@ -190,14 +190,19 @@ int flb_io_net_connect(struct flb_connection *connection,
             }
             /*
              * Ensure all I/O (the CONNECT request and any subsequent
-             * data) is routed through the proxy TLS session.  This is
-             * necessary when the ultimate destination is plain HTTP:
-             * the stream's FLB_IO_TLS flag is not set for such upstreams,
-             * but flb_io_net_write/read check that flag to decide whether
-             * to use connection->tls_session.  For HTTPS destinations the
-             * flag is already set so this is a no-op.
+             * data) is routed through the proxy TLS session. This must be
+             * a connection-scoped flag, not a stream-level one: the
+             * stream/upstream object is shared across every connection to
+             * this destination, and flb_io_net_write/read only need a
+             * per-connection signal to decide whether to use
+             * connection->tls_session. Setting the stream's FLB_IO_TLS
+             * flag here would permanently mark the destination itself as
+             * TLS-enabled, which corrupts destination-specific behavior
+             * for plain-HTTP destinations (e.g. Host header port handling
+             * in flb_http_client.c), even though only the proxy leg uses
+             * TLS.
              */
-            flb_stream_enable_flags(connection->stream, FLB_IO_TLS);
+            flb_connection_enable_flags(connection, FLB_IO_PROXY_TLS);
         }
 #endif
         ret = flb_http_client_proxy_connect(connection);
@@ -794,7 +799,7 @@ int flb_io_net_write(struct flb_connection *connection, const void *data,
         }
     }
 #ifdef FLB_HAVE_TLS
-    else if (flags & (FLB_IO_TLS | FLB_IO_DTLS)) {
+    else if (flags & (FLB_IO_TLS | FLB_IO_DTLS | FLB_IO_PROXY_TLS)) {
         if (flags & FLB_IO_ASYNC) {
             ret = flb_tls_net_write_async(coro, connection->tls_session, data, len, out_len);
         }
@@ -846,7 +851,7 @@ ssize_t flb_io_net_read(struct flb_connection *connection, void *buf, size_t len
         }
     }
 #ifdef FLB_HAVE_TLS
-    else if (flags & (FLB_IO_TLS | FLB_IO_DTLS)) {
+    else if (flags & (FLB_IO_TLS | FLB_IO_DTLS | FLB_IO_PROXY_TLS)) {
         if (flags & FLB_IO_ASYNC) {
             ret = flb_tls_net_read_async(coro, connection->tls_session, buf, len);
         }
