@@ -106,6 +106,32 @@ struct flb_config_map tls_configmap[] = {
      "Specify TLS ciphers up to TLSv1.2"
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "tls.proxy.ca_file", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to CA certificate file used to verify the HTTPS proxy "
+     "certificate. Independent from tls.ca_file (destination CA)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "tls.proxy.ca_path", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to scan for CA certificate files used to verify the "
+     "HTTPS proxy certificate"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.proxy.verify", "on",
+     0, FLB_FALSE, 0,
+     "Force HTTPS proxy certificate validation"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.proxy.verify_hostname", "on",
+     0, FLB_FALSE, 0,
+     "Enable or disable HTTPS proxy hostname verification"
+    },
+
     /* EOF */
     {0}
 };
