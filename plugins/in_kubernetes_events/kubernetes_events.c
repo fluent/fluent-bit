@@ -174,6 +174,7 @@ static int refresh_token_if_needed(struct k8s_events *ctx)
 static msgpack_object *record_get_field_ptr(msgpack_object *obj, const char *fieldname)
 {
     int i;
+    size_t fieldname_len;
     msgpack_object *k;
     msgpack_object *v;
 
@@ -181,13 +182,23 @@ static msgpack_object *record_get_field_ptr(msgpack_object *obj, const char *fie
         return NULL;
     }
 
+    fieldname_len = strlen(fieldname);
+
     for (i = 0; i < obj->via.map.size; i++) {
         k = &obj->via.map.ptr[i].key;
         if (k->type != MSGPACK_OBJECT_STR) {
             continue;
         }
 
-        if (strncmp(k->via.str.ptr, fieldname, strlen(fieldname)) == 0) {
+        /*
+         * msgpack strings are not NUL terminated: k->via.str.ptr points
+         * directly into the decode buffer for exactly k->via.str.size
+         * bytes. Require an exact length match before comparing so we
+         * never read past that boundary, and so a key that merely shares
+         * a prefix with fieldname cannot match.
+         */
+        if ((size_t) k->via.str.size == fieldname_len &&
+            strncmp(k->via.str.ptr, fieldname, fieldname_len) == 0) {
             v = &obj->via.map.ptr[i].val;
             return v;
         }
@@ -215,6 +226,7 @@ static int record_get_field_time(msgpack_object *obj, const char *fieldname, str
 {
     msgpack_object *v;
     struct flb_tm tm = { 0 };
+    char buf[64];
 
     v = record_get_field_ptr(obj, fieldname);
     if (v == NULL) {
@@ -224,7 +236,19 @@ static int record_get_field_time(msgpack_object *obj, const char *fieldname, str
         return -1;
     }
 
-    if (flb_strptime(v->via.str.ptr, "%Y-%m-%dT%H:%M:%SZ", &tm) == NULL) {
+    /*
+     * msgpack strings are not NUL terminated: v->via.str.ptr points
+     * directly into the decode buffer for exactly v->via.str.size bytes.
+     * Copy it into a bounded, NUL-terminated stack buffer before handing
+     * it to flb_strptime(), instead of scanning the raw buffer directly.
+     */
+    if (v->via.str.size == 0 || v->via.str.size >= sizeof(buf)) {
+        return -2;
+    }
+    memcpy(buf, v->via.str.ptr, v->via.str.size);
+    buf[v->via.str.size] = '\0';
+
+    if (flb_strptime(buf, "%Y-%m-%dT%H:%M:%SZ", &tm) == NULL) {
         return -2;
     }
 
@@ -237,7 +261,9 @@ static int record_get_field_time(msgpack_object *obj, const char *fieldname, str
 static int record_get_field_uint64(msgpack_object *obj, const char *fieldname, uint64_t *val)
 {
     msgpack_object *v;
+    char buf[32];
     char *end;
+    size_t len;
 
     v = record_get_field_ptr(obj, fieldname);
     if (v == NULL) {
@@ -246,8 +272,22 @@ static int record_get_field_uint64(msgpack_object *obj, const char *fieldname, u
 
     /* attempt to parse string as number... */
     if (v->type == MSGPACK_OBJECT_STR) {
-        *val = strtoul(v->via.str.ptr, &end, 10);
-        if (end == NULL || (end < v->via.str.ptr + v->via.str.size)) {
+        /*
+         * msgpack strings are not NUL terminated: v->via.str.ptr points
+         * directly into the decode buffer for exactly v->via.str.size
+         * bytes. Copy it into a bounded, NUL-terminated stack buffer
+         * before calling strtoul() on it, instead of scanning the raw
+         * buffer directly (no valid uint64 needs more than 20 digits).
+         */
+        len = v->via.str.size;
+        if (len == 0 || len > sizeof(buf) - 1) {
+            return -1;
+        }
+        memcpy(buf, v->via.str.ptr, len);
+        buf[len] = '\0';
+
+        *val = strtoul(buf, &end, 10);
+        if (end == NULL || end == buf || *end != '\0') {
             return -1;
         }
         return 0;
