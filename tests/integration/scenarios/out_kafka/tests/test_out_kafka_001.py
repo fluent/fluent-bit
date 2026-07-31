@@ -25,6 +25,9 @@ from utils.fluent_bit_manager import FluentBitStartupError
 from utils.test_service import FluentBitTestService
 
 
+EMPTY_MAP_RECORD_ID = "97789a11215b54828d2c3f50b864afed42543ff8"
+
+
 class Service:
     def __init__(self, config_file, *, use_schema_registry=False):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
@@ -180,6 +183,42 @@ def _decode_simple_msgpack(data, offset=0):
         return data[offset:end].decode("utf-8"), end
 
     raise ValueError(f"Unsupported MessagePack type 0x{first:02x}")
+
+
+def _decode_avro_long(data, offset=0):
+    encoded = 0
+    shift = 0
+
+    while True:
+        if offset >= len(data):
+            raise ValueError("Truncated Avro long")
+
+        byte = data[offset]
+        offset += 1
+
+        if shift == 63 and byte & 0x7E:
+            raise ValueError("Invalid Avro long")
+
+        encoded |= (byte & 0x7F) << shift
+
+        if byte & 0x80 == 0:
+            break
+
+        shift += 7
+        if shift >= 64:
+            raise ValueError("Invalid Avro long")
+
+    return (encoded >> 1) ^ -(encoded & 1), offset
+
+
+def _decode_avro_string(data, offset=0):
+    size, offset = _decode_avro_long(data, offset)
+    end = offset + size
+
+    if size < 0 or end > len(data):
+        raise ValueError("Invalid Avro string")
+
+    return data[offset:end].decode("utf-8"), end
 
 
 def _decode_otlp_proto(data, signal_type):
@@ -475,6 +514,8 @@ def _start_or_skip_without_avro_encoder(service):
         log_contents = _read_fluent_bit_log(service)
         error_message = str(error)
         unsupported_markers = [
+            "unknown configuration property 'schema_str'",
+            "unknown configuration property 'schema_id'",
             "unknown configuration property 'schema_registry_url'",
             "unknown configuration property 'schema_registry_subject'",
             "unknown configuration property 'schema_registry_version'",
@@ -493,6 +534,13 @@ def _start_or_skip_without_avro_encoder(service):
         except Exception:
             pass
         raise
+
+
+def test_decode_avro_long_rejects_out_of_range_terminal_bits():
+    payload = b"\x80" * 9 + b"\x02"
+
+    with pytest.raises(ValueError, match="Invalid Avro long"):
+        _decode_avro_long(payload)
 
 
 def test_out_kafka_sends_json_payload():
@@ -595,6 +643,28 @@ def test_out_kafka_avro_resolves_schema_registry_subject():
     assert requests_seen[0]["method"] == "GET"
     assert requests_seen[0]["path"] == f"/subjects/{SCHEMA_SUBJECT}/versions/latest"
     assert "application/vnd.schemaregistry.v1+json" in requests_seen[0]["headers"]["Accept"]
+
+
+def test_out_kafka_avro_encodes_empty_map():
+    service = Service("out_kafka_avro_empty_map.yaml")
+    _start_or_skip_without_avro_encoder(service)
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    message = messages[0]
+    value = message["value"]
+
+    assert message["topic"] == "test"
+    assert value[0] == 0
+    assert int.from_bytes(value[1:5], "big") == SCHEMA_ID
+
+    record_id, offset = _decode_avro_string(value, 5)
+    map_size, offset = _decode_avro_long(value, offset)
+
+    assert record_id == EMPTY_MAP_RECORD_ID
+    assert map_size == 0
+    assert offset == len(value)
 
 
 def test_out_kafka_otlp_json_logs():
