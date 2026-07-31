@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 #include <inttypes.h>
 #include <errno.h>
+#include <ctype.h>
 
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_network.h>
@@ -296,6 +297,18 @@ static int record_get_field_uint64(msgpack_object *obj, const char *fieldname, u
         }
         memcpy(buf, v->via.str.ptr, len);
         buf[len] = '\0';
+
+        /*
+         * strtoull() itself accepts a leading '+'/'-' and skips leading
+         * whitespace, which would let a value like "-5" silently wrap
+         * around into a huge positive number instead of being rejected.
+         * Kubernetes resourceVersion (the only caller) is always a plain,
+         * unsigned, digits-only decimal string, so require that directly
+         * before parsing.
+         */
+        if (!isdigit((unsigned char) buf[0])) {
+            return -1;
+        }
 
         errno = 0;
         *val = strtoull(buf, &end, 10);
