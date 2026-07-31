@@ -1,0 +1,131 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "my-service"
+            }
+          }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {},
+          "logRecords": [
+            {
+              "timeUnixNano": "1784797967000450100",
+              "body": {
+                "kvlistValue": {
+                  "values": [
+                    {
+                      "key": "field1",
+                      "value": {
+                        "stringValue": "1"
+                      }
+                    },
+                    {
+                      "key": "field2",
+                      "value": {
+                        "stringValue": "2"
+                      }
+                    },
+                    {
+                      "key": "field3",
+                      "value": {
+                        "stringValue": "3"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "timeUnixNano": "1784797967000450100",
+              "body": {
+                "kvlistValue": {
+                  "values": [
+                    {
+                      "key": "field1",
+                      "value": {
+                        "stringValue": "1"
+                      }
+                    },
+                    {
+                      "key": "field2",
+                      "value": {
+                        "stringValue": "2"
+                      }
+                    },
+                    {
+                      "key": "field4",
+                      "value": {
+                        "stringValue": "4"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "timeUnixNano": "1784797967000450100",
+              "body": {
+                "kvlistValue": {
+                  "values": [
+                    {
+                      "key": "field1",
+                      "value": {
+                        "stringValue": "1"
+                      }
+                    },
+                    {
+                      "key": "field3",
+                      "value": {
+                        "stringValue": "3"
+                      }
+                    },
+                    {
+                      "key": "field4",
+                      "value": {
+                        "stringValue": "4"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "timeUnixNano": "1784797967000450100",
+              "body": {
+                "kvlistValue": {
+                  "values": [
+                    {
+                      "key": "field2",
+                      "value": {
+                        "stringValue": "2"
+                      }
+                    },
+                    {
+                      "key": "field3",
+                      "value": {
+                        "stringValue": "3"
+                      }
+                    },
+                    {
+                      "key": "field4",
+                      "value": {
+                        "stringValue": "4"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

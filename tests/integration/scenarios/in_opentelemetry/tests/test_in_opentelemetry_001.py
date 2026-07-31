@@ -230,6 +230,14 @@ def read_stdout_otlp_json_text(service, root_key, timeout=10, interval=0.25):
     raise TimeoutError(f"Timed out waiting for stdout OTLP JSON payload with root key {root_key}")
 
 
+def read_fluent_bit_log(service):
+    if not service.flb or not service.flb.log_file or not os.path.exists(service.flb.log_file):
+        return ""
+
+    with open(service.flb.log_file, "r", encoding="utf-8", errors="replace") as log_file:
+        return log_file.read()
+
+
 def read_prometheus_metric_value(metrics_text, metric_name, input_name):
     label = f'name="{input_name}"'
 
@@ -1749,3 +1757,100 @@ def test_in_opentelemetry_http_workers_account_metrics_payload_bytes():
         service.stop()
 
     assert len(data_storage["metrics"]) == metrics_before + 1
+
+
+def test_expect_warn_validates_each_otlp_log_record_in_batch():
+    service = Service("expect_batch.yaml")
+    payload = read_json_file(
+        os.path.join(
+            os.path.dirname(__file__),
+            "data_files",
+            "test_logs_expect_batch.in.json",
+        )
+    )
+
+    service.start()
+
+    try:
+        response = requests.post(
+            f"http://127.0.0.1:{service.flb_listener_port}/v1/logs",
+            json=payload,
+            timeout=5,
+        )
+        assert response.status_code == 201
+
+        log_text = service.service.wait_for_condition(
+            lambda: (
+                content
+                if content.count("expect check failed") >= 4
+                else None
+            ) if (content := read_fluent_bit_log(service)) else None,
+            timeout=10,
+            interval=0.25,
+            description="one expect warning per invalid OTLP log record",
+        )
+    finally:
+        service.stop()
+
+    assert log_text.count("expect check failed") == 4
+    for field_name in ("field1", "field2", "field3", "field4"):
+        assert log_text.count(f"key '{field_name}' not found") == 1
+
+
+def test_expect_result_key_preserves_otlp_log_groups():
+    service = Service("expect_group_result_key.yaml")
+    payload = read_json_file(
+        os.path.join(
+            os.path.dirname(__file__),
+            "data_files",
+            "test_logs_expect_batch.in.json",
+        )
+    )
+    scope_logs = payload["resourceLogs"][0]["scopeLogs"][0]
+    scope_logs["scope"] = {"name": "issue.scope"}
+    scope_logs["logRecords"].append(
+        {
+            "timeUnixNano": "1784797967000450100",
+            "body": {
+                "kvlistValue": {
+                    "values": [
+                        {
+                            "key": f"field{index}",
+                            "value": {"stringValue": str(index)},
+                        }
+                        for index in range(1, 5)
+                    ]
+                }
+            },
+        }
+    )
+
+    service.start()
+
+    try:
+        response = requests.post(
+            f"http://127.0.0.1:{service.flb_listener_port}/v1/logs",
+            json=payload,
+            timeout=5,
+        )
+        assert response.status_code == 201
+        output = service.read_response("logs")
+    finally:
+        service.stop()
+
+    records = list(iter_log_records(output))
+    assert len(records) == 5
+
+    matched_values = []
+    for record in records:
+        assert record["resource_attributes"] == {"service.name": "my-service"}
+        assert record["scope_name"] == "issue.scope"
+
+        values = record["record"]["body"]["kvlistValue"]["values"]
+        fields = {
+            item["key"]: next(iter(item["value"].values()))
+            for item in values
+        }
+        matched_values.append(fields["matched"])
+
+    assert matched_values == [False, False, False, False, True]
