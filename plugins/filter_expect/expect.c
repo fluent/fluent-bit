@@ -405,7 +405,8 @@ static int cb_expect_filter(const void *data, size_t bytes,
 {
     int ret;
     int i;
-    int rule_matched = FLB_TRUE;
+    int rule_matched;
+    int32_t record_type;
     msgpack_object_kv *kv;
     struct flb_expect *ctx = filter_context;
     struct flb_log_event_encoder log_encoder;
@@ -427,25 +428,25 @@ static int cb_expect_filter(const void *data, size_t bytes,
         return FLB_FILTER_NOTOUCH;
     }
 
-    while ((ret = flb_log_event_decoder_next(
-                    &log_decoder,
-                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        ret = rule_apply(ctx, *log_event.body, config);
-        if (ret == FLB_TRUE) {
-            /* rule matches, we are good */
-            continue;
-        }
-        else {
-            if (ctx->action == FLB_EXP_WARN) {
-                flb_plg_warn(ctx->ins, "expect check failed");
+    if (ctx->action != FLB_EXP_RESULT_KEY) {
+        while ((ret = flb_log_event_decoder_next(
+                        &log_decoder,
+                        &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+            ret = rule_apply(ctx, *log_event.body, config);
+            if (ret == FLB_TRUE) {
+                /* rule matches, we are good */
+                continue;
             }
-            else if (ctx->action == FLB_EXP_EXIT) {
-                flb_engine_exit_status(config, 255);
+            else {
+                if (ctx->action == FLB_EXP_WARN) {
+                    flb_plg_warn(ctx->ins, "expect check failed");
+                    continue;
+                }
+                else if (ctx->action == FLB_EXP_EXIT) {
+                    flb_engine_exit_status(config, 255);
+                }
+                break;
             }
-            else if (ctx->action == FLB_EXP_RESULT_KEY) {
-                rule_matched = FLB_FALSE;
-            }
-            break;
         }
     }
 
@@ -453,6 +454,13 @@ static int cb_expect_filter(const void *data, size_t bytes,
     /* Append result key when action is "result_key"*/
     if (ctx->action == FLB_EXP_RESULT_KEY) {
         flb_log_event_decoder_reset(&log_decoder, (char *) data, bytes);
+
+        ret = flb_log_event_decoder_read_groups(&log_decoder, FLB_TRUE);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "failed to enable group marker decoding");
+            flb_log_event_decoder_destroy(&log_decoder);
+            return FLB_FILTER_NOTOUCH;
+        }
 
         ret = flb_log_event_encoder_init(&log_encoder,
                                          FLB_LOG_EVENT_FORMAT_DEFAULT);
@@ -469,6 +477,26 @@ static int cb_expect_filter(const void *data, size_t bytes,
         while ((ret = flb_log_event_decoder_next(
                         &log_decoder,
                         &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+            ret = flb_log_event_decoder_get_record_type(&log_event, &record_type);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "record has invalid event type");
+                break;
+            }
+
+            if (record_type == FLB_LOG_EVENT_GROUP_START ||
+                record_type == FLB_LOG_EVENT_GROUP_END) {
+                ret = flb_log_event_encoder_emit_raw_record(
+                        &log_encoder,
+                        log_decoder.record_base,
+                        log_decoder.record_length);
+                if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                    break;
+                }
+                continue;
+            }
+
+            rule_matched = rule_apply(ctx, *log_event.body, config);
+
             ret = flb_log_event_encoder_begin_record(&log_encoder);
 
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
