@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <inttypes.h>
+#include <errno.h>
 
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_network.h>
@@ -248,8 +249,13 @@ static int record_get_field_time(msgpack_object *obj, const char *fieldname, str
     memcpy(buf, v->via.str.ptr, v->via.str.size);
     buf[v->via.str.size] = '\0';
 
-    if (flb_strptime(buf, "%Y-%m-%dT%H:%M:%SZ", &tm) == NULL) {
-        return -2;
+    {
+        char *end;
+
+        end = flb_strptime(buf, "%Y-%m-%dT%H:%M:%SZ", &tm);
+        if (end == NULL || *end != '\0') {
+            return -2;
+        }
     }
 
     val->tm.tv_sec = flb_parser_tm2time(&tm, FLB_FALSE);
@@ -286,8 +292,9 @@ static int record_get_field_uint64(msgpack_object *obj, const char *fieldname, u
         memcpy(buf, v->via.str.ptr, len);
         buf[len] = '\0';
 
-        *val = strtoul(buf, &end, 10);
-        if (end == NULL || end == buf || *end != '\0') {
+        errno = 0;
+        *val = strtoull(buf, &end, 10);
+        if (errno == ERANGE || end == buf || *end != '\0') {
             return -1;
         }
         return 0;
@@ -297,8 +304,7 @@ static int record_get_field_uint64(msgpack_object *obj, const char *fieldname, u
         return 0;
     }
     if (v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-        *val = (uint64_t)v->via.i64;
-        return 0;
+        return -1;
     }
     return -1;
 }
@@ -312,12 +318,12 @@ static int item_get_timestamp(msgpack_object *obj, struct flb_time *event_time)
      * NULL while having metadata.creationTimestamp set.
      */
     ret = record_get_field_time(obj, "lastTimestamp", event_time);
-    if (ret != -1) {
+    if (ret == 0) {
         return FLB_TRUE;
     }
 
     ret = record_get_field_time(obj, "firstTimestamp", event_time);
-    if (ret != -1) {
+    if (ret == 0) {
         return FLB_TRUE;
     }
 
@@ -327,7 +333,7 @@ static int item_get_timestamp(msgpack_object *obj, struct flb_time *event_time)
     }
 
     ret = record_get_field_time(metadata, "creationTimestamp", event_time);
-    if (ret != -1) {
+    if (ret == 0) {
         return FLB_TRUE;
     }
 
