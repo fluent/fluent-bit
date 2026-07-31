@@ -103,6 +103,9 @@ avro_value_iface_t  *flb_avro_init(avro_value_t *aobject, char *json, size_t jso
 int msgpack2avro(avro_value_t *val, msgpack_object *o)
 {
     int ret = FLB_FALSE;
+    size_t record_size = 0;
+    avro_type_t type;
+
     flb_debug("in msgpack2avro\n");
 
     assert(val != NULL);
@@ -200,7 +203,19 @@ int msgpack2avro(avro_value_t *val, msgpack_object *o)
 
     case MSGPACK_OBJECT_MAP:
         flb_debug("got a map\n");
-        if(o->via.map.size != 0) {
+        if (o->via.map.size == 0) {
+            type = avro_value_get_type(val);
+
+            if (type == AVRO_MAP) {
+                ret = FLB_TRUE;
+            }
+            else if (type == AVRO_RECORD) {
+                if (avro_value_get_size(val, &record_size) == 0 && record_size == 0) {
+                    ret = FLB_TRUE;
+                }
+            }
+        }
+        else {
             msgpack_object_kv* p = o->via.map.ptr;
             msgpack_object_kv* const pend = o->via.map.ptr + o->via.map.size;
             for(; p < pend; ++p) {
