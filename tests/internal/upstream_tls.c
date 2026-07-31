@@ -587,6 +587,11 @@ void test_io_proxy_tls_flag_does_not_leak_to_stream(void)
     struct flb_config config = {0};
     flb_pipefd_t socket_pair[2];
 
+#ifdef FLB_SYSTEM_WINDOWS
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
+
     TEST_CHECK(setup_conn(&conn, &upstream, &config, socket_pair) == 0);
 
     /* Simulate what flb_io_net_connect() now does for an HTTPS proxy leg. */
@@ -600,6 +605,10 @@ void test_io_proxy_tls_flag_does_not_leak_to_stream(void)
 
     flb_pipe_close(socket_pair[1]);
     flb_pipe_close(conn.fd);
+
+#ifdef FLB_SYSTEM_WINDOWS
+    WSACleanup();
+#endif
 }
 
 /*
@@ -809,7 +818,17 @@ static int start_https_proxy_stub(struct https_proxy_stub *stub,
     stub->listen_fd = fd;
     stub->port = ntohs(addr.sin_port);
 
+    /*
+     * TLS_server_method() requires OpenSSL >= 1.1.0; older builds (e.g. the
+     * system OpenSSL on CentOS 7) only have the versioned SSLv23_*_method()
+     * API, which src/tls/openssl.c already falls back to for the same
+     * reason.
+     */
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+    stub->ssl_ctx = SSL_CTX_new(SSLv23_server_method());
+#else
     stub->ssl_ctx = SSL_CTX_new(TLS_server_method());
+#endif
     if (!stub->ssl_ctx) {
         close(fd);
         stub->listen_fd = -1;
