@@ -633,6 +633,68 @@ static void flb_test_issue_5846()
     filter_test_destroy(ctx);
 }
 
+/*
+ * A rule that rewrites a record to the tag it already has makes the emitter
+ * re-inject the record into the same filter. The emitter used to register
+ * itself as one of its own senders, so pausing it (hot reload or shutdown)
+ * recursed until the stack was exhausted.
+ */
+static void flb_test_self_cycle_issue_12189()
+{
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    int ret;
+    int not_used = 0;
+    int bytes;
+    int got;
+    char *p = "[0, {\"key\":\"cycle\"}]";
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &not_used;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+    clear_output_num();
+
+    /* The new tag is the tag the filter is matching, so it emits to itself */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "Rule", "$key ^(cycle)$ rewrite false",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Configure output */
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "Match", "rewrite",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* ingest record */
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    flb_time_msleep(1500); /* waiting flush */
+    got = get_output_num();
+
+    /*
+     * The record emitted once is kept by the filter on the second evaluation,
+     * the self-emission is rejected instead of looping.
+     */
+    if (!TEST_CHECK(got == 1)) {
+        TEST_MSG("expect: 1 got: %d", got);
+    }
+
+    /* Shutdown pauses the inputs, it must not recurse into the emitter */
+    filter_test_destroy(ctx);
+}
+
 TEST_LIST = {
     {"matched",          flb_test_matched},
     {"not_matched",      flb_test_not_matched},
@@ -642,5 +704,6 @@ TEST_LIST = {
     {"issue_4518", flb_test_issue_4518},
     {"issue_4793", flb_test_issue_4793},
     {"sigsegv_issue_5846", flb_test_issue_5846},
+    {"self_cycle_issue_12189", flb_test_self_cycle_issue_12189},
     {NULL, NULL}
 };
