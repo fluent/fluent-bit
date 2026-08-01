@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include <monkey/mk_core.h>
+#include <cfl/cfl_atomic.h>
 #include <fluent-bit/flb_bucket_queue.h>
 #include <fluent-bit/flb_event_loop.h>
 #include <fluent-bit/flb_time.h>
@@ -709,7 +710,8 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
             flb_trace("[engine] on-demand flush requested");
             flb_engine_reschedule_retries(config);
             flb_engine_flush(config, NULL);
-            config->flush_now_count++;
+            cfl_atomic_store(&config->flush_now_count,
+                             cfl_atomic_load(&config->flush_now_count) + 1);
             return 0;
         }
     }

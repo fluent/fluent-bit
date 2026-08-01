@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/http_server/flb_hs_utils.h>
+#include <cfl/cfl_atomic.h>
 #include "flush.h"
 
 #include <fluent-bit/flb_http_server.h>
@@ -30,13 +31,13 @@
 /* Bounded wait for the engine thread to acknowledge a dispatched flush */
 #define FLB_HS_FLUSH_ACK_TIMEOUT_MS 2000
 
-static int wait_for_flush_ack(unsigned int *counter, unsigned int baseline,
+static int wait_for_flush_ack(uint64_t *counter, uint64_t baseline,
                               int timeout_ms)
 {
     int waited_ms = 0;
     const int interval_ms = 2;
 
-    while (*counter == baseline) {
+    while (cfl_atomic_load(counter) == baseline) {
         if (waited_ms >= timeout_ms) {
             return FLB_FALSE;
         }
@@ -52,14 +53,14 @@ static int handle_flush_request(struct flb_http_response *response,
 {
     int ret;
     int acked;
-    unsigned int baseline;
+    uint64_t baseline;
     flb_sds_t out_buf;
     size_t out_size;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     int http_status;
 
-    baseline = config->flush_now_count;
+    baseline = cfl_atomic_load(&config->flush_now_count);
 
     ret = flb_engine_flush_request(config);
     if (ret == -1) {
@@ -92,7 +93,7 @@ static int handle_flush_request(struct flb_http_response *response,
 
     msgpack_pack_str(&mp_pck, 15);
     msgpack_pack_str_body(&mp_pck, "flush_now_count", 15);
-    msgpack_pack_int64(&mp_pck, config->flush_now_count);
+    msgpack_pack_int64(&mp_pck, cfl_atomic_load(&config->flush_now_count));
 
     /* Export to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
@@ -126,7 +127,7 @@ static int handle_get_flush_status(struct flb_http_response *response,
     msgpack_pack_map(&mp_pck, 1);
     msgpack_pack_str(&mp_pck, 15);
     msgpack_pack_str_body(&mp_pck, "flush_now_count", 15);
-    msgpack_pack_int64(&mp_pck, config->flush_now_count);
+    msgpack_pack_int64(&mp_pck, cfl_atomic_load(&config->flush_now_count));
 
     /* Export to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, FLB_TRUE);
