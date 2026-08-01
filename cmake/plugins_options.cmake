@@ -3,10 +3,36 @@ macro(DEFINE_OPTION option_name description default_value)
     if(FLB_MINIMAL)
         set(temp_value OFF)
     endif()
-    if(NOT "${FLB_GROUP_OVERRIDE}" STREQUAL "Inherit")
+    string(TOLOWER "${FLB_GROUP_OVERRIDE}" group_override)
+    if(NOT group_override STREQUAL "inherit")
         set(temp_value ${FLB_GROUP_OVERRIDE})
     endif()
+
+    if(temp_value)
+        set(temp_value ON)
+    else()
+        set(temp_value OFF)
+    endif()
+
+    get_property(option_type CACHE ${option_name} PROPERTY TYPE)
+    if(option_type STREQUAL "UNINITIALIZED")
+        set(_FLB_PINNED_${option_name} ON CACHE INTERNAL "")
+    endif()
+
     option(${option_name} "${description}" ${temp_value})
+
+    if(NOT DEFINED _FLB_INHERITED_${option_name})
+        set(_FLB_INHERITED_${option_name} "${${option_name}}" CACHE INTERNAL "")
+    else()
+        if(NOT _FLB_PINNED_${option_name} AND
+           NOT "${${option_name}}" STREQUAL "${_FLB_INHERITED_${option_name}}")
+            set(_FLB_PINNED_${option_name} ON CACHE INTERNAL "")
+        endif()
+        if(NOT _FLB_PINNED_${option_name} AND "${${option_name}}" STREQUAL "${_FLB_INHERITED_${option_name}}")
+            set(${option_name} ${temp_value} CACHE BOOL "${description}" FORCE)
+        endif()
+        set(_FLB_INHERITED_${option_name} ${temp_value} CACHE INTERNAL "")
+    endif()
 endmacro()
 
 # Add the FLB_MINIMAL option
@@ -21,6 +47,15 @@ set_property(CACHE FLB_ALL_INPUTS     PROPERTY STRINGS "On;Off;Inherit")
 set_property(CACHE FLB_ALL_PROCESSORS PROPERTY STRINGS "On;Off;Inherit")
 set_property(CACHE FLB_ALL_FILTERS    PROPERTY STRINGS "On;Off;Inherit")
 set_property(CACHE FLB_ALL_OUTPUTS    PROPERTY STRINGS "On;Off;Inherit")
+
+foreach(group_option FLB_ALL_INPUTS FLB_ALL_PROCESSORS FLB_ALL_FILTERS FLB_ALL_OUTPUTS)
+    string(TOLOWER "${${group_option}}" group_value)
+    if(NOT group_value MATCHES "^(on|off|inherit)$")
+        message(FATAL_ERROR
+            "${group_option} must be one of On, Off or Inherit "
+            "(got '${${group_option}}')")
+    endif()
+endforeach()
 
 # Inputs (sources, data collectors)
 # =================================
