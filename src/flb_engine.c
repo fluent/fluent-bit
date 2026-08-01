@@ -705,6 +705,13 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
             flb_engine_flush(config, NULL);
             return FLB_ENGINE_STOP;
         }
+        else if (key == FLB_ENGINE_FLUSH_NOW) {
+            flb_trace("[engine] on-demand flush requested");
+            flb_engine_reschedule_retries(config);
+            flb_engine_flush(config, NULL);
+            config->flush_now_count++;
+            return 0;
+        }
     }
 
     return 0;
@@ -1417,6 +1424,16 @@ int flb_engine_exit(struct flb_config *config)
     uint64_t val;
 
     val = FLB_ENGINE_EV_STOP;
+    ret = flb_pipe_w(config->ch_manager[1], &val, sizeof(uint64_t));
+    return ret;
+}
+
+int flb_engine_flush_request(struct flb_config *config)
+{
+    int ret;
+    uint64_t val;
+
+    val = FLB_ENGINE_EV_FLUSH_NOW;
     ret = flb_pipe_w(config->ch_manager[1], &val, sizeof(uint64_t));
     return ret;
 }
