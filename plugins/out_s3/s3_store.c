@@ -353,6 +353,24 @@ int s3_store_exit(struct flb_s3 *ctx)
         return 0;
     }
 
+    /*
+     * Detach the metadata ("sequence") stream before tearing down the store.
+     *
+     * The $INDEX value is persisted as a plain file inside the metadata stream
+     * directory (sequence/index_metadata/seq_index_<id>); it is not a Chunk I/O
+     * chunk, so the stream has zero registered fstore files. Because
+     * flb_fstore_destroy() recursively deletes any stream that has no files, the
+     * metadata stream (and the persisted $INDEX) would be removed on every
+     * graceful shutdown. Detaching the reference here (without deleting the
+     * directory) preserves the index on disk so it can be restored on the next
+     * start, which is the documented behavior of $INDEX with a persistent
+     * store_dir.
+     */
+    if (ctx->stream_metadata != NULL) {
+        flb_fstore_stream_destroy(ctx->stream_metadata, FLB_FALSE);
+        ctx->stream_metadata = NULL;
+    }
+
     /* release local context on non-multi upload files */
     mk_list_foreach(head, &ctx->fs->streams) {
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
