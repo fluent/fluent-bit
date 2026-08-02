@@ -1635,7 +1635,11 @@ set -e
 rm -f -- /etc/ld.so.conf.d/libfluent-bit.conf
 ldconfig
 ")
-    execute_process(COMMAND chmod 0755 "${PROJECT_BINARY_DIR}/scripts/prerm")
+    execute_process(COMMAND chmod 0755 "${PROJECT_BINARY_DIR}/scripts/prerm"
+      RESULT_VARIABLE FLB_CHMOD_PRERM_RESULT)
+    if(NOT FLB_CHMOD_PRERM_RESULT EQUAL 0)
+      message(FATAL_ERROR "Failed to make ${PROJECT_BINARY_DIR}/scripts/prerm executable")
+    endif()
     list(APPEND CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/prerm")
   endif(FLB_RUN_LDCONFIG)
 
@@ -1643,7 +1647,11 @@ ldconfig
     ${PROJECT_SOURCE_DIR}/cpack/debian/postinst.in
     ${PROJECT_BINARY_DIR}/scripts/postinst
     @ONLY)
-  execute_process(COMMAND chmod 0755 "${PROJECT_BINARY_DIR}/scripts/postinst")
+  execute_process(COMMAND chmod 0755 "${PROJECT_BINARY_DIR}/scripts/postinst"
+    RESULT_VARIABLE FLB_CHMOD_POSTINST_RESULT)
+  if(NOT FLB_CHMOD_POSTINST_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to make ${PROJECT_BINARY_DIR}/scripts/postinst executable")
+  endif()
   list(APPEND CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst")
 
 endif()
