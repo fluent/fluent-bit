@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+@LDCONFIG_POSTINST_CMDS@
+case "$1" in
+    configure)
+        ldconfig
+
+        if [ -z "${DPKG_ROOT:-}" ] && [ -d /run/systemd/system ]; then
+            systemctl --system daemon-reload >/dev/null || true
+
+            if [ -n "$2" ]; then
+                deb-systemd-invoke try-restart @FLB_OUT_NAME@.service >/dev/null || true
+            fi
+        fi
+        ;;
+esac
+
+exit 0
