@@ -258,6 +258,76 @@ def assert_pause_resume_cycles(
             assert result["status_code"] == success_status, result
 
 
+def assert_shutdown_while_paused(
+    flb,
+    stop_service,
+    host,
+    port,
+    url,
+    payload,
+    headers,
+    *,
+    input_name,
+    success_status,
+    connection_factory=open_partial_http_request,
+    connection_count=8,
+    pause_trigger_requests=2,
+    http_mode="http1.1",
+    ca_cert_path=None,
+):
+    active_connections = []
+    connection_flood = ConnectionFlood(host, port)
+
+    try:
+        for _ in range(connection_count):
+            active_connections.append(connection_factory(host, port))
+
+        connection_flood.start()
+        connection_flood.wait_for_attempts(128)
+
+        for _ in range(pause_trigger_requests):
+            result = run_curl_without_check(
+                url,
+                payload,
+                headers=headers,
+                http_mode=http_mode,
+                max_time=10,
+                ca_cert_path=ca_cert_path,
+            )
+            if input_pause_state(flb, input_name) == 1:
+                break
+
+            if result.returncode != 0 or curl_status_code(result) == 0:
+                wait_for_input_pause_state(flb, input_name, True, timeout=2)
+                break
+
+            assert curl_status_code(result) == success_status, result.stdout
+
+        wait_for_input_pause_state(
+            flb,
+            input_name,
+            True,
+            timeout=30 if is_valgrind() else 15,
+        )
+
+        shutdown_started = time.monotonic()
+        stop_service()
+        shutdown_elapsed = time.monotonic() - shutdown_started
+
+        shutdown_limit = 30 if is_valgrind() else 8
+        assert shutdown_elapsed < shutdown_limit
+
+        for connection in active_connections:
+            assert_connection_closed(
+                connection,
+                timeout=20 if is_valgrind() else 5,
+            )
+    finally:
+        connection_flood.stop()
+        for connection in active_connections:
+            connection.close()
+
+
 def run_curl_without_check(
     url,
     payload,

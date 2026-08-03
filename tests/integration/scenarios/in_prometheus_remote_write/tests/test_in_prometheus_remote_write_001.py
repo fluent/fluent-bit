@@ -6,6 +6,7 @@ import pytest
 from utils.fluent_bit_manager import FluentBitManager
 from utils.input_pause_resume import (
     assert_connection_closed,
+    is_valgrind,
     open_partial_http_request,
     open_stalled_tcp_connection,
     wait_for_input_pause_state,
@@ -165,6 +166,7 @@ def test_in_prometheus_remote_write_pause_resume_and_shutdown(receiver_config):
         "sender_cleartext.yaml",
     )
     stalled_connections = []
+    shutdown_connections = []
     paused_connection = None
 
     try:
@@ -213,6 +215,14 @@ def test_in_prometheus_remote_write_pause_resume_and_shutdown(receiver_config):
         delivered_before_resume = _read_file(service.receiver.log_file).count(
             "fluentbit_input_metrics_scrapes_total"
         )
+        for _ in range(8):
+            shutdown_connections.append(
+                open_partial_http_request(
+                    "127.0.0.1",
+                    service.receiver_port,
+                )
+            )
+
         service.start_sender()
         service.wait_for_log_count(
             service.receiver.log_file,
@@ -227,9 +237,18 @@ def test_in_prometheus_remote_write_pause_resume_and_shutdown(receiver_config):
             True,
             timeout=30,
         )
+
+        for connection in shutdown_connections:
+            assert_connection_closed(connection)
+
+        shutdown_started = time.monotonic()
         service.stop()
+        shutdown_elapsed = time.monotonic() - shutdown_started
+        assert shutdown_elapsed < (30 if is_valgrind() else 8)
     finally:
         for connection in stalled_connections:
+            connection.close()
+        for connection in shutdown_connections:
             connection.close()
         if paused_connection is not None:
             paused_connection.close()
