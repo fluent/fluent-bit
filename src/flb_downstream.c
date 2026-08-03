@@ -34,15 +34,18 @@
 #include <fluent-bit/flb_thread_storage.h>
 
 static inline int prepare_destroy_conn_safe(struct flb_connection *connection);
+static void resume_pending_event_coroutines(struct flb_downstream *stream);
 
-static void flb_downstream_conn_event_coro(void)
+static void flb_downstream_conn_event_coro_terminate(struct flb_coro *coro)
 {
-    struct flb_coro *coro;
-    struct flb_connection *connection;
+    while (FLB_TRUE) {
+        flb_coro_yield(coro, FLB_FALSE);
+    }
+}
 
-    coro = flb_coro_get();
-    connection = coro->data;
-
+static void flb_downstream_conn_event_loop(struct flb_connection *connection,
+                                           struct flb_coro *coro)
+{
     while (FLB_TRUE) {
         flb_coro_yield(coro, FLB_FALSE);
 
@@ -68,6 +71,92 @@ static void flb_downstream_conn_event_coro(void)
             connection->coroutine = coro;
         }
     }
+}
+
+static void flb_downstream_conn_async_event_loop(
+    struct flb_connection *connection,
+    struct flb_coro *coro)
+{
+    while (FLB_TRUE) {
+        connection->busy_flag = FLB_TRUE;
+        connection->event_callback(connection);
+        connection->busy_flag = FLB_FALSE;
+
+        if (connection->event_release_pending == FLB_TRUE) {
+            connection->event_release_pending = FLB_FALSE;
+            prepare_destroy_conn_safe(connection);
+        }
+
+        if (connection->fd == FLB_INVALID_SOCKET) {
+            connection->coroutine = NULL;
+            flb_downstream_conn_event_coro_terminate(coro);
+        }
+
+        connection->coroutine = coro;
+    }
+}
+
+static void flb_downstream_conn_event_coro(void)
+{
+    struct flb_coro *coro;
+    struct flb_connection *connection;
+
+    coro = flb_coro_get();
+    connection = coro->data;
+
+    flb_downstream_conn_event_loop(connection, coro);
+}
+
+static void flb_downstream_conn_accept_event_coro(void)
+{
+    int result;
+    struct flb_coro *coro;
+    struct flb_connection *connection;
+
+    coro = flb_coro_get();
+    connection = coro->data;
+
+    flb_connection_reset_connection_timeout(connection);
+    result = flb_io_net_accept(connection, coro);
+    flb_connection_unset_connection_timeout(connection);
+
+    if (result == 0 &&
+        connection->event_release_pending == FLB_FALSE &&
+        connection->downstream->paused == FLB_FALSE) {
+        result = connection->accept_callback(
+                     connection,
+                     connection->accept_callback_data);
+    }
+
+    if (result == 0 &&
+        connection->event_release_pending == FLB_FALSE &&
+        connection->fd != FLB_INVALID_SOCKET) {
+        flb_connection_reset_io_timeout(connection);
+
+        result = mk_event_add(connection->evl,
+                              connection->fd,
+                              FLB_ENGINE_EV_THREAD,
+                              connection->event_registration_mask,
+                              &connection->event);
+    }
+
+    connection->busy_flag = FLB_FALSE;
+
+    if (result != 0 ||
+        connection->event_release_pending == FLB_TRUE ||
+        connection->fd == FLB_INVALID_SOCKET) {
+        connection->event_release_pending = FLB_FALSE;
+        prepare_destroy_conn_safe(connection);
+        connection->coroutine = NULL;
+        flb_downstream_conn_event_coro_terminate(coro);
+    }
+
+    /*
+     * Async connection callbacks own their read wait. Run them continuously
+     * so TLS application data buffered during a handshake is consumed without
+     * requiring another kernel readiness edge.
+     */
+    flb_downstream_conn_async_event_loop(connection, coro);
 }
 
 /* Config map for Downstream networking setup */
@@ -579,6 +668,138 @@ int flb_downstream_conn_release(struct flb_connection *connection)
 
     if (resume == FLB_TRUE) {
         flb_downstream_conn_event_resume(connection);
+    }
+
+    return ret;
+}
+
+int flb_downstream_conn_release_all(struct flb_downstream *stream)
+{
+    struct flb_connection *connection;
+    struct mk_list *head;
+    struct mk_list *tmp;
+
+    if (stream == NULL) {
+        return -1;
+    }
+
+    flb_stream_acquire_lock(&stream->base, FLB_TRUE);
+
+    mk_list_foreach_safe(head, tmp, &stream->busy_queue) {
+        connection = mk_list_entry(head, struct flb_connection, _head);
+
+        if (connection->event_coroutine != NULL &&
+            connection->busy_flag == FLB_TRUE) {
+            connection->event_release_pending = FLB_TRUE;
+
+            if (flb_coro_get() != connection->event_coroutine) {
+                wake_event_coroutine(connection, ECANCELED);
+            }
+        }
+        else {
+            prepare_destroy_conn(connection);
+        }
+    }
+
+    flb_stream_release_lock(&stream->base);
+
+    if (flb_stream_is_thread_safe(&stream->base)) {
+        resume_pending_event_coroutines(stream);
+    }
+
+    return 0;
+}
+
+int flb_downstream_conn_event_accept(
+        struct flb_downstream *stream,
+        flb_connection_accept_callback accept_callback,
+        void *accept_callback_data,
+        flb_connection_event_callback event_callback,
+        int mask)
+{
+    int ret;
+    size_t stack_size;
+    flb_sockfd_t connection_fd;
+    struct flb_coro *coro;
+    struct flb_coro *previous_coro;
+    struct flb_connection *connection;
+    struct flb_config *config;
+
+    if (stream == NULL || accept_callback == NULL || event_callback == NULL ||
+        (mask & (MK_EVENT_READ | MK_EVENT_WRITE)) == 0 ||
+        (stream->base.transport != FLB_TRANSPORT_TCP &&
+         stream->base.transport != FLB_TRANSPORT_UNIX_STREAM)) {
+        return -1;
+    }
+
+    if (stream->paused == FLB_TRUE) {
+        connection_fd = flb_net_accept(stream->server_fd);
+        if (connection_fd >= 0) {
+            flb_socket_close(connection_fd);
+
+            return 0;
+        }
+
+        return -1;
+    }
+
+    config = stream->base.config;
+    if (config == NULL || flb_downstream_is_async(stream) == FLB_FALSE) {
+        return -1;
+    }
+
+    connection = flb_connection_create(FLB_INVALID_SOCKET,
+                                       FLB_DOWNSTREAM_CONNECTION,
+                                       stream,
+                                       flb_engine_evl_get(),
+                                       NULL);
+    if (connection == NULL) {
+        return -1;
+    }
+
+    coro = flb_coro_create(connection);
+    if (coro == NULL) {
+        flb_connection_destroy(connection);
+        return -1;
+    }
+
+    coro->caller = co_active();
+    coro->callee = co_create(config->coro_stack_size,
+                             flb_downstream_conn_accept_event_coro,
+                             &stack_size);
+    if (coro->callee == NULL) {
+        flb_coro_destroy(coro);
+        flb_connection_destroy(connection);
+        return -1;
+    }
+
+#ifdef FLB_HAVE_VALGRIND
+    coro->valgrind_stack_id = VALGRIND_STACK_REGISTER(
+                                  coro->callee,
+                                  ((char *) coro->callee) + stack_size);
+#endif
+
+    connection->accept_callback = accept_callback;
+    connection->accept_callback_data = accept_callback_data;
+    connection->event_callback = event_callback;
+    connection->event_registration_mask = mask;
+    connection->event_coroutine = coro;
+    connection->coroutine = coro;
+    connection->busy_flag = FLB_TRUE;
+    flb_connection_enable_flags(connection, FLB_IO_ASYNC);
+
+    flb_stream_acquire_lock(&stream->base, FLB_TRUE);
+    mk_list_add(&connection->_head, &stream->busy_queue);
+    flb_stream_release_lock(&stream->base);
+
+    previous_coro = flb_coro_get();
+    flb_coro_resume(coro);
+    flb_coro_set(previous_coro);
+
+    ret = 0;
+    if (connection->fd == FLB_INVALID_SOCKET &&
+        connection->coroutine == NULL) {
+        ret = -1;
     }
 
     return ret;
