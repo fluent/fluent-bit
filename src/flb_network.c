@@ -1924,10 +1924,14 @@ flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd)
                         SOCK_NONBLOCK | SOCK_CLOEXEC);
 #else
     remote_fd = accept(server_fd, (struct sockaddr*)&sock_addr, &socket_size);
-    flb_net_socket_nonblocking(remote_fd);
+
+    if (remote_fd != FLB_INVALID_SOCKET) {
+        flb_net_socket_nonblocking(remote_fd);
+    }
 #endif
 
-    if (remote_fd == -1) {
+    if (remote_fd == FLB_INVALID_SOCKET &&
+        !FLB_WOULDBLOCK()) {
         perror("accept4");
     }
 
