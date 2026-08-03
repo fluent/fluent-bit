@@ -117,13 +117,6 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    if (ctx->parsed_mode == FLB_SYSLOG_DTLS && ins->use_tls == FLB_FALSE) {
-        flb_plg_error(ctx->ins,
-                      "invalid configuration: mode=dtls requires tls=on");
-        flb_syslog_config_destroy(ctx);
-        return NULL;
-    }
-
     /* syslog_format */
     tmp = flb_output_get_property("syslog_format", ins);
     if (tmp) {
