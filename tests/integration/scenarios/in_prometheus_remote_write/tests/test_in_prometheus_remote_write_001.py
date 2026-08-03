@@ -4,6 +4,12 @@ import time
 import pytest
 
 from utils.fluent_bit_manager import FluentBitManager
+from utils.input_pause_resume import (
+    assert_connection_closed,
+    open_partial_http_request,
+    open_stalled_tcp_connection,
+    wait_for_input_pause_state,
+)
 from utils.network import find_available_port
 
 
@@ -72,7 +78,7 @@ class Service:
                 os.environ[key] = value
         self._previous_env.clear()
 
-    def start(self):
+    def start(self, *, start_sender=True):
         self._set_env("PROM_RW_RECEIVER_PORT", find_available_port())
         self._set_env("CERTIFICATE_TEST", self.tls_crt_file)
         self._set_env("PRIVATE_KEY_TEST", self.tls_key_file)
@@ -82,6 +88,10 @@ class Service:
         self.receiver_port = int(os.environ["PROM_RW_RECEIVER_PORT"])
         self.wait_for_log(self.receiver.log_file, f"listening on 127.0.0.1:{self.receiver_port}")
 
+        if start_sender:
+            self.start_sender()
+
+    def start_sender(self):
         self.sender = FluentBitManager(self.sender_config)
         self.sender.start()
 
@@ -102,6 +112,17 @@ class Service:
                 return contents
             time.sleep(interval)
         raise TimeoutError(f"Timed out waiting for {pattern} in {path}")
+
+    def wait_for_log_count(self, path, pattern, minimum, *, timeout=20, interval=0.5):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            count = _read_file(path).count(pattern)
+            if count >= minimum:
+                return count
+            time.sleep(interval)
+        raise TimeoutError(
+            f"Timed out waiting for {minimum} occurrences of {pattern} in {path}"
+        )
 
 
 @pytest.mark.parametrize("workers_enabled", [False, True], ids=["single_listener", "workers_4"])
@@ -127,4 +148,89 @@ def test_in_prometheus_remote_write_matrix(case, workers_enabled):
         assert f"listening on 127.0.0.1:{service.receiver_port}" in receiver_log
         assert "fluentbit_input_metrics_scrapes_total" in receiver_log
     finally:
+        service.stop()
+
+
+@pytest.mark.parametrize(
+    "receiver_config",
+    [
+        "receiver_pause_resume.yaml",
+        "receiver_pause_resume_workers.yaml",
+    ],
+    ids=["single_listener", "workers_4"],
+)
+def test_in_prometheus_remote_write_pause_resume_and_shutdown(receiver_config):
+    service = Service(
+        receiver_config,
+        "sender_cleartext.yaml",
+    )
+    stalled_connections = []
+    paused_connection = None
+
+    try:
+        service.start(start_sender=False)
+        for _ in range(8):
+            stalled_connections.append(
+                open_partial_http_request(
+                    "127.0.0.1",
+                    service.receiver_port,
+                )
+            )
+
+        service.start_sender()
+        wait_for_input_pause_state(
+            service.receiver,
+            "prometheus_remote_write.0",
+            True,
+            timeout=30,
+        )
+
+        for connection in stalled_connections:
+            assert_connection_closed(connection)
+
+        paused_connection = open_stalled_tcp_connection(
+            "127.0.0.1",
+            service.receiver_port,
+        )
+        assert_connection_closed(paused_connection)
+
+        service.sender.stop()
+        service.sender = None
+
+        wait_for_input_pause_state(
+            service.receiver,
+            "prometheus_remote_write.0",
+            False,
+            timeout=30,
+        )
+        service.wait_for_log(
+            service.receiver.log_file,
+            "fluentbit_input_metrics_scrapes_total",
+            timeout=30,
+            interval=0.5,
+        )
+
+        delivered_before_resume = _read_file(service.receiver.log_file).count(
+            "fluentbit_input_metrics_scrapes_total"
+        )
+        service.start_sender()
+        service.wait_for_log_count(
+            service.receiver.log_file,
+            "fluentbit_input_metrics_scrapes_total",
+            delivered_before_resume + 1,
+            timeout=30,
+            interval=0.5,
+        )
+        wait_for_input_pause_state(
+            service.receiver,
+            "prometheus_remote_write.0",
+            True,
+            timeout=30,
+        )
+        service.stop()
+    finally:
+        for connection in stalled_connections:
+            connection.close()
+        if paused_connection is not None:
+            paused_connection.close()
         service.stop()

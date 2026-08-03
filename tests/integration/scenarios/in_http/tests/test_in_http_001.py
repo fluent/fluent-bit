@@ -9,6 +9,16 @@ import requests
 
 from server.http_server import data_storage, http_server_run
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
+from utils.input_pause_resume import (
+    ConnectionFlood,
+    assert_connection_closed,
+    assert_pause_resume_cycles,
+    is_valgrind,
+    large_json_payload,
+    open_partial_http_request,
+    open_stalled_tcp_connection,
+    wait_for_input_pause_state,
+)
 from utils.test_service import FluentBitTestService
 
 logger = logging.getLogger(__name__)
@@ -139,6 +149,137 @@ def test_in_http_rejects_get_requests():
     service.stop()
 
     assert result["status_code"] >= 400
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        {
+            "id": "http1_cleartext_workers",
+            "config": "in_http_pause_resume.yaml",
+            "scheme": "http",
+            "http_mode": "http1.1",
+            "stalled_connection": open_partial_http_request,
+        },
+        {
+            "id": "http2_tls_workers",
+            "config": "in_http_pause_resume_http2_tls.yaml",
+            "scheme": "https",
+            "http_mode": "http2",
+            "stalled_connection": open_stalled_tcp_connection,
+        },
+    ],
+    ids=lambda case: case["id"],
+)
+def test_in_http_pause_resume_cycles(case):
+    service = Service(case["config"])
+
+    try:
+        service.start()
+
+        def open_active_connections():
+            return [
+                case["stalled_connection"](
+                    "127.0.0.1",
+                    service.flb_listener_port,
+                )
+                for _ in range(8)
+            ]
+
+        assert_pause_resume_cycles(
+            service.flb,
+            f"{case['scheme']}://localhost:{service.flb_listener_port}/",
+            large_json_payload(size=6144),
+            ["Content-Type: application/json"],
+            input_name="http.0",
+            success_status=201,
+            cycles=3,
+            http_mode=case["http_mode"],
+            pause_trigger_requests=2,
+            ca_cert_path=service.tls_crt_file if case["scheme"] == "https" else None,
+            active_connection_factory=open_active_connections,
+        )
+    finally:
+        service.stop()
+
+
+def test_in_http_shutdown_while_paused_with_active_connections():
+    service = Service("in_http_pause_resume.yaml")
+    service.start()
+    connection_flood = ConnectionFlood(
+        "127.0.0.1",
+        service.flb_listener_port,
+    )
+    stalled_connections = []
+
+    try:
+        for _ in range(8):
+            stalled_connections.append(
+                open_partial_http_request(
+                    "127.0.0.1",
+                    service.flb_listener_port,
+                )
+            )
+
+        connection_flood.start()
+        connection_flood.wait_for_attempts(256)
+
+        for _ in range(2):
+            result = run_curl_request(
+                f"http://localhost:{service.flb_listener_port}/",
+                large_json_payload(size=6144),
+                headers=["Content-Type: application/json"],
+                http_mode="http1.1",
+            )
+            assert result["status_code"] == 201, result
+
+        wait_for_input_pause_state(
+            service.flb,
+            "http.0",
+            True,
+            timeout=20 if is_valgrind() else 10,
+        )
+
+        shutdown_started = time.monotonic()
+        service.stop()
+        shutdown_elapsed = time.monotonic() - shutdown_started
+
+        shutdown_limit = 20 if is_valgrind() else 5
+        assert shutdown_elapsed < shutdown_limit
+
+        for connection in stalled_connections:
+            assert_connection_closed(connection)
+    finally:
+        connection_flood.stop()
+        for connection in stalled_connections:
+            connection.close()
+        service.stop()
+
+
+def test_in_http_async_tls_accept_timeout():
+    service = Service("in_http_accept_timeout_tls.yaml")
+    service.start()
+    stalled_connection = None
+
+    try:
+        stalled_connection = open_stalled_tcp_connection(
+            "127.0.0.1",
+            service.flb_listener_port,
+        )
+        assert_connection_closed(stalled_connection, timeout=10)
+
+        result = run_curl_request(
+            f"https://localhost:{service.flb_listener_port}/",
+            '{"message":"accept-timeout-recovered"}',
+            headers=["Content-Type: application/json"],
+            http_mode="http2",
+            ca_cert_path=service.tls_crt_file,
+        )
+        assert result["status_code"] == 201, result
+    finally:
+        if stalled_connection is not None:
+            stalled_connection.close()
+        service.stop()
 
 
 @pytest.mark.parametrize("case", PROTOCOL_CASES, ids=[case["id"] for case in PROTOCOL_CASES])
