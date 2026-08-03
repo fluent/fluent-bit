@@ -181,9 +181,30 @@ void test_ipv6_bracketed_listen()
     }
 }
 
+void test_accept_empty_nonblocking_listener()
+{
+    flb_sockfd_t fd_remote;
+    flb_sockfd_t fd_server;
+
+    fd_server = flb_net_server("0", TEST_HOSTv4,
+                               FLB_NETWORK_DEFAULT_BACKLOG_SIZE,
+                               FLB_FALSE);
+    if (!TEST_CHECK(fd_server != FLB_INVALID_SOCKET)) {
+        return;
+    }
+
+    fd_remote = flb_net_accept(fd_server);
+
+    TEST_CHECK(fd_remote == FLB_INVALID_SOCKET);
+    TEST_CHECK(FLB_WOULDBLOCK());
+
+    flb_socket_close(fd_server);
+}
+
 TEST_LIST = {
     { "ipv4_client_server", test_ipv4_client_server},
     { "ipv6_client_server", test_ipv6_client_server},
     { "ipv6_bracketed_listen", test_ipv6_bracketed_listen},
+    { "accept_empty_nonblocking_listener", test_accept_empty_nonblocking_listener},
     { 0 }
 };
