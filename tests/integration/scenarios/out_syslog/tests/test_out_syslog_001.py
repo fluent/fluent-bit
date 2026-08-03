@@ -1,6 +1,7 @@
 import os
 import shutil
 import socket
+import ssl
 import subprocess
 import threading
 import time
@@ -109,6 +110,45 @@ class TcpReceiver:
         return self.message
 
 
+class TlsReceiver(TcpReceiver):
+    def __init__(self, host, port, cert_file, key_file):
+        super().__init__(host, port)
+        self.cert_file = cert_file
+        self.key_file = key_file
+
+    def _run(self):
+        try:
+            tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            tls_context.load_cert_chain(certfile=self.cert_file, keyfile=self.key_file)
+
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+                server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                server.bind((self.host, self.port))
+                server.listen(1)
+                server.settimeout(120)
+                self._ready.set()
+                conn, _ = server.accept()
+
+                with tls_context.wrap_socket(conn, server_side=True) as tls_conn:
+                    tls_conn.settimeout(20)
+                    chunks = []
+
+                    while True:
+                        chunk = tls_conn.recv(4096)
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                        if b"\n" in chunk:
+                            break
+
+                    self.message = b"".join(chunks)
+                    self._done.set()
+        except Exception as exc:
+            self.error = exc
+            self._ready.set()
+            self._done.set()
+
+
 class DtlsReceiver:
     def __init__(self, port, cert_file, key_file):
         self.port = port
@@ -204,6 +244,13 @@ class Service:
             self.receiver = UdpReceiver("127.0.0.1", self.receiver_port)
         elif self.receiver_type == "tcp":
             self.receiver = TcpReceiver("127.0.0.1", self.receiver_port)
+        elif self.receiver_type == "tls":
+            self.receiver = TlsReceiver(
+                "127.0.0.1",
+                self.receiver_port,
+                self.tls_crt_file,
+                self.tls_key_file,
+            )
         elif self.receiver_type == "dtls":
             self.receiver = DtlsReceiver(self.receiver_port, self.tls_crt_file, self.tls_key_file)
         else:
@@ -258,8 +305,20 @@ def test_out_syslog_tcp():
     _assert_syslog_payload(payload)
 
 
+def test_out_syslog_tls_auto_enable():
+    service = Service("out_syslog_tls.yaml", "tls")
+    service.start()
+
+    try:
+        payload = service.receiver.wait_message(timeout=20)
+    finally:
+        service.stop()
+
+    _assert_syslog_payload(payload)
+
+
 @pytest.mark.skipif(not shutil.which("openssl"), reason="openssl is required for DTLS test")
-def test_out_syslog_dtls():
+def test_out_syslog_dtls_auto_enable():
     service = Service("out_syslog_dtls.yaml", "dtls")
     service.start()
 
