@@ -23,6 +23,9 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_socket.h>
+#ifdef FLB_HAVE_TLS
+#include <fluent-bit/tls/flb_tls.h>
+#endif
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -1638,6 +1641,56 @@ void flb_test_udp_mode_rejects_tls()
     flb_free(ctx);
 }
 
+#ifdef FLB_HAVE_TLS
+static void test_secure_mode_enables_tls(const char *mode, int tls_mode)
+{
+    struct test_ctx *ctx;
+    struct flb_output_instance *ins;
+    int ret;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "mode", mode,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        flb_destroy(ctx->flb);
+        flb_free(ctx);
+        return;
+    }
+
+    ins = flb_output_get_instance(ctx->flb->config, ctx->o_ffd);
+    TEST_CHECK(ins != NULL);
+    if (ins != NULL) {
+        TEST_CHECK(ins->use_tls == FLB_TRUE);
+        TEST_CHECK(ins->tls != NULL);
+        if (ins->tls != NULL) {
+            TEST_CHECK(ins->tls->mode == tls_mode);
+        }
+    }
+
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_tls_mode_enables_tls()
+{
+    test_secure_mode_enables_tls("tls", FLB_TLS_CLIENT_MODE);
+}
+
+void flb_test_dtls_mode_enables_tls()
+{
+    test_secure_mode_enables_tls("dtls", FLB_TLS_CLIENT_MODE_DGRAM);
+}
+#endif
+
 TEST_LIST = {
     /* rfc3164 */
     /* procid_key, msgid_key, sd_key are not supported */
@@ -1670,5 +1723,9 @@ TEST_LIST = {
     {"allow_longer_sd_id_rfc5424", flb_test_allow_longer_sd_id_rfc5424},
     {"malformed_longer_sd_id_rfc5424", flb_test_malformed_longer_sd_id_rfc5424},
     {"udp_mode_rejects_tls", flb_test_udp_mode_rejects_tls},
+#ifdef FLB_HAVE_TLS
+    {"tls_mode_enables_tls", flb_test_tls_mode_enables_tls},
+    {"dtls_mode_enables_tls", flb_test_dtls_mode_enables_tls},
+#endif
     {NULL, NULL}
 };
