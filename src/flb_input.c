@@ -2984,6 +2984,46 @@ static void flb_input_ingestion_resumed(struct flb_input_instance *ins)
     }
 }
 
+int flb_input_plugin_pause(struct flb_input_instance *ins)
+{
+    int ret;
+
+    ret = 0;
+
+    if (ins->p->cb_pause_checked != NULL) {
+        ret = ins->p->cb_pause_checked(ins->context, ins->config);
+    }
+    else if (ins->p->cb_pause != NULL) {
+        ins->p->cb_pause(ins->context, ins->config);
+    }
+
+    if (ret == 0) {
+        flb_input_ingestion_paused(ins);
+    }
+
+    return ret;
+}
+
+int flb_input_plugin_resume(struct flb_input_instance *ins)
+{
+    int ret;
+
+    ret = 0;
+
+    if (ins->p->cb_resume_checked != NULL) {
+        ret = ins->p->cb_resume_checked(ins->context, ins->config);
+    }
+    else if (ins->p->cb_resume != NULL) {
+        ins->p->cb_resume(ins->context, ins->config);
+    }
+
+    if (ret == 0) {
+        flb_input_ingestion_resumed(ins);
+    }
+
+    return ret;
+}
+
 int flb_input_pause(struct flb_input_instance *ins)
 {
     /* if the instance is already paused, just return */
@@ -2992,14 +3032,14 @@ int flb_input_pause(struct flb_input_instance *ins)
     }
 
     /* Pause only if a callback is set and a local context exists */
-    if (ins->p->cb_pause && ins->context) {
+    if ((ins->p->cb_pause || ins->p->cb_pause_checked) && ins->context) {
         if (flb_input_is_threaded(ins)) {
             /* signal the thread event loop about the 'pause' operation */
-            flb_input_thread_instance_pause(ins);
+            return flb_input_thread_instance_pause(ins);
         }
         else {
             flb_info("[input] pausing %s", flb_input_name(ins));
-            ins->p->cb_pause(ins->context, ins->config);
+            return flb_input_plugin_pause(ins);
         }
     }
 
@@ -3010,14 +3050,14 @@ int flb_input_pause(struct flb_input_instance *ins)
 
 int flb_input_resume(struct flb_input_instance *ins)
 {
-    if (ins->p->cb_resume && ins->context) {
+    if ((ins->p->cb_resume || ins->p->cb_resume_checked) && ins->context) {
         if (flb_input_is_threaded(ins)) {
             /* signal the thread event loop about the 'resume' operation */
-            flb_input_thread_instance_resume(ins);
+            return flb_input_thread_instance_resume(ins);
         }
         else {
             flb_info("[input] resume %s", flb_input_name(ins));
-            ins->p->cb_resume(ins->context, ins->config);
+            return flb_input_plugin_resume(ins);
         }
     }
 
