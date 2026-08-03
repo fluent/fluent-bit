@@ -265,7 +265,7 @@ static int compose_index_header(struct flb_elasticsearch *ctx,
     if (es_index_custom_len > 0) {
         p = logstash_index + es_index_custom_len;
     } else {
-        p = logstash_index + flb_sds_len(ctx->logstash_prefix);
+        p = logstash_index + strlen(logstash_index);
     }
     len = p - logstash_index;
     ret = snprintf(p, logstash_index_size - len, "%s",
