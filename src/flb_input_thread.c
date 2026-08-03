@@ -75,13 +75,17 @@ static inline int handle_input_event(flb_pipefd_t fd, struct flb_input_instance 
     }
     else if (type == FLB_INPUT_THREAD_TO_THREAD) {
         if (operation == FLB_INPUT_THREAD_PAUSE) {
-            if (ins->p->cb_pause && ins->context) {
-                ins->p->cb_pause(ins->context, ins->config);
+            if ((ins->p->cb_pause || ins->p->cb_pause_checked) && ins->context) {
+                if (flb_input_plugin_pause(ins) != 0) {
+                    flb_plg_error(ins, "could not pause input instance");
+                }
             }
         }
         else if (operation == FLB_INPUT_THREAD_RESUME) {
-            if (ins->p->cb_resume) {
-                ins->p->cb_resume(ins->context, ins->config);
+            if ((ins->p->cb_resume || ins->p->cb_resume_checked) && ins->context) {
+                if (flb_input_plugin_resume(ins) != 0) {
+                    flb_plg_error(ins, "could not resume input instance");
+                }
             }
         }
         else if (operation == FLB_INPUT_THREAD_EXIT) {
