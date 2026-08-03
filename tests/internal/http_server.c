@@ -683,6 +683,38 @@ void test_http_server_session_destroy_clears_drop_pending()
     flb_free(session);
 }
 
+void test_http_server_session_destroy_is_reentrant_safe()
+{
+    struct flb_connection connection;
+    struct flb_http_server_session *session;
+
+    memset(&connection, 0, sizeof(struct flb_connection));
+    connection.fd = FLB_INVALID_SOCKET;
+
+    session = flb_http_server_session_create(HTTP_PROTOCOL_VERSION_11);
+    if (!TEST_CHECK(session != NULL)) {
+        return;
+    }
+
+    session->connection = &connection;
+    session->releasable = FLB_FALSE;
+    session->destroying = FLB_TRUE;
+    connection.user_data = session;
+
+    flb_http_server_session_destroy(session);
+
+    TEST_CHECK(session->connection == &connection);
+    TEST_CHECK(connection.user_data == session);
+
+    session->destroying = FLB_FALSE;
+    flb_http_server_session_destroy(session);
+
+    TEST_CHECK(connection.user_data == NULL);
+    TEST_CHECK(session->connection == NULL);
+
+    flb_free(session);
+}
+
 TEST_LIST = {
     { "http_server_options_defaults", test_http_server_options_defaults },
     { "http_server_options_multi_worker_magic", test_http_server_options_multi_worker_magic },
@@ -703,5 +735,7 @@ TEST_LIST = {
       test_http_server_session_destroy_with_closed_connection },
     { "http_server_session_destroy_clears_drop_pending",
       test_http_server_session_destroy_clears_drop_pending },
+    { "http_server_session_destroy_is_reentrant_safe",
+      test_http_server_session_destroy_is_reentrant_safe },
     { 0 }
 };
