@@ -36,7 +36,11 @@ from google.protobuf import json_format
 # local imports
 from utils.data_utils import read_json_file
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
-from utils.input_pause_resume import assert_pause_resume_cycles, open_stalled_tcp_connection
+from utils.input_pause_resume import (
+    assert_pause_resume_cycles,
+    assert_shutdown_while_paused,
+    open_stalled_tcp_connection,
+)
 from utils.test_service import FluentBitTestService
 
 from server.http_server import http_server_run
@@ -1564,16 +1568,30 @@ def test_in_opentelemetry_http_workers_mixed_signal_matrix(case):
 
 
 @pytest.mark.parametrize(
-    "signal_type,json_input,endpoint",
+    "config_file,signal_type,json_input,endpoint",
     [
-        ("logs", "test_logs_001.in.json", "/v1/logs"),
-        ("metrics", "test_metrics_001.in.json", "/v1/metrics"),
-        ("traces", "test_traces_001.in.json", "/v1/traces"),
+        (config_file, signal_type, json_input, endpoint)
+        for config_file in [
+            "otlp_pause_resume_single.yaml",
+            "otlp_pause_resume_workers.yaml",
+        ]
+        for signal_type, json_input, endpoint in [
+            ("logs", "test_logs_001.in.json", "/v1/logs"),
+            ("metrics", "test_metrics_001.in.json", "/v1/metrics"),
+            ("traces", "test_traces_001.in.json", "/v1/traces"),
+        ]
     ],
-    ids=["logs", "metrics", "traces"],
+    ids=[
+        f"{'single_listener' if 'single' in config_file else 'workers_4'}-{signal_type}"
+        for config_file in [
+            "otlp_pause_resume_single.yaml",
+            "otlp_pause_resume_workers.yaml",
+        ]
+        for signal_type in ["logs", "metrics", "traces"]
+    ],
 )
-def test_in_opentelemetry_pause_resume_workers(signal_type, json_input, endpoint):
-    service = Service("otlp_pause_resume_workers.yaml")
+def test_in_opentelemetry_pause_resume(config_file, signal_type, json_input, endpoint):
+    service = Service(config_file)
 
     try:
         service.start()
@@ -1600,6 +1618,35 @@ def test_in_opentelemetry_pause_resume_workers(signal_type, json_input, endpoint
             pause_trigger_requests=64,
             resume_payload=resume_payload,
             active_connection_factory=open_active_connections,
+        )
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    ["otlp_pause_resume_single.yaml", "otlp_pause_resume_workers.yaml"],
+    ids=["single_listener", "workers_4"],
+)
+def test_in_opentelemetry_shutdown_while_paused(config_file):
+    service = Service(config_file)
+
+    try:
+        service.start()
+        payload = service.build_otel_payload("test_logs_001.in.json", "logs")
+        assert_shutdown_while_paused(
+            service.flb,
+            service.stop,
+            "127.0.0.1",
+            service.flb_listener_port,
+            f"http://localhost:{service.flb_listener_port}/v1/logs",
+            payload,
+            ["Content-Type: application/x-protobuf"],
+            input_name="opentelemetry.0",
+            success_status=201,
+            connection_factory=open_stalled_tcp_connection,
+            pause_trigger_requests=64,
+            http_mode="http2-prior-knowledge",
         )
     finally:
         service.stop()

@@ -10,14 +10,13 @@ import requests
 from server.http_server import data_storage, http_server_run
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
 from utils.input_pause_resume import (
-    ConnectionFlood,
     assert_connection_closed,
     assert_pause_resume_cycles,
+    assert_shutdown_while_paused,
     is_valgrind,
     large_json_payload,
     open_partial_http_request,
     open_stalled_tcp_connection,
-    wait_for_input_pause_state,
 )
 from utils.test_service import FluentBitTestService
 
@@ -155,6 +154,13 @@ def test_in_http_rejects_get_requests():
     "case",
     [
         {
+            "id": "http1_cleartext_single_listener",
+            "config": "in_http_pause_resume_single.yaml",
+            "scheme": "http",
+            "http_mode": "http1.1",
+            "stalled_connection": open_partial_http_request,
+        },
+        {
             "id": "http1_cleartext_workers",
             "config": "in_http_pause_resume.yaml",
             "scheme": "http",
@@ -203,56 +209,28 @@ def test_in_http_pause_resume_cycles(case):
         service.stop()
 
 
-def test_in_http_shutdown_while_paused_with_active_connections():
-    service = Service("in_http_pause_resume.yaml")
-    service.start()
-    connection_flood = ConnectionFlood(
-        "127.0.0.1",
-        service.flb_listener_port,
-    )
-    stalled_connections = []
+@pytest.mark.parametrize(
+    "config_file",
+    ["in_http_pause_resume_single.yaml", "in_http_pause_resume.yaml"],
+    ids=["single_listener", "workers_4"],
+)
+def test_in_http_shutdown_while_paused_with_active_connections(config_file):
+    service = Service(config_file)
 
     try:
-        for _ in range(8):
-            stalled_connections.append(
-                open_partial_http_request(
-                    "127.0.0.1",
-                    service.flb_listener_port,
-                )
-            )
-
-        connection_flood.start()
-        connection_flood.wait_for_attempts(256)
-
-        for _ in range(2):
-            result = run_curl_request(
-                f"http://localhost:{service.flb_listener_port}/",
-                large_json_payload(size=6144),
-                headers=["Content-Type: application/json"],
-                http_mode="http1.1",
-            )
-            assert result["status_code"] == 201, result
-
-        wait_for_input_pause_state(
+        service.start()
+        assert_shutdown_while_paused(
             service.flb,
-            "http.0",
-            True,
-            timeout=20 if is_valgrind() else 10,
+            service.stop,
+            "127.0.0.1",
+            service.flb_listener_port,
+            f"http://localhost:{service.flb_listener_port}/",
+            large_json_payload(size=6144),
+            ["Content-Type: application/json"],
+            input_name="http.0",
+            success_status=201,
         )
-
-        shutdown_started = time.monotonic()
-        service.stop()
-        shutdown_elapsed = time.monotonic() - shutdown_started
-
-        shutdown_limit = 20 if is_valgrind() else 5
-        assert shutdown_elapsed < shutdown_limit
-
-        for connection in stalled_connections:
-            assert_connection_closed(connection)
     finally:
-        connection_flood.stop()
-        for connection in stalled_connections:
-            connection.close()
         service.stop()
 
 
