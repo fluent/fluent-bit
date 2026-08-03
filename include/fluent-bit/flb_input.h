@@ -203,6 +203,8 @@ struct flb_input_plugin {
      */
     void (*cb_pause) (void *, struct flb_config *);
     void (*cb_resume) (void *, struct flb_config *);
+    int (*cb_pause_checked) (void *, struct flb_config *);
+    int (*cb_resume_checked) (void *, struct flb_config *);
 
     /*
      * Optional callback that can be used from a parent caller to ingest
@@ -906,6 +908,8 @@ void *flb_input_flush(struct flb_input_instance *ins, size_t *size);
 int flb_input_test_pause_resume(struct flb_input_instance *ins, int sleep_seconds);
 int flb_input_pause(struct flb_input_instance *ins);
 int flb_input_pause_all(struct flb_config *config);
+int flb_input_plugin_pause(struct flb_input_instance *ins);
+int flb_input_plugin_resume(struct flb_input_instance *ins);
 int flb_input_resume(struct flb_input_instance *ins);
 #ifdef FLB_HAVE_METRICS
 void flb_input_rate_update(struct flb_input_instance *ins,
