@@ -36,6 +36,7 @@ from google.protobuf import json_format
 # local imports
 from utils.data_utils import read_json_file
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
+from utils.input_pause_resume import assert_pause_resume_cycles, open_stalled_tcp_connection
 from utils.test_service import FluentBitTestService
 
 from server.http_server import http_server_run
@@ -1560,6 +1561,48 @@ def test_in_opentelemetry_http_workers_mixed_signal_matrix(case):
     assert "/v1/logs" in paths_seen
     assert "/v1/metrics" in paths_seen
     assert "/v1/traces" in paths_seen
+
+
+@pytest.mark.parametrize(
+    "signal_type,json_input,endpoint",
+    [
+        ("logs", "test_logs_001.in.json", "/v1/logs"),
+        ("metrics", "test_metrics_001.in.json", "/v1/metrics"),
+        ("traces", "test_traces_001.in.json", "/v1/traces"),
+    ],
+    ids=["logs", "metrics", "traces"],
+)
+def test_in_opentelemetry_pause_resume_workers(signal_type, json_input, endpoint):
+    service = Service("otlp_pause_resume_workers.yaml")
+
+    try:
+        service.start()
+        resume_payload = service.build_otel_payload(json_input, signal_type)
+
+        def open_active_connections():
+            return [
+                open_stalled_tcp_connection(
+                    "127.0.0.1",
+                    service.flb_listener_port,
+                )
+                for _ in range(8)
+            ]
+
+        assert_pause_resume_cycles(
+            service.flb,
+            f"http://localhost:{service.flb_listener_port}{endpoint}",
+            resume_payload,
+            ["Content-Type: application/x-protobuf"],
+            input_name="opentelemetry.0",
+            success_status=201,
+            cycles=2,
+            http_mode="http2-prior-knowledge",
+            pause_trigger_requests=64,
+            resume_payload=resume_payload,
+            active_connection_factory=open_active_connections,
+        )
+    finally:
+        service.stop()
 
 
 def test_in_opentelemetry_http_workers_export_ingress_queue_metrics():
