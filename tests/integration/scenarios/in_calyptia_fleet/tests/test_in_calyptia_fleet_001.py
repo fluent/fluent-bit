@@ -122,9 +122,27 @@ def _fleet_files_payload():
     return [{"name": PARSER_FILE, "contents": encoded}]
 
 
-def _bootstrap_config(cache_dir, api_port, *, legacy=False, interval_sec="3600"):
+def _customs_section(cache_dir, api_port, *, legacy=False, interval_sec="3600"):
     legacy_value = "on" if legacy else "off"
 
+    return f"""
+customs:
+  - name: calyptia
+    api_key: {API_KEY}
+    calyptia_host: 127.0.0.1
+    calyptia_port: "{api_port}"
+    calyptia_tls: off
+    calyptia_tls.verify: off
+    fleet_name: {FLEET_ID}
+    machine_id: {MACHINE_ID}
+    fleet.config_dir: {_yaml_string(cache_dir)}
+    fleet_config_legacy_format: {legacy_value}
+    fleet.interval_sec: "{interval_sec}"
+    fleet.interval_nsec: "0"
+""".lstrip()
+
+
+def _bootstrap_config(cache_dir, api_port, *, legacy=False, interval_sec="3600"):
     return f"""
 service:
   flush: 1
@@ -133,40 +151,13 @@ service:
   http_server: on
   http_port: ${{FLUENT_BIT_HTTP_MONITORING_PORT}}
 
-customs:
-  - name: calyptia
-    api_key: {API_KEY}
-    calyptia_host: 127.0.0.1
-    calyptia_port: "{api_port}"
-    calyptia_tls: off
-    calyptia_tls.verify: off
-    fleet_name: {FLEET_ID}
-    machine_id: {MACHINE_ID}
-    fleet.config_dir: {_yaml_string(cache_dir)}
-    fleet_config_legacy_format: {legacy_value}
-    fleet.interval_sec: "{interval_sec}"
-    fleet.interval_nsec: "0"
-""".lstrip()
+""".lstrip() + _customs_section(
+        cache_dir, api_port, legacy=legacy, interval_sec=interval_sec
+    )
 
 
 def _custom_config(cache_dir, api_port, *, legacy=False, interval_sec="3600"):
-    legacy_value = "on" if legacy else "off"
-
-    return f"""
-customs:
-  - name: calyptia
-    api_key: {API_KEY}
-    calyptia_host: 127.0.0.1
-    calyptia_port: "{api_port}"
-    calyptia_tls: off
-    calyptia_tls.verify: off
-    fleet_name: {FLEET_ID}
-    machine_id: {MACHINE_ID}
-    fleet.config_dir: {_yaml_string(cache_dir)}
-    fleet_config_legacy_format: {legacy_value}
-    fleet.interval_sec: "{interval_sec}"
-    fleet.interval_nsec: "0"
-""".lstrip()
+    return _customs_section(cache_dir, api_port, legacy=legacy, interval_sec=interval_sec)
 
 
 def _fleet_config(
@@ -237,7 +228,15 @@ def _write_bootstrap_config(tmp_path, cache_dir, api_port, *, legacy=False, inte
     return config_path
 
 
-def _write_old_cache(cache_dir, api_port, ref_name, marker, *, target_marker=None):
+def _write_old_cache(
+    cache_dir,
+    api_port,
+    ref_name,
+    marker,
+    *,
+    target_marker=None,
+    interval_sec="3600",
+):
     timestamp = 1234567890
     base_dir = _fleet_base_dir(cache_dir)
     timestamp_dir = base_dir / str(timestamp)
@@ -247,14 +246,26 @@ def _write_old_cache(cache_dir, api_port, ref_name, marker, *, target_marker=Non
 
     timestamp_dir.mkdir(parents=True)
     flat_config.write_text(
-        _fleet_config(cache_dir, api_port, marker, include_custom=True),
+        _fleet_config(
+            cache_dir,
+            api_port,
+            marker,
+            include_custom=True,
+            interval_sec=interval_sec,
+        ),
         encoding="utf-8",
     )
     parser_config.write_text(PARSER_CONFIG, encoding="utf-8")
 
     if target_marker is not None:
         nested_config.write_text(
-            _fleet_config(cache_dir, api_port, target_marker, include_custom=True),
+            _fleet_config(
+                cache_dir,
+                api_port,
+                target_marker,
+                include_custom=True,
+                interval_sec=interval_sec,
+            ),
             encoding="utf-8",
         )
 
@@ -527,6 +538,54 @@ def test_fleet_startup_migrates_flat_cur_ref_for_relative_includes(tmp_path):
     assert not paths["flat_config"].exists()
     assert _read_ref_path(paths["ref_file"]) == paths["nested_config"]
     assert marker in log_text
+
+
+def test_fleet_migrates_flat_cache_then_applies_server_update(tmp_path):
+    api_port = find_available_port()
+    cache_dir = tmp_path / "fleet-cache"
+    old_marker = "migrated-flat-fleet-config-ok"
+    new_marker = "server-updated-nested-fleet-config-ok"
+    paths = _write_old_cache(
+        cache_dir,
+        api_port,
+        "cur",
+        old_marker,
+        interval_sec="2",
+    )
+    config_path = _write_bootstrap_config(tmp_path, cache_dir, api_port)
+    fleet_config = _fleet_config(cache_dir, api_port, new_marker, interval_sec="1")
+    service = FluentBitTestService(str(config_path))
+
+    with FleetAPIServer(api_port, fleet_config, _fleet_files_payload()) as api:
+        try:
+            service.start()
+            _wait_for_log_contains(service, old_marker, timeout=30)
+            log_text = _wait_for_log_contains(service, new_marker, timeout=45)
+            service.wait_for_condition(
+                lambda: (
+                    paths["ref_file"].is_file()
+                    and _read_ref_path(paths["ref_file"]) != paths["nested_config"]
+                    and not (paths["base_dir"] / "old.ref").exists()
+                ),
+                timeout=45,
+                interval=0.5,
+                description="updated fleet config commit and old config cleanup",
+            )
+        finally:
+            service.stop()
+
+    current_config = _read_ref_path(paths["ref_file"])
+    _assert_no_include_error(log_text)
+    assert not paths["flat_config"].exists()
+    assert not paths["nested_config"].exists()
+    assert current_config.name == "config.yaml"
+    assert current_config.parent.parent == paths["base_dir"]
+    assert (current_config.parent / PARSER_FILE).is_file()
+    assert new_marker in current_config.read_text(encoding="utf-8")
+    assert any(request["path"] == f"/v1/fleets/{FLEET_ID}/config" for request in api.requests)
+    assert any(request["path"] == f"/v1/fleets/{FLEET_ID}/files" for request in api.requests)
+    assert old_marker in log_text
+    assert new_marker in log_text
 
 
 def test_fleet_startup_keeps_nested_cur_ref_for_relative_includes(tmp_path):
