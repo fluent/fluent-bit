@@ -142,6 +142,11 @@ struct mk_server
      * is used when overriding the configuration from some caller
      */
     char *transport_layer;
+    int tls_mode;
+    char *tls_cert_file;
+    char *tls_cert_chain_file;
+    char *tls_key_file;
+    char *tls_dh_param_file;
 
     /* Define the default mime type when is not possible to find the proper one */
     struct mk_list mimetype_list;

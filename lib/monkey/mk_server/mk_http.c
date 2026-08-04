@@ -384,6 +384,7 @@ static int mk_http_error_page(char *title, mk_ptr_t *message, char *signature,
                               char **out_buf, unsigned long *out_size)
 {
     char *temp;
+    char *escaped;
 
     *out_buf = NULL;
 
@@ -394,9 +395,19 @@ static int mk_http_error_page(char *title, mk_ptr_t *message, char *signature,
         temp = mk_string_dup("");
     }
 
-    mk_string_build(out_buf, out_size,
-                    MK_REQUEST_DEFAULT_PAGE, title, temp, signature);
+    if (!temp) {
+        return -1;
+    }
+
+    escaped = mk_string_html_escape(temp);
     mk_mem_free(temp);
+    if (!escaped) {
+        return -1;
+    }
+
+    mk_string_build(out_buf, out_size,
+                    MK_REQUEST_DEFAULT_PAGE, title, escaped, signature);
+    mk_mem_free(escaped);
     return 0;
 }
 
@@ -457,6 +468,10 @@ static int mk_http_range_parse(struct mk_http_request *sr)
     if ((sep_pos = mk_string_char_search(sr->range.data, '-', sr->range.len)) < 0)
         return -1;
 
+    if (sep_pos < eq_pos) {
+        return -1;
+    }
+
     len = sr->range.len;
     sh = &sr->headers;
 
@@ -476,10 +491,16 @@ static int mk_http_range_parse(struct mk_http_request *sr)
     /* =yyy-xxx */
     if ((eq_pos + 1 != sep_pos) && (len > sep_pos + 1)) {
         buffer = mk_string_copy_substr(sr->range.data, eq_pos + 1, sep_pos);
+        if (!buffer) {
+            return -1;
+        }
         sh->ranges[0] = (unsigned long) atol(buffer);
         mk_mem_free(buffer);
 
         buffer = mk_string_copy_substr(sr->range.data, sep_pos + 1, len);
+        if (!buffer) {
+            return -1;
+        }
         sh->ranges[1] = (unsigned long) atol(buffer);
         mk_mem_free(buffer);
 
@@ -493,6 +514,9 @@ static int mk_http_range_parse(struct mk_http_request *sr)
     /* =yyy- */
     if ((eq_pos + 1 != sep_pos) && (len == sep_pos + 1)) {
         buffer = mk_string_copy_substr(sr->range.data, eq_pos + 1, len);
+        if (!buffer) {
+            return -1;
+        }
         sr->headers.ranges[0] = (unsigned long) atol(buffer);
         mk_mem_free(buffer);
 
@@ -522,7 +546,16 @@ static int mk_http_directory_redirect_check(struct mk_http_session *cs,
         return 0;
     }
 
+    if (!sr->host.data || sr->host.len <= 0) {
+        mk_http_error(MK_CLIENT_BAD_REQUEST, cs, sr, server);
+        return -1;
+    }
+
     host = mk_ptr_to_buf(sr->host);
+    if (!host) {
+        mk_http_error(MK_CLIENT_BAD_REQUEST, cs, sr, server);
+        return -1;
+    }
 
     /*
      * Add ending slash to the location string
@@ -588,6 +621,9 @@ static inline char *mk_http_index_lookup(mk_ptr_t *path_base,
     }
 
     off = path_base->len;
+    if ((size_t) off >= buf_size) {
+        return NULL;
+    }
     memcpy(buf, path_base->data, off);
 
     mk_list_foreach(head, server->index_files) {
@@ -999,7 +1035,6 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
         sr->in_file.fd           = sr->file_fd;
         sr->in_file.bytes_offset = 0;
         sr->in_file.bytes_total  = sr->file_info.size;
-        sr->in_file.stream       = &sr->stream;
     }
 
     /* Process methods */
@@ -1042,8 +1077,10 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
     /* Send file content */
     if (sr->method == MK_METHOD_GET || sr->method == MK_METHOD_POST) {
         /* Note: bytes and offsets are set after the Range check */
-        sr->in_file.type = MK_STREAM_FILE;
-        mk_stream_append(&sr->in_file, &sr->stream);
+        mk_stream_in_file(&sr->stream, &sr->in_file, sr->file_fd,
+                          sr->in_file.bytes_total,
+                          sr->in_file.bytes_offset,
+                          NULL, NULL);
     }
 
     /*
@@ -1138,15 +1175,27 @@ int mk_http_request_end(struct mk_http_session *cs, struct mk_server *server)
     ret = mk_http_parser_more(&cs->parser, cs->body_length);
     if (ret == MK_TRUE) {
         /* Our pipeline request limit is the same that our keepalive limit */
+        if (cs->parser.i < 0 ||
+            (unsigned int) (cs->parser.i + 1) >= cs->body_length) {
+            goto shutdown;
+        }
+
         cs->counter_connections++;
         len = (cs->body_length - cs->parser.i) -1;
+        if (len <= 0) {
+            goto shutdown;
+        }
         memmove(cs->body,
                 cs->body + cs->parser.i + 1,
                 len);
         cs->body_length = len;
 
         /* Prepare for next one */
-        sr = mk_list_entry_first(&cs->request_list, struct mk_http_request, _head);
+        if (mk_list_is_empty(&cs->request_list) == 0) {
+            cs->close_now = MK_TRUE;
+            goto shutdown;
+        }
+        sr = &cs->sr_fixed;
         mk_http_request_free(sr, server);
         mk_http_request_init(cs, sr, server);
         mk_http_parser_init(&cs->parser);
@@ -1429,7 +1478,7 @@ int mk_http_session_init(struct mk_http_session *cs, struct mk_sched_conn *conn,
 
     /* alloc space for body content */
     if (conn->net->buffer_size > MK_REQUEST_CHUNK) {
-        cs->body = mk_mem_alloc(conn->net->buffer_size);
+        cs->body = mk_mem_alloc(conn->net->buffer_size + 1);
         cs->body_size = conn->net->buffer_size;
     }
     else {
@@ -1626,9 +1675,10 @@ int mk_http_sched_done(struct mk_sched_conn *conn,
     struct mk_http_request *sr;
 
     session = mk_http_session_get(conn);
-    sr = mk_list_entry_first(&session->request_list,
-                             struct mk_http_request, _head);
-    mk_plugin_stage_run_40(session, sr, server);
+    if (mk_list_is_empty(&session->request_list) != 0) {
+        sr = &session->sr_fixed;
+        mk_plugin_stage_run_40(session, sr, server);
+    }
 
     return mk_http_request_end(session, server);
 }

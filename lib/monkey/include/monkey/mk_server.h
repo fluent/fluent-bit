@@ -24,6 +24,7 @@
 #include <monkey/mk_socket.h>
 #include <monkey/mk_config.h>
 #include <monkey/mk_core.h>
+#include <monkey/mk_plugin_net.h>
 
 #define MK_SERVER_SIGNAL_START     0xEEEEEEEE
 #define MK_SERVER_SIGNAL_STOP      0xDDDDDDDD
@@ -33,7 +34,7 @@ struct mk_server_listen
     struct mk_event event;
 
     int server_fd;
-    struct mk_plugin *network;
+    struct mk_plugin_network *network;
     struct mk_sched_handler *protocol;
     struct mk_config_listener *listen;
     struct mk_list _head;

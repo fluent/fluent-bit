@@ -17,9 +17,7 @@
 #define HTTP_CONNECT_TIMEOUT	45
 #define HTTP_WRITE_TIMEOUT	50
 #define HTTP_READ_TIMEOUT	50
-
-#define HTTP_PREFIX		"http://"
-#define HTTP_DEFAULTPORT	80
+#define HTTP_INITIAL_RETRY_TIMEOUT	2
 
 enum message_read_status {
 	ALL_DATA_READ = 1,
@@ -32,9 +30,6 @@ enum message_read_status {
 struct evbuffer;
 struct addrinfo;
 struct evhttp_request;
-
-/* Indicates an unknown request method. */
-#define EVHTTP_REQ_UNKNOWN_ (1<<15)
 
 enum evhttp_connection_state {
 	EVCON_DISCONNECTED,	/**< not currently connected not trying either*/
@@ -56,7 +51,6 @@ struct evhttp_connection {
 	 * server */
 	TAILQ_ENTRY(evhttp_connection) next;
 
-	evutil_socket_t fd;
 	struct bufferevent *bufev;
 
 	struct event retry_ev;		/* for retrying connects */
@@ -67,6 +61,9 @@ struct evhttp_connection {
 	char *address;			/* address to connect to */
 	ev_uint16_t port;
 
+#ifndef _WIN32
+	char *unixsocket;
+#endif
 	size_t max_headers_size;
 	ev_uint64_t max_body_size;
 
@@ -79,8 +76,13 @@ struct evhttp_connection {
 /* Installed when attempt to read HTTP error after write failed, see
  * EVHTTP_CON_READ_ON_WRITE_ERROR */
 #define EVHTTP_CON_READING_ERROR	(EVHTTP_CON_AUTOFREE << 1)
+/* Timeout is not default */
+#define EVHTTP_CON_TIMEOUT_ADJUSTED	(EVHTTP_CON_READING_ERROR << 1)
 
-	struct timeval timeout;		/* timeout for events */
+	struct timeval timeout_connect;		/* timeout for connect phase */
+	struct timeval timeout_read;		/* timeout for read */
+	struct timeval timeout_write;		/* timeout for write */
+
 	int retry_cnt;			/* retry count */
 	int retry_max;			/* maximum number of retries */
 	struct timeval initial_retry_timeout; /* Timeout for low long to wait
@@ -105,6 +107,8 @@ struct evhttp_connection {
 	struct event_base *base;
 	struct evdns_base *dns_base;
 	int ai_family;
+
+	evhttp_ext_method_cb ext_method_cmp;
 };
 
 /* A callback for an http server */
@@ -120,9 +124,16 @@ struct evhttp_cb {
 /* both the http server as well as the rpc system need to queue connections */
 TAILQ_HEAD(evconq, evhttp_connection);
 
+/* WebSockets connections */
+TAILQ_HEAD(evwsq, evws_connection);
+
 /* each bound socket is stored in one of these */
 struct evhttp_bound_socket {
 	TAILQ_ENTRY(evhttp_bound_socket) next;
+
+	struct evhttp *http;
+	struct bufferevent* (*bevcb)(struct event_base *, void *);
+	void *bevcbarg;
 
 	struct evconnlistener *listener;
 };
@@ -143,8 +154,12 @@ struct evhttp {
 
 	TAILQ_HEAD(httpcbq, evhttp_cb) callbacks;
 
-	/* All live connections on this host. */
+	/* All live HTTP connections on this host. */
 	struct evconq connections;
+	/* All live WebSockets sessions on this host. */
+	struct evwsq ws_sessions;
+	int connection_max;
+	int connection_cnt;
 
 	TAILQ_HEAD(vhostsq, evhttp) virtualhosts;
 
@@ -153,7 +168,8 @@ struct evhttp {
 	/* NULL if this server is not a vhost */
 	char *vhost_pattern;
 
-	struct timeval timeout;
+	struct timeval timeout_read;		/* timeout for read */
+	struct timeval timeout_write;		/* timeout for write */
 
 	size_t default_max_headers_size;
 	ev_uint64_t default_max_body_size;
@@ -162,34 +178,61 @@ struct evhttp {
 
 	/* Bitmask of all HTTP methods that we accept and pass to user
 	 * callbacks. */
-	ev_uint16_t allowed_methods;
+	ev_uint32_t allowed_methods;
 
 	/* Fallback callback if all the other callbacks for this connection
 	   don't match. */
 	void (*gencb)(struct evhttp_request *req, void *);
 	void *gencbarg;
+
 	struct bufferevent* (*bevcb)(struct event_base *, void *);
 	void *bevcbarg;
+	int (*newreqcb)(struct evhttp_request *req, void *);
+	void *newreqcbarg;
+
+	int (*errorcb)(struct evhttp_request *, struct evbuffer *, int, const char *, void *);
+	void *errorcbarg;
 
 	struct event_base *base;
+
+	evhttp_ext_method_cb ext_method_cmp;
 };
 
 /* XXX most of these functions could be static. */
 
 /* resets the connection; can be reused for more requests */
-void evhttp_connection_reset_(struct evhttp_connection *);
+void evhttp_connection_reset_(struct evhttp_connection *, int);
 
 /* connects if necessary */
 int evhttp_connection_connect_(struct evhttp_connection *);
 
 enum evhttp_request_error;
 /* notifies the current request that it failed; resets connection */
+EVENT2_EXPORT_SYMBOL
 void evhttp_connection_fail_(struct evhttp_connection *,
     enum evhttp_request_error error);
 
+enum evhttp_transfer_encoding_header_status {
+	/* This Transfer-Encoding line was invalid.
+	 * (We consider all "chunked" encodings invalid except those at the end
+	 * of the sequence.) */
+	TE_INVALID,
+	/* This Transfer-Encoding line ended with the "chunked" encoding. */
+	TE_ENDS_IN_CHUNKED,
+	/* This Transfer-Encoding line was valid and did not contain "chunked" */
+	TE_NO_CHUNKED,
+};
+EVENT2_EXPORT_SYMBOL
+int evhttp_str_is_chunked_(const char *value, const char *eos);
+EVENT2_EXPORT_SYMBOL
+enum evhttp_transfer_encoding_header_status
+evhttp_check_transfer_encoding_(const char *value);
+
 enum message_read_status;
 
+EVENT2_EXPORT_SYMBOL
 enum message_read_status evhttp_parse_firstline_(struct evhttp_request *, struct evbuffer*);
+EVENT2_EXPORT_SYMBOL
 enum message_read_status evhttp_parse_headers_(struct evhttp_request *, struct evbuffer*);
 
 void evhttp_start_read_(struct evhttp_connection *);
@@ -199,7 +242,13 @@ void evhttp_start_write_(struct evhttp_connection *);
 void evhttp_response_code_(struct evhttp_request *, int, const char *);
 void evhttp_send_page_(struct evhttp_request *, struct evbuffer *);
 
+struct bufferevent * evhttp_start_ws_(struct evhttp_request *req);
+
+/* [] has been stripped */
+#define _EVHTTP_URI_HOST_HAS_BRACKETS 0x02
+
+EVENT2_EXPORT_SYMBOL
 int evhttp_decode_uri_internal(const char *uri, size_t length,
     char *ret, int decode_plus);
 
-#endif /* _HTTP_H */
+#endif /* HTTP_INTERNAL_H_INCLUDED_ */
