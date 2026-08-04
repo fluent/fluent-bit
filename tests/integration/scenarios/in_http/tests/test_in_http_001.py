@@ -246,11 +246,11 @@ def test_in_http_rejects_empty_content_length(header_value, following_data):
     try:
         service.start()
         response = send_raw_http1_request(service.flb_listener_port, request)
-        time.sleep(0.5)
-        forwarded_payloads = list(data_storage["payloads"])
+        service.assert_no_forwarded_payloads_for()
     finally:
         service.stop()
 
+    forwarded_payloads = list(data_storage["payloads"])
     assert response == b"" or b"HTTP/1.1 400" in response
     assert forwarded_payloads == []
 
@@ -509,6 +509,13 @@ class Service:
                 return data_storage["payloads"]
             time.sleep(0.5)
         raise TimeoutError("Timed out waiting for forwarded HTTP payloads")
+
+    def assert_no_forwarded_payloads_for(self, quiet_period=1.5):
+        deadline = time.time() + quiet_period
+
+        while time.time() < deadline:
+            assert data_storage["payloads"] == []
+            time.sleep(0.1)
 
     def stop(self):
         self.service.stop()
