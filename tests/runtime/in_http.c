@@ -637,7 +637,8 @@ void flb_test_http(void)
 
     num = get_output_num();
     TEST_CHECK(send_invalid_header_request() == 0);
-    flb_time_msleep(500);
+    /* Observe the same full dispatch and flush window as accepted requests. */
+    flb_time_msleep(1500);
     TEST_CHECK(get_output_num() == num);
 
     flb_http_client_destroy(c);
