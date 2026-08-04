@@ -1407,6 +1407,36 @@ int flb_output_plugin_property_check(struct flb_output_instance *ins,
     return 0;
 }
 
+#ifdef FLB_HAVE_TLS
+/* Eagerly validate tls.proxy.ca_file/ca_path so a bad path fails init here,
+ * instead of being silently ignored later in flb_output_upstream_set(). */
+int flb_output_proxy_tls_ca_check(struct flb_output_instance *ins)
+{
+    struct flb_tls *tls_proxy_validate;
+
+    if (ins->tls_proxy_ca_file == NULL && ins->tls_proxy_ca_path == NULL) {
+        return 0;
+    }
+
+    tls_proxy_validate = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                        ins->tls_proxy_verify,
+                                        0,
+                                        NULL,
+                                        ins->tls_proxy_ca_path,
+                                        ins->tls_proxy_ca_file,
+                                        NULL, NULL, NULL);
+    if (!tls_proxy_validate) {
+        flb_error("[output %s] error initializing TLS context for "
+                  "tls.proxy.ca_file/tls.proxy.ca_path",
+                  ins->name);
+        return -1;
+    }
+
+    flb_tls_destroy(tls_proxy_validate);
+    return 0;
+}
+#endif
+
 /* Trigger the output plugins setup callbacks to prepare them. */
 int flb_output_init_all(struct flb_config *config)
 {
@@ -1704,6 +1734,11 @@ int flb_output_init_all(struct flb_config *config)
                 }
             }
 # endif
+        }
+
+        if (flb_output_proxy_tls_ca_check(ins) == -1) {
+            flb_output_instance_destroy(ins);
+            return -1;
         }
 #endif
         /*

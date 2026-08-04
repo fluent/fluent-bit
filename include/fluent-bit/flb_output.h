@@ -1448,6 +1448,9 @@ int flb_output_oauth2_property_check(struct flb_output_instance *ins,
                                       struct flb_config *config);
 int flb_output_plugin_property_check(struct flb_output_instance *ins,
                                      struct flb_config *config);
+#ifdef FLB_HAVE_TLS
+int flb_output_proxy_tls_ca_check(struct flb_output_instance *ins);
+#endif
 int flb_output_init_all(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
 int flb_output_log_check(struct flb_output_instance *ins, int l);
