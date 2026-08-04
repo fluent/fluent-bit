@@ -374,6 +374,22 @@ static int flb_http_server_should_connection_be_closed(
     return FLB_TRUE;
 }
 
+struct flb_http_server_request_callback_context {
+    struct flb_http_server *server;
+    struct flb_http_request *request;
+    struct flb_http_response *response;
+};
+
+static int flb_http_server_request_callback_dispatch(void *data)
+{
+    struct flb_http_server_request_callback_context *context;
+
+    context = data;
+
+    return context->server->request_callback(context->request,
+                                             context->response);
+}
+
 static int flb_http_server_client_activity_event_handler(void *data)
 {
     int                             close_connection;
@@ -385,6 +401,7 @@ static int flb_http_server_client_activity_event_handler(void *data)
     struct flb_http_server_session *session;
     struct flb_http_server         *server;
     struct flb_http_stream         *stream;
+    struct flb_http_server_request_callback_context callback_context;
     int                             result;
     struct mk_event                *event;
 
@@ -453,7 +470,14 @@ static int flb_http_server_client_activity_event_handler(void *data)
         }
 
         if (server->request_callback != NULL) {
-            result = server->request_callback(request, response);
+            callback_context.server = server;
+            callback_context.request = request;
+            callback_context.response = response;
+
+            result = flb_downstream_conn_event_call_parent(
+                         connection,
+                         flb_http_server_request_callback_dispatch,
+                         &callback_context);
         }
         else {
             /* Report */
