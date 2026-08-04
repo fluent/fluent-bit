@@ -581,6 +581,10 @@ int flb_input_thread_instance_exit(struct flb_input_instance *ins)
 
     memcpy(&tid, &thi->th->tid, sizeof(pthread_t));
 
+    if (ins->p->cb_pre_exit && ins->context) {
+        ins->p->cb_pre_exit(ins->context, ins->config);
+    }
+
     /* compose message to pause the thread */
     val = FLB_BITS_U64_SET(FLB_INPUT_THREAD_TO_THREAD,
                            FLB_INPUT_THREAD_EXIT);
