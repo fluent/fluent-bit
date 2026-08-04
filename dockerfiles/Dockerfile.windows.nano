@@ -220,7 +220,7 @@ SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPref
 WORKDIR /fluent-bit/bin
 # Set up config files and binaries in single /fluent-bit hierarchy for easy copy in later stage
 RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
-    Copy-Item -Path /src/conf/fluent-bit-win32.conf /fluent-bit/etc/fluent-bit.conf; `
+    Copy-Item -Path /src/conf/fluent-bit-nano.conf /fluent-bit/etc/fluent-bit.conf; `
     Copy-Item -Path /src/conf/parsers.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_ambassador.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_java.conf /fluent-bit/etc/; `
@@ -255,6 +255,8 @@ LABEL org.opencontainers.image.title="Fluent Bit" `
 
 # Copy only the built artifacts from builder stage
 COPY --from=builder /fluent-bit /fluent-bit
+
+EXPOSE 24224
 
 ENTRYPOINT [ "C:\\fluent-bit\\bin\\fluent-bit.exe" ]
 # Hadolint gets confused by Windows it seems
