@@ -672,6 +672,8 @@ jobs:
             runs_on: windows-latest
           - tag: "windows-2025-${{ github.event.inputs.version }}"
             runs_on: windows-2025
+          - tag: "windows-nano-2025-${{ github.event.inputs.version }}"
+            runs_on: windows-2025
     steps:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
