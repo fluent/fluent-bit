@@ -206,6 +206,14 @@ struct flb_input_plugin {
      */
     int (*cb_ingest) (void *in_context, void *, size_t);
 
+    /*
+     * Notify a threaded input from the parent thread immediately before its
+     * event loop is asked to exit. This callback must only interrupt blocking
+     * work; the input thread remains responsible for releasing its context in
+     * cb_exit.
+     */
+    void (*cb_pre_exit) (void *, struct flb_config *);
+
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
 
