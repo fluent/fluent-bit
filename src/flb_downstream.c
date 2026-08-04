@@ -721,7 +721,6 @@ int flb_downstream_conn_event_accept(
     size_t stack_size;
     flb_sockfd_t connection_fd;
     struct flb_coro *coro;
-    struct flb_coro *previous_coro;
     struct flb_connection *connection;
     struct flb_config *config;
 
@@ -792,9 +791,7 @@ int flb_downstream_conn_event_accept(
     mk_list_add(&connection->_head, &stream->busy_queue);
     flb_stream_release_lock(&stream->base);
 
-    previous_coro = flb_coro_get();
-    flb_coro_resume(coro);
-    flb_coro_set(previous_coro);
+    flb_downstream_conn_event_resume(connection);
 
     ret = 0;
     if (connection->fd == FLB_INVALID_SOCKET &&
@@ -812,7 +809,6 @@ int flb_downstream_conn_event_register(struct flb_connection *connection,
     int ret;
     size_t stack_size;
     struct flb_coro *coro;
-    struct flb_coro *previous_coro;
     struct flb_config *config;
 
     if (connection == NULL || callback == NULL ||
@@ -859,9 +855,7 @@ int flb_downstream_conn_event_register(struct flb_connection *connection,
     flb_trace("[downstream] register event coroutine for connection #%i",
               connection->fd);
 
-    previous_coro = flb_coro_get();
-    flb_coro_resume(coro);
-    flb_coro_set(previous_coro);
+    flb_downstream_conn_event_resume(connection);
 
     ret = mk_event_add(connection->evl,
                        connection->fd,
@@ -880,13 +874,61 @@ int flb_downstream_conn_event_register(struct flb_connection *connection,
     return 0;
 }
 
+int flb_downstream_conn_event_call_parent(
+        struct flb_connection *connection,
+        flb_connection_event_callback callback,
+        void *callback_data)
+{
+    struct flb_coro *coro;
+
+    if (connection == NULL || callback == NULL) {
+        return -1;
+    }
+
+    coro = flb_coro_get();
+    if (coro == NULL || coro != connection->event_coroutine) {
+        return callback(callback_data);
+    }
+
+    if (connection->event_parent_callback != NULL) {
+        return -1;
+    }
+
+    connection->event_parent_callback = callback;
+    connection->event_parent_callback_data = callback_data;
+    flb_coro_yield(coro, FLB_FALSE);
+
+    return connection->event_parent_callback_result;
+}
+
 void flb_downstream_conn_event_resume(struct flb_connection *connection)
 {
+    int result;
+    void *callback_data;
+    flb_connection_event_callback callback;
     struct flb_coro *previous_coro;
 
     previous_coro = flb_coro_get();
     connection->event_wakeup_pending = FLB_FALSE;
-    flb_coro_resume(connection->event_coroutine);
+
+    while (connection->event_coroutine != NULL) {
+        flb_coro_resume(connection->event_coroutine);
+        flb_coro_set(previous_coro);
+
+        callback = connection->event_parent_callback;
+        if (callback == NULL) {
+            break;
+        }
+
+        callback_data = connection->event_parent_callback_data;
+        connection->event_parent_callback = NULL;
+        connection->event_parent_callback_data = NULL;
+
+        result = callback(callback_data);
+        connection->event_parent_callback_result = result;
+        connection->event_wakeup_pending = FLB_FALSE;
+    }
+
     flb_coro_set(previous_coro);
 }
 
