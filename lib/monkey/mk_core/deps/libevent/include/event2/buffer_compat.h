@@ -27,11 +27,12 @@
 #ifndef EVENT2_BUFFER_COMPAT_H_INCLUDED_
 #define EVENT2_BUFFER_COMPAT_H_INCLUDED_
 
+#include <stddef.h>
 #include <event2/visibility.h>
 
 /** @file event2/buffer_compat.h
 
-	Obsolete and deprecated versions of the functions in buffer.h: provided
+	@brief Obsolete and deprecated versions of the functions in buffer.h: provided
 	only for backward compatibility.
  */
 
@@ -90,9 +91,10 @@ typedef void (*evbuffer_cb)(struct evbuffer *buffer, size_t old_len, size_t new_
   @param cb the callback function to invoke when the evbuffer is modified,
 	 or NULL to remove all callbacks.
   @param cbarg an argument to be provided to the callback function
+  @return 0 if successful, or -1 on error
  */
 EVENT2_EXPORT_SYMBOL
-void evbuffer_setcb(struct evbuffer *buffer, evbuffer_cb cb, void *cbarg);
+int evbuffer_setcb(struct evbuffer *buffer, evbuffer_cb cb, void *cbarg);
 
 
 /**

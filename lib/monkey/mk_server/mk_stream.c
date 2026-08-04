@@ -19,6 +19,7 @@
 
 #include <monkey/monkey.h>
 #include <monkey/mk_stream.h>
+#include <monkey/mk_net.h>
 #include <assert.h>
 
 /* Create a new channel */
@@ -108,7 +109,9 @@ int mk_channel_flush(struct mk_channel *channel)
             mk_event_add(mk_sched_loop(),
                          channel->fd,
                          MK_EVENT_CONNECTION,
-                         MK_EVENT_WRITE,
+                         mk_net_transport_event_interest(channel->io,
+                                                         channel->fd,
+                                                         MK_EVENT_WRITE),
                          channel->event);
         }
     }

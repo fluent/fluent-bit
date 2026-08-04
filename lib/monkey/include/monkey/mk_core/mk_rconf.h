@@ -62,7 +62,7 @@ struct mk_rconf_file
 struct mk_rconf
 {
     int level;
-    int created;
+    time_t created;
     char *file;
     char *root_path;
 

@@ -135,7 +135,7 @@ struct mk_http_session
     char *body;
 
     /* Initial fixed size buffer for small requests */
-    char body_fixed[MK_REQUEST_CHUNK];
+    char body_fixed[MK_REQUEST_CHUNK + 1];
 
     /*
      * FIXME: in previous versions of Monkey we used to parse the complete request
