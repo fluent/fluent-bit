@@ -381,7 +381,7 @@ jobs:
 
   # This takes a long time...
   call-build-windows-container:
-    name: Windows container images
+    name: Windows ${{ matrix.windows-container-type }} ${{ matrix.windows-base-version }} container image
     runs-on: windows-${{ matrix.windows-base-version }}
     environment: ${{ inputs.environment }}
     needs:
@@ -389,14 +389,24 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        windows-base-version:
-          - '2022'
-          - '2025'
+        include:
+          - windows-base-version: '2022'
+            windows-container-type: servercore
+            dockerfile: Dockerfile.windows
+            image-tag-prefix: windows-2022
+          - windows-base-version: '2025'
+            windows-container-type: servercore
+            dockerfile: Dockerfile.windows
+            image-tag-prefix: windows-2025
+          - windows-base-version: '2025'
+            windows-container-type: nanoserver
+            dockerfile: Dockerfile.windows.nano
+            image-tag-prefix: windows-nano-2025
     permissions:
       contents: read
       packages: write
     env:
-      IMAGE: ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
+      IMAGE: ${{ inputs.registry }}/${{ inputs.image }}:${{ matrix.image-tag-prefix }}-${{ inputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -438,20 +448,44 @@ jobs:
         run: |
           VERSION=$(gh release list --json tagName,isLatest --jq '.[] | select(.isLatest)|.tagName | sub("^v"; "")')
           echo VERSION="$VERSION"
-          docker pull ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-$VERSION
+          docker pull ${{ inputs.registry }}/${{ inputs.image }}:${{ matrix.image-tag-prefix }}-$VERSION
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.token }}
 
       - name: Build the production images
         run: |
-          docker build -t $IMAGE --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
+          docker build -t $IMAGE --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/${{ matrix.dockerfile }} .
         shell: bash
 
       - name: Sanity check of the production images
         run: |
           docker run --rm -t $IMAGE --help
         shell: bash
+
+      - name: Sanity check the Nano Server default configuration
+        if: matrix.windows-container-type == 'nanoserver'
+        run: |
+          $containerName = "fluent-bit-nano-${{ matrix.windows-base-version }}"
+
+          try {
+            docker run --detach --name $containerName $env:IMAGE
+            Start-Sleep -Seconds 5
+
+            $running = docker inspect --format '{{.State.Running}}' $containerName
+            docker logs $containerName
+
+            if ($running -ne "true") {
+              throw "Nano Server container did not remain running"
+            }
+          }
+          finally {
+            $containerId = docker ps --all --quiet --filter "name=^/${containerName}$"
+            if ($containerId) {
+              docker rm --force $containerName | Out-Null
+            }
+          }
+        shell: pwsh
 
       - name: Push the production images
         if: inputs.push

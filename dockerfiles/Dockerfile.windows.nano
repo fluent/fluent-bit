@@ -7,7 +7,8 @@
 #
 # - DEVELOPER_GUIDE.md "Windows" section
 # - appveyor.yml
-# - .github/workflows/call-build-windows.yaml
+# - .github/workflows/call-build-images.yaml
+# - .github/workflows/pr-image-tests.yaml
 # - dockerfiles/Dockerfile.windows
 #
 
