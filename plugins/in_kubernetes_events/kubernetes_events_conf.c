@@ -362,6 +362,9 @@ void k8s_events_conf_destroy(struct k8s_events *ctx)
 
 #ifdef FLB_HAVE_SQLDB
     if (ctx->db) {
+        sqlite3_finalize(ctx->stmt_get_kubernetes_event_exists_by_uid);
+        sqlite3_finalize(ctx->stmt_insert_kubernetes_event);
+        sqlite3_finalize(ctx->stmt_delete_old_kubernetes_events);
         flb_kubernetes_event_db_close(ctx->db);
     }
 #endif
