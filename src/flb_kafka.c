@@ -95,7 +95,7 @@ rd_kafka_conf_t *flb_kafka_conf_create(struct flb_kafka *kafka,
 
 err:
     if (kafka_cfg) {
-        flb_free(kafka_cfg);
+        rd_kafka_conf_destroy(kafka_cfg);
     }
     return NULL;
 }
