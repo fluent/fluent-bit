@@ -224,6 +224,7 @@ static int cb_loki_tenant_policy_server(struct flb_http_request *request,
 
 static void *tenant_policy_server_loop(void *data)
 {
+    struct flb_connection *connection;
     struct mk_event *event;
     struct tenant_policy_server *mock = data;
 
@@ -235,6 +236,18 @@ static void *tenant_policy_server_loop(void *data)
         mk_event_foreach(event, mock->event_loop) {
             if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
+            }
+            else if (event->type == FLB_ENGINE_EV_THREAD) {
+                connection = (struct flb_connection *) event;
+
+                if (connection->coroutine != NULL) {
+                    if (connection->event_coroutine != NULL) {
+                        flb_downstream_conn_event_resume(connection);
+                    }
+                    else {
+                        flb_coro_resume(connection->coroutine);
+                    }
+                }
             }
         }
 
