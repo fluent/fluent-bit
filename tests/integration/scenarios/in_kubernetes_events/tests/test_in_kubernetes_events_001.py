@@ -117,6 +117,7 @@ def _run_kube_api_server():
 def _write_config(tmp_path, kube_api_port):
     token_file = tmp_path / "token"
     token_file.write_text("test-token", encoding="utf-8")
+    database_file = tmp_path / "kubernetes-events.db"
     config_file = tmp_path / "kubernetes_events_watch_timeout.conf"
     config_file.write_text(
         "\n".join(
@@ -124,7 +125,7 @@ def _write_config(tmp_path, kube_api_port):
                 "[SERVICE]",
                 "    Flush 1",
                 "    Grace 1",
-                "    Log_Level info",
+                "    Log_Level debug",
                 "    HTTP_Server On",
                 "    HTTP_Port ${FLUENT_BIT_HTTP_MONITORING_PORT}",
                 "",
@@ -132,6 +133,7 @@ def _write_config(tmp_path, kube_api_port):
                 "    Name kubernetes_events",
                 f"    Kube_URL http://127.0.0.1:{kube_api_port}",
                 f"    Kube_Token_File {token_file}",
+                f"    Db {database_file}",
                 "    tls Off",
                 "    Interval_Sec 5",
                 "    Interval_NSec 0",
@@ -173,5 +175,8 @@ def test_kubernetes_events_reconnects_stalled_watch(tmp_path):
         assert kube_api_server.list_requests >= 2
         assert kube_api_server.watch_requests >= 2
         assert all("timeoutSeconds=1" in path for path in kube_api_server.watch_paths)
-        assert log_text.count(EVENT_UID) == 1
-        assert log_text.count(RECOVERED_EVENT_UID) == 1
+        assert log_text.count(f'"uid"=>"{EVENT_UID}"') == 1
+        assert log_text.count(f'"uid"=>"{RECOVERED_EVENT_UID}"') == 1
+        assert "unable to find metadata to save event" not in log_text
+        assert f"inserted k8s event: uid={EVENT_UID}" in log_text
+        assert f"inserted k8s event: uid={RECOVERED_EVENT_UID}" in log_text
