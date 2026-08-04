@@ -8,6 +8,7 @@ on:
     paths:
       - 'dockerfiles/Dockerfile'
       - 'dockerfiles/Dockerfile.windows'
+      - 'dockerfiles/Dockerfile.windows.nano'
       - 'conf/**'
 
   workflow_dispatch:
@@ -85,15 +86,24 @@ jobs:
           DOCKER_BUILDKIT: 0
         shell: bash
     pr-image-tests-build-windows-images:
-      name: PR - Docker windows build test, windows 2022 and 2025
+      name: PR - Docker ${{ matrix.windows-container-type }} build, Windows ${{ matrix.windows-base-version }}
       runs-on: windows-${{ matrix.windows-base-version }}
       strategy:
         fail-fast: true
         matrix:
-          windows-base-version:
-            # https://github.com/fluent/fluent-bit/blob/1d366594a889624ec3003819fe18588aac3f17cd/dockerfiles/Dockerfile.windows#L3
-            - '2022'
-            - '2025'
+          include:
+            - windows-base-version: '2022'
+              windows-container-type: servercore
+              dockerfile: Dockerfile.windows
+              image-tag-suffix: windows-2022
+            - windows-base-version: '2025'
+              windows-container-type: servercore
+              dockerfile: Dockerfile.windows
+              image-tag-suffix: windows-2025
+            - windows-base-version: '2025'
+              windows-container-type: nanoserver
+              dockerfile: Dockerfile.windows.nano
+              image-tag-suffix: windows-nano-2025
       permissions:
         contents: read
       steps:
@@ -108,7 +118,7 @@ jobs:
             tags: |
               type=sha
             flavor: |
-              suffix=-windows-${{ matrix.windows-base-version }}
+              suffix=-${{ matrix.image-tag-suffix }}
 
         # https://github.com/actions/runner-images/issues/12199
         # https://github.com/moby/moby/issues/48093
@@ -133,11 +143,35 @@ jobs:
         - name: Build the windows images
           id: build
           run: |
-            docker build -t ${{ steps.meta.outputs.tags }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
+            docker build -t ${{ steps.meta.outputs.tags }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/${{ matrix.dockerfile }} .
 
         - name: Sanity check it runs
           # We do this for a simple check of dependencies
           run: |
             docker run --rm -t ${{ steps.meta.outputs.tags }} --help
           shell: bash
+
+        - name: Sanity check the Nano Server default configuration
+          if: matrix.windows-container-type == 'nanoserver'
+          run: |
+            $containerName = "fluent-bit-nano-${{ matrix.windows-base-version }}"
+
+            try {
+              docker run --detach --name $containerName ${{ steps.meta.outputs.tags }}
+              Start-Sleep -Seconds 5
+
+              $running = docker inspect --format '{{.State.Running}}' $containerName
+              docker logs $containerName
+
+              if ($running -ne "true") {
+                throw "Nano Server container did not remain running"
+              }
+            }
+            finally {
+              $containerId = docker ps --all --quiet --filter "name=^/${containerName}$"
+              if ($containerId) {
+                docker rm --force $containerName | Out-Null
+              }
+            }
+          shell: pwsh
 
