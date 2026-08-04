@@ -1549,7 +1549,7 @@ void flb_test_file_rotation_same_second_rotations(void)
     int ret;
     int bytes;
     int rotated_count;
-    char *p = (char *)JSON_SMALL;
+    char *p = (char *)JSON_LONG;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -1621,7 +1621,7 @@ void flb_test_file_rotation_filename_pattern(void)
     int i;
     int ret;
     int bytes;
-    char *p = (char *)JSON_SMALL;
+    char *p = (char *)JSON_LONG;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -1695,7 +1695,7 @@ void flb_test_file_rotation_cleanup_legacy_format(void)
     int ret;
     int bytes;
     int file_count;
-    char *p = (char *)JSON_SMALL;
+    char *p = (char *)JSON_LONG;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -1773,7 +1773,7 @@ void flb_test_file_rotation_gzip_compression(void)
     int i;
     int ret;
     int bytes;
-    char *p = (char *)JSON_SMALL;
+    char *p = (char *)JSON_LONG;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -1866,7 +1866,7 @@ void flb_test_file_rotation_max_files_cleanup(void)
     int i;
     int ret;
     int bytes;
-    char *p = (char *)JSON_SMALL;
+    char *p = (char *)JSON_LONG;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
