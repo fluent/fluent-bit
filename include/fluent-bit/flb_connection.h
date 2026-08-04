@@ -162,6 +162,9 @@ struct flb_connection {
     /* Downstream-owned event callback coroutine */
     struct flb_coro *event_coroutine;
     flb_connection_event_callback event_callback;
+    flb_connection_event_callback event_parent_callback;
+    void *event_parent_callback_data;
+    int event_parent_callback_result;
     int event_wakeup_pending;
     int event_release_pending;
 

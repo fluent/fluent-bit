@@ -101,6 +101,15 @@ int flb_downstream_conn_event_accept(
 int flb_downstream_conn_event_register(struct flb_connection *connection,
                                        int (*callback)(void *data),
                                        int mask);
+
+/*
+ * Suspend an event coroutine while callback runs on its parent stack. This is
+ * required for code which depends on native thread stack bounds, such as WAMR.
+ */
+int flb_downstream_conn_event_call_parent(
+        struct flb_connection *connection,
+        flb_connection_event_callback callback,
+        void *callback_data);
 void flb_downstream_conn_event_resume(struct flb_connection *connection);
 
 int flb_downstream_conn_pending_destroy_list(struct mk_list *list);
