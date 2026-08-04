@@ -5,8 +5,10 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#include <cmetrics/cmt_counter.h>
 #include <limits.h>
 #include <pthread.h>
 #include <string.h>
@@ -95,7 +97,9 @@ TEST_LIST = {
 
 #define TEST_LOGFILE "flb_test_file_rotation.log"
 #define TEST_LOGPATH "out_file_rotation"
-#define TEST_TIMEOUT 10
+#define TEST_FLUSH_INTERVAL "0.2"
+#define TEST_POLL_INTERVAL_MS 50
+#define TEST_TIMEOUT_MS 10000
 
 #define JSON_DYNAMIC_A "[1448403340, {\"stream\":\"alpha\", \"message\":\"a\"}]"
 #define JSON_DYNAMIC_B "[1448403340, {\"stream\":\"beta\", \"message\":\"b\"}]"
@@ -279,6 +283,65 @@ static int count_files_in_directory(const char *dir_path, const char *prefix)
 }
 #endif
 
+static int wait_for_output_counter(flb_ctx_t *ctx, struct cmt_counter *counter,
+                                   double minimum_value)
+{
+    int ret;
+    int elapsed_time;
+    double value;
+    char *labels[1];
+    struct flb_output_instance *ins;
+
+    if (ctx == NULL || counter == NULL) {
+        return -1;
+    }
+
+    ins = mk_list_entry_first(&ctx->config->outputs,
+                              struct flb_output_instance, _head);
+    labels[0] = (char *) flb_output_name(ins);
+
+    for (elapsed_time = 0; elapsed_time < TEST_TIMEOUT_MS;
+         elapsed_time += TEST_POLL_INTERVAL_MS) {
+        ret = cmt_counter_get_val(counter, 1, labels, &value);
+        if (ret == 0 && value >= minimum_value) {
+            return 0;
+        }
+
+        flb_time_msleep(TEST_POLL_INTERVAL_MS);
+    }
+
+    return -1;
+}
+
+static int wait_for_output_errors(flb_ctx_t *ctx, double minimum_errors)
+{
+    struct flb_output_instance *ins;
+
+    if (ctx == NULL || mk_list_is_empty(&ctx->config->outputs) == 0) {
+        return -1;
+    }
+
+    ins = mk_list_entry_first(&ctx->config->outputs,
+                              struct flb_output_instance, _head);
+
+    return wait_for_output_counter(ctx, ins->cmt_errors, minimum_errors);
+}
+
+static int wait_for_output_records(flb_ctx_t *ctx, double minimum_records)
+{
+    struct flb_output_instance *ins;
+
+    if (ctx == NULL || mk_list_is_empty(&ctx->config->outputs) == 0) {
+        return -1;
+    }
+
+    ins = mk_list_entry_first(&ctx->config->outputs,
+                              struct flb_output_instance, _head);
+
+    return wait_for_output_counter(ctx, ins->cmt_proc_records,
+                                   minimum_records);
+}
+
 /*
  * Helper function: wait for a file matching "prefix*suffix" to appear in
  * dir_path. Returns 1 on match and 0 on timeout. An empty suffix matches any
@@ -286,7 +349,7 @@ static int count_files_in_directory(const char *dir_path, const char *prefix)
  */
 #ifdef FLB_SYSTEM_WINDOWS
 static int wait_for_file_pattern(const char *dir_path, const char *prefix,
-                                 const char *suffix, int time_limit)
+                                 const char *suffix, int time_limit_ms)
 {
     int elapsed_time;
     int found = 0;
@@ -299,8 +362,8 @@ static int wait_for_file_pattern(const char *dir_path, const char *prefix,
 
     snprintf(search_path, sizeof(search_path), "%s\\*", dir_path);
 
-    for (elapsed_time = 0; elapsed_time < time_limit && !found;
-         elapsed_time++) {
+    for (elapsed_time = 0; elapsed_time < time_limit_ms && !found;
+         elapsed_time += TEST_POLL_INTERVAL_MS) {
         hFind = FindFirstFileA(search_path, &ffd);
         if (hFind != INVALID_HANDLE_VALUE) {
             do {
@@ -317,14 +380,14 @@ static int wait_for_file_pattern(const char *dir_path, const char *prefix,
             FindClose(hFind);
         }
         if (!found) {
-            flb_time_msleep(1000);
+            flb_time_msleep(TEST_POLL_INTERVAL_MS);
         }
     }
     return found;
 }
 #else
 static int wait_for_file_pattern(const char *dir_path, const char *prefix,
-                                 const char *suffix, int time_limit)
+                                 const char *suffix, int time_limit_ms)
 {
     int elapsed_time;
     int found = 0;
@@ -334,8 +397,8 @@ static int wait_for_file_pattern(const char *dir_path, const char *prefix,
     size_t suffix_len = strlen(suffix);
     size_t name_len;
 
-    for (elapsed_time = 0; elapsed_time < time_limit && !found;
-         elapsed_time++) {
+    for (elapsed_time = 0; elapsed_time < time_limit_ms && !found;
+         elapsed_time += TEST_POLL_INTERVAL_MS) {
         dir = opendir(dir_path);
         if (dir) {
             while ((entry = readdir(dir)) != NULL) {
@@ -352,7 +415,7 @@ static int wait_for_file_pattern(const char *dir_path, const char *prefix,
             closedir(dir);
         }
         if (!found) {
-            flb_time_msleep(1000);
+            flb_time_msleep(TEST_POLL_INTERVAL_MS);
         }
     }
     return found;
@@ -444,17 +507,88 @@ static int find_file_pattern(const char *dir_path, const char *prefix,
 #endif
 
 /* Helper function: wait for a file to exist and have a minimum size */
-static int wait_for_file_size(const char *path, size_t min_size, int time_limit)
+static int wait_for_file_size(const char *path, size_t min_size,
+                              int time_limit_ms)
 {
     int elapsed_time;
     struct stat st;
 
-    for (elapsed_time = 0; elapsed_time < time_limit; elapsed_time++) {
+    for (elapsed_time = 0; elapsed_time < time_limit_ms;
+         elapsed_time += TEST_POLL_INTERVAL_MS) {
         if (stat(path, &st) == 0 && st.st_size >= min_size) {
             return 0;
         }
-        flb_time_msleep(1000);
+        flb_time_msleep(TEST_POLL_INTERVAL_MS);
     }
+    return -1;
+}
+
+static int wait_for_file_size_and_output_records(flb_ctx_t *ctx,
+                                                 const char *path,
+                                                 size_t minimum_size,
+                                                 double minimum_records)
+{
+    if (wait_for_file_size(path, minimum_size, TEST_TIMEOUT_MS) != 0) {
+        return -1;
+    }
+
+    return wait_for_output_records(ctx, minimum_records);
+}
+
+static int wait_for_file_growth(const char *path, size_t previous_size,
+                                int time_limit_ms)
+{
+    int elapsed_time;
+    struct stat st;
+
+    for (elapsed_time = 0; elapsed_time < time_limit_ms;
+         elapsed_time += TEST_POLL_INTERVAL_MS) {
+        if (stat(path, &st) == 0 && st.st_size > previous_size) {
+            return 0;
+        }
+        flb_time_msleep(TEST_POLL_INTERVAL_MS);
+    }
+
+    return -1;
+}
+
+static int wait_for_file_count_at_least(const char *dir_path,
+                                        const char *prefix,
+                                        int minimum_count,
+                                        int time_limit_ms)
+{
+    int count;
+    int elapsed_time;
+
+    for (elapsed_time = 0; elapsed_time < time_limit_ms;
+         elapsed_time += TEST_POLL_INTERVAL_MS) {
+        count = count_files_in_directory(dir_path, prefix);
+        if (count >= minimum_count) {
+            return 0;
+        }
+        flb_time_msleep(TEST_POLL_INTERVAL_MS);
+    }
+
+    return -1;
+}
+
+static int wait_for_file_count_at_most(const char *dir_path,
+                                       const char *prefix,
+                                       int maximum_count,
+                                       int time_limit_ms)
+{
+    int count;
+    int elapsed_time;
+
+    for (elapsed_time = 0; elapsed_time < time_limit_ms;
+         elapsed_time += TEST_POLL_INTERVAL_MS) {
+        count = count_files_in_directory(dir_path, prefix);
+        if (count >= 0 && count <= maximum_count) {
+            return 0;
+        }
+        flb_time_msleep(TEST_POLL_INTERVAL_MS);
+    }
+
     return -1;
 }
 
@@ -619,7 +753,7 @@ void flb_test_file_rotation_basic(void)
              TEST_LOGFILE);
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -643,20 +777,22 @@ void flb_test_file_rotation_basic(void)
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
         TEST_CHECK(bytes == strlen(p));
     }
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile, 1, 3) == 0);
 
     for (i = 0; i < 3; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
         TEST_CHECK(bytes == strlen(p));
     }
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_pattern(TEST_LOGPATH, TEST_LOGFILE ".", "",
+                                     TEST_TIMEOUT_MS) == 1);
+    TEST_CHECK(wait_for_output_records(ctx, 6) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
 
     /* A rotated file is the base name plus '.' and the generated suffix. */
     TEST_CHECK(wait_for_file_pattern(TEST_LOGPATH, TEST_LOGFILE ".", "",
-                                     TEST_TIMEOUT) == 1);
+                                     TEST_TIMEOUT_MS) == 1);
     TEST_CHECK(find_file_pattern(TEST_LOGPATH, TEST_LOGFILE ".", "",
                                  rotated, sizeof(rotated)) == 1);
 
@@ -684,7 +820,7 @@ void flb_test_file_rotation_format_csv(void)
              "test_csv.log");
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -707,7 +843,7 @@ void flb_test_file_rotation_format_csv(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile, 1, 3) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -746,7 +882,7 @@ void flb_test_file_rotation_format_ltsv(void)
              "test_ltsv.log");
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -768,7 +904,7 @@ void flb_test_file_rotation_format_ltsv(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile, 1, 3) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -803,7 +939,7 @@ void flb_test_file_rotation_format_plain(void)
              "test_plain.log");
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -825,7 +961,7 @@ void flb_test_file_rotation_format_plain(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile, 1, 3) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -860,7 +996,7 @@ void flb_test_file_rotation_format_msgpack(void)
              "test_msgpack.log");
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -882,7 +1018,7 @@ void flb_test_file_rotation_format_msgpack(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile, 1, 3) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -923,7 +1059,7 @@ void flb_test_file_rotation_format_template(void)
              "test_template.log");
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -947,7 +1083,7 @@ void flb_test_file_rotation_format_template(void)
         TEST_CHECK(bytes == strlen(json_template));
     }
 
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile, 1, 3) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -989,7 +1125,7 @@ void flb_test_file_rotation_path(void)
 #pragma GCC diagnostic pop
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -1011,7 +1147,7 @@ void flb_test_file_rotation_path(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile, 1, 3) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -1052,7 +1188,7 @@ void flb_test_file_rotation_mkdir(void)
     recursive_delete_directory(TEST_LOGPATH);
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -1074,7 +1210,7 @@ void flb_test_file_rotation_mkdir(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile, 1, 3) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -1110,7 +1246,7 @@ void flb_test_file_rotation_delimiter(void)
              "test_delimiter.log");
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -1132,7 +1268,7 @@ void flb_test_file_rotation_delimiter(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile, 1, 3) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -1174,7 +1310,7 @@ void flb_test_file_rotation_label_delimiter(void)
              "test_label_delimiter.log");
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -1196,7 +1332,7 @@ void flb_test_file_rotation_label_delimiter(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile, 1, 3) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -1231,7 +1367,7 @@ void flb_test_file_rotation_csv_column_names(void)
              "test_csv_columns.log");
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -1253,7 +1389,7 @@ void flb_test_file_rotation_csv_column_names(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile, 1, 3) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -1328,7 +1464,7 @@ void flb_test_file_rotation_multithreaded(void)
              "test_multithreaded.log");
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "0.5", "Grace", "2", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "2", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -1365,10 +1501,10 @@ void flb_test_file_rotation_multithreaded(void)
         pthread_join(threads[i], NULL);
     }
 
-    flb_time_msleep(3000);
-
-    ret = wait_for_file_size(logfile, 100 * 1024, TEST_TIMEOUT);
+    ret = wait_for_file_size(logfile, 100 * 1024, TEST_TIMEOUT_MS);
     TEST_CHECK(ret == 0);
+    TEST_CHECK(wait_for_output_records(ctx,
+                                       num_threads * events_per_thread) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -1426,7 +1562,7 @@ void flb_test_file_rotation_same_second_rotations(void)
              TEST_LOGFILE);
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -1448,24 +1584,27 @@ void flb_test_file_rotation_same_second_rotations(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    ret = wait_for_file_size(logfile, 10 * 1024, TEST_TIMEOUT);
+    ret = wait_for_file_size(logfile, 10 * 1024, TEST_TIMEOUT_MS);
     TEST_CHECK(ret == 0);
-
-    flb_time_msleep(1500);
-
-    for (i = 0; i < 4; i++) {
-        bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
-        TEST_CHECK(bytes == strlen(p));
-    }
-
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_output_records(ctx, 4) == 0);
 
     for (i = 0; i < 4; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_count_at_least(TEST_LOGPATH, rotated_prefix, 1,
+                                            TEST_TIMEOUT_MS) == 0);
+    TEST_CHECK(wait_for_output_records(ctx, 8) == 0);
+
+    for (i = 0; i < 4; i++) {
+        bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+        TEST_CHECK(bytes == strlen(p));
+    }
+
+    TEST_CHECK(wait_for_file_count_at_least(TEST_LOGPATH, rotated_prefix, 2,
+                                            TEST_TIMEOUT_MS) == 0);
+    TEST_CHECK(wait_for_output_records(ctx, 12) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -1498,7 +1637,7 @@ void flb_test_file_rotation_filename_pattern(void)
              TEST_LOGFILE);
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -1520,15 +1659,18 @@ void flb_test_file_rotation_filename_pattern(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    ret = wait_for_file_size(logfile, 10 * 1024, TEST_TIMEOUT);
+    ret = wait_for_file_size(logfile, 10 * 1024, TEST_TIMEOUT_MS);
     TEST_CHECK(ret == 0);
+    TEST_CHECK(wait_for_output_records(ctx, 4) == 0);
 
     for (i = 0; i < 4; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_pattern(TEST_LOGPATH, TEST_LOGFILE ".", "",
+                                     TEST_TIMEOUT_MS) == 1);
+    TEST_CHECK(wait_for_output_records(ctx, 8) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -1574,16 +1716,13 @@ void flb_test_file_rotation_cleanup_legacy_format(void)
         if (lfp) {
             fclose(lfp);
         }
-        if (i < 2) {
-            flb_time_msleep(1100);
-        }
     }
 
     snprintf(logfile, sizeof(logfile), "%s" PATH_SEPARATOR "%s", TEST_LOGPATH,
              TEST_LOGFILE);
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -1605,15 +1744,18 @@ void flb_test_file_rotation_cleanup_legacy_format(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    ret = wait_for_file_size(logfile, 10 * 1024, TEST_TIMEOUT);
+    ret = wait_for_file_size(logfile, 10 * 1024, TEST_TIMEOUT_MS);
     TEST_CHECK(ret == 0);
+    TEST_CHECK(wait_for_output_records(ctx, 4) == 0);
 
     for (i = 0; i < 4; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_count_at_most(TEST_LOGPATH, TEST_LOGFILE, 3,
+                                           TEST_TIMEOUT_MS) == 0);
+    TEST_CHECK(wait_for_output_records(ctx, 8) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -1647,7 +1789,7 @@ void flb_test_file_rotation_gzip_compression(void)
              TEST_LOGFILE);
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -1669,21 +1811,24 @@ void flb_test_file_rotation_gzip_compression(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    ret = wait_for_file_size(logfile, 10 * 1024, TEST_TIMEOUT);
+    ret = wait_for_file_size(logfile, 10 * 1024, TEST_TIMEOUT_MS);
     TEST_CHECK(ret == 0);
+    TEST_CHECK(wait_for_output_records(ctx, 4) == 0);
 
     for (i = 0; i < 4; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
         TEST_CHECK(bytes == strlen(p));
     }
 
-    flb_time_msleep(2000);
+    TEST_CHECK(wait_for_file_pattern(TEST_LOGPATH, TEST_LOGFILE ".", ".gz",
+                                     TEST_TIMEOUT_MS) == 1);
+    TEST_CHECK(wait_for_output_records(ctx, 8) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
 
     ret = wait_for_file_pattern(TEST_LOGPATH, TEST_LOGFILE ".",
-                                ".gz", TEST_TIMEOUT);
+                                ".gz", TEST_TIMEOUT_MS);
     TEST_CHECK(ret == 1);
     if (ret == 1) {
         ret = find_file_pattern(TEST_LOGPATH, TEST_LOGFILE ".",
@@ -1718,23 +1863,39 @@ void flb_test_file_rotation_gzip_compression(void)
 
 void flb_test_file_rotation_max_files_cleanup(void)
 {
-    int i, j;
+    int i;
     int ret;
     int bytes;
     char *p = (char *)JSON_SMALL;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
+    FILE *fp;
     int file_count;
     char logfile[512];
+    char rotated_path[PATH_MAX];
+    static const char *rotation_suffixes[] = {
+        "20200101_000001_00000001", "20200101_000002_00000002",
+        "20200101_000003_00000003", "20200101_000004_00000004"
+    };
 
     recursive_delete_directory(TEST_LOGPATH);
     TEST_MKDIR(TEST_LOGPATH);
     snprintf(logfile, sizeof(logfile), "%s" PATH_SEPARATOR "%s", TEST_LOGPATH,
              TEST_LOGFILE);
 
+    /* Start above the retention limit so one rotation must remove artifacts. */
+    for (i = 0; i < 4; i++) {
+        snprintf(rotated_path, sizeof(rotated_path),
+                 "%s" PATH_SEPARATOR "%s.%s", TEST_LOGPATH, TEST_LOGFILE,
+                 rotation_suffixes[i]);
+        fp = fopen(rotated_path, "wb");
+        TEST_ASSERT(fp != NULL);
+        fclose(fp);
+    }
+
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -1751,20 +1912,20 @@ void flb_test_file_rotation_max_files_cleanup(void)
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    for (i = 0; i < 5; i++) {
-        for (j = 0; j < 4; j++) {
-            bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
-            TEST_CHECK(bytes == strlen(p));
-        }
-
-        flb_time_msleep(1500);
-
-        file_count = count_files_in_directory(TEST_LOGPATH, TEST_LOGFILE);
-        TEST_ASSERT(file_count >= 0);
-        TEST_CHECK(file_count <= 4);
+    for (i = 0; i < 4; i++) {
+        bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+        TEST_CHECK(bytes == strlen(p));
     }
+    TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile,
+                                                     10 * 1024, 4) == 0);
 
-    flb_time_msleep(1500);
+    for (i = 0; i < 4; i++) {
+        bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+        TEST_CHECK(bytes == strlen(p));
+    }
+    TEST_CHECK(wait_for_file_count_at_most(TEST_LOGPATH, TEST_LOGFILE, 4,
+                                           TEST_TIMEOUT_MS) == 0);
+    TEST_CHECK(wait_for_output_records(ctx, 8) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -1788,7 +1949,7 @@ void flb_test_file_rotation_max_files_validation(void)
              TEST_LOGFILE);
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "off", NULL) == 0);
 
     /* Test with rotate_max_files = 0 */
@@ -1804,7 +1965,7 @@ void flb_test_file_rotation_max_files_validation(void)
 
     /* Test with rotate_max_files = -1 */
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "off", NULL) == 0);
 
     out_ffd = flb_output(ctx, (char *)"file", NULL);
@@ -1840,7 +2001,7 @@ void flb_test_file_rotation_gzip_compression_exact_chunk(void)
              TEST_LOGFILE);
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *)"lib", NULL);
@@ -1876,19 +2037,22 @@ void flb_test_file_rotation_gzip_compression_exact_chunk(void)
     flb_free(large_message);
     flb_free(json_payload);
 
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size(logfile, msg_size, TEST_TIMEOUT_MS) == 0);
+    TEST_CHECK(wait_for_output_records(ctx, 1) == 0);
 
     small_payload = "[1234567890, {\"message\": \"trigger\"}]";
     bytes = flb_lib_push(ctx, in_ffd, small_payload, strlen(small_payload));
     TEST_CHECK(bytes == strlen(small_payload));
 
-    flb_time_msleep(2000);
+    TEST_CHECK(wait_for_file_pattern(TEST_LOGPATH, TEST_LOGFILE ".", ".gz",
+                                     TEST_TIMEOUT_MS) == 1);
+    TEST_CHECK(wait_for_output_records(ctx, 2) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
 
     ret = wait_for_file_pattern(TEST_LOGPATH, TEST_LOGFILE ".",
-                                ".gz", TEST_TIMEOUT);
+                                ".gz", TEST_TIMEOUT_MS);
     TEST_CHECK(ret == 1);
 
     recursive_delete_directory(TEST_LOGPATH);
@@ -1914,7 +2078,7 @@ void flb_test_file_rotation_gzip_round_trip(void)
              TEST_LOGFILE);
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -1938,19 +2102,21 @@ void flb_test_file_rotation_gzip_round_trip(void)
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
         TEST_CHECK(bytes == strlen(p));
     }
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile, 1, 3) == 0);
 
     for (i = 0; i < 3; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
         TEST_CHECK(bytes == strlen(p));
     }
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_pattern(TEST_LOGPATH, TEST_LOGFILE ".", ".gz",
+                                     TEST_TIMEOUT_MS) == 1);
+    TEST_CHECK(wait_for_output_records(ctx, 6) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
 
     TEST_CHECK(wait_for_file_pattern(TEST_LOGPATH, TEST_LOGFILE ".", ".gz",
-                                     TEST_TIMEOUT) == 1);
+                                     TEST_TIMEOUT_MS) == 1);
     TEST_ASSERT(find_file_pattern(TEST_LOGPATH, TEST_LOGFILE ".", ".gz",
                                   archive, sizeof(archive)) == 1);
 
@@ -1980,7 +2146,7 @@ void flb_test_file_rotation_dynamic_destination(void)
     TEST_MKDIR(TEST_LOGPATH);
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2009,20 +2175,24 @@ void flb_test_file_rotation_dynamic_destination(void)
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
         TEST_CHECK(bytes == strlen(p));
     }
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size(TEST_LOGPATH PATH_SEPARATOR "alpha", 1,
+                                  TEST_TIMEOUT_MS) == 0);
+    TEST_CHECK(wait_for_output_records(ctx, 3) == 0);
 
     for (i = 0; i < 3; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
         TEST_CHECK(bytes == strlen(p));
     }
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_pattern(TEST_LOGPATH, "alpha.", "",
+                                     TEST_TIMEOUT_MS) == 1);
+    TEST_CHECK(wait_for_output_records(ctx, 6) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
 
     /* The resolved destination 'alpha' must be the file that rotated. */
     TEST_CHECK(wait_for_file_pattern(TEST_LOGPATH, "alpha.", "",
-                                     TEST_TIMEOUT) == 1);
+                                     TEST_TIMEOUT_MS) == 1);
     TEST_CHECK(find_file_pattern(TEST_LOGPATH, "alpha.", "",
                                  rotated, sizeof(rotated)) == 1);
 
@@ -2043,7 +2213,7 @@ void flb_test_file_rotation_fallback_destination(void)
     TEST_MKDIR(TEST_LOGPATH);
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2076,21 +2246,25 @@ void flb_test_file_rotation_fallback_destination(void)
                              strlen(JSON_DYNAMIC_B));
         TEST_CHECK(bytes == strlen(JSON_DYNAMIC_B));
     }
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size(TEST_LOGPATH PATH_SEPARATOR "overflow.log", 1,
+                                  TEST_TIMEOUT_MS) == 0);
+    TEST_CHECK(wait_for_output_records(ctx, 6) == 0);
 
     for (i = 0; i < 3; i++) {
         bytes = flb_lib_push(ctx, in_ffd, (char *) JSON_DYNAMIC_B,
                              strlen(JSON_DYNAMIC_B));
         TEST_CHECK(bytes == strlen(JSON_DYNAMIC_B));
     }
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_pattern(TEST_LOGPATH, "overflow.log.", "",
+                                     TEST_TIMEOUT_MS) == 1);
+    TEST_CHECK(wait_for_output_records(ctx, 9) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
 
     /* The fallback destination is tracked and rotated like any other. */
     TEST_CHECK(wait_for_file_pattern(TEST_LOGPATH, "overflow.log.", "",
-                                     TEST_TIMEOUT) == 1);
+                                     TEST_TIMEOUT_MS) == 1);
     TEST_CHECK(find_file_pattern(TEST_LOGPATH, "overflow.log.", "",
                                  rotated, sizeof(rotated)) == 1);
 
@@ -2112,7 +2286,7 @@ void flb_test_file_rotation_metrics(void)
              "metrics.log");
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "fluentbit_metrics", NULL);
@@ -2132,14 +2306,13 @@ void flb_test_file_rotation_metrics(void)
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    /* Let several scrape and flush cycles run so a rotation occurs. */
-    flb_time_msleep(4000);
+    TEST_CHECK(wait_for_file_pattern(TEST_LOGPATH, "metrics.log.", "",
+                                     TEST_TIMEOUT_MS) == 1);
+    TEST_CHECK(wait_for_output_records(ctx, 2) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    TEST_CHECK(wait_for_file_pattern(TEST_LOGPATH, "metrics.log.", "",
-                                     TEST_TIMEOUT) == 1);
     TEST_CHECK(find_file_pattern(TEST_LOGPATH, "metrics.log.", "",
                                  rotated, sizeof(rotated)) == 1);
 
@@ -2164,6 +2337,7 @@ void flb_test_file_rotation_repeated_flush_all_formats(void)
     int out_ffd;
     char logfile[512];
     struct stat first;
+    struct stat second;
     struct stat last;
 
     for (f = 0; f < 6; f++) {
@@ -2173,7 +2347,7 @@ void flb_test_file_rotation_repeated_flush_all_formats(void)
                  TEST_LOGPATH, formats[f]);
 
         ctx = flb_create();
-        TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1",
+        TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1",
                                     "Log_Level", "error", NULL) == 0);
 
         in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2198,20 +2372,25 @@ void flb_test_file_rotation_repeated_flush_all_formats(void)
             bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
             TEST_CHECK(bytes == strlen(p));
         }
-        flb_time_msleep(1500);
+        TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile, 1, 3) == 0);
         TEST_ASSERT(stat(logfile, &first) == 0);
 
         for (i = 0; i < 3; i++) {
             bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
             TEST_CHECK(bytes == strlen(p));
         }
-        flb_time_msleep(1500);
+        TEST_CHECK(wait_for_file_growth(logfile, first.st_size,
+                                        TEST_TIMEOUT_MS) == 0);
+        TEST_CHECK(wait_for_output_records(ctx, 6) == 0);
+        TEST_ASSERT(stat(logfile, &second) == 0);
 
         for (i = 0; i < 3; i++) {
             bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
             TEST_CHECK(bytes == strlen(p));
         }
-        flb_time_msleep(1500);
+        TEST_CHECK(wait_for_file_growth(logfile, second.st_size,
+                                        TEST_TIMEOUT_MS) == 0);
+        TEST_CHECK(wait_for_output_records(ctx, 9) == 0);
 
         flb_stop(ctx);
         flb_destroy(ctx);
@@ -2251,7 +2430,7 @@ void flb_test_file_rotation_open_failure_releases_lock(void)
     TEST_MKDIR(logfile);
 
     ctx = flb_create();
-    TEST_ASSERT(flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level",
+    TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
                                 "error", NULL) == 0);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2275,7 +2454,7 @@ void flb_test_file_rotation_open_failure_releases_lock(void)
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
         TEST_CHECK(bytes == strlen(p));
     }
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_output_errors(ctx, 1) == 0);
 
     /* Path is still a directory: open failed and must have released the lock. */
     TEST_ASSERT(stat(logfile, &st) == 0);
@@ -2291,7 +2470,7 @@ void flb_test_file_rotation_open_failure_releases_lock(void)
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
         TEST_CHECK(bytes == strlen(p));
     }
-    flb_time_msleep(1500);
+    TEST_CHECK(wait_for_file_size_and_output_records(ctx, logfile, 1, 3) == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);
