@@ -2,6 +2,7 @@ import http.client
 import json
 import os
 import logging
+import socket
 import time
 
 import pytest
@@ -64,6 +65,28 @@ def send_requests(conn, num_requests, headers, json_payload):
             'data': response.read().decode()
         })
     return responses
+
+
+def send_raw_http1_request(port, request):
+    response = bytearray()
+
+    with socket.create_connection(("127.0.0.1", port), timeout=2) as connection:
+        connection.settimeout(2)
+        connection.sendall(request)
+
+        while len(response) < 4096 and b"\r\n" not in response:
+            try:
+                data = connection.recv(4096 - len(response))
+            except ConnectionResetError:
+                break
+            except socket.timeout:
+                pytest.fail("HTTP/1 server did not respond or close the connection")
+
+            if not data:
+                break
+            response.extend(data)
+
+    return bytes(response)
 
 
 def test_send_data():
@@ -148,6 +171,88 @@ def test_in_http_rejects_get_requests():
     service.stop()
 
     assert result["status_code"] >= 400
+
+
+def test_in_http_accepts_post_with_empty_generic_headers():
+    service = Service("in_http_config")
+    body = b'{"message":"empty-header"}'
+    request = (
+        b"POST / HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        + f"Content-Length: {len(body)}\r\n".encode()
+        + b"X-Empty:\r\n"
+        b"X-Empty-Whitespace: \t\r\n"
+        b"Connection: close\r\n"
+        b"\r\n"
+        + body
+    )
+
+    try:
+        service.start()
+        response = send_raw_http1_request(service.flb_listener_port, request)
+        forwarded_payloads = service.read_forwarded_payloads()
+    finally:
+        service.stop()
+
+    assert b"HTTP/1.1 201" in response
+    assert len(forwarded_payloads) == 1
+    assert forwarded_payloads[0][0]["message"] == "empty-header"
+
+
+def test_in_http_accepts_empty_connection_and_transfer_encoding():
+    service = Service("in_http_config")
+    body = b'{"message":"empty-semantic-headers"}'
+    request = (
+        b"POST / HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        + f"Content-Length: {len(body)}\r\n".encode()
+        + b"Connection:\r\n"
+        b"Transfer-Encoding: \t\r\n"
+        b"Connection: close\r\n"
+        b"\r\n"
+        + body
+    )
+
+    try:
+        service.start()
+        response = send_raw_http1_request(service.flb_listener_port, request)
+        forwarded_payloads = service.read_forwarded_payloads()
+    finally:
+        service.stop()
+
+    assert b"HTTP/1.1 201" in response
+    assert len(forwarded_payloads) == 1
+    assert forwarded_payloads[0][0]["message"] == "empty-semantic-headers"
+
+
+@pytest.mark.parametrize("header_value", [b"", b" \t"], ids=["empty", "whitespace"])
+@pytest.mark.parametrize(
+    "following_data",
+    [b"1-X: value\r\nConnection: close\r\n\r\n1", b"\r\n1"],
+    ids=["numeric-header", "numeric-body"],
+)
+def test_in_http_rejects_empty_content_length(header_value, following_data):
+    service = Service("in_http_config")
+    request = (
+        b"POST / HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        b"Content-Length:" + header_value + b"\r\n"
+        + following_data
+    )
+
+    try:
+        service.start()
+        response = send_raw_http1_request(service.flb_listener_port, request)
+        time.sleep(0.5)
+        forwarded_payloads = list(data_storage["payloads"])
+    finally:
+        service.stop()
+
+    assert response == b"" or b"HTTP/1.1 400" in response
+    assert forwarded_payloads == []
 
 
 @pytest.mark.parametrize(
