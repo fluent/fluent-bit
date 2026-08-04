@@ -209,6 +209,7 @@ RUN call "%MSVS_HOME%\VC\Auxiliary\Build\vcvars64.bat" && `
       -DCMAKE_BUILD_TYPE=Release `
       -DFLB_SHARED_LIB=Off `
       -DFLB_EXAMPLES=Off `
+      -DFLB_IN_WINDOWS_EXPORTER_METRICS=Off `
       -DFLB_DEBUG=Off `
       -DFLB_RELEASE=On `
       ..\ && `
