@@ -89,6 +89,30 @@ def send_raw_http1_request(port, request):
     return bytes(response)
 
 
+def send_split_http2_preface(port):
+    preface = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+    settings_frame = b"\x00\x00\x00\x04\x00\x00\x00\x00\x00"
+    response = bytearray()
+
+    with socket.create_connection(("127.0.0.1", port), timeout=2) as connection:
+        connection.settimeout(2)
+        connection.sendall(preface[:-2])
+        time.sleep(0.1)
+        connection.sendall(preface[-2:] + settings_frame)
+
+        while len(response) < 9:
+            try:
+                data = connection.recv(4096)
+            except socket.timeout:
+                pytest.fail("HTTP/2 server did not respond to a split connection preface")
+
+            if not data:
+                break
+            response.extend(data)
+
+    return bytes(response)
+
+
 def test_send_data():
     try:
         service = Service("in_http_config")
@@ -139,6 +163,20 @@ def test_in_http_protocol_matrix(case):
     assert result["http_version"] == case["expected_http_version"]
     assert len(forwarded_payloads) == 1
     assert forwarded_payloads[0][0]["message"] == "Este es un mensaje de prueba"
+
+
+def test_in_http_accepts_split_http2_preface():
+    service = Service("in_http_http2_cleartext.yaml")
+
+    try:
+        service.start()
+        response = send_split_http2_preface(service.flb_listener_port)
+    finally:
+        service.stop()
+
+    assert len(response) >= 9
+    assert response[3] == 0x04
+    assert data_storage["payloads"] == []
 
 
 def test_in_http_rejects_bad_json():
