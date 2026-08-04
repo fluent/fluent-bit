@@ -217,6 +217,8 @@ static int record_get_field_sds(msgpack_object *obj, const char *fieldname, flb_
 {
     msgpack_object *v;
 
+    *val = NULL;
+
     v = record_get_field_ptr(obj, fieldname);
     if (v == NULL) {
         return 0;
@@ -226,6 +228,10 @@ static int record_get_field_sds(msgpack_object *obj, const char *fieldname, flb_
     }
 
     *val = flb_sds_create_len(v->via.str.ptr, v->via.str.size);
+    if (*val == NULL) {
+        return -1;
+    }
+
     return 0;
 }
 
@@ -361,7 +367,7 @@ static bool check_event_is_filtered(struct k8s_events *ctx, msgpack_object *obj,
     int ret;
     uint64_t outdated;
     msgpack_object *metadata;
-    flb_sds_t uid;
+    flb_sds_t uid = NULL;
     uint64_t resource_version;
 
     outdated = cfl_time_now() - ((uint64_t) ctx->retention_time * 1000000000ULL);
@@ -384,8 +390,8 @@ static bool check_event_is_filtered(struct k8s_events *ctx, msgpack_object *obj,
     }
 
     ret = record_get_field_sds(metadata, "uid", &uid);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "Cannot get resourceVersion for item in response");
+    if (ret == -1 || uid == NULL) {
+        flb_plg_error(ctx->ins, "Cannot get uid for item in response");
         return FLB_FALSE;
     }
 
@@ -526,8 +532,9 @@ static int process_watched_event(struct k8s_events *ctx, char *buf_data, size_t 
     }
 
     ret = record_get_field_sds(&root, "type", &event_type);
-    if (ret == -1) {
+    if (ret == -1 || event_type == NULL) {
         flb_plg_warn(ctx->ins, "Streamed Event 'type' not found");
+        ret = -1;
         goto msg_error;
     }
 
@@ -739,7 +746,7 @@ static int k8s_events_sql_insert_event(struct k8s_events *ctx, msgpack_object *i
     uint64_t resource_version;
     struct flb_time last;
     msgpack_object *meta;
-    flb_sds_t uid;
+    flb_sds_t uid = NULL;
 
 
     meta = record_get_field_ptr(item, "metadata");
@@ -755,7 +762,7 @@ static int k8s_events_sql_insert_event(struct k8s_events *ctx, msgpack_object *i
     }
 
     ret = record_get_field_sds(meta, "uid", &uid);
-    if (ret == -1) {
+    if (ret == -1 || uid == NULL) {
         flb_plg_error(ctx->ins, "unable to find uid in metadata to save event");
         return -1;
     }
