@@ -218,7 +218,7 @@ static int log_prepare_header(char *buf, size_t size, int type,
     header_title = flb_log_message_type_str(type);
 
     return snprintf(buf, size,
-                    "%s[%s%i/%02i/%02i %02i:%02i:%02i.%03ld%s]%s [%s%5s%s] ",
+                    "%s[%s%i-%02i-%02iT%02i:%02i:%02i.%03ld%s]%s [%s%5s%s] ",
                     bold_color, reset_color,
                     current->tm_year + 1900,
                     current->tm_mon + 1,
