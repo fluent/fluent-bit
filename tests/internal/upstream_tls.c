@@ -11,6 +11,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_output.h>
 
 #include "flb_tests_internal.h"
 
@@ -572,6 +573,32 @@ void test_upstream_proxy_tls_setup_configures_ca(void)
 
     flb_upstream_destroy(u);
     flb_config_exit(config);
+}
+
+/* Invalid tls.proxy.ca_file/ca_path must fail output init. */
+void test_output_proxy_tls_ca_check(void)
+{
+    struct flb_output_instance ins = {0};
+    char valid_ca_file[4096];
+
+    snprintf(valid_ca_file, sizeof(valid_ca_file), "%sdata/tls/proxy_stub_certificate.pem",
+             FLB_TESTS_DATA_PATH);
+
+    snprintf(ins.name, sizeof(ins.name), "test");
+    ins.tls_proxy_verify = FLB_TRUE;
+
+    /* No proxy CA configured: nothing to validate. */
+    ins.tls_proxy_ca_file = NULL;
+    ins.tls_proxy_ca_path = NULL;
+    TEST_CHECK(flb_output_proxy_tls_ca_check(&ins) == 0);
+
+    /* Invalid ca_file: must fail so the caller aborts output init. */
+    ins.tls_proxy_ca_file = "/this/path/does/not/exist.pem";
+    TEST_CHECK(flb_output_proxy_tls_ca_check(&ins) == -1);
+
+    /* Valid ca_file: must succeed. */
+    ins.tls_proxy_ca_file = valid_ca_file;
+    TEST_CHECK(flb_output_proxy_tls_ca_check(&ins) == 0);
 }
 
 /*
@@ -1181,6 +1208,7 @@ TEST_LIST = {
      test_tls_reload_does_not_hide_concurrent_file_change},
     {"upstream_proxy_tls_setup_noop_without_proxy", test_upstream_proxy_tls_setup_noop_without_proxy},
     {"upstream_proxy_tls_setup_configures_ca", test_upstream_proxy_tls_setup_configures_ca},
+    {"output_proxy_tls_ca_check", test_output_proxy_tls_ca_check},
     {"io_proxy_tls_flag_does_not_leak_to_stream", test_io_proxy_tls_flag_does_not_leak_to_stream},
     {"http_client_host_header_not_polluted_by_proxy_tls",
      test_http_client_host_header_not_polluted_by_proxy_tls},
