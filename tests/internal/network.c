@@ -248,6 +248,7 @@ void test_downstream_event_callback_runs_on_parent_stack()
 
     memset(&context, 0, sizeof(context));
 
+    flb_coro_init();
     flb_coro_thread_init();
 
     coro = flb_coro_create(&context);
