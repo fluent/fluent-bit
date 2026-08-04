@@ -226,6 +226,7 @@ static int record_get_field_sds(msgpack_object *obj, const char *fieldname, flb_
 
 static int record_get_field_time(msgpack_object *obj, const char *fieldname, struct flb_time *val)
 {
+    char *end;
     msgpack_object *v;
     struct flb_tm tm = { 0 };
     char buf[64];
@@ -250,13 +251,9 @@ static int record_get_field_time(msgpack_object *obj, const char *fieldname, str
     memcpy(buf, v->via.str.ptr, v->via.str.size);
     buf[v->via.str.size] = '\0';
 
-    {
-        char *end;
-
-        end = flb_strptime(buf, "%Y-%m-%dT%H:%M:%SZ", &tm);
-        if (end == NULL || *end != '\0') {
-            return -2;
-        }
+    end = flb_strptime(buf, "%Y-%m-%dT%H:%M:%SZ", &tm);
+    if (end == NULL || *end != '\0') {
+        return -2;
     }
 
     val->tm.tv_sec = flb_parser_tm2time(&tm, FLB_FALSE);
@@ -565,7 +562,6 @@ static int process_event_list(struct k8s_events *ctx, char *in_data, size_t in_s
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_object root;
-    msgpack_object k;
     msgpack_object *items = NULL;
     msgpack_object *item = NULL;
     msgpack_object *metadata = NULL;
@@ -594,27 +590,16 @@ static int process_event_list(struct k8s_events *ctx, char *in_data, size_t in_s
     /* Traverse the EventList for the metadata (for the continue token) and the items.
      * https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/#EventList
      */
-    for (i = 0; i < root.via.map.size; i++) {
-        k = root.via.map.ptr[i].key;
-        if (k.type != MSGPACK_OBJECT_STR) {
-            continue;
-        }
+    items = record_get_field_ptr(&root, "items");
+    if (items != NULL && items->type != MSGPACK_OBJECT_ARRAY) {
+        flb_plg_error(ctx->ins, "Cannot unpack items");
+        goto msg_error;
+    }
 
-        if (strncmp(k.via.str.ptr, "items", 5) == 0) {
-            items = &root.via.map.ptr[i].val;
-            if (items->type != MSGPACK_OBJECT_ARRAY) {
-                flb_plg_error(ctx->ins, "Cannot unpack items");
-                goto msg_error;
-            }
-        }
-
-        if (strncmp(k.via.str.ptr, "metadata", 8) == 0) {
-            metadata = &root.via.map.ptr[i].val;
-            if (metadata->type != MSGPACK_OBJECT_MAP) {
-                flb_plg_error(ctx->ins, "Cannot unpack metadata");
-                goto msg_error;
-            }
-        }
+    metadata = record_get_field_ptr(&root, "metadata");
+    if (metadata != NULL && metadata->type != MSGPACK_OBJECT_MAP) {
+        flb_plg_error(ctx->ins, "Cannot unpack metadata");
+        goto msg_error;
     }
 
     if (items == NULL) {
@@ -751,7 +736,7 @@ static int k8s_events_sql_insert_event(struct k8s_events *ctx, msgpack_object *i
     flb_sds_t uid;
 
 
-    meta = record_get_field_ptr(item, "meta");
+    meta = record_get_field_ptr(item, "metadata");
     if (meta == NULL) {
         flb_plg_error(ctx->ins, "unable to find metadata to save event");
         return -1;
