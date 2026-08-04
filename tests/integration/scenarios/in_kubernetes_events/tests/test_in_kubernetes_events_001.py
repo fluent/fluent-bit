@@ -13,15 +13,17 @@ EVENT_UID = "watch-event-uid"
 RECOVERED_EVENT_UID = "post-recovery-event-uid"
 
 
-def _event(resource_version, uid):
+def _event(resource_version, uid=None):
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    return {
+    event = {
         "metadata": {
             "creationTimestamp": timestamp,
             "resourceVersion": str(resource_version),
-            "uid": uid,
         }
     }
+    if uid is not None:
+        event["metadata"]["uid"] = uid
+    return event
 
 
 class _KubeApiServer(http.server.ThreadingHTTPServer):
@@ -36,6 +38,7 @@ class _KubeApiServer(http.server.ThreadingHTTPServer):
         self.watch_paths = []
         self.event = _event(2, EVENT_UID)
         self.recovered_event = _event(3, RECOVERED_EVENT_UID)
+        self.uidless_event = _event(4)
 
 
 class _KubeApiHandler(http.server.BaseHTTPRequestHandler):
@@ -54,10 +57,13 @@ class _KubeApiHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             if watch_request <= 2:
                 event = self.server.event
+                type_key = "type"
+                if watch_request == 1:
+                    type_key = "typeExtra"
                 if watch_request == 2:
                     event = self.server.recovered_event
                 payload = (
-                    json.dumps({"type": "ADDED", "object": event}) + "\n"
+                    json.dumps({type_key: "ADDED", "object": event}) + "\n"
                 ).encode("utf-8")
                 self.wfile.write(f"{len(payload):x}\r\n".encode("ascii"))
                 self.wfile.write(payload)
@@ -85,7 +91,11 @@ class _KubeApiHandler(http.server.BaseHTTPRequestHandler):
                 "kind": "EventList",
                 "apiVersion": "v1",
                 "metadata": {"resourceVersion": str(min(list_request, 2))},
-                "items": [self.server.event] if list_request > 1 else [],
+                "items": (
+                    [self.server.event, self.server.uidless_event]
+                    if list_request > 1
+                    else []
+                ),
             }
         ).encode("utf-8")
         self.send_response(200)
@@ -177,6 +187,9 @@ def test_kubernetes_events_reconnects_stalled_watch(tmp_path):
         assert all("timeoutSeconds=1" in path for path in kube_api_server.watch_paths)
         assert log_text.count(f'"uid"=>"{EVENT_UID}"') == 1
         assert log_text.count(f'"uid"=>"{RECOVERED_EVENT_UID}"') == 1
+        assert "Streamed Event 'type' not found" in log_text
+        assert "Cannot get uid for item in response" in log_text
+        assert "unable to find uid in metadata to save event" in log_text
         assert "unable to find metadata to save event" not in log_text
         assert f"inserted k8s event: uid={EVENT_UID}" in log_text
         assert f"inserted k8s event: uid={RECOVERED_EVENT_UID}" in log_text
