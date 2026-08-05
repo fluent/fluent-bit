@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#include <string.h>
 #include "flb_tests_runtime.h"
 
 /* Thread-safe callback invocation tracking */
@@ -742,6 +743,185 @@ void flb_test_lifecycle()
     }
 }
 
+static void cb_check_payload_under_limit(void *ctx, int ffd, int res_ret,
+                                           void *res_data, size_t res_size,
+                                           void *data)
+{
+    flb_sds_t json = res_data;
+    size_t limit = *(size_t *) data;
+
+    if (!TEST_CHECK(res_ret == 0)) {
+        TEST_MSG("formatter returned an error");
+    }
+    if (!TEST_CHECK(res_size > 0)) {
+        TEST_MSG("formatter returned empty payload");
+    }
+    if (!TEST_CHECK(res_size <= limit)) {
+        TEST_MSG("payload size %zu exceeds limit %zu", res_size, limit);
+    }
+    if (!TEST_CHECK(strstr(json, "\"lines\":") != NULL)) {
+        TEST_MSG("missing lines array: %s", json);
+    }
+
+    set_output_num(get_output_num() + 1);
+    flb_sds_destroy(json);
+}
+
+void flb_test_payload_under_limit()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd;
+    size_t payload_limit = 2 * 1024 * 1024;
+
+    clear_output_num();
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "logdna", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "api_key", "test-key",
+                   "payload_limit", "2M",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_payload_under_limit,
+                              (void *) &payload_limit, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd,
+                 (char *) JSON_NO_APP,
+                 sizeof(JSON_NO_APP) - 1);
+
+    sleep(2);
+
+    if (!TEST_CHECK(get_output_num() > 0)) {
+        TEST_MSG("formatter callback was not invoked");
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+static int count_substring(const char *haystack, const char *needle)
+{
+    int count = 0;
+    const char *p = haystack;
+
+    while ((p = strstr(p, needle)) != NULL) {
+        count++;
+        p += strlen(needle);
+    }
+
+    return count;
+}
+
+static void cb_check_batch_split(void *ctx, int ffd, int res_ret,
+                                 void *res_data, size_t res_size,
+                                 void *data)
+{
+    flb_sds_t json = res_data;
+    size_t payload_limit = *(size_t *) data;
+    int line_count;
+
+    if (!TEST_CHECK(res_ret == 0)) {
+        TEST_MSG("formatter returned an error");
+    }
+    if (!TEST_CHECK(res_size <= payload_limit)) {
+        TEST_MSG("payload size %zu exceeds limit %zu", res_size, payload_limit);
+    }
+
+    line_count = count_substring(json, "\"line\":");
+    if (!TEST_CHECK(line_count > 0 && line_count < 5)) {
+        TEST_MSG("expected partial batch (1-4 lines), got %d lines in: %s",
+                 line_count, json);
+    }
+
+    if (!TEST_CHECK(strstr(json, "batch-record-0") != NULL)) {
+        TEST_MSG("first record missing from partial batch: %s", json);
+    }
+    if (!TEST_CHECK(strstr(json, "batch-record-4") == NULL)) {
+        TEST_MSG("last record should not appear in first partial batch: %s", json);
+    }
+
+    set_output_num(get_output_num() + 1);
+    flb_sds_destroy(json);
+}
+
+void flb_test_batch_split_by_size()
+{
+    int i;
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd;
+    char record[2048];
+    size_t payload_limit = 4096;
+    const char *padding =
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+
+    clear_output_num();
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "0.2", "grace", "1",
+                    "log_level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "logdna", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "api_key", "test-key",
+                   "payload_limit", "4K",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_batch_split,
+                              (void *) &payload_limit, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    for (i = 0; i < 5; i++) {
+        snprintf(record, sizeof(record) - 1,
+                 "[12345678, {\"message\":\"batch-record-%d-%s\"}]",
+                 i, padding);
+        flb_lib_push(ctx, in_ffd, record, strlen(record));
+    }
+
+    sleep(2);
+
+    if (!TEST_CHECK(get_output_num() > 0)) {
+        TEST_MSG("formatter callback was not invoked");
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 TEST_LIST = {
     {"non_duplication",            flb_test_non_duplication},
     {"data_completeness",          flb_test_data_completeness},
@@ -752,5 +932,7 @@ TEST_LIST = {
     {"payload_structure",          flb_test_payload_structure},
     {"backward_compat",            flb_test_backward_compat},
     {"lifecycle",                  flb_test_lifecycle},
+    {"payload_under_limit",        flb_test_payload_under_limit},
+    {"batch_split_by_size",        flb_test_batch_split_by_size},
     {NULL, NULL}
 };

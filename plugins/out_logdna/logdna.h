@@ -29,6 +29,9 @@
 #define FLB_LOGDNA_CT        "Content-Type"
 #define FLB_LOGDNA_CT_JSON   "application/json; charset=UTF-8"
 
+#define LOGDNA_THRESHOLD_RATIO   0.8
+#define LOGDNA_RETRY_LIMIT       8
+
 struct flb_logdna {
     /* Incoming Configuration Properties */
     flb_sds_t logdna_host;
@@ -42,12 +45,18 @@ struct flb_logdna {
     flb_sds_t app;
     struct mk_list *tags;
     int exclude_promoted_keys;
+    size_t payload_limit;
 
     /* Internal */
     flb_sds_t _hostname;
     flb_sds_t tags_formatted;
     struct flb_upstream *u;
     struct flb_output_instance *ins;
+
+    /* Multi-batch flush progress (resume on engine retry) */
+    int flush_task_id;
+    const void *flush_chunk_data;
+    size_t flush_byte_offset;
 };
 
 

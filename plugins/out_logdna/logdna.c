@@ -173,17 +173,83 @@ static int record_append_primary_keys(struct flb_logdna *ctx,
     return c;
 }
 
-static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
-                                        const void *data, size_t bytes,
-                                        const char *tag, int tag_len,
-                                        struct flb_config *config)
+static void logdna_flush_progress_clear(struct flb_logdna *ctx)
+{
+    ctx->flush_task_id = -1;
+    ctx->flush_chunk_data = NULL;
+    ctx->flush_byte_offset = 0;
+}
+
+static size_t logdna_flush_progress_load(struct flb_logdna *ctx,
+                                         int task_id,
+                                         const void *chunk_data)
+{
+    if (ctx->flush_task_id == task_id &&
+        ctx->flush_chunk_data == chunk_data) {
+        return ctx->flush_byte_offset;
+    }
+
+    logdna_flush_progress_clear(ctx);
+    return 0;
+}
+
+static void logdna_flush_progress_save(struct flb_logdna *ctx,
+                                       int task_id,
+                                       const void *chunk_data,
+                                       size_t byte_offset)
+{
+    ctx->flush_task_id = task_id;
+    ctx->flush_chunk_data = chunk_data;
+    ctx->flush_byte_offset = byte_offset;
+}
+
+static int count_mp_with_threshold(size_t last_offset, size_t threshold,
+                                   struct flb_log_event_decoder *log_decoder,
+                                   struct flb_logdna *ctx)
+{
+    int ret;
+    int array_size = 0;
+    size_t off = 0;
+    struct flb_log_event log_event;
+
+    if (last_offset != 0) {
+        log_decoder->offset = last_offset;
+    }
+
+    while ((ret = flb_log_event_decoder_next(
+                    log_decoder,
+                    &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
+        off = log_decoder->offset;
+        array_size++;
+
+        if (off >= (threshold + last_offset)) {
+            flb_plg_debug(ctx->ins,
+                          "offset %zu exceeded threshold %zu, "
+                          "batch record count is %d",
+                          off, threshold, array_size);
+            break;
+        }
+    }
+
+    return array_size;
+}
+
+static int logdna_format(const void *data, size_t bytes,
+                         size_t last_offset, size_t threshold,
+                         size_t *out_offset,
+                         struct flb_log_event_decoder *log_decoder,
+                         struct flb_logdna *ctx,
+                         struct flb_config *config,
+                         flb_sds_t *out_json)
 {
     int ret;
     int len;
     int total_lines;
     int array_size = 0;
+    int records_packed = 0;
     off_t map_off;
-    size_t off;
+    size_t line_off;
+    size_t last_off = last_offset;
     char *line_json;
     flb_sds_t json;
     msgpack_packer mp_pck;
@@ -191,22 +257,26 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
     msgpack_packer mp_line_pck;
     msgpack_sbuffer mp_line_sbuf;
     msgpack_unpacked mp_line_result;
-    struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
 
-    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
-
-    if (ret != FLB_EVENT_DECODER_SUCCESS) {
-        flb_plg_error(ctx->ins,
-                      "Log event decoder initialization error : %d", ret);
-
-        return NULL;
+    if (out_json) {
+        *out_json = NULL;
+    }
+    if (out_offset) {
+        *out_offset = last_offset;
     }
 
-    /* Count number of records */
-    total_lines = flb_mp_count_log_records(data, bytes);
+    total_lines = count_mp_with_threshold(last_offset, threshold,
+                                          log_decoder, ctx);
+    if (total_lines <= 0) {
+        return -1;
+    }
 
-    /* Initialize msgpack buffers */
+    flb_log_event_decoder_reset(log_decoder, (char *) data, bytes);
+    if (last_offset != 0) {
+        log_decoder->offset = last_offset;
+    }
+
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -218,20 +288,13 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
     msgpack_pack_array(&mp_pck, total_lines);
 
     while ((ret = flb_log_event_decoder_next(
-                    &log_decoder,
+                    log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         map_off = mp_sbuf.size;
 
         array_size = 2;
         msgpack_pack_map(&mp_pck, array_size);
 
-        /*
-         * Append primary keys found, the return value is the number of appended
-         * keys to the record, we use that to adjust the map header size.
-         *
-         * When exclude_promoted_keys is enabled, non-primary keys are packed
-         * into mp_line_sbuf for use as the "line" body.
-         */
         if (ctx->exclude_promoted_keys) {
             msgpack_sbuffer_init(&mp_line_sbuf);
             msgpack_packer_init(&mp_line_pck, &mp_line_sbuf,
@@ -246,20 +309,18 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
         }
         array_size += ret;
 
-        /* Timestamp */
         msgpack_pack_str(&mp_pck, 9);
         msgpack_pack_str_body(&mp_pck, "timestamp", 9);
         msgpack_pack_int(&mp_pck, (int) flb_time_to_double(&log_event.timestamp));
 
-        /* Line */
         msgpack_pack_str(&mp_pck, 4);
         msgpack_pack_str_body(&mp_pck, "line", 4);
 
         if (ctx->exclude_promoted_keys) {
             msgpack_unpacked_init(&mp_line_result);
-            off = 0;
+            line_off = 0;
             msgpack_unpack_next(&mp_line_result,
-                                mp_line_sbuf.data, mp_line_sbuf.size, &off);
+                                mp_line_sbuf.data, mp_line_sbuf.size, &line_off);
 
             line_json = flb_msgpack_to_json_str(1024, &mp_line_result.data,
                                                 config->json_escape_unicode);
@@ -272,22 +333,47 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
                                                 config->json_escape_unicode);
         }
 
+        if (!line_json) {
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return -1;
+        }
+
         len = strlen(line_json);
         msgpack_pack_str(&mp_pck, len);
         msgpack_pack_str_body(&mp_pck, line_json, len);
         flb_free(line_json);
 
-        /* Adjust map header size */
         flb_mp_set_map_header_size(mp_sbuf.data + map_off, array_size);
+
+        last_off = log_decoder->offset;
+        records_packed++;
+
+        if (last_off >= (threshold + last_offset)) {
+            flb_plg_debug(ctx->ins,
+                          "offset %zu exceeded threshold %zu, "
+                          "packed %d records in batch",
+                          last_off, threshold, records_packed);
+            break;
+        }
     }
 
-    flb_log_event_decoder_destroy(&log_decoder);
+    if (records_packed == 0) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return -1;
+    }
 
     json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
                                        config->json_escape_unicode);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    return json;
+    if (!json) {
+        flb_plg_error(ctx->ins, "error formatting JSON payload");
+        return -1;
+    }
+
+    *out_offset = last_off;
+    *out_json = json;
+    return 0;
 }
 
 static void logdna_config_destroy(struct flb_logdna *ctx)
@@ -323,6 +409,7 @@ static struct flb_logdna *logdna_config_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->ins = ins;
+    logdna_flush_progress_clear(ctx);
 
     /* Load config map */
     ret = flb_output_config_map_set(ins, (void *) ctx);
@@ -441,50 +528,24 @@ static int cb_logdna_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_logdna_flush(struct flb_event_chunk *event_chunk,
-                            struct flb_output_flush *out_flush,
-                            struct flb_input_instance *i_ins,
-                            void *out_context,
-                            struct flb_config *config)
+static int logdna_post_payload(struct flb_logdna *ctx,
+                               struct flb_connection *u_conn,
+                               flb_sds_t payload,
+                               struct flb_config *config)
 {
     int ret;
     int out_ret = FLB_OK;
     size_t b_sent;
     flb_sds_t uri;
     flb_sds_t tmp;
-    flb_sds_t payload;
-    struct flb_logdna *ctx = out_context;
-    struct flb_connection *u_conn;
     struct flb_http_client *c;
 
-    /* Format the data to the expected LogDNA Payload */
-    payload = logdna_compose_payload(ctx,
-                                     event_chunk->data,
-                                     event_chunk->size,
-                                     event_chunk->tag,
-                                     flb_sds_len(event_chunk->tag),
-                                     config);
-    if (!payload) {
-        flb_plg_error(ctx->ins, "cannot compose request payload");
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
-    /* Lookup an available connection context */
-    u_conn = flb_upstream_conn_get(ctx->u);
-    if (!u_conn) {
-        flb_plg_error(ctx->ins, "no upstream connections available");
-        flb_sds_destroy(payload);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
-    /* Compose the HTTP URI */
     uri = flb_sds_create_size(256);
     if (!uri) {
         flb_plg_error(ctx->ins, "cannot allocate buffer for URI");
-        flb_sds_destroy(payload);
-        flb_free(ctx);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+        return FLB_RETRY;
     }
+
     tmp = flb_sds_printf(&uri,
                          "%s?hostname=%s&mac=%s&ip=%s&now=%lu&tags=%s",
                          ctx->logdna_endpoint,
@@ -495,12 +556,10 @@ static void cb_logdna_flush(struct flb_event_chunk *event_chunk,
                          ctx->tags_formatted);
     if (!tmp) {
         flb_plg_error(ctx->ins, "error formatting URI");
-        flb_sds_destroy(payload);
-        flb_free(ctx);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+        flb_sds_destroy(uri);
+        return FLB_RETRY;
     }
 
-    /* Create HTTP client context */
     c = flb_http_client(u_conn, FLB_HTTP_POST, uri,
                         payload, flb_sds_len(payload),
                         ctx->logdna_host, ctx->logdna_port,
@@ -508,47 +567,21 @@ static void cb_logdna_flush(struct flb_event_chunk *event_chunk,
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
         flb_sds_destroy(uri);
-        flb_sds_destroy(payload);
-        flb_upstream_conn_release(u_conn);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+        return FLB_RETRY;
     }
 
-    /* Set callback context to the HTTP client context */
     flb_http_set_callback_context(c, ctx->ins->callback);
-
-    /* User Agent */
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-
-    /* Add Content-Type header */
     flb_http_add_header(c,
                         FLB_LOGDNA_CT, sizeof(FLB_LOGDNA_CT) - 1,
                         FLB_LOGDNA_CT_JSON, sizeof(FLB_LOGDNA_CT_JSON) - 1);
-
-    /* Add auth */
     flb_http_basic_auth(c, ctx->api_key, "");
-
     flb_http_strip_port_from_host(c);
 
-    /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
-
-    /* Destroy buffers */
     flb_sds_destroy(uri);
-    flb_sds_destroy(payload);
 
-    /* Validate HTTP client return status */
     if (ret == 0) {
-        /*
-         * Only allow the following HTTP status:
-         *
-         * - 200: OK
-         * - 201: Created
-         * - 202: Accepted
-         * - 203: no authorative resp
-         * - 204: No Content
-         * - 205: Reset content
-         *
-         */
         if (c->resp.status < 200 || c->resp.status > 205) {
             if (c->resp.payload) {
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
@@ -575,14 +608,141 @@ static void cb_logdna_flush(struct flb_event_chunk *event_chunk,
         }
     }
     else {
-        flb_plg_error(ctx->ins, "could not flush records to %s:%s (http_do=%i)",
-                      FLB_LOGDNA_HOST, FLB_LOGDNA_PORT, ret);
+        flb_plg_error(ctx->ins, "could not flush records to %s:%i (http_do=%i)",
+                      ctx->logdna_host, ctx->logdna_port, ret);
         out_ret = FLB_RETRY;
     }
 
+    (void) config;
     flb_http_client_destroy(c);
+    return out_ret;
+}
+
+static void cb_logdna_flush(struct flb_event_chunk *event_chunk,
+                            struct flb_output_flush *out_flush,
+                            struct flb_input_instance *i_ins,
+                            void *out_context,
+                            struct flb_config *config)
+{
+    int ret;
+    int ret_code = FLB_RETRY;
+    int retries = 0;
+    int need_loop = FLB_TRUE;
+    flb_sds_t payload;
+    size_t payload_size;
+    size_t threshold;
+    size_t offset;
+    size_t out_offset = 0;
+    struct flb_logdna *ctx = out_context;
+    struct flb_connection *u_conn;
+    struct flb_log_event_decoder log_decoder;
+
+    (void) i_ins;
+
+    if (ctx->payload_limit == 0) {
+        flb_plg_error(ctx->ins, "payload_limit must be greater than zero");
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
+    threshold = (size_t) (LOGDNA_THRESHOLD_RATIO * ctx->payload_limit);
+    offset = logdna_flush_progress_load(ctx,
+                                        out_flush->task->id,
+                                        event_chunk->data);
+
+    if (offset >= event_chunk->size) {
+        logdna_flush_progress_clear(ctx);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
+
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+        flb_plg_error(ctx->ins, "no upstream connections available");
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    ret = flb_log_event_decoder_init(&log_decoder,
+                                     (char *) event_chunk->data,
+                                     event_chunk->size);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+        flb_upstream_conn_release(u_conn);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    while (need_loop) {
+    retry:
+        if (retries > 0) {
+            threshold = (size_t) (((LOGDNA_RETRY_LIMIT - retries) / 10.0) *
+                                  ctx->payload_limit);
+        }
+
+        ret = logdna_format(event_chunk->data, event_chunk->size,
+                            offset, threshold, &out_offset,
+                            &log_decoder, ctx, config, &payload);
+        if (ret != 0) {
+            flb_log_event_decoder_destroy(&log_decoder);
+            flb_upstream_conn_release(u_conn);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        payload_size = flb_sds_len(payload);
+        flb_plg_debug(ctx->ins, "formatted payload size is %zu bytes", payload_size);
+
+        if (payload_size >= ctx->payload_limit) {
+            retries++;
+            if (retries >= LOGDNA_RETRY_LIMIT) {
+                flb_plg_error(ctx->ins,
+                              "retry limit exceeded for logdna_format");
+                flb_sds_destroy(payload);
+                flb_log_event_decoder_destroy(&log_decoder);
+                flb_upstream_conn_release(u_conn);
+                FLB_OUTPUT_RETURN(FLB_ERROR);
+            }
+
+            flb_plg_debug(ctx->ins,
+                          "payload size %zu exceeded limit %zu, "
+                          "attempts remaining: %d",
+                          payload_size, ctx->payload_limit,
+                          LOGDNA_RETRY_LIMIT - retries);
+            flb_sds_destroy(payload);
+            goto retry;
+        }
+
+        retries = 0;
+
+        ret = logdna_post_payload(ctx, u_conn, payload, config);
+        flb_sds_destroy(payload);
+
+        if (ret != FLB_OK) {
+            logdna_flush_progress_save(ctx,
+                                       out_flush->task->id,
+                                       event_chunk->data,
+                                       offset);
+            ret_code = ret;
+            break;
+        }
+
+        logdna_flush_progress_save(ctx,
+                                   out_flush->task->id,
+                                   event_chunk->data,
+                                   out_offset);
+        offset = out_offset;
+
+        if (out_offset >= event_chunk->size) {
+            need_loop = FLB_FALSE;
+            ret_code = FLB_OK;
+        }
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
     flb_upstream_conn_release(u_conn);
-    FLB_OUTPUT_RETURN(out_ret);
+
+    if (ret_code == FLB_OK) {
+        logdna_flush_progress_clear(ctx);
+    }
+
+    FLB_OUTPUT_RETURN(ret_code);
 }
 
 static int cb_logdna_exit(void *data, struct flb_config *config)
@@ -592,6 +752,8 @@ static int cb_logdna_exit(void *data, struct flb_config *config)
     if (!ctx) {
         return 0;
     }
+
+    logdna_flush_progress_clear(ctx);
 
     if (ctx->_hostname) {
         flb_sds_destroy(ctx->_hostname);
@@ -668,6 +830,12 @@ static struct flb_config_map config_map[] = {
      "Exclude promoted keys (meta, level, severity (promoted as level), app, file) from the line body"
     },
 
+    {
+     FLB_CONFIG_MAP_SIZE, "payload_limit", "2M",
+     0, FLB_TRUE, offsetof(struct flb_logdna, payload_limit),
+     "Maximum formatted JSON request body size"
+    },
+
     /* EOF */
     {0}
 
@@ -682,11 +850,40 @@ static int cb_logdna_format_test(struct flb_config *config,
                                  const void *data, size_t bytes,
                                  void **out_data, size_t *out_size)
 {
+    int ret;
+    size_t threshold;
+    size_t out_offset;
     flb_sds_t json;
     struct flb_logdna *ctx = plugin_context;
+    struct flb_log_event_decoder log_decoder;
 
-    json = logdna_compose_payload(ctx, data, bytes, tag, tag_len, config);
-    if (!json) {
+    (void) ins;
+    (void) flush_ctx;
+    (void) event_type;
+    (void) tag;
+    (void) tag_len;
+
+    threshold = bytes;
+    if (ctx->payload_limit > 0) {
+        size_t batch_threshold;
+
+        batch_threshold = (size_t) (LOGDNA_THRESHOLD_RATIO * ctx->payload_limit);
+        if (batch_threshold < bytes) {
+            threshold = batch_threshold;
+        }
+    }
+
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "log event decoder init error");
+        return -1;
+    }
+
+    ret = logdna_format(data, bytes, 0, threshold, &out_offset,
+                        &log_decoder, ctx, config, &json);
+    flb_log_event_decoder_destroy(&log_decoder);
+
+    if (ret != 0) {
         return -1;
     }
 
