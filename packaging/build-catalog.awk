@@ -1,9 +1,39 @@
 BEGIN {
     nrepos = split(repo_paths, repos, " ")
+    if (min_catalog_major !~ /^[0-9]+$/) {
+        print "ERROR: min_catalog_major must be a nonnegative integer: " min_catalog_major > "/dev/stderr"
+        exit 1
+    }
+    min_catalog_major = min_catalog_major + 0
 }
 
 function is_version(v) {
     return v ~ /^[0-9]+\.[0-9]+(\.[0-9]+)*$/
+}
+
+function version_major(v,    parts) {
+    split(v, parts, ".")
+    return parts[1] + 0
+}
+
+function version_in_catalog(v) {
+    if (!is_version(v)) {
+        return 0
+    }
+    if (min_catalog_major == 0) {
+        return 1
+    }
+    return version_major(v) >= min_catalog_major
+}
+
+function path_in_catalog(path,    n, name, v, parts) {
+    n = split(path, parts, "/")
+    name = parts[n]
+    v = extract_version(name)
+    if (v == "") {
+        return 1
+    }
+    return version_in_catalog(v)
 }
 
 function schema_version(name) {
@@ -47,10 +77,6 @@ function extract_version(name,    rest, i, c, following) {
     }
 
     return rest
-}
-
-function version_includes_linux(v) {
-    return v ~ /^[45]\./
 }
 
 function repo_prefix(path,    i, p) {
@@ -117,7 +143,7 @@ function json_url(path) {
 }
 
 function note_linux(v, path, name, repo,    key, label, idx) {
-    if (!version_includes_linux(v)) {
+    if (!version_in_catalog(v)) {
         return
     }
     key = v SUBSEP path
@@ -212,12 +238,20 @@ function emit_version(v,    out, i, repo_key, repo, repos_out, repos_n) {
 
     path = $0
     sub(/\r$/, "", path)
+
+    if (emit_mode == "filter") {
+        if (path_in_catalog(path)) {
+            print path
+        }
+        next
+    }
+
     n = split(path, parts, "/")
     name = parts[n]
 
     if (name ~ /^fluent-bit-schema-[0-9]+\.[0-9]+(\.[0-9]+)*\.json$/) {
         v = schema_version(name)
-        if (is_version(v)) {
+        if (version_in_catalog(v)) {
             versions[v] = 1
             schema[v] = path
         }
@@ -227,7 +261,7 @@ function emit_version(v,    out, i, repo_key, repo, repos_out, repos_n) {
     if (path ~ /^windows\//) {
         v = extract_version(name)
         key = windows_key(name, v)
-        if (key != "") {
+        if (key != "" && version_in_catalog(v)) {
             versions[v] = 1
             windows[v, key] = path
         }
@@ -236,7 +270,7 @@ function emit_version(v,    out, i, repo_key, repo, repos_out, repos_n) {
 
     if (path ~ /^macos\//) {
         v = extract_version(name)
-        if (v == "") {
+        if (v == "" || !version_in_catalog(v)) {
             next
         }
         versions[v] = 1
@@ -254,7 +288,7 @@ function emit_version(v,    out, i, repo_key, repo, repos_out, repos_n) {
             next
         }
         v = extract_version(name)
-        if (!is_version(v)) {
+        if (!version_in_catalog(v)) {
             next
         }
         versions[v] = 1
@@ -264,8 +298,11 @@ function emit_version(v,    out, i, repo_key, repo, repos_out, repos_n) {
 
 END {
     mode = emit_mode
+    if (mode == "filter") {
+        exit 0
+    }
     for (v in versions) {
-        if (!is_version(v)) {
+        if (!version_in_catalog(v)) {
             continue
         }
         if (mode == "versions") {
