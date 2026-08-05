@@ -67,12 +67,33 @@ def send_requests(conn, num_requests, headers, json_payload):
     return responses
 
 
-def send_raw_http1_request(port, request):
+def assert_connection_open_without_response(connection):
+    connection.settimeout(1)
+
+    try:
+        data = connection.recv(1)
+    except socket.timeout:
+        return
+
+    if not data:
+        pytest.fail("HTTP server closed the connection while the request was incomplete")
+
+    pytest.fail("HTTP server responded before the request was complete")
+
+
+def send_raw_http1_request(port, request, split_at=None):
     response = bytearray()
 
     with socket.create_connection(("127.0.0.1", port), timeout=2) as connection:
         connection.settimeout(2)
-        connection.sendall(request)
+
+        if split_at is None:
+            connection.sendall(request)
+        else:
+            connection.sendall(request[:split_at])
+            assert_connection_open_without_response(connection)
+            connection.settimeout(2)
+            connection.sendall(request[split_at:])
 
         while len(response) < 4096 and b"\r\n" not in response:
             try:
@@ -97,7 +118,8 @@ def send_split_http2_preface(port):
     with socket.create_connection(("127.0.0.1", port), timeout=2) as connection:
         connection.settimeout(2)
         connection.sendall(preface[:-2])
-        time.sleep(0.1)
+        assert_connection_open_without_response(connection)
+        connection.settimeout(2)
         connection.sendall(preface[-2:] + settings_frame)
 
         while len(response) < 9:
@@ -177,6 +199,31 @@ def test_in_http_accepts_split_http2_preface():
     assert len(response) >= 9
     assert response[3] == 0x04
     assert data_storage["payloads"] == []
+
+
+def test_in_http_accepts_http1_request_split_before_autodetect_boundary():
+    service = Service("in_http_http2_cleartext.yaml")
+    body = b'{"message":"split-http1"}'
+    request = (
+        b"POST / HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        + f"Content-Length: {len(body)}\r\n".encode()
+        + b"Connection: close\r\n"
+        b"\r\n"
+        + body
+    )
+
+    try:
+        service.start()
+        response = send_raw_http1_request(service.flb_listener_port, request, split_at=1)
+        forwarded_payloads = service.read_forwarded_payloads()
+    finally:
+        service.stop()
+
+    assert b"HTTP/1.1 201" in response
+    assert len(forwarded_payloads) == 1
+    assert forwarded_payloads[0][0]["message"] == "split-http1"
 
 
 def test_in_http_rejects_bad_json():
