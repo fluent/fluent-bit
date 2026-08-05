@@ -1147,7 +1147,7 @@ int flb_input_chunk_release_space_compound(
  * will drop the the oldest chunks when the limitation on local disk is reached.
  */
 int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
-                                        size_t chunk_size, int overlimit)
+                                        size_t chunk_size)
 {
     int count;
     int result;
@@ -1156,20 +1156,23 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
     size_t local_release_requirement;
 
     /*
-     * For each output instances that will be over the limit after adding the new chunk,
-     * we have to determine how many chunks needs to be removed. We will adjust the
-     * routes_mask to only route to the output plugin that have enough space after
-     * deleting some chunks fome the queue.
+     * For each output instance that will be over the limit after adding the new chunk,
+     * we have to determine how many chunks need to be removed. We will adjust the
+     * routes_mask to only route to the output plugin that has enough space after
+     * deleting some chunks from the queue.
      */
     count = 0;
 
     mk_list_foreach(head, &ic->in->config->outputs) {
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
 
-        if ((o_ins->total_limit_size == -1) || ((1 << o_ins->id) & overlimit) == 0 ||
-           (flb_routes_mask_get_bit(ic->routes_mask,
-                                    o_ins->id,
-                                    o_ins->config->router) == 0)) {
+        if ((o_ins->total_limit_size == -1) ||
+            (flb_routes_mask_get_bit(ic->routes_mask,
+                                     o_ins->id,
+                                     o_ins->config->router) == 0) ||
+            (o_ins->fs_chunks_size +
+             o_ins->fs_backlog_chunks_size +
+             chunk_size) <= o_ins->total_limit_size) {
             continue;
         }
 
@@ -1227,7 +1230,7 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
         if ((o_ins->fs_chunks_size +
              o_ins->fs_backlog_chunks_size +
              chunk_size) > o_ins->total_limit_size) {
-            overlimit |= (1 << o_ins->id);
+            overlimit = FLB_TRUE;
         }
     }
 
@@ -1240,13 +1243,13 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
 int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_size)
 {
     int result;
-	int overlimit;
+    int overlimit;
     struct flb_input_instance *i_ins = ic->in;
 
     if (i_ins->storage_type == CIO_STORE_FS) {
         overlimit = flb_input_chunk_has_overlimit_routes(ic, chunk_size);
         if (overlimit != 0) {
-            result = flb_input_chunk_find_space_new_data(ic, chunk_size, overlimit);
+            result = flb_input_chunk_find_space_new_data(ic, chunk_size);
 
             if (result != 0) {
                 return 0;
