@@ -1142,6 +1142,7 @@ void flb_test_input_chunk_limit_with_many_outputs(void)
     char *root_path;
     char temp_path[128];
     char buf[2048];
+    ssize_t chunk_real_size;
     size_t first_chunk_size;
 
     snprintf(temp_path, sizeof(temp_path) - 1,
@@ -1250,7 +1251,12 @@ void flb_test_input_chunk_limit_with_many_outputs(void)
                                           records, "many.one", 8,
                                           buf, sizeof(buf)) == 0);
     ic = mk_list_entry_last(&i_ins->chunks, struct flb_input_chunk, _head);
-    first_chunk_size = flb_input_chunk_get_real_size(ic);
+    chunk_real_size = flb_input_chunk_get_real_size(ic);
+    TEST_CHECK(chunk_real_size > 0);
+    if (chunk_real_size <= 0) {
+        goto cleanup;
+    }
+    first_chunk_size = (size_t) chunk_real_size;
     o_high->total_limit_size = first_chunk_size + (first_chunk_size / 2);
 
     TEST_CHECK(flb_input_chunk_append_raw(i_ins, FLB_INPUT_LOGS,
@@ -1265,6 +1271,7 @@ void flb_test_input_chunk_limit_with_many_outputs(void)
                                        o_high->id, cfg->router) == 0);
     TEST_CHECK(o_high->fs_chunks_size <= o_high->total_limit_size);
 
+cleanup:
     mk_list_foreach_safe(head, tmp, &i_ins->tasks) {
         task = mk_list_entry(head, struct flb_task, _head);
         flb_task_destroy(task, FLB_TRUE);
