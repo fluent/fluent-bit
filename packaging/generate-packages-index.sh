@@ -12,6 +12,7 @@ AWS_S3_BUCKET=${AWS_S3_BUCKET:-}
 AWS_S3_REMOTE_DISCOVERY=${AWS_S3_REMOTE_DISCOVERY:-false}
 AWS_S3_NO_SIGN_REQUEST=${AWS_S3_NO_SIGN_REQUEST:-true}
 AWS_S3_ENDPOINT=${AWS_S3_ENDPOINT:-}
+MIN_CATALOG_MAJOR=${MIN_CATALOG_MAJOR:-3}
 
 WORK_DIR=""
 OBJECT_LIST=""
@@ -57,6 +58,7 @@ Environment variables:
   AWS_S3_ENDPOINT         Optional custom S3 endpoint URL
   GITHUB_REPO             GitHub repository URL for release links
   DOCS_URL                Installation documentation URL
+  MIN_CATALOG_MAJOR       Minimum major version in catalog (default: 3, 0 = all)
 
 Example:
   BASE_PATH=./catalog ./generate-packages-index.sh
@@ -93,6 +95,11 @@ fi
 
 if ! command -v tree >/dev/null 2>&1; then
     echo "ERROR: tree is required" >&2
+    exit 1
+fi
+
+if [[ ! "$MIN_CATALOG_MAJOR" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: MIN_CATALOG_MAJOR must be a nonnegative integer: $MIN_CATALOG_MAJOR" >&2
     exit 1
 fi
 
@@ -203,6 +210,17 @@ fi
 grep -Ev 'source-|pool|dists' "$OBJECT_LIST" | \
     grep -E '\.(rpm|deb|key|repo|exe|msi|zip|pkg)$' > "$TREE_LIST" || true
 
+awk -v emit_mode=filter \
+    -v min_catalog_major="$MIN_CATALOG_MAJOR" \
+    -f "$SCRIPT_DIR/build-catalog.awk" \
+    "$TREE_LIST" > "$WORK_DIR/tree-filtered.txt"
+
+if [[ -s "$WORK_DIR/tree-filtered.txt" ]]; then
+    mv "$WORK_DIR/tree-filtered.txt" "$TREE_LIST"
+else
+    : > "$TREE_LIST"
+fi
+
 if [[ ! -s "$TREE_LIST" ]]; then
     echo "ERROR: no package files found for index.html" >&2
     exit 1
@@ -217,6 +235,7 @@ awk -v emit_mode=versions \
     -v github_release="$GITHUB_REPO" \
     -v docs_url="$DOCS_URL" \
     -v repo_paths="$REPO_PATHS" \
+    -v min_catalog_major="$MIN_CATALOG_MAJOR" \
     -f "$SCRIPT_DIR/build-catalog.awk" \
     "$OBJECT_LIST" | sort -t $'\t' -V -k1,1 > "$VERSION_ROWS"
 
@@ -249,16 +268,15 @@ fi
 
 GENERATED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-jq -n \
+awk -F '\t' '{ print $2 }' "$VERSION_ROWS" | jq -s \
     --arg latest "$LATEST" \
     --arg generated_at "$GENERATED_AT" \
     --arg base_url "$BASE_URL" \
-    --argjson versions "$(awk -F '\t' '{ print $2 }' "$VERSION_ROWS" | jq -s 'reverse')" \
-    '{
+    'reverse | {
         latest: $latest,
         generated_at: $generated_at,
         base_url: $base_url,
-        versions: $versions
+        versions: .
     }' > "$BASE_PATH/versions.json"
 
 printf '%s\n' "$LATEST" > "$BASE_PATH/latest-version.txt"

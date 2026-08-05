@@ -10,7 +10,8 @@ S3_LISTING_FILE=""
 cleanup()
 {
     rm -rf "$OUTPUT_DIR" "${OUTPUT_DIR_S3:-}" "${OUTPUT_DIR_OVERRIDE:-}" \
-        "${EMPTY_BASE_PATH:-}" "$S3_LISTING_FILE"
+        "${OUTPUT_DIR_MIN:-}" "${OUTPUT_DIR_ALL:-}" \
+        "${EMPTY_BASE_PATH:-}" "${JQ_STRESS_DIR:-}" "$S3_LISTING_FILE"
 }
 
 trap cleanup EXIT
@@ -46,6 +47,16 @@ setup_local_fixture()
         "$root/windows/fluent-bit-4.2.6-win64.exe" \
         "$root/windows/fluent-bit-4.2.7-win64.exe" \
         "$root/windows/fluent-bit-4.2.7-win64.zip"
+}
+
+setup_local_fixture_with_legacy()
+{
+    local root="$1"
+
+    setup_local_fixture "$root"
+    touch \
+        "$root/centos/9/fluent-bit-2.1.0-1.x86_64.rpm" \
+        "$root/windows/fluent-bit-2.1.0-win64.exe"
 }
 
 setup_s3_listing_fixture()
@@ -237,3 +248,83 @@ if ! jq -e '.latest == "4.2.7"' "$PREVIEW_DIR/versions.json" >/dev/null; then
 fi
 
 echo "packages-index preview script test passed"
+
+OUTPUT_DIR_MIN="$(mktemp -d)"
+setup_local_fixture_with_legacy "$OUTPUT_DIR_MIN"
+
+BASE_PATH="$OUTPUT_DIR_MIN" \
+AWS_S3_REMOTE_DISCOVERY=false \
+BASE_URL=https://packages.example.test \
+"$GENERATOR"
+
+if jq -e '.versions[] | select(.version == "2.1.0")' "$OUTPUT_DIR_MIN/versions.json" >/dev/null; then
+    echo "ERROR: versions.json should exclude 2.1.0 with default MIN_CATALOG_MAJOR" >&2
+    exit 1
+fi
+
+if grep -Fq "fluent-bit-2.1.0" "$OUTPUT_DIR_MIN/index.html"; then
+    echo "ERROR: index.html should exclude 2.1.0 packages with default MIN_CATALOG_MAJOR" >&2
+    exit 1
+fi
+
+echo "packages-index min catalog major test passed"
+
+OUTPUT_DIR_ALL="$(mktemp -d)"
+setup_local_fixture_with_legacy "$OUTPUT_DIR_ALL"
+
+BASE_PATH="$OUTPUT_DIR_ALL" \
+AWS_S3_REMOTE_DISCOVERY=false \
+MIN_CATALOG_MAJOR=0 \
+BASE_URL=https://packages.example.test \
+"$GENERATOR"
+
+if ! jq -e '.versions[] | select(.version == "2.1.0")' "$OUTPUT_DIR_ALL/versions.json" >/dev/null; then
+    echo "ERROR: versions.json should include 2.1.0 when MIN_CATALOG_MAJOR=0" >&2
+    exit 1
+fi
+
+if ! jq -e '.versions[] | select(.version == "2.1.0") | .artifacts.linux[] | select(.name == "fluent-bit-2.1.0-1.x86_64.rpm")' \
+    "$OUTPUT_DIR_ALL/versions.json" >/dev/null; then
+    echo "ERROR: versions.json missing Linux RPM artifact for 2.1.0 when MIN_CATALOG_MAJOR=0" >&2
+    exit 1
+fi
+
+assert_contains "$OUTPUT_DIR_ALL/index.html" "fluent-bit-2.1.0-win64.exe"
+
+echo "packages-index disabled min catalog major test passed"
+
+assert_fails_with "MIN_CATALOG_MAJOR must be a nonnegative integer" \
+    env BASE_PATH="$OUTPUT_DIR" AWS_S3_REMOTE_DISCOVERY=false MIN_CATALOG_MAJOR=-1 \
+    BASE_URL=https://packages.example.test "$GENERATOR"
+
+assert_fails_with "MIN_CATALOG_MAJOR must be a nonnegative integer" \
+    env BASE_PATH="$OUTPUT_DIR" AWS_S3_REMOTE_DISCOVERY=false MIN_CATALOG_MAJOR=abc \
+    BASE_URL=https://packages.example.test "$GENERATOR"
+
+echo "packages-index min catalog major validation test passed"
+
+JQ_STRESS_DIR="$(mktemp -d)"
+VERSION_ROWS="$JQ_STRESS_DIR/version-rows.tsv"
+i=0
+while [[ "$i" -lt 500 ]]; do
+    i=$((i + 1))
+    printf '3.0.%s\t{"version":"3.0.%s"}\n' "$i" "$i"
+done > "$VERSION_ROWS"
+
+awk -F '\t' '{ print $2 }' "$VERSION_ROWS" | jq -s \
+    --arg latest "3.0.500" \
+    --arg generated_at "2026-01-01T00:00:00Z" \
+    --arg base_url "https://packages.example.test" \
+    'reverse | {
+        latest: $latest,
+        generated_at: $generated_at,
+        base_url: $base_url,
+        versions: .
+    }' > "$JQ_STRESS_DIR/versions.json"
+
+if ! jq -e '.latest == "3.0.500" and (.versions | length) == 500' "$JQ_STRESS_DIR/versions.json" >/dev/null; then
+    echo "ERROR: large versions.json envelope generation failed" >&2
+    exit 1
+fi
+
+echo "packages-index large versions.json test passed"
