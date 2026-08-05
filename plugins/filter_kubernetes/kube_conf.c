@@ -152,6 +152,18 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
     }
 
 
+    if (ctx->kube_meta_negative_cache_ttl > 0) {
+        ctx->neg_hash_table = flb_hash_table_create_with_ttl(
+                                            ctx->kube_meta_negative_cache_ttl,
+                                            FLB_HASH_TABLE_EVICT_OLDER,
+                                            FLB_HASH_TABLE_SIZE,
+                                            FLB_HASH_TABLE_SIZE);
+        if (!ctx->neg_hash_table) {
+            flb_kube_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
     if (!ctx->hash_table || !ctx->namespace_hash_table) {
         flb_kube_conf_destroy(ctx);
         return NULL;
@@ -213,6 +225,10 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
 
     if (ctx->namespace_hash_table) {
         flb_hash_table_destroy(ctx->namespace_hash_table);
+    }
+
+    if (ctx->neg_hash_table) {
+        flb_hash_table_destroy(ctx->neg_hash_table);
     }
 
     if (ctx->aws_pod_service_hash_table) {
