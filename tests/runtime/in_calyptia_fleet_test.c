@@ -136,8 +136,9 @@ static void test_in_fleet_timestamped_config_format(void)
     t_ctx = init_test_context();
     TEST_CHECK(t_ctx != NULL);
 
-    ret = snprintf(expectedValue, sizeof(expectedValue), "%s/%s/%s/123.conf",
-                   FLEET_DEFAULT_CONFIG_DIR, t_ctx->ctx->machine_id, t_ctx->ctx->fleet_name);
+    ret = snprintf(expectedValue, sizeof(expectedValue), "%s" PATH_SEPARATOR "%s"
+                   PATH_SEPARATOR "%s" PATH_SEPARATOR "123.conf", TEST_FLEET_CONFIG_DIR,
+                   t_ctx->ctx->machine_id, t_ctx->ctx->fleet_name);
     TEST_CHECK(ret > 0 && ret < (int) sizeof(expectedValue));
 
     value = time_fleet_config_filename(t_ctx->ctx, 123);
@@ -149,8 +150,9 @@ static void test_in_fleet_timestamped_config_format(void)
 
     t_ctx->ctx->fleet_config_legacy_format = FLB_FALSE;
 
-    ret = snprintf(expectedValue, sizeof(expectedValue), "%s/%s/%s/123/config.yaml",
-                   FLEET_DEFAULT_CONFIG_DIR, t_ctx->ctx->machine_id, t_ctx->ctx->fleet_name);
+    ret = snprintf(expectedValue, sizeof(expectedValue), "%s" PATH_SEPARATOR "%s"
+                   PATH_SEPARATOR "%s" PATH_SEPARATOR "123" PATH_SEPARATOR "config.yaml",
+                   TEST_FLEET_CONFIG_DIR, t_ctx->ctx->machine_id, t_ctx->ctx->fleet_name);
     TEST_CHECK(ret > 0 && ret < (int) sizeof(expectedValue));
 
     value = time_fleet_config_filename(t_ctx->ctx, 123);
