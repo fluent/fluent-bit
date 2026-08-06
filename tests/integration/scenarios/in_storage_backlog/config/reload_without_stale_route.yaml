@@ -1,0 +1,19 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  hot_reload: on
+  hot_reload.timeout: 10
+  storage.path: ${STORAGE_BACKLOG_PATH}
+
+pipeline:
+  inputs:
+    - name: tail
+      tag: live
+      path: ${STORAGE_BACKLOG_MISSING_PATH}
+      storage.type: filesystem
+
+  outputs:
+    - name: null
+      match: live
