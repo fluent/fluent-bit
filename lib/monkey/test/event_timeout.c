@@ -19,6 +19,12 @@
 
 #include "mk_tests.h"
 
+#ifdef _WIN32
+struct test_event_map {
+    evutil_socket_t pipe[2];
+};
+#endif
+
 static int consume_timer_tick(int fd, uint64_t *val)
 {
 #ifdef _WIN32
@@ -71,10 +77,64 @@ void test_timeout_tick_destroy(void)
     mk_event_loop_destroy(evl);
 }
 
+#ifdef _WIN32
+void test_timeout_notification_backpressure(void)
+{
+    int fd;
+    int ret;
+    int error;
+    DWORD send_timeout;
+    uint64_t tick;
+    struct test_event_map *event_map;
+    struct mk_event_loop *evl;
+    struct mk_event ev = {0};
+
+    TEST_CHECK(mk_event_init() == 0);
+
+    evl = mk_event_loop_create(4);
+    TEST_ASSERT(evl != NULL);
+
+    fd = mk_event_timeout_create(evl, 0, 1000, &ev);
+    TEST_ASSERT(fd >= 0);
+
+    event_map = ev.data;
+    TEST_ASSERT(event_map != NULL);
+
+    send_timeout = 100;
+    ret = setsockopt(event_map->pipe[1], SOL_SOCKET, SO_SNDTIMEO,
+                     (const char *) &send_timeout, sizeof(send_timeout));
+    TEST_ASSERT(ret == 0);
+
+    tick = 1;
+    do {
+        ret = send(event_map->pipe[1], (char *) &tick, sizeof(tick), 0);
+    } while (ret > 0);
+
+    error = WSAGetLastError();
+    TEST_ASSERT(ret == SOCKET_ERROR);
+    TEST_ASSERT(error == WSAEWOULDBLOCK);
+
+    ret = mk_event_wait_2(evl, 100);
+    TEST_ASSERT(ret == 1);
+    TEST_ASSERT(ev.data == event_map);
+
+    ret = mk_event_timeout_destroy(evl, &ev);
+    TEST_ASSERT(ret == 0);
+
+    mk_event_loop_destroy(evl);
+}
+#endif
+
 TEST_LIST = {
     {
         "timeout_create_tick_destroy",
         test_timeout_tick_destroy,
     },
+#ifdef _WIN32
+    {
+        "timeout_notification_backpressure",
+        test_timeout_notification_backpressure,
+    },
+#endif
     {NULL, NULL}
 };

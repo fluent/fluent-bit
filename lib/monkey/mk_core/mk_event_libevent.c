@@ -28,9 +28,11 @@
 
 #ifdef _WIN32
 #define ERR(e) (WSA##e)
+#define MK_EVENT_LIBEVENT_WOULD_BLOCK(e) ((e) == WSAEWOULDBLOCK)
 static LONG mk_event_libevent_wsa_initialized = 0;
 #else
 #define ERR(e) (e)
+#define MK_EVENT_LIBEVENT_WOULD_BLOCK(e) ((e) == EAGAIN || (e) == EWOULDBLOCK)
 #endif
 
 struct ev_map {
@@ -309,6 +311,7 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
  */
 static void cb_timeout(evutil_socket_t fd, short flags, void *data)
 {
+    int error;
     int ret;
     uint64_t val = 1;
     struct ev_map *ev_map = data;
@@ -316,7 +319,11 @@ static void cb_timeout(evutil_socket_t fd, short flags, void *data)
     ret = send(ev_map->pipe[1], (char *) &val, sizeof(uint64_t), 0);
 
     if (ret == -1) {
-        if (evutil_socket_geterror(fd) != ERR(ECONNABORTED)) {
+        error = evutil_socket_geterror(ev_map->pipe[1]);
+        if (MK_EVENT_LIBEVENT_WOULD_BLOCK(error)) {
+            return;
+        }
+        if (error != ERR(ECONNABORTED)) {
             perror("write");
         }
         evutil_closesocket(ev_map->pipe[1]);
@@ -346,6 +353,13 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
     if (mk_event_libevent_socketpair(fd) == -1) {
         perror("socketpair");
+        return -1;
+    }
+
+    if (evutil_make_socket_nonblocking(fd[1]) == -1) {
+        perror("nonblocking");
+        evutil_closesocket(fd[0]);
+        evutil_closesocket(fd[1]);
         return -1;
     }
 
