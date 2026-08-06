@@ -473,6 +473,12 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
             return NULL;
         }
 
+        ret = flb_tail_db_cleanup(ctx);
+        if (ret != 0) {
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+
     }
 #endif
 

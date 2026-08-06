@@ -380,15 +380,6 @@ static int in_tail_init(struct flb_input_instance *in,
     /* Scan path */
     flb_tail_scan(ctx->path_list, ctx);
 
-#ifdef FLB_HAVE_SQLDB
-    /* Delete stale files that are not monitored from the database */
-    ret = flb_tail_db_stale_file_delete(in, config, ctx);
-    if (ret == -1) {
-        flb_tail_config_destroy(ctx);
-        return -1;
-    }
-#endif
-
     if (ctx->read_newly_discovered_files_from_head) {
         /*
         * After the first scan (on start time), all new files discovered needs to be
