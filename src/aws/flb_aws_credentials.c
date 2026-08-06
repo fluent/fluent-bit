@@ -541,6 +541,7 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
     }
 
     pthread_mutex_init(&provider->lock, NULL);
+    pthread_mutex_init(&provider->cache_lock, NULL);
 
     implementation = flb_calloc(1, sizeof(struct flb_aws_provider_chain));
 
@@ -774,6 +775,7 @@ void flb_aws_provider_destroy(struct flb_aws_provider *provider)
         }
 
         pthread_mutex_destroy(&provider->lock);
+        pthread_mutex_destroy(&provider->cache_lock);
 
         /* free managed dependencies */
         if (provider->base_aws_provider) {
@@ -862,4 +864,106 @@ int try_lock_provider(struct flb_aws_provider *provider)
 void unlock_provider(struct flb_aws_provider *provider)
 {
     pthread_mutex_unlock(&provider->lock);
+}
+
+/*
+ * The cache lock is never held across IO, so unlike the provider lock it is
+ * safe to block on it.
+ */
+static inline void lock_provider_cache(struct flb_aws_provider *provider)
+{
+    pthread_mutex_lock(&provider->cache_lock);
+}
+
+static inline void unlock_provider_cache(struct flb_aws_provider *provider)
+{
+    pthread_mutex_unlock(&provider->cache_lock);
+}
+
+struct flb_aws_credentials *flb_aws_cache_get_credentials(struct flb_aws_provider
+                                                          *provider,
+                                                          struct flb_aws_credentials
+                                                          **cache)
+{
+    struct flb_aws_credentials *cached;
+    struct flb_aws_credentials *creds = NULL;
+
+    lock_provider_cache(provider);
+
+    cached = *cache;
+    if (!cached) {
+        unlock_provider_cache(provider);
+        return NULL;
+    }
+
+    creds = flb_calloc(1, sizeof(struct flb_aws_credentials));
+    if (!creds) {
+        goto error;
+    }
+
+    creds->access_key_id = flb_sds_create(cached->access_key_id);
+    if (!creds->access_key_id) {
+        goto error;
+    }
+
+    creds->secret_access_key = flb_sds_create(cached->secret_access_key);
+    if (!creds->secret_access_key) {
+        goto error;
+    }
+
+    if (cached->session_token) {
+        creds->session_token = flb_sds_create(cached->session_token);
+        if (!creds->session_token) {
+            goto error;
+        }
+    }
+    else {
+        creds->session_token = NULL;
+    }
+
+    unlock_provider_cache(provider);
+    return creds;
+
+error:
+    unlock_provider_cache(provider);
+    flb_errno();
+    flb_aws_credentials_destroy(creds);
+    return NULL;
+}
+
+time_t flb_aws_cache_get_refresh_time(struct flb_aws_provider *provider,
+                                      time_t *next_refresh)
+{
+    time_t refresh_time;
+
+    lock_provider_cache(provider);
+    refresh_time = *next_refresh;
+    unlock_provider_cache(provider);
+
+    return refresh_time;
+}
+
+void flb_aws_cache_set_credentials(struct flb_aws_provider *provider,
+                                   struct flb_aws_credentials **cache,
+                                   struct flb_aws_credentials *creds,
+                                   time_t *next_refresh,
+                                   time_t refresh_time)
+{
+    struct flb_aws_credentials *previous;
+
+    lock_provider_cache(provider);
+
+    previous = *cache;
+    *cache = creds;
+    *next_refresh = refresh_time;
+
+    unlock_provider_cache(provider);
+
+    /*
+     * Free the old credentials after the swap and outside of the lock.
+     * Readers hold the cache lock for the whole copy, so none of them was
+     * halfway through reading these when we swapped them out, and anyone
+     * arriving now sees the new ones.
+     */
+    flb_aws_credentials_destroy(previous);
 }
