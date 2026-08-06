@@ -10,7 +10,8 @@ S3_LISTING_FILE=""
 cleanup()
 {
     rm -rf "$OUTPUT_DIR" "${OUTPUT_DIR_S3:-}" "${OUTPUT_DIR_OVERRIDE:-}" \
-        "${OUTPUT_DIR_MIN:-}" "${OUTPUT_DIR_ALL:-}" \
+        "${OUTPUT_DIR_MIN:-}" "${OUTPUT_DIR_ALL:-}" "${OUTPUT_DIR_TRAILING:-}" \
+        "${OUTPUT_DIR_FILTERED:-}" \
         "${EMPTY_BASE_PATH:-}" "${JQ_STRESS_DIR:-}" "$S3_LISTING_FILE"
 }
 
@@ -142,6 +143,47 @@ assert_contains "$OUTPUT_DIR/index.html" "Latest release: <strong>4.2.7</strong>
 assert_contains "$OUTPUT_DIR/index.html" "4.2.6"
 assert_contains "$OUTPUT_DIR/index.html" "fluent-bit-4.2.7-win64.exe"
 assert_contains "$OUTPUT_DIR/index.html" "https://packages.example.test/versions.json"
+assert_contains "$OUTPUT_DIR/index.html" \
+    'href="https://packages.example.test/centos/9/fluent-bit-4.2.7-1.x86_64.rpm"'
+
+if grep -Eo 'href="[^"]*(catalog-paths\.txt|/tree\.txt/)' "$OUTPUT_DIR/index.html" >/dev/null; then
+    echo "ERROR: index.html contains broken tree listing paths in href attributes" >&2
+    grep -Eo 'href="[^"]*(catalog-paths\.txt|/tree\.txt/)' "$OUTPUT_DIR/index.html" >&2 || true
+    exit 1
+fi
+
+OUTPUT_DIR_TRAILING="$(mktemp -d)"
+setup_local_fixture "$OUTPUT_DIR_TRAILING"
+
+BASE_PATH="$OUTPUT_DIR_TRAILING" \
+AWS_S3_REMOTE_DISCOVERY=false \
+BASE_URL=https://packages.example.test/ \
+"$GENERATOR"
+
+assert_contains "$OUTPUT_DIR_TRAILING/index.html" \
+    'href="https://packages.example.test/centos/9/fluent-bit-4.2.7-1.x86_64.rpm"'
+
+if grep -Eo 'href="https://[^/]+//[^"]*"' "$OUTPUT_DIR_TRAILING/index.html" >/dev/null; then
+    echo "ERROR: index.html contains double slashes in href attributes" >&2
+    grep -Eo 'href="https://[^/]+//[^"]*"' "$OUTPUT_DIR_TRAILING/index.html" >&2 || true
+    exit 1
+fi
+
+if ! jq -e '.base_url == "https://packages.example.test"' "$OUTPUT_DIR_TRAILING/versions.json" >/dev/null; then
+    echo "ERROR: versions.json base_url was not normalized without trailing slash" >&2
+    jq . "$OUTPUT_DIR_TRAILING/versions.json" >&2 || true
+    exit 1
+fi
+
+OUTPUT_DIR_FILTERED="$(mktemp -d)"
+mkdir -p "$OUTPUT_DIR_FILTERED/centos/9" "$OUTPUT_DIR_FILTERED/windows"
+touch \
+    "$OUTPUT_DIR_FILTERED/centos/9/fluent-bit-2.1.0-1.x86_64.rpm" \
+    "$OUTPUT_DIR_FILTERED/windows/fluent-bit-2.1.0-win64.exe"
+
+assert_fails_with "ERROR: no package files found for index.html" \
+    env BASE_PATH="$OUTPUT_DIR_FILTERED" AWS_S3_REMOTE_DISCOVERY=false \
+    BASE_URL=https://packages.example.test "$GENERATOR"
 
 if ! jq -e '.latest == "4.2.7" and (.versions | length) == 2' "$OUTPUT_DIR/versions.json" >/dev/null; then
     echo "ERROR: versions.json did not contain the expected version entries" >&2

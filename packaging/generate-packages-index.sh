@@ -106,7 +106,7 @@ fi
 BASE_PATH="$(cd "$BASE_PATH" && pwd)"
 WORK_DIR="$(mktemp -d)"
 OBJECT_LIST="$WORK_DIR/objects.txt"
-TREE_LIST="$WORK_DIR/tree.txt"
+TREE_PATHS="$WORK_DIR/catalog-paths.txt"
 VERSION_ROWS="$WORK_DIR/version-rows.tsv"
 trap cleanup EXIT
 
@@ -190,6 +190,101 @@ build_object_list()
     sort -u -o "$OBJECT_LIST" "$OBJECT_LIST"
 }
 
+filter_package_paths()
+{
+    local candidates="$WORK_DIR/package-candidates.txt"
+    local rc=0
+
+    grep -Ev 'source-|pool|dists' "$OBJECT_LIST" > "$candidates"
+    rc=$?
+    if [[ "$rc" -ne 0 && "$rc" -ne 1 ]]; then
+        echo "ERROR: failed filtering package paths from object list" >&2
+        exit 1
+    fi
+    if [[ "$rc" -eq 1 ]]; then
+        : > "$candidates"
+    fi
+
+    grep -E '\.(rpm|deb|key|repo|exe|msi|zip|pkg)$' "$candidates" > "$TREE_PATHS"
+    rc=$?
+    if [[ "$rc" -ne 0 && "$rc" -ne 1 ]]; then
+        echo "ERROR: failed selecting package file paths" >&2
+        exit 1
+    fi
+    if [[ "$rc" -eq 1 ]]; then
+        : > "$TREE_PATHS"
+    fi
+}
+
+absolutize_tree_hrefs()
+{
+    awk -v base="$BASE_URL" '
+    function absolutize(url) {
+        if (url ~ /^https?:\/\//) {
+            return url
+        }
+        if (url == "/") {
+            return base "/"
+        }
+        if (substr(url, 1, 1) == "/") {
+            return base url
+        }
+        return base "/" url
+    }
+    {
+        line = $0
+        out = ""
+        while (match(line, /href="[^"]+"/)) {
+            out = out substr(line, 1, RSTART - 1)
+            href = substr(line, RSTART, RLENGTH)
+            url = substr(href, 7, length(href) - 7)
+            out = out "href=\"" absolutize(url) "\""
+            line = substr(line, RSTART + RLENGTH)
+        }
+        print out line
+    }'
+}
+
+build_tree_html()
+{
+    local -a tree_pipe_status=()
+
+    BASE_URL="${BASE_URL%/}"
+    (
+        cd "$WORK_DIR"
+        tree --noreport --charset utf-8 --fromfile catalog-paths.txt -H "${BASE_URL}/"
+    ) | sed -e "s|${BASE_URL}/catalog-paths.txt/|${BASE_URL}/|g" \
+           -e "s|${BASE_URL}/catalog-paths.txt|${BASE_URL}/|g" \
+           -e "s|${BASE_URL}catalog-paths.txt/|${BASE_URL}/|g" \
+           -e "s|${BASE_URL}catalog-paths.txt|${BASE_URL}/|g" \
+           -e 's|>catalog-paths.txt</a>|>/</a>|g' \
+           -e 's|\(https://[^/]*\)//|\1/|g' \
+      | absolutize_tree_hrefs \
+      | awk '/<hr>/ { exit } { print } END { print "</body></html>" }' > "$WORK_DIR/tree.html"
+    tree_pipe_status=("${PIPESTATUS[@]}")
+
+    if [[ "${tree_pipe_status[0]}" -ne 0 ]]; then
+        echo "ERROR: tree failed to generate package index HTML" >&2
+        exit 1
+    fi
+    if [[ "${tree_pipe_status[1]}" -ne 0 ]]; then
+        echo "ERROR: failed to normalize package index tree links" >&2
+        exit 1
+    fi
+    if [[ "${tree_pipe_status[2]}" -ne 0 ]]; then
+        echo "ERROR: failed to absolutize package index tree links" >&2
+        exit 1
+    fi
+    if [[ "${tree_pipe_status[3]}" -ne 0 ]]; then
+        echo "ERROR: failed to finalize package index tree HTML" >&2
+        exit 1
+    fi
+    if [[ ! -s "$WORK_DIR/tree.html" ]]; then
+        echo "ERROR: package index tree HTML is empty" >&2
+        exit 1
+    fi
+}
+
 render_index_html()
 {
     local latest="$1"
@@ -207,27 +302,25 @@ if [[ ! -s "$OBJECT_LIST" ]]; then
     exit 1
 fi
 
-grep -Ev 'source-|pool|dists' "$OBJECT_LIST" | \
-    grep -E '\.(rpm|deb|key|repo|exe|msi|zip|pkg)$' > "$TREE_LIST" || true
+filter_package_paths
 
 awk -v emit_mode=filter \
     -v min_catalog_major="$MIN_CATALOG_MAJOR" \
     -f "$SCRIPT_DIR/build-catalog.awk" \
-    "$TREE_LIST" > "$WORK_DIR/tree-filtered.txt"
+    "$TREE_PATHS" > "$WORK_DIR/tree-filtered.txt"
 
 if [[ -s "$WORK_DIR/tree-filtered.txt" ]]; then
-    mv "$WORK_DIR/tree-filtered.txt" "$TREE_LIST"
+    mv "$WORK_DIR/tree-filtered.txt" "$TREE_PATHS"
 else
-    : > "$TREE_LIST"
+    : > "$TREE_PATHS"
 fi
 
-if [[ ! -s "$TREE_LIST" ]]; then
+if [[ ! -s "$TREE_PATHS" ]]; then
     echo "ERROR: no package files found for index.html" >&2
     exit 1
 fi
 
-tree --noreport --charset utf-8 --fromfile "$TREE_LIST" -H "$BASE_URL" | \
-    awk '/<hr>/ { exit } { print } END { print "</body></html>" }' > "$WORK_DIR/tree.html"
+build_tree_html
 
 REPO_PATHS="$(printf '%s ' "${LINUX_REPO_PATHS[@]}")"
 awk -v emit_mode=versions \
