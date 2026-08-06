@@ -190,8 +190,10 @@ static int flb_tail_db_file_delete_by_id(struct flb_tail_config *ctx,
     return 0;
 }
 
-static int stale_file_matches(struct flb_tail_config *ctx, const char *path,
-                              uint64_t inode)
+static int stale_file_matches(struct flb_tail_config *ctx,
+                              flb_tail_db_inode_check_fn inode_is_monitored,
+                              void *data,
+                              const char *path, uint64_t inode)
 {
     int ret;
     struct stat st;
@@ -207,8 +209,17 @@ static int stale_file_matches(struct flb_tail_config *ctx, const char *path,
     ret = stat(path, &st);
 #endif
 
+    if (ret == 0 && inode == (uint64_t) st.st_ino) {
+        return FLB_TRUE;
+    }
+
+    if (inode_is_monitored != NULL &&
+        inode_is_monitored(inode, data) == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
     if (ret == 0) {
-        return inode == (uint64_t) st.st_ino;
+        return FLB_FALSE;
     }
 
     if (errno == ENOENT || errno == ENOTDIR) {
@@ -219,6 +230,8 @@ static int stale_file_matches(struct flb_tail_config *ctx, const char *path,
 }
 
 static int stale_file_delete_missing(struct flb_tail_config *ctx,
+                                     flb_tail_db_inode_check_fn inode_is_monitored,
+                                     void *data,
                                      sqlite3_stmt *stmt, int *deleted_count)
 {
     int ret;
@@ -235,7 +248,7 @@ static int stale_file_delete_missing(struct flb_tail_config *ctx,
     while ((ret = sqlite3_step(stmt)) == SQLITE_ROW) {
         name = (const char *) sqlite3_column_text(stmt, 1);
         if (name == NULL ||
-            stale_file_matches(ctx, name,
+            stale_file_matches(ctx, inode_is_monitored, data, name,
                                sqlite3_column_int64(stmt, 2)) == FLB_TRUE) {
             continue;
         }
@@ -556,7 +569,9 @@ int flb_tail_db_file_delete(struct flb_tail_file *file,
     return 0;
 }
 
-int flb_tail_db_cleanup(struct flb_tail_config *ctx)
+int flb_tail_db_cleanup(struct flb_tail_config *ctx,
+                        flb_tail_db_inode_check_fn inode_is_monitored,
+                        void *data)
 {
     int ret;
     int deleted_count;
@@ -587,7 +602,8 @@ int flb_tail_db_cleanup(struct flb_tail_config *ctx)
         goto error;
     }
 
-    ret = stale_file_delete_missing(ctx, stmt_stale_files, &deleted_count);
+    ret = stale_file_delete_missing(ctx, inode_is_monitored, data,
+                                    stmt_stale_files, &deleted_count);
     sqlite3_finalize(stmt_stale_files);
     stmt_stale_files = NULL;
     if (ret != 0) {

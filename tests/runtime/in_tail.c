@@ -3066,6 +3066,101 @@ void flb_test_db_replaced_file_cleanup()
     unlink(db);
 }
 
+void flb_test_db_renamed_file_preserves_offset()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"test_db_renamed.log"};
+    char *renamed_file[] = {"test_db_renamed.log.1"};
+    char *db = "test_db_renamed.db";
+    char *old_message = "old message";
+    char *new_message = "new message";
+    int unused;
+    int ret;
+    int num;
+
+    unlink(db);
+    unlink(renamed_file[0]);
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, file, 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ret = write_msg(ctx, old_message, strlen(old_message));
+    TEST_CHECK(ret > 0);
+    flb_time_msleep(500);
+
+    close(ctx->fds[0]);
+    flb_free(ctx->fds);
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+
+    ret = rename(file[0], renamed_file[0]);
+    TEST_CHECK(ret == 0);
+    clear_output_num();
+
+    ctx = test_tail_ctx_create(&cb_data, renamed_file, 1, FLB_FALSE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        unlink(renamed_file[0]);
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", renamed_file[0],
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 0)) {
+        TEST_MSG("num error after rename. expect=0 got=%d", num);
+    }
+
+    ret = write_msg(ctx, new_message, strlen(new_message));
+    TEST_CHECK(ret > 0);
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 1)) {
+        TEST_MSG("num error after append. expect=1 got=%d", num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+    unlink(db);
+}
+
 void flb_test_db_shared_between_inputs()
 {
     struct flb_lib_out_cb cb_data;
@@ -3377,6 +3472,7 @@ TEST_LIST = {
     {"db", flb_test_db},
     {"db_delete_stale_file", flb_test_db_delete_stale_file},
     {"db_replaced_file_cleanup", flb_test_db_replaced_file_cleanup},
+    {"db_renamed_file_preserves_offset", flb_test_db_renamed_file_preserves_offset},
     {"db_shared_between_inputs", flb_test_db_shared_between_inputs},
     {"db_compare_filename", flb_test_db_compare_filename},
 #endif
