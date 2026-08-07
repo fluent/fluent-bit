@@ -26,8 +26,10 @@ void flb_test_file_delim_ltsv(void);
 void flb_test_file_label_delim(void);
 void flb_test_file_template(void);
 void flb_test_file_mkdir(void);
+void flb_test_file_literal_percent(void);
 void flb_test_file_dynamic_path_file(void);
 void flb_test_file_dynamic_timestamp(void);
+void flb_test_file_dynamic_percent_values(void);
 void flb_test_file_dynamic_requires_fallback(void);
 void flb_test_file_dynamic_missing_fallback(void);
 void flb_test_file_dynamic_unsafe_fallback(void);
@@ -40,8 +42,10 @@ TEST_LIST = {
     {"path",            flb_test_file_path},
     {"path_file",       flb_test_file_path_file},
     {"mkdir",           flb_test_file_mkdir},
+    {"literal_percent", flb_test_file_literal_percent},
     {"dynamic_path_file", flb_test_file_dynamic_path_file},
     {"dynamic_timestamp", flb_test_file_dynamic_timestamp},
+    {"dynamic_percent_values", flb_test_file_dynamic_percent_values},
     {"dynamic_requires_fallback", flb_test_file_dynamic_requires_fallback},
     {"dynamic_missing_fallback", flb_test_file_dynamic_missing_fallback},
     {"dynamic_unsafe_fallback", flb_test_file_dynamic_unsafe_fallback},
@@ -548,6 +552,63 @@ void flb_test_file_path_file(void)
 #define JSON_DYNAMIC_LIMIT \
     "[1448403340,{\"hostname\":\"host1\"}]" \
     "[1448403341,{\"hostname\":\"host2\"}]"
+#define JSON_DYNAMIC_PERCENT "[1448403340,{\"proxy_name\":\"proxy%m\"}]"
+
+void flb_test_file_literal_percent(void)
+{
+    int ret;
+    int bytes;
+    char *p = JSON_BASIC;
+    char file[256];
+    char fallback[256];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    FILE *fp;
+
+    snprintf(file, sizeof(file), "%s/metrics%%used.log", TEST_LOGPATH);
+    snprintf(fallback, sizeof(fallback), "%s/fallback.log", TEST_LOGPATH);
+    remove(file);
+    remove(fallback);
+    flb_test_rmdir(TEST_LOGPATH);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "file", "metrics%used.log", NULL);
+    flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "fallback_file", "fallback.log", NULL);
+    flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+    ret = wait_for_file(file, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    fp = fopen(file, "r");
+    TEST_CHECK(fp != NULL);
+    if (fp != NULL) {
+        fclose(fp);
+    }
+    TEST_CHECK(access(fallback, F_OK) != 0);
+    remove(file);
+    remove(fallback);
+    flb_test_rmdir(TEST_LOGPATH);
+}
 
 void flb_test_file_dynamic_path_file(void)
 {
@@ -588,6 +649,7 @@ void flb_test_file_dynamic_path_file(void)
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH "/$TAG/$proxy_name", NULL);
     flb_output_set(ctx, out_ffd, "file", "file.%Y%m%d", NULL);
+    flb_output_set(ctx, out_ffd, "enable_strftime", "true", NULL);
     flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
     flb_output_set(ctx, out_ffd, "fallback_file", "metrics.log", NULL);
     flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
@@ -642,6 +704,7 @@ void flb_test_file_dynamic_timestamp(void)
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
     flb_output_set(ctx, out_ffd, "file", "events.%Y%m%d.log", NULL);
+    flb_output_set(ctx, out_ffd, "enable_strftime", "true", NULL);
     flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
     flb_output_set(ctx, out_ffd, "fallback_file", "fallback.log", NULL);
     flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
@@ -659,6 +722,66 @@ void flb_test_file_dynamic_timestamp(void)
     flb_destroy(ctx);
 
     remove(path);
+    flb_test_rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_dynamic_percent_values(void)
+{
+    int ret;
+    int bytes;
+    char *p = JSON_DYNAMIC_PERCENT;
+    char path[256];
+    char proxy_dir[256];
+    char tag_dir[256];
+    char year_dir[256];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    snprintf(year_dir, sizeof(year_dir), "%s/2015", TEST_LOGPATH);
+    snprintf(tag_dir, sizeof(tag_dir), "%s/test%%d", year_dir);
+    snprintf(proxy_dir, sizeof(proxy_dir), "%s/proxy%%m", tag_dir);
+    snprintf(path, sizeof(path), "%s/file.20151124", proxy_dir);
+    remove(path);
+    flb_test_rmdir(proxy_dir);
+    flb_test_rmdir(tag_dir);
+    flb_test_rmdir(year_dir);
+    flb_test_rmdir(TEST_LOGPATH);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                    "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test%d", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "path",
+                   TEST_LOGPATH "/%Y/$TAG/$proxy_name", NULL);
+    flb_output_set(ctx, out_ffd, "file", "file.%Y%m%d", NULL);
+    flb_output_set(ctx, out_ffd, "enable_strftime", "true", NULL);
+    flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "fallback_file", "fallback.log", NULL);
+    flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+    ret = wait_for_file(path, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    remove(path);
+    flb_test_rmdir(proxy_dir);
+    flb_test_rmdir(tag_dir);
+    flb_test_rmdir(year_dir);
     flb_test_rmdir(TEST_LOGPATH);
 }
 
