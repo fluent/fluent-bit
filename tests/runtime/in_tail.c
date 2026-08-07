@@ -29,6 +29,9 @@ Approach for this tests is basing on filter_kubernetes tests
 #ifdef FLB_HAVE_UNICODE_ENCODER
 #include <fluent-bit/flb_unicode.h>
 #endif
+#ifdef FLB_HAVE_SQLDB
+#include <sqlite3.h>
+#endif
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -2917,6 +2920,374 @@ void flb_test_db_delete_stale_file()
     unlink(db);
 }
 
+static int tail_db_contains_file(const char *db_path, const char *file_path,
+                                 uint64_t inode)
+{
+    int found = FLB_FALSE;
+    int ret;
+    const unsigned char *name;
+    sqlite3 *db = NULL;
+    sqlite3_stmt *stmt = NULL;
+
+    ret = sqlite3_open(db_path, &db);
+    if (ret != SQLITE_OK) {
+        goto cleanup;
+    }
+
+    ret = sqlite3_prepare_v2(db, "SELECT name, inode FROM in_tail_files;",
+                             -1, &stmt, NULL);
+    if (ret != SQLITE_OK) {
+        goto cleanup;
+    }
+
+    ret = sqlite3_step(stmt);
+    if (ret != SQLITE_ROW) {
+        goto cleanup;
+    }
+
+    name = sqlite3_column_text(stmt, 0);
+    if (name == NULL || strcmp((const char *) name, file_path) != 0 ||
+        sqlite3_column_int64(stmt, 1) != (sqlite3_int64) inode) {
+        goto cleanup;
+    }
+
+    ret = sqlite3_step(stmt);
+    if (ret == SQLITE_DONE) {
+        found = FLB_TRUE;
+    }
+
+cleanup:
+    if (stmt != NULL) {
+        sqlite3_finalize(stmt);
+    }
+    if (db != NULL) {
+        sqlite3_close(db);
+    }
+
+    return found;
+}
+
+void flb_test_db_replaced_file_cleanup()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"test_db_replaced.log"};
+    char *old_file = "test_db_replaced_old.log";
+    char *db = "test_db_replaced.db";
+    char *old_message = "old message";
+    char *new_message = "new message";
+    struct stat st;
+    int unused;
+    int ret;
+    int num;
+
+    unlink(db);
+    unlink(old_file);
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, file, 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ret = write_msg(ctx, old_message, strlen(old_message));
+    TEST_CHECK(ret > 0);
+    flb_time_msleep(500);
+
+    close(ctx->fds[0]);
+    flb_free(ctx->fds);
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+
+    ret = rename(file[0], old_file);
+    TEST_CHECK(ret == 0);
+    clear_output_num();
+
+    ctx = test_tail_ctx_create(&cb_data, file, 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        unlink(old_file);
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    ret = write_msg(ctx, new_message, strlen(new_message));
+    TEST_CHECK(ret > 0);
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 1)) {
+        TEST_MSG("num error. expect=1 got=%d", num);
+    }
+
+    ret = stat(file[0], &st);
+    TEST_CHECK(ret == 0);
+
+    ret = tail_db_contains_file(db, file[0], st.st_ino);
+    if (!TEST_CHECK(ret == FLB_TRUE)) {
+        TEST_MSG("database does not contain only the replacement file");
+    }
+
+    test_tail_ctx_destroy(ctx);
+    unlink(old_file);
+    unlink(db);
+}
+
+void flb_test_db_renamed_file_preserves_offset()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"test_db_renamed.log"};
+    char *renamed_file[] = {"test_db_renamed.log.1"};
+    char *db = "test_db_renamed.db";
+    char *old_message = "old message";
+    char *new_message = "new message";
+    int unused;
+    int ret;
+    int num;
+
+    unlink(db);
+    unlink(renamed_file[0]);
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, file, 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ret = write_msg(ctx, old_message, strlen(old_message));
+    TEST_CHECK(ret > 0);
+    flb_time_msleep(500);
+
+    close(ctx->fds[0]);
+    flb_free(ctx->fds);
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+
+    ret = rename(file[0], renamed_file[0]);
+    TEST_CHECK(ret == 0);
+    clear_output_num();
+
+    ctx = test_tail_ctx_create(&cb_data, renamed_file, 1, FLB_FALSE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        unlink(renamed_file[0]);
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", renamed_file[0],
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 0)) {
+        TEST_MSG("num error after rename. expect=0 got=%d", num);
+    }
+
+    ret = write_msg(ctx, new_message, strlen(new_message));
+    TEST_CHECK(ret > 0);
+    flb_time_msleep(500);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 1)) {
+        TEST_MSG("num error after append. expect=1 got=%d", num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+    unlink(db);
+}
+
+void flb_test_db_shared_between_inputs()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *files[] = {"test_db_shared_a.log", "test_db_shared_b.log"};
+    char *db = "test_db_shared.db";
+    char *msg_init = "initial message";
+    char *msg_end = "new message";
+    int second_input;
+    int unused;
+    int ret;
+    int num;
+    int i;
+
+    unlink(db);
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, files,
+                               sizeof(files) / sizeof(char *), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    second_input = flb_input(ctx->flb, "tail", NULL);
+    TEST_CHECK(second_input >= 0);
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "tag", "shared_db",
+                        "path", files[0],
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_set(ctx->flb, second_input,
+                        "tag", "shared_db",
+                        "path", files[1],
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "shared_db",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ret = write_msg(ctx, msg_init, strlen(msg_init));
+    TEST_CHECK(ret > 0);
+
+    flb_time_msleep(500);
+    num = get_output_num();
+    if (!TEST_CHECK(num == 2)) {
+        TEST_MSG("num error. expect=2 got=%d", num);
+    }
+
+    for (i = 0; i < ctx->fd_num; i++) {
+        close(ctx->fds[i]);
+    }
+    flb_free(ctx->fds);
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+
+    clear_output_num();
+
+    ctx = test_tail_ctx_create(&cb_data, files,
+                               sizeof(files) / sizeof(char *), FLB_FALSE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        unlink(db);
+        exit(EXIT_FAILURE);
+    }
+
+    second_input = flb_input(ctx->flb, "tail", NULL);
+    TEST_CHECK(second_input >= 0);
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "tag", "shared_db",
+                        "path", files[0],
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_set(ctx->flb, second_input,
+                        "tag", "shared_db",
+                        "path", files[1],
+                        "read_from_head", "true",
+                        "db", db,
+                        "db.sync", "full",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "shared_db",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(500);
+
+    ret = write_msg(ctx, msg_end, strlen(msg_end));
+    TEST_CHECK(ret > 0);
+
+    flb_time_msleep(500);
+    num = get_output_num();
+    if (!TEST_CHECK(num == 2)) {
+        TEST_MSG("num error. expect=2 got=%d", num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+    unlink(db);
+}
+
 void flb_test_db_compare_filename()
 {
     struct flb_lib_out_cb cb_data;
@@ -3100,6 +3471,9 @@ TEST_LIST = {
 #ifdef FLB_HAVE_SQLDB
     {"db", flb_test_db},
     {"db_delete_stale_file", flb_test_db_delete_stale_file},
+    {"db_replaced_file_cleanup", flb_test_db_replaced_file_cleanup},
+    {"db_renamed_file_preserves_offset", flb_test_db_renamed_file_preserves_offset},
+    {"db_shared_between_inputs", flb_test_db_shared_between_inputs},
     {"db_compare_filename", flb_test_db_compare_filename},
 #endif
 
