@@ -27,6 +27,7 @@ void flb_test_file_label_delim(void);
 void flb_test_file_template(void);
 void flb_test_file_mkdir(void);
 void flb_test_file_dynamic_path_file(void);
+void flb_test_file_dynamic_timestamp(void);
 void flb_test_file_dynamic_requires_fallback(void);
 void flb_test_file_dynamic_missing_fallback(void);
 void flb_test_file_dynamic_unsafe_fallback(void);
@@ -40,6 +41,7 @@ TEST_LIST = {
     {"path_file",       flb_test_file_path_file},
     {"mkdir",           flb_test_file_mkdir},
     {"dynamic_path_file", flb_test_file_dynamic_path_file},
+    {"dynamic_timestamp", flb_test_file_dynamic_timestamp},
     {"dynamic_requires_fallback", flb_test_file_dynamic_requires_fallback},
     {"dynamic_missing_fallback", flb_test_file_dynamic_missing_fallback},
     {"dynamic_unsafe_fallback", flb_test_file_dynamic_unsafe_fallback},
@@ -554,20 +556,23 @@ void flb_test_file_dynamic_path_file(void)
     char *p = JSON_DYNAMIC;
     char path1[256];
     char path2[256];
+    char tag_dir[256];
     char dir1[256];
     char dir2[256];
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
 
-    snprintf(dir1, sizeof(dir1), "%s/proxy1", TEST_LOGPATH);
-    snprintf(dir2, sizeof(dir2), "%s/proxy2", TEST_LOGPATH);
-    snprintf(path1, sizeof(path1), "%s/host1.log", dir1);
-    snprintf(path2, sizeof(path2), "%s/host2.log", dir2);
+    snprintf(tag_dir, sizeof(tag_dir), "%s/test", TEST_LOGPATH);
+    snprintf(dir1, sizeof(dir1), "%s/proxy1", tag_dir);
+    snprintf(dir2, sizeof(dir2), "%s/proxy2", tag_dir);
+    snprintf(path1, sizeof(path1), "%s/file.20151124", dir1);
+    snprintf(path2, sizeof(path2), "%s/file.20151124", dir2);
     remove(path1);
     remove(path2);
     rmdir(dir1);
     rmdir(dir2);
+    rmdir(tag_dir);
     rmdir(TEST_LOGPATH);
 
     ctx = flb_create();
@@ -581,8 +586,8 @@ void flb_test_file_dynamic_path_file(void)
     out_ffd = flb_output(ctx, (char *) "file", NULL);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
-    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH "/$proxy_name", NULL);
-    flb_output_set(ctx, out_ffd, "file", "$hostname.log", NULL);
+    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH "/$TAG/$proxy_name", NULL);
+    flb_output_set(ctx, out_ffd, "file", "file.%Y%m%d", NULL);
     flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
     flb_output_set(ctx, out_ffd, "fallback_file", "metrics.log", NULL);
     flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
@@ -606,6 +611,54 @@ void flb_test_file_dynamic_path_file(void)
     remove(path2);
     rmdir(dir1);
     rmdir(dir2);
+    rmdir(tag_dir);
+    rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_dynamic_timestamp(void)
+{
+    int ret;
+    int bytes;
+    char *p = JSON_BASIC;
+    char path[256];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    snprintf(path, sizeof(path), "%s/events.20151124.log", TEST_LOGPATH);
+    remove(path);
+    rmdir(TEST_LOGPATH);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                    "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "file", "events.%Y%m%d.log", NULL);
+    flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "fallback_file", "fallback.log", NULL);
+    flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    ret = wait_for_file(path, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    remove(path);
     rmdir(TEST_LOGPATH);
 }
 
