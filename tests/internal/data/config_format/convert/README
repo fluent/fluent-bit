@@ -1,0 +1,20 @@
+Convert parser .conf files to .yaml, and validate they behave the same.
+
+fb-parser-conf2yaml.pl can convert all conf/parser*conf files.
+
+parser*.test files are the example logs linked to in existing .conf files.
+
+To use:
+
+- copy parser .conf files to pwd, like:
+
+  cp ../../../../../conf/parser*conf .
+
+- convert them all:
+
+  ./fb-parser-conf2yaml.pl *.conf
+
+To test:
+
+  ./run_tests.sh
+
