@@ -426,8 +426,8 @@ void flb_test_file_path(void)
     flb_sds_printf(&path, "%s/%s", TEST_LOGPATH, file);
 
     remove(path);
-    remove(TEST_LOGPATH);
-    ret = mkdir(TEST_LOGPATH, S_IRUSR | S_IWUSR | S_IXUSR);
+    flb_test_rmdir(TEST_LOGPATH);
+    ret = flb_test_mkdir(TEST_LOGPATH);
     if (!TEST_CHECK(ret == 0)) {
         TEST_MSG("mkdir failed:path=%s errno=%d",TEST_LOGPATH, errno);
         flb_sds_destroy(path);
@@ -469,7 +469,7 @@ void flb_test_file_path(void)
     }
     flb_sds_destroy(path);
     flb_sds_destroy(file);
-    remove(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 }
 
 void flb_test_file_path_file(void)
@@ -492,8 +492,8 @@ void flb_test_file_path_file(void)
     flb_sds_printf(&path, "%s/%s", TEST_LOGPATH, TEST_LOGFILE);
 
     remove(path);
-    remove(TEST_LOGPATH);
-    ret = mkdir(TEST_LOGPATH, S_IRUSR | S_IWUSR | S_IXUSR);
+    flb_test_rmdir(TEST_LOGPATH);
+    ret = flb_test_mkdir(TEST_LOGPATH);
     if (!TEST_CHECK(ret == 0)) {
         TEST_MSG("mkdir failed:path=%s errno=%d",TEST_LOGPATH, errno);
         flb_sds_destroy(path);
@@ -534,7 +534,7 @@ void flb_test_file_path_file(void)
         remove(path);
     }
     flb_sds_destroy(path);
-    remove(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 }
 
 #define JSON_BASIC "[1448403340,{\"key1\":\"val1\", \"key2\":\"val2\"}]"
@@ -570,10 +570,10 @@ void flb_test_file_dynamic_path_file(void)
     snprintf(path2, sizeof(path2), "%s/file.20151124", dir2);
     remove(path1);
     remove(path2);
-    rmdir(dir1);
-    rmdir(dir2);
-    rmdir(tag_dir);
-    rmdir(TEST_LOGPATH);
+    flb_test_rmdir(dir1);
+    flb_test_rmdir(dir2);
+    flb_test_rmdir(tag_dir);
+    flb_test_rmdir(TEST_LOGPATH);
 
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "1", "Grace", "1",
@@ -609,10 +609,10 @@ void flb_test_file_dynamic_path_file(void)
 
     remove(path1);
     remove(path2);
-    rmdir(dir1);
-    rmdir(dir2);
-    rmdir(tag_dir);
-    rmdir(TEST_LOGPATH);
+    flb_test_rmdir(dir1);
+    flb_test_rmdir(dir2);
+    flb_test_rmdir(tag_dir);
+    flb_test_rmdir(TEST_LOGPATH);
 }
 
 void flb_test_file_dynamic_timestamp(void)
@@ -627,7 +627,7 @@ void flb_test_file_dynamic_timestamp(void)
 
     snprintf(path, sizeof(path), "%s/events.20151124.log", TEST_LOGPATH);
     remove(path);
-    rmdir(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "1", "Grace", "1",
@@ -659,7 +659,7 @@ void flb_test_file_dynamic_timestamp(void)
     flb_destroy(ctx);
 
     remove(path);
-    rmdir(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 }
 
 void flb_test_file_dynamic_requires_fallback(void)
@@ -703,7 +703,7 @@ void flb_test_file_dynamic_missing_fallback(void)
 
     snprintf(fallback, sizeof(fallback), "%s/fallback.log", TEST_LOGPATH);
     remove(fallback);
-    rmdir(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
@@ -734,7 +734,7 @@ void flb_test_file_dynamic_missing_fallback(void)
     flb_destroy(ctx);
 
     remove(fallback);
-    rmdir(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 }
 
 void flb_test_file_dynamic_unsafe_fallback(void)
@@ -750,7 +750,7 @@ void flb_test_file_dynamic_unsafe_fallback(void)
     snprintf(fallback, sizeof(fallback), "%s/fallback.log", TEST_LOGPATH);
     remove(fallback);
     remove("escape.log");
-    rmdir(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
@@ -782,7 +782,7 @@ void flb_test_file_dynamic_unsafe_fallback(void)
 
     TEST_CHECK(access("escape.log", F_OK) != 0);
     remove(fallback);
-    rmdir(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 }
 
 void flb_test_file_dynamic_windows_unsafe_fallback(void)
@@ -800,7 +800,7 @@ void flb_test_file_dynamic_windows_unsafe_fallback(void)
     snprintf(unsafe, sizeof(unsafe), "%s/host:one.log", TEST_LOGPATH);
     remove(fallback);
     remove(unsafe);
-    rmdir(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
@@ -833,7 +833,7 @@ void flb_test_file_dynamic_windows_unsafe_fallback(void)
     TEST_CHECK(access(unsafe, F_OK) != 0);
     remove(fallback);
     remove(unsafe);
-    rmdir(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 }
 
 void flb_test_file_dynamic_limit_fallback(void)
@@ -854,7 +854,7 @@ void flb_test_file_dynamic_limit_fallback(void)
     remove(first);
     remove(second);
     remove(overflow);
-    rmdir(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
@@ -891,7 +891,7 @@ void flb_test_file_dynamic_limit_fallback(void)
     remove(first);
     remove(second);
     remove(overflow);
-    rmdir(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 }
 
 void flb_test_file_dynamic_path_traversal_fallback(void)
@@ -907,7 +907,7 @@ void flb_test_file_dynamic_path_traversal_fallback(void)
     snprintf(fallback, sizeof(fallback), "%s/fallback.log", TEST_LOGPATH);
     remove(fallback);
     remove("unsafe.log");
-    rmdir(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
@@ -939,7 +939,7 @@ void flb_test_file_dynamic_path_traversal_fallback(void)
 
     TEST_CHECK(access("unsafe.log", F_OK) != 0);
     remove(fallback);
-    rmdir(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 }
 
 void flb_test_file_delim_csv(void)
@@ -1203,7 +1203,7 @@ void flb_test_file_mkdir(void)
     flb_sds_printf(&path, "%s/%s", TEST_LOGPATH, file);
 
     remove(path);
-    remove(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
@@ -1240,5 +1240,5 @@ void flb_test_file_mkdir(void)
     }
     flb_sds_destroy(path);
     flb_sds_destroy(file);
-    remove(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 }
