@@ -23,6 +23,8 @@
 #define FLB_SPLUNK_DEFAULT_HOST          "127.0.0.1"
 #define FLB_SPLUNK_DEFAULT_PORT          8088
 #define FLB_SPLUNK_DEFAULT_ENDPOINT      "/services/collector/event"
+#define FLB_SPLUNK_AUTO_EXTRACT_ENDPOINT \
+    "/services/collector/event?auto_extract_timestamp=true"
 #define FLB_SPLUNK_DEFAULT_TIME          "time"
 #define FLB_SPLUNK_DEFAULT_EVENT_HOST    "host"
 #define FLB_SPLUNK_DEFAULT_EVENT_SOURCE  "source"
@@ -107,6 +109,9 @@ struct flb_splunk {
 
     /* Send fields directly or pack data into "event" object */
     int splunk_send_raw;
+
+    /* Ask Splunk to extract the timestamp from the event data */
+    int auto_extract_timestamp;
 
     /* HTTP Client Setup */
     size_t buffer_size;
