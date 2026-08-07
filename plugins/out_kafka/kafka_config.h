@@ -95,6 +95,10 @@ struct flb_out_kafka {
     int message_key_field_len;
     char *message_key_field;
 
+    size_t headers_key_len;
+    flb_sds_t headers_key;
+    int preserve_headers_key;
+
     int raw_log_key_len;
     char *raw_log_key;
 
