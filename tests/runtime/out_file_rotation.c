@@ -1,16 +1,16 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
+#include <fluent-bit/flb_compat.h>
 #include "flb_tests_runtime.h"
 #include <fluent-bit.h>
-#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
 #include <cmetrics/cmt_counter.h>
 #include <limits.h>
-#include <pthread.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -18,18 +18,19 @@
 #ifndef FLB_SYSTEM_WINDOWS
 #include <dirent.h>
 #include <unistd.h>
-#define TEST_MKDIR(path) mkdir(path, 0755)
 #define PATH_SEPARATOR "/"
 #else
 #include <direct.h>
 #include <windows.h>
-#define TEST_MKDIR(path) _mkdir(path)
 #define PATH_SEPARATOR "\\"
 /* Windows S_ISDIR compatibility */
 #ifndef S_ISDIR
 #define S_ISDIR(mode) (((mode) & S_IFMT) == S_IFDIR)
 #endif
+
 #endif
+
+#define TEST_MKDIR(path) flb_test_mkdir(path)
 
 /* Test data */
 #include "data/common/json_invalid.h" /* JSON_INVALID */
@@ -228,7 +229,7 @@ static int recursive_delete_directory(const char *dir_path)
     closedir(dir);
 
     /* Remove the directory itself */
-    if (rmdir(dir_path) != 0) {
+    if (flb_test_rmdir(dir_path) != 0) {
         ret = -1;
     }
 
@@ -1118,11 +1119,15 @@ void flb_test_file_rotation_path(void)
              TEST_LOGPATH);
     recursive_delete_directory(TEST_LOGPATH);
     TEST_MKDIR(TEST_LOGPATH);
+#ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
+#endif
     snprintf(logfile, sizeof(logfile), "%s" PATH_SEPARATOR "path_test.log",
              test_path);
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif
 
     ctx = flb_create();
     TEST_ASSERT(flb_service_set(ctx, "Flush", TEST_FLUSH_INTERVAL, "Grace", "1", "Log_Level",
@@ -1179,11 +1184,15 @@ void flb_test_file_rotation_mkdir(void)
              "%s" PATH_SEPARATOR "nested" PATH_SEPARATOR "deep" PATH_SEPARATOR
              "path",
              TEST_LOGPATH);
+#ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-truncation"
+#endif
     snprintf(logfile, sizeof(logfile), "%s" PATH_SEPARATOR "test_mkdir.log",
              nested_path);
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif
 
     recursive_delete_directory(TEST_LOGPATH);
 
@@ -2028,8 +2037,8 @@ void flb_test_file_rotation_gzip_compression_exact_chunk(void)
     json_payload = flb_malloc(json_size);
     TEST_CHECK(json_payload != NULL);
 
-    snprintf(json_payload, json_size, "[%lu, {\"message\": \"%s\"}]",
-             time(NULL), large_message);
+    snprintf(json_payload, json_size, "[%lld, {\"message\": \"%s\"}]",
+             (long long) time(NULL), large_message);
 
     bytes = flb_lib_push(ctx, in_ffd, json_payload, strlen(json_payload));
     TEST_CHECK(bytes == strlen(json_payload));
@@ -2463,7 +2472,7 @@ void flb_test_file_rotation_open_failure_releases_lock(void)
 #ifdef FLB_SYSTEM_WINDOWS
     TEST_ASSERT(RemoveDirectoryA(logfile) != 0);
 #else
-    TEST_ASSERT(rmdir(logfile) == 0);
+    TEST_ASSERT(flb_test_rmdir(logfile) == 0);
 #endif
 
     for (i = 0; i < 3; i++) {
