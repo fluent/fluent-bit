@@ -21,6 +21,7 @@
 #define FLB_CONFIG_H
 
 #include <time.h>
+#include <stdint.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pipe.h>
@@ -83,10 +84,11 @@ struct flb_config {
      * shutdown when all remaining tasks are flushed
      */
     int grace;
-    int grace_count;          /* Count of grace shutdown tries              */
-    int grace_input;          /* Shutdown grace to keep inputs ingesting    */
-    flb_pipefd_t flush_fd;    /* Timer FD associated to flush               */
-    int convert_nan_to_null;  /* Convert null to nan ?                      */
+    int grace_count;              /* Count of grace shutdown tries           */
+    int grace_input;              /* Shutdown grace to keep inputs ingesting */
+    flb_pipefd_t flush_fd;        /* Timer FD associated to flush            */
+    uint64_t flush_now_count;     /* count of on-demand flush requests       */
+    int convert_nan_to_null;      /* Convert null to nan ?                   */
 
     int daemon;               /* Run as a daemon ?              */
     flb_pipefd_t shutdown_fd; /* Shutdown FD, 5 seconds         */

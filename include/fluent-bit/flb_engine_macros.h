@@ -42,16 +42,18 @@
 #define FLB_ENGINE_EV_NOTIFICATION  (1 << 19)                          /* 524288 */
 
 /* Engine events: all engine events set the left 32 bits to '1' */
-#define FLB_ENGINE_EV_STARTED   FLB_BITS_U64_SET(1, 1) /* Engine started    */
-#define FLB_ENGINE_EV_FAILED    FLB_BITS_U64_SET(1, 2) /* Engine started    */
-#define FLB_ENGINE_EV_STOP      FLB_BITS_U64_SET(1, 3) /* Requested to stop */
-#define FLB_ENGINE_EV_SHUTDOWN  FLB_BITS_U64_SET(1, 4) /* Engine shutdown   */
+#define FLB_ENGINE_EV_STARTED   FLB_BITS_U64_SET(1, 1) /* Engine started          */
+#define FLB_ENGINE_EV_FAILED    FLB_BITS_U64_SET(1, 2) /* Engine started          */
+#define FLB_ENGINE_EV_STOP      FLB_BITS_U64_SET(1, 3) /* Requested to stop       */
+#define FLB_ENGINE_EV_SHUTDOWN  FLB_BITS_U64_SET(1, 4) /* Engine shutdown         */
+#define FLB_ENGINE_EV_FLUSH_NOW FLB_BITS_U64_SET(1, 5) /* On-demand flush request */
 
 /* Similar to engine events, but used as return values */
 #define FLB_ENGINE_STARTED      FLB_BITS_U64_LOW(FLB_ENGINE_EV_STARTED)
 #define FLB_ENGINE_FAILED       FLB_BITS_U64_LOW(FLB_ENGINE_EV_FAILED)
 #define FLB_ENGINE_STOP         FLB_BITS_U64_LOW(FLB_ENGINE_EV_STOP)
 #define FLB_ENGINE_SHUTDOWN     FLB_BITS_U64_LOW(FLB_ENGINE_EV_SHUTDOWN)
+#define FLB_ENGINE_FLUSH_NOW    FLB_BITS_U64_LOW(FLB_ENGINE_EV_FLUSH_NOW)
 
 /* Engine signals: Task, it only refer to the type */
 #define FLB_ENGINE_TASK         2

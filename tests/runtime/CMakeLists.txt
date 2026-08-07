@@ -32,6 +32,9 @@ if(NOT FLB_SYSTEM_WINDOWS)
   FLB_RT_CORE_TEST(FLB_CORE_SHUTDOWN_SPIN   "core_shutdown_spin.c")
 endif()
 FLB_RT_CORE_TEST(1 "http_client_chunked.c")
+if(FLB_IN_LIB AND FLB_OUT_LIB)
+  FLB_RT_TEST(1 "core_engine_flush_now.c")
+endif()
 
 FLB_RT_TEST(FLB_CHUNK_TRACE "core_chunk_trace.c")
 
