@@ -117,6 +117,8 @@ struct flb_opentelemetry_otlp_logs_options {
     const char **logs_body_keys;
     size_t logs_body_key_count;
     int logs_body_key_attributes;
+    int max_resources;  /* 0 = unlimited */
+    int max_scopes;     /* 0 = unlimited, per resource */
 };
 
 /* Backward-compatible alias for older external callers. */
