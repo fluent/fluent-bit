@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_compression.h>
+#include <fluent-bit/flb_oauth2.h>
 
 #include "azure_blob.h"
 #include "azure_blob_conf.h"
@@ -573,6 +574,27 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         return NULL;
     }
 
+    /* Set Auth type - must be parsed before remote configuration */
+    tmp = (char *) flb_output_get_property("auth_type", ins);
+    if (!tmp) {
+        ctx->atype = AZURE_BLOB_AUTH_KEY;
+    }
+    else {
+        if (strcasecmp(tmp, "key") == 0) {
+            ctx->atype = AZURE_BLOB_AUTH_KEY;
+        }
+        else if (strcasecmp(tmp, "sas") == 0) {
+            ctx->atype = AZURE_BLOB_AUTH_SAS;
+        }
+        else if (strcasecmp(tmp, "service_principal") == 0) {
+            ctx->atype = AZURE_BLOB_AUTH_SERVICE_PRINCIPAL;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid auth_type value '%s'", tmp);
+            return NULL;
+        }
+    }
+
     if (ctx->configuration_endpoint_url != NULL) {
         ret = flb_azure_blob_apply_remote_configuration(ctx);
 
@@ -604,23 +626,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         return NULL;
     }
 
-    /* Set Auth type */
-    tmp = (char *) flb_output_get_property("auth_type", ins);
-    if (!tmp) {
-        ctx->atype = AZURE_BLOB_AUTH_KEY;
-    }
-    else {
-        if (strcasecmp(tmp, "key") == 0) {
-            ctx->atype = AZURE_BLOB_AUTH_KEY;
-        }
-        else if (strcasecmp(tmp, "sas") == 0) {
-            ctx->atype = AZURE_BLOB_AUTH_SAS;
-        }
-        else {
-            flb_plg_error(ctx->ins, "invalid auth_type value '%s'", tmp);
-            return NULL;
-        }
-    }
+    /* Validate auth-specific required fields */
     if (ctx->atype == AZURE_BLOB_AUTH_KEY &&
         ctx->shared_key == NULL) {
         flb_plg_error(ctx->ins, "'shared_key' has not been set");
@@ -634,6 +640,21 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         }
         if (ctx->sas_token[0] == '?') {
             ctx->sas_token++;
+        }
+    }
+
+    if (ctx->atype == AZURE_BLOB_AUTH_SERVICE_PRINCIPAL) {
+        if (ctx->tenant_id == NULL || flb_sds_len(ctx->tenant_id) == 0) {
+            flb_plg_error(ctx->ins, "'tenant_id' is required for service_principal auth");
+            return NULL;
+        }
+        if (ctx->client_id == NULL || flb_sds_len(ctx->client_id) == 0) {
+            flb_plg_error(ctx->ins, "'client_id' is required for service_principal auth");
+            return NULL;
+        }
+        if (ctx->client_secret == NULL || flb_sds_len(ctx->client_secret) == 0) {
+            flb_plg_error(ctx->ins, "'client_secret' is required for service_principal auth");
+            return NULL;
         }
     }
 
@@ -693,6 +714,17 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         flb_plg_error(ctx->ins,
                       "the option 'compress_blob' is not compatible with 'appendblob' "
                       "blob_type");
+        return NULL;
+    }
+
+    /*
+     * Service principal authentication requires TLS for Azure Storage API
+     * requests. Validate that TLS is explicitly enabled.
+     */
+    if (ctx->atype == AZURE_BLOB_AUTH_SERVICE_PRINCIPAL &&
+        ins->use_tls != FLB_TRUE) {
+        flb_plg_error(ctx->ins,
+                      "service_principal auth requires TLS; set 'tls On'");
         return NULL;
     }
 
@@ -795,7 +827,8 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
                  ctx->btype == AZURE_BLOB_APPENDBLOB ? "appendblob" : "blockblob",
                  ctx->emulator_mode ? "yes" : "no",
                  ctx->real_endpoint ? ctx->real_endpoint : "no",
-                 ctx->atype == AZURE_BLOB_AUTH_KEY ? "key" : "sas");
+                 ctx->atype == AZURE_BLOB_AUTH_KEY ? "key" :
+                 (ctx->atype == AZURE_BLOB_AUTH_SAS ? "sas" : "service_principal"));
     return ctx;
 }
 
@@ -838,6 +871,14 @@ void flb_azure_blob_conf_destroy(struct flb_azure_blob *ctx)
 
     if (ctx->shared_key_prefix) {
         flb_sds_destroy(ctx->shared_key_prefix);
+    }
+
+    /* Cleanup service principal resources */
+    if (ctx->atype == AZURE_BLOB_AUTH_SERVICE_PRINCIPAL) {
+        if (ctx->o) {
+            flb_oauth2_destroy(ctx->o);
+            ctx->o = NULL;
+        }
     }
 
     if (ctx->u) {
