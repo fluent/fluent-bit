@@ -88,6 +88,9 @@ struct flb_file_conf {
     int missing_field_action;
     int limit_reached_action;
     int dynamic_destination;
+    int enable_strftime;
+    int time_path;
+    int time_file;
     struct flb_record_accessor *ra_path;
     struct flb_record_accessor *ra_file;
     struct flb_hash_table *dynamic_files;
@@ -325,6 +328,27 @@ static int compose_output_file(const char *path,
     return 0;
 }
 
+static flb_sds_t format_event_timestamp(const char *format,
+                                        const struct flb_time *timestamp)
+{
+    size_t length;
+    time_t seconds;
+    struct tm utc_time;
+    char output[PATH_MAX * 2];
+
+    seconds = timestamp->tm.tv_sec;
+    if (gmtime_r(&seconds, &utc_time) == NULL) {
+        return NULL;
+    }
+
+    length = strftime(output, sizeof(output), format, &utc_time);
+    if (length == 0) {
+        return NULL;
+    }
+
+    return flb_sds_create_len(output, length);
+}
+
 static int use_fallback_destination(struct flb_file_conf *ctx,
                                     char *output,
                                     size_t output_size)
@@ -363,6 +387,7 @@ static int apply_destination_action(struct flb_file_conf *ctx,
 static int resolve_dynamic_destination(struct flb_file_conf *ctx,
                                        const char *tag,
                                        msgpack_object map,
+                                       const struct flb_time *timestamp,
                                        char *output,
                                        size_t output_size,
                                        int *new_destination)
@@ -373,6 +398,12 @@ static int resolve_dynamic_destination(struct flb_file_conf *ctx,
     size_t stored_size;
     flb_sds_t dynamic_path = NULL;
     flb_sds_t dynamic_file = NULL;
+    flb_sds_t timestamp_path = NULL;
+    flb_sds_t timestamp_file = NULL;
+    struct flb_record_accessor *event_ra_path = NULL;
+    struct flb_record_accessor *event_ra_file = NULL;
+    struct flb_record_accessor *ra_path;
+    struct flb_record_accessor *ra_file;
     const char *path;
     const char *file;
 
@@ -380,11 +411,36 @@ static int resolve_dynamic_destination(struct flb_file_conf *ctx,
     path = ctx->out_path;
     file = ctx->out_file;
 
+    if (ctx->time_path == FLB_TRUE) {
+        timestamp_path = format_event_timestamp(path, timestamp);
+        if (timestamp_path == NULL) {
+            flb_plg_error(ctx->ins, "could not format timestamp placeholders in path");
+            return -1;
+        }
+        path = timestamp_path;
+    }
+
     if (ctx->ra_path != NULL) {
-        dynamic_path = flb_ra_translate_check(ctx->ra_path,
+        ra_path = ctx->ra_path;
+        if (ctx->time_path == FLB_TRUE) {
+            event_ra_path = flb_ra_create((char *) path, FLB_TRUE);
+            if (event_ra_path == NULL) {
+                flb_plg_error(ctx->ins,
+                              "could not parse timestamp-expanded record accessor path");
+                flb_sds_destroy(timestamp_path);
+                return -1;
+            }
+            ra_path = event_ra_path;
+        }
+
+        dynamic_path = flb_ra_translate_check(ra_path,
                                               (char *) tag, strlen(tag),
                                               map, NULL, FLB_TRUE);
+        if (event_ra_path != NULL) {
+            flb_ra_destroy(event_ra_path);
+        }
         if (dynamic_path == NULL) {
+            flb_sds_destroy(timestamp_path);
             return apply_destination_action(ctx, ctx->missing_field_action,
                                             "record accessor field missing from path",
                                             output, output_size);
@@ -392,12 +448,42 @@ static int resolve_dynamic_destination(struct flb_file_conf *ctx,
         path = dynamic_path;
     }
 
+    if (ctx->time_file == FLB_TRUE) {
+        timestamp_file = format_event_timestamp(file, timestamp);
+        if (timestamp_file == NULL) {
+            flb_plg_error(ctx->ins, "could not format timestamp placeholders in file");
+            flb_sds_destroy(dynamic_path);
+            flb_sds_destroy(timestamp_path);
+            return -1;
+        }
+        file = timestamp_file;
+    }
+
     if (ctx->ra_file != NULL) {
-        dynamic_file = flb_ra_translate_check(ctx->ra_file,
+        ra_file = ctx->ra_file;
+        if (ctx->time_file == FLB_TRUE) {
+            event_ra_file = flb_ra_create((char *) file, FLB_TRUE);
+            if (event_ra_file == NULL) {
+                flb_plg_error(ctx->ins,
+                              "could not parse timestamp-expanded record accessor file");
+                flb_sds_destroy(dynamic_path);
+                flb_sds_destroy(timestamp_path);
+                flb_sds_destroy(timestamp_file);
+                return -1;
+            }
+            ra_file = event_ra_file;
+        }
+
+        dynamic_file = flb_ra_translate_check(ra_file,
                                               (char *) tag, strlen(tag),
                                               map, NULL, FLB_TRUE);
+        if (event_ra_file != NULL) {
+            flb_ra_destroy(event_ra_file);
+        }
         if (dynamic_file == NULL) {
             flb_sds_destroy(dynamic_path);
+            flb_sds_destroy(timestamp_path);
+            flb_sds_destroy(timestamp_file);
             return apply_destination_action(ctx, ctx->missing_field_action,
                                             "record accessor field missing from file",
                                             output, output_size);
@@ -408,15 +494,20 @@ static int resolve_dynamic_destination(struct flb_file_conf *ctx,
         ret = sanitize_tag_name(tag, sanitized_tag, sizeof(sanitized_tag));
         if (ret != 0) {
             flb_sds_destroy(dynamic_path);
+            flb_sds_destroy(timestamp_path);
             return -1;
         }
         file = sanitized_tag;
     }
 
-    if ((ctx->ra_path != NULL && validate_dynamic_path(path) != 0) ||
-        (ctx->ra_file != NULL && validate_dynamic_file(file) != 0)) {
+    if (((ctx->ra_path != NULL || ctx->time_path == FLB_TRUE) &&
+         validate_dynamic_path(path) != 0) ||
+        ((ctx->ra_file != NULL || ctx->time_file == FLB_TRUE) &&
+         validate_dynamic_file(file) != 0)) {
         flb_sds_destroy(dynamic_path);
         flb_sds_destroy(dynamic_file);
+        flb_sds_destroy(timestamp_path);
+        flb_sds_destroy(timestamp_file);
         return apply_destination_action(ctx, ctx->missing_field_action,
                                         "unsafe dynamic output destination",
                                         output, output_size);
@@ -425,6 +516,8 @@ static int resolve_dynamic_destination(struct flb_file_conf *ctx,
     ret = compose_output_file(path, file, output, output_size);
     flb_sds_destroy(dynamic_path);
     flb_sds_destroy(dynamic_file);
+    flb_sds_destroy(timestamp_path);
+    flb_sds_destroy(timestamp_file);
     if (ret != 0) {
         return -1;
     }
@@ -517,6 +610,12 @@ static int cb_file_init(struct flb_output_instance *ins,
         ctx->dynamic_destination = FLB_TRUE;
     }
 
+    if (ctx->enable_strftime == FLB_TRUE &&
+        ctx->out_path != NULL && strchr(ctx->out_path, '%') != NULL) {
+        ctx->time_path = FLB_TRUE;
+        ctx->dynamic_destination = FLB_TRUE;
+    }
+
     if (ctx->out_file != NULL && strchr(ctx->out_file, '$') != NULL) {
         ctx->ra_file = flb_ra_create((char *) ctx->out_file, FLB_TRUE);
         if (ctx->ra_file == NULL) {
@@ -524,6 +623,12 @@ static int cb_file_init(struct flb_output_instance *ins,
             file_conf_destroy(ctx);
             return -1;
         }
+        ctx->dynamic_destination = FLB_TRUE;
+    }
+
+    if (ctx->enable_strftime == FLB_TRUE &&
+        ctx->out_file != NULL && strchr(ctx->out_file, '%') != NULL) {
+        ctx->time_file = FLB_TRUE;
         ctx->dynamic_destination = FLB_TRUE;
     }
 
@@ -1047,6 +1152,7 @@ static int flush_dynamic_logs(struct flb_event_chunk *event_chunk,
     while ((ret = flb_log_event_decoder_next(log_decoder,
                                               log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         ret = resolve_dynamic_destination(ctx, event_chunk->tag, *log_event->body,
+                                          &log_event->timestamp,
                                           output, output_size, &new_destination);
         if (ret == 1) {
             continue;
@@ -1143,7 +1249,7 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
         ret = use_fallback_destination(ctx, out_file, sizeof(out_file));
         if (ret != 0) {
             flb_plg_error(ctx->ins,
-                          "dynamic path and file record accessors are unsupported for metrics");
+                          "dynamic path and file placeholders are unsupported for metrics");
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
     }
@@ -1337,14 +1443,23 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "path", NULL,
      0, FLB_TRUE, offsetof(struct flb_file_conf, out_path),
      "Absolute path to store the files. Log record accessor expressions are supported, "
-     "and dynamic paths must retain a static prefix"
+     "and paths with record accessors must retain a static prefix. When enable_strftime "
+     "is true, strftime placeholders use the UTC event timestamp"
     },
 
     {
      FLB_CONFIG_MAP_STR, "file", NULL,
      0, FLB_TRUE, offsetof(struct flb_file_conf, out_file),
      "Name of the target file to write the records. If 'path' is specified, "
-     "the value is prefixed. Log record accessor expressions are supported"
+     "the value is prefixed. Log record accessor expressions are supported. When "
+     "enable_strftime is true, strftime placeholders use the UTC event timestamp"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "enable_strftime", "false",
+     0, FLB_TRUE, offsetof(struct flb_file_conf, enable_strftime),
+     "Enable strftime placeholders in path and file. Disabled by default so literal "
+     "percent characters in existing filenames are preserved"
     },
 
     {
