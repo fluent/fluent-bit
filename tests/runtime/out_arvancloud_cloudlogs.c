@@ -56,7 +56,10 @@
     "[1448403340, {\"key\":\"value\",\"category\":\"security\"}]"
 
 #define JSON_WITH_TIMESTAMP \
-    "[1448403340, {\"key\":\"value\",\"ts\":\"2024-01-15T10:30:45Z\"}]"
+    "[1448403340, {\"key\":\"value\",\"ts\":\"2024-01-15T10:30:45.123456+03:30\"}]"
+
+/* Event time 1448403340 == 2015-11-24T22:15:40Z */
+#define EXPECTED_EVENT_TIMESTAMP "2015-11-24T22:15:40.000000Z"
 
 /*
  * Convert a formatted JSON payload into msgpack and validate that the value
@@ -251,22 +254,60 @@ static void cb_check_include_tag_key(void *ctx, int ffd,
 }
 
 /*
- * When timestamp_key + timestamp_format are configured, the value from the
- * record must be parsed and re-emitted in canonical RFC3339 UTC form with
- * microseconds.
+ * Default path (design A): format Fluent Bit event time as RFC3339 UTC.
+ * String parsing belongs in an upstream parser, not this output.
  */
-static void cb_check_timestamp_from_record(void *ctx, int ffd,
-                                           int res_ret, void *res_data, size_t res_size,
-                                           void *data)
+static void cb_check_event_timestamp(void *ctx, int ffd,
+                                     int res_ret, void *res_data, size_t res_size,
+                                     void *data)
 {
     int ret;
     flb_sds_t out_js = res_data;
 
     ret = mp_kv_cmp((char *) out_js, res_size,
                     "$logs[0]['timestamp']",
-                    "2024-01-15T10:30:45.000000Z");
+                    EXPECTED_EVENT_TIMESTAMP);
     if (!TEST_CHECK(ret == FLB_TRUE)) {
-        TEST_MSG("expected normalized RFC3339 timestamp. Given:%s", out_js);
+        TEST_MSG("expected event-time RFC3339 UTC. Given:%s", out_js);
+    }
+
+    flb_sds_destroy(out_js);
+}
+
+/*
+ * Optional timestamp_key is pass-through only: the record value is forwarded
+ * as-is when present (must already be OpenAPI date-time).
+ */
+static void cb_check_timestamp_passthrough(void *ctx, int ffd,
+                                           int res_ret, void *res_data,
+                                           size_t res_size, void *data)
+{
+    int ret;
+    flb_sds_t out_js = res_data;
+
+    ret = mp_kv_cmp((char *) out_js, res_size,
+                    "$logs[0]['timestamp']",
+                    "2024-01-15T10:30:45.123456+03:30");
+    if (!TEST_CHECK(ret == FLB_TRUE)) {
+        TEST_MSG("expected timestamp_key pass-through. Given:%s", out_js);
+    }
+
+    flb_sds_destroy(out_js);
+}
+
+/* Missing timestamp_key field falls back to event timestamp. */
+static void cb_check_timestamp_key_fallback(void *ctx, int ffd,
+                                            int res_ret, void *res_data,
+                                            size_t res_size, void *data)
+{
+    int ret;
+    flb_sds_t out_js = res_data;
+
+    ret = mp_kv_cmp((char *) out_js, res_size,
+                    "$logs[0]['timestamp']",
+                    EXPECTED_EVENT_TIMESTAMP);
+    if (!TEST_CHECK(ret == FLB_TRUE)) {
+        TEST_MSG("expected event-time fallback. Given:%s", out_js);
     }
 
     flb_sds_destroy(out_js);
@@ -422,19 +463,48 @@ void flb_test_include_tag_key()
     flb_destroy(ctx);
 }
 
-void flb_test_timestamp_from_record()
+void flb_test_event_timestamp()
 {
     int in_ffd;
     flb_ctx_t *ctx;
 
-    ctx = create_ctx(&in_ffd, cb_check_timestamp_from_record,
+    ctx = create_ctx(&in_ffd, cb_check_event_timestamp, NULL);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_BASIC, sizeof(JSON_BASIC) - 1);
+    sleep(2);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_timestamp_key_passthrough()
+{
+    int in_ffd;
+    flb_ctx_t *ctx;
+
+    ctx = create_ctx(&in_ffd, cb_check_timestamp_passthrough,
                      "timestamp_key", "$ts",
-                     "timestamp_format", "%Y-%m-%dT%H:%M:%SZ",
                      NULL);
 
     flb_lib_push(ctx, in_ffd,
                  (char *) JSON_WITH_TIMESTAMP,
                  sizeof(JSON_WITH_TIMESTAMP) - 1);
+    sleep(2);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_timestamp_key_fallback()
+{
+    int in_ffd;
+    flb_ctx_t *ctx;
+
+    ctx = create_ctx(&in_ffd, cb_check_timestamp_key_fallback,
+                     "timestamp_key", "$missing_ts",
+                     NULL);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_BASIC, sizeof(JSON_BASIC) - 1);
     sleep(2);
 
     flb_stop(ctx);
@@ -448,6 +518,8 @@ TEST_LIST = {
     { "log_type_key",           flb_test_log_type_key },
     { "log_type_key_fallback",  flb_test_log_type_key_fallback },
     { "include_tag_key",        flb_test_include_tag_key },
-    { "timestamp_from_record",  flb_test_timestamp_from_record },
+    { "event_timestamp",        flb_test_event_timestamp },
+    { "timestamp_key_passthrough", flb_test_timestamp_key_passthrough },
+    { "timestamp_key_fallback", flb_test_timestamp_key_fallback },
     { NULL, NULL }
 };
