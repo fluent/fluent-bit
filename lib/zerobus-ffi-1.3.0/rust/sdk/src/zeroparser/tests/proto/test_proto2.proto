@@ -1,0 +1,192 @@
+syntax = "proto2";
+
+package zeroparser.e2e.proto2;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/wrappers.proto";
+
+// Enum for testing enum parsing.
+enum Status {
+  STATUS_UNKNOWN = 0;
+  STATUS_PENDING = 1;
+  STATUS_APPROVED = 2;
+  STATUS_REJECTED = 3;
+}
+
+// Comprehensive test message with all proto2 features.
+message AllTypesMessage {
+  // Nested message for testing nested message parsing.
+  message NestedMessage {
+    optional int32 nested_id = 18;
+    optional string nested_name = 7;
+  }
+
+  // Deeply nested message (3 levels).
+  message DeeplyNestedMessage {
+    optional int32 deep_id = 18;
+    optional NestedMessage nested = 7;
+  }
+
+
+  // All scalar types.
+  optional int32 f_int32 = 29;
+  optional int64 f_int64 = 11;
+  optional uint32 f_uint32 = 33;
+  optional uint64 f_uint64 = 2;
+  optional sint32 f_sint32 = 24;
+  optional sint64 f_sint64 = 15;
+  optional fixed32 f_fixed32 = 31;
+  optional fixed64 f_fixed64 = 5;
+  optional sfixed32 f_sfixed32 = 22;
+  optional sfixed64 f_sfixed64 = 9;
+  optional float f_float = 27;
+  optional double f_double = 3;
+  optional bool f_bool = 19;
+  optional string f_string = 12;
+  optional bytes f_bytes = 26;
+
+  // Enum field.
+  optional Status f_enum = 8;
+
+  // Required field.
+  required int32 f_required = 34;
+
+  // Fields with defaults.
+  optional int32 f_default_int = 14 [default = 42];
+  optional string f_default_string = 20 [default = "default_value"];
+  optional bool f_default_bool = 13 [default = true];
+
+  // Nested message.
+  optional NestedMessage f_nested = 4;
+
+  // Deeply nested message.
+  optional DeeplyNestedMessage f_deeply_nested = 16;
+
+  // Repeated scalar fields.
+  repeated int32 f_repeated_int32 = 10;
+  repeated string f_repeated_string = 21;
+
+  // Packed repeated field.
+  repeated int32 f_repeated_packed = 6 [packed = true];
+
+  // Unpacked repeated field.
+  repeated int32 f_repeated_unpacked = 23 [packed = false];
+
+  // Repeated message.
+  repeated NestedMessage f_repeated_message = 1;
+
+  // Map fields.
+  map<int32, string> f_map_int_string = 32;
+  map<string, string> f_map_string_string = 28;
+  map<string, NestedMessage> f_map_string_message = 17;
+
+  // Oneof fields.
+  oneof f_oneof {
+    int32 oneof_int = 25;
+    string oneof_string = 30;
+    NestedMessage oneof_message = 250;
+  }
+
+  // Repeated enum field.
+  repeated Status f_repeated_enum = 175;
+
+  // Large field numbers to test sparse map overflow (>128).
+  optional int32 f_large_field_150 = 301;
+  optional string f_large_field_200 = 150;
+  optional int64 f_large_field_300 = 200;
+}
+
+// Message for testing unknown fields (V1 - fewer fields).
+message SupportedTypesV1 {
+  optional bool approved = 29;
+  optional int32 day_num = 11;
+  optional int64 cost = 33;
+  optional string description = 2;
+}
+
+// Message for testing unknown fields (V2 - more fields).
+message SupportedTypesV2 {
+  optional bool approved = 29;
+  optional int32 day_num = 11;
+  optional int64 cost = 33;
+  optional string description = 2;
+
+  // New fields in V2 (unknown to V1).
+  optional float discount = 24;
+  optional double cost_with_discount = 15;
+  optional bytes photo = 31;
+  repeated string tags = 5;
+  map<int32, string> metadata = 22;
+}
+
+// Complex nested message with all field type combinations.
+message ComplexNested {
+  // Scalar fields.
+  optional int32 id = 29;
+  optional string name = 11;
+
+  // Nested message.
+  message InnerData {
+    optional int64 value = 29;
+    optional bytes data = 11;
+    repeated int32 numbers = 33;
+  }
+  optional InnerData inner = 33;
+
+  // Repeated scalars of various types.
+  repeated int32 int_list = 2;
+  repeated string string_list = 24;
+  repeated bool bool_list = 15;
+
+  // Repeated nested messages.
+  repeated InnerData inner_list = 31;
+
+  // Maps with scalar values.
+  map<string, int32> string_to_int = 5;
+  map<int32, string> int_to_string = 22;
+
+  // Maps with message values.
+  map<string, InnerData> string_to_message = 9;
+
+  // Nested message containing maps.
+  message DataWithMaps {
+    optional string label = 29;
+    map<string, string> properties = 11;
+    repeated int32 indices = 33;
+  }
+  optional DataWithMaps data_with_maps = 27;
+
+  // Repeated message with complex fields.
+  message ComplexItem {
+    optional int32 item_id = 29;
+    repeated string tags = 11;
+    map<string, int32> attributes = 33;
+  }
+  repeated ComplexItem items = 3;
+
+  // Recursive self-referential message for testing parser depth handling.
+  message TreeNode {
+    optional int32 value = 29;
+    optional string label = 11;
+    repeated TreeNode children = 33;
+    optional TreeNode left = 2;
+    optional TreeNode right = 24;
+  }
+  optional TreeNode tree = 19;
+}
+
+message GoogleProtobufTypesMessage {
+  optional google.protobuf.Timestamp timestamp = 1;
+  optional google.protobuf.Duration duration = 2;
+  optional google.protobuf.StringValue string_value = 3;
+  optional google.protobuf.Int32Value int32_value = 4;
+  optional google.protobuf.Int64Value int64_value = 5;
+  optional google.protobuf.UInt32Value uint32_value = 6;
+  optional google.protobuf.UInt64Value uint64_value = 7;
+  optional google.protobuf.FloatValue float_value = 8;
+  optional google.protobuf.DoubleValue double_value = 9;
+  optional google.protobuf.BoolValue bool_value = 10;
+  optional google.protobuf.BytesValue bytes_value = 11;
+  repeated google.protobuf.Timestamp timestamps = 12;
+}
