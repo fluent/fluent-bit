@@ -45,7 +45,6 @@ struct flb_out_arvancloud_cloudlogs {
     struct flb_record_accessor *ra_log_type_key;
     flb_sds_t timestamp_key;
     struct flb_record_accessor *ra_timestamp_key;
-    flb_sds_t timestamp_format;
 
     /* Instance */
     struct flb_output_instance *ins;

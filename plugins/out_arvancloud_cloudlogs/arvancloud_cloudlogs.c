@@ -26,7 +26,6 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_time.h>
-#include <fluent-bit/flb_strptime.h>
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
@@ -35,8 +34,9 @@
 #include "arvancloud_cloudlogs.h"
 
 /*
- * Format timestamp to RFC3339 string with microseconds in UTC.
- * Returns the length of the formatted string.
+ * Format event time to RFC3339 with microseconds in UTC.
+ * String parsing belongs in a parser (Time_Key / Time_Format / %L / %z);
+ * this output only shapes the API date-time field.
  */
 static size_t format_timestamp_rfc3339(char *buffer, size_t buffer_size,
                                         time_t seconds, long nsec)
@@ -44,76 +44,12 @@ static size_t format_timestamp_rfc3339(char *buffer, size_t buffer_size,
     struct tm tm;
     size_t s;
     int len;
-    
+
     gmtime_r(&seconds, &tm);
     s = strftime(buffer, buffer_size - 1, "%Y-%m-%dT%H:%M:%S", &tm);
     len = snprintf(buffer + s, buffer_size - 1 - s,
                    ".%06ldZ", (long) (nsec / 1000));
     return s + len;
-}
-
-/*
- * Parse timestamp string using a user-provided flb_strptime format.
- *
- * - Returns 0 on success, -1 on failure.
- * - Extracts fractional seconds (if any) into nanoseconds.
- * - Does NOT attempt any auto-detection: the format must match the input.
- */
-static int parse_timestamp_string(const char *timestamp_str,
-                                  const char *format,
-                                  struct flb_tm *tm_out,
-                                  long *nsec_out)
-{
-    char *result;
-    const char *frac_ptr;
-    long frac_value;
-    int digit_count;
-
-    if (!timestamp_str || !tm_out || !nsec_out) {
-        return -1;
-    }
-
-    if (!format || format[0] == '\0') {
-        return -1;
-    }
-
-    frac_value = 0;
-    digit_count = 0;
-
-    memset(tm_out, 0, sizeof(struct flb_tm));
-    tm_out->tm.tm_isdst = -1;
-    flb_tm_gmtoff(tm_out) = 0;
-    *nsec_out = 0;
-
-    /* Parse according to the user-provided format */
-    result = flb_strptime(timestamp_str, format, tm_out);
-    if (!result) {
-        return -1;
-    }
-
-    /* Extract fractional seconds if present (flb_strptime doesn't handle them) */
-    frac_ptr = strchr(timestamp_str, '.');
-    if (frac_ptr) {
-        frac_ptr++; /* Skip the dot */
-
-        /* Count digits and parse fractional part (up to nanoseconds) */
-        while (*frac_ptr >= '0' && *frac_ptr <= '9' && digit_count < 9) {
-            frac_value = frac_value * 10 + (*frac_ptr - '0');
-            digit_count++;
-            frac_ptr++;
-        }
-
-        if (digit_count > 0) {
-            /* Scale to nanoseconds */
-            while (digit_count < 9) {
-                frac_value *= 10;
-                digit_count++;
-            }
-            *nsec_out = frac_value;
-        }
-    }
-
-    return 0;
 }
 
 static int arvancloud_format(struct flb_config *config,
@@ -184,7 +120,7 @@ static int arvancloud_format(struct flb_config *config,
         if (ctx->log_type_key && ctx->ra_log_type_key) {
             /* Try to extract from record using log_type_key */
             log_type_value = flb_ra_translate(ctx->ra_log_type_key,
-                                              tag, tag_len,
+                                              (char *) tag, tag_len,
                                               *log_event.body, NULL);
             if (log_type_value && !flb_sds_is_empty(log_type_value)) {
                 final_log_type = log_type_value;
@@ -216,85 +152,42 @@ static int arvancloud_format(struct flb_config *config,
             flb_sds_destroy(log_type_value);
         }
 
-        /* timestamp: Try to extract from record if timestamp_key is configured */
+        /*
+         * timestamp: prefer Fluent Bit event time (set upstream via parser
+         * Time_Key / Time_Format). Optional timestamp_key is pass-through
+         * only when the field is already an OpenAPI date-time string.
+         */
         if (ctx->timestamp_key && ctx->ra_timestamp_key) {
             flb_sds_t timestamp_value;
-            int parse_success;
+            int use_record_value;
 
-            parse_success = FLB_FALSE;
-
-            /* Try to extract timestamp from record */
+            use_record_value = FLB_FALSE;
             timestamp_value = flb_ra_translate(ctx->ra_timestamp_key,
-                                               tag, tag_len,
+                                               (char *) tag, tag_len,
                                                *log_event.body, NULL);
 
             if (timestamp_value && !flb_sds_is_empty(timestamp_value)) {
-                /*
-                 * If user provided timestamp_format, parse and normalize
-                 * into the CloudLogs canonical UTC RFC3339 format.
-                 */
-                if (ctx->timestamp_format && ctx->timestamp_format[0] != '\0') {
-                    struct flb_tm parsed_tm;
-                    long parsed_nsec;
-                    time_t parsed_time;
-                    long gmtoff_value;
-                    time_t time_before_adjustment;
-
-                    parsed_nsec = 0;
-
-                    if (parse_timestamp_string(timestamp_value,
-                                              ctx->timestamp_format,
-                                              &parsed_tm, &parsed_nsec) == 0) {
-                        /*
-                         * Convert flb_tm to time_t, accounting for timezone offset.
-                         * IMPORTANT: read gmtoff BEFORE calling timegm() as
-                         * timegm() may modify the struct.
-                         */
-                        gmtoff_value = flb_tm_gmtoff(&parsed_tm);
-                        time_before_adjustment = timegm(&parsed_tm.tm);
-                        parsed_time = time_before_adjustment - gmtoff_value;
-
-                        s = format_timestamp_rfc3339(time_formatted,
-                                                     sizeof(time_formatted),
-                                                     parsed_time, parsed_nsec);
-                        parse_success = FLB_TRUE;
-                    }
-                    else {
-                        flb_plg_warn(ctx->ins,
-                                     "Failed to parse timestamp from field '%s': %s, "
-                                     "falling back to event timestamp",
-                                     ctx->timestamp_key, timestamp_value);
-                    }
+                s = flb_sds_len(timestamp_value);
+                if (s >= sizeof(time_formatted)) {
+                    s = sizeof(time_formatted) - 1;
                 }
-                else {
-                    /*
-                     * No timestamp_format configured: assume the value is already
-                     * in a format accepted by CloudLogs and forward it as-is.
-                     */
-                    s = flb_sds_len(timestamp_value);
-                    if (s >= sizeof(time_formatted)) {
-                        s = sizeof(time_formatted) - 1;
-                    }
 
-                    memcpy(time_formatted, timestamp_value, s);
-                    time_formatted[s] = '\0';
-                    parse_success = FLB_TRUE;
-                }
+                memcpy(time_formatted, timestamp_value, s);
+                time_formatted[s] = '\0';
+                use_record_value = FLB_TRUE;
             }
 
             if (timestamp_value) {
                 flb_sds_destroy(timestamp_value);
             }
 
-            if (!parse_success) {
-                /* Extraction or parsing failed, use event timestamp */
+            if (!use_record_value) {
                 s = format_timestamp_rfc3339(time_formatted,
                                              sizeof(time_formatted),
                                              t.tm.tv_sec, t.tm.tv_nsec);
             }
         }
         else {
-            /* timestamp_key not configured, use event timestamp */
             s = format_timestamp_rfc3339(time_formatted, sizeof(time_formatted),
                                          t.tm.tv_sec, t.tm.tv_nsec);
         }
@@ -584,15 +477,10 @@ static struct flb_config_map config_map[] = {
     {
         FLB_CONFIG_MAP_STR, "timestamp_key", NULL,
         0, FLB_TRUE, offsetof(struct flb_out_arvancloud_cloudlogs, timestamp_key),
-        "Field in the record to use as log timestamp. "
-        "If not set, uses Fluent Bit event timestamp."
-    },
-    {
-        FLB_CONFIG_MAP_STR, "timestamp_format", NULL,
-        0, FLB_TRUE, offsetof(struct flb_out_arvancloud_cloudlogs, timestamp_format),
-        "strptime format string to parse timestamp_key. "
-        "If not set, tries to auto-detect ISO8601 format. "
-        "Example: '%Y-%m-%dT%H:%M:%S%z' for ISO8601 with timezone."
+        "Optional record field to forward as CloudLogs timestamp when the "
+        "value is already an OpenAPI date-time string. Prefer setting event "
+        "time with a parser (Time_Key / Time_Format). If unset or missing, "
+        "uses the Fluent Bit event timestamp formatted as RFC3339 UTC."
     },
     /* EOF */
     {0}
