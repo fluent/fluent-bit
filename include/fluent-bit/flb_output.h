@@ -154,8 +154,23 @@ struct flb_test_out_formatter {
      */
     void *rt_data;
 
-    /* optional context for flush callback */
+    /* optional context for "flush context callback" */
     void *flush_ctx;
+
+    /*
+     * Callback
+     * =========
+     * Optional "flush context callback": it references the function that extracts
+     * optional flush context for "formatter callback".
+     */
+    void *(*flush_ctx_callback) (/* Fluent Bit context */
+                                 struct flb_config *,
+                                 /* plugin that ingested the records */
+                                 struct flb_input_instance *,
+                                 /* plugin instance context */
+                                 void *plugin_context,
+                                 /* context for "flush context callback" */
+                                 void *flush_ctx);
 
     /*
      * Callback
@@ -381,6 +396,16 @@ struct flb_output_instance {
     int tls_win_use_enterprise_certstore;    /* Use enterprise CertStore */
     char *tls_win_thumbprints;               /* CertStore Thumbprints (Windows) */
 # endif
+
+    /*
+     * HTTPS proxy TLS settings: independent from the destination tls.*
+     * settings above, since the proxy leg and the destination leg are
+     * different TLS peers.
+     */
+    int tls_proxy_verify;                /* Verify proxy cert (default: true) */
+    int tls_proxy_verify_hostname;       /* Verify proxy hostname (default: true) */
+    char *tls_proxy_ca_path;             /* Path to CA certs for proxy verification */
+    char *tls_proxy_ca_file;             /* CA root cert for proxy verification */
 #endif
 
     /*
@@ -1424,6 +1449,9 @@ int flb_output_oauth2_property_check(struct flb_output_instance *ins,
                                       struct flb_config *config);
 int flb_output_plugin_property_check(struct flb_output_instance *ins,
                                      struct flb_config *config);
+#ifdef FLB_HAVE_TLS
+int flb_output_proxy_tls_ca_check(struct flb_output_instance *ins);
+#endif
 int flb_output_init_all(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
 int flb_output_log_check(struct flb_output_instance *ins, int l);

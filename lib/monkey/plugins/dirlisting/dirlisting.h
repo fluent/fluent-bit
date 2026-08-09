@@ -142,6 +142,7 @@ struct dirhtml_value
 
     /* string data */
     int len;
+    int owned;
     char *value;
 
     /* next node */

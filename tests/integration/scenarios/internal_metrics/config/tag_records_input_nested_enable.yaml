@@ -1,0 +1,28 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      alias: tag_records_nested_enabled
+      tag: tag.records.nested.enable
+      telemetry:
+        metrics:
+          logs:
+            tag_records:
+              enabled: true
+      dummy: '{"message":"nested on"}'
+      samples: 1
+    - name: dummy
+      alias: tag_records_nested_default
+      tag: tag.records.nested.default
+      dummy: '{"message":"default"}'
+      samples: 1
+
+  outputs:
+    - name: stdout
+      match: '*'

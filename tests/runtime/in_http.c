@@ -413,6 +413,158 @@ static void test_ctx_destroy(struct test_ctx *ctx)
     flb_free(ctx);
 }
 
+static int send_raw_http_request(const char *request,
+                                 char *response,
+                                 size_t response_size)
+{
+    struct sockaddr_in address;
+    struct timeval timeout;
+    fd_set read_fds;
+    flb_sockfd_t fd;
+    size_t request_length;
+    size_t request_offset;
+    int ret;
+    int written;
+    int received;
+    int response_length;
+
+    if (response_size < 2) {
+        return -1;
+    }
+
+    response[0] = '\0';
+    request_length = strlen(request);
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd == FLB_INVALID_SOCKET) {
+        return -1;
+    }
+
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(9880);
+
+    ret = connect(fd, (struct sockaddr *) &address, sizeof(address));
+    if (ret != 0) {
+        flb_socket_close(fd);
+        return -1;
+    }
+
+    request_offset = 0;
+    while (request_offset < request_length) {
+        written = send(fd,
+                       request + request_offset,
+                       (int) (request_length - request_offset),
+                       0);
+        if (written <= 0) {
+            flb_socket_close(fd);
+            return -1;
+        }
+        request_offset += (size_t) written;
+    }
+
+    response_length = 0;
+    while (response_length < (int) response_size - 1) {
+        FD_ZERO(&read_fds);
+        FD_SET(fd, &read_fds);
+        timeout.tv_sec = 2;
+        timeout.tv_usec = 0;
+
+        ret = select((int) (fd + 1), &read_fds, NULL, NULL, &timeout);
+        if (ret <= 0) {
+            flb_socket_close(fd);
+            return -1;
+        }
+
+        received = recv(fd,
+                        response + response_length,
+                        (int) response_size - 1 - response_length,
+                        0);
+        if (received <= 0) {
+            break;
+        }
+
+        response_length += received;
+        response[response_length] = '\0';
+        if (strstr(response, "\r\n") != NULL) {
+            break;
+        }
+    }
+
+    flb_socket_close(fd);
+    response[response_length] = '\0';
+
+    if (response_length > 0 && strstr(response, "\r\n") == NULL) {
+        return -1;
+    }
+
+    return response_length;
+}
+
+static int send_empty_header_request(void)
+{
+    const char *body = "{\"test\":\"msg\"}";
+    const char *request_template =
+        "POST / HTTP/1.1\r\n"
+        "Host: 127.0.0.1\r\n"
+        "Content-Length: %zu\r\n"
+        "Content-Type: application/json\r\n"
+        "X-Empty:\r\n"
+        "X-Empty-Whitespace: \t\r\n"
+        "\r\n"
+        "%s";
+    char request[512];
+    char response[256];
+    int ret;
+    int response_length;
+
+    ret = snprintf(request, sizeof(request), request_template,
+                   strlen(body), body);
+    if (ret <= 0 || (size_t) ret >= sizeof(request)) {
+        return -1;
+    }
+
+    response_length = send_raw_http_request(request, response, sizeof(response));
+    if (response_length <= 0) {
+        return -1;
+    }
+
+    return strstr(response, "HTTP/1.1 201") != NULL ? 0 : -1;
+}
+
+static int send_invalid_header_request(void)
+{
+    const char *body = "{\"test\":\"msg\"}";
+    const char *request_template =
+        "POST / HTTP/1.1\r\n"
+        "Host: 127.0.0.1\r\n"
+        "Content-Length: %zu\r\n"
+        "Content-Type: application/json\r\n"
+        "Upgrade:\r\n"
+        "\r\n"
+        "%s";
+    char request[512];
+    char response[256];
+    int ret;
+    int response_length;
+
+    ret = snprintf(request, sizeof(request), request_template,
+                   strlen(body), body);
+    if (ret <= 0 || (size_t) ret >= sizeof(request)) {
+        return -1;
+    }
+
+    response_length = send_raw_http_request(request, response, sizeof(response));
+    if (response_length < 0) {
+        return -1;
+    }
+    if (response_length == 0) {
+        return 0;
+    }
+
+    return strstr(response, "HTTP/1.1 4") != NULL ? 0 : -1;
+}
+
 void flb_test_http(void)
 {
     struct flb_lib_out_cb cb_data;
@@ -469,13 +621,26 @@ void flb_test_http(void)
         TEST_MSG("http response code error. expect: 201, got: %d\n", c->resp.status);
     }
 
+    /* Ensure the first request has reached the callback before the regression. */
+    flb_time_msleep(1500);
+    num = get_output_num();
+    TEST_CHECK(num > 0);
+
+    TEST_CHECK(send_empty_header_request() == 0);
+
     /* waiting to flush */
     flb_time_msleep(1500);
 
-    num = get_output_num();
-    if (!TEST_CHECK(num > 0))  {
-        TEST_MSG("no outputs");
+    if (!TEST_CHECK(get_output_num() > num)) {
+        TEST_MSG("empty-header request did not reach the callback");
     }
+
+    num = get_output_num();
+    TEST_CHECK(send_invalid_header_request() == 0);
+    /* Observe the same full dispatch and flush window as accepted requests. */
+    flb_time_msleep(1500);
+    TEST_CHECK(get_output_num() == num);
+
     flb_http_client_destroy(c);
     flb_upstream_conn_release(ctx->httpc->u_conn);
     test_ctx_destroy(ctx);

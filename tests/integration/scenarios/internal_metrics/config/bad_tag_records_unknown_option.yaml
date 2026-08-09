@@ -1,0 +1,23 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: error
+  telemetry:
+    metrics:
+      logs:
+        tag_records:
+          enabled: true
+          # typo: 'max_serie' is not a known option and must be rejected so a
+          # misconfigured cardinality guard is not silently left at default
+          max_serie: 5
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: bad.unknown
+      dummy: '{"message":"x"}'
+      samples: 1
+
+  outputs:
+    - name: 'null'
+      match: '*'

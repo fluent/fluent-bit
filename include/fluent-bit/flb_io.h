@@ -40,6 +40,13 @@
 
 /* Other features */
 #define FLB_IO_IPV6      128  /* network I/O uses IPv6                  */
+#define FLB_IO_PROXY_TLS 256  /* connection-scoped: an HTTPS proxy TLS
+                                * session is active on this connection.
+                                * Independent of FLB_IO_TLS, which
+                                * describes the destination stream: must
+                                * only ever be set on struct
+                                * flb_connection.flags, never on the
+                                * shared stream/upstream flags.          */
 
 struct flb_connection;
 

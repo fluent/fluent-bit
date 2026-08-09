@@ -162,14 +162,14 @@ static int syslog_configure_tls_options(struct flb_output_instance *ins)
     return 0;
 }
 
-static int syslog_configure_dtls_context(struct flb_output_instance *ins)
+static int syslog_configure_tls_context(struct flb_output_instance *ins, int mode)
 {
     if (ins->tls != NULL) {
         flb_tls_destroy(ins->tls);
         ins->tls = NULL;
     }
 
-    ins->tls = flb_tls_create(FLB_TLS_CLIENT_MODE_DGRAM,
+    ins->tls = flb_tls_create(mode,
                               ins->tls_verify,
                               ins->tls_debug,
                               ins->tls_vhost,
@@ -1013,8 +1013,18 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
     }
     else {
 #ifdef FLB_HAVE_TLS
-        if (ctx->parsed_mode == FLB_SYSLOG_DTLS) {
-            ret = syslog_configure_dtls_context(ins);
+        if (ctx->parsed_mode == FLB_SYSLOG_TLS && ins->use_tls == FLB_FALSE) {
+            ins->use_tls = FLB_TRUE;
+            ret = syslog_configure_tls_context(ins, FLB_TLS_CLIENT_MODE);
+            if (ret != 0) {
+                flb_plg_error(ins, "could not initialize TLS context");
+                flb_syslog_config_destroy(ctx);
+                return -1;
+            }
+        }
+        else if (ctx->parsed_mode == FLB_SYSLOG_DTLS) {
+            ins->use_tls = FLB_TRUE;
+            ret = syslog_configure_tls_context(ins, FLB_TLS_CLIENT_MODE_DGRAM);
             if (ret != 0) {
                 flb_plg_error(ins, "could not initialize DTLS context");
                 flb_syslog_config_destroy(ctx);
@@ -1022,8 +1032,9 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
             }
         }
 #else
-        if (ctx->parsed_mode == FLB_SYSLOG_DTLS) {
-            flb_plg_error(ins, "could not initialize DTLS context");
+        if (ctx->parsed_mode == FLB_SYSLOG_TLS ||
+            ctx->parsed_mode == FLB_SYSLOG_DTLS) {
+            flb_plg_error(ins, "TLS support is unavailable");
             flb_syslog_config_destroy(ctx);
             return -1;
         }
@@ -1154,7 +1165,7 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "mode", "udp",
      0, FLB_TRUE, offsetof(struct flb_syslog, mode),
      "Set the desired transport type, the available options are udp, tcp, tls and dtls. "
-     "Use tls=on together with mode=dtls."
+     "Modes tls and dtls enable TLS automatically."
     },
 
     {

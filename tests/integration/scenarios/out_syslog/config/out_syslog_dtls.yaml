@@ -17,6 +17,5 @@ pipeline:
       host: 127.0.0.1
       port: ${SYSLOG_RECEIVER_PORT}
       mode: dtls
-      tls: on
       tls.verify: off
       syslog_message_key: message

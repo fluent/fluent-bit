@@ -112,6 +112,32 @@ struct flb_config_map tls_configmap[] = {
      "Specify TLS ciphers up to TLSv1.2"
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "tls.proxy.ca_file", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to CA certificate file used to verify the HTTPS proxy "
+     "certificate. Independent from tls.ca_file (destination CA)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "tls.proxy.ca_path", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to scan for CA certificate files used to verify the "
+     "HTTPS proxy certificate"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.proxy.verify", "on",
+     0, FLB_FALSE, 0,
+     "Force HTTPS proxy certificate validation"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.proxy.verify_hostname", "on",
+     0, FLB_FALSE, 0,
+     "Enable or disable HTTPS proxy hostname verification"
+    },
+
     /* EOF */
     {0}
 };
@@ -1029,13 +1055,20 @@ int flb_tls_session_create(struct flb_tls *tls,
     vhost = NULL;
 
     if (connection->type == FLB_UPSTREAM_CONNECTION) {
-        if (connection->upstream->proxied_host != NULL) {
+        if (tls->vhost != NULL) {
+            /*
+             * An explicit vhost in the TLS context takes priority. This
+             * covers the HTTPS proxy case where the proxy TLS context has
+             * its own vhost (= tcp_host) and must not fall through to
+             * proxied_host which belongs to the inner destination.
+             * Leave vhost as NULL so net_handshake() picks up tls->vhost.
+             */
+        }
+        else if (connection->upstream->proxied_host != NULL) {
             vhost = flb_rtrim(connection->upstream->proxied_host, '.');
         }
         else {
-            if (tls->vhost == NULL) {
-                vhost = flb_rtrim(connection->upstream->tcp_host, '.');
-            }
+            vhost = flb_rtrim(connection->upstream->tcp_host, '.');
         }
     }
 
@@ -1053,6 +1086,40 @@ int flb_tls_session_create(struct flb_tls *tls,
         flb_free(session);
 
         return -1;
+    }
+
+    /*
+     * If an existing TLS session is already active on this connection
+     * (e.g. the proxy TLS session for an HTTPS proxy), chain the new
+     * session's I/O through it.  The inner (destination) TLS handshake
+     * data must travel inside the outer (proxy) TLS tunnel rather than
+     * going directly to the raw socket.
+     */
+    if (connection->tls_session != NULL &&
+        tls->api->session_set_outer != NULL) {
+        result = tls->api->session_set_outer(session->ptr,
+                                             connection->tls_session->ptr);
+        if (result != 0) {
+            flb_error("[tls] failed to chain TLS session over proxy tunnel for %s",
+                      flb_connection_get_remote_address(connection));
+
+            if (vhost != NULL) {
+                flb_free(vhost);
+            }
+
+            tls->api->session_destroy(session->ptr);
+            flb_free(session);
+            return -1;
+        }
+
+        /*
+         * The outer backend session ptr is now owned by the inner session
+         * (via outer_session).  Release the outer flb_tls_session wrapper
+         * without going through flb_tls_session_destroy, which would free
+         * the backend ptr we just transferred.
+         */
+        flb_free(connection->tls_session);
+        connection->tls_session = NULL;
     }
 
     session->tls = tls;

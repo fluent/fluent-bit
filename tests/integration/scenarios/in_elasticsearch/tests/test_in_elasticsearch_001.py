@@ -4,6 +4,11 @@ import pytest
 
 from server.otlp_server import data_storage
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
+from utils.input_pause_resume import (
+    assert_pause_resume_cycles,
+    assert_shutdown_while_paused,
+    open_partial_http_request,
+)
 from utils.test_service import FluentBitTestService
 
 logger = logging.getLogger(__name__)
@@ -271,6 +276,76 @@ def test_in_elasticsearch_rejects_unknown_bulk_operation():
     assert payload["errors"] is True
     assert operation == "unknown"
     assert details["status"] == 400
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "in_elasticsearch_pause_resume.yaml",
+        "in_elasticsearch_pause_resume_workers.yaml",
+    ],
+    ids=["single_listener", "workers_4"],
+)
+def test_in_elasticsearch_pause_resume_cycles(config_file):
+    service = Service(config_file)
+
+    try:
+        service.start()
+        large_document = '{"index":{}}\n{"message":"' + ("x" * 6144) + '"}\n'
+        small_document = '{"index":{}}\n{"message":"resume-check"}\n'
+
+        def open_active_connections():
+            return [
+                open_partial_http_request(
+                    "127.0.0.1",
+                    service.flb_listener_port,
+                )
+                for _ in range(8)
+            ]
+
+        assert_pause_resume_cycles(
+            service.flb,
+            f"http://localhost:{service.flb_listener_port}/_bulk",
+            large_document,
+            ["Content-Type: application/x-ndjson"],
+            input_name="elasticsearch.0",
+            success_status=200,
+            cycles=2,
+            pause_trigger_requests=2,
+            resume_payload=small_document,
+            active_connection_factory=open_active_connections,
+        )
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "in_elasticsearch_pause_resume.yaml",
+        "in_elasticsearch_pause_resume_workers.yaml",
+    ],
+    ids=["single_listener", "workers_4"],
+)
+def test_in_elasticsearch_shutdown_while_paused(config_file):
+    service = Service(config_file)
+
+    try:
+        service.start()
+        large_document = '{"index":{}}\n{"message":"' + ("x" * 6144) + '"}\n'
+        assert_shutdown_while_paused(
+            service.flb,
+            service.stop,
+            "127.0.0.1",
+            service.flb_listener_port,
+            f"http://localhost:{service.flb_listener_port}/_bulk",
+            large_document,
+            ["Content-Type: application/x-ndjson"],
+            input_name="elasticsearch.0",
+            success_status=200,
+        )
+    finally:
+        service.stop()
 
 
 @pytest.mark.parametrize(

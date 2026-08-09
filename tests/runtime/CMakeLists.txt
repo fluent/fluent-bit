@@ -113,6 +113,10 @@ if (FLB_CUSTOM_CALYPTIA)
     endforeach()
 endif()
 
+if(FLB_IN_LIB AND FLB_OUT_HTTP AND FLB_OUT_NULL AND FLB_IN_STORAGE_BACKLOG)
+  FLB_RT_TEST(FLB_IN_STORAGE_BACKLOG "in_storage_backlog.c")
+endif()
+
 if(FLB_IN_EBPF)
     # Define common variables
     set(EBPF_TEST_INCLUDE_DIRS
@@ -286,6 +290,7 @@ if(FLB_IN_LIB)
     # These plugins work only on Linux
   if(NOT FLB_SYSTEM_WINDOWS)
     FLB_RT_TEST(FLB_OUT_FILE              "out_file.c")
+    FLB_RT_TEST(FLB_OUT_FILE              "out_file_rotation.c")
   endif()
   FLB_RT_TEST(FLB_OUT_S3                "out_s3.c")
   FLB_RT_TEST(FLB_OUT_GCS               "out_gcs.c")

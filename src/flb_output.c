@@ -203,6 +203,12 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
     if (ins->tls_ciphers) {
         flb_sds_destroy(ins->tls_ciphers);
     }
+    if (ins->tls_proxy_ca_path) {
+        flb_sds_destroy(ins->tls_proxy_ca_path);
+    }
+    if (ins->tls_proxy_ca_file) {
+        flb_sds_destroy(ins->tls_proxy_ca_file);
+    }
 # if defined(FLB_SYSTEM_WINDOWS)
     if (ins->tls_win_certstore_name) {
         flb_sds_destroy(ins->tls_win_certstore_name);
@@ -853,6 +859,10 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->tls_win_use_enterprise_certstore = FLB_FALSE;
     instance->tls_win_thumbprints = NULL;
 # endif
+    instance->tls_proxy_verify          = FLB_TRUE;
+    instance->tls_proxy_verify_hostname = FLB_TRUE;
+    instance->tls_proxy_ca_path         = NULL;
+    instance->tls_proxy_ca_file         = NULL;
 #endif
 
     if (plugin->flags & FLB_OUTPUT_NET) {
@@ -1120,6 +1130,20 @@ int flb_output_set_property(struct flb_output_instance *ins,
     }
     else if (prop_key_check("tls.ciphers", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.ciphers", &ins->tls_ciphers, tmp);
+    }
+    else if (prop_key_check("tls.proxy.verify", k, len) == 0 && tmp) {
+        ins->tls_proxy_verify = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.proxy.verify_hostname", k, len) == 0 && tmp) {
+        ins->tls_proxy_verify_hostname = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.proxy.ca_path", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.proxy.ca_path", &ins->tls_proxy_ca_path, tmp);
+    }
+    else if (prop_key_check("tls.proxy.ca_file", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.proxy.ca_file", &ins->tls_proxy_ca_file, tmp);
     }
 #  if defined(FLB_SYSTEM_WINDOWS)
     else if (prop_key_check("tls.windows.certstore_name", k, len) == 0 && tmp) {
@@ -1389,6 +1413,36 @@ int flb_output_plugin_property_check(struct flb_output_instance *ins,
 
     return 0;
 }
+
+#ifdef FLB_HAVE_TLS
+/* Eagerly validate tls.proxy.ca_file/ca_path so a bad path fails init here,
+ * instead of being silently ignored later in flb_output_upstream_set(). */
+int flb_output_proxy_tls_ca_check(struct flb_output_instance *ins)
+{
+    struct flb_tls *tls_proxy_validate;
+
+    if (ins->tls_proxy_ca_file == NULL && ins->tls_proxy_ca_path == NULL) {
+        return 0;
+    }
+
+    tls_proxy_validate = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                        ins->tls_proxy_verify,
+                                        0,
+                                        NULL,
+                                        ins->tls_proxy_ca_path,
+                                        ins->tls_proxy_ca_file,
+                                        NULL, NULL, NULL);
+    if (!tls_proxy_validate) {
+        flb_error("[output %s] error initializing TLS context for "
+                  "tls.proxy.ca_file/tls.proxy.ca_path",
+                  ins->name);
+        return -1;
+    }
+
+    flb_tls_destroy(tls_proxy_validate);
+    return 0;
+}
+#endif
 
 /* Trigger the output plugins setup callbacks to prepare them. */
 int flb_output_init_all(struct flb_config *config)
@@ -1698,6 +1752,11 @@ int flb_output_init_all(struct flb_config *config)
             }
 # endif
         }
+
+        if (flb_output_proxy_tls_ca_check(ins) == -1) {
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
 #endif
         /*
          * Before to call the initialization callback, make sure that the received
@@ -1911,7 +1970,30 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
             flb_free(u->proxy_password);
             u->proxy_password = NULL;
         }
+
+#ifdef FLB_HAVE_TLS
+        if (u->proxy_tls_context) {
+            flb_tls_destroy(u->proxy_tls_context);
+            u->proxy_tls_context = NULL;
+        }
+#endif
     }
+
+#ifdef FLB_HAVE_TLS
+    /*
+     * If flb_upstream_create() built a proxy TLS context (HTTPS proxy in
+     * effect), reconfigure it using this instance's tls.proxy.* settings
+     * instead of the hardcoded defaults. Independent from ins->tls*
+     * (destination TLS settings) by design.
+     */
+    if (u->proxy_tls_context != NULL) {
+        flb_upstream_proxy_tls_setup(u,
+                                     ins->tls_proxy_verify,
+                                     ins->tls_proxy_verify_hostname,
+                                     ins->tls_proxy_ca_path,
+                                     ins->tls_proxy_ca_file);
+    }
+#endif
 
     return 0;
 }

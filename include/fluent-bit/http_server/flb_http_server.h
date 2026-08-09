@@ -169,6 +169,7 @@ struct flb_http_server_session {
 
     int                             releasable;
     int                             drop_pending;
+    int                             destroying;
     int                             connection_slot_reserved;
 
     struct flb_connection          *connection;
@@ -218,6 +219,10 @@ int flb_http_server_init_with_options(struct flb_http_server *session,
                                       struct flb_http_server_options *options);
 
 int flb_http_server_start(struct flb_http_server *session);
+
+int flb_http_server_pause(struct flb_http_server *session);
+
+int flb_http_server_resume(struct flb_http_server *session);
 
 int flb_http_server_stop(struct flb_http_server *session);
 

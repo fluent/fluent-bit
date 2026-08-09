@@ -101,30 +101,37 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 - For touched components covered by `tests/integration`, agents must run the
   focused scenario(s) twice:
   - once normally to verify behavior;
-  - once with valgrind enabled to verify memory-safety behavior.
+  - once with the platform memory checker enabled to verify memory-safety
+    behavior: Valgrind on Linux or Leaks on macOS.
 - The default expectation for component verification is:
   `./tests/integration/setup-venv.sh`
   `cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On`
   `cmake --build build -j8`
   `tests/integration/.venv/bin/python -m pytest <focused-scenario> -q`
+  On Linux, run the memory-safety pass with:
   `VALGRIND=1 VALGRIND_STRICT=1 tests/integration/.venv/bin/python -m pytest <focused-scenario> -q`
+  On macOS, run the memory-safety pass with:
+  `LEAKS=1 LEAKS_STRICT=1 tests/integration/.venv/bin/python -m pytest <focused-scenario> -q`
 - On Windows, use the same `-DFLB_TESTS_RUNTIME=On` configuration and run
-  relevant focused runtime cases. Valgrind is normally unavailable on Windows;
-  report that exact blocker instead of conflating it with runtime-test support.
+  relevant focused runtime and functional integration cases. Valgrind and
+  macOS Leaks are normally unavailable on Windows; report that exact
+  memory-checker blocker instead of conflating it with test support.
 - Run broader test coverage when changing shared lifecycle, routing, storage, or accounting code.
 - Validate both success and failure paths (invalid payloads, boundary sizes, null/missing fields).
 - You can also run specific binaries from `build/bin` (e.g., `./bin/flb-it-opentelemetry`).
 - When changing code covered by `tests/integration`, agents must verify the
-  affected scenarios are valgrind-clean. Run the focused integration tests with
-  `tests/integration/run_tests.py --valgrind --valgrind-strict ...` and do not
-  stop at functional pass/fail if memory errors or leaks remain.
-- If a focused integration or valgrind run cannot be executed, agents must not
-  silently skip it. They must report the exact blocker in the final response
-  (for example: missing binary, missing Python environment, unsupported
-  scenario, missing dependency, or infrastructure failure).
+  affected scenarios are clean under the platform memory checker. On Linux,
+  run `tests/integration/run_tests.py --valgrind --valgrind-strict ...`. On
+  macOS, run `tests/integration/run_tests.py --leaks --leaks-strict ...`. Do
+  not stop at functional pass/fail if memory errors or leaks remain.
+- If a focused integration or platform memory-checker run cannot be executed,
+  agents must not silently skip it. They must report the exact blocker in the
+  final response (for example: missing binary, missing Python environment,
+  unsupported scenario, missing dependency, or infrastructure failure).
 - Final task close-outs must include proof of verification:
   - the exact focused integration command(s) run;
-  - whether valgrind was used;
+  - which platform memory checker was used (Valgrind on Linux or Leaks on
+    macOS), or `not run` with the exact blocker;
   - pass/fail status;
   - any concrete blocker if a required run could not be completed.
 - Keep generated integration artifacts out of git. Do not commit

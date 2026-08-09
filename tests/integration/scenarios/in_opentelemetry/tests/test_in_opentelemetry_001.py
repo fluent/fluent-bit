@@ -36,6 +36,11 @@ from google.protobuf import json_format
 # local imports
 from utils.data_utils import read_json_file
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
+from utils.input_pause_resume import (
+    assert_pause_resume_cycles,
+    assert_shutdown_while_paused,
+    open_stalled_tcp_connection,
+)
 from utils.test_service import FluentBitTestService
 
 from server.http_server import http_server_run
@@ -228,6 +233,14 @@ def read_stdout_otlp_json_text(service, root_key, timeout=10, interval=0.25):
         time.sleep(interval)
 
     raise TimeoutError(f"Timed out waiting for stdout OTLP JSON payload with root key {root_key}")
+
+
+def read_fluent_bit_log(service):
+    if not service.flb or not service.flb.log_file or not os.path.exists(service.flb.log_file):
+        return ""
+
+    with open(service.flb.log_file, "r", encoding="utf-8", errors="replace") as log_file:
+        return log_file.read()
 
 
 def read_prometheus_metric_value(metrics_text, metric_name, input_name):
@@ -919,6 +932,87 @@ def test_in_opentelemetry_rejects_invalid_logs_payload():
     assert len(data_storage["logs"]) == 0
 
 
+@pytest.mark.parametrize(
+    ("body", "expected_status", "expected_body"),
+    [
+        pytest.param(
+            {"arrayValue": {"values": "not-an-array"}},
+            400,
+            None,
+            id="array-value",
+        ),
+        pytest.param(
+            {"arrayValue": {"value": []}},
+            400,
+            None,
+            id="array-value-invalid-values-key",
+        ),
+        pytest.param(
+            {"kvlistValue": {"values": "not-a-kvlist"}},
+            400,
+            None,
+            id="kvlist-value",
+        ),
+        pytest.param(
+            {"kvlistValue": {}},
+            201,
+            {"kvlistValue": {"values": []}},
+            id="map-form-kvlist-value",
+        ),
+        pytest.param(
+            {"arrayValue": {}},
+            201,
+            {"arrayValue": {"values": []}},
+            id="empty-array-value",
+        ),
+    ],
+)
+def test_in_opentelemetry_handles_json_logs_with_invalid_any_value_container(
+    body, expected_status, expected_body
+):
+    payload = {
+        "resourceLogs": [
+            {
+                "scopeLogs": [
+                    {
+                        "logRecords": [
+                            {
+                                "body": body,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    service = Service("003-stdout-otlp-json.yaml")
+    service.start()
+
+    try:
+        response = service.send_raw_request(
+            "/v1/logs",
+            json.dumps(payload).encode("utf-8"),
+            content_type="application/json",
+        )
+
+        assert response.status_code == expected_status
+        assert service.flb.process is not None
+        assert service.flb.process.poll() is None
+
+        if expected_body is None:
+            with pytest.raises(TimeoutError):
+                read_stdout_otlp_json(service, "resourceLogs", timeout=2)
+        else:
+            output = read_stdout_otlp_json(service, "resourceLogs")
+            records = list(iter_log_records(output))
+
+            assert len(records) == 1
+            assert records[0]["record"]["body"] == expected_body
+    finally:
+        service.stop()
+
+
 def test_in_opentelemetry_rejects_invalid_metrics_payload():
     service = Service("001-fluent-bit.yaml")
     service.start()
@@ -1473,6 +1567,91 @@ def test_in_opentelemetry_http_workers_mixed_signal_matrix(case):
     assert "/v1/traces" in paths_seen
 
 
+@pytest.mark.parametrize(
+    "config_file,signal_type,json_input,endpoint",
+    [
+        (config_file, signal_type, json_input, endpoint)
+        for config_file in [
+            "otlp_pause_resume_single.yaml",
+            "otlp_pause_resume_workers.yaml",
+        ]
+        for signal_type, json_input, endpoint in [
+            ("logs", "test_logs_001.in.json", "/v1/logs"),
+            ("metrics", "test_metrics_001.in.json", "/v1/metrics"),
+            ("traces", "test_traces_001.in.json", "/v1/traces"),
+        ]
+    ],
+    ids=[
+        f"{'single_listener' if 'single' in config_file else 'workers_4'}-{signal_type}"
+        for config_file in [
+            "otlp_pause_resume_single.yaml",
+            "otlp_pause_resume_workers.yaml",
+        ]
+        for signal_type in ["logs", "metrics", "traces"]
+    ],
+)
+def test_in_opentelemetry_pause_resume(config_file, signal_type, json_input, endpoint):
+    service = Service(config_file)
+
+    try:
+        service.start()
+        resume_payload = service.build_otel_payload(json_input, signal_type)
+
+        def open_active_connections():
+            return [
+                open_stalled_tcp_connection(
+                    "127.0.0.1",
+                    service.flb_listener_port,
+                )
+                for _ in range(8)
+            ]
+
+        assert_pause_resume_cycles(
+            service.flb,
+            f"http://localhost:{service.flb_listener_port}{endpoint}",
+            resume_payload,
+            ["Content-Type: application/x-protobuf"],
+            input_name="opentelemetry.0",
+            success_status=201,
+            cycles=2,
+            http_mode="http2-prior-knowledge",
+            pause_trigger_requests=64,
+            resume_payload=resume_payload,
+            active_connection_factory=open_active_connections,
+        )
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    ["otlp_pause_resume_single.yaml", "otlp_pause_resume_workers.yaml"],
+    ids=["single_listener", "workers_4"],
+)
+def test_in_opentelemetry_shutdown_while_paused(config_file):
+    service = Service(config_file)
+
+    try:
+        service.start()
+        payload = service.build_otel_payload("test_logs_001.in.json", "logs")
+        assert_shutdown_while_paused(
+            service.flb,
+            service.stop,
+            "127.0.0.1",
+            service.flb_listener_port,
+            f"http://localhost:{service.flb_listener_port}/v1/logs",
+            payload,
+            ["Content-Type: application/x-protobuf"],
+            input_name="opentelemetry.0",
+            success_status=201,
+            connection_factory=open_stalled_tcp_connection,
+            pause_trigger_requests=64,
+            http_mode="http2-prior-knowledge",
+        )
+    finally:
+        service.stop()
+
+
 def test_in_opentelemetry_http_workers_export_ingress_queue_metrics():
     service = Service(IN_OPENTELEMETRY_WORKER_PROTOCOL_CONFIGS["http1_cleartext"])
     service.start()
@@ -1668,3 +1847,100 @@ def test_in_opentelemetry_http_workers_account_metrics_payload_bytes():
         service.stop()
 
     assert len(data_storage["metrics"]) == metrics_before + 1
+
+
+def test_expect_warn_validates_each_otlp_log_record_in_batch():
+    service = Service("expect_batch.yaml")
+    payload = read_json_file(
+        os.path.join(
+            os.path.dirname(__file__),
+            "data_files",
+            "test_logs_expect_batch.in.json",
+        )
+    )
+
+    service.start()
+
+    try:
+        response = requests.post(
+            f"http://127.0.0.1:{service.flb_listener_port}/v1/logs",
+            json=payload,
+            timeout=5,
+        )
+        assert response.status_code == 201
+
+        log_text = service.service.wait_for_condition(
+            lambda: (
+                content
+                if content.count("expect check failed") >= 4
+                else None
+            ) if (content := read_fluent_bit_log(service)) else None,
+            timeout=10,
+            interval=0.25,
+            description="one expect warning per invalid OTLP log record",
+        )
+    finally:
+        service.stop()
+
+    assert log_text.count("expect check failed") == 4
+    for field_name in ("field1", "field2", "field3", "field4"):
+        assert log_text.count(f"key '{field_name}' not found") == 1
+
+
+def test_expect_result_key_preserves_otlp_log_groups():
+    service = Service("expect_group_result_key.yaml")
+    payload = read_json_file(
+        os.path.join(
+            os.path.dirname(__file__),
+            "data_files",
+            "test_logs_expect_batch.in.json",
+        )
+    )
+    scope_logs = payload["resourceLogs"][0]["scopeLogs"][0]
+    scope_logs["scope"] = {"name": "issue.scope"}
+    scope_logs["logRecords"].append(
+        {
+            "timeUnixNano": "1784797967000450100",
+            "body": {
+                "kvlistValue": {
+                    "values": [
+                        {
+                            "key": f"field{index}",
+                            "value": {"stringValue": str(index)},
+                        }
+                        for index in range(1, 5)
+                    ]
+                }
+            },
+        }
+    )
+
+    service.start()
+
+    try:
+        response = requests.post(
+            f"http://127.0.0.1:{service.flb_listener_port}/v1/logs",
+            json=payload,
+            timeout=5,
+        )
+        assert response.status_code == 201
+        output = service.read_response("logs")
+    finally:
+        service.stop()
+
+    records = list(iter_log_records(output))
+    assert len(records) == 5
+
+    matched_values = []
+    for record in records:
+        assert record["resource_attributes"] == {"service.name": "my-service"}
+        assert record["scope_name"] == "issue.scope"
+
+        values = record["record"]["body"]["kvlistValue"]["values"]
+        fields = {
+            item["key"]: next(iter(item["value"].values()))
+            for item in values
+        }
+        matched_values.append(fields["matched"])
+
+    assert matched_values == [False, False, False, False, True]

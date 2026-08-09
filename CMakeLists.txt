@@ -853,6 +853,13 @@ else()
   message(STATUS "FLB Event loop backend > auto discovery (Monkey library)")
 endif()
 
+# Monkey uses its bundled libevent backend on Windows. Link it statically so
+# Fluent Bit binaries do not require event.dll at runtime.
+if(FLB_SYSTEM_WINDOWS)
+  set(EVENT__LIBRARY_TYPE STATIC CACHE STRING
+      "Build Monkey's bundled libevent as a static library" FORCE)
+endif()
+
 # Build Monkey HTTP Server
 if(FLB_HTTP_SERVER)
   add_subdirectory(${FLB_PATH_LIB_MONKEY} EXCLUDE_FROM_ALL)
@@ -1618,19 +1625,41 @@ if(DPKG_PROGRAM)
     ${PROJECT_SOURCE_DIR}/cpack/debian/conffiles
     )
 
+  set(LDCONFIG_POSTINST_CMDS "")
   if(FLB_RUN_LDCONFIG)
-    set(LDCONFIG_DIR ${FLB_INSTALL_LIBDIR})
-    file(WRITE ${PROJECT_BINARY_DIR}/scripts/postinst "
+    if(IS_ABSOLUTE "${FLB_INSTALL_LIBDIR}")
+      set(LDCONFIG_DIR "${FLB_INSTALL_LIBDIR}")
+    else()
+      set(LDCONFIG_DIR "/${FLB_INSTALL_LIBDIR}")
+    endif()
+    set(LDCONFIG_POSTINST_CMDS "
 mkdir -p /etc/ld.so.conf.d
 echo \"${LDCONFIG_DIR}\" > /etc/ld.so.conf.d/libfluent-bit.conf
 ldconfig
-    ")
-    file(WRITE ${PROJECT_BINARY_DIR}/scripts/prerm "
+")
+    file(WRITE ${PROJECT_BINARY_DIR}/scripts/prerm "#!/bin/sh
+set -e
 rm -f -- /etc/ld.so.conf.d/libfluent-bit.conf
 ldconfig
-    ")
-    set(CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst;${PROJECT_BINARY_DIR}/scripts/prerm")
+")
+    execute_process(COMMAND chmod 0755 "${PROJECT_BINARY_DIR}/scripts/prerm"
+      RESULT_VARIABLE FLB_CHMOD_PRERM_RESULT)
+    if(NOT FLB_CHMOD_PRERM_RESULT EQUAL 0)
+      message(FATAL_ERROR "Failed to make ${PROJECT_BINARY_DIR}/scripts/prerm executable")
+    endif()
+    list(APPEND CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/prerm")
   endif(FLB_RUN_LDCONFIG)
+
+  configure_file(
+    ${PROJECT_SOURCE_DIR}/cpack/debian/postinst.in
+    ${PROJECT_BINARY_DIR}/scripts/postinst
+    @ONLY)
+  execute_process(COMMAND chmod 0755 "${PROJECT_BINARY_DIR}/scripts/postinst"
+    RESULT_VARIABLE FLB_CHMOD_POSTINST_RESULT)
+  if(NOT FLB_CHMOD_POSTINST_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to make ${PROJECT_BINARY_DIR}/scripts/postinst executable")
+  endif()
+  list(APPEND CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst")
 
 endif()
 

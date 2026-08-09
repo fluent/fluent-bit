@@ -476,6 +476,7 @@ struct dirhtml_value *mk_dirhtml_tag_assign(struct mk_list *list,
     aux->value = value;
     aux->sep = sep;
     aux->tags = tags;
+    aux->owned = MK_FALSE;
 
     if (value) {
         aux->len = strlen(value);
@@ -497,6 +498,9 @@ static void mk_dirhtml_tag_free_list(struct mk_list *list)
     mk_list_foreach_safe(head, tmp, list) {
         target = mk_list_entry(head, struct dirhtml_value, _head);
         mk_list_del(&target->_head);
+        if (target->owned == MK_TRUE && target->value) {
+            mk_api->mem_free(target->value);
+        }
         mk_api->mem_free(target);
     }
 }
@@ -741,11 +745,13 @@ static int mk_dirhtml_init(struct mk_plugin *plugin,
     int len;
     char tmp[16];
     unsigned int i = 0;
+    char *escaped_uri;
     struct mk_list *head;
     struct mk_list list;
     struct mk_f_list *entry;
     struct mk_dirhtml_request *request;
     struct mk_stream *stream;
+    struct dirhtml_value *title;
 
     if (!(dir = opendir(sr->real_path.data))) {
         return -1;
@@ -802,9 +808,24 @@ static int mk_dirhtml_init(struct mk_plugin *plugin,
     mk_list_init(&list);
 
     /* Set %_html_title_% */
-    mk_dirhtml_tag_assign(&list, 0, mk_dir_iov_none,
-                          sr->uri_processed.data,
-                          (char **) _tags_global);
+    escaped_uri = mk_string_html_escape(sr->uri_processed.data);
+    if (!escaped_uri) {
+        mk_stream_release(stream);
+        closedir(dir);
+        mk_api->mem_free(request);
+        return -1;
+    }
+    title = mk_dirhtml_tag_assign(&list, 0, mk_dir_iov_none,
+                                  escaped_uri,
+                                  (char **) _tags_global);
+    if (!title) {
+        mk_api->mem_free(escaped_uri);
+        mk_stream_release(stream);
+        closedir(dir);
+        mk_api->mem_free(request);
+        return -1;
+    }
+    title->owned = MK_TRUE;
 
     /* Set %_theme_path_% */
     mk_dirhtml_tag_assign(&list, 1, mk_dir_iov_none,

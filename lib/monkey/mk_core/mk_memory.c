@@ -52,6 +52,16 @@ char *mk_ptr_to_buf(mk_ptr_t p)
 {
     char *buf;
 
+    if (!p.data || p.len == 0) {
+        buf = mk_mem_alloc(1);
+        if (!buf) {
+            return NULL;
+        }
+
+        buf[0] = '\0';
+        return buf;
+    }
+
     buf = mk_mem_alloc(p.len + 1);
     if (!buf) return NULL;
 
