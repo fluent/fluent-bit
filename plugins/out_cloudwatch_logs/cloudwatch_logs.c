@@ -162,6 +162,12 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         }
     }
 
+    if (ctx->add_entity == FLB_TRUE) {
+        if (entity_ra_init(ctx) != 0) {
+            goto error;
+        }
+    }
+
     tmp = flb_output_get_property("log_format", ins);
     if (tmp) {
         ctx->log_format = tmp;
@@ -513,6 +519,8 @@ void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx)
         if (ctx->ra_stream) {
             flb_ra_destroy(ctx->ra_stream);
         }
+
+        entity_ra_destroy(ctx);
 
         if (ctx->group_name) {
             flb_sds_destroy(ctx->group_name);
