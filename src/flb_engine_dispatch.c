@@ -29,8 +29,58 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_event.h>
+#include <fluent-bit/flb_metrics.h>
 #include <chunkio/chunkio.h>
+#include <cfl/cfl_time.h>
 
+
+static void record_retry_failure_metrics(struct flb_task *task,
+                                         struct flb_output_instance *output,
+                                         struct flb_config *config)
+{
+    int effective_records;
+    size_t effective_bytes;
+    uint64_t timestamp;
+    char *input_name;
+    char *output_name;
+
+    effective_records = 0;
+    effective_bytes = 0;
+    timestamp = cfl_time_now();
+    input_name = (char *) flb_input_name(task->i_ins);
+    output_name = (char *) flb_output_name(output);
+
+    flb_task_acquire_lock(task);
+    if (flb_task_get_route_data(task, output,
+                                &effective_records,
+                                &effective_bytes) != 0 &&
+        task->event_chunk != NULL) {
+        effective_records = task->event_chunk->total_events;
+        effective_bytes = task->event_chunk->size;
+    }
+    flb_task_release_lock(task);
+
+    cmt_counter_inc(output->cmt_retries_failed, timestamp,
+                    1, (char *[]) {output_name});
+    cmt_counter_add(output->cmt_dropped_records, timestamp, effective_records,
+                    1, (char *[]) {output_name});
+
+    if (config->router && task->event_chunk &&
+        task->event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+        cmt_counter_add(config->router->logs_drop_records_total, timestamp,
+                        effective_records,
+                        2, (char *[]) {input_name, output_name});
+        cmt_counter_add(config->router->logs_drop_bytes_total, timestamp,
+                        effective_bytes,
+                        2, (char *[]) {input_name, output_name});
+    }
+
+#ifdef FLB_HAVE_METRICS
+    flb_metrics_sum(FLB_METRIC_OUT_RETRY_FAILED, 1, output->metrics);
+    flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS,
+                    effective_records, output->metrics);
+#endif
+}
 
 /* It creates a new output thread using a 'Retry' context */
 int flb_engine_dispatch_retry(struct flb_task_retry *retry,
@@ -68,6 +118,7 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
     if (!buf_data) {
         /* Could not retrieve chunk content */
         flb_error("[engine_dispatch] could not retrieve chunk content, removing retry");
+        record_retry_failure_metrics(task, retry->o_ins, config);
         flb_task_retry_destroy(retry);
         flb_task_users_release(task);
         return -1;
