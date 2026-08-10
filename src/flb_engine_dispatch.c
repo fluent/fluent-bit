@@ -69,6 +69,7 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
         /* Could not retrieve chunk content */
         flb_error("[engine_dispatch] could not retrieve chunk content, removing retry");
         flb_task_retry_destroy(retry);
+        flb_task_users_release(task);
         return -1;
     }
 
