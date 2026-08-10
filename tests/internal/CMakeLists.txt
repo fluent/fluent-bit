@@ -58,6 +58,7 @@ set(UNIT_TESTS_FILES
   unicode.c
   opentelemetry.c
   storage_dlq.c
+  engine_dispatch.c
 )
 
 if(FLB_OUT_AZURE_BLOB)
@@ -268,6 +269,10 @@ endfunction(prepare_unit_tests)
 
 prepare_unit_tests(flb-it- "${UNIT_TESTS_FILES}")
 
+if(TARGET flb-it-engine_dispatch)
+  target_include_directories(flb-it-engine_dispatch PRIVATE
+    ${PROJECT_SOURCE_DIR}/lib/chunkio/deps)
+endif()
 if(FLB_METRICS AND FLB_PROCESSOR_CUMULATIVE_TO_DELTA)
   set(CUMULATIVE_TO_DELTA_PLUGIN_DIR
     ${PROJECT_SOURCE_DIR}/plugins/processor_cumulative_to_delta)
