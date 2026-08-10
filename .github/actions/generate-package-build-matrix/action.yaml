@@ -94,12 +94,14 @@ runs:
 
     - name: Manual override of target
       if: inputs.target != ''
+      env:
+        TARGET_INPUT: ${{ inputs.target }}
       run: |
-        if [ -n "${{ inputs.target || '' }}" ]; then
-          echo "Overriding matrix to build: ${{ inputs.target }}"
+        if [ -n "$TARGET_INPUT" ]; then
+          echo "Overriding matrix to build: $TARGET_INPUT"
           matrix=$((
             echo '{ "distro" : ['
-            echo '"${{ inputs.target }}"'
+            echo "\"$TARGET_INPUT\""
             echo ']}'
           ) | jq -c .)
         fi
