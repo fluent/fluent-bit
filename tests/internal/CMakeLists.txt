@@ -64,6 +64,7 @@ set(UNIT_TESTS_FILES
   opentelemetry.c
   storage_dlq.c
   engine_adaptive_flush.c
+  engine_dispatch.c
 )
 
 if(FLB_OUT_AZURE_BLOB)
@@ -278,6 +279,11 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
 endfunction(prepare_unit_tests)
 
 prepare_unit_tests(flb-it- "${UNIT_TESTS_FILES}")
+
+if(TARGET flb-it-engine_dispatch)
+  target_include_directories(flb-it-engine_dispatch PRIVATE
+    ${PROJECT_SOURCE_DIR}/lib/chunkio/deps)
+endif()
 
 option(FLB_TESTS_FIPS_ENABLED "Run tests that require an installed OpenSSL FIPS provider" OFF)
 if(TARGET flb-it-fips)
