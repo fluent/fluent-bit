@@ -518,9 +518,83 @@ static void test_retry_flush_failure_preserves_pending_retry(void)
     test_ctx_destroy(ctx);
 }
 
+/*
+ * With retry budget left the chunk must be kept and the attempt re-scheduled,
+ * otherwise a transient read failure would delete records a later attempt
+ * could still deliver.
+ */
+static void test_retry_flush_failure_reschedules_within_retry_limit(void)
+{
+    int ret;
+    int task_id;
+    double value;
+    char *chunk_buffer;
+    char *output_name;
+    struct test_ctx *ctx;
+    struct flb_task *task;
+    struct flb_task_retry *retry;
+    struct flb_output_instance output;
+
+    ctx = test_ctx_create();
+    TEST_CHECK(ctx != NULL);
+    if (ctx == NULL) {
+        return;
+    }
+
+    ret = test_output_init(&output, "output_a");
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        test_ctx_destroy(ctx);
+        return;
+    }
+
+    /* the retry starts with attempts=1, so this leaves budget available */
+    output.retry_limit = 5;
+
+    retry = create_retry_dispatch_task(ctx, &output, &task_id, &chunk_buffer);
+    TEST_CHECK(retry != NULL);
+    if (retry == NULL) {
+        test_output_destroy(&output);
+        test_ctx_destroy(ctx);
+        return;
+    }
+    task = retry->parent;
+
+    ret = flb_engine_dispatch_retry(retry, ctx->config);
+    TEST_CHECK(ret == 0);
+
+    /* the task keeps its slot, its chunk and a pending retry */
+    TEST_CHECK(ctx->config->task_map[task_id].task == task);
+    TEST_CHECK(mk_list_size(&ctx->input->tasks) == 1);
+    TEST_CHECK(mk_list_size(&ctx->input->chunks) == 1);
+    TEST_CHECK(mk_list_size(&task->retries) == 1);
+    TEST_CHECK(retry->attempts == 2);
+
+    /*
+     * Nothing was dropped, so no drop accounting must be recorded. An untouched
+     * counter has no series yet, so cmt_counter_get_val() reports a failure.
+     */
+    output_name = (char *) flb_output_name(&output);
+    ret = cmt_counter_get_val(output.cmt_retries_failed,
+                              1, (char *[]) {output_name}, &value);
+    TEST_CHECK(ret != 0 || value == 0);
+
+    ret = cmt_counter_get_val(output.cmt_dropped_records,
+                              1, (char *[]) {output_name}, &value);
+    TEST_CHECK(ret != 0 || value == 0);
+
+    flb_task_destroy(task, FLB_TRUE);
+    free(chunk_buffer);
+
+    test_output_destroy(&output);
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     { "retry_flush_failure_releases_last_task_owner",
       test_retry_flush_failure_releases_last_task_owner },
+    { "retry_flush_failure_reschedules_within_retry_limit",
+      test_retry_flush_failure_reschedules_within_retry_limit },
     { "retry_flush_failure_preserves_active_task_owner",
       test_retry_flush_failure_preserves_active_task_owner },
     { "retry_flush_failure_preserves_pending_retry",
