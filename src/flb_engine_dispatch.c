@@ -90,6 +90,7 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
     char *buf_data;
     size_t buf_size;
     struct flb_task *task;
+    struct flb_output_instance *ins;
 
     task = retry->parent;
 
@@ -116,12 +117,38 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
     /* There is a match, get the buffer */
     buf_data = (char *) flb_input_chunk_flush(task->ic, &buf_size);
     if (!buf_data) {
-        /* Could not retrieve chunk content */
-        flb_error("[engine_dispatch] could not retrieve chunk content, removing retry");
-        record_retry_failure_metrics(task, retry->o_ins, config);
-        flb_task_retry_destroy(retry);
-        flb_task_users_release(task);
-        return -1;
+        /*
+         * The chunk is up but its content could not be read. That is usually
+         * transient, so spend a delivery attempt on it instead of discarding
+         * records a later attempt could still deliver.
+         *
+         * Destroying the retry without releasing the task would leave the task
+         * with no users and no retries, a state nothing reaps.
+         */
+        ins = retry->o_ins;
+
+        if (retry->attempts >= ins->retry_limit && ins->retry_limit >= 0) {
+            flb_error("[engine_dispatch] could not retrieve chunk content, "
+                      "task_id=%i reached retry-attempts limit %i/%i, dropping",
+                      task->id, retry->attempts, ins->retry_limit);
+            record_retry_failure_metrics(task, ins, config);
+            flb_task_retry_destroy(retry);
+            flb_task_users_release(task);
+            return -1;
+        }
+
+        retry->attempts++;
+        flb_warn("[engine_dispatch] could not retrieve chunk content, "
+                 "re-scheduling task_id=%i attempts=%i",
+                 task->id, retry->attempts);
+
+        ret = flb_task_retry_reschedule(retry, config);
+        if (ret == -1) {
+            return -1;
+        }
+
+        /* Just return because it has been re-scheduled */
+        return 0;
     }
 
     /* Update the buffer reference */
