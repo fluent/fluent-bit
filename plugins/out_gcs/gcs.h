@@ -31,6 +31,10 @@
 #define FLB_GCS_SCOPE "https://www.googleapis.com/auth/devstorage.read_write"
 #define FLB_GCS_AUTH_URL "https://oauth2.googleapis.com/token"
 #define FLB_GCS_TOKEN_REFRESH 3000
+#define FLB_GCS_METADATA_SERVER "http://metadata.google.internal"
+#define FLB_GCS_METADATA_TOKEN_URI \
+    "/computeMetadata/v1/instance/service-accounts/default/token"
+#define FLB_GCS_METADATA_TOKEN_SIZE_MAX 14336
 
 #define FLB_GCS_FORMAT_JSON_LINES 0
 #define FLB_GCS_FORMAT_PARQUET    100
@@ -59,14 +63,17 @@ struct flb_gcs {
     struct flb_output_instance *ins;
     struct flb_config *config;
     struct flb_upstream *u;
+    struct flb_upstream *metadata_u;
     struct flb_oauth2 *o;
     pthread_mutex_t token_mutex;
     int token_mutex_initialized;
+    int metadata_server_auth;
 
     flb_sds_t bucket;
     flb_sds_t content_type;
     flb_sds_t credentials_file;
     int credentials_file_owned;
+    flb_sds_t metadata_server;
     flb_sds_t store_dir;
     flb_sds_t gcs_key_format;
     flb_sds_t tag_delimiters;

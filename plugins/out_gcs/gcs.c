@@ -628,6 +628,110 @@ error:
     return -1;
 }
 
+static int gcs_fetch_metadata_token(struct flb_gcs *ctx, flb_sds_t *payload)
+{
+    int ret;
+    int result;
+    size_t bytes_sent;
+    const char *test_response;
+    flb_sds_t tmp;
+    struct flb_connection *connection;
+    struct flb_http_client *client;
+
+    if (gcs_under_test_mode() == FLB_TRUE) {
+        test_response = getenv("TEST_GCS_METADATA_RESPONSE");
+        if (!test_response) {
+            return -1;
+        }
+
+        tmp = flb_sds_copy(*payload, test_response, strlen(test_response));
+        if (!tmp) {
+            return -1;
+        }
+        *payload = tmp;
+        mock_gcs_call_increment_counter("MetadataToken");
+        gcs_setenv("TEST_GCS_LAST_METADATA_URI", FLB_GCS_METADATA_TOKEN_URI);
+        return 0;
+    }
+
+    connection = flb_upstream_conn_get(ctx->metadata_u);
+    if (!connection) {
+        flb_plg_error(ctx->ins,
+                      "failed to connect to metadata server at '%s'; "
+                      "provide google_service_credentials when not running on GCE/GKE",
+                      ctx->metadata_server);
+        return -1;
+    }
+
+    client = flb_http_client(connection, FLB_HTTP_GET,
+                             FLB_GCS_METADATA_TOKEN_URI,
+                             "", 0, NULL, 0, NULL, 0);
+    if (!client) {
+        flb_upstream_conn_release(connection);
+        return -1;
+    }
+
+    flb_http_buffer_size(client, FLB_GCS_METADATA_TOKEN_SIZE_MAX);
+    flb_http_add_header(client, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(client, "Metadata-Flavor", 15, "Google", 6);
+
+    ret = flb_http_do(client, &bytes_sent);
+    if (ret != 0) {
+        flb_plg_warn(ctx->ins, "metadata token request failed: http_do=%i", ret);
+        result = -1;
+    }
+    else if (client->resp.status == 200) {
+        tmp = flb_sds_copy(*payload, client->resp.payload,
+                           client->resp.payload_size);
+        if (tmp) {
+            *payload = tmp;
+            result = 0;
+        }
+        else {
+            result = -1;
+        }
+    }
+    else {
+        flb_plg_warn(ctx->ins,
+                     "metadata token request failed with status=%i response='%.*s'",
+                     client->resp.status,
+                     (int) client->resp.payload_size,
+                     client->resp.payload ? client->resp.payload : "");
+        result = -1;
+    }
+
+    flb_http_client_destroy(client);
+    flb_upstream_conn_release(connection);
+
+    return result;
+}
+
+static int gcs_get_metadata_token(struct flb_gcs *ctx)
+{
+    int ret;
+    flb_sds_t payload;
+
+    payload = flb_sds_create_size(FLB_GCS_METADATA_TOKEN_SIZE_MAX);
+    if (!payload) {
+        return -1;
+    }
+
+    ret = gcs_fetch_metadata_token(ctx, &payload);
+    if (ret == 0) {
+        ret = flb_oauth2_parse_json_response(payload, flb_sds_len(payload),
+                                             ctx->o);
+    }
+    flb_sds_destroy(payload);
+
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "could not retrieve a metadata server token");
+        return -1;
+    }
+
+    ctx->o->expires_at = time(NULL) + ctx->o->expires_in;
+    return 0;
+}
+
 static int gcs_get_oauth2_token(struct flb_gcs *ctx)
 {
     int ret;
@@ -638,6 +742,10 @@ static int gcs_get_oauth2_token(struct flb_gcs *ctx)
     char payload[1024];
 
     flb_oauth2_payload_clear(ctx->o);
+    if (ctx->metadata_server_auth == FLB_TRUE) {
+        return gcs_get_metadata_token(ctx);
+    }
+
     issued = time(NULL);
     expires = issued + FLB_GCS_TOKEN_REFRESH;
     snprintf(payload, sizeof(payload) - 1,
@@ -917,7 +1025,8 @@ static int upload_data(struct flb_gcs *ctx,
     size_t upload_size;
     char random_hex[9];
 
-    if (gcs_under_test_mode() == FLB_TRUE) {
+    if (gcs_under_test_mode() == FLB_TRUE &&
+        ctx->metadata_server_auth == FLB_FALSE) {
         auth = flb_sds_create("Bearer test-token");
     }
     else {
@@ -1300,6 +1409,7 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
     flb_sds_t normalized_compression;
     struct flb_gcs *ctx;
     const char *tmp;
+    const char *legacy_credentials;
     (void) data;
 
     ctx = flb_calloc(1, sizeof(*ctx));
@@ -1355,7 +1465,16 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
         goto error;
     }
 
-    tmp = getenv("GOOGLE_SERVICE_CREDENTIALS");
+    tmp = getenv("GOOGLE_APPLICATION_CREDENTIALS");
+    legacy_credentials = getenv("GOOGLE_SERVICE_CREDENTIALS");
+    if (!ctx->credentials_file && tmp && legacy_credentials) {
+        flb_plg_warn(ins, "GOOGLE_APPLICATION_CREDENTIALS and "
+                     "GOOGLE_SERVICE_CREDENTIALS are both set; using "
+                     "GOOGLE_APPLICATION_CREDENTIALS");
+    }
+    if (!ctx->credentials_file && !tmp) {
+        tmp = legacy_credentials;
+    }
     if (!ctx->credentials_file && tmp) {
         ctx->credentials_file = flb_sds_create(tmp);
         if (!ctx->credentials_file) {
@@ -1364,16 +1483,21 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
         ctx->credentials_file_owned = FLB_TRUE;
     }
 
-    ctx->oauth_credentials = flb_calloc(1, sizeof(struct flb_gcs_oauth_credentials));
-    if (!ctx->oauth_credentials) {
-        flb_errno();
-        goto error;
-    }
+    if (ctx->credentials_file) {
+        ctx->oauth_credentials = flb_calloc(1, sizeof(struct flb_gcs_oauth_credentials));
+        if (!ctx->oauth_credentials) {
+            flb_errno();
+            goto error;
+        }
 
-    if (!ctx->credentials_file ||
-        flb_gcs_read_credentials_file(ctx, ctx->credentials_file, ctx->oauth_credentials) == -1) {
-        flb_errno();
-        goto error;
+        if (flb_gcs_read_credentials_file(ctx, ctx->credentials_file,
+                                          ctx->oauth_credentials) == -1) {
+            goto error;
+        }
+    }
+    else {
+        ctx->metadata_server_auth = FLB_TRUE;
+        flb_plg_info(ins, "using GCE/GKE metadata server authentication");
     }
 
     ctx->o = flb_oauth2_create(config, FLB_GCS_AUTH_URL, FLB_GCS_TOKEN_REFRESH);
@@ -1390,6 +1514,15 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
                                  FLB_IO_TLS, ins->tls);
     if (!ctx->u) {
         goto error;
+    }
+    if (ctx->metadata_server_auth == FLB_TRUE) {
+        ctx->metadata_u = flb_upstream_create_url(config, ctx->metadata_server,
+                                                  FLB_IO_TCP, NULL);
+        if (!ctx->metadata_u) {
+            flb_plg_error(ins, "metadata upstream creation failed");
+            goto error;
+        }
+        flb_stream_disable_async_mode(&ctx->metadata_u->base);
     }
     ctx->out_format = FLB_PACK_JSON_FORMAT_LINES;
     ctx->gcs_format = FLB_GCS_FORMAT_JSON_LINES;
@@ -1578,6 +1711,10 @@ static int gcs_ctx_destroy(void *data, struct flb_config *config)
         flb_upstream_destroy(ctx->u);
     }
 
+    if (ctx->metadata_u) {
+        flb_upstream_destroy(ctx->metadata_u);
+    }
+
     if (ctx->o) {
         flb_oauth2_destroy(ctx->o);
     }
@@ -1674,6 +1811,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "google_service_credentials", NULL,
      0, FLB_TRUE, offsetof(struct flb_gcs, credentials_file),
      "Service account JSON file."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "metadata_server", FLB_GCS_METADATA_SERVER,
+     0, FLB_TRUE, offsetof(struct flb_gcs, metadata_server),
+     "GCE/GKE metadata server used when no credentials file is configured."
     },
     {
      FLB_CONFIG_MAP_STR, "store_dir", "/tmp/fluent-bit/gcs",
