@@ -381,6 +381,181 @@ void flb_test_gcs_accepts_extra_credential_fields(void)
     flb_free(store_dir);
 }
 
+void flb_test_gcs_application_default_credentials_env(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    char *store_dir;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-adc-env-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("GOOGLE_APPLICATION_CREDENTIALS", SERVICE_CREDENTIALS, 1);
+    setenv("GOOGLE_SERVICE_CREDENTIALS", "/does/not/exist", 1);
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+
+    unsetenv("GOOGLE_APPLICATION_CREDENTIALS");
+    unsetenv("GOOGLE_SERVICE_CREDENTIALS");
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_metadata_server_authentication(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    int metadata_calls;
+    int upload_calls;
+    char *store_dir;
+    char *value;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-metadata-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    unsetenv("GOOGLE_APPLICATION_CREDENTIALS");
+    unsetenv("GOOGLE_SERVICE_CREDENTIALS");
+    unsetenv("TEST_GCS_MetadataToken_CALL_COUNT");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    setenv("TEST_GCS_METADATA_RESPONSE",
+           "{\"access_token\":\"metadata-token\",\"expires_in\":3600,"
+           "\"token_type\":\"Bearer\"}", 1);
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "1s", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+        sleep(3);
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+
+    value = getenv("TEST_GCS_MetadataToken_CALL_COUNT");
+    metadata_calls = value ? atoi(value) : 0;
+    TEST_CHECK_(metadata_calls == 1,
+                "Expected 1 metadata token call, got %d", metadata_calls);
+    value = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    upload_calls = value ? atoi(value) : 0;
+    TEST_CHECK_(upload_calls == 1,
+                "Expected 1 UploadObject call, got %d", upload_calls);
+    value = getenv("TEST_GCS_LAST_METADATA_URI");
+    TEST_CHECK_(value != NULL, "Expected the metadata URI to be captured");
+    if (value) {
+        TEST_CHECK(strcmp(value, FLB_GCS_METADATA_TOKEN_URI) == 0);
+    }
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_METADATA_RESPONSE");
+    unsetenv("TEST_GCS_MetadataToken_CALL_COUNT");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_METADATA_URI");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_rejects_invalid_metadata_response(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    int metadata_calls;
+    int upload_calls;
+    char *store_dir;
+    char *value;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-metadata-invalid-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    unsetenv("GOOGLE_APPLICATION_CREDENTIALS");
+    unsetenv("GOOGLE_SERVICE_CREDENTIALS");
+    unsetenv("TEST_GCS_MetadataToken_CALL_COUNT");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    setenv("TEST_GCS_METADATA_RESPONSE", "{\"invalid\":true}", 1);
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "1s", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+        sleep(3);
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+
+    value = getenv("TEST_GCS_MetadataToken_CALL_COUNT");
+    metadata_calls = value ? atoi(value) : 0;
+    TEST_CHECK_(metadata_calls >= 1,
+                "Expected at least 1 metadata token call, got %d", metadata_calls);
+    value = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    upload_calls = value ? atoi(value) : 0;
+    TEST_CHECK_(upload_calls == 0,
+                "Expected no UploadObject calls, got %d", upload_calls);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_METADATA_RESPONSE");
+    unsetenv("TEST_GCS_MetadataToken_CALL_COUNT");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_METADATA_URI");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
 void flb_test_gcs_upload_error(void)
 {
     int ret;
@@ -701,6 +876,9 @@ TEST_LIST = {
     {"rejects_invalid_configuration", flb_test_gcs_rejects_invalid_configuration},
     {"rejects_invalid_compression", flb_test_gcs_rejects_invalid_compression},
     {"accepts_extra_credential_fields", flb_test_gcs_accepts_extra_credential_fields},
+    {"application_default_credentials_env", flb_test_gcs_application_default_credentials_env},
+    {"metadata_server_authentication", flb_test_gcs_metadata_server_authentication},
+    {"rejects_invalid_metadata_response", flb_test_gcs_rejects_invalid_metadata_response},
     {"upload_error", flb_test_gcs_upload_error},
     {"shutdown_preserves_pending_upload", flb_test_gcs_shutdown_preserves_pending_upload},
     {"unify_tag_buffers_multiple_tags", flb_test_gcs_unify_tag_buffers_multiple_tags},
