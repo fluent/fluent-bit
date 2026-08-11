@@ -99,11 +99,7 @@ runs:
       run: |
         if [ -n "$TARGET_INPUT" ]; then
           echo "Overriding matrix to build: $TARGET_INPUT"
-          matrix=$((
-            echo '{ "distro" : ['
-            echo "\"$TARGET_INPUT\""
-            echo ']}'
-          ) | jq -c .)
+          matrix=$(jq -cn --arg target "$TARGET_INPUT" '{distro: [$target]}')
         fi
         echo "MATRIX=$matrix" >> $GITHUB_ENV
       shell: bash
