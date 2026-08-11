@@ -28,10 +28,6 @@
 
 #include <stdint.h>
 
-#ifdef FLB_HAVE_ARROW
-#include "compression/arrow/compress.h"
-#endif
-
 /* Wrapper function to adapt flb_snappy_compress to AWS compression interface */
 static int flb_snappy_compress_wrapper(void *in_data, size_t in_len,
                                        void **out_data, size_t *out_len)
@@ -77,20 +73,6 @@ static const struct compression_option compression_options[] = {
         "snappy",
         &flb_snappy_compress_wrapper
     },
-#ifdef FLB_HAVE_ARROW
-    {
-        FLB_AWS_COMPRESS_ARROW,
-        "arrow",
-        &out_s3_compress_arrow
-    },
-#endif
-#ifdef FLB_HAVE_ARROW_PARQUET
-    {
-        FLB_AWS_COMPRESS_PARQUET,
-        "parquet",
-        &out_s3_compress_parquet
-    },
-#endif
     { 0 }
 };
 

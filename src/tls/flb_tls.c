@@ -20,6 +20,9 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_mem.h>
+
+#include <sys/stat.h>
 
 #include "openssl.c"
 
@@ -103,6 +106,32 @@ struct flb_config_map tls_configmap[] = {
      "Specify TLS ciphers up to TLSv1.2"
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "tls.proxy.ca_file", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to CA certificate file used to verify the HTTPS proxy "
+     "certificate. Independent from tls.ca_file (destination CA)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "tls.proxy.ca_path", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to scan for CA certificate files used to verify the "
+     "HTTPS proxy certificate"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.proxy.verify", "on",
+     0, FLB_FALSE, 0,
+     "Force HTTPS proxy certificate validation"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.proxy.verify_hostname", "on",
+     0, FLB_FALSE, 0,
+     "Enable or disable HTTPS proxy hostname verification"
+    },
+
     /* EOF */
     {0}
 };
@@ -124,31 +153,37 @@ static inline void io_tls_backup_event(struct flb_connection *connection,
     }
 }
 
-static inline void io_tls_restore_event(struct flb_connection *connection,
-                                        struct mk_event *backup)
+static inline int io_tls_restore_event(struct flb_connection *connection,
+                                       struct mk_event *backup)
 {
     int result;
 
-    if (connection != NULL && backup != NULL) {
-        if (MK_EVENT_IS_REGISTERED((&connection->event))) {
-            result = mk_event_del(connection->evl, &connection->event);
+    if (connection == NULL || backup == NULL) {
+        return -1;
+    }
 
-            assert(result == 0);
-        }
-
-        if (MK_EVENT_IS_REGISTERED(backup)) {
-            connection->event.priority = backup->priority;
-            connection->event.handler = backup->handler;
-
-            result = mk_event_add(connection->evl,
-                                  connection->fd,
-                                  backup->type,
-                                  backup->mask,
-                                  &connection->event);
-
-            assert(result == 0);
+    if (MK_EVENT_IS_REGISTERED((&connection->event))) {
+        result = mk_event_del(connection->evl, &connection->event);
+        if (result == -1) {
+            return -1;
         }
     }
+
+    if (MK_EVENT_IS_REGISTERED(backup)) {
+        connection->event.priority = backup->priority;
+        connection->event.handler = backup->handler;
+
+        result = mk_event_add(connection->evl,
+                              connection->fd,
+                              backup->type,
+                              backup->mask,
+                              &connection->event);
+        if (result == -1) {
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
 
@@ -182,7 +217,150 @@ static inline int io_tls_event_switch(struct flb_tls_session *session,
 
 int flb_tls_load_system_certificates(struct flb_tls *tls)
 {
-    return load_system_certificates(tls->ctx);
+    int ret;
+
+    ret = load_system_certificates(tls->ctx);
+    if (ret == 0) {
+        tls->system_certificates_loaded = FLB_TRUE;
+    }
+
+    return ret;
+}
+
+static int tls_file_status_get(const char *path,
+                               struct flb_tls_file_status *status)
+{
+    struct stat st;
+
+    memset(status, 0, sizeof(struct flb_tls_file_status));
+
+    if (path == NULL) {
+        return 0;
+    }
+
+    if (stat(path, &st) != 0) {
+        status->exists = FLB_FALSE;
+        return -1;
+    }
+
+    status->exists = FLB_TRUE;
+    status->size = (uint64_t) st.st_size;
+#ifdef FLB_SYSTEM_LINUX
+    status->device = (uint64_t) st.st_dev;
+    status->inode = (uint64_t) st.st_ino;
+    status->mtime_nsec = (uint64_t) st.st_mtim.tv_nsec;
+    status->ctime_nsec = (uint64_t) st.st_ctim.tv_nsec;
+#else
+    status->device = 0;
+    status->inode = 0;
+    status->mtime_nsec = 0;
+    status->ctime_nsec = 0;
+#endif
+    status->mtime = (uint64_t) st.st_mtime;
+    status->ctime = (uint64_t) st.st_ctime;
+
+    return 0;
+}
+
+static int tls_file_status_changed(struct flb_tls_file_status *current,
+                                   struct flb_tls_file_status *previous)
+{
+    if (current->exists != previous->exists ||
+        current->size != previous->size ||
+        current->device != previous->device ||
+        current->inode != previous->inode ||
+        current->mtime != previous->mtime ||
+        current->mtime_nsec != previous->mtime_nsec ||
+        current->ctime != previous->ctime ||
+        current->ctime_nsec != previous->ctime_nsec) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static void tls_file_status_refresh(struct flb_tls *tls)
+{
+    tls_file_status_get(tls->ca_path, &tls->ca_path_status);
+    tls_file_status_get(tls->ca_file, &tls->ca_file_status);
+    tls_file_status_get(tls->crt_file, &tls->crt_file_status);
+    tls_file_status_get(tls->key_file, &tls->key_file_status);
+}
+
+static int tls_file_status_has_changed(
+    struct flb_tls *tls,
+    struct flb_tls_file_status *ca_path_status,
+    struct flb_tls_file_status *ca_file_status,
+    struct flb_tls_file_status *crt_file_status,
+    struct flb_tls_file_status *key_file_status)
+{
+    tls_file_status_get(tls->ca_path, ca_path_status);
+    tls_file_status_get(tls->ca_file, ca_file_status);
+    tls_file_status_get(tls->crt_file, crt_file_status);
+    tls_file_status_get(tls->key_file, key_file_status);
+
+    if (tls_file_status_changed(ca_path_status, &tls->ca_path_status) == FLB_TRUE ||
+        tls_file_status_changed(ca_file_status, &tls->ca_file_status) == FLB_TRUE ||
+        tls_file_status_changed(crt_file_status, &tls->crt_file_status) == FLB_TRUE ||
+        tls_file_status_changed(key_file_status, &tls->key_file_status) == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static int tls_should_reload_context(
+    struct flb_tls *tls,
+    struct flb_tls_file_status *ca_path_status,
+    struct flb_tls_file_status *ca_file_status,
+    struct flb_tls_file_status *crt_file_status,
+    struct flb_tls_file_status *key_file_status)
+{
+    if (tls_file_status_has_changed(tls,
+                                    ca_path_status,
+                                    ca_file_status,
+                                    crt_file_status,
+                                    key_file_status) == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+#if defined(FLB_SYSTEM_WINDOWS) || defined(FLB_SYSTEM_MACOS)
+    /*
+     * macOS Keychain and Windows CertStore do not expose a portable file
+     * metadata handle for us to watch. Refresh store-backed contexts before
+     * each new TLS session so rotations/imports become visible without a
+     * process restart.
+     */
+    if (tls->system_certificates_loaded == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+#endif
+
+    return FLB_FALSE;
+}
+
+static int tls_store_string(char **slot, const char *value)
+{
+    char *tmp;
+
+    if (*slot != NULL) {
+        flb_free(*slot);
+        *slot = NULL;
+    }
+
+    if (value == NULL) {
+        return 0;
+    }
+
+    tmp = flb_strdup(value);
+    if (tmp == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    *slot = tmp;
+
+    return 0;
 }
 
 struct flb_tls *flb_tls_create(int mode,
@@ -217,30 +395,104 @@ struct flb_tls *flb_tls_create(int mode,
         return NULL;
     }
 
+    tls->ctx = backend;
+    tls->api = &tls_openssl;
+    pthread_mutex_init(&tls->reload_mutex, NULL);
+
     tls->verify = verify;
     tls->debug = debug;
     tls->mode = mode;
     tls->verify_hostname = FLB_FALSE;
+    tls->system_certificates_loaded = FLB_FALSE;
+#if defined(FLB_SYSTEM_WINDOWS) || defined(FLB_SYSTEM_MACOS)
+    if (ca_path == NULL && ca_file == NULL && mode == FLB_TLS_CLIENT_MODE) {
+        tls->system_certificates_loaded = FLB_TRUE;
+    }
+#endif
 #if defined(FLB_SYSTEM_WINDOWS)
     tls->certstore_name = NULL;
     tls->use_enterprise_store = FLB_FALSE;
+    tls->client_thumbprints = NULL;
 #endif
 
-    if (vhost != NULL) {
-        tls->vhost = flb_strdup(vhost);
+    if (tls_store_string(&tls->vhost, vhost) != 0 ||
+        tls_store_string(&tls->ca_path, ca_path) != 0 ||
+        tls_store_string(&tls->ca_file, ca_file) != 0 ||
+        tls_store_string(&tls->crt_file, crt_file) != 0 ||
+        tls_store_string(&tls->key_file, key_file) != 0 ||
+        tls_store_string(&tls->key_passwd, key_passwd) != 0) {
+        flb_tls_destroy(tls);
+        return NULL;
     }
-    tls->ctx = backend;
 
-    tls->api = &tls_openssl;
+    tls_file_status_refresh(tls);
 
     return tls;
+}
+
+int flb_tls_reload_if_needed(struct flb_tls *tls)
+{
+    int ret;
+    struct flb_tls_file_status ca_path_status;
+    struct flb_tls_file_status ca_file_status;
+    struct flb_tls_file_status crt_file_status;
+    struct flb_tls_file_status key_file_status;
+
+    if (tls == NULL || tls->ctx == NULL || tls->api == NULL ||
+        tls->api->context_reload == NULL) {
+        return 0;
+    }
+
+    pthread_mutex_lock(&tls->reload_mutex);
+
+    if (tls_should_reload_context(tls,
+                                  &ca_path_status,
+                                  &ca_file_status,
+                                  &crt_file_status,
+                                  &key_file_status) == FLB_FALSE) {
+        pthread_mutex_unlock(&tls->reload_mutex);
+        return 0;
+    }
+
+    ret = tls->api->context_reload(tls);
+    if (ret != 0) {
+        pthread_mutex_unlock(&tls->reload_mutex);
+        flb_error("[tls] detected certificate file changes but reload failed");
+        return -1;
+    }
+
+    /*
+     * Commit the snapshot that triggered this reload. If a file changes while
+     * the backend is loading it, the next session will observe the newer
+     * metadata and reload again instead of treating unseen contents as loaded.
+     */
+    tls->ca_path_status = ca_path_status;
+    tls->ca_file_status = ca_file_status;
+    tls->crt_file_status = crt_file_status;
+    tls->key_file_status = key_file_status;
+    pthread_mutex_unlock(&tls->reload_mutex);
+    flb_info("[tls] reloaded TLS certificate configuration");
+
+    return 1;
 }
 
 int flb_tls_set_minmax_proto(struct flb_tls *tls,
                              const char *min_version, const char *max_version)
 {
+    int ret;
+
     if (tls->ctx) {
-        return tls->api->set_minmax_proto(tls, min_version, max_version);
+        ret = tls->api->set_minmax_proto(tls, min_version, max_version);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if (tls_store_string(&tls->min_version, min_version) != 0 ||
+            tls_store_string(&tls->max_version, max_version) != 0) {
+            return -1;
+        }
+
+        return ret;
     }
 
     return 0;
@@ -248,8 +500,19 @@ int flb_tls_set_minmax_proto(struct flb_tls *tls,
 
 int flb_tls_set_ciphers(struct flb_tls *tls, const char *ciphers)
 {
+    int ret;
+
     if (tls->ctx) {
-        return tls->api->set_ciphers(tls, ciphers);
+        ret = tls->api->set_ciphers(tls, ciphers);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if (tls_store_string(&tls->ciphers, ciphers) != 0) {
+            return -1;
+        }
+
+        return ret;
     }
 
     return 0;
@@ -269,12 +532,44 @@ int flb_tls_destroy(struct flb_tls *tls)
     if (tls->vhost != NULL) {
         flb_free(tls->vhost);
     }
+    if (tls->ca_path != NULL) {
+        flb_free(tls->ca_path);
+    }
+    if (tls->ca_file != NULL) {
+        flb_free(tls->ca_file);
+    }
+    if (tls->crt_file != NULL) {
+        flb_free(tls->crt_file);
+    }
+    if (tls->key_file != NULL) {
+        flb_free(tls->key_file);
+    }
+    if (tls->key_passwd != NULL) {
+        flb_free(tls->key_passwd);
+    }
+    if (tls->alpn != NULL) {
+        flb_free(tls->alpn);
+    }
+    if (tls->min_version != NULL) {
+        flb_free(tls->min_version);
+    }
+    if (tls->max_version != NULL) {
+        flb_free(tls->max_version);
+    }
+    if (tls->ciphers != NULL) {
+        flb_free(tls->ciphers);
+    }
 
 #if defined(FLB_SYSTEM_WINDOWS)
     if (tls->certstore_name) {
         flb_free(tls->certstore_name);
     }
+    if (tls->client_thumbprints) {
+        flb_free(tls->client_thumbprints);
+    }
 #endif
+
+    pthread_mutex_destroy(&tls->reload_mutex);
 
     flb_free(tls);
 
@@ -283,8 +578,19 @@ int flb_tls_destroy(struct flb_tls *tls)
 
 int flb_tls_set_alpn(struct flb_tls *tls, const char *alpn)
 {
+    int ret;
+
     if (tls->ctx) {
-        return tls->api->context_alpn_set(tls->ctx, alpn);
+        ret = tls->api->context_alpn_set(tls->ctx, alpn);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if (tls_store_string(&tls->alpn, alpn) != 0) {
+            return -1;
+        }
+
+        return ret;
     }
 
     return 0;
@@ -297,6 +603,11 @@ int flb_tls_set_verify_client(struct flb_tls *tls, int verify_client)
     }
 
     tls->verify_client = verify_client;
+#if defined(FLB_SYSTEM_WINDOWS) || defined(FLB_SYSTEM_MACOS)
+    if (verify_client == FLB_TRUE && tls->ca_path == NULL && tls->ca_file == NULL) {
+        tls->system_certificates_loaded = FLB_TRUE;
+    }
+#endif
 
     if (tls->ctx && tls->api->context_set_verify_client) {
         return tls->api->context_set_verify_client(tls->ctx, verify_client);
@@ -319,8 +630,19 @@ int flb_tls_set_verify_hostname(struct flb_tls *tls, int verify_hostname)
 #if defined(FLB_SYSTEM_WINDOWS)
 int flb_tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name)
 {
+    int ret;
+
     if (tls) {
-        return tls->api->set_certstore_name(tls, certstore_name);
+        ret = tls->api->set_certstore_name(tls, certstore_name);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if (tls_store_string(&tls->certstore_name, certstore_name) != 0) {
+            return -1;
+        }
+
+        return ret;
     }
 
     return 0;
@@ -328,16 +650,36 @@ int flb_tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name)
 
 int flb_tls_set_use_enterprise_store(struct flb_tls *tls, int use_enterprise)
 {
+    int ret;
+
     if (tls) {
-        return tls->api->set_use_enterprise_store(tls, use_enterprise);
+        ret = tls->api->set_use_enterprise_store(tls, use_enterprise);
+        if (ret != 0) {
+            return ret;
+        }
+
+        tls->use_enterprise_store = use_enterprise;
+
+        return ret;
     }
 
     return 0;
 }
 
 int flb_tls_set_client_thumbprints(struct flb_tls *tls, const char *thumbprints) {
+    int ret;
+
     if (tls && tls->api->set_client_thumbprints) {
-        return tls->api->set_client_thumbprints(tls, thumbprints);
+        ret = tls->api->set_client_thumbprints(tls, thumbprints);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if (tls_store_string(&tls->client_thumbprints, thumbprints) != 0) {
+            return -1;
+        }
+
+        return ret;
     }
     return -1;
 }
@@ -408,8 +750,17 @@ int flb_tls_net_read_async(struct flb_coro *co,
 
         session->connection->coroutine = co;
 
-        io_tls_event_switch(session, MK_EVENT_READ);
+        ret = io_tls_event_switch(session, MK_EVENT_READ);
+        if (ret == -1) {
+            goto read_finished;
+        }
+
         flb_coro_yield(co, FLB_FALSE);
+
+        if (session->connection->net_error != -1) {
+            ret = -1;
+            goto read_finished;
+        }
 
         goto retry_read;
     }
@@ -418,21 +769,28 @@ int flb_tls_net_read_async(struct flb_coro *co,
 
         session->connection->coroutine = co;
 
-        io_tls_event_switch(session, MK_EVENT_WRITE);
+        ret = io_tls_event_switch(session, MK_EVENT_WRITE);
+        if (ret == -1) {
+            goto read_finished;
+        }
+
         flb_coro_yield(co, FLB_FALSE);
+
+        if (session->connection->net_error != -1) {
+            ret = -1;
+            goto read_finished;
+        }
 
         goto retry_read;
     }
-    else
-    {
-        /* We want this field to hold NULL at all times unless we are explicitly
-         * waiting to be resumed.
-         */
-        session->connection->coroutine = NULL;
+read_finished:
+    /* We want this field to hold NULL at all times unless we are explicitly
+     * waiting to be resumed.
+     */
+    session->connection->coroutine = NULL;
 
-        if (ret <= 0) {
-            ret = -1;
-        }
+    if (ret <= 0) {
+        ret = -1;
     }
 
     if (event_restore_needed) {
@@ -446,7 +804,9 @@ int flb_tls_net_read_async(struct flb_coro *co,
          * the same event.
          */
 
-        io_tls_restore_event(session->connection, &event_backup);
+        if (io_tls_restore_event(session->connection, &event_backup) == -1) {
+            ret = -1;
+        }
     }
 
     return ret;
@@ -518,18 +878,44 @@ retry_write:
     if (ret == FLB_TLS_WANT_WRITE) {
         event_restore_needed = FLB_TRUE;
 
-        io_tls_event_switch(session, MK_EVENT_WRITE);
+        ret = io_tls_event_switch(session, MK_EVENT_WRITE);
+        if (ret == -1) {
+            session->connection->coroutine = NULL;
+            *out_len = total;
+            io_tls_restore_event(session->connection, &event_backup);
+            return -1;
+        }
 
         flb_coro_yield(co, FLB_FALSE);
+
+        if (session->connection->net_error != -1) {
+            session->connection->coroutine = NULL;
+            *out_len = total;
+            io_tls_restore_event(session->connection, &event_backup);
+            return -1;
+        }
 
         goto retry_write;
     }
     else if (ret == FLB_TLS_WANT_READ) {
         event_restore_needed = FLB_TRUE;
 
-        io_tls_event_switch(session, MK_EVENT_READ);
+        ret = io_tls_event_switch(session, MK_EVENT_READ);
+        if (ret == -1) {
+            session->connection->coroutine = NULL;
+            *out_len = total;
+            io_tls_restore_event(session->connection, &event_backup);
+            return -1;
+        }
 
         flb_coro_yield(co, FLB_FALSE);
+
+        if (session->connection->net_error != -1) {
+            session->connection->coroutine = NULL;
+            *out_len = total;
+            io_tls_restore_event(session->connection, &event_backup);
+            return -1;
+        }
 
         goto retry_write;
     }
@@ -550,9 +936,24 @@ retry_write:
     total += ret;
 
     if (total < len) {
-        io_tls_event_switch(session, MK_EVENT_WRITE);
+        event_restore_needed = FLB_TRUE;
+
+        ret = io_tls_event_switch(session, MK_EVENT_WRITE);
+        if (ret == -1) {
+            session->connection->coroutine = NULL;
+            *out_len = total;
+            io_tls_restore_event(session->connection, &event_backup);
+            return -1;
+        }
 
         flb_coro_yield(co, FLB_FALSE);
+
+        if (session->connection->net_error != -1) {
+            session->connection->coroutine = NULL;
+            *out_len = total;
+            io_tls_restore_event(session->connection, &event_backup);
+            return -1;
+        }
 
         goto retry_write;
     }
@@ -576,7 +977,9 @@ retry_write:
          * the same event.
          */
 
-        io_tls_restore_event(session->connection, &event_backup);
+        if (io_tls_restore_event(session->connection, &event_backup) == -1) {
+            return -1;
+        }
     }
 
     return total;
@@ -608,6 +1011,8 @@ int flb_tls_session_create(struct flb_tls *tls,
     char                   *vhost;
     int                     flag;
 
+    flb_tls_reload_if_needed(tls);
+
     session = flb_calloc(1, sizeof(struct flb_tls_session));
 
     if (session == NULL) {
@@ -617,13 +1022,20 @@ int flb_tls_session_create(struct flb_tls *tls,
     vhost = NULL;
 
     if (connection->type == FLB_UPSTREAM_CONNECTION) {
-        if (connection->upstream->proxied_host != NULL) {
+        if (tls->vhost != NULL) {
+            /*
+             * An explicit vhost in the TLS context takes priority. This
+             * covers the HTTPS proxy case where the proxy TLS context has
+             * its own vhost (= tcp_host) and must not fall through to
+             * proxied_host which belongs to the inner destination.
+             * Leave vhost as NULL so net_handshake() picks up tls->vhost.
+             */
+        }
+        else if (connection->upstream->proxied_host != NULL) {
             vhost = flb_rtrim(connection->upstream->proxied_host, '.');
         }
         else {
-            if (tls->vhost == NULL) {
-                vhost = flb_rtrim(connection->upstream->tcp_host, '.');
-            }
+            vhost = flb_rtrim(connection->upstream->tcp_host, '.');
         }
     }
 
@@ -641,6 +1053,40 @@ int flb_tls_session_create(struct flb_tls *tls,
         flb_free(session);
 
         return -1;
+    }
+
+    /*
+     * If an existing TLS session is already active on this connection
+     * (e.g. the proxy TLS session for an HTTPS proxy), chain the new
+     * session's I/O through it.  The inner (destination) TLS handshake
+     * data must travel inside the outer (proxy) TLS tunnel rather than
+     * going directly to the raw socket.
+     */
+    if (connection->tls_session != NULL &&
+        tls->api->session_set_outer != NULL) {
+        result = tls->api->session_set_outer(session->ptr,
+                                             connection->tls_session->ptr);
+        if (result != 0) {
+            flb_error("[tls] failed to chain TLS session over proxy tunnel for %s",
+                      flb_connection_get_remote_address(connection));
+
+            if (vhost != NULL) {
+                flb_free(vhost);
+            }
+
+            tls->api->session_destroy(session->ptr);
+            flb_free(session);
+            return -1;
+        }
+
+        /*
+         * The outer backend session ptr is now owned by the inner session
+         * (via outer_session).  Release the outer flb_tls_session wrapper
+         * without going through flb_tls_session_destroy, which would free
+         * the backend ptr we just transferred.
+         */
+        flb_free(connection->tls_session);
+        connection->tls_session = NULL;
     }
 
     session->tls = tls;
@@ -755,7 +1201,10 @@ cleanup:
          * the same event.
          */
 
-        io_tls_restore_event(session->connection, &event_backup);
+        if (io_tls_restore_event(session->connection, &event_backup) == -1 &&
+            result == 0) {
+            result = -1;
+        }
     }
 
     if (result != 0) {

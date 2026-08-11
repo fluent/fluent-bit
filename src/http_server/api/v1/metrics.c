@@ -37,9 +37,10 @@
 /* Return the newest metrics buffer */
 static struct flb_hs_buf *metrics_get_latest(struct flb_hs *hs)
 {
-    if (hs->metrics.data == NULL || hs->metrics.raw_data == NULL) {
+    if (flb_hs_buf_acquire(&hs->metrics, FLB_TRUE, FLB_TRUE) != 0) {
         return NULL;
     }
+
     return &hs->metrics;
 }
 
@@ -158,9 +159,6 @@ static int cb_metrics_prometheus(struct flb_hs *hs,
         flb_http_response_set_status(response, 404);
         return flb_http_response_commit(response);
     }
-
-    /* ref count */
-    buf->users++;
 
     /* Compose outgoing buffer string */
     sds = flb_sds_create_size(1024);
@@ -415,8 +413,6 @@ static int cb_metrics(struct flb_hs *hs,
         flb_http_response_set_status(response, 404);
         return flb_http_response_commit(response);
     }
-
-    buf->users++;
 
     flb_hs_response_set_payload(response, 200,
                                 FLB_HS_CONTENT_TYPE_JSON,

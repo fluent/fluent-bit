@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_hash_table.h>
+#include <fluent-bit/flb_pthread.h>
 
 /*
  * Since this filter might get a high number of request per second,
@@ -174,6 +175,7 @@ struct flb_kube {
     size_t podname_len;
 
     /* Kubernetes Token from FLB_KUBE_TOKEN file */
+    char *namespace_file;
     char *token_file;
     char *token;
     size_t token_len;
@@ -212,6 +214,13 @@ struct flb_kube {
     int aws_pod_service_map_refresh_interval;
     flb_sds_t aws_pod_service_preload_cache_path;
     struct flb_upstream *aws_pod_association_upstream;
+    pthread_mutex_t aws_pod_service_mutex;
+    pthread_cond_t aws_pod_service_cond;
+    pthread_t aws_pod_service_thread;
+    int aws_pod_service_sync_initialized;
+    int aws_pod_service_thread_created;
+    int aws_pod_service_shutdown;
+    struct mk_event_loop *aws_pod_service_event_loop;
     /*
      * This variable holds the Kubernetes platform type
      * Current checks for EKS or Native Kuberentes

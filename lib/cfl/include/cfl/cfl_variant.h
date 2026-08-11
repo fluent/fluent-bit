@@ -23,6 +23,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <inttypes.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include <cfl/cfl_sds.h>
 
 #define CFL_VARIANT_BOOL       1
 #define CFL_VARIANT_INT        2
@@ -37,6 +41,7 @@
 
 struct cfl_array;
 struct cfl_kvlist;
+struct cfl_arena;
 
 struct cfl_variant {
     int type;
@@ -52,6 +57,7 @@ struct cfl_variant {
      * a copy of the original data.
      */
     uint8_t referenced;
+    uint8_t owned;
 
     /* the data */
     union {
@@ -65,6 +71,8 @@ struct cfl_variant {
         struct cfl_array *as_array;
         struct cfl_kvlist *as_kvlist;
     } data;
+
+    struct cfl_arena *arena;
 };
 
 int cfl_variant_print(FILE *fp, struct cfl_variant *val);
@@ -80,6 +88,31 @@ struct cfl_variant *cfl_variant_create_from_null();
 struct cfl_variant *cfl_variant_create_from_kvlist(struct cfl_kvlist *value);
 struct cfl_variant *cfl_variant_create_from_reference(void *value);
 struct cfl_variant *cfl_variant_create();
+struct cfl_variant *cfl_variant_create_in(struct cfl_arena *arena);
+struct cfl_variant *cfl_variant_create_from_string_in(struct cfl_arena *arena,
+                                                       char *value);
+struct cfl_variant *cfl_variant_create_from_string_s_in(struct cfl_arena *arena,
+                                                         char *value,
+                                                         size_t value_length,
+                                                         int referenced);
+struct cfl_variant *cfl_variant_create_from_bytes_in(struct cfl_arena *arena,
+                                                      char *value, size_t length,
+                                                      int referenced);
+struct cfl_variant *cfl_variant_create_from_bool_in(struct cfl_arena *arena,
+                                                     int value);
+struct cfl_variant *cfl_variant_create_from_int64_in(struct cfl_arena *arena,
+                                                      int64_t value);
+struct cfl_variant *cfl_variant_create_from_uint64_in(struct cfl_arena *arena,
+                                                       uint64_t value);
+struct cfl_variant *cfl_variant_create_from_double_in(struct cfl_arena *arena,
+                                                       double value);
+struct cfl_variant *cfl_variant_create_from_null_in(struct cfl_arena *arena);
+struct cfl_variant *cfl_variant_create_from_reference_in(struct cfl_arena *arena,
+                                                          void *value);
+struct cfl_variant *cfl_variant_create_from_array_in(struct cfl_arena *arena,
+                                                      struct cfl_array *value);
+struct cfl_variant *cfl_variant_create_from_kvlist_in(struct cfl_arena *arena,
+                                                       struct cfl_kvlist *value);
 
 void cfl_variant_destroy(struct cfl_variant *instance);
 

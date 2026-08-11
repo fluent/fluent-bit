@@ -31,6 +31,9 @@
 
 struct flb_connection;
 
+#define FLB_DOWNSTREAM_CONN_RELEASED  0
+#define FLB_DOWNSTREAM_CONN_DEFERRED  1
+
 /* Downstream handler */
 struct flb_downstream {
     struct flb_stream      base;
@@ -83,6 +86,31 @@ void flb_downstream_pause(struct flb_downstream *stream);
 void flb_downstream_resume(struct flb_downstream *stream);
 
 int flb_downstream_conn_release(struct flb_connection *connection);
+int flb_downstream_conn_release_all(struct flb_downstream *stream);
+
+/*
+ * The callback and any ingestion it invokes run on config->coro_stack_size.
+ * Callers must size that stack for their complete callback path.
+ */
+int flb_downstream_conn_event_accept(
+        struct flb_downstream *stream,
+        flb_connection_accept_callback accept_callback,
+        void *accept_callback_data,
+        flb_connection_event_callback event_callback,
+        int mask);
+int flb_downstream_conn_event_register(struct flb_connection *connection,
+                                       int (*callback)(void *data),
+                                       int mask);
+
+/*
+ * Suspend an event coroutine while callback runs on its parent stack. This is
+ * required for code which depends on native thread stack bounds, such as WAMR.
+ */
+int flb_downstream_conn_event_call_parent(
+        struct flb_connection *connection,
+        flb_connection_event_callback callback,
+        void *callback_data);
+void flb_downstream_conn_event_resume(struct flb_connection *connection);
 
 int flb_downstream_conn_pending_destroy_list(struct mk_list *list);
 int flb_downstream_conn_pending_destroy(struct flb_downstream *stream);

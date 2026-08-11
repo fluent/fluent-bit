@@ -458,6 +458,10 @@ static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
                                    event_chunk->type, config);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
+        if (buf->non_retriable_error == FLB_TRUE) {
+            cw_flush_destroy(buf);
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
         cw_flush_destroy(buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }

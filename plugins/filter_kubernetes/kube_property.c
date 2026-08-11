@@ -236,8 +236,12 @@ int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
     /* If the property is for a specific container, and this is not
      * that container, bail out
      */
-    if (container && strncmp(container, meta->container_name, container_len)) {
-        return 0;
+    if (container) {
+        if (meta->container_name == NULL ||
+            container_len != (size_t) meta->container_name_len ||
+            strncmp(container, meta->container_name, container_len) != 0) {
+            return 0;
+        }
     }
 
     return function(ctx, meta,

@@ -22,6 +22,7 @@
 
 #include <monkey/mk_core.h>
 #include <monkey/mk_stream.h>
+#include <monkey/mk_plugin_net.h>
 
 struct mk_net_connection {
     struct mk_event event;
@@ -32,6 +33,9 @@ struct mk_net_connection {
 };
 
 int mk_net_init();
+struct mk_plugin_network *mk_net_transport_default();
+int mk_net_transport_event_interest(struct mk_plugin_network *transport,
+                                    int fd, int fallback);
 
 struct mk_net_connection *mk_net_conn_create(char *addr, int port);
 int mk_net_conn_write(struct mk_channel *channel,

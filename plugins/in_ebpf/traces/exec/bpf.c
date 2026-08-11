@@ -14,6 +14,7 @@
 #include <gadget/types.h>
 
 #include "common/events.h"
+#include "common/event_id.bpf.h"
 
 #define MAX_ENTRIES 10240
 #define ARGV_MAX_SCAN 20
@@ -71,6 +72,7 @@ static __always_inline int submit_exec_event(void *ctx,
     pid_tgid = bpf_get_current_pid_tgid();
     uid_gid = bpf_get_current_uid_gid();
 
+    generate_event_id(&event->common.event_id);
     event->common.timestamp_raw = bpf_ktime_get_boot_ns();
     event->common.pid = (__u32) (pid_tgid >> 32);
     event->common.tid = (__u32) pid_tgid;

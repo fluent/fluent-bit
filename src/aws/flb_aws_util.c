@@ -346,16 +346,16 @@ int flb_aws_is_auth_error(char *payload, size_t payload_size)
         return FLB_FALSE;
     }
 
-    /* Fluent Bit calls the STS API which returns XML */
-    if (strcasestr(payload, "InvalidClientTokenId") != NULL) {
-        return FLB_TRUE;
-    }
-
-    if (strcasestr(payload, "AccessDenied") != NULL) {
-        return FLB_TRUE;
-    }
-
-    if (strcasestr(payload, "Expired") != NULL) {
+    /* STS, S3, and other AWS APIs return XML error responses */
+    if (strcasestr(payload, "InvalidClientTokenId") != NULL ||
+        strcasestr(payload, "AccessDenied") != NULL ||
+        strcasestr(payload, "Expired") != NULL ||
+        strcasestr(payload, "InvalidAccessKeyId") != NULL ||
+        strcasestr(payload, "SignatureDoesNotMatch") != NULL ||
+        strcasestr(payload, "InvalidToken") != NULL ||
+        strcasestr(payload, "InvalidSecurity") != NULL ||
+        strcasestr(payload, "TokenRefreshRequired") != NULL ||
+        strcasestr(payload, "InvalidSignature") != NULL) {
         return FLB_TRUE;
     }
 
@@ -372,6 +372,9 @@ int flb_aws_is_auth_error(char *payload, size_t payload_size)
             strcmp(error, "InvalidClientTokenId") == 0 ||
             strcmp(error, "InvalidToken") == 0 ||
             strcmp(error, "InvalidAccessKeyId") == 0 ||
+            strcmp(error, "InvalidSecurity") == 0 ||
+            strcmp(error, "TokenRefreshRequired") == 0 ||
+            strcmp(error, "InvalidSignature") == 0 ||
             strcmp(error, "UnrecognizedClientException") == 0) {
                 flb_sds_destroy(error);
             return FLB_TRUE;

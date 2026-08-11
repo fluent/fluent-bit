@@ -23,8 +23,6 @@
 #include <sys/types.h>
 #define FLB_AWS_COMPRESS_NONE    0
 #define FLB_AWS_COMPRESS_GZIP    1
-#define FLB_AWS_COMPRESS_ARROW   2
-#define FLB_AWS_COMPRESS_PARQUET 3
 #define FLB_AWS_COMPRESS_ZSTD    4
 #define FLB_AWS_COMPRESS_SNAPPY  5
 
@@ -62,5 +60,26 @@ int flb_aws_compression_compress(int compression_type, void *in_data, size_t in_
 int flb_aws_compression_b64_truncate_compress(int compression_type, size_t max_out_len,
                                              void *in_data, size_t in_len,
                                              void **out_data, size_t *out_len);
+
+/*
+ * Columnar output formats for out_s3_compress_columnar(). Compression is
+ * applied on top of the format via a generic FLB_AWS_COMPRESS_* codec.
+ */
+#define FLB_AWS_COMPRESS_FORMAT_ARROW    0
+#define FLB_AWS_COMPRESS_FORMAT_PARQUET  1
+
+/*
+ * Convert JSON data to a columnar format (Apache Arrow/Feather or Apache
+ * Parquet) selected by `columnar_format` (FLB_AWS_COMPRESS_FORMAT_*),
+ * applying `compression_type` (a generic FLB_AWS_COMPRESS_* codec) on top of
+ * the format:
+ *   - Parquet supports NONE, SNAPPY, GZIP and ZSTD (page-level codec).
+ *   - Arrow/Feather supports NONE and ZSTD only.
+ *
+ * Returns 0 on success, -1 on failure.
+ */
+int out_s3_compress_columnar(int columnar_format, void *json, size_t size,
+                             void **out_buf, size_t *out_size,
+                             int compression_type);
 
 #endif

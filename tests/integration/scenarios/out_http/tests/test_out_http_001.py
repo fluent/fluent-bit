@@ -12,9 +12,17 @@ from server.http_server import (
     http_server_run,
     server_instances,
 )
+from utils.memory_check import memory_check_enabled
 from utils.test_service import FluentBitTestService
 
 logger = logging.getLogger(__name__)
+
+def _memory_check_timeout(timeout):
+    if memory_check_enabled():
+        return max(timeout * 3, 30)
+
+    return timeout
+
 
 def _wait_for_http_server(port, timeout=5):
     deadline = time.time() + timeout
@@ -128,7 +136,7 @@ class Service:
     def wait_for_requests(self, minimum_count, timeout=10):
         return self.service.wait_for_condition(
             lambda: data_storage["requests"] if len(data_storage["requests"]) >= minimum_count else None,
-            timeout=timeout,
+            timeout=_memory_check_timeout(timeout),
             interval=0.5,
             description=f"{minimum_count} outbound HTTP requests",
         )
@@ -148,7 +156,7 @@ class Service:
 
         return self.service.wait_for_condition(
             _read_log,
-            timeout=timeout,
+            timeout=_memory_check_timeout(timeout),
             interval=0.25,
             description=f"log message '{pattern}'",
         )

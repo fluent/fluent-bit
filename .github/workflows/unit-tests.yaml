@@ -22,6 +22,7 @@ on:
       - 'examples/**'
     branches:
       - master
+      - 5.0
       - 4.2
       - 4.1
       - 4.0
@@ -56,6 +57,7 @@ jobs:
           - "-DFLB_SIMD=Off"
           - "-DFLB_ARROW=On"
           - "-DFLB_COMPILER_STRICT_POINTER_TYPES=On"
+          - "-DFLB_AVRO_ENCODER=On -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
         cmake_version:
           - "3.31.6"
         compiler:
@@ -75,6 +77,10 @@ jobs:
               cc: clang
               cxx: clang++
           - flb_option: "-DFLB_COMPILER_STRICT_POINTER_TYPES=On"
+            compiler:
+              cc: clang
+              cxx: clang++
+          - flb_option: "-DFLB_AVRO_ENCODER=On -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
             compiler:
               cc: clang
               cxx: clang++
@@ -105,16 +111,18 @@ jobs:
           sudo ln -s /usr/bin/llvm-symbolizer-12 /usr/bin/llvm-symbolizer || true
 
       - name: Install cmake
-        uses: jwlawson/actions-setup-cmake@v2
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
         with:
           cmake-version: "${{ matrix.cmake_version }}"
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: calyptia/fluent-bit-ci
+          repository: fluent/fluent-bit-ci
           path: ci
+          # Last commit to master branch
+          ref: 17eb004a1b73b1c44986c20a9f4a33fc0961ca45
       - name: Setup Apache Arrow libraries for parquet (-DFLB_ARROW=On Only)
         if: matrix.flb_option == '-DFLB_ARROW=On'
         run: |
@@ -164,15 +172,17 @@ jobs:
       contents: read
     steps:
       - name: Install cmake
-        uses: jwlawson/actions-setup-cmake@v2
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
         with:
           cmake-version: "${{ matrix.cmake_version }}"
 
-      - uses: actions/checkout@v6
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: calyptia/fluent-bit-ci
+          repository: fluent/fluent-bit-ci
           path: ci
+          # Last commit to master branch
+          ref: 17eb004a1b73b1c44986c20a9f4a33fc0961ca45
 
       - name: ${{ matrix.flb_option }}
         run: |
@@ -208,7 +218,7 @@ jobs:
 
     steps:
       - name: Checkout Fluent Bit code
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup environment
         run: |
@@ -270,10 +280,10 @@ jobs:
           - riscv64
     steps:
       - name: Checkout Fluent Bit code
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Prepare and build with QEMU ${{ matrix.arch }}
-        uses: uraimo/run-on-arch-action@v3
+        uses: uraimo/run-on-arch-action@f9b26e3a1a408d5fd530d20c17b9f3f4428ff8d9 # v3.1.0
         id: build-and-test-on-qemu
         with:
           arch: ${{ matrix.arch }}

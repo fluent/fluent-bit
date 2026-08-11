@@ -21,7 +21,7 @@
 #include <monkey/mk_scheduler.h>
 
 #ifdef _WIN32
-#include <event.h>
+#include <mk_core/mk_win32_socketpair.h>
 #endif
 
 static struct mk_fifo_worker *mk_fifo_worker_create(struct mk_fifo *ctx,
@@ -30,6 +30,9 @@ static struct mk_fifo_worker *mk_fifo_worker_create(struct mk_fifo *ctx,
     int id;
     int ret;
     struct mk_fifo_worker *fw;
+#ifdef _WIN32
+    SOCKET channel[2];
+#endif
 
     /* Get an ID */
     id = mk_list_size(&ctx->workers);
@@ -55,9 +58,14 @@ static struct mk_fifo_worker *mk_fifo_worker_create(struct mk_fifo *ctx,
     fw->buf_size = MK_FIFO_BUF_SIZE;
 
 #ifdef _WIN32
-    ret = evutil_socketpair(AF_INET, SOCK_STREAM, 0, fw->channel);
+    ret = mk_win32_socketpair(channel);
+    if (ret == 0) {
+        fw->channel[0] = (mk_fifo_channel_fd) channel[0];
+        fw->channel[1] = (mk_fifo_channel_fd) channel[1];
+    }
     if (ret == -1) {
         perror("socketpair");
+        mk_mem_free(fw->buf_data);
         mk_mem_free(fw);
         return NULL;
     }
@@ -65,6 +73,7 @@ static struct mk_fifo_worker *mk_fifo_worker_create(struct mk_fifo *ctx,
     ret = pipe(fw->channel);
     if (ret == -1) {
         perror("pipe");
+        mk_mem_free(fw->buf_data);
         mk_mem_free(fw);
         return NULL;
     }
@@ -249,8 +258,8 @@ static int mk_fifo_worker_destroy_all(struct mk_fifo *ctx)
         fw = mk_list_entry(head, struct mk_fifo_worker, _head);
 
 #ifdef _WIN32
-        evutil_closesocket(fw->channel[0]);
-        evutil_closesocket(fw->channel[1]);
+        closesocket((SOCKET) fw->channel[0]);
+        closesocket((SOCKET) fw->channel[1]);
 #else
         close(fw->channel[0]);
         close(fw->channel[1]);
@@ -264,14 +273,14 @@ static int mk_fifo_worker_destroy_all(struct mk_fifo *ctx)
     return c;
 }
 
-static int msg_write(int fd, void *buf, size_t count)
+static int msg_write(mk_fifo_channel_fd fd, void *buf, size_t count)
 {
     ssize_t bytes;
     size_t total = 0;
 
     do {
 #ifdef _WIN32
-        bytes = send(fd, (uint8_t *)buf + total, count - total, 0);
+        bytes = send((SOCKET) fd, (uint8_t *)buf + total, count - total, 0);
 #else
         bytes = write(fd, (uint8_t *)buf + total, count - total);
 #endif
@@ -410,7 +419,8 @@ int mk_fifo_worker_read(void *event)
 
     /* Read data from pipe */
 #ifdef _WIN32
-    bytes = recv(fw->channel[0], fw->buf_data + fw->buf_len, available, 0);
+    bytes = recv((SOCKET) fw->channel[0],
+                 fw->buf_data + fw->buf_len, available, 0);
 #else
     bytes = read(fw->channel[0], fw->buf_data + fw->buf_len, available);
 #endif

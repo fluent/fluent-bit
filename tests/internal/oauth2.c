@@ -92,6 +92,8 @@ struct oauth2_mock_server {
     int expires_in;
     char latest_token[64];
     char latest_token_request[MOCK_BODY_SIZE];
+    int token_user_agent_seen;
+    char token_user_agent[256];
     pthread_t thread;
 #ifdef _WIN32
     int wsa_initialized;
@@ -152,9 +154,45 @@ static int request_content_length(const char *request)
     return len;
 }
 
+static int request_header_value(const char *request, const char *header_name,
+                                char *out, size_t out_size)
+{
+    int header_len;
+    const char *end;
+    const char *start;
+    size_t value_len;
+
+    start = strstr(request, header_name);
+    if (!start) {
+        return -1;
+    }
+
+    header_len = strlen(header_name);
+    start += header_len;
+    while (*start == ' ') {
+        start++;
+    }
+
+    end = strstr(start, "\r\n");
+    if (!end) {
+        return -1;
+    }
+
+    value_len = end - start;
+    if (value_len >= out_size) {
+        return -1;
+    }
+
+    memcpy(out, start, value_len);
+    out[value_len] = '\0';
+
+    return 0;
+}
+
 static void handle_token_request(struct oauth2_mock_server *server, flb_sockfd_t fd,
                                  const char *request)
 {
+    int ret;
     char payload[MOCK_BODY_SIZE];
     char *body;
     size_t body_len;
@@ -162,6 +200,16 @@ static void handle_token_request(struct oauth2_mock_server *server, flb_sockfd_t
     server->token_requests++;
     snprintf(server->latest_token, sizeof(server->latest_token),
              "mock-token-%d", server->token_requests);
+
+    server->token_user_agent_seen = FLB_FALSE;
+    server->token_user_agent[0] = '\0';
+    ret = request_header_value(request,
+                               "User-Agent:",
+                               server->token_user_agent,
+                               sizeof(server->token_user_agent));
+    if (ret == 0) {
+        server->token_user_agent_seen = FLB_TRUE;
+    }
 
     body = strstr(request, "\r\n\r\n");
     if (body) {
@@ -464,11 +512,13 @@ static void oauth2_mock_server_stop(struct oauth2_mock_server *server)
 #endif
 }
 
-static struct flb_oauth2 *create_oauth_ctx(struct flb_config *config,
-                                           struct oauth2_mock_server *server,
-                                           int refresh_skew)
+static struct flb_oauth2 *create_oauth_ctx_with_user_agent(struct flb_config *config,
+                                                           struct oauth2_mock_server *server,
+                                                           int refresh_skew,
+                                                           const char *user_agent)
 {
     struct flb_oauth2_config cfg;
+    struct flb_oauth2 *ctx;
 
     memset(&cfg, 0, sizeof(cfg));
     cfg.enabled = FLB_TRUE;
@@ -477,14 +527,75 @@ static struct flb_oauth2 *create_oauth_ctx(struct flb_config *config,
     cfg.refresh_skew = refresh_skew;
     cfg.client_id = flb_sds_create("id");
     cfg.client_secret = flb_sds_create("secret");
+    if (user_agent) {
+        cfg.user_agent = flb_sds_create(user_agent);
+    }
 
     flb_sds_printf(&cfg.token_url, "http://127.0.0.1:%d/token", server->port);
 
-    struct flb_oauth2 *ctx = flb_oauth2_create_from_config(config, &cfg);
+    ctx = flb_oauth2_create_from_config(config, &cfg);
 
     flb_oauth2_config_destroy(&cfg);
 
     return ctx;
+}
+
+static struct flb_oauth2 *create_oauth_ctx(struct flb_config *config,
+                                           struct oauth2_mock_server *server,
+                                           int refresh_skew)
+{
+    return create_oauth_ctx_with_user_agent(config, server, refresh_skew, NULL);
+}
+
+void test_user_agent_header_optional(void)
+{
+    int ret;
+    flb_sds_t token = NULL;
+    struct flb_config *config;
+    struct flb_oauth2 *ctx;
+    struct oauth2_mock_server server;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+
+    ret = oauth2_mock_server_start(&server, 3600, 0);
+    TEST_CHECK(ret == 0);
+
+    ctx = create_oauth_ctx(config, &server, 58);
+    TEST_CHECK(ctx != NULL);
+
+#ifdef FLB_SYSTEM_MACOS
+    ret = oauth2_mock_server_wait_ready(&server);
+    TEST_CHECK(ret == 0);
+#endif
+
+    ret = flb_oauth2_get_access_token(ctx, &token, FLB_FALSE);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(server.token_user_agent_seen == FLB_FALSE);
+
+    flb_oauth2_destroy(ctx);
+    oauth2_mock_server_stop(&server);
+
+    ret = oauth2_mock_server_start(&server, 3600, 0);
+    TEST_CHECK(ret == 0);
+
+    ctx = create_oauth_ctx_with_user_agent(config, &server, 58,
+                                           "oauth2-agent-test/1.0");
+    TEST_CHECK(ctx != NULL);
+
+#ifdef FLB_SYSTEM_MACOS
+    ret = oauth2_mock_server_wait_ready(&server);
+    TEST_CHECK(ret == 0);
+#endif
+
+    ret = flb_oauth2_get_access_token(ctx, &token, FLB_FALSE);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(server.token_user_agent_seen == FLB_TRUE);
+    TEST_CHECK(strcmp(server.token_user_agent, "oauth2-agent-test/1.0") == 0);
+
+    flb_oauth2_destroy(ctx);
+    oauth2_mock_server_stop(&server);
+    flb_config_exit(config);
 }
 
 static struct flb_oauth2 *create_legacy_oauth_ctx(struct flb_config *config,
@@ -1149,6 +1260,7 @@ TEST_LIST = {
      test_parse_rejects_missing_required_fields},
     {"parse_rejects_invalid_expires_in", test_parse_rejects_invalid_expires_in},
     {"caching_and_refresh", test_caching_and_refresh},
+    {"user_agent_header_optional", test_user_agent_header_optional},
     {"legacy_create_manual_payload_flow", test_legacy_create_manual_payload_flow},
     {"private_key_jwt_body", test_private_key_jwt_body},
     {"private_key_jwt_x5t_header", test_private_key_jwt_x5t_header},

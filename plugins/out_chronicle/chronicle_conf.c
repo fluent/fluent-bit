@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_aws_credentials.h>
+#include <fluent-bit/flb_slist.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -38,6 +39,105 @@ static inline int key_cmp(char *str, int len, char *cmp) {
     }
 
     return strncasecmp(str, cmp, len);
+}
+
+static void chronicle_labels_destroy(struct flb_chronicle *ctx)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_chronicle_label *label;
+
+    mk_list_foreach_safe(head, tmp, &ctx->labels) {
+        label = mk_list_entry(head, struct flb_chronicle_label, _head);
+        mk_list_del(&label->_head);
+
+        flb_sds_destroy(label->key);
+        flb_sds_destroy(label->value);
+
+        if (label->ra) {
+            flb_ra_destroy(label->ra);
+        }
+
+        flb_free(label);
+    }
+}
+
+static int chronicle_label_add(struct flb_chronicle *ctx,
+                               char *key, size_t key_len,
+                               char *value, size_t value_len)
+{
+    struct flb_chronicle_label *label;
+
+    if (key == NULL || key_len == 0 || value == NULL) {
+        flb_plg_error(ctx->ins, "label requires a non-empty key and value");
+        return -1;
+    }
+
+    label = flb_calloc(1, sizeof(struct flb_chronicle_label));
+    if (!label) {
+        flb_errno();
+        return -1;
+    }
+
+    label->key = flb_sds_create_len(key, key_len);
+    if (!label->key) {
+        flb_free(label);
+        return -1;
+    }
+
+    label->value = flb_sds_create_len(value, value_len);
+    if (!label->value) {
+        flb_sds_destroy(label->key);
+        flb_free(label);
+        return -1;
+    }
+
+    if (memchr(value, '$', value_len) != NULL) {
+        label->ra = flb_ra_create(label->value, FLB_FALSE);
+        if (!label->ra) {
+            flb_plg_error(ctx->ins, "invalid label record accessor '%s'",
+                          label->value);
+            flb_sds_destroy(label->key);
+            flb_sds_destroy(label->value);
+            flb_free(label);
+            return -1;
+        }
+    }
+
+    mk_list_add(&label->_head, &ctx->labels);
+    return 0;
+}
+
+static int chronicle_configure_labels(struct flb_chronicle *ctx)
+{
+    int ret;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *key;
+    struct flb_slist_entry *val;
+
+    if (ctx->label_properties) {
+        flb_config_map_foreach(head, mv, ctx->label_properties) {
+            if (mk_list_size(mv->val.list) != 2) {
+                flb_plg_error(ctx->ins, "'label' expects a key and a value");
+                return -1;
+            }
+
+            key = mk_list_entry_first(mv->val.list,
+                                      struct flb_slist_entry, _head);
+            val = mk_list_entry_last(mv->val.list,
+                                     struct flb_slist_entry, _head);
+
+            ret = chronicle_label_add(ctx,
+                                      key->str, flb_sds_len(key->str),
+                                      val->str, flb_sds_len(val->str));
+            if (ret != 0) {
+                return -1;
+            }
+        }
+    }
+
+    return 0;
 }
 
 static int flb_chronicle_read_credentials_file(struct flb_chronicle *ctx,
@@ -187,6 +287,7 @@ struct flb_chronicle *flb_chronicle_conf_create(struct flb_output_instance *ins,
     }
     ctx->ins = ins;
     ctx->config = config;
+    mk_list_init(&ctx->labels);
 
     ret = flb_output_config_map_set(ins, (void *)ctx);
     if (ret == -1) {
@@ -298,6 +399,28 @@ struct flb_chronicle *flb_chronicle_conf_create(struct flb_output_instance *ins,
     /* config: 'log_type' */
     if (ctx->log_type == NULL) {
         flb_plg_error(ctx->ins, "property 'log_type' is not defined");
+        flb_chronicle_conf_destroy(ctx);
+        return NULL;
+    }
+
+    if (ctx->namespace && flb_sds_len(ctx->namespace) == 0) {
+        flb_plg_error(ctx->ins, "property 'namespace' cannot be empty");
+        flb_chronicle_conf_destroy(ctx);
+        return NULL;
+    }
+
+    if (ctx->namespace_key) {
+        ctx->namespace_ra = flb_ra_create(ctx->namespace_key, FLB_FALSE);
+        if (!ctx->namespace_ra) {
+            flb_plg_error(ctx->ins, "invalid namespace_key record accessor '%s'",
+                          ctx->namespace_key);
+            flb_chronicle_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    ret = chronicle_configure_labels(ctx);
+    if (ret != 0) {
         flb_chronicle_conf_destroy(ctx);
         return NULL;
     }
@@ -417,6 +540,12 @@ int flb_chronicle_conf_destroy(struct flb_chronicle *ctx)
     if (ctx->o) {
         flb_oauth2_destroy(ctx->o);
     }
+
+    if (ctx->namespace_ra) {
+        flb_ra_destroy(ctx->namespace_ra);
+    }
+
+    chronicle_labels_destroy(ctx);
 
     flb_free(ctx);
     return 0;

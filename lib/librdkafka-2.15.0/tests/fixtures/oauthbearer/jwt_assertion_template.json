@@ -1,0 +1,10 @@
+{
+  "header": {},
+  "payload": {
+    "sub": "testuser-template",
+    "aud": "https://token_endpoint/token",
+    "iss": "my_service",
+    "target_audience": "kafka-cluster",
+    "jti":"94232d62-8b0c-406b-ba12-f92d7f522253"
+  }
+}

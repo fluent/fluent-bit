@@ -27,6 +27,10 @@ endmacro()
 FLB_RT_CORE_TEST(FLB_COROUTINE_TIMEOUT    "core-timeout.c")
 FLB_RT_CORE_TEST(FLB_INTERNAL_LOGGER      "core_internal_logger.c")
 FLB_RT_CORE_TEST(FLB_DOWNSTREAM_ACCEPT_TIMEOUT "core_accept_timeout.c")
+# Uses POSIX alarm()/sigaction() for a watchdog; skip on Windows.
+if(NOT FLB_SYSTEM_WINDOWS)
+  FLB_RT_CORE_TEST(FLB_CORE_SHUTDOWN_SPIN   "core_shutdown_spin.c")
+endif()
 FLB_RT_CORE_TEST(1 "http_client_chunked.c")
 
 FLB_RT_TEST(FLB_CHUNK_TRACE "core_chunk_trace.c")
@@ -62,7 +66,9 @@ if(FLB_OUT_LIB)
   FLB_RT_TEST(FLB_IN_FLUENTBIT_METRICS "in_fluentbit_metrics.c")
   FLB_RT_TEST(FLB_IN_PROMETHEUS_TEXTFILE "in_prometheus_textfile.c")
   FLB_RT_TEST(FLB_IN_KUBERNETES_EVENTS "in_kubernetes_events.c")
-  FLB_RT_TEST(FLB_IN_OPENTELEMETRY "in_opentelemetry_routing.c")
+  if(FLB_HAVE_LIBYAML)
+    FLB_RT_TEST(FLB_IN_OPENTELEMETRY "in_opentelemetry_routing.c")
+  endif()
   if (FLB_IN_SYSTEMD)
     FLB_RT_TEST(FLB_IN_SYSTEMD        "in_systemd.c")
   endif ()
@@ -70,7 +76,7 @@ endif()
 
 if (FLB_CUSTOM_CALYPTIA)
     set(CALYPTIA_TEST_LINK_LIBS
-        fluent-bit-static
+        ${FLB_TEST_LINK_LIBRARY}
         ${CMAKE_THREAD_LIBS_INIT}
     )
 
@@ -85,11 +91,14 @@ if (FLB_CUSTOM_CALYPTIA)
         get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
 
         set(TEST_TARGET "flb-rt-${TEST_NAME}")
-        add_executable(${TEST_TARGET}
-            ${TEST_SOURCE}
-            "../../plugins/custom_calyptia/calyptia.c"
-            "../../plugins/in_calyptia_fleet/in_calyptia_fleet.c"
-        )
+        add_executable(${TEST_TARGET} ${TEST_SOURCE})
+
+        if("${FLB_TEST_LINK_LIBRARY}" STREQUAL "fluent-bit-static")
+            target_sources(${TEST_TARGET} PRIVATE
+                "../../plugins/custom_calyptia/calyptia.c"
+                "../../plugins/in_calyptia_fleet/in_calyptia_fleet.c"
+            )
+        endif()
 
         target_link_libraries(${TEST_TARGET}
             ${CALYPTIA_TEST_LINK_LIBS}
@@ -100,8 +109,12 @@ if (FLB_CUSTOM_CALYPTIA)
                  WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
 
         set_tests_properties(${TEST_TARGET} PROPERTIES LABELS "runtime")
-        add_dependencies(${TEST_TARGET} fluent-bit-static)
+        add_dependencies(${TEST_TARGET} ${FLB_TEST_LINK_LIBRARY})
     endforeach()
+endif()
+
+if(FLB_IN_LIB AND FLB_OUT_HTTP AND FLB_OUT_NULL AND FLB_IN_STORAGE_BACKLOG)
+  FLB_RT_TEST(FLB_IN_STORAGE_BACKLOG "in_storage_backlog.c")
 endif()
 
 if(FLB_IN_EBPF)
@@ -111,7 +124,7 @@ if(FLB_IN_EBPF)
     )
 
     set(EBPF_TEST_LINK_LIBS
-        fluent-bit-static
+        ${FLB_TEST_LINK_LIBRARY}
         ${CMAKE_THREAD_LIBS_INIT}
         ${SYSTEMD_LIB}
         -lbpf
@@ -177,11 +190,25 @@ if(FLB_IN_EBPF)
         "../../plugins/in_ebpf/traces/exec/handler.c"
     )
 
-    add_dependencies(flb-rt-in_ebpf_bind_handler fluent-bit-static)
-    add_dependencies(flb-rt-in_ebpf_signal_handler fluent-bit-static)
-    add_dependencies(flb-rt-in_ebpf_malloc_handler fluent-bit-static)
-    add_dependencies(flb-rt-in_ebpf_tcp_handler fluent-bit-static)
-    add_dependencies(flb-rt-in_ebpf_exec_handler fluent-bit-static)
+    add_ebpf_handler_test(
+        "openssl"
+        "in_ebpf_openssl_handler.c"
+        "../../plugins/in_ebpf/traces/openssl/handler.c"
+    )
+
+    add_ebpf_handler_test(
+        "sched"
+        "in_ebpf_sched_handler.c"
+        "../../plugins/in_ebpf/traces/sched/handler.c"
+    )
+
+    add_dependencies(flb-rt-in_ebpf_bind_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_signal_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_malloc_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_tcp_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_exec_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_openssl_handler ${FLB_TEST_LINK_LIBRARY})
+    add_dependencies(flb-rt-in_ebpf_sched_handler ${FLB_TEST_LINK_LIBRARY})
 
 endif()
 
@@ -263,8 +290,10 @@ if(FLB_IN_LIB)
     # These plugins work only on Linux
   if(NOT FLB_SYSTEM_WINDOWS)
     FLB_RT_TEST(FLB_OUT_FILE              "out_file.c")
+    FLB_RT_TEST(FLB_OUT_FILE              "out_file_rotation.c")
   endif()
   FLB_RT_TEST(FLB_OUT_S3                "out_s3.c")
+  FLB_RT_TEST(FLB_OUT_GCS               "out_gcs.c")
   if (FLB_IN_OPENTELEMETRY AND FLB_OUT_S3)
     FLB_RT_TEST(FLB_OUT_S3              "out_s3_otlp_json.c")
   endif()
@@ -301,10 +330,29 @@ if(FLB_HAVE_SYSTEMD)
     set(SYSTEMD_LIB, "systemd")
 endif()
 
-set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+if(FLB_SYSTEM_WINDOWS)
+  set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_BINARY_DIR})
+  file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/data"
+       DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+  configure_file("${PROJECT_SOURCE_DIR}/conf/parsers.conf"
+                 "${CMAKE_CURRENT_BINARY_DIR}/data/common/parsers.conf"
+                 COPYONLY)
+else()
+  set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h.in"
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h"
+  )
+
+set(FLB_RT_SIMPLE_SYSTEMS_TESTS
+  in_cpu.c
+  in_disk.c
+  in_dummy.c
+  in_head.c
+  in_mem.c
+  in_proc.c
+  in_random.c
   )
 
 foreach(source_file ${CHECK_PROGRAMS})
@@ -313,13 +361,22 @@ foreach(source_file ${CHECK_PROGRAMS})
   if(FLB_WITHOUT_${source_file_we})
     message("Skipping test ${source_file_we}")
   else()
+    set(resolved_source_file ${source_file})
+    list(FIND FLB_RT_SIMPLE_SYSTEMS_TESTS ${source_file} simple_systems_test)
+    if(NOT simple_systems_test EQUAL -1)
+      set(resolved_source_file in_simple_systems.c)
+    endif()
+
     add_executable(
       ${source_file_we}
-      ${source_file}
+      ${resolved_source_file}
       )
     add_sanitizers(${source_file_we})
+    if(MSVC AND o_source_file_we STREQUAL "filter_aws")
+      target_compile_options(${source_file_we} PRIVATE /Zc:preprocessor)
+    endif()
     target_link_libraries(${source_file_we}
-      fluent-bit-static
+      ${FLB_TEST_LINK_LIBRARY}
       ${CMAKE_THREAD_LIBS_INIT}
       ${SYSTEMD_LIB}
       )

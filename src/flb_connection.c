@@ -26,6 +26,8 @@ int flb_connection_setup(struct flb_connection *connection,
     connection->ts_assigned             = time(NULL);
     connection->busy_flag               = FLB_FALSE;
     connection->shutdown_flag           = FLB_FALSE;
+    connection->event_wakeup_pending     = FLB_FALSE;
+    connection->event_release_pending    = FLB_FALSE;
 
     connection->net = &connection->stream->net;
 
@@ -97,11 +99,20 @@ static void compose_user_friendly_remote_host(struct flb_connection *connection)
                  connection->remote_port);
     }
     else if (connection_type == FLB_TRANSPORT_UDP) {
-        snprintf(connection->user_friendly_remote_host,
-                 sizeof(connection->user_friendly_remote_host),
-                 "udp://%s:%u",
-                 connection->remote_host,
-                 connection->remote_port);
+        if (flb_stream_get_flag_status(connection->stream, FLB_IO_DTLS)) {
+            snprintf(connection->user_friendly_remote_host,
+                     sizeof(connection->user_friendly_remote_host),
+                     "dtls://%s:%u",
+                     connection->remote_host,
+                     connection->remote_port);
+        }
+        else {
+            snprintf(connection->user_friendly_remote_host,
+                     sizeof(connection->user_friendly_remote_host),
+                     "udp://%s:%u",
+                     connection->remote_host,
+                     connection->remote_port);
+        }
     }
     else if (connection_type == FLB_TRANSPORT_UNIX_STREAM) {
         snprintf(connection->user_friendly_remote_host,
@@ -196,7 +207,17 @@ char *flb_connection_get_remote_address(struct flb_connection *connection)
 
 int flb_connection_get_flags(struct flb_connection *connection)
 {
-    return flb_stream_get_flags(connection->stream);
+    return flb_stream_get_flags(connection->stream) | connection->flags;
+}
+
+void flb_connection_enable_flags(struct flb_connection *connection, int flags)
+{
+    connection->flags |= flags;
+}
+
+void flb_connection_disable_flags(struct flb_connection *connection, int flags)
+{
+    connection->flags &= ~flags;
 }
 
 void flb_connection_reset_connection_timeout(struct flb_connection *connection)

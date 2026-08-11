@@ -65,6 +65,7 @@ DEB_REPO_PATHS=( "debian/bookworm"
                  "debian/trixie"
                  "ubuntu/jammy"
                  "ubuntu/noble"
+                 "ubuntu/resolute"
                  "raspbian/bookworm"
                 )
 

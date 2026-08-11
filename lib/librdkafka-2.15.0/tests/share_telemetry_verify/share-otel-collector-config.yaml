@@ -1,0 +1,28 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    send_batch_max_size: 100
+    send_batch_size: 10
+    timeout: 5s
+
+exporters:
+  kafka:
+    brokers:
+      - host.docker.internal:19092
+    metrics:
+      topic: ${env:TELEMETRY_TOPIC}
+      encoding: otlp_proto
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [kafka, debug]

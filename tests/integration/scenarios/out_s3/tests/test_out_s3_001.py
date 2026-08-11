@@ -1,6 +1,9 @@
 import gzip
 import json
 import os
+import glob
+import time
+import shutil
 
 import requests
 import pytest
@@ -137,6 +140,22 @@ def _start_or_skip_unsupported_s3_format(service, format_name):
         raise
 
 
+def _start_or_skip_unsupported_columnar_format(service, requires_marker):
+    """Start the service, skipping if the columnar format support
+    (arrow-glib/parquet-glib) was not compiled into the Fluent Bit binary."""
+    try:
+        service.start()
+    except FluentBitStartupError:
+        log_contents = ""
+        if service.service.flb and service.service.flb.log_file:
+            with open(service.service.flb.log_file, "r", encoding="utf-8", errors="replace") as file:
+                log_contents = file.read()
+        if requires_marker in log_contents or \
+                "unknown configuration property 'format'" in log_contents:
+            pytest.skip("columnar format support is not compiled into this Fluent Bit binary")
+        raise
+
+
 def test_out_s3_put_object_uploads_json_lines_payload():
     service = Service("out_s3_basic.yaml")
     service.start()
@@ -218,3 +237,94 @@ def test_out_s3_otlp_json_uploads_signal_payloads(signal_type, json_file, root_k
 
     rendered = json.dumps(payload)
     assert expected_value in rendered
+
+
+def test_out_s3_default_retry_exhausted_action_quarantines_file():
+    store_dir = "/tmp/fluent-bit-test-suite-s3-retry-exhausted"
+    if os.path.exists(store_dir):
+        shutil.rmtree(store_dir)
+    os.makedirs(store_dir, exist_ok=True)
+
+    service = Service("out_s3_retry_exhausted_default_quarantine.yaml")
+    service.start()
+    timeout = time.time() + 10
+    files = []
+    while time.time() < timeout:
+        files = [p for p in glob.glob(f"{store_dir}/**", recursive=True) if os.path.isfile(p)]
+        if len(files) > 0:
+            break
+        time.sleep(0.2)
+    service.stop()
+
+    assert len(files) > 0
+
+
+def test_out_s3_format_arrow_uploads_feather_with_zstd():
+    service = Service("out_s3_arrow.yaml")
+    _start_or_skip_unsupported_columnar_format(service, "requires arrow-glib")
+    request = service.wait_for_request()
+    service.stop()
+
+    assert request["method"] == "PUT"
+    assert request["path"].startswith("/test-bucket/payloads/out_s3/")
+    body = request["body"]
+    # Arrow/Feather V2 files begin with the "ARROW1" magic. The object is the
+    # columnar file itself, so it must not carry a byte-level Content-Encoding.
+    assert body[:6] == b"ARROW1"
+    assert "Content-Encoding" not in request["headers"]
+
+
+def test_out_s3_format_parquet_uploads_parquet_with_zstd():
+    service = Service("out_s3_parquet.yaml")
+    _start_or_skip_unsupported_columnar_format(service, "requires parquet-glib")
+    request = service.wait_for_request()
+    service.stop()
+
+    assert request["method"] == "PUT"
+    assert request["path"].startswith("/test-bucket/payloads/out_s3/")
+    body = request["body"]
+    # Parquet files start and end with the "PAR1" magic. Page-level zstd is
+    # applied inside the file, so no byte-level Content-Encoding is expected.
+    assert body[:4] == b"PAR1"
+    assert body[-4:] == b"PAR1"
+    assert "Content-Encoding" not in request["headers"]
+
+
+def test_out_s3_format_parquet_compression_none_is_accepted():
+    # 'compression none' must be explicitly accepted (not rejected as an
+    # unknown codec) and produce an uncompressed Parquet object with no
+    # byte-level Content-Encoding header.
+    service = Service("out_s3_parquet_none.yaml")
+    _start_or_skip_unsupported_columnar_format(service, "requires parquet-glib")
+    request = service.wait_for_request()
+    service.stop()
+
+    assert request["method"] == "PUT"
+    body = request["body"]
+    assert body[:4] == b"PAR1"
+    assert body[-4:] == b"PAR1"
+    assert "Content-Encoding" not in request["headers"]
+
+
+def test_out_s3_format_arrow_compression_none_is_accepted():
+    # 'compression none' must be explicitly accepted (not rejected as an
+    # unknown codec) and produce an uncompressed Arrow/Feather object with no
+    # byte-level Content-Encoding header.
+    service = Service("out_s3_arrow_none.yaml")
+    _start_or_skip_unsupported_columnar_format(service, "requires arrow-glib")
+    request = service.wait_for_request()
+    service.stop()
+
+    assert request["method"] == "PUT"
+    body = request["body"]
+    assert body[:6] == b"ARROW1"
+    assert "Content-Encoding" not in request["headers"]
+
+
+def test_out_s3_format_arrow_compression_gzip_is_rejected():
+    # format=arrow with compression=gzip is an invalid combination;
+    # validate_format_compression() must reject it at plugin init.
+    service = Service("out_s3_arrow_gzip_invalid.yaml")
+    with pytest.raises(FluentBitStartupError):
+        service.start()
+    service.stop()

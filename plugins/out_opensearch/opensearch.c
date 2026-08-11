@@ -225,6 +225,21 @@ static flb_sds_t os_get_id_value(struct flb_opensearch *ctx,
     return tmp_str;
 }
 
+static int os_action_line_value_is_safe(const char *value, size_t len)
+{
+    size_t i;
+    unsigned char c;
+
+    for (i = 0; i < len; i++) {
+        c = (unsigned char) value[i];
+        if (c == '\n' || c == '\r' || c == '"' || c == '\\' || c < 0x20) {
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
 static int compose_index_header(struct flb_opensearch *ctx,
                                 int index_custom_len,
                                 char *logstash_index, size_t logstash_index_size,
@@ -283,6 +298,8 @@ static int opensearch_format(struct flb_config *config,
     int index_len = 0;
     int write_op_update = FLB_FALSE;
     int write_op_upsert = FLB_FALSE;
+    int id_key_required = FLB_FALSE;
+    int id_key_safe;
     flb_sds_t ra_index = NULL;
     size_t s = 0;
     char *index = NULL;
@@ -330,10 +347,16 @@ static int opensearch_format(struct flb_config *config,
         return -1;
     }
 
-    /* Copy logstash prefix if logstash format is enabled */
-    if (ctx->logstash_format == FLB_TRUE) {
-        strncpy(logstash_index, ctx->logstash_prefix, sizeof(logstash_index));
-        logstash_index[sizeof(logstash_index) - 1] = '\0';
+    if (strcasecmp(ctx->write_operation, FLB_OS_WRITE_OP_UPDATE) == 0) {
+        write_op_update = FLB_TRUE;
+    }
+    else if (strcasecmp(ctx->write_operation, FLB_OS_WRITE_OP_UPSERT) == 0) {
+        write_op_upsert = FLB_TRUE;
+    }
+
+    if (ctx->ra_id_key && ctx->generate_id == FLB_FALSE &&
+        (write_op_update == FLB_TRUE || write_op_upsert == FLB_TRUE)) {
+        id_key_required = FLB_TRUE;
     }
 
     /*
@@ -393,6 +416,12 @@ static int opensearch_format(struct flb_config *config,
         map      = *log_event.body;
         map_size = map.via.map.size;
 
+        /* Copy logstash prefix for the per-record fallback path. */
+        if (ctx->logstash_format == FLB_TRUE) {
+            strncpy(logstash_index, ctx->logstash_prefix, sizeof(logstash_index));
+            logstash_index[sizeof(logstash_index) - 1] = '\0';
+        }
+
         index_custom_len = 0;
         if (ctx->logstash_prefix_key) {
             flb_sds_t v = flb_ra_translate(ctx->ra_prefix_key,
@@ -400,15 +429,17 @@ static int opensearch_format(struct flb_config *config,
                                            map, NULL);
             if (v) {
                 len = flb_sds_len(v);
-                if (len > 128) {
-                    len = 128;
-                    memcpy(logstash_index, v, 128);
-                }
-                else {
-                    memcpy(logstash_index, v, len);
-                }
+                if (os_action_line_value_is_safe(v, len) == FLB_TRUE) {
+                    if (len > 128) {
+                        len = 128;
+                        memcpy(logstash_index, v, 128);
+                    }
+                    else {
+                        memcpy(logstash_index, v, len);
+                    }
 
-                index_custom_len = len;
+                    index_custom_len = len;
+                }
                 flb_sds_destroy(v);
             }
         }
@@ -492,6 +523,11 @@ static int opensearch_format(struct flb_config *config,
             if (!ra_index) {
                 flb_plg_warn(ctx->ins, "invalid index translation from record accessor pattern, default to static index");
             }
+            else if (os_action_line_value_is_safe(ra_index,
+                                                  flb_sds_len(ra_index)) == FLB_FALSE) {
+                flb_sds_destroy(ra_index);
+                ra_index = NULL;
+            }
             else {
                 index = ra_index;
             }
@@ -566,7 +602,15 @@ static int opensearch_format(struct flb_config *config,
         }
         if (ctx->ra_id_key) {
             id_key_str = os_get_id_value(ctx ,&map);
-            if (id_key_str) {
+            id_key_safe = FLB_FALSE;
+
+            if (id_key_str &&
+                os_action_line_value_is_safe(id_key_str,
+                                             flb_sds_len(id_key_str)) == FLB_TRUE) {
+                id_key_safe = FLB_TRUE;
+            }
+
+            if (id_key_safe == FLB_TRUE) {
                 if (ctx->suppress_type_name) {
                     index_len = flb_sds_snprintf(&j_index,
                                                  flb_sds_alloc(j_index),
@@ -581,6 +625,35 @@ static int opensearch_format(struct flb_config *config,
                                                  ctx->action,
                                                  index, ctx->type, id_key_str);
                 }
+            }
+            else if (id_key_required == FLB_TRUE) {
+                flb_plg_warn(ctx->ins,
+                             "skipping record with missing or unsafe Id_Key value");
+                if (id_key_str) {
+                    flb_sds_destroy(id_key_str);
+                    id_key_str = NULL;
+                }
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                continue;
+            }
+            else if (ctx->generate_id == FLB_FALSE && id_key_str) {
+                if (ctx->suppress_type_name) {
+                    index_len = flb_sds_snprintf(&j_index,
+                                                 flb_sds_alloc(j_index),
+                                                 OS_BULK_INDEX_FMT_NO_TYPE,
+                                                 ctx->action,
+                                                 index);
+                }
+                else {
+                    index_len = flb_sds_snprintf(&j_index,
+                                                 flb_sds_alloc(j_index),
+                                                 OS_BULK_INDEX_FMT,
+                                                 ctx->action,
+                                                 index, ctx->type);
+                }
+            }
+
+            if (id_key_str) {
                 flb_sds_destroy(id_key_str);
                 id_key_str = NULL;
             }
@@ -611,13 +684,6 @@ static int opensearch_format(struct flb_config *config,
                 flb_sds_destroy(ra_index);
             }
             return -1;
-        }
-
-        if (strcasecmp(ctx->write_operation, FLB_OS_WRITE_OP_UPDATE) == 0) {
-            write_op_update = FLB_TRUE;
-        }
-        else if (strcasecmp(ctx->write_operation, FLB_OS_WRITE_OP_UPSERT) == 0) {
-            write_op_upsert = FLB_TRUE;
         }
 
         /* UPDATE | UPSERT */
@@ -911,6 +977,12 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     if (ret != 0) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
+    if (out_size == 0) {
+        flb_sds_destroy(out_buf);
+        flb_upstream_conn_release(u_conn);
+        FLB_OUTPUT_RETURN(FLB_OK);
     }
 
     pack = (char *) out_buf;

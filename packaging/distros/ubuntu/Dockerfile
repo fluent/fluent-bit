@@ -257,6 +257,56 @@ RUN apt-get update && \
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
+# ubuntu/26.04 base image
+FROM ubuntu:26.04 AS ubuntu-26.04-base
+ENV DEBIAN_FRONTEND="noninteractive" \
+    CMAKE_HOME="/opt/cmake"
+
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
+# hadolint ignore=DL3008,DL3015
+RUN apt-get update && \
+    apt-get install -y curl ca-certificates build-essential libsystemd-dev \
+    make bash wget unzip nano vim valgrind dh-make flex bison \
+    libpq-dev postgresql-server-dev-all libpq5 \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
+    libyaml-dev pkg-config zlib1g-dev \
+    tar gzip && \
+    apt-get install -y --reinstall lsb-base lsb-release && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+
+# ubuntu/26.04.arm64v8 base image
+FROM arm64v8/ubuntu:26.04 AS ubuntu-26.04.arm64v8-base
+ENV DEBIAN_FRONTEND="noninteractive" \
+    CMAKE_HOME="/opt/cmake"
+
+COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+
+ARG CMAKE_VERSION="3.31.6"
+ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+
+# hadolint ignore=DL3008,DL3015
+RUN apt-get update && \
+    apt-get install -y curl ca-certificates build-essential libsystemd-dev \
+    make bash wget unzip nano vim valgrind dh-make flex bison \
+    libpq-dev postgresql-server-dev-all libpq5 \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
+    libyaml-dev pkg-config zlib1g-dev \
+    tar gzip && \
+    apt-get install -y --reinstall lsb-base lsb-release && \
+    mkdir -p "${CMAKE_HOME}" && \
+    cmake_download_url="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-$(uname -m).tar.gz" && \
+    echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
+    curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
+
+ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+
 # Common build for all distributions now
 # hadolint ignore=DL3006
 FROM $BASE_BUILDER AS builder

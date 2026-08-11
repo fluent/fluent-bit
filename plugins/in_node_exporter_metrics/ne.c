@@ -36,6 +36,7 @@
 #include "ne_uname.h"
 #include "ne_stat.h"
 #include "ne_time.h"
+#include "ne_timex.h"
 #include "ne_loadavg.h"
 #include "ne_vmstat.h"
 #include "ne_netdev.h"
@@ -47,6 +48,7 @@
 #include "ne_nvme.h"
 #include "ne_thermalzone.h"
 #include "ne_hwmon.h"
+#include "ne_powersupply.h"
 
 /*
  * Update the metrics, this function is invoked every time 'scrape_interval'
@@ -192,6 +194,7 @@ static int in_ne_init(struct flb_input_instance *in,
     mk_list_add(&uname_collector._head, &ctx->collectors);
     mk_list_add(&stat_collector._head, &ctx->collectors);
     mk_list_add(&time_collector._head, &ctx->collectors);
+    mk_list_add(&timex_collector._head, &ctx->collectors);
     mk_list_add(&loadavg_collector._head, &ctx->collectors);
     mk_list_add(&vmstat_collector._head, &ctx->collectors);
     mk_list_add(&netdev_collector._head, &ctx->collectors);
@@ -204,6 +207,7 @@ static int in_ne_init(struct flb_input_instance *in,
     mk_list_add(&nvme_collector._head, &ctx->collectors);
     mk_list_add(&thermalzone_collector._head, &ctx->collectors);
     mk_list_add(&hwmon_collector._head, &ctx->collectors);
+    mk_list_add(&powersupply_collector._head, &ctx->collectors);
 
     mk_list_foreach(head, &ctx->collectors) {
         coll = mk_list_entry(head, struct flb_ne_collector, _head);
@@ -371,6 +375,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_TIME, "collector.time.scrape_interval", "0",
      0, FLB_FALSE, 0,
      "scrape interval to collect time metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "collector.timex.scrape_interval", "0",
+     0, FLB_FALSE, 0,
+     "scrape interval to collect timex metrics from the node."
     },
 
     {

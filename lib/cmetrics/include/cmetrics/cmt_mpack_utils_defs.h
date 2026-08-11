@@ -35,6 +35,5 @@
 
 #define CMT_MPACK_MAX_ARRAY_ENTRY_COUNT      65535
 #define CMT_MPACK_MAX_MAP_ENTRY_COUNT        10
-#define CMT_MPACK_MAX_STRING_LENGTH          1024
 
 #endif

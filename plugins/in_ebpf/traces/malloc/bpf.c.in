@@ -15,6 +15,7 @@
 #include <gadget/types.h>
 
 #include "common/events.h"
+#include "common/event_id.bpf.h"
 
 #define MAX_ENTRIES 10240
 
@@ -72,6 +73,7 @@ static int gen_alloc_exit(struct pt_regs *ctx, enum memop op, u64 addr) {
 
     u64 uid_gid = bpf_get_current_uid_gid();
 
+    generate_event_id(&eventp->common.event_id);
     eventp->common.timestamp_raw = bpf_ktime_get_ns();
     eventp->common.pid = tid >> 32;
     eventp->common.tid = tid;
@@ -102,6 +104,7 @@ static int gen_free_enter(struct pt_regs *ctx, enum memop op, u64 addr) {
 
     u32 tid = (u32)bpf_get_current_pid_tgid();
 
+    generate_event_id(&eventp->common.event_id);
     eventp->common.timestamp_raw = bpf_ktime_get_ns();
     eventp->common.pid = tid >> 32;
     eventp->common.tid = tid;

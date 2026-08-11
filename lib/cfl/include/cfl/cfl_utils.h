@@ -2,7 +2,9 @@
 #define CFL_UTILS_H
 
 #include <sys/types.h> /* off_t */
+
 #include <cfl/cfl_sds.h>
+#include <cfl/cfl_list.h>
 #include <cfl/cfl_compat.h>
 
 struct cfl_split_entry {

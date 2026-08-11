@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_parser.h>
@@ -34,6 +35,7 @@
 #include "kubernetes_aws.h"
 
 #include <stdio.h>
+#include <errno.h>
 #include <msgpack.h>
 #include <sys/stat.h>
 
@@ -41,32 +43,70 @@
 #define MERGE_NONE        0 /* merge unescaped string in temporary buffer */
 #define MERGE_PARSED      1 /* merge parsed string (log_buf)             */
 #define MERGE_MAP         2 /* merge direct binary object (v)            */
+#define FLB_KUBE_LOCAL_LOGS_INPUT "fluentbit_logs"
 
-struct task_args {
-    struct flb_kube *ctx;
-    char *api_server_url;
-};
-
-pthread_mutex_t metadata_mutex;
-pthread_t background_thread;
-struct task_args *task_args = {0};
-struct mk_event_loop *evl;
-
-void *update_pod_service_map(void *arg)
+static int wait_for_pod_service_map_refresh(struct flb_kube *ctx)
 {
+    int ret;
+    int shutdown;
+    struct flb_time current_time;
+    struct timespec deadline;
+
+    pthread_mutex_lock(&ctx->aws_pod_service_mutex);
+
+    flb_time_get(&current_time);
+    deadline = current_time.tm;
+    deadline.tv_sec += ctx->aws_pod_service_map_refresh_interval;
+
+    while (!ctx->aws_pod_service_shutdown) {
+        ret = pthread_cond_timedwait(&ctx->aws_pod_service_cond,
+                                     &ctx->aws_pod_service_mutex,
+                                     &deadline);
+        if (ret == ETIMEDOUT) {
+            break;
+        }
+        else if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "Failed waiting for pod service map refresh");
+            break;
+        }
+    }
+
+    shutdown = ctx->aws_pod_service_shutdown;
+    pthread_mutex_unlock(&ctx->aws_pod_service_mutex);
+
+    return shutdown;
+}
+
+static void *update_pod_service_map(void *arg)
+{
+    struct flb_kube *ctx;
+
+    ctx = arg;
+
     flb_engine_evl_init();
-    evl = mk_event_loop_create(256);
-    if (evl == NULL) {
-        flb_plg_error(task_args->ctx->ins,
+    ctx->aws_pod_service_event_loop = mk_event_loop_create(256);
+    if (ctx->aws_pod_service_event_loop == NULL) {
+        flb_plg_error(ctx->ins,
                       "Failed to create event loop for pod service map");
         return NULL;
     }
-    flb_engine_evl_set(evl);
+    flb_engine_evl_set(ctx->aws_pod_service_event_loop);
+
     while (1) {
-        fetch_pod_service_map(task_args->ctx,task_args->api_server_url,&metadata_mutex);
-        flb_plg_debug(task_args->ctx->ins, "Updating pod to service map after %d seconds", task_args->ctx->aws_pod_service_map_refresh_interval);
-        sleep(task_args->ctx->aws_pod_service_map_refresh_interval);
+        fetch_pod_service_map(ctx,
+                              ctx->aws_pod_association_endpoint,
+                              &ctx->aws_pod_service_mutex);
+        flb_plg_debug(ctx->ins,
+                      "Updating pod to service map after %d seconds",
+                      ctx->aws_pod_service_map_refresh_interval);
+
+        if (wait_for_pod_service_map_refresh(ctx)) {
+            break;
+        }
     }
+
+    return NULL;
 }
 
 static int get_stream(msgpack_object_map map)
@@ -237,24 +277,38 @@ static int cb_kube_init(struct flb_filter_instance *f_ins,
      */
     flb_kube_meta_init(ctx, config);
 
-/*
- * Init separate thread for calling pod to
- * service map
- */
-    pthread_mutex_init(&metadata_mutex, NULL);
-
     if (ctx->aws_use_pod_association) {
-        task_args = flb_malloc(sizeof(struct task_args));
-        if (!task_args) {
-            flb_errno();
+        ret = pthread_mutex_init(&ctx->aws_pod_service_mutex, NULL);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "Failed to initialize pod service map mutex");
+            flb_kube_conf_destroy(ctx);
             return -1;
         }
-        task_args->ctx = ctx;
-        task_args->api_server_url = ctx->aws_pod_association_endpoint;
-        if (pthread_create(&background_thread, NULL, update_pod_service_map, NULL) != 0) {
-            flb_error("Failed to create background thread");
-            background_thread = 0;
-            flb_free(task_args);
+
+        ret = pthread_cond_init(&ctx->aws_pod_service_cond, NULL);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "Failed to initialize pod service map condition");
+            pthread_mutex_destroy(&ctx->aws_pod_service_mutex);
+            flb_kube_conf_destroy(ctx);
+            return -1;
+        }
+        ctx->aws_pod_service_sync_initialized = FLB_TRUE;
+
+        ret = pthread_create(&ctx->aws_pod_service_thread,
+                             NULL,
+                             update_pod_service_map,
+                             ctx);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "Failed to create pod service map background thread");
+            pthread_cond_destroy(&ctx->aws_pod_service_cond);
+            pthread_mutex_destroy(&ctx->aws_pod_service_mutex);
+            ctx->aws_pod_service_sync_initialized = FLB_FALSE;
+        }
+        else {
+            ctx->aws_pod_service_thread_created = FLB_TRUE;
         }
     }
 
@@ -624,6 +678,15 @@ static int cb_kube_filter(const void *data, size_t bytes,
             ret = flb_kube_dummy_meta_get(&dummy_cache_buf, &cache_size);
             cache_buf = dummy_cache_buf;
         }
+        else if (i_ins != NULL && i_ins->p != NULL &&
+                 strcmp(i_ins->p->name, FLB_KUBE_LOCAL_LOGS_INPUT) == 0) {
+            ret = flb_kube_meta_get_local(ctx,
+                                          &cache_buf, &cache_size,
+                                          &namespace_cache_buf,
+                                          &namespace_cache_size,
+                                          &meta, &props,
+                                          &namespace_meta);
+        }
         else {
             /* Check if we have some cached metadata for the incoming events */
             ret = flb_kube_meta_get(ctx,
@@ -813,20 +876,30 @@ static int cb_kube_exit(void *data, struct flb_config *config)
     struct flb_kube *ctx;
 
     ctx = data;
-    
-    flb_kube_conf_destroy(ctx);
-    if (background_thread) {
-        pthread_cancel(background_thread);
-        pthread_join(background_thread, NULL);
-    }
-    pthread_mutex_destroy(&metadata_mutex);
 
-    if (task_args) {
-        flb_free(task_args);
+    if (ctx->aws_pod_service_thread_created) {
+        pthread_mutex_lock(&ctx->aws_pod_service_mutex);
+        ctx->aws_pod_service_shutdown = FLB_TRUE;
+        pthread_cond_signal(&ctx->aws_pod_service_cond);
+        pthread_mutex_unlock(&ctx->aws_pod_service_mutex);
+
+        pthread_join(ctx->aws_pod_service_thread, NULL);
+        ctx->aws_pod_service_thread_created = FLB_FALSE;
     }
-    if (evl) {
-        mk_event_loop_destroy(evl);
+
+    if (ctx->aws_pod_service_event_loop) {
+        mk_event_loop_destroy(ctx->aws_pod_service_event_loop);
+        ctx->aws_pod_service_event_loop = NULL;
     }
+
+    if (ctx->aws_pod_service_sync_initialized) {
+        pthread_cond_destroy(&ctx->aws_pod_service_cond);
+        pthread_mutex_destroy(&ctx->aws_pod_service_mutex);
+        ctx->aws_pod_service_sync_initialized = FLB_FALSE;
+    }
+
+    flb_kube_conf_destroy(ctx);
+
     return 0;
 }
 
@@ -941,6 +1014,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "kube_tag_prefix", FLB_KUBE_TAG_PREFIX,
      0, FLB_TRUE, offsetof(struct flb_kube, kube_tag_prefix),
      "prefix used in tag by the input plugin"
+    },
+
+    /* Kubernetes Namespace file */
+    {
+     FLB_CONFIG_MAP_STR, "kube_namespace_file", FLB_KUBE_NAMESPACE,
+     0, FLB_TRUE, offsetof(struct flb_kube, namespace_file),
+     "Kubernetes namespace file"
     },
 
     /* Kubernetes Token file */

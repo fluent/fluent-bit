@@ -24,6 +24,7 @@
 #include <mpack/mpack.h>
 #include <msgpack.h>
 #include <msgpack/timestamp.h>
+#include <string.h>
 #include "flb_tests_internal.h"
 
 #define SEC_32BIT  1647061992 /* 0x622c2be8 */
@@ -212,6 +213,71 @@ void test_msgpack_to_time_eventtime()
     msgpack_unpacked_destroy(&result);
 }
 
+void test_eventtime_boundaries()
+{
+    struct flb_time tm;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_unpacked result;
+    msgpack_object tm_obj;
+    uint32_t value[2];
+    int ret;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    value[0] = htonl(UINT32_MAX - 2);
+    value[1] = htonl(999999999);
+    msgpack_pack_ext(&mp_pck, 8, 0);
+    msgpack_pack_ext_body(&mp_pck, value, sizeof(value));
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, NULL);
+    tm_obj = result.data;
+    ret = flb_time_msgpack_to_time(&tm, &tm_obj);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(tm.tm.tv_sec == (time_t) (UINT32_MAX - 2));
+    TEST_CHECK(tm.tm.tv_nsec == 999999999);
+    msgpack_unpacked_destroy(&result);
+
+    msgpack_sbuffer_clear(&mp_sbuf);
+    value[0] = htonl(2209072510U);
+    value[1] = htonl(808241446);
+    msgpack_pack_ext(&mp_pck, 8, 0);
+    msgpack_pack_ext_body(&mp_pck, value, sizeof(value));
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, NULL);
+    tm_obj = result.data;
+    ret = flb_time_msgpack_to_time(&tm, &tm_obj);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(tm.tm.tv_sec == (time_t) 2209072510U);
+    TEST_CHECK(tm.tm.tv_nsec == 808241446);
+    msgpack_unpacked_destroy(&result);
+
+    msgpack_sbuffer_clear(&mp_sbuf);
+    value[0] = htonl(2209072510U);
+    value[1] = htonl(1000000000U);
+    msgpack_pack_ext(&mp_pck, 8, 0);
+    msgpack_pack_ext_body(&mp_pck, value, sizeof(value));
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, NULL);
+    tm_obj = result.data;
+    ret = flb_time_msgpack_to_time(&tm, &tm_obj);
+    TEST_CHECK(ret != 0);
+    msgpack_unpacked_destroy(&result);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+}
+
+void test_from_uint64_post_2038()
+{
+    struct flb_time tm;
+    int ret;
+
+    ret = flb_time_from_uint64(&tm, UINT64_C(2209072510808241446));
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(tm.tm.tv_sec == (time_t) 2209072510U);
+    TEST_CHECK(tm.tm.tv_nsec == 808241446);
+}
+
 void test_msgpack_to_time_invalid()
 {
     struct flb_time tm;
@@ -323,13 +389,161 @@ void test_append_to_msgpack_eventtime()
     msgpack_unpacked_destroy(&result);
 }
 
+void test_windows_zone_to_iana()
+{
+    const char *iana;
+
+    iana = flb_time_windows_zone_to_iana("Pacific Standard Time");
+    if (!TEST_CHECK(iana != NULL && strcmp(iana, "America/Los_Angeles") == 0)) {
+        TEST_MSG("got %s, expect America/Los_Angeles", iana);
+    }
+
+    iana = flb_time_windows_zone_to_iana("arabian standard time");
+    if (!TEST_CHECK(iana != NULL && strcmp(iana, "Asia/Dubai") == 0)) {
+        TEST_MSG("got %s, expect Asia/Dubai", iana);
+    }
+
+    iana = flb_time_windows_zone_to_iana("Middle East Standard Time");
+    if (!TEST_CHECK(iana != NULL && strcmp(iana, "Asia/Beirut") == 0)) {
+        TEST_MSG("got %s, expect Asia/Beirut", iana);
+    }
+
+    iana = flb_time_windows_zone_to_iana("India Standard Time");
+    if (!TEST_CHECK(iana != NULL && strcmp(iana, "Asia/Kolkata") == 0)) {
+        TEST_MSG("got %s, expect Asia/Kolkata", iana);
+    }
+
+    iana = flb_time_windows_zone_to_iana("Nepal Standard Time");
+    if (!TEST_CHECK(iana != NULL && strcmp(iana, "Asia/Kathmandu") == 0)) {
+        TEST_MSG("got %s, expect Asia/Kathmandu", iana);
+    }
+
+    iana = flb_time_windows_zone_to_iana("Unknown Standard Time");
+    if (!TEST_CHECK(iana == NULL)) {
+        TEST_MSG("got %s, expect NULL", iana);
+    }
+
+    iana = flb_time_windows_zone_to_iana(NULL);
+    if (!TEST_CHECK(iana == NULL)) {
+        TEST_MSG("got %s, expect NULL", iana);
+    }
+}
+
+void test_iana_zone_to_windows()
+{
+    const char *windows;
+
+    windows = flb_time_iana_zone_to_windows("America/Vancouver");
+    if (!TEST_CHECK(windows != NULL && strcmp(windows, "Pacific Standard Time") == 0)) {
+        TEST_MSG("got %s, expect Pacific Standard Time", windows);
+    }
+
+    windows = flb_time_iana_zone_to_windows("Etc/GMT-4");
+    if (!TEST_CHECK(windows != NULL && strcmp(windows, "Arabian Standard Time") == 0)) {
+        TEST_MSG("got %s, expect Arabian Standard Time", windows);
+    }
+
+    windows = flb_time_iana_zone_to_windows("Asia/Kathmandu");
+    if (!TEST_CHECK(windows != NULL && strcmp(windows, "Nepal Standard Time") == 0)) {
+        TEST_MSG("got %s, expect Nepal Standard Time", windows);
+    }
+
+    windows = flb_time_iana_zone_to_windows("Etc/Unknown");
+    if (!TEST_CHECK(windows == NULL)) {
+        TEST_MSG("got %s, expect NULL", windows);
+    }
+
+    windows = flb_time_iana_zone_to_windows(NULL);
+    if (!TEST_CHECK(windows == NULL)) {
+        TEST_MSG("got %s, expect NULL", windows);
+    }
+}
+
+void test_windows_zone_to_utc_offset()
+{
+    int ret;
+    long offset;
+
+    ret = flb_time_windows_zone_to_utc_offset("SE Asia Standard Time", &offset);
+    if (!TEST_CHECK(ret == 0 && offset == 25200)) {
+        TEST_MSG("got ret=%d offset=%ld, expect ret=0 offset=25200", ret, offset);
+    }
+
+    ret = flb_time_windows_zone_to_utc_offset("Nepal Standard Time", &offset);
+    if (!TEST_CHECK(ret == 0 && offset == 20700)) {
+        TEST_MSG("got ret=%d offset=%ld, expect ret=0 offset=20700", ret, offset);
+    }
+
+    ret = flb_time_windows_zone_to_utc_offset("Newfoundland Standard Time", &offset);
+    if (!TEST_CHECK(ret == 0 && offset == -12600)) {
+        TEST_MSG("got ret=%d offset=%ld, expect ret=0 offset=-12600", ret, offset);
+    }
+
+    ret = flb_time_windows_zone_to_utc_offset("Unknown Standard Time", &offset);
+    if (!TEST_CHECK(ret == -1)) {
+        TEST_MSG("got ret=%d, expect ret=-1", ret);
+    }
+
+    ret = flb_time_windows_zone_to_utc_offset(NULL, &offset);
+    if (!TEST_CHECK(ret == -1)) {
+        TEST_MSG("got ret=%d, expect ret=-1", ret);
+    }
+
+    ret = flb_time_windows_zone_to_utc_offset("UTC", NULL);
+    if (!TEST_CHECK(ret == -1)) {
+        TEST_MSG("got ret=%d, expect ret=-1", ret);
+    }
+}
+
+void test_iana_zone_to_utc_offset()
+{
+    int ret;
+    long offset;
+
+    ret = flb_time_iana_zone_to_utc_offset("Asia/Bangkok", &offset);
+    if (!TEST_CHECK(ret == 0 && offset == 25200)) {
+        TEST_MSG("got ret=%d offset=%ld, expect ret=0 offset=25200", ret, offset);
+    }
+
+    ret = flb_time_iana_zone_to_utc_offset("Australia/Eucla", &offset);
+    if (!TEST_CHECK(ret == 0 && offset == 31500)) {
+        TEST_MSG("got ret=%d offset=%ld, expect ret=0 offset=31500", ret, offset);
+    }
+
+    ret = flb_time_iana_zone_to_utc_offset("Etc/GMT+12", &offset);
+    if (!TEST_CHECK(ret == 0 && offset == -43200)) {
+        TEST_MSG("got ret=%d offset=%ld, expect ret=0 offset=-43200", ret, offset);
+    }
+
+    ret = flb_time_iana_zone_to_utc_offset("Etc/Unknown", &offset);
+    if (!TEST_CHECK(ret == -1)) {
+        TEST_MSG("got ret=%d, expect ret=-1", ret);
+    }
+
+    ret = flb_time_iana_zone_to_utc_offset(NULL, &offset);
+    if (!TEST_CHECK(ret == -1)) {
+        TEST_MSG("got ret=%d, expect ret=-1", ret);
+    }
+
+    ret = flb_time_iana_zone_to_utc_offset("Etc/UTC", NULL);
+    if (!TEST_CHECK(ret == -1)) {
+        TEST_MSG("got ret=%d, expect ret=-1", ret);
+    }
+}
+
 TEST_LIST = {
     { "flb_time_to_nanosec"           , test_to_nanosec},
     { "flb_time_append_to_mpack_v1"   , test_append_to_mpack_v1},
     { "msgpack_to_time_int"           , test_msgpack_to_time_int},
     { "msgpack_to_time_double"        , test_msgpack_to_time_double},
     { "msgpack_to_time_eventtime"     , test_msgpack_to_time_eventtime},
+    { "eventtime_boundaries"          , test_eventtime_boundaries},
+    { "from_uint64_post_2038"         , test_from_uint64_post_2038},
     { "msgpack_to_time_invalid"       , test_msgpack_to_time_invalid},
     { "append_to_msgpack_eventtime"   , test_append_to_msgpack_eventtime},
+    { "windows_zone_to_iana"          , test_windows_zone_to_iana},
+    { "iana_zone_to_windows"          , test_iana_zone_to_windows},
+    { "windows_zone_to_utc_offset"    , test_windows_zone_to_utc_offset},
+    { "iana_zone_to_utc_offset"       , test_iana_zone_to_utc_offset},
     { NULL, NULL }
 };

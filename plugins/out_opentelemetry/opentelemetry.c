@@ -585,14 +585,10 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
 
         if (result  != 0) {
             flb_plg_error(ctx->ins, "error setting http authorization data");
+            flb_http_client_request_destroy(request, FLB_TRUE);
 
             return FLB_RETRY;
         }
-
-        flb_http_request_set_authorization(request,
-                                           HTTP_WWW_AUTHORIZATION_SCHEME_BASIC,
-                                           ctx->http_user,
-                                           ctx->http_passwd);
     }
 
 #ifdef FLB_HAVE_SIGNV4

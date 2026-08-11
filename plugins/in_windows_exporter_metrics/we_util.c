@@ -152,7 +152,7 @@ wchar_t* we_convert_str(char *str)
         return NULL;
     }
 
-    buf = flb_calloc(1, sizeof(PWSTR) * size);
+    buf = flb_calloc(1, sizeof(wchar_t) * size);
     if (buf == NULL) {
         flb_errno();
         return NULL;

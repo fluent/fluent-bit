@@ -744,6 +744,11 @@ static struct flb_config_map config_map[] = {
      "OAuth2 client_secret"
     },
     {
+     FLB_CONFIG_MAP_STR, "oauth2.user_agent", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.user_agent),
+     "Optional User-Agent header for OAuth2 token requests"
+    },
+    {
      FLB_CONFIG_MAP_STR, "oauth2.scope", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, oauth2_config.scope),
      "Optional OAuth2 scope"

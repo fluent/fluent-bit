@@ -106,7 +106,8 @@ static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st,
 
         if (ctx->options.flags & CIO_DELETE_IRRECOVERABLE) {
             if (err == CIO_CORRUPTED) {
-                if (ctx->last_chunk_error == CIO_ERR_BAD_FILE_SIZE ||
+                if (ctx->last_chunk_error == CIO_ERR_BAD_CHECKSUM ||
+                    ctx->last_chunk_error == CIO_ERR_BAD_FILE_SIZE ||
                     ctx->last_chunk_error == CIO_ERR_BAD_LAYOUT)
                 {
                     cio_log_error(ctx, "[cio scan] discarding irrecoverable chunk");

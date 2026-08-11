@@ -452,9 +452,60 @@ void test_filter_with_label_key_value_pairs()
     cmt_destroy(cmt6);
 }
 
+void test_filter_label_pair_exact_and_all_matches()
+{
+    int                 ret;
+    cfl_sds_t           text;
+    struct cmt         *src;
+    struct cmt         *prefix_result;
+    struct cmt         *exact_result;
+    struct cmt_counter *counter;
+
+    src = cmt_create();
+    prefix_result = cmt_create();
+    exact_result = cmt_create();
+    TEST_ASSERT(src != NULL);
+    TEST_ASSERT(prefix_result != NULL);
+    TEST_ASSERT(exact_result != NULL);
+
+    counter = cmt_counter_create(src, "test", "filter", "requests",
+                                 "Filter exact label pairs", 2,
+                                 (char *[]) {"host", "zone"});
+    TEST_ASSERT(counter != NULL);
+
+    TEST_ASSERT(cmt_counter_set(counter, 1, 1, 2,
+                               (char *[]) {"prod", "a"}) == 0);
+    TEST_ASSERT(cmt_counter_set(counter, 1, 2, 2,
+                               (char *[]) {"prod", "b"}) == 0);
+    TEST_ASSERT(cmt_counter_set(counter, 1, 3, 2,
+                               (char *[]) {"production", "c"}) == 0);
+
+    ret = cmt_filter_with_label_pair(prefix_result, src, "hostname", "prod");
+    TEST_ASSERT(ret == CMT_FILTER_SUCCESS);
+    text = cmt_encode_text_create(prefix_result);
+    TEST_ASSERT(text != NULL);
+    TEST_CHECK(strstr(text, "host=\"prod\",zone=\"a\"") != NULL);
+    TEST_CHECK(strstr(text, "host=\"prod\",zone=\"b\"") != NULL);
+    TEST_CHECK(strstr(text, "host=\"production\",zone=\"c\"") != NULL);
+    cmt_encode_text_destroy(text);
+
+    ret = cmt_filter_with_label_pair(exact_result, src, "host", "prod");
+    TEST_ASSERT(ret == CMT_FILTER_SUCCESS);
+    text = cmt_encode_text_create(exact_result);
+    TEST_ASSERT(text != NULL);
+    TEST_CHECK(strstr(text, "host=\"prod\"") == NULL);
+    TEST_CHECK(strstr(text, "host=\"production\",zone=\"c\"") != NULL);
+    cmt_encode_text_destroy(text);
+
+    cmt_destroy(exact_result);
+    cmt_destroy(prefix_result);
+    cmt_destroy(src);
+}
+
 
 TEST_LIST = {
     {"filter", test_filter},
     {"filter_with_label_pair", test_filter_with_label_key_value_pairs},
+    {"filter_label_pair_exact_and_all_matches", test_filter_label_pair_exact_and_all_matches},
     { 0 }
 };

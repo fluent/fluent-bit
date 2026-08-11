@@ -145,6 +145,14 @@
           "type": "deb"
         },
         {
+          "target": "ubuntu/26.04",
+          "type": "deb"
+        },
+        {
+          "target": "ubuntu/26.04.arm64v8",
+          "type": "deb"
+        },
+        {
           "target": "raspbian/bookworm",
           "type": "deb"
         }

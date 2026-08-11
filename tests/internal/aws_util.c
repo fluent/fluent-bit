@@ -144,6 +144,36 @@ static void test_flb_aws_error()
     flb_sds_destroy(error_type);
 }
 
+static void test_flb_aws_is_auth_error()
+{
+    char *payload;
+
+    initialization_crutch();
+
+    payload = "<Error><Code>InvalidAccessKeyId</Code><Message>The AWS Access Key Id you provided does not exist in our records.</Message>"
+              "<AWSAccessKeyId>AKIATRANDOMKEY12345678</AWSAccessKeyId>"
+              "<RequestId>XZ4Y38XBV54B7GKT</RequestId>"
+              "<HostId>PEH4YGxFyd7aiREqx47Xj1SEztmklUp/9rzwrLz4A1LIWp8jQRhybogym3KhlfpCC4JD4FaRYxU=</HostId></Error>";
+    TEST_CHECK(flb_aws_is_auth_error(payload, strlen(payload)) == FLB_TRUE);
+
+    payload = "<Error>"
+              "<Code>NoSuchKey</Code>"
+              "<Message>The resource you requested does not exist</Message>"
+              "<Resource>/mybucket/myfoto.jpg</Resource>"
+              "<RequestId>4442587FB7D0A2F9</RequestId>"
+              "</Error>";
+    TEST_CHECK(flb_aws_is_auth_error(payload, strlen(payload)) == FLB_FALSE);
+
+    payload = "{\"__type\":\"ExpiredToken\",\"message\":\"The security token included in the request is expired.\"}";
+    TEST_CHECK(flb_aws_is_auth_error(payload, strlen(payload)) == FLB_TRUE);
+
+    payload = "{\"__type\":\"ValidationError\",\"message\":\"Input validation failed.\"}";
+    TEST_CHECK(flb_aws_is_auth_error(payload, strlen(payload)) == FLB_FALSE);
+
+    payload = "";
+    TEST_CHECK(flb_aws_is_auth_error(payload, strlen(payload)) == FLB_FALSE);
+}
+
 static void test_flb_aws_endpoint()
 {
     char *endpoint;
@@ -418,6 +448,7 @@ static void test_flb_get_s3_key_mixed_timestamp()
 
 TEST_LIST = {
     { "parse_api_error" , test_flb_aws_error},
+    { "flb_aws_is_auth_error", test_flb_aws_is_auth_error},
     { "flb_aws_endpoint" , test_flb_aws_endpoint},
     {"flb_get_s3_key_multi_tag_exists", test_flb_get_s3_key_multi_tag_exists},
     {"flb_get_s3_key_full_tag", test_flb_get_s3_key_full_tag},

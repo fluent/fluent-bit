@@ -1,6 +1,7 @@
 import json
 import os
 import struct
+import time
 from copy import deepcopy
 
 import requests
@@ -11,13 +12,26 @@ from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportM
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 
 from server.kafka_server import data_storage, kafka_server_run, kafka_server_stop
+from server.schema_registry_server import (
+    SCHEMA_ID,
+    SCHEMA_SUBJECT,
+    data_storage as schema_registry_data_storage,
+    schema_registry_server_run,
+    schema_registry_server_stop,
+)
 from utils.data_utils import read_json_file
+from utils.memory_check import memory_check_enabled
+from utils.fluent_bit_manager import FluentBitStartupError
 from utils.test_service import FluentBitTestService
 
 
+EMPTY_MAP_RECORD_ID = "97789a11215b54828d2c3f50b864afed42543ff8"
+
+
 class Service:
-    def __init__(self, config_file):
+    def __init__(self, config_file, *, use_schema_registry=False):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
+        self.use_schema_registry = use_schema_registry
         self.service = FluentBitTestService(
             self.config_file,
             data_storage=data_storage,
@@ -29,8 +43,13 @@ class Service:
     def _start_receiver(self, service):
         self.kafka_port = service.allocate_port_env("TEST_SUITE_KAFKA_PORT")
         kafka_server_run(self.kafka_port)
+        if self.use_schema_registry:
+            self.schema_registry_port = service.allocate_port_env("TEST_SUITE_SCHEMA_REGISTRY_PORT")
+            schema_registry_server_run(self.schema_registry_port)
 
     def _stop_receiver(self, service):
+        if self.use_schema_registry:
+            schema_registry_server_stop()
         kafka_server_stop()
 
     def start(self):
@@ -166,6 +185,42 @@ def _decode_simple_msgpack(data, offset=0):
     raise ValueError(f"Unsupported MessagePack type 0x{first:02x}")
 
 
+def _decode_avro_long(data, offset=0):
+    encoded = 0
+    shift = 0
+
+    while True:
+        if offset >= len(data):
+            raise ValueError("Truncated Avro long")
+
+        byte = data[offset]
+        offset += 1
+
+        if shift == 63 and byte & 0x7E:
+            raise ValueError("Invalid Avro long")
+
+        encoded |= (byte & 0x7F) << shift
+
+        if byte & 0x80 == 0:
+            break
+
+        shift += 7
+        if shift >= 64:
+            raise ValueError("Invalid Avro long")
+
+    return (encoded >> 1) ^ -(encoded & 1), offset
+
+
+def _decode_avro_string(data, offset=0):
+    size, offset = _decode_avro_long(data, offset)
+    end = offset + size
+
+    if size < 0 or end > len(data):
+        raise ValueError("Invalid Avro string")
+
+    return data[offset:end].decode("utf-8"), end
+
+
 def _decode_otlp_proto(data, signal_type):
     messages = {
         "logs": ExportLogsServiceRequest(),
@@ -255,6 +310,157 @@ def _build_resource_collision_payload(user_id, body, schema_url=None):
     return payload
 
 
+def _build_monolithic_logs_payload(record_count):
+    body_padding = "x" * 256
+    current_time_ns = 1640995200000000000
+
+    resource_log = {
+        "resource": {
+            "attributes": [
+                {
+                    "key": "service.name",
+                    "value": {
+                        "string_value": "monolithic-payment-backend",
+                    },
+                },
+                {
+                    "key": "deployment.environment",
+                    "value": {
+                        "string_value": "production",
+                    },
+                },
+                {
+                    "key": "k8s.namespace.name",
+                    "value": {
+                        "string_value": "transactions",
+                    },
+                },
+                {
+                    "key": "cloud.region",
+                    "value": {
+                        "string_value": "eastus2",
+                    },
+                },
+            ],
+        },
+        "scope_logs": [
+            {
+                "scope": {
+                    "name": "io.opentelemetry.contrib.mongodb",
+                    "version": "1.0.0",
+                },
+                "log_records": [],
+            }
+        ],
+    }
+
+    for index in range(record_count):
+        resource_log["scope_logs"][0]["log_records"].append(
+            {
+                "time_unix_nano": str(current_time_ns - (index * 100000)),
+                "observed_time_unix_nano": str(current_time_ns),
+                "severity_number": 13,
+                "severity_text": "WARN",
+                "body": {
+                    "string_value": (
+                        "Database transaction query execution took longer than "
+                        f"expected threshold. Execution time: {120 + index}ms. "
+                        f"{body_padding}"
+                    ),
+                },
+                "attributes": [
+                    {
+                        "key": "component",
+                        "value": {
+                            "string_value": "database-proxy",
+                        },
+                    },
+                    {
+                        "key": "db.system",
+                        "value": {
+                            "string_value": "mongodb",
+                        },
+                    },
+                    {
+                        "key": "db.operation",
+                        "value": {
+                            "string_value": "findAndModify",
+                        },
+                    },
+                    {
+                        "key": "exception.type",
+                        "value": {
+                            "string_value": "com.mongodb.MongoTimeoutException",
+                        },
+                    },
+                ],
+                "dropped_attributes_count": 0,
+            }
+        )
+
+    return {
+        "resource_logs": [
+            resource_log,
+        ],
+    }
+
+
+def _build_logs_payload_with_unset_attribute_values():
+    return {
+        "resource_logs": [
+            {
+                "resource": {
+                    "attributes": [
+                        {
+                            "key": "service.name",
+                            "value": {
+                                "string_value": "unset-any-value-service",
+                            },
+                        },
+                        {
+                            "key": "resource.unset",
+                            "value": {},
+                        },
+                    ],
+                },
+                "scope_logs": [
+                    {
+                        "scope": {
+                            "name": "unset-any-value-scope",
+                            "attributes": [
+                                {
+                                    "key": "scope.unset",
+                                    "value": {},
+                                },
+                            ],
+                        },
+                        "log_records": [
+                            {
+                                "time_unix_nano": "1640995200000000000",
+                                "body": {
+                                    "string_value": "log with unset attribute values",
+                                },
+                                "attributes": [
+                                    {
+                                        "key": "record.unset",
+                                        "value": {},
+                                    },
+                                    {
+                                        "key": "record.ok",
+                                        "value": {
+                                            "string_value": "ok",
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+    }
+
+
 def _decode_kafka_payload(message, format_name, signal_type):
     if format_name == "otlp_json":
         return json.loads(message["value"].decode("utf-8"))
@@ -270,6 +476,71 @@ def _collect_resources(messages, format_name, signal_type):
         resources.extend(payload[resource_key])
 
     return resources
+
+
+def _wait_for_log_text(log_file, pattern, timeout=10):
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        try:
+            with open(log_file, "r", encoding="utf-8") as log:
+                text = log.read()
+        except FileNotFoundError:
+            text = ""
+
+        if pattern in text:
+            return text
+
+        time.sleep(0.25)
+
+    raise TimeoutError(f"Timed out waiting for log pattern {pattern!r}")
+
+
+def _read_fluent_bit_log(service):
+    if not service.service.flb or not service.service.flb.log_file:
+        return ""
+
+    try:
+        with open(service.service.flb.log_file, "r", encoding="utf-8", errors="replace") as log:
+            return log.read()
+    except FileNotFoundError:
+        return ""
+
+
+def _start_or_skip_without_avro_encoder(service):
+    try:
+        service.start()
+    except FluentBitStartupError as error:
+        log_contents = _read_fluent_bit_log(service)
+        error_message = str(error)
+        unsupported_markers = [
+            "unknown configuration property 'schema_str'",
+            "unknown configuration property 'schema_id'",
+            "unknown configuration property 'schema_registry_url'",
+            "unknown configuration property 'schema_registry_subject'",
+            "unknown configuration property 'schema_registry_version'",
+        ]
+
+        if any(marker in log_contents or marker in error_message
+               for marker in unsupported_markers):
+            try:
+                service.stop()
+            except Exception:
+                pass
+            pytest.skip("Kafka Avro Schema Registry requires FLB_AVRO_ENCODER=On")
+
+        try:
+            service.stop()
+        except Exception:
+            pass
+        raise
+
+
+def test_decode_avro_long_rejects_out_of_range_terminal_bits():
+    payload = b"\x80" * 9 + b"\x02"
+
+    with pytest.raises(ValueError, match="Invalid Avro long"):
+        _decode_avro_long(payload)
 
 
 def test_out_kafka_sends_json_payload():
@@ -352,6 +623,50 @@ def test_out_kafka_msgpack_format_sends_msgpack_payload():
     assert payload["source"] == "dummy"
 
 
+def test_out_kafka_avro_resolves_schema_registry_subject():
+    service = Service("out_kafka_avro_schema_registry.yaml", use_schema_registry=True)
+    _start_or_skip_without_avro_encoder(service)
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    message = messages[0]
+    value = message["value"]
+
+    assert message["topic"] == "test"
+    assert value[0] == 0
+    assert int.from_bytes(value[1:5], "big") == SCHEMA_ID
+    assert len(value) > 5
+
+    requests_seen = schema_registry_data_storage["requests"]
+    assert len(requests_seen) == 1
+    assert requests_seen[0]["method"] == "GET"
+    assert requests_seen[0]["path"] == f"/subjects/{SCHEMA_SUBJECT}/versions/latest"
+    assert "application/vnd.schemaregistry.v1+json" in requests_seen[0]["headers"]["Accept"]
+
+
+def test_out_kafka_avro_encodes_empty_map():
+    service = Service("out_kafka_avro_empty_map.yaml")
+    _start_or_skip_without_avro_encoder(service)
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    message = messages[0]
+    value = message["value"]
+
+    assert message["topic"] == "test"
+    assert value[0] == 0
+    assert int.from_bytes(value[1:5], "big") == SCHEMA_ID
+
+    record_id, offset = _decode_avro_string(value, 5)
+    map_size, offset = _decode_avro_long(value, offset)
+
+    assert record_id == EMPTY_MAP_RECORD_ID
+    assert map_size == 0
+    assert offset == len(value)
+
+
 def test_out_kafka_otlp_json_logs():
     service = Service("out_kafka_otlp_json.yaml")
     service.start()
@@ -369,6 +684,39 @@ def test_out_kafka_otlp_json_logs():
     assert payload["resourceLogs"]
     assert record["body"]["stringValue"] == "This is an example log message."
     assert payload["resourceLogs"][0]["resource"]["attributes"][0]["key"] == "service.name"
+
+
+def test_out_kafka_otlp_json_logs_preserves_unset_attribute_values():
+    service = Service("out_kafka_otlp_json.yaml")
+    service.start()
+    service.send_payload_dict(_build_logs_payload_with_unset_attribute_values(), "logs")
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    payload = json.loads(messages[0]["value"].decode("utf-8"))
+    resource_log = payload["resourceLogs"][0]
+    scope_log = resource_log["scopeLogs"][0]
+    record = scope_log["logRecords"][0]
+
+    resource_attrs = {
+        attr["key"]: attr["value"]
+        for attr in resource_log["resource"]["attributes"]
+    }
+    scope_attrs = {
+        attr["key"]: attr["value"]
+        for attr in scope_log["scope"]["attributes"]
+    }
+    record_attrs = {
+        attr["key"]: attr["value"]
+        for attr in record["attributes"]
+    }
+
+    assert resource_attrs["resource.unset"] == {}
+    assert scope_attrs["scope.unset"] == {}
+    assert record_attrs["record.unset"] == {}
+    assert record_attrs["record.ok"]["stringValue"] == "ok"
+    assert record["body"]["stringValue"] == "log with unset attribute values"
 
 
 def test_out_kafka_otlp_json_metrics():
@@ -645,3 +993,95 @@ def test_out_kafka_otlp_logs_preserve_resource_schema_urls_across_requests(
     assert body_to_schema_url["event-a"] == "schema-a"
     assert body_to_schema_url["event-b"] == "schema-b"
     assert len(resources) == 2
+
+
+@pytest.mark.parametrize(
+    "format_name,config_file",
+    [
+        ("otlp_json", "out_kafka_otlp_json_partition_by_resource.yaml"),
+        ("otlp_proto", "out_kafka_otlp_proto_partition_by_resource.yaml"),
+    ],
+)
+def test_out_kafka_otlp_logs_partition_by_resource(format_name, config_file):
+    service = Service(config_file)
+    service.start()
+    service.send_payload_dict(
+        _build_resource_collision_payload("user-a", "event-a"),
+        "logs",
+    )
+    service.send_payload_dict(
+        _build_resource_collision_payload("user-b", "event-b"),
+        "logs",
+    )
+
+    messages = service.wait_for_messages(2, timeout=10)
+    service.stop()
+
+    assert len(messages) == 2
+
+    keys = {message["key"] for message in messages}
+    assert len(keys) == 2
+    assert b"static-otlp-key" not in keys
+
+    body_to_user = {}
+    for message in messages:
+        assert message["topic"] == "otlp-topic"
+        assert message["key"]
+
+        payload = _decode_kafka_payload(message, format_name, "logs")
+        resources = payload["resourceLogs"]
+        assert len(resources) == 1
+
+        resource = resources[0]
+        user_id = next(
+            attribute["value"]["stringValue"]
+            for attribute in resource["resource"]["attributes"]
+            if attribute["key"] == "user.id"
+        )
+
+        for scope in resource["scopeLogs"]:
+            for record in scope["logRecords"]:
+                body_to_user[record["body"]["stringValue"]] = user_id
+
+    assert body_to_user == {
+        "event-a": "user-a",
+        "event-b": "user-b",
+    }
+
+
+def test_out_kafka_otlp_json_partition_by_resource_keeps_monolithic_resource_valid():
+    record_count = 512
+    service = Service("out_kafka_otlp_json_partition_by_resource.yaml")
+    service.start()
+    service.send_payload_dict(_build_monolithic_logs_payload(record_count), "logs")
+
+    messages = service.wait_for_messages(1, timeout=10)
+    service.stop()
+
+    assert len(messages) == 1
+    message = messages[0]
+    payload = json.loads(message["value"].decode("utf-8"))
+    resource_logs = payload["resourceLogs"]
+
+    assert message["topic"] == "otlp-topic"
+    assert len(resource_logs) == 1
+    assert len(resource_logs[0]["scopeLogs"]) == 1
+    assert len(resource_logs[0]["scopeLogs"][0]["logRecords"]) == record_count
+    assert len(message["value"]) > 100000
+
+
+def test_out_kafka_otlp_json_partition_by_resource_rejects_oversized_message():
+    service = Service("out_kafka_otlp_json_partition_by_resource_small_message_max.yaml")
+    service.start()
+    service.send_payload_dict(_build_monolithic_logs_payload(512), "logs")
+
+    timeout = 30 if memory_check_enabled() else 10
+    log_text = _wait_for_log_text(
+        service.flb.log_file,
+        "Broker: Message size too large",
+        timeout=timeout,
+    )
+    service.stop()
+
+    assert data_storage["messages"] == []
+    assert "could not convert partitioned OTLP logs" not in log_text

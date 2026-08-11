@@ -21,7 +21,13 @@
 #include <string.h>
 #include <stdio.h>
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
+
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
@@ -83,6 +89,87 @@ static inline size_t http2_lower_value(size_t left_value, size_t right_value)
     }
 
     return right_value;
+}
+
+static int http2_is_ipv6_literal(const char *host,
+                                 char *address_buffer,
+                                 size_t address_buffer_size,
+                                 const char **host_for_authority)
+{
+    struct in6_addr address;
+    const char     *zone_id;
+    size_t          host_length;
+
+    *host_for_authority = host;
+
+    if (host == NULL || host[0] == '[') {
+        return FLB_FALSE;
+    }
+
+    zone_id = strchr(host, '%');
+
+    if (zone_id != NULL) {
+        host_length = zone_id - host;
+
+        if (host_length == 0 || host_length >= address_buffer_size) {
+            return FLB_FALSE;
+        }
+
+        memcpy(address_buffer, host, host_length);
+        address_buffer[host_length] = '\0';
+
+        if (inet_pton(AF_INET6, address_buffer, &address) == 1) {
+            return FLB_TRUE;
+        }
+
+        return FLB_FALSE;
+    }
+
+    if (inet_pton(AF_INET6, host, &address) == 1) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static int http2_request_set_authority(struct flb_http_request *request)
+{
+    cfl_sds_t  sds_result;
+    const char *host_for_authority;
+    char        address_buffer[INET6_ADDRSTRLEN];
+    int         is_ipv6;
+
+    request->authority = cfl_sds_create_size(strlen(request->host) + 32);
+
+    if (request->authority == NULL) {
+        return -1;
+    }
+
+    is_ipv6 = http2_is_ipv6_literal(request->host,
+                                    address_buffer,
+                                    sizeof(address_buffer),
+                                    &host_for_authority);
+
+    if (is_ipv6) {
+        sds_result = cfl_sds_printf(&request->authority,
+                                    "[%s]:%u",
+                                    host_for_authority,
+                                    request->port);
+    }
+    else {
+        sds_result = cfl_sds_printf(&request->authority,
+                                    "%s:%u",
+                                    request->host,
+                                    request->port);
+    }
+
+    if (sds_result == NULL) {
+        return -1;
+    }
+
+    request->authority = sds_result;
+
+    return 0;
 }
 
 /* PRIVATE */
@@ -486,7 +573,6 @@ int flb_http2_request_begin(struct flb_http_request *request)
 int flb_http2_request_commit(struct flb_http_request *request)
 {
     struct flb_http_client_session  *parent_session;
-    cfl_sds_t                        sds_result;
     struct flb_http2_client_session *session;
     struct flb_http_stream          *stream;
     int                              result;
@@ -562,17 +648,8 @@ int flb_http2_request_commit(struct flb_http_request *request)
     }
 
     if (request->authority == NULL) {
-        request->authority = cfl_sds_create(request->host);
-
-        if (request->authority == NULL) {
-            return -1;
-        }
-
-        sds_result = cfl_sds_printf(&request->authority,
-                                    ":%u",
-                                    request->port);
-
-        if (sds_result == NULL) {
+        result = http2_request_set_authority(request);
+        if (result != 0) {
             return -1;
         }
     }

@@ -16,6 +16,7 @@
 #include <gadget/types.h>
 
 #include "common/events.h" 
+#include "common/event_id.bpf.h"
 
 
 struct value {
@@ -81,6 +82,7 @@ static int handle_signal_exit(void *ctx, int ret) {
         return 0;
 
     /* Populate the event with data */
+    generate_event_id(&eventp->common.event_id);
     eventp->common.timestamp_raw = bpf_ktime_get_boot_ns();
     eventp->common.pid = pid_tgid >> 32;
     eventp->common.tid = tid;
@@ -167,6 +169,7 @@ int ig_sig_generate(struct trace_event_raw_signal_generate *ctx) {
         return 0;
 
     /* Populate the event with data */
+    generate_event_id(&event->common.event_id);
     event->common.timestamp_raw = bpf_ktime_get_boot_ns();
     event->common.pid = pid;
     event->common.tid = (__u32)pid_tgid;

@@ -1,23 +1,41 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <time.h>
 #include <monkey/mk_core/mk_list.h>
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/aws/flb_aws_error_reporter.h>
 
 #include "flb_tests_internal.h"
 
-const char* file_path = "/tmp/error.log";
+#ifdef FLB_SYSTEM_WINDOWS
+#define TEST_ERROR_FILE_PATH "error.log"
+#define TEST_INVALID_ERROR_FILE_PATH "NUL\\error.log"
+
+static int test_setenv(const char *name, const char *value, int overwrite)
+{
+    if (overwrite == 0 && getenv(name) != NULL) {
+        return 0;
+    }
+
+    return _putenv_s(name, value);
+}
+#else
+#define TEST_ERROR_FILE_PATH "/tmp/error.log"
+#define TEST_INVALID_ERROR_FILE_PATH "/dev/null/error.log"
+#define test_setenv(name, value, overwrite) setenv(name, value, overwrite)
+#endif
+
+const char* file_path = TEST_ERROR_FILE_PATH;
 const char* error_message_1 = "[engine] scheduler could not start";
 const char* error_message_2 = "[engine] scheduler could not stop";
 
 
 void test_flb_aws_error_reporter_create() {
 
-    setenv(STATUS_MESSAGE_FILE_PATH_ENV, file_path, 1);
+    test_setenv(STATUS_MESSAGE_FILE_PATH_ENV, file_path, 1);
     struct flb_aws_error_reporter *error_reporter = flb_aws_error_reporter_create();
     TEST_CHECK((void*) error_reporter != NULL);
     TEST_CHECK((void*)error_reporter->file_path != NULL);
@@ -36,7 +54,7 @@ void test_flb_aws_error_reporter_write() {
     }
     error_message_3[1040] = '\0';
 
-    setenv(STATUS_MESSAGE_FILE_PATH_ENV, file_path, 1);
+    test_setenv(STATUS_MESSAGE_FILE_PATH_ENV, file_path, 1);
 
     struct flb_aws_error_reporter *error_reporter = flb_aws_error_reporter_create();
     flb_aws_error_reporter_write(error_reporter, error_message_1);
@@ -62,7 +80,7 @@ void test_flb_aws_error_reporter_write() {
 
 void test_flb_aws_error_reporter_clean() {
 
-    setenv(STATUS_MESSAGE_FILE_PATH_ENV, file_path, 1);
+    test_setenv(STATUS_MESSAGE_FILE_PATH_ENV, file_path, 1);
     struct flb_aws_error_reporter *error_reporter = flb_aws_error_reporter_create();
     flb_aws_error_reporter_write(error_reporter, error_message_1);
     time_t start = time(NULL);
@@ -74,9 +92,30 @@ void test_flb_aws_error_reporter_clean() {
     flb_aws_error_reporter_destroy(error_reporter);
 }
 
+void test_flb_aws_error_reporter_write_open_failure()
+{
+    int ret;
+    struct flb_aws_error_reporter *error_reporter;
+
+    test_setenv(STATUS_MESSAGE_FILE_PATH_ENV,
+                TEST_INVALID_ERROR_FILE_PATH, 1);
+
+    error_reporter = flb_aws_error_reporter_create();
+    TEST_CHECK(error_reporter != NULL);
+
+    ret = flb_aws_error_reporter_write(error_reporter, error_message_1);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(mk_list_size(&error_reporter->messages) == 0);
+    TEST_CHECK(error_reporter->file_size == 0);
+
+    flb_aws_error_reporter_destroy(error_reporter);
+}
+
 TEST_LIST = {
     { "test_flb_aws_error_reporter_create", test_flb_aws_error_reporter_create},
     {"test_flb_aws_error_reporter_write", test_flb_aws_error_reporter_write},
     {"test_flb_aws_error_reporter_clean", test_flb_aws_error_reporter_clean},
+    {"test_flb_aws_error_reporter_write_open_failure",
+     test_flb_aws_error_reporter_write_open_failure},
     { 0 }
 };

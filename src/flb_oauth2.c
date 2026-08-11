@@ -68,6 +68,11 @@ struct flb_config_map oauth2_config_map[] = {
      "OAuth2 client_secret"
     },
     {
+     FLB_CONFIG_MAP_STR, "oauth2.user_agent", NULL,
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config, user_agent),
+     "Optional User-Agent header for OAuth2 token requests"
+    },
+    {
      FLB_CONFIG_MAP_STR, "oauth2.scope", NULL,
      0, FLB_TRUE, offsetof(struct flb_oauth2_config, scope),
      "Optional OAuth2 scope"
@@ -185,6 +190,7 @@ static void oauth2_apply_defaults(struct flb_oauth2_config *cfg)
     cfg->token_url = NULL;
     cfg->client_id = NULL;
     cfg->client_secret = NULL;
+    cfg->user_agent = NULL;
     cfg->scope = NULL;
     cfg->audience = NULL;
     cfg->resource = NULL;
@@ -237,6 +243,15 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
     if (src->client_secret) {
         dst->client_secret = flb_sds_create(src->client_secret);
         if (!dst->client_secret) {
+            flb_errno();
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+
+    if (src->user_agent) {
+        dst->user_agent = flb_sds_create(src->user_agent);
+        if (!dst->user_agent) {
             flb_errno();
             flb_oauth2_config_destroy(dst);
             return -1;
@@ -324,6 +339,8 @@ void flb_oauth2_config_destroy(struct flb_oauth2_config *cfg)
     cfg->client_id = NULL;
     flb_sds_destroy(cfg->client_secret);
     cfg->client_secret = NULL;
+    flb_sds_destroy(cfg->user_agent);
+    cfg->user_agent = NULL;
     flb_sds_destroy(cfg->scope);
     cfg->scope = NULL;
     flb_sds_destroy(cfg->audience);
@@ -562,67 +579,45 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
     return 0;
 }
 
-static flb_sds_t oauth2_append_kv(flb_sds_t buffer, const char *key,
-                                  const char *value)
+static int oauth2_append_kv(flb_sds_t *buffer, const char *key,
+                            const char *value)
 {
     flb_sds_t tmp;
-    flb_sds_t result;
 
     if (!value) {
-        return buffer;
+        return 0;
     }
 
     tmp = flb_uri_encode(value, strlen(value));
     if (!tmp) {
         flb_errno();
-        if (buffer) {
-            flb_sds_destroy(buffer);
-        }
-        return NULL;
+        return -1;
     }
 
-    if (flb_sds_len(buffer) > 0) {
-        result = flb_sds_cat(buffer, "&", 1);
-        if (!result) {
+    if (flb_sds_len(*buffer) > 0) {
+        if (flb_sds_cat_safe(buffer, "&", 1) == -1) {
             flb_sds_destroy(tmp);
-            if (buffer) {
-                flb_sds_destroy(buffer);
-            }
-            return NULL;
+            return -1;
         }
-        buffer = result;
     }
 
-    result = flb_sds_cat(buffer, key, strlen(key));
-    if (!result) {
+    if (flb_sds_cat_safe(buffer, key, strlen(key)) == -1) {
         flb_sds_destroy(tmp);
-        if (buffer) {
-            flb_sds_destroy(buffer);
-        }
-        return NULL;
+        return -1;
     }
-    buffer = result;
 
-    result = flb_sds_cat(buffer, "=", 1);
-    if (!result) {
+    if (flb_sds_cat_safe(buffer, "=", 1) == -1) {
         flb_sds_destroy(tmp);
-        if (buffer) {
-            flb_sds_destroy(buffer);
-        }
-        return NULL;
+        return -1;
     }
-    buffer = result;
 
-    result = flb_sds_cat(buffer, tmp, flb_sds_len(tmp));
+    if (flb_sds_cat_safe(buffer, tmp, flb_sds_len(tmp)) == -1) {
+        flb_sds_destroy(tmp);
+        return -1;
+    }
     flb_sds_destroy(tmp);
-    if (!result) {
-        if (buffer) {
-            flb_sds_destroy(buffer);
-        }
-        return NULL;
-    }
 
-    return result;
+    return 0;
 }
 
 static int oauth2_base64_url_encode(const unsigned char *input, size_t input_size,
@@ -965,8 +960,8 @@ error:
 
 static flb_sds_t oauth2_build_body(struct flb_oauth2 *ctx)
 {
+    int ret;
     flb_sds_t body;
-    flb_sds_t tmp;
     flb_sds_t assertion = NULL;
 
     if (ctx->payload_manual == FLB_TRUE && ctx->payload) {
@@ -985,76 +980,60 @@ static flb_sds_t oauth2_build_body(struct flb_oauth2 *ctx)
         return NULL;
     }
 
-    tmp = oauth2_append_kv(body, "grant_type", "client_credentials");
-    if (!tmp) {
+    if (oauth2_append_kv(&body, "grant_type", "client_credentials") == -1) {
         flb_sds_destroy(body);
         return NULL;
     }
-    body = tmp;
 
     if (ctx->cfg.scope) {
-        tmp = oauth2_append_kv(body, "scope", ctx->cfg.scope);
-        if (!tmp) {
+        if (oauth2_append_kv(&body, "scope", ctx->cfg.scope) == -1) {
             flb_sds_destroy(body);
             return NULL;
         }
-        body = tmp;
     }
 
     if (ctx->cfg.audience) {
-        tmp = oauth2_append_kv(body, "audience", ctx->cfg.audience);
-        if (!tmp) {
+        if (oauth2_append_kv(&body, "audience", ctx->cfg.audience) == -1) {
             flb_sds_destroy(body);
             return NULL;
         }
-        body = tmp;
     }
 
     if (ctx->cfg.resource) {
-        tmp = oauth2_append_kv(body, "resource", ctx->cfg.resource);
-        if (!tmp) {
+        if (oauth2_append_kv(&body, "resource", ctx->cfg.resource) == -1) {
             flb_sds_destroy(body);
             return NULL;
         }
-        body = tmp;
     }
 
     if (ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_POST) {
         if (ctx->cfg.client_id) {
-            tmp = oauth2_append_kv(body, "client_id", ctx->cfg.client_id);
-            if (!tmp) {
+            if (oauth2_append_kv(&body, "client_id", ctx->cfg.client_id) == -1) {
                 flb_sds_destroy(body);
                 return NULL;
             }
-            body = tmp;
         }
 
         if (ctx->cfg.client_secret) {
-            tmp = oauth2_append_kv(body, "client_secret", ctx->cfg.client_secret);
-            if (!tmp) {
+            if (oauth2_append_kv(&body, "client_secret", ctx->cfg.client_secret) == -1) {
                 flb_sds_destroy(body);
                 return NULL;
             }
-            body = tmp;
         }
     }
     else if (ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT) {
         if (ctx->cfg.client_id) {
-            tmp = oauth2_append_kv(body, "client_id", ctx->cfg.client_id);
-            if (!tmp) {
+            if (oauth2_append_kv(&body, "client_id", ctx->cfg.client_id) == -1) {
                 flb_sds_destroy(body);
                 return NULL;
             }
-            body = tmp;
         }
 
-        tmp = oauth2_append_kv(body, "client_assertion_type",
-                               "urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
-        if (!tmp) {
+        if (oauth2_append_kv(&body, "client_assertion_type",
+                             "urn:ietf:params:oauth:client-assertion-type:jwt-bearer") == -1) {
             flb_sds_destroy(body);
             return NULL;
         }
-        body = tmp;
 
         assertion = oauth2_private_key_jwt_create_assertion(ctx);
         if (!assertion) {
@@ -1062,13 +1041,12 @@ static flb_sds_t oauth2_build_body(struct flb_oauth2 *ctx)
             return NULL;
         }
 
-        tmp = oauth2_append_kv(body, "client_assertion", assertion);
+        ret = oauth2_append_kv(&body, "client_assertion", assertion);
         flb_sds_destroy(assertion);
-        if (!tmp) {
+        if (ret == -1) {
             flb_sds_destroy(body);
             return NULL;
         }
-        body = tmp;
     }
 
     return body;
@@ -1113,6 +1091,14 @@ static int oauth2_http_request(struct flb_oauth2 *ctx, flb_sds_t body)
                         sizeof(FLB_HTTP_HEADER_CONTENT_TYPE) - 1,
                         FLB_OAUTH2_HTTP_ENCODING,
                         sizeof(FLB_OAUTH2_HTTP_ENCODING) - 1);
+
+    if (ctx->cfg.user_agent) {
+        flb_http_add_header(c,
+                            "User-Agent",
+                            10,
+                            ctx->cfg.user_agent,
+                            flb_sds_len(ctx->cfg.user_agent));
+    }
 
     if (ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_BASIC &&
         ctx->cfg.client_id && ctx->cfg.client_secret) {

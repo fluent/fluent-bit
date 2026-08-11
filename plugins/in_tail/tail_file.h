@@ -155,5 +155,8 @@ static inline off_t flb_tail_file_db_offset(struct flb_tail_file *file)
 
 int flb_tail_file_update_offset_marker(struct flb_tail_file *file);
 int flb_tail_file_offset_marker_matches(struct flb_tail_file *file);
+int flb_tail_file_reset_on_truncate(struct flb_tail_file *file,
+                                    int64_t size_delta,
+                                    const char *caller);
 
 #endif

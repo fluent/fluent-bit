@@ -118,7 +118,7 @@ static int cpufreq_update(struct flb_ne *ctx)
         cpu_id++;
 
         /* node_cpu_frequency_hertz */
-        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
                                         entry->str, "cpufreq", "cpuinfo_cur_freq",
                                         &val);
         if (ret == 0) {
@@ -128,7 +128,7 @@ static int cpufreq_update(struct flb_ne *ctx)
         }
 
         /* node_cpu_frequency_max_hertz */
-        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
                                         entry->str, "cpufreq", "cpuinfo_max_freq",
                                         &val);
         if (ret == 0) {
@@ -138,7 +138,7 @@ static int cpufreq_update(struct flb_ne *ctx)
         }
 
         /* node_cpu_frequency_min_hertz */
-        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
                                         entry->str, "cpufreq", "cpuinfo_min_freq",
                                         &val);
         if (ret == 0) {
@@ -149,7 +149,7 @@ static int cpufreq_update(struct flb_ne *ctx)
 
 
         /* node_cpu_scaling_frequency_hertz */
-        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
                                         entry->str, "cpufreq", "scaling_cur_freq",
                                         &val);
         if (ret == 0) {
@@ -159,7 +159,7 @@ static int cpufreq_update(struct flb_ne *ctx)
         }
 
         /* node_cpu_scaling_frequency_max_hertz */
-        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
                                         entry->str, "cpufreq", "scaling_max_freq",
                                         &val);
         if (ret == 0) {
@@ -169,7 +169,7 @@ static int cpufreq_update(struct flb_ne *ctx)
         }
 
         /* node_cpu_frequency_min_hertz */
-        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
                                         entry->str, "cpufreq", "scaling_min_freq",
                                         &val);
         if (ret == 0) {

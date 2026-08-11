@@ -447,6 +447,10 @@ static flb_sds_t url_params_format(char *params)
         }
         if (!tmp) {
             flb_error("[signv4] error allocating value");
+            flb_sds_destroy(buf);
+            flb_kv_release(&list);
+            flb_free(arr);
+            return NULL;
         }
         buf = tmp;
     }

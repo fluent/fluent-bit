@@ -416,7 +416,7 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                     return MQTT_ERROR;
                 }
 
-                if (length + 2 > (conn->buf_len - pos)) {
+                if (length + (conn->buf_pos - pos + 1) > (conn->buf_len - pos)) {
                     conn->buf_pos = pos;
                     flb_plg_trace(ctx->ins, "[fd=%i] Need more data",
                                   conn->connection->fd);
@@ -424,7 +424,7 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                 }
 
                 if ((BUFC() & 128) == 0) {
-                    if (conn->buf_len - 2 < length) {
+                    if (conn->buf_len - (conn->buf_pos - pos + 1) < length) {
                         conn->buf_pos = pos;
                         flb_plg_trace(ctx->ins, "[fd=%i] Need more data",
                                       conn->connection->fd);

@@ -34,6 +34,10 @@ static int wmi_coinitialize(struct flb_we *ctx, char* wmi_namespace)
     IWbemServices *service = 0;
     HRESULT hr;
     wchar_t *wnamespace;
+    BSTR bstrNamespace;
+    SYSTEM_INFO sysInfo;
+    VARIANT vArch;
+    VARIANT vReq;
 
     flb_plg_debug(ctx->ins, "initializing WMI instance....");
 
@@ -69,27 +73,62 @@ static int wmi_coinitialize(struct flb_we *ctx, char* wmi_namespace)
     }
     ctx->locator = locator;
 
+    hr = CoCreateInstance(&CLSID_WbemContext, 0, CLSCTX_INPROC_SERVER, &IID_IWbemContext, (LPVOID *) &ctx->wmi_context);
+    if (SUCCEEDED(hr) && ctx->wmi_context != NULL) {
+        GetNativeSystemInfo(&sysInfo);
+
+        VariantInit(&vArch);
+        vArch.vt = VT_I4;
+
+        if (sysInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64 ||
+            sysInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_ARM64) {
+            vArch.lVal = 64;
+        }
+        else {
+            vArch.lVal = 32;
+        }
+
+        ctx->wmi_context->lpVtbl->SetValue(ctx->wmi_context, L"__ProviderArchitecture", 0, &vArch);
+        VariantClear(&vArch);
+
+        VariantInit(&vReq);
+        vReq.vt = VT_BOOL;
+        vReq.boolVal = VARIANT_TRUE;
+        ctx->wmi_context->lpVtbl->SetValue(ctx->wmi_context, L"__RequiredArchitecture", 0, &vReq);
+        VariantClear(&vReq);
+    }
+
     if (wmi_namespace == NULL) {
         wnamespace = we_convert_str("ROOT\\CIMV2");
     }
     else {
         wnamespace = we_convert_str(wmi_namespace);
     }
+
+    bstrNamespace = SysAllocString(wnamespace);
+
     /* Connect WMI server */
     hr = locator->lpVtbl->ConnectServer(locator,
-                                        wnamespace,
+                                        bstrNamespace,
                                         NULL,
                                         NULL,
                                         0,
                                         0,
                                         0,
-                                        NULL,
+                                        ctx->wmi_context,
                                         &service);
+
+    SysFreeString(bstrNamespace);
     flb_free(wnamespace);
 
     if (FAILED(hr)) {
         flb_plg_error(ctx->ins, "Could not connect. Error code = %x", hr);
         locator->lpVtbl->Release(locator);
+        ctx->locator = NULL;
+        if (ctx->wmi_context != NULL) {
+            ctx->wmi_context->lpVtbl->Release(ctx->wmi_context);
+            ctx->wmi_context = NULL;
+        }
         CoUninitialize();
         return hr;
     }
@@ -109,6 +148,12 @@ static int wmi_coinitialize(struct flb_we *ctx, char* wmi_namespace)
         flb_plg_error(ctx->ins, "Could not set proxy blanket. Error code = %x", hr);
         service->lpVtbl->Release(service);
         locator->lpVtbl->Release(locator);
+        ctx->service = NULL;
+        ctx->locator = NULL;
+        if (ctx->wmi_context != NULL) {
+            ctx->wmi_context->lpVtbl->Release(ctx->wmi_context);
+            ctx->wmi_context = NULL;
+        }
         CoUninitialize();
         return hr;
     }
@@ -299,6 +344,8 @@ static inline int wmi_execute_query(struct flb_we *ctx, struct wmi_query_spec *s
     char *query = NULL;
     IEnumWbemClassObject* enumerator = NULL;
     size_t size;
+    BSTR bstrLanguage;
+    BSTR bstrQuery;
 
     size = 14 + strlen(spec->wmi_counter);
     if (spec->where_clause != NULL) {
@@ -319,13 +366,19 @@ static inline int wmi_execute_query(struct flb_we *ctx, struct wmi_query_spec *s
     wquery = we_convert_str(query);
     flb_free(query);
 
+    bstrLanguage = SysAllocString(L"WQL");
+    bstrQuery = SysAllocString(wquery);
+
     hr = ctx->service->lpVtbl->ExecQuery(
             ctx->service,
-            L"WQL",
-            wquery,
+            bstrLanguage,
+            bstrQuery,
             WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
-            NULL,
+            ctx->wmi_context,
             &enumerator);
+
+    SysFreeString(bstrLanguage);
+    SysFreeString(bstrQuery);
 
     flb_free(wquery);
 
@@ -363,6 +416,12 @@ static int wmi_exec_query_fixed_val(struct flb_we *ctx, struct wmi_query_spec *s
             &class_obj, &ret);
 
         if(0 == ret) {
+            if (FAILED(hr)) {
+                flb_plg_error(ctx->ins, "WMI Next() failed for fixed val. Error code = %x", hr);
+            }
+            else {
+                flb_plg_debug(ctx->ins, "WMI Next() returned 0 items for %s", spec->wmi_counter);
+            }
             break;
         }
 
@@ -397,6 +456,12 @@ static int wmi_exec_query(struct flb_we *ctx, struct wmi_query_spec *spec)
             &class_obj, &ret);
 
         if(0 == ret) {
+            if (FAILED(hr)) {
+                flb_plg_error(ctx->ins, "WMI Next() failed for query. Error code = %x", hr);
+            }
+            else {
+                flb_plg_debug(ctx->ins, "WMI Next() returned 0 items for %s", spec->wmi_counter);
+            }
             break;
         }
 
@@ -424,6 +489,10 @@ static int wmi_cleanup(struct flb_we *ctx)
     if (ctx->locator != NULL) {
         ctx->locator->lpVtbl->Release(ctx->locator);
         ctx->locator = NULL;
+    }
+    if (ctx->wmi_context != NULL) {
+        ctx->wmi_context->lpVtbl->Release(ctx->wmi_context);
+        ctx->wmi_context = NULL;
     }
     CoUninitialize();
 
@@ -476,6 +545,7 @@ int we_wmi_init(struct flb_we *ctx)
 {
     ctx->locator = NULL;
     ctx->service = NULL;
+    ctx->wmi_context = NULL;
 
     return 0;
 }

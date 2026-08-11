@@ -419,6 +419,9 @@ int flb_http1_response_commit(struct flb_http_response *response)
 
         return -9;
     }
+    response_buffer = sds_result;
+
+    response_buffer = sds_result;
 
     if (response->body != NULL) {
         sds_result = cfl_sds_cat(response_buffer,
@@ -562,6 +565,12 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
          * To prevent this, we reset the parser state, which introduces a minimal
          * performance overhead in exchange for ensuring safety.
          */
+    }
+    else if (result == MK_HTTP_PARSER_ERROR) {
+        /* The caller closes the session when a parser error is returned. */
+        session->stream.status = HTTP_STREAM_STATUS_ERROR;
+
+        return HTTP_SERVER_PROVIDER_ERROR;
     }
 
     dummy_mk_http_request_init(&session->inner_session, &session->inner_request);

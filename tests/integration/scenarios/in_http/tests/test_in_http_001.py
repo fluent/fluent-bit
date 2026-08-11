@@ -2,6 +2,7 @@ import http.client
 import json
 import os
 import logging
+import socket
 import time
 
 import pytest
@@ -9,6 +10,15 @@ import requests
 
 from server.http_server import data_storage, http_server_run
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
+from utils.input_pause_resume import (
+    assert_connection_closed,
+    assert_pause_resume_cycles,
+    assert_shutdown_while_paused,
+    is_valgrind,
+    large_json_payload,
+    open_partial_http_request,
+    open_stalled_tcp_connection,
+)
 from utils.test_service import FluentBitTestService
 
 logger = logging.getLogger(__name__)
@@ -55,6 +65,74 @@ def send_requests(conn, num_requests, headers, json_payload):
             'data': response.read().decode()
         })
     return responses
+
+
+def assert_connection_open_without_response(connection):
+    connection.settimeout(1)
+
+    try:
+        data = connection.recv(1)
+    except socket.timeout:
+        return
+
+    if not data:
+        pytest.fail("HTTP server closed the connection while the request was incomplete")
+
+    pytest.fail("HTTP server responded before the request was complete")
+
+
+def send_raw_http1_request(port, request, split_at=None):
+    response = bytearray()
+
+    with socket.create_connection(("127.0.0.1", port), timeout=2) as connection:
+        connection.settimeout(2)
+
+        if split_at is None:
+            connection.sendall(request)
+        else:
+            connection.sendall(request[:split_at])
+            assert_connection_open_without_response(connection)
+            connection.settimeout(2)
+            connection.sendall(request[split_at:])
+
+        while len(response) < 4096 and b"\r\n" not in response:
+            try:
+                data = connection.recv(4096 - len(response))
+            except ConnectionResetError:
+                break
+            except socket.timeout:
+                pytest.fail("HTTP/1 server did not respond or close the connection")
+
+            if not data:
+                break
+            response.extend(data)
+
+    return bytes(response)
+
+
+def send_split_http2_preface(port):
+    preface = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+    settings_frame = b"\x00\x00\x00\x04\x00\x00\x00\x00\x00"
+    response = bytearray()
+
+    with socket.create_connection(("127.0.0.1", port), timeout=2) as connection:
+        connection.settimeout(2)
+        connection.sendall(preface[:-2])
+        assert_connection_open_without_response(connection)
+        connection.settimeout(2)
+        connection.sendall(preface[-2:] + settings_frame)
+
+        while len(response) < 9:
+            try:
+                data = connection.recv(4096)
+            except socket.timeout:
+                pytest.fail("HTTP/2 server did not respond to a split connection preface")
+
+            if not data:
+                break
+            response.extend(data)
+
+    return bytes(response)
 
 
 def test_send_data():
@@ -109,6 +187,45 @@ def test_in_http_protocol_matrix(case):
     assert forwarded_payloads[0][0]["message"] == "Este es un mensaje de prueba"
 
 
+def test_in_http_accepts_split_http2_preface():
+    service = Service("in_http_http2_cleartext.yaml")
+
+    try:
+        service.start()
+        response = send_split_http2_preface(service.flb_listener_port)
+    finally:
+        service.stop()
+
+    assert len(response) >= 9
+    assert response[3] == 0x04
+    assert data_storage["payloads"] == []
+
+
+def test_in_http_accepts_http1_request_split_before_autodetect_boundary():
+    service = Service("in_http_http2_cleartext.yaml")
+    body = b'{"message":"split-http1"}'
+    request = (
+        b"POST / HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        + f"Content-Length: {len(body)}\r\n".encode()
+        + b"Connection: close\r\n"
+        b"\r\n"
+        + body
+    )
+
+    try:
+        service.start()
+        response = send_raw_http1_request(service.flb_listener_port, request, split_at=1)
+        forwarded_payloads = service.read_forwarded_payloads()
+    finally:
+        service.stop()
+
+    assert b"HTTP/1.1 201" in response
+    assert len(forwarded_payloads) == 1
+    assert forwarded_payloads[0][0]["message"] == "split-http1"
+
+
 def test_in_http_rejects_bad_json():
     service = Service("in_http_config")
     service.start()
@@ -139,6 +256,198 @@ def test_in_http_rejects_get_requests():
     service.stop()
 
     assert result["status_code"] >= 400
+
+
+def test_in_http_accepts_post_with_empty_generic_headers():
+    service = Service("in_http_config")
+    body = b'{"message":"empty-header"}'
+    request = (
+        b"POST / HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        + f"Content-Length: {len(body)}\r\n".encode()
+        + b"X-Empty:\r\n"
+        b"X-Empty-Whitespace: \t\r\n"
+        b"Connection: close\r\n"
+        b"\r\n"
+        + body
+    )
+
+    try:
+        service.start()
+        response = send_raw_http1_request(service.flb_listener_port, request)
+        forwarded_payloads = service.read_forwarded_payloads()
+    finally:
+        service.stop()
+
+    assert b"HTTP/1.1 201" in response
+    assert len(forwarded_payloads) == 1
+    assert forwarded_payloads[0][0]["message"] == "empty-header"
+
+
+def test_in_http_accepts_empty_connection_and_transfer_encoding():
+    service = Service("in_http_config")
+    body = b'{"message":"empty-semantic-headers"}'
+    request = (
+        b"POST / HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        + f"Content-Length: {len(body)}\r\n".encode()
+        + b"Connection:\r\n"
+        b"Transfer-Encoding: \t\r\n"
+        b"Connection: close\r\n"
+        b"\r\n"
+        + body
+    )
+
+    try:
+        service.start()
+        response = send_raw_http1_request(service.flb_listener_port, request)
+        forwarded_payloads = service.read_forwarded_payloads()
+    finally:
+        service.stop()
+
+    assert b"HTTP/1.1 201" in response
+    assert len(forwarded_payloads) == 1
+    assert forwarded_payloads[0][0]["message"] == "empty-semantic-headers"
+
+
+@pytest.mark.parametrize("header_value", [b"", b" \t"], ids=["empty", "whitespace"])
+@pytest.mark.parametrize(
+    "following_data",
+    [b"1-X: value\r\nConnection: close\r\n\r\n1", b"\r\n1"],
+    ids=["numeric-header", "numeric-body"],
+)
+def test_in_http_rejects_empty_content_length(header_value, following_data):
+    service = Service("in_http_config")
+    request = (
+        b"POST / HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        b"Content-Length:" + header_value + b"\r\n"
+        + following_data
+    )
+
+    try:
+        service.start()
+        response = send_raw_http1_request(service.flb_listener_port, request)
+        service.assert_no_forwarded_payloads_for()
+    finally:
+        service.stop()
+
+    forwarded_payloads = list(data_storage["payloads"])
+    assert response == b"" or b"HTTP/1.1 400" in response
+    assert forwarded_payloads == []
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        {
+            "id": "http1_cleartext_single_listener",
+            "config": "in_http_pause_resume_single.yaml",
+            "scheme": "http",
+            "http_mode": "http1.1",
+            "stalled_connection": open_partial_http_request,
+        },
+        {
+            "id": "http1_cleartext_workers",
+            "config": "in_http_pause_resume.yaml",
+            "scheme": "http",
+            "http_mode": "http1.1",
+            "stalled_connection": open_partial_http_request,
+        },
+        {
+            "id": "http2_tls_workers",
+            "config": "in_http_pause_resume_http2_tls.yaml",
+            "scheme": "https",
+            "http_mode": "http2",
+            "stalled_connection": open_stalled_tcp_connection,
+        },
+    ],
+    ids=lambda case: case["id"],
+)
+def test_in_http_pause_resume_cycles(case):
+    service = Service(case["config"])
+
+    try:
+        service.start()
+
+        def open_active_connections():
+            return [
+                case["stalled_connection"](
+                    "127.0.0.1",
+                    service.flb_listener_port,
+                )
+                for _ in range(8)
+            ]
+
+        assert_pause_resume_cycles(
+            service.flb,
+            f"{case['scheme']}://localhost:{service.flb_listener_port}/",
+            large_json_payload(size=6144),
+            ["Content-Type: application/json"],
+            input_name="http.0",
+            success_status=201,
+            cycles=3,
+            http_mode=case["http_mode"],
+            pause_trigger_requests=2,
+            ca_cert_path=service.tls_crt_file if case["scheme"] == "https" else None,
+            active_connection_factory=open_active_connections,
+        )
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    ["in_http_pause_resume_single.yaml", "in_http_pause_resume.yaml"],
+    ids=["single_listener", "workers_4"],
+)
+def test_in_http_shutdown_while_paused_with_active_connections(config_file):
+    service = Service(config_file)
+
+    try:
+        service.start()
+        assert_shutdown_while_paused(
+            service.flb,
+            service.stop,
+            "127.0.0.1",
+            service.flb_listener_port,
+            f"http://localhost:{service.flb_listener_port}/",
+            large_json_payload(size=6144),
+            ["Content-Type: application/json"],
+            input_name="http.0",
+            success_status=201,
+        )
+    finally:
+        service.stop()
+
+
+def test_in_http_async_tls_accept_timeout():
+    service = Service("in_http_accept_timeout_tls.yaml")
+    service.start()
+    stalled_connection = None
+
+    try:
+        stalled_connection = open_stalled_tcp_connection(
+            "127.0.0.1",
+            service.flb_listener_port,
+        )
+        assert_connection_closed(stalled_connection, timeout=10)
+
+        result = run_curl_request(
+            f"https://localhost:{service.flb_listener_port}/",
+            '{"message":"accept-timeout-recovered"}',
+            headers=["Content-Type: application/json"],
+            http_mode="http2",
+            ca_cert_path=service.tls_crt_file,
+        )
+        assert result["status_code"] == 201, result
+    finally:
+        if stalled_connection is not None:
+            stalled_connection.close()
+        service.stop()
 
 
 @pytest.mark.parametrize("case", PROTOCOL_CASES, ids=[case["id"] for case in PROTOCOL_CASES])
@@ -285,6 +594,13 @@ class Service:
                 return data_storage["payloads"]
             time.sleep(0.5)
         raise TimeoutError("Timed out waiting for forwarded HTTP payloads")
+
+    def assert_no_forwarded_payloads_for(self, quiet_period=1.5):
+        deadline = time.time() + quiet_period
+
+        while time.time() < deadline:
+            assert data_storage["payloads"] == []
+            time.sleep(0.1)
 
     def stop(self):
         self.service.stop()

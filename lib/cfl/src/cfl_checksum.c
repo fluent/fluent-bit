@@ -93,6 +93,10 @@ uint32_t cfl_checksum_crc32c(unsigned char *buffer, size_t length)
     uint32_t checksum;
     size_t   index;
 
+    if (buffer == NULL && length > 0) {
+        return 0;
+    }
+
     checksum = 0xFFFFFFFF;
 
     /* Keeping in mind that compilers are smart enough to optimize these

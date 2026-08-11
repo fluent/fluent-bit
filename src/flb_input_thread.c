@@ -75,13 +75,17 @@ static inline int handle_input_event(flb_pipefd_t fd, struct flb_input_instance 
     }
     else if (type == FLB_INPUT_THREAD_TO_THREAD) {
         if (operation == FLB_INPUT_THREAD_PAUSE) {
-            if (ins->p->cb_pause && ins->context) {
-                ins->p->cb_pause(ins->context, ins->config);
+            if ((ins->p->cb_pause || ins->p->cb_pause_checked) && ins->context) {
+                if (flb_input_plugin_pause(ins) != 0) {
+                    flb_plg_error(ins, "could not pause input instance");
+                }
             }
         }
         else if (operation == FLB_INPUT_THREAD_RESUME) {
-            if (ins->p->cb_resume) {
-                ins->p->cb_resume(ins->context, ins->config);
+            if ((ins->p->cb_resume || ins->p->cb_resume_checked) && ins->context) {
+                if (flb_input_plugin_resume(ins) != 0) {
+                    flb_plg_error(ins, "could not resume input instance");
+                }
             }
         }
         else if (operation == FLB_INPUT_THREAD_EXIT) {
@@ -459,7 +463,12 @@ static void input_thread(void *data)
                     flb_trace("[engine] resuming coroutine=%p",
                               connection->coroutine);
 
-                    flb_coro_resume(connection->coroutine);
+                    if (connection->event_coroutine != NULL) {
+                        flb_downstream_conn_event_resume(connection);
+                    }
+                    else {
+                        flb_coro_resume(connection->coroutine);
+                    }
                 }
             }
             else if (event->type == FLB_ENGINE_EV_INPUT) {
@@ -580,6 +589,10 @@ int flb_input_thread_instance_exit(struct flb_input_instance *ins)
     }
 
     memcpy(&tid, &thi->th->tid, sizeof(pthread_t));
+
+    if (ins->p->cb_pre_exit && ins->context) {
+        ins->p->cb_pre_exit(ins->context, ins->config);
+    }
 
     /* compose message to pause the thread */
     val = FLB_BITS_U64_SET(FLB_INPUT_THREAD_TO_THREAD,

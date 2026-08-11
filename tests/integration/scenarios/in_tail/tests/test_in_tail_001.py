@@ -2,6 +2,7 @@ import gzip
 import os
 import shutil
 import sqlite3
+import sys
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -11,7 +12,29 @@ import pytest
 import requests
 
 from server.http_server import data_storage, http_server_run
+from utils.fluent_bit_manager import fluent_bit_input_supports_config_property
 from utils.test_service import FluentBitTestService
+
+skip_on_windows = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="scenario relies on POSIX rotation, symlink, permissions, or inode semantics",
+)
+
+
+POLLING_CONFIGS = {
+    "tail_ignore_active_older.yaml",
+    "tail_ignore_older.yaml",
+    "tail_stat.yaml",
+    "tail_stat_db_compare_filename.yaml",
+}
+
+
+def _timezone_available(iana_zone):
+    if sys.platform == "win32":
+        return True
+
+    tzdir = Path(os.environ.get("TZDIR", "/usr/share/zoneinfo"))
+    return (tzdir / iana_zone).exists()
 
 
 class PersistentWriter:
@@ -35,6 +58,7 @@ class PersistentWriter:
 
 class Service:
     def __init__(self, config_file, *, tail_path, db_path):
+        self.config_name = config_file
         self.config_file = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../config", config_file)
         )
@@ -75,6 +99,14 @@ class Service:
             pass
 
     def start(self):
+        if (self.config_name in POLLING_CONFIGS and
+                not fluent_bit_input_supports_config_property(
+                    "tail", "inotify_watcher"
+                )):
+            pytest.skip(
+                "tail.inotify_watcher is not supported by the selected Fluent Bit binary"
+            )
+
         self.service.start()
         self.flb = self.service.flb
 
@@ -104,6 +136,53 @@ class Service:
             records = flatten_records(data_storage["payloads"])
             assert len(records) == expected_count
             time.sleep(0.5)
+
+
+class StorageFailureService:
+    def __init__(self, config_file, *, tail_path, db_path, storage_path):
+        self.config_file = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "../config", config_file)
+        )
+        self.service = FluentBitTestService(
+            self.config_file,
+            extra_env={
+                "TAIL_TEST_PATH": tail_path,
+                "TAIL_TEST_DB": db_path,
+                "TAIL_STORAGE_PATH": storage_path,
+            },
+            pre_start=self._set_closed_output_port,
+        )
+
+    def _set_closed_output_port(self, service):
+        service.allocate_port_env("TAIL_STORAGE_OUTPUT_PORT")
+
+    def start(self):
+        self.service.start()
+
+    def stop(self):
+        self.service.stop()
+
+    def wait_for_log_line(self, needle, timeout=20):
+        def has_log_line():
+            log_file = self.service.flb.log_file
+
+            if not log_file or not os.path.exists(log_file):
+                return None
+
+            with open(log_file, "r", encoding="utf-8") as handle:
+                content = handle.read()
+
+            if needle in content:
+                return content
+
+            return None
+
+        return self.service.wait_for_condition(
+            has_log_line,
+            timeout=timeout,
+            interval=0.5,
+            description=f"log line containing {needle!r}",
+        )
 
 
 def flatten_records(payloads):
@@ -150,10 +229,71 @@ def assert_log_set(records, expected_logs):
         assert logs.count(expected) == 1
 
 
+def wait_for_path_absent(path, timeout=20):
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        if not path.exists():
+            return
+
+        time.sleep(0.5)
+
+    raise TimeoutError(f"Timed out waiting for {path} to be deleted")
+
+
+def write_checksum_corrupted_chunk(storage_path):
+    stream_path = storage_path / "tail.0"
+    chunk_path = stream_path / "1-177560529.168611552.flb"
+    data = bytearray(25)
+
+    stream_path.mkdir()
+
+    data[0] = 0xC1
+    data[1] = 0x00
+    data[10] = 0x00
+    data[11] = 0x00
+    data[12] = 0x00
+    data[13] = 0x01
+    data[22] = 0x00
+    data[23] = 0x00
+    data[24] = 0x91
+
+    with open(chunk_path, "wb") as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+    return chunk_path
+
+
 @pytest.fixture
 def workspace():
     with tempfile.TemporaryDirectory(prefix="flb-tail-it-") as tmpdir:
         yield Path(tmpdir)
+
+
+def test_in_tail_storage_deletes_checksum_corrupted_chunk_on_startup(workspace):
+    log_file = workspace / "checksum-corrupt.log"
+    db_path = workspace / "tail.db"
+    storage_path = workspace / "storage"
+
+    storage_path.mkdir()
+    log_file.write_text("", encoding="utf-8")
+    corrupted_chunk = write_checksum_corrupted_chunk(storage_path)
+
+    service = StorageFailureService(
+        "tail_storage_corrupt_chunk.yaml",
+        tail_path=log_file,
+        db_path=db_path,
+        storage_path=storage_path,
+    )
+
+    try:
+        service.start()
+        service.wait_for_log_line("invalid crc32")
+        wait_for_path_absent(corrupted_chunk)
+    finally:
+        service.stop()
 
 
 def test_in_tail_discovers_new_files_from_head(workspace):
@@ -185,6 +325,95 @@ def test_in_tail_discovers_new_files_from_head(workspace):
         assert_log_set(records, ["discover-1", "discover-2", "discover-3"])
     finally:
         service.stop()
+
+
+def write_windows_utf8_path_config(path, tail_path, db_path, exclude_path):
+    path.write_text(
+        f"""service:
+  flush: 1
+  log_level: debug
+  http_server: on
+  http_port: ${{FLUENT_BIT_HTTP_MONITORING_PORT}}
+
+pipeline:
+  inputs:
+    - name: tail
+      tag: tail.integration
+      path: {tail_path}
+      exclude_path: {exclude_path}
+      windows.path_encoding: utf-8
+      read_from_head: true
+      read_newly_discovered_files_from_head: true
+      refresh_interval: 1
+      watcher_interval: 1
+      progress_check_interval: 1
+      rotate_wait: 6
+      db: {db_path}
+      db.sync: full
+      db.journal_mode: DELETE
+      db.compare_filename: true
+      path_key: file
+      offset_key: offset
+
+  outputs:
+    - name: http
+      match: tail.integration
+      host: 127.0.0.1
+      port: ${{TEST_SUITE_HTTP_PORT}}
+      uri: /data
+      format: json
+      json_date_key: false
+""",
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only path API mode")
+def test_in_tail_windows_utf8_path_encoding_discovers_unicode_file(workspace):
+    log_dir = workspace / "utf8-\U0001f600"
+    db_path = workspace / "tail.db"
+    config_path = workspace / "tail_windows_utf8_path.yaml"
+    log_dir.mkdir()
+
+    log_file = log_dir / "unicode-\U0001f600.log"
+    long_log_file = log_dir / (("\U0001f600" * 70) + ".log")
+    excluded_log_file = log_dir / "excluded-\U0001f600.log"
+    log_file.write_text("utf8-path-1\n", encoding="utf-8")
+    long_log_file.write_text("utf8-path-2\n", encoding="utf-8")
+    excluded_log_file.write_text("must-be-excluded\n", encoding="utf-8")
+    write_windows_utf8_path_config(
+        config_path,
+        log_dir / "*.log",
+        db_path,
+        excluded_log_file.name,
+    )
+
+    service = Service(
+        config_path,
+        tail_path=log_dir / "*.log",
+        db_path=db_path,
+    )
+
+    try:
+        service.start()
+        records = service.wait_for_records(2)
+        service.assert_no_new_records_for(2, quiet_period=3)
+    finally:
+        service.stop()
+
+    assert_log_set(records[:2], ["utf8-path-1", "utf8-path-2"])
+    record_paths = {record["file"] for record in records[:2]}
+    assert record_paths == {str(log_file), str(long_log_file)}
+
+    db = sqlite3.connect(db_path)
+    try:
+        row = db.execute(
+            "SELECT name FROM in_tail_files",
+        ).fetchall()
+    finally:
+        db.close()
+
+    assert {item[0] for item in row} == {str(log_file), str(long_log_file)}
 
 
 def test_in_tail_newly_discovered_files_can_start_from_tail(workspace):
@@ -239,6 +468,7 @@ def test_in_tail_existing_file_can_start_from_tail_on_startup(workspace):
     assert records[0]["offset"] > 0
 
 
+@skip_on_windows
 def test_in_tail_follows_rename_rotation(workspace):
     active_log = workspace / "app.log"
     db_path = workspace / "tail.db"
@@ -276,6 +506,7 @@ def test_in_tail_follows_rename_rotation(workspace):
         service.stop()
 
 
+@skip_on_windows
 def test_in_tail_handles_multiple_rename_rotations(workspace):
     active_log = workspace / "multi-rotate.log"
     db_path = workspace / "tail.db"
@@ -357,6 +588,7 @@ def test_in_tail_handles_copytruncate_with_stale_writer(workspace):
         service.stop()
 
 
+@skip_on_windows
 def test_in_tail_handles_symlink_target_rotation(workspace):
     target_one = workspace / "target-one.log"
     target_two = workspace / "target-two.log"
@@ -400,6 +632,7 @@ def test_in_tail_handles_symlink_target_rotation(workspace):
         service.stop()
 
 
+@skip_on_windows
 def test_in_tail_stat_backend_covers_nfs_style_polling(workspace):
     active_log = workspace / "nfs-style.log"
     db_path = workspace / "tail.db"
@@ -433,6 +666,7 @@ def test_in_tail_stat_backend_covers_nfs_style_polling(workspace):
         service.stop()
 
 
+@skip_on_windows
 def test_in_tail_db_compare_filename_replays_renamed_file_after_restart(workspace):
     source_log = workspace / "db-source.log"
     moved_log = workspace / "db-moved.log"
@@ -501,6 +735,30 @@ def test_in_tail_parser_mode_structures_records(workspace):
     assert record["path"] == "/apache_pb.gif"
     assert record["code"] == "200"
     assert record["size"] == "2326"
+    assert record["file"] == str(log_file)
+    assert "offset" in record
+
+
+def test_in_tail_parser_time_zone_generates_native_timestamp(workspace):
+    if not _timezone_available("America/New_York"):
+        pytest.skip("America/New_York zoneinfo is not available")
+
+    log_file = workspace / "iana-timezone.log"
+    db_path = workspace / "tail.db"
+
+    write_and_sync(log_file, "07/17/2017 16:17:03 summer in new york\n")
+
+    service = Service("tail_parser_time_zone.yaml", tail_path=log_file, db_path=db_path)
+
+    try:
+        service.start()
+        records = service.wait_for_records(1)
+    finally:
+        service.stop()
+
+    record = records[0]
+    assert record["message"] == "summer in new york"
+    assert record["timestamp"] == "2017-07-17T20:17:03.000000Z"
     assert record["file"] == str(log_file)
     assert "offset" in record
 
@@ -580,6 +838,7 @@ def test_in_tail_truncate_long_lines_emits_truncated_record_and_continues(worksp
     assert len(truncated[0]) > 0
 
 
+@skip_on_windows
 def test_in_tail_rotate_wait_keeps_old_inode_then_purges_it(workspace):
     active_log = workspace / "rotate-wait.log"
     db_path = workspace / "tail.db"
@@ -614,6 +873,7 @@ def test_in_tail_rotate_wait_keeps_old_inode_then_purges_it(workspace):
         service.stop()
 
 
+@skip_on_windows
 def test_in_tail_delete_and_recreate_same_path_is_reingested(workspace):
     active_log = workspace / "recreate.log"
     db_path = workspace / "tail.db"
@@ -640,6 +900,7 @@ def test_in_tail_delete_and_recreate_same_path_is_reingested(workspace):
         service.stop()
 
 
+@skip_on_windows
 def test_in_tail_restart_resumes_from_db_offset(workspace):
     log_file = workspace / "resume.log"
     db_path = workspace / "tail.db"
@@ -665,6 +926,7 @@ def test_in_tail_restart_resumes_from_db_offset(workspace):
         second_run.stop()
 
 
+@skip_on_windows
 def test_in_tail_copytruncate_across_restart_reads_new_content_only(workspace):
     log_file = workspace / "restart-copytruncate.log"
     archived = workspace / "restart-copytruncate.log.1"
@@ -693,6 +955,7 @@ def test_in_tail_copytruncate_across_restart_reads_new_content_only(workspace):
         second_run.stop()
 
 
+@skip_on_windows
 def test_in_tail_partial_line_across_restart_is_completed_once(workspace):
     log_file = workspace / "partial-restart.log"
     db_path = workspace / "tail.db"
@@ -718,6 +981,7 @@ def test_in_tail_partial_line_across_restart_is_completed_once(workspace):
     assert_log_set(records, ["partial line"])
 
 
+@skip_on_windows
 def test_in_tail_db_schema_upgrade_is_automatic(workspace):
     log_file = workspace / "schema-upgrade.log"
     db_path = workspace / "tail.db"
@@ -779,6 +1043,7 @@ def test_in_tail_db_schema_upgrade_is_automatic(workspace):
     assert "offset_marker_size" in columns
 
 
+@skip_on_windows
 def test_in_tail_multi_file_rapid_rotation(workspace):
     log_dir = workspace / "rapid"
     log_dir.mkdir()
@@ -871,6 +1136,7 @@ def test_in_tail_exclude_path_skips_matching_files(workspace):
     assert records[0]["file"] == str(keep_file)
 
 
+@skip_on_windows
 def test_in_tail_ignore_older_skips_stale_files(workspace):
     stale_file = workspace / "stale.log"
     db_path = workspace / "tail.db"
@@ -888,7 +1154,8 @@ def test_in_tail_ignore_older_skips_stale_files(workspace):
         service.stop()
 
 
-def test_in_tail_ignore_active_older_files_stops_following_aged_file(workspace):
+@skip_on_windows
+def test_in_tail_ignore_active_older_files_resumes_updated_file(workspace):
     log_file = workspace / "active-aged.log"
     db_path = workspace / "tail.db"
 
@@ -904,9 +1171,11 @@ def test_in_tail_ignore_active_older_files_stops_following_aged_file(workspace):
         time.sleep(4)
         service.assert_no_new_records_for(1, quiet_period=4)
         write_and_sync(log_file, "second-line\n")
-        service.assert_no_new_records_for(1, quiet_period=4)
+        records = service.wait_for_records(2, timeout=20)
     finally:
         service.stop()
+
+    assert_log_set(records, ["first-line", "second-line"])
 
 
 def test_in_tail_docker_mode_parses_and_flushes_docker_json_stream(workspace):
@@ -965,6 +1234,7 @@ def test_in_tail_generic_encoding_shiftjis(workspace):
     assert_log_set(records, [expected_text])
 
 
+@skip_on_windows
 def test_in_tail_discovers_file_after_permissions_are_restored(workspace):
     log_dir = workspace / "permissions"
     log_dir.mkdir()

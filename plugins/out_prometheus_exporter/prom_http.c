@@ -126,6 +126,7 @@ struct prom_http *prom_http_server_create(struct prom_exporter *ctx,
     options.use_caller_event_loop = FLB_TRUE;
 
     if (ins->http_server_config != NULL) {
+        options.idle_timeout = ins->http_server_config->idle_timeout;
         options.buffer_max_size = ins->http_server_config->buffer_max_size;
         options.max_connections = ins->http_server_config->max_connections;
     }

@@ -15,7 +15,9 @@
 #  limitations under the License.
 
 import gzip
+import hashlib
 import logging
+import os
 import socket
 import struct
 import subprocess
@@ -28,11 +30,20 @@ logger = logging.getLogger(__name__)
 data_storage = {
     "messages": [],
     "connections": [],
+    "handshakes": [],
 }
 
 server_thread = None
 server_port = None
 server_stop_event = threading.Event()
+
+# Secure forward (shared_key handshake) behavior; configured by
+# forward_server_run().
+server_options = {
+    "shared_key": None,
+    "self_hostname": "python-forward-server",
+    "corrupt_pong_digest": False,
+}
 
 
 class IncompleteBuffer(Exception):
@@ -42,6 +53,7 @@ class IncompleteBuffer(Exception):
 def reset_forward_server_state():
     data_storage["messages"] = []
     data_storage["connections"] = []
+    data_storage["handshakes"] = []
     server_stop_event.clear()
 
 
@@ -226,6 +238,10 @@ def _pack_map(mapping):
 
 
 def _pack_obj(value):
+    if value is None:
+        return b"\xC0"
+    if isinstance(value, bool):
+        return b"\xC3" if value else b"\xC2"
     if isinstance(value, str):
         return _pack_str(value)
     if isinstance(value, bytes):
@@ -233,6 +249,10 @@ def _pack_obj(value):
         if length <= 0xFF:
             return b"\xC4" + bytes([length]) + value
         return b"\xC5" + length.to_bytes(2, "big") + value
+    if isinstance(value, list):
+        if len(value) > 15:
+            raise TypeError("only fixarray packing is supported")
+        return bytes([0x90 | len(value)]) + b"".join(_pack_obj(item) for item in value)
     if isinstance(value, dict):
         return _pack_map(value)
     raise TypeError(f"Unsupported pack type {type(value)!r}")
@@ -240,6 +260,72 @@ def _pack_obj(value):
 
 def _send_ack(sock, chunk):
     sock.sendall(_pack_obj({"ack": chunk}))
+
+
+def _sha512_hex(*parts):
+    hasher = hashlib.sha512()
+    for part in parts:
+        if isinstance(part, str):
+            part = part.encode()
+        hasher.update(part)
+    return hasher.hexdigest()
+
+
+def _recv_msgpack(conn, buffer=b""):
+    while True:
+        if buffer:
+            try:
+                value, offset = _unpack_obj(buffer, 0)
+                return value, buffer[offset:]
+            except IncompleteBuffer:
+                pass
+        chunk = conn.recv(4096)
+        if not chunk:
+            raise ConnectionError("connection closed during secure handshake")
+        buffer += chunk
+
+
+def _perform_secure_handshake(conn):
+    """
+    Secure forward handshake (Forward protocol v1/v1.5):
+
+      server -> HELO ["HELO", {"nonce", "auth", "keepalive"}]
+      client -> PING ["PING", client_hostname, shared_key_salt,
+                      shared_key_hexdigest, username, password]
+      server -> PONG ["PONG", auth_result, reason, server_hostname,
+                      shared_key_hexdigest]
+
+    Returns any bytes received beyond the PING message.
+    """
+    shared_key = server_options["shared_key"]
+    self_hostname = server_options["self_hostname"]
+    nonce = os.urandom(16)
+
+    conn.sendall(_pack_obj(["HELO", {"nonce": nonce, "auth": b"", "keepalive": True}]))
+
+    ping, leftover = _recv_msgpack(conn)
+    if not isinstance(ping, list) or len(ping) != 6 or ping[0] != "PING":
+        raise ValueError(f"invalid PING message: {ping!r}")
+
+    client_hostname = ping[1]
+    shared_key_salt = ping[2]
+    client_digest = ping[3]
+
+    expected_client_digest = _sha512_hex(shared_key_salt, client_hostname,
+                                         nonce, shared_key)
+    data_storage["handshakes"].append({
+        "client_hostname": client_hostname,
+        "client_digest_valid": client_digest == expected_client_digest,
+    })
+
+    server_digest = _sha512_hex(shared_key_salt, self_hostname, nonce, shared_key)
+    if server_options["corrupt_pong_digest"]:
+        first = "1" if server_digest[0] == "0" else "0"
+        server_digest = first + server_digest[1:]
+
+    conn.sendall(_pack_obj(["PONG", True, "", self_hostname, server_digest]))
+
+    return leftover
 
 
 def _decode_packed_entries(entry, options):
@@ -316,6 +402,15 @@ def _classify_message(root):
 def _handle_client(conn, address):
     data_storage["connections"].append({"peer": address})
     buffer = b""
+
+    if server_options["shared_key"] is not None:
+        conn.settimeout(5)
+        try:
+            buffer = _perform_secure_handshake(conn)
+        except (ConnectionError, OSError, ValueError) as error:
+            logger.info("secure forward handshake aborted: %s", error)
+            return
+
     conn.settimeout(0.5)
 
     while not server_stop_event.is_set():
@@ -370,10 +465,15 @@ def run_forward_server(port):
                 _handle_client(conn, address)
 
 
-def forward_server_run(port):
+def forward_server_run(port, shared_key=None,
+                       self_hostname="python-forward-server",
+                       corrupt_pong_digest=False):
     global server_thread, server_port
 
     reset_forward_server_state()
+    server_options["shared_key"] = shared_key
+    server_options["self_hostname"] = self_hostname
+    server_options["corrupt_pong_digest"] = corrupt_pong_digest
     server_port = port
     server_thread = threading.Thread(target=run_forward_server, args=(port,), daemon=True)
     server_thread.start()

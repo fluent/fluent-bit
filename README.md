@@ -26,7 +26,7 @@ Fluent Bit supports a wide array of platforms, including Linux, Windows, MacOS, 
 ## 📌 Roadmap & Maintenance
 
 We follow a fast-paced development cycle, with major releases every 3–4 months.
-The active development branch (`master`) is currently focused on **v5.0** (development).
+The active development branch (`master`) is currently focused on **v5.1** (development).
 
 For version-specific maintenance timelines and policies, see our [MAINTENANCE.md](https://github.com/fluent/fluent-bit/blob/master/MAINTENANCE.md).
 

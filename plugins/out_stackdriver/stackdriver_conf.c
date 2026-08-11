@@ -134,6 +134,9 @@ static int read_credentials_file(const char *cred_file, struct flb_stackdriver *
             ctx->creds->type = flb_sds_create_len(val, val_len);
         }
         else if (key_cmp(key, key_len, "project_id") == 0) {
+            if (ctx->project_id) {
+                flb_sds_destroy(ctx->project_id);
+            }
             ctx->project_id = flb_sds_create_len(val, val_len);
         }
         else if (key_cmp(key, key_len, "private_key_id") == 0) {
@@ -183,6 +186,7 @@ static int parse_key_value_list(struct flb_stackdriver *ctx,
     char *p;
     flb_sds_t key;
     flb_sds_t val;
+    flb_sds_t tmp_sds;
     struct flb_kv *kv;
     struct mk_list *head;
     struct flb_slist_entry *entry;
@@ -199,23 +203,52 @@ static int parse_key_value_list(struct flb_stackdriver *ctx,
             }
 
             key = flb_sds_create_size((p - entry->str) + 1);
-            flb_sds_cat(key, entry->str, p - entry->str);
-            val = flb_sds_create(p + 1);
-            if (shouldTrim) {
-                flb_sds_trim(key);
-                flb_sds_trim(val);
-            }
-            if (!key || flb_sds_len(key) == 0) {
+            if (!key) {
                 flb_plg_error(ctx->ins,
-                              "invalid key value pair on '%s'",
+                              "cannot allocate key for '%s'",
                               entry->str);
                 return -1;
             }
-            if (!val || flb_sds_len(val) == 0) {
+
+            tmp_sds = flb_sds_cat(key, entry->str, p - entry->str);
+            if (!tmp_sds) {
+                flb_plg_error(ctx->ins,
+                              "cannot copy key for '%s'",
+                              entry->str);
+                flb_sds_destroy(key);
+                return -1;
+            }
+            key = tmp_sds;
+
+            val = flb_sds_create(p + 1);
+            if (!val) {
                 flb_plg_error(ctx->ins,
                               "invalid key value pair on '%s'",
                               entry->str);
                 flb_sds_destroy(key);
+                return -1;
+            }
+
+            if (shouldTrim) {
+                flb_sds_trim(key);
+                flb_sds_trim(val);
+            }
+
+            if (flb_sds_len(key) == 0) {
+                flb_plg_error(ctx->ins,
+                              "invalid key value pair on '%s'",
+                              entry->str);
+                flb_sds_destroy(key);
+                flb_sds_destroy(val);
+                return -1;
+            }
+
+            if (flb_sds_len(val) == 0) {
+                flb_plg_error(ctx->ins,
+                              "invalid key value pair on '%s'",
+                              entry->str);
+                flb_sds_destroy(key);
+                flb_sds_destroy(val);
                 return -1;
             }
 
@@ -264,6 +297,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     size_t http_request_key_size;
     struct cmt_histogram_buckets *buckets;
     flb_sds_t cloud_logging_base_url_str;
+    flb_sds_t tmp_sds;
     size_t cloud_logging_base_url_size, cloud_logging_write_url_size;
 
     /* Allocate config context */
@@ -548,7 +582,17 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     if (ctx->tag_prefix == NULL && ctx->resource_type == RESOURCE_TYPE_K8S) {
         /* allocate the flb_sds_t to tag_prefix_k8s so we can safely deallocate it */
         ctx->tag_prefix_k8s = flb_sds_create(ctx->resource);
-        ctx->tag_prefix_k8s = flb_sds_cat(ctx->tag_prefix_k8s, ".", 1);
+        if (!ctx->tag_prefix_k8s) {
+            flb_stackdriver_conf_destroy(ctx);
+            return NULL;
+        }
+
+        tmp_sds = flb_sds_cat(ctx->tag_prefix_k8s, ".", 1);
+        if (!tmp_sds) {
+            flb_stackdriver_conf_destroy(ctx);
+            return NULL;
+        }
+        ctx->tag_prefix_k8s = tmp_sds;
         ctx->tag_prefix = ctx->tag_prefix_k8s;
     }
 
@@ -663,13 +707,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
         flb_sds_destroy(ctx->metadata_server);
     }
 
-    if (ctx->resource_type == RESOURCE_TYPE_K8S){
-        flb_sds_destroy(ctx->namespace_name);
-        flb_sds_destroy(ctx->pod_name);
-        flb_sds_destroy(ctx->container_name);
-        flb_sds_destroy(ctx->node_name);
-        flb_sds_destroy(ctx->local_resource_id);
-    }
+
 
     if (ctx->metadata_server_auth) {
         flb_sds_destroy(ctx->zone);
@@ -706,6 +744,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
 
     flb_kv_release(&ctx->config_labels);
     flb_kv_release(&ctx->resource_labels_kvs);
+
     if (ctx->token_mutex_initialized) {
         pthread_mutex_destroy(&ctx->token_mutex);
     }

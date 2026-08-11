@@ -466,6 +466,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
     struct flb_config *new_config;
     flb_ctx_t *new_ctx = NULL;
     struct flb_cf *new_cf;
+    struct flb_cf *loaded_cf;
     struct flb_cf *original_cf;
     int verbose;
     int reloaded_count = 0;
@@ -551,14 +552,18 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
     /* Create another config format context */
     if (file != NULL) {
-        new_cf = flb_cf_create_from_file(new_cf, file);
+        loaded_cf = flb_cf_create_from_file(new_cf, file);
 
-        if (!new_cf) {
+        if (!loaded_cf) {
             flb_sds_destroy(file);
+            flb_cf_destroy(new_cf);
+            flb_destroy(new_ctx);
             old_config->hot_reloading = FLB_FALSE;
             flb_reload_watchdog_cleanup(watchdog_ctx);
             return FLB_RELOAD_HALTED;
         }
+
+        new_cf = loaded_cf;
     }
 
     /* Load external plugins via command line */
@@ -586,6 +591,19 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         old_config->hot_reloading = FLB_FALSE;
 
         flb_error("[reload] reloaded config format is invalid. Reloading is halted");
+        flb_reload_watchdog_cleanup(watchdog_ctx);
+        return FLB_RELOAD_HALTED;
+    }
+
+    if (new_config->fips_mode != old_config->fips_mode) {
+        if (file != NULL) {
+            flb_sds_destroy(file);
+        }
+        flb_cf_destroy(new_cf);
+        flb_destroy(new_ctx);
+        old_config->hot_reloading = FLB_FALSE;
+
+        flb_error("[reload] security.fips_mode cannot be changed by hot reload");
         flb_reload_watchdog_cleanup(watchdog_ctx);
         return FLB_RELOAD_HALTED;
     }

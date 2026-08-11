@@ -18,6 +18,7 @@
 #define FLB_003 FLB_TESTS_DATA_PATH "/data/config_format/classic/recursion.conf"
 #define FLB_004 FLB_TESTS_DATA_PATH "/data/config_format/classic/issue6281.conf"
 #define FLB_005 FLB_TESTS_DATA_PATH "/data/config_format/classic/nolimitline.conf"
+#define FLB_006 FLB_TESTS_DATA_PATH "/data/config_format/classic/missing_include.conf"
 
 #define ERROR_LOG "fluentbit_conf_error.log"
 
@@ -166,7 +167,8 @@ void missing_value()
 
 void indent_level_error()
 {
-	struct flb_cf *cf;
+    struct flb_cf *cf;
+    struct flb_cf *ret;
     FILE *fp = NULL;
     char *expected_strs[] = {"invalid", "indent", "level"};
     struct str_list expected = {
@@ -188,32 +190,29 @@ void indent_level_error()
         exit(EXIT_FAILURE);
     }
 
-    cf = flb_cf_fluentbit_create(cf, FLB_002, NULL, 0);
-    TEST_CHECK(cf == NULL);
+    ret = flb_cf_fluentbit_create(cf, FLB_002, NULL, 0);
+    TEST_CHECK(ret == NULL);
     fflush(fp);
     fclose(fp);
 
     fp = fopen(ERROR_LOG, "r");
     if (!TEST_CHECK(fp != NULL)) {
         TEST_MSG("fopen failed. errno=%d path=%s", errno, ERROR_LOG);
-        if (cf != NULL) {
-            flb_cf_destroy(cf);
-        }
+        flb_cf_destroy(cf);
         unlink(ERROR_LOG);
         exit(EXIT_FAILURE);
     }
 
     check_str_list(&expected, fp);
-    if (cf != NULL) {
-        flb_cf_destroy(cf);
-    }
+    flb_cf_destroy(cf);
     fclose(fp);
     unlink(ERROR_LOG);
 }
 
 void recursion()
 {
-	struct flb_cf *cf;
+    struct flb_cf *cf;
+    struct flb_cf *ret;
 
     cf = flb_cf_create();
     if (!TEST_CHECK(cf != NULL)) {
@@ -221,9 +220,32 @@ void recursion()
         exit(EXIT_FAILURE);
     }
 
-    cf = flb_cf_fluentbit_create(cf, FLB_003, NULL, 0);
+    ret = flb_cf_fluentbit_create(cf, FLB_003, NULL, 0);
+    if (ret != NULL) {
+        flb_cf_destroy(ret);
+    }
+    else {
+        flb_cf_destroy(cf);
+    }
 
     /* No SIGSEGV means success */
+}
+
+void test_caller_owned_error()
+{
+    struct flb_cf *cf;
+    struct flb_cf *ret;
+
+    cf = flb_cf_create();
+    if (!TEST_CHECK(cf != NULL)) {
+        TEST_MSG("flb_cf_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_cf_fluentbit_create(cf, FLB_006, NULL, 0);
+    TEST_CHECK(ret == NULL);
+
+    flb_cf_destroy(cf);
 }
 
 
@@ -346,6 +368,7 @@ TEST_LIST = {
     { "missing_value_issue5880" , missing_value},
     { "indent_level_error" , indent_level_error},
     { "recursion" , recursion},
+    { "caller_owned_error" , test_caller_owned_error},
     { "not_current_dir_files", not_current_dir_files},
     { "no_limit_line", test_nolimit_line},
     { "snake_case_key", test_snake_case_key},

@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_fips.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_filter.h>
@@ -591,6 +592,21 @@ int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
                         void *out_callback_data,
                         void *test_ctx)
 {
+    return flb_output_set_test_with_ctx_callback(ctx, ffd, test_name,
+                                                 out_callback,
+                                                 out_callback_data,
+                                                 test_ctx, NULL);
+}
+
+int flb_output_set_test_with_ctx_callback(flb_ctx_t *ctx, int ffd,
+                                          char *test_name,
+                                          void (*out_callback) (void *, int, int, void *, size_t, void *),
+                                          void *out_callback_data,
+                                          void *test_ctx,
+                                          void *(*test_ctx_callback) (struct flb_config *,
+                                                                      struct flb_input_instance *,
+                                                                      void *, void *))
+{
     struct flb_output_instance *o_ins;
 
     o_ins = out_instance_get(ctx, ffd);
@@ -611,6 +627,7 @@ int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
         o_ins->test_formatter.rt_out_callback = out_callback;
         o_ins->test_formatter.rt_data = out_callback_data;
         o_ins->test_formatter.flush_ctx = test_ctx;
+        o_ins->test_formatter.flush_ctx_callback = test_ctx_callback;
     }
     else {
         return -1;
@@ -940,8 +957,15 @@ int static do_start(flb_ctx_t *ctx)
 
     /* set context as the last active one */
 
-    /* spawn worker thread */
     config = ctx->config;
+
+    /* OpenSSL default properties must be configured before worker threads start. */
+    ret = flb_fips_init(config);
+    if (ret != 0) {
+        return -1;
+    }
+
+    /* spawn worker thread */
     ret = mk_utils_worker_spawn(flb_lib_worker, ctx, &tid);
     if (ret == -1) {
         return -1;

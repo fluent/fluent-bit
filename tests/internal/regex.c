@@ -319,6 +319,95 @@ static void test_option_i_x()
     }
 }
 
+static void test_literal_slash()
+{
+    struct flb_regex *regex = NULL;
+    int ret;
+
+    regex = flb_regex_create("/");
+    if (!TEST_CHECK(regex != NULL)) {
+        TEST_MSG("flb_regex_create failed");
+        exit(1);
+    }
+
+    ret = flb_regex_match(regex, (unsigned char *) "/tmp", 4);
+    if (!TEST_CHECK(ret == 1)) {
+        TEST_MSG("literal slash did not match");
+        flb_regex_destroy(regex);
+        exit(1);
+    }
+
+    ret = flb_regex_match(regex, (unsigned char *) "tmp", 3);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("literal slash matched string without slash");
+        flb_regex_destroy(regex);
+        exit(1);
+    }
+
+    ret = flb_regex_destroy(regex);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_regex_destroy failed");
+        exit(1);
+    }
+}
+
+static void test_slash_delimited_pattern()
+{
+    struct flb_regex *regex = NULL;
+    int ret;
+
+    regex = flb_regex_create("/tmp/");
+    if (!TEST_CHECK(regex != NULL)) {
+        TEST_MSG("flb_regex_create failed");
+        exit(1);
+    }
+
+    ret = flb_regex_match(regex, (unsigned char *) "tmp", 3);
+    if (!TEST_CHECK(ret == 1)) {
+        TEST_MSG("slash-delimited pattern did not match");
+        flb_regex_destroy(regex);
+        exit(1);
+    }
+
+    ret = flb_regex_destroy(regex);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_regex_destroy failed");
+        exit(1);
+    }
+}
+
+static void test_slash_delimited_literal_slashes()
+{
+    struct flb_regex *regex = NULL;
+    int ret;
+
+    regex = flb_regex_create("//tmp//");
+    if (!TEST_CHECK(regex != NULL)) {
+        TEST_MSG("flb_regex_create failed");
+        exit(1);
+    }
+
+    ret = flb_regex_match(regex, (unsigned char *) "/tmp/", 5);
+    if (!TEST_CHECK(ret == 1)) {
+        TEST_MSG("slash-delimited literal slash pattern did not match");
+        flb_regex_destroy(regex);
+        exit(1);
+    }
+
+    ret = flb_regex_match(regex, (unsigned char *) "tmp", 3);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("slash-delimited literal slash pattern matched string without slashes");
+        flb_regex_destroy(regex);
+        exit(1);
+    }
+
+    ret = flb_regex_destroy(regex);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_regex_destroy failed");
+        exit(1);
+    }
+}
+
 TEST_LIST = {
     { "basic" , test_basic},
     { "uri" , test_uri},
@@ -326,5 +415,8 @@ TEST_LIST = {
     { "option_multiline" , test_option_multiline},
     { "option_extend" , test_option_extend},
     { "option_i_x" , test_option_i_x},
+    { "literal_slash" , test_literal_slash},
+    { "slash_delimited_pattern" , test_slash_delimited_pattern},
+    { "slash_delimited_literal_slashes" , test_slash_delimited_literal_slashes},
     { 0 }
 };

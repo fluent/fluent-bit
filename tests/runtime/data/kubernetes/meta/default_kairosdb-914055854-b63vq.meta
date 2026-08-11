@@ -14,7 +14,8 @@
       "pod-template-hash": "914055854"
     },
     "annotations": {
-      "kubernetes.io/created-by": "{\"kind\":\"SerializedReference\",\"apiVersion\":\"v1\",\"reference\":{\"kind\":\"ReplicaSet\",\"namespace\":\"default\",\"name\":\"kairosdb-914055854\",\"uid\":\"d6c2f841-05a4-11e8-a8c4-080027435fb7\",\"apiVersion\":\"extensions\",\"resourceVersion\":\"1592\"}}\n"
+      "kubernetes.io/created-by": "{\"kind\":\"SerializedReference\",\"apiVersion\":\"v1\",\"reference\":{\"kind\":\"ReplicaSet\",\"namespace\":\"default\",\"name\":\"kairosdb-914055854\",\"uid\":\"d6c2f841-05a4-11e8-a8c4-080027435fb7\",\"apiVersion\":\"extensions\",\"resourceVersion\":\"1592\"}}\n",
+      "fluentbit.io/exclude-kairosdb": "true"
     },
     "ownerReferences": [
       {

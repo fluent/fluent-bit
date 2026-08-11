@@ -58,7 +58,7 @@ static int filefd_update(struct flb_ne *ctx)
     struct flb_slist_entry *max;
 
     mk_list_init(&list);
-    ret = ne_utils_file_read_lines(ctx->path_procfs, "/sys/fs/file-nr", &list);
+    ret = ne_utils_file_read_lines(ctx, ctx->path_procfs, "/sys/fs/file-nr", &list);
     if (ret == -1) {
         return -1;
     }

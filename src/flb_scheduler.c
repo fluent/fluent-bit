@@ -751,6 +751,9 @@ struct flb_sched *flb_sched_create(struct flb_config *config,
 
     sched->config = config;
     sched->evl = evl;
+    sched->ch_events[0] = -1;
+    sched->ch_events[1] = -1;
+    MK_EVENT_ZERO(&sched->event);
 
     /* Initialize lists */
     mk_list_init(&sched->requests);
@@ -791,7 +794,7 @@ struct flb_sched *flb_sched_create(struct flb_config *config,
     ret = mk_event_channel_create(sched->evl,
                                   &sched->ch_events[0],
                                   &sched->ch_events[1],
-                                  sched);
+                                  &sched->event);
     if (ret == -1) {
         flb_sched_destroy(sched);
         return NULL;
@@ -847,6 +850,15 @@ int flb_sched_destroy(struct flb_sched *sched)
         timer = mk_list_entry(head, struct flb_sched_timer, _head);
         flb_sched_timer_destroy(timer);
         c++;
+    }
+
+    if (sched->ch_events[0] != -1) {
+        mk_event_channel_destroy(sched->evl,
+                                 sched->ch_events[0],
+                                 sched->ch_events[1],
+                                 &sched->event);
+        sched->ch_events[0] = -1;
+        sched->ch_events[1] = -1;
     }
 
     flb_free(sched);

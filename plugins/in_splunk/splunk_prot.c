@@ -582,6 +582,9 @@ static int send_json_message_response_ng(struct flb_http_response *response,
     else if (http_status == 401) {
         flb_http_response_set_message(response, "Unauthorized");
     }
+    else if (http_status == 403) {
+        flb_http_response_set_message(response, "Forbidden");
+    }
 
     flb_http_response_set_header(response,
                                 "content-type", 0,
@@ -629,7 +632,12 @@ static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_reque
             }
         }
 
-        return SPLUNK_AUTH_UNAUTHORIZED;
+        if (strncasecmp(auth_header, "Splunk ", 7) == 0 &&
+            strlen(auth_header) > 7) {
+            return SPLUNK_AUTH_INVALID_TOKEN;
+        }
+
+        return SPLUNK_AUTH_INVALID_AUTHORIZATION;
     }
     else {
         return SPLUNK_AUTH_MISSING_CRED;
@@ -770,12 +778,19 @@ int splunk_prot_handle_ng(struct flb_http_request *request,
     ret = validate_auth_header_ng(context, request);
 
     if (ret < 0) {
-        send_response_ng(response, 401, "error: unauthorized\n");
-
         if (ret == SPLUNK_AUTH_MISSING_CRED) {
+            send_json_message_response_ng(response, 401,
+                                          "{\"text\":\"Token is required\",\"code\":2}");
             flb_plg_warn(context->ins, "missing credentials in request headers");
         }
-        else if (ret == SPLUNK_AUTH_UNAUTHORIZED) {
+        else if (ret == SPLUNK_AUTH_INVALID_AUTHORIZATION) {
+            send_json_message_response_ng(response, 401,
+                                          "{\"text\":\"Invalid authorization\",\"code\":3}");
+            flb_plg_warn(context->ins, "invalid authorization in request headers");
+        }
+        else if (ret == SPLUNK_AUTH_INVALID_TOKEN) {
+            send_json_message_response_ng(response, 403,
+                                          "{\"text\":\"Invalid token\",\"code\":4}");
             flb_plg_warn(context->ins, "wrong credentials in request headers");
         }
 

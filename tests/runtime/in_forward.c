@@ -32,6 +32,10 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #endif
+#ifndef _WIN32
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#endif
 #include <fcntl.h>
 #include "flb_tests_runtime.h"
 
@@ -561,6 +565,7 @@ void flb_test_unix_perm()
         exit(EXIT_FAILURE);
     }
 
+#ifndef _WIN32
     if (!TEST_CHECK((sb.st_mode & S_IRWXO) == 0)) {
         TEST_MSG("Permssion(others) error. val=0x%x",sb.st_mode & S_IRWXO);
     }
@@ -570,6 +575,7 @@ void flb_test_unix_perm()
     if (!TEST_CHECK((sb.st_mode & S_IRWXU) == (S_IRUSR | S_IWUSR))) {
         TEST_MSG("Permssion(user) error. val=0x%x",sb.st_mode & S_IRWXU);
     }
+#endif
 
     flb_socket_close(fd);
     test_ctx_destroy(ctx);

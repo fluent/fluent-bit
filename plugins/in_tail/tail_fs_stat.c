@@ -34,6 +34,18 @@
 #include "win32.h"
 #endif
 
+static int tail_fs_stat_path(struct flb_tail_config *ctx, const char *path,
+                             struct stat *st)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    if (ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
+        return win32_stat_utf8(path, st);
+    }
+#endif
+
+    return stat(path, st);
+}
+
 struct fs_stat {
     /* last time check */
     time_t checked;
@@ -233,7 +245,7 @@ int flb_tail_fs_stat_add(struct flb_tail_file *file)
     }
 
     fst->checked = time(NULL);
-    ret = stat(file->name, &fst->st);
+    ret = tail_fs_stat_path(file->config, file->name, &fst->st);
     if (ret == -1) {
         flb_errno();
         flb_free(fst);
@@ -246,8 +258,9 @@ int flb_tail_fs_stat_add(struct flb_tail_file *file)
 
 int flb_tail_fs_stat_remove(struct flb_tail_file *file)
 {
-    if (file->tail_mode == FLB_TAIL_EVENT) {
+    if (file->fs_backend != NULL) {
         flb_free(file->fs_backend);
+        file->fs_backend = NULL;
     }
     return 0;
 }

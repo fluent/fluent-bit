@@ -21,9 +21,14 @@
 #include <cfl/cfl_kv.h>
 #include <cfl/cfl_log.h>
 
+#include <limits.h>
 
 void cfl_kv_init(struct cfl_list *list)
 {
+    if (list == NULL) {
+        return;
+    }
+
     cfl_list_init(list);
 }
 
@@ -33,6 +38,14 @@ struct cfl_kv *cfl_kv_item_create_len(struct cfl_list *list,
 {
     struct cfl_kv *kv;
 
+    if (list == NULL || k_buf == NULL || k_len > INT_MAX || v_len > INT_MAX) {
+        return NULL;
+    }
+
+    if (v_len > 0 && v_buf == NULL) {
+        return NULL;
+    }
+
     kv = calloc(1, sizeof(struct cfl_kv));
 
     if (kv == NULL) {
@@ -41,7 +54,7 @@ struct cfl_kv *cfl_kv_item_create_len(struct cfl_list *list,
         return NULL;
     }
 
-    kv->key = cfl_sds_create_len(k_buf, k_len);
+    kv->key = cfl_sds_create_len(k_buf, (int) k_len);
 
     if (kv->key == NULL) {
         free(kv);
@@ -50,7 +63,7 @@ struct cfl_kv *cfl_kv_item_create_len(struct cfl_list *list,
     }
 
     if (v_len > 0) {
-        kv->val = cfl_sds_create_len(v_buf, v_len);
+        kv->val = cfl_sds_create_len(v_buf, (int) v_len);
 
         if (kv->val == NULL) {
             cfl_sds_destroy(kv->key);
@@ -68,10 +81,10 @@ struct cfl_kv *cfl_kv_item_create_len(struct cfl_list *list,
 struct cfl_kv *cfl_kv_item_create(struct cfl_list *list,
                                   char *k_buf, char *v_buf)
 {
-    int k_len;
-    int v_len;
+    size_t k_len;
+    size_t v_len;
 
-    if (k_buf == NULL) {
+    if (list == NULL || k_buf == NULL) {
         return NULL;
     }
 
@@ -84,11 +97,19 @@ struct cfl_kv *cfl_kv_item_create(struct cfl_list *list,
         v_len = 0;
     }
 
+    if (k_len > INT_MAX || v_len > INT_MAX) {
+        return NULL;
+    }
+
     return cfl_kv_item_create_len(list, k_buf, k_len, v_buf, v_len);
 }
 
 void cfl_kv_item_destroy(struct cfl_kv *kv)
 {
+    if (kv == NULL) {
+        return;
+    }
+
     if (kv->key != NULL) {
         cfl_sds_destroy(kv->key);
     }
@@ -108,6 +129,10 @@ void cfl_kv_release(struct cfl_list *list)
     struct cfl_list *tmp;
     struct cfl_kv   *kv;
 
+    if (list == NULL) {
+        return;
+    }
+
     cfl_list_foreach_safe(head, tmp, list) {
         kv = cfl_list_entry(head, struct cfl_kv, _head);
 
@@ -118,10 +143,10 @@ void cfl_kv_release(struct cfl_list *list)
 const char *cfl_kv_get_key_value(const char *key, struct cfl_list *list)
 {
     struct cfl_list *head;
-    int              len;
+    size_t           len;
     struct cfl_kv   *kv;
 
-    if (key == NULL) {
+    if (key == NULL || list == NULL) {
         return NULL;
     }
 

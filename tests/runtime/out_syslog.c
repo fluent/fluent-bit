@@ -23,10 +23,15 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_socket.h>
+#ifdef FLB_HAVE_TLS
+#include <fluent-bit/tls/flb_tls.h>
+#endif
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include "flb_tests_runtime.h"
+
+#define UTF8_BOM "\xEF\xBB\xBF"
 
 struct test_ctx {
     flb_ctx_t *flb;    /* Fluent Bit library context */
@@ -213,7 +218,7 @@ void flb_test_severity_key_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "<13>" /* 1(user-level messages) * 8 + 5(severity) */,
-                             "<13>1 1970-01-01T00:00:01.000000Z - - - - - ﻿hello world"};
+                             "<13>1 1970-01-01T00:00:01.000000Z - - - - - " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -270,7 +275,7 @@ void flb_test_severity_preset_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "<13>" /* 1(user-level messages) * 8 + 5(severity) */,
-                             "<13>1 1970-01-01T00:00:01.000000Z - - - - - ﻿hello world"};
+                             "<13>1 1970-01-01T00:00:01.000000Z - - - - - " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -438,7 +443,7 @@ void flb_test_facility_key_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "<110>" /* 13(log audit) * 8 + 6(default severity) */,
-                             "<110>1 1970-01-01T00:00:01.000000Z - - - - - ﻿hello world"};
+                             "<110>1 1970-01-01T00:00:01.000000Z - - - - - " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -494,7 +499,7 @@ void flb_test_facility_preset_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "<110>" /* 13(log audit) * 8 + 6(default severity) */,
-                             "<110>1 1970-01-01T00:00:01.000000Z - - - - - ﻿hello world"};
+                             "<110>1 1970-01-01T00:00:01.000000Z - - - - - " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -662,7 +667,7 @@ void flb_test_severity_facility_key_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "<109>" /* 13(log audit) * 8 + 5(severity) */,
-                             "<109>1 1970-01-01T00:00:01.000000Z - - - - - ﻿hello world"};
+                             "<109>1 1970-01-01T00:00:01.000000Z - - - - - " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -776,7 +781,7 @@ void flb_test_hostname_key_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "localhost",
-                             "<14>1 1970-01-01T00:00:01.000000Z localhost - - - - ﻿hello world"};
+                             "<14>1 1970-01-01T00:00:01.000000Z localhost - - - - " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -832,7 +837,7 @@ void flb_test_hostname_preset_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "localhost",
-                             "<14>1 1970-01-01T00:00:01.000000Z localhost - - - - ﻿hello world"};
+                             "<14>1 1970-01-01T00:00:01.000000Z localhost - - - - " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -1000,7 +1005,7 @@ void flb_test_appname_key_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "fluent-bit",
-                             "<14>1 1970-01-01T00:00:01.000000Z - fluent-bit - - - ﻿hello world"};
+                             "<14>1 1970-01-01T00:00:01.000000Z - fluent-bit - - - " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -1056,7 +1061,7 @@ void flb_test_appname_preset_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "fluent-bit",
-                             "<14>1 1970-01-01T00:00:01.000000Z - fluent-bit - - - ﻿hello world"};
+                             "<14>1 1970-01-01T00:00:01.000000Z - fluent-bit - - - " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -1224,7 +1229,7 @@ void flb_test_procid_key_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "1234",
-                             "<14>1 1970-01-01T00:00:01.000000Z - - 1234 - - ﻿hello world"};
+                             "<14>1 1970-01-01T00:00:01.000000Z - - 1234 - - " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -1280,7 +1285,7 @@ void flb_test_procid_preset_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "1234",
-                             "<14>1 1970-01-01T00:00:01.000000Z - - 1234 - - ﻿hello world"};
+                             "<14>1 1970-01-01T00:00:01.000000Z - - 1234 - - " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -1336,7 +1341,7 @@ void flb_test_msgid_key_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "TCPIN",
-                             "<14>1 1970-01-01T00:00:01.000000Z - - - TCPIN - ﻿hello world"};
+                             "<14>1 1970-01-01T00:00:01.000000Z - - - TCPIN - " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -1392,7 +1397,7 @@ void flb_test_msgid_preset_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z", "TCPIN",
-                             "<14>1 1970-01-01T00:00:01.000000Z - - - TCPIN - ﻿hello world"};
+                             "<14>1 1970-01-01T00:00:01.000000Z - - - TCPIN - " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -1448,7 +1453,7 @@ void flb_test_sd_key_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z",
-                             "<14>1 1970-01-01T00:00:01.000000Z - - - - [sd_key logtype=\"access\" clustername=\"mycluster\" namespace=\"mynamespace\"] ﻿hello world"};
+                             "<14>1 1970-01-01T00:00:01.000000Z - - - - [sd_key logtype=\"access\" clustername=\"mycluster\" namespace=\"mynamespace\"] " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -1504,7 +1509,7 @@ void flb_test_allow_longer_sd_id_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z",
-                             "<14>1 1970-01-01T00:00:01.000000Z - - - - [sd_key_that_is_longer_than_32_characters logtype_that_is_longer_than_32_characters=\"access\" clustername=\"mycluster\" namespace=\"mynamespace\"] ﻿hello world"};
+                             "<14>1 1970-01-01T00:00:01.000000Z - - - - [sd_key_that_is_longer_than_32_characters logtype_that_is_longer_than_32_characters=\"access\" clustername=\"mycluster\" namespace=\"mynamespace\"] " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -1561,7 +1566,7 @@ void flb_test_malformed_longer_sd_id_rfc5424()
     size_t size = strlen(buf);
 
     char *expected_strs[] = {"hello world", "1970-01-01T00:00:01.000000Z",
-                             "<14>1 1970-01-01T00:00:01.000000Z - - - - [sd_key_that_is_longer_than_32_ch logtype_that_is_longer_than_32_c=\"access\" clustername=\"mycluster\" namespace=\"mynamespace\"] ﻿hello world"};
+                             "<14>1 1970-01-01T00:00:01.000000Z - - - - [sd_key_that_is_longer_than_32_ch logtype_that_is_longer_than_32_c=\"access\" clustername=\"mycluster\" namespace=\"mynamespace\"] " UTF8_BOM "hello world"};
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
@@ -1631,8 +1636,60 @@ void flb_test_udp_mode_rejects_tls()
         TEST_MSG("expected startup failure for mode=udp with tls=on");
     }
 
+    /* flb_start failed, so there is no running engine to stop. */
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+
+#ifdef FLB_HAVE_TLS
+static void test_secure_mode_enables_tls(const char *mode, int tls_mode)
+{
+    struct test_ctx *ctx;
+    struct flb_output_instance *ins;
+    int ret;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "mode", mode,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        flb_destroy(ctx->flb);
+        flb_free(ctx);
+        return;
+    }
+
+    ins = flb_output_get_instance(ctx->flb->config, ctx->o_ffd);
+    TEST_CHECK(ins != NULL);
+    if (ins != NULL) {
+        TEST_CHECK(ins->use_tls == FLB_TRUE);
+        TEST_CHECK(ins->tls != NULL);
+        if (ins->tls != NULL) {
+            TEST_CHECK(ins->tls->mode == tls_mode);
+        }
+    }
+
     test_ctx_destroy(ctx);
 }
+
+void flb_test_tls_mode_enables_tls()
+{
+    test_secure_mode_enables_tls("tls", FLB_TLS_CLIENT_MODE);
+}
+
+void flb_test_dtls_mode_enables_tls()
+{
+    test_secure_mode_enables_tls("dtls", FLB_TLS_CLIENT_MODE_DGRAM);
+}
+#endif
 
 TEST_LIST = {
     /* rfc3164 */
@@ -1666,5 +1723,9 @@ TEST_LIST = {
     {"allow_longer_sd_id_rfc5424", flb_test_allow_longer_sd_id_rfc5424},
     {"malformed_longer_sd_id_rfc5424", flb_test_malformed_longer_sd_id_rfc5424},
     {"udp_mode_rejects_tls", flb_test_udp_mode_rejects_tls},
+#ifdef FLB_HAVE_TLS
+    {"tls_mode_enables_tls", flb_test_tls_mode_enables_tls},
+    {"dtls_mode_enables_tls", flb_test_dtls_mode_enables_tls},
+#endif
     {NULL, NULL}
 };

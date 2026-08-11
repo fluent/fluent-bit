@@ -20,6 +20,8 @@
 #ifndef CFL_KV_H
 #define CFL_KV_H
 
+#include <stddef.h>
+
 #include <cfl/cfl_info.h>
 #include <cfl/cfl_sds.h>
 #include <cfl/cfl_list.h>

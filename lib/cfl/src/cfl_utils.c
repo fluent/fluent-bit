@@ -19,15 +19,28 @@
 
 #include <cfl/cfl.h>
 
+#include <limits.h>
+#include <stdint.h>
+
 /* Lookup char into string, return position
  * Based on monkey/monkey's mk_string_char_search.
  */
 static int cfl_string_char_search(const char *string, int c, int len)
 {
     char *p;
+    size_t string_len;
+
+    if (string == NULL) {
+        return -1;
+    }
 
     if (len < 0) {
-        len = strlen(string);
+        string_len = strlen(string);
+        if (string_len > INT_MAX) {
+            return -1;
+        }
+
+        len = (int) string_len;
     }
 
     p = memchr(string, c, len);
@@ -43,14 +56,20 @@ static int cfl_string_char_search(const char *string, int c, int len)
  */
 static char *cfl_string_copy_substr(const char *string, int pos_init, int pos_end)
 {
-    unsigned int size, bytes;
+    size_t size;
+    size_t bytes;
     char *buffer = 0;
 
-    if (pos_init > pos_end) {
+    if (string == NULL || pos_init < 0 || pos_end < 0 || pos_init > pos_end) {
         return NULL;
     }
 
-    size = (unsigned int) (pos_end - pos_init) + 1;
+    bytes = (size_t) (pos_end - pos_init);
+    if (bytes > SIZE_MAX - 1) {
+        return NULL;
+    }
+
+    size = bytes + 1;
     if (size <= 2) {
         size = 4;
     }
@@ -61,7 +80,6 @@ static char *cfl_string_copy_substr(const char *string, int pos_init, int pos_en
         return NULL;
     }
 
-    bytes = pos_end - pos_init;
     memcpy(buffer, string + pos_init, bytes);
     buffer[bytes] = '\0';
 
@@ -74,7 +92,13 @@ static char *cfl_string_copy_substr(const char *string, int pos_init, int pos_en
 static int quoted_string_len(const char *str)
 {
     int len = 0;
-    char quote = *str++; /* Consume the quote character. */
+    char quote;
+
+    if (str == NULL) {
+        return -1;
+    }
+
+    quote = *str++; /* Consume the quote character. */
 
     while (quote != 0) {
         char c = *str++;
@@ -98,6 +122,9 @@ static int quoted_string_len(const char *str)
             default:
                 break;
         }
+        if (len == INT_MAX) {
+            return -1;
+        }
         len++;
     }
 
@@ -117,10 +144,15 @@ static int quoted_string_len(const char *str)
 static int next_token(const char *str, int separator, char **out, int *out_len, int parse_quotes) {
     const char *token_in = str;
     char *token_out;
+    size_t token_len;
     int next_separator = 0;
     int quote = 0; /* Parser state: 0 not inside quoted string, or '"' or '\'' when inside quoted string. */
     int len = 0;
     int i;
+
+    if (str == NULL || out == NULL || out_len == NULL) {
+        return -1;
+    }
 
     /* Skip leading separators. */
     while (*token_in == separator) {
@@ -129,7 +161,12 @@ static int next_token(const char *str, int separator, char **out, int *out_len, 
 
     /* Should quotes be parsed? Or is token quoted? If not, copy until separator or the end of string. */
     if (parse_quotes == CFL_FALSE || (*token_in != '"' && *token_in != '\'')) {
-        len = (int)strlen(token_in);
+        token_len = strlen(token_in);
+        if (token_len > INT_MAX) {
+            return -1;
+        }
+
+        len = (int) token_len;
         next_separator = cfl_string_char_search(token_in, separator, len);
         if (next_separator > 0) {
             len = next_separator;
@@ -186,6 +223,7 @@ static struct cfl_list *split(const char *line, int separator, int max_split, in
     int val_len;
     int len;
     int end;
+    size_t line_len;
     char *val;
     struct cfl_list *list;
     struct cfl_split_entry *new;
@@ -201,7 +239,13 @@ static struct cfl_list *split(const char *line, int separator, int max_split, in
     }
     cfl_list_init(list);
 
-    len = strlen(line);
+    line_len = strlen(line);
+    if (line_len > INT_MAX) {
+        free(list);
+        return NULL;
+    }
+
+    len = (int) line_len;
     while (i < len) {
         end = next_token(line + i, separator, &val, &val_len, quoted);
         if (end == -1) {
@@ -236,13 +280,19 @@ static struct cfl_list *split(const char *line, int separator, int max_split, in
          * and last entry.
          */
         if (count >= max_split && max_split > 0 && i < len) {
-          new = calloc(1, sizeof(struct cfl_split_entry));
+            new = calloc(1, sizeof(struct cfl_split_entry));
             if (!new) {
                 cfl_errno();
                 cfl_utils_split_free(list);
                 return NULL;
             }
             new->value = cfl_string_copy_substr(line, i, len);
+            if (new->value == NULL) {
+                cfl_errno();
+                free(new);
+                cfl_utils_split_free(list);
+                return NULL;
+            }
             new->len   = len - i;
             cfl_list_add(&new->_head, list);
             break;
@@ -265,6 +315,10 @@ struct cfl_list *cfl_utils_split(const char *line, int separator, int max_split)
 
 void cfl_utils_split_free_entry(struct cfl_split_entry *entry)
 {
+    if (entry == NULL) {
+        return;
+    }
+
     cfl_list_del(&entry->_head);
     free(entry->value);
     free(entry);
@@ -275,6 +329,10 @@ void cfl_utils_split_free(struct cfl_list *list)
     struct cfl_list *tmp;
     struct cfl_list *head;
     struct cfl_split_entry *entry;
+
+    if (list == NULL) {
+        return;
+    }
 
     cfl_list_foreach_safe(head, tmp, list) {
         entry = cfl_list_entry(head, struct cfl_split_entry, _head);

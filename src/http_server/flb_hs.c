@@ -110,8 +110,19 @@ static int flb_hs_request_handler(struct flb_http_request *request,
     return flb_http_response_commit(response);
 }
 
-static void flb_hs_buf_cleanup(struct flb_hs_buf *buffer,
-                               void (*raw_free)(void *))
+static int flb_hs_buf_init(struct flb_hs_buf *buffer)
+{
+    if (buffer == NULL) {
+        return -1;
+    }
+
+    mk_list_init(&buffer->_head);
+
+    return pthread_mutex_init(&buffer->lock, NULL);
+}
+
+static void flb_hs_buf_cleanup_locked(struct flb_hs_buf *buffer,
+                                      void (*raw_free)(void *))
 {
     if (buffer == NULL) {
         return;
@@ -142,17 +153,86 @@ static void flb_hs_buf_cleanup(struct flb_hs_buf *buffer,
     buffer->users = 0;
 }
 
+static void flb_hs_buf_destroy(struct flb_hs_buf *buffer,
+                               void (*raw_free)(void *))
+{
+    if (buffer == NULL) {
+        return;
+    }
+
+    pthread_mutex_lock(&buffer->lock);
+    flb_hs_buf_cleanup_locked(buffer, raw_free);
+    pthread_mutex_unlock(&buffer->lock);
+    pthread_mutex_destroy(&buffer->lock);
+}
+
+static int flb_hs_buf_set(struct flb_hs_buf *buffer, flb_sds_t data,
+                          void *raw_data, size_t raw_size,
+                          void (*raw_free)(void *))
+{
+    if (buffer == NULL) {
+        return -1;
+    }
+
+    pthread_mutex_lock(&buffer->lock);
+    if (buffer->users > 0) {
+        buffer->pending_free = FLB_TRUE;
+        pthread_mutex_unlock(&buffer->lock);
+        return -1;
+    }
+
+    flb_hs_buf_cleanup_locked(buffer, raw_free);
+
+    buffer->data = data;
+    buffer->raw_data = raw_data;
+    buffer->raw_size = raw_size;
+
+    pthread_mutex_unlock(&buffer->lock);
+
+    return 0;
+}
+
+int flb_hs_buf_acquire(struct flb_hs_buf *buffer, int require_data,
+                       int require_raw_data)
+{
+    if (buffer == NULL) {
+        return -1;
+    }
+
+    pthread_mutex_lock(&buffer->lock);
+
+    if ((require_data == FLB_TRUE && buffer->data == NULL) ||
+        (require_raw_data == FLB_TRUE && buffer->raw_data == NULL)) {
+        pthread_mutex_unlock(&buffer->lock);
+        return -1;
+    }
+
+    buffer->users++;
+    pthread_mutex_unlock(&buffer->lock);
+
+    return 0;
+}
+
 void flb_hs_buf_release(struct flb_hs_buf *buffer, void (*raw_free)(void *))
 {
-    if (buffer == NULL || buffer->users <= 0) {
+    if (buffer == NULL) {
+        return;
+    }
+
+    pthread_mutex_lock(&buffer->lock);
+
+    if (buffer->users <= 0) {
+        pthread_mutex_unlock(&buffer->lock);
         return;
     }
 
     buffer->users--;
 
     if (buffer->users == 0 && buffer->pending_free == FLB_TRUE) {
-        flb_hs_buf_cleanup(buffer, raw_free);
+        flb_hs_buf_cleanup_locked(buffer, raw_free);
     }
+
+    pthread_mutex_unlock(&buffer->lock);
 }
 
 int flb_hs_register_endpoint(struct flb_hs *hs,
@@ -182,6 +262,7 @@ int flb_hs_register_endpoint(struct flb_hs *hs,
 int flb_hs_push_health_metrics(struct flb_hs *hs, void *data, size_t size)
 {
     struct flb_hs_hc_buf *buf;
+    struct flb_hs_hc_buf *old_buf;
     int error_count;
     int retry_failure_count;
 
@@ -190,19 +271,6 @@ int flb_hs_push_health_metrics(struct flb_hs *hs, void *data, size_t size)
     }
 
     read_metrics(data, size, &error_count, &retry_failure_count);
-
-    hs->health_counter.period_counter++;
-
-    while (hs->health_counter.period_counter > hs->health_counter.period_limit &&
-           mk_list_size(&hs->health_metrics) > 0) {
-        buf = mk_list_entry_first(&hs->health_metrics, struct flb_hs_hc_buf, _head);
-        if (buf->users > 0) {
-            break;
-        }
-        mk_list_del(&buf->_head);
-        flb_free(buf);
-        hs->health_counter.period_counter--;
-    }
 
     buf = flb_calloc(1, sizeof(struct flb_hs_hc_buf));
     if (buf == NULL) {
@@ -213,10 +281,28 @@ int flb_hs_push_health_metrics(struct flb_hs *hs, void *data, size_t size)
     buf->error_count = error_count;
     buf->retry_failure_count = retry_failure_count;
 
+    pthread_mutex_lock(&hs->health_metrics_lock);
+
+    hs->health_counter.period_counter++;
+
+    while (hs->health_counter.period_counter > hs->health_counter.period_limit &&
+           mk_list_size(&hs->health_metrics) > 0) {
+        old_buf = mk_list_entry_first(&hs->health_metrics,
+                                      struct flb_hs_hc_buf, _head);
+        if (old_buf->users > 0) {
+            break;
+        }
+        mk_list_del(&old_buf->_head);
+        flb_free(old_buf);
+        hs->health_counter.period_counter--;
+    }
+
     hs->health_counter.error_counter = error_count;
     hs->health_counter.retry_failure_counter = retry_failure_count;
 
     mk_list_add(&buf->_head, &hs->health_metrics);
+
+    pthread_mutex_unlock(&hs->health_metrics_lock);
 
     return 0;
 }
@@ -224,6 +310,7 @@ int flb_hs_push_health_metrics(struct flb_hs *hs, void *data, size_t size)
 /* Ingest pipeline metrics into the web service context */
 int flb_hs_push_pipeline_metrics(struct flb_hs *hs, void *data, size_t size)
 {
+    int ret;
     flb_sds_t json_buffer;
     void *raw_buffer;
 
@@ -245,16 +332,12 @@ int flb_hs_push_pipeline_metrics(struct flb_hs *hs, void *data, size_t size)
 
     memcpy(raw_buffer, data, size);
 
-    flb_hs_buf_cleanup(&hs->metrics, NULL);
-    if (hs->metrics.pending_free == FLB_TRUE) {
+    ret = flb_hs_buf_set(&hs->metrics, json_buffer, raw_buffer, size, NULL);
+    if (ret != 0) {
         flb_sds_destroy(json_buffer);
         flb_free(raw_buffer);
         return -1;
     }
-
-    hs->metrics.data = json_buffer;
-    hs->metrics.raw_data = raw_buffer;
-    hs->metrics.raw_size = size;
 
     return 0;
 }
@@ -275,13 +358,12 @@ int flb_hs_push_metrics(struct flb_hs *hs, void *data, size_t size)
         return -1;
     }
 
-    flb_hs_buf_cleanup(&hs->metrics_v2, flb_hs_destroy_cmt_buffer);
-    if (hs->metrics_v2.pending_free == FLB_TRUE) {
+    ret = flb_hs_buf_set(&hs->metrics_v2, NULL, cmt, 0,
+                         flb_hs_destroy_cmt_buffer);
+    if (ret != 0) {
         flb_hs_destroy_cmt_buffer(cmt);
         return -1;
     }
-
-    hs->metrics_v2.raw_data = cmt;
 
     return 0;
 }
@@ -289,6 +371,7 @@ int flb_hs_push_metrics(struct flb_hs *hs, void *data, size_t size)
 /* Ingest storage metrics into the web service context */
 int flb_hs_push_storage_metrics(struct flb_hs *hs, void *data, size_t size)
 {
+    int ret;
     flb_sds_t json_buffer;
     void *raw_buffer;
 
@@ -310,18 +393,68 @@ int flb_hs_push_storage_metrics(struct flb_hs *hs, void *data, size_t size)
 
     memcpy(raw_buffer, data, size);
 
-    flb_hs_buf_cleanup(&hs->storage_metrics, NULL);
-    if (hs->storage_metrics.pending_free == FLB_TRUE) {
+    ret = flb_hs_buf_set(&hs->storage_metrics, json_buffer, raw_buffer, size,
+                         NULL);
+    if (ret != 0) {
         flb_sds_destroy(json_buffer);
         flb_free(raw_buffer);
         return -1;
     }
 
-    hs->storage_metrics.data = json_buffer;
-    hs->storage_metrics.raw_data = raw_buffer;
-    hs->storage_metrics.raw_size = size;
+    return 0;
+}
+
+static int flb_hs_state_init(struct flb_hs *hs)
+{
+    int ret;
+
+    ret = flb_hs_buf_init(&hs->metrics);
+    if (ret != 0) {
+        return -1;
+    }
+
+    ret = flb_hs_buf_init(&hs->metrics_v2);
+    if (ret != 0) {
+        pthread_mutex_destroy(&hs->metrics.lock);
+        return -1;
+    }
+
+    ret = flb_hs_buf_init(&hs->storage_metrics);
+    if (ret != 0) {
+        pthread_mutex_destroy(&hs->metrics_v2.lock);
+        pthread_mutex_destroy(&hs->metrics.lock);
+        return -1;
+    }
+
+    ret = pthread_mutex_init(&hs->health_metrics_lock, NULL);
+    if (ret != 0) {
+        pthread_mutex_destroy(&hs->storage_metrics.lock);
+        pthread_mutex_destroy(&hs->metrics_v2.lock);
+        pthread_mutex_destroy(&hs->metrics.lock);
+        return -1;
+    }
 
     return 0;
+}
+
+static void flb_hs_state_destroy(struct flb_hs *hs)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_hs_hc_buf *health_buffer;
+
+    flb_hs_buf_destroy(&hs->metrics, NULL);
+    flb_hs_buf_destroy(&hs->metrics_v2, flb_hs_destroy_cmt_buffer);
+    flb_hs_buf_destroy(&hs->storage_metrics, NULL);
+
+    pthread_mutex_lock(&hs->health_metrics_lock);
+    mk_list_foreach_safe(head, tmp, &hs->health_metrics) {
+        health_buffer = mk_list_entry(head, struct flb_hs_hc_buf, _head);
+        mk_list_del(&health_buffer->_head);
+        flb_free(health_buffer);
+    }
+    pthread_mutex_unlock(&hs->health_metrics_lock);
+    pthread_mutex_destroy(&hs->health_metrics_lock);
 }
 
 /* Create ROOT endpoints */
@@ -343,6 +476,11 @@ struct flb_hs *flb_hs_create(const char *listen, const char *tcp_port,
     hs->config = config;
     mk_list_init(&hs->routes);
     mk_list_init(&hs->health_metrics);
+    ret = flb_hs_state_init(hs);
+    if (ret != 0) {
+        flb_free(hs);
+        return NULL;
+    }
 
     hs->health_counter.error_limit = config->hc_errors_count;
     hs->health_counter.retry_failure_limit = config->hc_retry_failure_count;
@@ -363,6 +501,7 @@ struct flb_hs *flb_hs_create(const char *listen, const char *tcp_port,
         port <= 0 || port > 65535) {
         flb_error("[http_server] invalid monitoring tcp_port '%s'", tcp_port);
         flb_hs_endpoints_free(hs);
+        flb_hs_state_destroy(hs);
         flb_free(hs);
         return NULL;
     }
@@ -370,13 +509,14 @@ struct flb_hs *flb_hs_create(const char *listen, const char *tcp_port,
     options.networking_flags = 0;
     flb_net_setup_init(&hs->net_setup);
     options.networking_setup = &hs->net_setup;
-    options.event_loop = config->evl;
+    options.event_loop = NULL;
     options.system_context = config;
-    options.use_caller_event_loop = FLB_TRUE;
+    options.use_caller_event_loop = FLB_FALSE;
 
     ret = flb_http_server_init_with_options(&hs->server, &options);
     if (ret != 0) {
         flb_hs_endpoints_free(hs);
+        flb_hs_state_destroy(hs);
         flb_free(hs);
         return NULL;
     }
@@ -425,7 +565,6 @@ int flb_hs_destroy(struct flb_hs *hs)
     struct mk_list *head;
     struct mk_list *tmp;
     struct flb_hs_route *route;
-    struct flb_hs_hc_buf *health_buffer;
 
     if (!hs) {
         return 0;
@@ -434,15 +573,7 @@ int flb_hs_destroy(struct flb_hs *hs)
     flb_hs_health_destroy();
     flb_http_server_destroy(&hs->server);
 
-    flb_hs_buf_cleanup(&hs->metrics, NULL);
-    flb_hs_buf_cleanup(&hs->metrics_v2, flb_hs_destroy_cmt_buffer);
-    flb_hs_buf_cleanup(&hs->storage_metrics, NULL);
-
-    mk_list_foreach_safe(head, tmp, &hs->health_metrics) {
-        health_buffer = mk_list_entry(head, struct flb_hs_hc_buf, _head);
-        mk_list_del(&health_buffer->_head);
-        flb_free(health_buffer);
-    }
+    flb_hs_state_destroy(hs);
 
     mk_list_foreach_safe(head, tmp, &hs->routes) {
         route = mk_list_entry(head, struct flb_hs_route, _head);

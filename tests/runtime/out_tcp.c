@@ -70,10 +70,74 @@ static void clear_output_num()
     set_output_num(0);
 }
 
+static int wait_for_output_num(int expected, uint32_t timeout_ms)
+{
+    uint32_t elapsed = 0;
+
+    while (elapsed < timeout_ms) {
+        if (get_output_num() >= expected) {
+            return 0;
+        }
+
+        flb_time_msleep(10);
+        elapsed += 10;
+    }
+
+    return -1;
+}
+
 struct str_list {
     size_t size;
     char **lists;
+    int *matches;
+    int require_json_array;
+    char *joined;
+    char *expected_payload;
+    flb_sds_t accumulated_payload;
 };
+
+static int validate_json_array_payload(flb_sds_t out_line, struct str_list *l)
+{
+    size_t len;
+
+    len = flb_sds_len(out_line);
+    if (!TEST_CHECK(len >= 2 && out_line[0] == '[' && out_line[len - 1] == ']')) {
+        TEST_MSG("expected JSON array payload, got: %s", out_line);
+        return -1;
+    }
+
+    if (l->joined != NULL && strstr(out_line, l->lists[0]) != NULL &&
+        strstr(out_line, l->lists[1]) != NULL &&
+        !TEST_CHECK(strstr(out_line, l->joined) != NULL)) {
+        TEST_MSG("expected JSON array separator, got: %s", out_line);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int accumulate_payload(flb_sds_t out_line, struct str_list *l)
+{
+    int ret;
+
+    if (l->accumulated_payload == NULL) {
+        l->accumulated_payload = flb_sds_create_size(flb_sds_len(out_line));
+        if (!TEST_CHECK(l->accumulated_payload != NULL)) {
+            TEST_MSG("could not allocate accumulated payload");
+            return -1;
+        }
+    }
+
+    ret = flb_sds_cat_safe(&l->accumulated_payload,
+                           out_line,
+                           flb_sds_len(out_line));
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("could not append accumulated payload");
+        return -1;
+    }
+
+    return 0;
+}
 
 /* Callback to check expected results */
 static void cb_check_str_list(void *ctx, int ffd, int res_ret, 
@@ -100,15 +164,74 @@ static void cb_check_str_list(void *ctx, int ffd, int res_ret,
         return;
     }
 
-    for (i=0; i<l->size; i++) {
-        p = strstr(out_line, l->lists[i]);
-        if (!TEST_CHECK(p != NULL)) {
-            TEST_MSG("  Got   :%s\n  expect:%s", out_line, l->lists[i]);
+    if (l->require_json_array) {
+        validate_json_array_payload(out_line, l);
+    }
+
+    if (l->expected_payload != NULL) {
+        accumulate_payload(out_line, l);
+    }
+    else {
+        for (i=0; i<l->size; i++) {
+            p = strstr(out_line, l->lists[i]);
+            if (l->matches != NULL) {
+                if (p != NULL) {
+                    l->matches[i]++;
+                }
+                continue;
+            }
+
+            if (!TEST_CHECK(p != NULL)) {
+                TEST_MSG("  Got   :%s\n  expect:%s", out_line, l->lists[i]);
+            }
         }
     }
     set_output_num(num+1);
 
     flb_sds_destroy(out_line);
+}
+
+static int check_str_list_matches(struct str_list *l)
+{
+    int ret = 0;
+    size_t i;
+
+    for (i=0; i<l->size; i++) {
+        if (!TEST_CHECK(l->matches[i] > 0)) {
+            TEST_MSG("missing expected output: %s", l->lists[i]);
+            ret = -1;
+        }
+    }
+
+    return ret;
+}
+
+static int check_accumulated_payload(struct str_list *l)
+{
+    int ret = 0;
+    size_t expected_size;
+    size_t actual_size;
+
+    if (!TEST_CHECK(l->accumulated_payload != NULL)) {
+        TEST_MSG("no payload was accumulated");
+        return -1;
+    }
+
+    expected_size = strlen(l->expected_payload);
+    actual_size = flb_sds_len(l->accumulated_payload);
+    if (!TEST_CHECK(actual_size == expected_size &&
+                    memcmp(l->accumulated_payload,
+                           l->expected_payload,
+                           expected_size) == 0)) {
+        TEST_MSG("  Got   :%s\n  expect:%s",
+                 l->accumulated_payload, l->expected_payload);
+        ret = -1;
+    }
+
+    flb_sds_destroy(l->accumulated_payload);
+    l->accumulated_payload = NULL;
+
+    return ret;
 }
 
 static int msgpack_strncmp(char* str, size_t str_len, msgpack_object obj)
@@ -138,7 +261,7 @@ static int msgpack_strncmp(char* str, size_t str_len, msgpack_object obj)
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
         {
             long long val = strtoll(str, NULL, 10);
-            if (val == (unsigned long)obj.via.i64) {
+            if (val == obj.via.i64) {
                 ret = 0;
             }
         }
@@ -447,10 +570,18 @@ void flb_test_format_json()
     char *buf2 = "[2, {\"msg\":\"hello world\"}]";
     size_t size2 = strlen(buf2);
 
-    char *expected_strs[] = {"[{\"date\":1.0,\"msg\":\"hello world\"},{\"date\":2.0,\"msg\":\"hello world\"}]"};
+    int matches[] = {0, 0};
+    char *expected_strs[] = {
+        "{\"date\":1.0,\"msg\":\"hello world\"}",
+        "{\"date\":2.0,\"msg\":\"hello world\"}"
+    };
+    char *joined = "{\"date\":1.0,\"msg\":\"hello world\"},{\"date\":2.0,\"msg\":\"hello world\"}";
     struct str_list expected = {
                                 .size = sizeof(expected_strs)/sizeof(char*),
                                 .lists = &expected_strs[0],
+                                .matches = &matches[0],
+                                .require_json_array = FLB_TRUE,
+                                .joined = joined,
     };
 
     clear_output_num();
@@ -489,6 +620,7 @@ void flb_test_format_json()
     if (!TEST_CHECK(num > 0))  {
         TEST_MSG("no outputs");
     }
+    check_str_list_matches(&expected);
 
     test_ctx_destroy(ctx);
 }
@@ -504,10 +636,10 @@ void flb_test_format_json_stream()
     char *buf2 = "[2, {\"msg\":\"hello world\"}]";
     size_t size2 = strlen(buf2);
 
-    char *expected_strs[] = {"{\"date\":1.0,\"msg\":\"hello world\"}{\"date\":2.0,\"msg\":\"hello world\"}"};
     struct str_list expected = {
-                                .size = sizeof(expected_strs)/sizeof(char*),
-                                .lists = &expected_strs[0],
+                                .expected_payload =
+                                    "{\"date\":1.0,\"msg\":\"hello world\"}"
+                                    "{\"date\":2.0,\"msg\":\"hello world\"}",
     };
 
     clear_output_num();
@@ -546,6 +678,7 @@ void flb_test_format_json_stream()
     if (!TEST_CHECK(num > 0))  {
         TEST_MSG("no outputs");
     }
+    check_accumulated_payload(&expected);
 
     test_ctx_destroy(ctx);
 }
@@ -561,10 +694,10 @@ void flb_test_format_json_lines()
     char *buf2 = "[2, {\"msg\":\"hello world\"}]";
     size_t size2 = strlen(buf2);
 
-    char *expected_strs[] = {"{\"date\":1.0,\"msg\":\"hello world\"}\n{\"date\":2.0,\"msg\":\"hello world\"}"};
     struct str_list expected = {
-                                .size = sizeof(expected_strs)/sizeof(char*),
-                                .lists = &expected_strs[0],
+                                .expected_payload =
+                                    "{\"date\":1.0,\"msg\":\"hello world\"}\n"
+                                    "{\"date\":2.0,\"msg\":\"hello world\"}\n",
     };
 
     clear_output_num();
@@ -593,6 +726,13 @@ void flb_test_format_json_lines()
     /* Ingest data sample */
     ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf1, size1);
     TEST_CHECK(ret >= 0);
+
+    /* Make the second record use a separate input chunk. */
+    ret = wait_for_output_num(1, 2000);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("first json_lines record was not formatted before timeout");
+    }
+
     ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf2, size2);
     TEST_CHECK(ret >= 0);
 
@@ -603,6 +743,7 @@ void flb_test_format_json_lines()
     if (!TEST_CHECK(num > 0))  {
         TEST_MSG("no outputs");
     }
+    check_accumulated_payload(&expected);
 
     test_ctx_destroy(ctx);
 }

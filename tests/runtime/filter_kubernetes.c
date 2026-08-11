@@ -8,12 +8,11 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <unistd.h>
-#ifdef _WIN32
-    #define TIME_EPSILON_MS 30
-#else
-    #define TIME_EPSILON_MS 10
 #endif
+#define KUBE_TEST_WAIT_STEP_MS  10
+#define KUBE_TEST_TIMEOUT_MS  5000
 
 struct kube_test {
     flb_ctx_t *flb;
@@ -26,7 +25,11 @@ struct kube_test_result {
     int   nMatched;
 };
 
-void wait_with_timeout(uint32_t timeout_ms, struct kube_test_result *result, int nExpected)
+struct local_logs_result {
+    int nMatched;
+};
+
+static void wait_with_timeout(uint32_t timeout_ms, int *matched, int expected)
 {
     struct flb_time start_time;
     struct flb_time end_time;
@@ -36,18 +39,17 @@ void wait_with_timeout(uint32_t timeout_ms, struct kube_test_result *result, int
     flb_time_get(&start_time);
 
     while (true) {
-        if (result->nMatched == nExpected) {
+        if (*matched >= expected) {
             break;
         }
 
-        flb_time_msleep(100);
+        flb_time_msleep(KUBE_TEST_WAIT_STEP_MS);
         flb_time_get(&end_time);
         flb_time_diff(&end_time, &start_time, &diff_time);
         elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
 
-        if (elapsed_time_flb > timeout_ms - TIME_EPSILON_MS) {
+        if (elapsed_time_flb >= timeout_ms) {
             flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
-            // Reached timeout.
             break;
         }
     }
@@ -67,6 +69,13 @@ char kube_test_id[64];
 #define KUBE_PORT        "8002"
 #define KUBE_URL         "http://" KUBE_IP ":" KUBE_PORT
 #define DPATH            FLB_TESTS_DATA_PATH "/data/kubernetes"
+#ifdef _WIN32
+#define KUBE_TAG_REGEX   "^.*[\\\\/]log[\\\\/](?:[^\\\\/]+[\\\\/])?" \
+                         "(?<namespace>.+)_(?<pod>.+)_(?<container>.+)\\.log$"
+#else
+#define KUBE_TAG_REGEX   "^" DPATH "/log/(?:[^/]+/)?" \
+                         "(?<namespace>.+)_(?<pod>.+)_(?<container>.+)\\.log$"
+#endif
 
 static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
 {
@@ -75,13 +84,18 @@ static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
     char *buf;
     FILE *fp;
     struct stat st;
+    const char *file_mode = "r";
+
+#ifdef FLB_SYSTEM_WINDOWS
+    file_mode = "rb";
+#endif
 
     ret = stat(path, &st);
     if (ret == -1) {
         return -1;
     }
 
-    fp = fopen(path, "r");
+    fp = fopen(path, file_mode);
     if (!fp) {
         return -1;
     }
@@ -242,7 +256,7 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     }
 
     ret = flb_service_set(ctx.flb,
-                          "Flush", "1",
+                          "Flush", "0.2",
                           "Grace", "1",
                           "Log_Level", "error",
                           "Parsers_File", DPATH "/parsers.conf",
@@ -257,7 +271,7 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
         TEST_CHECK_(in_ffd >= 0, "initialising input");
         ret = flb_input_set(ctx.flb, in_ffd,
                             "Tag", "kube.<namespace>.<pod>.<container>",
-                            "Tag_Regex", "^" DPATH "/log/(?:[^/]+/)?(?<namespace>.+)_(?<pod>.+)_(?<container>.+)\\.log$",
+                            "Tag_Regex", KUBE_TAG_REGEX,
                             "Path", path,
                             "Parser", "docker",
                             "Docker_Mode", "On",
@@ -357,13 +371,8 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     }
 #endif
 
-    /* Poll for up to 2 seconds or until we got a match */
-    for (ret = 0; ret < 2000 && result.nMatched == 0; ret++) {
-        usleep(1000);
-    }
-
     /* Wait until matching nExpected results */
-    wait_with_timeout(5000, &result, nExpected);
+    wait_with_timeout(KUBE_TEST_TIMEOUT_MS, &result.nMatched, nExpected);
 
     TEST_CHECK(result.nMatched == nExpected);
     TEST_MSG("result.nMatched: %i\nnExpected: %i", result.nMatched, nExpected);
@@ -375,6 +384,188 @@ exit:
     if (ctx.flb) {
         flb_destroy(ctx.flb);
     }
+}
+
+static int cb_check_local_logs_result(void *record, size_t size, void *data)
+{
+    struct local_logs_result *result;
+    char *out;
+
+    result = (struct local_logs_result *) data;
+    out = (char *) record;
+
+    if (strstr(out, "[input:fluentbit_logs:fluentbit_logs.0] storage_strategy") != NULL &&
+        strstr(out, "\"kubernetes\":") != NULL &&
+        strstr(out, "\"pod_name\":\"kairosdb-914055854-b63vq\"") != NULL &&
+        strstr(out, "\"namespace_name\":\"default\"") != NULL &&
+        strstr(out, "\"pod_id\":\"d6c53deb-05a4-11e8-a8c4-080027435fb7\"") != NULL &&
+        strstr(out, "\"labels\":{\"name\":\"kairosdb\"") != NULL) {
+        result->nMatched++;
+    }
+
+    if (size > 0) {
+        flb_free(record);
+    }
+
+    return 0;
+}
+
+static void flb_test_local_fluentbit_logs()
+{
+    int ret;
+    int in_ffd;
+    int filter_ffd;
+    int out_ffd;
+    char *old_hostname;
+    struct kube_test ctx;
+    struct flb_lib_out_cb cb_data;
+    struct local_logs_result result = {0};
+
+    ctx.flb = flb_create();
+    TEST_CHECK_(ctx.flb != NULL, "initialising service");
+    if (!ctx.flb) {
+        return;
+    }
+
+    old_hostname = getenv("HOSTNAME");
+    if (old_hostname != NULL) {
+        old_hostname = flb_strdup(old_hostname);
+    }
+
+    ret = setenv("HOSTNAME", "kairosdb-914055854-b63vq", 1);
+    TEST_CHECK_(ret == 0, "setting HOSTNAME");
+
+    ret = flb_service_set(ctx.flb,
+                          "Flush", "0.2",
+                          "Grace", "1",
+                          "Log_Level", "info",
+                          NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
+
+    in_ffd = flb_input(ctx.flb, "fluentbit_logs", NULL);
+    TEST_CHECK_(in_ffd >= 0, "initialising input");
+    ret = flb_input_set(ctx.flb, in_ffd,
+                        "Tag", "fluentbit.internal",
+                        NULL);
+    TEST_CHECK_(ret == 0, "setting input options");
+
+    filter_ffd = flb_filter(ctx.flb, "kubernetes", NULL);
+    TEST_CHECK_(filter_ffd >= 0, "initialising filter");
+    ret = flb_filter_set(ctx.flb, filter_ffd,
+                         "Match", "fluentbit.internal",
+                         "Kube_Url", KUBE_URL,
+                         "Kube_Meta_Preload_Cache_Dir", DPATH "/meta",
+                         "Kube_Namespace_File", DPATH "/local/namespace",
+                         "Kube_Token_File", DPATH "/local/token",
+                         NULL);
+    TEST_CHECK_(ret == 0, "setting filter options");
+
+    cb_data.cb = cb_check_local_logs_result;
+    cb_data.data = &result;
+
+    out_ffd = flb_output(ctx.flb, "lib", (void *) &cb_data);
+    TEST_CHECK_(out_ffd >= 0, "initialising output");
+    ret = flb_output_set(ctx.flb, out_ffd,
+                         "Match", "fluentbit.internal",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK_(ret == 0, "setting output options");
+
+    ret = flb_start(ctx.flb);
+    TEST_CHECK_(ret == 0, "starting engine");
+    if (ret == -1) {
+        goto exit;
+    }
+
+    wait_with_timeout(KUBE_TEST_TIMEOUT_MS, &result.nMatched, 1);
+
+    TEST_CHECK(result.nMatched == 1);
+    TEST_MSG("result.nMatched: %i\nnExpected: 1", result.nMatched);
+
+    flb_log_set_level(ctx.flb->config, FLB_LOG_ERROR);
+
+    ret = flb_stop(ctx.flb);
+    TEST_CHECK_(ret == 0, "stopping engine");
+
+exit:
+    if (old_hostname != NULL) {
+        setenv("HOSTNAME", old_hostname, 1);
+        flb_free(old_hostname);
+    }
+    else {
+        unsetenv("HOSTNAME");
+    }
+
+    flb_destroy(ctx.flb);
+}
+
+static void flb_test_pod_association_multiple_instances()
+{
+    int ret;
+    int in_ffd;
+    int filter_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+
+    ctx = flb_create();
+    TEST_CHECK_(ctx != NULL, "initialising service");
+    if (!ctx) {
+        return;
+    }
+
+    ret = flb_service_set(ctx,
+                          "Flush", "0.2",
+                          "Grace", "1",
+                          "Log_Level", "error",
+                          NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
+
+    in_ffd = flb_input(ctx, "dummy", NULL);
+    TEST_CHECK_(in_ffd >= 0, "initialising input");
+    ret = flb_input_set(ctx, in_ffd,
+                        "Tag", "application.test",
+                        "Samples", "1",
+                        NULL);
+    TEST_CHECK_(ret == 0, "setting input options");
+
+    filter_ffd = flb_filter(ctx, "kubernetes", NULL);
+    TEST_CHECK_(filter_ffd >= 0, "initialising first filter");
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "application.*",
+                         "Dummy_Meta", "On",
+                         "Use_Pod_Association", "On",
+                         "AWS_Pod_Service_Preload_Cache_Dir",
+                         DPATH "/pod-service",
+                         "AWS_Pod_Service_Map_Refresh_Interval", "1",
+                         NULL);
+    TEST_CHECK_(ret == 0, "setting first filter options");
+
+    filter_ffd = flb_filter(ctx, "kubernetes", NULL);
+    TEST_CHECK_(filter_ffd >= 0, "initialising second filter");
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "dataplane.*",
+                         "Dummy_Meta", "On",
+                         "Use_Pod_Association", "On",
+                         "AWS_Pod_Service_Preload_Cache_Dir",
+                         DPATH "/pod-service",
+                         "AWS_Pod_Service_Map_Refresh_Interval", "1",
+                         NULL);
+    TEST_CHECK_(ret == 0, "setting second filter options");
+
+    out_ffd = flb_output(ctx, "null", NULL);
+    TEST_CHECK_(out_ffd >= 0, "initialising output");
+    ret = flb_output_set(ctx, out_ffd, "Match", "*", NULL);
+    TEST_CHECK_(ret == 0, "setting output options");
+
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret == 0, "starting engine");
+    if (ret == 0) {
+        flb_time_msleep(100);
+        ret = flb_stop(ctx);
+        TEST_CHECK_(ret == 0, "stopping engine");
+    }
+
+    flb_destroy(ctx);
 }
 
 
@@ -1036,6 +1227,8 @@ TEST_LIST = {
     {"kube_core_unescaping_json", flb_test_core_unescaping_json},
     {"kube_core_base_with_namespace_labels_and_annotations", flb_test_core_base_with_namespace_labels_and_annotations},
     {"kube_core_base_with_owner_references", flb_test_core_base_with_owner_references},
+    {"kube_local_fluentbit_logs", flb_test_local_fluentbit_logs},
+    {"kube_pod_association_multiple_instances", flb_test_pod_association_multiple_instances},
     {"kube_options_use-kubelet_enabled_json", flb_test_options_use_kubelet_enabled_json},
     {"kube_options_use-kubelet_disabled_json", flb_test_options_use_kubelet_disabled_json},
     {"kube_options_merge_log_enabled_text", flb_test_options_merge_log_enabled_text},

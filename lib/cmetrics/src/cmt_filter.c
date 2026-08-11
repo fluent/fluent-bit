@@ -186,7 +186,7 @@ static int filter_get_label_index(struct cmt_map *src, const char *label_key)
 
     cfl_list_foreach(head, &src->label_keys) {
         label = cfl_list_entry(head, struct cmt_map_label, _head);
-        if (strncmp(label->name, label_key, strlen(label->name)) == 0) {
+        if (strcmp(label->name, label_key) == 0) {
            return index;
         }
 
@@ -228,7 +228,7 @@ int metrics_check_label_value_existence(struct cmt_metric *metric,
         return CMT_FALSE;
     }
 
-    if (strncmp(label->name, label_value, strlen(label->name)) == 0) {
+    if (strcmp(label->name, label_value) == 0) {
         return CMT_TRUE;
     }
 
@@ -239,27 +239,25 @@ static int metrics_map_drop_label_value_pairs(struct cmt_map *map,
                                               size_t label_index,
                                               const char *label_value)
 {
+    struct cfl_list   *tmp;
     struct cfl_list   *head;
     struct cmt_metric *metric;
+    int                match;
     int                result;
 
     result = CMT_FALSE;
 
-    cfl_list_foreach(head, &map->metrics) {
+    cfl_list_foreach_safe(head, tmp, &map->metrics) {
         metric = cfl_list_entry(head, struct cmt_metric, _head);
 
-        result = metrics_check_label_value_existence(metric,
-                                                     label_index,
-                                                     label_value);
+        match = metrics_check_label_value_existence(metric,
+                                                    label_index,
+                                                    label_value);
 
-        if (result == CMT_TRUE) {
+        if (match == CMT_TRUE) {
             result = CMT_TRUE;
-            break;
+            cmt_map_metric_destroy(metric);
         }
-    }
-
-    if (result == CMT_TRUE) {
-        cmt_map_metric_destroy(metric);
     }
 
     return result;

@@ -43,6 +43,7 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *ins)
     }
     ctx->ins = ins;
     ctx->format = FLB_TCP_FMT_JSON;
+    ctx->workers = 1;
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *)ctx);
@@ -166,6 +167,11 @@ int tcp_config_destroy(struct flb_in_tcp_config *ctx)
         flb_input_collector_delete(ctx->collector_id, ctx->ins);
 
         ctx->collector_id = -1;
+    }
+
+    if (ctx->listener_registered == FLB_TRUE && ctx->event_loop != NULL) {
+        mk_event_del(ctx->event_loop, &ctx->listener_event);
+        ctx->listener_registered = FLB_FALSE;
     }
 
     if (ctx->downstream != NULL) {

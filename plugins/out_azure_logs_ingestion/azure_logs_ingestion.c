@@ -377,6 +377,11 @@ cleanup:
 static int cb_azure_logs_ingestion_exit(void *data, struct flb_config *config)
 {
     struct flb_az_li *ctx = data;
+
+    if (!ctx) {
+        return 0;
+    }
+
     flb_plg_debug(ctx->ins, "exiting logs ingestion plugin");
     flb_az_li_ctx_destroy(ctx);
     return 0;

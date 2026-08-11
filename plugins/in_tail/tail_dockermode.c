@@ -190,7 +190,7 @@ static int unesc_ends_with_nl(char *str, size_t len)
         return FLB_FALSE;
     }
     unesc_len = flb_unescape_string(str, len, &unesc);
-    nl = unesc[unesc_len - 1] == '\n';
+    nl = unesc_len > 0 && unesc[unesc_len - 1] == '\n';
     flb_free(unesc);
     return nl;
 }

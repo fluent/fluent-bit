@@ -26,8 +26,11 @@ import requests
 from google.protobuf import json_format
 
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
-from src.server.otlp_server import data_storage, otlp_server_run
-from src.utils.fluent_bit_manager import FluentBitManager
+from src.server.otlp_server import data_storage, otlp_server_run, stop_otlp_server
+from src.utils.fluent_bit_manager import (
+    FluentBitManager,
+    fluent_bit_binary_supports_config_property,
+)
 from src.utils.network import find_available_port
 
 logger = logging.getLogger(__name__)
@@ -67,10 +70,14 @@ class Service:
         self.flb.start()
 
     def stop(self):
-        if getattr(self, "flb", None) is not None and self.flb.process is not None:
-            self.flb.stop()
-        requests.post(f"http://127.0.0.1:{self.test_suite_http_port}/shutdown")
-        shutil.rmtree(self.runtime_dir, ignore_errors=True)
+        try:
+            if getattr(self, "flb", None) is not None and self.flb.process is not None:
+                self.flb.stop()
+        finally:
+            try:
+                stop_otlp_server()
+            finally:
+                shutil.rmtree(self.runtime_dir, ignore_errors=True)
 
     def wait_for_log_count(self, expected_count, timeout=15):
         start_time = time.time()
@@ -99,7 +106,25 @@ def assert_reload_result(service):
     assert service.read_message(1) == "after"
 
 
+def test_cleanup_removes_runtime_dir_when_otlp_stop_fails(monkeypatch):
+    service = Service("fluent-bit-before.yaml", "fluent-bit-after.yaml")
+    runtime_dir = service.runtime_dir
+
+    def fail_to_stop_otlp_server():
+        raise RuntimeError("OTLP server did not stop")
+
+    monkeypatch.setitem(globals(), "stop_otlp_server", fail_to_stop_otlp_server)
+
+    with pytest.raises(RuntimeError, match="OTLP server did not stop"):
+        service.stop()
+
+    assert not os.path.exists(runtime_dir)
+
+
 def test_hot_reload_watch_yaml_config_change():
+    if not fluent_bit_binary_supports_config_property("hot_reload.watch"):
+        pytest.skip("hot_reload.watch is not supported by the selected Fluent Bit binary")
+
     service = Service("fluent-bit-before.yaml", "fluent-bit-after.yaml")
 
     try:

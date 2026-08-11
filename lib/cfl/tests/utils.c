@@ -153,10 +153,25 @@ void test_cfl_utils_split_quoted_errors()
     TEST_CHECK(split == NULL);
 }
 
+void test_cfl_utils_null_inputs()
+{
+    struct cfl_list *split = NULL;
+
+    split = cfl_utils_split(NULL, ',', 1);
+    TEST_CHECK(split == NULL);
+
+    split = cfl_utils_split_quoted(NULL, ',', 1);
+    TEST_CHECK(split == NULL);
+
+    cfl_utils_split_free_entry(NULL);
+    cfl_utils_split_free(NULL);
+}
+
 
 TEST_LIST = {
     { "test_flb_utils_split", test_cfl_utils_split },
     { "test_flb_utils_split_quoted", test_cfl_utils_split_quoted},
     { "test_flb_utils_split_quoted_errors", test_cfl_utils_split_quoted_errors},
+    { "test_cfl_utils_null_inputs", test_cfl_utils_null_inputs},
     { 0 }
 };

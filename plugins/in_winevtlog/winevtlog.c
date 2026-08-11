@@ -23,12 +23,1069 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_sqldb.h>
 #include <fluent-bit/flb_input.h>
+#include <wchar.h>
 #include "winevtlog.h"
 
 #define EVENT_PROVIDER_NAME_LENGTH 256
 
 static char* convert_wstr(wchar_t *wstr, UINT codePage);
 static wchar_t* convert_str(char *str);
+
+static const char *skip_spaces(const char *cursor)
+{
+    while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+        cursor++;
+    }
+
+    return cursor;
+}
+
+static char *trim_spaces(char *value)
+{
+    char *end;
+
+    value = (char *) skip_spaces(value);
+    end = value + strlen(value);
+
+    while (end > value &&
+           (*(end - 1) == ' ' || *(end - 1) == '\t' ||
+            *(end - 1) == '\r' || *(end - 1) == '\n')) {
+        end--;
+    }
+    *end = '\0';
+
+    return value;
+}
+
+static int query_is_structured_xml(const char *query)
+{
+    const unsigned char *cursor;
+
+    if (query == NULL) {
+        return FLB_FALSE;
+    }
+
+    cursor = (const unsigned char *) query;
+
+    if (strlen((const char *) cursor) >= 3 &&
+        cursor[0] == 0xef && cursor[1] == 0xbb && cursor[2] == 0xbf) {
+        cursor += 3;
+    }
+
+    cursor = (const unsigned char *) skip_spaces((const char *) cursor);
+
+    return *cursor == '<';
+}
+
+static const char *xml_tag_end(const char *tag)
+{
+    char quote = '\0';
+
+    while (*tag != '\0') {
+        if (quote != '\0') {
+            if (*tag == quote) {
+                quote = '\0';
+            }
+        }
+        else if (*tag == '\'' || *tag == '"') {
+            quote = *tag;
+        }
+        else if (*tag == '>') {
+            return tag + 1;
+        }
+        tag++;
+    }
+
+    return NULL;
+}
+
+static int xml_tag_is(const char *tag, const char *name, int closing)
+{
+    size_t name_length;
+
+    if (*tag != '<') {
+        return FLB_FALSE;
+    }
+    tag++;
+
+    if (closing) {
+        if (*tag != '/') {
+            return FLB_FALSE;
+        }
+        tag++;
+    }
+    else if (*tag == '/') {
+        return FLB_FALSE;
+    }
+
+    tag = skip_spaces(tag);
+    name_length = strlen(name);
+
+    if (strncasecmp(tag, name, name_length) != 0) {
+        return FLB_FALSE;
+    }
+
+    tag += name_length;
+    return *tag == '>' || *tag == '/' || *tag == ' ' || *tag == '\t' ||
+           *tag == '\r' || *tag == '\n';
+}
+
+static int xml_attribute(const char *tag, const char *tag_end, const char *name,
+                         const char **value, size_t *value_length)
+{
+    char quote;
+    size_t attribute_length;
+    size_t name_length;
+    const char *cursor;
+    const char *attribute;
+    const char *value_end;
+
+    name_length = strlen(name);
+    cursor = tag + 1;
+
+    if (*cursor == '/') {
+        cursor++;
+    }
+    cursor = skip_spaces(cursor);
+    while (cursor < tag_end &&
+           *cursor != ' ' && *cursor != '\t' && *cursor != '\r' &&
+           *cursor != '\n' && *cursor != '>' && *cursor != '/') {
+        cursor++;
+    }
+
+    while (cursor < tag_end && *cursor != '>' && *cursor != '/') {
+        cursor = skip_spaces(cursor);
+
+        if (cursor >= tag_end || *cursor == '>' || *cursor == '/') {
+            break;
+        }
+
+        attribute = cursor;
+        while (cursor < tag_end &&
+               *cursor != '=' && *cursor != ' ' && *cursor != '\t' &&
+               *cursor != '\r' && *cursor != '\n' &&
+               *cursor != '>' && *cursor != '/') {
+            cursor++;
+        }
+        attribute_length = cursor - attribute;
+        cursor = skip_spaces(cursor);
+
+        if (cursor >= tag_end || *cursor != '=') {
+            return FLB_FALSE;
+        }
+        cursor = skip_spaces(cursor + 1);
+        if (cursor >= tag_end || (*cursor != '\'' && *cursor != '"')) {
+            return FLB_FALSE;
+        }
+
+        quote = *cursor;
+        cursor++;
+        value_end = cursor;
+        while (value_end < tag_end && *value_end != quote) {
+            value_end++;
+        }
+        if (value_end >= tag_end) {
+            return FLB_FALSE;
+        }
+
+        if (attribute_length == name_length &&
+            strncasecmp(attribute, name, name_length) == 0) {
+            *value = cursor;
+            *value_length = value_end - *value;
+            return FLB_TRUE;
+        }
+        cursor = value_end + 1;
+    }
+
+    return FLB_FALSE;
+}
+
+static const wchar_t *wxml_tag_end(const wchar_t *tag)
+{
+    wchar_t quote = L'\0';
+
+    while (*tag != L'\0') {
+        if (quote != L'\0') {
+            if (*tag == quote) {
+                quote = L'\0';
+            }
+        }
+        else if (*tag == L'\'' || *tag == L'"') {
+            quote = *tag;
+        }
+        else if (*tag == L'>') {
+            return tag + 1;
+        }
+        tag++;
+    }
+
+    return NULL;
+}
+
+static int wxml_tag_is(const wchar_t *tag, const wchar_t *name, int closing)
+{
+    size_t name_length;
+
+    if (*tag != L'<') {
+        return FLB_FALSE;
+    }
+    tag++;
+
+    if (closing) {
+        if (*tag != L'/') {
+            return FLB_FALSE;
+        }
+        tag++;
+    }
+    else if (*tag == L'/') {
+        return FLB_FALSE;
+    }
+
+    while (*tag == L' ' || *tag == L'\t' || *tag == L'\r' || *tag == L'\n') {
+        tag++;
+    }
+
+    name_length = wcslen(name);
+    if (wcsncmp(tag, name, name_length) != 0) {
+        return FLB_FALSE;
+    }
+
+    tag += name_length;
+    return *tag == L'>' || *tag == L'/' || *tag == L' ' || *tag == L'\t' ||
+           *tag == L'\r' || *tag == L'\n';
+}
+
+static int wxml_attribute(const wchar_t *tag, const wchar_t *tag_end,
+                          const wchar_t *name, const wchar_t **value,
+                          size_t *value_length)
+{
+    wchar_t quote;
+    size_t attribute_length;
+    size_t name_length;
+    const wchar_t *cursor;
+    const wchar_t *attribute;
+    const wchar_t *value_end;
+
+    name_length = wcslen(name);
+    cursor = tag + 1;
+
+    if (*cursor == L'/') {
+        cursor++;
+    }
+    while (*cursor == L' ' || *cursor == L'\t' || *cursor == L'\r' || *cursor == L'\n') {
+        cursor++;
+    }
+    while (cursor < tag_end && *cursor != L' ' && *cursor != L'\t' &&
+           *cursor != L'\r' && *cursor != L'\n' && *cursor != L'>' &&
+           *cursor != L'/') {
+        cursor++;
+    }
+
+    while (cursor < tag_end && *cursor != L'>' && *cursor != L'/') {
+        while (*cursor == L' ' || *cursor == L'\t' ||
+               *cursor == L'\r' || *cursor == L'\n') {
+            cursor++;
+        }
+
+        if (cursor >= tag_end || *cursor == L'>' || *cursor == L'/') {
+            break;
+        }
+
+        attribute = cursor;
+        while (cursor < tag_end && *cursor != L'=' && *cursor != L' ' &&
+               *cursor != L'\t' && *cursor != L'\r' && *cursor != L'\n' &&
+               *cursor != L'>' && *cursor != L'/') {
+            cursor++;
+        }
+        attribute_length = cursor - attribute;
+
+        while (*cursor == L' ' || *cursor == L'\t' ||
+               *cursor == L'\r' || *cursor == L'\n') {
+            cursor++;
+        }
+        if (cursor >= tag_end || *cursor != L'=') {
+            return FLB_FALSE;
+        }
+
+        cursor++;
+        while (*cursor == L' ' || *cursor == L'\t' ||
+               *cursor == L'\r' || *cursor == L'\n') {
+            cursor++;
+        }
+        if (cursor >= tag_end || (*cursor != L'\'' && *cursor != L'"')) {
+            return FLB_FALSE;
+        }
+
+        quote = *cursor++;
+        value_end = cursor;
+        while (value_end < tag_end && *value_end != quote) {
+            value_end++;
+        }
+        if (value_end >= tag_end) {
+            return FLB_FALSE;
+        }
+
+        if (attribute_length == name_length &&
+            wcsncmp(attribute, name, name_length) == 0) {
+            *value = cursor;
+            *value_length = value_end - cursor;
+            return FLB_TRUE;
+        }
+        cursor = value_end + 1;
+    }
+
+    return FLB_FALSE;
+}
+
+static PWSTR wxml_decode_attribute(const wchar_t *value, size_t value_length)
+{
+    size_t input_index;
+    size_t output_index = 0;
+    PWSTR output;
+
+    output = flb_malloc(sizeof(wchar_t) * (value_length + 1));
+    if (output == NULL) {
+        flb_errno();
+        return NULL;
+    }
+
+    for (input_index = 0; input_index < value_length; input_index++) {
+        if (value[input_index] != L'&') {
+            output[output_index++] = value[input_index];
+            continue;
+        }
+
+        if (input_index + 5 <= value_length &&
+            wcsncmp(&value[input_index], L"&amp;", 5) == 0) {
+            output[output_index++] = L'&';
+            input_index += 4;
+        }
+        else if (input_index + 4 <= value_length &&
+                 wcsncmp(&value[input_index], L"&lt;", 4) == 0) {
+            output[output_index++] = L'<';
+            input_index += 3;
+        }
+        else if (input_index + 4 <= value_length &&
+                 wcsncmp(&value[input_index], L"&gt;", 4) == 0) {
+            output[output_index++] = L'>';
+            input_index += 3;
+        }
+        else if (input_index + 6 <= value_length &&
+                 wcsncmp(&value[input_index], L"&quot;", 6) == 0) {
+            output[output_index++] = L'"';
+            input_index += 5;
+        }
+        else if (input_index + 6 <= value_length &&
+                 wcsncmp(&value[input_index], L"&apos;", 6) == 0) {
+            output[output_index++] = L'\'';
+            input_index += 5;
+        }
+        else {
+            flb_free(output);
+            return NULL;
+        }
+    }
+
+    output[output_index] = L'\0';
+    return output;
+}
+
+static void winevtlog_event_template_destroy(struct winevtlog_event_template *event_template)
+{
+    UINT index;
+
+    if (event_template == NULL) {
+        return;
+    }
+
+    for (index = 0; index < event_template->data_count; index++) {
+        flb_free(event_template->data_names[index]);
+    }
+    flb_free(event_template->data_names);
+    flb_free(event_template->cache_key);
+    flb_free(event_template->provider_name);
+    flb_free(event_template);
+}
+
+void winevtlog_event_template_cache_destroy(struct winevtlog_config *ctx)
+{
+    struct winevtlog_event_template *event_template;
+    struct mk_list *head;
+    struct mk_list *tmp;
+
+    if (ctx == NULL) {
+        return;
+    }
+
+    if (ctx->event_template_cache != NULL) {
+        flb_hash_table_destroy(ctx->event_template_cache);
+        ctx->event_template_cache = NULL;
+    }
+
+    mk_list_foreach_safe(head, tmp, &ctx->event_templates) {
+        event_template = mk_list_entry(head,
+                                       struct winevtlog_event_template,
+                                       _head);
+        mk_list_del(&event_template->_head);
+        winevtlog_event_template_destroy(event_template);
+    }
+}
+
+static char *event_template_cache_key(PCWSTR provider_name, DWORD event_id,
+                                      DWORD version, size_t *key_length)
+{
+    int provider_length;
+    int suffix_length;
+    size_t provider_utf8_length;
+    char suffix[32];
+    char *key;
+
+    provider_length = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+                                          provider_name, -1, NULL, 0, NULL,
+                                          NULL);
+    if (provider_length == 0) {
+        return NULL;
+    }
+
+    suffix_length = _snprintf_s(suffix, sizeof(suffix), _TRUNCATE,
+                                "|%lu|%lu", event_id, version);
+    if (suffix_length <= 0) {
+        return NULL;
+    }
+
+    provider_utf8_length = (size_t) provider_length - 1;
+    key = flb_malloc(provider_utf8_length + (size_t) suffix_length + 1);
+    if (key == NULL) {
+        flb_errno();
+        return NULL;
+    }
+
+    if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, provider_name, -1,
+                            key, provider_length, NULL, NULL) == 0) {
+        flb_free(key);
+        return NULL;
+    }
+
+    memcpy(&key[provider_utf8_length], suffix, (size_t) suffix_length + 1);
+    *key_length = provider_utf8_length + (size_t) suffix_length;
+    return key;
+}
+
+static struct winevtlog_event_template *event_template_cache_find(
+        struct winevtlog_config *ctx, PCWSTR provider_name,
+        DWORD event_id, DWORD version)
+{
+    char *cache_key;
+    size_t cache_key_length;
+    size_t cache_value_size;
+    void *cache_value;
+    struct winevtlog_event_template *event_template;
+
+    if (ctx->event_template_cache == NULL) {
+        return NULL;
+    }
+
+    cache_key = event_template_cache_key(provider_name, event_id, version,
+                                         &cache_key_length);
+    if (cache_key == NULL) {
+        return NULL;
+    }
+
+    if (flb_hash_table_get(ctx->event_template_cache, cache_key,
+                           (int) cache_key_length, &cache_value,
+                           &cache_value_size) < 0) {
+        flb_free(cache_key);
+        return NULL;
+    }
+
+    flb_free(cache_key);
+    event_template = cache_value;
+    mk_list_del(&event_template->_head);
+    mk_list_add(&event_template->_head, &ctx->event_templates);
+    return event_template;
+}
+
+static int event_template_cache_evict(struct winevtlog_config *ctx)
+{
+    struct winevtlog_event_template *event_template;
+
+    while (mk_list_size(&ctx->event_templates) >=
+           ctx->event_template_cache_size) {
+        event_template = mk_list_entry_first(&ctx->event_templates,
+                                              struct winevtlog_event_template,
+                                              _head);
+        if (flb_hash_table_del_ptr(ctx->event_template_cache,
+                                   event_template->cache_key,
+                                   (int) event_template->cache_key_length,
+                                   event_template) != 0) {
+            return -1;
+        }
+        mk_list_del(&event_template->_head);
+        winevtlog_event_template_destroy(event_template);
+    }
+
+    return 0;
+}
+
+static struct winevtlog_event_template *event_template_cache_create(
+        struct winevtlog_config *ctx, PCWSTR provider_name,
+        DWORD event_id, DWORD version)
+{
+    size_t provider_name_length;
+    struct winevtlog_event_template *event_template;
+
+    event_template = flb_calloc(1, sizeof(struct winevtlog_event_template));
+    if (event_template == NULL) {
+        flb_errno();
+        return NULL;
+    }
+
+    provider_name_length = wcslen(provider_name);
+    event_template->provider_name = flb_malloc(sizeof(wchar_t) *
+                                                (provider_name_length + 1));
+    if (event_template->provider_name == NULL) {
+        flb_errno();
+        winevtlog_event_template_destroy(event_template);
+        return NULL;
+    }
+
+    memcpy(event_template->provider_name, provider_name,
+           sizeof(wchar_t) * (provider_name_length + 1));
+    event_template->event_id = event_id;
+    event_template->version = version;
+
+    event_template->cache_key = event_template_cache_key(provider_name,
+                                                          event_id, version,
+                                                          &event_template->cache_key_length);
+    if (event_template->cache_key == NULL ||
+        event_template_cache_evict(ctx) != 0 ||
+        flb_hash_table_add(ctx->event_template_cache,
+                           event_template->cache_key,
+                           (int) event_template->cache_key_length,
+                           event_template, 0) < 0) {
+        winevtlog_event_template_destroy(event_template);
+        return NULL;
+    }
+
+    mk_list_add(&event_template->_head, &ctx->event_templates);
+
+    return event_template;
+}
+
+static int event_template_append_name(struct winevtlog_event_template *event_template,
+                                      PWSTR name)
+{
+    PWSTR *new_names;
+    UINT index;
+
+    if (name == NULL || name[0] == L'\0') {
+        return -1;
+    }
+
+    for (index = 0; index < event_template->data_count; index++) {
+        if (wcscmp(event_template->data_names[index], name) == 0) {
+            return -1;
+        }
+    }
+
+    new_names = flb_realloc(event_template->data_names,
+                            sizeof(PWSTR) * (event_template->data_count + 1));
+    if (new_names == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    event_template->data_names = new_names;
+    event_template->data_names[event_template->data_count++] = name;
+    return 0;
+}
+
+static int event_template_parse_data_names(
+        struct winevtlog_event_template *event_template,
+        PCWSTR template_xml)
+{
+    const wchar_t *cursor;
+    const wchar_t *tag_end;
+    const wchar_t *name;
+    size_t name_length;
+    PWSTR decoded_name;
+
+    if (template_xml == NULL) {
+        return -1;
+    }
+
+    cursor = template_xml;
+    while ((cursor = wcschr(cursor, L'<')) != NULL) {
+        tag_end = wxml_tag_end(cursor);
+        if (tag_end == NULL) {
+            return -1;
+        }
+
+        if (wxml_tag_is(cursor, L"data", FLB_FALSE)) {
+            if (!wxml_attribute(cursor, tag_end, L"name", &name, &name_length)) {
+                return -1;
+            }
+
+            decoded_name = wxml_decode_attribute(name, name_length);
+            if (decoded_name == NULL ||
+                event_template_append_name(event_template, decoded_name) != 0) {
+                flb_free(decoded_name);
+                return -1;
+            }
+        }
+        cursor = tag_end;
+    }
+
+    return 0;
+}
+
+static int event_metadata_get_uint32(EVT_HANDLE event_metadata,
+                                     EVT_EVENT_METADATA_PROPERTY_ID property_id,
+                                     DWORD *value)
+{
+    DWORD buffer_size = 0;
+    DWORD buffer_used = 0;
+    PEVT_VARIANT property = NULL;
+    DWORD status;
+    int result = -1;
+
+    if (EvtGetEventMetadataProperty(event_metadata, property_id, 0, 0, NULL,
+                                    &buffer_size)) {
+        return -1;
+    }
+
+    status = GetLastError();
+    if (status != ERROR_INSUFFICIENT_BUFFER) {
+        return -1;
+    }
+
+    property = flb_malloc(buffer_size);
+    if (property == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    if (!EvtGetEventMetadataProperty(event_metadata, property_id, 0,
+                                     buffer_size, property, &buffer_used) ||
+        (property->Type & EVT_VARIANT_TYPE_MASK) != EvtVarTypeUInt32) {
+        goto cleanup;
+    }
+
+    *value = property->UInt32Val;
+    result = 0;
+
+cleanup:
+    flb_free(property);
+    return result;
+}
+
+static PWSTR event_metadata_get_template(EVT_HANDLE event_metadata)
+{
+    DWORD buffer_size = 0;
+    DWORD buffer_used = 0;
+    PEVT_VARIANT property = NULL;
+    PWSTR template_xml = NULL;
+    size_t template_length;
+    DWORD status;
+
+    if (EvtGetEventMetadataProperty(event_metadata,
+                                    EventMetadataEventTemplate,
+                                    0, 0, NULL, &buffer_size)) {
+        return NULL;
+    }
+
+    status = GetLastError();
+    if (status != ERROR_INSUFFICIENT_BUFFER) {
+        return NULL;
+    }
+
+    property = flb_malloc(buffer_size);
+    if (property == NULL) {
+        flb_errno();
+        return NULL;
+    }
+
+    if (!EvtGetEventMetadataProperty(event_metadata,
+                                     EventMetadataEventTemplate,
+                                     0, buffer_size, property, &buffer_used) ||
+        (property->Type & EVT_VARIANT_TYPE_MASK) != EvtVarTypeString ||
+        property->StringVal == NULL) {
+        goto cleanup;
+    }
+
+    template_length = wcslen(property->StringVal);
+    template_xml = flb_malloc(sizeof(wchar_t) * (template_length + 1));
+    if (template_xml == NULL) {
+        flb_errno();
+        goto cleanup;
+    }
+
+    memcpy(template_xml, property->StringVal,
+           sizeof(wchar_t) * (template_length + 1));
+
+cleanup:
+    flb_free(property);
+    return template_xml;
+}
+
+static void event_template_load(struct winevtlog_event_template *event_template,
+                                EVT_HANDLE remote,
+                                struct winevtlog_config *ctx)
+{
+    DWORD event_id;
+    DWORD version;
+    DWORD status;
+    EVT_HANDLE event_metadata = NULL;
+    EVT_HANDLE event_metadata_enum = NULL;
+    EVT_HANDLE publisher_metadata = NULL;
+    PWSTR template_xml = NULL;
+
+    publisher_metadata = EvtOpenPublisherMetadata(
+            remote, event_template->provider_name, NULL,
+            MAKELCID(LANG_NEUTRAL, SORT_DEFAULT), 0);
+    if (publisher_metadata == NULL) {
+        flb_plg_debug(ctx->ins,
+                      "could not open publisher metadata for event data map: %lu",
+                      GetLastError());
+        goto cleanup;
+    }
+
+    event_metadata_enum = EvtOpenEventMetadataEnum(publisher_metadata, 0);
+    if (event_metadata_enum == NULL) {
+        flb_plg_debug(ctx->ins,
+                      "could not enumerate publisher event metadata: %lu",
+                      GetLastError());
+        goto cleanup;
+    }
+
+    while (FLB_TRUE) {
+        event_metadata = EvtNextEventMetadata(event_metadata_enum, 0);
+        if (event_metadata == NULL) {
+            status = GetLastError();
+            if (status != ERROR_NO_MORE_ITEMS) {
+                flb_plg_debug(ctx->ins,
+                              "could not read publisher event metadata: %lu",
+                              status);
+            }
+            break;
+        }
+
+        if (event_metadata_get_uint32(event_metadata, EventMetadataEventID,
+                                      &event_id) == 0 &&
+            event_metadata_get_uint32(event_metadata, EventMetadataEventVersion,
+                                      &version) == 0 &&
+            event_id == event_template->event_id &&
+            version == event_template->version) {
+            template_xml = event_metadata_get_template(event_metadata);
+            if (template_xml == NULL) {
+                flb_plg_debug(ctx->ins,
+                              "could not read event metadata template for event %lu",
+                              event_template->event_id);
+                break;
+            }
+
+            if (event_template_parse_data_names(event_template,
+                                                template_xml) == 0 &&
+                event_template->data_count > 0) {
+                event_template->valid = FLB_TRUE;
+                flb_plg_debug(ctx->ins,
+                              "loaded EventData template for %ls, event %lu version %lu: %u fields",
+                              event_template->provider_name,
+                              event_template->event_id,
+                              event_template->version,
+                              event_template->data_count);
+            }
+            else {
+                flb_plg_debug(ctx->ins,
+                              "EventData template has no usable names for %ls, event %lu version %lu",
+                              event_template->provider_name,
+                              event_template->event_id,
+                              event_template->version);
+            }
+            break;
+        }
+
+        EvtClose(event_metadata);
+        event_metadata = NULL;
+    }
+
+cleanup:
+    if (template_xml != NULL) {
+        flb_free(template_xml);
+    }
+    if (event_metadata != NULL) {
+        EvtClose(event_metadata);
+    }
+    if (event_metadata_enum != NULL) {
+        EvtClose(event_metadata_enum);
+    }
+    if (publisher_metadata != NULL) {
+        EvtClose(publisher_metadata);
+    }
+}
+
+struct winevtlog_event_template *winevtlog_event_template_get(
+        PEVT_VARIANT system, EVT_HANDLE remote,
+        struct winevtlog_config *ctx)
+{
+    DWORD event_id;
+    DWORD version;
+    PCWSTR provider_name;
+    struct winevtlog_event_template *event_template;
+
+    if (ctx == NULL || system == NULL ||
+        (system[EvtSystemProviderName].Type & EVT_VARIANT_TYPE_MASK) !=
+                EvtVarTypeString ||
+        system[EvtSystemProviderName].StringVal == NULL ||
+        (system[EvtSystemEventID].Type & EVT_VARIANT_TYPE_MASK) !=
+                EvtVarTypeUInt16) {
+        return NULL;
+    }
+
+    provider_name = system[EvtSystemProviderName].StringVal;
+    event_id = system[EvtSystemEventID].UInt16Val;
+    version = 0;
+
+    if ((system[EvtSystemVersion].Type & EVT_VARIANT_TYPE_MASK) ==
+            EvtVarTypeByte) {
+        version = system[EvtSystemVersion].ByteVal;
+    }
+
+    event_template = event_template_cache_find(ctx, provider_name,
+                                               event_id, version);
+    if (event_template != NULL) {
+        return event_template;
+    }
+
+    event_template = event_template_cache_create(ctx, provider_name,
+                                                 event_id, version);
+    if (event_template == NULL) {
+        return NULL;
+    }
+
+    event_template_load(event_template, remote, ctx);
+    return event_template;
+}
+
+static int path_matches_channel(const char *path, size_t path_length,
+                                const char *channel)
+{
+    size_t channel_length;
+
+    if (path == NULL) {
+        return FLB_FALSE;
+    }
+
+    channel_length = strlen(channel);
+    if (channel_length != path_length) {
+        return FLB_FALSE;
+    }
+
+    return strncasecmp(path, channel, path_length) == 0;
+}
+
+static const char *xml_element_end(const char *element, const char *limit,
+                                   const char *name)
+{
+    const char *cursor;
+    const char *tag_end;
+
+    tag_end = xml_tag_end(element);
+    if (tag_end == NULL || tag_end > limit) {
+        return NULL;
+    }
+
+    if (tag_end >= element + 2 && *(tag_end - 2) == '/') {
+        return tag_end;
+    }
+
+    cursor = tag_end;
+    while (cursor < limit) {
+        cursor = strchr(cursor, '<');
+        if (cursor == NULL || cursor >= limit) {
+            return NULL;
+        }
+        if (xml_tag_is(cursor, name, FLB_TRUE)) {
+            tag_end = xml_tag_end(cursor);
+            if (tag_end == NULL || tag_end > limit) {
+                return NULL;
+            }
+            return tag_end;
+        }
+        cursor++;
+    }
+
+    return NULL;
+}
+
+static int query_for_channel(const char *query, const char *channel,
+                             flb_sds_t *channel_query)
+{
+    int matches = 0;
+    int query_selects;
+    flb_sds_t output;
+    flb_sds_t query_body;
+    const char *cursor;
+    const char *query_start;
+    const char *query_open_end;
+    const char *query_close;
+    const char *query_end;
+    const char *element_start;
+    const char *element_open_end;
+    const char *element_end;
+    const char *query_path;
+    const char *element_path;
+    const char *effective_path;
+    const char *element_name;
+    size_t query_path_length;
+    size_t element_path_length;
+    size_t effective_path_length;
+
+    *channel_query = NULL;
+
+    if (!query_is_structured_xml(query)) {
+        if (query != NULL) {
+            *channel_query = flb_sds_create(query);
+            if (*channel_query == NULL) {
+                return -1;
+            }
+        }
+        return 0;
+    }
+
+    output = flb_sds_create("<QueryList>");
+    if (output == NULL) {
+        return -1;
+    }
+
+    cursor = query;
+    while ((query_start = strchr(cursor, '<')) != NULL) {
+        if (!xml_tag_is(query_start, "Query", FLB_FALSE)) {
+            cursor = query_start + 1;
+            continue;
+        }
+
+        query_open_end = xml_tag_end(query_start);
+        if (query_open_end == NULL) {
+            flb_sds_destroy(output);
+            return -1;
+        }
+
+        query_close = query_open_end;
+        while ((query_close = strchr(query_close, '<')) != NULL) {
+            if (xml_tag_is(query_close, "Query", FLB_TRUE)) {
+                break;
+            }
+            query_close++;
+        }
+        if (query_close == NULL) {
+            flb_sds_destroy(output);
+            return -1;
+        }
+
+        query_end = xml_tag_end(query_close);
+        if (query_end == NULL) {
+            flb_sds_destroy(output);
+            return -1;
+        }
+
+        query_path = NULL;
+        query_path_length = 0;
+        xml_attribute(query_start, query_open_end, "Path",
+                      &query_path, &query_path_length);
+
+        query_body = flb_sds_create_size(query_end - query_start);
+        if (query_body == NULL) {
+            flb_sds_destroy(output);
+            return -1;
+        }
+
+        query_selects = 0;
+        element_start = query_open_end;
+        while ((element_start = strchr(element_start, '<')) != NULL &&
+               element_start < query_close) {
+            if (xml_tag_is(element_start, "Select", FLB_FALSE)) {
+                element_name = "Select";
+            }
+            else if (xml_tag_is(element_start, "Suppress", FLB_FALSE)) {
+                element_name = "Suppress";
+            }
+            else {
+                element_start++;
+                continue;
+            }
+
+            element_open_end = xml_tag_end(element_start);
+            if (element_open_end == NULL || element_open_end > query_close) {
+                flb_sds_destroy(query_body);
+                flb_sds_destroy(output);
+                return -1;
+            }
+
+            element_end = xml_element_end(element_start, query_close, element_name);
+            if (element_end == NULL) {
+                flb_sds_destroy(query_body);
+                flb_sds_destroy(output);
+                return -1;
+            }
+
+            element_path = NULL;
+            element_path_length = 0;
+            if (xml_attribute(element_start, element_open_end, "Path",
+                              &element_path, &element_path_length)) {
+                effective_path = element_path;
+                effective_path_length = element_path_length;
+            }
+            else {
+                effective_path = query_path;
+                effective_path_length = query_path_length;
+            }
+
+            if (path_matches_channel(effective_path, effective_path_length, channel)) {
+                if (flb_sds_cat_safe(&query_body, element_start,
+                                     element_end - element_start) != 0) {
+                    flb_sds_destroy(query_body);
+                    flb_sds_destroy(output);
+                    return -1;
+                }
+                if (strcasecmp(element_name, "Select") == 0) {
+                    query_selects++;
+                }
+            }
+            element_start = element_end;
+        }
+
+        if (query_selects > 0) {
+            if (flb_sds_cat_safe(&output, query_start,
+                                 query_open_end - query_start) != 0 ||
+                flb_sds_cat_safe(&output, query_body,
+                                 flb_sds_len(query_body)) != 0 ||
+                flb_sds_cat_safe(&output, query_close,
+                                 query_end - query_close) != 0) {
+                flb_sds_destroy(query_body);
+                flb_sds_destroy(output);
+                return -1;
+            }
+            matches++;
+        }
+
+        flb_sds_destroy(query_body);
+        cursor = query_end;
+    }
+
+    if (matches == 0) {
+        flb_sds_destroy(output);
+        return 1;
+    }
+
+    if (flb_sds_cat_safe(&output, "</QueryList>", 12) != 0) {
+        flb_sds_destroy(output);
+        return -1;
+    }
+
+    *channel_query = output;
+    return 0;
+}
 
 static EVT_HANDLE
 create_remote_handle(struct winevtlog_session *session, DWORD *error_code)
@@ -69,6 +1126,7 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevt
     EVT_HANDLE remote_handle = NULL;
     void *buf;
     DWORD err = ERROR_SUCCESS;
+    int structured_query;
 
     ch = flb_calloc(1, sizeof(struct winevtlog_channel));
     if (ch == NULL) {
@@ -84,37 +1142,40 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevt
     }
     ch->query = NULL;
     ch->remote = NULL;
+    structured_query = query_is_structured_xml(query);
 
     signal_event = CreateEvent(NULL, TRUE, TRUE, NULL);
 
-    // channel : To wide char
-    len = MultiByteToWideChar(CP_UTF8, 0, channel, -1, NULL, 0);
-    wide_channel = flb_malloc(sizeof(WCHAR) * len);
-    if (wide_channel == NULL) {
-        if (signal_event) {
-            CloseHandle(signal_event);
+    if (!structured_query) {
+        /* channel : To wide char */
+        len = MultiByteToWideChar(CP_UTF8, 0, channel, -1, NULL, 0);
+        wide_channel = flb_malloc(sizeof(WCHAR) * len);
+        if (wide_channel == NULL) {
+            if (signal_event) {
+                CloseHandle(signal_event);
+            }
+            flb_free(ch->name);
+            if (ch->query) {
+                flb_free(ch->query);
+            }
+            flb_free(ch);
+            return NULL;
         }
-        flb_free(ch->name);
-        if (ch->query) {
-            flb_free(ch->query);
+        if (0 == MultiByteToWideChar(CP_UTF8, 0, channel, -1, wide_channel, len)) {
+            if (signal_event) {
+                CloseHandle(signal_event);
+            }
+            flb_free(wide_channel);
+            flb_free(ch->name);
+            if (ch->query) {
+                flb_free(ch->query);
+            }
+            flb_free(ch);
+            return NULL;
         }
-        flb_free(ch);
-        return NULL;
-    }
-    if (0 == MultiByteToWideChar(CP_UTF8, 0, channel, -1, wide_channel, len)) {
-        if (signal_event) {
-            CloseHandle(signal_event);
-        }
-        flb_free(wide_channel);
-        flb_free(ch->name);
-        if (ch->query) {
-            flb_free(ch->query);
-        }
-        flb_free(ch);
-        return NULL;
     }
     if (query != NULL) {
-    // query : To wide char
+        /* query : To wide char */
         len = MultiByteToWideChar(CP_UTF8, 0, query, -1, NULL, 0);
         wide_query = flb_malloc(sizeof(WCHAR) * len);
        if (wide_query == NULL) {
@@ -173,6 +1234,8 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, struct winevt
     }
 
     /* The wide_query parameter can handle NULL as `*` for retrieving all events.
+     * ChannelPath must be NULL for structured XML queries because Windows ignores
+     * it and the query itself defines all subscribed channels.
      * ref. https://learn.microsoft.com/en-us/windows/win32/api/winevt/nf-winevt-evtsubscribe
      */
     ch->subscription = EvtSubscribe(remote_handle, signal_event, wide_channel, wide_query,
@@ -597,11 +1660,20 @@ cleanup:
 int get_string_inserts(EVT_HANDLE handle, PEVT_VARIANT *string_inserts_values,
                        UINT *prop_count, unsigned int *string_inserts_size)
 {
-    PEVT_VARIANT values;
+    PEVT_VARIANT values = NULL;
     DWORD buffer_size = 0;
     DWORD buffer_size_used = 0;
     DWORD count = 0;
     BOOL succeeded = FLB_TRUE;
+
+    if (string_inserts_values == NULL || prop_count == NULL ||
+        string_inserts_size == NULL) {
+        return FLB_FALSE;
+    }
+
+    *string_inserts_values = NULL;
+    *prop_count = 0;
+    *string_inserts_size = 0;
 
     EVT_HANDLE context = EvtCreateRenderContext(0, NULL, EvtRenderContextUser);
     if (context == NULL) {
@@ -611,8 +1683,27 @@ int get_string_inserts(EVT_HANDLE handle, PEVT_VARIANT *string_inserts_values,
     }
 
     // Get the size of the buffer
-    EvtRender(context, handle, EvtRenderEventValues, 0, NULL, &buffer_size, &count);
+    if (EvtRender(context, handle, EvtRenderEventValues, 0, NULL,
+                  &buffer_size, &count)) {
+        if (count == 0) {
+            goto cleanup;
+        }
+        flb_error("Unexpected successful string inserts size query");
+        succeeded = FLB_FALSE;
+        goto cleanup;
+    }
+    if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+        flb_error("Failed to get string inserts size with %d", GetLastError());
+        succeeded = FLB_FALSE;
+        goto cleanup;
+    }
+
     values = (PEVT_VARIANT)flb_malloc(buffer_size);
+    if (values == NULL) {
+        flb_errno();
+        succeeded = FLB_FALSE;
+        goto cleanup;
+    }
 
     succeeded = EvtRender(context,
                           handle,
@@ -623,7 +1714,7 @@ int get_string_inserts(EVT_HANDLE handle, PEVT_VARIANT *string_inserts_values,
                           &count);
 
     if (!succeeded) {
-        flb_error("Failed to get string inserts with %d\n", GetLastError());
+        flb_error("Failed to get string inserts with %d", GetLastError());
         goto cleanup;
     }
 
@@ -632,6 +1723,10 @@ int get_string_inserts(EVT_HANDLE handle, PEVT_VARIANT *string_inserts_values,
     *string_inserts_size = buffer_size;
 
 cleanup:
+
+    if (!succeeded && values != NULL) {
+        flb_free(values);
+    }
 
     if (context != NULL) {
         EvtClose(context);
@@ -779,15 +1874,21 @@ int winevtlog_try_reconnect(struct winevtlog_channel *ch, struct winevtlog_confi
     PWSTR wide_query   = NULL;
     DWORD len;
 
-    len = MultiByteToWideChar(CP_UTF8, 0, ch->name, -1, NULL, 0);
-    if (len == 0) {
-        return -1;
+    if (!query_is_structured_xml(ch->query)) {
+        len = MultiByteToWideChar(CP_UTF8, 0, ch->name, -1, NULL, 0);
+        if (len == 0) {
+            return -1;
+        }
+        wide_channel = flb_malloc(sizeof(WCHAR) * len);
+        if (!wide_channel) {
+            return -1;
+        }
+        if (MultiByteToWideChar(CP_UTF8, 0, ch->name, -1,
+                                wide_channel, len) == 0) {
+            flb_free(wide_channel);
+            return -1;
+        }
     }
-    wide_channel = flb_malloc(sizeof(WCHAR) * len);
-    if (!wide_channel) {
-        return -1;
-    }
-    MultiByteToWideChar(CP_UTF8, 0, ch->name, -1, wide_channel, len);
 
     if (ch->query) {
         len = MultiByteToWideChar(CP_UTF8, 0, ch->query, -1, NULL, 0);
@@ -898,6 +1999,7 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
     DWORD status = ERROR_SUCCESS;
     PWSTR system_xml = NULL;
     unsigned int system_size = 0;
+    unsigned int system_xml_size = 0;
     unsigned int message_size = 0;
     unsigned int string_inserts_size = 0;
     int hit_threshold = FLB_FALSE;
@@ -905,39 +2007,74 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
     PWSTR message = NULL;
     PEVT_VARIANT rendered_system = NULL;
     PEVT_VARIANT string_inserts = NULL;
+    struct winevtlog_event_template *event_template = NULL;
     UINT count_inserts = 0;
     DWORD i = 0;
     int rc = 0;
+    int render_user_data;
+
+    render_user_data = ctx->string_inserts || ctx->event_data_as_map;
 
     while (winevtlog_next(ch, hit_threshold)) {
         for (i = 0; i < ch->count; i++) {
+            system_xml = NULL;
+            rendered_system = NULL;
+            message = NULL;
+            string_inserts = NULL;
+            system_size = 0;
+            system_xml_size = 0;
+            message_size = 0;
+            string_inserts_size = 0;
+            count_inserts = 0;
+            event_template = NULL;
+
             if (ctx->render_event_as_xml) {
-                system_xml = render_event(ch->events[i], EvtRenderEventXml, &system_size);
+                system_xml = render_event(ch->events[i], EvtRenderEventXml,
+                                          &system_xml_size);
                 message = get_description(ch->events[i], LANG_NEUTRAL, &message_size, ch->remote);
-                get_string_inserts(ch->events[i], &string_inserts, &count_inserts, &string_inserts_size);
+                if (ctx->event_data_as_map) {
+                    render_system_event(ch->events[i], &rendered_system,
+                                        &system_size);
+                    if (rendered_system != NULL) {
+                        event_template = winevtlog_event_template_get(rendered_system,
+                                                                       ch->remote, ctx);
+                    }
+                }
+                if (render_user_data) {
+                    get_string_inserts(ch->events[i], &string_inserts,
+                                       &count_inserts, &string_inserts_size);
+                }
                 if (system_xml) {
-                    /* Caluculate total allocated size: system + message + string_inserts */
-                    read_size += (system_size + message_size + string_inserts_size);
+                    /* Calculate allocated size: XML + system + message + inserts. */
+                    read_size += (system_xml_size + system_size + message_size +
+                                  string_inserts_size);
                     winevtlog_pack_xml_event(system_xml, message, string_inserts,
-                                             count_inserts, ch, ctx);
+                                             count_inserts, event_template, ch, ctx);
                 }
 
                 flb_free(string_inserts);
                 flb_free(system_xml);
+                flb_free(rendered_system);
                 if (message) {
                     flb_free(message);
                 }
             }
             else if (ctx->render_event_as_text) {
-                rendered_system = NULL;
                 render_system_event(ch->events[i], &rendered_system, &system_size);
                 message = get_description(ch->events[i], LANG_NEUTRAL, &message_size, ch->remote);
-                get_string_inserts(ch->events[i], &string_inserts, &count_inserts, &string_inserts_size);
+                if (ctx->event_data_as_map && rendered_system != NULL) {
+                    event_template = winevtlog_event_template_get(rendered_system,
+                                                                   ch->remote, ctx);
+                }
+                if (render_user_data) {
+                    get_string_inserts(ch->events[i], &string_inserts,
+                                       &count_inserts, &string_inserts_size);
+                }
                 if (rendered_system) {
-                    /* Caluculate total allocated size: system + message + string_inserts */
+                    /* Calculate allocated size: system + message + inserts. */
                     read_size += (system_size + message_size + string_inserts_size);
                     winevtlog_pack_text_event(rendered_system, message, string_inserts,
-                                              count_inserts, ch, ctx);
+                                              count_inserts, event_template, ch, ctx);
 
                 }
 
@@ -950,12 +2087,19 @@ int winevtlog_read(struct winevtlog_channel *ch, struct winevtlog_config *ctx,
             else {
                 render_system_event(ch->events[i], &rendered_system, &system_size);
                 message = get_description(ch->events[i], LANG_NEUTRAL, &message_size, ch->remote);
-                get_string_inserts(ch->events[i], &string_inserts, &count_inserts, &string_inserts_size);
+                if (ctx->event_data_as_map && rendered_system != NULL) {
+                    event_template = winevtlog_event_template_get(rendered_system,
+                                                                   ch->remote, ctx);
+                }
+                if (render_user_data) {
+                    get_string_inserts(ch->events[i], &string_inserts,
+                                       &count_inserts, &string_inserts_size);
+                }
                 if (rendered_system) {
-                    /* Caluculate total allocated size: system + message + string_inserts */
+                    /* Calculate allocated size: system + message + inserts. */
                     read_size += (system_size + message_size + string_inserts_size);
                     winevtlog_pack_event(rendered_system, message, string_inserts,
-                                         count_inserts, ch, ctx);
+                                         count_inserts, event_template, ch, ctx);
                 }
 
                 flb_free(string_inserts);
@@ -1018,6 +2162,8 @@ struct mk_list *winevtlog_open_all(const char *channels, struct winevtlog_config
     char *tmp;
     char *channel;
     char *state;
+    int ret;
+    flb_sds_t channel_query;
     struct winevtlog_channel *ch;
     struct mk_list *list;
 
@@ -1037,8 +2183,27 @@ struct mk_list *winevtlog_open_all(const char *channels, struct winevtlog_config
 
     channel = strtok_s(tmp , ",", &state);
     while (channel) {
-        ch = winevtlog_subscribe(channel, ctx, NULL, ctx->event_query,
+        channel = trim_spaces(channel);
+        ret = query_for_channel(ctx->event_query, channel, &channel_query);
+        if (ret == 1) {
+            flb_plg_debug(ctx->ins,
+                          "channel '%s' is not selected by the structured query",
+                          channel);
+            channel = strtok_s(NULL, ",", &state);
+            continue;
+        }
+        else if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "could not create the event query for channel '%s'",
+                          channel);
+            flb_free(tmp);
+            winevtlog_close_all(list);
+            return NULL;
+        }
+
+        ch = winevtlog_subscribe(channel, ctx, NULL, channel_query,
                                  ctx->session);
+        flb_sds_destroy(channel_query);
         if (ch) {
             mk_list_add(&ch->_head, list);
         }

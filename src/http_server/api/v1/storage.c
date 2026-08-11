@@ -30,9 +30,10 @@
 /* Return the newest storage metrics buffer */
 static struct flb_hs_buf *storage_metrics_get_latest(struct flb_hs *hs)
 {
-    if (hs->storage_metrics.data == NULL) {
+    if (flb_hs_buf_acquire(&hs->storage_metrics, FLB_TRUE, FLB_FALSE) != 0) {
         return NULL;
     }
+
     return &hs->storage_metrics;
 }
 
@@ -50,8 +51,6 @@ static int cb_storage(struct flb_hs *hs,
         flb_http_response_set_status(response, 404);
         return flb_http_response_commit(response);
     }
-
-    buf->users++;
 
     flb_hs_response_set_payload(response, 200,
                                 FLB_HS_CONTENT_TYPE_JSON,

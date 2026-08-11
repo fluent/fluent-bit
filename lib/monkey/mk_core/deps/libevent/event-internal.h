@@ -32,6 +32,7 @@ extern "C" {
 #endif
 
 #include "event2/event-config.h"
+#include "event2/watch.h"
 #include "evconfig-private.h"
 
 #include <time.h>
@@ -205,6 +206,52 @@ struct event_once {
 	void *arg;
 };
 
+/** Contextual information passed from event_base_loop to the "prepare" watcher
+ * callbacks. We define this as a struct rather than individual parameters to
+ * the callback function for the sake of future extensibility. */
+struct evwatch_prepare_cb_info {
+	/** The timeout duration passed to the underlying implementation's `dispatch`.
+	 * See evwatch_prepare_get_timeout. */
+	const struct timeval *timeout;
+};
+
+/** Contextual information passed from event_base_loop to the "check" watcher
+ * callbacks. We define this as a struct rather than individual parameters to
+ * the callback function for the sake of future extensibility. */
+struct evwatch_check_cb_info {
+	/** Placeholder, since empty struct is not allowed by some compilers. */
+	void *unused;
+};
+
+/** Watcher types (prepare and check, perhaps others in the future). */
+#define EVWATCH_PREPARE 0
+#define EVWATCH_CHECK   1
+#define EVWATCH_MAX     2
+
+/** Handle to a "prepare" or "check" callback, registered in event_base. */
+union evwatch_cb {
+	evwatch_prepare_cb prepare;
+	evwatch_check_cb check;
+};
+struct evwatch {
+	/** Tail queue pointers, called "next" by convention in libevent.
+	 * See <sys/queue.h> */
+	TAILQ_ENTRY(evwatch) next;
+
+	/** Pointer to owning event loop */
+	struct event_base *base;
+
+	/** Watcher type (see above) */
+	unsigned type;
+
+	/** Callback function */
+	union evwatch_cb callback;
+
+	/** User-defined argument for callback function */
+	void *arg;
+};
+TAILQ_HEAD(evwatch_list, evwatch);
+
 struct event_base {
 	/** Function pointers and other data to describe this event_base's
 	 * backend. */
@@ -219,7 +266,7 @@ struct event_base {
 	/** Function pointers used to describe the backend that this event_base
 	 * uses for signals */
 	const struct eventop *evsigsel;
-	/** Data to implement the common signal handelr code. */
+	/** Data to implement the common signal handler code. */
 	struct evsig_info sig;
 
 	/** Number of virtual events */
@@ -346,6 +393,8 @@ struct event_base {
 	/** List of event_onces that have not yet fired. */
 	LIST_HEAD(once_event_list, event_once) once_events;
 
+	/** "Prepare" and "check" watchers. */
+	struct evwatch_list watchers[EVWATCH_MAX];
 };
 
 struct event_config_entry {
@@ -368,6 +417,10 @@ struct event_config {
 };
 
 /* Internal use only: Functions that might be missing from <sys/queue.h> */
+#ifndef LIST_END
+#define LIST_END(head)			NULL
+#endif
+
 #ifndef TAILQ_FIRST
 #define	TAILQ_FIRST(head)		((head)->tqh_first)
 #endif
@@ -414,23 +467,26 @@ int event_add_nolock_(struct event *ev,
  * if it is running in another thread and it doesn't have EV_FINALIZE set.
  */
 #define EVENT_DEL_AUTOBLOCK 2
-/** Argument for event_del_nolock_. Tells event_del to procede even if the
+/** Argument for event_del_nolock_. Tells event_del to proceed even if the
  * event is set up for finalization rather for regular use.*/
 #define EVENT_DEL_EVEN_IF_FINALIZING 3
 int event_del_nolock_(struct event *ev, int blocking);
 int event_remove_timer_nolock_(struct event *ev);
 
 void event_active_nolock_(struct event *ev, int res, short count);
+EVENT2_EXPORT_SYMBOL
 int event_callback_activate_(struct event_base *, struct event_callback *);
 int event_callback_activate_nolock_(struct event_base *, struct event_callback *);
 int event_callback_cancel_(struct event_base *base,
     struct event_callback *evcb);
 
 void event_callback_finalize_nolock_(struct event_base *base, unsigned flags, struct event_callback *evcb, void (*cb)(struct event_callback *, void *));
+EVENT2_EXPORT_SYMBOL
 void event_callback_finalize_(struct event_base *base, unsigned flags, struct event_callback *evcb, void (*cb)(struct event_callback *, void *));
 int event_callback_finalize_many_(struct event_base *base, int n_cbs, struct event_callback **evcb, void (*cb)(struct event_callback *, void *));
 
 
+EVENT2_EXPORT_SYMBOL
 void event_active_later_(struct event *ev, int res);
 void event_active_later_nolock_(struct event *ev, int res);
 int event_callback_activate_later_nolock_(struct event_base *base,
@@ -441,6 +497,7 @@ void event_callback_init_(struct event_base *base,
     struct event_callback *cb);
 
 /* FIXME document. */
+EVENT2_EXPORT_SYMBOL
 void event_base_add_virtual_(struct event_base *base);
 void event_base_del_virtual_(struct event_base *base);
 
@@ -450,6 +507,7 @@ void event_base_del_virtual_(struct event_base *base);
 
     Returns on success; aborts on failure.
 */
+EVENT2_EXPORT_SYMBOL
 void event_base_assert_ok_(struct event_base *base);
 void event_base_assert_ok_nolock_(struct event_base *base);
 

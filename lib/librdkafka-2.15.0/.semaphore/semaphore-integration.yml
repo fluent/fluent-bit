@@ -1,0 +1,236 @@
+version: v1.0
+name: librdkafka-integration-tests
+agent:
+  machine:
+    type: s1-prod-ubuntu24-04-arm64-00
+execution_time_limit:
+  hours: 3
+
+auto_cancel:
+  running:
+    when: "branch != 'master'"
+
+global_job_config:
+  prologue:
+    commands:
+      - checkout
+      - mkdir artifacts
+      - mkdir dest
+  env_vars:
+    - name: CACHE_TAG
+      value: '7'
+    - name: CI
+      value: 'true'
+    - name: KAFKA_VERSION
+      value: '4.3.0'
+    - name: CP_VERSION
+      value: '8.0.0'
+    # Shows plain output from docker build (no progress bars)
+    - name: BUILDKIT_PROGRESS
+      value: plain
+    - name: MACOSX_DEPLOYMENT_TARGET
+      value: '13'
+
+blocks:
+  - name: 'OSX arm64/m1'
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-macos-15-arm64-8
+      env_vars:
+        - name: ARTIFACT_KEY
+          value: p-librdkafka__plat-osx__arch-arm64__lnk-all
+      epilogue:
+        commands:
+          - '[[ -z $SEMAPHORE_GIT_TAG_NAME ]] || artifact push workflow artifacts/ --destination artifacts/${ARTIFACT_KEY}/'
+      jobs:
+        - name: 'Build'
+          commands:
+            - packaging/macos/build-release-artifacts.sh
+
+
+  - name: 'OSX x64'
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-macos-15-amd64-6
+      env_vars:
+        - name: ARTIFACT_KEY
+          value: p-librdkafka__plat-osx__arch-x64__lnk-all
+      epilogue:
+        commands:
+          - '[[ -z $SEMAPHORE_GIT_TAG_NAME ]] || artifact push workflow artifacts/ --destination artifacts/${ARTIFACT_KEY}/'
+      jobs:
+        - name: 'Build'
+          commands:
+            - packaging/macos/build-release-artifacts.sh
+
+  - name: 'Linux Ubuntu amd64: integration tests'
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-amd64-1
+      env_vars:
+        - name: CFLAGS
+          value: -std=gnu90 # Test minimum C standard, default in CentOS 7
+      prologue:
+        commands:
+          - '[[ -z $DOCKERHUB_APIKEY ]] || docker login --username $DOCKERHUB_USER --password $DOCKERHUB_APIKEY'
+      jobs:
+        - name: 'Build and integration tests with "classic" protocol'
+          commands:
+            - cache restore trivup-kafka-${KAFKA_VERSION}-${CACHE_TAG}
+            - packaging/tools/run-in-docker.sh test-runner-amd64-${CACHE_TAG}
+              ./packaging/tools/run-integration-tests.sh
+              ${KAFKA_VERSION} ${CP_VERSION} classic
+            - cache store trivup-kafka-${KAFKA_VERSION}-${CACHE_TAG} tests/tmp-KafkaCluster/KafkaCluster/KafkaBrokerApp/kafka/${KAFKA_VERSION}
+        - name: 'Build and integration tests with "consumer" protocol'
+          commands:
+            - cache restore trivup-kafka-${KAFKA_VERSION}-${CACHE_TAG}
+            - packaging/tools/run-in-docker.sh test-runner-amd64-${CACHE_TAG}
+              ./packaging/tools/run-integration-tests.sh
+              ${KAFKA_VERSION} ${CP_VERSION} consumer
+            - cache store trivup-kafka-${KAFKA_VERSION}-${CACHE_TAG} tests/tmp-KafkaCluster/KafkaCluster/KafkaBrokerApp/kafka/${KAFKA_VERSION}
+
+
+  - name: 'Linux arm64: local quick tests'
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-arm64-1
+      prologue:
+        commands:
+          - '[[ -z $DOCKERHUB_APIKEY ]] || docker login --username $DOCKERHUB_USER --password $DOCKERHUB_APIKEY'
+      epilogue:
+        commands:
+          - '[[ -z $SEMAPHORE_GIT_TAG_NAME ]] || artifact push workflow artifacts/ --destination artifacts/${ARTIFACT_KEY}/'
+      jobs:
+        - name: 'Build: centos8 glibc +gssapi'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-centos8__arch-arm64__lnk-std__extra-gssapi
+          commands:
+            - packaging/tools/build-release-artifacts.sh quay.io/pypa/manylinux_2_28_aarch64:2026.05.07-2 artifacts/librdkafka.tgz
+
+        - name: 'Build: centos8 glibc'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-centos8__arch-arm64__lnk-all
+          commands:
+            - packaging/tools/build-release-artifacts.sh --disable-gssapi quay.io/pypa/manylinux_2_28_aarch64:2026.05.07-2 artifacts/librdkafka.tgz
+
+        - name: 'Build: alpine musl +gssapi'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-alpine__arch-arm64__lnk-all__extra-gssapi
+          commands:
+            - packaging/tools/build-release-artifacts.sh alpine:3.16.9 artifacts/librdkafka.tgz
+
+        - name: 'Build: alpine musl'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-alpine__arch-arm64__lnk-all
+          commands:
+            - packaging/tools/build-release-artifacts.sh --disable-gssapi alpine:3.16.9 artifacts/librdkafka.tgz
+
+
+  - name: 'Windows x64: MinGW-w64'
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-windows
+      env_vars:
+        - name: CHERE_INVOKING
+          value: 'yes'
+        - name: MSYSTEM
+          value: UCRT64
+      prologue:
+        commands:
+          # Set up msys2
+          - "& .\\win32\\setup-msys2.ps1"
+      epilogue:
+        commands:
+          - if ($env:SEMAPHORE_GIT_TAG_NAME -ne "") { artifact push workflow artifacts/ --destination artifacts/$Env:ARTIFACT_KEY/ }
+      jobs:
+        - name: 'Build: MinGW-w64 Dynamic'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-windows__dist-mingw__arch-x64__lnk-std
+          commands:
+            - C:\msys64\usr\bin\bash -lc './packaging/mingw-w64/semaphoreci-build.sh ./artifacts/librdkafka.tgz'
+
+        - name: 'Build: MinGW-w64 Static'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-windows__dist-mingw__arch-x64__lnk-static
+          commands:
+            - C:\msys64\usr\bin\bash -lc './packaging/mingw-w64/semaphoreci-build.sh --static ./artifacts/librdkafka.tgz'
+
+  - name: 'Windows x64: Windows SDK 10.0 / MSVC v142 / VS 2019'
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-windows
+      env_vars:
+        # Disable vcpkg telemetry
+        - name: VCPKG_DISABLE_METRICS
+          value: 'yes'
+      prologue:
+        commands:
+          # install vcpkg in the parent directory.
+          - cd ..
+          # Setup vcpkg
+          - "& .\\librdkafka\\win32\\setup-vcpkg.ps1"
+          - cd librdkafka
+      epilogue:
+        commands:
+          - Get-ChildItem . -include *.dll -recurse
+          - Get-ChildItem . -include *.lib -recurse
+          - if ($env:SEMAPHORE_GIT_TAG_NAME -ne "") { artifact push workflow artifacts/ --destination artifacts/$Env:ARTIFACT_KEY/ }
+      jobs:
+        - name: 'Build: MSVC x64'
+          env_vars:
+            - name: triplet
+              value: x64-windows
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-windows__dist-msvc__arch-x64__lnk-std
+          commands:
+            - "& .\\win32\\msbuild.ps1 -platform x64"
+            - "& .\\win32\\package-zip.ps1 -platform x64"
+        - name: 'Build: MSVC x86'
+          env_vars:
+            - name: triplet
+              value: x86-windows
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-windows__dist-msvc__arch-x86__lnk-std
+          commands:
+            - "& .\\win32\\msbuild.ps1 -platform Win32"
+            - "& .\\win32\\package-zip.ps1 -platform Win32"
+
+promotions:
+  - name: Run all tests on master commits
+    pipeline_file: run-all-tests.yml
+    parameters:
+      env_vars:
+        - required: true
+          name: TEST_KAFKA_GIT_REF
+          default_value: 4.3.0
+        - required: true
+          name: TEST_TYPE
+          default_value: plaintext,ssl
+        - required: true
+          name: TEST_ARCHES
+          default_value: x86_64,aarch64
+        - required: true
+          name: TEST_PARALLEL
+          default_value: "1"
+    auto_promote_on:
+      - result: passed
+        branch:
+        - "master"

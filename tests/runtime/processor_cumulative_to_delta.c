@@ -1,7 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <math.h>
-#include <pthread.h>
+#include <fluent-bit/flb_pthread.h>
 #include <stdlib.h>
 #include <string.h>
 

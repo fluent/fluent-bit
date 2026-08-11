@@ -49,6 +49,8 @@ struct flb_parser {
     char *time_key;       /* field name that contains the time */
     int time_offset;      /* fixed UTC offset */
     int time_system_timezone; /* use the system timezone as a fallback */
+    char *time_zone;      /* IANA timezone for naive timestamps */
+    void *time_zone_data; /* parsed native timezone data */
     int time_keep;        /* keep time field */
     int time_strict;      /* parse time field strictly */
     int logfmt_no_bare_keys; /* in logfmt parsers, require all keys to have values */
@@ -91,6 +93,8 @@ static inline time_t flb_parser_tm2time(const struct flb_tm *src,
     return res;
 }
 
+time_t flb_parser_tm2time_parser(const struct flb_tm *src,
+                                 struct flb_parser *parser);
 
 struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      const char *p_regex,
@@ -100,6 +104,22 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      int time_keep,
                                      int time_strict,
                                      int time_system_timezone,
+                                     int logfmt_no_bare_keys,
+                                     struct flb_parser_types *types,
+                                     int types_len,
+                                     struct mk_list *decoders,
+                                     struct flb_config *config);
+struct flb_parser *flb_parser_create_with_time_zone(const char *name,
+                                     const char *format,
+                                     const char *p_regex,
+                                     int skip_empty,
+                                     const char *time_fmt,
+                                     const char *time_key,
+                                     const char *time_offset,
+                                     int time_keep,
+                                     int time_strict,
+                                     int time_system_timezone,
+                                     const char *time_zone,
                                      int logfmt_no_bare_keys,
                                      struct flb_parser_types *types,
                                      int types_len,

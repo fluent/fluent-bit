@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit.h>
+#include <dirent.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -73,6 +74,51 @@ static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
     *out_size = st.st_size;
 
     return 0;
+}
+
+static int count_chunk_files(const char *path)
+{
+    int total;
+    size_t name_len;
+    struct stat st;
+    struct dirent *entry;
+    DIR *dir;
+    char full_path[PATH_MAX];
+
+    total = 0;
+    dir = opendir(path);
+    if (dir == NULL) {
+        return 0;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 ||
+            strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        snprintf(full_path, sizeof(full_path) - 1, "%s/%s", path, entry->d_name);
+        full_path[sizeof(full_path) - 1] = '\0';
+
+        if (stat(full_path, &st) != 0) {
+            continue;
+        }
+
+        if (S_ISDIR(st.st_mode)) {
+            total += count_chunk_files(full_path);
+            continue;
+        }
+
+        name_len = strlen(entry->d_name);
+        if (name_len > 4 &&
+            strcmp(entry->d_name + name_len - 4, ".flb") == 0) {
+            total++;
+        }
+    }
+
+    closedir(dir);
+
+    return total;
 }
 
 /* Given a target, lookup the .out file and return it content in a tail_file_lines structure */
@@ -920,6 +966,163 @@ void flb_test_input_chunk_grouped_release_space_drop_counters(void)
     flb_free(storage_path);
 }
 
+void flb_test_input_chunk_prefers_deletable_files_on_limit(void)
+{
+    int records;
+    int chunk_file_count;
+    struct flb_input_instance *i_ins;
+    struct flb_output_instance *o_shared;
+    struct flb_output_instance *o_solo;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_input_chunk *ic;
+    struct flb_task *task;
+    struct flb_config *cfg;
+    struct cio_ctx *cio;
+    struct mk_event_loop *evl;
+    struct cio_options opts = {0};
+    char *root_path;
+    char stream_path[PATH_MAX];
+    char temp_path[128];
+    char buf[2048];
+    size_t shared_chunk_size;
+    size_t solo_chunk_size;
+    size_t total_limit;
+
+    snprintf(temp_path, sizeof(temp_path) - 1,
+             "/input-chunk-prefer-deletable-files-%i/",
+             getpid());
+    temp_path[sizeof(temp_path) - 1] = '\0';
+
+    root_path = flb_test_tmpdir_cat(temp_path);
+    TEST_CHECK(root_path != NULL);
+    if (!root_path) {
+        return;
+    }
+
+    memset(buf, 0x5A, sizeof(buf));
+
+    flb_init_env();
+    cfg = flb_config_init();
+    evl = mk_event_loop_create(256);
+
+    TEST_CHECK(evl != NULL);
+    if (!evl) {
+        flb_config_exit(cfg);
+        flb_free(root_path);
+        return;
+    }
+
+    cfg->evl = evl;
+    flb_log_create(cfg, FLB_LOG_STDERR, FLB_LOG_DEBUG, NULL);
+
+    i_ins = flb_input_new(cfg, "dummy", NULL, FLB_TRUE);
+    TEST_CHECK(i_ins != NULL);
+    if (!i_ins) {
+        flb_config_exit(cfg);
+        flb_free(root_path);
+        return;
+    }
+    i_ins->storage_type = CIO_STORE_FS;
+
+    cio_options_init(&opts);
+    opts.root_path = root_path;
+    opts.log_cb = log_cb;
+    opts.log_level = CIO_LOG_DEBUG;
+    opts.flags = CIO_OPEN;
+
+    cio = cio_create(&opts);
+    TEST_CHECK(cio != NULL);
+    if (!cio) {
+        flb_input_exit_all(cfg);
+        flb_output_exit(cfg);
+        flb_config_exit(cfg);
+        flb_free(root_path);
+        return;
+    }
+
+    flb_storage_input_create(cio, i_ins);
+    flb_input_init_all(cfg);
+
+    snprintf(stream_path, sizeof(stream_path) - 1,
+             "%s/%s", root_path, i_ins->name);
+    stream_path[sizeof(stream_path) - 1] = '\0';
+
+    o_shared = flb_output_new(cfg, "http", NULL, FLB_TRUE);
+    o_solo = flb_output_new(cfg, "http", NULL, FLB_TRUE);
+    TEST_CHECK(o_shared != NULL);
+    TEST_CHECK(o_solo != NULL);
+    if (!o_shared || !o_solo) {
+        cio_destroy(cio);
+        flb_input_exit_all(cfg);
+        flb_output_exit(cfg);
+        flb_config_exit(cfg);
+        flb_free(root_path);
+        return;
+    }
+
+    o_shared->id = 0;
+    o_solo->id = 1;
+
+    flb_output_set_property(o_shared, "match", "shared.*");
+    flb_output_set_property(o_shared, "storage.total_limit_size", "10M");
+    flb_output_set_property(o_solo, "match", "*");
+    flb_output_set_property(o_solo, "storage.total_limit_size", "10M");
+
+    TEST_CHECK_(flb_router_io_set(cfg) != -1, "unable to router");
+
+    records = flb_mp_count(buf, sizeof(buf));
+
+    TEST_CHECK(flb_input_chunk_append_raw(i_ins, FLB_INPUT_LOGS,
+                                          records, "shared.one", 10,
+                                          buf, sizeof(buf)) == 0);
+    ic = mk_list_entry_last(&i_ins->chunks, struct flb_input_chunk, _head);
+    shared_chunk_size = flb_input_chunk_get_real_size(ic);
+
+    TEST_CHECK(flb_input_chunk_append_raw(i_ins, FLB_INPUT_LOGS,
+                                          records, "solo.one", 8,
+                                          buf, sizeof(buf)) == 0);
+    ic = mk_list_entry_last(&i_ins->chunks, struct flb_input_chunk, _head);
+    solo_chunk_size = flb_input_chunk_get_real_size(ic);
+
+    total_limit = shared_chunk_size + solo_chunk_size + (solo_chunk_size / 2);
+    o_solo->total_limit_size = total_limit;
+
+    chunk_file_count = count_chunk_files(stream_path);
+    TEST_CHECK(chunk_file_count == 2);
+
+    TEST_CHECK(flb_input_chunk_append_raw(i_ins, FLB_INPUT_LOGS,
+                                          records, "solo.two", 8,
+                                          buf, sizeof(buf)) == 0);
+
+    chunk_file_count = count_chunk_files(stream_path);
+
+    /*
+     * The oldest chunk is shared with another output and cannot be unlinked
+     * by only dropping a single route. When the solo output needs space, we
+     * should prefer the next chunk that can actually be deleted.
+     */
+    TEST_CHECK(chunk_file_count == 2);
+    TEST_CHECK(mk_list_size(&i_ins->chunks) == 2);
+
+    mk_list_foreach_safe(head, tmp, &i_ins->tasks) {
+        task = mk_list_entry(head, struct flb_task, _head);
+        flb_task_destroy(task, FLB_TRUE);
+    }
+
+    mk_list_foreach_safe(head, tmp, &i_ins->chunks) {
+        ic = mk_list_entry(head, struct flb_input_chunk, _head);
+        flb_input_chunk_destroy(ic, FLB_TRUE);
+    }
+
+    cio_destroy(cio);
+    flb_router_exit(cfg);
+    flb_input_exit_all(cfg);
+    flb_output_exit(cfg);
+    flb_config_exit(cfg);
+    flb_free(root_path);
+}
+
 
 /* Test list */
 TEST_LIST = {
@@ -931,5 +1134,7 @@ TEST_LIST = {
     {"input_chunk_grouped_auto_records", flb_test_input_chunk_grouped_auto_records},
     {"input_chunk_grouped_release_space_drop_counters",
      flb_test_input_chunk_grouped_release_space_drop_counters},
+    {"input_chunk_prefers_deletable_files_on_limit",
+     flb_test_input_chunk_prefers_deletable_files_on_limit},
     {NULL, NULL}
 };

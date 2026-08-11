@@ -19,6 +19,9 @@ import yaml
 import logging
 import pytest
 
+from utils.fluent_bit_manager import fluent_bit_binary_version
+from utils.test_service import stop_active_services
+
 # Configure logging
 def configure_logging():
     logger = logging.getLogger(__name__)
@@ -46,11 +49,17 @@ GLOBAL_CONFIG = load_global_config()
 def pytest_configure(config):
     logger.info("Configuring pytest")
 
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_sessionstart(session):
     logger.info("Starting pytest session")
+    fluent_bit_binary_version()
     #flb = FluentBitManager(GLOBAL_CONFIG['fluent_bit']['config_path'])
     #flb = FluentBitManager()
+
+@pytest.hookimpl(trylast=True)
+def pytest_runtest_teardown(item, nextitem):
+    stop_active_services()
 
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):

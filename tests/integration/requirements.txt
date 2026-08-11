@@ -9,6 +9,7 @@ Flask==3.0.3
 google==3.0.0
 googleapis-common-protos==1.63.2
 grpcio==1.64.1
+h2==4.1.0
 idna==3.7
 importlib_metadata==7.1.0
 iniconfig==2.0.0
@@ -28,6 +29,7 @@ packaging==24.1
 pluggy==1.5.0
 protobuf==4.25.3
 pytest==8.2.2
+pytest-xdist==3.8.0
 PyYAML==6.0.1
 requests==2.32.3
 soupsieve==2.5

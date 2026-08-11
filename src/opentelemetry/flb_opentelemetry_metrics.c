@@ -1808,6 +1808,23 @@ static int parse_histogram_bounds(msgpack_object *explicit_bounds_object,
     return 0;
 }
 
+static int check_histogram_bounds_order(double *bounds, size_t count)
+{
+    size_t index;
+
+    if (bounds == NULL) {
+        return -1;
+    }
+
+    for (index = 1 ; index < count ; index++) {
+        if (bounds[index - 1] >= bounds[index]) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 static int parse_histogram_bucket_counts(msgpack_object *bucket_counts_object,
                                          uint64_t **out_bucket_counts,
                                          size_t *out_count)
@@ -2192,6 +2209,14 @@ static int process_metric_histogram_data_points(struct cmt *context,
             continue;
         }
 
+        if (check_histogram_bounds_order(point_bounds, point_bound_count) != 0) {
+            flb_free(bucket_counts);
+            flb_free(point_bounds);
+            destroy_label_arrays(metric_label_count, metric_label_keys, NULL);
+            flb_free(metric_bounds);
+            return OTEL_METRICS_JSON_DECODER_ERROR;
+        }
+
         if (bucket_counts_count != point_bound_count + 1) {
             flb_free(bucket_counts);
             flb_free(point_bounds);
@@ -2313,24 +2338,12 @@ static int process_metric_histogram_data_points(struct cmt *context,
                 return result;
             }
 
-            buckets = cmt_histogram_buckets_create_size(metric_bounds,
-                                                        metric_bound_count);
-            if (buckets == NULL) {
-                flb_sds_destroy(metric_name);
-                flb_sds_destroy(metric_help);
-                destroy_label_arrays(point_label_count, NULL, point_label_values);
-                destroy_label_arrays(metric_label_count, metric_label_keys, NULL);
-                flb_free(metric_bounds);
-                flb_free(bucket_counts);
-                return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
-            }
-
             histogram = cmt_histogram_create(context,
                                              "",
                                              "",
                                              metric_name,
                                              metric_help,
-                                             buckets,
+                                             NULL,
                                              metric_label_count,
                                              (char **) metric_label_keys);
             flb_sds_destroy(metric_name);
@@ -2338,13 +2351,27 @@ static int process_metric_histogram_data_points(struct cmt *context,
             metric_help = NULL;
 
             if (histogram == NULL) {
-                cmt_histogram_buckets_destroy(buckets);
                 destroy_label_arrays(point_label_count, NULL, point_label_values);
                 destroy_label_arrays(metric_label_count, metric_label_keys, NULL);
                 flb_free(metric_bounds);
                 flb_free(bucket_counts);
                 return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
             }
+
+            buckets = cmt_histogram_buckets_create_size(metric_bounds,
+                                                        metric_bound_count);
+            if (buckets == NULL) {
+                destroy_label_arrays(point_label_count, NULL, point_label_values);
+                destroy_label_arrays(metric_label_count, metric_label_keys, NULL);
+                flb_free(metric_bounds);
+                flb_free(bucket_counts);
+                cmt_histogram_destroy(histogram);
+                return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+            }
+
+            cmt_histogram_buckets_destroy(histogram->buckets);
+            histogram->buckets = buckets;
+            buckets = NULL;
 
             result = set_metric_unit(histogram->map, metric_map);
             if (result != 0) {

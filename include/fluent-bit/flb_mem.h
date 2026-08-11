@@ -98,6 +98,13 @@ void *flb_calloc(size_t n, const size_t size) {
 static inline FLB_ALLOCSZ_ATTR(2)
 void *flb_realloc(void *ptr, const size_t size)
 {
+#ifdef FLB_HAVE_TESTS_OSSFUZZ
+    /* Add chance of failure. Used by fuzzing to test error-handling code. */
+    if (flb_fuzz_get_probability(1)) {
+        return NULL;
+    }
+#endif
+
     return realloc(ptr, size);
 }
 

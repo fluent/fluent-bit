@@ -77,8 +77,11 @@ struct flb_aws_error_reporter *flb_aws_error_reporter_create()
 
     /* clean up existing file*/
     if ((f = fopen(error_reporter->file_path, "r")) != NULL) {
+        fclose(f);
+
         /* file exist, try delete it*/
         if (remove(error_reporter->file_path)) {
+            flb_sds_destroy(error_reporter->file_path);
             flb_free(error_reporter);
             flb_errno();
             return NULL;
@@ -115,6 +118,7 @@ int flb_aws_error_reporter_write(struct flb_aws_error_reporter *error_reporter, 
     flb_sds_t buf;
     flb_sds_t buf_tmp;
     int deleted_message_count = 0;
+    int projected_size;
     FILE *f;
 
     if (error_reporter == NULL) {
@@ -166,7 +170,34 @@ int flb_aws_error_reporter_write(struct flb_aws_error_reporter *error_reporter, 
 
     message->len = flb_sds_len(buf);
 
-   /* clean up old message to provide enough space for new message*/
+    projected_size = error_reporter->file_size + message->len;
+    mk_list_foreach_safe(head, tmp, &error_reporter->messages) {
+        if (projected_size <= error_reporter->max_size) {
+            break;
+        }
+
+        tmp_message = mk_list_entry(head, struct flb_error_message, _head);
+        projected_size -= tmp_message->len;
+        deleted_message_count++;
+    }
+
+    if (deleted_message_count == 0) {
+        f = fopen(error_reporter->file_path, "a");
+    }
+    else {
+        f = fopen(error_reporter->file_path, "w");
+    }
+
+    if (f == NULL) {
+        flb_sds_destroy(message->data);
+        flb_free(message);
+        flb_sds_destroy(buf);
+        return -1;
+    }
+
+    deleted_message_count = 0;
+
+    /* clean up old messages to provide enough space for the new message */
     mk_list_foreach_safe(head, tmp, &error_reporter->messages) {
         tmp_message = mk_list_entry(head, struct flb_error_message, _head);
         if (error_reporter->file_size + flb_sds_len(buf) <= error_reporter->max_size) {
@@ -186,14 +217,12 @@ int flb_aws_error_reporter_write(struct flb_aws_error_reporter *error_reporter, 
     error_reporter->file_size += message->len;
 
     if (deleted_message_count == 0) {
-        f = fopen(error_reporter->file_path, "a");
-        fprintf(f, message->data);
+        fprintf(f, "%s", message->data);
     }
     else {
-        f = fopen(error_reporter->file_path, "w");
         mk_list_foreach_safe(head, tmp, &error_reporter->messages) {
             tmp_message = mk_list_entry(head, struct flb_error_message, _head);
-            fprintf(f, tmp_message->data);
+            fprintf(f, "%s", tmp_message->data);
         }
     }
     fclose(f);
@@ -233,9 +262,12 @@ void flb_aws_error_reporter_clean(struct flb_aws_error_reporter *error_reporter)
     /* rewrite error report file if any message is cleaned up*/
     if (expired_message_count > 0) {
         f = fopen(error_reporter->file_path, "w");
+        if (f == NULL) {
+            return;
+        }
         mk_list_foreach_safe(head, tmp, &error_reporter->messages) {
             message = mk_list_entry(head, struct flb_error_message, _head);
-            fprintf(f, message->data);
+            fprintf(f, "%s", message->data);
         }
         fclose(f);
     }

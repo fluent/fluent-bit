@@ -25,7 +25,47 @@
 #include <msgpack.h>
 #include <float.h>
 #include <math.h>
+#ifndef FLB_SYSTEM_WINDOWS
+#include <sys/stat.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <stdio.h>
+#endif
 #include "flb_tests_internal.h"
+
+static int timezone_available(const char *iana_zone)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    return FLB_TRUE;
+#else
+    int ret;
+    size_t len;
+    char path[PATH_MAX];
+    const char *tzdir;
+    struct stat st;
+
+    tzdir = getenv("TZDIR");
+    if (tzdir == NULL || tzdir[0] == '\0') {
+        tzdir = "/usr/share/zoneinfo";
+    }
+
+    ret = snprintf(path, sizeof(path), "%s/%s", tzdir, iana_zone);
+    if (ret < 0) {
+        return FLB_FALSE;
+    }
+
+    len = (size_t) ret;
+    if (len >= sizeof(path)) {
+        return FLB_FALSE;
+    }
+
+    if (stat(path, &st) != 0) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+#endif
+}
 
 static int msgpack_strncmp(char* str, size_t str_len, msgpack_object obj)
 {
@@ -480,6 +520,146 @@ void test_decode_field_json()
     flb_config_exit(config);
 }
 
+void test_time_zone()
+{
+    struct flb_parser *parser = NULL;
+    struct flb_config *config = NULL;
+    int ret = 0;
+    char *regex = "^(?<time>\\d{2}/\\d{2}/\\d{4} \\d{2}:\\d{2}:\\d{2}) (?<message>.+)$";
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    struct flb_time out_time;
+    char *expected_strs[] = {"message", "summer"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    config = flb_config_init();
+    if(!TEST_CHECK(config != NULL)) {
+        TEST_MSG("flb_config_init failed");
+        exit(1);
+    }
+
+    if (timezone_available("America/New_York") == FLB_FALSE) {
+        TEST_MSG("skipped: America/New_York zoneinfo is not available");
+        flb_config_exit(config);
+        return;
+    }
+
+    if (timezone_available("Australia/Sydney") == FLB_FALSE) {
+        TEST_MSG("skipped: Australia/Sydney zoneinfo is not available");
+        flb_config_exit(config);
+        return;
+    }
+
+    parser = flb_parser_create_with_time_zone("regex_iana_ny", "regex", regex,
+                                              FLB_FALSE,
+                                              "%m/%d/%Y %H:%M:%S",
+                                              "time",
+                                              NULL,
+                                              FLB_FALSE,
+                                              FLB_TRUE,
+                                              FLB_FALSE,
+                                              "America/New_York",
+                                              FLB_FALSE,
+                                              NULL, 0, NULL, config);
+    if (!TEST_CHECK(parser != NULL)) {
+        TEST_MSG("flb_parser_create_with_time_zone failed");
+        flb_config_exit(config);
+        exit(1);
+    }
+
+    ret = flb_parser_do(parser, "07/17/2017 16:17:03 summer",
+                        strlen("07/17/2017 16:17:03 summer"),
+                        &out_buf, &out_size, &out_time);
+    if (!TEST_CHECK(ret != -1)) {
+        TEST_MSG("flb_parser_do failed");
+        flb_parser_destroy(parser);
+        flb_config_exit(config);
+        exit(1);
+    }
+
+    ret = compare_msgpack(out_buf, out_size, &expected);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("compare failed");
+    }
+
+    TEST_CHECK(out_time.tm.tv_sec == 1500322623);
+    TEST_CHECK(out_time.tm.tv_nsec == 0);
+
+    flb_free(out_buf);
+    out_buf = NULL;
+    out_size = 0;
+
+    ret = flb_parser_do(parser, "01/15/2017 15:00:00 winter",
+                        strlen("01/15/2017 15:00:00 winter"),
+                        &out_buf, &out_size, &out_time);
+    if (!TEST_CHECK(ret != -1)) {
+        TEST_MSG("flb_parser_do failed");
+        flb_parser_destroy(parser);
+        flb_config_exit(config);
+        exit(1);
+    }
+
+    TEST_CHECK(out_time.tm.tv_sec == 1484510400);
+    TEST_CHECK(out_time.tm.tv_nsec == 0);
+
+    flb_free(out_buf);
+    flb_parser_destroy(parser);
+
+    parser = flb_parser_create_with_time_zone("regex_iana_sydney", "regex", regex,
+                                              FLB_FALSE,
+                                              "%m/%d/%Y %H:%M:%S",
+                                              "time",
+                                              NULL,
+                                              FLB_FALSE,
+                                              FLB_TRUE,
+                                              FLB_FALSE,
+                                              "Australia/Sydney",
+                                              FLB_FALSE,
+                                              NULL, 0, NULL, config);
+    if (!TEST_CHECK(parser != NULL)) {
+        TEST_MSG("flb_parser_create_with_time_zone failed");
+        flb_config_exit(config);
+        exit(1);
+    }
+
+    ret = flb_parser_do(parser, "01/15/2017 15:00:00 summer",
+                        strlen("01/15/2017 15:00:00 summer"),
+                        &out_buf, &out_size, &out_time);
+    if (!TEST_CHECK(ret != -1)) {
+        TEST_MSG("flb_parser_do failed");
+        flb_parser_destroy(parser);
+        flb_config_exit(config);
+        exit(1);
+    }
+
+    TEST_CHECK(out_time.tm.tv_sec == 1484452800);
+    TEST_CHECK(out_time.tm.tv_nsec == 0);
+
+    flb_free(out_buf);
+    out_buf = NULL;
+    out_size = 0;
+
+    ret = flb_parser_do(parser, "07/17/2017 16:17:03 winter",
+                        strlen("07/17/2017 16:17:03 winter"),
+                        &out_buf, &out_size, &out_time);
+    if (!TEST_CHECK(ret != -1)) {
+        TEST_MSG("flb_parser_do failed");
+        flb_parser_destroy(parser);
+        flb_config_exit(config);
+        exit(1);
+    }
+
+    TEST_CHECK(out_time.tm.tv_sec == 1500272223);
+    TEST_CHECK(out_time.tm.tv_nsec == 0);
+
+    flb_free(out_buf);
+    flb_parser_destroy(parser);
+    flb_config_exit(config);
+}
+
 
 TEST_LIST = {
     { "basic", test_basic},
@@ -487,5 +667,6 @@ TEST_LIST = {
     { "time_keep", test_time_keep},
     { "types", test_types},
     { "decode_field_json", test_decode_field_json},
+    { "time_zone", test_time_zone},
     { 0 }
 };

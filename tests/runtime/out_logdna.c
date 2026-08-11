@@ -18,9 +18,9 @@
  */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
-#include <pthread.h>
 #include "flb_tests_runtime.h"
 
 /* Thread-safe callback invocation tracking */

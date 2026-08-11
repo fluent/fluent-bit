@@ -1058,6 +1058,9 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
     struct flb_log_event log_event;
     int ret;
     flb_sds_t out_buf;
+    flb_sds_t tmp_buf;
+    flb_sds_t json_record;
+    int map_size;
 
     /* Create array for all records */
     records = flb_mp_count_log_records(data, bytes);
@@ -1087,7 +1090,7 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
     while ((ret = flb_log_event_decoder_next(&log_decoder, &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         msgpack_sbuffer_clear(&mp_sbuf);
 
-        int map_size = 1;
+        map_size = 1;
         if (ctx->include_time_key == FLB_TRUE) {
             map_size++;
         }
@@ -1151,8 +1154,8 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
             msgpack_pack_str_body(&mp_pck, "log_attribute_missing", 20);
         }
 
-        flb_sds_t json_record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
-                                                            config->json_escape_unicode);
+        json_record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
+                                                  config->json_escape_unicode);
         if (!json_record) {
             flb_plg_error(ctx->ins, "error converting msgpack to JSON");
             flb_sds_destroy(out_buf);
@@ -1162,8 +1165,27 @@ static int azure_kusto_format(struct flb_azure_kusto *ctx, const char *tag, int 
         }
 
         /* Concatenate the JSON record to the output buffer */
-        out_buf = flb_sds_cat(out_buf, json_record, flb_sds_len(json_record));
-        out_buf = flb_sds_cat(out_buf, "\n", 1);
+        tmp_buf = flb_sds_cat(out_buf, json_record, flb_sds_len(json_record));
+        if (!tmp_buf) {
+            flb_plg_error(ctx->ins, "error appending JSON record");
+            flb_sds_destroy(json_record);
+            flb_sds_destroy(out_buf);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            flb_log_event_decoder_destroy(&log_decoder);
+            return -1;
+        }
+        out_buf = tmp_buf;
+
+        tmp_buf = flb_sds_cat(out_buf, "\n", 1);
+        if (!tmp_buf) {
+            flb_plg_error(ctx->ins, "error appending JSON record delimiter");
+            flb_sds_destroy(json_record);
+            flb_sds_destroy(out_buf);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            flb_log_event_decoder_destroy(&log_decoder);
+            return -1;
+        }
+        out_buf = tmp_buf;
 
         flb_sds_destroy(json_record);
     }

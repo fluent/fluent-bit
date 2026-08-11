@@ -32,6 +32,7 @@
 #include <monkey/mk_core.h>
 
 struct flb_router;
+struct flb_hash_table;
 
 #define FLB_CONFIG_FLUSH_SECS   1
 #define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
@@ -64,6 +65,18 @@ struct flb_config {
     int is_shutting_down;     /* is the service shutting down ? */
     int is_running;           /* service running ?              */
     double flush;             /* Flush timeout                  */
+    int flush_adaptive;       /* Enable adaptive flush interval */
+    double flush_adaptive_min_interval;
+    double flush_adaptive_max_interval;
+    double flush_adaptive_low_pressure;
+    double flush_adaptive_medium_pressure;
+    double flush_adaptive_high_pressure;
+    int flush_adaptive_up_steps;
+    int flush_adaptive_down_steps;
+    int flush_adaptive_level;
+    int flush_adaptive_hits;
+    int flush_adaptive_direction;
+    double flush_adaptive_current_interval;
 
     /*
      * Maximum grace time on shutdown. If set to -1, the engine will
@@ -199,6 +212,17 @@ struct flb_config {
      */
     struct mk_list cmetrics;
 
+    /*
+     * Optional telemetry metrics with user-controlled cardinality.
+     */
+    int telemetry_metrics_logs_tag_records;
+    int telemetry_metrics_logs_tag_records_max_series;
+    int telemetry_metrics_logs_tag_records_max_tag_length;
+    size_t telemetry_metrics_logs_tag_records_series_count;
+    struct flb_hash_table *telemetry_metrics_logs_tag_records_ht;
+    pthread_mutex_t telemetry_metrics_logs_tag_records_lock;
+    int telemetry_metrics_logs_tag_records_lock_inited;
+
     /* HTTP Server */
 #ifdef FLB_HAVE_HTTP_SERVER
     int http_server;                /* HTTP Server running    */
@@ -257,6 +281,7 @@ struct flb_config {
     /* DLQ for non-retriable output failures */
     int   storage_keep_rejected;     /* 0/1 */
     char *storage_rejected_path;     /* relative to storage_path, default "rejected" */
+    char *storage_rejected_limit;    /* maximum total bytes in DLQ stream */
     void *storage_rejected_stream;  /* NULL until first use */
 
     /* Embedded SQL Database support (SQLite3) */
@@ -289,6 +314,9 @@ struct flb_config {
 #ifdef FLB_HAVE_CHUNK_TRACE
     int enable_chunk_trace;
 #endif /* FLB_HAVE_CHUNK_TRACE */
+
+    int fips_mode;
+    int fips_mode_active;
 
     int enable_hot_reload;
     int ensure_thread_safety_on_hot_reloading;
@@ -368,6 +396,14 @@ enum conf_type {
 };
 
 #define FLB_CONF_STR_FLUSH        "Flush"
+#define FLB_CONF_STR_FLUSH_ADAPTIVE "flush.adaptive"
+#define FLB_CONF_STR_FLUSH_ADAPTIVE_MIN "flush.adaptive.min_interval"
+#define FLB_CONF_STR_FLUSH_ADAPTIVE_MAX "flush.adaptive.max_interval"
+#define FLB_CONF_STR_FLUSH_ADAPTIVE_LOW "flush.adaptive.low_pressure"
+#define FLB_CONF_STR_FLUSH_ADAPTIVE_MEDIUM "flush.adaptive.medium_pressure"
+#define FLB_CONF_STR_FLUSH_ADAPTIVE_HIGH "flush.adaptive.high_pressure"
+#define FLB_CONF_STR_FLUSH_ADAPTIVE_UP_STEPS "flush.adaptive.up_steps"
+#define FLB_CONF_STR_FLUSH_ADAPTIVE_DOWN_STEPS "flush.adaptive.down_steps"
 #define FLB_CONF_STR_GRACE        "Grace"
 #define FLB_CONF_STR_DAEMON       "Daemon"
 #define FLB_CONF_STR_LOGFILE      "Log_File"
@@ -377,6 +413,7 @@ enum conf_type {
 #define FLB_CONF_STR_STREAMS_FILE "Streams_File"
 #define FLB_CONF_STR_STREAMS_STR_CONV "sp.convert_from_str_to_num"
 #define FLB_CONF_STR_CONV_NAN     "json.convert_nan_to_null"
+#define FLB_CONF_STR_FIPS_MODE    "security.fips_mode"
 
 /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER
@@ -423,6 +460,7 @@ enum conf_type {
 /* Storage DLQ */
 #define FLB_CONF_STORAGE_KEEP_REJECTED "storage.keep.rejected"
 #define FLB_CONF_STORAGE_REJECTED_PATH "storage.rejected.path"
+#define FLB_CONF_STORAGE_REJECTED_LIMIT "storage.rejected.limit"
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
