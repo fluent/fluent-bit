@@ -834,6 +834,7 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
                                  struct flb_http_response *response)
 {
     int ret = -1;
+    int request_result = 0;
     size_t auth_len = 0;
     int grpc_request = FLB_FALSE;
     int grpc_uncompressed = FLB_FALSE;
@@ -841,7 +842,7 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
     uint64_t  grpc_size = 0;
     flb_sds_t tag = NULL;
     char *auth_header = NULL;
-    char payload_type;
+    char payload_type = 0;
     char *encoding = NULL;
     size_t encoding_size = 0;
     char *buf = (char *) request->body;
@@ -1129,6 +1130,18 @@ next_grpc_message:
     }
 
 cleanup:
+    if (ret == FLB_INPUT_INGRESS_BUSY) {
+        request_result = FLB_INPUT_INGRESS_BUSY;
+    }
+    else if (ret != 0 && request_result != FLB_INPUT_INGRESS_BUSY) {
+        request_result = ret;
+    }
+
+    if (tag != NULL) {
+        flb_sds_destroy(tag);
+        tag = NULL;
+    }
+
     if (grpc_request) {
         /* check if we have uncompressed a gRPC message, if so, release it */
         if (grpc_uncompressed == FLB_TRUE) {
@@ -1142,6 +1155,7 @@ cleanup:
             goto next_grpc_message;
         }
 
+        ret = request_result;
         if (ret == FLB_INPUT_INGRESS_BUSY) {
             send_ingress_busy_response_ng(response, grpc_request);
         }
@@ -1160,8 +1174,6 @@ cleanup:
             send_response_ng(response, 400, "invalid request: deserialisation error\n");
         }
     }
-
-    flb_sds_destroy(tag);
 
     return ret;
 }
