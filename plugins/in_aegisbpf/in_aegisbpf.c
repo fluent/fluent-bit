@@ -59,6 +59,7 @@ static void aegisbpf_disconnect(struct flb_in_aegisbpf *ctx)
     }
     ctx->connected = 0;
     ctx->handshake_done = 0;
+    ctx->skipping_line = 0;
     ctx->buf_len = 0;
 }
 
@@ -85,7 +86,20 @@ static void aegisbpf_process_lines(struct flb_in_aegisbpf *ctx)
     size_t start = 0;
     size_t i;
 
-    for (i = 0; i < ctx->buf_len; i++) {
+    /* If a previous read dropped an oversized line, discard bytes up to and
+     * including the next newline so the tail of that line is never parsed as a
+     * (truncated) event. */
+    if (ctx->skipping_line) {
+        char *nl = memchr(ctx->buf, '\n', ctx->buf_len);
+        if (nl == NULL) {
+            ctx->buf_len = 0;
+            return;
+        }
+        ctx->skipping_line = 0;
+        start = (size_t) (nl - ctx->buf) + 1;
+    }
+
+    for (i = start; i < ctx->buf_len; i++) {
         if (ctx->buf[i] != '\n') {
             continue;
         }
@@ -119,8 +133,13 @@ static void aegisbpf_process_lines(struct flb_in_aegisbpf *ctx)
 
                 ret = flb_pack_json(line, line_len, &mp, &mp_size,
                                     &root_type, &consumed);
-                if (ret != 0 || mp == NULL) {
-                    flb_plg_debug(ctx->ins, "skipping non-JSON line (%zu bytes)",
+                /* Accept only a single, whole JSON object per line: reject parse
+                 * errors, arrays/scalars, and any trailing bytes after the object
+                 * (which flb_pack_json would otherwise pack as extra roots). */
+                if (ret != 0 || mp == NULL ||
+                    root_type != FLB_PACK_JSON_OBJECT || consumed != line_len) {
+                    flb_plg_debug(ctx->ins,
+                                  "skipping line: not a single JSON object (%zu bytes)",
                                   line_len);
                     if (mp != NULL) {
                         flb_free(mp);
@@ -163,6 +182,7 @@ static int in_aegisbpf_read(struct flb_input_instance *ins,
 {
     struct flb_in_aegisbpf *ctx = data;
     int disconnected = 0;
+    size_t drained = 0;
 
     (void) config;
 
@@ -173,11 +193,14 @@ static int in_aegisbpf_read(struct flb_input_instance *ins,
 
         if (ctx->buf_len == ctx->buf_size) {
             if (ctx->buf_size >= FLB_IN_AEGISBPF_BUF_MAX) {
-                /* A single line exceeded the cap; drop it defensively. */
+                /* A single line exceeded the cap; drop the buffered head and mark
+                 * the line for skipping so its remaining tail (still in the
+                 * socket) is discarded up to the next newline rather than parsed
+                 * as a truncated event. */
                 flb_plg_warn(ins, "line exceeded %d bytes, dropping",
                              FLB_IN_AEGISBPF_BUF_MAX);
                 ctx->buf_len = 0;
-                ctx->handshake_done = 1;
+                ctx->skipping_line = 1;
             }
             else {
                 size_t new_size = ctx->buf_size * 2;
@@ -200,6 +223,13 @@ static int in_aegisbpf_read(struct flb_input_instance *ins,
         if (n > 0) {
             ctx->buf_len += (size_t) n;
             aegisbpf_process_lines(ctx);
+            /* Bound work per wake so a continuously-writing agent can't hold the
+             * engine thread or grow the append arbitrarily large. The socket
+             * collector re-arms and continues on the next wake. */
+            drained += (size_t) n;
+            if (drained >= FLB_IN_AEGISBPF_DRAIN_MAX) {
+                break;
+            }
             continue;
         }
         else if (n == 0) {

@@ -28,6 +28,7 @@
 #define FLB_IN_AEGISBPF_DEFAULT_RECONN  2      /* seconds */
 #define FLB_IN_AEGISBPF_BUF_INIT        16384  /* initial line-assembly buffer */
 #define FLB_IN_AEGISBPF_BUF_MAX         (1024 * 1024) /* cap: drop a pathological line */
+#define FLB_IN_AEGISBPF_DRAIN_MAX       (4 * 1024 * 1024) /* max bytes drained per collector wake */
 
 struct flb_in_aegisbpf {
     /* config */
@@ -38,6 +39,7 @@ struct flb_in_aegisbpf {
     int fd;                  /* stream socket fd, -1 when disconnected */
     int connected;
     int handshake_done;      /* the agent's first line is a streaming ack; skip it */
+    int skipping_line;       /* discarding the tail of an over-length line */
     int coll_fd_reconnect;   /* time collector: (re)connect */
     int coll_fd_read;        /* socket collector: drain events */
 
