@@ -369,12 +369,17 @@ static int send_export_logs_service_response_ng(struct flb_http_response *respon
 
         message_length = opentelemetry__proto__collector__logs__v1__export_logs_service_response__get_packed_size(&message);
 
-        message_buffer = flb_calloc(message_length, sizeof(uint8_t));
-        if (message_buffer == NULL) {
-            return -1;
+        if (message_length == 0) {
+            message_buffer = NULL;
         }
+        else {
+            message_buffer = flb_calloc(message_length, sizeof(uint8_t));
+            if (message_buffer == NULL) {
+                return -1;
+            }
 
-        opentelemetry__proto__collector__logs__v1__export_logs_service_response__pack(&message, message_buffer);
+            opentelemetry__proto__collector__logs__v1__export_logs_service_response__pack(&message, message_buffer);
+        }
 
         grpc_status  = 0;
         grpc_message = "";
@@ -409,13 +414,17 @@ static int send_export_metrics_service_response_ng(struct flb_http_response *res
 
         message_length = opentelemetry__proto__collector__metrics__v1__export_metrics_service_response__get_packed_size(&message);
 
-        message_buffer = flb_calloc(message_length, sizeof(uint8_t));
-
-        if (message_buffer == NULL) {
-            return -1;
+        if (message_length == 0) {
+            message_buffer = NULL;
         }
+        else {
+            message_buffer = flb_calloc(message_length, sizeof(uint8_t));
+            if (message_buffer == NULL) {
+                return -1;
+            }
 
-        opentelemetry__proto__collector__metrics__v1__export_metrics_service_response__pack(&message, message_buffer);
+            opentelemetry__proto__collector__metrics__v1__export_metrics_service_response__pack(&message, message_buffer);
+        }
 
         grpc_status  = 0;
         grpc_message = "-";
@@ -450,13 +459,17 @@ static int send_export_traces_service_response_ng(struct flb_http_response *resp
 
         message_length = opentelemetry__proto__collector__trace__v1__export_trace_service_response__get_packed_size(&message);
 
-        message_buffer = flb_calloc(message_length, sizeof(uint8_t));
-
-        if (message_buffer == NULL) {
-            return -1;
+        if (message_length == 0) {
+            message_buffer = NULL;
         }
+        else {
+            message_buffer = flb_calloc(message_length, sizeof(uint8_t));
+            if (message_buffer == NULL) {
+                return -1;
+            }
 
-        opentelemetry__proto__collector__trace__v1__export_trace_service_response__pack(&message, message_buffer);
+            opentelemetry__proto__collector__trace__v1__export_trace_service_response__pack(&message, message_buffer);
+        }
 
         grpc_status  = 0;
         grpc_message = "-";
@@ -491,12 +504,17 @@ static int send_export_profiles_service_response_ng(struct flb_http_response *re
 
         message_length = opentelemetry__proto__collector__profiles__v1development__export_profiles_service_response__get_packed_size(&message);
 
-        message_buffer = flb_calloc(message_length, sizeof(uint8_t));
-        if (message_buffer == NULL) {
-            return -1;
+        if (message_length == 0) {
+            message_buffer = NULL;
         }
+        else {
+            message_buffer = flb_calloc(message_length, sizeof(uint8_t));
+            if (message_buffer == NULL) {
+                return -1;
+            }
 
-        opentelemetry__proto__collector__profiles__v1development__export_profiles_service_response__pack(&message, message_buffer);
+            opentelemetry__proto__collector__profiles__v1development__export_profiles_service_response__pack(&message, message_buffer);
+        }
 
         grpc_status  = 0;
         grpc_message = "-";
