@@ -364,6 +364,41 @@ struct record_check go_output[] = {
     {"one more line, no multiline\n"}
 };
 
+/* JSON (pretty-printed and single-line objects) */
+struct record_check json_input[] = {
+    {"{\"id\":101,\"level\":\"info\",\"msg\":\"single-line record A\"}"},
+    {"{"},
+    {"  \"id\": 102,"},
+    {"  \"level\": \"warn\","},
+    {"  \"msg\": \"multiline record B\""},
+    {"}"},
+    {"{\"id\":103,\"level\":\"info\",\"msg\":\"single-line record C\"}"},
+    {"{"},
+    {"  \"id\": 104,"},
+    {"  \"level\": \"error\","},
+    {"  \"msg\": \"multiline record D\""},
+    {"}"},
+};
+
+struct record_check json_output[] = {
+    {"{\"id\":101,\"level\":\"info\",\"msg\":\"single-line record A\"}\n"},
+    {
+        "{\n"
+        "  \"id\": 102,\n"
+        "  \"level\": \"warn\",\n"
+        "  \"msg\": \"multiline record B\"\n"
+        "}\n"
+    },
+    {"{\"id\":103,\"level\":\"info\",\"msg\":\"single-line record C\"}\n"},
+    {
+        "{\n"
+        "  \"id\": 104,\n"
+        "  \"level\": \"error\",\n"
+        "  \"msg\": \"multiline record D\"\n"
+        "}\n"
+    },
+};
+
 /*
  * Issue 3817 (case: 1)
  * --------------------
@@ -1198,6 +1233,55 @@ static void test_parser_go()
     if (ml) {
         flb_ml_destroy(ml);
     }
+
+    flb_config_exit(config);
+}
+
+static void test_parser_json()
+{
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id = 0;
+    struct record_check *r;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+
+    res.key = "log";
+    res.out_records = json_output;
+
+    config = flb_config_init();
+
+    ml = flb_ml_create(config, "json-test");
+    TEST_CHECK(ml != NULL);
+
+    mlp_i = flb_ml_parser_instance_create(ml, "json");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "json", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    entries = sizeof(json_input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        r = &json_input[i];
+        len = strlen(r->buf);
+
+        flb_time_get(&tm);
+        flb_ml_append_text(ml, stream_id, &tm, r->buf, len);
+    }
+
+    flb_ml_flush_pending_now(ml);
+
+    if (ml) {
+        flb_ml_destroy(ml);
+    }
+
+    TEST_CHECK(res.current_record == (sizeof(json_output) / sizeof(struct record_check)));
 
     flb_config_exit(config);
 }
@@ -2129,6 +2213,7 @@ TEST_LIST = {
     { "parser_ruby",    test_parser_ruby},
     { "parser_elastic", test_parser_elastic},
     { "parser_go",      test_parser_go},
+    { "parser_json",    test_parser_json},
     { "container_mix",  test_container_mix},
     { "endswith",       test_endswith},
     { "buffer_limit_truncation", test_buffer_limit_truncation},
