@@ -1072,6 +1072,101 @@ void flb_test_s3_default_retry_exhausted_action_quarantine(void)
     flb_free(store_dir);
 }
 
+void flb_test_s3_startup_buffer_size_accounting(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    int call_count;
+    int file_count;
+    flb_ctx_t *ctx;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-s3-test-startup-size-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
+
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "use_put_object", "true", NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir_limit_size", "1M", NULL);
+    flb_output_set(ctx, out_ffd, "retry_limit", "10", NULL);
+    flb_output_set(ctx, out_ffd, "retry_exhausted_action", "delete", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+    TEST_CHECK(ret >= 0);
+    wait_for_s3_call_count("PutObject", 1);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    file_count = count_files_recursive(store_dir);
+    TEST_CHECK_(file_count > 0,
+                "Expected a buffered file to survive the first run, got %d",
+                file_count);
+
+    unsetenv("TEST_PUT_OBJECT_ERROR");
+    unsetenv("TEST_PutObject_CALL_COUNT");
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "use_put_object", "true", NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir_limit_size", "1M", NULL);
+    flb_output_set(ctx, out_ffd, "retry_limit", "10", NULL);
+    flb_output_set(ctx, out_ffd, "retry_exhausted_action", "delete", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    wait_for_s3_call_count("PutObject", 1);
+
+    ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+    TEST_CHECK(ret >= 0);
+    wait_for_s3_call_count("PutObject", 2);
+
+    call_count = get_s3_call_count("PutObject");
+    TEST_CHECK_(call_count == 2,
+                "Expected startup resend and new upload, got %d PutObject calls",
+                call_count);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_PUT_OBJECT_ERROR");
+    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_free(store_dir);
+}
+
 /* Test list */
 TEST_LIST = {
     {"multipart_success", flb_test_s3_multipart_success },
@@ -1080,6 +1175,7 @@ TEST_LIST = {
     {"putobject_retry_limit_semantics", flb_test_s3_putobject_retry_limit_semantics },
     {"default_retry_limit", flb_test_s3_default_retry_limit },
     {"default_retry_exhausted_action_quarantine", flb_test_s3_default_retry_exhausted_action_quarantine },
+    {"startup_buffer_size_accounting", flb_test_s3_startup_buffer_size_accounting },
     {"create_upload_error", flb_test_s3_create_upload_error },
     {"upload_part_error", flb_test_s3_upload_part_error },
     {"complete_upload_error", flb_test_s3_complete_upload_error },
