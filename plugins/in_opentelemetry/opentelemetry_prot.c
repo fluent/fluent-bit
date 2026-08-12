@@ -884,7 +884,6 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
         return -1;
     }
 
-    /* ToDo: Fix me */
     /* HTTP/1.1 needs Host header */
     if (request->protocol_version == HTTP_PROTOCOL_VERSION_11 &&
         request->host == NULL) {
@@ -892,6 +891,7 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
             send_grpc_error_response_ng(response, 3, "missing host header");
             return -1;
         }
+        send_response_ng(response, 400, "error: missing host header\n");
         return -1;
     }
 
