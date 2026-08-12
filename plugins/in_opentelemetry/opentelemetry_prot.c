@@ -602,6 +602,8 @@ static int process_payload_metrics_ng(struct flb_opentelemetry *ctx,
             }
             else if (result != 0) {
                 flb_plg_debug(ctx->ins, "could not ingest metrics context : %d", result);
+                cmt_decode_opentelemetry_destroy(&decoded_contexts);
+                return -1;
             }
         }
 
