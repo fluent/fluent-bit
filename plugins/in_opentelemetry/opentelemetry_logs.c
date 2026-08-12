@@ -890,10 +890,11 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
         }
     }
     else {
-        ret = flb_opentelemetry_logs_json_to_msgpack(encoder,
-                                                     (const char *) payload, payload_size,
-                                                     ctx->logs_body_key,
-                                                     &error_status);
+        ret = flb_opentelemetry_logs_json_to_msgpack_ext(encoder,
+                                                         (const char *) payload, payload_size,
+                                                         ctx->logs_body_key,
+                                                         ctx->logs_metadata_key,
+                                                         &error_status);
         if (ret != 0) {
             /* we are printing the error for now, let's see what is the user's preference later */
             flb_plg_error(ctx->ins, "failed to process logs from JSON payload (%i) %s",
