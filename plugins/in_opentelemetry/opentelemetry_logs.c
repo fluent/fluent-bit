@@ -17,6 +17,8 @@
  *  limitations under the License.
  */
 
+#include <stdint.h>
+
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_sds.h>
@@ -108,6 +110,10 @@ static int otlp_pack_any_value(msgpack_packer *mp_pck, Opentelemetry__Proto__Com
 
 static int otel_pack_string(msgpack_packer *mp_pck, char *str)
 {
+    if (str == NULL) {
+        return msgpack_pack_str_with_body(mp_pck, "", 0);
+    }
+
     return msgpack_pack_str_with_body(mp_pck, str, strlen(str));
 }
 
@@ -121,7 +127,7 @@ static int otel_pack_bool(msgpack_packer *mp_pck, bool val)
     }
 }
 
-static int otel_pack_int(msgpack_packer *mp_pck, int val)
+static int otel_pack_int(msgpack_packer *mp_pck, int64_t val)
 {
     return msgpack_pack_int64(mp_pck, val);
 }
