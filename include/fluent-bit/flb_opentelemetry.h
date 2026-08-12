@@ -204,6 +204,12 @@ int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder
                                            const char *logs_body_key,
                                            int *error_status);
 
+int flb_opentelemetry_logs_json_to_msgpack_ext(struct flb_log_event_encoder *encoder,
+                                               const char *body, size_t len,
+                                               const char *logs_body_key,
+                                               const char *logs_metadata_key,
+                                               int *error_status);
+
 int flb_opentelemetry_metrics_json_to_cmt(struct cfl_list *context_list,
                                           const char *body, size_t len);
 

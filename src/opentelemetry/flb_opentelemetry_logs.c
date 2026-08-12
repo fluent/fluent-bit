@@ -276,8 +276,14 @@ static int process_json_payload_log_records_entry(
         result = flb_log_event_encoder_set_timestamp(encoder, &timestamp);
     }
 
+    if (logs_metadata_key == NULL || logs_metadata_key_len == 0) {
+        logs_metadata_key = FLB_OTEL_LOGS_METADATA_KEY;
+        logs_metadata_key_len = sizeof(FLB_OTEL_LOGS_METADATA_KEY) - 1;
+    }
+
     flb_log_event_encoder_append_metadata_values(encoder,
-                                                 FLB_LOG_EVENT_CSTRING_VALUE(FLB_OTEL_LOGS_METADATA_KEY));
+                                                 FLB_LOG_EVENT_STRING_VALUE(logs_metadata_key,
+                                                                            logs_metadata_key_len));
 
 
     result = flb_log_event_encoder_begin_map(encoder, FLB_LOG_EVENT_METADATA);
@@ -455,6 +461,7 @@ static int process_json_payload_scope_logs_entry(
         struct flb_log_event_encoder *encoder,
         msgpack_object *scope_logs_object,
         const char *logs_body_key,
+        const char *logs_metadata_key,
         int *error_status)
 {
     msgpack_object_map   *scope_logs_entry;
@@ -500,8 +507,8 @@ static int process_json_payload_scope_logs_entry(
         result = process_json_payload_log_records_entry(
                     encoder,
                     &log_records->ptr[index],
-                    FLB_OTEL_LOGS_METADATA_KEY,
-                    sizeof(FLB_OTEL_LOGS_METADATA_KEY) - 1,
+                    logs_metadata_key,
+                    logs_metadata_key != NULL ? strlen(logs_metadata_key) : 0,
                     logs_body_key,
                     &entry_status);
         if (result < 0 && error_status) {
@@ -517,6 +524,7 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
                                                      size_t resource_logs_index,
                                                      msgpack_object *resource_logs_object,
                                                      const char *logs_body_key,
+                                                     const char *logs_metadata_key,
                                                      int *error_status)
 {
     int ret;
@@ -792,6 +800,7 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
                                                       tmp_encoder,
                                                       &scope_logs->ptr[index],
                                                       logs_body_key,
+                                                      logs_metadata_key,
                                                       error_status);
         size_after = tmp_encoder->buffer.size;
 
@@ -825,6 +834,7 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
 static int process_json_payload_root(struct flb_log_event_encoder *encoder,
                                      msgpack_object *root_object,
                                      const char *logs_body_key,
+                                     const char *logs_metadata_key,
                                      int *error_status)
 {
     msgpack_object_array *resource_logs;
@@ -876,6 +886,7 @@ static int process_json_payload_root(struct flb_log_event_encoder *encoder,
                     index,
                     &resource_logs->ptr[index],
                     logs_body_key,
+                    logs_metadata_key,
                     error_status);
         if (result < 0) {
             /* error_status should already be set by callee */
@@ -908,6 +919,17 @@ int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder
                                            const char *body, size_t len,
                                            const char *logs_body_key,
                                            int *error_status)
+{
+    return flb_opentelemetry_logs_json_to_msgpack_ext(encoder, body, len,
+                                                      logs_body_key, NULL,
+                                                      error_status);
+}
+
+int flb_opentelemetry_logs_json_to_msgpack_ext(struct flb_log_event_encoder *encoder,
+                                               const char *body, size_t len,
+                                               const char *logs_body_key,
+                                               const char *logs_metadata_key,
+                                               int *error_status)
 {
     int              result;
     int              root_type;
@@ -956,6 +978,7 @@ int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder
     result = process_json_payload_root(&local_log_encoder,
                                        &unpacked_root.data,
                                        logs_body_key,
+                                       logs_metadata_key,
                                        error_status);
 
     if (result < 0) {
