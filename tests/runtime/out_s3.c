@@ -1,9 +1,13 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 #include <fluent-bit.h>
 #include <fluent-bit/flb_time.h>
+#include <cfl/cfl_atomic.h>
+#include "../../plugins/out_s3/s3.h"
+#include "../../plugins/out_s3/s3_store.h"
 #include "flb_tests_runtime.h"
 #include "../include/flb_tests_tmpdir.h"
 #include <errno.h>
+#include <inttypes.h>
 
 #ifdef FLB_SYSTEM_WINDOWS
 #include <windows.h>
@@ -27,6 +31,19 @@
                             <RequestId>656c76696e6727732072657175657374</RequestId>\
                             <HostId>Uuag1LuByRx9e6j5Onimru9pO4ZVKnJ2Qz7/C1NPcfTWAtRPfTaOFg==</HostId>\
                             </Error>"
+
+static struct flb_s3 *get_s3_context(flb_ctx_t *ctx)
+{
+    struct flb_output_instance *ins;
+
+    if (ctx == NULL || mk_list_is_empty(&ctx->config->outputs) == 0) {
+        return NULL;
+    }
+
+    ins = mk_list_entry_first(&ctx->config->outputs,
+                              struct flb_output_instance, _head);
+    return ins->context;
+}
 
 static int count_files_recursive(const char *path)
 {
@@ -1072,6 +1089,76 @@ void flb_test_s3_default_retry_exhausted_action_quarantine(void)
     flb_free(store_dir);
 }
 
+void flb_test_s3_near_full_buffer_append_succeeds(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    char payload[96];
+    char excess_payload[5];
+    flb_ctx_t *ctx;
+    char *store_dir;
+    struct flb_s3 *s3_ctx;
+    struct s3_file *s3_file;
+
+    store_dir = create_test_store_directory("/flb-s3-test-near-full-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
+
+    memset(payload, 'a', sizeof(payload));
+    memset(excess_payload, 'b', sizeof(excess_payload));
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "use_put_object", "true", NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "1h", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir_limit_size", "100", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    s3_ctx = get_s3_context(ctx);
+    TEST_CHECK(s3_ctx != NULL);
+    ret = s3_store_buffer_put(s3_ctx, NULL, "test", 4, payload,
+                              sizeof(payload), time(NULL));
+    TEST_CHECK_(ret == 0,
+                "Expected a committed near-full append to return success, got %d",
+                ret);
+    TEST_CHECK(cfl_atomic_load(&s3_ctx->current_buffer_size) == sizeof(payload));
+
+    s3_file = s3_store_file_get(s3_ctx, "test", 4);
+    TEST_CHECK(s3_file != NULL);
+    TEST_CHECK(s3_store_file_size_get(s3_file) == sizeof(payload));
+
+    ret = s3_store_buffer_put(s3_ctx, s3_file, "test", 4, excess_payload,
+                              sizeof(excess_payload), time(NULL));
+    TEST_CHECK_(ret == -1,
+                "Expected an over-limit append to fail, got %d",
+                ret);
+    TEST_CHECK(cfl_atomic_load(&s3_ctx->current_buffer_size) == sizeof(payload));
+    TEST_CHECK(s3_store_file_size_get(s3_file) == sizeof(payload));
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_free(store_dir);
+}
+
 void flb_test_s3_startup_buffer_size_accounting(void)
 {
     int ret;
@@ -1079,8 +1166,11 @@ void flb_test_s3_startup_buffer_size_accounting(void)
     int out_ffd;
     int call_count;
     int file_count;
+    uint64_t live_buffer_size;
+    uint64_t restored_buffer_size;
     flb_ctx_t *ctx;
     char *store_dir;
+    struct flb_s3 *s3_ctx;
 
     store_dir = create_test_store_directory("/flb-s3-test-startup-size-XXXXXX");
     TEST_CHECK(store_dir != NULL);
@@ -1116,6 +1206,12 @@ void flb_test_s3_startup_buffer_size_accounting(void)
     TEST_CHECK(ret >= 0);
     wait_for_s3_call_count("PutObject", 1);
 
+    s3_ctx = get_s3_context(ctx);
+    TEST_CHECK(s3_ctx != NULL);
+    live_buffer_size = cfl_atomic_load(&s3_ctx->current_buffer_size);
+    TEST_CHECK_(live_buffer_size > 0,
+                "Expected live buffer accounting to contain payload bytes");
+
     flb_stop(ctx);
     flb_destroy(ctx);
 
@@ -1123,6 +1219,39 @@ void flb_test_s3_startup_buffer_size_accounting(void)
     TEST_CHECK_(file_count > 0,
                 "Expected a buffered file to survive the first run, got %d",
                 file_count);
+
+    unsetenv("TEST_PutObject_CALL_COUNT");
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "use_put_object", "true", NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir_limit_size", "1M", NULL);
+    flb_output_set(ctx, out_ffd, "retry_limit", "10", NULL);
+    flb_output_set(ctx, out_ffd, "retry_exhausted_action", "delete", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    s3_ctx = get_s3_context(ctx);
+    TEST_CHECK(s3_ctx != NULL);
+    restored_buffer_size = cfl_atomic_load(&s3_ctx->current_buffer_size);
+    TEST_CHECK_(restored_buffer_size == live_buffer_size,
+                "Expected restored payload bytes=%" PRIu64 ", got %" PRIu64,
+                live_buffer_size, restored_buffer_size);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
 
     unsetenv("TEST_PUT_OBJECT_ERROR");
     unsetenv("TEST_PutObject_CALL_COUNT");
@@ -1175,6 +1304,7 @@ TEST_LIST = {
     {"putobject_retry_limit_semantics", flb_test_s3_putobject_retry_limit_semantics },
     {"default_retry_limit", flb_test_s3_default_retry_limit },
     {"default_retry_exhausted_action_quarantine", flb_test_s3_default_retry_exhausted_action_quarantine },
+    {"near_full_buffer_append_succeeds", flb_test_s3_near_full_buffer_append_succeeds },
     {"startup_buffer_size_accounting", flb_test_s3_startup_buffer_size_accounting },
     {"create_upload_error", flb_test_s3_create_upload_error },
     {"upload_part_error", flb_test_s3_upload_part_error },
