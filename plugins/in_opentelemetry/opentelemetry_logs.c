@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_opentelemetry.h>
 #include <fluent-otel-proto/fluent-otel.h>
@@ -782,6 +784,52 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
     return 0;
 }
 
+static flb_sds_t extract_tag_from_encoded_logs(struct flb_opentelemetry *ctx,
+                                               void *buf, size_t buf_size)
+{
+    int ret;
+    flb_sds_t tag;
+    struct flb_ra_value *ra_val;
+    struct flb_log_event event;
+    struct flb_log_event_decoder decoder;
+
+    tag = NULL;
+
+    if (ctx->ra_tag_key == NULL || buf == NULL || buf_size == 0) {
+        return NULL;
+    }
+
+    ret = flb_log_event_decoder_init(&decoder, buf, buf_size);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        return NULL;
+    }
+
+    flb_log_event_decoder_read_groups(&decoder, FLB_TRUE);
+
+    while (flb_log_event_decoder_next(&decoder, &event) == FLB_EVENT_DECODER_SUCCESS) {
+        if (event.body == NULL || event.body->type != MSGPACK_OBJECT_MAP) {
+            continue;
+        }
+
+        ra_val = flb_ra_get_value_object(ctx->ra_tag_key, *event.body);
+        if (ra_val == NULL) {
+            continue;
+        }
+
+        if (ra_val->type == FLB_RA_STRING) {
+            tag = flb_sds_create_len(ra_val->o.via.str.ptr, ra_val->o.via.str.size);
+        }
+
+        flb_ra_key_value_destroy(ra_val);
+        if (tag != NULL) {
+            break;
+        }
+    }
+
+    flb_log_event_decoder_destroy(&decoder);
+    return tag;
+}
+
 /*
  * Main function used from opentelemetry_prot.c to process logs either in JSON or Protobuf format.
  * -----------------------------------------------------------------------------------------------
@@ -799,6 +847,9 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
     uint8_t *payload;
     uint64_t payload_size;
     size_t record_count;
+    size_t ingest_tag_len;
+    const char *ingest_tag;
+    flb_sds_t tag_from_record = NULL;
     struct flb_log_event_encoder *encoder;
 
     buf = (char *) data;
@@ -853,6 +904,16 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
     }
 
     if (ret >= 0) {
+        ingest_tag = tag;
+        ingest_tag_len = flb_sds_len(tag);
+        tag_from_record = extract_tag_from_encoded_logs(ctx,
+                                                        encoder->output_buffer,
+                                                        encoder->output_length);
+        if (tag_from_record != NULL) {
+            ingest_tag = tag_from_record;
+            ingest_tag_len = flb_sds_len(tag_from_record);
+        }
+
         if (opentelemetry_uses_worker_ingress_queue(ctx)) {
             size_t allocation_size;
             void *resized_buffer;
@@ -872,8 +933,8 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
 
             ret = opentelemetry_ingest_logs_take(ctx,
                                                  record_count,
-                                                 tag,
-                                                 flb_sds_len(tag),
+                                                 ingest_tag,
+                                                 ingest_tag_len,
                                                  encoder->output_buffer,
                                                  encoder->output_length,
                                                  allocation_size);
@@ -881,11 +942,13 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
         }
         else {
             ret = opentelemetry_ingest_logs(ctx,
-                                            tag,
-                                            flb_sds_len(tag),
+                                            ingest_tag,
+                                            ingest_tag_len,
                                             encoder->output_buffer,
                                             encoder->output_length);
         }
+
+        flb_sds_destroy(tag_from_record);
 
         if (ret != 0) {
             flb_plg_error(ctx->ins, "failed to append logs to the input buffer");

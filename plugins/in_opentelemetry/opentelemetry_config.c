@@ -70,6 +70,11 @@ int opentelemetry_config_destroy(struct flb_opentelemetry *ctx)
 {
     flb_http_server_destroy(&ctx->http_server);
 
+    if (ctx->ra_tag_key) {
+        flb_ra_destroy(ctx->ra_tag_key);
+        ctx->ra_tag_key = NULL;
+    }
+
     if (ctx->oauth2_ctx) {
         flb_oauth2_jwt_context_destroy(ctx->oauth2_ctx);
         ctx->oauth2_ctx = NULL;

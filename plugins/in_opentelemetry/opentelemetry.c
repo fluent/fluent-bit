@@ -119,6 +119,17 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
         ctx->successful_response_code = 201;
     }
 
+    if (ctx->tag_key != NULL && ctx->tag_key[0] != '\0') {
+        ctx->ra_tag_key = flb_ra_create((char *) ctx->tag_key, FLB_TRUE);
+        if (!ctx->ra_tag_key) {
+            flb_plg_error(ctx->ins,
+                          "invalid record accessor pattern for tag_key: %s",
+                          ctx->tag_key);
+            opentelemetry_config_destroy(ctx);
+            return -1;
+        }
+    }
+
     return 0;
 }
 

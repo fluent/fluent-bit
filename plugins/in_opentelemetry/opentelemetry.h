@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_oauth2_jwt.h>
+#include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_utils.h>
 
 #include <fluent-bit/http_server/flb_http_server.h>
@@ -35,6 +36,7 @@ struct flb_opentelemetry {
     flb_sds_t listen;
     flb_sds_t tcp_port;
     const char *tag_key;
+    struct flb_record_accessor *ra_tag_key;
     int raw_traces;
     int  tag_from_uri;
     flb_sds_t logs_metadata_key;
