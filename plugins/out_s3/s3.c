@@ -2212,7 +2212,7 @@ static int upload_queue_valid(struct upload_queue *upload_contents, time_t now,
                       "Exiting");
         return -1;
     }
-    if (upload_contents->upload_file->size <= 0) {
+    if (s3_store_file_size_get(upload_contents->upload_file) == 0) {
         flb_plg_debug(ctx->ins, "Encountered empty chunk file in upload_queue. "
                       "Deleting empty chunk file");
         remove_from_queue(upload_contents);
@@ -2278,7 +2278,6 @@ static int buffer_chunk(void *out_context, struct s3_file *upload_file,
 static void s3_chunk_retry_exhausted_cleanup(struct flb_s3 *ctx,
                                              struct s3_file *chunk_file)
 {
-    size_t reclaim_size;
     int ret;
 
     if (chunk_file == NULL) {
@@ -2286,31 +2285,19 @@ static void s3_chunk_retry_exhausted_cleanup(struct flb_s3 *ctx,
     }
 
     if (ctx->retry_exhausted_action == S3_RETRY_EXHAUSTED_QUARANTINE) {
-        reclaim_size = chunk_file->size;
-
-        if (ctx->quarantine_dir_limit_size > 0 &&
-            ctx->quarantine_buffer_size + reclaim_size > ctx->quarantine_dir_limit_size) {
+        ret = s3_store_file_quarantine(ctx, chunk_file);
+        if (ret == S3_STORE_QUARANTINE_FULL) {
             flb_plg_warn(ctx->ins,
                          "quarantine limit reached, deleting retry-exhausted chunk");
             s3_store_file_delete(ctx, chunk_file);
             return;
         }
-
-        ret = s3_store_file_quarantine(ctx, chunk_file);
         if (ret < 0) {
             flb_plg_error(ctx->ins,
                           "could not quarantine, deleting retry-exhausted chunk");
             s3_store_file_delete(ctx, chunk_file);
             return;
         }
-
-        if (ctx->current_buffer_size >= reclaim_size) {
-            ctx->current_buffer_size -= reclaim_size;
-        }
-        else {
-            ctx->current_buffer_size = 0;
-        }
-        ctx->quarantine_buffer_size += reclaim_size;
 
         flb_plg_warn(ctx->ins,
                      "retry-exhausted chunk moved to quarantine");
@@ -4349,7 +4336,8 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* If total_file_size has been reached, upload file */
-    if ((upload_file && upload_file->size + chunk_size > ctx->upload_chunk_size) ||
+    if ((upload_file &&
+         s3_store_file_size_get(upload_file) + chunk_size > ctx->upload_chunk_size) ||
         (m_upload_file && m_upload_file->bytes + chunk_size > ctx->file_size)) {
         total_file_size_check = FLB_TRUE;
     }
