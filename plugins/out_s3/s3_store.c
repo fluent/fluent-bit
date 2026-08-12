@@ -340,7 +340,6 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                      "Buffer is almost full: current_buffer_size=%" PRIu64
                      ", store_dir_limit_size=%zu bytes",
                      new_buffer_size, ctx->store_dir_limit_size);
-        return -1;
     }
 
     return 0;
@@ -380,7 +379,7 @@ static int set_files_context(struct flb_s3 *ctx)
             s3_file->first_log_time = time(NULL);
             s3_file->create_time = time(NULL);
 
-            file_size = cio_chunk_get_real_size(fsf->chunk);
+            file_size = cio_chunk_get_content_size(fsf->chunk);
             if (file_size > 0) {
                 cfl_atomic_store(&s3_file->size, (uint64_t) file_size);
 
