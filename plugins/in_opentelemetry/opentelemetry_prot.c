@@ -74,6 +74,20 @@ static int is_profiles_export_path(const char *path)
     return FLB_FALSE;
 }
 
+static int is_profiles_http_path(const char *path)
+{
+    if (path == NULL) {
+        return FLB_FALSE;
+    }
+
+    if (strcmp(path, "/v1development/profiles") == 0 ||
+        strcmp(path, "/v1/profiles") == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 static \
 int uncompress_zlib(struct flb_opentelemetry *ctx,
                     char **output_buffer,
@@ -829,6 +843,10 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
         strcmp(request->path, "/v1/logs") == 0) {
         grpc_request = FLB_FALSE;
     }
+    else if (context->profile_support_enabled &&
+             is_profiles_http_path(request->path) == FLB_TRUE) {
+        grpc_request = FLB_FALSE;
+    }
     else if(strcmp(request->path, "/opentelemetry.proto.collector.metrics.v1.MetricsService/Export") == 0 ||
             strcmp(request->path, "/opentelemetry.proto.collector.traces.v1.TracesService/Export") == 0 ||
             strcmp(request->path, "/opentelemetry.proto.collector.logs.v1.LogsService/Export") == 0 ||
@@ -1073,7 +1091,8 @@ next_grpc_message:
                                          payload, payload_size);
     }
     else if (context->profile_support_enabled &&
-             is_profiles_export_path(request->path) == FLB_TRUE) {
+             (is_profiles_export_path(request->path) == FLB_TRUE ||
+              is_profiles_http_path(request->path) == FLB_TRUE)) {
         payload_type = 'P';
         tag = opentelemetry_prot_create_request_tag(context, "v1development_profiles");
         if (tag == NULL) {
