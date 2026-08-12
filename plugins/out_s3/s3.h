@@ -153,8 +153,8 @@ struct flb_s3 {
     struct flb_tls *authorization_endpoint_tls_context;
 
     /* track the total amount of buffered data */
-    size_t current_buffer_size;
-    size_t quarantine_buffer_size;
+    uint64_t current_buffer_size;
+    uint64_t quarantine_buffer_size;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;
