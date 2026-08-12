@@ -914,7 +914,10 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
             ingest_tag_len = flb_sds_len(tag_from_record);
         }
 
-        if (opentelemetry_uses_worker_ingress_queue(ctx)) {
+        if (encoder->output_length == 0) {
+            ret = 0;
+        }
+        else if (opentelemetry_uses_worker_ingress_queue(ctx)) {
             size_t allocation_size;
             void *resized_buffer;
 
