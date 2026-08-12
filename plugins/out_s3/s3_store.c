@@ -476,7 +476,19 @@ int s3_store_file_delete(struct flb_s3 *ctx, struct s3_file *s3_file)
     struct flb_fstore_file *fsf;
 
     fsf = s3_file->fsf;
-    ctx->current_buffer_size -= s3_file->size;
+
+    /*
+     * Files recovered from a previous run are not accounted into
+     * current_buffer_size at startup, so guard the subtraction to keep
+     * the unsigned counter from underflowing; a wrapped counter makes
+     * the store_dir_limit_size check reject every new chunk.
+     */
+    if (ctx->current_buffer_size >= s3_file->size) {
+        ctx->current_buffer_size -= s3_file->size;
+    }
+    else {
+        ctx->current_buffer_size = 0;
+    }
 
     /* permanent deletion */
     flb_fstore_file_delete(ctx->fs, fsf);
