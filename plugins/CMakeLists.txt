@@ -245,6 +245,7 @@ endmacro()
 # Custom Plugins
 REGISTER_CUSTOM_PLUGIN("custom_calyptia")
 
+REGISTER_IN_PLUGIN("in_aegisbpf")
 REGISTER_IN_PLUGIN("in_blob")
 
 # These plugins works only on Linux
