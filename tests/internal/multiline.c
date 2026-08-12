@@ -378,6 +378,15 @@ struct record_check json_input[] = {
     {"  \"level\": \"error\","},
     {"  \"msg\": \"multiline record D\""},
     {"}"},
+    /* invalid boundary: unindented line after opening brace */
+    {"{"},
+    {"\"bad\": true"},
+    /* invalid boundary: closing brace with trailing content */
+    {"{"},
+    {"  \"ok\": 1"},
+    {"} trailing"},
+    /* valid single-line object after invalid boundaries */
+    {"{\"id\":105,\"level\":\"info\",\"msg\":\"after boundaries\"}"},
 };
 
 struct record_check json_output[] = {
@@ -397,6 +406,16 @@ struct record_check json_output[] = {
         "  \"msg\": \"multiline record D\"\n"
         "}\n"
     },
+    /* unindented continuation must not merge into buffered '{' */
+    {"{\n"},
+    {"\"bad\": true\n"},
+    /* trailing content on '}' line must not merge into partial object */
+    {
+        "{\n"
+        "  \"ok\": 1\n"
+    },
+    {"} trailing\n"},
+    {"{\"id\":105,\"level\":\"info\",\"msg\":\"after boundaries\"}\n"},
 };
 
 /*
