@@ -763,6 +763,11 @@ int flb_parser_logfmt_do(struct flb_parser *parser,
                          void **out_buf, size_t *out_size,
                          struct flb_time *out_time);
 
+int flb_parser_csv_do(struct flb_parser *parser,
+                      const char *buf, size_t length,
+                      void **out_buf, size_t *out_size,
+                      struct flb_time *out_time);
+
 /*
  * This function is used to free all aspects of a parser
  * which is provided by the caller of flb_create_parser.
@@ -861,6 +866,9 @@ struct flb_parser *flb_parser_create_with_time_zone(const char *name,
     }
     else if (strcasecmp(format, "logfmt") == 0) {
         p->type = FLB_PARSER_LOGFMT;
+    }
+    else if (strcasecmp(format, "csv") == 0) {
+        p->type = FLB_PARSER_CSV;
     }
     else {
         flb_error("[parser:%s] Invalid format %s", name, format);
@@ -1045,6 +1053,10 @@ struct flb_parser *flb_parser_create_with_time_zone(const char *name,
     p->logfmt_no_bare_keys = logfmt_no_bare_keys;
     p->types = types;
     p->types_len = types_len;
+    p->csv_time_field_index = -1;
+    if (p->type == FLB_PARSER_CSV) {
+        flb_parser_csv_resolve_time_field(p);
+    }
     return p;
 }
 
@@ -1101,6 +1113,12 @@ void flb_parser_destroy(struct flb_parser *parser)
             flb_free(parser->types[i].key);
         }
         flb_free(parser->types);
+    }
+    if (parser->csv_field_names) {
+        for (i = 0; i < parser->csv_field_names_len; i++) {
+            flb_free(parser->csv_field_names[i]);
+        }
+        flb_free(parser->csv_field_names);
     }
 
     if (parser->decoders) {
@@ -1181,6 +1199,62 @@ static int proc_types_str(const char *types_str, struct flb_parser_types **types
     return i;
 }
 
+/* Parse a comma separated 'csv_fields' value into the parser's field names */
+static int proc_csv_fields_str(struct flb_parser *parser, const char *fields_str)
+{
+    int i;
+    int ret;
+    int fields_len;
+    char **fields;
+    struct mk_list *split;
+    struct mk_list *head;
+    struct flb_split_entry *sentry;
+
+    split = flb_utils_split(fields_str, ',', -1);
+    if (!split) {
+        return -1;
+    }
+
+    fields_len = mk_list_size(split);
+    if (fields_len <= 0) {
+        flb_utils_split_free(split);
+        return -1;
+    }
+
+    fields = flb_calloc(fields_len, sizeof(char *));
+    if (!fields) {
+        flb_errno();
+        flb_utils_split_free(split);
+        return -1;
+    }
+
+    i = 0;
+    mk_list_foreach(head, split) {
+        sentry = mk_list_entry(head, struct flb_split_entry, _head);
+        fields[i] = flb_strndup(sentry->value, sentry->len);
+        if (!fields[i]) {
+            flb_errno();
+            while (i > 0) {
+                flb_free(fields[--i]);
+            }
+            flb_free(fields);
+            flb_utils_split_free(split);
+            return -1;
+        }
+        i++;
+    }
+    flb_utils_split_free(split);
+
+    ret = flb_parser_csv_set_fields(parser, fields, fields_len);
+
+    for (i = 0; i < fields_len; i++) {
+        flb_free(fields[i]);
+    }
+    flb_free(fields);
+
+    return ret;
+}
+
 static flb_sds_t get_parser_key(struct flb_config *config,
                                 struct flb_cf *cf, struct flb_cf_section *s,
                                 char *key)
@@ -1223,6 +1297,7 @@ int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
     flb_sds_t time_offset;
     flb_sds_t time_zone;
     flb_sds_t types_str;
+    flb_sds_t csv_fields_str;
     flb_sds_t tmp_str;
     int skip_empty;
     int time_keep;
@@ -1234,6 +1309,7 @@ int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
     struct mk_list *decoders = NULL;
     struct flb_cf_section *s;
     struct flb_parser_types *types = NULL;
+    struct flb_parser *parser;
 
     /* Read all 'parser' sections */
     mk_list_foreach(head, &cf->parsers) {
@@ -1245,6 +1321,7 @@ int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
         time_offset = NULL;
         time_zone = NULL;
         types_str = NULL;
+        csv_fields_str = NULL;
         tmp_str = NULL;
 
         /* retrieve the section context */
@@ -1333,15 +1410,32 @@ int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
             types_len = 0;
         }
 
+        /* csv_fields (only meaningful for 'format csv', comma separated names) */
+        csv_fields_str = get_parser_key(config, cf, s, "csv_fields");
+
         /* Decoders */
         decoders = flb_parser_decoder_list_create(s);
 
         /* Create the parser context */
-        if (!flb_parser_create_with_time_zone(name, format, regex, skip_empty,
+        parser = flb_parser_create_with_time_zone(name, format, regex, skip_empty,
                                time_fmt, time_key, time_offset, time_keep, time_strict,
                                time_system_timezone, time_zone, logfmt_no_bare_keys,
-                               types, types_len, decoders, config)) {
+                               types, types_len, decoders, config);
+        if (!parser) {
             goto fconf_error;
+        }
+
+        if (parser->type == FLB_PARSER_CSV) {
+            if (csv_fields_str) {
+                if (proc_csv_fields_str(parser, csv_fields_str) == -1) {
+                    goto fconf_error;
+                }
+            }
+            else {
+                /* no named fields: 'time_key', if any, must reference a
+                 * numeric (0-based) field index */
+                flb_parser_csv_resolve_time_field(parser);
+            }
         }
 
         flb_debug("[parser] new parser registered: %s", name);
@@ -1363,6 +1457,9 @@ int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
         }
         if (time_zone) {
             flb_sds_destroy(time_zone);
+        }
+        if (csv_fields_str) {
+            flb_sds_destroy(csv_fields_str);
         }
         if (types_str) {
             flb_sds_destroy(types_str);
@@ -1405,6 +1502,9 @@ int flb_parser_load_parser_definitions(const char *cfg, struct flb_cf *cf,
     }
     if (types_str) {
         flb_sds_destroy(types_str);
+    }
+    if (csv_fields_str) {
+        flb_sds_destroy(csv_fields_str);
     }
     if (types_len) {
         for (i=0; i<types_len; i++){
@@ -1800,6 +1900,10 @@ int flb_parser_do(struct flb_parser *parser, const char *buf, size_t length,
     else if (parser->type == FLB_PARSER_LOGFMT) {
         return flb_parser_logfmt_do(parser, buf, length,
                                   out_buf, out_size, out_time);
+    }
+    else if (parser->type == FLB_PARSER_CSV) {
+        return flb_parser_csv_do(parser, buf, length,
+                                 out_buf, out_size, out_time);
     }
 
     return -1;

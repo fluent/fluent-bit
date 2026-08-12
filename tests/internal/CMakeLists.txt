@@ -46,6 +46,7 @@ set(UNIT_TESTS_FILES
   parser_ltsv.c
   parser_regex.c
   parser_logfmt.c
+  parser_csv.c
   env.c
   log.c
   log_event_decoder.c

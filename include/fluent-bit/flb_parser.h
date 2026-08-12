@@ -31,6 +31,7 @@
 #define FLB_PARSER_JSON  2
 #define FLB_PARSER_LTSV  3
 #define FLB_PARSER_LOGFMT 4
+#define FLB_PARSER_CSV   5
 
 struct flb_parser_types {
     char *key;
@@ -67,6 +68,12 @@ struct flb_parser {
     int time_with_tz;     /* do time_fmt consider a timezone ?  */
     struct flb_regex *regex;
     struct mk_list _head;
+
+    /* CSV (type == FLB_PARSER_CSV) */
+    char **csv_field_names;   /* optional user-defined field names */
+    int csv_field_names_len;
+    int csv_time_field_index; /* -1 if unset, else 0-based index of the
+                                * field holding the record timestamp */
 };
 
 enum {
@@ -134,6 +141,9 @@ int flb_parser_load_multiline_parser_definitions(const char *cfg, struct flb_cf 
 
 void flb_parser_destroy(struct flb_parser *parser);
 struct flb_parser *flb_parser_get(const char *name, struct flb_config *config);
+int flb_parser_csv_set_fields(struct flb_parser *parser,
+                              char **fields, int fields_len);
+void flb_parser_csv_resolve_time_field(struct flb_parser *parser);
 int flb_parser_do(struct flb_parser *parser, const char *buf, size_t length,
                   void **out_buf, size_t *out_size, struct flb_time *out_time);
 
