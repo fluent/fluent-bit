@@ -114,6 +114,7 @@
 #define V2_SYSFS_FILE_CPU_STAT         "cpu.stat"
 #define V2_SYSFS_FILE_PIDS             "cgroup.procs"
 #define V2_SYSFS_FILE_PIDS_ALT         "container/cgroup.procs"
+#define V2_SYSFS_FILE_PIDS_ALT_LEGACY  "containers/cgroup.procs"
 #define V2_SYSFS_FILE_IO_STAT          "io.stat"
 
 /* Values used to construct counters/gauges names and descriptions */
