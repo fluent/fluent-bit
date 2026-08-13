@@ -495,6 +495,10 @@ int fill_counters_with_sysfs_data_v2(struct flb_in_metrics *ctx)
         if (!pid || pid == UINT64_MAX) {
             pid = get_data_from_sysfs(ctx, path, V2_SYSFS_FILE_PIDS_ALT, NULL);
         }
+        if (!pid || pid == UINT64_MAX) {
+            pid = get_data_from_sysfs(ctx, path,
+                                      V2_SYSFS_FILE_PIDS_ALT_LEGACY, NULL);
+        }
         if (pid && pid != UINT64_MAX) {
             get_net_data_from_proc(ctx, cnt, pid);
         }
