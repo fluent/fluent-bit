@@ -66,8 +66,10 @@ static void aegisbpf_disconnect(struct flb_in_aegisbpf *ctx)
 static int write_all(int fd, const char *buf, size_t len)
 {
     size_t off = 0;
+    ssize_t w;
+
     while (off < len) {
-        ssize_t w = write(fd, buf + off, len - off);
+        w = write(fd, buf + off, len - off);
         if (w < 0) {
             if (errno == EINTR) {
                 continue;
@@ -85,12 +87,22 @@ static void aegisbpf_process_lines(struct flb_in_aegisbpf *ctx)
 {
     size_t start = 0;
     size_t i;
+    char *nl;
+    char *line;
+    size_t line_len;
+    char *mp;
+    size_t mp_size;
+    int root_type;
+    size_t consumed;
+    int ret;
+    int r;
+    struct flb_time tm;
 
     /* If a previous read dropped an oversized line, discard bytes up to and
      * including the next newline so the tail of that line is never parsed as a
      * (truncated) event. */
     if (ctx->skipping_line) {
-        char *nl = memchr(ctx->buf, '\n', ctx->buf_len);
+        nl = memchr(ctx->buf, '\n', ctx->buf_len);
         if (nl == NULL) {
             ctx->buf_len = 0;
             return;
@@ -104,68 +116,58 @@ static void aegisbpf_process_lines(struct flb_in_aegisbpf *ctx)
             continue;
         }
 
-        {
-            char *line = ctx->buf + start;
-            size_t line_len = i - start;
+        line = ctx->buf + start;
+        line_len = i - start;
 
-            /* strip a trailing CR if present */
-            if (line_len > 0 && line[line_len - 1] == '\r') {
-                line_len--;
-            }
+        /* strip a trailing CR if present */
+        if (line_len > 0 && line[line_len - 1] == '\r') {
+            line_len--;
+        }
 
-            start = i + 1;
+        start = i + 1;
 
-            /* The agent's first line is the streaming ack, not an event. */
-            if (!ctx->handshake_done) {
-                ctx->handshake_done = 1;
-                continue;
-            }
-            if (line_len == 0) {
-                continue;
-            }
+        /* The agent's first line is the streaming ack, not an event. */
+        if (!ctx->handshake_done) {
+            ctx->handshake_done = 1;
+            continue;
+        }
+        if (line_len == 0) {
+            continue;
+        }
 
-            {
-                char *mp = NULL;
-                size_t mp_size = 0;
-                int root_type = 0;
-                size_t consumed = 0;
-                int ret;
-
-                ret = flb_pack_json(line, line_len, &mp, &mp_size,
-                                    &root_type, &consumed);
-                /* Accept only a single, whole JSON object per line: reject parse
-                 * errors, arrays/scalars, and any trailing bytes after the object
-                 * (which flb_pack_json would otherwise pack as extra roots). */
-                if (ret != 0 || mp == NULL ||
-                    root_type != FLB_PACK_JSON_OBJECT || consumed != line_len) {
-                    flb_plg_debug(ctx->ins,
-                                  "skipping line: not a single JSON object (%zu bytes)",
-                                  line_len);
-                    if (mp != NULL) {
-                        flb_free(mp);
-                    }
-                    continue;
-                }
-
-                if (flb_log_event_encoder_begin_record(ctx->encoder) ==
-                        FLB_EVENT_ENCODER_SUCCESS) {
-                    struct flb_time tm;
-                    int r;
-
-                    flb_time_get(&tm);
-                    flb_log_event_encoder_set_timestamp(ctx->encoder, &tm);
-                    r = flb_log_event_encoder_set_body_from_raw_msgpack(
-                            ctx->encoder, mp, mp_size);
-                    if (r == FLB_EVENT_ENCODER_SUCCESS) {
-                        flb_log_event_encoder_commit_record(ctx->encoder);
-                    }
-                    else {
-                        flb_log_event_encoder_rollback_record(ctx->encoder);
-                    }
-                }
+        mp = NULL;
+        mp_size = 0;
+        root_type = 0;
+        consumed = 0;
+        ret = flb_pack_json(line, line_len, &mp, &mp_size, &root_type, &consumed);
+        /* Accept only a single, whole JSON object per line: reject parse errors,
+         * arrays/scalars, and any trailing bytes after the object (which
+         * flb_pack_json would otherwise pack as extra roots). */
+        if (ret != 0 || mp == NULL ||
+            root_type != FLB_PACK_JSON_OBJECT || consumed != line_len) {
+            flb_plg_debug(ctx->ins,
+                          "skipping line: not a single JSON object (%zu bytes)",
+                          line_len);
+            if (mp != NULL) {
                 flb_free(mp);
             }
+            continue;
         }
+
+        if (flb_log_event_encoder_begin_record(ctx->encoder) ==
+                FLB_EVENT_ENCODER_SUCCESS) {
+            flb_time_get(&tm);
+            flb_log_event_encoder_set_timestamp(ctx->encoder, &tm);
+            r = flb_log_event_encoder_set_body_from_raw_msgpack(ctx->encoder,
+                                                                mp, mp_size);
+            if (r == FLB_EVENT_ENCODER_SUCCESS) {
+                flb_log_event_encoder_commit_record(ctx->encoder);
+            }
+            else {
+                flb_log_event_encoder_rollback_record(ctx->encoder);
+            }
+        }
+        flb_free(mp);
     }
 
     if (start > 0) {
@@ -183,14 +185,15 @@ static int in_aegisbpf_read(struct flb_input_instance *ins,
     struct flb_in_aegisbpf *ctx = data;
     int disconnected = 0;
     size_t drained = 0;
+    ssize_t n;
+    size_t new_size;
+    char *tmp;
 
     (void) config;
 
     flb_log_event_encoder_reset(ctx->encoder);
 
     while (1) {
-        ssize_t n;
-
         if (ctx->buf_len == ctx->buf_size) {
             if (ctx->buf_size >= FLB_IN_AEGISBPF_BUF_MAX) {
                 /* A single line exceeded the cap; drop the buffered head and mark
@@ -203,8 +206,7 @@ static int in_aegisbpf_read(struct flb_input_instance *ins,
                 ctx->skipping_line = 1;
             }
             else {
-                size_t new_size = ctx->buf_size * 2;
-                char *tmp;
+                new_size = ctx->buf_size * 2;
                 if (new_size > FLB_IN_AEGISBPF_BUF_MAX) {
                     new_size = FLB_IN_AEGISBPF_BUF_MAX;
                 }
