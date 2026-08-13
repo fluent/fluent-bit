@@ -668,6 +668,8 @@ static int flb_http_server_worker_initialize(struct flb_downstream_worker *worke
         return result;
     }
 
+    context->server.tls_alpn_configured = parent->tls_alpn_configured;
+
     result = flb_http_server_start(&context->server);
     if (result != 0) {
         flb_http_server_destroy(&context->server);
