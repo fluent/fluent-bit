@@ -360,6 +360,11 @@ static int prepare_destroy_conn(struct flb_connection *connection)
      */
 
     if (connection->fd != FLB_INVALID_SOCKET) {
+#ifdef FLB_HAVE_TLS
+        if (connection->tls_session != NULL) {
+            flb_tls_session_invalidate(connection->tls_session);
+        }
+#endif
         flb_socket_close(connection->fd);
 
         connection->fd = FLB_INVALID_SOCKET;
