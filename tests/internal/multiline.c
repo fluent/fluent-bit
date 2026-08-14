@@ -2119,6 +2119,138 @@ static void test_issue_truncation_10576()
     flb_config_exit(config);
 }
 
+/*
+ * Verifies multiline_buffer_limit truncation for FLB_ML_EQ, using the
+ * built-in 'cri' parser.
+ */
+static void test_buffer_limit_truncation_cri()
+{
+    int ret;
+    uint64_t stream_id;
+    struct flb_config *config;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct flb_time tm;
+    struct expected_result res = {0};
+
+    char *line1 = "2026-08-14T18:57:50.904275087+00:00 stdout P AAAAAAAAAA";
+    char *line2 = "2026-08-14T18:57:51.904275088+00:00 stdout P BBBBBBBBBB";
+    char *line3 = "2026-08-14T18:57:52.904275089+00:00 stdout P CCCCCCCCCC";
+    char *line4 = "2026-08-14T18:57:53.904275090+00:00 stdout F DDDDDDDDDD";
+
+    struct record_check cri_buffer_limit_output[] = {
+      {"AAAAAAAAAABBBBBBBBBBCCCCC"},
+      {"DDDDDDDDDD"},
+    };
+
+    res.key = "log";
+    res.out_records = cri_buffer_limit_output;
+
+    config = flb_config_init();
+    if (config->multiline_buffer_limit) {
+        flb_free(config->multiline_buffer_limit);
+    }
+    config->multiline_buffer_limit = flb_strdup("25");
+
+    ml = flb_ml_create(config, "cri-limit-test");
+    TEST_CHECK(ml != NULL);
+
+    mlp_i = flb_ml_parser_instance_create(ml, "cri");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "cri", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    flb_time_get(&tm);
+
+    ret = flb_ml_append_text(ml, stream_id, &tm, line1, strlen(line1));
+    TEST_CHECK(ret == FLB_MULTILINE_OK);
+
+    ret = flb_ml_append_text(ml, stream_id, &tm, line2, strlen(line2));
+    TEST_CHECK(ret == FLB_MULTILINE_OK);
+
+    /* 20 bytes buffered so far, this line pushes it past the 25 byte limit. */
+    ret = flb_ml_append_text(ml, stream_id, &tm, line3, strlen(line3));
+    TEST_CHECK(ret == FLB_MULTILINE_TRUNCATED);
+
+    ret = flb_ml_append_text(ml, stream_id, &tm, line4, strlen(line4));
+    TEST_CHECK(ret == FLB_MULTILINE_OK);
+
+    TEST_CHECK(res.current_record == 2);
+
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+}
+
+/*
+ * Verifies multiline_buffer_limit truncation for FLB_ML_ENDSWITH, using the
+ * built-in 'docker' parser.
+ */
+static void test_buffer_limit_truncation_docker()
+{
+    int ret;
+    uint64_t stream_id;
+    struct flb_config *config;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct flb_time tm;
+    struct expected_result res = {0};
+
+    char *line1 = "{\"log\": \"AAAAAAAAAA\", \"stream\": \"stdout\", "
+                  "\"time\": \"2026-08-14T16:45:03.01231z\"}";
+    char *line2 = "{\"log\": \"BBBBBBBBBB\", \"stream\": \"stdout\", "
+                  "\"time\": \"2026-08-14T16:45:03.01232z\"}";
+    char *line3 = "{\"log\": \"CCCCCCCCCC\", \"stream\": \"stdout\", "
+                  "\"time\": \"2026-08-14T16:45:03.01233z\"}";
+    char *line4 = "{\"log\": \"DDDDDDDDDD\\n\", \"stream\": \"stdout\", "
+                  "\"time\": \"2026-08-14T16:45:03.01234z\"}";
+
+    struct record_check docker_buffer_limit_output[] = {
+      {"AAAAAAAAAABBBBBBBBBBCCCCC"},
+      {"DDDDDDDDDD\n"},
+    };
+
+    res.key = "log";
+    res.out_records = docker_buffer_limit_output;
+
+    config = flb_config_init();
+    if (config->multiline_buffer_limit) {
+        flb_free(config->multiline_buffer_limit);
+    }
+    config->multiline_buffer_limit = flb_strdup("25");
+
+    ml = flb_ml_create(config, "docker-limit-test");
+    TEST_CHECK(ml != NULL);
+
+    mlp_i = flb_ml_parser_instance_create(ml, "docker");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "docker", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    flb_time_get(&tm);
+
+    ret = flb_ml_append_text(ml, stream_id, &tm, line1, strlen(line1));
+    TEST_CHECK(ret == FLB_MULTILINE_OK);
+
+    ret = flb_ml_append_text(ml, stream_id, &tm, line2, strlen(line2));
+    TEST_CHECK(ret == FLB_MULTILINE_OK);
+
+    /* 20 bytes buffered so far, this line pushes it past the 25 byte limit. */
+    ret = flb_ml_append_text(ml, stream_id, &tm, line3, strlen(line3));
+    TEST_CHECK(ret == FLB_MULTILINE_TRUNCATED);
+
+    ret = flb_ml_append_text(ml, stream_id, &tm, line4, strlen(line4));
+    TEST_CHECK(ret == FLB_MULTILINE_OK);
+
+    TEST_CHECK(res.current_record == 2);
+
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
     /* Normal features tests */
     { "parser_docker",  test_parser_docker},
@@ -2132,6 +2264,8 @@ TEST_LIST = {
     { "container_mix",  test_container_mix},
     { "endswith",       test_endswith},
     { "buffer_limit_truncation", test_buffer_limit_truncation},
+    { "buffer_limit_truncation_cri", test_buffer_limit_truncation_cri},
+    { "buffer_limit_truncation_docker", test_buffer_limit_truncation_docker},
     { "buffer_limit_disabled", test_buffer_limit_disabled},
     { "known_bug_multi_group_flush_only_first_group",
       test_known_bug_multi_group_flush_only_first_group},
