@@ -444,6 +444,10 @@ static int in_winevtlog_collect(struct flb_input_instance *ins,
     struct mk_list *head;
     struct winevtlog_channel *ch;
 
+    if (!ctx->active_channel) {
+        return 0;
+    }
+
     mk_list_foreach(head, ctx->active_channel) {
         ch = mk_list_entry(head, struct winevtlog_channel, _head);
         in_winevtlog_read_channel(ins, ctx, ch);
