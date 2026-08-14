@@ -900,11 +900,11 @@ def test_out_kafka_dynamic_headers_supports_binary_and_duplicate_values():
     service.send_forward_record(_encode_forward_record_with_binary_headers())
 
     messages = service.wait_for_messages(1)
-    log_text = _wait_for_log_text(
+    name_log_text = _wait_for_log_text(
         service.service.flb.log_file,
         "skipping Kafka header with a non-string name",
     )
-    log_text = _wait_for_log_text(
+    value_log_text = _wait_for_log_text(
         service.service.flb.log_file,
         "value must be a string, binary, or null",
     )
@@ -920,7 +920,8 @@ def test_out_kafka_dynamic_headers_supports_binary_and_duplicate_values():
     payload = json.loads(message["value"].decode("utf-8"))
     assert payload["message"] == "binary headers"
     assert "headers" not in payload
-    assert "value must be a string, binary, or null" in log_text
+    assert "skipping Kafka header with a non-string name" in name_log_text
+    assert "value must be a string, binary, or null" in value_log_text
 
 
 def test_out_kafka_dynamic_headers_supports_large_binary_value():
@@ -1022,11 +1023,11 @@ def test_out_kafka_dynamic_headers_all_invalid_map_is_removed():
     )
 
     messages = service.wait_for_messages(1)
-    log_text = _wait_for_log_text(
+    name_log_text = _wait_for_log_text(
         service.service.flb.log_file,
         "skipping Kafka header with a non-string name",
     )
-    log_text = _wait_for_log_text(
+    value_log_text = _wait_for_log_text(
         service.service.flb.log_file,
         "value must be a string, binary, or null",
     )
@@ -1034,7 +1035,8 @@ def test_out_kafka_dynamic_headers_all_invalid_map_is_removed():
 
     message = messages[0]
     assert message["headers"] == []
-    assert "value must be a string, binary, or null" in log_text
+    assert "skipping Kafka header with a non-string name" in name_log_text
+    assert "value must be a string, binary, or null" in value_log_text
 
     payload = json.loads(message["value"].decode("utf-8"))
     assert payload["message"] == "invalid map"
