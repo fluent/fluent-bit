@@ -2,6 +2,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_simd.h>
 #include <fluent-bit/flb_utils.h>
 #include <stdarg.h>
 #include "flb_tests_internal.h"
@@ -337,6 +338,67 @@ void test_write_str()
     off = 0;
     ret = flb_utils_write_str(buf, &off, size, "aaaaaaaaaaa", 11, FLB_TRUE);
     TEST_CHECK(ret == FLB_FALSE);
+}
+
+static void check_write_str_simd_boundary(size_t input_len)
+{
+    int off;
+    int ret;
+    size_t output_size;
+    char *input;
+    char *output;
+
+    output_size = input_len + FLB_SIMD_VEC8_INST_LEN + 8;
+
+    input = flb_malloc(input_len + FLB_SIMD_VEC8_INST_LEN);
+    output = flb_calloc(output_size, sizeof(char));
+    if (!TEST_CHECK(input != NULL && output != NULL)) {
+        flb_free(input);
+        flb_free(output);
+        return;
+    }
+
+    /*
+     * A multibyte character moves the input cursor off its original SIMD
+     * alignment. Poison the bytes beyond the declared string length to catch
+     * a subsequent vector copy that crosses that boundary.
+     */
+    memset(input, 'x', input_len + FLB_SIMD_VEC8_INST_LEN);
+    input[0] = '\xc2';
+    input[1] = '\xae';
+
+    off = 0;
+    ret = flb_utils_write_str(output, &off, output_size, input, input_len, FLB_TRUE);
+    TEST_CHECK(ret == FLB_TRUE);
+    TEST_CHECK_(off == input_len + 4, "expected %zu escaped bytes, got %d",
+                input_len + 4, off);
+    TEST_CHECK(memcmp(output, "\\u00ae", 6) == 0);
+    TEST_CHECK(memcmp(output + 6, input + 2, input_len - 2) == 0);
+
+    memset(output, 0, output_size);
+    off = 0;
+    ret = flb_utils_write_str(output, &off, output_size, input, input_len, FLB_FALSE);
+    TEST_CHECK(ret == FLB_TRUE);
+    TEST_CHECK_(off == input_len, "expected %zu raw bytes, got %d", input_len, off);
+    TEST_CHECK(memcmp(output, input, input_len) == 0);
+
+    flb_free(input);
+    flb_free(output);
+}
+
+void test_write_str_simd_boundary()
+{
+    size_t i;
+    size_t input_lengths[] = {
+        FLB_SIMD_VEC8_INST_LEN * 2,
+        /* Historical x86_64 and arm64 macOS coroutine stack sizes. */
+        24 * 1024,
+        36 * 1024
+    };
+
+    for (i = 0; i < sizeof(input_lengths) / sizeof(input_lengths[0]); i++) {
+        check_write_str_simd_boundary(input_lengths[i]);
+    }
 }
 
 void test_write_str_invalid_trailing_bytes()
@@ -1005,6 +1067,7 @@ TEST_LIST = {
     { "url_split", test_url_split },
     { "url_split_sds", test_url_split_sds },
     { "write_str", test_write_str },
+    { "write_str_simd_boundary", test_write_str_simd_boundary },
     { "write_str_special_bytes", test_write_str_special_bytes },
     { "write_raw_str_special_bytes", test_write_raw_str_special_bytes },
     { "write_raw_str_invalid_bytes", test_write_raw_str_invalid_sequences},
