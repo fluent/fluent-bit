@@ -310,7 +310,10 @@ static int package_content(struct flb_ml_stream *mst,
             if (ret == FLB_MULTILINE_TRUNCATED) {
                 /* Buffer limit reached. Flush now to emit the truncated record. */
                 truncated = FLB_TRUE;
-                flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
+                ret = flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
+                if (ret == -1) {
+                    return -1;
+                }
             }
             else if (rule_match) {
                 /* On ENDSWITH mode, a rule match means flush the content. */
@@ -352,7 +355,10 @@ static int package_content(struct flb_ml_stream *mst,
         if (ret == FLB_MULTILINE_TRUNCATED) {
             /* Buffer limit reached. Flush now to emit the truncated record. */
             truncated = FLB_TRUE;
-            flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
+            ret = flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
+            if (ret == -1) {
+                return -1;
+            }
         }
         else if (rule_match) {
             /* On EQ mode, a rule match means flush the content. */
