@@ -3,6 +3,7 @@ import hashlib
 import json
 import mmap
 import os
+import re
 import shutil
 import socket
 import ssl
@@ -2141,6 +2142,12 @@ def test_in_forward_storage_limit_single_output_prefers_actual_chunk_deletion():
                     "forward storage eviction preference is not supported by this Fluent Bit binary"
                 )
             raise
+
+        service.wait_for_log_contains(
+            "evicted from output queue to make room under "
+            "storage.total_limit_size: input=forward.0 > output=http.0",
+            timeout=10,
+        )
     finally:
         service.stop()
 
@@ -2263,9 +2270,25 @@ def test_in_forward_storage_limit_shared_success_route_deletes_old_chunk():
             interval=0.2,
             description="shared-output stale route eviction snapshot",
         )
+
+        log_text = service.wait_for_log_contains(
+            "evicted from output queue to make room under "
+            "storage.total_limit_size: task_id=",
+            timeout=timeout,
+        )
     finally:
         service.stop()
+
+    failed_chunks = set(re.findall(
+        r"failed to flush chunk '([^']+)'.*output=non_working_endpoint",
+        log_text,
+    ))
+    evicted_chunks = set(re.findall(
+        r"chunk '([^']+)' evicted from output queue.*output=non_working_endpoint",
+        log_text,
+    ))
 
     assert not any(b"shared-one" in content for content in chunk_contents)
     assert any(b"shared-two" in content for content in chunk_contents)
     assert any(b"shared-three" in content for content in chunk_contents)
+    assert failed_chunks & evicted_chunks
