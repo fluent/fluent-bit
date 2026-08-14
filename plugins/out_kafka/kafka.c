@@ -1811,23 +1811,23 @@ static struct flb_config_map config_map[] = {
     "If you specify a key name with this option, then only the value of "
     "that key will be sent to Kafka."
    },
-   {
-    FLB_CONFIG_MAP_STR, "headers_key", NULL,
-    0, FLB_TRUE, offsetof(struct flb_out_kafka, headers_key),
-    "Specify which record key contains a map of key-value pairs to be "
-    "used as Kafka message headers. The value must be a msgpack map; string, "
-    "binary, and null values are supported. By default, the selected field is "
-    "omitted from the payload. An empty or whitespace-only value disables this "
-    "option. Nonblank values are matched exactly. This option is supported for "
-    "standard log formats, but not OTLP formats."
-   },
-   {
-    FLB_CONFIG_MAP_BOOL, "preserve_headers_key", "false",
-    0, FLB_TRUE, offsetof(struct flb_out_kafka, preserve_headers_key),
-    "Keep the map selected by headers_key in the record passed to the normal "
-    "payload formatter. By default, a valid selected map is omitted from the "
-    "payload after its entries are converted to Kafka message headers."
-   },
+    {
+        FLB_CONFIG_MAP_STR, "headers_key", NULL,
+        0, FLB_TRUE, offsetof(struct flb_out_kafka, headers_key),
+        "Specify which record key contains a map of key-value pairs to be "
+        "used as Kafka message headers. The value must be a msgpack map; string, "
+        "binary, and null values are supported. By default, the selected field is "
+        "omitted from the payload. An empty or whitespace-only value disables this "
+        "option. Nonblank values are matched exactly. This option is supported for "
+        "standard log formats, but not OTLP formats."
+    },
+    {
+        FLB_CONFIG_MAP_BOOL, "preserve_headers_key", "false",
+        0, FLB_TRUE, offsetof(struct flb_out_kafka, preserve_headers_key),
+        "Keep the map selected by headers_key in the record passed to the normal "
+        "payload formatter. By default, a valid selected map is omitted from the "
+        "payload after its entries are converted to Kafka message headers."
+    },
 
 #ifdef FLB_HAVE_AWS_MSK_IAM
    {
