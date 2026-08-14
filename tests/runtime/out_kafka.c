@@ -115,9 +115,9 @@ void flb_test_nonblank_headers_key_is_not_trimmed()
 }
 
 TEST_LIST = {
-  { "raw_format", flb_test_raw_format },
-  { "empty_headers_key", flb_test_empty_headers_key },
-  { "whitespace_headers_key", flb_test_whitespace_headers_key },
-  { "nonblank_headers_key_is_not_trimmed", flb_test_nonblank_headers_key_is_not_trimmed },
-  { NULL, NULL },
+    { "raw_format", flb_test_raw_format },
+    { "empty_headers_key", flb_test_empty_headers_key },
+    { "whitespace_headers_key", flb_test_whitespace_headers_key },
+    { "nonblank_headers_key_is_not_trimmed", flb_test_nonblank_headers_key_is_not_trimmed },
+    { NULL, NULL },
 };
