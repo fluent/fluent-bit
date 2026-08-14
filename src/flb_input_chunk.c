@@ -494,6 +494,21 @@ static ssize_t get_input_chunk_record_count(struct flb_input_chunk *input_chunk)
     return record_count;
 }
 
+static const char *get_input_chunk_source_name(struct flb_input_chunk *input_chunk)
+{
+    struct cio_chunk *chunk;
+
+    if (input_chunk->fs_backlog == FLB_TRUE && input_chunk->chunk != NULL) {
+        chunk = (struct cio_chunk *) input_chunk->chunk;
+
+        if (chunk->st != NULL && chunk->st->name != NULL) {
+            return chunk->st->name;
+        }
+    }
+
+    return flb_input_name(input_chunk->in);
+}
+
 static int flb_input_chunk_release_space(
                     struct flb_input_chunk     *new_input_chunk,
                     struct flb_input_instance  *input_plugin,
@@ -592,7 +607,7 @@ static int flb_input_chunk_release_space(
                          "(out_id=%d), bytes=%zd, limit=%zu",
                          flb_input_chunk_get_name(old_input_chunk),
                          task_id,
-                         flb_input_name(old_input_chunk->in),
+                         get_input_chunk_source_name(old_input_chunk),
                          flb_output_name(output_plugin),
                          output_plugin->id,
                          chunk_size,
@@ -603,7 +618,7 @@ static int flb_input_chunk_release_space(
                          "under storage.total_limit_size: input=%s > output=%s "
                          "(out_id=%d), bytes=%zd, limit=%zu",
                          flb_input_chunk_get_name(old_input_chunk),
-                         flb_input_name(old_input_chunk->in),
+                         get_input_chunk_source_name(old_input_chunk),
                          flb_output_name(output_plugin),
                          output_plugin->id,
                          chunk_size,
