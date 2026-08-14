@@ -37,6 +37,8 @@ FLB_RT_TEST(FLB_CHUNK_TRACE "core_chunk_trace.c")
 
 # Input Plugins
 FLB_RT_TEST(FLB_IN_EVENT_TEST   "in_event_test.c")
+# FLB_IN_WINEVTLOG is only enabled on Windows builds
+FLB_RT_TEST(FLB_IN_WINEVTLOG    "in_winevtlog.c")
 
 if(FLB_OUT_LIB)
   # These plugins works only on Linux
