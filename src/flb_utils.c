@@ -878,7 +878,7 @@ static int flb_utils_write_str_escaped(char *buf, int *off, size_t size, const c
 {
     int i, b, ret, len, hex_bytes, utf_sequence_length, utf_sequence_number;
     int processed_bytes = 0;
-    int is_valid, copypos = 0, vlen;
+    int is_valid, copypos = 0;
     uint32_t c;
     uint32_t codepoint = 0;
     uint32_t state = 0;
@@ -902,11 +902,9 @@ static int flb_utils_write_str_escaped(char *buf, int *off, size_t size, const c
 
     p = buf + *off;
 
-    /* align length to the nearest multiple of the vector size for safe SIMD processing */
-    vlen = str_len & ~(inst_len - 1);
     for (i = 0;;) {
         /* SIMD optimization: Process chunk of input string */
-        for (; i < vlen; i += inst_len) {
+        for (; i + inst_len <= str_len; i += inst_len) {
             flb_vector8 chunk;
             flb_vector8_load(&chunk, (const uint8_t *)&str[i]);
 
@@ -1247,7 +1245,7 @@ static inline int flb_utf8_validate_char(const unsigned char *str, int max_len)
 static int flb_utils_write_str_raw(char *buf, int *off, size_t size,
                                    const char *str, size_t str_len)
 {
-    int i, b, vlen, len, utf_len, copypos = 0;
+    int i, b, len, utf_len, copypos = 0;
     size_t available;
     char *p;
     off_t offset = 0;
@@ -1258,15 +1256,12 @@ static int flb_utils_write_str_raw(char *buf, int *off, size_t size,
     available = size - *off;
     p = buf + *off;
 
-    /* align length to the nearest multiple of the vector size for safe SIMD processing */
-    vlen = str_len & ~(inst_len - 1);
-
     for (i = 0;;) {
         /*
          * Process chunks of the input string using SIMD instructions.
          * This loop continues as long as it finds "safe" ASCII characters.
          */
-        for (; i < vlen; i += inst_len) {
+        for (; i + inst_len <= str_len; i += inst_len) {
             flb_vector8 chunk;
             flb_vector8_load(&chunk, (const uint8_t *)&str[i]);
 
