@@ -7,7 +7,7 @@ This document outlines the maintenance strategy and version support for Fluent B
 | Branch     | Version | Status           | Maintainer                                                  | Notes                                                              |
 |------------|---------|------------------|-------------------------------------------------------------|--------------------------------------------------------------------|
 | `master`   | v5.1.x  | Stable           | [Eduardo Silva](https://github.com/edsiper)                 | Current stable release series. All new features and bug fixes land here first. |
-| `5.0`      | v5.0.x  | Maintenance only | [Eduardo Silva](https://github.com/edsiper) [Hiroshi Hatake (@cosmo0920)](https://github.com/cosmo0920) | Bug fixes, security fixes, and selected low-risk backports until **November 30, 2026**. |
+| `5.0`      | v5.0.x  | Maintenance only | [Eduardo Silva](https://github.com/edsiper) [Hiroshi Hatake (@cosmo0920)](https://github.com/cosmo0920) | Critical bug fixes, security fixes, and selected low-risk backports until **November 30, 2026**. |
 
 ---
 
@@ -35,9 +35,9 @@ use. New features and bug fixes land in `master` first.
 
 ### v5.0 Maintenance
 
-**v5.0** is in **maintenance mode** and receives bug fixes, security updates,
-and selected low-risk backports until **November 30, 2026** (as specified in
-[SECURITY.md](SECURITY.md)).
+**v5.0** is in **maintenance mode** and receives critical bug fixes, security
+updates, and selected low-risk backports until **November 30, 2026** (as
+specified in [SECURITY.md](SECURITY.md)).
 
 ### v4.2 End-of-Life
 
