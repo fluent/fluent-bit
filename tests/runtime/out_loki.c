@@ -1188,6 +1188,155 @@ void flb_test_tenant_id_key_partial_error()
                                        FLB_TRUE);
 }
 
+static char *create_long_unicode_input(size_t message_size, size_t *input_size)
+{
+    size_t json_prefix_len;
+    size_t message_prefix_len;
+    size_t message_suffix_len;
+    size_t json_suffix_len;
+    char *input;
+    char *message;
+    const char json_prefix[] = "[12345678,{\"seq\":0,\"msg\":\"";
+    const char message_prefix[] = "<TEST \xc2\xae>";
+    const char message_suffix[] = "</TEST>";
+    const char json_suffix[] = "\"}]";
+
+    json_prefix_len = sizeof(json_prefix) - 1;
+    message_prefix_len = sizeof(message_prefix) - 1;
+    message_suffix_len = sizeof(message_suffix) - 1;
+    json_suffix_len = sizeof(json_suffix) - 1;
+
+    if (message_size < message_prefix_len + message_suffix_len) {
+        return NULL;
+    }
+
+    *input_size = json_prefix_len + message_size + json_suffix_len;
+    input = flb_malloc(*input_size + 1);
+    if (input == NULL) {
+        return NULL;
+    }
+
+    memcpy(input, json_prefix, json_prefix_len);
+    message = input + json_prefix_len;
+    memset(message, '1', message_size);
+    memcpy(message, message_prefix, message_prefix_len);
+    memcpy(message + message_size - message_suffix_len,
+           message_suffix, message_suffix_len);
+    memcpy(message + message_size, json_suffix, json_suffix_len);
+    input[*input_size] = '\0';
+
+    return input;
+}
+
+struct long_unicode_test_result {
+    size_t message_size;
+    int callback_called;
+};
+
+static void cb_check_long_unicode_payload(void *ctx, int ffd,
+                                          int res_ret, void *res_data,
+                                          size_t res_size, void *data)
+{
+    char *ending;
+    char *removed_key;
+    flb_sds_t out_js;
+    struct long_unicode_test_result *result;
+
+    out_js = res_data;
+    result = data;
+    result->callback_called = FLB_TRUE;
+
+    TEST_CHECK(res_ret == 0);
+    if (!TEST_CHECK(out_js != NULL)) {
+        return;
+    }
+
+    ending = strstr(out_js, "</TEST>\\\"}");
+    if (!TEST_CHECK(ending != NULL)) {
+        TEST_MSG("%zu-byte message did not end at </TEST>", result->message_size);
+    }
+
+    removed_key = strstr(out_js, "\\\"seq\\\":");
+    TEST_CHECK(removed_key == NULL);
+
+    flb_sds_destroy(out_js);
+}
+
+static void run_long_unicode_payload_boundary(size_t message_size)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    size_t input_size;
+    char *input;
+    flb_ctx_t *ctx;
+    struct long_unicode_test_result result;
+
+    input = create_long_unicode_input(message_size, &input_size);
+    if (!TEST_CHECK(input != NULL)) {
+        return;
+    }
+
+    ctx = flb_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        flb_free(input);
+        return;
+    }
+
+    ret = flb_service_set(ctx,
+                          "flush", "1",
+                          "grace", "1",
+                          "log_level", "error",
+                          NULL);
+    TEST_CHECK(ret == 0);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "loki", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "test",
+                         "line_format", "json",
+                         "labels", "job=mwe",
+                         "remove_keys", "seq",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    result.message_size = message_size;
+    result.callback_called = FLB_FALSE;
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_long_unicode_payload,
+                              &result, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    if (!TEST_CHECK(ret == 0)) {
+        flb_destroy(ctx);
+        flb_free(input);
+        return;
+    }
+
+    ret = flb_lib_push(ctx, in_ffd, input, input_size);
+    TEST_CHECK(ret >= 0);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    flb_free(input);
+
+    if (!TEST_CHECK(result.callback_called == FLB_TRUE)) {
+        TEST_MSG("formatter was not called for %zu-byte message", message_size);
+    }
+}
+
+void flb_test_long_unicode_payload_boundaries()
+{
+    run_long_unicode_payload_boundary(24 * 1024);
+    run_long_unicode_payload_boundary(36 * 1024);
+}
+
 static void cb_check_label_map_path(void *ctx, int ffd,
                                     int res_ret, void *res_data, size_t res_size,
                                     void *data)
@@ -1520,6 +1669,7 @@ TEST_LIST = {
     {"tenant_id_key_splits_requests", flb_test_tenant_id_key_splits_requests },
     {"tenant_id_key_partial_success", flb_test_tenant_id_key_partial_success },
     {"tenant_id_key_partial_error", flb_test_tenant_id_key_partial_error },
+    {"long_unicode_payload_boundaries", flb_test_long_unicode_payload_boundaries },
     {"basic"                  , flb_test_basic },
     {"labels"                 , flb_test_labels },
     {"label_keys"             , flb_test_label_keys },
