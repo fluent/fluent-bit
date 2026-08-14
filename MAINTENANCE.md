@@ -4,18 +4,19 @@ This document outlines the maintenance strategy and version support for Fluent B
 
 ## Active Branches and Maintainers
 
-| Branch     | Version            | Status              | Maintainer                                                  | Notes                                                              |
-|------------|--------------------|---------------------|-------------------------------------------------------------|--------------------------------------------------------------------|
-| `master`   | v5.1 (development) | Active development  | [Eduardo Silva](https://github.com/edsiper)                 | Next minor development line. All new features and bug fixes land here first |
-| `5.0`      | v5.0.x             | Stable              | [Eduardo Silva](https://github.com/edsiper) [Hiroshi Hatake (@cosmo0920)](https://github.com/cosmo0920) | Current stable release series. Receives bug fixes, security fixes, and selected low-risk backports. |
-| `4.2`      | v4.2.x             | Maintenance only    | [Eduardo Silva](https://github.com/edsiper) [Hiroshi Hatake (@cosmo0920)](https://github.com/cosmo0920) | Critical fixes and safe backports only. Maintained until **July 30, 2026** |
-| `4.1`      | v4.1.x             | Maintenance only    | [Hiroshi Hatake (@cosmo0920)](https://github.com/cosmo0920) | Critical fixes and safe backports only. Maintained until **February 28, 2026** |
+| Branch     | Version | Status           | Maintainer                                                  | Notes                                                              |
+|------------|---------|------------------|-------------------------------------------------------------|--------------------------------------------------------------------|
+| `master`   | v5.1.x  | Stable           | [Eduardo Silva](https://github.com/edsiper)                 | Current stable release series. All new features and bug fixes land here first. |
+| `5.0`      | v5.0.x  | Maintenance only | [Eduardo Silva](https://github.com/edsiper) [Hiroshi Hatake (@cosmo0920)](https://github.com/cosmo0920) | Bug fixes, security fixes, and selected low-risk backports until **November 30, 2026**. |
 
 ---
 
 ## Maintenance Policy
 
-Active development is currently on the next Fluent Bit **v5.1** line (tracked in the `master` branch). The **v5.0** branch is the current stable release series and receives stable branch updates. Previous release lines enter **maintenance mode** after the next major/minor release.
+Fluent Bit **v5.1** is the current stable release series and is tracked in the
+`master` branch. The **v5.0** branch is in maintenance mode and receives bug
+fixes, security updates, and selected low-risk backports until its
+End-of-Maintenance date. Older release lines are End-of-Life (EOL).
 
 ### Accepted Changes for Maintenance Branches
 
@@ -27,21 +28,28 @@ Active development is currently on the next Fluent Bit **v5.1** line (tracked in
 
 Maintenance releases continue on an as-needed basis depending on urgency and impact.
 
-### v5.0 Stable Series
+### v5.1 Stable Series
 
-**v5.0** is the current stable release series and receives bug fixes, security updates, and selected low-risk backports. This is the recommended version for production use.
+**v5.1** is the current stable release series and is recommended for production
+use. New features and bug fixes land in `master` first.
 
-### v4.2 Maintenance
+### v5.0 Maintenance
 
-**v4.2** has entered **maintenance mode** and receives critical fixes and safe backports until **July 30, 2026** (as specified in [SECURITY.md](SECURITY.md)).
+**v5.0** is in **maintenance mode** and receives bug fixes, security updates,
+and selected low-risk backports until **November 30, 2026** (as specified in
+[SECURITY.md](SECURITY.md)).
 
-### v4.1 Maintenance
+### v4.2 End-of-Life
 
-**v4.1** has entered **maintenance mode**, now maintained by [Hiroshi Hatake (@cosmo0920)](https://github.com/cosmo0920), a long-time Fluent Bit contributor and core developer.
+**v4.2** reached **End-of-Life (EOL)** on **July 30, 2026** and is no longer
+maintained.
 
-**v4.1** will receive security updates and critical fixes until **February 28, 2026** (as specified in [SECURITY.md](SECURITY.md)).
+### v4.1 End-of-Life
 
-### v4.0 Maintenance
+**v4.1** reached **End-of-Life (EOL)** on **February 28, 2026** and is no longer
+maintained.
+
+### v4.0 End-of-Life
 
 **v4.0** reached **End-of-Life (EOL)** on **December 23, 2025** and is no longer maintained. No further security patches or bug fixes will be provided for this version line.
 
@@ -49,13 +57,14 @@ Maintenance releases continue on an as-needed basis depending on urgency and imp
 
 ## How to Contribute to Maintained Versions
 
-If you're submitting a fix or feature relevant to a stable or maintenance branch (v5.0, v4.2, or v4.1):
+If you're submitting a fix or feature relevant to a stable or maintenance
+branch:
 
 - Open your PR against the `master` branch
-- Add a note in the PR or issue: `Target: v5.0`, `Target: v4.2`, or `Target: v4.1`
-- Tag the branch maintainer to request backport consideration:
-  - For v5.0: [@edsiper](https://github.com/edsiper) [@cosmo0920](https://github.com/cosmo0920)
-  - For v4.2: [@edsiper](https://github.com/edsiper) [@cosmo0920](https://github.com/cosmo0920)
-  - For v4.1: [@cosmo0920](https://github.com/cosmo0920)
+- For a v5.0 backport, add `Target: v5.0` to the PR or issue and tag
+  [@edsiper](https://github.com/edsiper) or
+  [@cosmo0920](https://github.com/cosmo0920)
 
-> **Note:** v4.0 is End-of-Life and no longer accepts backports. For security-related issues, please follow the process outlined in [SECURITY.md](SECURITY.md).
+> **Note:** v4.2 and earlier are End-of-Life and no longer accept backports. For
+> security-related issues, follow the process outlined in
+> [SECURITY.md](SECURITY.md).
