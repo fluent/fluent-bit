@@ -1,3 +1,4 @@
+import mmap
 import os
 from pathlib import Path
 import signal
@@ -14,9 +15,14 @@ CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 SEED_CONFIG = CONFIG_DIR / "seed_unroutable_chunk.yaml"
 RELOAD_WITHOUT_ROUTE = CONFIG_DIR / "reload_without_stale_route.yaml"
 RELOAD_WITH_ROUTE = CONFIG_DIR / "reload_with_stale_route.yaml"
+RELOAD_WITH_EVICTION = CONFIG_DIR / "reload_with_storage_limit_eviction.yaml"
 KEEP_ON_DISK_MESSAGE = "no matching route for dummy.0/"
 REGISTER_MESSAGE = "register dummy.0/"
 QUEUE_MESSAGE = "queueing dummy.0:"
+EVICTION_MESSAGE = (
+    "evicted from output queue to make room under "
+    "storage.total_limit_size: input=dummy.0 > output=http.0"
+)
 
 
 def wait_for_persisted_chunk(storage_path, process, log_path, timeout=10):
@@ -91,9 +97,14 @@ def seeded_chunk(tmp_path, monkeypatch):
     storage_path.mkdir()
     seed_log_path = tmp_path / "seed.log"
     missing_path = tmp_path / "does-not-exist.log"
+    live_one_path = tmp_path / "live-one.log"
+    live_two_path = tmp_path / "live-two.log"
 
     monkeypatch.setenv("STORAGE_BACKLOG_PATH", str(storage_path))
     monkeypatch.setenv("STORAGE_BACKLOG_MISSING_PATH", str(missing_path))
+    monkeypatch.setenv("STORAGE_BACKLOG_LIVE_ONE_PATH", str(live_one_path))
+    monkeypatch.setenv("STORAGE_BACKLOG_LIVE_TWO_PATH", str(live_two_path))
+    monkeypatch.setenv("STORAGE_BACKLOG_TOTAL_LIMIT_SIZE", str(mmap.PAGESIZE * 2))
 
     persisted_chunk = seed_persisted_chunk(storage_path, seed_log_path)
     assert persisted_chunk.exists()
@@ -116,6 +127,33 @@ def test_routable_persisted_chunk_is_replayed_on_startup(seeded_chunk):
     finally:
         manager.stop()
 
+    assert not seeded_chunk.exists()
+
+
+def test_loaded_backlog_eviction_reports_original_input(seeded_chunk):
+    manager = FluentBitManager(str(RELOAD_WITH_EVICTION))
+    live_one_path = Path(os.environ["STORAGE_BACKLOG_LIVE_ONE_PATH"])
+    live_two_path = Path(os.environ["STORAGE_BACKLOG_LIVE_TWO_PATH"])
+
+    try:
+        manager.start()
+        wait_for_log_occurrences(
+            Path(manager.log_file), QUEUE_MESSAGE, expected=1
+        )
+
+        live_one_path.write_text("live one\n", encoding="utf-8")
+        live_two_path.write_text("live two\n", encoding="utf-8")
+
+        wait_for_log_occurrences(
+            Path(manager.log_file), EVICTION_MESSAGE, expected=1
+        )
+        wait_for_path_removal(seeded_chunk)
+
+        log = Path(manager.log_file).read_text(encoding="utf-8", errors="replace")
+    finally:
+        manager.stop()
+
+    assert "input=storage_backlog." not in log
     assert not seeded_chunk.exists()
 
 

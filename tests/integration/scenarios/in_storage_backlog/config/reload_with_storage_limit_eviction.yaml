@@ -1,0 +1,29 @@
+service:
+  flush: 60
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  storage.path: ${STORAGE_BACKLOG_PATH}
+
+pipeline:
+  inputs:
+    - name: tail
+      tag: live.one
+      path: ${STORAGE_BACKLOG_LIVE_ONE_PATH}
+      refresh_interval: 1
+      storage.type: filesystem
+
+    - name: tail
+      tag: live.two
+      path: ${STORAGE_BACKLOG_LIVE_TWO_PATH}
+      refresh_interval: 1
+      storage.type: filesystem
+
+  outputs:
+    - name: http
+      match: "*"
+      host: 127.0.0.1
+      port: 9
+      retry_limit: no_limits
+      storage.total_limit_size: ${STORAGE_BACKLOG_TOTAL_LIMIT_SIZE}
