@@ -513,6 +513,7 @@ static int flb_input_chunk_release_space(
     ssize_t                 released_space;
     int                     chunk_released;
     ssize_t                 chunk_size;
+    int                     task_id;
 
     released_space = 0;
 
@@ -554,6 +555,11 @@ static int flb_input_chunk_release_space(
 
             chunk_released = FLB_FALSE;
             chunk_destroy_flag = FLB_FALSE;
+            task_id = -1;
+
+            if (old_input_chunk->task != NULL) {
+                task_id = old_input_chunk->task->id;
+            }
 
             if (flb_input_chunk_drop_task_route(old_input_chunk->task,
                                                 output_plugin,
@@ -578,6 +584,30 @@ static int flb_input_chunk_release_space(
             }
             else if (release_scope == FLB_INPUT_CHUNK_RELEASE_SCOPE_GLOBAL) {
                 chunk_destroy_flag = FLB_TRUE;
+            }
+
+            if (task_id >= 0) {
+                flb_warn("[input chunk] chunk '%s' evicted from output queue to make room "
+                         "under storage.total_limit_size: task_id=%d, input=%s > output=%s "
+                         "(out_id=%d), bytes=%zd, limit=%zu",
+                         flb_input_chunk_get_name(old_input_chunk),
+                         task_id,
+                         flb_input_name(old_input_chunk->in),
+                         flb_output_name(output_plugin),
+                         output_plugin->id,
+                         chunk_size,
+                         output_plugin->total_limit_size);
+            }
+            else {
+                flb_warn("[input chunk] chunk '%s' evicted from output queue to make room "
+                         "under storage.total_limit_size: input=%s > output=%s "
+                         "(out_id=%d), bytes=%zd, limit=%zu",
+                         flb_input_chunk_get_name(old_input_chunk),
+                         flb_input_name(old_input_chunk->in),
+                         flb_output_name(output_plugin),
+                         output_plugin->id,
+                         chunk_size,
+                         output_plugin->total_limit_size);
             }
 
 #ifdef FLB_HAVE_METRICS
