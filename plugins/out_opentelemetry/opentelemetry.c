@@ -1288,7 +1288,7 @@ struct flb_output_plugin out_opentelemetry_plugin = {
     .cb_exit     = cb_opentelemetry_exit,
     .config_map  = config_map,
     .event_type  = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS | FLB_OUTPUT_TRACES | FLB_OUTPUT_PROFILES,
-    .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
+    .flags       = FLB_OUTPUT_NET | FLB_OUTPUT_OAUTH2_CLIENT | FLB_IO_OPT_TLS,
 
     .test_formatter.callback = opentelemetry_format_test,
 };
