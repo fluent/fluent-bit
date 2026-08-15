@@ -23,7 +23,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
-    make bash wget unzip nano vim valgrind dh-make flex bison \
+    make bash wget nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all software-properties-common \
     software-properties-common libyaml-dev apt-transport-https  \
     pkg-config libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.0 \
@@ -54,7 +54,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates gcc-8 g++-8 libsystemd-dev \
-    make bash wget unzip nano vim valgrind dh-make flex bison \
+    make bash wget nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libcurl4-openssl-dev \
     software-properties-common libyaml-dev apt-transport-https pkg-config zlib1g-dev \
@@ -88,7 +88,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates gcc-8 g++-8 libsystemd-dev \
-    make bash wget unzip nano vim valgrind dh-make flex bison \
+    make bash wget nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libcurl4-openssl-dev \
     software-properties-common libyaml-dev apt-transport-https pkg-config zlib1g-dev \
@@ -118,7 +118,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
-    make bash wget unzip nano vim valgrind dh-make flex bison \
+    make bash wget nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libcurl4-openssl-dev \
     libyaml-dev pkg-config zlib1g-dev \
@@ -144,7 +144,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
-    make bash wget unzip nano vim valgrind dh-make flex bison \
+    make bash wget nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libcurl4-openssl-dev \
     libyaml-dev pkg-config zlib1g-dev \
@@ -168,7 +168,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
-    make bash wget unzip nano vim valgrind dh-make flex bison \
+    make bash wget nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all libpq5 \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
     libyaml-dev pkg-config zlib1g-dev \
@@ -194,7 +194,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
-    make bash wget unzip nano vim valgrind dh-make flex bison \
+    make bash wget nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all libpq5 \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
     libyaml-dev pkg-config zlib1g-dev \
@@ -218,7 +218,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
-    make bash wget unzip nano vim valgrind dh-make flex bison \
+    make bash wget nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all libpq5 \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
     libyaml-dev pkg-config zlib1g-dev \
@@ -244,7 +244,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
-    make bash wget unzip nano vim valgrind dh-make flex bison \
+    make bash wget nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all libpq5 \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
     libyaml-dev pkg-config zlib1g-dev \
@@ -268,7 +268,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
-    make bash wget unzip nano vim valgrind dh-make flex bison \
+    make bash wget nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all libpq5 \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
     libyaml-dev pkg-config zlib1g-dev \
@@ -294,7 +294,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential libsystemd-dev \
-    make bash wget unzip nano vim valgrind dh-make flex bison \
+    make bash wget nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all libpq5 \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl3 libcurl4-openssl-dev \
     libyaml-dev pkg-config zlib1g-dev \

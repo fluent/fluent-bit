@@ -18,7 +18,7 @@ RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/almalinux-powertools.repo
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
-    wget unzip systemd-devel wget flex bison \
+    systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
@@ -38,7 +38,7 @@ RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/almalinux-powertools.repo
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
-    wget unzip systemd-devel wget flex bison \
+    systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
@@ -57,7 +57,7 @@ RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/almalinux-crb.repo
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
-    wget unzip systemd-devel wget flex bison \
+    systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
@@ -77,7 +77,7 @@ RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/almalinux-crb.repo
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
-    wget unzip systemd-devel wget flex bison \
+    systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config && \
     yum clean all
@@ -96,7 +96,7 @@ RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/almalinux-crb.repo
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
-    wget unzip systemd-devel wget flex bison \
+    systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
     libzstd-devel && \
@@ -118,7 +118,7 @@ RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/almalinux-crb.repo
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
-    wget unzip systemd-devel wget flex bison \
+    systemd-devel wget flex bison \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config \
     libzstd-devel && \
