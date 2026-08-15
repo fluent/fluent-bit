@@ -47,6 +47,14 @@
 #define TEST_RECOVERY_TRIES     60
 #define TEST_STALL_TRIES        200
 
+/* Backoff far enough out that no retry can fire on its own during the test */
+#define TEST_SCHED_BASE_SEC     "30"
+#define TEST_SCHED_CAP_SEC      "120"
+#define TEST_DEAD_PORT_STR      "1"
+#define TEST_RETRY_TRIES        50
+#define TEST_HTTP_BUFFER_SIZE   (256 * 1024)
+#define TEST_BACKOFF_SETTLE_MS  1500
+
 static pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int result_count = 0;
 
@@ -215,6 +223,8 @@ static int http_request(struct http_client_ctx *http_ctx, int method,
     if (http_client == NULL) {
         return -1;
     }
+
+    flb_http_buffer_size(http_client, TEST_HTTP_BUFFER_SIZE);
 
     if (flb_http_do(http_client, &b_sent) != 0) {
         flb_http_client_destroy(http_client);
@@ -564,54 +574,6 @@ void flb_test_flush_now_http_method_not_allowed(void)
     flb_destroy(ctx);
 }
 
-/* The retry rescheduling opt-in must be accepted. */
-void flb_test_flush_now_http_reschedule_retries(void)
-{
-    flb_ctx_t *ctx;
-    struct flb_lib_out_cb cb_data;
-    struct http_client_ctx *http_ctx;
-    flb_sds_t payload = NULL;
-    int in_ffd = -1;
-    int status = 0;
-    int count = 0;
-    char *input_json = "[1, {\"msg\": \"retry opt-in\"}]";
-
-    ctx = flush_test_start(&in_ffd, &cb_data);
-    TEST_CHECK_(ctx != NULL, "starting engine with HTTP server");
-    if (ctx == NULL) {
-        return;
-    }
-
-    http_ctx = wait_for_http_server();
-    TEST_CHECK_(http_ctx != NULL, "HTTP server did not become ready");
-    if (http_ctx == NULL) {
-        flb_stop(ctx);
-        flb_destroy(ctx);
-        return;
-    }
-
-    TEST_CHECK(flb_lib_push(ctx, in_ffd, input_json,
-                            strlen(input_json)) >= 0);
-
-    TEST_CHECK(http_request(http_ctx, FLB_HTTP_POST,
-                            "/api/v2/flush?reschedule_retries=true",
-                            &status, &payload) == 0);
-    TEST_CHECK_(status == 200, "expected 200, got %d", status);
-
-    if (payload != NULL) {
-        TEST_CHECK(strstr(payload, "dispatched") != NULL);
-        flb_sds_destroy(payload);
-    }
-
-    wait_for_result(TEST_WAIT_TIMEOUT_MS, 1, &count);
-    TEST_CHECK_(count >= 1, "expected the record to be dispatched, got %d",
-                count);
-
-    http_client_ctx_destroy(http_ctx);
-    flb_stop(ctx);
-    flb_destroy(ctx);
-}
-
 struct concurrent_worker {
     pthread_t thread;
     struct http_client_ctx *http_ctx;
@@ -902,14 +864,161 @@ void flb_test_flush_now_http_slow_output_timeout(void)
     flb_destroy(ctx);
 }
 
+static int read_retries_total(struct http_client_ctx *http_ctx, uint64_t *out)
+{
+    flb_sds_t payload = NULL;
+    const char *p;
+    int status = 0;
+    int ret = -1;
+
+    if (http_request(http_ctx, FLB_HTTP_GET, "/api/v2/metrics/prometheus",
+                     &status, &payload) != 0 || status != 200) {
+        if (payload != NULL) {
+            flb_sds_destroy(payload);
+        }
+        return -1;
+    }
+
+    if (payload != NULL) {
+        p = strstr(payload, "fluentbit_output_retries_total{");
+        if (p != NULL) {
+            p = strchr(p, '}');
+            if (p != NULL && sscanf(p + 1, " %" SCNu64, out) == 1) {
+                ret = 0;
+            }
+        }
+        flb_sds_destroy(payload);
+    }
+
+    return ret;
+}
+
+/*
+ * A failing output leaves a chunk waiting on its backoff timer. The default
+ * flush must leave that timer alone, and only reschedule_retries=true may
+ * force the retry to happen now.
+ */
+void flb_test_flush_now_http_forces_retry(void)
+{
+    flb_ctx_t *ctx;
+    struct http_client_ctx *http_ctx;
+    int in_ffd;
+    int out_ffd;
+    int status = 0;
+    int ret;
+    int i;
+    uint64_t baseline = 0;
+    uint64_t retries = 0;
+    char *input_json = "[1, {\"msg\": \"retry probe\"}]";
+
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+    if (ctx == NULL) {
+        return;
+    }
+
+    TEST_CHECK(flb_service_set(ctx,
+                               "Flush",          TEST_FLUSH_INTERVAL_SEC,
+                               "Grace",          "1",
+                               "Log_Level",      "error",
+                               "scheduler.base", TEST_SCHED_BASE_SEC,
+                               "scheduler.cap",  TEST_SCHED_CAP_SEC,
+                               "HTTP_Server",    "On",
+                               "HTTP_Listen",    TEST_HTTP_HOST,
+                               "HTTP_Port",      TEST_HTTP_PORT_STR,
+                               NULL) == 0);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    out_ffd = flb_output(ctx, (char *) "http", NULL);
+    if (out_ffd < 0) {
+        TEST_MSG("out_http is not available, skipping");
+        flb_destroy(ctx);
+        return;
+    }
+
+    TEST_CHECK(flb_output_set(ctx, out_ffd,
+                              "match", "*",
+                              "host", TEST_HTTP_HOST,
+                              "port", TEST_DEAD_PORT_STR,
+                              "retry_limit", "20",
+                              NULL) == 0);
+
+    TEST_CHECK(flb_start(ctx) == 0);
+
+    http_ctx = wait_for_http_server();
+    TEST_CHECK_(http_ctx != NULL, "HTTP server did not become ready");
+    if (http_ctx == NULL) {
+        flb_stop(ctx);
+        flb_destroy(ctx);
+        return;
+    }
+
+    TEST_CHECK(flb_lib_push(ctx, in_ffd, input_json,
+                            strlen(input_json)) >= 0);
+
+    TEST_CHECK(http_request(http_ctx, FLB_HTTP_POST, "/api/v2/flush",
+                            &status, NULL) == 0);
+    TEST_CHECK_(status == 200, "initial flush expected 200, got %d", status);
+
+    ret = -1;
+    for (i = 0; i < TEST_RETRY_TRIES; i++) {
+        ret = read_retries_total(http_ctx, &baseline);
+        if (ret == 0 && baseline >= 1) {
+            break;
+        }
+        flb_time_msleep(100);
+    }
+
+    TEST_CHECK_(ret == 0, "could not read the retries metric");
+    TEST_CHECK_(baseline >= 1,
+                "the failing output should have scheduled a retry, got %"
+                PRIu64, baseline);
+
+    TEST_CHECK(http_request(http_ctx, FLB_HTTP_POST, "/api/v2/flush",
+                            &status, NULL) == 0);
+    TEST_CHECK_(status == 200, "default flush expected 200, got %d", status);
+    flb_time_msleep(TEST_BACKOFF_SETTLE_MS);
+
+    TEST_CHECK_(read_retries_total(http_ctx, &retries) == 0,
+                "could not read the retries metric");
+    TEST_CHECK_(retries == baseline,
+                "a default flush must leave the backoff intact: %" PRIu64
+                " -> %" PRIu64, baseline, retries);
+
+    TEST_CHECK(http_request(http_ctx, FLB_HTTP_POST,
+                            "/api/v2/flush?reschedule_retries=true",
+                            &status, NULL) == 0);
+    TEST_CHECK_(status == 200, "opt-in flush expected 200, got %d", status);
+
+    ret = -1;
+    for (i = 0; i < TEST_RETRY_TRIES; i++) {
+        ret = read_retries_total(http_ctx, &retries);
+        if (ret == 0 && retries > baseline) {
+            break;
+        }
+        flb_time_msleep(100);
+    }
+
+    TEST_CHECK_(ret == 0, "could not read the retries metric");
+    TEST_CHECK_(retries > baseline,
+                "reschedule_retries=true must force a retry now: %" PRIu64
+                " -> %" PRIu64, baseline, retries);
+
+    http_client_ctx_destroy(http_ctx);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"flush_now_dispatches_immediately", flb_test_flush_now_dispatches_immediately},
     {"flush_now_http_dispatches", flb_test_flush_now_http_dispatches},
     {"flush_now_http_get_status", flb_test_flush_now_http_get_status},
     {"flush_now_http_method_not_allowed", flb_test_flush_now_http_method_not_allowed},
-    {"flush_now_http_reschedule_retries", flb_test_flush_now_http_reschedule_retries},
     {"flush_now_http_concurrent", flb_test_flush_now_http_concurrent},
     {"flush_now_http_slow_output_timeout", flb_test_flush_now_http_slow_output_timeout},
+    {"flush_now_http_forces_retry", flb_test_flush_now_http_forces_retry},
     {NULL, NULL}
 };
