@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#include <cfl/cfl_atomic.h>
 #include <inttypes.h>
 #include <pthread.h>
 #include <string.h>
@@ -44,6 +45,7 @@
 /* Must exceed the endpoint's 2000ms acknowledgement timeout */
 #define TEST_SLOW_OUTPUT_MS     3000
 #define TEST_RECOVERY_TRIES     60
+#define TEST_STALL_TRIES        200
 
 static pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int result_count = 0;
@@ -88,15 +90,17 @@ static int cb_count_record(void *record, size_t size, void *data)
  * thread: stalling here stalls the whole engine, which is what lets this
  * exercise a slow output and the acknowledgement timeout.
  */
-static int slow_output_armed = FLB_FALSE;
+static uint64_t slow_output_armed = FLB_FALSE;
+static uint64_t slow_output_stalling = FLB_FALSE;
 
 static int cb_slow_record(void *record, size_t size, void *data)
 {
     (void) size;
     (void) data;
 
-    if (slow_output_armed == FLB_TRUE) {
-        slow_output_armed = FLB_FALSE;
+    if (cfl_atomic_compare_exchange(&slow_output_armed,
+                                    FLB_TRUE, FLB_FALSE) != 0) {
+        cfl_atomic_store(&slow_output_stalling, FLB_TRUE);
         flb_time_msleep(TEST_SLOW_OUTPUT_MS);
     }
 
@@ -778,7 +782,8 @@ void flb_test_flush_now_http_slow_output_timeout(void)
     char *input_json = "[1, {\"msg\": \"slow output\"}]";
 
     reset_result_count();
-    slow_output_armed = FLB_TRUE;
+    cfl_atomic_store(&slow_output_stalling, FLB_FALSE);
+    cfl_atomic_store(&slow_output_armed, FLB_TRUE);
 
     ctx = flb_create();
     TEST_CHECK(ctx != NULL);
@@ -810,7 +815,7 @@ void flb_test_flush_now_http_slow_output_timeout(void)
     http_ctx = wait_for_http_server();
     TEST_CHECK_(http_ctx != NULL, "HTTP server did not become ready");
     if (http_ctx == NULL) {
-        slow_output_armed = FLB_FALSE;
+        cfl_atomic_store(&slow_output_armed, FLB_FALSE);
         flb_stop(ctx);
         flb_destroy(ctx);
         return;
@@ -831,6 +836,16 @@ void flb_test_flush_now_http_slow_output_timeout(void)
         flb_sds_destroy(payload);
         payload = NULL;
     }
+
+    for (i = 0; i < TEST_STALL_TRIES; i++) {
+        if (cfl_atomic_load(&slow_output_stalling) == FLB_TRUE) {
+            break;
+        }
+        flb_time_msleep(10);
+    }
+
+    TEST_CHECK_(cfl_atomic_load(&slow_output_stalling) == FLB_TRUE,
+                "the slow output never entered its stall");
 
     /*
      * The output is now stalling the engine thread, so this request cannot
@@ -881,7 +896,7 @@ void flb_test_flush_now_http_slow_output_timeout(void)
         flb_sds_destroy(payload);
     }
 
-    slow_output_armed = FLB_FALSE;
+    cfl_atomic_store(&slow_output_armed, FLB_FALSE);
     http_client_ctx_destroy(http_ctx);
     flb_stop(ctx);
     flb_destroy(ctx);
