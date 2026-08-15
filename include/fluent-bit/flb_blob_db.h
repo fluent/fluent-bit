@@ -20,7 +20,11 @@
 #ifndef FLB_BLOB_DB_H
 #define FLB_BLOB_DB_H
 
+#include <stdint.h>
+#include <cfl/cfl_sds.h>
 #include <fluent-bit/flb_lock.h>
+
+struct flb_config;
 
 #define SQL_PRAGMA_FOREIGN_KEYS "PRAGMA foreign_keys = ON;"
 
