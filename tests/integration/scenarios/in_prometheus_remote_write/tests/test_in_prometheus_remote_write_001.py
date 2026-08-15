@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from utils.fluent_bit_manager import FluentBitManager
+from utils.fluent_bit_manager import FluentBitManager, FluentBitStartupError
 from utils.input_pause_resume import (
     assert_connection_closed,
     is_valgrind,
@@ -148,6 +148,52 @@ def test_in_prometheus_remote_write_matrix(case, workers_enabled):
         )
         assert f"listening on 127.0.0.1:{service.receiver_port}" in receiver_log
         assert "fluentbit_input_metrics_scrapes_total" in receiver_log
+    finally:
+        service.stop()
+
+
+def test_in_prometheus_remote_write_zstd_compression():
+    """
+    The sender compresses the payload with zstd. The receiver can only decode
+    it when the body is a valid zstd frame and the Content-Encoding header
+    matches, so seeing the scraped metrics arrive exercises both.
+    """
+    service = Service("receiver_http1_cleartext.yaml", "sender_zstd.yaml")
+    service.start()
+
+    try:
+        receiver_log = service.wait_for_log(
+            service.receiver.log_file,
+            "fluentbit_input_metrics_scrapes_total",
+            timeout=40,
+            interval=1,
+        )
+        assert f"listening on 127.0.0.1:{service.receiver_port}" in receiver_log
+        assert "fluentbit_input_metrics_scrapes_total" in receiver_log
+    finally:
+        service.stop()
+
+
+def test_in_prometheus_remote_write_rejects_invalid_compression():
+    """
+    An unrecognized 'compression' value must fail during initialization. It
+    used to be treated as 'no compression' without logging anything, which
+    made a typo indistinguishable from a working configuration.
+    """
+    service = Service(
+        "receiver_http1_cleartext.yaml",
+        "sender_invalid_compression.yaml",
+    )
+    service.start(start_sender=False)
+
+    try:
+        with pytest.raises(FluentBitStartupError):
+            service.start_sender()
+
+        sender_log = _read_file(service.sender.log_file)
+        assert "invalid 'compression' value 'not_a_real_algorithm'" in sender_log
+        assert "it must be one of 'snappy', 'gzip' or 'zstd'" in sender_log
+        assert "failed to initialize 'prometheus_remote_write' plugin" in sender_log
     finally:
         service.stop()
 
