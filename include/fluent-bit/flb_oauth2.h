@@ -42,6 +42,7 @@ struct flb_oauth2_config {
     flb_sds_t token_url;
     flb_sds_t client_id;
     flb_sds_t client_secret;
+    flb_sds_t client_secret_file;
     flb_sds_t user_agent;
     flb_sds_t scope;
     flb_sds_t audience;

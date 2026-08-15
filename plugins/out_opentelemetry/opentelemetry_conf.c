@@ -449,8 +449,10 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
                 return NULL;
             }
         }
-        else if (!ctx->oauth2_config.client_secret) {
-            flb_plg_error(ctx->ins, "oauth2 basic/post require client_secret");
+        else if (!ctx->oauth2_config.client_secret &&
+                 !ctx->oauth2_config.client_secret_file) {
+            flb_plg_error(ctx->ins, "oauth2 basic/post require client_secret "
+                          "or client_secret_file");
             flb_opentelemetry_context_destroy(ctx);
             return NULL;
         }
