@@ -1717,6 +1717,7 @@ struct log_stream *get_or_create_log_stream(struct flb_cloudwatch *ctx,
     new_stream->group = flb_sds_create(group_name);
     if (new_stream->group == NULL) {
         flb_errno();
+        log_stream_destroy(new_stream);
         return NULL;
     }
 
