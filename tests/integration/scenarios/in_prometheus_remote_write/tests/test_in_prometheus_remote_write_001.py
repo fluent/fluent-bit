@@ -2,8 +2,11 @@ import os
 import time
 
 import pytest
+import requests
 
+from server.http_server import configure_http_response, data_storage, http_server_run
 from utils.fluent_bit_manager import FluentBitManager, FluentBitStartupError
+from utils.test_service import FluentBitTestService
 from utils.input_pause_resume import (
     assert_connection_closed,
     is_valgrind,
@@ -152,11 +155,95 @@ def test_in_prometheus_remote_write_matrix(case, workers_enabled):
         service.stop()
 
 
+class WireCaptureService:
+    """
+    Sends to the test suite HTTP server instead of a Fluent Bit receiver, so
+    the outbound request can be inspected before anything decodes it.
+    """
+
+    def __init__(self, config_file):
+        self.config_file = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "../config", config_file)
+        )
+        self.service = FluentBitTestService(
+            self.config_file,
+            data_storage=data_storage,
+            data_keys=["payloads", "requests"],
+            pre_start=self._start_receiver,
+            post_stop=self._stop_receiver,
+        )
+
+    def _start_receiver(self, service):
+        http_server_run(service.test_suite_http_port)
+        configure_http_response(status_code=200, body={})
+        self.service.wait_for_http_endpoint(
+            f"http://127.0.0.1:{service.test_suite_http_port}/ping",
+            timeout=10,
+            interval=0.5,
+        )
+
+    def _stop_receiver(self, service):
+        try:
+            requests.post(
+                f"http://127.0.0.1:{service.test_suite_http_port}/shutdown",
+                timeout=2,
+            )
+        except requests.RequestException:
+            pass
+
+    def start(self):
+        self.service.start()
+
+    def stop(self):
+        self.service.stop()
+
+    def wait_for_requests(self, minimum_count, timeout=30):
+        if os.environ.get("VALGRIND"):
+            timeout = max(timeout * 3, 60)
+
+        return self.service.wait_for_condition(
+            lambda: data_storage["requests"]
+            if len(data_storage["requests"]) >= minimum_count
+            else None,
+            timeout=timeout,
+            interval=0.5,
+            description=f"{minimum_count} outbound remote write requests",
+        )
+
+
+def test_in_prometheus_remote_write_zstd_content_encoding():
+    """
+    The sender must advertise the compression it actually applied.
+
+    This is checked on the wire rather than at a Fluent Bit receiver, because
+    a receiver cannot distinguish the failure case. If the zstd branch stopped
+    being applied the body would be sent uncompressed and without a
+    Content-Encoding header, and an uncompressed remote write body still
+    decodes as protobuf, so the metrics would arrive and look correct.
+    """
+    service = WireCaptureService("sender_zstd_wire.yaml")
+    service.start()
+
+    try:
+        requests_seen = service.wait_for_requests(1)
+    finally:
+        service.stop()
+
+    headers = requests_seen[0]["headers"]
+    assert headers.get("Content-Encoding") == "zstd"
+    assert headers.get("Content-Type") == "application/x-protobuf"
+
+
 def test_in_prometheus_remote_write_zstd_compression():
     """
-    The sender compresses the payload with zstd. The receiver can only decode
-    it when the body is a valid zstd frame and the Content-Encoding header
-    matches, so seeing the scraped metrics arrive exercises both.
+    The sender compresses the payload with zstd and the receiver decodes it.
+
+    Metrics arriving is not sufficient on its own. When decompression fails,
+    flb_http_request_uncompress_body() leaves the body untouched and still
+    reports success, so an uncompressed payload sent with a zstd
+    Content-Encoding header would also decode as protobuf and produce metrics.
+    That case is only distinguishable by the decompression failure the
+    receiver logs, so assert it never appears.
     """
     service = Service("receiver_http1_cleartext.yaml", "sender_zstd.yaml")
     service.start()
@@ -170,6 +257,9 @@ def test_in_prometheus_remote_write_zstd_compression():
         )
         assert f"listening on 127.0.0.1:{service.receiver_port}" in receiver_log
         assert "fluentbit_input_metrics_scrapes_total" in receiver_log
+
+        receiver_log = _read_file(service.receiver.log_file)
+        assert "[http zstd] decompression failed" not in receiver_log
     finally:
         service.stop()
 
