@@ -18,4 +18,4 @@ pipeline:
       port: ${TEST_SUITE_HTTP_PORT}
       tls: off
       uri: /data
-      compression: zstd
+      compression: ${PROM_RW_COMPRESSION}

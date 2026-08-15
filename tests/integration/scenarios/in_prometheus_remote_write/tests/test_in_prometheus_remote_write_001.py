@@ -161,7 +161,7 @@ class WireCaptureService:
     the outbound request can be inspected before anything decodes it.
     """
 
-    def __init__(self, config_file):
+    def __init__(self, config_file, extra_env=None):
         self.config_file = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../config", config_file)
         )
@@ -169,6 +169,7 @@ class WireCaptureService:
             self.config_file,
             data_storage=data_storage,
             data_keys=["payloads", "requests"],
+            extra_env=extra_env,
             pre_start=self._start_receiver,
             post_stop=self._stop_receiver,
         )
@@ -211,17 +212,24 @@ class WireCaptureService:
         )
 
 
-def test_in_prometheus_remote_write_zstd_content_encoding():
+@pytest.mark.parametrize("compression", ["snappy", "gzip", "zstd"])
+def test_in_prometheus_remote_write_compression_content_encoding(compression):
     """
     The sender must advertise the compression it actually applied.
 
     This is checked on the wire rather than at a Fluent Bit receiver, because
-    a receiver cannot distinguish the failure case. If the zstd branch stopped
-    being applied the body would be sent uncompressed and without a
+    a receiver cannot distinguish the failure case. When a compression branch
+    is not applied the body is sent uncompressed and without a
     Content-Encoding header, and an uncompressed remote write body still
     decodes as protobuf, so the metrics would arrive and look correct.
+
+    All three supported algorithms are covered because they share the same
+    fall through, so a regression in any of them fails the same silent way.
     """
-    service = WireCaptureService("sender_zstd_wire.yaml")
+    service = WireCaptureService(
+        "sender_compression_wire.yaml",
+        extra_env={"PROM_RW_COMPRESSION": compression},
+    )
     service.start()
 
     try:
@@ -230,7 +238,7 @@ def test_in_prometheus_remote_write_zstd_content_encoding():
         service.stop()
 
     headers = requests_seen[0]["headers"]
-    assert headers.get("Content-Encoding") == "zstd"
+    assert headers.get("Content-Encoding") == compression
     assert headers.get("Content-Type") == "application/x-protobuf"
 
 
