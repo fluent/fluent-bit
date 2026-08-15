@@ -1,6 +1,15 @@
-string (TOLOWER ${CMAKE_HOST_SYSTEM_NAME} WAMR_BUILD_PLATFORM)
+# Use the target system, not the build host, so cross-compiles pick the
+# right WAMR platform port.
+string (TOLOWER ${CMAKE_SYSTEM_NAME} WAMR_BUILD_PLATFORM)
 if (FLB_SYSTEM_WINDOWS)
-  enable_language(ASM_MASM)
+  if (MSVC)
+    enable_language(ASM_MASM)
+  else ()
+    # ASM_MASM is the MSVC-only assembler; MinGW and other toolchains
+    # still build WASM, using the generic C native-call wrapper the
+    # ARM64 Windows build already uses.
+    set (WAMR_BUILD_INVOKE_NATIVE_GENERAL 1)
+  endif ()
 endif()
 if (APPLE)
   add_definitions(-DBH_PLATFORM_DARWIN)
@@ -137,6 +146,14 @@ set (WAMR_ROOT_DIR ../../${FLB_PATH_LIB_WASM_MICRO_RUNTIME})
 # build out vmlib-static
 include (${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
 add_library(vmlib-static STATIC ${WAMR_RUNTIME_LIB_SOURCE})
+if (FLB_SYSTEM_WINDOWS AND NOT MSVC)
+  # WAMR's Windows platform calls PathCchCombine (win_file.c) and
+  # NtQueryTimerResolution (win_clock.c). MSVC links these via
+  # #pragma comment(lib, ...), which GCC ignores; declare them on the
+  # library that needs them so CMake orders them after vmlib-static on
+  # consumers' link lines (GNU ld resolves left to right).
+  target_link_libraries(vmlib-static PUBLIC pathcch ntdll)
+endif ()
 
 # Application related
 include (${SHARED_DIR}/utils/uncommon/shared_uncommon.cmake)

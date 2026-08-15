@@ -47,7 +47,7 @@ struct throttle_size_table
     void *lock;
 };
 
-struct throttle_size_table *create_throttle_size_table();
+struct throttle_size_table *create_throttle_size_table(size_t size);
 
 struct throttle_size_window *size_window_create(const char *name,
                                                 unsigned name_length,
