@@ -49,6 +49,7 @@ RUN apt-get update && \
     pkg-config \
     libsystemd-dev \
     zlib1g-dev \
+    libzstd-dev \
     libpq-dev \
     postgresql-server-dev-all \
     flex \
@@ -263,7 +264,7 @@ RUN apt-get update && \
     openssl \
     htop atop strace iotop sysstat ncdu logrotate hdparm pciutils psmisc tree pv \
     make tar flex bison \
-    libssl-dev libsasl2-dev libsystemd-dev zlib1g-dev libpq-dev libyaml-dev postgresql-server-dev-all \
+    libssl-dev libsasl2-dev libsystemd-dev zlib1g-dev libzstd-dev libpq-dev libyaml-dev postgresql-server-dev-all \
     && apt-get satisfy -y cmake "cmake (<< 4.0)" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
