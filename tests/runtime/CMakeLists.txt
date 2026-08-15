@@ -306,3 +306,14 @@ foreach(source_file ${CHECK_PROGRAMS})
     set_property(TARGET ${source_file_we} APPEND_STRING PROPERTY COMPILE_FLAGS "-D${o_source_file_we}")
   endif()
 endforeach()
+
+# The out_kafka runtime test includes librdkafka's public header directly, so it
+# needs the same include path the in_kafka/out_kafka plugins use. Cover both the
+# system librdkafka (pkg-config) and the bundled librdkafka build.
+if(TARGET flb-rt-out_kafka)
+  if(DEFINED KAFKA_INCLUDEDIR)
+    target_include_directories(flb-rt-out_kafka PRIVATE ${KAFKA_INCLUDEDIR}/librdkafka)
+  endif()
+  target_include_directories(flb-rt-out_kafka PRIVATE
+    ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RDKAFKA}/src)
+endif()
