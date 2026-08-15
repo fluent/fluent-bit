@@ -34,6 +34,7 @@
 
 #define FLB_OPENTELEMETRY_CONTENT_TYPE_HEADER_NAME "Content-Type"
 #define FLB_OPENTELEMETRY_MIME_PROTOBUF_LITERAL    "application/x-protobuf"
+#define FLB_OPENTELEMETRY_MIME_JSON_LITERAL        "application/json"
 
 /*
  * This lets you send log records in batches instead of a request per log record
@@ -190,6 +191,9 @@ struct opentelemetry_context {
     /* compression: zstd */
     int compress_zstd;
 
+    /* encoding: 0 = protobuf (default), 1 = JSON */
+    int use_json_encoding;
+
     /* FLB/OTLP Record accessor patterns */
     struct flb_record_accessor *ra_meta_schema;
     struct flb_record_accessor *ra_meta_resource_id;
@@ -217,5 +221,6 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                        const void *body, size_t body_len,
                        const char *tag, int tag_len,
                        const char *http_uri,
-                       const char *grpc_uri);
+                       const char *grpc_uri,
+                       const char *content_type);
 #endif
