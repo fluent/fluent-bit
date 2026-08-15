@@ -380,15 +380,6 @@ static int in_tail_init(struct flb_input_instance *in,
     /* Scan path */
     flb_tail_scan(ctx->path_list, ctx);
 
-#ifdef FLB_HAVE_SQLDB
-    /* Delete stale files that are not monitored from the database */
-    ret = flb_tail_db_stale_file_delete(in, config, ctx);
-    if (ret == -1) {
-        flb_tail_config_destroy(ctx);
-        return -1;
-    }
-#endif
-
     if (ctx->read_newly_discovered_files_from_head) {
         /*
         * After the first scan (on start time), all new files discovered needs to be
@@ -490,11 +481,66 @@ static int in_tail_init(struct flb_input_instance *in,
 }
 
 /* Pre-run callback / before the event loop */
+#ifdef FLB_HAVE_SQLDB
+struct tail_db_cleanup_context {
+    struct flb_tail_config *ctx;
+    struct flb_config *config;
+};
+
+static int tail_db_inode_is_monitored(uint64_t inode, void *data)
+{
+    struct tail_db_cleanup_context *cleanup_context = data;
+    struct mk_list *input_head;
+    struct mk_list *file_head;
+    struct flb_input_instance *input;
+    struct flb_tail_config *tail_ctx;
+    struct flb_tail_file *file;
+
+    mk_list_foreach(input_head, &cleanup_context->config->inputs) {
+        input = mk_list_entry(input_head, struct flb_input_instance, _head);
+        if (input->p != cleanup_context->ctx->ins->p ||
+            input->context == NULL) {
+            continue;
+        }
+
+        tail_ctx = input->context;
+        if (tail_ctx->db == NULL ||
+            tail_ctx->db->handler != cleanup_context->ctx->db->handler) {
+            continue;
+        }
+
+        mk_list_foreach(file_head, &tail_ctx->files_static) {
+            file = mk_list_entry(file_head, struct flb_tail_file, _head);
+            if (file->inode == inode) {
+                return FLB_TRUE;
+            }
+        }
+    }
+
+    return FLB_FALSE;
+}
+#endif
+
 static int in_tail_pre_run(struct flb_input_instance *ins,
                            struct flb_config *config, void *in_context)
 {
+#ifdef FLB_HAVE_SQLDB
+    int ret;
+    struct tail_db_cleanup_context cleanup_context;
+#endif
     struct flb_tail_config *ctx = in_context;
     (void) ins;
+    (void) config;
+
+#ifdef FLB_HAVE_SQLDB
+    cleanup_context.ctx = ctx;
+    cleanup_context.config = config;
+    ret = flb_tail_db_cleanup(ctx, tail_db_inode_is_monitored,
+                              &cleanup_context);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "db: stale file cleanup failed");
+    }
+#endif
 
     return tail_signal_manager(ctx);
 }
