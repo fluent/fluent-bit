@@ -103,6 +103,7 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
 {
     struct mk_list         *iterator;
     struct mk_http_header  *header;
+    cfl_sds_t               sds_result;
     int                     result;
     size_t chunked_size;
     size_t written_bytes = 0;
@@ -128,6 +129,27 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
 
     if (session->stream.request.path == NULL) {
         return -1;
+    }
+
+    if (session->inner_request.query_string.data != NULL &&
+        session->inner_request.query_string.len > 0) {
+        sds_result = cfl_sds_cat(session->stream.request.path, "?", 1);
+
+        if (sds_result == NULL) {
+            return -1;
+        }
+
+        session->stream.request.path = sds_result;
+
+        sds_result = cfl_sds_cat(session->stream.request.path,
+                                 session->inner_request.query_string.data,
+                                 session->inner_request.query_string.len);
+
+        if (sds_result == NULL) {
+            return -1;
+        }
+
+        session->stream.request.path = sds_result;
     }
 
     result = flb_http_request_normalize(&session->stream.request);
