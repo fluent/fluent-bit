@@ -1192,6 +1192,7 @@ int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
     int off_payload = 0;
     int off_headers_end = 0;
     int off_chunk_processed_end = 0;
+    int has_payload = 0;
     char *tmp;
     size_t new_size;
     size_t allocated;
@@ -1222,7 +1223,8 @@ int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
      * The payload is a reference to a position of 'data' buffer,
      * we need to adjust the pointer after a memory buffer size change.
      */
-    if (c->resp.payload_size > 0) {
+    if (c->resp.payload != NULL) {
+        has_payload = 1;
         off_payload = c->resp.payload - c->resp.data;
     }
 
@@ -1242,7 +1244,7 @@ int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
         if (off_chunk_processed_end > 0) {
             c->resp.chunk_processed_end = c->resp.data + off_chunk_processed_end;
         }
-        if (off_payload > 0) {
+        if (has_payload) {
             c->resp.payload = c->resp.data + off_payload;
         }
     }
