@@ -138,6 +138,45 @@ void test_http_buffer_increase()
     test_ctx_destroy(ctx);
 }
 
+void test_http_buffer_increase_consumed_payload()
+{
+    int ret;
+    size_t s;
+    size_t off;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", 80, NULL, 0);
+    TEST_CHECK(c != NULL);
+
+    flb_http_buffer_size(c, 0);
+    ret = flb_http_buffer_increase(c, 64, &s);
+    TEST_CHECK(ret == 0);
+
+    memcpy(c->resp.data, "00abc11def22ghi__PAYLOAD__8yz9900", 33);
+    c->resp.data[33] = '\0';
+    c->resp.data_len = 33;
+    c->resp.payload = c->resp.data + 15;
+    c->resp.payload_size = 0;
+    off = c->resp.payload - c->resp.data;
+
+    ret = flb_http_buffer_increase(c, 819200, &s);
+    TEST_CHECK(ret == 0);
+
+    TEST_CHECK(c->resp.payload == c->resp.data + off);
+    ret = strncmp(c->resp.payload, "__PAYLOAD__", 11);
+    TEST_CHECK(ret == 0);
+
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
 void test_http_add_get_header()
 {
     struct test_ctx *ctx;
@@ -1115,6 +1154,7 @@ void test_http_timeout_setters_preserve_upstream_io_timeout()
 
 TEST_LIST = {
     { "http_buffer_increase"  , test_http_buffer_increase},
+    { "http_buffer_increase_consumed_payload"  , test_http_buffer_increase_consumed_payload},
     { "add_get_header"        , test_http_add_get_header},
     { "set_keepalive"         , test_http_set_keepalive},
     { "strip_port_from_host"  , test_http_strip_port_from_host},
