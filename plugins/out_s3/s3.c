@@ -208,9 +208,9 @@ static int s3_format_is_columnar(int s3_format)
  * aws-compress columnar format identifier
  *
  * Translates FLB_S3_FORMAT_* to the FLB_AWS_COMPRESS_FORMAT_* identifier
- * consumed by out_s3_compress_columnar(), keeping the compression layer
- * decoupled from the plugin's format enum. Returns -1 for any format that is
- * not a known columnar format, so a future format added to
+ * consumed by flb_aws_compression_compress_columnar(), keeping the
+ * compression layer decoupled from the plugin's format enum. Returns -1 for
+ * any format that is not a known columnar format, so a future format added to
  * s3_format_is_columnar() but not mapped here fails loudly instead of being
  * silently emitted as Arrow.
  */
@@ -1527,9 +1527,10 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
 
 #ifdef FLB_HAVE_ARROW
     if (s3_format_is_columnar(ctx->s3_format)) {
-        ret = out_s3_compress_columnar(s3_format_to_aws_compress_format(ctx->s3_format),
-                                       body, body_size, &payload_buf,
-                                       &payload_size, ctx->compression);
+        ret = flb_aws_compression_compress_columnar(
+                    s3_format_to_aws_compress_format(ctx->s3_format),
+                    body, body_size, &payload_buf,
+                    &payload_size, ctx->compression);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to convert data to columnar "
                           "format");
@@ -1777,7 +1778,7 @@ static int put_all_chunks(struct flb_s3 *ctx)
 
 #ifdef FLB_HAVE_ARROW
             if (s3_format_is_columnar(ctx->s3_format)) {
-                ret = out_s3_compress_columnar(
+                ret = flb_aws_compression_compress_columnar(
                             s3_format_to_aws_compress_format(ctx->s3_format),
                             buffer, buffer_size,
                             &payload_buf, &payload_size,
