@@ -239,9 +239,10 @@ static GArrowResizableBuffer* table_to_parquet_buffer(GArrowTable *table,
 }
 #endif
 
-int out_s3_compress_columnar(int columnar_format, void *json, size_t size,
-                             void **out_buf, size_t *out_size,
-                             int compression_type)
+int flb_aws_compression_compress_columnar(int columnar_format,
+                                          void *json, size_t size,
+                                          void **out_buf, size_t *out_size,
+                                          int compression_type)
 {
         GArrowTable *table;
         GArrowResizableBuffer *buffer;
@@ -319,4 +320,13 @@ int out_s3_compress_columnar(int columnar_format, void *json, size_t size,
         g_object_unref(buffer);
         g_bytes_unref(bytes);
         return 0;
+}
+
+int out_s3_compress_columnar(int columnar_format, void *json, size_t size,
+                             void **out_buf, size_t *out_size,
+                             int compression_type)
+{
+        return flb_aws_compression_compress_columnar(
+                        columnar_format, json, size,
+                        out_buf, out_size, compression_type);
 }
