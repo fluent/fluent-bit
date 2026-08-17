@@ -752,6 +752,21 @@ static void test_chunk_restore_alias_plugin_match_multiple()
                                        http_out.id,
                                        config.router) == 0);
 
+    /* A saturated counter must remain over the configured storage limit. */
+    stdout_one.total_limit_size = 1024;
+    stdout_one.fs_chunks_size = SIZE_MAX - 1;
+    stdout_two.total_limit_size = (size_t) -1;
+    http_out.total_limit_size = (size_t) -1;
+
+    flb_input_chunk_update_output_instances(ic, 2);
+
+    TEST_CHECK(stdout_one.fs_chunks_size == SIZE_MAX);
+    TEST_CHECK(flb_input_chunk_has_overlimit_routes(ic, 1) == FLB_TRUE);
+    TEST_CHECK(flb_input_chunk_find_space_new_data(ic, 1) == 1);
+
+    stdout_one.fs_chunks_size = 0;
+    ic->fs_counted = FLB_FALSE;
+
 cleanup:
     cleanup_test_routing_scenario(ic, &stdout_one, &stdout_two, &http_out,
                                   &in, &config, chunk, ctx, config_ready,
