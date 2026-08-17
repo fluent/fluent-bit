@@ -763,6 +763,10 @@ int flb_parser_logfmt_do(struct flb_parser *parser,
                          void **out_buf, size_t *out_size,
                          struct flb_time *out_time);
 
+int flb_parser_cri_do(struct flb_parser *parser,
+                         const char *buf, size_t length,
+                         void **out_buf, size_t *out_size,
+                         struct flb_time *out_time);
 /*
  * This function is used to free all aspects of a parser
  * which is provided by the caller of flb_create_parser.
@@ -861,6 +865,9 @@ struct flb_parser *flb_parser_create_with_time_zone(const char *name,
     }
     else if (strcasecmp(format, "logfmt") == 0) {
         p->type = FLB_PARSER_LOGFMT;
+    }
+    else if (strcasecmp(format, "cri") == 0) {
+        p->type = FLB_PARSER_CRI;
     }
     else {
         flb_error("[parser:%s] Invalid format %s", name, format);
@@ -1799,6 +1806,10 @@ int flb_parser_do(struct flb_parser *parser, const char *buf, size_t length,
     }
     else if (parser->type == FLB_PARSER_LOGFMT) {
         return flb_parser_logfmt_do(parser, buf, length,
+                                  out_buf, out_size, out_time);
+    }
+    else if (parser->type == FLB_PARSER_CRI) {
+        return flb_parser_cri_do(parser, buf, length,
                                   out_buf, out_size, out_time);
     }
 
