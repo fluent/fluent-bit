@@ -75,7 +75,7 @@ static inline int flb_lua_metadata_init(struct flb_lua_metadata *meta)
 /* convert from negative index to positive index */
 static inline int flb_lua_absindex(lua_State *l , int index)
 {
-#if defined(LUA_VERSION_NUM) && LUA_VERSION_NUM < 520
+#if defined(LUA_VERSION_NUM) && LUA_VERSION_NUM < 502
     if (index < 0) {
         index = lua_gettop(l) + index + 1;
     }
