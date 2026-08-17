@@ -19,7 +19,6 @@
 
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_crypto.h>
-#include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_jsmn.h>
@@ -28,6 +27,7 @@
 #include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_unescape.h>
 #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/aws/flb_aws_compress.h>
 
 #include "gcs.h"
 #include "gcs_store.h"
@@ -36,6 +36,40 @@
 #include <sys/stat.h>
 
 static int gcs_ctx_destroy(void *data, struct flb_config *config);
+
+static int enable_parquet_format(struct flb_gcs *ctx)
+{
+#ifdef FLB_HAVE_ARROW_PARQUET
+    ctx->gcs_format = FLB_GCS_FORMAT_PARQUET;
+    return 0;
+#else
+    flb_plg_error(ctx->ins,
+                  "parquet format requires parquet-glib at compile time");
+    return -1;
+#endif
+}
+
+static int parse_output_format(const char *format)
+{
+    if (strcasecmp(format, "parquet") == 0) {
+        return FLB_GCS_FORMAT_PARQUET;
+    }
+
+    return flb_pack_to_json_format_type(format);
+}
+
+static int validate_parquet_compression(int compression_type)
+{
+    switch (compression_type) {
+    case FLB_AWS_COMPRESS_NONE:
+    case FLB_AWS_COMPRESS_SNAPPY:
+    case FLB_AWS_COMPRESS_GZIP:
+    case FLB_AWS_COMPRESS_ZSTD:
+        return 0;
+    default:
+        return -1;
+    }
+}
 
 static const char *get_predefined_acl(const char *canned_acl)
 {
@@ -782,9 +816,20 @@ static int gcs_upload_object(struct flb_gcs *ctx,
     };
     char final_body_md5[25];
 
+    if (ctx->gcs_format == FLB_GCS_FORMAT_PARQUET &&
+        flb_output_get_property("content_type", ctx->ins) == NULL) {
+        content_type_header.val = "application/vnd.apache.parquet";
+        content_type_header.val_len = 30;
+    }
+    else {
+        content_type_header.val = ctx->content_type;
+        content_type_header.val_len = flb_sds_len(ctx->content_type);
+    }
+
     if (gcs_under_test_mode() == FLB_TRUE) {
         mock_gcs_call_increment_counter("UploadObject");
         gcs_setenv("TEST_GCS_LAST_URI", uri);
+        gcs_setenv("TEST_GCS_LAST_CONTENT_TYPE", content_type_header.val);
         if (body_size >= 2 &&
             (unsigned char) body[0] == 0x1f &&
             (unsigned char) body[1] == 0x8b) {
@@ -792,6 +837,14 @@ static int gcs_upload_object(struct flb_gcs *ctx,
         }
         else {
             gcs_setenv("TEST_GCS_LAST_BODY_GZIP", "false");
+        }
+        if (body_size >= 8 &&
+            memcmp(body, "PAR1", 4) == 0 &&
+            memcmp(body + body_size - 4, "PAR1", 4) == 0) {
+            gcs_setenv("TEST_GCS_LAST_BODY_PARQUET", "true");
+        }
+        else {
+            gcs_setenv("TEST_GCS_LAST_BODY_PARQUET", "false");
         }
 
         if (getenv("TEST_GCS_UPLOAD_ERROR") != NULL) {
@@ -813,8 +866,6 @@ static int gcs_upload_object(struct flb_gcs *ctx,
         return -1;
     }
 
-    content_type_header.val = ctx->content_type;
-    content_type_header.val_len = flb_sds_len(ctx->content_type);
     flb_http_add_header(c, content_type_header.key, content_type_header.key_len,
                         content_type_header.val, content_type_header.val_len);
     flb_http_add_header(c, "Authorization", 13, auth, flb_sds_len(auth));
@@ -859,8 +910,8 @@ static int upload_data(struct flb_gcs *ctx,
     flb_sds_t gcs_key_encoded;
     flb_sds_t uri;
     flb_sds_t tmp;
-    void *gz_data = NULL;
-    size_t gz_size = 0;
+    void *compressed_data = NULL;
+    size_t compressed_size = 0;
     char *upload_body;
     size_t upload_size;
     char random_hex[9];
@@ -955,7 +1006,8 @@ static int upload_data(struct flb_gcs *ctx,
     }
     uri = tmp;
 
-    if (ctx->compression_type == FLB_GCS_COMPRESSION_GZIP) {
+    if (ctx->gcs_format != FLB_GCS_FORMAT_PARQUET &&
+        ctx->compression_type == FLB_AWS_COMPRESS_GZIP) {
         tmp = flb_sds_cat(uri, "&contentEncoding=gzip", 21);
         if (!tmp) {
             flb_sds_destroy(uri);
@@ -978,10 +1030,15 @@ static int upload_data(struct flb_gcs *ctx,
 
     upload_body = buffer;
     upload_size = buffer_size;
-    if (ctx->compression_type == FLB_GCS_COMPRESSION_GZIP) {
-        ret = flb_gzip_compress(buffer, buffer_size, &gz_data, &gz_size);
-        if (ret != 0 || !gz_data) {
-            flb_plg_error(ctx->ins, "could not gzip buffered data");
+#ifdef FLB_HAVE_ARROW_PARQUET
+    if (ctx->gcs_format == FLB_GCS_FORMAT_PARQUET) {
+        ret = flb_aws_compression_compress_columnar(
+                    FLB_AWS_COMPRESS_FORMAT_PARQUET,
+                    buffer, buffer_size,
+                    &compressed_data, &compressed_size,
+                    ctx->compression_type);
+        if (ret != 0 || !compressed_data) {
+            flb_plg_error(ctx->ins, "could not convert buffered data to parquet");
             flb_sds_destroy(auth);
             flb_sds_destroy(uri);
             if (ctx->key_fmt_has_seq_index && ctx->seq_index > 0) {
@@ -991,16 +1048,36 @@ static int upload_data(struct flb_gcs *ctx,
             return -1;
         }
 
-        upload_body = gz_data;
-        upload_size = gz_size;
+        upload_body = compressed_data;
+        upload_size = compressed_size;
+    }
+    else
+#endif
+    if (ctx->compression_type != FLB_AWS_COMPRESS_NONE) {
+        ret = flb_aws_compression_compress(ctx->compression_type,
+                                           buffer, buffer_size,
+                                           &compressed_data, &compressed_size);
+        if (ret != 0 || !compressed_data) {
+            flb_plg_error(ctx->ins, "could not compress buffered data");
+            flb_sds_destroy(auth);
+            flb_sds_destroy(uri);
+            if (ctx->key_fmt_has_seq_index && ctx->seq_index > 0) {
+                ctx->seq_index--;
+                write_seq_index(ctx->seq_index_file, ctx->seq_index);
+            }
+            return -1;
+        }
+
+        upload_body = compressed_data;
+        upload_size = compressed_size;
         flb_plg_debug(ctx->ins,
                       "Pre-compression chunk size is %zu, After compression, chunk is %zu bytes",
-                      buffer_size, gz_size);
+                      buffer_size, compressed_size);
     }
 
     ret = gcs_upload_object(ctx, auth, uri, upload_body, upload_size);
-    if (gz_data) {
-        flb_free(gz_data);
+    if (compressed_data) {
+        flb_free(compressed_data);
     }
     flb_sds_destroy(auth);
     flb_sds_destroy(uri);
@@ -1312,6 +1389,7 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
         goto error;
     }
     ctx->out_format = FLB_PACK_JSON_FORMAT_LINES;
+    ctx->gcs_format = FLB_GCS_FORMAT_JSON_LINES;
     ctx->json_date_format = FLB_PACK_JSON_DATE_DOUBLE;
     if (ctx->content_type == NULL) {
         ctx->content_type = flb_sds_create("application/json");
@@ -1320,11 +1398,47 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
         }
     }
 
-    tmp = flb_output_get_property("compression", ins);
-    if (tmp && strcasecmp(tmp, "gzip") == 0) {
-        ctx->compression_type = FLB_GCS_COMPRESSION_GZIP;
+    tmp = flb_output_get_property("format", ins);
+    if (tmp) {
+        ret = parse_output_format(tmp);
+        if (ret == FLB_GCS_FORMAT_PARQUET) {
+            if (enable_parquet_format(ctx) == -1) {
+                goto error;
+            }
+        }
+        else if (ret == FLB_PACK_JSON_FORMAT_JSON) {
+            flb_plg_warn(ctx->ins,
+                         "'json' format is interpreted as 'json_lines'");
+        }
+        else if (ret != FLB_PACK_JSON_FORMAT_LINES) {
+            flb_plg_error(ctx->ins, "unsupported format '%s'", tmp);
+            goto error;
+        }
     }
-    else if (tmp && strcasecmp(tmp, "none") != 0) {
+
+    tmp = flb_output_get_property("compression", ins);
+    if (!tmp || strcasecmp(tmp, "none") == 0) {
+        ctx->compression_type = FLB_AWS_COMPRESS_NONE;
+    }
+    else {
+        ret = flb_aws_compression_get_type(tmp);
+        if (ret == -1) {
+            flb_plg_error(ins, "unsupported compression type '%s'", tmp);
+            goto error;
+        }
+        ctx->compression_type = ret;
+    }
+
+    if (ctx->gcs_format == FLB_GCS_FORMAT_PARQUET) {
+        if (validate_parquet_compression(ctx->compression_type) != 0) {
+            flb_plg_error(ins,
+                          "'%s' is not a supported parquet compression codec",
+                          tmp);
+            goto error;
+        }
+    }
+    else if (ctx->compression_type != FLB_AWS_COMPRESS_NONE &&
+             ctx->compression_type != FLB_AWS_COMPRESS_GZIP) {
         flb_plg_error(ins, "unsupported compression type '%s'", tmp);
         goto error;
     }
@@ -1474,6 +1588,12 @@ static int cb_gcs_exit(void *data, struct flb_config *config)
 
 static struct flb_config_map config_map[] = {
     {
+     FLB_CONFIG_MAP_STR, "format", "json_lines",
+     0, FLB_FALSE, 0,
+     "Output format. Supported values: json_lines and parquet. When format is "
+     "parquet, compression selects the page-level codec."
+    },
+    {
      FLB_CONFIG_MAP_STR, "bucket", NULL,
      0, FLB_TRUE, offsetof(struct flb_gcs, bucket),
      "GCS bucket."
@@ -1526,7 +1646,8 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "content_type", "application/json",
      0, FLB_TRUE, offsetof(struct flb_gcs, content_type),
-     "Content type."
+     "Content type. Defaults to application/json for JSON lines and "
+     "application/vnd.apache.parquet for Parquet."
     },
     {
      FLB_CONFIG_MAP_STR, "google_service_credentials", NULL,
@@ -1541,7 +1662,8 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compression", "none",
      0, FLB_FALSE, 0,
-     "Compression: none or gzip."
+     "Compression type. JSON lines support none and gzip. Parquet supports "
+     "none, snappy, gzip, and zstd."
     },
     {
      FLB_CONFIG_MAP_BOOL, "unify_tag", "false",
