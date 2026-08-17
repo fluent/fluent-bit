@@ -318,6 +318,9 @@ static int package_content(struct flb_ml_stream *mst,
             if (ret == FLB_MULTILINE_TRUNCATED) {
                 /* Buffer limit reached. Flush now to emit the truncated record. */
                 truncated = FLB_TRUE;
+                if (metadata != NULL) {
+                    flb_ml_stream_group_add_metadata(stream_group, metadata);
+                }
                 ret = flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
                 if (ret == -1) {
                     return -1;
@@ -363,6 +366,9 @@ static int package_content(struct flb_ml_stream *mst,
         if (ret == FLB_MULTILINE_TRUNCATED) {
             /* Buffer limit reached. Flush now to emit the truncated record. */
             truncated = FLB_TRUE;
+            if (metadata != NULL) {
+                flb_ml_stream_group_add_metadata(stream_group, metadata);
+            }
             ret = flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
             if (ret == -1) {
                 return -1;
