@@ -143,8 +143,130 @@ void flb_test_gcs_upload_success(void)
     unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
     unsetenv("TEST_GCS_LAST_URI");
     unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    unsetenv("TEST_GCS_LAST_BODY_PARQUET");
+    unsetenv("TEST_GCS_LAST_CONTENT_TYPE");
     flb_free(store_dir);
 }
+
+#ifdef FLB_HAVE_ARROW_PARQUET
+void flb_test_gcs_upload_parquet_zstd(void)
+{
+    int ret;
+    int call_count;
+    int in_ffd;
+    int out_ffd;
+    char *call_count_str;
+    char *store_dir;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-parquet-zstd-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "3s", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "gcs_key_format", "logs/$TAG", NULL);
+    flb_output_set(ctx, out_ffd, "static_file_path", "true", NULL);
+    flb_output_set(ctx, out_ffd, "format", "parquet", NULL);
+    flb_output_set(ctx, out_ffd, "compression", "zstd", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+    sleep(5);
+
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 1,
+                "Expected 1 UploadObject call, got %d", call_count);
+    TEST_CHECK_(getenv("TEST_GCS_LAST_URI") != NULL,
+                "Expected the mock upload URI to be captured");
+    if (getenv("TEST_GCS_LAST_URI")) {
+        TEST_CHECK(strcmp(getenv("TEST_GCS_LAST_URI"),
+                          "/upload/storage/v1/b/fluent/o?uploadType=media&"
+                          "name=logs%2Ftest") == 0);
+    }
+    TEST_CHECK_(getenv("TEST_GCS_LAST_BODY_PARQUET") != NULL,
+                "Expected the mock upload body format to be captured");
+    if (getenv("TEST_GCS_LAST_BODY_PARQUET")) {
+        TEST_CHECK(strcmp(getenv("TEST_GCS_LAST_BODY_PARQUET"), "true") == 0);
+    }
+    TEST_CHECK_(getenv("TEST_GCS_LAST_BODY_GZIP") != NULL,
+                "Expected the mock upload body encoding to be captured");
+    if (getenv("TEST_GCS_LAST_BODY_GZIP")) {
+        TEST_CHECK(strcmp(getenv("TEST_GCS_LAST_BODY_GZIP"), "false") == 0);
+    }
+    TEST_CHECK_(getenv("TEST_GCS_LAST_CONTENT_TYPE") != NULL,
+                "Expected the mock upload content type to be captured");
+    if (getenv("TEST_GCS_LAST_CONTENT_TYPE")) {
+        TEST_CHECK(strcmp(getenv("TEST_GCS_LAST_CONTENT_TYPE"),
+                          "application/vnd.apache.parquet") == 0);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    unsetenv("TEST_GCS_LAST_BODY_PARQUET");
+    unsetenv("TEST_GCS_LAST_CONTENT_TYPE");
+    flb_free(store_dir);
+}
+#endif
+
+#ifndef FLB_HAVE_ARROW_PARQUET
+void flb_test_gcs_rejects_parquet_without_support(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    char *store_dir;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-no-parquet-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "format", "parquet", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+
+    flb_destroy(ctx);
+    flb_free(store_dir);
+}
+#endif
 
 void flb_test_gcs_rejects_invalid_configuration(void)
 {
@@ -300,6 +422,8 @@ void flb_test_gcs_upload_error(void)
     unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
     unsetenv("TEST_GCS_LAST_URI");
     unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    unsetenv("TEST_GCS_LAST_BODY_PARQUET");
+    unsetenv("TEST_GCS_LAST_CONTENT_TYPE");
     flb_free(store_dir);
 }
 
@@ -387,6 +511,8 @@ void flb_test_gcs_shutdown_preserves_pending_upload(void)
     unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
     unsetenv("TEST_GCS_LAST_URI");
     unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    unsetenv("TEST_GCS_LAST_BODY_PARQUET");
+    unsetenv("TEST_GCS_LAST_CONTENT_TYPE");
     flb_free(store_dir);
 }
 
@@ -555,6 +681,11 @@ TEST_LIST = {
     {"jwt_signing", flb_test_gcs_jwt_signing},
     {"uri_encode_object_name", flb_test_gcs_uri_encode_object_name},
     {"upload_success", flb_test_gcs_upload_success},
+#ifdef FLB_HAVE_ARROW_PARQUET
+    {"upload_parquet_zstd", flb_test_gcs_upload_parquet_zstd},
+#else
+    {"rejects_parquet_without_support", flb_test_gcs_rejects_parquet_without_support},
+#endif
     {"rejects_invalid_configuration", flb_test_gcs_rejects_invalid_configuration},
     {"rejects_invalid_compression", flb_test_gcs_rejects_invalid_compression},
     {"accepts_extra_credential_fields", flb_test_gcs_accepts_extra_credential_fields},
