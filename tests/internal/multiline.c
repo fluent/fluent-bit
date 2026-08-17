@@ -2251,6 +2251,125 @@ static void test_buffer_limit_truncation_docker()
     flb_config_exit(config);
 }
 
+/*
+ * Verifies multiline_buffer_limit truncation preserves metadata from
+ * fragments already processed.
+ */
+static void test_buffer_limit_truncation_metadata()
+{
+    int ret;
+    int i;
+    uint64_t stream_id;
+    struct flb_config *config;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct flb_time tm;
+    int root_type;
+    char body_json[128];
+    char meta_json[64];
+    char *body_buf;
+    char *meta_buf;
+    size_t body_size;
+    size_t meta_size;
+    msgpack_sbuffer out_sbuf;
+    msgpack_unpacked body_result;
+    msgpack_unpacked meta_result;
+    flb_sds_t json;
+    size_t off;
+
+    struct {
+        char *log;
+        char *tag;
+    } frags[4] = {
+        {"2026-08-14T18:57:50.904275087+00:00 stdout P AAAAAAAAAA", "frag1"},
+        {"2026-08-14T18:57:51.904275088+00:00 stdout P BBBBBBBBBB", "frag2"},
+        /*
+         * The third fragment pushes past the 25 limit and should cause
+         * truncation.
+         */
+        {"2026-08-14T18:57:52.904275089+00:00 stdout P CCCCCCCCCC", "frag3"},
+        {"2026-08-14T18:57:53.904275090+00:00 stdout F DDDDDDDDDD", "frag4"},
+    };
+
+    config = flb_config_init();
+    if (config->multiline_buffer_limit) {
+        flb_free(config->multiline_buffer_limit);
+    }
+    config->multiline_buffer_limit = flb_strdup("25");
+
+    ml = flb_ml_create(config, "cri-metadata-test");
+    TEST_CHECK(ml != NULL);
+
+    mlp_i = flb_ml_parser_instance_create(ml, "cri");
+    TEST_CHECK(mlp_i != NULL);
+
+    msgpack_sbuffer_init(&out_sbuf);
+
+    ret = flb_ml_stream_create(ml, "cri", -1, flush_callback_to_buf,
+                               (void *) &out_sbuf, &stream_id);
+    TEST_CHECK(ret == 0);
+
+    flb_time_get(&tm);
+
+    for (i = 0; i < 4; i++) {
+        snprintf(body_json, sizeof(body_json), "{\"log\": \"%s\"}", frags[i].log);
+        ret = flb_pack_json(body_json, strlen(body_json), &body_buf, &body_size,
+                            &root_type, NULL);
+        TEST_CHECK(ret != -1);
+
+        /*
+         * Add individual metadata in each fragment, different from one
+         * another.
+         */
+        snprintf(meta_json, sizeof(meta_json), "{\"container_id\": \"%s\"}",
+                 frags[i].tag);
+        ret = flb_pack_json(meta_json, strlen(meta_json), &meta_buf, &meta_size,
+                            &root_type, NULL);
+        TEST_CHECK(ret != -1);
+
+        off = 0;
+        msgpack_unpacked_init(&body_result);
+        ret = msgpack_unpack_next(&body_result, body_buf, body_size, &off);
+        TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+
+        off = 0;
+        msgpack_unpacked_init(&meta_result);
+        ret = msgpack_unpack_next(&meta_result, meta_buf, meta_size, &off);
+        TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+
+        ret = flb_ml_append_object(ml, stream_id, &tm, &meta_result.data,
+                                   &body_result.data);
+        if (i == 2) {
+            /*
+             * Expect a truncation happening while processing the third
+             * fragment.
+             */
+            TEST_CHECK(ret == FLB_MULTILINE_TRUNCATED);
+        }
+        else {
+            TEST_CHECK(ret == FLB_MULTILINE_OK);
+        }
+
+        msgpack_unpacked_destroy(&body_result);
+        msgpack_unpacked_destroy(&meta_result);
+        flb_free(body_buf);
+        flb_free(meta_buf);
+    }
+
+    /*
+     * Confirm that the third fragment's metadata is preserved after
+     * truncation.
+     */
+    json = flb_msgpack_raw_to_json_sds(out_sbuf.data, out_sbuf.size, FLB_FALSE);
+    TEST_CHECK(json != NULL);
+    TEST_CHECK(json && strstr(json, "frag3") != NULL);
+    flb_sds_destroy(json);
+    msgpack_sbuffer_destroy(&out_sbuf);
+
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
     /* Normal features tests */
     { "parser_docker",  test_parser_docker},
@@ -2266,6 +2385,7 @@ TEST_LIST = {
     { "buffer_limit_truncation", test_buffer_limit_truncation},
     { "buffer_limit_truncation_cri", test_buffer_limit_truncation_cri},
     { "buffer_limit_truncation_docker", test_buffer_limit_truncation_docker},
+    { "buffer_limit_truncation_metadata", test_buffer_limit_truncation_metadata},
     { "buffer_limit_disabled", test_buffer_limit_disabled},
     { "known_bug_multi_group_flush_only_first_group",
       test_known_bug_multi_group_flush_only_first_group},
