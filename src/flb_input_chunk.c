@@ -63,6 +63,34 @@
  */
 #define FLB_INPUT_CHUNK_FILE_HEADER_SIZE 24
 
+void flb_input_chunk_output_size_subtract(struct flb_output_instance *o_ins,
+                                          size_t bytes)
+{
+    if (bytes > o_ins->fs_chunks_size) {
+        flb_warn("[input chunk] filesystem chunk accounting underflow for output %s: "
+                 "current=%zu, subtract=%zu; resetting to zero",
+                 flb_output_name(o_ins), o_ins->fs_chunks_size, bytes);
+        o_ins->fs_chunks_size = 0;
+        return;
+    }
+
+    o_ins->fs_chunks_size -= bytes;
+}
+
+static void input_chunk_output_size_add(struct flb_output_instance *o_ins,
+                                        size_t bytes)
+{
+    if (bytes > SIZE_MAX - o_ins->fs_chunks_size) {
+        flb_warn("[input chunk] filesystem chunk accounting overflow for output %s: "
+                 "current=%zu, add=%zu; saturating at maximum",
+                 flb_output_name(o_ins), o_ins->fs_chunks_size, bytes);
+        o_ins->fs_chunks_size = SIZE_MAX;
+        return;
+    }
+
+    o_ins->fs_chunks_size += bytes;
+}
+
 static int logs_tag_records_metrics_enabled(struct flb_input_instance *in)
 {
     if (in->telemetry_metrics_logs_tag_records != -1) {
@@ -589,7 +617,7 @@ static int flb_input_chunk_release_space(
                                           input_plugin->config->router);
 
                 FS_CHUNK_SIZE_DEBUG_MOD(output_plugin, old_input_chunk, chunk_size);
-                output_plugin->fs_chunks_size -= chunk_size;
+                flb_input_chunk_output_size_subtract(output_plugin, (size_t) chunk_size);
 
                 chunk_destroy_flag = flb_routes_mask_is_empty(
                                                     old_input_chunk->routes_mask,
@@ -807,7 +835,7 @@ int flb_input_chunk_release_route(struct flb_input_chunk *ic,
         }
 
         FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, bytes);
-        o_ins->fs_chunks_size -= bytes;
+        flb_input_chunk_output_size_subtract(o_ins, (size_t) bytes);
     }
 
     flb_routes_mask_clear_bit(ic->routes_mask,
@@ -2590,7 +2618,7 @@ int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic,
                                     o_ins->config->router) != 0) {
             if (ic->fs_counted == FLB_TRUE) {
                 FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, -bytes);
-                o_ins->fs_chunks_size -= bytes;
+                flb_input_chunk_output_size_subtract(o_ins, (size_t) bytes);
                 flb_debug("[input chunk] remove chunk %s with %ld bytes from plugin %s, "
                           "the updated fs_chunks_size is %ld bytes", flb_input_chunk_get_name(ic),
                           bytes, o_ins->name, o_ins->fs_chunks_size);
@@ -2676,7 +2704,7 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
                                     o_ins->config->router) != 0) {
             if (ic->fs_counted == FLB_TRUE) {
                 FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, -bytes);
-                o_ins->fs_chunks_size -= bytes;
+                flb_input_chunk_output_size_subtract(o_ins, (size_t) bytes);
                 flb_debug("[input chunk] remove chunk %s with %ld bytes from plugin %s, "
                           "the updated fs_chunks_size is %ld bytes", flb_input_chunk_get_name(ic),
                           bytes, o_ins->name, o_ins->fs_chunks_size);
@@ -3170,9 +3198,9 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     size_t dropped_chunks;
     size_t dropped_bytes;
     size_t content_size;
-    size_t real_diff;
-    size_t real_size;
-    size_t pre_real_size;
+    ssize_t real_diff;
+    ssize_t real_size;
+    ssize_t pre_real_size;
     struct flb_input_chunk *ic;
     struct flb_storage_input *si;
     void  *filtered_data_buffer;
@@ -3464,7 +3492,13 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     }
 
     real_size = flb_input_chunk_get_real_size(ic);
-    real_diff = real_size - pre_real_size;
+    if (real_size >= 0 && pre_real_size >= 0) {
+        real_diff = real_size - pre_real_size;
+    }
+    else {
+        real_diff = 0;
+    }
+
     if (real_diff != 0) {
         flb_trace("[input chunk] update output instances with new chunk size diff=%zd, records=%zu, input=%s",
                   real_diff, n_records, flb_input_name(in));
@@ -3724,8 +3758,8 @@ int flb_input_chunk_ring_buffer_enqueue_log_routing(struct flb_input_instance *i
 const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
 {
     int ret;
-    size_t pre_size;
-    size_t post_size;
+    ssize_t pre_size;
+    ssize_t post_size;
     ssize_t diff_size;
     char *buf = NULL;
 
@@ -3767,7 +3801,7 @@ const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
     ic->busy = FLB_TRUE;
 
     post_size = flb_input_chunk_get_real_size(ic);
-    if (post_size != pre_size) {
+    if (pre_size >= 0 && post_size >= 0 && post_size != pre_size) {
         diff_size = post_size - pre_size;
         flb_input_chunk_update_output_instances(ic, diff_size);
     }
@@ -3858,10 +3892,18 @@ int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
  * the total number of bytes in use after ingesting the new data.
  */
 void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic,
-                                             size_t chunk_size)
+                                             ssize_t chunk_size)
 {
+    size_t bytes;
     struct mk_list *head;
     struct flb_output_instance *o_ins;
+
+    if (chunk_size < 0) {
+        bytes = (size_t) (-(chunk_size + 1)) + 1;
+    }
+    else {
+        bytes = (size_t) chunk_size;
+    }
 
     /* for each output plugin, we update the fs_chunks_size */
     mk_list_foreach(head, &ic->in->config->outputs) {
@@ -3877,12 +3919,21 @@ void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic,
              * if there is match on any index of 1's in the binary, it indicates
              * that the input chunk will flush to this output instance
              */
-            FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, chunk_size);
-            o_ins->fs_chunks_size += chunk_size;
-            ic->fs_counted = FLB_TRUE;
+            flb_trace("[input chunk] output %s fs_chunks_size=%zu adjustment=%zd",
+                      o_ins->name, o_ins->fs_chunks_size, chunk_size);
 
-            flb_trace("[input chunk] chunk %s update plugin %s fs_chunks_size by %ld bytes, "
-                      "the current fs_chunks_size is %ld bytes", flb_input_chunk_get_name(ic),
+            if (chunk_size < 0) {
+                flb_input_chunk_output_size_subtract(o_ins, bytes);
+            }
+            else {
+                input_chunk_output_size_add(o_ins, bytes);
+                if (chunk_size > 0) {
+                    ic->fs_counted = FLB_TRUE;
+                }
+            }
+
+            flb_trace("[input chunk] updated plugin %s fs_chunks_size by %zd bytes, "
+                      "the current fs_chunks_size is %zu bytes",
                       o_ins->name, chunk_size, o_ins->fs_chunks_size);
         }
     }
