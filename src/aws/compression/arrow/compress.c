@@ -39,6 +39,34 @@ static GArrowCompressionType compression_type_to_garrow(int compression_type)
         }
 }
 
+static int validate_columnar_compression(int columnar_format,
+                                         int compression_type)
+{
+        if (columnar_format == FLB_AWS_COMPRESS_FORMAT_PARQUET) {
+                switch (compression_type) {
+                case FLB_AWS_COMPRESS_NONE:
+                case FLB_AWS_COMPRESS_SNAPPY:
+                case FLB_AWS_COMPRESS_GZIP:
+                case FLB_AWS_COMPRESS_ZSTD:
+                        return 0;
+                default:
+                        return -1;
+                }
+        }
+
+        if (columnar_format == FLB_AWS_COMPRESS_FORMAT_ARROW) {
+                switch (compression_type) {
+                case FLB_AWS_COMPRESS_NONE:
+                case FLB_AWS_COMPRESS_ZSTD:
+                        return 0;
+                default:
+                        return -1;
+                }
+        }
+
+        return -1;
+}
+
 static int choose_block_size(size_t size)
 {
     int block_size = 8 * 1024 * 1024;
@@ -250,6 +278,14 @@ int flb_aws_compression_compress_columnar(int columnar_format,
         gconstpointer ptr;
         gsize len;
         uint8_t *buf;
+
+        if (validate_columnar_compression(columnar_format,
+                                          compression_type) != 0) {
+                flb_error("[aws][compress] unsupported compression type %d "
+                          "for columnar format %d",
+                          compression_type, columnar_format);
+                return -1;
+        }
 
         table = parse_json((uint8_t *) json, size);
         if (table == NULL) {
