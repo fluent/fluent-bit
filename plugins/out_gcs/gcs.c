@@ -32,6 +32,7 @@
 #include "gcs.h"
 #include "gcs_store.h"
 
+#include <ctype.h>
 #include <limits.h>
 #include <sys/stat.h>
 
@@ -1295,6 +1296,8 @@ static int flush_init(struct flb_gcs *ctx)
 static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *config, void *data)
 {
     int ret;
+    size_t index;
+    flb_sds_t normalized_compression;
     struct flb_gcs *ctx;
     const char *tmp;
     (void) data;
@@ -1417,11 +1420,29 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
     }
 
     tmp = flb_output_get_property("compression", ins);
-    if (!tmp || strcasecmp(tmp, "none") == 0) {
+    if (!tmp) {
         ctx->compression_type = FLB_AWS_COMPRESS_NONE;
     }
     else {
-        ret = flb_aws_compression_get_type(tmp);
+        normalized_compression = flb_sds_create(tmp);
+        if (!normalized_compression) {
+            flb_errno();
+            goto error;
+        }
+
+        for (index = 0; index < flb_sds_len(normalized_compression); index++) {
+            normalized_compression[index] =
+                tolower((unsigned char) normalized_compression[index]);
+        }
+
+        if (strcmp(normalized_compression, "none") == 0) {
+            ret = FLB_AWS_COMPRESS_NONE;
+        }
+        else {
+            ret = flb_aws_compression_get_type(normalized_compression);
+        }
+
+        flb_sds_destroy(normalized_compression);
         if (ret == -1) {
             flb_plg_error(ins, "unsupported compression type '%s'", tmp);
             goto error;
