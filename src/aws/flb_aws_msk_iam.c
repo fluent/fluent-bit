@@ -30,6 +30,7 @@
 #include <fluent-bit/aws/flb_aws_msk_iam.h>
 
 #include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/tls/flb_tls.h>
 #include <rdkafka.h>
 
 #include <stdio.h>
@@ -42,6 +43,10 @@ struct flb_aws_msk_iam {
     struct flb_config *flb_config;  /* For creating AWS provider on-demand */
     flb_sds_t region;
     flb_sds_t cluster_arn;
+    /* Optional STS Assume Role fields */
+    flb_sds_t role_arn;
+    flb_sds_t sts_endpoint;
+    flb_sds_t external_id;
 };
 
 /* Utility functions - same as before */
@@ -167,7 +172,10 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
                                        const char *host)
 {
     struct flb_aws_provider *temp_provider = NULL;
+    struct flb_aws_provider *base_provider = NULL;
+    struct flb_tls *sts_tls = NULL;
     struct flb_aws_credentials *creds = NULL;
+    char *sts_session_name = NULL;
     flb_sds_t payload = NULL;
     int encode_result;
     char *p;
@@ -227,9 +235,57 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
         return NULL;
     }
 
+    /* If role_arn is set, wrap with STS AssumeRole provider */
+    if (config->role_arn) {
+        sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE, FLB_TRUE, 0,
+                                 NULL, NULL, NULL, NULL, NULL, NULL);
+        if (!sts_tls) {
+            flb_error("[aws_msk_iam] build_msk_iam_payload: failed to create TLS for STS");
+            flb_aws_provider_destroy(temp_provider);
+            return NULL;
+        }
+
+        sts_session_name = flb_sts_session_name();
+        if (!sts_session_name) {
+            flb_error("[aws_msk_iam] build_msk_iam_payload: failed to generate STS session name");
+            flb_tls_destroy(sts_tls);
+            flb_aws_provider_destroy(temp_provider);
+            return NULL;
+        }
+
+        base_provider = temp_provider;
+        temp_provider = flb_sts_provider_create(config->flb_config,
+                                               sts_tls,
+                                               base_provider,
+                                               config->external_id,
+                                               config->role_arn,
+                                               sts_session_name,
+                                               config->region,
+                                               config->sts_endpoint,
+                                               NULL,
+                                               flb_aws_client_generator());
+        flb_free(sts_session_name);
+        sts_session_name = NULL;
+
+        if (!temp_provider) {
+            flb_error("[aws_msk_iam] build_msk_iam_payload: failed to create STS provider");
+            flb_tls_destroy(sts_tls);
+            flb_aws_provider_destroy(base_provider);
+            return NULL;
+        }
+
+        flb_info("[aws_msk_iam] build_msk_iam_payload: using STS AssumeRole for credentials");
+    }
+
     if (temp_provider->provider_vtable->init(temp_provider) != 0) {
         flb_error("[aws_msk_iam] build_msk_iam_payload: failed to initialize AWS credentials provider");
         flb_aws_provider_destroy(temp_provider);
+        if (base_provider) {
+            flb_aws_provider_destroy(base_provider);
+        }
+        if (sts_tls) {
+            flb_tls_destroy(sts_tls);
+        }
         return NULL;
     }
 
@@ -238,6 +294,12 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
     if (!creds) {
         flb_error("[aws_msk_iam] build_msk_iam_payload: failed to get credentials");
         flb_aws_provider_destroy(temp_provider);
+        if (base_provider) {
+            flb_aws_provider_destroy(base_provider);
+        }
+        if (sts_tls) {
+            flb_tls_destroy(sts_tls);
+        }
         return NULL;
     }
 
@@ -553,6 +615,12 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
     if (temp_provider) {
         flb_aws_provider_destroy(temp_provider);
     }
+    if (base_provider) {
+        flb_aws_provider_destroy(base_provider);
+    }
+    if (sts_tls) {
+        flb_tls_destroy(sts_tls);
+    }
 
     return payload;
 
@@ -600,6 +668,12 @@ error:
     if (temp_provider) {
         flb_aws_provider_destroy(temp_provider);
     }
+    if (base_provider) {
+        flb_aws_provider_destroy(base_provider);
+    }
+    if (sts_tls) {
+        flb_tls_destroy(sts_tls);
+    }
 
     return NULL;
 }
@@ -623,6 +697,9 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     struct flb_aws_credentials *creds = NULL;
     struct flb_kafka_opaque *kafka_opaque;
     struct flb_aws_provider *temp_provider = NULL;
+    struct flb_aws_provider *base_provider = NULL;
+    struct flb_tls *sts_tls = NULL;
+    char *sts_session_name = NULL;
     (void) oauthbearer_config;
 
     kafka_opaque = (struct flb_kafka_opaque *) opaque;
@@ -678,7 +755,32 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
                                                       flb_aws_client_generator(),
                                                       NULL);
     if (temp_provider) {
-        if (temp_provider->provider_vtable->init(temp_provider) == 0) {
+        /* If role_arn is set, wrap with STS AssumeRole to get the assumed principal */
+        if (config->role_arn) {
+            sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE, FLB_TRUE, 0,
+                                     NULL, NULL, NULL, NULL, NULL, NULL);
+            sts_session_name = sts_tls ? flb_sts_session_name() : NULL;
+
+            if (sts_tls && sts_session_name) {
+                base_provider = temp_provider;
+                temp_provider = flb_sts_provider_create(config->flb_config,
+                                                       sts_tls,
+                                                       base_provider,
+                                                       config->external_id,
+                                                       config->role_arn,
+                                                       sts_session_name,
+                                                       config->region,
+                                                       config->sts_endpoint,
+                                                       NULL,
+                                                       flb_aws_client_generator());
+            }
+            if (sts_session_name) {
+                flb_free(sts_session_name);
+                sts_session_name = NULL;
+            }
+        }
+
+        if (temp_provider && temp_provider->provider_vtable->init(temp_provider) == 0) {
             creds = temp_provider->provider_vtable->get_credentials(temp_provider);
         }
     }
@@ -710,16 +812,24 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     if (temp_provider) {
         flb_aws_provider_destroy(temp_provider);
     }
-
+    if (base_provider) {
+        flb_aws_provider_destroy(base_provider);
+    }
+    if (sts_tls) {
+        flb_tls_destroy(sts_tls);
+    }
     if (payload) {
         flb_sds_destroy(payload);
     }
 }
 
-/* Register callback with lightweight config - keeps your current interface */
+/* Register callback with lightweight config */
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
                                                           const char *cluster_arn,
+                                                          const char *role_arn,
+                                                          const char *sts_endpoint,
+                                                          const char *external_id,
                                                           struct flb_kafka_opaque *opaque)
 {
     struct flb_aws_msk_iam *ctx;
@@ -732,7 +842,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         return NULL;
     }
 
-    /* Allocate lightweight config - NO AWS provider! */
+    /* Allocate lightweight config - NO persistent AWS provider! */
     ctx = flb_calloc(1, sizeof(struct flb_aws_msk_iam));
     if (!ctx) {
         flb_errno();
@@ -769,6 +879,35 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
         return NULL;
     }
 
+    /* Store optional STS Assume Role parameters */
+    if (role_arn) {
+        ctx->role_arn = flb_sds_create(role_arn);
+        if (!ctx->role_arn) {
+            flb_error("[aws_msk_iam] failed to store role ARN");
+            flb_aws_msk_iam_destroy(ctx);
+            return NULL;
+        }
+        flb_info("[aws_msk_iam] STS AssumeRole enabled with role ARN: %s", role_arn);
+    }
+
+    if (sts_endpoint) {
+        ctx->sts_endpoint = flb_sds_create(sts_endpoint);
+        if (!ctx->sts_endpoint) {
+            flb_error("[aws_msk_iam] failed to store STS endpoint");
+            flb_aws_msk_iam_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    if (external_id) {
+        ctx->external_id = flb_sds_create(external_id);
+        if (!ctx->external_id) {
+            flb_error("[aws_msk_iam] failed to store external ID");
+            flb_aws_msk_iam_destroy(ctx);
+            return NULL;
+        }
+    }
+
     flb_info("[aws_msk_iam] extracted region: %s", ctx->region);
 
     /* Set the callback and opaque */
@@ -781,7 +920,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
     return ctx;
 }
 
-/* Simple destroy - just config cleanup, no AWS provider to leak! */
+/* Simple destroy - just config cleanup, no persistent AWS provider to leak! */
 void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
 {
     if (!ctx) {
@@ -790,12 +929,20 @@ void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
 
     flb_info("[aws_msk_iam] destroying MSK IAM config");
 
-    /* NO AWS provider to destroy! */
     if (ctx->region) {
         flb_sds_destroy(ctx->region);
     }
     if (ctx->cluster_arn) {
         flb_sds_destroy(ctx->cluster_arn);
+    }
+    if (ctx->role_arn) {
+        flb_sds_destroy(ctx->role_arn);
+    }
+    if (ctx->sts_endpoint) {
+        flb_sds_destroy(ctx->sts_endpoint);
+    }
+    if (ctx->external_id) {
+        flb_sds_destroy(ctx->external_id);
     }
     flb_free(ctx);
 }
