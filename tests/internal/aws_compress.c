@@ -419,6 +419,22 @@ void test_parquet_format_uncompressed()
     flb_free(out_buf);
 }
 
+void test_parquet_format_invalid_compression()
+{
+    int ret;
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    char *json = "{\"key\":\"value\",\"num\":42}\n";
+    size_t json_len = strlen(json);
+
+    ret = flb_aws_compression_compress_columnar(FLB_AWS_COMPRESS_FORMAT_PARQUET,
+                                                json, json_len,
+                                                &out_buf, &out_size, -1);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(out_buf == NULL);
+    TEST_CHECK(out_size == 0);
+}
+
 void test_parquet_compression_reduces_size()
 {
     int ret;
@@ -545,6 +561,8 @@ TEST_LIST = {
     { "test_parquet_format_zstd", test_parquet_format_zstd },
     { "test_parquet_format_gzip", test_parquet_format_gzip },
     { "test_parquet_format_uncompressed", test_parquet_format_uncompressed },
+    { "test_parquet_format_invalid_compression",
+      test_parquet_format_invalid_compression },
     { "test_parquet_compression_reduces_size",
       test_parquet_compression_reduces_size },
 #endif
