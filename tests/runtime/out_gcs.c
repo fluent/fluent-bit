@@ -109,7 +109,7 @@ void flb_test_gcs_upload_success(void)
     flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
     flb_output_set(ctx, out_ffd, "gcs_key_format", "logs/$TAG", NULL);
     flb_output_set(ctx, out_ffd, "static_file_path", "true", NULL);
-    flb_output_set(ctx, out_ffd, "compression", "gzip", NULL);
+    flb_output_set(ctx, out_ffd, "compression", "GZIP", NULL);
     flb_output_set(ctx, out_ffd, "canned_acl", "public-read", NULL);
 
     ret = flb_start(ctx);
@@ -149,7 +149,8 @@ void flb_test_gcs_upload_success(void)
 }
 
 #ifdef FLB_HAVE_ARROW_PARQUET
-void flb_test_gcs_upload_parquet_zstd(void)
+static void test_gcs_upload_parquet(const char *compression,
+                                    const char *store_directory_postfix)
 {
     int ret;
     int call_count;
@@ -159,7 +160,7 @@ void flb_test_gcs_upload_parquet_zstd(void)
     char *store_dir;
     flb_ctx_t *ctx;
 
-    store_dir = create_test_store_directory("/flb-gcs-test-parquet-zstd-XXXXXX");
+    store_dir = create_test_store_directory(store_directory_postfix);
     TEST_CHECK(store_dir != NULL);
     if (!store_dir) {
         return;
@@ -183,7 +184,7 @@ void flb_test_gcs_upload_parquet_zstd(void)
     flb_output_set(ctx, out_ffd, "gcs_key_format", "logs/$TAG", NULL);
     flb_output_set(ctx, out_ffd, "static_file_path", "true", NULL);
     flb_output_set(ctx, out_ffd, "format", "parquet", NULL);
-    flb_output_set(ctx, out_ffd, "compression", "zstd", NULL);
+    flb_output_set(ctx, out_ffd, "compression", compression, NULL);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
@@ -229,6 +230,16 @@ void flb_test_gcs_upload_parquet_zstd(void)
     unsetenv("TEST_GCS_LAST_BODY_PARQUET");
     unsetenv("TEST_GCS_LAST_CONTENT_TYPE");
     flb_free(store_dir);
+}
+
+void flb_test_gcs_upload_parquet_zstd(void)
+{
+    test_gcs_upload_parquet("ZSTD", "/flb-gcs-test-parquet-zstd-XXXXXX");
+}
+
+void flb_test_gcs_upload_parquet_snappy(void)
+{
+    test_gcs_upload_parquet("SNAPPY", "/flb-gcs-test-parquet-snappy-XXXXXX");
 }
 #endif
 
@@ -683,6 +694,7 @@ TEST_LIST = {
     {"upload_success", flb_test_gcs_upload_success},
 #ifdef FLB_HAVE_ARROW_PARQUET
     {"upload_parquet_zstd", flb_test_gcs_upload_parquet_zstd},
+    {"upload_parquet_snappy", flb_test_gcs_upload_parquet_snappy},
 #else
     {"rejects_parquet_without_support", flb_test_gcs_rejects_parquet_without_support},
 #endif
