@@ -729,6 +729,11 @@ static struct flb_config_map config_map[] = {
       "Set the systemd journal path"
     },
     {
+      FLB_CONFIG_MAP_STR, "namespace", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, journal_namespace),
+      "Set the systemd journal namespace (requires systemd >= 245)"
+    },
+    {
       FLB_CONFIG_MAP_INT, "max_fields", FLB_SYSTEMD_MAX_FIELDS,
       0, FLB_TRUE, offsetof(struct flb_systemd_config, max_fields),
       "Set the maximum fields per notification"
