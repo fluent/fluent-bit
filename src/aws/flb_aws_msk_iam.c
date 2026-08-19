@@ -793,6 +793,7 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
 {
     struct flb_aws_msk_iam *ctx;
     char *region_str;
+    char *session_name;
 
     flb_info("[aws_msk_iam] registering OAuth callback with cluster ARN: %s", cluster_arn);
 
@@ -840,8 +841,6 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
 
     /* Store optional STS Assume Role parameters */
     if (role_arn) {
-        char *session_name;
-
         ctx->role_arn = flb_sds_create(role_arn);
         if (!ctx->role_arn) {
             flb_error("[aws_msk_iam] failed to store role ARN");
