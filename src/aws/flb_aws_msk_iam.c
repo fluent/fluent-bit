@@ -47,6 +47,7 @@ struct flb_aws_msk_iam {
     flb_sds_t role_arn;
     flb_sds_t sts_endpoint;
     flb_sds_t external_id;
+    flb_sds_t sts_session_name;
 };
 
 /* Utility functions - same as before */
@@ -169,13 +170,13 @@ static char *extract_region(const char *arn)
 
 /* Stateless payload generator - creates AWS provider on demand */
 static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
-                                       const char *host)
+                                       const char *host,
+                                       flb_sds_t *out_access_key_id)
 {
     struct flb_aws_provider *temp_provider = NULL;
     struct flb_aws_provider *base_provider = NULL;
     struct flb_tls *sts_tls = NULL;
     struct flb_aws_credentials *creds = NULL;
-    char *sts_session_name = NULL;
     flb_sds_t payload = NULL;
     int encode_result;
     char *p;
@@ -208,6 +209,10 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
     unsigned char empty_payload_hash[32];
     struct tm gm;
     time_t now;
+
+    if (out_access_key_id) {
+        *out_access_key_id = NULL;
+    }
 
     now = time(NULL);
 
@@ -245,27 +250,17 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
             return NULL;
         }
 
-        sts_session_name = flb_sts_session_name();
-        if (!sts_session_name) {
-            flb_error("[aws_msk_iam] build_msk_iam_payload: failed to generate STS session name");
-            flb_tls_destroy(sts_tls);
-            flb_aws_provider_destroy(temp_provider);
-            return NULL;
-        }
-
         base_provider = temp_provider;
         temp_provider = flb_sts_provider_create(config->flb_config,
                                                sts_tls,
                                                base_provider,
                                                config->external_id,
                                                config->role_arn,
-                                               sts_session_name,
+                                               config->sts_session_name,
                                                config->region,
                                                config->sts_endpoint,
                                                NULL,
                                                flb_aws_client_generator());
-        flb_free(sts_session_name);
-        sts_session_name = NULL;
 
         if (!temp_provider) {
             flb_error("[aws_msk_iam] build_msk_iam_payload: failed to create STS provider");
@@ -307,7 +302,17 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
         flb_error("[aws_msk_iam] build_msk_iam_payload: incomplete credentials");
         flb_aws_credentials_destroy(creds);
         flb_aws_provider_destroy(temp_provider);
+        if (base_provider) {
+            flb_aws_provider_destroy(base_provider);
+        }
+        if (sts_tls) {
+            flb_tls_destroy(sts_tls);
+        }
         return NULL;
+    }
+
+    if (out_access_key_id) {
+        *out_access_key_id = flb_sds_create(creds->access_key_id);
     }
 
     gmtime_r(&now, &gm);
@@ -674,6 +679,10 @@ error:
     if (sts_tls) {
         flb_tls_destroy(sts_tls);
     }
+    if (out_access_key_id && *out_access_key_id) {
+        flb_sds_destroy(*out_access_key_id);
+        *out_access_key_id = NULL;
+    }
 
     return NULL;
 }
@@ -686,6 +695,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
 {
     char host[256];
     flb_sds_t payload = NULL;
+    flb_sds_t access_key_id = NULL;
     rd_kafka_resp_err_t err;
     char errstr[512];
     int64_t now;
@@ -694,12 +704,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     size_t arn_len;
     size_t suffix_len;
     struct flb_aws_msk_iam *config;
-    struct flb_aws_credentials *creds = NULL;
     struct flb_kafka_opaque *kafka_opaque;
-    struct flb_aws_provider *temp_provider = NULL;
-    struct flb_aws_provider *base_provider = NULL;
-    struct flb_tls *sts_tls = NULL;
-    char *sts_session_name = NULL;
     (void) oauthbearer_config;
 
     kafka_opaque = (struct flb_kafka_opaque *) opaque;
@@ -742,47 +747,11 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     flb_info("[aws_msk_iam] requesting MSK IAM payload for region: %s, host: %s", config->region, host);
 
     /* Generate payload using stateless function - creates and destroys AWS provider internally */
-    payload = build_msk_iam_payload(config, host);
+    payload = build_msk_iam_payload(config, host, &access_key_id);
     if (!payload) {
         flb_error("[aws_msk_iam] failed to generate MSK IAM payload");
         rd_kafka_oauthbearer_set_token_failure(rk, "payload generation failed");
         return;
-    }
-
-    /* Get credentials for principal (create temporary provider just for this) */
-    temp_provider = flb_standard_chain_provider_create(config->flb_config, NULL,
-                                                      config->region, NULL, NULL,
-                                                      flb_aws_client_generator(),
-                                                      NULL);
-    if (temp_provider) {
-        /* If role_arn is set, wrap with STS AssumeRole to get the assumed principal */
-        if (config->role_arn) {
-            sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE, FLB_TRUE, 0,
-                                     NULL, NULL, NULL, NULL, NULL, NULL);
-            sts_session_name = sts_tls ? flb_sts_session_name() : NULL;
-
-            if (sts_tls && sts_session_name) {
-                base_provider = temp_provider;
-                temp_provider = flb_sts_provider_create(config->flb_config,
-                                                       sts_tls,
-                                                       base_provider,
-                                                       config->external_id,
-                                                       config->role_arn,
-                                                       sts_session_name,
-                                                       config->region,
-                                                       config->sts_endpoint,
-                                                       NULL,
-                                                       flb_aws_client_generator());
-            }
-            if (sts_session_name) {
-                flb_free(sts_session_name);
-                sts_session_name = NULL;
-            }
-        }
-
-        if (temp_provider && temp_provider->provider_vtable->init(temp_provider) == 0) {
-            creds = temp_provider->provider_vtable->get_credentials(temp_provider);
-        }
     }
 
     now = time(NULL);
@@ -791,7 +760,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     err = rd_kafka_oauthbearer_set_token(rk,
                                         payload,
                                         md_lifetime_ms,
-                                        creds ? creds->access_key_id : "unknown",
+                                        access_key_id ? access_key_id : "unknown",
                                         NULL,
                                         0,
                                         errstr,
@@ -805,18 +774,8 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
         flb_info("[aws_msk_iam] OAuth bearer token successfully set");
     }
 
-    /* Clean up everything immediately - no memory leaks possible! */
-    if (creds) {
-        flb_aws_credentials_destroy(creds);
-    }
-    if (temp_provider) {
-        flb_aws_provider_destroy(temp_provider);
-    }
-    if (base_provider) {
-        flb_aws_provider_destroy(base_provider);
-    }
-    if (sts_tls) {
-        flb_tls_destroy(sts_tls);
+    if (access_key_id) {
+        flb_sds_destroy(access_key_id);
     }
     if (payload) {
         flb_sds_destroy(payload);
@@ -881,12 +840,29 @@ struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *con
 
     /* Store optional STS Assume Role parameters */
     if (role_arn) {
+        char *session_name;
+
         ctx->role_arn = flb_sds_create(role_arn);
         if (!ctx->role_arn) {
             flb_error("[aws_msk_iam] failed to store role ARN");
             flb_aws_msk_iam_destroy(ctx);
             return NULL;
         }
+
+        session_name = flb_sts_session_name();
+        if (!session_name) {
+            flb_error("[aws_msk_iam] failed to generate STS session name");
+            flb_aws_msk_iam_destroy(ctx);
+            return NULL;
+        }
+        ctx->sts_session_name = flb_sds_create(session_name);
+        flb_free(session_name);
+        if (!ctx->sts_session_name) {
+            flb_error("[aws_msk_iam] failed to store STS session name");
+            flb_aws_msk_iam_destroy(ctx);
+            return NULL;
+        }
+
         flb_info("[aws_msk_iam] STS AssumeRole enabled with role ARN: %s", role_arn);
     }
 
@@ -943,6 +919,9 @@ void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx)
     }
     if (ctx->external_id) {
         flb_sds_destroy(ctx->external_id);
+    }
+    if (ctx->sts_session_name) {
+        flb_sds_destroy(ctx->sts_session_name);
     }
     flb_free(ctx);
 }
