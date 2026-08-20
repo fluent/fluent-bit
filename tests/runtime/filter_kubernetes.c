@@ -603,6 +603,59 @@ static void flb_test_core_base_with_namespace_labels_and_annotations()
     flb_test_namespace_labels_and_annotations("core_base-with-namespace-labels-and-annotations_fluent-bit", NULL, 1);
 }
 
+#define flb_test_namespace_exclude(target, suffix, nExpected, ...) \
+    kube_test("namespace-exclude/" target, KUBE_TAIL, suffix, nExpected, \
+              __VA_ARGS__, \
+              NULL); \
+
+static void flb_test_namespace_exclude_enabled()
+{
+    flb_test_namespace_exclude("namespace-exclude-true_base_text", NULL, 0,
+                               "Namespace_Exclude", "On");
+}
+
+static void flb_test_namespace_exclude_false()
+{
+    flb_test_namespace_exclude("namespace-exclude-false_base_text", NULL, 1,
+                               "Namespace_Exclude", "On");
+}
+
+static void flb_test_namespace_exclude_disabled()
+{
+    flb_test_namespace_exclude("namespace-exclude-true_base_text", NULL, 1,
+                               "Namespace_Exclude", "Off");
+}
+
+static void flb_test_namespace_exclude_ignores_stdout_annotation_stdout()
+{
+    flb_test_namespace_exclude("namespace-exclude-stdout_base_text", "stdout", 1,
+                               "Namespace_Exclude", "On");
+}
+
+static void flb_test_namespace_exclude_ignores_stdout_annotation_stderr()
+{
+    flb_test_namespace_exclude("namespace-exclude-stdout_base_text", "stderr", 1,
+                               "Namespace_Exclude", "On");
+}
+
+static void flb_test_namespace_exclude_metadata_only()
+{
+    flb_test_namespace_exclude("namespace-exclude-true_base_text", NULL, 0,
+                               "Namespace_Exclude", "On",
+                               "Namespace_Metadata_Only", "On");
+}
+
+static void flb_test_namespace_exclude_with_pod_exclude()
+{
+    kube_test("annotations-exclude/annotations-exclude_default_text",
+              KUBE_TAIL,
+              NULL,
+              0,
+              "Namespace_Exclude", "On",
+              "K8s-Logging.Exclude", "On",
+              NULL);
+}
+
 static void flb_test_kube_short_prefix_uat_podname()
 {
     kube_test("core/core_uat-myapp-12345_fluent-bit",
@@ -1226,6 +1279,15 @@ TEST_LIST = {
     {"kube_core_unescaping_text", flb_test_core_unescaping_text},
     {"kube_core_unescaping_json", flb_test_core_unescaping_json},
     {"kube_core_base_with_namespace_labels_and_annotations", flb_test_core_base_with_namespace_labels_and_annotations},
+    {"kube_namespace_exclude_enabled", flb_test_namespace_exclude_enabled},
+    {"kube_namespace_exclude_false", flb_test_namespace_exclude_false},
+    {"kube_namespace_exclude_disabled", flb_test_namespace_exclude_disabled},
+    {"kube_namespace_exclude_ignores_stdout_annotation_stdout",
+     flb_test_namespace_exclude_ignores_stdout_annotation_stdout},
+    {"kube_namespace_exclude_ignores_stdout_annotation_stderr",
+     flb_test_namespace_exclude_ignores_stdout_annotation_stderr},
+    {"kube_namespace_exclude_metadata_only", flb_test_namespace_exclude_metadata_only},
+    {"kube_namespace_exclude_with_pod_exclude", flb_test_namespace_exclude_with_pod_exclude},
     {"kube_core_base_with_owner_references", flb_test_core_base_with_owner_references},
     {"kube_local_fluentbit_logs", flb_test_local_fluentbit_logs},
     {"kube_pod_association_multiple_instances", flb_test_pod_association_multiple_instances},
