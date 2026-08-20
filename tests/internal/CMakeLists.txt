@@ -87,6 +87,7 @@ endif()
 # Config format
 set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
+    config.c
     config_format.c
     config_format_fluentbit.c
 )
