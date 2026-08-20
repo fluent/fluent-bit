@@ -109,6 +109,7 @@ struct flb_kube {
     int owner_references;
     int namespace_labels;
     int namespace_annotations;
+    int namespace_exclude;
     int namespace_metadata_only;
     int dummy_meta;
     int tls_debug;

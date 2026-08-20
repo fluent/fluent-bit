@@ -49,12 +49,18 @@ static inline void prop_not_allowed(const char *prop, struct flb_kube_meta *meta
 
 /* Property: parser */
 static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
-                           int is_container_specific, int stream,
+                           int is_namespace, int is_container_specific, int stream,
                            const char *val_buf, size_t val_len,
                            struct flb_kube_props *props)
 {
     char *tmp;
     struct flb_parser *parser;
+
+    if (is_namespace == FLB_TRUE) {
+        flb_plg_warn(ctx->ins, "annotation 'fluentbit.io/parser' is not supported "
+                     "on namespaces (ns='%s')", meta->namespace);
+        return -1;
+    }
 
     /* Parser property must be allowed by k8s-logging.parser */
     if (ctx->k8s_logging_parser == FLB_FALSE) {
@@ -105,15 +111,16 @@ static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
 }
 
 static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
-                            int is_container_specific, int stream,
+                            int is_namespace, int is_container_specific, int stream,
                             const char *val_buf, size_t val_len,
                             struct flb_kube_props *props)
 {
     char *tmp;
     int exclude;
 
-    /* Exclude property must be allowed by k8s-logging.exclude */
-    if (ctx->k8s_logging_exclude == FLB_FALSE) {
+    /* Exclude property must be enabled for its annotation context */
+    if ((is_namespace == FLB_TRUE && ctx->namespace_exclude == FLB_FALSE) ||
+        (is_namespace == FLB_FALSE && ctx->k8s_logging_exclude == FLB_FALSE)) {
         prop_not_allowed("fluentbit.io/exclude", meta, ctx);
         return -1;
     }
@@ -147,10 +154,10 @@ static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
     return 0;
 }
 
-int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
-                      const char *prop, int prop_len,
-                      const char *val_buf, size_t val_len,
-                      struct flb_kube_props *props)
+static int prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
+                    int is_namespace, const char *prop, int prop_len,
+                    const char *val_buf, size_t val_len,
+                    struct flb_kube_props *props)
 {
     /*
      * Property can take the following forms:
@@ -167,7 +174,7 @@ int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
     size_t container_len = 0;
     int stream = FLB_KUBE_PROP_NO_STREAM;
     int (*function)(struct flb_kube *ctx, struct flb_kube_meta *meta,
-                    int is_container_specific, int stream,
+                    int is_namespace, int is_container_specific, int stream,
                     const char *val_buf, size_t val_len,
                     struct flb_kube_props *props);
 
@@ -244,9 +251,36 @@ int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
         }
     }
 
-    return function(ctx, meta,
+    return function(ctx, meta, is_namespace,
                     (container ? FLB_TRUE : FLB_FALSE), stream,
                     val_buf, val_len, props);
+}
+
+int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
+                      const char *prop, int prop_len,
+                      const char *val_buf, size_t val_len,
+                      struct flb_kube_props *props)
+{
+    return prop_set(ctx, meta, FLB_FALSE, prop, prop_len,
+                    val_buf, val_len, props);
+}
+
+int flb_kube_namespace_prop_set(struct flb_kube *ctx,
+                                struct flb_kube_meta *meta,
+                                const char *prop, int prop_len,
+                                const char *val_buf, size_t val_len,
+                                struct flb_kube_props *props)
+{
+    if (prop_len != FLB_KUBE_PROP_EXCLUDE_LEN ||
+        strncmp(prop, FLB_KUBE_PROP_EXCLUDE, FLB_KUBE_PROP_EXCLUDE_LEN) != 0) {
+        flb_plg_warn(ctx->ins, "namespace annotation 'fluentbit.io/%.*s' is "
+                     "not supported; only 'fluentbit.io/exclude' is supported "
+                     "(ns='%s')", prop_len, prop, meta->namespace);
+        return -1;
+    }
+
+    return prop_set_exclude(ctx, meta, FLB_TRUE, FLB_FALSE,
+                            FLB_KUBE_PROP_NO_STREAM, val_buf, val_len, props);
 }
 
 int flb_kube_prop_pack(struct flb_kube_props *props,
@@ -367,4 +401,7 @@ void flb_kube_prop_destroy(struct flb_kube_props *props)
         flb_sds_destroy(props->stderr_parser);
         props->stderr_parser = NULL;
     }
+
+    props->stdout_exclude = FLB_KUBE_PROP_UNDEF;
+    props->stderr_exclude = FLB_KUBE_PROP_UNDEF;
 }
