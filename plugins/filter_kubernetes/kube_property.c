@@ -116,6 +116,7 @@ static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
                             struct flb_kube_props *props)
 {
     char *tmp;
+    int bool_value;
     int exclude;
 
     /* Get the bool value */
@@ -125,7 +126,16 @@ static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
         return -1;
     }
 
-    exclude = flb_utils_bool(tmp) == FLB_TRUE ?
+    bool_value = flb_utils_bool(tmp);
+    if (bool_value != FLB_TRUE && bool_value != FLB_FALSE) {
+        flb_plg_warn(ctx->ins, "invalid boolean value '%s' for annotation "
+                     "'fluentbit.io/exclude' (ns='%s' pod_name='%s')",
+                     tmp, meta->namespace, meta->podname);
+        flb_free(tmp);
+        return -1;
+    }
+
+    exclude = bool_value == FLB_TRUE ?
               FLB_KUBE_PROP_TRUE : FLB_KUBE_PROP_FALSE;
 
     /*
