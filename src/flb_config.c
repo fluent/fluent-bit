@@ -859,6 +859,15 @@ int flb_config_set_property(struct flb_config *config,
                     }
                 #ifndef FLB_HAVE_STATIC_CONF
                 }
+                else {
+                    /*
+                     * FLB_LOG_LEVEL was set in the environment and already
+                     * applied by set_log_level_from_env(), which takes
+                     * precedence over the config value. Record success so the
+                     * caller does not treat this path as a fatal error.
+                     */
+                    ret = 0;
+                }
                 #endif
             }
             else if (!strncasecmp(key, FLB_CONF_STR_PARSERS_FILE, 32)) {
