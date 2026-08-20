@@ -118,13 +118,6 @@ static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
     char *tmp;
     int exclude;
 
-    /* Exclude property must be enabled for its annotation context */
-    if ((is_namespace == FLB_TRUE && ctx->namespace_exclude == FLB_FALSE) ||
-        (is_namespace == FLB_FALSE && ctx->k8s_logging_exclude == FLB_FALSE)) {
-        prop_not_allowed("fluentbit.io/exclude", meta, ctx);
-        return -1;
-    }
-
     /* Get the bool value */
     tmp = flb_strndup(val_buf, val_len);
     if (!tmp) {
@@ -134,6 +127,20 @@ static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
 
     exclude = flb_utils_bool(tmp) == FLB_TRUE ?
               FLB_KUBE_PROP_TRUE : FLB_KUBE_PROP_FALSE;
+
+    /*
+     * Namespace exclusion enables explicit Pod opt-ins. Pod exclusions still
+     * require the existing k8s-logging.exclude option.
+     */
+    if ((is_namespace == FLB_TRUE && ctx->namespace_exclude == FLB_FALSE) ||
+        (is_namespace == FLB_FALSE &&
+         ctx->k8s_logging_exclude == FLB_FALSE &&
+         (ctx->namespace_exclude == FLB_FALSE ||
+          exclude != FLB_KUBE_PROP_FALSE))) {
+        prop_not_allowed("fluentbit.io/exclude", meta, ctx);
+        flb_free(tmp);
+        return -1;
+    }
 
     /* Save the exclude property in the context */
     if ((stream == FLB_KUBE_PROP_NO_STREAM ||
@@ -322,16 +329,22 @@ int flb_kube_prop_pack(struct flb_kube_props *props,
     if (props->stdout_exclude == FLB_KUBE_PROP_TRUE) {
         msgpack_pack_true(&pck);
     }
-    else {
+    else if (props->stdout_exclude == FLB_KUBE_PROP_FALSE) {
         msgpack_pack_false(&pck);
+    }
+    else {
+        msgpack_pack_nil(&pck);
     }
 
     /* Index 3: FLB_KUBE_PROPS_STDERR_EXCLUDE */
     if (props->stderr_exclude == FLB_KUBE_PROP_TRUE) {
         msgpack_pack_true(&pck);
     }
-    else {
+    else if (props->stderr_exclude == FLB_KUBE_PROP_FALSE) {
         msgpack_pack_false(&pck);
+    }
+    else {
+        msgpack_pack_nil(&pck);
     }
 
     /* Set outgoing msgpack buffer */
@@ -380,11 +393,23 @@ int flb_kube_prop_unpack(struct flb_kube_props *props,
 
     /* Index 2: stdout_exclude */
     o = root.via.array.ptr[FLB_KUBE_PROPS_STDOUT_EXCLUDE];
-    props->stdout_exclude = o.via.boolean;
+    if (o.type == MSGPACK_OBJECT_BOOLEAN) {
+        props->stdout_exclude = o.via.boolean ?
+                                FLB_KUBE_PROP_TRUE : FLB_KUBE_PROP_FALSE;
+    }
+    else {
+        props->stdout_exclude = FLB_KUBE_PROP_UNDEF;
+    }
 
     /* Index 3: stderr_exclude */
     o = root.via.array.ptr[FLB_KUBE_PROPS_STDERR_EXCLUDE];
-    props->stderr_exclude = o.via.boolean;
+    if (o.type == MSGPACK_OBJECT_BOOLEAN) {
+        props->stderr_exclude = o.via.boolean ?
+                                FLB_KUBE_PROP_TRUE : FLB_KUBE_PROP_FALSE;
+    }
+    else {
+        props->stderr_exclude = FLB_KUBE_PROP_UNDEF;
+    }
 
     msgpack_unpacked_destroy(&result);
     return 0;

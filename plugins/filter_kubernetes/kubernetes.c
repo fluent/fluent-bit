@@ -136,6 +136,15 @@ static int get_stream(msgpack_object_map map)
     return FLB_KUBE_PROP_NO_STREAM;
 }
 
+static int should_exclude(int pod_property, int namespace_property)
+{
+    if (pod_property != FLB_KUBE_PROP_UNDEF) {
+        return pod_property == FLB_KUBE_PROP_TRUE;
+    }
+
+    return namespace_property == FLB_KUBE_PROP_TRUE;
+}
+
 static int value_trim_size(msgpack_object o)
 {
     int i;
@@ -764,8 +773,8 @@ static int cb_kube_filter(const void *data, size_t bytes,
         switch (get_stream(log_event.body->via.map)) {
         case FLB_KUBE_PROP_STREAM_STDOUT:
             {
-                if (props.stdout_exclude == FLB_TRUE ||
-                    namespace_props.stdout_exclude == FLB_TRUE) {
+                if (should_exclude(props.stdout_exclude,
+                                   namespace_props.stdout_exclude)) {
                     /* Skip this record */
                     if (ctx->use_journal == FLB_TRUE) {
                         flb_kube_meta_release(&meta);
@@ -782,8 +791,8 @@ static int cb_kube_filter(const void *data, size_t bytes,
             break;
         case FLB_KUBE_PROP_STREAM_STDERR:
             {
-                if (props.stderr_exclude == FLB_TRUE ||
-                    namespace_props.stderr_exclude == FLB_TRUE) {
+                if (should_exclude(props.stderr_exclude,
+                                   namespace_props.stderr_exclude)) {
                     /* Skip this record */
                     if (ctx->use_journal == FLB_TRUE) {
                         flb_kube_meta_release(&meta);
@@ -800,10 +809,10 @@ static int cb_kube_filter(const void *data, size_t bytes,
             break;
         default:
             {
-                if ((props.stdout_exclude == FLB_TRUE ||
-                     namespace_props.stdout_exclude == FLB_TRUE) &&
-                    (props.stderr_exclude == FLB_TRUE ||
-                     namespace_props.stderr_exclude == FLB_TRUE)) {
+                if (should_exclude(props.stdout_exclude,
+                                   namespace_props.stdout_exclude) &&
+                    should_exclude(props.stderr_exclude,
+                                   namespace_props.stderr_exclude)) {
                     if (ctx->use_journal == FLB_TRUE) {
                         flb_kube_meta_release(&meta);
                         flb_kube_prop_destroy(&props);
