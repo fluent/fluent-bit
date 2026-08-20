@@ -1210,6 +1210,8 @@ static int merge_namespace_meta(struct flb_kube_meta *meta, struct flb_kube *ctx
     int have_labels = -1;
     int have_annotations = -1;
     size_t off = 0;
+    size_t prop_size;
+    void *prop_buf;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
 
@@ -1219,6 +1221,8 @@ static int merge_namespace_meta(struct flb_kube_meta *meta, struct flb_kube *ctx
     msgpack_object v;
     msgpack_object meta_val;
     msgpack_object api_map;
+    msgpack_object ann_map;
+    struct flb_kube_props props = {0};
 
     /*
      *
@@ -1322,6 +1326,36 @@ static int merge_namespace_meta(struct flb_kube_meta *meta, struct flb_kube *ctx
 
         msgpack_pack_object(&mp_pck, k);
         msgpack_pack_object(&mp_pck, v);
+    }
+
+    /* Process namespace configuration suggested through annotations */
+    if (have_annotations >= 0 && ctx->namespace_exclude == FLB_TRUE) {
+        ann_map = meta_val.via.map.ptr[have_annotations].val;
+
+        if (ann_map.type == MSGPACK_OBJECT_MAP) {
+            for (i = 0; i < ann_map.via.map.size; i++) {
+                k = ann_map.via.map.ptr[i].key;
+                v = ann_map.via.map.ptr[i].val;
+
+                if (k.type == MSGPACK_OBJECT_STR &&
+                    v.type == MSGPACK_OBJECT_STR &&
+                    k.via.str.size == sizeof("fluentbit.io/exclude") - 1 &&
+                    strncmp(k.via.str.ptr, "fluentbit.io/exclude",
+                            sizeof("fluentbit.io/exclude") - 1) == 0) {
+                    flb_kube_namespace_prop_set(ctx, meta,
+                                                k.via.str.ptr + 13,
+                                                k.via.str.size - 13,
+                                                v.via.str.ptr,
+                                                v.via.str.size,
+                                                &props);
+                }
+            }
+        }
+
+        flb_kube_prop_pack(&props, &prop_buf, &prop_size);
+        msgpack_sbuffer_write(&mp_sbuf, prop_buf, prop_size);
+        flb_kube_prop_destroy(&props);
+        flb_free(prop_buf);
     }
 
     if (api_buf != NULL) {
@@ -2531,7 +2565,8 @@ static inline int flb_kube_local_pod_meta_get(struct flb_kube *ctx,
 
 static inline int lookup_namespace_meta(struct flb_kube *ctx,
                       const char **out_buf, size_t *out_size,
-                      struct flb_kube_meta *meta)
+                      struct flb_kube_meta *meta,
+                      struct flb_kube_props *props)
 {
     int id;
     int ret;
@@ -2539,6 +2574,7 @@ static inline int lookup_namespace_meta(struct flb_kube *ctx,
     char *tmp_hash_meta_buf;
     size_t off = 0;
     size_t hash_meta_size;
+    size_t namespace_meta_size;
     msgpack_unpacked result;
 
     /* Check if we have some data associated to the cache key */
@@ -2586,6 +2622,7 @@ static inline int lookup_namespace_meta(struct flb_kube *ctx,
      * The retrieved buffer may have serialized items:
      *
      * [0] = kubernetes metadata (annotations, labels)
+     * [1] = namespace annotation properties
      *
      */
     msgpack_unpacked_init(&result);
@@ -2599,9 +2636,24 @@ static inline int lookup_namespace_meta(struct flb_kube *ctx,
         return 0;
     }
 
-    /* Set the pointer and proper size for the caller */
+    namespace_meta_size = off;
+
+    /* Expose namespace metadata only when record injection is enabled */
     *out_buf = hash_meta_buf;
-    *out_size = off;
+    if (ctx->namespace_labels == FLB_TRUE ||
+        ctx->namespace_annotations == FLB_TRUE) {
+        *out_size = namespace_meta_size;
+    }
+    else {
+        *out_size = 0;
+    }
+
+    ret = msgpack_unpack_next(&result, hash_meta_buf, hash_meta_size, &off);
+    if (ret == MSGPACK_UNPACK_SUCCESS) {
+        flb_kube_prop_unpack(props,
+                             hash_meta_buf + namespace_meta_size,
+                             hash_meta_size - namespace_meta_size);
+    }
 
     msgpack_unpacked_destroy(&result);
 
@@ -2612,7 +2664,8 @@ static inline int flb_kube_namespace_meta_get(struct flb_kube *ctx,
                       const char *tag, int tag_len,
                       const char *data, size_t data_size,
                       const char **out_buf, size_t *out_size,
-                      struct flb_kube_meta *meta)
+                      struct flb_kube_meta *meta,
+                      struct flb_kube_props *props)
 {
     int ret;
 
@@ -2622,12 +2675,13 @@ static inline int flb_kube_namespace_meta_get(struct flb_kube *ctx,
         return -1;
     }
 
-    return lookup_namespace_meta(ctx, out_buf, out_size, meta);
+    return lookup_namespace_meta(ctx, out_buf, out_size, meta, props);
 }
 
 static inline int flb_kube_local_namespace_meta_get(struct flb_kube *ctx,
                       const char **out_buf, size_t *out_size,
-                      struct flb_kube_meta *meta)
+                      struct flb_kube_meta *meta,
+                      struct flb_kube_props *props)
 {
     int ret;
 
@@ -2636,7 +2690,7 @@ static inline int flb_kube_local_namespace_meta_get(struct flb_kube *ctx,
         return -1;
     }
 
-    return lookup_namespace_meta(ctx, out_buf, out_size, meta);
+    return lookup_namespace_meta(ctx, out_buf, out_size, meta, props);
 }
 
 int flb_kube_meta_get(struct flb_kube *ctx,
@@ -2647,15 +2701,19 @@ int flb_kube_meta_get(struct flb_kube *ctx,
                       size_t *namespace_out_size,
                       struct flb_kube_meta *meta,
                       struct flb_kube_props *props,
-                      struct flb_kube_meta *namespace_meta
+                      struct flb_kube_meta *namespace_meta,
+                      struct flb_kube_props *namespace_props
                       )
 {
     int ret_namespace_meta = -1;
     int ret_pod_meta = -1;
 
-    if(ctx->namespace_labels == FLB_TRUE || ctx->namespace_annotations == FLB_TRUE) {
+    if (ctx->namespace_labels == FLB_TRUE ||
+        ctx->namespace_annotations == FLB_TRUE ||
+        ctx->namespace_exclude == FLB_TRUE) {
         ret_namespace_meta = flb_kube_namespace_meta_get(ctx, tag, tag_len, data,
-                        data_size, namespace_out_buf, namespace_out_size, namespace_meta);
+                        data_size, namespace_out_buf, namespace_out_size,
+                        namespace_meta, namespace_props);
     }
 
     if(ctx->namespace_metadata_only == FLB_FALSE) {
@@ -2677,15 +2735,19 @@ int flb_kube_meta_get_local(struct flb_kube *ctx,
                             size_t *namespace_out_size,
                             struct flb_kube_meta *meta,
                             struct flb_kube_props *props,
-                            struct flb_kube_meta *namespace_meta)
+                            struct flb_kube_meta *namespace_meta,
+                            struct flb_kube_props *namespace_props)
 {
     int ret_namespace_meta = -1;
     int ret_pod_meta = -1;
 
-    if (ctx->namespace_labels == FLB_TRUE || ctx->namespace_annotations == FLB_TRUE) {
+    if (ctx->namespace_labels == FLB_TRUE ||
+        ctx->namespace_annotations == FLB_TRUE ||
+        ctx->namespace_exclude == FLB_TRUE) {
         ret_namespace_meta = flb_kube_local_namespace_meta_get(ctx, namespace_out_buf,
                                                                namespace_out_size,
-                                                               namespace_meta);
+                                                               namespace_meta,
+                                                               namespace_props);
     }
 
     if (ctx->namespace_metadata_only == FLB_FALSE) {
