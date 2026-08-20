@@ -656,6 +656,26 @@ static void flb_test_namespace_exclude_with_pod_exclude()
               NULL);
 }
 
+static void flb_test_namespace_exclude_pod_override()
+{
+    flb_test_namespace_exclude("namespace-exclude-true_override_text", NULL, 1,
+                               "Namespace_Exclude", "On");
+}
+
+static void flb_test_namespace_exclude_pod_stdout_override_stdout()
+{
+    flb_test_namespace_exclude("namespace-exclude-true_stream-override_text",
+                               "stdout", 1,
+                               "Namespace_Exclude", "On");
+}
+
+static void flb_test_namespace_exclude_pod_stdout_override_stderr()
+{
+    flb_test_namespace_exclude("namespace-exclude-true_stream-override_text",
+                               "stderr", 0,
+                               "Namespace_Exclude", "On");
+}
+
 static void flb_test_kube_short_prefix_uat_podname()
 {
     kube_test("core/core_uat-myapp-12345_fluent-bit",
@@ -1288,6 +1308,11 @@ TEST_LIST = {
      flb_test_namespace_exclude_ignores_stdout_annotation_stderr},
     {"kube_namespace_exclude_metadata_only", flb_test_namespace_exclude_metadata_only},
     {"kube_namespace_exclude_with_pod_exclude", flb_test_namespace_exclude_with_pod_exclude},
+    {"kube_namespace_exclude_pod_override", flb_test_namespace_exclude_pod_override},
+    {"kube_namespace_exclude_pod_stdout_override_stdout",
+     flb_test_namespace_exclude_pod_stdout_override_stdout},
+    {"kube_namespace_exclude_pod_stdout_override_stderr",
+     flb_test_namespace_exclude_pod_stdout_override_stderr},
     {"kube_core_base_with_owner_references", flb_test_core_base_with_owner_references},
     {"kube_local_fluentbit_logs", flb_test_local_fluentbit_logs},
     {"kube_pod_association_multiple_instances", flb_test_pod_association_multiple_instances},
