@@ -830,6 +830,26 @@ int set_log_level_from_env(struct flb_config *config)
     return -1;
 }
 
+int flb_config_service_property_is_valid(const char *k)
+{
+    int i = 0;
+    size_t len;
+    char *key;
+
+    len = strnlen(k, 256);
+    key = service_configs[0].key;
+
+    while (key != NULL) {
+        if (prop_key_check(key, k, len) == 0) {
+            return FLB_TRUE;
+        }
+
+        key = service_configs[++i].key;
+    }
+
+    return FLB_FALSE;
+}
+
 int flb_config_set_property(struct flb_config *config,
                             const char *k, const char *v)
 {
@@ -927,6 +947,8 @@ int flb_config_set_property(struct flb_config *config,
         }
         key = service_configs[++i].key;
     }
+
+    flb_warn("[config] unknown service property '%s', it has been ignored", k);
     return 0;
 }
 
@@ -1544,6 +1566,12 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
             else {
                 /* Yaml allow parsers definitions in any Yaml file, all good */
             }
+        }
+
+        if (s->type == FLB_CF_OTHER &&
+            strcasecmp(s->name, "processor") != 0) {
+            flb_warn("[config] unknown configuration section '%s', it has been ignored",
+                     s->name);
         }
     }
 
