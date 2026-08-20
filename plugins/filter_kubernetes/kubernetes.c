@@ -835,7 +835,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         ret = flb_log_event_encoder_begin_record(&log_encoder);
 
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-            break;
+            goto record_cleanup;
         }
 
         ret = pack_map_content(&log_encoder,
@@ -863,15 +863,18 @@ static int cb_kube_filter(const void *data, size_t bytes,
 
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
             flb_log_event_encoder_rollback_record(&log_encoder);
-
-            break;
         }
 
+record_cleanup:
         if (ctx->use_journal == FLB_TRUE) {
             flb_kube_meta_release(&meta);
             flb_kube_prop_destroy(&props);
             flb_kube_meta_release(&namespace_meta);
             flb_kube_prop_destroy(&namespace_props);
+        }
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            break;
         }
     }
 
