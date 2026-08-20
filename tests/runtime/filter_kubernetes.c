@@ -236,6 +236,7 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     int in_ffd;
     int filter_ffd;
     int out_ffd;
+    int wait_for_zero = FLB_FALSE;
     char *key;
     char *value;
     char path[PATH_MAX];
@@ -309,6 +310,10 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
             /* Wrong parameter */
             break;
         }
+        if (strcasecmp(key, "Namespace_Exclude") == 0 &&
+            strcasecmp(value, "On") == 0) {
+            wait_for_zero = FLB_TRUE;
+        }
         ret = flb_filter_set(ctx.flb, filter_ffd, key, value, NULL);
         TEST_CHECK_(ret == 0, "setting filter additional options");
     }
@@ -371,8 +376,13 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     }
 #endif
 
-    /* Wait until matching nExpected results */
-    wait_with_timeout(KUBE_TEST_TIMEOUT_MS, &result.nMatched, nExpected);
+    /* Zero-output namespace exclusion cases must observe the full timeout. */
+    if (nExpected == 0 && wait_for_zero == FLB_TRUE) {
+        flb_time_msleep(KUBE_TEST_TIMEOUT_MS);
+    }
+    else {
+        wait_with_timeout(KUBE_TEST_TIMEOUT_MS, &result.nMatched, nExpected);
+    }
 
     TEST_CHECK(result.nMatched == nExpected);
     TEST_MSG("result.nMatched: %i\nnExpected: %i", result.nMatched, nExpected);
@@ -659,6 +669,12 @@ static void flb_test_namespace_exclude_with_pod_exclude()
 static void flb_test_namespace_exclude_pod_override()
 {
     flb_test_namespace_exclude("namespace-exclude-true_override_text", NULL, 1,
+                               "Namespace_Exclude", "On");
+}
+
+static void flb_test_namespace_exclude_invalid_pod_override()
+{
+    flb_test_namespace_exclude("namespace-exclude-true_invalid-override_text", NULL, 0,
                                "Namespace_Exclude", "On");
 }
 
@@ -1309,6 +1325,8 @@ TEST_LIST = {
     {"kube_namespace_exclude_metadata_only", flb_test_namespace_exclude_metadata_only},
     {"kube_namespace_exclude_with_pod_exclude", flb_test_namespace_exclude_with_pod_exclude},
     {"kube_namespace_exclude_pod_override", flb_test_namespace_exclude_pod_override},
+    {"kube_namespace_exclude_invalid_pod_override",
+     flb_test_namespace_exclude_invalid_pod_override},
     {"kube_namespace_exclude_pod_stdout_override_stdout",
      flb_test_namespace_exclude_pod_stdout_override_stdout},
     {"kube_namespace_exclude_pod_stdout_override_stderr",
