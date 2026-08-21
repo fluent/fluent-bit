@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_search_bulk.h>
 #include <msgpack.h>
 
 #include <time.h>
@@ -1216,6 +1217,10 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t signature = NULL;
     flb_sds_t uri = NULL;
     int compressed = FLB_FALSE;
+    void *final_payload_buf;
+    size_t final_payload_size;
+    struct flb_search_bulk_retry *retry_payload;
+    struct flb_search_bulk_retry *next_retry_payload;
     int compress_gzip;
     size_t buffer_size;
     flb_sds_t header_line = NULL;
@@ -1229,6 +1234,12 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     const char *aws_service_name;
     int has_aws_auth;
 #endif
+
+    pack = NULL;
+    out_buf = NULL;
+    final_payload_buf = NULL;
+    final_payload_size = 0;
+    next_retry_payload = NULL;
 
     node_ctx = NULL;
     if (ctx->ha_mode == FLB_TRUE) {
@@ -1253,16 +1264,28 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    /* Convert format */
-    ret = elasticsearch_format(config, ins,
-                               ctx, node,
-                               event_chunk->type,
-                               event_chunk->tag, flb_sds_len(event_chunk->tag),
-                               event_chunk->data, event_chunk->size,
-                               &out_buf, &out_size);
-    if (ret != 0) {
-        flb_upstream_conn_release(u_conn);
-        FLB_OUTPUT_RETURN(FLB_ERROR);
+    retry_payload = flb_output_get_retry_context(out_flush, NULL, NULL);
+    if (retry_payload != NULL) {
+        out_buf = flb_malloc(retry_payload->size);
+        if (out_buf == NULL) {
+            flb_upstream_conn_release(u_conn);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        memcpy(out_buf, retry_payload->payload, retry_payload->size);
+        out_size = retry_payload->size;
+    }
+    else {
+        /* Convert format */
+        ret = elasticsearch_format(config, ins,
+                                   ctx, node,
+                                   event_chunk->type,
+                                   event_chunk->tag, flb_sds_len(event_chunk->tag),
+                                   event_chunk->data, event_chunk->size,
+                                   &out_buf, &out_size);
+        if (ret != 0) {
+            flb_upstream_conn_release(u_conn);
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
     }
 
     if (out_size == 0) {
@@ -1273,6 +1296,8 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
 
     pack = (char *) out_buf;
     pack_size = out_size;
+    final_payload_buf = pack;
+    final_payload_size = pack_size;
 
     /* Should we compress the payload ? */
     if (compress_gzip == FLB_TRUE) {
@@ -1284,17 +1309,9 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         }
         else {
             compressed = FLB_TRUE;
+            final_payload_buf = out_buf;
+            final_payload_size = out_size;
         }
-
-        /*
-         * The payload buffer is different than pack, means we must be free it.
-         */
-        if (out_buf != pack) {
-            flb_free(pack);
-        }
-
-        pack = (char *) out_buf;
-        pack_size = out_size;
     }
 
     /* Compose HTTP Client request */
@@ -1304,7 +1321,8 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     }
 
     c = flb_http_client(u_conn, FLB_HTTP_POST, uri,
-                        pack, pack_size, NULL, 0, NULL, 0);
+                        final_payload_buf, final_payload_size,
+                        NULL, 0, NULL, 0);
     if (c == NULL) {
         goto retry;
     }
@@ -1421,17 +1439,34 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         }
 
         if (c->resp.payload_size > 0) {
-            /*
-             * Elasticsearch payload should be JSON, we convert it to msgpack
-             * and lookup the 'error' field.
-             */
-            ret = elasticsearch_error_check(ctx, c);
-            if (ret & FLB_ES_STATUS_SUCCESS) {
+            ret = flb_search_bulk_process_response(c->resp.payload,
+                                                   c->resp.payload_size,
+                                                   pack, pack_size,
+                                                   &next_retry_payload);
+            if (ret == FLB_SEARCH_BULK_COMPLETE) {
+                flb_output_clear_retry_context(out_flush);
                 flb_plg_debug(ctx->ins, "Elasticsearch response\n%s",
                               c->resp.payload);
             }
             else {
-                /* we got an error */
+                if (ret == FLB_SEARCH_BULK_RETRY) {
+                    ret = flb_output_set_retry_context(
+                              out_flush, next_retry_payload,
+                              flb_search_bulk_retry_destroy,
+                              next_retry_payload->records,
+                              next_retry_payload->size);
+                    if (ret != 0) {
+                        flb_search_bulk_retry_destroy(next_retry_payload);
+                    }
+                    else {
+                        next_retry_payload = NULL;
+                    }
+                }
+                else {
+                    flb_plg_error(ctx->ins,
+                                  "invalid Elasticsearch bulk response");
+                }
+
                 if (ctx->trace_error) {
                     /*
                      * If trace_error is set, trace the actual
@@ -1467,6 +1502,9 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         flb_http_client_destroy(c);
     }
     flb_free(pack);
+    if (final_payload_buf != pack) {
+        flb_free(final_payload_buf);
+    }
     flb_upstream_conn_release(u_conn);
     if (signature) {
         flb_sds_destroy(signature);
@@ -1483,8 +1521,8 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     if (signature != NULL) {
         flb_sds_destroy(signature);
     }
-    if (out_buf != pack) {
-        flb_free(out_buf);
+    if (final_payload_buf != pack) {
+        flb_free(final_payload_buf);
     }
 
     flb_sds_destroy(uri);
