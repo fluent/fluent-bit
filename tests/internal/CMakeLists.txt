@@ -24,6 +24,7 @@ set(UNIT_TESTS_FILES
   zstd.c
   random.c
   thread_storage.c
+  config_service.c
   config_map.c
   mp.c
   mp_chunk_cobj.c
