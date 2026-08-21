@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_search_bulk.h>
 #include <msgpack.h>
 
 #include <cfl/cfl.h>
@@ -939,11 +940,13 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     size_t b_sent;
     struct flb_opensearch *ctx = out_context;
     struct flb_connection *u_conn;
-    struct flb_http_client *c;
+    struct flb_http_client *c = NULL;
     flb_sds_t signature = NULL;
     int compressed = FLB_FALSE;
     void *final_payload_buf = NULL;
     size_t final_payload_size = 0;
+    struct flb_search_bulk_retry *retry_payload;
+    struct flb_search_bulk_retry *next_retry_payload = NULL;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -951,8 +954,19 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    /* Convert format */
-    if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
+    retry_payload = flb_output_get_retry_context(out_flush, NULL, NULL);
+    if (retry_payload != NULL) {
+        pack = flb_sds_create_len(retry_payload->payload,
+                                  retry_payload->size);
+        if (pack == NULL) {
+            flb_upstream_conn_release(u_conn);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        ret = 0;
+        out_buf = pack;
+        out_size = flb_sds_len(pack);
+    }
+    else if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
         pack = flb_msgpack_raw_to_json_sds(event_chunk->data, event_chunk->size,
                                            config->json_escape_unicode);
         if (pack) {
@@ -1008,6 +1022,9 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
                         final_payload_buf, final_payload_size, NULL, 0, NULL, 0);
+    if (c == NULL) {
+        goto retry;
+    }
 
     flb_http_buffer_size(c, ctx->buffer_size);
 
@@ -1072,13 +1089,37 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
         }
 
         if (c->resp.payload_size > 0) {
-            /*
-             * OpenSearch payload should be JSON, we convert it to msgpack
-             * and lookup the 'error' field.
-             */
-            ret = opensearch_error_check(ctx, c);
-            if (ret == FLB_TRUE) {
-                /* we got an error */
+            if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+                ret = flb_search_bulk_process_response(c->resp.payload,
+                                                       c->resp.payload_size,
+                                                       pack, pack_size,
+                                                       &next_retry_payload);
+            }
+            else if (opensearch_error_check(ctx, c) == FLB_TRUE) {
+                ret = FLB_SEARCH_BULK_INVALID;
+            }
+            else {
+                ret = FLB_SEARCH_BULK_COMPLETE;
+            }
+            if (ret != FLB_SEARCH_BULK_COMPLETE) {
+                if (ret == FLB_SEARCH_BULK_RETRY) {
+                    ret = flb_output_set_retry_context(
+                              out_flush, next_retry_payload,
+                              flb_search_bulk_retry_destroy,
+                              next_retry_payload->records,
+                              next_retry_payload->size);
+                    if (ret != 0) {
+                        flb_search_bulk_retry_destroy(next_retry_payload);
+                    }
+                    else {
+                        next_retry_payload = NULL;
+                    }
+                }
+                else {
+                    flb_plg_error(ctx->ins,
+                                  "invalid OpenSearch bulk response");
+                }
+
                 if (ctx->trace_error) {
                     /*
                      * If trace_error is set, trace the actual
@@ -1108,6 +1149,7 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
                 goto retry;
             }
             else {
+                flb_output_clear_retry_context(out_flush);
                 flb_plg_debug(ctx->ins, "OpenSearch response\n%s",
                               c->resp.payload);
             }
@@ -1122,7 +1164,9 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Cleanup */
-    flb_http_client_destroy(c);
+    if (c != NULL) {
+        flb_http_client_destroy(c);
+    }
 
     if (final_payload_buf != pack) {
         flb_free(final_payload_buf);
@@ -1137,7 +1181,9 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
 
     /* Issue a retry */
  retry:
-    flb_http_client_destroy(c);
+    if (c != NULL) {
+        flb_http_client_destroy(c);
+    }
     flb_sds_destroy(pack);
 
     if (final_payload_buf != pack) {
