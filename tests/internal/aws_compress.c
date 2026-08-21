@@ -344,7 +344,7 @@ void test_parquet_format_snappy()
                  "{\"key\":\"other\",\"num\":99}\n";
     size_t json_len = strlen(json);
 
-    ret = out_s3_compress_columnar(FLB_AWS_COMPRESS_FORMAT_PARQUET,
+    ret = flb_aws_compression_compress_columnar(FLB_AWS_COMPRESS_FORMAT_PARQUET,
                                    json, json_len, &out_buf, &out_size,
                                    FLB_AWS_COMPRESS_SNAPPY);
     if (!TEST_CHECK(ret == 0 && out_buf != NULL && out_size >= 8)) {
@@ -365,7 +365,7 @@ void test_parquet_format_zstd()
                  "{\"key\":\"other\",\"num\":99}\n";
     size_t json_len = strlen(json);
 
-    ret = out_s3_compress_columnar(FLB_AWS_COMPRESS_FORMAT_PARQUET,
+    ret = flb_aws_compression_compress_columnar(FLB_AWS_COMPRESS_FORMAT_PARQUET,
                                    json, json_len, &out_buf, &out_size,
                                    FLB_AWS_COMPRESS_ZSTD);
     if (!TEST_CHECK(ret == 0 && out_buf != NULL && out_size >= 8)) {
@@ -386,7 +386,7 @@ void test_parquet_format_gzip()
                  "{\"key\":\"other\",\"num\":99}\n";
     size_t json_len = strlen(json);
 
-    ret = out_s3_compress_columnar(FLB_AWS_COMPRESS_FORMAT_PARQUET,
+    ret = flb_aws_compression_compress_columnar(FLB_AWS_COMPRESS_FORMAT_PARQUET,
                                    json, json_len, &out_buf, &out_size,
                                    FLB_AWS_COMPRESS_GZIP);
     if (!TEST_CHECK(ret == 0 && out_buf != NULL && out_size >= 8)) {
@@ -407,7 +407,7 @@ void test_parquet_format_uncompressed()
                  "{\"key\":\"other\",\"num\":99}\n";
     size_t json_len = strlen(json);
 
-    ret = out_s3_compress_columnar(FLB_AWS_COMPRESS_FORMAT_PARQUET,
+    ret = flb_aws_compression_compress_columnar(FLB_AWS_COMPRESS_FORMAT_PARQUET,
                                    json, json_len, &out_buf, &out_size,
                                    FLB_AWS_COMPRESS_NONE);
     if (!TEST_CHECK(ret == 0 && out_buf != NULL && out_size >= 8)) {
@@ -433,7 +433,7 @@ void test_parquet_compression_reduces_size()
                  "{\"msg\":\"hello hello hello hello hello hello\"}\n";
     size_t json_len = strlen(json);
 
-    ret = out_s3_compress_columnar(FLB_AWS_COMPRESS_FORMAT_PARQUET,
+    ret = flb_aws_compression_compress_columnar(FLB_AWS_COMPRESS_FORMAT_PARQUET,
                                    json, json_len, &buf_none, &size_none,
                                    FLB_AWS_COMPRESS_NONE);
     if (!TEST_CHECK(ret == 0 && buf_none != NULL)) {
@@ -441,7 +441,7 @@ void test_parquet_compression_reduces_size()
         return;
     }
 
-    ret = out_s3_compress_columnar(FLB_AWS_COMPRESS_FORMAT_PARQUET,
+    ret = flb_aws_compression_compress_columnar(FLB_AWS_COMPRESS_FORMAT_PARQUET,
                                    json, json_len, &buf_snappy, &size_snappy,
                                    FLB_AWS_COMPRESS_SNAPPY);
     if (!TEST_CHECK(ret == 0 && buf_snappy != NULL)) {
@@ -466,7 +466,7 @@ void test_arrow_format_uncompressed()
                  "{\"key\":\"other\",\"num\":99}\n";
     size_t json_len = strlen(json);
 
-    ret = out_s3_compress_columnar(FLB_AWS_COMPRESS_FORMAT_ARROW,
+    ret = flb_aws_compression_compress_columnar(FLB_AWS_COMPRESS_FORMAT_ARROW,
                                    json, json_len, &out_buf, &out_size,
                                    FLB_AWS_COMPRESS_NONE);
     if (!TEST_CHECK(ret == 0 && out_buf != NULL && out_size >= 8)) {
@@ -487,7 +487,7 @@ void test_arrow_format_zstd()
                  "{\"key\":\"other\",\"num\":99}\n";
     size_t json_len = strlen(json);
 
-    ret = out_s3_compress_columnar(FLB_AWS_COMPRESS_FORMAT_ARROW,
+    ret = flb_aws_compression_compress_columnar(FLB_AWS_COMPRESS_FORMAT_ARROW,
                                    json, json_len, &out_buf, &out_size,
                                    FLB_AWS_COMPRESS_ZSTD);
     if (!TEST_CHECK(ret == 0 && out_buf != NULL && out_size >= 8)) {
@@ -512,7 +512,7 @@ void test_arrow_format_gzip_unsupported()
                  "{\"key\":\"other\",\"num\":99}\n";
     size_t json_len = strlen(json);
 
-    ret = out_s3_compress_columnar(FLB_AWS_COMPRESS_FORMAT_ARROW,
+    ret = flb_aws_compression_compress_columnar(FLB_AWS_COMPRESS_FORMAT_ARROW,
                                    json, json_len, &out_buf, &out_size,
                                    FLB_AWS_COMPRESS_GZIP);
     TEST_CHECK(ret == -1);
