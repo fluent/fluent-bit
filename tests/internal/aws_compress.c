@@ -85,6 +85,61 @@ void test_compression_zstd()
     flb_aws_compress_test_cases(cases);
 }
 
+void test_compression_zstd_level()
+{
+    int ret;
+    void *out_default = NULL;
+    void *out_high = NULL;
+    void *roundtrip = NULL;
+    size_t out_default_len = 0;
+    size_t out_high_len = 0;
+    size_t roundtrip_len = 0;
+    /* repetitive input so higher levels have something to win on */
+    char in_data[512];
+    size_t i;
+
+    for (i = 0; i < sizeof(in_data); i++) {
+        in_data[i] = "hello world "[i % 12];
+    }
+
+    /* explicit level compresses and roundtrips */
+    ret = flb_aws_compression_compress_level(FLB_AWS_COMPRESS_ZSTD, 19,
+                                             in_data, sizeof(in_data),
+                                             &out_high, &out_high_len);
+    TEST_CHECK(ret == 0);
+    ret = flb_zstd_uncompress(out_high, out_high_len, &roundtrip, &roundtrip_len);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(roundtrip_len == sizeof(in_data));
+    TEST_CHECK(memcmp(roundtrip, in_data, sizeof(in_data)) == 0);
+    flb_free(roundtrip);
+
+    /* sentinel level matches the plain API's built-in default */
+    ret = flb_aws_compression_compress_level(FLB_AWS_COMPRESS_ZSTD,
+                                             FLB_AWS_COMPRESS_LEVEL_DEFAULT,
+                                             in_data, sizeof(in_data),
+                                             &out_default, &out_default_len);
+    TEST_CHECK(ret == 0);
+
+    /* a higher level must not produce a larger frame on repetitive input */
+    TEST_CHECK(out_high_len <= out_default_len);
+
+    /* out-of-range level fails */
+    ret = flb_aws_compression_compress_level(FLB_AWS_COMPRESS_ZSTD, 1000000,
+                                             in_data, sizeof(in_data),
+                                             &roundtrip, &roundtrip_len);
+    TEST_CHECK(ret == -1);
+
+    /* codec without tunable level falls back to its default and succeeds */
+    ret = flb_aws_compression_compress_level(FLB_AWS_COMPRESS_GZIP, 9,
+                                             in_data, sizeof(in_data),
+                                             &roundtrip, &roundtrip_len);
+    TEST_CHECK(ret == 0);
+    flb_free(roundtrip);
+
+    flb_free(out_default);
+    flb_free(out_high);
+}
+
 void test_compression_snappy()
 {
     struct flb_aws_test_case cases[] =
@@ -525,6 +580,7 @@ void test_arrow_format_gzip_unsupported()
 TEST_LIST = {
     { "test_compression_gzip", test_compression_gzip },
     { "test_compression_zstd", test_compression_zstd },
+    { "test_compression_zstd_level", test_compression_zstd_level },
     { "test_compression_snappy", test_compression_snappy },
     { "test_compression_snappy_return_value_normalization",
       test_compression_snappy_return_value_normalization },

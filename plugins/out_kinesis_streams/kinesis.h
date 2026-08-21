@@ -99,6 +99,8 @@ struct flb_kinesis {
     int retry_requests;
     int simple_aggregation;
     int compression;
+    /* FLB_AWS_COMPRESS_LEVEL_DEFAULT unless compression_level is set */
+    int compression_level;
     char *sts_endpoint;
     int custom_endpoint;
     uint16_t port;

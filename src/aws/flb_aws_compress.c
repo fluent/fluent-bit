@@ -49,6 +49,9 @@ struct compression_option {
     int compression_type;
     char *compression_keyword;
     int(*compress)(void *in_data, size_t in_len, void **out_data, size_t *out_len);
+    /* NULL when the codec has no tunable level */
+    int(*compress_level)(void *in_data, size_t in_len, void **out_data,
+                         size_t *out_len, int level);
 };
 
 /*
@@ -61,17 +64,20 @@ static const struct compression_option compression_options[] = {
     {
         FLB_AWS_COMPRESS_GZIP,
         "gzip",
-        &flb_gzip_compress
+        &flb_gzip_compress,
+        NULL
     },
     {
         FLB_AWS_COMPRESS_ZSTD,
         "zstd",
-        &flb_zstd_compress
+        &flb_zstd_compress,
+        &flb_zstd_compress_level
     },
     {
         FLB_AWS_COMPRESS_SNAPPY,
         "snappy",
-        &flb_snappy_compress_wrapper
+        &flb_snappy_compress_wrapper,
+        NULL
     },
     { 0 }
 };
@@ -98,13 +104,32 @@ int flb_aws_compression_get_type(const char *compression_keyword)
 int flb_aws_compression_compress(int compression_type, void *in_data, size_t in_len,
                                 void **out_data, size_t *out_len)
 {
+    return flb_aws_compression_compress_level(compression_type,
+                                              FLB_AWS_COMPRESS_LEVEL_DEFAULT,
+                                              in_data, in_len, out_data, out_len);
+}
+
+int flb_aws_compression_compress_level(int compression_type, int compression_level,
+                                       void *in_data, size_t in_len,
+                                       void **out_data, size_t *out_len)
+{
     const struct compression_option *o;
 
     o = compression_options;
 
     while (o->compression_type != 0) {
         if (o->compression_type == compression_type) {
-            return o->compress(in_data, in_len, out_data, out_len);
+            if (compression_level == FLB_AWS_COMPRESS_LEVEL_DEFAULT) {
+                return o->compress(in_data, in_len, out_data, out_len);
+            }
+            if (o->compress_level == NULL) {
+                flb_warn("[aws_compress] compression level %i ignored: '%s' has "
+                         "no tunable level, using its built-in default",
+                         compression_level, o->compression_keyword);
+                return o->compress(in_data, in_len, out_data, out_len);
+            }
+            return o->compress_level(in_data, in_len, out_data, out_len,
+                                     compression_level);
         }
         ++o;
     }
@@ -117,6 +142,18 @@ int flb_aws_compression_compress(int compression_type, void *in_data, size_t in_
 int flb_aws_compression_b64_truncate_compress(int compression_type, size_t max_out_len,
                                              void *in_data, size_t in_len,
                                              void **out_data, size_t *out_len)
+{
+    return flb_aws_compression_b64_truncate_compress_level(compression_type,
+                                                    FLB_AWS_COMPRESS_LEVEL_DEFAULT,
+                                                    max_out_len, in_data, in_len,
+                                                    out_data, out_len);
+}
+
+int flb_aws_compression_b64_truncate_compress_level(int compression_type,
+                                                    int compression_level,
+                                                    size_t max_out_len,
+                                                    void *in_data, size_t in_len,
+                                                    void **out_data, size_t *out_len)
 {
     static const void *truncation_suffix = "[Truncated...]";
     static const size_t truncation_suffix_len = 14;
@@ -154,7 +191,8 @@ int flb_aws_compression_b64_truncate_compress(int compression_type, size_t max_o
             return -1;
         }
 
-        ret = flb_aws_compression_compress(compression_type, truncated_in_buf,
+        ret = flb_aws_compression_compress_level(compression_type, compression_level,
+                                          truncated_in_buf,
                                           truncated_in_len, &compressed_buf,
                                           &compressed_len);
         ++compression_attempts;

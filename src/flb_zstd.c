@@ -29,13 +29,28 @@ struct flb_zstd_decompression_context {
 };
 
 #define FLB_ZSTD_DEFAULT_CHUNK      (64 * 1024)       /* 64 KB buffer */
+/* Historical default used by flb_zstd_compress(); kept for compatibility */
+#define FLB_ZSTD_DEFAULT_COMPRESSION_LEVEL 1
 #define FLB_ZSTD_DECOMPRESS_MAX     (100 * 1024 * 1024)  /* 100 MB limit */
 
 int flb_zstd_compress(void *in_data, size_t in_len, void **out_data, size_t *out_len)
 {
+    return flb_zstd_compress_level(in_data, in_len, out_data, out_len,
+                                   FLB_ZSTD_DEFAULT_COMPRESSION_LEVEL);
+}
+
+int flb_zstd_compress_level(void *in_data, size_t in_len, void **out_data,
+                            size_t *out_len, int level)
+{
     void *buf;
     size_t size;
     size_t bound;
+
+    if (level < ZSTD_minCLevel() || level > ZSTD_maxCLevel()) {
+        flb_error("[zstd] invalid compression level %i (valid range: %i..%i)",
+                  level, ZSTD_minCLevel(), ZSTD_maxCLevel());
+        return -1;
+    }
 
     bound = ZSTD_compressBound(in_len);
     buf = flb_malloc(bound);
@@ -44,7 +59,7 @@ int flb_zstd_compress(void *in_data, size_t in_len, void **out_data, size_t *out
         return -1;
     }
 
-    size = ZSTD_compress(buf, bound, in_data, in_len, 1);
+    size = ZSTD_compress(buf, bound, in_data, in_len, level);
     if (ZSTD_isError(size)) {
         flb_error("[zstd] compression failed: %s", ZSTD_getErrorName(size));
         flb_free(buf);

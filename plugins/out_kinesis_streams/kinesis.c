@@ -160,6 +160,17 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
         ctx->compression = FLB_AWS_COMPRESS_NONE;
     }
 
+    ctx->compression_level = FLB_AWS_COMPRESS_LEVEL_DEFAULT;
+    tmp = flb_output_get_property("compression_level", ins);
+    if (tmp) {
+        if (ctx->compression == FLB_AWS_COMPRESS_NONE) {
+            flb_plg_error(ctx->ins,
+                          "compression_level requires compression to be set");
+            goto error;
+        }
+        ctx->compression_level = atoi(tmp);
+    }
+
     tmp = flb_output_get_property("region", ins);
     if (tmp) {
         ctx->region = tmp;
@@ -542,6 +553,15 @@ static struct flb_config_map config_map[] = {
     "Compression type for Kinesis records. Each log record is individually compressed "
     "and sent to Kinesis Data Streams. Supported values: 'gzip', 'zstd', 'snappy'. "
     "Defaults to no compression."
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "compression_level", "-1",
+     0, FLB_FALSE, 0,
+    "Compression level for the configured 'compression' type. Currently honored "
+    "for 'zstd' only (valid levels follow the linked zstd library, typically "
+    "-131072..22); other codecs use their built-in default and log a warning. "
+    "Defaults to the codec's built-in default (zstd: 1)."
     },
 
     /* EOF */
