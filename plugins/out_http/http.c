@@ -109,6 +109,54 @@ static void append_headers(struct flb_http_client *c,
     }
 }
 
+/*
+ * Reads ctx->http_bearer_token_file fresh (no caching), trims trailing whitespace/newlines,
+ * and sets the Authorization: Bearer header on the given HTTP client. Returns 0 on
+ * success, -1 on read failure, empty-after-trim content, or header-construction failure
+ * (error already logged, path and reason only, never token content).
+ */
+static int http_bearer_token_file_auth(struct flb_out_http *ctx,
+                                       struct flb_http_client *c)
+{
+    int ret;
+    char *bearer_buf = NULL;
+    size_t bearer_size = 0;
+
+    ret = flb_utils_read_file(ctx->http_bearer_token_file, &bearer_buf, &bearer_size);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "could not read http_bearer_token_file '%s'",
+                      ctx->http_bearer_token_file);
+        return -1;
+    }
+
+    while (bearer_size > 0 &&
+           (bearer_buf[bearer_size - 1] == '\r' ||
+            bearer_buf[bearer_size - 1] == '\n' ||
+            bearer_buf[bearer_size - 1] == ' ' ||
+            bearer_buf[bearer_size - 1] == '\t')) {
+        bearer_size--;
+    }
+    bearer_buf[bearer_size] = '\0';
+
+    if (bearer_size == 0) {
+        flb_plg_error(ctx->ins, "http_bearer_token_file '%s' is empty after trimming",
+                      ctx->http_bearer_token_file);
+        flb_free(bearer_buf);
+        return -1;
+    }
+
+    ret = flb_http_bearer_auth(c, bearer_buf);
+    flb_free(bearer_buf);
+
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "could not set Authorization header from "
+                      "http_bearer_token_file '%s'", ctx->http_bearer_token_file);
+        return -1;
+    }
+
+    return 0;
+}
+
 static int http_request(struct flb_out_http *ctx,
                         const void *body, size_t body_len,
                         const char *tag, int tag_len,
@@ -265,6 +313,17 @@ static int http_request(struct flb_out_http *ctx,
     /* Basic Auth headers */
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    }
+    else if (ctx->http_bearer_token_file) {
+        ret = http_bearer_token_file_auth(ctx, c);
+        if (ret == -1) {
+            if (payload_buf != body) {
+                flb_free(payload_buf);
+            }
+            flb_http_client_destroy(c);
+            flb_upstream_conn_release(u_conn);
+            return FLB_RETRY;
+        }
     }
 
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
@@ -722,6 +781,14 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_out_http, http_passwd),
      "Set HTTP auth password"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "http_bearer_token_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, http_bearer_token_file),
+     "Path to a file containing a Bearer token. The file is re-read on every "
+     "outgoing request (no caching), so token rotation on disk is picked up "
+     "without a restart. Mutually exclusive with http_user/http_passwd and "
+     "oauth2.enable."
     },
     {
      FLB_CONFIG_MAP_BOOL, "oauth2.enable", "false",
