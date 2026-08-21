@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_sqldb.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_oauth2.h>
 
 /* Content-Type */
 #define AZURE_BLOB_CT          "Content-Type"
@@ -53,6 +54,12 @@
 
 #define AZURE_BLOB_AUTH_KEY 0
 #define AZURE_BLOB_AUTH_SAS 1
+#define AZURE_BLOB_AUTH_SERVICE_PRINCIPAL 2
+
+/* OAuth2 defaults for service principal authentication */
+#define AZURE_BLOB_DEFAULT_AUTHORITY_HOST "https://login.microsoftonline.com"
+#define AZURE_BLOB_OAUTH_SCOPE "https://storage.azure.com/.default"
+#define AZURE_BLOB_TOKEN_REFRESH 3000  /* refresh token every 50 minutes */
 
 struct flb_azure_blob {
     int auto_create_container;
@@ -69,6 +76,11 @@ struct flb_azure_blob {
     flb_sds_t date_key;
     flb_sds_t auth_type;
     flb_sds_t sas_token;
+
+    /* Service Principal authentication fields */
+    flb_sds_t tenant_id;
+    flb_sds_t client_id;
+    flb_sds_t client_secret;
     flb_sds_t database_file;
     size_t part_size;
     time_t upload_parts_timeout;
@@ -124,6 +136,10 @@ struct flb_azure_blob {
     /* Shared key */
     unsigned char *decoded_sk;        /* decoded shared key */
     size_t decoded_sk_size;           /* size of decoded shared key */
+
+    /* Service Principal OAuth2 context */
+    struct flb_oauth2 *o;
+    pthread_mutex_t token_mutex;
 
 #ifdef FLB_HAVE_SQLDB
     /*
