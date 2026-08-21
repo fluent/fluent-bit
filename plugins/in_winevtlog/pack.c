@@ -302,38 +302,69 @@ static int pack_systemtime(struct winevtlog_config *ctx, SYSTEMTIME *st)
     _locale_t locale;
     DYNAMIC_TIME_ZONE_INFORMATION dtzi;
     SYSTEMTIME st_local;
+    struct tm tm;
+
+    if (st == NULL) {
+        return -1;
+    }
 
     _tzset();
 
     GetDynamicTimeZoneInformation(&dtzi);
 
+    if (!SystemTimeToTzSpecificLocalTimeEx(&dtzi, st, &st_local)) {
+        flb_plg_debug(ctx->ins,
+                      "failed to convert SYSTEMTIME to local time: error=%u",
+                      GetLastError());
+        return -1;
+    }
+
+    /* SYSTEMTIME values come straight from event data, so they can hold
+     * out-of-range fields. The MSVC secure CRT invokes the invalid
+     * parameter handler when _strftime_l() receives an out-of-range
+     * struct tm, which terminates the whole process with
+     * STATUS_STACK_BUFFER_OVERRUN (0xc0000409, FAST_FAIL_INVALID_ARG).
+     * Validate every field before formatting.
+     */
+    if (st_local.wYear < 1601  || st_local.wYear > 30827 ||
+        st_local.wMonth < 1    || st_local.wMonth > 12   ||
+        st_local.wDay < 1      || st_local.wDay > 31     ||
+        st_local.wHour > 23    || st_local.wMinute > 59  ||
+        st_local.wSecond > 59  || st_local.wDayOfWeek > 6) {
+        flb_plg_debug(ctx->ins,
+                      "dropping out-of-range SYSTEMTIME value: "
+                      "%u-%u-%u %u:%u:%u (dow=%u)",
+                      st_local.wYear, st_local.wMonth, st_local.wDay,
+                      st_local.wHour, st_local.wMinute, st_local.wSecond,
+                      st_local.wDayOfWeek);
+        return -1;
+    }
+
     locale = _get_current_locale();
     if (locale == NULL) {
         return -1;
     }
-    if (st != NULL) {
-        SystemTimeToTzSpecificLocalTimeEx(&dtzi, st, &st_local);
 
-        struct tm tm = {st_local.wSecond,
-                        st_local.wMinute,
-                        st_local.wHour,
-                        st_local.wDay,
-                        st_local.wMonth-1,
-                        st_local.wYear-1900,
-                        st_local.wDayOfWeek, 0, -1};
-        len = _strftime_l(buf, 64, FORMAT_ISO8601, &tm, locale);
-        if (len == 0) {
-            flb_errno();
-            _free_locale(locale);
-            return -1;
-        }
+    memset(&tm, 0, sizeof(tm));
+    tm.tm_sec   = st_local.wSecond;
+    tm.tm_min   = st_local.wMinute;
+    tm.tm_hour  = st_local.wHour;
+    tm.tm_mday  = st_local.wDay;
+    tm.tm_mon   = st_local.wMonth - 1;
+    tm.tm_year  = st_local.wYear - 1900;
+    tm.tm_wday  = st_local.wDayOfWeek;
+    tm.tm_yday  = 0;
+    tm.tm_isdst = -1;
+
+    len = _strftime_l(buf, 64, FORMAT_ISO8601, &tm, locale);
+    if (len == 0) {
+        flb_errno();
         _free_locale(locale);
-
-        flb_log_event_encoder_append_body_string(ctx->log_encoder, buf, len);
-    }
-    else {
         return -1;
     }
+    _free_locale(locale);
+
+    flb_log_event_encoder_append_body_string(ctx->log_encoder, buf, len);
 
     return 0;
 }
@@ -402,7 +433,7 @@ static int pack_filetime(struct winevtlog_config *ctx, ULONGLONG filetime)
                       offset_hours,
                       offset_minutes);
 
-    if (len <= 0) {
+    if ((int) len <= 0) {
         return -1;
     }
 
