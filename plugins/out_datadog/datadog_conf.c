@@ -40,6 +40,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     char *host = NULL;
     char *port = NULL;
     char *uri = NULL;
+    char *site = NULL;
 
     /* Start resource creation */
     ctx = flb_calloc(1, sizeof(struct flb_out_datadog));
@@ -98,6 +99,14 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+    /* Site parameter is now handled by config map */
+    if (ctx->site) {
+        flb_plg_debug(ctx->ins, "site parameter set to: %s", ctx->site);
+    } 
+    else {
+        flb_plg_debug(ctx->ins, "no site parameter found");
+    }
+
     /* Tag Key */
     if (ctx->include_tag_key == FLB_TRUE) {
         ctx->nb_additional_entries++;
@@ -126,7 +135,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     tmp = flb_output_get_property("provider", ins);
     ctx->remap = tmp && (strlen(tmp) == strlen(FLB_DATADOG_REMAP_PROVIDER)) && \
         (strncmp(tmp, FLB_DATADOG_REMAP_PROVIDER, strlen(tmp)) == 0);
-
+    
     ctx->uri = flb_sds_create("/api/v2/logs");
     if (!ctx->uri) {
         flb_plg_error(ctx->ins, "error on uri generation");
@@ -138,18 +147,45 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
 
     /* Get network configuration */
     if (!ins->host.name) {
-        tmp_sds = flb_sds_create(FLB_DATADOG_DEFAULT_HOST);
+        /* No explicit Host parameter, check for site */
+        if (ctx->site) {
+            flb_plg_debug(ctx->ins, "using site for host construction: %s", ctx->site);
+            /* Construct hostname from site */
+            tmp_sds = flb_sds_create("http-intake.logs.");
+            if (!tmp_sds) {
+                flb_errno();
+                flb_datadog_conf_destroy(ctx);
+                return NULL;
+            }
+            tmp_sds = flb_sds_cat(tmp_sds, (const char *)ctx->site, flb_sds_len(ctx->site));
+            ctx->host = tmp_sds;
+            flb_plg_debug(ctx->ins, "host constructed from site: %s", ctx->host);
+        } 
+        else {
+            flb_plg_debug(ctx->ins, "no site specified, using default host");
+            /* No site specified, use default */
+            tmp_sds = flb_sds_create(FLB_DATADOG_DEFAULT_HOST);
+            if (!tmp_sds) {
+                flb_errno();
+                flb_datadog_conf_destroy(ctx);
+                return NULL;
+            }
+            ctx->host = tmp_sds;
+            flb_plg_debug(ctx->ins, "host: %s", ctx->host);
+        }
     }
     else {
+        flb_plg_debug(ctx->ins, "explicit Host parameter takes precedence: %s", ins->host.name);
+        /* Explicit Host parameter takes precedence */
         tmp_sds = flb_sds_create(ins->host.name);
+        if (!tmp_sds) {
+            flb_errno();
+            flb_datadog_conf_destroy(ctx);
+            return NULL;
+        }
+        ctx->host = tmp_sds;
+        flb_plg_debug(ctx->ins, "host: %s", ctx->host);
     }
-    if (!tmp_sds) {
-        flb_errno();
-        flb_datadog_conf_destroy(ctx);
-        return NULL;
-    }
-    ctx->host = tmp_sds;
-    flb_plg_debug(ctx->ins, "host: %s", ctx->host);
 
     if (ins->host.port != 0) {
         ctx->port = ins->host.port;
