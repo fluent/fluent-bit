@@ -173,6 +173,7 @@ static void flb_help(int rc, struct flb_config *config)
     print_opt_i("-s, --coro_stack_size", "set coroutines stack size in bytes",
                 config->coro_stack_size);
     print_opt("-q, --quiet", "quiet mode");
+    print_opt("-B, --no-banner", "Disable printing of version banner");
     print_opt("-S, --sosreport", "support report for Enterprise customers");
     print_opt("-Y, --enable-hot-reload", "enable for hot reloading");
     print_opt("    --enable-fips", "require OpenSSL FIPS mode at startup");
@@ -1072,6 +1073,7 @@ static int flb_main_run(int argc, char **argv)
         { "verbose",         no_argument      , NULL, 'v' },
         { "workdir",         required_argument, NULL, 'w' },
         { "quiet",           no_argument      , NULL, 'q' },
+        { "no-banner",       no_argument      , NULL, 'B' },
         { "help",            no_argument      , NULL, 'h' },
         { "help-json",       no_argument      , NULL, 'J' },
         { "coro_stack_size", required_argument, NULL, 's' },
@@ -1130,7 +1132,7 @@ static int flb_main_run(int argc, char **argv)
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
                               "b:c:dDf:C:i:m:M:o:R:r:F:p:e:"
-                              "t:T:l:vw:qVhJL:HP:s:SWYZ",
+                              "t:T:l:vBw:qVhJL:HP:s:SWYZ",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -1289,6 +1291,9 @@ static int flb_main_run(int argc, char **argv)
         case 'v':
             config->verbose++;
             break;
+        case 'B':
+            config->banner = FLB_FALSE;
+            break;
         case 'w':
             config->workdir =  flb_strdup(optarg);
             break;
@@ -1350,7 +1355,8 @@ static int flb_main_run(int argc, char **argv)
 
     set_log_level_from_env(config);
 
-    if (config->verbose != FLB_LOG_OFF) {
+    /* Show banner only if the configuration explicitly says so */
+    if (config->verbose != FLB_LOG_OFF && config->banner == FLB_TRUE) {
         flb_version_banner();
     }
 
