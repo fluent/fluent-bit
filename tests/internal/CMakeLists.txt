@@ -65,6 +65,7 @@ set(UNIT_TESTS_FILES
   storage_dlq.c
   engine_adaptive_flush.c
   engine_dispatch.c
+  search_bulk.c
 )
 
 if(FLB_OUT_AZURE_BLOB)
