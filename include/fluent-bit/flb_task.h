@@ -59,6 +59,10 @@ struct flb_task_route {
     int status;
     int records;
     size_t bytes;
+    void *retry_context;
+    void (*retry_context_destroy)(void *);
+    int retry_records;
+    size_t retry_bytes;
     struct flb_output_instance *out;
     struct mk_list _head;
 };
@@ -303,6 +307,71 @@ static FLB_INLINE int flb_task_get_route_data(
     }
 
     return -1;
+}
+
+static FLB_INLINE void *flb_task_get_route_retry_context(
+                        struct flb_task *task,
+                        struct flb_output_instance *o_ins,
+                        int *records,
+                        size_t *bytes)
+{
+    struct mk_list *iterator;
+    struct flb_task_route *route;
+
+    mk_list_foreach(iterator, &task->routes) {
+        route = mk_list_entry(iterator, struct flb_task_route, _head);
+
+        if (route->out == o_ins) {
+            if (records != NULL) {
+                *records = route->retry_records;
+            }
+            if (bytes != NULL) {
+                *bytes = route->retry_bytes;
+            }
+            return route->retry_context;
+        }
+    }
+
+    return NULL;
+}
+
+static FLB_INLINE int flb_task_set_route_retry_context(
+                        struct flb_task *task,
+                        struct flb_output_instance *o_ins,
+                        void *context,
+                        void (*destroy)(void *),
+                        int records,
+                        size_t bytes)
+{
+    struct mk_list *iterator;
+    struct flb_task_route *route;
+
+    mk_list_foreach(iterator, &task->routes) {
+        route = mk_list_entry(iterator, struct flb_task_route, _head);
+
+        if (route->out == o_ins) {
+            if (route->retry_context != NULL &&
+                route->retry_context != context &&
+                route->retry_context_destroy != NULL) {
+                route->retry_context_destroy(route->retry_context);
+            }
+
+            route->retry_context = context;
+            route->retry_context_destroy = destroy;
+            route->retry_records = records;
+            route->retry_bytes = bytes;
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+static FLB_INLINE int flb_task_clear_route_retry_context(
+                        struct flb_task *task,
+                        struct flb_output_instance *o_ins)
+{
+    return flb_task_set_route_retry_context(task, o_ins, NULL, NULL, 0, 0);
 }
 
 
