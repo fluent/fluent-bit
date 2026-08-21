@@ -138,7 +138,9 @@ static flb_sds_t read_token_from_file(const char *token_file)
     return token;
 }
 
-int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *token_file, const char *client_id, const char *tenant_id)
+int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *token_file,
+                                          const char *client_id, const char *tenant_id,
+                                          const char *scope)
 {
     int ret;
     size_t b_sent;
@@ -162,7 +164,7 @@ int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *to
         return -1;
     }
 
-    flb_info("[azure workload identity] after read token from file %s", federated_token);
+    flb_debug("[azure workload identity] federated token read successfully from file");
 
     /* Build the form data for token exchange *before* creating the client */
     body = flb_sds_create_size(4096);
@@ -211,8 +213,14 @@ int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *to
     }
     body = tmp;
 
-    /* Use the correct scope and length for Kusto */
-    tmp = flb_sds_cat(body, "&scope=https://help.kusto.windows.net/.default", 46);
+    /* Use the cloud-specific scope for Kusto */
+    tmp = flb_sds_cat(body, "&scope=", 7);
+    if (!tmp) {
+        goto body_error;
+    }
+    body = tmp;
+
+    tmp = flb_sds_cat(body, scope, strlen(scope));
     if (!tmp) {
         goto body_error;
     }
@@ -249,8 +257,8 @@ int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *to
     /* c->body_buf = body; */
     /* c->body_len = flb_sds_len(body); */
 
-    /* Add a debug log to verify the body content just before sending */
-    flb_debug("[azure workload identity] Sending request body (len=%zu): %s", flb_sds_len(body), body);
+    /* Log only the body length, not the content (body contains sensitive credentials) */
+    flb_debug("[azure workload identity] sending token exchange request (body_len=%zu)", flb_sds_len(body));
 
     /* Issue request */
     ret = flb_http_do(c, &b_sent);
