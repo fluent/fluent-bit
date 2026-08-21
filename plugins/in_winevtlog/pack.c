@@ -310,7 +310,12 @@ static int pack_systemtime(struct winevtlog_config *ctx, SYSTEMTIME *st)
 
     _tzset();
 
-    GetDynamicTimeZoneInformation(&dtzi);
+    if (GetDynamicTimeZoneInformation(&dtzi) == TIME_ZONE_ID_INVALID) {
+        flb_plg_debug(ctx->ins,
+                      "failed to get dynamic timezone information: error=%u",
+                      GetLastError());
+        return -1;
+    }
 
     if (!SystemTimeToTzSpecificLocalTimeEx(&dtzi, st, &st_local)) {
         flb_plg_debug(ctx->ins,
@@ -324,9 +329,10 @@ static int pack_systemtime(struct winevtlog_config *ctx, SYSTEMTIME *st)
      * parameter handler when _strftime_l() receives an out-of-range
      * struct tm, which terminates the whole process with
      * STATUS_STACK_BUFFER_OVERRUN (0xc0000409, FAST_FAIL_INVALID_ARG).
-     * Validate every field before formatting.
+     * Validate every field before formatting. The UCRT only accepts
+     * tm_year values up to 8099, so cap the year at 9999.
      */
-    if (st_local.wYear < 1601  || st_local.wYear > 30827 ||
+    if (st_local.wYear < 1601  || st_local.wYear > 9999  ||
         st_local.wMonth < 1    || st_local.wMonth > 12   ||
         st_local.wDay < 1      || st_local.wDay > 31     ||
         st_local.wHour > 23    || st_local.wMinute > 59  ||
