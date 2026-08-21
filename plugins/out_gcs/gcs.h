@@ -32,8 +32,8 @@
 #define FLB_GCS_AUTH_URL "https://oauth2.googleapis.com/token"
 #define FLB_GCS_TOKEN_REFRESH 3000
 
-#define FLB_GCS_COMPRESSION_NONE 0
-#define FLB_GCS_COMPRESSION_GZIP 1
+#define FLB_GCS_FORMAT_JSON_LINES 0
+#define FLB_GCS_FORMAT_PARQUET    100
 
 struct upload_queue {
     struct gcs_file *upload_file;
@@ -83,6 +83,7 @@ struct flb_gcs {
     int static_file_path;
 
     int out_format;
+    int gcs_format;
     int json_date_format;
     flb_sds_t json_date_key;
     int compression_type;

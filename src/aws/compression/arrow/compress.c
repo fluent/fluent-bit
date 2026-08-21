@@ -39,6 +39,34 @@ static GArrowCompressionType compression_type_to_garrow(int compression_type)
         }
 }
 
+static int validate_columnar_compression(int columnar_format,
+                                         int compression_type)
+{
+        if (columnar_format == FLB_AWS_COMPRESS_FORMAT_PARQUET) {
+                switch (compression_type) {
+                case FLB_AWS_COMPRESS_NONE:
+                case FLB_AWS_COMPRESS_SNAPPY:
+                case FLB_AWS_COMPRESS_GZIP:
+                case FLB_AWS_COMPRESS_ZSTD:
+                        return 0;
+                default:
+                        return -1;
+                }
+        }
+
+        if (columnar_format == FLB_AWS_COMPRESS_FORMAT_ARROW) {
+                switch (compression_type) {
+                case FLB_AWS_COMPRESS_NONE:
+                case FLB_AWS_COMPRESS_ZSTD:
+                        return 0;
+                default:
+                        return -1;
+                }
+        }
+
+        return -1;
+}
+
 static int choose_block_size(size_t size)
 {
     int block_size = 8 * 1024 * 1024;
@@ -239,9 +267,10 @@ static GArrowResizableBuffer* table_to_parquet_buffer(GArrowTable *table,
 }
 #endif
 
-int out_s3_compress_columnar(int columnar_format, void *json, size_t size,
-                             void **out_buf, size_t *out_size,
-                             int compression_type)
+int flb_aws_compression_compress_columnar(int columnar_format,
+                                          void *json, size_t size,
+                                          void **out_buf, size_t *out_size,
+                                          int compression_type)
 {
         GArrowTable *table;
         GArrowResizableBuffer *buffer;
@@ -249,6 +278,14 @@ int out_s3_compress_columnar(int columnar_format, void *json, size_t size,
         gconstpointer ptr;
         gsize len;
         uint8_t *buf;
+
+        if (validate_columnar_compression(columnar_format,
+                                          compression_type) != 0) {
+                flb_error("[aws][compress] unsupported compression type %d "
+                          "for columnar format %d",
+                          compression_type, columnar_format);
+                return -1;
+        }
 
         table = parse_json((uint8_t *) json, size);
         if (table == NULL) {
@@ -319,4 +356,13 @@ int out_s3_compress_columnar(int columnar_format, void *json, size_t size,
         g_object_unref(buffer);
         g_bytes_unref(bytes);
         return 0;
+}
+
+int out_s3_compress_columnar(int columnar_format, void *json, size_t size,
+                             void **out_buf, size_t *out_size,
+                             int compression_type)
+{
+        return flb_aws_compression_compress_columnar(
+                        columnar_format, json, size,
+                        out_buf, out_size, compression_type);
 }
