@@ -23,7 +23,13 @@
 #include "azure_kusto.h"
 #include "azure_kusto_store.h"
 
+/* Internal policy: early-delete is safe only after queue enqueue succeeds. */
+int azure_kusto_should_early_delete_buffer_file(struct flb_azure_kusto *ctx,
+                                                struct azure_kusto_file *upload_file,
+                                                int enqueue_ret);
 int azure_kusto_queued_ingestion(struct flb_azure_kusto *ctx, flb_sds_t tag,
-                                 size_t tag_len, flb_sds_t payload, size_t payload_size, struct azure_kusto_file *upload_file);
+                                 size_t tag_len, flb_sds_t payload,
+                                 size_t payload_size,
+                                 struct azure_kusto_file *upload_file);
 
 #endif
