@@ -134,7 +134,7 @@ flb_sds_t azb_uri_ensure_or_create_container(struct flb_azure_blob *ctx)
         return NULL;
     }
 
-    if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
+    if (ctx->atype == FLB_AZURE_AUTH_SAS && ctx->sas_token) {
         if (flb_sds_printf(&uri, "&%s", ctx->sas_token) == NULL) {
             flb_sds_destroy(uri);
             return NULL;
@@ -192,7 +192,7 @@ flb_sds_t azb_uri_create_blob(struct flb_azure_blob *ctx,
         }
     }
 
-    if (ctx->atype == AZURE_BLOB_AUTH_SAS && ctx->sas_token) {
+    if (ctx->atype == FLB_AZURE_AUTH_SAS && ctx->sas_token) {
         if (flb_sds_printf(&uri, "?%s", ctx->sas_token) == NULL) {
             flb_sds_destroy(uri);
             return NULL;
