@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_snappy.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_kv.h>
 
@@ -69,6 +70,10 @@ static int http_post(struct prometheus_remote_write_context *ctx,
     }
     else if (strcasecmp(ctx->compression, "gzip") == 0) {
         ret = flb_gzip_compress((void *) body, body_len,
+                                &payload_buf, &payload_size);
+    }
+    else if (strcasecmp(ctx->compression, "zstd") == 0) {
+        ret = flb_zstd_compress((void *) body, body_len,
                                 &payload_buf, &payload_size);
     }
     else {
@@ -133,6 +138,13 @@ static int http_post(struct prometheus_remote_write_context *ctx,
                             strlen("Content-Encoding"),
                             "gzip",
                             strlen("gzip"));
+    }
+    else if (strcasecmp(ctx->compression, "zstd") == 0) {
+        flb_http_add_header(c,
+                            "Content-Encoding",
+                            strlen("Content-Encoding"),
+                            "zstd",
+                            strlen("zstd"));
     }
 
     /* Basic Auth headers */
@@ -415,7 +427,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compression", "snappy",
      0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, compression),
-     "Compress the payload with either snappy, gzip if set"
+     "Compress the payload with either snappy, gzip, zstd if set"
     },
 
 #ifdef FLB_HAVE_SIGNV4
