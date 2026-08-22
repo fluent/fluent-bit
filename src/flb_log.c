@@ -1001,6 +1001,41 @@ struct flb_log_metrics *flb_log_metrics_create()
     return metrics;
 }
 
+/*
+ * Release everything flb_log_create() has set up so far, for the failure
+ * paths that run after the channel manager pipe exists but before the
+ * collector thread is started. flb_log_destroy() cannot be used there: it
+ * joins log->tid and dereferences log->worker, neither of which is valid
+ * yet.
+ */
+static void log_create_cleanup(struct flb_log *log, struct flb_config *config)
+{
+    flb_log_metrics_destroy(log->metrics);
+    flb_pipe_destroy(log->ch_mng);
+    log_close_sink(log);
+    pthread_mutex_destroy(&log->queue_mutex);
+    pthread_mutex_destroy(&log->pipeline_queue.mutex);
+    mk_event_loop_destroy(log->evl);
+    flb_free(log);
+    config->log = NULL;
+}
+
+/*
+ * Release the fake worker context flb_log_create() builds for the main
+ * thread. The thread-local pointer is cleared too, otherwise it would be
+ * left dangling for any later flb_log_create() attempt.
+ */
+static void log_create_worker_cleanup(struct flb_worker *worker)
+{
+    if (worker->log_cache) {
+        flb_log_cache_destroy(worker->log_cache);
+        worker->log_cache = NULL;
+    }
+    flb_log_worker_destroy(worker);
+    flb_free(worker);
+    FLB_TLS_SET(flb_worker_ctx, NULL);
+}
+
 struct flb_log *flb_log_create(struct flb_config *config, int type,
                                int level, char *out)
 {
@@ -1063,9 +1098,7 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
 
     if (ret == -1) {
         fprintf(stderr, "[log] could not register event\n");
-        mk_event_loop_destroy(log->evl);
-        flb_free(log);
-        config->log = NULL;
+        log_create_cleanup(log, config);
         return NULL;
     }
 
@@ -1073,9 +1106,7 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     log->metrics = flb_log_metrics_create();
     if (log->metrics == NULL) {
         fprintf(stderr, "[log] could not create log metrics\n");
-        mk_event_loop_destroy(log->evl);
-        flb_free(log);
-        config->log = NULL;
+        log_create_cleanup(log, config);
         return NULL;
     }
 
@@ -1087,9 +1118,8 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     worker = flb_worker_context_create(NULL, NULL, config);
     if (!worker) {
         flb_errno();
-        mk_event_loop_destroy(log->evl);
-        flb_free(log);
-        config->log = NULL;
+        log_create_cleanup(log, config);
+        return NULL;
     }
 
     /* Set the worker context global */
@@ -1099,10 +1129,8 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     ret = flb_log_worker_init(worker);
     if (ret == -1) {
         flb_errno();
-        mk_event_loop_destroy(log->evl);
-        flb_free(log);
-        config->log = NULL;
-        flb_free(worker);
+        log_create_cleanup(log, config);
+        log_create_worker_cleanup(worker);
         return NULL;
     }
     log->worker = worker;
@@ -1120,10 +1148,10 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     ret = flb_worker_create(log_worker_collector, log, &log->tid, config);
     if (ret == -1) {
         pthread_mutex_unlock(&log->pth_mutex);
-        mk_event_loop_destroy(log->evl);
-        flb_free(log->worker);
-        flb_free(log);
-        config->log = NULL;
+        pthread_mutex_destroy(&log->pth_mutex);
+        pthread_cond_destroy(&log->pth_cond);
+        log_create_worker_cleanup(log->worker);
+        log_create_cleanup(log, config);
         return NULL;
     }
 
