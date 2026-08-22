@@ -1271,6 +1271,80 @@ void flb_test_gcs_rejects_total_file_size_below_minimum(void)
     flb_free(store_dir);
 }
 
+/*
+ * Multiple output workers flush concurrently and share the upload queue,
+ * the local file store and the sequence index. Every tag must still be
+ * uploaded exactly once and the process must not crash or corrupt state.
+ */
+void flb_test_gcs_workers_upload_all_tags(void)
+{
+    int i;
+    int ret;
+    int in_ffd[4];
+    int out_ffd;
+    int call_count;
+    char tag[16];
+    char *call_count_str;
+    char *store_dir;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-workers-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    ctx = flb_create();
+    for (i = 0; i < 4; i++) {
+        snprintf(tag, sizeof(tag), "test.%d", i);
+        in_ffd[i] = flb_input(ctx, (char *) "lib", NULL);
+        TEST_CHECK(in_ffd[i] >= 0);
+        flb_input_set(ctx, in_ffd[i], "tag", tag, NULL);
+    }
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "3s", NULL);
+    flb_output_set(ctx, out_ffd, "preserve_data_ordering", "true", NULL);
+    flb_output_set(ctx, out_ffd, "gcs_key_format", "logs/$TAG/$INDEX", NULL);
+    flb_output_set(ctx, out_ffd, "workers", "4", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+        flb_free(store_dir);
+        return;
+    }
+
+    for (i = 0; i < 4; i++) {
+        flb_lib_push(ctx, in_ffd[i], (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+    }
+    sleep(6);
+
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 4,
+                "Expected 4 UploadObject calls (one per tag), got %d", call_count);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
 TEST_LIST = {
     {"jwt_signing", flb_test_gcs_jwt_signing},
     {"net_settings_applied_to_upstream", flb_test_gcs_net_settings_applied_to_upstream},
@@ -1279,6 +1353,7 @@ TEST_LIST = {
     {"total_file_size_triggers_upload", flb_test_gcs_total_file_size_triggers_upload},
     {"rejects_total_file_size_below_minimum",
      flb_test_gcs_rejects_total_file_size_below_minimum},
+    {"workers_upload_all_tags", flb_test_gcs_workers_upload_all_tags},
     {"uri_encode_object_name", flb_test_gcs_uri_encode_object_name},
     {"upload_success", flb_test_gcs_upload_success},
 #ifdef FLB_HAVE_ARROW_PARQUET
