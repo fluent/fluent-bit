@@ -1032,6 +1032,22 @@ static void log_create_cleanup(struct flb_log *log, struct flb_config *config)
     config->log = NULL;
 }
 
+/*
+ * Release the fake worker context flb_log_create() builds for the main
+ * thread. The thread-local pointer is cleared too, otherwise it would be
+ * left dangling for any later flb_log_create() attempt.
+ */
+static void log_create_worker_cleanup(struct flb_worker *worker)
+{
+    if (worker->log_cache) {
+        flb_log_cache_destroy(worker->log_cache);
+        worker->log_cache = NULL;
+    }
+    flb_log_worker_destroy(worker);
+    flb_free(worker);
+    FLB_TLS_SET(flb_worker_ctx, NULL);
+}
+
 struct flb_log *flb_log_create(struct flb_config *config, int type,
                                int level, char *out)
 {
@@ -1126,7 +1142,7 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     if (ret == -1) {
         flb_errno();
         log_create_cleanup(log, config);
-        flb_free(worker);
+        log_create_worker_cleanup(worker);
         return NULL;
     }
     log->worker = worker;
@@ -1144,10 +1160,10 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     ret = flb_worker_create(log_worker_collector, log, &log->tid, config);
     if (ret == -1) {
         pthread_mutex_unlock(&log->pth_mutex);
-        mk_event_loop_destroy(log->evl);
-        flb_free(log->worker);
-        flb_free(log);
-        config->log = NULL;
+        pthread_mutex_destroy(&log->pth_mutex);
+        pthread_cond_destroy(&log->pth_cond);
+        log_create_worker_cleanup(log->worker);
+        log_create_cleanup(log, config);
         return NULL;
     }
 
