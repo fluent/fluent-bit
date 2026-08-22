@@ -177,6 +177,10 @@ int flb_input_chunk_set_up_down(struct flb_input_chunk *ic);
 int flb_input_chunk_set_up(struct flb_input_chunk *ic);
 int flb_input_chunk_down(struct flb_input_chunk *ic);
 int flb_input_chunk_is_up(struct flb_input_chunk *ic);
+int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
+                                        size_t chunk_size);
+int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
+                                         size_t chunk_size);
 void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic,
                                              size_t chunk_size);
 

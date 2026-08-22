@@ -2560,6 +2560,7 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
 
     if (protocol_version == HTTP_PROTOCOL_VERSION_20) {
         flb_stream_disable_keepalive(&upstream->base);
+        flb_upstream_conn_recycle(connection, FLB_FALSE);
     }
 
     session = flb_http_client_session_create(client, protocol_version, connection);
