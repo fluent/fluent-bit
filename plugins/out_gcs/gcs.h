@@ -89,6 +89,9 @@ struct flb_gcs {
     struct flb_oauth2 *o;
     pthread_mutex_t token_mutex;
     int token_mutex_initialized;
+    /* serializes access to the upload queue / file store across workers */
+    pthread_mutex_t upload_lock;
+    int upload_lock_initialized;
     int metadata_server_auth;
 
     flb_sds_t bucket;
