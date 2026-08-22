@@ -1196,6 +1196,36 @@ static void remove_from_queue(struct upload_queue *entry)
     flb_free(entry);
 }
 
+/*
+ * Seal a buffered file that reached total_file_size: no more data is
+ * appended to it and its queue entry becomes due immediately.
+ */
+static int seal_and_queue_for_upload(struct flb_gcs *ctx, struct gcs_file *chunk,
+                                     const char *tag, int tag_len)
+{
+    struct mk_list *head;
+    struct upload_queue *entry;
+
+    if (add_to_queue(ctx, chunk, tag, tag_len) == -1) {
+        return -1;
+    }
+
+    gcs_store_file_seal(chunk);
+
+    mk_list_foreach(head, &ctx->upload_queue) {
+        entry = mk_list_entry(head, struct upload_queue, _head);
+        if (entry->upload_file == chunk) {
+            entry->upload_time = time(NULL);
+            break;
+        }
+    }
+
+    flb_plg_debug(ctx->ins,
+                  "total_file_size reached for tag %.*s (%zu bytes), "
+                  "scheduling upload", tag_len, tag, chunk->size);
+    return 0;
+}
+
 
 static void clear_upload_queue(struct flb_gcs *ctx)
 {
@@ -1840,6 +1870,13 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
         goto error;
     }
 
+    if (ctx->total_file_size != 0 &&
+        ctx->total_file_size < FLB_GCS_MIN_TOTAL_FILE_SIZE) {
+        flb_plg_error(ins, "'total_file_size' must be at least 1M "
+                      "(or 0 to disable the size trigger)");
+        goto error;
+    }
+
     ctx->timer_ms = ctx->upload_timeout / 6;
     if (ctx->timer_ms >= 60) {
         ctx->timer_ms = 60000;
@@ -2087,6 +2124,18 @@ static void cb_gcs_flush(struct flb_event_chunk *event_chunk, struct flb_output_
     }
 
     chunk = gcs_store_file_get(ctx, tag_name, tag_name_len);
+
+    /* total_file_size reached: upload the current file, start a new one */
+    if (chunk && ctx->total_file_size > 0 &&
+        chunk->size + flb_sds_len(payload) > ctx->total_file_size) {
+        ret = seal_and_queue_for_upload(ctx, chunk, tag_name, tag_name_len);
+        if (ret == -1) {
+            flb_sds_destroy(payload);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        chunk = NULL;
+    }
+
     if (gcs_store_buffer_put(ctx, chunk, tag_name, tag_name_len,
                              payload, flb_sds_len(payload)) == -1) {
         flb_sds_destroy(payload);
@@ -2233,6 +2282,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_TIME, "upload_timeout", "10m",
      0, FLB_TRUE, offsetof(struct flb_gcs, upload_timeout),
      "Upload timeout before chunk is flushed."
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "total_file_size", "100M",
+     0, FLB_TRUE, offsetof(struct flb_gcs, total_file_size),
+     "Maximum size of buffered data per tag before it is uploaded as an "
+     "object, even if upload_timeout has not elapsed yet. Minimum 1M, "
+     "0 disables the size trigger."
     },
     {
      FLB_CONFIG_MAP_BOOL, "send_content_md5", "false",
