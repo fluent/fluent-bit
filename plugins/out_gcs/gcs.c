@@ -1957,6 +1957,9 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
     if (!ctx->u) {
         goto error;
     }
+    /* apply net.* properties (keepalive, timeouts, ...) to the upstream */
+    flb_output_upstream_set(ctx->u, ins);
+
     if (ctx->metadata_server_auth == FLB_TRUE) {
         ctx->metadata_u = flb_upstream_create_url(config, ctx->metadata_server,
                                                   FLB_IO_TCP, NULL);
