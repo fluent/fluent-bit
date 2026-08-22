@@ -1056,9 +1056,89 @@ void flb_test_gcs_net_settings_applied_to_upstream(void)
     flb_free(store_dir);
 }
 
+/*
+ * The upload timer callback runs outside of any coroutine. If the upstream
+ * were left in async mode, the first network write from the timer would
+ * try to yield a NULL coroutine and crash. The plugin must therefore keep
+ * the upstream in sync mode and still deliver timer-driven uploads when
+ * preserve_data_ordering is disabled.
+ */
+void flb_test_gcs_timer_upload_without_ordering_uses_sync_upstream(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    int call_count;
+    char *call_count_str;
+    char *store_dir;
+    flb_ctx_t *ctx;
+    struct flb_gcs *gcs_ctx;
+    struct flb_output_instance *out_ins;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-unordered-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "3s", NULL);
+    flb_output_set(ctx, out_ffd, "preserve_data_ordering", "false", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+        flb_free(store_dir);
+        return;
+    }
+
+    out_ins = flb_output_get_instance(ctx->config, out_ffd);
+    TEST_CHECK(out_ins != NULL);
+    gcs_ctx = out_ins ? out_ins->context : NULL;
+    TEST_CHECK(gcs_ctx != NULL);
+    if (gcs_ctx && gcs_ctx->u) {
+        TEST_CHECK_(flb_stream_is_async(&gcs_ctx->u->base) == FLB_FALSE,
+                    "Expected the GCS upstream to run in sync mode");
+    }
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+    sleep(6);
+
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 1,
+                "Expected 1 timer-driven UploadObject call, got %d", call_count);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
 TEST_LIST = {
     {"jwt_signing", flb_test_gcs_jwt_signing},
     {"net_settings_applied_to_upstream", flb_test_gcs_net_settings_applied_to_upstream},
+    {"timer_upload_without_ordering_uses_sync_upstream",
+     flb_test_gcs_timer_upload_without_ordering_uses_sync_upstream},
     {"uri_encode_object_name", flb_test_gcs_uri_encode_object_name},
     {"upload_success", flb_test_gcs_upload_success},
 #ifdef FLB_HAVE_ARROW_PARQUET
