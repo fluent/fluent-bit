@@ -3,6 +3,7 @@
 # Set this to the base image to use in each case, so if we want to build for centos/7
 # we would set BASE_BUILDER=centos-7-base.
 ARG BASE_BUILDER
+ARG RUST_VERSION="1.91"
 # Lookup the name to use below but should follow the '<distro>-base' convention with slashes replaced.
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
@@ -12,11 +13,13 @@ FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 # centos/7 base image
 FROM centos:7 AS centos-7-base
 
-ENV CMAKE_HOME="/opt/cmake"
+ENV CMAKE_HOME="/opt/cmake" \
+    CARGO_HOME="/opt/cargo"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+ARG RUST_VERSION
 
-# hadolint ignore=DL3033
+# hadolint ignore=DL3033,DL4001,DL4006
 RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\/mirrorlist.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo && \
     sed -i -e "s/^#baseurl=http:\/\/mirror.centos.org/baseurl=http:\/\/vault.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo && \
     yum -y update && \
@@ -33,7 +36,10 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+# hadolint ignore=DL4006
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
@@ -51,11 +57,13 @@ FROM arm64v8/centos:7 AS centos-7.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
-ENV CMAKE_HOME="/opt/cmake"
+ENV CMAKE_HOME="/opt/cmake" \
+    CARGO_HOME="/opt/cargo"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+ARG RUST_VERSION
 
-# hadolint ignore=DL3033
+# hadolint ignore=DL3033,DL4001,DL4006
 RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\/mirrorlist.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo && \
     sed -i -e "s/^#baseurl=http:\/\/mirror.centos.org/baseurl=http:\/\/vault.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo && \
     yum -y update && \
@@ -72,7 +80,10 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+# hadolint ignore=DL4006
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
 # There are no postgresql libraries available for this target
 ARG FLB_OUT_PGSQL=Off
@@ -100,11 +111,13 @@ RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/CentOS-Linux-PowerTools.repo
 
-ENV CMAKE_HOME="/opt/cmake"
+ENV CMAKE_HOME="/opt/cmake" \
+    CARGO_HOME="/opt/cargo"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+ARG RUST_VERSION
 
-# hadolint ignore=DL3033
+# hadolint ignore=DL3033,DL4001,DL4006
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
@@ -118,7 +131,10 @@ RUN yum -y update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+# hadolint ignore=DL4006
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
@@ -143,11 +159,13 @@ RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
 # Add for the YAML development libraries
 RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/CentOS-Linux-PowerTools.repo
 
-ENV CMAKE_HOME="/opt/cmake"
+ENV CMAKE_HOME="/opt/cmake" \
+    CARGO_HOME="/opt/cargo"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+ARG RUST_VERSION
 
-# hadolint ignore=DL3033
+# hadolint ignore=DL3033,DL4001,DL4006
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
@@ -161,7 +179,10 @@ RUN yum -y update && \
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+# hadolint ignore=DL4006
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
@@ -180,12 +201,14 @@ ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
 FROM quay.io/centos/centos:stream9 AS centos-9-base
 
-ENV CMAKE_HOME="/opt/cmake"
+ENV CMAKE_HOME="/opt/cmake" \
+    CARGO_HOME="/opt/cargo"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+ARG RUST_VERSION
 
 # Add for the YAML development libraries
-# hadolint ignore=DL3033,DL3041
+# hadolint ignore=DL3033,DL3041,DL4001,DL4006
 RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-enabled crb && \
     dnf -y install rpm-build ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
@@ -199,7 +222,10 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+# hadolint ignore=DL4006
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
@@ -211,12 +237,14 @@ FROM --platform=arm64 quay.io/centos/centos:stream9 AS centos-9.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
-ENV CMAKE_HOME="/opt/cmake"
+ENV CMAKE_HOME="/opt/cmake" \
+    CARGO_HOME="/opt/cargo"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+ARG RUST_VERSION
 
 # Add for the YAML development libraries
-# hadolint ignore=DL3033,DL3041
+# hadolint ignore=DL3033,DL3041,DL4001,DL4006
 RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-enabled crb && \
     dnf -y install rpm-build ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
@@ -230,7 +258,10 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+# hadolint ignore=DL4006
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
@@ -249,12 +280,14 @@ ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
 FROM quay.io/centos/centos:stream10 AS centos-10-base
 
-ENV CMAKE_HOME="/opt/cmake"
+ENV CMAKE_HOME="/opt/cmake" \
+    CARGO_HOME="/opt/cargo"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+ARG RUST_VERSION
 
 # Add for the YAML development libraries
-# hadolint ignore=DL3033,DL3041
+# hadolint ignore=DL3033,DL3041,DL4001,DL4006
 RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-enabled crb && \
     dnf -y install rpm-build ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
@@ -268,7 +301,10 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+# hadolint ignore=DL4006
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
@@ -281,12 +317,14 @@ FROM --platform=arm64 quay.io/centos/centos:stream10 AS centos-10.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
-ENV CMAKE_HOME="/opt/cmake"
+ENV CMAKE_HOME="/opt/cmake" \
+    CARGO_HOME="/opt/cargo"
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
+ARG RUST_VERSION
 
 # Add for the YAML development libraries
-# hadolint ignore=DL3033,DL3041
+# hadolint ignore=DL3033,DL3041,DL4001,DL4006
 RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-enabled crb && \
     dnf -y install rpm-build ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
@@ -300,7 +338,10 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     echo "Downloading CMake ${CMAKE_VERSION}: ${cmake_download_url} -> ${CMAKE_HOME}" && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
-ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+# hadolint ignore=DL4006
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CMAKE_HOME}/bin:${CARGO_HOME}/bin:${PATH}"
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
@@ -324,6 +365,8 @@ FROM $BASE_BUILDER AS builder
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
+ENV CARGO_HOME="/opt/cargo" \
+    PATH="/opt/cargo/bin:${PATH}"
 
 # Docker context must be the base of the repo
 WORKDIR /tmp/fluent-bit/
@@ -343,6 +386,7 @@ ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
 ARG FLB_JEMALLOC=On
 ARG FLB_CHUNK_TRACE=On
+ARG FLB_OUT_ZEROBUS=On
 
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
@@ -353,6 +397,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_HTTP_SERVER="$FLB_HTTP_SERVER" \
     -DFLB_KAFKA="$FLB_KAFKA" \
     -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
+    -DFLB_OUT_ZEROBUS="${FLB_OUT_ZEROBUS}" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_JEMALLOC_OPTIONS="$FLB_JEMALLOC_OPTIONS" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
