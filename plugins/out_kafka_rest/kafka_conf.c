@@ -197,6 +197,10 @@ struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
 
 int flb_kr_conf_destroy(struct flb_kafka_rest *ctx)
 {
+    if (!ctx) {
+        return 0;
+    }
+    
     flb_free(ctx->topic);
     flb_free(ctx->http_user);
     flb_free(ctx->http_passwd);

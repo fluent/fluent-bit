@@ -231,6 +231,10 @@ int cb_nats_exit(void *data, struct flb_config *config)
     (void) config;
     struct flb_out_nats_config *ctx = data;
 
+    if (!ctx) {
+        return 0;
+    }
+
     flb_upstream_destroy(ctx->u);
     flb_free(ctx);
 
