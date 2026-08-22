@@ -995,8 +995,70 @@ void flb_test_gcs_unify_tag_disabled_by_default(void)
     flb_free(store_dir);
 }
 
+void flb_test_gcs_net_settings_applied_to_upstream(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    char *store_dir;
+    flb_ctx_t *ctx;
+    struct flb_gcs *gcs_ctx;
+    struct flb_output_instance *out_ins;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-net-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "net.connect_timeout", "7", NULL);
+    flb_output_set(ctx, out_ffd, "net.keepalive_idle_timeout", "17", NULL);
+    flb_output_set(ctx, out_ffd, "net.keepalive_max_recycle", "5", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        flb_free(store_dir);
+        return;
+    }
+
+    out_ins = flb_output_get_instance(ctx->config, out_ffd);
+    TEST_CHECK(out_ins != NULL);
+    gcs_ctx = out_ins ? out_ins->context : NULL;
+    TEST_CHECK(gcs_ctx != NULL);
+
+    if (gcs_ctx && gcs_ctx->u) {
+        TEST_CHECK_(gcs_ctx->u->base.net.connect_timeout == 7,
+                    "Expected net.connect_timeout=7 on upstream, got %d",
+                    gcs_ctx->u->base.net.connect_timeout);
+        TEST_CHECK_(gcs_ctx->u->base.net.keepalive_idle_timeout == 17,
+                    "Expected net.keepalive_idle_timeout=17 on upstream, got %d",
+                    gcs_ctx->u->base.net.keepalive_idle_timeout);
+        TEST_CHECK_(gcs_ctx->u->base.net.keepalive_max_recycle == 5,
+                    "Expected net.keepalive_max_recycle=5 on upstream, got %d",
+                    gcs_ctx->u->base.net.keepalive_max_recycle);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    flb_free(store_dir);
+}
+
 TEST_LIST = {
     {"jwt_signing", flb_test_gcs_jwt_signing},
+    {"net_settings_applied_to_upstream", flb_test_gcs_net_settings_applied_to_upstream},
     {"uri_encode_object_name", flb_test_gcs_uri_encode_object_name},
     {"upload_success", flb_test_gcs_upload_success},
 #ifdef FLB_HAVE_ARROW_PARQUET
