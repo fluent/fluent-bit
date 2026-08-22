@@ -1134,11 +1134,151 @@ void flb_test_gcs_timer_upload_without_ordering_uses_sync_upstream(void)
     flb_free(store_dir);
 }
 
+/* Build a single ~size-byte JSON record for in_lib */
+static char *build_large_record(size_t size, size_t *out_len)
+{
+    char *buf;
+    size_t prefix_len;
+    const char *prefix = "[0, {\"message\": \"";
+    const char *suffix = "\"}]";
+
+    prefix_len = strlen(prefix);
+    buf = flb_malloc(size + prefix_len + strlen(suffix) + 1);
+    if (!buf) {
+        return NULL;
+    }
+    memcpy(buf, prefix, prefix_len);
+    memset(buf + prefix_len, 'a', size);
+    memcpy(buf + prefix_len + size, suffix, strlen(suffix) + 1);
+    *out_len = prefix_len + size + strlen(suffix);
+    return buf;
+}
+
+void flb_test_gcs_total_file_size_triggers_upload(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    int call_count;
+    char *call_count_str;
+    char *store_dir;
+    char *record;
+    size_t record_len;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-total-size-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    record = build_large_record(600 * 1024, &record_len);
+    TEST_CHECK(record != NULL);
+    if (!record) {
+        flb_free(store_dir);
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    /* long timeout: only total_file_size can trigger an upload in this test */
+    flb_output_set(ctx, out_ffd, "upload_timeout", "10m", NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "1M", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+        flb_free(record);
+        flb_free(store_dir);
+        return;
+    }
+
+    /* first record (~600KB) is buffered, no upload yet */
+    flb_lib_push(ctx, in_ffd, record, (int) record_len);
+    sleep(3);
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 0,
+                "Expected no upload below total_file_size, got %d", call_count);
+
+    /* second record would exceed 1M: the buffered file must be uploaded */
+    flb_lib_push(ctx, in_ffd, record, (int) record_len);
+    sleep(3);
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 1,
+                "Expected 1 upload after reaching total_file_size, got %d",
+                call_count);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(record);
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_rejects_total_file_size_below_minimum(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-small-total-size-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "512K", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret != 0, "Expected total_file_size below 1M to be rejected");
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+    flb_free(store_dir);
+}
+
 TEST_LIST = {
     {"jwt_signing", flb_test_gcs_jwt_signing},
     {"net_settings_applied_to_upstream", flb_test_gcs_net_settings_applied_to_upstream},
     {"timer_upload_without_ordering_uses_sync_upstream",
      flb_test_gcs_timer_upload_without_ordering_uses_sync_upstream},
+    {"total_file_size_triggers_upload", flb_test_gcs_total_file_size_triggers_upload},
+    {"rejects_total_file_size_below_minimum",
+     flb_test_gcs_rejects_total_file_size_below_minimum},
     {"uri_encode_object_name", flb_test_gcs_uri_encode_object_name},
     {"upload_success", flb_test_gcs_upload_success},
 #ifdef FLB_HAVE_ARROW_PARQUET
