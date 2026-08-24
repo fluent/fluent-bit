@@ -2,6 +2,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_worker.h>
 #include <inttypes.h>
 
 #include "flb_tests_internal.h"
@@ -164,8 +165,62 @@ static void cache_one_slot()
     flb_log_cache_destroy(cache);
 }
 
+static void check_suppress_interval(int cache_timeout, int suppress_interval,
+                                    int message_age, int expected)
+{
+    int ret;
+    struct flb_worker worker = {0};
+    struct flb_worker *previous_worker;
+    struct flb_log_cache_entry *entry;
+
+    worker.log_cache = flb_log_cache_create(cache_timeout, 1);
+    TEST_CHECK(worker.log_cache != NULL);
+    if (!worker.log_cache) {
+        return;
+    }
+
+    previous_worker = flb_worker_get();
+    FLB_TLS_SET(flb_worker_ctx, &worker);
+
+    ret = flb_log_suppress_check(suppress_interval, TEST_RECORD_01);
+    TEST_CHECK(ret == FLB_FALSE);
+
+    entry = flb_log_cache_exists(worker.log_cache,
+                                 TEST_RECORD_01, TEST_RECORD_01_SIZE);
+    TEST_CHECK(entry != NULL);
+    if (entry) {
+        entry->timestamp = time(NULL) - message_age;
+    }
+
+    ret = flb_log_suppress_check(suppress_interval, TEST_RECORD_01);
+    if (!TEST_CHECK(ret == expected)) {
+        TEST_MSG("cache timeout=%d, suppress interval=%d, message age=%d, "
+                 "expected=%d, actual=%d",
+                 cache_timeout, suppress_interval, message_age, expected, ret);
+    }
+
+    FLB_TLS_SET(flb_worker_ctx, previous_worker);
+    flb_log_cache_destroy(worker.log_cache);
+}
+
+static void suppress_interval_longer_than_cache_timeout()
+{
+    /* A two-second-old message is still within the configured interval. */
+    check_suppress_interval(1, 3, 2, FLB_TRUE);
+}
+
+static void suppress_interval_shorter_than_cache_timeout()
+{
+    /* A two-second-old message is outside the configured interval. */
+    check_suppress_interval(3, 1, 2, FLB_FALSE);
+}
+
 TEST_LIST = {
     { "cache_basic_timeout" , cache_basic_timeout },
     { "cache_one_slot"      , cache_one_slot      },
+    { "suppress_interval_longer_than_cache_timeout",
+      suppress_interval_longer_than_cache_timeout },
+    { "suppress_interval_shorter_than_cache_timeout",
+      suppress_interval_shorter_than_cache_timeout },
     { 0 }
 };
