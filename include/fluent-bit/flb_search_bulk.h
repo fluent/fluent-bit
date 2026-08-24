@@ -20,6 +20,9 @@
 #define FLB_SEARCH_BULK_RETRY     1
 #define FLB_SEARCH_BULK_INVALID  -1
 
+#define FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS  0
+#define FLB_SEARCH_BULK_ACK_ALL_CONFLICTS     1
+
 struct flb_search_bulk_retry {
     char *payload;
     size_t size;
@@ -30,6 +33,7 @@ int flb_search_bulk_process_response(const char *response,
                                      size_t response_size,
                                      const char *payload,
                                      size_t payload_size,
+                                     int acknowledge_all_conflicts,
                                      struct flb_search_bulk_retry **retry);
 void flb_search_bulk_retry_destroy(void *data);
 
