@@ -27,19 +27,292 @@ static int object_key_equals(msgpack_object key, const char *value, size_t lengt
     return strncmp(key.via.str.ptr, value, length) == 0;
 }
 
-static int response_contains(const char *response, size_t response_size,
-                             const char *value, size_t value_size)
+static void json_skip_whitespace(const char *json, size_t size, size_t *offset)
+{
+    while (*offset < size) {
+        if (json[*offset] != ' ' && json[*offset] != '\t' &&
+            json[*offset] != '\r' && json[*offset] != '\n') {
+            break;
+        }
+        (*offset)++;
+    }
+}
+
+static int json_is_hexadecimal(char value)
+{
+    if ((value >= '0' && value <= '9') ||
+        (value >= 'a' && value <= 'f') ||
+        (value >= 'A' && value <= 'F')) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static int json_scan_string(const char *json, size_t size, size_t *offset,
+                            size_t *content_start, size_t *content_size)
+{
+    char value;
+    size_t index;
+    size_t start;
+
+    if (*offset >= size || json[*offset] != '"') {
+        return -1;
+    }
+
+    start = *offset + 1;
+    index = start;
+    while (index < size) {
+        value = json[index];
+        if (value == '"') {
+            if (content_start != NULL) {
+                *content_start = start;
+            }
+            if (content_size != NULL) {
+                *content_size = index - start;
+            }
+            *offset = index + 1;
+            return 0;
+        }
+        if ((unsigned char) value < 0x20) {
+            return -1;
+        }
+        if (value == '\\') {
+            index++;
+            if (index >= size || strchr("\"\\/bfnrtu", json[index]) == NULL) {
+                return -1;
+            }
+            if (json[index] == 'u') {
+                if (index + 4 >= size) {
+                    return -1;
+                }
+                if (json_is_hexadecimal(json[index + 1]) == FLB_FALSE ||
+                    json_is_hexadecimal(json[index + 2]) == FLB_FALSE ||
+                    json_is_hexadecimal(json[index + 3]) == FLB_FALSE ||
+                    json_is_hexadecimal(json[index + 4]) == FLB_FALSE) {
+                    return -1;
+                }
+                index += 4;
+            }
+        }
+        index++;
+    }
+
+    return -1;
+}
+
+static int json_skip_value(const char *json, size_t size,
+                           size_t *offset, int depth);
+
+static int json_skip_object(const char *json, size_t size,
+                            size_t *offset, int depth)
+{
+    if (depth > 64 || *offset >= size || json[*offset] != '{') {
+        return -1;
+    }
+
+    (*offset)++;
+    json_skip_whitespace(json, size, offset);
+    if (*offset < size && json[*offset] == '}') {
+        (*offset)++;
+        return 0;
+    }
+
+    while (*offset < size) {
+        if (json_scan_string(json, size, offset, NULL, NULL) != 0) {
+            return -1;
+        }
+        json_skip_whitespace(json, size, offset);
+        if (*offset >= size || json[*offset] != ':') {
+            return -1;
+        }
+        (*offset)++;
+        if (json_skip_value(json, size, offset, depth + 1) != 0) {
+            return -1;
+        }
+        json_skip_whitespace(json, size, offset);
+        if (*offset >= size) {
+            return -1;
+        }
+        if (json[*offset] == '}') {
+            (*offset)++;
+            return 0;
+        }
+        if (json[*offset] != ',') {
+            return -1;
+        }
+        (*offset)++;
+        json_skip_whitespace(json, size, offset);
+    }
+
+    return -1;
+}
+
+static int json_skip_array(const char *json, size_t size,
+                           size_t *offset, int depth)
+{
+    if (depth > 64 || *offset >= size || json[*offset] != '[') {
+        return -1;
+    }
+
+    (*offset)++;
+    json_skip_whitespace(json, size, offset);
+    if (*offset < size && json[*offset] == ']') {
+        (*offset)++;
+        return 0;
+    }
+
+    while (*offset < size) {
+        if (json_skip_value(json, size, offset, depth + 1) != 0) {
+            return -1;
+        }
+        json_skip_whitespace(json, size, offset);
+        if (*offset >= size) {
+            return -1;
+        }
+        if (json[*offset] == ']') {
+            (*offset)++;
+            return 0;
+        }
+        if (json[*offset] != ',') {
+            return -1;
+        }
+        (*offset)++;
+        json_skip_whitespace(json, size, offset);
+    }
+
+    return -1;
+}
+
+static int json_skip_number(const char *json, size_t size, size_t *offset)
 {
     size_t index;
 
-    if (value_size > response_size) {
+    index = *offset;
+    if (index < size && json[index] == '-') {
+        index++;
+    }
+    if (index >= size) {
+        return -1;
+    }
+    if (json[index] == '0') {
+        index++;
+    }
+    else {
+        if (json[index] < '1' || json[index] > '9') {
+            return -1;
+        }
+        while (index < size && json[index] >= '0' && json[index] <= '9') {
+            index++;
+        }
+    }
+    if (index < size && json[index] == '.') {
+        index++;
+        if (index >= size || json[index] < '0' || json[index] > '9') {
+            return -1;
+        }
+        while (index < size && json[index] >= '0' && json[index] <= '9') {
+            index++;
+        }
+    }
+    if (index < size && (json[index] == 'e' || json[index] == 'E')) {
+        index++;
+        if (index < size && (json[index] == '+' || json[index] == '-')) {
+            index++;
+        }
+        if (index >= size || json[index] < '0' || json[index] > '9') {
+            return -1;
+        }
+        while (index < size && json[index] >= '0' && json[index] <= '9') {
+            index++;
+        }
+    }
+
+    *offset = index;
+    return 0;
+}
+
+static int json_skip_value(const char *json, size_t size,
+                           size_t *offset, int depth)
+{
+    json_skip_whitespace(json, size, offset);
+    if (*offset >= size) {
+        return -1;
+    }
+
+    if (json[*offset] == '"') {
+        return json_scan_string(json, size, offset, NULL, NULL);
+    }
+    if (json[*offset] == '{') {
+        return json_skip_object(json, size, offset, depth);
+    }
+    if (json[*offset] == '[') {
+        return json_skip_array(json, size, offset, depth);
+    }
+    if (size - *offset >= 4 &&
+        (memcmp(json + *offset, "true", 4) == 0 ||
+         memcmp(json + *offset, "null", 4) == 0)) {
+        *offset += 4;
+        return 0;
+    }
+    if (size - *offset >= 5 && memcmp(json + *offset, "false", 5) == 0) {
+        *offset += 5;
+        return 0;
+    }
+
+    return json_skip_number(json, size, offset);
+}
+
+static int top_level_errors_is_false(const char *json, size_t size)
+{
+    size_t offset;
+    size_t key_start;
+    size_t key_size;
+    size_t value_end;
+
+    offset = 0;
+    json_skip_whitespace(json, size, &offset);
+    if (offset >= size || json[offset] != '{') {
         return FLB_FALSE;
     }
 
-    for (index = 0; index <= response_size - value_size; index++) {
-        if (memcmp(response + index, value, value_size) == 0) {
-            return FLB_TRUE;
+    offset++;
+    json_skip_whitespace(json, size, &offset);
+    while (offset < size && json[offset] != '}') {
+        if (json_scan_string(json, size, &offset,
+                             &key_start, &key_size) != 0) {
+            return FLB_FALSE;
         }
+        json_skip_whitespace(json, size, &offset);
+        if (offset >= size || json[offset] != ':') {
+            return FLB_FALSE;
+        }
+        offset++;
+        json_skip_whitespace(json, size, &offset);
+
+        if (key_size == 6 && memcmp(json + key_start, "errors", 6) == 0) {
+            if (size - offset < 5 || memcmp(json + offset, "false", 5) != 0) {
+                return FLB_FALSE;
+            }
+
+            value_end = offset + 5;
+            json_skip_whitespace(json, size, &value_end);
+            if (value_end == size || json[value_end] == ',' ||
+                json[value_end] == '}') {
+                return FLB_TRUE;
+            }
+            return FLB_FALSE;
+        }
+
+        if (json_skip_value(json, size, &offset, 0) != 0) {
+            return FLB_FALSE;
+        }
+        json_skip_whitespace(json, size, &offset);
+        if (offset >= size || json[offset] != ',') {
+            return FLB_FALSE;
+        }
+        offset++;
+        json_skip_whitespace(json, size, &offset);
     }
 
     return FLB_FALSE;
@@ -178,9 +451,7 @@ int flb_search_bulk_process_response(const char *response,
          * buffer. Preserve the success marker available at the start of the
          * bounded response instead of retrying an already accepted batch.
         */
-        if (response_contains(response, response_size,
-                              "\"errors\":false,\"items\":[",
-                              sizeof("\"errors\":false,\"items\":[") - 1) == FLB_TRUE) {
+        if (top_level_errors_is_false(response, response_size) == FLB_TRUE) {
             return FLB_SEARCH_BULK_COMPLETE;
         }
         return FLB_SEARCH_BULK_INVALID;
