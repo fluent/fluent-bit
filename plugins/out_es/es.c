@@ -1439,9 +1439,11 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         }
 
         if (c->resp.payload_size > 0) {
+            /* Only create conflicts confirm that the document already exists. */
             ret = flb_search_bulk_process_response(c->resp.payload,
                                                    c->resp.payload_size,
                                                    pack, pack_size,
+                                                   FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
                                                    &next_retry_payload);
             if (ret == FLB_SEARCH_BULK_COMPLETE) {
                 flb_output_clear_retry_context(out_flush);
