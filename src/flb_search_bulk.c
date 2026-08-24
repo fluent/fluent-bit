@@ -27,7 +27,26 @@ static int object_key_equals(msgpack_object key, const char *value, size_t lengt
     return strncmp(key.via.str.ptr, value, length) == 0;
 }
 
-static int item_is_acknowledged(msgpack_object item)
+static int response_contains(const char *response, size_t response_size,
+                             const char *value, size_t value_size)
+{
+    size_t index;
+
+    if (value_size > response_size) {
+        return FLB_FALSE;
+    }
+
+    for (index = 0; index <= response_size - value_size; index++) {
+        if (memcmp(response + index, value, value_size) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static int item_is_acknowledged(msgpack_object item,
+                                int acknowledge_all_conflicts)
 {
     int index;
     int status;
@@ -64,8 +83,11 @@ static int item_is_acknowledged(msgpack_object item)
     if (status >= 200 && status < 300) {
         return FLB_TRUE;
     }
-    if (status == 409 && object_key_equals(key, "create", 6) == FLB_TRUE) {
-        return FLB_TRUE;
+    if (status == 409) {
+        if (acknowledge_all_conflicts == FLB_TRUE ||
+            object_key_equals(key, "create", 6) == FLB_TRUE) {
+            return FLB_TRUE;
+        }
     }
 
     return FLB_FALSE;
@@ -118,6 +140,7 @@ int flb_search_bulk_process_response(const char *response,
                                      size_t response_size,
                                      const char *payload,
                                      size_t payload_size,
+                                     int acknowledge_all_conflicts,
                                      struct flb_search_bulk_retry **out_retry)
 {
     int index;
@@ -150,6 +173,16 @@ int flb_search_bulk_process_response(const char *response,
                            &packed_response, &packed_size,
                            &root_type, NULL);
     if (result != 0) {
+        /*
+         * A successful bulk response can exceed the configured HTTP response
+         * buffer. Preserve the success marker available at the start of the
+         * bounded response instead of retrying an already accepted batch.
+        */
+        if (response_contains(response, response_size,
+                              "\"errors\":false,\"items\":[",
+                              sizeof("\"errors\":false,\"items\":[") - 1) == FLB_TRUE) {
+            return FLB_SEARCH_BULK_COMPLETE;
+        }
         return FLB_SEARCH_BULK_INVALID;
     }
 
@@ -221,7 +254,8 @@ int flb_search_bulk_process_response(const char *response,
             goto done;
         }
 
-        acknowledged = item_is_acknowledged(items.via.array.ptr[index]);
+        acknowledged = item_is_acknowledged(items.via.array.ptr[index],
+                                            acknowledge_all_conflicts);
         if (acknowledged < 0) {
             result = FLB_SEARCH_BULK_INVALID;
             goto done;
