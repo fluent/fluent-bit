@@ -32,6 +32,7 @@ static void test_mixed_response_keeps_only_unresolved(void)
     result = flb_search_bulk_process_response(response, strlen(response),
                                               BULK_PAYLOAD,
                                               strlen(BULK_PAYLOAD),
+                                              FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_RETRY);
     TEST_CHECK(retry != NULL);
@@ -55,6 +56,7 @@ static void test_create_conflicts_are_complete(void)
     result = flb_search_bulk_process_response(response, strlen(response),
                                               BULK_PAYLOAD,
                                               strlen(BULK_PAYLOAD),
+                                              FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_COMPLETE);
     TEST_CHECK(retry == NULL);
@@ -74,12 +76,51 @@ static void test_update_conflict_is_retried(void)
 
     result = flb_search_bulk_process_response(response, strlen(response),
                                               payload, strlen(payload),
+                                              FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_RETRY);
     TEST_CHECK(retry != NULL);
     TEST_CHECK(retry->records == 1);
     TEST_CHECK(retry->size == strlen(payload));
     flb_search_bulk_retry_destroy(retry);
+}
+
+static void test_update_conflict_is_complete_when_all_conflicts_are_acknowledged(void)
+{
+    int result;
+    const char *payload;
+    const char *response;
+    struct flb_search_bulk_retry *retry;
+
+    payload = "{\"update\":{\"_index\":\"logs\",\"_id\":\"one\"}}\n"
+              "{\"doc\":{\"message\":\"one\"}}\n";
+    response = "{\"errors\":true,\"items\":["
+               "{\"update\":{\"status\":409}}]}";
+
+    result = flb_search_bulk_process_response(response, strlen(response),
+                                              payload, strlen(payload),
+                                              FLB_SEARCH_BULK_ACK_ALL_CONFLICTS,
+                                              &retry);
+    TEST_CHECK(result == FLB_SEARCH_BULK_COMPLETE);
+    TEST_CHECK(retry == NULL);
+}
+
+static void test_truncated_success_response_is_complete(void)
+{
+    int result;
+    const char *response;
+    struct flb_search_bulk_retry *retry;
+
+    response = "{\"took\":1,\"errors\":false,\"items\":["
+               "{\"create\":{\"status\":201}}";
+
+    result = flb_search_bulk_process_response(response, strlen(response),
+                                              BULK_PAYLOAD,
+                                              strlen(BULK_PAYLOAD),
+                                              FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
+                                              &retry);
+    TEST_CHECK(result == FLB_SEARCH_BULK_COMPLETE);
+    TEST_CHECK(retry == NULL);
 }
 
 static void test_item_count_mismatch_is_invalid(void)
@@ -94,6 +135,7 @@ static void test_item_count_mismatch_is_invalid(void)
     result = flb_search_bulk_process_response(response, strlen(response),
                                               BULK_PAYLOAD,
                                               strlen(BULK_PAYLOAD),
+                                              FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_INVALID);
     TEST_CHECK(retry == NULL);
@@ -103,6 +145,10 @@ TEST_LIST = {
     {"mixed_response_keeps_only_unresolved", test_mixed_response_keeps_only_unresolved},
     {"create_conflicts_are_complete", test_create_conflicts_are_complete},
     {"update_conflict_is_retried", test_update_conflict_is_retried},
+    {"update_conflict_is_complete_when_all_conflicts_are_acknowledged",
+     test_update_conflict_is_complete_when_all_conflicts_are_acknowledged},
+    {"truncated_success_response_is_complete",
+     test_truncated_success_response_is_complete},
     {"item_count_mismatch_is_invalid", test_item_count_mismatch_is_invalid},
     {NULL, NULL}
 };
