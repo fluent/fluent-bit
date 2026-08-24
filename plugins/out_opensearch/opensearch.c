@@ -1090,9 +1090,11 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
 
         if (c->resp.payload_size > 0) {
             if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+                /* Preserve the existing behavior that acknowledges all conflicts. */
                 ret = flb_search_bulk_process_response(c->resp.payload,
                                                        c->resp.payload_size,
                                                        pack, pack_size,
+                                                       FLB_SEARCH_BULK_ACK_ALL_CONFLICTS,
                                                        &next_retry_payload);
             }
             else if (opensearch_error_check(ctx, c) == FLB_TRUE) {
