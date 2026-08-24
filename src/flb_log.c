@@ -676,7 +676,7 @@ struct flb_log_cache_entry *flb_log_cache_get_target(struct flb_log_cache *cache
         }
 
         /* expired entry */
-        if (entry->timestamp + cache->timeout < ts) {
+        if (entry->timestamp + entry->interval <= ts) {
             return entry;
         }
 
@@ -728,14 +728,17 @@ int flb_log_cache_check_suppress_interval(struct flb_log_cache *cache,
 
         entry->buf = buf;
         entry->timestamp = now;
+        entry->interval = interval_seconds;
         return FLB_FALSE;
     }
     else {
         if (entry->timestamp + interval_seconds > now) {
+            entry->interval = interval_seconds;
             return FLB_TRUE;
         }
         else {
             entry->timestamp = now;
+            entry->interval = interval_seconds;
             return FLB_FALSE;
         }
     }

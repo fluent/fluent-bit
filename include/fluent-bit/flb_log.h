@@ -124,6 +124,7 @@ struct flb_log {
 struct flb_log_cache_entry {
     flb_sds_t buf;
     uint64_t timestamp;
+    int interval;
     struct mk_list _head;
 };
 
