@@ -123,6 +123,24 @@ static void test_truncated_success_response_is_complete(void)
     TEST_CHECK(retry == NULL);
 }
 
+static void test_nested_success_marker_with_top_level_errors_is_invalid(void)
+{
+    int result;
+    const char *response;
+    struct flb_search_bulk_retry *retry;
+
+    response = "{\"metadata\":{\"errors\":false,\"items\":[1]},"
+               "\"errors\":true,\"items\":[{\"create\":{\"status\":429}}";
+
+    result = flb_search_bulk_process_response(response, strlen(response),
+                                              BULK_PAYLOAD,
+                                              strlen(BULK_PAYLOAD),
+                                              FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
+                                              &retry);
+    TEST_CHECK(result == FLB_SEARCH_BULK_INVALID);
+    TEST_CHECK(retry == NULL);
+}
+
 static void test_item_count_mismatch_is_invalid(void)
 {
     int result;
@@ -149,6 +167,8 @@ TEST_LIST = {
      test_update_conflict_is_complete_when_all_conflicts_are_acknowledged},
     {"truncated_success_response_is_complete",
      test_truncated_success_response_is_complete},
+    {"nested_success_marker_with_top_level_errors_is_invalid",
+     test_nested_success_marker_with_top_level_errors_is_invalid},
     {"item_count_mismatch_is_invalid", test_item_count_mismatch_is_invalid},
     {NULL, NULL}
 };
