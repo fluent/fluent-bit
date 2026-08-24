@@ -14,6 +14,9 @@
 #define TEST_RECORD_02      "other type of message"
 #define TEST_RECORD_02_SIZE sizeof(TEST_RECORD_02) - 1
 
+#define TEST_RECORD_03      "third type of message"
+#define TEST_RECORD_03_SIZE sizeof(TEST_RECORD_03) - 1
+
 static int check_clock(uint64_t timeout, struct flb_time *tm_start)
 {
 	struct flb_time tm_now;
@@ -215,6 +218,60 @@ static void suppress_interval_shorter_than_cache_timeout()
     check_suppress_interval(3, 1, 2, FLB_FALSE);
 }
 
+static void suppress_interval_preserved_during_cache_replacement()
+{
+    int ret;
+    struct flb_worker worker = {0};
+    struct flb_worker *previous_worker;
+    struct flb_log_cache_entry *entry;
+
+    worker.log_cache = flb_log_cache_create(1, 2);
+    TEST_CHECK(worker.log_cache != NULL);
+    if (!worker.log_cache) {
+        return;
+    }
+
+    previous_worker = flb_worker_get();
+    FLB_TLS_SET(flb_worker_ctx, &worker);
+
+    ret = flb_log_suppress_check(3, TEST_RECORD_01);
+    TEST_CHECK(ret == FLB_FALSE);
+
+    entry = flb_log_cache_exists(worker.log_cache,
+                                 TEST_RECORD_01, TEST_RECORD_01_SIZE);
+    TEST_CHECK(entry != NULL);
+    if (entry) {
+        entry->timestamp = time(NULL) - 2;
+    }
+
+    ret = flb_log_suppress_check(1, TEST_RECORD_02);
+    TEST_CHECK(ret == FLB_FALSE);
+
+    entry = flb_log_cache_exists(worker.log_cache,
+                                 TEST_RECORD_02, TEST_RECORD_02_SIZE);
+    TEST_CHECK(entry != NULL);
+    if (entry) {
+        entry->timestamp = time(NULL) - 2;
+    }
+
+    ret = flb_log_suppress_check(3, TEST_RECORD_03);
+    TEST_CHECK(ret == FLB_FALSE);
+
+    entry = flb_log_cache_exists(worker.log_cache,
+                                 TEST_RECORD_03, TEST_RECORD_03_SIZE);
+    TEST_CHECK(entry != NULL);
+
+    entry = flb_log_cache_exists(worker.log_cache,
+                                 TEST_RECORD_02, TEST_RECORD_02_SIZE);
+    TEST_CHECK(entry == NULL);
+
+    ret = flb_log_suppress_check(3, TEST_RECORD_01);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    FLB_TLS_SET(flb_worker_ctx, previous_worker);
+    flb_log_cache_destroy(worker.log_cache);
+}
+
 TEST_LIST = {
     { "cache_basic_timeout" , cache_basic_timeout },
     { "cache_one_slot"      , cache_one_slot      },
@@ -222,5 +279,7 @@ TEST_LIST = {
       suppress_interval_longer_than_cache_timeout },
     { "suppress_interval_shorter_than_cache_timeout",
       suppress_interval_shorter_than_cache_timeout },
+    { "suppress_interval_preserved_during_cache_replacement",
+      suppress_interval_preserved_during_cache_replacement },
     { 0 }
 };
