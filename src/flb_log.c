@@ -695,7 +695,9 @@ struct flb_log_cache_entry *flb_log_cache_get_target(struct flb_log_cache *cache
  *
  * if no similar message exists, then the incoming message is added to the cache.
  */
-int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, size_t msg_size)
+int flb_log_cache_check_suppress_interval(struct flb_log_cache *cache,
+                                          char *msg_buf, size_t msg_size,
+                                          int interval_seconds)
 {
     uint64_t now = 0;
     flb_sds_t buf;
@@ -729,7 +731,7 @@ int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, siz
         return FLB_FALSE;
     }
     else {
-        if (entry->timestamp + cache->timeout > now) {
+        if (entry->timestamp + interval_seconds > now) {
             return FLB_TRUE;
         }
         else {
@@ -738,6 +740,13 @@ int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, siz
         }
     }
     return FLB_TRUE;
+}
+
+int flb_log_cache_check_suppress(struct flb_log_cache *cache,
+                                 char *msg_buf, size_t msg_size)
+{
+    return flb_log_cache_check_suppress_interval(cache, msg_buf, msg_size,
+                                                 cache->timeout);
 }
 
 int flb_log_worker_destroy(struct flb_worker *worker)

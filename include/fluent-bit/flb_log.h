@@ -193,6 +193,9 @@ struct flb_log_cache_entry *flb_log_cache_exists(struct flb_log_cache *cache, ch
 struct flb_log_cache_entry *flb_log_cache_get_target(struct flb_log_cache *cache, uint64_t ts);
 
 int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, size_t msg_size);
+int flb_log_cache_check_suppress_interval(struct flb_log_cache *cache,
+                                          char *msg_buf, size_t msg_size,
+                                          int interval_seconds);
 
 
 static inline int flb_log_suppress_check(int log_suppress_interval, const char *fmt, ...)
@@ -233,7 +236,8 @@ static inline int flb_log_suppress_check(int log_suppress_interval, const char *
         return FLB_FALSE;
     }
 
-    ret = flb_log_cache_check_suppress(w->log_cache, buf, size);
+    ret = flb_log_cache_check_suppress_interval(w->log_cache, buf, size,
+                                                log_suppress_interval);
     return ret;
 }
 
