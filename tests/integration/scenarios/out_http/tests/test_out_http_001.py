@@ -247,10 +247,11 @@ def test_out_http_bearer_token_file_adds_bearer_header(tmp_path):
         extra_env={"BEARER_TOKEN_FILE_TEST": str(token_path)},
     )
     service.start()
-    configure_http_response(status_code=200, body={"status": "received"})
-
-    requests_seen = service.wait_for_requests(1)
-    service.stop()
+    try:
+        configure_http_response(status_code=200, body={"status": "received"})
+        requests_seen = service.wait_for_requests(1)
+    finally:
+        service.stop()
 
     data_request = requests_seen[0]
     assert data_request["headers"].get("Authorization") == "Bearer test-token-value"
