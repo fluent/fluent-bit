@@ -260,6 +260,8 @@ int cm_metrics_process(struct flb_processor_instance *ins,
                        const char *tag, int tag_len)
 {
     int ret = -1;
+    size_t key_index;
+    cfl_sds_t key;
     struct cfl_variant *var = NULL;
 
     if (ctx->context_type == CM_CONTEXT_OTEL_RESOURCE_ATTR) {
@@ -302,30 +304,35 @@ int cm_metrics_process(struct flb_processor_instance *ins,
         return FLB_PROCESSOR_FAILURE;
     }
 
-    if (ctx->action_type == CM_ACTION_INSERT) {
-        ret = run_action_insert(ctx, var->data.as_kvlist, tag, tag_len, ctx->key, ctx->value);
-    }
-    else if (ctx->action_type == CM_ACTION_UPSERT) {
-        ret = run_action_upsert(ctx, var->data.as_kvlist, tag, tag_len, ctx->key, ctx->value);
-    }
-    else if (ctx->action_type == CM_ACTION_DELETE) {
-        ret = run_action_delete(ctx, var->data.as_kvlist, tag, tag_len, ctx->key);
-    }
-    else if (ctx->action_type == CM_ACTION_RENAME) {
-        ret = run_action_rename(ctx, var->data.as_kvlist, tag, tag_len, ctx->key, ctx->value);
-    }
-    else if (ctx->action_type == CM_ACTION_HASH) {
-        ret = run_action_hash(ctx, var->data.as_kvlist, tag, tag_len, ctx->key);
-    }
-    else if (ctx->action_type == CM_ACTION_EXTRACT) {
-        ret = run_action_extract(ctx, var->data.as_kvlist, tag, tag_len, ctx->key, ctx->regex);
-    }
-    else if (ctx->action_type == CM_ACTION_CONVERT) {
-        ret = run_action_convert(ctx, var->data.as_kvlist, tag, tag_len, ctx->key, ctx->converted_type);
-    }
+    for (key_index = 0; key_index < cm_key_count(ctx); key_index++) {
+        key = cm_key_at(ctx, key_index);
 
-    if (ret != 0) {
-        return FLB_PROCESSOR_FAILURE;
+        if (ctx->action_type == CM_ACTION_INSERT) {
+            ret = run_action_insert(ctx, var->data.as_kvlist, tag, tag_len, key, ctx->value);
+        }
+        else if (ctx->action_type == CM_ACTION_UPSERT) {
+            ret = run_action_upsert(ctx, var->data.as_kvlist, tag, tag_len, key, ctx->value);
+        }
+        else if (ctx->action_type == CM_ACTION_DELETE) {
+            ret = run_action_delete(ctx, var->data.as_kvlist, tag, tag_len, key);
+        }
+        else if (ctx->action_type == CM_ACTION_RENAME) {
+            ret = run_action_rename(ctx, var->data.as_kvlist, tag, tag_len, key, ctx->value);
+        }
+        else if (ctx->action_type == CM_ACTION_HASH) {
+            ret = run_action_hash(ctx, var->data.as_kvlist, tag, tag_len, key);
+        }
+        else if (ctx->action_type == CM_ACTION_EXTRACT) {
+            ret = run_action_extract(ctx, var->data.as_kvlist, tag, tag_len, key, ctx->regex);
+        }
+        else if (ctx->action_type == CM_ACTION_CONVERT) {
+            ret = run_action_convert(ctx, var->data.as_kvlist, tag, tag_len, key,
+                                     ctx->converted_type);
+        }
+
+        if (ret != 0) {
+            return FLB_PROCESSOR_FAILURE;
+        }
     }
 
     return FLB_PROCESSOR_SUCCESS;

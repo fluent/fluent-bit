@@ -345,6 +345,8 @@ int cm_logs_process(struct flb_processor_instance *ins,
 {
     int ret = -1;
     int record_type;
+    size_t key_index;
+    cfl_sds_t key;
     struct flb_mp_chunk_record *record;
     struct cfl_object *obj = NULL;
     struct cfl_object obj_static;
@@ -428,31 +430,35 @@ int cm_logs_process(struct flb_processor_instance *ins,
             return FLB_PROCESSOR_FAILURE;
         }
 
-        /* process the action */
-        if (ctx->action_type == CM_ACTION_INSERT) {
-            ret = run_action_insert(ctx, obj, tag, tag_len, ctx->key, ctx->value);
-        }
-        else if (ctx->action_type == CM_ACTION_UPSERT) {
-            ret = run_action_upsert(ctx, obj, tag, tag_len, ctx->key, ctx->value);
-        }
-        else if (ctx->action_type == CM_ACTION_DELETE) {
-            ret = run_action_delete(ctx, obj, tag, tag_len, ctx->key);
-        }
-        else if (ctx->action_type == CM_ACTION_RENAME) {
-            ret = run_action_rename(ctx, obj, tag, tag_len, ctx->key, ctx->value);
-        }
-        else if (ctx->action_type == CM_ACTION_HASH) {
-            ret = run_action_hash(ctx, obj, tag, tag_len, ctx->key);
-        }
-        else if (ctx->action_type == CM_ACTION_EXTRACT) {
-            ret = run_action_extract(ctx, obj, tag, tag_len, ctx->key, ctx->regex);
-        }
-        else if (ctx->action_type == CM_ACTION_CONVERT) {
-            ret = run_action_convert(ctx, obj, tag, tag_len, ctx->key, ctx->converted_type);
-        }
+        for (key_index = 0; key_index < cm_key_count(ctx); key_index++) {
+            key = cm_key_at(ctx, key_index);
 
-        if (ret != 0) {
-            return FLB_PROCESSOR_FAILURE;
+            /* process the action */
+            if (ctx->action_type == CM_ACTION_INSERT) {
+                ret = run_action_insert(ctx, obj, tag, tag_len, key, ctx->value);
+            }
+            else if (ctx->action_type == CM_ACTION_UPSERT) {
+                ret = run_action_upsert(ctx, obj, tag, tag_len, key, ctx->value);
+            }
+            else if (ctx->action_type == CM_ACTION_DELETE) {
+                ret = run_action_delete(ctx, obj, tag, tag_len, key);
+            }
+            else if (ctx->action_type == CM_ACTION_RENAME) {
+                ret = run_action_rename(ctx, obj, tag, tag_len, key, ctx->value);
+            }
+            else if (ctx->action_type == CM_ACTION_HASH) {
+                ret = run_action_hash(ctx, obj, tag, tag_len, key);
+            }
+            else if (ctx->action_type == CM_ACTION_EXTRACT) {
+                ret = run_action_extract(ctx, obj, tag, tag_len, key, ctx->regex);
+            }
+            else if (ctx->action_type == CM_ACTION_CONVERT) {
+                ret = run_action_convert(ctx, obj, tag, tag_len, key, ctx->converted_type);
+            }
+
+            if (ret != 0) {
+                return FLB_PROCESSOR_FAILURE;
+            }
         }
     }
 

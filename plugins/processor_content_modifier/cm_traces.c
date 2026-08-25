@@ -564,35 +564,41 @@ int cm_traces_process(struct flb_processor_instance *ins,
                       const char *tag, int tag_len)
 {
     int ret = -1;
+    size_t key_index;
+    cfl_sds_t key;
 
-    /* process the action */
-    if (ctx->action_type == CM_ACTION_INSERT) {
-        ret = traces_insert_attributes(ctx, traces_context, ctx->key, ctx->value);
-    }
-    else if (ctx->action_type == CM_ACTION_UPSERT) {
-        ret = traces_upsert_attributes(ctx, traces_context, ctx->key, ctx->value);
-    }
-    else if (ctx->action_type == CM_ACTION_DELETE) {
-        ret = traces_delete_attributes(ctx, traces_context, ctx->key);
-    }
-    else if (ctx->action_type == CM_ACTION_RENAME) {
-        ret = traces_rename_attributes(ctx, traces_context, ctx->key, ctx->value);
-    }
-    else if (ctx->action_type == CM_ACTION_HASH) {
-        ret = traces_hash_attributes(ctx, traces_context, ctx->key);
-    }
-    else if (ctx->action_type == CM_ACTION_EXTRACT) {
-        ret = traces_extract_attributes(ctx, traces_context, ctx->key, ctx->regex);
-    }
-    else if (ctx->action_type == CM_ACTION_CONVERT) {
-        ret = traces_convert_attributes(ctx, traces_context, ctx->key, ctx->converted_type);
+    for (key_index = 0; key_index < cm_key_count(ctx); key_index++) {
+        key = cm_key_at(ctx, key_index);
+
+        /* process the action */
+        if (ctx->action_type == CM_ACTION_INSERT) {
+            ret = traces_insert_attributes(ctx, traces_context, key, ctx->value);
+        }
+        else if (ctx->action_type == CM_ACTION_UPSERT) {
+            ret = traces_upsert_attributes(ctx, traces_context, key, ctx->value);
+        }
+        else if (ctx->action_type == CM_ACTION_DELETE) {
+            ret = traces_delete_attributes(ctx, traces_context, key);
+        }
+        else if (ctx->action_type == CM_ACTION_RENAME) {
+            ret = traces_rename_attributes(ctx, traces_context, key, ctx->value);
+        }
+        else if (ctx->action_type == CM_ACTION_HASH) {
+            ret = traces_hash_attributes(ctx, traces_context, key);
+        }
+        else if (ctx->action_type == CM_ACTION_EXTRACT) {
+            ret = traces_extract_attributes(ctx, traces_context, key, ctx->regex);
+        }
+        else if (ctx->action_type == CM_ACTION_CONVERT) {
+            ret = traces_convert_attributes(ctx, traces_context, key, ctx->converted_type);
+        }
+
+        if (ret != 0) {
+            return FLB_PROCESSOR_FAILURE;
+        }
     }
 
     *out_traces_context = traces_context;
-
-    if (ret != 0) {
-        return FLB_PROCESSOR_FAILURE;
-    }
 
     return FLB_PROCESSOR_SUCCESS;
 }
