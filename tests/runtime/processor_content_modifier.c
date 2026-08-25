@@ -458,6 +458,151 @@ static void flb_logs_action_delete()
     processor_test_destroy(ctx);
 }
 
+static void flb_logs_action_delete_key_list()
+{
+    int ret;
+    int bytes;
+    char *p;
+    size_t len;
+    struct cfl_array *keys;
+    struct cfl_variant *key;
+    struct processor_test *ctx;
+    struct flb_lib_out_cb cb_data;
+    struct expect_str expect[] = {
+      {"\"foo\":\"one\"", FLB_FALSE},
+      {"\"bar\":\"two\"", FLB_FALSE},
+      {"\"keep\":\"three\"", FLB_TRUE},
+      {NULL, FLB_TRUE}
+    };
+    struct cfl_variant action = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "delete",
+    };
+    struct cfl_variant context = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "message",
+    };
+
+    keys = cfl_array_create(3);
+    TEST_CHECK(keys != NULL);
+    TEST_CHECK(cfl_array_append_string(keys, "foo") == 0);
+    TEST_CHECK(cfl_array_append_string(keys, "bar") == 0);
+    TEST_CHECK(cfl_array_append_string(keys, "missing") == 0);
+
+    key = cfl_variant_create_from_array(keys);
+    TEST_CHECK(key != NULL);
+
+    cb_data.cb = cb_check_result;
+    cb_data.data = &expect;
+
+    ctx = processor_test_create(FLB_PROCESSOR_LOGS, &cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        cfl_variant_destroy(key);
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_processor_unit_set_property(ctx->pu, "action", &action);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "context", &context);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "key", key);
+    TEST_CHECK(ret == 0);
+    cfl_variant_destroy(key);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        processor_test_destroy(ctx);
+        return;
+    }
+
+    p = "[0, {\"foo\":\"one\", \"bar\":\"two\", \"keep\":\"three\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    processor_test_destroy(ctx);
+}
+
+static void flb_logs_action_upsert_key_list()
+{
+    int ret;
+    int bytes;
+    char *p;
+    size_t len;
+    struct cfl_array *keys;
+    struct cfl_variant *key;
+    struct processor_test *ctx;
+    struct flb_lib_out_cb cb_data;
+    struct expect_str expect[] = {
+      {"\"foo\":\"new\"", FLB_TRUE},
+      {"\"bar\":\"new\"", FLB_TRUE},
+      {"\"keep\":\"three\"", FLB_TRUE},
+      {NULL, FLB_TRUE}
+    };
+    struct cfl_variant action = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "upsert",
+    };
+    struct cfl_variant context = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "message",
+    };
+    struct cfl_variant value = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "new",
+    };
+
+    keys = cfl_array_create(2);
+    TEST_CHECK(keys != NULL);
+    TEST_CHECK(cfl_array_append_string(keys, "foo") == 0);
+    TEST_CHECK(cfl_array_append_string(keys, "bar") == 0);
+
+    key = cfl_variant_create_from_array(keys);
+    TEST_CHECK(key != NULL);
+
+    cb_data.cb = cb_check_result;
+    cb_data.data = &expect;
+
+    ctx = processor_test_create(FLB_PROCESSOR_LOGS, &cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        cfl_variant_destroy(key);
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_processor_unit_set_property(ctx->pu, "action", &action);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "context", &context);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "key", key);
+    TEST_CHECK(ret == 0);
+    cfl_variant_destroy(key);
+    ret = flb_processor_unit_set_property(ctx->pu, "value", &value);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        processor_test_destroy(ctx);
+        return;
+    }
+
+    p = "[0, {\"foo\":\"old\", \"keep\":\"three\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    processor_test_destroy(ctx);
+}
+
 static void flb_logs_action_rename()
 {
     struct processor_test *ctx;
@@ -1879,6 +2024,8 @@ static void flb_logs_otel_log_attributes_invalid_otlp_metadata()
 TEST_LIST = {
     {"logs.action.insert"           , flb_logs_action_insert },
     {"logs.action.delete"           , flb_logs_action_delete },
+    {"logs.action.delete_key_list"  , flb_logs_action_delete_key_list },
+    {"logs.action.upsert_key_list"  , flb_logs_action_upsert_key_list },
     {"logs.action.rename"           , flb_logs_action_rename },
     {"logs.action.upsert"           , flb_logs_action_upsert },
     {"logs.action.hash"             , flb_logs_action_hash },
