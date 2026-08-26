@@ -59,6 +59,7 @@ set(UNIT_TESTS_FILES
   opentelemetry.c
   storage_dlq.c
   engine_dispatch.c
+  output.c
 )
 
 if(FLB_OUT_AZURE_BLOB)
