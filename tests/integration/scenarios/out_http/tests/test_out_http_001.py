@@ -239,6 +239,7 @@ def test_out_http_oauth2_private_key_jwt_adds_bearer_token():
 
 
 def test_out_http_bearer_token_file_adds_bearer_header(tmp_path):
+    """Verify http_bearer_token_file sets the Authorization header from the file contents."""
     token_path = tmp_path / "bearer_token_file_test.token"
     token_path.write_text("test-token-value\n", encoding="utf-8")
 
@@ -258,6 +259,7 @@ def test_out_http_bearer_token_file_adds_bearer_header(tmp_path):
 
 
 def test_out_http_bearer_token_file_picks_up_rotation(tmp_path):
+    """Verify a token rotated on disk is picked up on the next request without a restart."""
     token_path = tmp_path / "bearer_token_file_rotation.token"
     token_path.write_text("token-v1", encoding="utf-8")
 
@@ -291,6 +293,7 @@ def test_out_http_bearer_token_file_picks_up_rotation(tmp_path):
 
 
 def test_out_http_bearer_token_file_missing_retries(tmp_path):
+    """Verify a missing http_bearer_token_file logs an error and retries without leaking a token."""
     missing_token_path = tmp_path / "bearer_token_file_missing.token"
 
     service = Service(
@@ -310,6 +313,7 @@ def test_out_http_bearer_token_file_missing_retries(tmp_path):
 
 
 def test_out_http_bearer_token_file_empty_retries(tmp_path):
+    """Verify an empty (post-trim) http_bearer_token_file logs an error and retries."""
     empty_token_path = tmp_path / "bearer_token_file_empty.token"
     empty_token_path.write_text("\n", encoding="utf-8")
 
