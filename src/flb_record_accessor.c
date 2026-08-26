@@ -743,7 +743,7 @@ int flb_ra_strcmp(struct flb_record_accessor *ra, msgpack_object map,
 
     rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
     return flb_ra_key_strcmp(rp->key->name, map, rp->key->subkeys,
-                             rp->key->name, flb_sds_len(rp->key->name));
+                             str, len);
 }
 
 /*
