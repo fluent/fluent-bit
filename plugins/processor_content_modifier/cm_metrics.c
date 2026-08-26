@@ -219,38 +219,64 @@ static int run_action_extract(struct content_modifier_ctx *ctx,
 }
 
 static int run_action_convert(struct content_modifier_ctx *ctx,
-                              struct cfl_kvlist *kvlist,
-                              const char *tag, int tag_len,
-                              cfl_sds_t key, int converted_type)
+                              struct cfl_kvlist *kvlist)
 {
     int ret;
-    struct cfl_variant *v;
-    struct cfl_kvpair *kvpair;
-    struct cfl_variant *converted;
+    size_t index;
+    size_t key_count;
+    cfl_sds_t key;
+    struct cfl_variant *old_value;
+    struct cfl_variant **converted_values;
+    struct cfl_kvpair **kvpairs;
 
-    /* if the kv pair already exists, remove it from the list */
-    kvpair = kvlist_get_kvpair(kvlist, key);
-    if (!kvpair) {
+    key_count = cm_key_count(ctx);
+    converted_values = flb_calloc(key_count, sizeof(struct cfl_variant *));
+    kvpairs = flb_calloc(key_count, sizeof(struct cfl_kvpair *));
+    if (converted_values == NULL || kvpairs == NULL) {
+        flb_free(converted_values);
+        flb_free(kvpairs);
         return -1;
     }
 
-    /* convert the value */
-    v = kvpair->val;
-    ret = cm_utils_variant_convert(v, &converted, converted_type);
-    if (ret != FLB_TRUE) {
-        return -1;
+    /* Validate and stage every conversion before changing the context. */
+    for (index = 0; index < key_count; index++) {
+        key = cm_key_at(ctx, index);
+        kvpairs[index] = kvlist_get_kvpair(kvlist, key);
+        if (kvpairs[index] == NULL) {
+            continue;
+        }
+
+        ret = cm_utils_variant_convert(kvpairs[index]->val,
+                                       &converted_values[index],
+                                       ctx->converted_type);
+        if (ret != FLB_TRUE) {
+            ret = -1;
+            goto cleanup;
+        }
     }
 
-    /* remove the old kvpair */
-    cfl_kvpair_destroy(kvpair);
+    for (index = 0; index < key_count; index++) {
+        if (kvpairs[index] == NULL) {
+            continue;
+        }
 
-    ret = cfl_kvlist_insert_s(kvlist, key, cfl_sds_len(key), converted);
-    if (ret != 0) {
-        cfl_variant_destroy(converted);
-        return -1;
+        old_value = kvpairs[index]->val;
+        kvpairs[index]->val = converted_values[index];
+        converted_values[index] = NULL;
+        cfl_variant_destroy(old_value);
     }
+    ret = 0;
 
-    return 0;
+cleanup:
+    for (index = 0; index < key_count; index++) {
+        if (converted_values[index] != NULL) {
+            cfl_variant_destroy(converted_values[index]);
+        }
+    }
+    flb_free(converted_values);
+    flb_free(kvpairs);
+
+    return ret;
 }
 
 int cm_metrics_process(struct flb_processor_instance *ins,
@@ -304,6 +330,14 @@ int cm_metrics_process(struct flb_processor_instance *ins,
         return FLB_PROCESSOR_FAILURE;
     }
 
+    if (ctx->action_type == CM_ACTION_CONVERT) {
+        ret = run_action_convert(ctx, var->data.as_kvlist);
+        if (ret != 0) {
+            return FLB_PROCESSOR_FAILURE;
+        }
+        return FLB_PROCESSOR_SUCCESS;
+    }
+
     for (key_index = 0; key_index < cm_key_count(ctx); key_index++) {
         key = cm_key_at(ctx, key_index);
 
@@ -325,11 +359,6 @@ int cm_metrics_process(struct flb_processor_instance *ins,
         else if (ctx->action_type == CM_ACTION_EXTRACT) {
             ret = run_action_extract(ctx, var->data.as_kvlist, tag, tag_len, key, ctx->regex);
         }
-        else if (ctx->action_type == CM_ACTION_CONVERT) {
-            ret = run_action_convert(ctx, var->data.as_kvlist, tag, tag_len, key,
-                                     ctx->converted_type);
-        }
-
         if (ret != 0) {
             return FLB_PROCESSOR_FAILURE;
         }

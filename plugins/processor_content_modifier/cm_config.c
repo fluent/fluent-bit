@@ -26,6 +26,7 @@
 
 size_t cm_key_count(struct content_modifier_ctx *ctx)
 {
+    /* Monkey returns zero when a list is empty. */
     if (ctx->keys != NULL && mk_list_is_empty(ctx->keys) != 0) {
         return mk_list_size(ctx->keys);
     }
@@ -43,6 +44,7 @@ cfl_sds_t cm_key_at(struct content_modifier_ctx *ctx, size_t index)
     struct mk_list *head;
     struct flb_config_map_val *entry;
 
+    /* Monkey returns zero when a list is empty. */
     if (ctx->keys != NULL && mk_list_is_empty(ctx->keys) != 0) {
         current_index = 0;
 
