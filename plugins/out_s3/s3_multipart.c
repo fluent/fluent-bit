@@ -652,7 +652,8 @@ flb_sds_t get_etag(char *response, size_t size)
         return NULL;
     }
 
-    tmp = strstr(response, "ETag:");
+    //tmp = strstr(response, "ETag:");
+    tmp = strcasestr(response, "ETag:");
     if (!tmp) {
         return NULL;
     }
