@@ -1144,6 +1144,7 @@ void flb_test_in_http()
     test_ctx_destroy(ctx);
 }
 
+/* test that http_bearer_token_file cannot be combined with http_user/http_passwd */
 void flb_test_http_bearer_token_file_conflicts_with_http_user()
 {
     struct test_ctx *ctx;
@@ -1173,6 +1174,7 @@ void flb_test_http_bearer_token_file_conflicts_with_http_user()
     flb_free(ctx);
 }
 
+/* test that http_bearer_token_file cannot be combined with oauth2.enable */
 void flb_test_http_bearer_token_file_conflicts_with_oauth2()
 {
     struct test_ctx *ctx;
