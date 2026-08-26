@@ -860,6 +860,27 @@ def test_in_forward_message_mode_partial_tcp_writes():
     assert records[0]["message"] == "partial"
 
 
+def test_in_forward_multiple_message_mode_frames_in_one_write():
+    service = Service("in_forward.yaml")
+    service.start()
+
+    try:
+        payload = b"".join(
+            _message_mode_payload(TEST_TAG, {"message": message})
+            for message in ["coalesced-one", "coalesced-two", "coalesced-three"]
+        )
+        _send_tcp_payload(service.flb_listener_port, payload)
+        records = service.wait_for_record_count(3)
+    finally:
+        service.stop()
+
+    assert [record["message"] for record in records] == [
+        "coalesced-one",
+        "coalesced-two",
+        "coalesced-three",
+    ]
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="process resource limits are Linux-only")
 def test_in_forward_repro_payload_allocation_failure_closes_connection(tmp_path):
     if os.environ.get("VALGRIND"):
