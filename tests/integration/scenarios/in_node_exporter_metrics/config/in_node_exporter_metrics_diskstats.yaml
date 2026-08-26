@@ -1,0 +1,21 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: node_exporter_metrics
+      tag: node_metrics
+      scrape_interval: 1
+      metrics: diskstats
+      path.procfs: ${NODE_EXPORTER_PROCFS}
+      diskstats.ignore_device_regex: "^$"
+
+  outputs:
+    - name: prometheus_exporter
+      match: node_metrics
+      host: 127.0.0.1
+      port: ${NODE_EXPORTER_EXPORTER_PORT}
