@@ -258,6 +258,7 @@ static int run_content_modifier_direct(int type,
                                        char **key_names,
                                        size_t key_count,
                                        char *value_string,
+                                       char *converted_type_string,
                                        void *data)
 {
     int ret;
@@ -281,6 +282,10 @@ static int run_content_modifier_direct(int type,
     struct cfl_variant value = {
         .type = CFL_VARIANT_STRING,
         .data.as_string = value_string,
+    };
+    struct cfl_variant converted_type = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = converted_type_string,
     };
 
     ret = -1;
@@ -345,6 +350,11 @@ static int run_content_modifier_direct(int type,
 
     if (value_string != NULL &&
         flb_processor_unit_set_property(unit, "value", &value) != 0) {
+        goto cleanup;
+    }
+
+    if (converted_type_string != NULL &&
+        flb_processor_unit_set_property(unit, "converted_type", &converted_type) != 0) {
         goto cleanup;
     }
 
@@ -469,7 +479,7 @@ static void assert_metrics_crud_action(char *action_name, int use_key_list)
     ret = run_content_modifier_direct(FLB_PROCESSOR_METRICS,
                                       action_name,
                                       "otel_resource_attributes",
-                                      selected_keys, key_count, value, context);
+                                      selected_keys, key_count, value, NULL, context);
     TEST_CHECK(ret == 0);
 
     if (strcmp(action_name, "insert") == 0) {
@@ -536,6 +546,78 @@ static void flb_metrics_action_upsert_key_list()
 static void flb_metrics_action_delete_key_list()
 {
     assert_metrics_crud_action("delete", FLB_TRUE);
+}
+
+static void flb_metrics_action_convert_key_list_atomic()
+{
+    int ret;
+    char *keys[] = {"foo", "bar"};
+    struct cmt *context;
+    struct cfl_kvlist *attributes;
+
+    context = cmt_create();
+    TEST_CHECK(context != NULL);
+    if (context == NULL) {
+        return;
+    }
+
+    attributes = create_metrics_resource_attributes(context);
+    TEST_CHECK(attributes != NULL);
+    if (attributes == NULL) {
+        cmt_destroy(context);
+        return;
+    }
+
+    TEST_CHECK(cfl_kvlist_insert_string(attributes, "foo", "1") == 0);
+    TEST_CHECK(cfl_kvlist_insert_string(attributes, "bar", "invalid") == 0);
+
+    ret = run_content_modifier_direct(FLB_PROCESSOR_METRICS,
+                                      "convert", "otel_resource_attributes",
+                                      keys, 2, NULL, "int", context);
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(string_attribute_equals(attributes, "foo", "1") == FLB_TRUE);
+    TEST_CHECK(string_attribute_equals(attributes, "bar", "invalid") == FLB_TRUE);
+
+    cmt_destroy(context);
+}
+
+static void flb_metrics_action_convert_key_list_missing_key()
+{
+    int ret;
+    char *keys[] = {"missing", "foo"};
+    struct cmt *context;
+    struct cfl_kvlist *attributes;
+    struct cfl_variant *value;
+
+    context = cmt_create();
+    TEST_CHECK(context != NULL);
+    if (context == NULL) {
+        return;
+    }
+
+    attributes = create_metrics_resource_attributes(context);
+    TEST_CHECK(attributes != NULL);
+    if (attributes == NULL) {
+        cmt_destroy(context);
+        return;
+    }
+
+    TEST_CHECK(cfl_kvlist_insert_string(attributes, "foo", "1") == 0);
+
+    ret = run_content_modifier_direct(FLB_PROCESSOR_METRICS,
+                                      "convert", "otel_resource_attributes",
+                                      keys, 2, NULL, "int", context);
+    TEST_CHECK(ret == 0);
+
+    value = cfl_kvlist_fetch(attributes, "foo");
+    TEST_CHECK(value != NULL);
+    if (value != NULL) {
+        TEST_CHECK(value->type == CFL_VARIANT_INT);
+        TEST_CHECK(value->data.as_int64 == 1);
+    }
+    TEST_CHECK(cfl_kvlist_contains(attributes, "missing") == FLB_FALSE);
+
+    cmt_destroy(context);
 }
 
 struct traces_fixture {
@@ -663,7 +745,7 @@ static void assert_traces_crud_action(char *action_name, int use_key_list)
     ret = run_content_modifier_direct(FLB_PROCESSOR_TRACES,
                                       action_name,
                                       "span_attributes",
-                                      selected_keys, key_count, value, fixture.context);
+                                      selected_keys, key_count, value, NULL, fixture.context);
     TEST_CHECK(ret == 0);
 
     for (index = 0; index < 2; index++) {
@@ -737,6 +819,42 @@ static void flb_traces_action_upsert_key_list()
 static void flb_traces_action_delete_key_list()
 {
     assert_traces_crud_action("delete", FLB_TRUE);
+}
+
+static void flb_traces_action_convert_key_list_atomic()
+{
+    int ret;
+    size_t index;
+    char *keys[] = {"foo", "bar"};
+    struct ctrace_span *spans[2];
+    struct traces_fixture fixture;
+
+    ret = traces_fixture_create(&fixture);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        traces_fixture_destroy(&fixture);
+        return;
+    }
+
+    spans[0] = fixture.first_span;
+    spans[1] = fixture.second_span;
+    for (index = 0; index < 2; index++) {
+        TEST_CHECK(ctr_span_set_attribute_string(spans[index], "foo", "1") == 0);
+        TEST_CHECK(ctr_span_set_attribute_string(spans[index],
+                                                 "bar", "invalid") == 0);
+    }
+
+    ret = run_content_modifier_direct(FLB_PROCESSOR_TRACES,
+                                      "convert", "span_attributes",
+                                      keys, 2, NULL, "int", fixture.context);
+    TEST_CHECK(ret != 0);
+
+    for (index = 0; index < 2; index++) {
+        TEST_CHECK(span_attribute_equals(spans[index], "foo", "1") == FLB_TRUE);
+        TEST_CHECK(span_attribute_equals(spans[index], "bar", "invalid") == FLB_TRUE);
+    }
+
+    traces_fixture_destroy(&fixture);
 }
 
 static void assert_otel_scope_context_key(char *context_name, char *expected_key)
@@ -1085,6 +1203,149 @@ static void flb_logs_action_upsert_key_list()
     }
 
     p = "[0, {\"foo\":\"old\", \"keep\":\"three\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    processor_test_destroy(ctx);
+}
+
+static void flb_logs_action_convert_key_list_atomic()
+{
+    int ret;
+    int bytes;
+    char *p;
+    size_t len;
+    struct cfl_array *keys;
+    struct cfl_variant *key;
+    struct processor_test *ctx;
+    struct flb_lib_out_cb cb_data;
+    struct expect_str expect[] = {
+      {"\"foo\":\"1\"", FLB_TRUE},
+      {"\"bar\":\"invalid\"", FLB_TRUE},
+      {NULL, FLB_TRUE}
+    };
+    struct cfl_variant action = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "convert",
+    };
+    struct cfl_variant context = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "message",
+    };
+    struct cfl_variant converted_type = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "int",
+    };
+
+    keys = cfl_array_create(2);
+    TEST_CHECK(keys != NULL);
+    TEST_CHECK(cfl_array_append_string(keys, "foo") == 0);
+    TEST_CHECK(cfl_array_append_string(keys, "bar") == 0);
+
+    key = cfl_variant_create_from_array(keys);
+    TEST_CHECK(key != NULL);
+
+    cb_data.cb = cb_check_result;
+    cb_data.data = &expect;
+
+    ctx = processor_test_create(FLB_PROCESSOR_LOGS, &cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        cfl_variant_destroy(key);
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, "format", "json", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "action", &action);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "context", &context);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "key", key);
+    TEST_CHECK(ret == 0);
+    cfl_variant_destroy(key);
+    ret = flb_processor_unit_set_property(ctx->pu, "converted_type", &converted_type);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        processor_test_destroy(ctx);
+        return;
+    }
+
+    p = "[0, {\"foo\":\"1\", \"bar\":\"invalid\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    processor_test_destroy(ctx);
+}
+
+static void flb_logs_action_convert_key_list_missing_key()
+{
+    int ret;
+    int bytes;
+    char *p;
+    size_t len;
+    struct cfl_array *keys;
+    struct cfl_variant *key;
+    struct processor_test *ctx;
+    struct flb_lib_out_cb cb_data;
+    struct expect_str expect[] = {
+      {"\"foo\":1", FLB_TRUE},
+      {"\"keep\":\"unchanged\"", FLB_TRUE},
+      {"\"missing\"", FLB_FALSE},
+      {NULL, FLB_TRUE}
+    };
+    struct cfl_variant action = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "convert",
+    };
+    struct cfl_variant context = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "message",
+    };
+    struct cfl_variant converted_type = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "int",
+    };
+
+    keys = cfl_array_create(2);
+    TEST_CHECK(keys != NULL);
+    TEST_CHECK(cfl_array_append_string(keys, "missing") == 0);
+    TEST_CHECK(cfl_array_append_string(keys, "foo") == 0);
+
+    key = cfl_variant_create_from_array(keys);
+    TEST_CHECK(key != NULL);
+
+    cb_data.cb = cb_check_result;
+    cb_data.data = &expect;
+
+    ctx = processor_test_create(FLB_PROCESSOR_LOGS, &cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        cfl_variant_destroy(key);
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, "format", "json", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "action", &action);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "context", &context);
+    TEST_CHECK(ret == 0);
+    ret = flb_processor_unit_set_property(ctx->pu, "key", key);
+    TEST_CHECK(ret == 0);
+    cfl_variant_destroy(key);
+    ret = flb_processor_unit_set_property(ctx->pu, "converted_type", &converted_type);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        processor_test_destroy(ctx);
+        return;
+    }
+
+    p = "[0, {\"foo\":\"1\", \"keep\":\"unchanged\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -2515,18 +2776,25 @@ TEST_LIST = {
     {"logs.action.delete"           , flb_logs_action_delete },
     {"logs.action.delete_key_list"  , flb_logs_action_delete_key_list },
     {"logs.action.upsert_key_list"  , flb_logs_action_upsert_key_list },
+    {"logs.action.convert_key_list_atomic", flb_logs_action_convert_key_list_atomic },
+    {"logs.action.convert_key_list_missing_key",
+     flb_logs_action_convert_key_list_missing_key },
     {"metrics.action.insert"        , flb_metrics_action_insert },
     {"metrics.action.delete"        , flb_metrics_action_delete },
     {"metrics.action.upsert"        , flb_metrics_action_upsert },
     {"metrics.action.insert_key_list", flb_metrics_action_insert_key_list },
     {"metrics.action.upsert_key_list", flb_metrics_action_upsert_key_list },
     {"metrics.action.delete_key_list", flb_metrics_action_delete_key_list },
+    {"metrics.action.convert_key_list_atomic", flb_metrics_action_convert_key_list_atomic },
+    {"metrics.action.convert_key_list_missing_key",
+     flb_metrics_action_convert_key_list_missing_key },
     {"traces.action.insert"         , flb_traces_action_insert },
     {"traces.action.delete"         , flb_traces_action_delete },
     {"traces.action.upsert"         , flb_traces_action_upsert },
     {"traces.action.insert_key_list", flb_traces_action_insert_key_list },
     {"traces.action.upsert_key_list", flb_traces_action_upsert_key_list },
     {"traces.action.delete_key_list", flb_traces_action_delete_key_list },
+    {"traces.action.convert_key_list_atomic", flb_traces_action_convert_key_list_atomic },
     {"logs.action.rename"           , flb_logs_action_rename },
     {"logs.action.upsert"           , flb_logs_action_upsert },
     {"logs.action.hash"             , flb_logs_action_hash },
