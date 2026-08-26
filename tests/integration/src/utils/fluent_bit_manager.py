@@ -18,6 +18,7 @@ import datetime
 import logging
 import os
 from pathlib import Path
+import signal
 import shutil
 import subprocess
 import time
@@ -150,6 +151,32 @@ class FluentBitManager:
             assert_valgrind_clean(self.valgrind_log_file)
 
         logger.info(f"Fluent Bit stopped (pid: {pid})")
+
+    def send_sighup(self):
+        if not self.process:
+            raise RuntimeError("Fluent Bit is not running")
+
+        self.process.send_signal(signal.SIGHUP)
+
+    def get_reload_status(self):
+        url = f"http://127.0.0.1:{self.http_monitoring_port}/api/v2/reload"
+        response = requests.get(url, timeout=0.5)
+        response.raise_for_status()
+        return response.json()
+
+    def wait_for_hot_reload_count(self, expected_count, timeout=10):
+        deadline = time.time() + timeout
+
+        while time.time() < deadline:
+            try:
+                payload = self.get_reload_status()
+                if payload.get("hot_reload_count", 0) >= expected_count:
+                    return payload
+            except requests.RequestException:
+                pass
+            time.sleep(0.1)
+
+        raise TimeoutError(f"Timed out waiting for hot reload count {expected_count}")
 
     def get_version_info(self):
         try:
