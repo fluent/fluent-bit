@@ -311,6 +311,7 @@ if (FLB_STREAM_PROCESSOR)
 endif()
 
 if (FLB_SYSTEM_WINDOWS)
+  REGISTER_IN_PLUGIN("in_etw")
   REGISTER_IN_PLUGIN("in_winlog")
   REGISTER_IN_PLUGIN("in_winstat")
   REGISTER_IN_PLUGIN("in_winevtlog")
@@ -402,6 +403,7 @@ REGISTER_OUT_PLUGIN("out_udp")
 REGISTER_OUT_PLUGIN("out_td")
 REGISTER_OUT_PLUGIN("out_lib")
 REGISTER_OUT_PLUGIN("out_flowcounter")
+REGISTER_OUT_PLUGIN("out_gcs")
 REGISTER_OUT_PLUGIN("out_gelf")
 REGISTER_OUT_PLUGIN("out_websocket")
 REGISTER_OUT_PLUGIN("out_cloudwatch_logs")
@@ -491,10 +493,11 @@ if(EXT_FILTER_PLUGINS)
   endforeach()
 endif()
 
-# Generate the header from the template
+# Keep the generated plugin registry local to each build configuration.
+file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/generated/include/fluent-bit")
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_plugins.h.in"
-  "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_plugins.h"
+  "${PROJECT_BINARY_DIR}/generated/include/fluent-bit/flb_plugins.h"
   )
 
 set(FLB_PLUGINS "${flb_plugins}" PARENT_SCOPE)

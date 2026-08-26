@@ -29,6 +29,7 @@ packaging==24.1
 pluggy==1.5.0
 protobuf==4.25.3
 pytest==8.2.2
+pytest-xdist==3.8.0
 PyYAML==6.0.1
 requests==2.32.3
 soupsieve==2.5

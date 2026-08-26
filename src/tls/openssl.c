@@ -81,6 +81,7 @@ struct tls_session {
     char alpn[FLB_TLS_ALPN_MAX_LENGTH];
     int continuation_flag;
     struct tls_context *parent;    /* parent struct tls_context ref */
+    struct tls_session *outer_session; /* outer TLS session for TLS-in-TLS (HTTPS proxy) */
 };
 
 static int host_is_ip_literal(const char *hostname, char *normalized, size_t normalized_size)
@@ -902,7 +903,22 @@ static void *tls_context_create(int verify,
      *
      * https://www.openssl.org/docs/man1.0.2/man3/SSLv23_method.html
      */
-    if (mode == FLB_TLS_SERVER_MODE) {
+    if (mode == FLB_TLS_SERVER_MODE_DGRAM ||
+        mode == FLB_TLS_CLIENT_MODE_DGRAM) {
+#ifndef OPENSSL_NO_DTLS
+        if (mode == FLB_TLS_SERVER_MODE_DGRAM) {
+            ssl_ctx = SSL_CTX_new(DTLSv1_server_method());
+        }
+        else {
+            ssl_ctx = SSL_CTX_new(DTLSv1_client_method());
+        }
+#else
+        flb_error("[openssl] DTLS mode requested but this OpenSSL build "
+                  "does not provide DTLS support");
+        return NULL;
+#endif
+    }
+    else if (mode == FLB_TLS_SERVER_MODE) {
         ssl_ctx = SSL_CTX_new(SSLv23_server_method());
     }
     else {
@@ -912,6 +928,12 @@ static void *tls_context_create(int verify,
 #else
     if (mode == FLB_TLS_SERVER_MODE) {
         ssl_ctx = SSL_CTX_new(TLS_server_method());
+    }
+    else if (mode == FLB_TLS_SERVER_MODE_DGRAM) {
+        ssl_ctx = SSL_CTX_new(DTLS_server_method());
+    }
+    else if (mode == FLB_TLS_CLIENT_MODE_DGRAM) {
+        ssl_ctx = SSL_CTX_new(DTLS_client_method());
     }
     else {
         ssl_ctx = SSL_CTX_new(TLS_client_method());
@@ -1316,6 +1338,99 @@ static int tls_set_client_thumbprints(struct flb_tls *tls, const char *thumbprin
 
 #endif
 
+static int tls_context_reload(struct flb_tls *tls)
+{
+    SSL_CTX *old_ssl_ctx;
+    struct tls_context *ctx;
+    struct tls_context *new_ctx;
+    struct flb_tls tmp_tls;
+
+    ctx = tls->ctx;
+
+    new_ctx = tls_context_create(tls->verify,
+                                 tls->debug,
+                                 tls->mode,
+                                 tls->vhost,
+                                 tls->ca_path,
+                                 tls->ca_file,
+                                 tls->crt_file,
+                                 tls->key_file,
+                                 tls->key_passwd);
+    if (new_ctx == NULL) {
+        return -1;
+    }
+
+    memset(&tmp_tls, 0, sizeof(struct flb_tls));
+    tmp_tls.ctx = new_ctx;
+
+    if (tls->verify_client == FLB_TRUE &&
+        tls_context_set_verify_client(new_ctx, tls->verify_client) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
+    if ((tls->min_version != NULL || tls->max_version != NULL) &&
+        tls_set_minmax_proto(&tmp_tls, tls->min_version, tls->max_version) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
+    if (tls->ciphers != NULL &&
+        tls_set_ciphers(&tmp_tls, tls->ciphers) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
+    if (tls->alpn != NULL &&
+        tls_context_alpn_set(new_ctx, tls->alpn) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
+#if defined(FLB_SYSTEM_WINDOWS)
+    if (tls->certstore_name != NULL &&
+        tls_set_certstore_name(&tmp_tls, tls->certstore_name) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
+    if (tls->use_enterprise_store == FLB_TRUE &&
+        tls_set_use_enterprise_store(&tmp_tls, tls->use_enterprise_store) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
+    if (tls->client_thumbprints != NULL &&
+        tls_set_client_thumbprints(&tmp_tls, tls->client_thumbprints) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+#endif
+
+    if (tls->system_certificates_loaded == FLB_TRUE &&
+        load_system_certificates(new_ctx) != 0) {
+        tls_context_destroy(new_ctx);
+        return -1;
+    }
+
+    pthread_mutex_lock(&ctx->mutex);
+    old_ssl_ctx = ctx->ctx;
+    ctx->ctx = new_ctx->ctx;
+    new_ctx->ctx = old_ssl_ctx;
+
+    if (tls->alpn != NULL && tls->mode == FLB_TLS_SERVER_MODE) {
+        SSL_CTX_set_alpn_select_cb(ctx->ctx,
+                                   tls_context_server_alpn_select_callback,
+                                   ctx);
+    }
+
+    pthread_mutex_unlock(&ctx->mutex);
+
+    tls_context_destroy(new_ctx);
+
+    return 0;
+}
+
 static void *tls_session_create(struct flb_tls *tls,
                                 int fd)
 {
@@ -1361,10 +1476,40 @@ static void *tls_session_create(struct flb_tls *tls,
     return session;
 }
 
+/*
+ * Chain inner TLS session I/O through an outer TLS session.
+ * Used for TLS-in-TLS when connecting through an HTTPS proxy: the inner
+ * (destination) SSL object's BIO is replaced with a BIO_f_ssl wrapper
+ * around the outer (proxy) SSL object, so all inner TLS bytes flow
+ * through the already-established outer TLS tunnel.
+ */
+static int tls_session_set_outer(void *inner_ptr, void *outer_ptr)
+{
+    struct tls_session *inner = (struct tls_session *) inner_ptr;
+    struct tls_session *outer = (struct tls_session *) outer_ptr;
+    BIO *bio;
+
+    bio = BIO_new(BIO_f_ssl());
+    if (!bio) {
+        flb_error("[tls] could not create BIO for TLS-in-TLS tunnel");
+        return -1;
+    }
+
+    /*
+     * BIO_NOCLOSE: the outer SSL object must NOT be freed when this BIO
+     * is freed; we manage its lifecycle via inner->outer_session.
+     */
+    BIO_set_ssl(bio, outer->ssl, BIO_NOCLOSE);
+    SSL_set_bio(inner->ssl, bio, bio);
+    inner->outer_session = outer;
+    return 0;
+}
+
 static int tls_session_destroy(void *session)
 {
     struct tls_session *ptr = session;
     struct tls_context *ctx;
+    struct tls_context *outer_ctx;
 
     if (!ptr) {
         return 0;
@@ -1378,6 +1523,24 @@ static int tls_session_destroy(void *session)
     }
 
     SSL_free(ptr->ssl);
+
+    /*
+     * If this session was chained over an outer TLS session (HTTPS proxy),
+     * BIO_NOCLOSE ensured SSL_free above did not free the outer SSL object.
+     * Free it explicitly now, under its own context mutex.
+     */
+    if (ptr->outer_session != NULL) {
+        /* After session_set_outer(), the outer backend session is owned only
+         * by the inner session; no path should independently use it or acquire
+         * outer-context then inner-context locks for the same chained pair.
+         */
+        outer_ctx = ptr->outer_session->parent;
+        pthread_mutex_lock(&outer_ctx->mutex);
+        SSL_free(ptr->outer_session->ssl);
+        flb_free(ptr->outer_session);
+        pthread_mutex_unlock(&outer_ctx->mutex);
+    }
+
     flb_free(ptr);
 
     pthread_mutex_unlock(&ctx->mutex);
@@ -1442,12 +1605,34 @@ static const char *tls_session_alpn_get(void *session_)
     return backend_session->alpn;
 }
 
+static void tls_log_io_error(int ssl_error, int saved_errno)
+{
+    unsigned long err_code;
+    char err_buf[256];
+
+    err_code = ERR_get_error();
+
+    if (err_code != 0) {
+        ERR_error_string_n(err_code, err_buf, sizeof(err_buf) - 1);
+        flb_error("[tls] error: %s", err_buf);
+    }
+    else if (ssl_error == SSL_ERROR_SYSCALL && saved_errno != 0) {
+        flb_error("[tls] syscall error: %s", strerror(saved_errno));
+    }
+    else if (ssl_error == SSL_ERROR_SYSCALL) {
+        flb_error("[tls] error: unexpected EOF");
+    }
+    else {
+        flb_error("[tls] unknown error (ssl_error=%d)", ssl_error);
+    }
+}
+
 static int tls_net_read(struct flb_tls_session *session,
                         void *buf, size_t len)
 {
     int ret;
-    unsigned long err_code;
-    char err_buf[256];
+    int ssl_ret;
+    int saved_errno;
     struct tls_context *ctx;
     struct tls_session *backend_session;
 
@@ -1465,51 +1650,57 @@ static int tls_net_read(struct flb_tls_session *session,
 
     ERR_clear_error();
 
+    errno = 0;
     ret = SSL_read(backend_session->ssl, buf, len);
+    saved_errno = errno;
 
     if (ret <= 0) {
-        ret = SSL_get_error(backend_session->ssl, ret);
+        ssl_ret = SSL_get_error(backend_session->ssl, ret);
 
-        if (ret == SSL_ERROR_WANT_READ) {
+        if (ssl_ret == SSL_ERROR_WANT_READ) {
             ret = FLB_TLS_WANT_READ;
         }
-        else if (ret == SSL_ERROR_WANT_WRITE) {
+        else if (ssl_ret == SSL_ERROR_WANT_WRITE) {
             ret = FLB_TLS_WANT_WRITE;
         }
-        else if (ret == SSL_ERROR_SYSCALL) {
-            flb_errno();
-
-            err_code = ERR_get_error();
-
-            if (err_code != 0) {
-                ERR_error_string_n(err_code, err_buf, sizeof(err_buf)-1);
-                flb_error("[tls] syscall error: %s", err_buf);
-            }
-            else {
-                flb_error("[tls] syscall error: %s", strerror(errno));
-            }
+        else if (ssl_ret == SSL_ERROR_SYSCALL) {
+            tls_log_io_error(ssl_ret, saved_errno);
 
             /* According to the documentation these are non-recoverable
              * errors so we don't need to screen them before saving them
              * to the net_error field.
              */
 
-            session->connection->net_error = errno;
+            if (saved_errno != 0) {
+                session->connection->net_error = saved_errno;
+            }
+            else {
+                session->connection->net_error = ECONNRESET;
+            }
 
             ret = -1;
         }
-        else if (ret < 0) {
-            err_code = ERR_get_error();
+        else if (ssl_ret == SSL_ERROR_ZERO_RETURN) {
+            flb_debug("[tls] connection closed by the remote peer "
+                      "(close_notify)");
 
-            if (err_code != 0) {
-                ERR_error_string_n(err_code, err_buf, sizeof(err_buf)-1);
-                flb_error("[tls] error: %s", err_buf);
-            }
-            else {
-                flb_error("[tls] error: %s", strerror(errno));
-            }
+            /*
+             * The peer performed a clean TLS shutdown, so this session
+             * is finished. Flag the connection as errored so it is not
+             * reused: a reused session would keep hitting the cached
+             * shutdown state and fail every subsequent read identically.
+             * For a pooled upstream connection this makes
+             * flb_upstream_conn_release() destroy it instead of
+             * returning it to the keepalive pool.
+             */
+            session->connection->net_error = ECONNRESET;
+
+            ret = -1;
         }
         else {
+            tls_log_io_error(ssl_ret, saved_errno);
+            session->connection->net_error = ECONNRESET;
+
             ret = -1;
         }
     }
@@ -1523,8 +1714,7 @@ static int tls_net_write(struct flb_tls_session *session,
 {
     int ret;
     int ssl_ret;
-    unsigned long err_code;
-    char err_buf[256];
+    int saved_errno;
     size_t total = 0;
     struct tls_context *ctx;
     struct tls_session *backend_session;
@@ -1542,9 +1732,11 @@ static int tls_net_write(struct flb_tls_session *session,
 
     ERR_clear_error();
 
+    errno = 0;
     ret = SSL_write(backend_session->ssl,
                     (unsigned char *) data + total,
                     len - total);
+    saved_errno = errno;
 
     if (ret <= 0) {
         ssl_ret = SSL_get_error(backend_session->ssl, ret);
@@ -1556,39 +1748,42 @@ static int tls_net_write(struct flb_tls_session *session,
             ret = FLB_TLS_WANT_READ;
         }
         else if (ssl_ret == SSL_ERROR_SYSCALL) {
-            err_code = ERR_get_error();
-
-            if (err_code == 0) {
-                if (ret == 0) {
-                    flb_debug("[tls] connection closed");
-                }
-                else {
-                    flb_error("[tls] syscall error: %s", strerror(errno));
-                }
-            }
-            else {
-                ERR_error_string_n(err_code, err_buf, sizeof(err_buf) - 1);
-                flb_error("[tls] syscall error: %s", err_buf);
-            }
+            tls_log_io_error(ssl_ret, saved_errno);
 
             /* According to the documentation these are non-recoverable
              * errors so we don't need to screen them before saving them
              * to the net_error field.
              */
 
-            session->connection->net_error = errno;
+            if (saved_errno != 0) {
+                session->connection->net_error = saved_errno;
+            }
+            else {
+                session->connection->net_error = ECONNRESET;
+            }
+
+            ret = -1;
+        }
+        else if (ssl_ret == SSL_ERROR_ZERO_RETURN) {
+            flb_debug("[tls] connection closed by the remote peer "
+                      "(close_notify)");
+
+            /*
+             * The peer performed a clean TLS shutdown, so this session
+             * is finished. Flag the connection as errored so it is not
+             * reused: a reused session would keep hitting the cached
+             * shutdown state and fail every subsequent operation
+             * identically. For a pooled upstream connection this makes
+             * flb_upstream_conn_release() destroy it instead of
+             * returning it to the keepalive pool.
+             */
+            session->connection->net_error = ECONNRESET;
 
             ret = -1;
         }
         else {
-            err_code = ERR_get_error();
-            if (err_code == 0) {
-                flb_error("[tls] unknown error");
-            }
-            else {
-                ERR_error_string_n(err_code, err_buf, sizeof(err_buf) - 1);
-                flb_error("[tls] error: %s", err_buf);
-            }
+            tls_log_io_error(ssl_ret, saved_errno);
+            session->connection->net_error = ECONNRESET;
 
             ret = -1;
         }
@@ -1647,7 +1842,8 @@ static int tls_net_handshake(struct flb_tls *tls,
     pthread_mutex_lock(&ctx->mutex);
 
     if (!session->continuation_flag) {
-        if (tls->mode == FLB_TLS_CLIENT_MODE) {
+        if (tls->mode == FLB_TLS_CLIENT_MODE ||
+            tls->mode == FLB_TLS_CLIENT_MODE_DGRAM) {
             SSL_set_connect_state(session->ssl);
 
             if (ctx->alpn != NULL) {
@@ -1662,7 +1858,8 @@ static int tls_net_handshake(struct flb_tls *tls,
                 }
             }
         }
-        else if (tls->mode == FLB_TLS_SERVER_MODE) {
+        else if (tls->mode == FLB_TLS_SERVER_MODE ||
+                 tls->mode == FLB_TLS_SERVER_MODE_DGRAM) {
             SSL_set_accept_state(session->ssl);
         }
         else {
@@ -1696,10 +1893,12 @@ static int tls_net_handshake(struct flb_tls *tls,
 
     ERR_clear_error();
 
-    if (tls->mode == FLB_TLS_CLIENT_MODE) {
+    if (tls->mode == FLB_TLS_CLIENT_MODE ||
+        tls->mode == FLB_TLS_CLIENT_MODE_DGRAM) {
         ret = SSL_connect(session->ssl);
     }
-    else if (tls->mode == FLB_TLS_SERVER_MODE) {
+    else if (tls->mode == FLB_TLS_SERVER_MODE ||
+             tls->mode == FLB_TLS_SERVER_MODE_DGRAM) {
         ret = SSL_accept(session->ssl);
     }
 
@@ -1770,6 +1969,7 @@ static int tls_net_handshake(struct flb_tls *tls,
 static struct flb_tls_backend tls_openssl = {
     .name                 = "openssl",
     .context_create       = tls_context_create,
+    .context_reload       = tls_context_reload,
     .context_destroy      = tls_context_destroy,
     .context_alpn_set     = tls_context_alpn_set,
     .context_set_verify_client = tls_context_set_verify_client,
@@ -1779,6 +1979,7 @@ static struct flb_tls_backend tls_openssl = {
     .session_create       = tls_session_create,
     .session_invalidate   = tls_session_invalidate,
     .session_destroy      = tls_session_destroy,
+    .session_set_outer    = tls_session_set_outer,
     .net_read             = tls_net_read,
     .net_write            = tls_net_write,
     .net_handshake        = tls_net_handshake,

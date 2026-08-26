@@ -37,18 +37,21 @@ jobs:
           - name: "Windows 32bit"
             arch: x86
             cmake_additional_opt: ""
+            runtime_tests: "Off"
             vcpkg_triplet: x86-windows-static
             cmake_version: "3.31.6"
             os: windows-latest
           - name: "Windows 64bit"
             arch: x64
             cmake_additional_opt: ""
+            runtime_tests: "On"
             vcpkg_triplet: x64-windows-static
             cmake_version: "3.31.6"
             os: windows-latest
           - name: "Windows 64bit (Arm64)"
             arch: amd64_arm64
             cmake_additional_opt: "-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION=10.0 -DCMAKE_SYSTEM_PROCESSOR=ARM64"
+            runtime_tests: "Off"
             vcpkg_triplet: arm64-windows-static
             cmake_version: "3.31.6"
             os: windows-11-arm
@@ -59,7 +62,7 @@ jobs:
       PATH: C:\ProgramData\Chocolatey\bin;c:/Program Files/Git/cmd;c:/Windows/system32;C:/Windows/System32/WindowsPowerShell/v1.0;$ENV:WIX/bin;C:/Program Files/CMake/bin;C:\vcpkg;
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
 
@@ -207,6 +210,7 @@ jobs:
         run: |
           cmake -G "NMake Makefiles" `
             -D FLB_TESTS_INTERNAL=On `
+            -D FLB_TESTS_RUNTIME=${{ matrix.config.runtime_tests }} `
             -D FLB_NIGHTLY_BUILD='${{ inputs.unstable }}' `
             -D OPENSSL_ROOT_DIR='C:\vcpkg\installed\${{ matrix.config.vcpkg_triplet }}' `
             ${{ matrix.config.cmake_additional_opt }} `
@@ -214,6 +218,7 @@ jobs:
             -D FLB_WITHOUT_flb-rt-out_elasticsearch=On `
             -D FLB_WITHOUT_flb-rt-out_td=On `
             -D FLB_WITHOUT_flb-rt-out_forward=On `
+            -D FLB_WITHOUT_flb-rt-filter_rewrite_tag=On `
             -D FLB_WITHOUT_flb-rt-in_disk=On `
             -D FLB_WITHOUT_flb-rt-in_proc=On `
             -D FLB_WITHOUT_flb-it-unit_sizes=On `
@@ -247,6 +252,12 @@ jobs:
 
       - name: Run unit tests for Fluent Bit packages (x86, x64, and ARM64)
         run: |
-            ctest --build-run-dir "$PWD" --output-on-failure
+            $nparallel = 1
+            if ('${{ matrix.config.runtime_tests }}' -eq 'On') {
+              $nparallel = [Math]::Min([Environment]::ProcessorCount, 8)
+            }
+
+            Write-Host "Running CTest with parallel level $nparallel"
+            ctest --parallel $nparallel --build-run-dir "$PWD" --output-on-failure
         shell: pwsh
         working-directory: build

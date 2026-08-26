@@ -1,17 +1,10 @@
-set(src
-  tls.c
-)
-
-if(NOT WITH_MBEDTLS_SHARED)
-  option(ENABLE_TESTING  OFF)
-  option(ENABLE_PROGRAMS OFF)
-  option(INSTALL_MBEDTLS_HEADERS OFF)
-  set(MK_MBEDTLS_SRC ../../deps/mbedtls-2.4.2)
-  add_subdirectory(${MK_MBEDTLS_SRC} ${CMAKE_BINARY_DIR}/mbedtls-2.4.2)
-  include_directories(${MK_MBEDTLS_SRC}/include)
+if(NOT DEFINED MK_TLS_PLUGIN_SRC)
+  message(FATAL_ERROR "TLS backend was not configured. Enable MK_PLUGIN_TLS and configure tls/CMakeLists.txt")
 endif()
 
-MONKEY_PLUGIN(tls "${src}")
+MONKEY_PLUGIN(tls "${MK_TLS_PLUGIN_SRC}")
 
-MONKEY_PLUGIN_LINK_LIB(tls mbedtls)
+foreach(lib ${MK_TLS_PLUGIN_LIBS})
+  MONKEY_PLUGIN_LINK_LIB(tls ${lib})
+endforeach()
 add_subdirectory(conf)

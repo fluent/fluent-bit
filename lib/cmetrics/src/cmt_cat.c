@@ -658,6 +658,50 @@ static struct cmt_exp_histogram *exp_histogram_lookup(struct cmt *cmt, struct cm
     return NULL;
 }
 
+static struct cmt_summary *summary_lookup(struct cmt *cmt, struct cmt_opts *opts)
+{
+    struct cmt_summary *summary;
+    struct cfl_list *head;
+
+    cfl_list_foreach(head, &cmt->summaries) {
+        summary = cfl_list_entry(head, struct cmt_summary, _head);
+        if (cmt_opts_compare(&summary->opts, opts) == 0) {
+            return summary;
+        }
+    }
+
+    return NULL;
+}
+
+static int summary_label_keys_match(struct cmt_map *left,
+                                    struct cmt_map *right)
+{
+    struct cfl_list *left_head;
+    struct cfl_list *right_head;
+    struct cmt_map_label *left_label;
+    struct cmt_map_label *right_label;
+
+    left_head = left->label_keys.next;
+    right_head = right->label_keys.next;
+
+    while (left_head != &left->label_keys &&
+           right_head != &right->label_keys) {
+        left_label = cfl_list_entry(left_head, struct cmt_map_label, _head);
+        right_label = cfl_list_entry(right_head, struct cmt_map_label, _head);
+
+        if (left_label->name == NULL || right_label->name == NULL ||
+            strcmp(left_label->name, right_label->name) != 0) {
+            return CMT_FALSE;
+        }
+
+        left_head = left_head->next;
+        right_head = right_head->next;
+    }
+
+    return left_head == &left->label_keys &&
+           right_head == &right->label_keys;
+}
+
 int cmt_cat_counter(struct cmt *cmt, struct cmt_counter *counter,
                     struct cmt_map *filtered_map)
 {
@@ -856,48 +900,65 @@ int cmt_cat_histogram(struct cmt *cmt, struct cmt_histogram *histogram,
 int cmt_cat_summary(struct cmt *cmt, struct cmt_summary *summary,
                     struct cmt_map *filtered_map)
 {
-    int i;
+    size_t i;
     int ret;
     char **labels = NULL;
     struct cmt_map *map;
     struct cmt_opts *opts;
     struct cmt_summary *sum;
     double *quantiles;
-    uint64_t timestamp;
-    double summary_sum;
 
     map = summary->map;
     opts = map->opts;
-    timestamp = cmt_metric_get_timestamp(&map->metric);
-
     ret = cmt_cat_copy_label_keys(map, (char **) &labels);
     if (ret == -1) {
         return -1;
     }
 
-    quantiles = calloc(1, sizeof(double) * summary->quantiles_count);
-    for (i = 0; i < summary->quantiles_count; i++) {
-        quantiles[i] = summary->quantiles[i];
+    sum = summary_lookup(cmt, opts);
+    if (sum != NULL) {
+        if (!summary_label_keys_match(sum->map, map)) {
+            free(labels);
+            return -1;
+        }
+
+        if (sum->quantiles_count != summary->quantiles_count) {
+            free(labels);
+            return -1;
+        }
+
+        for (i = 0; i < summary->quantiles_count; i++) {
+            if (sum->quantiles[i] != summary->quantiles[i]) {
+                free(labels);
+                return -1;
+            }
+        }
+    }
+    else {
+        quantiles = NULL;
+        if (summary->quantiles_count > 0) {
+            quantiles = calloc(summary->quantiles_count, sizeof(double));
+            if (quantiles == NULL) {
+                free(labels);
+                return -1;
+            }
+            memcpy(quantiles, summary->quantiles,
+                   summary->quantiles_count * sizeof(double));
+        }
+
+        sum = cmt_summary_create(cmt,
+                                 opts->ns, opts->subsystem,
+                                 opts->name, opts->description,
+                                 summary->quantiles_count,
+                                 quantiles,
+                                 map->label_count, labels);
+        free(quantiles);
     }
 
-    /* create summary */
-    sum = cmt_summary_create(cmt,
-                             opts->ns, opts->subsystem,
-                             opts->name, opts->description,
-                             summary->quantiles_count,
-                             quantiles,
-                             map->label_count, labels);
+    free(labels);
     if (!sum) {
-        free(labels);
-        free(quantiles);
         return -1;
     }
-
-    summary_sum = cmt_summary_get_sum_value(&summary->map->metric);
-
-    cmt_summary_set_default(sum, timestamp, quantiles, summary_sum, summary->quantiles_count, map->label_count, labels);
-    free(labels);
-    free(quantiles);
 
     if (filtered_map != NULL) {
         ret = cmt_cat_copy_map(&sum->opts, sum->map, filtered_map);

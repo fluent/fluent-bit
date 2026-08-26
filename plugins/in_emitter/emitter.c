@@ -55,6 +55,8 @@ struct flb_emitter {
     struct flb_ring_buffer *msgs;       /* ring buffer for cross-thread messages */
     int ring_buffer_size;               /* size of the ring buffer */
     struct mk_list i_ins_list;          /* instance list of linked/sending inputs */
+    int cycle_reported;                 /* self-emission cycle already logged ? */
+    int propagating;                    /* pause/resume propagation in progress */
 };
 
 struct em_chunk *em_chunk_create(const char *tag, int tag_len,
@@ -160,6 +162,27 @@ int in_emitter_add_record(const char *tag, int tag_len,
 
     ctx = (struct flb_emitter *) in->context;
     ec = NULL;
+
+    /*
+     * Reject records that this emitter is trying to send to itself: the filter
+     * that owns the emitter matched a record that the emitter injected. Keeping
+     * the emitter in its own sender list makes pause/resume recurse into this
+     * same instance until the stack is exhausted, and the emission itself is an
+     * endless tag rewrite cycle.
+     */
+    if (i_ins == ctx->ins) {
+        if (ctx->cycle_reported == FLB_FALSE) {
+            ctx->cycle_reported = FLB_TRUE;
+            flb_plg_error(ctx->ins,
+                          "emitter cycle detected: the filter attached to this "
+                          "emitter matches the records it emits (tag=%.*s), "
+                          "the emission is rejected. Adjust the filter 'Match' "
+                          "or its rules so emitted records are not processed "
+                          "again", tag_len, tag);
+        }
+        return -1;
+    }
+
     /* Iterate over list of already known (source) inputs */
     /* If new, add it to the list to be able to pause it later on */
     ref_found = false;
@@ -421,12 +444,23 @@ static void cb_emitter_pause(void *data, struct flb_config *config)
     struct mk_list *head;
     struct input_ref *i_ref;
 
+    /*
+     * A sender can be another emitter that references this one back, the guard
+     * keeps the propagation from recursing into this instance again.
+     */
+    if (ctx->propagating == FLB_TRUE) {
+        return;
+    }
+    ctx->propagating = FLB_TRUE;
+
     /* Pause all known senders */
     flb_input_collector_pause(ctx->coll_fd, ctx->ins);
     mk_list_foreach_safe(head, tmp, &ctx->i_ins_list) {
         i_ref = mk_list_entry(head, struct input_ref, _head);
         flb_input_pause(i_ref->i_ins);
     }
+
+    ctx->propagating = FLB_FALSE;
 }
 
 static void cb_emitter_resume(void *data, struct flb_config *config)
@@ -436,12 +470,19 @@ static void cb_emitter_resume(void *data, struct flb_config *config)
     struct mk_list *head;
     struct input_ref *i_ref;
 
+    if (ctx->propagating == FLB_TRUE) {
+        return;
+    }
+    ctx->propagating = FLB_TRUE;
+
     /* Resume all known senders */
     flb_input_collector_resume(ctx->coll_fd, ctx->ins);
     mk_list_foreach_safe(head, tmp, &ctx->i_ins_list) {
         i_ref = mk_list_entry(head, struct input_ref, _head);
         flb_input_resume(i_ref->i_ins);
     }
+
+    ctx->propagating = FLB_FALSE;
 }
 
 static int cb_emitter_exit(void *data, struct flb_config *config)

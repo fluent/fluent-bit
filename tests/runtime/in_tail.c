@@ -1,4 +1,4 @@
-/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+﻿/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 /*  Fluent Bit
  *  ==========
@@ -34,7 +34,50 @@ Approach for this tests is basing on filter_kubernetes tests
 #include <sys/types.h>
 #include <fcntl.h>
 #include <string.h>
+#ifdef _WIN32
+#include <io.h>
+#include <sys/utime.h>
+#include "../../plugins/in_tail/win32/interface.h"
+#endif
 #include "flb_tests_runtime.h"
+
+#ifdef _WIN32
+#define fsync _commit
+#ifndef S_IRUSR
+#define S_IRUSR _S_IREAD
+#endif
+#ifndef S_IWUSR
+#define S_IWUSR _S_IWRITE
+#endif
+#ifndef S_IRGRP
+#define S_IRGRP 0
+#endif
+#ifndef S_IWGRP
+#define S_IWGRP 0
+#endif
+#ifndef S_IRWXU
+#define S_IRWXU (S_IRUSR | S_IWUSR)
+#endif
+#ifndef AT_FDCWD
+#define AT_FDCWD -100
+#endif
+
+static int flb_test_utimensat(int dirfd, const char *path,
+                              const struct timespec times[2], int flags)
+{
+    struct _utimbuf tm;
+
+    (void) dirfd;
+    (void) flags;
+
+    tm.actime = times[0].tv_sec;
+    tm.modtime = times[1].tv_sec;
+
+    return _utime(path, &tm);
+}
+
+#define utimensat flb_test_utimensat
+#endif
 
 #ifdef FLB_HAVE_INOTIFY
 #include "../../plugins/in_tail/tail_config.h"
@@ -189,6 +232,9 @@ static struct test_tail_ctx *test_tail_ctx_create(struct flb_lib_out_cb *data,
 
     /* open() flags */
     o_flags = O_RDWR | O_CREAT;
+#ifdef FLB_SYSTEM_WINDOWS
+    o_flags |= O_BINARY;
+#endif
 
     if (paths != NULL) {
         ctx->fds = flb_malloc(sizeof(int) * path_num);
@@ -375,8 +421,12 @@ void wait_expected_num_with_timeout(uint32_t timeout_ms, int expected_num, int *
 
 static inline int64_t set_result(int64_t v)
 {
+#ifdef _WIN32
+    return InterlockedExchange64((volatile LONG64 *)&result_time, v);
+#else
     int64_t old = __sync_lock_test_and_set(&result_time, v);
     return old;
+#endif
 }
 
 
@@ -387,13 +437,18 @@ static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
     char *buf;
     FILE *fp;
     struct stat st;
+    const char *file_mode = "r";
+
+#ifdef FLB_SYSTEM_WINDOWS
+    file_mode = "rb";
+#endif
 
     ret = stat(path, &st);
     if (ret == -1) {
         return -1;
     }
 
-    fp = fopen(path, "r");
+    fp = fopen(path, file_mode);
     if (!fp) {
         return -1;
     }
@@ -1575,6 +1630,25 @@ void flb_test_exclude_path()
 
     test_tail_ctx_destroy(ctx);
 }
+
+#ifdef _WIN32
+void flb_test_windows_extended_path_prefixes(void)
+{
+    size_t length;
+    wchar_t local_path[] = L"\\\\?\\C:\\logs\\unicode.log";
+    wchar_t unc_path[] = L"\\\\?\\UNC\\server\\share\\unicode.log";
+    const wchar_t expected_local_path[] = L"C:\\logs\\unicode.log";
+    const wchar_t expected_unc_path[] = L"\\\\server\\share\\unicode.log";
+
+    length = win32_remove_extended_path_prefix(local_path, wcslen(local_path));
+    TEST_CHECK(length == wcslen(expected_local_path));
+    TEST_CHECK(wcscmp(local_path, expected_local_path) == 0);
+
+    length = win32_remove_extended_path_prefix(unc_path, wcslen(unc_path));
+    TEST_CHECK(length == wcslen(expected_unc_path));
+    TEST_CHECK(wcscmp(unc_path, expected_unc_path) == 0);
+}
+#endif
 
 void flb_test_offset_key()
 {
@@ -3001,6 +3075,9 @@ TEST_LIST = {
     {"path_comma", flb_test_path_comma},
     {"path_key", flb_test_path_key},
     {"exclude_path", flb_test_exclude_path},
+#ifdef _WIN32
+    {"windows_extended_path_prefixes", flb_test_windows_extended_path_prefixes},
+#endif
     {"offset_key", flb_test_offset_key},
     {"multiline_offset_key", flb_test_multiline_offset_key},
     {"skip_empty_lines", flb_test_skip_empty_lines},

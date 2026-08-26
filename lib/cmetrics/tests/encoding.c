@@ -978,6 +978,201 @@ void test_prometheus_remote_write_with_outdated_timestamps()
     cmt_destroy(cmt);
 }
 
+static int remote_write_contains_series(Prometheus__WriteRequest *request,
+                                        const char *metric_name,
+                                        const char *label_name,
+                                        const char *label_value)
+{
+    size_t series_index;
+    size_t label_index;
+    int metric_matches;
+    int label_matches;
+    Prometheus__Label *label;
+
+    for (series_index = 0; series_index < request->n_timeseries; series_index++) {
+        metric_matches = CMT_FALSE;
+        label_matches = label_name == NULL;
+
+        for (label_index = 0;
+             label_index < request->timeseries[series_index]->n_labels;
+             label_index++) {
+            label = request->timeseries[series_index]->labels[label_index];
+            if (label == NULL || label->name == NULL || label->value == NULL) {
+                continue;
+            }
+
+            if (strcmp(label->name, "__name__") == 0 &&
+                strcmp(label->value, metric_name) == 0) {
+                metric_matches = CMT_TRUE;
+            }
+
+            if (label_name != NULL && strcmp(label->name, label_name) == 0 &&
+                strcmp(label->value, label_value) == 0) {
+                label_matches = CMT_TRUE;
+            }
+        }
+
+        if (metric_matches && label_matches) {
+            return CMT_TRUE;
+        }
+    }
+
+    return CMT_FALSE;
+}
+
+static Prometheus__WriteRequest *decode_remote_write_payload(cfl_sds_t payload)
+{
+    if (payload == NULL) {
+        return NULL;
+    }
+
+    return prometheus__write_request__unpack(NULL, cfl_sds_len(payload),
+                                             (uint8_t *) payload);
+}
+
+void test_prometheus_remote_write_skips_only_stale_samples()
+{
+    uint64_t                  now;
+    cfl_sds_t                 payload;
+    struct cmt               *cmt;
+    struct cmt_counter       *counter;
+    Prometheus__WriteRequest *request;
+
+    now = cfl_time_now();
+    cmt = cmt_create();
+    TEST_ASSERT(cmt != NULL);
+
+    counter = cmt_counter_create(cmt, "test", "remote", "mixed",
+                                 "Mixed timestamp samples", 1,
+                                 (char *[]) {"state"});
+    TEST_ASSERT(counter != NULL);
+    TEST_ASSERT(cmt_counter_set(counter,
+                               now - CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_THRESHOLD - 1,
+                               1, 1, (char *[]) {"stale"}) == 0);
+    TEST_ASSERT(cmt_counter_set(counter, now, 2, 1,
+                               (char *[]) {"fresh"}) == 0);
+
+    payload = cmt_encode_prometheus_remote_write_create(cmt);
+    request = decode_remote_write_payload(payload);
+    TEST_ASSERT(request != NULL);
+    TEST_CHECK(remote_write_contains_series(request, "test_remote_mixed",
+                                            "state", "stale") == CMT_FALSE);
+    TEST_CHECK(remote_write_contains_series(request, "test_remote_mixed",
+                                            "state", "fresh") == CMT_TRUE);
+
+    prometheus__write_request__free_unpacked(request, NULL);
+    cmt_encode_prometheus_remote_write_destroy(payload);
+    cmt_destroy(cmt);
+}
+
+void test_prometheus_remote_write_continues_after_stale_family()
+{
+    uint64_t                  now;
+    cfl_sds_t                 payload;
+    struct cmt               *cmt;
+    struct cmt_counter       *counter;
+    struct cmt_gauge         *gauge;
+    Prometheus__WriteRequest *request;
+
+    now = cfl_time_now();
+    cmt = cmt_create();
+    TEST_ASSERT(cmt != NULL);
+
+    counter = cmt_counter_create(cmt, "test", "remote", "stale_counter",
+                                 "Stale counter", 0, NULL);
+    TEST_ASSERT(counter != NULL);
+    TEST_ASSERT(cmt_counter_set(counter,
+                               now - CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_THRESHOLD - 1,
+                               1, 0, NULL) == 0);
+
+    gauge = cmt_gauge_create(cmt, "test", "remote", "fresh_gauge",
+                             "Fresh gauge", 0, NULL);
+    TEST_ASSERT(gauge != NULL);
+    TEST_ASSERT(cmt_gauge_set(gauge, now, 2, 0, NULL) == 0);
+
+    payload = cmt_encode_prometheus_remote_write_create(cmt);
+    request = decode_remote_write_payload(payload);
+    TEST_ASSERT(request != NULL);
+    TEST_CHECK(remote_write_contains_series(request, "test_remote_stale_counter",
+                                            NULL, NULL) == CMT_FALSE);
+    TEST_CHECK(remote_write_contains_series(request, "test_remote_fresh_gauge",
+                                            NULL, NULL) == CMT_TRUE);
+
+    prometheus__write_request__free_unpacked(request, NULL);
+    cmt_encode_prometheus_remote_write_destroy(payload);
+    cmt_destroy(cmt);
+}
+
+void test_prometheus_remote_write_preserves_future_samples()
+{
+    uint64_t                  now;
+    cfl_sds_t                 payload;
+    struct cmt               *cmt;
+    struct cmt_counter       *counter;
+    Prometheus__WriteRequest *request;
+
+    now = cfl_time_now();
+    cmt = cmt_create();
+    TEST_ASSERT(cmt != NULL);
+
+    counter = cmt_counter_create(cmt, "test", "remote", "future",
+                                 "Future timestamp", 0, NULL);
+    TEST_ASSERT(counter != NULL);
+    TEST_ASSERT(cmt_counter_set(counter, now + 1000000000, 1, 0, NULL) == 0);
+
+    payload = cmt_encode_prometheus_remote_write_create(cmt);
+    request = decode_remote_write_payload(payload);
+    TEST_ASSERT(request != NULL);
+    TEST_CHECK(remote_write_contains_series(request, "test_remote_future",
+                                            NULL, NULL) == CMT_TRUE);
+
+    prometheus__write_request__free_unpacked(request, NULL);
+    cmt_encode_prometheus_remote_write_destroy(payload);
+    cmt_destroy(cmt);
+}
+
+void test_prometheus_remote_write_skips_only_stale_histograms()
+{
+    uint64_t                      now;
+    cfl_sds_t                     payload;
+    struct cmt                   *cmt;
+    struct cmt_histogram         *histogram;
+    struct cmt_histogram_buckets *buckets;
+    Prometheus__WriteRequest     *request;
+
+    now = cfl_time_now();
+    cmt = cmt_create();
+    TEST_ASSERT(cmt != NULL);
+
+    buckets = cmt_histogram_buckets_create(1, 1.0);
+    TEST_ASSERT(buckets != NULL);
+    histogram = cmt_histogram_create(cmt, "test", "remote", "mixed_histogram",
+                                     "Mixed histogram timestamps", buckets,
+                                     1, (char *[]) {"state"});
+    TEST_ASSERT(histogram != NULL);
+
+    TEST_ASSERT(cmt_histogram_observe(
+                    histogram,
+                    now - CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_THRESHOLD - 1,
+                    0.5, 1, (char *[]) {"stale"}) == 0);
+    TEST_ASSERT(cmt_histogram_observe(histogram, now, 0.5, 1,
+                                     (char *[]) {"fresh"}) == 0);
+
+    payload = cmt_encode_prometheus_remote_write_create(cmt);
+    request = decode_remote_write_payload(payload);
+    TEST_ASSERT(request != NULL);
+    TEST_CHECK(remote_write_contains_series(
+                   request, "test_remote_mixed_histogram_bucket",
+                   "state", "stale") == CMT_FALSE);
+    TEST_CHECK(remote_write_contains_series(
+                   request, "test_remote_mixed_histogram_bucket",
+                   "state", "fresh") == CMT_TRUE);
+
+    prometheus__write_request__free_unpacked(request, NULL);
+    cmt_encode_prometheus_remote_write_destroy(payload);
+    cmt_destroy(cmt);
+}
+
 void test_opentelemetry()
 {
     cfl_sds_t payload;
@@ -1615,6 +1810,10 @@ TEST_LIST = {
     {"cmt_msgpack_partial_processing", test_cmt_msgpack_partial_processing},
     {"prometheus_remote_write",        test_prometheus_remote_write},
     {"prometheus_remote_write_old_cmt",test_prometheus_remote_write_with_outdated_timestamps},
+    {"prometheus_remote_write_skips_only_stale_samples", test_prometheus_remote_write_skips_only_stale_samples},
+    {"prometheus_remote_write_continues_after_stale_family", test_prometheus_remote_write_continues_after_stale_family},
+    {"prometheus_remote_write_preserves_future_samples", test_prometheus_remote_write_preserves_future_samples},
+    {"prometheus_remote_write_skips_only_stale_histograms", test_prometheus_remote_write_skips_only_stale_histograms},
     {"cmt_msgpack_stability",          test_cmt_to_msgpack_stability},
     {"cmt_msgpack_integrity",          test_cmt_to_msgpack_integrity},
     {"cmt_msgpack_labels",             test_cmt_to_msgpack_labels},

@@ -9,6 +9,7 @@ set(UNIT_TESTS_FILES
   config_random_fuzzer.c
   ctrace_fuzzer.c
   input_fuzzer.c
+  log_cache_fuzzer.c
   signv4_fuzzer.c
   flb_json_fuzzer.c
   flb_mp_fuzzer.c
@@ -50,7 +51,7 @@ foreach(source_file ${UNIT_TESTS_FILES})
     target_link_libraries(${source_file_we} flb-sp)
   endif()
 
-  target_link_libraries(${source_file_we} fluent-bit-static)
+  target_link_libraries(${source_file_we} ${FLB_TEST_LINK_LIBRARY})
 
   if (FLB_TESTS_OSSFUZZ)
    add_executable(${source_file_we}_OSSFUZZ ${source_file})

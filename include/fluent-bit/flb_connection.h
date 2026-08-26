@@ -62,6 +62,10 @@ struct flb_connection;
 
 typedef void (*flb_connection_drop_notification_callback)(
                  struct flb_connection *connection);
+typedef int (*flb_connection_accept_callback)(
+                 struct flb_connection *connection,
+                 void *data);
+typedef int (*flb_connection_event_callback)(void *data);
 
 /* Base network connection */
 struct flb_connection {
@@ -78,6 +82,9 @@ struct flb_connection {
      * teardown immediately after the callback returns.
      */
     flb_connection_drop_notification_callback drop_notification_callback;
+    flb_connection_accept_callback accept_callback;
+    void *accept_callback_data;
+    int event_registration_mask;
 
     /* Socket */
     flb_sockfd_t fd;
@@ -152,6 +159,18 @@ struct flb_connection {
     /* Coroutine in charge of this connection */
     struct flb_coro *coroutine;
 
+    /* Downstream-owned event callback coroutine */
+    struct flb_coro *event_coroutine;
+    flb_connection_event_callback event_callback;
+    flb_connection_event_callback event_parent_callback;
+    void *event_parent_callback_data;
+    int event_parent_callback_result;
+    int event_wakeup_pending;
+    int event_release_pending;
+
+    /* Per-connection I/O flags */
+    int flags;
+
     /* Connection type : FLB_UPSTREAM_CONNECTION or FLB_DOWNSTREAM_CONNECTION */
     int type;
 
@@ -189,6 +208,8 @@ void flb_connection_set_remote_host(struct flb_connection *connection,
 char *flb_connection_get_remote_address(struct flb_connection *connection);
 
 int flb_connection_get_flags(struct flb_connection *connection);
+void flb_connection_enable_flags(struct flb_connection *connection, int flags);
+void flb_connection_disable_flags(struct flb_connection *connection, int flags);
 void flb_connection_reset_connection_timeout(struct flb_connection *connection);
 void flb_connection_unset_connection_timeout(struct flb_connection *connection);
 

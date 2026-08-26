@@ -1127,6 +1127,16 @@ static int send_blob(struct flb_config *config,
         }
         else if (event_type == FLB_EVENT_TYPE_BLOBS) {
             block_id = azb_block_blob_id_blob(ctx, name, part_id);
+            if (!block_id) {
+                flb_plg_error(ctx->ins, "could not generate block id");
+                flb_free(generated_random_string);
+                generated_random_string = NULL;
+                flb_sds_destroy(ref_name);
+                if (tmp_path_prefix) {
+                    flb_sds_destroy(tmp_path_prefix);
+                }
+                return FLB_RETRY;
+            }
             uri = azb_block_blob_uri(ctx, path_prefix, name,
                                      block_id, 0, generated_random_string);
             ref_name = flb_sds_printf(&ref_name, "file=%s:%" PRIu64, name, part_id);

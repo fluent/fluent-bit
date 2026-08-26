@@ -50,6 +50,9 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     ctx->ins = ins;
     ctx->blocked = FLB_FALSE;
     mk_list_init(&ctx->topics);
+#ifdef FLB_HAVE_AVRO_ENCODER
+    mk_list_init(&ctx->schema_registry_endpoints);
+#endif
 
     ret = flb_output_config_map_set(ins, (void*) ctx);
     if (ret == -1) {
@@ -266,6 +269,12 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     if (tmp) {
         ctx->avro_fields.schema_str = flb_sds_create(tmp);
     }
+
+    ret = flb_kafka_schema_registry_configure(ctx, config);
+    if (ret == -1) {
+        flb_out_kafka_destroy(ctx);
+        return NULL;
+    }
 #endif
 
     /* Config: Topic */
@@ -341,6 +350,7 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
 #ifdef FLB_HAVE_AVRO_ENCODER
     // avro
     flb_sds_destroy(ctx->avro_fields.schema_str);
+    flb_kafka_schema_registry_destroy(ctx);
 #endif
 
     flb_free(ctx);

@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time_utils.h>
 
 #include <time.h>
+#include <limits.h>
 #include <msgpack.h>
 #include <mpack/mpack.h>
 struct flb_time {
@@ -84,15 +85,55 @@ static inline void flb_time_copy(struct flb_time *dst, struct flb_time *src)
     dst->tm.tv_nsec = src->tm.tv_nsec;
 }
 
-static inline void flb_time_from_uint64(struct flb_time *dst, uint64_t value)
+static inline int flb_time_is_valid_eventtime(struct flb_time *tm)
 {
-    dst->tm.tv_sec = (long) (value / 1000000000L);
+    if (tm == NULL || tm->tm.tv_sec < 0 ||
+        (uint64_t) tm->tm.tv_sec > UINT32_MAX ||
+        tm->tm.tv_nsec < 0 || tm->tm.tv_nsec >= 1000000000L) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
+static inline int flb_time_from_uint64(struct flb_time *dst, uint64_t value)
+{
+    uint64_t seconds;
+    uint64_t maximum_seconds;
+    unsigned int bit_count;
+
+    if (dst == NULL) {
+        return -1;
+    }
+
+    seconds = value / 1000000000L;
+
+    bit_count = sizeof(time_t) * CHAR_BIT;
+    if ((time_t) -1 < 0) {
+        bit_count--;
+    }
+
+    if (bit_count >= sizeof(uint64_t) * CHAR_BIT) {
+        maximum_seconds = UINT64_MAX;
+    }
+    else {
+        maximum_seconds = UINT64_MAX >>
+                          (sizeof(uint64_t) * CHAR_BIT - bit_count);
+    }
+
+    if (seconds > maximum_seconds) {
+        return -1;
+    }
+
+    dst->tm.tv_sec = (time_t) seconds;
     dst->tm.tv_nsec = (long) (value - ((uint64_t) dst->tm.tv_sec * 1000000000L));
+
+    return 0;
 }
 
 static inline void flb_time_from_double(struct flb_time *dst, double d)
 {
-    dst->tm.tv_sec = (int) d;
+    dst->tm.tv_sec = (time_t) d;
     dst->tm.tv_nsec = (long) ((d - dst->tm.tv_sec) * 1000000000L);
 }
 

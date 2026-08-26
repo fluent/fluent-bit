@@ -27,6 +27,11 @@
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_blob_db.h>
 
+/* S3 output format types */
+#define FLB_S3_FORMAT_JSON_LINES  0
+#define FLB_S3_FORMAT_PARQUET     100
+#define FLB_S3_FORMAT_ARROW       101
+
 /* Upload data to S3 in 5MB chunks */
 #define MIN_CHUNKED_UPLOAD_SIZE 5242880
 #define MAX_CHUNKED_UPLOAD_SIZE 50000000
@@ -127,6 +132,7 @@ struct flb_s3 {
     int static_file_path;
     int retry_exhausted_action;
     int compression;
+    int s3_format;
     int port;
     int insecure;
     size_t store_dir_limit_size;
@@ -147,8 +153,8 @@ struct flb_s3 {
     struct flb_tls *authorization_endpoint_tls_context;
 
     /* track the total amount of buffered data */
-    size_t current_buffer_size;
-    size_t quarantine_buffer_size;
+    uint64_t current_buffer_size;
+    uint64_t quarantine_buffer_size;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;

@@ -3,15 +3,16 @@
 ## Preferred Commands
 - Configure: `cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On`
 - Configure on Windows:
-  `cmake -S . -B build -DFLB_TESTS_RUNTIME=Off -DFLB_TESTS_INTERNAL=On`
+  `cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On`
 - Build: `cmake --build build -j8`
 - Test: `ctest --test-dir build --output-on-failure`
 - Prefer targeted tests with `ctest --test-dir build -R <name> --output-on-failure`
   when the affected area is known, because the full enabled suite can be slow.
-- On Windows, do not run runtime test cases yet. Runtime tests are not supported
-  there, so skip them and report the skip instead of treating missing runtime
-  verification as a failure. Configure with `-DFLB_TESTS_RUNTIME=Off` and
-  prefer filtered non-runtime CTest runs over the full suite.
+- Windows supports building and running runtime tests. Prefer focused
+  `flb-rt-*` targets or CTest matches because the full runtime suite can be
+  slow. The GitHub Actions unit-test workflow enables runtime execution only
+  for x64 to control CI running time. Do not apply that CI-only restriction to
+  local agents or AI cloud builds.
 - Run a focused integration test with
   `ctest --test-dir build -R flb-it-opentelemetry --output-on-failure`
 - Run the in-tree Python integration suite with:
@@ -49,9 +50,8 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
   asks for that structure.
 
 ## Build, Test, and Development Commands
-- `cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On`: configure with runtime + internal tests.
-- `cmake -S . -B build -DFLB_TESTS_RUNTIME=Off -DFLB_TESTS_INTERNAL=On`:
-  configure on Windows, where runtime tests are unsupported.
+- `cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On`:
+  configure runtime and internal tests, including on Windows.
 - `cmake --build build -j8`: compile Fluent Bit and tests.
 - `ctest --test-dir build --output-on-failure`: run enabled tests.
 - `ctest --test-dir build -R flb-it-opentelemetry --output-on-failure`: run a focused integration test.
@@ -84,12 +84,12 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 - Add or update tests for behavior changes, especially protocol parsing and encoder/decoder paths.
 - Prefer targeted tests close to the changed module (`tests/internal`, plugin runtime tests).
 - Prefer focused `ctest -R ...` runs or specific test binaries when the touched area is known.
-- Windows exception: runtime test cases are not supported on Windows yet. When
-  working on Windows, do not run `tests/runtime`, `flb-rt-*` targets, or runtime
-  CTest matches as verification. Configure with `-DFLB_TESTS_RUNTIME=Off` so
-  unsupported runtime targets are not built. Run applicable non-runtime tests
-  instead and state clearly that runtime verification was skipped because the
-  platform does not support it.
+- Windows supports `tests/runtime`, `flb-rt-*` targets, and runtime CTest
+  matches. Configure with `-DFLB_TESTS_RUNTIME=On` and run applicable focused
+  runtime coverage. In `.github/workflows/call-windows-unit-tests.yaml`, keep
+  runtime execution disabled for x86 and ARM64 unless the workflow scope
+  explicitly changes; that exclusion controls GitHub Actions running time only.
+  It does not apply to local agents or AI cloud builds.
 - Use `tests/integration` when validating end-to-end plugin behavior, network
   protocols, downstream request generation, or local fake-server interactions
   that are awkward to cover in `ctest` binaries alone.
@@ -101,33 +101,38 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 - For touched components covered by `tests/integration`, agents must run the
   focused scenario(s) twice:
   - once normally to verify behavior;
-  - once with valgrind enabled to verify memory-safety behavior.
+  - once with the platform memory checker enabled to verify memory-safety
+    behavior: Valgrind on Linux or Leaks on macOS.
 - The default expectation for component verification is:
   `./tests/integration/setup-venv.sh`
   `cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On`
   `cmake --build build -j8`
   `tests/integration/.venv/bin/python -m pytest <focused-scenario> -q`
+  On Linux, run the memory-safety pass with:
   `VALGRIND=1 VALGRIND_STRICT=1 tests/integration/.venv/bin/python -m pytest <focused-scenario> -q`
-- On Windows, replace the configure command above with:
-  `cmake -S . -B build -DFLB_TESTS_RUNTIME=Off -DFLB_TESTS_INTERNAL=On`
-  and skip runtime test cases because they are not supported there.
+  On macOS, run the memory-safety pass with:
+  `LEAKS=1 LEAKS_STRICT=1 tests/integration/.venv/bin/python -m pytest <focused-scenario> -q`
+- On Windows, use the same `-DFLB_TESTS_RUNTIME=On` configuration and run
+  relevant focused runtime and functional integration cases. Valgrind and
+  macOS Leaks are normally unavailable on Windows; report that exact
+  memory-checker blocker instead of conflating it with test support.
 - Run broader test coverage when changing shared lifecycle, routing, storage, or accounting code.
 - Validate both success and failure paths (invalid payloads, boundary sizes, null/missing fields).
 - You can also run specific binaries from `build/bin` (e.g., `./bin/flb-it-opentelemetry`).
 - When changing code covered by `tests/integration`, agents must verify the
-  affected scenarios are valgrind-clean. Run the focused integration tests with
-  `tests/integration/run_tests.py --valgrind --valgrind-strict ...` and do not
-  stop at functional pass/fail if memory errors or leaks remain.
-- If a focused integration or valgrind run cannot be executed, agents must not
-  silently skip it. They must report the exact blocker in the final response
-  (for example: missing binary, missing Python environment, unsupported
-  scenario, missing dependency, or infrastructure failure).
+  affected scenarios are clean under the platform memory checker. On Linux,
+  run `tests/integration/run_tests.py --valgrind --valgrind-strict ...`. On
+  macOS, run `tests/integration/run_tests.py --leaks --leaks-strict ...`. Do
+  not stop at functional pass/fail if memory errors or leaks remain.
+- If a focused integration or platform memory-checker run cannot be executed,
+  agents must not silently skip it. They must report the exact blocker in the
+  final response (for example: missing binary, missing Python environment,
+  unsupported scenario, missing dependency, or infrastructure failure).
 - Final task close-outs must include proof of verification:
   - the exact focused integration command(s) run;
-  - whether valgrind was used;
+  - which platform memory checker was used (Valgrind on Linux or Leaks on
+    macOS), or `not run` with the exact blocker;
   - pass/fail status;
-  - on Windows, any runtime test cases intentionally skipped because runtime
-    tests are not supported there;
   - any concrete blocker if a required run could not be completed.
 - Keep generated integration artifacts out of git. Do not commit
   `.venv/`, `.pytest_cache/`, `results/`, or `__pycache__/` under
@@ -289,8 +294,8 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 
 ### Testing strategy
 - Use `tests/internal` for core lifecycle/accounting logic.
-- Use `tests/runtime` for plugin-level behavior and end-to-end semantics, except
-  on Windows where runtime test cases are not supported and must be skipped.
+- Use `tests/runtime` for plugin-level behavior and end-to-end semantics,
+  including Windows runtime targets supported by the active toolchain and host.
 - Add regression tests for:
   - mixed signals
   - processor drop/modify paths

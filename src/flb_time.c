@@ -184,6 +184,10 @@ int flb_time_append_to_mpack(mpack_writer_t *writer, struct flb_time *tm, int fm
         /* We can't set with msgpack-c !! */
         /* see pack_template.h and msgpack_pack_inline_func(_ext) */
     case FLB_TIME_ETFMT_V1_FIXEXT:
+        if (flb_time_is_valid_eventtime(tm) != FLB_TRUE) {
+            return -1;
+        }
+
         tmp = htonl((uint32_t)tm->tm.tv_sec); /* second from epoch */
         memcpy(&ext_data, &tmp, 4);
         tmp = htonl((uint32_t)tm->tm.tv_nsec);/* nanosecond */
@@ -235,6 +239,10 @@ int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt)
         /* We can't set with msgpack-c !! */
         /* see pack_template.h and msgpack_pack_inline_func(_ext) */
     case FLB_TIME_ETFMT_V1_FIXEXT:
+        if (flb_time_is_valid_eventtime(tm) != FLB_TRUE) {
+            return -1;
+        }
+
         tmp = htonl((uint32_t)tm->tm.tv_sec); /* second from epoch */
         memcpy(&ext_data, &tmp, 4);
         tmp = htonl((uint32_t)tm->tm.tv_nsec);/* nanosecond */
@@ -283,6 +291,10 @@ int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj)
         time->tm.tv_sec = (uint32_t) ntohl(tmp);
         memcpy(&tmp, &obj->via.ext.ptr[4], 4);
         time->tm.tv_nsec = (uint32_t) ntohl(tmp);
+        if (flb_time_is_valid_eventtime(time) != FLB_TRUE) {
+            flb_warn("[time] invalid EventTime value");
+            return -1;
+        }
         break;
     default:
         flb_warn("unknown time format %x", obj->type);
@@ -376,6 +388,10 @@ int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader)
             time->tm.tv_sec = (uint32_t) ntohl(tmp);
             memcpy(&tmp, extbuf + 4, 4);
             time->tm.tv_nsec = (uint32_t) ntohl(tmp);
+            if (flb_time_is_valid_eventtime(time) != FLB_TRUE) {
+                flb_warn("invalid EventTime value");
+                return -1;
+            }
             break;
         default:
             flb_warn("unknown time format %d", tag.type);

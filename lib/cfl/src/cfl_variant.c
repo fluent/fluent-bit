@@ -19,6 +19,24 @@
 
 #include <cfl/cfl.h>
 #include <cfl/cfl_variant.h>
+#include <cfl/cfl_arena.h>
+
+#include "cfl_arena_internal.h"
+
+static void variant_instance_release(struct cfl_variant *instance)
+{
+    if (instance == NULL) {
+        return;
+    }
+
+    if (instance->arena == NULL) {
+        free(instance);
+    }
+    else {
+        cfl_arena_free_variant(instance->arena, instance,
+                                       sizeof(struct cfl_variant));
+    }
+}
 #include <cfl/cfl_array.h>
 #include <cfl/cfl_kvlist.h>
 #include <cfl/cfl_container.h>
@@ -211,7 +229,8 @@ struct cfl_variant *cfl_variant_create_from_string_s(char *value, size_t value_s
             return NULL;
         }
 
-        instance->data.as_string = cfl_sds_create_len(value, (int) value_size);
+        instance->data.as_string = cfl_sds_create_len_in(NULL, value,
+                                                         (int) value_size);
         if (instance->data.as_string == NULL) {
             free(instance);
             return NULL;
@@ -393,7 +412,203 @@ struct cfl_variant *cfl_variant_create()
         return NULL;
     }
     instance->size = 0;
+    instance->arena = NULL;
 
+    return instance;
+}
+
+struct cfl_variant *cfl_variant_create_in(struct cfl_arena *arena)
+{
+    struct cfl_variant *instance;
+
+    if (arena == NULL) {
+        return cfl_variant_create();
+    }
+
+    instance = cfl_arena_alloc_variant(arena,
+                                                sizeof(struct cfl_variant));
+    if (instance != NULL) {
+        instance->arena = arena;
+    }
+
+    return instance;
+}
+
+struct cfl_variant *cfl_variant_create_from_string_s_in(struct cfl_arena *arena,
+                                                         char *value,
+                                                         size_t value_size,
+                                                         int referenced)
+{
+    struct cfl_variant *instance;
+
+    if (value == NULL && value_size > 0) {
+        return NULL;
+    }
+
+    instance = cfl_variant_create_in(arena);
+    if (instance == NULL) {
+        return NULL;
+    }
+
+    instance->referenced = referenced ? CFL_TRUE : CFL_FALSE;
+    if (referenced) {
+        instance->data.as_string = value;
+    }
+    else {
+        if (value_size > INT_MAX) {
+            variant_instance_release(instance);
+            return NULL;
+        }
+        instance->data.as_string = cfl_sds_create_len_in(arena, value,
+                                                         (int) value_size);
+        if (instance->data.as_string == NULL) {
+            variant_instance_release(instance);
+            return NULL;
+        }
+    }
+    instance->size = value_size;
+    instance->type = CFL_VARIANT_STRING;
+
+    return instance;
+}
+
+struct cfl_variant *cfl_variant_create_from_string_in(struct cfl_arena *arena,
+                                                       char *value)
+{
+    if (value == NULL) {
+        return NULL;
+    }
+    return cfl_variant_create_from_string_s_in(arena, value, strlen(value), CFL_FALSE);
+}
+
+struct cfl_variant *cfl_variant_create_from_bytes_in(struct cfl_arena *arena,
+                                                      char *value, size_t length,
+                                                      int referenced)
+{
+    struct cfl_variant *instance;
+
+    instance = cfl_variant_create_from_string_s_in(arena, value, length, referenced);
+    if (instance != NULL) {
+        instance->type = CFL_VARIANT_BYTES;
+    }
+    return instance;
+}
+
+struct cfl_variant *cfl_variant_create_from_bool_in(struct cfl_arena *arena,
+                                                     int value)
+{
+    struct cfl_variant *instance;
+
+    instance = cfl_variant_create_in(arena);
+    if (instance != NULL) {
+        instance->data.as_bool = value;
+        instance->type = CFL_VARIANT_BOOL;
+    }
+    return instance;
+}
+
+struct cfl_variant *cfl_variant_create_from_int64_in(struct cfl_arena *arena,
+                                                      int64_t value)
+{
+    struct cfl_variant *instance;
+
+    instance = cfl_variant_create_in(arena);
+    if (instance != NULL) {
+        instance->data.as_int64 = value;
+        instance->type = CFL_VARIANT_INT;
+    }
+    return instance;
+}
+
+struct cfl_variant *cfl_variant_create_from_uint64_in(struct cfl_arena *arena,
+                                                       uint64_t value)
+{
+    struct cfl_variant *instance;
+
+    instance = cfl_variant_create_in(arena);
+    if (instance != NULL) {
+        instance->data.as_uint64 = value;
+        instance->type = CFL_VARIANT_UINT;
+    }
+    return instance;
+}
+
+struct cfl_variant *cfl_variant_create_from_double_in(struct cfl_arena *arena,
+                                                       double value)
+{
+    struct cfl_variant *instance;
+
+    instance = cfl_variant_create_in(arena);
+    if (instance != NULL) {
+        instance->data.as_double = value;
+        instance->type = CFL_VARIANT_DOUBLE;
+    }
+    return instance;
+}
+
+struct cfl_variant *cfl_variant_create_from_null_in(struct cfl_arena *arena)
+{
+    struct cfl_variant *instance;
+
+    instance = cfl_variant_create_in(arena);
+    if (instance != NULL) {
+        instance->type = CFL_VARIANT_NULL;
+    }
+    return instance;
+}
+
+struct cfl_variant *cfl_variant_create_from_reference_in(struct cfl_arena *arena,
+                                                          void *value)
+{
+    struct cfl_variant *instance;
+
+    instance = cfl_variant_create_in(arena);
+    if (instance != NULL) {
+        instance->data.as_reference = value;
+        instance->type = CFL_VARIANT_REFERENCE;
+    }
+    return instance;
+}
+
+struct cfl_variant *cfl_variant_create_from_array_in(struct cfl_arena *arena,
+                                                      struct cfl_array *value)
+{
+    struct cfl_variant *instance;
+
+    if (value != NULL && value->arena != arena) {
+        return NULL;
+    }
+
+    instance = cfl_variant_create_in(arena);
+    if (instance != NULL) {
+        if (value != NULL && cfl_container_claim_array(value, instance) != 0) {
+            variant_instance_release(instance);
+            return NULL;
+        }
+        instance->data.as_array = value;
+        instance->type = CFL_VARIANT_ARRAY;
+    }
+    return instance;
+}
+
+struct cfl_variant *cfl_variant_create_from_kvlist_in(struct cfl_arena *arena,
+                                                       struct cfl_kvlist *value)
+{
+    struct cfl_variant *instance;
+
+    if (value != NULL && value->arena != arena) {
+        return NULL;
+    }
+
+    instance = cfl_variant_create_in(arena);
+    if (instance != NULL) {
+        if (value != NULL && cfl_container_claim_kvlist(value, instance) != 0) {
+            variant_instance_release(instance);
+            return NULL;
+        }
+        instance->data.as_kvlist = value;
+        instance->type = CFL_VARIANT_KVLIST;
+    }
     return instance;
 }
 
@@ -418,7 +633,7 @@ void cfl_variant_destroy(struct cfl_variant *instance)
         cfl_kvlist_destroy(instance->data.as_kvlist);
     }
 
-    free(instance);
+    variant_instance_release(instance);
 }
 
 void cfl_variant_size_set(struct cfl_variant *var, size_t size)

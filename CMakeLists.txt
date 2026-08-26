@@ -10,7 +10,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  5)
 set(FLB_VERSION_MINOR  1)
-set(FLB_VERSION_PATCH  0)
+set(FLB_VERSION_PATCH  1)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -374,6 +374,7 @@ if(FLB_ALL)
   # Output plugins
   set(FLB_OUT_ES          1)
   set(FLB_OUT_FORWARD     1)
+  set(FLB_OUT_GCS         1)
   set(FLB_OUT_GELF        1)
   set(FLB_OUT_HTTP        1)
   set(FLB_OUT_NATS        1)
@@ -816,6 +817,7 @@ add_subdirectory(${FLB_PATH_LIB_JSMN})
 # Runtime Tests (filter_kubernetes) requires HTTP Server
 if(FLB_TESTS_RUNTIME)
   FLB_OPTION(FLB_HTTP_SERVER  ON)
+  FLB_OPTION(FLB_IN_EVENT_TEST ON)
 endif()
 
 # Monkey Core Library
@@ -849,6 +851,13 @@ elseif (FLB_EVENT_LOOP_LIBEVENT)
 else()
   FLB_DEFINITION(FLB_EVENT_LOOP_AUTO_DISCOVERY)
   message(STATUS "FLB Event loop backend > auto discovery (Monkey library)")
+endif()
+
+# Monkey uses its bundled libevent backend on Windows. Link it statically so
+# Fluent Bit binaries do not require event.dll at runtime.
+if(FLB_SYSTEM_WINDOWS)
+  set(EVENT__LIBRARY_TYPE STATIC CACHE STRING
+      "Build Monkey's bundled libevent as a static library" FORCE)
 endif()
 
 # Build Monkey HTTP Server
@@ -1453,8 +1462,8 @@ if(NOT FLB_POSIX_TLS)
   check_c_source_compiles("
    __thread int a;
    int main() {
-       __tls_get_addr(0);
-       return 0;
+       a = 1;
+       return a - 1;
    }" FLB_HAVE_C_TLS)
   if(FLB_HAVE_C_TLS)
     FLB_DEFINITION(FLB_HAVE_C_TLS)
@@ -1530,6 +1539,14 @@ else()
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
+if(MSVC OR FLB_JEMALLOC)
+  # MSVC tests need plugin-private symbols that are not exported from fluent-bit.dll.
+  # Jemalloc must not be embedded in both the test executable and shared library.
+  set(FLB_TEST_LINK_LIBRARY fluent-bit-static)
+else()
+  set(FLB_TEST_LINK_LIBRARY fluent-bit-shared)
+endif()
+
 add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)
@@ -1608,19 +1625,41 @@ if(DPKG_PROGRAM)
     ${PROJECT_SOURCE_DIR}/cpack/debian/conffiles
     )
 
+  set(LDCONFIG_POSTINST_CMDS "")
   if(FLB_RUN_LDCONFIG)
-    set(LDCONFIG_DIR ${FLB_INSTALL_LIBDIR})
-    file(WRITE ${PROJECT_BINARY_DIR}/scripts/postinst "
+    if(IS_ABSOLUTE "${FLB_INSTALL_LIBDIR}")
+      set(LDCONFIG_DIR "${FLB_INSTALL_LIBDIR}")
+    else()
+      set(LDCONFIG_DIR "/${FLB_INSTALL_LIBDIR}")
+    endif()
+    set(LDCONFIG_POSTINST_CMDS "
 mkdir -p /etc/ld.so.conf.d
 echo \"${LDCONFIG_DIR}\" > /etc/ld.so.conf.d/libfluent-bit.conf
 ldconfig
-    ")
-    file(WRITE ${PROJECT_BINARY_DIR}/scripts/prerm "
+")
+    file(WRITE ${PROJECT_BINARY_DIR}/scripts/prerm "#!/bin/sh
+set -e
 rm -f -- /etc/ld.so.conf.d/libfluent-bit.conf
 ldconfig
-    ")
-    set(CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst;${PROJECT_BINARY_DIR}/scripts/prerm")
+")
+    execute_process(COMMAND chmod 0755 "${PROJECT_BINARY_DIR}/scripts/prerm"
+      RESULT_VARIABLE FLB_CHMOD_PRERM_RESULT)
+    if(NOT FLB_CHMOD_PRERM_RESULT EQUAL 0)
+      message(FATAL_ERROR "Failed to make ${PROJECT_BINARY_DIR}/scripts/prerm executable")
+    endif()
+    list(APPEND CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/prerm")
   endif(FLB_RUN_LDCONFIG)
+
+  configure_file(
+    ${PROJECT_SOURCE_DIR}/cpack/debian/postinst.in
+    ${PROJECT_BINARY_DIR}/scripts/postinst
+    @ONLY)
+  execute_process(COMMAND chmod 0755 "${PROJECT_BINARY_DIR}/scripts/postinst"
+    RESULT_VARIABLE FLB_CHMOD_POSTINST_RESULT)
+  if(NOT FLB_CHMOD_POSTINST_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to make ${PROJECT_BINARY_DIR}/scripts/postinst executable")
+  endif()
+  list(APPEND CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst")
 
 endif()
 

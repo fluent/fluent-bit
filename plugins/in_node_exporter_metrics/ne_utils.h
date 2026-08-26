@@ -34,12 +34,28 @@ int ne_utils_file_read_uint64(struct flb_ne *ctx,
                               const char *join_a, const char *join_b,
                               uint64_t *out_val);
 
+int ne_utils_file_read_uint64_at_level(struct flb_ne *ctx,
+                                       const char *mount,
+                                       const char *path,
+                                       const char *join_a,
+                                       const char *join_b,
+                                       uint64_t *out_val,
+                                       int log_level);
+
 int ne_utils_file_read_sds(struct flb_ne *ctx,
                            const char *mount,
                            const char *path,
                            const char *join_a,
                            const char *join_b,
                            flb_sds_t *str);
+
+int ne_utils_file_read_sds_at_level(struct flb_ne *ctx,
+                                    const char *mount,
+                                    const char *path,
+                                    const char *join_a,
+                                    const char *join_b,
+                                    flb_sds_t *str,
+                                    int log_level);
 
 int ne_utils_file_read_lines(struct flb_ne *ctx,
                              const char *mount,

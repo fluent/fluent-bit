@@ -22,6 +22,8 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_log.h>
 
+#include <inttypes.h>
+
 #define FLB_LOG_EVENT_DECODER_MAX_RECURSION_DEPTH        1000  /* Safety limit for recursion */
 
 static int create_empty_map(struct flb_log_event_decoder *context) {
@@ -180,6 +182,9 @@ void flb_log_event_decoder_destroy(struct flb_log_event_decoder *context)
 int flb_log_event_decoder_decode_timestamp(msgpack_object *input,
                                            struct flb_time *output)
 {
+    uint32_t seconds;
+    uint32_t nanoseconds;
+
     flb_time_zero(output);
 
     if (input->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
@@ -194,15 +199,43 @@ int flb_log_event_decoder_decode_timestamp(msgpack_object *input,
             return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
         }
 
-        output->tm.tv_sec  =
-            (int32_t) FLB_UINT32_TO_HOST_BYTE_ORDER(
-                        FLB_ALIGNED_DWORD_READ(
-                            (unsigned char *) &input->via.ext.ptr[0]));
+        seconds = FLB_UINT32_TO_HOST_BYTE_ORDER(
+                      FLB_ALIGNED_DWORD_READ(
+                          (unsigned char *) &input->via.ext.ptr[0]));
 
-        output->tm.tv_nsec  =
-            (int32_t) FLB_UINT32_TO_HOST_BYTE_ORDER(
-                        FLB_ALIGNED_DWORD_READ(
-                            (unsigned char *) &input->via.ext.ptr[4]));
+        /*
+         * EventTime seconds are unsigned. Only the two exact values used by
+         * Fluent Bit's legacy group records are special; all other values,
+         * including 0xfffffffd, are normal timestamps.
+         */
+        if (seconds == UINT32_MAX) {
+            nanoseconds = FLB_UINT32_TO_HOST_BYTE_ORDER(
+                              FLB_ALIGNED_DWORD_READ(
+                                  (unsigned char *) &input->via.ext.ptr[4]));
+            if (nanoseconds != 0) {
+                return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
+            }
+            output->tm.tv_sec = FLB_LOG_EVENT_GROUP_START;
+            output->tm.tv_nsec = 0;
+            return FLB_EVENT_DECODER_SUCCESS;
+        }
+        else if (seconds == UINT32_MAX - 1) {
+            nanoseconds = FLB_UINT32_TO_HOST_BYTE_ORDER(
+                              FLB_ALIGNED_DWORD_READ(
+                                  (unsigned char *) &input->via.ext.ptr[4]));
+            if (nanoseconds != 0) {
+                return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
+            }
+            output->tm.tv_sec = FLB_LOG_EVENT_GROUP_END;
+            output->tm.tv_nsec = 0;
+            return FLB_EVENT_DECODER_SUCCESS;
+        }
+
+        if (flb_time_msgpack_to_time(output, input) != 0) {
+            return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
+        }
+
+        return FLB_EVENT_DECODER_SUCCESS;
     }
     else {
         return FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE;
@@ -313,7 +346,7 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
     int result;
     int record_type;
     size_t previous_offset;
-    int32_t invalid_timestamp;
+    int64_t invalid_timestamp;
 
     if (context == NULL) {
         return FLB_EVENT_DECODER_ERROR_INVALID_CONTEXT;
@@ -368,8 +401,8 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
              * to avoid losing valid group metadata if corruption occurs mid-group.
              * Skip the record and continue processing.
              */
-            invalid_timestamp = (int32_t) event->timestamp.tm.tv_sec;
-            flb_debug("[decoder] Invalid group marker timestamp (%d), skipping record. "
+            invalid_timestamp = (int64_t) event->timestamp.tm.tv_sec;
+            flb_debug("[decoder] Invalid group marker timestamp (%" PRId64 "), skipping record. "
                      "Group state preserved.", invalid_timestamp);
 
             /* Increment recursion depth before recursive call */
@@ -457,9 +490,9 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
 
 int flb_log_event_decoder_get_record_type(struct flb_log_event *event, int32_t *type)
 {
-    int32_t s;
+    time_t s;
 
-    s = (int32_t) event->timestamp.tm.tv_sec;
+    s = event->timestamp.tm.tv_sec;
 
     if (s >= 0) {
         *type = FLB_LOG_EVENT_NORMAL;

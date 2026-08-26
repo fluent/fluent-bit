@@ -28,14 +28,22 @@
 #ifndef EVENT2_BUFFEREVENT_COMPAT_H_INCLUDED_
 #define EVENT2_BUFFEREVENT_COMPAT_H_INCLUDED_
 
+/** @file event2/bufferevent_compat.h
+ *
+ * @brief Deprecated versions of the functions in bufferevent.h: provided
+ * only for backwards compatibility.
+ */
+
+#include <event2/visibility.h>
+
 #define evbuffercb bufferevent_data_cb
 #define everrorcb bufferevent_event_cb
 
 /**
   Create a new bufferevent for an fd.
 
-  This function is deprecated.  Use bufferevent_socket_new and
-  bufferevent_set_callbacks instead.
+  This function is deprecated.  Use bufferevent_socket_new() and
+  bufferevent_setcb() instead.
 
   Libevent provides an abstraction on top of the regular event callbacks.
   This abstraction is called a buffered event.  A buffered event provides
@@ -72,6 +80,7 @@
 	  error occurred
   @see bufferevent_base_set(), bufferevent_free()
   */
+EVENT2_EXPORT_SYMBOL
 struct bufferevent *bufferevent_new(evutil_socket_t fd,
     evbuffercb readcb, evbuffercb writecb, everrorcb errorcb, void *cbarg);
 
@@ -79,10 +88,13 @@ struct bufferevent *bufferevent_new(evutil_socket_t fd,
 /**
   Set the read and write timeout for a buffered event.
 
+  @deprecated Use bufferevent_set_timeouts instead.
+
   @param bufev the bufferevent to be modified
   @param timeout_read the read timeout
   @param timeout_write the write timeout
  */
+EVENT2_EXPORT_SYMBOL
 void bufferevent_settimeout(struct bufferevent *bufev,
     int timeout_read, int timeout_write);
 

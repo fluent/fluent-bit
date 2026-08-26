@@ -1,0 +1,21 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: error
+  telemetry:
+    metrics:
+      logs:
+        # typo in the leaf key: 'tag_record' (missing 's') must be rejected so
+        # it is not silently treated as "nothing configured"
+        tag_record: true
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: bad.parentkey
+      dummy: '{"message":"x"}'
+      samples: 1
+
+  outputs:
+    - name: 'null'
+      match: '*'

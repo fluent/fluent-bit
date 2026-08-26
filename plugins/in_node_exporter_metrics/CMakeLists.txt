@@ -10,6 +10,7 @@ set(src
   ne_netstat.c
   ne_sockstat.c
   ne_time.c
+  ne_timex.c
   ne_loadavg.c
   ne_filefd.c
   ne_textfile.c
@@ -20,6 +21,7 @@ set(src
   ne_config.c
   ne_systemd.c
   ne_thermalzone.c
+  ne_powersupply.c
   ne.c
   )
 

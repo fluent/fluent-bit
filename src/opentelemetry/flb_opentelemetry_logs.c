@@ -119,7 +119,12 @@ static int process_json_payload_log_records_entry(
             return -FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
         }
 
-        flb_time_from_uint64(&timestamp, timestamp_uint64);
+        if (flb_time_from_uint64(&timestamp, timestamp_uint64) != 0) {
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
+            }
+            return -FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
+        }
     }
 
     /* observedTimeUnixNano (only camelCase) */

@@ -27,6 +27,7 @@
 #include <cfl/cfl_variant.h>
 
 struct cfl_kvlist;
+struct cfl_arena;
 
 struct cfl_array {
     int                  resizable;
@@ -36,9 +37,14 @@ struct cfl_array {
     struct cfl_variant  *owner;
     struct cfl_array    *parent_array;
     struct cfl_kvlist   *parent_kvlist;
+    struct cfl_arena *arena;
 };
 
 struct cfl_array *cfl_array_create(size_t slot_count);
+struct cfl_array *cfl_array_create_in(struct cfl_arena *arena,
+                                      size_t slot_count);
+struct cfl_array *cfl_array_create_like(struct cfl_array *parent,
+                                        size_t slot_count);
 void cfl_array_destroy(struct cfl_array *array);
 
 static inline struct cfl_variant *cfl_array_fetch_by_index(struct cfl_array *array,

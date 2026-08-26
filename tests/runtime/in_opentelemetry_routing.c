@@ -27,7 +27,9 @@
 #include <fluent-bit/flb_input.h>
 #include <string.h>
 #include <limits.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -36,6 +38,17 @@
 #include "flb_tests_runtime.h"
 #include "../../plugins/in_opentelemetry/opentelemetry.h"
 #include "../../plugins/in_opentelemetry/opentelemetry_logs.h"
+
+#ifdef _WIN32
+static int test_mkdir(const char *path, int mode)
+{
+    (void) mode;
+
+    return mkdir(path);
+}
+#else
+#define test_mkdir(path, mode) mkdir(path, mode)
+#endif
 
 #define JSON_CONTENT_TYPE "application/json"
 /* Pick a port that is not in use by other tests as well */
@@ -224,7 +237,7 @@ static struct test_ctx *test_ctx_create(const char *config_file)
     }
 
     /* Create directory if it doesn't exist */
-    ret = mkdir(ctx->output_dir, 0755);
+    ret = test_mkdir(ctx->output_dir, 0755);
     if (ret != 0 && errno != EEXIST) {
         flb_error("[test] Failed to create output directory: %s", ctx->output_dir);
         flb_destroy(ctx->flb);

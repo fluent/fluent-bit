@@ -62,15 +62,13 @@ struct dt_metric {
 static void metric_cache_set(struct flb_ne *ctx, void *metric, double factor, int *offset)
 {
     int id;
-    struct dt_metric *m;
-    struct dt_metric **cache;
+    struct dt_metric *cache;
 
     id = *offset;
 
-    cache = (struct dt_metric **) ctx->dt_metrics;
-    m = (struct dt_metric *) &cache[id];
-    m->metric = metric;
-    m->factor = factor;
+    cache = (struct dt_metric *) ctx->dt_metrics;
+    cache[id].metric = metric;
+    cache[id].factor = factor;
     (*offset)++;
 }
 
@@ -80,11 +78,11 @@ static void metric_cache_update(struct flb_ne *ctx, int id, flb_sds_t device,
     int ret = -1;
     uint64_t ts;
     struct dt_metric *m;
-    struct dt_metric **cache;
+    struct dt_metric *cache;
     struct cmt_counter *c;
 
-    cache = (struct dt_metric **) ctx->dt_metrics;
-    m = (struct dt_metric *) &cache[id];
+    cache = (struct dt_metric *) ctx->dt_metrics;
+    m = &cache[id];
 
     ts = cfl_time_now();
 

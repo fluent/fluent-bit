@@ -9,6 +9,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build-distro-packages-arm64:
     runs-on: ubuntu-latest
@@ -18,8 +21,8 @@ jobs:
       matrix:
         format: [ rpm, deb ]
     steps:
-      - uses: actions/checkout@v6
-      - uses: uraimo/run-on-arch-action@v3.0.1
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: uraimo/run-on-arch-action@f9b26e3a1a408d5fd530d20c17b9f3f4428ff8d9 # v3.1.0
         name: Build the ${{matrix.format}} packages
         with:
           arch: aarch64
@@ -36,7 +39,7 @@ jobs:
             echo ${{ matrix.format }} | awk '{print toupper($0)}' | xargs -I{} cpack -G {}
 
       - name: Store the master package artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ matrix.format }}-arm64
           path: |
@@ -51,14 +54,14 @@ jobs:
 
     runs-on: [ ubuntu-latest ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Build the ${{matrix.format}} packages
         run:  |
           cmake .
           echo ${{ matrix.format }} | awk '{print toupper($0)}' | xargs -I{} cpack -G {}
 
       - name: Store the master package artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ matrix.format }}-amd64
           path: |
@@ -74,7 +77,7 @@ jobs:
       contents: write
     steps:
       - name: Download all artefacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts/
 
@@ -84,7 +87,7 @@ jobs:
         shell: bash
 
       - name: Unstable release on push to master to make it easier to download
-        uses: pyTooling/Actions/releaser@r0
+        uses: pyTooling/Actions/releaser@b346408fef88bd4cfda9109149e9ec8338a32b15 # r0
         continue-on-error: true
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -94,7 +97,7 @@ jobs:
             artifacts/**/*
 
       - name: Release on tag
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@7c4723f7a335432393329f8f1c564994ce50185d # v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           generate_release_notes: true

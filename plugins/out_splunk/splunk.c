@@ -431,13 +431,15 @@ static int pack_map(struct flb_splunk *ctx, msgpack_packer *mp_pck,
     else {
         flb_mp_map_header_init(&mh, mp_pck);
 
-        /* Append the time key */
-        flb_mp_map_header_append(&mh);
-        msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_TIME) -1);
-        msgpack_pack_str_body(mp_pck,
-                              FLB_SPLUNK_DEFAULT_TIME,
-                              sizeof(FLB_SPLUNK_DEFAULT_TIME) - 1);
-        msgpack_pack_double(mp_pck, t);
+        if (ctx->auto_extract_timestamp == FLB_FALSE) {
+            /* Append the time key */
+            flb_mp_map_header_append(&mh);
+            msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_TIME) -1);
+            msgpack_pack_str_body(mp_pck,
+                                  FLB_SPLUNK_DEFAULT_TIME,
+                                  sizeof(FLB_SPLUNK_DEFAULT_TIME) - 1);
+            msgpack_pack_double(mp_pck, t);
+        }
 
         /* Pack Splunk metadata */
         pack_map_meta(ctx, &mh, mp_pck, map, tag, tag_len);
@@ -502,13 +504,15 @@ static inline int pack_event_key(struct flb_splunk *ctx, msgpack_packer *mp_pck,
     if (ctx->splunk_send_raw == FLB_FALSE) {
         flb_mp_map_header_init(&mh, mp_pck);
 
-        /* Append the time key */
-        flb_mp_map_header_append(&mh);
-        msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_TIME) -1);
-        msgpack_pack_str_body(mp_pck,
-                              FLB_SPLUNK_DEFAULT_TIME,
-                              sizeof(FLB_SPLUNK_DEFAULT_TIME) - 1);
-        msgpack_pack_double(mp_pck, t);
+        if (ctx->auto_extract_timestamp == FLB_FALSE) {
+            /* Append the time key */
+            flb_mp_map_header_append(&mh);
+            msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_TIME) -1);
+            msgpack_pack_str_body(mp_pck,
+                                  FLB_SPLUNK_DEFAULT_TIME,
+                                  sizeof(FLB_SPLUNK_DEFAULT_TIME) - 1);
+            msgpack_pack_double(mp_pck, t);
+        }
 
         /* Pack Splunk metadata */
         pack_map_meta(ctx, &mh, mp_pck, map, tag, tag_len);
@@ -869,6 +873,7 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t buf_data;
     size_t resp_size;
     size_t buf_size;
+    const char *endpoint;
     struct flb_splunk *ctx = out_context;
     struct flb_connection *u_conn;
     struct flb_http_client *c;
@@ -928,8 +933,13 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
         }
     }
 
+    endpoint = FLB_SPLUNK_DEFAULT_ENDPOINT;
+    if (ctx->auto_extract_timestamp == FLB_TRUE) {
+        endpoint = FLB_SPLUNK_AUTO_EXTRACT_ENDPOINT;
+    }
+
     /* Compose HTTP Client request */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, FLB_SPLUNK_DEFAULT_ENDPOINT,
+    c = flb_http_client(u_conn, FLB_HTTP_POST, endpoint,
                         payload_buf, payload_size, NULL, 0, NULL, 0);
 
     /* HTTP Response buffer size, honor value set by the user */
@@ -1160,6 +1170,14 @@ static struct flb_config_map config_map[] = {
      "When enabled, the record keys and values are set in the top level of the "
      "map instead of under the event key. Refer to the Sending Raw Events section "
      "from the docs for more details to make this option work properly."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "auto_extract_timestamp", "off",
+     0, FLB_TRUE, offsetof(struct flb_splunk, auto_extract_timestamp),
+     "Ask Splunk to extract the timestamp from the event data by setting "
+     "auto_extract_timestamp=true in the HTTP Event Collector URL and omitting "
+     "the time field from the event envelope."
     },
 
     {

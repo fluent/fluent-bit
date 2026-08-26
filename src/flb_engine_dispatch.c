@@ -29,8 +29,58 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_event.h>
+#include <fluent-bit/flb_metrics.h>
 #include <chunkio/chunkio.h>
+#include <cfl/cfl_time.h>
 
+
+static void record_retry_failure_metrics(struct flb_task *task,
+                                         struct flb_output_instance *output,
+                                         struct flb_config *config)
+{
+    int effective_records;
+    size_t effective_bytes;
+    uint64_t timestamp;
+    char *input_name;
+    char *output_name;
+
+    effective_records = 0;
+    effective_bytes = 0;
+    timestamp = cfl_time_now();
+    input_name = (char *) flb_input_name(task->i_ins);
+    output_name = (char *) flb_output_name(output);
+
+    flb_task_acquire_lock(task);
+    if (flb_task_get_route_data(task, output,
+                                &effective_records,
+                                &effective_bytes) != 0 &&
+        task->event_chunk != NULL) {
+        effective_records = task->event_chunk->total_events;
+        effective_bytes = task->event_chunk->size;
+    }
+    flb_task_release_lock(task);
+
+    cmt_counter_inc(output->cmt_retries_failed, timestamp,
+                    1, (char *[]) {output_name});
+    cmt_counter_add(output->cmt_dropped_records, timestamp, effective_records,
+                    1, (char *[]) {output_name});
+
+    if (config->router && task->event_chunk &&
+        task->event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+        cmt_counter_add(config->router->logs_drop_records_total, timestamp,
+                        effective_records,
+                        2, (char *[]) {input_name, output_name});
+        cmt_counter_add(config->router->logs_drop_bytes_total, timestamp,
+                        effective_bytes,
+                        2, (char *[]) {input_name, output_name});
+    }
+
+#ifdef FLB_HAVE_METRICS
+    flb_metrics_sum(FLB_METRIC_OUT_RETRY_FAILED, 1, output->metrics);
+    flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS,
+                    effective_records, output->metrics);
+#endif
+}
 
 /* It creates a new output thread using a 'Retry' context */
 int flb_engine_dispatch_retry(struct flb_task_retry *retry,
@@ -40,6 +90,7 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
     char *buf_data;
     size_t buf_size;
     struct flb_task *task;
+    struct flb_output_instance *ins;
 
     task = retry->parent;
 
@@ -66,10 +117,38 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
     /* There is a match, get the buffer */
     buf_data = (char *) flb_input_chunk_flush(task->ic, &buf_size);
     if (!buf_data) {
-        /* Could not retrieve chunk content */
-        flb_error("[engine_dispatch] could not retrieve chunk content, removing retry");
-        flb_task_retry_destroy(retry);
-        return -1;
+        /*
+         * The chunk is up but its content could not be read. That is usually
+         * transient, so spend a delivery attempt on it instead of discarding
+         * records a later attempt could still deliver.
+         *
+         * Destroying the retry without releasing the task would leave the task
+         * with no users and no retries, a state nothing reaps.
+         */
+        ins = retry->o_ins;
+
+        if (retry->attempts >= ins->retry_limit && ins->retry_limit >= 0) {
+            flb_error("[engine_dispatch] could not retrieve chunk content, "
+                      "task_id=%i reached retry-attempts limit %i/%i, dropping",
+                      task->id, retry->attempts, ins->retry_limit);
+            record_retry_failure_metrics(task, ins, config);
+            flb_task_retry_destroy(retry);
+            flb_task_users_release(task);
+            return -1;
+        }
+
+        retry->attempts++;
+        flb_warn("[engine_dispatch] could not retrieve chunk content, "
+                 "re-scheduling task_id=%i attempts=%i",
+                 task->id, retry->attempts);
+
+        ret = flb_task_retry_reschedule(retry, config);
+        if (ret == -1) {
+            return -1;
+        }
+
+        /* Just return because it has been re-scheduled */
+        return 0;
     }
 
     /* Update the buffer reference */
@@ -101,17 +180,23 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
 static void test_run_formatter(struct flb_config *config,
                                struct flb_input_instance *i_ins,
                                struct flb_output_instance *o_ins,
-                               struct flb_task *task,
-                               void *flush_ctx)
+                               struct flb_task *task)
 {
     int ret;
     void *out_buf = NULL;
     size_t out_size = 0;
     struct flb_test_out_formatter *otf;
     struct flb_event_chunk *evc;
+    void *flush_ctx;
 
     otf = &o_ins->test_formatter;
     evc = task->event_chunk;
+
+    flush_ctx = otf->flush_ctx;
+    if (otf->flush_ctx_callback) {
+        flush_ctx = otf->flush_ctx_callback(config, i_ins, o_ins->context,
+                                            flush_ctx);
+    }
 
     /* Invoke the output plugin formatter test callback */
     ret = otf->callback(config,
@@ -176,9 +261,7 @@ static int tasks_start(struct flb_input_instance *in,
                 out->test_formatter.callback != NULL) {
 
                 /* Run the formatter test */
-                test_run_formatter(config, in, out,
-                                   task,
-                                   out->test_formatter.flush_ctx);
+                test_run_formatter(config, in, out, task);
 
                 /* Remove the route */
                 mk_list_del(&route->_head);

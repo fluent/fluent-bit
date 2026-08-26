@@ -1336,6 +1336,8 @@ static int unpack_metric_array_entry(mpack_reader_t *reader, size_t index, void 
             else if (decode_context->map->type == CMT_SUMMARY) {
                 cmt_atomic_store(&decode_context->map->metric.sum_quantiles_set, cmt_atomic_load(&metric->sum_quantiles_set));
                 decode_context->map->metric.sum_quantiles = metric->sum_quantiles;
+                decode_context->map->metric.sum_quantiles_count =
+                    metric->sum_quantiles_count;
                 cmt_atomic_store(&decode_context->map->metric.sum_count,
                                  cmt_atomic_load(&metric->sum_count));
                 cmt_atomic_store(&decode_context->map->metric.sum_sum,
@@ -1636,6 +1638,7 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
     int                                   result;
     struct cmt_summary                   *summary;
     struct cmt_histogram                 *histogram;
+    struct cmt_exp_histogram             *exp_histogram;
     struct cmt_counter                   *counter;
     struct cmt_msgpack_decode_context    *decode_context;
     struct cmt_mpack_map_entry_callback_t callbacks[] = \
@@ -1684,6 +1687,12 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
             else {
                 histogram->buckets = NULL;
             }
+
+            histogram->aggregation_type = decode_context->aggregation_type;
+        }
+        else if (decode_context->map->type == CMT_EXP_HISTOGRAM) {
+            exp_histogram = (struct cmt_exp_histogram *) decode_context->map->parent;
+            exp_histogram->aggregation_type = decode_context->aggregation_type;
         }
         else if (decode_context->map->type == CMT_SUMMARY) {
             summary = (struct cmt_summary *) decode_context->map->parent;

@@ -23,6 +23,10 @@ import requests
 from src.utils import fluent_bit_manager as manager_module
 from src.utils.fluent_bit_manager import ENV_FLB_BINARY_PATH
 from src.utils.fluent_bit_manager import FluentBitManager
+from src.utils.fluent_bit_manager import fluent_bit_binary_version
+from src.utils.fluent_bit_manager import fluent_bit_binary_supports_config_property
+from src.utils.fluent_bit_manager import fluent_bit_input_supports_config_property
+from src.utils.fluent_bit_manager import parse_fluent_bit_version
 
 
 def test_binary_path_uses_environment_override(monkeypatch):
@@ -33,6 +37,113 @@ def test_binary_path_uses_environment_override(monkeypatch):
 
     assert manager.binary_path == "/opt/fluent-bit/bin/fluent-bit"
     assert manager.binary_absolute_path == "/resolved//opt/fluent-bit/bin/fluent-bit"
+
+
+def test_binary_capability_detects_config_property_in_help(monkeypatch, tmp_path):
+    binary_path = tmp_path / "fluent-bit"
+    binary_path.write_bytes(b"binary without the marker")
+    binary_path.chmod(0o755)
+    result = Mock(stdout="Options: hot_reload.watch", stderr="")
+    monkeypatch.setattr(manager_module.subprocess, "run", lambda *args, **kwargs: result)
+
+    assert fluent_bit_binary_supports_config_property(
+        "hot_reload.watch", str(binary_path)
+    ) is True
+
+
+def test_binary_capability_detects_compiled_config_property(monkeypatch, tmp_path):
+    binary_path = tmp_path / "fluent-bit"
+    binary_path.write_bytes(b"prefix Hot_Reload.Watch suffix")
+    binary_path.chmod(0o755)
+    result = Mock(stdout="", stderr="")
+    monkeypatch.setattr(manager_module.subprocess, "run", lambda *args, **kwargs: result)
+
+    assert fluent_bit_binary_supports_config_property(
+        "hot_reload.watch", str(binary_path)
+    ) is True
+
+
+def test_binary_capability_rejects_missing_config_property(monkeypatch, tmp_path):
+    binary_path = tmp_path / "fluent-bit"
+    binary_path.write_bytes(b"binary without the marker")
+    binary_path.chmod(0o755)
+    result = Mock(stdout="", stderr="")
+    monkeypatch.setattr(manager_module.subprocess, "run", lambda *args, **kwargs: result)
+
+    assert fluent_bit_binary_supports_config_property(
+        "hot_reload.watch", str(binary_path)
+    ) is False
+
+
+def test_input_capability_detects_plugin_config_property(monkeypatch, tmp_path):
+    binary_path = tmp_path / "fluent-bit"
+    binary_path.write_bytes(b"binary")
+    binary_path.chmod(0o755)
+    result = Mock(stdout="workers  Set the number of listener workers", stderr="")
+
+    def fake_run(command, **kwargs):
+        assert command == [str(binary_path), "-i", "forward", "-h"]
+        return result
+
+    monkeypatch.setattr(manager_module.subprocess, "run", fake_run)
+
+    assert fluent_bit_input_supports_config_property(
+        "forward", "workers", str(binary_path)
+    ) is True
+
+
+def test_input_capability_rejects_property_from_other_plugins(monkeypatch, tmp_path):
+    binary_path = tmp_path / "fluent-bit"
+    binary_path.write_bytes(b"binary containing inotify_watcher elsewhere")
+    binary_path.chmod(0o755)
+    result = Mock(stdout="path  Path to tail", stderr="")
+    monkeypatch.setattr(manager_module.subprocess, "run", lambda *args, **kwargs: result)
+
+    assert fluent_bit_input_supports_config_property(
+        "tail", "inotify_watcher", str(binary_path)
+    ) is False
+
+
+@pytest.mark.parametrize(
+    "version_text,expected",
+    [
+        ("Fluent Bit v5.1.0", (5, 1, 0)),
+        ("Fluent Bit 5.0.9\nGit commit: abc", (5, 0, 9)),
+        ("v6.2.1-dev", (6, 2, 1)),
+        ("unknown", None),
+    ],
+)
+def test_parse_fluent_bit_version(version_text, expected):
+    assert parse_fluent_bit_version(version_text) == expected
+
+
+def test_fluent_bit_binary_version_uses_selected_binary(monkeypatch, tmp_path):
+    binary_path = tmp_path / "fluent-bit"
+    binary_path.write_bytes(b"binary")
+    binary_path.chmod(0o755)
+    result = Mock(stdout="Fluent Bit v5.1.0", stderr="")
+
+    def fake_run(command, **kwargs):
+        assert command == [str(binary_path), "--version"]
+        return result
+
+    monkeypatch.setattr(manager_module.subprocess, "run", fake_run)
+
+    assert fluent_bit_binary_version(str(binary_path)) == (5, 1, 0)
+
+
+def test_fluent_bit_binary_version_is_cached(monkeypatch, tmp_path):
+    binary_path = tmp_path / "fluent-bit"
+    binary_path.write_bytes(b"binary")
+    binary_path.chmod(0o755)
+    result = Mock(stdout="Fluent Bit v5.1.0\nGit commit: abc123", stderr="")
+    run = Mock(return_value=result)
+    monkeypatch.setattr(manager_module.subprocess, "run", run)
+
+    assert fluent_bit_binary_version(str(binary_path)) == (5, 1, 0)
+    manager = FluentBitManager("/tmp/fluent-bit.yaml", binary_path=str(binary_path))
+    assert manager.get_version_info() == ("v5.1.0", "abc123")
+    run.assert_called_once()
 
 
 def test_send_signal_raises_when_process_is_missing():
@@ -56,8 +167,9 @@ def test_trigger_http_reload_posts_to_reload_endpoint(monkeypatch):
     response.json.return_value = {"reload": "done"}
     response.raise_for_status.return_value = None
 
-    def fake_post(url):
+    def fake_post(url, timeout):
         assert url == "http://127.0.0.1:2020/api/v2/reload"
+        assert timeout == 0.5
         return response
 
     monkeypatch.setattr(manager_module.requests, "post", fake_post)
@@ -75,8 +187,14 @@ def test_start_uses_unique_valgrind_log_path(monkeypatch, tmp_path):
 
     monkeypatch.setenv("VALGRIND", "1")
     monkeypatch.setattr(manager_module.os.path, "exists", lambda path: True)
+    monkeypatch.setattr(manager_module.os.path, "isfile", lambda path: True)
+    monkeypatch.setattr(manager_module.os, "access", lambda path, mode: True)
     monkeypatch.setattr(manager_module, "find_available_port", lambda starting_port: 40200)
-    monkeypatch.setattr(manager_module.requests, "get", lambda url: Mock(status_code=200, json=lambda: {"uptime_sec": 2}))
+    monkeypatch.setattr(
+        manager_module.requests,
+        "get",
+        lambda url, timeout=0.5: Mock(status_code=200, json=lambda: {"uptime_sec": 2}),
+    )
 
     created_dirs = iter([
         str(tmp_path / "run-1"),
@@ -89,6 +207,7 @@ def test_start_uses_unique_valgrind_log_path(monkeypatch, tmp_path):
 
     popen_result = Mock()
     popen_result.pid = 1234
+    popen_result.poll.return_value = None
 
     monkeypatch.setattr(FluentBitManager, "create_results_directory", fake_create_results_directory)
     monkeypatch.setattr(FluentBitManager, "get_version_info", lambda self: ("vtest", "commit"))
@@ -108,6 +227,7 @@ def test_start_uses_unique_valgrind_log_path(monkeypatch, tmp_path):
         "valgrind",
         f"--log-file={manager.valgrind_log_file}",
         "--leak-check=full",
+        "--show-leak-kinds=all",
         "/usr/bin/fluent-bit",
         "-c", str(config_path),
         "-l", str(tmp_path / "run-1" / "fluent_bit.log")

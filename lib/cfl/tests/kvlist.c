@@ -1323,6 +1323,115 @@ static void embedded_nul_keys_do_not_match_short_name()
     cfl_kvlist_destroy(list);
 }
 
+static void case_sensitive_operations()
+{
+    int ret;
+    char upper_key[] = {'U', 's', 'e', 'r'};
+    char lower_key[] = {'u', 's', 'e', 'r'};
+    char nul_key[] = {'k', '\0', 'A'};
+    char different_nul_key[] = {'K', '\0', 'B'};
+    struct cfl_kvlist *list;
+    struct cfl_variant *variant;
+
+    list = cfl_kvlist_create();
+    TEST_CHECK(list != NULL);
+
+    ret = cfl_kvlist_insert_int64(list, "User", 1);
+    TEST_CHECK(ret == 0);
+    ret = cfl_kvlist_insert_int64(list, "user", 2);
+    TEST_CHECK(ret == 0);
+    ret = cfl_kvlist_insert_int64_s(list, nul_key, sizeof(nul_key), 3);
+    TEST_CHECK(ret == 0);
+
+    variant = cfl_kvlist_fetch_s_ex(list, upper_key, sizeof(upper_key),
+                                    CFL_KVLIST_MATCH_CASE_SENSITIVE);
+    TEST_CHECK(variant != NULL);
+    TEST_CHECK(variant->data.as_int64 == 1);
+
+    variant = cfl_kvlist_fetch_case_s(list, lower_key, sizeof(lower_key));
+    TEST_CHECK(variant != NULL);
+    TEST_CHECK(variant->data.as_int64 == 2);
+
+    variant = cfl_kvlist_fetch_ex(list, "USER",
+                                  CFL_KVLIST_MATCH_CASE_SENSITIVE);
+    TEST_CHECK(variant == NULL);
+    variant = cfl_kvlist_fetch(list, "USER");
+    TEST_CHECK(variant != NULL);
+
+    ret = cfl_kvlist_contains_ex(list, "USER",
+                                 CFL_KVLIST_MATCH_CASE_SENSITIVE);
+    TEST_CHECK(ret == CFL_FALSE);
+    ret = cfl_kvlist_contains(list, "USER");
+    TEST_CHECK(ret == CFL_TRUE);
+
+    ret = cfl_kvlist_remove_ex(list, "User",
+                               CFL_KVLIST_MATCH_CASE_SENSITIVE);
+    TEST_CHECK(ret == CFL_TRUE);
+    TEST_CHECK(cfl_kvlist_count(list) == 2);
+    TEST_CHECK(cfl_kvlist_fetch_ex(list, "User",
+                                  CFL_KVLIST_MATCH_CASE_SENSITIVE) == NULL);
+    variant = cfl_kvlist_fetch_ex(list, "user",
+                                  CFL_KVLIST_MATCH_CASE_SENSITIVE);
+    TEST_CHECK(variant != NULL);
+    TEST_CHECK(variant->data.as_int64 == 2);
+
+    variant = cfl_kvlist_fetch_s_ex(list, different_nul_key,
+                                    sizeof(different_nul_key),
+                                    CFL_KVLIST_MATCH_CASE_INSENSITIVE);
+    TEST_CHECK(variant == NULL);
+    variant = cfl_kvlist_fetch_s_ex(list, nul_key, sizeof(nul_key),
+                                    CFL_KVLIST_MATCH_CASE_INSENSITIVE);
+    TEST_CHECK(variant != NULL);
+    TEST_CHECK(variant->data.as_int64 == 3);
+
+    variant = cfl_kvlist_fetch_ex(list, "user",
+                                  (enum cfl_kvlist_match_mode) 99);
+    TEST_CHECK(variant == NULL);
+    ret = cfl_kvlist_contains_ex(list, "user",
+                                 (enum cfl_kvlist_match_mode) 99);
+    TEST_CHECK(ret == CFL_FALSE);
+    ret = cfl_kvlist_remove_ex(list, "user",
+                               (enum cfl_kvlist_match_mode) 99);
+    TEST_CHECK(ret == CFL_FALSE);
+    TEST_CHECK(cfl_kvlist_count(list) == 2);
+
+    cfl_kvlist_destroy(list);
+}
+
+static void case_sensitive_arena_operations()
+{
+    int ret;
+    struct cfl_arena *arena;
+    struct cfl_kvlist *list;
+    struct cfl_variant *variant;
+
+    arena = cfl_arena_create(256);
+    TEST_CHECK(arena != NULL);
+    list = cfl_kvlist_create_in(arena);
+    TEST_CHECK(list != NULL);
+
+    ret = cfl_kvlist_insert_string(list, "TraceId", "upper");
+    TEST_CHECK(ret == 0);
+    ret = cfl_kvlist_insert_string(list, "traceid", "lower");
+    TEST_CHECK(ret == 0);
+
+    variant = cfl_kvlist_fetch_ex(list, "TraceId",
+                                  CFL_KVLIST_MATCH_CASE_SENSITIVE);
+    TEST_CHECK(variant != NULL);
+    TEST_CHECK(strcmp(variant->data.as_string, "upper") == 0);
+
+    ret = cfl_kvlist_remove_ex(list, "traceid",
+                               CFL_KVLIST_MATCH_CASE_SENSITIVE);
+    TEST_CHECK(ret == CFL_TRUE);
+    TEST_CHECK(cfl_kvlist_count(list) == 1);
+    TEST_CHECK(cfl_kvlist_contains_ex(list, "TraceId",
+                                     CFL_KVLIST_MATCH_CASE_SENSITIVE) ==
+               CFL_TRUE);
+
+    cfl_kvlist_destroy(list);
+    cfl_arena_destroy(arena);
+}
+
 static void print_write_error()
 {
 #ifdef __linux__
@@ -1542,6 +1651,8 @@ TEST_LIST = {
     {"null_inputs", null_inputs},
     {"print_escaped_keys", print_escaped_keys},
     {"embedded_nul_keys_do_not_match_short_name", embedded_nul_keys_do_not_match_short_name},
+    {"case_sensitive_operations", case_sensitive_operations},
+    {"case_sensitive_arena_operations", case_sensitive_arena_operations},
     {"print_write_error", print_write_error},
     {"reject_kvlist_cycles", reject_kvlist_cycles},
     {"reject_variant_cycles", reject_variant_cycles},

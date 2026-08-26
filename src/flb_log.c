@@ -22,6 +22,7 @@
 #include <signal.h>
 #include <stdarg.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -597,7 +598,9 @@ struct flb_log_cache *flb_log_cache_create(int timeout_seconds, int size)
         entry->buf = flb_sds_create_size(FLB_LOG_CACHE_TEXT_BUF_SIZE);
         if (!entry->buf) {
             flb_errno();
+            flb_free(entry);
             flb_log_cache_destroy(cache);
+            return NULL;
         }
         entry->timestamp = 0; /* unset for now */
         mk_list_add(&entry->_head, &cache->entries);
@@ -695,7 +698,12 @@ struct flb_log_cache_entry *flb_log_cache_get_target(struct flb_log_cache *cache
 int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, size_t msg_size)
 {
     uint64_t now = 0;
+    flb_sds_t buf;
     struct flb_log_cache_entry *entry;
+
+    if (msg_size > INT_MAX) {
+        return FLB_FALSE;
+    }
 
     now = time(NULL);
     entry = flb_log_cache_exists(cache, msg_buf, msg_size);
@@ -711,8 +719,12 @@ int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, siz
         }
 
         /* add the message to the cache */
-        flb_sds_len_set(entry->buf, 0);
-        entry->buf = flb_sds_copy(entry->buf, msg_buf, msg_size);
+        buf = flb_sds_copy(entry->buf, msg_buf, msg_size);
+        if (!buf) {
+            return FLB_FALSE;
+        }
+
+        entry->buf = buf;
         entry->timestamp = now;
         return FLB_FALSE;
     }

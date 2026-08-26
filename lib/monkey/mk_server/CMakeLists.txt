@@ -31,10 +31,18 @@ if(MK_HTTP2)
     )
 endif()
 
+set(src ${src} ${MK_TLS_SOURCES})
+
 # Always build a static library, thats our core :)
 add_library(monkey-core-static STATIC ${src})
 set_target_properties(monkey-core-static PROPERTIES OUTPUT_NAME monkey)
+if(MK_TLS_INCLUDE_DIRS)
+  target_include_directories(monkey-core-static PRIVATE ${MK_TLS_INCLUDE_DIRS})
+endif()
 target_link_libraries(monkey-core-static mk_core ${CMAKE_THREAD_LIBS_INIT} ${STATIC_PLUGINS_LIBS} ${CMAKE_DL_LIBS} rbtree co)
+if(MK_TLS_LIBS)
+  target_link_libraries(monkey-core-static ${MK_TLS_LIBS})
+endif()
 
 message(STATUS "LINKING ${STATIC_PLUGINS_LIBS}")
 

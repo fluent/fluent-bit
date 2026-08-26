@@ -625,7 +625,11 @@ void flb_test_firehose_aggregation_custom_time_format(void)
     flb_output_set(ctx, out_ffd, "delivery_stream", "fluent", NULL);
     flb_output_set(ctx, out_ffd, "simple_aggregation", "On", NULL);
     flb_output_set(ctx, out_ffd, "time_key", "ts", NULL);
+#ifdef FLB_SYSTEM_WINDOWS
+    flb_output_set(ctx, out_ffd, "time_key_format", "%Y%m%d", NULL);
+#else
     flb_output_set(ctx, out_ffd, "time_key_format", "%s", NULL);
+#endif
     flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);

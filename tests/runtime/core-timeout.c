@@ -32,6 +32,11 @@ void flb_test_timeout_coroutine_recovery()
     flb_ctx_t *ctx;
     int64_t    ret;
 
+#ifdef _WIN32
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
+
     ctx = flb_create();
 
     TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",

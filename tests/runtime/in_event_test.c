@@ -3,7 +3,7 @@
 #include <fluent-bit.h>
 #include "flb_tests_runtime.h"
 
-void flb_test_input_event()
+void flb_test_input_event(void)
 {
     int ret;
     flb_ctx_t *ctx;
@@ -22,7 +22,8 @@ void flb_test_input_event()
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    sleep(8);
+    ret = flb_loop(ctx);
+    TEST_CHECK(ret == 0);
 
     flb_stop(ctx);
     flb_destroy(ctx);

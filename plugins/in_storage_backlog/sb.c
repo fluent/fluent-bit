@@ -312,8 +312,11 @@ static int sb_append_chunk_to_segregated_backlogs(struct cio_chunk  *target_chun
         return -2;
     }
 
-    flb_routes_mask_set_by_tag(dummy_input_chunk.routes_mask, tag_buf, tag_len,
-                               context->ins);
+    result = flb_routes_mask_set_by_tag(dummy_input_chunk.routes_mask, tag_buf, tag_len,
+                                        context->ins);
+    if (result == 0) {
+        return -4;
+    }
 
     mk_list_foreach_safe(head, tmp, &context->backlogs) {
         backlog = mk_list_entry(head, struct sb_out_queue, _head);
@@ -412,6 +415,20 @@ int sb_segregate_chunks(struct flb_config *config)
             /* try to segregate a chunk */
             ret = sb_append_chunk_to_segregated_backlogs(chunk, stream, context);
             if (ret) {
+                /*
+                 * Leave chunks without a route on disk so a future configuration
+                 * can reconsider them. Closing the ChunkIO handle removes them
+                 * from this context's active chunk accounting without deleting
+                 * the underlying files.
+                 */
+                if (ret == -4) {
+                    flb_plg_info(context->ins,
+                                 "no matching route for %s/%s, keeping it on disk",
+                                 stream->name, chunk->name);
+                    cio_chunk_close(chunk, CIO_FALSE);
+                    continue;
+                }
+
                 /*
                  * if the chunk could not be segregated, just remove it from the
                  * queue, delete it and continue.
@@ -516,6 +533,16 @@ int sb_release_output_queue_space(struct flb_output_instance *output_plugin,
 
         released_space += chunk->size;
         underlying_chunk = chunk->chunk;
+
+        flb_warn("[storage backlog] chunk '%s' evicted from output queue to make room "
+                 "under storage.total_limit_size: input=%s > output=%s "
+                 "(out_id=%d), bytes=%zu, limit=%zu",
+                 underlying_chunk->name,
+                 chunk->stream->name,
+                 flb_output_name(output_plugin),
+                 output_plugin->id,
+                 chunk->size,
+                 output_plugin->total_limit_size);
 
         sb_remove_chunk_from_segregated_backlogs(underlying_chunk, context);
         cio_chunk_close(underlying_chunk, FLB_TRUE);

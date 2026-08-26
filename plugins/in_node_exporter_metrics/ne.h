@@ -33,9 +33,9 @@
 /* Default enabled metrics */
 
 #ifdef __linux__
-#define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,loadavg,vmstat,netdev,netstat,sockstat,filefd,systemd,nvme,thermal_zone,hwmon"
+#define NE_DEFAULT_ENABLED_METRICS "cpu,cpufreq,meminfo,diskstats,filesystem,uname,stat,time,timex,loadavg,vmstat,netdev,netstat,sockstat,filefd,systemd,nvme,thermal_zone,hwmon,powersupplyclass"
 #elif __APPLE__
-#define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,meminfo,diskstats,uname,netdev"
+#define NE_DEFAULT_ENABLED_METRICS "cpu,loadavg,meminfo,diskstats,filesystem,uname,stat,netdev,thermal_zone,powersupplyclass"
 #endif
 
 /* filesystem: regex for ignoring mount points and filesystem types */
@@ -101,6 +101,28 @@ struct flb_ne {
     struct cmt_gauge *darwin_swap_used_bytes;
     struct cmt_gauge *darwin_swap_total_bytes;
     struct cmt_counter *darwin_total_bytes;
+
+    /* thermal_darwin */
+    struct cmt_gauge *darwin_thermal_cpu_scheduler_limit;
+    struct cmt_gauge *darwin_thermal_cpu_available;
+    struct cmt_gauge *darwin_thermal_cpu_speed_limit;
+    struct cmt_gauge *darwin_thermal_temperature;
+
+    /* powersupply_darwin */
+    struct cmt_gauge *darwin_ps_current_capacity;
+    struct cmt_gauge *darwin_ps_max_capacity;
+    struct cmt_gauge *darwin_ps_design_capacity;
+    struct cmt_gauge *darwin_ps_nominal_capacity;
+    struct cmt_gauge *darwin_ps_time_to_empty;
+    struct cmt_gauge *darwin_ps_time_to_full;
+    struct cmt_gauge *darwin_ps_voltage;
+    struct cmt_gauge *darwin_ps_current;
+    struct cmt_gauge *darwin_ps_temperature;
+    struct cmt_gauge *darwin_ps_present;
+    struct cmt_gauge *darwin_ps_charging;
+    struct cmt_gauge *darwin_ps_charged;
+    struct cmt_gauge *darwin_ps_internal_failure;
+    struct cmt_gauge *darwin_ps_battery_health;
 #endif
 
     /* diskstats: abbreviation 'dt' */
@@ -111,7 +133,7 @@ struct flb_ne {
     /* uname */
     struct cmt_gauge *uname;
 
-    /* stat_linux */
+    /* stat */
     struct cmt_counter *st_intr;
     struct cmt_counter *st_context_switches;
     struct cmt_gauge   *st_boot_time;
@@ -140,6 +162,10 @@ struct flb_ne {
     struct cmt_gauge *darwin_collisions;
     struct cmt_gauge *darwin_noproto;
 #endif
+
+    /* powersupply_linux */
+    struct cmt_gauge *powersupply_info;
+    struct mk_list    powersupply_dynamic_metrics;
 
     /* sockstat_linux */
     struct cmt_gauge *sockstat_sockets_used;
@@ -172,9 +198,29 @@ struct flb_ne {
     struct cmt_counter *netstat_Udp_InErrors;
     struct cmt_counter *netstat_Udp_OutDatagrams;
     struct cmt_counter *netstat_Udp_NoPorts;
+    struct mk_list      netstat_dynamic_metrics;
 
     /* time */
     struct cmt_gauge *time;
+
+    /* timex */
+    struct cmt_gauge   *timex_offset;
+    struct cmt_gauge   *timex_freq;
+    struct cmt_gauge   *timex_maxerror;
+    struct cmt_gauge   *timex_esterror;
+    struct cmt_gauge   *timex_status;
+    struct cmt_gauge   *timex_constant;
+    struct cmt_gauge   *timex_tick;
+    struct cmt_gauge   *timex_pps_freq;
+    struct cmt_gauge   *timex_jitter;
+    struct cmt_gauge   *timex_shift;
+    struct cmt_gauge   *timex_stabil;
+    struct cmt_counter *timex_jitcnt;
+    struct cmt_counter *timex_calcnt;
+    struct cmt_counter *timex_errcnt;
+    struct cmt_counter *timex_stbcnt;
+    struct cmt_gauge   *timex_tai;
+    struct cmt_gauge   *timex_sync_status;
 
     /* loadavg */
     struct cmt_gauge *lavg_1;

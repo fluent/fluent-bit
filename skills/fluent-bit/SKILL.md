@@ -1,3 +1,8 @@
+---
+name: fluent-bit
+description: Work in the Fluent Bit C/C++ repository using its scoped patch, testing, runtime, integration, lifecycle, and review conventions. Use for Fluent Bit source, plugin, pipeline, Windows runtime-test, CI, configuration, protocol, or regression tasks.
+---
+
 # Fluent Bit Repository Skill
 
 Use this skill when working in the Fluent Bit repository or in a similar
@@ -56,15 +61,20 @@ ctest --test-dir build -R <name> --output-on-failure
 ./build/bin/fluent-bit -c conf/fluent-bit.conf
 ```
 
-On Windows, skip runtime test cases. Runtime tests are not supported there yet,
-so configure with runtime tests disabled, use applicable non-runtime
-verification, and report the runtime-test skip:
+Windows supports runtime-test builds and execution on the latest master
+revision. Initialize the appropriate MSVC environment, configure runtime tests,
+and prefer focused targets or CTest matches:
 
 ```sh
-cmake -S . -B build -DFLB_TESTS_RUNTIME=Off -DFLB_TESTS_INTERNAL=On
-cmake --build build -j8
-ctest --test-dir build -R <non-runtime-name> --output-on-failure
+cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On
+cmake --build build --target <flb-rt-target>
+ctest --test-dir build -R '^<flb-rt-target>$' --output-on-failure
 ```
+
+The GitHub Actions Windows unit-test matrix executes runtime tests only for x64
+to control CI running time. Keep that workflow policy scoped to GitHub Actions;
+local agents and AI cloud builds should enable and run applicable runtime tests
+without inheriting the x86/ARM64 CI restriction.
 
 For Python integration scenarios:
 
@@ -82,8 +92,6 @@ Final responses for implementation tasks should include:
 - The exact verification commands run.
 - Pass/fail status.
 - Whether valgrind was used when integration coverage applies.
-- Any runtime tests skipped on Windows because runtime test cases are
-  unsupported there.
 - Any bundled library patch touched, including the upstream project/path and
   confirmation that the user approved editing it.
 - Any concrete blocker for required tests that could not run.

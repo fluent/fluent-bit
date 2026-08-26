@@ -1,0 +1,113 @@
+name: Input HTTP pause and lifecycle tests
+
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/input-http-pause-tests.yaml'
+      - 'include/fluent-bit/flb_connection.h'
+      - 'include/fluent-bit/flb_downstream.h'
+      - 'include/fluent-bit/http_server/**'
+      - 'plugins/in_elasticsearch/**'
+      - 'plugins/in_http/**'
+      - 'plugins/in_opentelemetry/**'
+      - 'plugins/in_prometheus_remote_write/**'
+      - 'plugins/in_splunk/**'
+      - 'src/flb_downstream.c'
+      - 'src/flb_network.c'
+      - 'src/http_server/**'
+      - 'tests/integration/scenarios/in_elasticsearch/**'
+      - 'tests/integration/scenarios/in_http/**'
+      - 'tests/integration/scenarios/in_http_max_connections/**'
+      - 'tests/integration/scenarios/in_opentelemetry/**'
+      - 'tests/integration/scenarios/in_prometheus_remote_write/**'
+      - 'tests/integration/scenarios/in_splunk/**'
+      - 'tests/integration/src/**'
+      - 'tests/internal/http_server.c'
+  push:
+    branches:
+      - master
+    paths:
+      - 'include/fluent-bit/flb_connection.h'
+      - 'include/fluent-bit/flb_downstream.h'
+      - 'include/fluent-bit/http_server/**'
+      - 'plugins/in_elasticsearch/**'
+      - 'plugins/in_http/**'
+      - 'plugins/in_opentelemetry/**'
+      - 'plugins/in_prometheus_remote_write/**'
+      - 'plugins/in_splunk/**'
+      - 'src/flb_downstream.c'
+      - 'src/flb_network.c'
+      - 'src/http_server/**'
+      - 'tests/integration/scenarios/in_elasticsearch/**'
+      - 'tests/integration/scenarios/in_http/**'
+      - 'tests/integration/scenarios/in_http_max_connections/**'
+      - 'tests/integration/scenarios/in_opentelemetry/**'
+      - 'tests/integration/scenarios/in_prometheus_remote_write/**'
+      - 'tests/integration/scenarios/in_splunk/**'
+      - 'tests/integration/src/**'
+      - 'tests/internal/http_server.c'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused-linux:
+    name: Focused Linux integration and Valgrind
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bison \
+            build-essential \
+            cmake \
+            flex \
+            libbpf-dev \
+            libssl-dev \
+            libsystemd-dev \
+            libyaml-dev \
+            python3-venv \
+            valgrind
+
+      - name: Configure and build
+        run: |
+          tests/integration/setup-venv.sh
+          cmake -S . -B build \
+            -DFLB_TESTS_RUNTIME=On \
+            -DFLB_TESTS_INTERNAL=On
+          cmake --build build -j8
+
+      - name: Run focused integration tests
+        run: |
+          tests/integration/.venv/bin/python -m pytest -q \
+            tests/integration/scenarios/in_http/tests/test_in_http_001.py \
+            tests/integration/scenarios/in_http_max_connections/tests/test_in_http_max_connections_001.py \
+            tests/integration/scenarios/in_elasticsearch/tests/test_in_elasticsearch_001.py \
+            tests/integration/scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py \
+            tests/integration/scenarios/in_prometheus_remote_write/tests/test_in_prometheus_remote_write_001.py \
+            tests/integration/scenarios/in_splunk/tests/test_in_splunk_001.py \
+            -k 'pause_resume or shutdown_while or async_tls_accept_timeout or max_connections or idle_timeout'
+
+      - name: Run focused integration tests with strict Valgrind
+        env:
+          VALGRIND: 1
+          VALGRIND_STRICT: 1
+        run: |
+          tests/integration/.venv/bin/python -m pytest -q \
+            tests/integration/scenarios/in_http/tests/test_in_http_001.py \
+            tests/integration/scenarios/in_http_max_connections/tests/test_in_http_max_connections_001.py \
+            tests/integration/scenarios/in_elasticsearch/tests/test_in_elasticsearch_001.py \
+            tests/integration/scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py \
+            tests/integration/scenarios/in_prometheus_remote_write/tests/test_in_prometheus_remote_write_001.py \
+            tests/integration/scenarios/in_splunk/tests/test_in_splunk_001.py \
+            -k 'pause_resume or shutdown_while or async_tls_accept_timeout or max_connections or idle_timeout'

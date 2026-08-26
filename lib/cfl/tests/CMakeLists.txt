@@ -11,6 +11,7 @@ set(UNIT_TESTS_FILES
   hash.c
   list.c
   variant.c
+  arena.c
   object.c
   version.c
   utils.c
@@ -39,6 +40,7 @@ set(PUBLIC_HEADERS
   cfl_time.h
   cfl_utils.h
   cfl_variant.h
+  cfl_arena.h
   cfl_version.h
   )
 
