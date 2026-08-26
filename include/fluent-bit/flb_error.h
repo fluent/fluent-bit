@@ -26,6 +26,7 @@
 #define FLB_ERR_CFG_FLUSH             20
 #define FLB_ERR_CFG_FLUSH_CREATE      21
 #define FLB_ERR_CFG_FLUSH_REGISTER    22
+#define FLB_ERR_EVENT_LOOP_CREATE     30
 #define FLB_ERR_CUSTOM_INVALID        49
 #define FLB_ERR_INPUT_INVALID         50
 #define FLB_ERR_INPUT_UNDEF           51
