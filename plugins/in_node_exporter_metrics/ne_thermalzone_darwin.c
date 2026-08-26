@@ -22,7 +22,7 @@
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <math.h>
 #include <stdint.h>
-#include <string.h>
+#include <stdio.h>
 #include <sys/sysctl.h>
 
 #include "ne.h"
@@ -219,7 +219,9 @@ static int copy_cf_string(CFStringRef source, char *destination, size_t size)
 static int update_temperatures(struct flb_ne *ctx, uint64_t timestamp)
 {
     int index;
+    int name_result;
     int temperature_count;
+    int unnamed_sensor_count;
     int32_t page;
     int32_t usage;
     double temperature;
@@ -277,11 +279,28 @@ static int update_temperatures(struct flb_ne *ctx, uint64_t timestamp)
 
     service_count = CFArrayGetCount(services);
     temperature_count = 0;
+    unnamed_sensor_count = 0;
 
     for (index = 0; index < service_count; index++) {
         service = (IOHIDServiceClientRef) CFArrayGetValueAtIndex(services, index);
         if (service == NULL) {
             continue;
+        }
+
+        name_result = -1;
+        name_ref = IOHIDServiceClientCopyProperty(service, CFSTR("Product"));
+        if (name_ref != NULL) {
+            if (CFGetTypeID(name_ref) == CFStringGetTypeID()) {
+                name_result = copy_cf_string((CFStringRef) name_ref,
+                                             sensor_name, sizeof(sensor_name));
+            }
+            CFRelease(name_ref);
+        }
+
+        if (name_result != 0) {
+            unnamed_sensor_count++;
+            snprintf(sensor_name, sizeof(sensor_name),
+                     "Unknown #%d", unnamed_sensor_count);
         }
 
         event = IOHIDServiceClientCopyEvent(service, NE_IOHID_EVENT_TYPE_TEMPERATURE,
@@ -296,15 +315,6 @@ static int update_temperatures(struct flb_ne *ctx, uint64_t timestamp)
 
         if (!isfinite(temperature) || temperature < NE_ABSOLUTE_ZERO_CELSIUS) {
             continue;
-        }
-
-        memcpy(sensor_name, "Unknown", sizeof("Unknown"));
-        name_ref = IOHIDServiceClientCopyProperty(service, CFSTR("Product"));
-        if (name_ref != NULL) {
-            if (CFGetTypeID(name_ref) == CFStringGetTypeID()) {
-                copy_cf_string((CFStringRef) name_ref, sensor_name, sizeof(sensor_name));
-            }
-            CFRelease(name_ref);
         }
 
         cmt_gauge_set(ctx->darwin_thermal_temperature, timestamp, temperature,
