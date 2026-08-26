@@ -23,8 +23,11 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_output_plugin.h>
-
+#ifdef FLB_SYSTEM_WINDOWS
+#include "pgsql_loadlib.h"
+#else
 #include <libpq-fe.h>
+#endif
 
 #define FLB_PGSQL_HOST "127.0.0.1"
 #define FLB_PGSQL_PORT 5432
