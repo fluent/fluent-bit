@@ -141,7 +141,7 @@ static void verify_decoded_values(struct flb_log_event *event,
             seen_argv = FLB_TRUE;
             TEST_CHECK(kv->val.type == MSGPACK_OBJECT_STR);
             TEST_CHECK(kv->val.via.str.size ==
-                       strlen(original->details.execve.argv));
+                       strlen(original->details.execve.argv[0]));
             TEST_CHECK(strncmp(kv->val.via.str.ptr,
                                original->details.execve.argv[0],
                                kv->val.via.str.size) == 0);
