@@ -6,7 +6,6 @@ import tempfile
 import requests
 
 from server.http_server import data_storage, http_server_run
-from utils.memory_check import memory_check_enabled
 from utils.test_service import FluentBitTestService
 
 
@@ -104,7 +103,7 @@ class Service:
         self.service.stop()
 
     def wait_for_records(self):
-        timeout = 60 if memory_check_enabled() else 20
+        timeout = 60 if os.environ.get("VALGRIND") or os.environ.get("LEAKS") else 20
 
         self.service.wait_for_condition(
             lambda: count_loki_values() >= RECORD_COUNT,
