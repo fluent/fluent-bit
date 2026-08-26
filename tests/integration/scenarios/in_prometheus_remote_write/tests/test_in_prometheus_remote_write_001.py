@@ -1,4 +1,7 @@
+import contextlib
+import http.server
 import os
+import threading
 import time
 
 import pytest
@@ -41,6 +44,9 @@ PROM_RW_CASES = [
         "sender_config": "sender_tls.yaml",
     },
 ]
+
+FRESH_METRIC = "backport_fresh_metric"
+STALE_METRIC = "backport_stale_metric"
 
 
 def _read_file(path):
@@ -104,6 +110,38 @@ class Service:
         raise TimeoutError(f"Timed out waiting for {pattern} in {path}")
 
 
+class _PrometheusSourceHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        now_ms = int(time.time() * 1000)
+        body = (
+            f"# TYPE {FRESH_METRIC} gauge\n"
+            f"{FRESH_METRIC} 2 {now_ms}\n"
+            f"# TYPE {STALE_METRIC} gauge\n"
+            f"{STALE_METRIC} 1 {now_ms - 7200000}\n"
+        ).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; version=0.0.4")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, fmt, *args):
+        return
+
+
+@contextlib.contextmanager
+def _run_prometheus_source():
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _PrometheusSourceHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server.server_address[1]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
 @pytest.mark.parametrize("workers_enabled", [False, True], ids=["single_listener", "workers_4"])
 @pytest.mark.parametrize("case", PROM_RW_CASES, ids=[case["id"] for case in PROM_RW_CASES])
 def test_in_prometheus_remote_write_matrix(case, workers_enabled):
@@ -128,3 +166,26 @@ def test_in_prometheus_remote_write_matrix(case, workers_enabled):
         assert "fluentbit_input_metrics_scrapes_total" in receiver_log
     finally:
         service.stop()
+
+
+def test_prometheus_remote_write_expires_stale_metrics():
+    with _run_prometheus_source() as source_port:
+        previous_source_port = os.environ.get("PROM_SCRAPE_SOURCE_PORT")
+        os.environ["PROM_SCRAPE_SOURCE_PORT"] = str(source_port)
+        service = Service("receiver_http1_cleartext.yaml", "sender_stale_metrics.yaml")
+
+        try:
+            service.start()
+            receiver_log = service.wait_for_log(
+                service.receiver.log_file,
+                FRESH_METRIC,
+                timeout=30,
+                interval=1,
+            )
+            assert STALE_METRIC not in receiver_log
+        finally:
+            service.stop()
+            if previous_source_port is None:
+                os.environ.pop("PROM_SCRAPE_SOURCE_PORT", None)
+            else:
+                os.environ["PROM_SCRAPE_SOURCE_PORT"] = previous_source_port
