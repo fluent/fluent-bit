@@ -23,6 +23,14 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_kv.h>
 
+#include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_exp_histogram.h>
+#include <cmetrics/cmt_gauge.h>
+#include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_map.h>
+#include <cmetrics/cmt_summary.h>
+#include <cmetrics/cmt_untyped.h>
+
 #ifdef FLB_HAVE_SIGNV4
 #ifdef FLB_HAVE_AWS
 #include <fluent-bit/flb_aws_credentials.h>
@@ -34,6 +42,87 @@
 #include "remote_write_conf.h"
 
 #define FLB_PROMETHEUS_REMOTE_WRITE_METRIC_MAX_AGE_SECONDS 3600
+#define FLB_PROMETHEUS_REMOTE_WRITE_NSEC_PER_SEC           1000000000ULL
+
+static void metric_storage_clear(struct cmt_metric *metric)
+{
+    if (metric->hist_buckets != NULL) {
+        flb_free(metric->hist_buckets);
+    }
+    if (metric->exp_hist_positive_buckets != NULL) {
+        flb_free(metric->exp_hist_positive_buckets);
+    }
+    if (metric->exp_hist_negative_buckets != NULL) {
+        flb_free(metric->exp_hist_negative_buckets);
+    }
+    if (metric->sum_quantiles != NULL) {
+        flb_free(metric->sum_quantiles);
+    }
+
+    memset(metric, 0, sizeof(struct cmt_metric));
+    cfl_list_init(&metric->labels);
+}
+
+static void map_metrics_expire(struct cmt_map *map, uint64_t expiration)
+{
+    struct cfl_list *tmp;
+    struct cfl_list *head;
+    struct cmt_metric *metric;
+
+    if (map->metric_static_set == CMT_TRUE &&
+        map->metric.timestamp < expiration) {
+        metric_storage_clear(&map->metric);
+        map->metric_static_set = CMT_FALSE;
+    }
+
+    cfl_list_foreach_safe(head, tmp, &map->metrics) {
+        metric = cfl_list_entry(head, struct cmt_metric, _head);
+        if (metric->timestamp < expiration) {
+            cmt_map_metric_destroy(metric);
+        }
+    }
+}
+
+static void metrics_expire(struct cmt *cmt, uint64_t expiration)
+{
+    struct cfl_list *head;
+    struct cmt_counter *counter;
+    struct cmt_gauge *gauge;
+    struct cmt_summary *summary;
+    struct cmt_histogram *histogram;
+    struct cmt_untyped *untyped;
+    struct cmt_exp_histogram *exp_histogram;
+
+    cfl_list_foreach(head, &cmt->counters) {
+        counter = cfl_list_entry(head, struct cmt_counter, _head);
+        map_metrics_expire(counter->map, expiration);
+    }
+
+    cfl_list_foreach(head, &cmt->gauges) {
+        gauge = cfl_list_entry(head, struct cmt_gauge, _head);
+        map_metrics_expire(gauge->map, expiration);
+    }
+
+    cfl_list_foreach(head, &cmt->summaries) {
+        summary = cfl_list_entry(head, struct cmt_summary, _head);
+        map_metrics_expire(summary->map, expiration);
+    }
+
+    cfl_list_foreach(head, &cmt->histograms) {
+        histogram = cfl_list_entry(head, struct cmt_histogram, _head);
+        map_metrics_expire(histogram->map, expiration);
+    }
+
+    cfl_list_foreach(head, &cmt->untypeds) {
+        untyped = cfl_list_entry(head, struct cmt_untyped, _head);
+        map_metrics_expire(untyped->map, expiration);
+    }
+
+    cfl_list_foreach(head, &cmt->exp_histograms) {
+        exp_histogram = cfl_list_entry(head, struct cmt_exp_histogram, _head);
+        map_metrics_expire(exp_histogram->map, expiration);
+    }
+}
 
 static int http_post(struct prometheus_remote_write_context *ctx,
                      const void *body, size_t body_len,
@@ -308,7 +397,7 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
     result = FLB_OK;
     expiration = cfl_time_now() -
                  (FLB_PROMETHEUS_REMOTE_WRITE_METRIC_MAX_AGE_SECONDS *
-                  FLB_NSEC_IN_SEC);
+                  FLB_PROMETHEUS_REMOTE_WRITE_NSEC_PER_SEC);
 
     /* Buffer to concatenate multiple metrics contexts */
     buf = flb_sds_create_size(event_chunk->size);
@@ -326,7 +415,7 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
                                             (char *) event_chunk->data,
                                             event_chunk->size, &off)) == ok) {
         /* Exclude samples that remote write backends consider stale. */
-        cmt_expire(cmt, expiration);
+        metrics_expire(cmt, expiration);
 
         /* append labels set by config */
         append_labels(ctx, cmt);
