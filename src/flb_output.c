@@ -821,8 +821,16 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     if (plugin->flags & FLB_OUTPUT_NET) {
         ret = flb_net_host_set(plugin->name, &instance->host, output);
         if (ret != 0) {
-            if (instance->flags & FLB_OUTPUT_SYNCHRONOUS) {
+            if ((instance->flags & FLB_OUTPUT_SYNCHRONOUS) &&
+                instance->singleplex_queue != NULL) {
                 flb_task_queue_destroy(instance->singleplex_queue);
+            }
+            if (instance->callback != NULL) {
+                flb_callback_destroy(instance->callback);
+            }
+            if (plugin->type != FLB_OUTPUT_PLUGIN_CORE &&
+                instance->context != NULL) {
+                flb_free(instance->context);
             }
             flb_free(instance->http_server_config);
             flb_free(instance);
