@@ -73,65 +73,114 @@ struct otlp_metrics_scope_state {
 static msgpack_object *msgpack_map_get_object(msgpack_object_map *map,
                                               const char *key);
 
+/*
+ * stream_hash_msgpack_object - feed a deterministic byte sequence for 'obj'
+ * into a running XXH3 state without allocating a serialisation buffer.
+ *
+ * Each value is prefixed with a type discriminant byte so that objects of
+ * different types with coincidentally equal content produce different hashes
+ * (e.g. the integer 1 and the boolean true are distinguishable).
+ * Container sizes are fed as native-endian uint32_t; this is consistent
+ * within a single process run, which is all these hashes are used for.
+ */
+static void stream_hash_msgpack_object(cfl_hash_state_t *state,
+                                       msgpack_object *obj)
+{
+    uint32_t sz;
+    uint8_t  tag;
+    size_t   i;
+
+    tag = (obj == NULL) ? (uint8_t) MSGPACK_OBJECT_NIL : (uint8_t) obj->type;
+    cfl_hash_64bits_update(state, &tag, 1);
+
+    if (obj == NULL) {
+        return;
+    }
+
+    switch (obj->type) {
+    case MSGPACK_OBJECT_NIL:
+        break;
+
+    case MSGPACK_OBJECT_BOOLEAN:
+        tag = obj->via.boolean ? 1 : 0;
+        cfl_hash_64bits_update(state, &tag, 1);
+        break;
+
+    case MSGPACK_OBJECT_POSITIVE_INTEGER:
+        cfl_hash_64bits_update(state, &obj->via.u64, sizeof(obj->via.u64));
+        break;
+
+    case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+        cfl_hash_64bits_update(state, &obj->via.i64, sizeof(obj->via.i64));
+        break;
+
+    case MSGPACK_OBJECT_FLOAT32:
+    case MSGPACK_OBJECT_FLOAT64:
+        cfl_hash_64bits_update(state, &obj->via.u64, sizeof(obj->via.u64));
+        break;
+
+    case MSGPACK_OBJECT_STR:
+        sz = (uint32_t) obj->via.str.size;
+        cfl_hash_64bits_update(state, &sz, sizeof(sz));
+        cfl_hash_64bits_update(state, obj->via.str.ptr, obj->via.str.size);
+        break;
+
+    case MSGPACK_OBJECT_BIN:
+        sz = (uint32_t) obj->via.bin.size;
+        cfl_hash_64bits_update(state, &sz, sizeof(sz));
+        cfl_hash_64bits_update(state, obj->via.bin.ptr, obj->via.bin.size);
+        break;
+
+    case MSGPACK_OBJECT_ARRAY:
+        sz = obj->via.array.size;
+        cfl_hash_64bits_update(state, &sz, sizeof(sz));
+        for (i = 0; i < obj->via.array.size; i++) {
+            stream_hash_msgpack_object(state, &obj->via.array.ptr[i]);
+        }
+        break;
+
+    case MSGPACK_OBJECT_MAP:
+        sz = obj->via.map.size;
+        cfl_hash_64bits_update(state, &sz, sizeof(sz));
+        for (i = 0; i < obj->via.map.size; i++) {
+            stream_hash_msgpack_object(state, &obj->via.map.ptr[i].key);
+            stream_hash_msgpack_object(state, &obj->via.map.ptr[i].val);
+        }
+        break;
+
+    case MSGPACK_OBJECT_EXT:
+        tag = (uint8_t) obj->via.ext.type;
+        cfl_hash_64bits_update(state, &tag, 1);
+        sz = (uint32_t) obj->via.ext.size;
+        cfl_hash_64bits_update(state, &sz, sizeof(sz));
+        cfl_hash_64bits_update(state, obj->via.ext.ptr, obj->via.ext.size);
+        break;
+
+    default:
+        break;
+    }
+}
+
 static uint64_t msgpack_object_hash(msgpack_object *object)
 {
-    uint64_t        hash;
-    msgpack_sbuffer buffer;
-    msgpack_packer  packer;
+    cfl_hash_state_t state;
 
-    if (object == NULL) {
-        return cfl_hash_64bits("null", 4);
-    }
-
-    msgpack_sbuffer_init(&buffer);
-    msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
-
-    if (msgpack_pack_object(&packer, *object) != 0) {
-        msgpack_sbuffer_destroy(&buffer);
-        return 0;
-    }
-
-    hash = cfl_hash_64bits(buffer.data, buffer.size);
-    msgpack_sbuffer_destroy(&buffer);
-
-    return hash;
+    cfl_hash_64bits_reset(&state);
+    stream_hash_msgpack_object(&state, object);
+    return cfl_hash_64bits_digest(&state);
 }
 
 static uint64_t msgpack_object_pair_hash(msgpack_object *left,
                                          msgpack_object *right)
 {
-    uint64_t        hash;
-    msgpack_sbuffer buffer;
-    msgpack_packer  packer;
+    cfl_hash_state_t state;
+    uint8_t          marker = 2; /* 2-element tuple discriminant */
 
-    msgpack_sbuffer_init(&buffer);
-    msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
-
-    if (msgpack_pack_array(&packer, 2) != 0) {
-        msgpack_sbuffer_destroy(&buffer);
-        return 0;
-    }
-
-    if (left == NULL) {
-        msgpack_pack_nil(&packer);
-    }
-    else if (msgpack_pack_object(&packer, *left) != 0) {
-        msgpack_sbuffer_destroy(&buffer);
-        return 0;
-    }
-
-    if (right == NULL) {
-        msgpack_pack_nil(&packer);
-    }
-    else if (msgpack_pack_object(&packer, *right) != 0) {
-        msgpack_sbuffer_destroy(&buffer);
-        return 0;
-    }
-
-    hash = cfl_hash_64bits(buffer.data, buffer.size);
-    msgpack_sbuffer_destroy(&buffer);
-
-    return hash;
+    cfl_hash_64bits_reset(&state);
+    cfl_hash_64bits_update(&state, &marker, 1);
+    stream_hash_msgpack_object(&state, left);
+    stream_hash_msgpack_object(&state, right);
+    return cfl_hash_64bits_digest(&state);
 }
 
 static msgpack_object *resource_schema_url_object(msgpack_object *resource_object,
@@ -1280,13 +1329,25 @@ static struct otlp_logs_scope_state *append_logs_scope_state(
     return state;
 }
 
+/*
+ * ensure_default_logs_scope_state — find or create the synthetic default
+ * resource+scope used for ungrouped log records (require_otel_metadata=false).
+ *
+ * Return values:
+ *   0  success
+ *   1  record silently dropped because max_resources or max_scopes would be
+ *      exceeded (caller should continue to the next event)
+ *  -1  allocation failure
+ */
 static int ensure_default_logs_scope_state(
     struct flb_json_mut_doc *doc,
     struct flb_json_mut_val *resource_logs,
     struct otlp_logs_resource_state **resource_states,
     size_t *resource_state_count,
     struct otlp_logs_resource_state **current_resource,
-    struct otlp_logs_scope_state **current_scope)
+    struct otlp_logs_scope_state **current_scope,
+    int max_resources,
+    int max_scopes)
 {
     uint64_t resource_hash;
     uint64_t scope_hash;
@@ -1299,6 +1360,10 @@ static int ensure_default_logs_scope_state(
                                                  0,
                                                  resource_hash);
     if (*current_resource == NULL) {
+        if (max_resources > 0 &&
+            *resource_state_count >= (size_t) max_resources) {
+            return 1;
+        }
         *current_resource = append_logs_resource_state(doc,
                                                        resource_logs,
                                                        resource_states,
@@ -1314,6 +1379,10 @@ static int ensure_default_logs_scope_state(
 
     *current_scope = find_logs_scope_state(*current_resource, 0, scope_hash);
     if (*current_scope == NULL) {
+        if (max_scopes > 0 &&
+            (*current_resource)->scope_count >= (size_t) max_scopes) {
+            return 1;
+        }
         *current_scope = append_logs_scope_state(doc,
                                                  *current_resource,
                                                  0,
@@ -1345,17 +1414,24 @@ static msgpack_object *find_log_body_candidate(msgpack_object *body,
     }
 
     for (index = 0; index < logs_body_key_count; index++) {
-        if (logs_body_keys[index] == NULL) {
+        const char *lookup = logs_body_keys[index];
+
+        if (lookup == NULL) {
             continue;
         }
 
-        candidate = msgpack_map_get_object(&body->via.map, logs_body_keys[index]);
+        /* Strip the leading '$' from record-accessor patterns (e.g. "$log" -> "log"). */
+        if (lookup[0] == '$' && lookup[1] != '\0') {
+            lookup = lookup + 1;
+        }
+
+        candidate = msgpack_map_get_object(&body->via.map, lookup);
         if (candidate != NULL) {
             if (matched_key != NULL) {
-                *matched_key = logs_body_keys[index];
+                *matched_key = lookup;
             }
             if (matched_key_length != NULL) {
-                *matched_key_length = strlen(logs_body_keys[index]);
+                *matched_key_length = strlen(lookup);
             }
             return candidate;
         }
@@ -1602,6 +1678,9 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
     int *result)
 {
     int                              ret;
+    int                              max_resources;
+    int                              max_scopes;
+    int                              skip_current_group;
     int32_t                          record_type;
     int                              logs_body_key_attributes;
     int                              require_otel_metadata;
@@ -1639,10 +1718,14 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
     logs_body_keys = default_logs_body_keys;
     logs_body_key_count = 2;
     logs_body_key_attributes = FLB_FALSE;
+    max_resources = 0;
+    max_scopes = 0;
 
     if (options != NULL) {
         require_otel_metadata = options->logs_require_otel_metadata;
         logs_body_key_attributes = options->logs_body_key_attributes;
+        max_resources = options->max_resources;
+        max_scopes    = options->max_scopes;
         if (options->logs_body_keys != NULL && options->logs_body_key_count > 0) {
             logs_body_keys = options->logs_body_keys;
             logs_body_key_count = options->logs_body_key_count;
@@ -1678,6 +1761,7 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
     resource_state_count = 0;
     current_resource = NULL;
     current_scope = NULL;
+    skip_current_group = FLB_FALSE;
     json = NULL;
 
     if (doc == NULL || root == NULL || resource_logs == NULL ||
@@ -1705,6 +1789,7 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
         }
 
         if (record_type == FLB_LOG_EVENT_GROUP_START) {
+            skip_current_group = FLB_FALSE;
             group_metadata = event.group_metadata != NULL ? event.group_metadata : event.metadata;
             group_body = event.body;
 
@@ -1723,6 +1808,7 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
                     return NULL;
                 }
 
+                skip_current_group = FLB_TRUE;
                 current_resource = NULL;
                 current_scope = NULL;
                 continue;
@@ -1744,6 +1830,15 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
                                                         resource_id,
                                                         resource_hash);
             if (current_resource == NULL) {
+                if (max_resources > 0 &&
+                    resource_state_count >= (size_t) max_resources) {
+                    /* resource limit reached: skip all records in this group */
+                    skip_current_group = FLB_TRUE;
+                    current_resource = NULL;
+                    current_scope = NULL;
+                    continue;
+                }
+
                 current_resource = append_logs_resource_state(doc,
                                                               resource_logs,
                                                               &resource_states,
@@ -1765,6 +1860,14 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
                                                   scope_id,
                                                   scope_hash);
             if (current_scope == NULL) {
+                if (max_scopes > 0 &&
+                    current_resource->scope_count >= (size_t) max_scopes) {
+                    /* scope limit reached: skip all records in this group */
+                    skip_current_group = FLB_TRUE;
+                    current_scope = NULL;
+                    continue;
+                }
+
                 current_scope = append_logs_scope_state(doc,
                                                         current_resource,
                                                         scope_id,
@@ -1782,8 +1885,13 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
             continue;
         }
         else if (record_type == FLB_LOG_EVENT_GROUP_END) {
+            skip_current_group = FLB_FALSE;
             current_resource = NULL;
             current_scope = NULL;
+            continue;
+        }
+
+        if (skip_current_group == FLB_TRUE) {
             continue;
         }
 
@@ -1796,17 +1904,22 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
                 return NULL;
             }
 
-            if (ensure_default_logs_scope_state(doc,
-                                                resource_logs,
-                                                &resource_states,
-                                                &resource_state_count,
-                                                &current_resource,
-                                                &current_scope) != 0) {
-                flb_log_event_decoder_destroy(&decoder);
-                destroy_logs_resource_states(resource_states, resource_state_count);
-                flb_json_mut_doc_destroy(doc);
-                set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, ENOMEM);
-                return NULL;
+            {
+                int cap_ret = ensure_default_logs_scope_state(
+                                  doc, resource_logs,
+                                  &resource_states, &resource_state_count,
+                                  &current_resource, &current_scope,
+                                  max_resources, max_scopes);
+                if (cap_ret == 1) {
+                    continue; /* record dropped: cap reached */
+                }
+                if (cap_ret != 0) {
+                    flb_log_event_decoder_destroy(&decoder);
+                    destroy_logs_resource_states(resource_states, resource_state_count);
+                    flb_json_mut_doc_destroy(doc);
+                    set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, ENOMEM);
+                    return NULL;
+                }
             }
         }
 
@@ -1848,16 +1961,868 @@ static flb_sds_t flb_opentelemetry_logs_to_otlp_json_render(
     return json;
 }
 
+/* =========================================================================
+ * Streaming OTLP/JSON log encoder
+ * =========================================================================
+ * Writes OTLP JSON directly into a growing flb_sds_t output buffer in a
+ * single pass over the msgpack event chunk.  No intermediate JSON AST is
+ * built, so the allocation cost per flush drops from ~80×N malloc()/free()
+ * calls (one per AST node, N records) to ~4 geometric SDS reallocs total.
+ *
+ * The pretty-print variant still uses the AST path; only the hot production
+ * path is replaced here.
+ * ========================================================================= */
+
+/* Internal: append s[0..len-1] to *b; evaluates to 0 on success, -1 on OOM */
+#define _SJ(b, s, l)   flb_sds_cat_safe((b), (s), (int)(l))
+#define _SJL(b, s)     _SJ((b), (s), (int)(sizeof(s) - 1))
+
+/* For int-returning helpers: bail out with -1 on OOM */
+#define SJCAT(b, s, l)  do { if (_SJ((b),(s),(l))  != 0) return -1; } while(0)
+#define SJCATL(b, s)    do { if (_SJL((b),(s))      != 0) return -1; } while(0)
+
+/* For the flb_sds_t-returning main function: jump to cleanup label */
+#define GJCATL(b, s)    do { if (_SJL((b),(s))      != 0) goto oom; } while(0)
+#define GCALL(f)        do { if ((f)                 != 0) goto oom; } while(0)
+
+/* Forward declaration — stream_otlp_any_value and stream_otlp_kv are mutually
+ * recursive (a kvlist value contains key-value pairs whose values are
+ * themselves AnyValues). */
+static int stream_otlp_any_value(flb_sds_t *buf, msgpack_object *obj);
+
+/*
+ * Append a quoted, JSON-escaped UTF-8 string to *buf.
+ * Batches runs of plain characters into a single cat call so that the common
+ * case (no escaping needed) is a single memcpy via flb_sds_cat_safe.
+ */
+static int stream_json_str(flb_sds_t *buf, const char *str, size_t len)
+{
+    static const char hex[] = "0123456789abcdef";
+    char              esc[6];
+    size_t            i;
+    size_t            run_start;
+    unsigned char     c;
+
+    SJCATL(buf, "\"");
+
+    for (i = 0, run_start = 0; i < len; i++) {
+        c = (unsigned char) str[i];
+        if (c != '"' && c != '\\' && c >= 0x20) {
+            continue; /* plain character — extend the run */
+        }
+        if (i > run_start) {
+            SJCAT(buf, str + run_start, i - run_start);
+        }
+        switch (c) {
+        case '"':  SJCATL(buf, "\\\""); break;
+        case '\\': SJCATL(buf, "\\\\"); break;
+        case '\b': SJCATL(buf, "\\b");  break;
+        case '\f': SJCATL(buf, "\\f");  break;
+        case '\n': SJCATL(buf, "\\n");  break;
+        case '\r': SJCATL(buf, "\\r");  break;
+        case '\t': SJCATL(buf, "\\t");  break;
+        default:
+            esc[0] = '\\'; esc[1] = 'u'; esc[2] = '0'; esc[3] = '0';
+            esc[4] = hex[(c >> 4) & 0xf];
+            esc[5] = hex[c & 0xf];
+            SJCAT(buf, esc, 6);
+            break;
+        }
+        run_start = i + 1;
+    }
+
+    if (i > run_start) {
+        SJCAT(buf, str + run_start, i - run_start);
+    }
+
+    return _SJL(buf, "\"");
+}
+
+/* Append base64-encoded binary to *buf (reuses the existing helper). */
+static int stream_base64_append(flb_sds_t *buf, const char *data, size_t len)
+{
+    flb_sds_t encoded;
+    int       ret;
+
+    if (binary_to_base64_sds(data, len, &encoded) != 0) {
+        return -1;
+    }
+    ret = _SJ(buf, encoded, (int) flb_sds_len(encoded));
+    flb_sds_destroy(encoded);
+    return ret;
+}
+
+/*
+ * Append a trace-id or span-id field value.
+ * Uses hex encoding when the binary length matches the expected OTLP size
+ * (16 bytes for trace, 8 for span), falling back to base64 otherwise —
+ * matching the behaviour of add_binary_id_field() in the AST path.
+ */
+static int stream_binary_id(flb_sds_t *buf,
+                             msgpack_object *obj,
+                             size_t expected_len)
+{
+    char hex_buf[33]; /* 16 bytes → 32 hex chars + NUL */
+
+    if (obj == NULL || obj->type != MSGPACK_OBJECT_BIN) {
+        return 0; /* field absent — omit silently */
+    }
+
+    if (obj->via.bin.size == expected_len &&
+        binary_to_hex(hex_buf, sizeof(hex_buf),
+                      obj->via.bin.ptr, obj->via.bin.size) == 0) {
+        return _SJ(buf, hex_buf, (int)(expected_len * 2));
+    }
+
+    return stream_base64_append(buf, obj->via.bin.ptr, obj->via.bin.size);
+}
+
+/*
+ * Append one OTLP KeyValue JSON object:
+ *   {"key":"<k>","value":<anyvalue>}
+ */
+static int stream_otlp_kv(flb_sds_t *buf,
+                           msgpack_object *key,
+                           msgpack_object *val)
+{
+    if (key->type != MSGPACK_OBJECT_STR) {
+        return -1;
+    }
+    SJCATL(buf, "{\"key\":");
+    if (stream_json_str(buf, key->via.str.ptr, key->via.str.size) != 0) return -1;
+    SJCATL(buf, ",\"value\":");
+    if (stream_otlp_any_value(buf, val) != 0) return -1;
+    return _SJL(buf, "}");
+}
+
+/*
+ * Append an OTLP AnyValue for a msgpack object.
+ * Produces the correct OTLP JSON type wrapper for every msgpack type.
+ */
+static int stream_otlp_any_value(flb_sds_t *buf, msgpack_object *obj)
+{
+    char   tmp[64];
+    int    n;
+    size_t i;
+
+    if (obj == NULL || obj->type == MSGPACK_OBJECT_NIL) {
+        return _SJL(buf, "{}");
+    }
+
+    switch (obj->type) {
+    case MSGPACK_OBJECT_STR:
+        SJCATL(buf, "{\"stringValue\":");
+        if (stream_json_str(buf, obj->via.str.ptr, obj->via.str.size) != 0) return -1;
+        return _SJL(buf, "}");
+
+    case MSGPACK_OBJECT_BOOLEAN:
+        return obj->via.boolean
+               ? _SJL(buf, "{\"boolValue\":true}")
+               : _SJL(buf, "{\"boolValue\":false}");
+
+    case MSGPACK_OBJECT_POSITIVE_INTEGER:
+        /* OTLP JSON spec: int64 values MUST be decimal strings */
+        n = snprintf(tmp, sizeof(tmp),
+                     "{\"intValue\":\"%" PRIu64 "\"}", obj->via.u64);
+        return _SJ(buf, tmp, n);
+
+    case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+        n = snprintf(tmp, sizeof(tmp),
+                     "{\"intValue\":\"%" PRId64 "\"}", obj->via.i64);
+        return _SJ(buf, tmp, n);
+
+    case MSGPACK_OBJECT_FLOAT32:
+    case MSGPACK_OBJECT_FLOAT64:
+        n = snprintf(tmp, sizeof(tmp), "{\"doubleValue\":%.17g}", obj->via.f64);
+        return _SJ(buf, tmp, n);
+
+    case MSGPACK_OBJECT_BIN:
+        SJCATL(buf, "{\"bytesValue\":\"");
+        if (stream_base64_append(buf, obj->via.bin.ptr, obj->via.bin.size) != 0) return -1;
+        return _SJL(buf, "\"}");
+
+    case MSGPACK_OBJECT_ARRAY:
+        SJCATL(buf, "{\"arrayValue\":{\"values\":[");
+        for (i = 0; i < obj->via.array.size; i++) {
+            if (i > 0) { SJCATL(buf, ","); }
+            if (stream_otlp_any_value(buf, &obj->via.array.ptr[i]) != 0) return -1;
+        }
+        return _SJL(buf, "]}}");
+
+    case MSGPACK_OBJECT_MAP:
+        SJCATL(buf, "{\"kvlistValue\":{\"values\":[");
+        for (i = 0; i < obj->via.map.size; i++) {
+            if (i > 0) { SJCATL(buf, ","); }
+            if (stream_otlp_kv(buf,
+                               &obj->via.map.ptr[i].key,
+                               &obj->via.map.ptr[i].val) != 0) return -1;
+        }
+        return _SJL(buf, "]}}");
+
+    default:
+        return _SJL(buf, "{}");
+    }
+}
+
+/* Append all key-value pairs from a msgpack map as OTLP KV objects. */
+static int stream_otlp_kv_from_map(flb_sds_t *buf, msgpack_object *map)
+{
+    size_t i;
+
+    if (map == NULL || map->type != MSGPACK_OBJECT_MAP) {
+        return 0;
+    }
+    for (i = 0; i < map->via.map.size; i++) {
+        if (i > 0) { SJCATL(buf, ","); }
+        if (stream_otlp_kv(buf,
+                           &map->via.map.ptr[i].key,
+                           &map->via.map.ptr[i].val) != 0) return -1;
+    }
+    return 0;
+}
+
+/*
+ * Same as stream_otlp_kv_from_map but skip one key by exact name match.
+ * Used when emitting body-key attributes: the matched body key is excluded
+ * from the attribute list.
+ */
+static int stream_otlp_kv_from_map_filtered(flb_sds_t          *buf,
+                                             msgpack_object *map,
+                                             const char           *skip_key,
+                                             size_t                skip_len)
+{
+    size_t               i;
+    int                  first = 1;
+    msgpack_object *key;
+
+    if (map == NULL || map->type != MSGPACK_OBJECT_MAP) {
+        return 0;
+    }
+    for (i = 0; i < map->via.map.size; i++) {
+        key = &map->via.map.ptr[i].key;
+        if (key->type != MSGPACK_OBJECT_STR) {
+            return -1;
+        }
+        if (skip_key != NULL &&
+            key->via.str.size == skip_len &&
+            memcmp(key->via.str.ptr, skip_key, skip_len) == 0) {
+            continue;
+        }
+        if (!first) { SJCATL(buf, ","); }
+        if (stream_otlp_kv(buf, key, &map->via.map.ptr[i].val) != 0) return -1;
+        first = 0;
+    }
+    return 0;
+}
+
+/*
+ * Append an OTLP Resource JSON object:
+ *   {"attributes":[...],"droppedAttributesCount":N}
+ * Mirrors logs_group_resource_to_json() from the AST path.
+ */
+/*
+ * Append an OTLP Resource JSON object.
+ * Mirrors logs_group_resource_to_json(): only writes "attributes" when the
+ * resource map contains that key, so a NULL/empty resource produces "{}"
+ * rather than "{\"attributes\":[]}".
+ */
+static int stream_otlp_resource(flb_sds_t *buf, msgpack_object *res)
+{
+    msgpack_object *attrs;
+    msgpack_object *dropped;
+    int             first = 1;
+    char            tmp[48];
+    int             n;
+
+    SJCATL(buf, "{");
+
+    if (res != NULL && res->type == MSGPACK_OBJECT_MAP) {
+        attrs = msgpack_map_get_object(&res->via.map, "attributes");
+        if (attrs != NULL) {
+            SJCATL(buf, "\"attributes\":[");
+            if (attrs->type == MSGPACK_OBJECT_MAP) {
+                if (stream_otlp_kv_from_map(buf, attrs) != 0) return -1;
+            }
+            SJCATL(buf, "]");
+            first = 0;
+        }
+
+        dropped = msgpack_map_get_object(&res->via.map, "dropped_attributes_count");
+        if (dropped != NULL &&
+            dropped->type == MSGPACK_OBJECT_POSITIVE_INTEGER &&
+            dropped->via.u64 > 0) {
+            if (!first) { SJCATL(buf, ","); }
+            n = snprintf(tmp, sizeof(tmp),
+                         "\"droppedAttributesCount\":%" PRIu64, dropped->via.u64);
+            SJCAT(buf, tmp, n);
+            first = 0;
+        }
+    }
+
+    (void) first;
+    return _SJL(buf, "}");
+}
+
+/*
+ * Append an OTLP InstrumentationScope JSON object:
+ *   {"name":"...","version":"...","attributes":[...]}
+ * Mirrors logs_group_scope_to_json() from the AST path.
+ */
+static int stream_otlp_scope(flb_sds_t *buf, msgpack_object *scope)
+{
+    msgpack_object *field;
+    int                   first = 1;
+    char                  tmp[48];
+    int                   n;
+
+    SJCATL(buf, "{");
+
+    if (scope == NULL || scope->type != MSGPACK_OBJECT_MAP) {
+        return _SJL(buf, "}");
+    }
+
+    field = msgpack_map_get_object(&scope->via.map, "name");
+    if (field != NULL && field->type == MSGPACK_OBJECT_STR) {
+        SJCATL(buf, "\"name\":");
+        if (stream_json_str(buf, field->via.str.ptr, field->via.str.size) != 0) return -1;
+        first = 0;
+    }
+
+    field = msgpack_map_get_object(&scope->via.map, "version");
+    if (field != NULL && field->type == MSGPACK_OBJECT_STR) {
+        if (!first) { SJCATL(buf, ","); }
+        SJCATL(buf, "\"version\":");
+        if (stream_json_str(buf, field->via.str.ptr, field->via.str.size) != 0) return -1;
+        first = 0;
+    }
+
+    field = msgpack_map_get_object(&scope->via.map, "attributes");
+    if (field != NULL && field->type == MSGPACK_OBJECT_MAP && field->via.map.size > 0) {
+        if (!first) { SJCATL(buf, ","); }
+        SJCATL(buf, "\"attributes\":[");
+        if (stream_otlp_kv_from_map(buf, field) != 0) return -1;
+        SJCATL(buf, "]");
+        first = 0;
+    }
+
+    field = msgpack_map_get_object(&scope->via.map, "dropped_attributes_count");
+    if (field != NULL &&
+        field->type == MSGPACK_OBJECT_POSITIVE_INTEGER &&
+        field->via.u64 > 0) {
+        if (!first) { SJCATL(buf, ","); }
+        n = snprintf(tmp, sizeof(tmp),
+                     "\"droppedAttributesCount\":%" PRIu64, field->via.u64);
+        SJCAT(buf, tmp, n);
+        first = 0;
+    }
+
+    (void) first;
+    return _SJL(buf, "}");
+}
+
+/*
+ * Append a complete OTLP LogRecord JSON object, replicating the field set
+ * and precedence rules of log_record_to_json() from the AST path.
+ */
+static int stream_otlp_log_record(flb_sds_t                                     *buf,
+                                   struct flb_log_event                          *event,
+                                   const char                                   **body_keys,
+                                   size_t                                         body_key_count,
+                                   int                                            body_key_attrs)
+{
+    msgpack_object *metadata     = event->metadata;
+    msgpack_object *otlp_meta    = NULL;
+    msgpack_object *field;
+    msgpack_object *body_val;
+    const char           *matched_key     = NULL;
+    size_t                matched_key_len = 0;
+    uint64_t              ts;
+    int                   first           = 1;
+    int                   attrs_written   = FLB_FALSE;
+    char                  tmp[64];
+    int                   n;
+
+    SJCATL(buf, "{");
+
+    if (metadata != NULL && metadata->type == MSGPACK_OBJECT_MAP) {
+        otlp_meta = msgpack_map_get_object(&metadata->via.map,
+                                           FLB_OTEL_LOGS_METADATA_KEY);
+    }
+
+    /* timeUnixNano — prefer the OTLP-preserved timestamp, fall back to the
+     * normalised event timestamp. */
+    if (otlp_meta != NULL && otlp_meta->type == MSGPACK_OBJECT_MAP &&
+        otlp_uint64_field_value(&otlp_meta->via.map, "timestamp", &ts) == 0) {
+        /* OTLP timestamp already extracted */
+    }
+    else if (event->raw_timestamp != NULL) {
+        if (event->raw_timestamp->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+            ts = event->raw_timestamp->via.u64;
+        }
+        else if (event->raw_timestamp->type == MSGPACK_OBJECT_NEGATIVE_INTEGER &&
+                 event->raw_timestamp->via.i64 >= 0) {
+            ts = (uint64_t) event->raw_timestamp->via.i64;
+        }
+        else {
+            ts = flb_time_to_nanosec(&event->timestamp);
+        }
+    }
+    else {
+        ts = flb_time_to_nanosec(&event->timestamp);
+    }
+
+    if (ts > 0) {
+        n = snprintf(tmp, sizeof(tmp), "\"timeUnixNano\":\"%" PRIu64 "\"", ts);
+        SJCAT(buf, tmp, n);
+        first = 0;
+    }
+
+    if (otlp_meta != NULL && otlp_meta->type == MSGPACK_OBJECT_MAP) {
+
+        /* observedTimeUnixNano */
+        field = msgpack_map_get_object(&otlp_meta->via.map, "observed_timestamp");
+        if (field != NULL) {
+            uint64_t obs = 0;
+            if (field->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                obs = field->via.u64;
+            }
+            else if (field->type == MSGPACK_OBJECT_NEGATIVE_INTEGER &&
+                     field->via.i64 >= 0) {
+                obs = (uint64_t) field->via.i64;
+            }
+            if (obs > 0) {
+                if (!first) { SJCATL(buf, ","); }
+                n = snprintf(tmp, sizeof(tmp),
+                             "\"observedTimeUnixNano\":\"%" PRIu64 "\"", obs);
+                SJCAT(buf, tmp, n);
+                first = 0;
+            }
+        }
+
+        /* severityNumber */
+        field = msgpack_map_get_object(&otlp_meta->via.map, "severity_number");
+        if (field != NULL) {
+            uint64_t sev = 0;
+            if (field->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                sev = field->via.u64;
+            }
+            else if (field->type == MSGPACK_OBJECT_NEGATIVE_INTEGER &&
+                     field->via.i64 >= 0) {
+                sev = (uint64_t) field->via.i64;
+            }
+            if (sev > 0) {
+                if (!first) { SJCATL(buf, ","); }
+                n = snprintf(tmp, sizeof(tmp), "\"severityNumber\":%" PRIu64, sev);
+                SJCAT(buf, tmp, n);
+                first = 0;
+            }
+        }
+
+        /* severityText */
+        field = msgpack_map_get_object(&otlp_meta->via.map, "severity_text");
+        if (field != NULL && field->type == MSGPACK_OBJECT_STR) {
+            if (!first) { SJCATL(buf, ","); }
+            SJCATL(buf, "\"severityText\":");
+            if (stream_json_str(buf, field->via.str.ptr, field->via.str.size) != 0) return -1;
+            first = 0;
+        }
+
+        /* attributes (from OTLP metadata) */
+        field = msgpack_map_get_object(&otlp_meta->via.map, "attributes");
+        if (field != NULL && field->type == MSGPACK_OBJECT_MAP &&
+            field->via.map.size > 0) {
+            if (!first) { SJCATL(buf, ","); }
+            SJCATL(buf, "\"attributes\":[");
+            if (stream_otlp_kv_from_map(buf, field) != 0) return -1;
+            SJCATL(buf, "]");
+            attrs_written = FLB_TRUE;
+            first = 0;
+        }
+
+        /* traceId */
+        field = msgpack_map_get_object(&otlp_meta->via.map, "trace_id");
+        if (field != NULL && field->type == MSGPACK_OBJECT_BIN) {
+            if (!first) { SJCATL(buf, ","); }
+            SJCATL(buf, "\"traceId\":\"");
+            if (stream_binary_id(buf, field, 16) != 0) return -1;
+            SJCATL(buf, "\"");
+            first = 0;
+        }
+
+        /* spanId */
+        field = msgpack_map_get_object(&otlp_meta->via.map, "span_id");
+        if (field != NULL && field->type == MSGPACK_OBJECT_BIN) {
+            if (!first) { SJCATL(buf, ","); }
+            SJCATL(buf, "\"spanId\":\"");
+            if (stream_binary_id(buf, field, 8) != 0) return -1;
+            SJCATL(buf, "\"");
+            first = 0;
+        }
+    }
+
+    /* body — use find_log_body_candidate to honour body_keys config */
+    body_val = find_log_body_candidate(event->body,
+                                       body_keys, body_key_count,
+                                       &matched_key, &matched_key_len);
+
+    /* attributes from body map (body_key_attributes=true) */
+    if (body_key_attrs == FLB_TRUE &&
+        matched_key != NULL &&
+        event->body != NULL &&
+        event->body->type == MSGPACK_OBJECT_MAP &&
+        attrs_written == FLB_FALSE) {
+        size_t i;
+        int    any = 0;
+        for (i = 0; i < event->body->via.map.size; i++) {
+            msgpack_object *k = &event->body->via.map.ptr[i].key;
+            if (k->type == MSGPACK_OBJECT_STR &&
+                !(k->via.str.size == matched_key_len &&
+                  memcmp(k->via.str.ptr, matched_key, matched_key_len) == 0)) {
+                any = 1;
+                break;
+            }
+        }
+        if (any) {
+            if (!first) { SJCATL(buf, ","); }
+            SJCATL(buf, "\"attributes\":[");
+            if (stream_otlp_kv_from_map_filtered(buf, event->body,
+                                                  matched_key,
+                                                  matched_key_len) != 0) return -1;
+            SJCATL(buf, "]");
+            first = 0;
+        }
+    }
+
+    if (body_val != NULL) {
+        if (!first) { SJCATL(buf, ","); }
+        SJCATL(buf, "\"body\":");
+        if (stream_otlp_any_value(buf, body_val) != 0) return -1;
+        first = 0;
+    }
+
+    (void) first;
+    return _SJL(buf, "}");
+}
+
+/*
+ * Main streaming render function.
+ *
+ * State machine mirrors flb_opentelemetry_logs_to_otlp_json_render() but
+ * writes JSON directly to a single flb_sds_t buffer rather than building an
+ * AST first.  Groups are NOT deduplicated across GROUP_START events; each
+ * GROUP_START opens a new resourceLogs entry.  For all real-world OTLP
+ * producers this is equivalent, since a given resource+scope pair appears as
+ * a single contiguous group within one chunk.
+ */
+/*
+ * Per-resource scope counter used to enforce max_scopes across GROUP_START
+ * events that share the same resource identity hash.  Stack-allocated; 128
+ * distinct resources per chunk is more than enough for any real workload.
+ */
+#define STREAM_MAX_RES_TRACK 128
+typedef struct { uint64_t hash; int scopes; } stream_res_scope_t;
+
+static flb_sds_t otlp_logs_stream_render(
+    const void                                       *data,
+    size_t                                            size,
+    const struct flb_opentelemetry_otlp_logs_options *opts,
+    int                                              *result)
+{
+    /* ── option resolution (mirrors flb_opentelemetry_logs_to_otlp_json_render) */
+    static const char *default_body_keys[] = {"log", "message"};
+    const char       **body_keys      = default_body_keys;
+    size_t             body_key_count = 2;
+    const char        *body_key_ptr   = NULL; /* wrapper for singular key */
+    int                body_key_attrs = FLB_FALSE;
+    int                require_meta   = FLB_TRUE; /* same default as AST path */
+    int                max_resources  = 0;
+    int                max_scopes     = 0;
+
+    if (opts != NULL) {
+        require_meta   = opts->logs_require_otel_metadata;
+        body_key_attrs = opts->logs_body_key_attributes;
+        max_resources  = opts->max_resources;
+        max_scopes     = opts->max_scopes;
+
+        if (opts->logs_body_keys != NULL && opts->logs_body_key_count > 0) {
+            body_keys      = opts->logs_body_keys;
+            body_key_count = opts->logs_body_key_count;
+        }
+        else if (opts->logs_body_key != NULL) {
+            body_key_ptr   = opts->logs_body_key;
+            body_keys      = &body_key_ptr;
+            body_key_count = 1;
+        }
+    }
+
+    /* ── per-resource scope counter (for max_scopes enforcement) */
+    stream_res_scope_t res_scope[STREAM_MAX_RES_TRACK];
+    int                res_scope_count = 0;
+
+    /* ── state */
+    int                      ret;
+    int                      record_type;
+    int                      in_group              = FLB_FALSE;
+    int                      skip_group            = FLB_FALSE;
+    int                      first_group           = FLB_TRUE;
+    int                      first_record          = FLB_TRUE;
+    int                      resource_count        = 0;
+    int64_t                  resource_id;
+    int64_t                  scope_id;
+    /* Resource-level schemaUrl is emitted AFTER scopeLogs (matching the AST
+     * path in append_logs_resource_state).  We store a pointer into the
+     * immutable input buffer so we can emit it at group-close time. */
+    const char              *res_schema_url_ptr    = NULL;
+    size_t                   res_schema_url_len    = 0;
+    flb_sds_t                buf;
+    msgpack_object          *resource_obj;
+    msgpack_object          *scope_obj;
+    msgpack_object          *group_metadata;
+    msgpack_object          *group_body;
+    msgpack_object          *schema_url;
+    struct flb_log_event     event;
+    struct flb_log_event_decoder decoder;
+
+    /* ── OTLP pre-check (same as AST path when require_meta is set) */
+    if (require_meta == FLB_TRUE &&
+        flb_opentelemetry_logs_chunk_is_otlp(data, size) != FLB_TRUE) {
+        set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_LOG_EVENT, EINVAL);
+        return NULL;
+    }
+
+    /* Pre-size at 4× the raw msgpack: OTLP JSON is typically 3–5× larger
+     * for K8s log records.  SDS grows geometrically so underestimates are
+     * cheap (2–3 extra reallocs at most). */
+    buf = flb_sds_create_size(size > 0 ? size * 4 : 256);
+    if (buf == NULL) {
+        set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, ENOMEM);
+        return NULL;
+    }
+
+    GJCATL(&buf, "{\"resourceLogs\":[");
+
+    ret = flb_log_event_decoder_init(&decoder, (char *) data, size);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_sds_destroy(buf);
+        set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_LOG_EVENT, EINVAL);
+        return NULL;
+    }
+    flb_log_event_decoder_read_groups(&decoder, FLB_TRUE);
+
+    while ((ret = flb_log_event_decoder_next(&decoder, &event)) ==
+           FLB_EVENT_DECODER_SUCCESS) {
+
+        ret = flb_log_event_decoder_get_record_type(&event, &record_type);
+        if (ret != 0) {
+            flb_log_event_decoder_destroy(&decoder);
+            flb_sds_destroy(buf);
+            set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_LOG_EVENT, EINVAL);
+            return NULL;
+        }
+
+        /* ── GROUP_START ─────────────────────────────────────────────── */
+        if (record_type == FLB_LOG_EVENT_GROUP_START) {
+
+            if (in_group) {
+                /* close logRecords ] scope_entry } scopeLogs ] */
+                GJCATL(&buf, "]}]");
+                /* emit resource-level schemaUrl before closing the entry */
+                if (res_schema_url_ptr != NULL) {
+                    GJCATL(&buf, ",\"schemaUrl\":");
+                    GCALL(stream_json_str(&buf, res_schema_url_ptr, res_schema_url_len));
+                    res_schema_url_ptr = NULL;
+                }
+                /* close resource_entry } */
+                GJCATL(&buf, "}");
+                in_group = FLB_FALSE;
+            }
+
+            skip_group     = FLB_FALSE;
+            group_metadata = (event.group_metadata != NULL)
+                             ? event.group_metadata : event.metadata;
+            group_body     = event.body;
+
+            if (group_metadata == NULL ||
+                group_metadata->type != MSGPACK_OBJECT_MAP ||
+                msgpack_map_entry_is_string(&group_metadata->via.map,
+                                            FLB_OTEL_LOGS_SCHEMA_KEY,
+                                            FLB_OTEL_LOGS_SCHEMA_OTLP) != FLB_TRUE ||
+                msgpack_map_get_int64(&group_metadata->via.map,
+                                      "resource_id", &resource_id) != 0 ||
+                msgpack_map_get_int64(&group_metadata->via.map,
+                                      "scope_id", &scope_id) != 0) {
+                if (require_meta == FLB_TRUE) {
+                    flb_log_event_decoder_destroy(&decoder);
+                    flb_sds_destroy(buf);
+                    set_error(result,
+                              FLB_OPENTELEMETRY_OTLP_JSON_INVALID_LOG_EVENT, EINVAL);
+                    return NULL;
+                }
+                skip_group = FLB_TRUE;
+                continue;
+            }
+
+            if (max_resources > 0 && resource_count >= max_resources) {
+                skip_group = FLB_TRUE;
+                continue;
+            }
+
+            resource_obj = NULL;
+            scope_obj    = NULL;
+            if (group_body != NULL && group_body->type == MSGPACK_OBJECT_MAP) {
+                resource_obj = msgpack_map_get_object(&group_body->via.map, "resource");
+                scope_obj    = msgpack_map_get_object(&group_body->via.map, "scope");
+            }
+
+            /*
+             * max_scopes enforcement: track how many scopes each resource
+             * has accumulated.  We only hash when max_scopes is active to
+             * avoid the serialize-to-hash cost in the common (unlimited) case.
+             */
+            if (max_scopes > 0) {
+                uint64_t res_hash = resource_identity_hash(resource_obj, group_body);
+                int      rs_idx;
+                for (rs_idx = 0; rs_idx < res_scope_count; rs_idx++) {
+                    if (res_scope[rs_idx].hash == res_hash) {
+                        break;
+                    }
+                }
+                if (rs_idx < res_scope_count) {
+                    if (res_scope[rs_idx].scopes >= max_scopes) {
+                        skip_group = FLB_TRUE;
+                        continue;
+                    }
+                    res_scope[rs_idx].scopes++;
+                }
+                else if (res_scope_count < STREAM_MAX_RES_TRACK) {
+                    res_scope[res_scope_count].hash   = res_hash;
+                    res_scope[res_scope_count].scopes = 1;
+                    res_scope_count++;
+                }
+            }
+
+            if (!first_group) { GJCATL(&buf, ","); }
+            GJCATL(&buf, "{\"resource\":");
+            GCALL(stream_otlp_resource(&buf, resource_obj));
+
+            /* Store resource-level schemaUrl; it is written AFTER scopeLogs
+             * (mirroring append_logs_resource_state in the AST path). */
+            schema_url = resource_schema_url_object(resource_obj, group_body);
+            if (schema_url != NULL && schema_url->type == MSGPACK_OBJECT_STR) {
+                res_schema_url_ptr = schema_url->via.str.ptr;
+                res_schema_url_len = schema_url->via.str.size;
+            }
+            else {
+                res_schema_url_ptr = NULL;
+            }
+
+            GJCATL(&buf, ",\"scopeLogs\":[{\"scope\":");
+            GCALL(stream_otlp_scope(&buf, scope_obj));
+
+            if (scope_obj != NULL && scope_obj->type == MSGPACK_OBJECT_MAP) {
+                schema_url = msgpack_map_get_object(&scope_obj->via.map, "schema_url");
+                if (schema_url != NULL && schema_url->type == MSGPACK_OBJECT_STR) {
+                    GJCATL(&buf, ",\"schemaUrl\":");
+                    GCALL(stream_json_str(&buf,
+                                          schema_url->via.str.ptr,
+                                          schema_url->via.str.size));
+                }
+            }
+
+            GJCATL(&buf, ",\"logRecords\":[");
+
+            in_group     = FLB_TRUE;
+            first_group  = FLB_FALSE;
+            first_record = FLB_TRUE;
+            resource_count++;
+            continue;
+        }
+
+        /* ── GROUP_END ───────────────────────────────────────────────── */
+        if (record_type == FLB_LOG_EVENT_GROUP_END) {
+            if (in_group) {
+                GJCATL(&buf, "]}]");
+                if (res_schema_url_ptr != NULL) {
+                    GJCATL(&buf, ",\"schemaUrl\":");
+                    GCALL(stream_json_str(&buf, res_schema_url_ptr, res_schema_url_len));
+                    res_schema_url_ptr = NULL;
+                }
+                GJCATL(&buf, "}");
+                in_group = FLB_FALSE;
+            }
+            skip_group = FLB_FALSE;
+            continue;
+        }
+
+        /* ── NORMAL RECORD ───────────────────────────────────────────── */
+        if (skip_group) {
+            continue;
+        }
+
+        /* Open a default empty resource+scope for ungrouped records. */
+        if (!in_group) {
+            if (max_resources > 0 && resource_count >= max_resources) {
+                continue;
+            }
+            if (!first_group) { GJCATL(&buf, ","); }
+            /* Empty resource/scope mirrors what logs_group_resource_to_json(NULL)
+             * and logs_group_scope_to_json(NULL) produce: bare "{}". */
+            GJCATL(&buf,
+                   "{\"resource\":{},"
+                   "\"scopeLogs\":[{\"scope\":{},"
+                   "\"logRecords\":[");
+            in_group     = FLB_TRUE;
+            first_group  = FLB_FALSE;
+            first_record = FLB_TRUE;
+            resource_count++;
+        }
+
+        if (!first_record) { GJCATL(&buf, ","); }
+
+        GCALL(stream_otlp_log_record(&buf, &event,
+                                      body_keys, body_key_count, body_key_attrs));
+
+        first_record = FLB_FALSE;
+    }
+
+    if (in_group) {
+        GJCATL(&buf, "]}]");
+        if (res_schema_url_ptr != NULL) {
+            GJCATL(&buf, ",\"schemaUrl\":");
+            GCALL(stream_json_str(&buf, res_schema_url_ptr, res_schema_url_len));
+        }
+        GJCATL(&buf, "}");
+    }
+
+    GJCATL(&buf, "]}");
+
+    flb_log_event_decoder_destroy(&decoder);
+    set_result(result, FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+    return buf;
+
+oom:
+    flb_log_event_decoder_destroy(&decoder);
+    flb_sds_destroy(buf);
+    set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_NOT_SUPPORTED, ENOMEM);
+    return NULL;
+}
+#undef STREAM_MAX_RES_TRACK
+
+/* Clean up the streaming-encoder-local macros. */
+#undef _SJ
+#undef _SJL
+#undef SJCAT
+#undef SJCATL
+#undef GJCATL
+#undef GCALL
+
 flb_sds_t flb_opentelemetry_logs_to_otlp_json(const void *event_chunk_data,
                                               size_t event_chunk_size,
                                               struct flb_opentelemetry_otlp_logs_options *options,
                                               int *result)
 {
-    return flb_opentelemetry_logs_to_otlp_json_render(event_chunk_data,
-                                                      event_chunk_size,
-                                                      options,
-                                                      FLB_FALSE,
-                                                      result);
+    return otlp_logs_stream_render(event_chunk_data, event_chunk_size,
+                                   options, result);
 }
 
 flb_sds_t flb_opentelemetry_logs_to_otlp_json_pretty(const void *event_chunk_data,

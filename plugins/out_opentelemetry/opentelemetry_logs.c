@@ -936,12 +936,12 @@ static int logs_flush_to_otel(struct opentelemetry_context *ctx, struct flb_even
 
     opentelemetry__proto__collector__logs__v1__export_logs_service_request__pack(export_logs, body);
 
-    /* send post request to opentelemetry with content type application/x-protobuf */
     ret = opentelemetry_post(ctx, body, len,
                              event_chunk->tag,
                              flb_sds_len(event_chunk->tag),
                              ctx->logs_uri_sanitized,
-                             ctx->grpc_logs_uri);
+                             ctx->grpc_logs_uri,
+                             FLB_OPENTELEMETRY_MIME_PROTOBUF_LITERAL);
     flb_free(body);
 
     return ret;
@@ -1107,6 +1107,63 @@ static int set_scope_attributes(struct flb_record_accessor *ra,
     return 0;
 }
 
+static int otel_process_logs_json(struct flb_event_chunk *event_chunk,
+                                  struct opentelemetry_context *ctx)
+{
+    int ret;
+    int json_result;
+    size_t key_count;
+    size_t key_idx;
+    flb_sds_t json_payload;
+    struct mk_list *head;
+    struct opentelemetry_body_key *bk;
+    struct flb_opentelemetry_otlp_logs_options opts = {0};
+    const char **body_keys = NULL;
+
+    key_count = mk_list_size(&ctx->log_body_key_list);
+    if (key_count > 0) {
+        body_keys = flb_calloc(key_count, sizeof(const char *));
+        if (!body_keys) {
+            flb_errno();
+            return FLB_ERROR;
+        }
+
+        key_idx = 0;
+        mk_list_foreach(head, &ctx->log_body_key_list) {
+            bk = mk_list_entry(head, struct opentelemetry_body_key, _head);
+            body_keys[key_idx++] = bk->key;
+        }
+
+        opts.logs_body_keys = body_keys;
+        opts.logs_body_key_count = key_count;
+    }
+
+    opts.logs_body_key_attributes = ctx->logs_body_key_attributes;
+    opts.max_resources = ctx->max_resources;
+    opts.max_scopes    = ctx->max_scopes;
+
+    json_payload = flb_opentelemetry_logs_to_otlp_json(event_chunk->data,
+                                                       event_chunk->size,
+                                                       &opts,
+                                                       &json_result);
+    flb_free(body_keys);
+
+    if (json_payload == NULL) {
+        flb_plg_error(ctx->ins, "failed to encode logs as OTLP JSON (result=%d)", json_result);
+        return FLB_ERROR;
+    }
+
+    ret = opentelemetry_post(ctx,
+                             json_payload, flb_sds_len(json_payload),
+                             event_chunk->tag,
+                             flb_sds_len(event_chunk->tag),
+                             ctx->logs_uri_sanitized,
+                             ctx->grpc_logs_uri,
+                             FLB_OPENTELEMETRY_MIME_JSON_LITERAL);
+    flb_sds_destroy(json_payload);
+    return ret;
+}
+
 int otel_process_logs(struct flb_event_chunk *event_chunk,
                       struct flb_output_flush *out_flush,
                       struct flb_input_instance *ins, void *out_context,
@@ -1152,6 +1209,10 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
     size_t *tmp_scope_capacities = NULL;
 
     ctx = (struct opentelemetry_context *) out_context;
+
+    if (ctx->use_json_encoding) {
+        return otel_process_logs_json(event_chunk, ctx);
+    }
 
     decoder = flb_log_event_decoder_create((char *) event_chunk->data, event_chunk->size);
     if (decoder == NULL) {
