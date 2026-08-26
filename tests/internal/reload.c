@@ -5,6 +5,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/flb_lib.h>
+#include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_reload.h>
 
 #include <cfl/cfl.h>
@@ -22,6 +23,7 @@
 #define FLB_YAML                 FLB_TESTS_DATA_PATH "/data/reload/yaml/processor.yaml"
 #define FLB_YAML_MISSING_INCLUDE FLB_TESTS_DATA_PATH "/data/reload/yaml/missing_include.yaml"
 #define FLB_CLASSIC              FLB_TESTS_DATA_PATH "/data/reload/fluent-bit.conf"
+#define FLB_CLASSIC_PATH         FLB_TESTS_DATA_PATH "/data/reload/"
 
 void test_reconstruct_cf()
 {
@@ -147,11 +149,14 @@ void test_reload()
     cf = flb_cf_create_from_file(cf, FLB_CLASSIC);
     TEST_CHECK(cf != NULL);
 
+    ctx->config->conf_path = flb_strdup(FLB_CLASSIC_PATH);
+    TEST_CHECK(ctx->config->conf_path != NULL);
     ctx->config->conf_path_file = flb_sds_create(FLB_CLASSIC);
     ctx->config->enable_hot_reload = FLB_TRUE;
 
     status = flb_config_load_config_format(ctx->config, cf);
     TEST_CHECK(status == 0);
+    TEST_CHECK(flb_parser_get("reload_test", ctx->config) != NULL);
 
     /* Start the engine */
     status = flb_start(ctx);
@@ -161,13 +166,24 @@ void test_reload()
     sleep(2);
 
     status = flb_reload(ctx, cf_opts);
-    TEST_CHECK(status == 0);
+    if (!TEST_CHECK(status == 0)) {
+        flb_cf_destroy(cf_opts);
+        if (status == FLB_RELOAD_HALTED) {
+            flb_stop(ctx);
+            flb_destroy(ctx);
+        }
+        return;
+    }
 
     sleep(2);
 
     /* flb context should be replaced with flb_reload() */
     ctx = flb_context_get();
 
+    if (TEST_CHECK(ctx->config->conf_path != NULL)) {
+        TEST_CHECK(strcmp(ctx->config->conf_path, FLB_CLASSIC_PATH) == 0);
+    }
+    TEST_CHECK(flb_parser_get("reload_test", ctx->config) != NULL);
     TEST_CHECK(mk_list_size(&ctx->config->cf_opts->inputs) == 1);
     TEST_CHECK(mk_list_size(&ctx->config->inputs) == 2);
 
