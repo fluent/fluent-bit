@@ -83,7 +83,16 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kafka_rest, avro_http_header),
      "Specify if the format has avro header in http request"
     },
-
+    {
+     FLB_CONFIG_MAP_STR, "http_user", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kafka_rest, http_user),
+     "Set HTTP auth user"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "http_passwd", "",
+     0, FLB_TRUE, offsetof(struct flb_kafka_rest, http_passwd),
+     "Set HTTP auth password"
+    },
     /* EOF */
     {0}
 };
