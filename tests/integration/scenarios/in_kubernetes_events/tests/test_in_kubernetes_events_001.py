@@ -11,6 +11,7 @@ from utils.test_service import FluentBitTestService
 
 EVENT_UID = "watch-event-uid"
 RECOVERED_EVENT_UID = "post-recovery-event-uid"
+PREFIX_COLLISION_EVENT_UID = "prefix-collision-event-uid"
 
 
 def _event(resource_version, uid):
@@ -27,14 +28,14 @@ def _event(resource_version, uid):
 class _KubeApiServer(http.server.ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, server_address, handler_class):
+    def __init__(self, server_address, handler_class, event=None):
         super().__init__(server_address, handler_class)
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
         self.list_requests = 0
         self.watch_requests = 0
         self.watch_paths = []
-        self.event = _event(2, EVENT_UID)
+        self.event = event or _event(2, EVENT_UID)
         self.recovered_event = _event(3, RECOVERED_EVENT_UID)
 
 
@@ -100,8 +101,8 @@ class _KubeApiHandler(http.server.BaseHTTPRequestHandler):
 
 
 @contextlib.contextmanager
-def _run_kube_api_server():
-    server = _KubeApiServer(("127.0.0.1", 0), _KubeApiHandler)
+def _run_kube_api_server(event=None):
+    server = _KubeApiServer(("127.0.0.1", 0), _KubeApiHandler, event)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
@@ -175,3 +176,44 @@ def test_kubernetes_events_reconnects_stalled_watch(tmp_path):
         assert all("timeoutSeconds=1" in path for path in kube_api_server.watch_paths)
         assert log_text.count(EVENT_UID) == 1
         assert log_text.count(RECOVERED_EVENT_UID) == 1
+
+
+def test_kubernetes_events_requires_exact_field_names(tmp_path):
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    event = {
+        "metadataExtra": {
+            "creationTimestamp": "invalid",
+            "resourceVersion": "-1",
+            "uid": "wrong-metadata",
+        },
+        "metadata": {
+            "creationTimestampExtra": "invalid",
+            "resourceVersionExtra": "18446744073709551616",
+            "uidExtra": "wrong-uid",
+            "creationTimestamp": timestamp,
+            "resourceVersion": "2",
+            "uid": PREFIX_COLLISION_EVENT_UID,
+        },
+    }
+
+    with _run_kube_api_server(event) as kube_api_server:
+        config_file = _write_config(tmp_path, kube_api_server.server_address[1])
+        service = FluentBitTestService(os.fspath(config_file))
+        service.start()
+        log_file = service.flb.log_file
+
+        try:
+            service.wait_for_condition(
+                lambda: PREFIX_COLLISION_EVENT_UID
+                if PREFIX_COLLISION_EVENT_UID in read_file(log_file)
+                else None,
+                timeout=15,
+                interval=0.25,
+                description="a Kubernetes event with prefix-collision fields",
+            )
+        finally:
+            service.stop()
+
+        with open(log_file, encoding="utf-8") as log:
+            log_text = log.read()
+        assert log_text.count(PREFIX_COLLISION_EVENT_UID) == 1
