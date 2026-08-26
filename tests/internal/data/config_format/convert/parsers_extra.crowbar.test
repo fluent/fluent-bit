@@ -1,0 +1,20 @@
+D, [2017-11-23T08:50:11.027720 #22864:0x007f3714418208] DEBUG -- Backing up databag repos-suse-12_2-x86_64/sle-module-adv-systems-mgmt-pool
+D, [2017-11-23T08:50:11.042078 #22864:0x007f3714418208] DEBUG -- Backing up databag repos-suse-12_2-x86_64/sles12-sp2-pool
+D, [2017-11-23T08:50:11.061805 #22864:0x007f3714418208] DEBUG -- Backing up databag repos-suse-12_2-x86_64/sle12-sp2-ha-pool
+D, [2017-11-23T08:50:11.079647 #22864:0x007f3714418208] DEBUG -- Backing up database
+D, [2017-11-23T08:50:11.108171 #22864:0x007f3714418208] DEBUG -- Backing up Crowbar files
+cp: cannot create directory '/opt/dell/crowbar_framework/tmp/create_archive-20171123-22864-flw32o/crowbar/data/backup': No such file or directory
+cp: cannot create directory '/opt/dell/crowbar_framework/tmp/create_archive-20171123-22864-flw32o/crowbar/data/cache': No such file or directory
+cp: cannot create directory '/opt/dell/crowbar_framework/tmp/create_archive-20171123-22864-flw32o/crowbar/data/config': No such file or directory
+D, [2017-11-23T08:50:12.057969 #22864:0x007f3714418208] DEBUG -- Backing up batch export
+D, [2017-11-23T08:50:12.077959 #22864:0x007f3714418208] DEBUG --   Proposal Load (0.5ms)  SELECT "proposals".* FROM "proposals" WHERE "proposals"."barclamp" = $1  [["barclamp", "crowbar"]]
+W, [2017-11-23T08:50:12.106486 #23764:0x007f3702cefa78]  WARN -- Switch name Error: d9c-dc-71-4c-5d-f8.200.xxx.corp: Switch config not detected during discovery
+W, [2017-11-23T08:50:12.114466 #23764:0x007f3702cefa78]  WARN -- Switch name Error: d9c-dc-71-4c-ba-f8.200.xxx.corp: Switch config not detected during discovery
+W, [2017-11-23T08:50:12.119009 #23764:0x007f3702cefa78]  WARN -- Switch name Error: d9c-dc-71-4c-f2-d0.200.xxx.corp: Switch config not detected during discovery
+W, [2017-11-23T08:50:12.136668 #23764:0x007f3702cefa78]  WARN -- Switch name Error: de0-07-1b-67-14-08.200.xxx.corp: Switch config not detected during discovery
+I, [2017-11-23T08:50:12.147477 #23764:0x007f3702cefa78]  INFO -- Completed 200 OK in 6024ms (Views: 5.8ms | ActiveRecord: 0.0ms)
+I, [2017-11-23T08:50:12.778818 #23764:0x007f3703f17598]  INFO -- Started GET "/crowbar/machines/1.0/show?name=d9c-dc-71-4c-f2-d0.200.xxx.corp" for 127.0.0.1 at 2017-11-23 08:50:12 +0000
+I, [2017-11-23T08:50:12.782483 #23764:0x007f3703f17598]  INFO -- Processing by MachinesController#show as JSON
+I, [2017-11-23T08:50:12.782614 #23764:0x007f3703f17598]  INFO --   Parameters: {"name"=>"d9c-dc-71-4c-f2-d0.200.xxx.corp", "id"=>"show"}
+I, [2017-11-23T08:50:12.846419 #23764:0x007f3703f17598]  INFO -- Completed 200 OK in 64ms (Views: 12.2ms | ActiveRecord: 0.0ms)
+I, [2017-11-23T08:50:13.137919 #23764:0x007f3703f17598]  INFO -- Started GET "/crowbar/machines/1.0/show?name=d9c-dc-71-4c-ba-f8.200.xxx.corp" for 127.0.0.1 at 2017-11-23 08:50:13 +0000

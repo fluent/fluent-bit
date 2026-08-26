@@ -1,0 +1,49 @@
+# Example openstack parsers, see source for recent updates:
+# https://github.com/salt-formulas/salt-formula-fluentbit/tree/master/metadata/service/config/parser
+#
+# Take these parsers as an example, as they may not fully fit all possible
+# openstack deployments from all vendors, etc..
+#
+
+parsers:
+  - name: cinder
+    format: regex
+    regex: '^(?<log_time>[^ ][-.\d\+:T]+[ ]*[.:\d]*)\s+(?<pid>[^ ]\d+)\s+(?<severity>[^ ][.-_\w]+)\s+(?<component>[^ ][.-_\w]+)(\s+\[(-|(?<req_id>[^ ][-\w]*) (?<req_user>[^ ][-\w]*) (?<req_project>[^ ][-\w]*) (?<req_domain>[^ ][-\w]*) (?<req_user_domain>[^ ][-\w]*) (?<req_project_domain>[^ ][-\w]*))\]){1}\s+(?<message>.*)$'
+    time_format: '%Y-%m-%d %H:%M:%S.%L'
+    time_keep: Off
+    time_key: log_time
+
+  - name: glance
+    format: regex
+    regex: '^(?<log_time>[^ ][-.\d\+:T]+[ ]*[.:\d]*)\s+(?<pid>[^ ]\d+)\s+(?<severity>[^ ][.-_\w]+)\s+(?<component>[^ ][.-_\w]+)(\s+\[(-|(?<req_id>[^ ][-\w]*) (?<req_user>[^ ][-\w]*) (?<req_project>[^ ][-\w]*) (?<req_domain>[^ ][-\w]*) (?<req_user_domain>[^ ][-\w]*) (?<req_project_domain>[^ ][-\w]*))\]){1}\s+(?<message>.*)$'
+    time_format: '%Y-%m-%d %H:%M:%S.%L'
+    time_keep: Off
+    time_key: log_time
+
+  - name: heat
+    format: regex
+    regex: '^(?<log_time>[^ ][-.\d\+:T]+[ ]*[.:\d]*)\s+(?<pid>[^ ]\d+)\s+(?<severity>[^ ][.-_\w]+)\s+(?<component>[^ ][.-_\w]+)(\s+\[(-|(?<req_id>[^ ][-\w]*) (?<req_user>[^ ][-\w]*) (?<req_project>[^ ][-\w]*) (?<req_domain>[^ ][-\w]*) (?<req_user_domain>[^ ][-\w]*) (?<req_project_domain>[^ ][-\w]*))\]){1}\s+(?<message>.*)$'
+    time_format: '%Y-%m-%d %H:%M:%S.%L'
+    time_keep: Off
+    time_key: log_time
+
+  - name: keystone
+    format: regex
+    regex: '^(?<log_time>[^ ][-.\d\+:T]+[ ]*[.:\d]*)\s+(?<pid>[^ ]\d+)\s+(?<severity>[^ ][.-_\w]+)\s+(?<component>[^ ][.-_\w]+)(\s+\[(-|(?<req_id>[^ ][-\w]*) (?<req_user>[^ ][-\w]*) (?<req_project>[^ ][-\w]*) (?<req_domain>[^ ][-\w]*) (?<req_user_domain>[^ ][-\w]*) (?<req_project_domain>[^ ][-\w]*))\]){1}\s+(?<message>.*)$'
+    time_format: '%Y-%m-%d %H:%M:%S.%L'
+    time_keep: Off
+    time_key: log_time
+
+  - name: neutron
+    format: regex
+    regex: '^(?<log_time>[^ ][-.\d\+:T]+[ ]*[.:\d]*)\s+(?<pid>[^ ]\d+)\s+(?<severity>[^ ][.-_\w]+)\s+(?<component>[^ ][.-_\w]+)(\s+\[(-|(?<req_id>[^ ][-\w]*) (?<req_user>[^ ][-\w]*) (?<req_project>[^ ][-\w]*) (?<req_domain>[^ ][-\w]*) (?<req_user_domain>[^ ][-\w]*) (?<req_project_domain>[^ ][-\w]*))\]){1}\s+(?<message>.*)$'
+    time_format: '%Y-%m-%d %H:%M:%S.%L'
+    time_keep: Off
+    time_key: log_time
+
+  - name: nova
+    format: regex
+    regex: '^(?<log_time>[^ ][-.\d\+:T]+[ ]*[.:\d]*)\s+(?<pid>[^ ]\d+)\s+(?<severity>[^ ][.-_\w]+)\s+(?<component>[^ ][.-_\w]+)(\s+\[(-|(?<req_id>[^ ][-\w]*) (?<req_user>[^ ][-\w]*) (?<req_project>[^ ][-\w]*) (?<req_domain>[^ ][-\w]*) (?<req_user_domain>[^ ][-\w]*) (?<req_project_domain>[^ ][-\w]*))\]){1}\s+(?<message>.*)$'
+    time_format: '%Y-%m-%d %H:%M:%S.%L'
+    time_keep: Off
+    time_key: log_time

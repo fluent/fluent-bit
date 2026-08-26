@@ -1,0 +1,6 @@
+parsers:
+  - name: java_multiline
+    format: regex
+    regex: '/^(?<time>\d{4}-\d{1,2}-\d{1,2} \d{1,2}:\d{1,2}:\d{1,2}) \[(?<thread>.*)\] (?<level>[^\s]+)(?<message>.*)/'
+    time_key: time
+    time_format: '%Y-%m-%d %H:%M:%S'
