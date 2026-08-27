@@ -166,23 +166,16 @@ void test_reload()
     sleep(2);
 
     status = flb_reload(ctx, cf_opts);
-    if (!TEST_CHECK(status == 0)) {
-        flb_cf_destroy(cf_opts);
-        if (status == FLB_RELOAD_HALTED) {
-            flb_stop(ctx);
-            flb_destroy(ctx);
-        }
-        return;
-    }
+    TEST_CHECK(status == 0);
+    TEST_MSG("Expected reload status 0, got %d", status);
 
     sleep(2);
 
     /* flb context should be replaced with flb_reload() */
     ctx = flb_context_get();
 
-    if (TEST_CHECK(ctx->config->conf_path != NULL)) {
-        TEST_CHECK(strcmp(ctx->config->conf_path, FLB_CLASSIC_PATH) == 0);
-    }
+    TEST_CHECK(ctx->config->conf_path != NULL &&
+               strcmp(ctx->config->conf_path, FLB_CLASSIC_PATH) == 0);
     TEST_CHECK(flb_parser_get("reload_test", ctx->config) != NULL);
     TEST_CHECK(mk_list_size(&ctx->config->cf_opts->inputs) == 1);
     TEST_CHECK(mk_list_size(&ctx->config->inputs) == 2);
