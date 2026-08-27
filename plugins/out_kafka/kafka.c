@@ -1392,13 +1392,21 @@ static void kafka_flush_force(struct flb_out_kafka *ctx,
                               struct flb_config *config)
 {
     int ret;
+    int timeout;
 
     if (!ctx) {
         return;
     }
 
     if (ctx->kafka.rk) {
-        ret = rd_kafka_flush(ctx->kafka.rk, config->grace * 1000);
+        timeout = config->grace;
+
+        /* Preserve the no-wait and infinite timeout (-1) sentinels. */
+        if (timeout > 0) {
+            timeout *= 1000;
+        }
+
+        ret = rd_kafka_flush(ctx->kafka.rk, timeout);
         if (ret != RD_KAFKA_RESP_ERR_NO_ERROR) {
             flb_plg_warn(ctx->ins, "Failed to force flush: %s",
                          rd_kafka_err2str(ret));
