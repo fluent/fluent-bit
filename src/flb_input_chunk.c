@@ -2832,6 +2832,30 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     }
 
     /*
+     * A new filesystem chunk can be returned DOWN after the maximum number
+     * of UP chunks is reached. Bring it UP before calculating the projected
+     * size, which reads metadata from the mapped file.
+     */
+    if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
+        ret = cio_chunk_up_force(ic->chunk);
+        if (ret != CIO_OK) {
+            if (new_chunk == FLB_TRUE) {
+                /*
+                 * flb_input_chunk_create() has already indexed the chunk.
+                 * Since the tag cannot be read from an unavailable DOWN
+                 * chunk, remove it using the caller-provided tag before
+                 * freeing the chunk.
+                 */
+                flb_input_chunk_destroy_corrupted(ic,
+                                                  tag, tag_len,
+                                                  FLB_TRUE);
+            }
+            return NULL;
+        }
+        *set_down = FLB_TRUE;
+    }
+
+    /*
      * If buffering this block of data will exceed one of the limit among all output instances
      * that the chunk will flush to, we need to modify the routes_mask of the oldest chunks
      * (based in creation time) to get enough space for the incoming chunk.
