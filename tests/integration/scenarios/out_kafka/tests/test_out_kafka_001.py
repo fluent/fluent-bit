@@ -625,6 +625,7 @@ def test_out_kafka_hot_reload_times_out_pending_delivery_with_finite_grace():
     try:
         _send_shutdown_grace_record(service)
         _wait_for_log_text(service.flb.log_file, "enqueued message")
+        reload_started_at = time.monotonic()
         service.flb.trigger_http_reload()
         service.flb.wait_for_hot_reload_count(
             1,
@@ -635,8 +636,12 @@ def test_out_kafka_hot_reload_times_out_pending_delivery_with_finite_grace():
             "Failed to force flush: Local: Timed out",
         )
 
+        reload_elapsed_seconds = time.monotonic() - reload_started_at
         force_flush_failure = "Failed to force flush: Local: Timed out"
         reload_start = "[reload] start everything"
+
+        # Allow scheduling margin around the configured two-second grace.
+        assert reload_elapsed_seconds >= 1.5
         assert reload_start in log_text
         assert log_text.index(force_flush_failure) < log_text.index(reload_start)
     finally:
