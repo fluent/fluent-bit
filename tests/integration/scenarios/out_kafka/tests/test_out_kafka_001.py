@@ -543,6 +543,35 @@ def test_decode_avro_long_rejects_out_of_range_terminal_bits():
         _decode_avro_long(payload)
 
 
+def _create_shutdown_grace_service(ensure_thread_safe_reload):
+    config_file = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "../config",
+            "out_kafka_shutdown_grace.yaml",
+        )
+    )
+    service = FluentBitTestService(
+        config_file,
+        extra_env={
+            "TEST_HOT_RELOAD_ENSURE_THREAD_SAFETY": (
+                "on" if ensure_thread_safe_reload else "off"
+            ),
+        },
+    )
+    service.allocate_port_env("TEST_SUITE_KAFKA_PORT")
+    return service
+
+
+def _send_shutdown_grace_record(service):
+    response = requests.post(
+        f"http://127.0.0.1:{service.flb_listener_port}/",
+        json={"message": "pending during reload"},
+        timeout=5,
+    )
+    response.raise_for_status()
+
+
 def test_out_kafka_sends_json_payload():
     service = Service("out_kafka_basic.yaml")
     service.start()
@@ -560,6 +589,58 @@ def test_out_kafka_sends_json_payload():
     assert payload["source"] == "dummy"
     assert any(request["api_key"] == 3 for request in data_storage["requests"])
     assert any(request["api_key"] == 0 for request in data_storage["requests"])
+
+
+def test_out_kafka_hot_reload_waits_for_pending_delivery_with_infinite_grace():
+    service = _create_shutdown_grace_service(ensure_thread_safe_reload=True)
+    service.start()
+
+    try:
+        _send_shutdown_grace_record(service)
+        _wait_for_log_text(service.flb.log_file, "enqueued message")
+        service.flb.trigger_http_reload()
+        service.flb.wait_for_hot_reload_count(
+            1,
+            timeout=30 if memory_check_enabled() else 10,
+        )
+        log_text = _wait_for_log_text(
+            service.flb.log_file,
+            "[reload] start everything",
+            timeout=30 if memory_check_enabled() else 10,
+        )
+
+        delivery_failure = "message delivery failed: Local: Message timed out"
+        reload_start = "[reload] start everything"
+        assert delivery_failure in log_text
+        assert "Failed to force flush" not in log_text
+        assert log_text.index(delivery_failure) < log_text.index(reload_start)
+    finally:
+        service.stop()
+
+
+def test_out_kafka_hot_reload_times_out_pending_delivery_with_finite_grace():
+    service = _create_shutdown_grace_service(ensure_thread_safe_reload=False)
+    service.start()
+
+    try:
+        _send_shutdown_grace_record(service)
+        _wait_for_log_text(service.flb.log_file, "enqueued message")
+        service.flb.trigger_http_reload()
+        service.flb.wait_for_hot_reload_count(
+            1,
+            timeout=30 if memory_check_enabled() else 10,
+        )
+        log_text = _wait_for_log_text(
+            service.flb.log_file,
+            "Failed to force flush: Local: Timed out",
+        )
+
+        force_flush_failure = "Failed to force flush: Local: Timed out"
+        reload_start = "[reload] start everything"
+        assert reload_start in log_text
+        assert log_text.index(force_flush_failure) < log_text.index(reload_start)
+    finally:
+        service.stop()
 
 
 def test_out_kafka_raw_format_uses_selected_field():
