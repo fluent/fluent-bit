@@ -1401,6 +1401,7 @@ int flb_engine_start(struct flb_config *config)
     {
         flb_error("[engine] could not segregate backlog chunks");
         flb_engine_failed(config);
+        flb_engine_shutdown(config);
         return -2;
     }
 
