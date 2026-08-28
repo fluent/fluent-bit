@@ -487,9 +487,9 @@ def _zstd_bytes(data):
 
 
 def _forward_allocation_repro_payload():
-    entry_count = 170
+    entry_count = 8
     declared_entries = entry_count * 2
-    body = "R" * 200
+    body = "R" * 100000
     payload = bytearray()
 
     payload += _pack_array_header(2)
@@ -499,7 +499,7 @@ def _forward_allocation_repro_payload():
     for i in range(entry_count):
         payload += _pack_obj([TEST_TS + i, {"log": body}])
 
-    return bytes(payload[:29229]).ljust(29229, b"\x00")
+    return bytes(payload[:800000]).ljust(800000, b"\x00")
 
 
 def _process_status_kb(pid, key):
@@ -650,6 +650,9 @@ def _run_forward_repro_attempt(tmp_path, data_limit_kb):
 
             if "fw_conn.c" in log_text and "Cannot allocate memory" in log_text:
                 return False, "connection allocation failed"
+
+            if "could not register new connection" in log_text:
+                return False, "connection registration failed"
 
             if process.poll() is not None:
                 return False, f"process exited with {process.returncode}"
@@ -936,10 +939,7 @@ def test_in_forward_repro_payload_allocation_failure_closes_connection(tmp_path)
     baseline_kb = _measure_forward_vmdata_kb(tmp_path)
     attempts = []
 
-    for delta_kb in [
-        512, 640, 768, 896, 960, 992, 1008, 1016, 1024, 1040, 1088, 1152, 1280,
-        1536, 2048,
-    ]:
+    for delta_kb in [1152, 1408, 1664, 1920, 2176, 2688, 3200]:
         data_limit_kb = baseline_kb + delta_kb
         matched, status = _run_forward_repro_attempt(tmp_path, data_limit_kb)
         attempts.append(f"{data_limit_kb} KiB: {status}")
