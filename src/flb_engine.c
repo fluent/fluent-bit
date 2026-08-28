@@ -1038,6 +1038,16 @@ int flb_engine_failed(struct flb_config *config)
     ret = flb_pipe_w(config->ch_notif[1], &val, sizeof(uint64_t));
     if (ret == -1) {
         flb_error("[engine] fail to dispatch FAILED message");
+
+        /*
+         * A library mode caller may be blocked on the notification
+         * channel waiting for this message: close the write end so the
+         * reader wakes up with EOF instead of waiting forever.
+         */
+        if (config->ch_notif[1] != config->ch_notif[0]) {
+            mk_event_closesocket(config->ch_notif[1]);
+            config->ch_notif[1] = -1;
+        }
     }
 
     /* Waiting flushing log */
@@ -1379,16 +1389,23 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
-    /* Signal that we have started */
-    flb_engine_started(config);
-
+    /*
+     * Segregate the backlog chunks before notifying the library mode
+     * caller: segregation closes chunks that cannot be routed, so it must
+     * not run concurrently with callers inspecting storage right after
+     * flb_start() returns.
+     */
     ret = sb_segregate_chunks(config);
 
     if (ret < 0)
     {
         flb_error("[engine] could not segregate backlog chunks");
+        flb_engine_failed(config);
         return -2;
     }
+
+    /* Signal that we have started */
+    flb_engine_started(config);
 
     config->grace_input  = config->grace / 2;
     flb_info("[engine] Shutdown Grace Period=%d, Shutdown Input Grace Period=%d", config->grace, config->grace_input);
