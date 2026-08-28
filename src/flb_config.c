@@ -623,7 +623,8 @@ void flb_config_exit(struct flb_config *config)
     /* Channel notifications */
     if (config->ch_notif[0] > 0) {
         mk_event_closesocket(config->ch_notif[0]);
-        if (config->ch_notif[0] != config->ch_notif[1]) {
+        if (config->ch_notif[1] > 0 &&
+            config->ch_notif[0] != config->ch_notif[1]) {
             mk_event_closesocket(config->ch_notif[1]);
         }
     }
