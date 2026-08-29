@@ -1,0 +1,19 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: zipkin
+      listen: 127.0.0.1
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      http2: off
+      parse_string_tags: true
+
+  outputs:
+    - name: stdout
+      match: '*'
+      format: otlp_json
