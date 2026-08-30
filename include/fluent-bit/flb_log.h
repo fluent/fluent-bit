@@ -198,6 +198,7 @@ int flb_log_cache_check_suppress(struct flb_log_cache *cache, char *msg_buf, siz
 static inline int flb_log_suppress_check(int log_suppress_interval, const char *fmt, ...)
 {
     int ret;
+    int written;
     size_t size;
     va_list args;
     char buf[4096];
@@ -208,11 +209,23 @@ static inline int flb_log_suppress_check(int log_suppress_interval, const char *
     }
 
     va_start(args, fmt);
-    size = vsnprintf(buf, sizeof(buf) - 1, fmt, args);
+    written = vsnprintf(buf, sizeof(buf) - 1, fmt, args);
     va_end(args);
 
-    if (size == -1) {
+    if (written < 0) {
         return FLB_FALSE;
+    }
+
+    /*
+     * vsnprintf() returns the length the message would have had, not what it
+     * wrote, so a message longer than the buffer is truncated while the return
+     * value is not. Passing that length on makes the suppression cache read
+     * past the end of this stack frame. Clamp to what actually landed in buf:
+     * vsnprintf() writes at most (sizeof(buf) - 1) - 1 characters plus a NUL.
+     */
+    size = (size_t) written;
+    if (size > sizeof(buf) - 2) {
+        size = sizeof(buf) - 2;
     }
 
     w = flb_worker_get();
