@@ -34,6 +34,7 @@
 #define LOKI_TENANT_SPLIT_PORT "18083"
 #define LOKI_TENANT_POLICY_SUCCESS_PORT "18084"
 #define LOKI_TENANT_POLICY_ERROR_PORT "18085"
+#define LOKI_MULTI_INSTANCE_PORT "18086"
 
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 int num_output = 0;
@@ -992,6 +993,120 @@ void flb_test_remove_keys_workers()
     flb_destroy(ctx);
 }
 
+/*
+ * Two 'loki' instances flushing the same records must each apply their own
+ * remove_keys set. Without a per-instance removal context they share the one
+ * created by whichever instance flushes first.
+ */
+#define JSON_MULTI_INSTANCE \
+    "[12345678, {\"msg\":\"hello\",\"alpha\":\"a\",\"beta\":\"b\"}]"
+
+static int check_instance_payload(char *marker, char *present, char *absent)
+{
+    int i;
+
+    for (i = 0; i < tenant_request_count; i++) {
+        if (tenant_payloads[i] == NULL) {
+            continue;
+        }
+
+        if (strstr(tenant_payloads[i], marker) == NULL) {
+            continue;
+        }
+
+        if (!TEST_CHECK(strstr(tenant_payloads[i], present) != NULL)) {
+            TEST_MSG("payload for %s did not contain %s: %s",
+                     marker, present, tenant_payloads[i]);
+            return -1;
+        }
+
+        if (!TEST_CHECK(strstr(tenant_payloads[i], absent) == NULL)) {
+            TEST_MSG("payload for %s contained %s: %s",
+                     marker, absent, tenant_payloads[i]);
+            return -1;
+        }
+
+        return 0;
+    }
+
+    TEST_CHECK(0);
+    TEST_MSG("no request found for %s", marker);
+
+    return -1;
+}
+
+void flb_test_remove_keys_multiple_instances()
+{
+    int ret;
+    int tries;
+    int in_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+    struct tenant_policy_server mock_server;
+
+    clear_tenant_requests();
+    clear_tenant_policy_requests();
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error",
+                    NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* First instance: drops 'alpha', keeps 'beta' */
+    out_ffd = flb_output(ctx, (char *) "loki", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "test",
+                         "host", LOKI_TENANT_POLICY_HOST,
+                         "port", LOKI_MULTI_INSTANCE_PORT,
+                         "labels", "instance=first",
+                         "remove_keys", "alpha",
+                         "net.keepalive", "off",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Second instance: drops 'beta', keeps 'alpha' */
+    out_ffd = flb_output(ctx, (char *) "loki", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "test",
+                         "host", LOKI_TENANT_POLICY_HOST,
+                         "port", LOKI_MULTI_INSTANCE_PORT,
+                         "labels", "instance=second",
+                         "remove_keys", "beta",
+                         "net.keepalive", "off",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    ret = start_tenant_policy_server(&mock_server, LOKI_MULTI_INSTANCE_PORT);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_lib_push(ctx, in_ffd, (char *) JSON_MULTI_INSTANCE,
+                       sizeof(JSON_MULTI_INSTANCE) - 1);
+    TEST_CHECK(ret >= 0);
+
+    for (tries = 0; tries < 20 && get_tenant_request_count() < 2; tries++) {
+        sleep(1);
+    }
+
+    TEST_CHECK(get_tenant_request_count() >= 2);
+
+    check_instance_payload("first", "beta", "alpha");
+    check_instance_payload("second", "alpha", "beta");
+
+    stop_tenant_policy_server(&mock_server);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    clear_tenant_requests();
+}
+
 static int check_tenant_request(char *tenant, char *present, char *absent)
 {
     int i;
@@ -1694,6 +1809,7 @@ TEST_LIST = {
     {"labels_ra"              , flb_test_labels_ra },
     {"remove_keys"            , flb_test_remove_keys },
     {"remove_keys_workers"    , flb_test_remove_keys_workers },
+    {"remove_keys_multiple_instances", flb_test_remove_keys_multiple_instances },
     {"tenant_id_key_splits_requests", flb_test_tenant_id_key_splits_requests },
     {"tenant_id_key_partial_success", flb_test_tenant_id_key_partial_success },
     {"tenant_id_key_partial_error", flb_test_tenant_id_key_partial_error },
