@@ -1362,6 +1362,8 @@ static void cb_gcs_flush(struct flb_event_chunk *event_chunk, struct flb_output_
 {
     struct flb_gcs *ctx = out_context;
     flb_sds_t payload;
+    flb_sds_t tag_name = NULL;
+    int tag_name_len;
     int ret;
     struct gcs_file *chunk;
 
@@ -1378,20 +1380,29 @@ static void cb_gcs_flush(struct flb_event_chunk *event_chunk, struct flb_output_
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    chunk = gcs_store_file_get(ctx, event_chunk->tag, flb_sds_len(event_chunk->tag));
-    if (gcs_store_buffer_put(ctx, chunk, event_chunk->tag, flb_sds_len(event_chunk->tag),
+    if (ctx->unify_tag == FLB_TRUE) {
+        tag_name = ctx->unify_tag_name;
+        tag_name_len = flb_sds_len(ctx->unify_tag_name);
+    }
+    else {
+        tag_name = event_chunk->tag;
+        tag_name_len = flb_sds_len(event_chunk->tag);
+    }
+
+    chunk = gcs_store_file_get(ctx, tag_name, tag_name_len);
+    if (gcs_store_buffer_put(ctx, chunk, tag_name, tag_name_len,
                              payload, flb_sds_len(payload)) == -1) {
         flb_sds_destroy(payload);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
     flb_sds_destroy(payload);
 
-    chunk = gcs_store_file_get(ctx, event_chunk->tag, flb_sds_len(event_chunk->tag));
+    chunk = gcs_store_file_get(ctx, tag_name, tag_name_len);
     if (!chunk) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    ret = add_to_queue(ctx, chunk, event_chunk->tag, flb_sds_len(event_chunk->tag));
+    ret = add_to_queue(ctx, chunk, tag_name, tag_name_len);
     if (ret == -1) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -1531,6 +1542,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "compression", "none",
      0, FLB_FALSE, 0,
      "Compression: none or gzip."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "unify_tag", "false",
+     0, FLB_TRUE, offsetof(struct flb_gcs, unify_tag),
+     "Unify all tags into a single buffer file (disables per-tag buffering)."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "unify_tag_name", "fluent-bit-buffer-file-unify-tag.log",
+     0, FLB_TRUE, offsetof(struct flb_gcs, unify_tag_name),
+     "Buffer file tag used when unify_tag is enabled."
     },
     {0}
 };
