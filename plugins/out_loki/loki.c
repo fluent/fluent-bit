@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_ra_key.h>
-#include <fluent-bit/flb_thread_storage.h>
+#include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_decoder.h>
@@ -45,18 +45,10 @@ struct flb_loki_tenant_group {
 #define FLB_LOKI_TENANT_GROUP_FLUSH_ERROR   (((uint64_t) 1) << 1)
 #define FLB_LOKI_TENANT_GROUP_FLUSH_RETRY   (((uint64_t) 1) << 2)
 
-pthread_once_t initialization_guard = PTHREAD_ONCE_INIT;
-
 struct flb_loki_remove_mpa_entry {
     struct flb_mp_accessor *mpa;
     struct cfl_list _head;
 };
-FLB_TLS_DEFINE(struct flb_loki_remove_mpa_entry, thread_local_remove_mpa);
-
-void initialize_thread_local_storage()
-{
-    FLB_TLS_INIT(thread_local_remove_mpa);
-}
 
 static struct flb_loki_remove_mpa_entry *remove_mpa_entry_create(struct flb_loki *ctx)
 {
@@ -1590,19 +1582,6 @@ static int cb_loki_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    result = pthread_once(&initialization_guard,
-                          initialize_thread_local_storage);
-
-    if (result != 0) {
-        flb_errno();
-
-        flb_plg_error(ins, "cannot initialize thread local storage");
-
-        loki_config_destroy(ctx);
-
-        return -1;
-    }
-
     result = pthread_mutex_init(&ctx->remove_mpa_list_lock, NULL);
     if (result != 0) {
         flb_errno();
@@ -1612,6 +1591,21 @@ static int cb_loki_init(struct flb_output_instance *ins,
     }
 
     cfl_list_init(&ctx->remove_mpa_list);
+
+    /*
+     * Per-instance TLS key for the remove_mpa cache. Using a global TLS
+     * symbol here would let two loki outputs running on the same worker
+     * thread share the first instance's mpa and silently skip remove_keys
+     * for the second one.
+     */
+    result = pthread_key_create(&ctx->remove_mpa_key, NULL);
+    if (result != 0) {
+        flb_errno();
+        flb_plg_error(ins, "cannot create remove_mpa thread-local key");
+        loki_config_destroy(ctx);
+        return -1;
+    }
+    ctx->remove_mpa_key_initialized = FLB_TRUE;
 
     /*
      * This plugin instance uses the HTTP client interface, let's register
@@ -2142,7 +2136,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     struct mk_list *head;
     struct flb_loki_tenant_group *group;
 
-    remove_mpa_entry = FLB_TLS_GET(thread_local_remove_mpa);
+    remove_mpa_entry = pthread_getspecific(ctx->remove_mpa_key);
 
     if (remove_mpa_entry == NULL) {
         remove_mpa_entry = remove_mpa_entry_create(ctx);
@@ -2151,7 +2145,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
 
-        FLB_TLS_SET(thread_local_remove_mpa, remove_mpa_entry);
+        pthread_setspecific(ctx->remove_mpa_key, remove_mpa_entry);
 
         pthread_mutex_lock(&ctx->remove_mpa_list_lock);
         cfl_list_add(&remove_mpa_entry->_head, &ctx->remove_mpa_list);
@@ -2247,6 +2241,11 @@ static int cb_loki_exit(void *data, struct flb_config *config)
     release_remove_mpa_entries(&ctx->remove_mpa_list);
 
     pthread_mutex_unlock(&ctx->remove_mpa_list_lock);
+
+    if (ctx->remove_mpa_key_initialized == FLB_TRUE) {
+        pthread_key_delete(ctx->remove_mpa_key);
+        ctx->remove_mpa_key_initialized = FLB_FALSE;
+    }
 
     loki_config_destroy(ctx);
 
