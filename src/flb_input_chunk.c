@@ -3215,7 +3215,9 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     }
 
     /* Check if the input plugin has been paused */
-    if (flb_input_paused(in) == FLB_TRUE) {
+    if (flb_input_paused(in) == FLB_TRUE &&
+        (in->config->is_shutting_down == FLB_FALSE ||
+         (in->flags & FLB_INPUT_SHUTDOWN_FLUSH) == 0)) {
         flb_debug("[input chunk] %s is paused, cannot append records",
                   flb_input_name(in));
         return -1;
