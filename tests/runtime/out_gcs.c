@@ -390,6 +390,167 @@ void flb_test_gcs_shutdown_preserves_pending_upload(void)
     flb_free(store_dir);
 }
 
+void flb_test_gcs_unify_tag_buffers_multiple_tags(void)
+{
+    int ret;
+    int i;
+    flb_ctx_t *ctx;
+    int in_a;
+    int in_b;
+    int out_ffd;
+    char *store_dir;
+    char *buf;
+    size_t buf_size;
+    flb_sds_t content;
+    struct flb_output_instance *out_ins;
+    struct flb_gcs *gcs_ctx;
+    struct gcs_file *chunk_unify;
+    int found_a = FLB_FALSE;
+    int found_b = FLB_FALSE;
+    const char *unify_tag = "unified-test-key";
+    const char *rec_a = "[1448403340, {\"src\": \"unify-marker-a\"}]";
+    const char *rec_b = "[1448403340, {\"src\": \"unify-marker-b\"}]";
+
+    store_dir = create_test_store_directory("/flb-gcs-test-unify-tag-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_a = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_a >= 0);
+    flb_input_set(ctx, in_a, "tag", "kube.a", NULL);
+
+    in_b = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_b >= 0);
+    flb_input_set(ctx, in_b, "tag", "kube.b", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "unify_tag", "true", NULL);
+    flb_output_set(ctx, out_ffd, "unify_tag_name", "unified-test-key", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    /* keep chunks buffered so the merged result can be inspected */
+    flb_output_set(ctx, out_ffd, "upload_timeout", "60m", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    out_ins = flb_output_get_instance(ctx->config, out_ffd);
+    TEST_CHECK(out_ins != NULL);
+    gcs_ctx = out_ins ? out_ins->context : NULL;
+    TEST_CHECK(gcs_ctx != NULL);
+
+    flb_lib_push(ctx, in_a, (char *) rec_a, (int) strlen(rec_a));
+    flb_lib_push(ctx, in_b, (char *) rec_b, (int) strlen(rec_b));
+
+    /*
+     * Wait (bounded) until both records are present in the single unified
+     * buffer chunk. Distinct markers prove both inputs were processed and
+     * merged, rather than a single record satisfying the check.
+     */
+    for (i = 0; gcs_ctx && i < 10 && !(found_a && found_b); i++) {
+        sleep(1);
+        chunk_unify = gcs_store_file_get(gcs_ctx, (char *) unify_tag,
+                                         strlen(unify_tag));
+        if (!chunk_unify) {
+            continue;
+        }
+        buf = NULL;
+        buf_size = 0;
+        if (gcs_store_file_read(gcs_ctx, chunk_unify, &buf, &buf_size) != 0 || !buf) {
+            continue;
+        }
+        content = flb_sds_create_len(buf, buf_size);
+        if (content) {
+            found_a = strstr(content, "unify-marker-a") != NULL;
+            found_b = strstr(content, "unify-marker-b") != NULL;
+            flb_sds_destroy(content);
+        }
+        flb_free(buf);
+    }
+
+    if (gcs_ctx) {
+        TEST_CHECK(gcs_ctx->unify_tag == FLB_TRUE);
+
+        TEST_CHECK_(gcs_store_file_get(gcs_ctx, "kube.a", 6) == NULL,
+                    "expected no per-tag chunk for kube.a");
+        TEST_CHECK_(gcs_store_file_get(gcs_ctx, "kube.b", 6) == NULL,
+                    "expected no per-tag chunk for kube.b");
+        TEST_CHECK_(found_a, "record from kube.a missing from unified buffer");
+        TEST_CHECK_(found_b, "record from kube.b missing from unified buffer");
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_unify_tag_disabled_by_default(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    char *store_dir;
+    struct flb_output_instance *out_ins;
+    struct flb_gcs *gcs_ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-no-unify-tag-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    out_ins = flb_output_get_instance(ctx->config, out_ffd);
+    TEST_CHECK(out_ins != NULL);
+    gcs_ctx = out_ins ? out_ins->context : NULL;
+    TEST_CHECK(gcs_ctx != NULL);
+
+    if (gcs_ctx) {
+        TEST_CHECK(gcs_ctx->unify_tag == FLB_FALSE);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
 TEST_LIST = {
     {"jwt_signing", flb_test_gcs_jwt_signing},
     {"uri_encode_object_name", flb_test_gcs_uri_encode_object_name},
@@ -399,5 +560,7 @@ TEST_LIST = {
     {"accepts_extra_credential_fields", flb_test_gcs_accepts_extra_credential_fields},
     {"upload_error", flb_test_gcs_upload_error},
     {"shutdown_preserves_pending_upload", flb_test_gcs_shutdown_preserves_pending_upload},
+    {"unify_tag_buffers_multiple_tags", flb_test_gcs_unify_tag_buffers_multiple_tags},
+    {"unify_tag_disabled_by_default", flb_test_gcs_unify_tag_disabled_by_default},
     {NULL, NULL}
 };
