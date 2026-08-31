@@ -2145,7 +2145,19 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
 
-        pthread_setspecific(ctx->remove_mpa_key, remove_mpa_entry);
+        /*
+         * Publish the entry before linking it: if the key cannot be set the
+         * entry stays unreachable from this thread, and linking it anyway
+         * would leak one accessor per flush until the instance is destroyed.
+         */
+        ret = pthread_setspecific(ctx->remove_mpa_key, remove_mpa_entry);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "cannot store remove_mpa entry in thread-local "
+                          "storage: %d", ret);
+            remove_mpa_entry_destroy(remove_mpa_entry);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
 
         pthread_mutex_lock(&ctx->remove_mpa_list_lock);
         cfl_list_add(&remove_mpa_entry->_head, &ctx->remove_mpa_list);
