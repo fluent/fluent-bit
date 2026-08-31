@@ -74,6 +74,7 @@
                                      * private key and certificate are required.
                                      */
 #define FLB_INPUT_HTTP_SERVER 4096  /* input uses the generic HTTP server     */
+#define FLB_INPUT_SHUTDOWN_FLUSH         8192 /* allow publishing while shutdown flushes */
 
 /* Input status */
 #define FLB_INPUT_RUNNING     1
