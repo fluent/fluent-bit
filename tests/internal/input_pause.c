@@ -185,10 +185,43 @@ static void test_threaded_dispatch_failure_preserves_state()
     input_pause_test_metrics_destroy(&instance);
 }
 
+static void test_shutdown_pause_notification_is_opt_in()
+{
+    int ret;
+    struct flb_config config;
+    struct flb_input_plugin plugin;
+    struct flb_input_instance instance;
+    struct input_pause_test_context context;
+
+    memset(&config, 0, sizeof(config));
+    memset(&plugin, 0, sizeof(plugin));
+    memset(&instance, 0, sizeof(instance));
+    memset(&context, 0, sizeof(context));
+
+    config.is_shutting_down = FLB_TRUE;
+    plugin.cb_pause_checked = checked_pause;
+    instance.p = &plugin;
+    instance.context = &context;
+    instance.config = &config;
+    instance.mem_buf_status = FLB_INPUT_PAUSED;
+    context.result = 0;
+
+    ret = flb_input_pause(&instance);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(context.pause_calls == 0);
+
+    instance.flags = FLB_INPUT_SHUTDOWN_FLUSH;
+    ret = flb_input_pause(&instance);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(context.pause_calls == 1);
+}
+
 TEST_LIST = {
     { "checked_pause_resume_result_and_metric",
       test_checked_pause_resume_result_and_metric },
     { "threaded_dispatch_failure_preserves_state",
       test_threaded_dispatch_failure_preserves_state },
+    { "shutdown_pause_notification_is_opt_in",
+      test_shutdown_pause_notification_is_opt_in },
     { 0 }
 };
