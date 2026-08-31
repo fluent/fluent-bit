@@ -45,6 +45,25 @@ int flb_aws_compression_compress(int compression_type, void *in_data, size_t in_
                                 void **out_data, size_t *out_len);
 
 /*
+ * Sentinel for "no explicit compression level": each codec keeps its
+ * historical built-in default (zstd: 1).
+ */
+#define FLB_AWS_COMPRESS_LEVEL_DEFAULT -1
+
+/*
+ * Same as flb_aws_compression_compress, with an explicit compression level.
+ * Pass FLB_AWS_COMPRESS_LEVEL_DEFAULT to keep the codec's built-in default.
+ * A non-default level is currently honored for zstd only; other codecs log a
+ * warning once and compress at their built-in default.
+ *
+ * Returns -1 on error
+ * Returns 0 on success
+ */
+int flb_aws_compression_compress_level(int compression_type, int compression_level,
+                                       void *in_data, size_t in_len,
+                                       void **out_data, size_t *out_len);
+
+/*
  * Truncate and compress in_data and convert to b64
  * If b64 output data is larger than max_out_len, the input is truncated with a
  * [Truncated...] suffix appended to the end, and recompressed. The result is written to a
@@ -60,6 +79,16 @@ int flb_aws_compression_compress(int compression_type, void *in_data, size_t in_
 int flb_aws_compression_b64_truncate_compress(int compression_type, size_t max_out_len,
                                              void *in_data, size_t in_len,
                                              void **out_data, size_t *out_len);
+
+/*
+ * Same as flb_aws_compression_b64_truncate_compress, with an explicit
+ * compression level (see flb_aws_compression_compress_level).
+ */
+int flb_aws_compression_b64_truncate_compress_level(int compression_type,
+                                                    int compression_level,
+                                                    size_t max_out_len,
+                                                    void *in_data, size_t in_len,
+                                                    void **out_data, size_t *out_len);
 
 /*
  * Columnar output formats for out_s3_compress_columnar(). Compression is

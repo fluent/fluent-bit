@@ -390,7 +390,8 @@ static int process_event(struct flb_kinesis *ctx, struct flush *buf,
         void *compressed_buf = NULL;
         size_t compressed_size = 0;
         
-        ret = flb_aws_compression_b64_truncate_compress(ctx->compression,
+        ret = flb_aws_compression_b64_truncate_compress_level(ctx->compression,
+                                                       ctx->compression_level,
                                                        MAX_B64_EVENT_SIZE,
                                                        tmp_buf_ptr,
                                                        written,
@@ -464,7 +465,8 @@ static int send_aggregated_record(struct flb_kinesis *ctx, struct flush *buf) {
         void *compressed_buf = NULL;
         size_t compressed_size = 0;
         
-        ret = flb_aws_compression_b64_truncate_compress(ctx->compression,
+        ret = flb_aws_compression_b64_truncate_compress_level(ctx->compression,
+                                                       ctx->compression_level,
                                                        MAX_B64_EVENT_SIZE,
                                                        buf->agg_buf.agg_buf,
                                                        agg_size,

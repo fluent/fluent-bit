@@ -27,6 +27,8 @@
 struct flb_decompression_context;
 
 int flb_zstd_compress(void *in_data, size_t in_len, void **out_data, size_t *out_len);
+int flb_zstd_compress_level(void *in_data, size_t in_len, void **out_data,
+                            size_t *out_len, int level);
 int flb_zstd_uncompress(void *in_data, size_t in_len, void **out_data, size_t *out_len);
 
 int flb_zstd_decompressor_dispatch(struct flb_decompression_context *context,
