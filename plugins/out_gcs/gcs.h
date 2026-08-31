@@ -98,6 +98,9 @@ struct flb_gcs {
     int timer_ms;
 
     struct flb_gcs_oauth_credentials *oauth_credentials;
+
+    int unify_tag;
+    flb_sds_t unify_tag_name;
 };
 
 int gcs_jwt_encode(struct flb_gcs *ctx, char *payload, char *secret,
