@@ -162,8 +162,6 @@ int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *to
         return -1;
     }
 
-    flb_info("[azure workload identity] after read token from file %s", federated_token);
-
     /* Build the form data for token exchange *before* creating the client */
     body = flb_sds_create_size(4096);
     if (!body) {
