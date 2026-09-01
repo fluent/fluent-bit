@@ -29,6 +29,8 @@ Approach for this tests is basing on filter_kubernetes tests
 #ifdef FLB_HAVE_UNICODE_ENCODER
 #include <fluent-bit/flb_unicode.h>
 #endif
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_counter.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -317,6 +319,58 @@ static ssize_t write_msg(struct test_tail_ctx *ctx, char *msg, size_t msg_len)
     return w_byte;
 }
 
+
+static struct cmt_counter *find_input_counter(flb_ctx_t *flb,
+                                              const char *metric_name,
+                                              struct flb_input_instance **out_ins)
+{
+    struct mk_list *head;
+    struct cfl_list *inner_head;
+    struct flb_input_instance *i_ins;
+    struct cmt_counter *counter;
+
+    mk_list_foreach(head, &flb->config->inputs) {
+        i_ins = mk_list_entry(head, struct flb_input_instance, _head);
+        if (i_ins->cmt == NULL) {
+            continue;
+        }
+        cfl_list_foreach(inner_head, &i_ins->cmt->counters) {
+            counter = cfl_list_entry(inner_head, struct cmt_counter, _head);
+            if (strcmp(metric_name, counter->opts.name) == 0) {
+                *out_ins = i_ins;
+                return counter;
+            }
+        }
+    }
+
+    return NULL;
+}
+
+static double get_input_counter_val(flb_ctx_t *flb, const char *metric_name)
+{
+    int ret;
+    double val;
+    char *label;
+    struct flb_input_instance *i_ins;
+    struct cmt_counter *counter;
+
+    val = 0;
+    i_ins = NULL;
+
+    counter = find_input_counter(flb, metric_name, &i_ins);
+    if (!TEST_CHECK(counter != NULL)) {
+        TEST_MSG("metric %s is not registered", metric_name);
+        return -1;
+    }
+
+    label = (char *) flb_input_name(i_ins);
+    ret = cmt_counter_get_val(counter, 1, (char *[]) {label}, &val);
+    if (ret != 0) {
+        return -1;
+    }
+
+    return val;
+}
 
 #define DPATH            FLB_TESTS_DATA_PATH "/data/tail"
 #define MAX_LINES        32
@@ -2046,6 +2100,127 @@ void flb_test_ignore_older()
     }
 }
 
+void flb_test_in_tail_abandoned_metrics(void)
+{
+    int ret;
+    int i;
+    ssize_t w_byte;
+    double files_abandoned;
+    double bytes_abandoned;
+    double lines_abandoned;
+    char *file;
+    char *rotated;
+    char *line;
+    size_t line_len;
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    int unused;
+
+    file = "abandoned.log";
+    rotated = "abandoned.log.1";
+    line = "{\"key\":\"0123456789012345678901234567890123456789\"}";
+    line_len = strlen(line) + strlen(NEW_LINE);
+
+    unlink(file);
+    unlink(rotated);
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file, 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file,
+                        "read_from_head", "true",
+                        "refresh_interval", "1",
+                        "rotate_wait", "1",
+                        "mem_buf_limit", "2k",
+                        "buffer_chunk_size", "2k",
+                        "buffer_max_size", "2k",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    for (i = 0; i < 20; i++) {
+        flb_time_msleep(100);
+    }
+    fprintf(stderr, "discovery complete\n");
+    fflush(stderr);
+
+    w_byte = write(ctx->fds[0], line, strlen(line));
+    TEST_CHECK(w_byte > 0);
+    w_byte = write(ctx->fds[0], NEW_LINE, strlen(NEW_LINE));
+    TEST_CHECK(w_byte > 0);
+    fsync(ctx->fds[0]);
+
+    for (i = 0; i < 10; i++) {
+        flb_time_msleep(100);
+    }
+    if (!TEST_CHECK(get_output_num() == 1)) {
+        TEST_MSG("output error: expect=1 got=%d", get_output_num());
+    }
+
+    ret = rename(file, rotated);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("rename failed. errno=%d", errno);
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+    for (i = 0; i < 10; i++) {
+        flb_time_msleep(100);
+    }
+
+    for (i = 0; i < 64; i++) {
+        w_byte = write(ctx->fds[0], line, strlen(line));
+        if (w_byte <= 0) {
+            break;
+        }
+        w_byte = write(ctx->fds[0], NEW_LINE, strlen(NEW_LINE));
+        if (w_byte <= 0) {
+            break;
+        }
+    }
+    fsync(ctx->fds[0]);
+    TEST_CHECK(i == 64);
+
+    for (i = 0; i < 40; i++) {
+        flb_time_msleep(100);
+    }
+
+    files_abandoned = get_input_counter_val(ctx->flb, "files_abandoned_total");
+    bytes_abandoned = get_input_counter_val(ctx->flb, "files_abandoned_bytes_total");
+    lines_abandoned = get_input_counter_val(ctx->flb,
+                                            "files_abandoned_lines_estimated_total");
+
+    if (!TEST_CHECK(files_abandoned == 1)) {
+        TEST_MSG("files_abandoned_total=%f, expected 1", files_abandoned);
+    }
+    if (!TEST_CHECK(bytes_abandoned > 0)) {
+        TEST_MSG("files_abandoned_bytes_total=%f, expected > 0", bytes_abandoned);
+    }
+    if (!TEST_CHECK(lines_abandoned > 0 && lines_abandoned <= 65)) {
+        TEST_MSG("files_abandoned_lines_estimated_total=%f, expected 1..65",
+                 lines_abandoned);
+    }
+    if (!TEST_CHECK(lines_abandoned <= (bytes_abandoned / line_len) + 1)) {
+        TEST_MSG("line estimate %f exceeds byte bound %f",
+                 lines_abandoned, bytes_abandoned / line_len);
+    }
+
+    test_tail_ctx_destroy(ctx);
+    unlink(rotated);
+}
+
 void flb_test_in_tail_ignore_active_older_files()
 {
     struct flb_lib_out_cb cb_data;
@@ -3084,6 +3259,7 @@ TEST_LIST = {
     {"skip_empty_lines_crlf", flb_test_skip_empty_lines_crlf},
     {"ignore_older", flb_test_ignore_older},
     {"ignore_active_older_files", flb_test_in_tail_ignore_active_older_files},
+    {"abandoned_metrics", flb_test_in_tail_abandoned_metrics},
     {"ignore_active_older_files_reread_on_update", flb_test_in_tail_ignore_active_older_files_reread_on_update},
     {"ignore_active_older_files_reread_on_update_default_read_from_head", flb_test_in_tail_ignore_active_older_files_reread_on_update_default_read_from_head},
 #ifdef FLB_HAVE_INOTIFY

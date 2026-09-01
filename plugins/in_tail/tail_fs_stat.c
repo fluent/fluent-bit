@@ -121,6 +121,7 @@ static int tail_fs_check(struct flb_input_instance *ins,
         /* Check if the file have been deleted */
         if (st.st_nlink == 0) {
             flb_plg_debug(ctx->ins, "file has been deleted: %s", file->name);
+            flb_tail_file_abandoned(file, &st);
 #ifdef FLB_HAVE_SQLDB
             if (ctx->db) {
                 /* Remove file entry from the database */

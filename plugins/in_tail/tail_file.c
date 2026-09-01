@@ -21,6 +21,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <time.h>
+#include <math.h>
 #ifndef FLB_SYSTEM_WINDOWS
 #include <unistd.h>
 #endif
@@ -1755,6 +1756,177 @@ err_close_fd:
     return -1;
 }
 
+#ifdef FLB_HAVE_METRICS
+#define FLB_TAIL_ABANDONED_EXACT_SCAN_LIMIT (64 * 1024)
+#define FLB_TAIL_ABANDONED_SAMPLE_SIZE      (64 * 1024)
+#define FLB_TAIL_ABANDONED_SAMPLE_COUNT     3
+
+static uint64_t count_newlines(const char *buf, size_t len)
+{
+    uint64_t count;
+    const char *p;
+    const char *end;
+
+    count = 0;
+    end = buf + len;
+
+    while ((p = memchr(buf, '\n', end - buf)) != NULL) {
+        count++;
+        buf = p + 1;
+    }
+
+    return count;
+}
+
+static ssize_t tail_pread(int fd, void *buf, size_t len, off_t offset)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    off_t original;
+    ssize_t ret;
+
+    original = lseek(fd, 0, SEEK_CUR);
+    if (original == -1) {
+        return -1;
+    }
+    if (lseek(fd, offset, SEEK_SET) == -1) {
+        return -1;
+    }
+    ret = read(fd, buf, len);
+    if (lseek(fd, original, SEEK_SET) == -1) {
+        return -1;
+    }
+    return ret;
+#else
+    return pread(fd, buf, len, offset);
+#endif
+}
+
+static int tail_abandoned_estimate_lines(struct flb_tail_file *file,
+                                         int64_t start,
+                                         int64_t end,
+                                         uint64_t *lines)
+{
+    int i;
+    int ret;
+    int64_t remaining;
+    int64_t sample_offset;
+    size_t sample_len;
+    size_t read_len;
+    size_t sampled_bytes;
+    uint64_t sampled_lines;
+    char *buf;
+
+    remaining = end - start;
+
+    if (remaining <= 0) {
+        *lines = 0;
+        return 0;
+    }
+
+    buf = flb_malloc(FLB_TAIL_ABANDONED_SAMPLE_SIZE);
+    if (!buf) {
+        flb_errno();
+        return -1;
+    }
+
+    sampled_bytes = 0;
+    sampled_lines = 0;
+
+    if (remaining <= FLB_TAIL_ABANDONED_EXACT_SCAN_LIMIT) {
+        while (sampled_bytes < (size_t) remaining) {
+            read_len = (size_t) remaining - sampled_bytes;
+            if (read_len > FLB_TAIL_ABANDONED_SAMPLE_SIZE) {
+                read_len = FLB_TAIL_ABANDONED_SAMPLE_SIZE;
+            }
+
+            ret = tail_pread(file->fd, buf, read_len, start + sampled_bytes);
+            if (ret <= 0) {
+                flb_free(buf);
+                return -1;
+            }
+
+            sampled_lines += count_newlines(buf, ret);
+            sampled_bytes += ret;
+        }
+    }
+    else {
+        for (i = 0; i < FLB_TAIL_ABANDONED_SAMPLE_COUNT; i++) {
+            sample_offset = start + ((remaining - FLB_TAIL_ABANDONED_SAMPLE_SIZE) * i) /
+                            (FLB_TAIL_ABANDONED_SAMPLE_COUNT - 1);
+            sample_len = FLB_TAIL_ABANDONED_SAMPLE_SIZE;
+            if (sample_offset + (int64_t) sample_len > end) {
+                sample_len = end - sample_offset;
+            }
+
+            ret = tail_pread(file->fd, buf, sample_len, sample_offset);
+            if (ret <= 0) {
+                flb_free(buf);
+                return -1;
+            }
+
+            sampled_lines += count_newlines(buf, ret);
+            sampled_bytes += ret;
+        }
+
+        if (sampled_lines == 0) {
+            flb_free(buf);
+            return -1;
+        }
+
+        *lines = (uint64_t) ceil(((double) remaining * sampled_lines) /
+                                 sampled_bytes);
+        flb_free(buf);
+        return 0;
+    }
+
+    *lines = sampled_lines;
+    flb_free(buf);
+    return 0;
+}
+#endif
+
+void flb_tail_file_abandoned(struct flb_tail_file *file, struct stat *st)
+{
+#ifdef FLB_HAVE_METRICS
+    int ret;
+    uint64_t ts;
+    uint64_t lines;
+    int64_t remaining;
+    int64_t offset;
+    char *name;
+    struct flb_tail_config *ctx;
+
+    ctx = file->config;
+    offset = flb_tail_file_db_offset(file);
+    remaining = (int64_t) st->st_size - offset;
+
+    if (remaining <= 0) {
+        return;
+    }
+
+    name = (char *) flb_input_name(ctx->ins);
+    ts = cfl_time_now();
+
+    cmt_counter_inc(ctx->cmt_files_abandoned, ts, 1, (char *[]) {name});
+    cmt_counter_add(ctx->cmt_files_abandoned_bytes, ts, (double) remaining,
+                    1, (char *[]) {name});
+
+    ret = tail_abandoned_estimate_lines(file, offset, st->st_size, &lines);
+    if (ret == -1) {
+        flb_plg_warn(ctx->ins,
+                     "could not estimate abandoned lines for %s",
+                     file->name);
+        return;
+    }
+
+    cmt_counter_add(ctx->cmt_files_abandoned_lines_estimated, ts,
+                    (double) lines, 1, (char *[]) {name});
+#else
+    (void) file;
+    (void) st;
+#endif
+}
+
 void flb_tail_file_remove(struct flb_tail_file *file)
 {
     uint64_t ts;
@@ -2516,6 +2688,7 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
     if (st.st_nlink == 0) {
         flb_plg_debug(ctx->ins, "purge: monitored file has been deleted: %s",
                       file->name);
+        flb_tail_file_abandoned(file, &st);
 #ifdef FLB_HAVE_SQLDB
         if (ctx->db) {
             /* Remove file entry from the database */
@@ -2582,6 +2755,7 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
                                  "ingestion is paused, consider increasing "
                                  "rotate_wait");
                 }
+                flb_tail_file_abandoned(file, &st);
             }
             else {
                 flb_plg_debug(ctx->ins,

@@ -220,6 +220,7 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
         flb_plg_debug(ctx->ins, "inode=%"PRIu64" file has been deleted: %s",
                       file->inode, file->name);
 
+        flb_tail_file_abandoned(file, &st);
 #ifdef FLB_HAVE_SQLDB
         if (ctx->db) {
             flb_tail_db_file_delete(file, ctx);

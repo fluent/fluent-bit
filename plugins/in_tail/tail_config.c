@@ -516,6 +516,30 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
                                                 "Total number of rotated files",
                                                 1, (char *[]) {"name"});
 
+    ctx->cmt_files_abandoned = cmt_counter_create(ins->cmt,
+                                                  "fluentbit", "input",
+                                                  "files_abandoned_total",
+                                                  "Total number of monitored files "
+                                                  "removed while unprocessed bytes "
+                                                  "remained",
+                                                  1, (char *[]) {"name"});
+
+    ctx->cmt_files_abandoned_bytes = cmt_counter_create(ins->cmt,
+                                                        "fluentbit", "input",
+                                                        "files_abandoned_bytes_total",
+                                                        "Total number of unprocessed "
+                                                        "raw bytes remaining when "
+                                                        "monitored files were removed",
+                                                        1, (char *[]) {"name"});
+
+    ctx->cmt_files_abandoned_lines_estimated = \
+            cmt_counter_create(ins->cmt,
+                               "fluentbit", "input",
+                               "files_abandoned_lines_estimated_total",
+                               "Estimated number of complete newline-delimited "
+                               "lines remaining when monitored files were removed",
+                               1, (char *[]) {"name"});
+
     ctx->cmt_multiline_truncated = \
             cmt_counter_create(ins->cmt,
                                "fluentbit", "input",
