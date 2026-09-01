@@ -167,6 +167,26 @@ static int compare_text_lines(const void *a, const void *b)
     return strcmp(line_a, line_b);
 }
 
+static char *duplicate_test_string(const char *source)
+{
+#ifdef _WIN32
+    return _strdup(source);
+#else
+    return strdup(source);
+#endif
+}
+
+static char *tokenize_test_string(char *source,
+                                  const char *delimiters,
+                                  char **context)
+{
+#ifdef _WIN32
+    return strtok_s(source, delimiters, context);
+#else
+    return strtok_r(source, delimiters, context);
+#endif
+}
+
 static int are_texts_equivalent_ignoring_line_order(const char *left, const char *right)
 {
     char   *left_copy;
@@ -184,8 +204,8 @@ static int are_texts_equivalent_ignoring_line_order(const char *left, const char
         return CMT_FALSE;
     }
 
-    left_copy = strdup(left);
-    right_copy = strdup(right);
+    left_copy = duplicate_test_string(left);
+    right_copy = duplicate_test_string(right);
     if (left_copy == NULL || right_copy == NULL) {
         free(left_copy);
         free(right_copy);
@@ -216,18 +236,18 @@ static int are_texts_equivalent_ignoring_line_order(const char *left, const char
 
     left_count = 0;
     saveptr = NULL;
-    line = strtok_r(left_copy, "\n", &saveptr);
+    line = tokenize_test_string(left_copy, "\n", &saveptr);
     while (line != NULL) {
         left_lines[left_count++] = line;
-        line = strtok_r(NULL, "\n", &saveptr);
+        line = tokenize_test_string(NULL, "\n", &saveptr);
     }
 
     right_count = 0;
     saveptr = NULL;
-    line = strtok_r(right_copy, "\n", &saveptr);
+    line = tokenize_test_string(right_copy, "\n", &saveptr);
     while (line != NULL) {
         right_lines[right_count++] = line;
-        line = strtok_r(NULL, "\n", &saveptr);
+        line = tokenize_test_string(NULL, "\n", &saveptr);
     }
 
     if (left_count != right_count) {
@@ -1993,6 +2013,569 @@ static void test_opentelemetry_omitted_null_key_label_encoded(void)
     cmt_destroy(cmt);
 }
 
+static void test_opentelemetry_data_point_batches(void)
+{
+    int index;
+    int result;
+    int ret;
+    int seen[11];
+    size_t batch_index;
+    size_t resource_index;
+    size_t scope_index;
+    size_t metric_index;
+    size_t point_index;
+    size_t total_data_points;
+    uint64_t timestamp;
+    cfl_sds_t payload;
+    char *label_keys[] = {"series"};
+    char *label_values[1];
+    char *series[] = {
+        "series-0", "series-1", "series-2", "series-3", "series-4", "series-5",
+        "series-6", "series-7", "series-8", "series-9", "series-10"
+    };
+    struct cmt *context;
+    struct cmt_gauge *gauge;
+    struct cmt_opentelemetry_batches *batches;
+    Opentelemetry__Proto__Metrics__V1__Metric *metric;
+    Opentelemetry__Proto__Metrics__V1__ScopeMetrics *scope;
+    Opentelemetry__Proto__Metrics__V1__ResourceMetrics *resource;
+    Opentelemetry__Proto__Metrics__V1__NumberDataPoint *point;
+    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *decoded;
+
+    memset(seen, 0, sizeof(seen));
+    context = cmt_create();
+    TEST_CHECK(context != NULL);
+    if (context == NULL) {
+        return;
+    }
+
+    gauge = cmt_gauge_create(context,
+                             "test",
+                             "batch",
+                             "value",
+                             "batching test",
+                             1,
+                             label_keys);
+    TEST_CHECK(gauge != NULL);
+    if (gauge == NULL) {
+        cmt_destroy(context);
+        return;
+    }
+
+    for (index = 0; index < 11; index++) {
+        label_values[0] = series[index];
+        ret = cmt_gauge_set(gauge,
+                            (uint64_t) index + 1,
+                            (double) index,
+                            1,
+                            label_values);
+        TEST_CHECK(ret == 0);
+    }
+
+    batches = cmt_encode_opentelemetry_create_batches(context, 4, &result);
+    TEST_CHECK(result == CMT_ENCODE_OPENTELEMETRY_SUCCESS);
+    TEST_CHECK(batches != NULL);
+    if (batches == NULL) {
+        cmt_destroy(context);
+        return;
+    }
+
+    TEST_CHECK(batches->count == 3);
+    TEST_CHECK(batches->entries[0].data_point_count == 4);
+    TEST_CHECK(batches->entries[1].data_point_count == 4);
+    TEST_CHECK(batches->entries[2].data_point_count == 3);
+
+    total_data_points = 0;
+    for (batch_index = 0; batch_index < batches->count; batch_index++) {
+        decoded =
+            opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(
+                NULL,
+                cfl_sds_len(batches->entries[batch_index].payload),
+                (uint8_t *) batches->entries[batch_index].payload);
+        TEST_CHECK(decoded != NULL);
+        if (decoded == NULL) {
+            continue;
+        }
+
+        for (resource_index = 0;
+             resource_index < decoded->n_resource_metrics;
+             resource_index++) {
+            resource = decoded->resource_metrics[resource_index];
+            for (scope_index = 0; scope_index < resource->n_scope_metrics; scope_index++) {
+                scope = resource->scope_metrics[scope_index];
+                for (metric_index = 0; metric_index < scope->n_metrics; metric_index++) {
+                    metric = scope->metrics[metric_index];
+                    TEST_CHECK(metric->data_case ==
+                               OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_GAUGE);
+                    if (metric->data_case !=
+                        OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_GAUGE) {
+                        continue;
+                    }
+
+                    TEST_CHECK(strcmp(metric->name, "test_batch_value") == 0);
+                    TEST_CHECK(strcmp(metric->description, "batching test") == 0);
+                    for (point_index = 0;
+                         point_index < metric->gauge->n_data_points;
+                         point_index++) {
+                        point = metric->gauge->data_points[point_index];
+                        timestamp = point->time_unix_nano;
+                        TEST_CHECK(timestamp >= 1 && timestamp <= 11);
+                        if (timestamp >= 1 && timestamp <= 11) {
+                            seen[timestamp - 1]++;
+                        }
+                        total_data_points++;
+                    }
+                }
+            }
+        }
+
+        opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__free_unpacked(
+            decoded,
+            NULL);
+    }
+
+    TEST_CHECK(total_data_points == 11);
+    for (index = 0; index < 11; index++) {
+        TEST_CHECK(seen[index] == 1);
+    }
+
+    cmt_encode_opentelemetry_destroy_batches(batches);
+
+    batches = cmt_encode_opentelemetry_create_batches(context, 11, &result);
+    TEST_CHECK(result == CMT_ENCODE_OPENTELEMETRY_SUCCESS);
+    TEST_CHECK(batches != NULL);
+    if (batches != NULL) {
+        TEST_CHECK(batches->count == 1);
+        TEST_CHECK(batches->entries[0].data_point_count == 11);
+        cmt_encode_opentelemetry_destroy_batches(batches);
+    }
+
+    payload = cmt_encode_opentelemetry_create(context);
+    TEST_CHECK(payload != NULL);
+    if (payload == NULL) {
+        cmt_destroy(context);
+        return;
+    }
+
+    batches = cmt_encode_opentelemetry_split_payload(payload,
+                                                     cfl_sds_len(payload),
+                                                     0,
+                                                     &result);
+    TEST_CHECK(result == CMT_ENCODE_OPENTELEMETRY_SUCCESS);
+    TEST_CHECK(batches != NULL);
+    if (batches != NULL) {
+        TEST_CHECK(batches->count == 1);
+        TEST_CHECK(batches->entries[0].data_point_count == 11);
+        TEST_CHECK(cfl_sds_len(batches->entries[0].payload) == cfl_sds_len(payload));
+        TEST_CHECK(memcmp(batches->entries[0].payload,
+                          payload,
+                          cfl_sds_len(payload)) == 0);
+        cmt_encode_opentelemetry_destroy_batches(batches);
+    }
+    cmt_encode_opentelemetry_destroy(payload);
+
+    cmt_destroy(context);
+
+    batches = cmt_encode_opentelemetry_create_batches(NULL, 4, &result);
+    TEST_CHECK(batches == NULL);
+    TEST_CHECK(result == CMT_ENCODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+
+    batches = cmt_encode_opentelemetry_split_payload(NULL, 0, 4, &result);
+    TEST_CHECK(batches == NULL);
+    TEST_CHECK(result == CMT_ENCODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+
+    batches = cmt_encode_opentelemetry_split_payload("invalid", 7, 4, &result);
+    TEST_CHECK(batches == NULL);
+    TEST_CHECK(result == CMT_ENCODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+}
+
+static void test_opentelemetry_batches_empty_context(void)
+{
+    int result;
+    const char empty_payload = '\0';
+    struct cmt *context;
+    struct cmt_opentelemetry_batches *batches;
+
+    batches = cmt_encode_opentelemetry_split_payload(&empty_payload,
+                                                     0,
+                                                     0,
+                                                     &result);
+    TEST_CHECK(result == CMT_ENCODE_OPENTELEMETRY_SUCCESS);
+    TEST_CHECK(batches != NULL);
+    if (batches != NULL) {
+        TEST_CHECK(batches->count == 1);
+        if (batches->count == 1) {
+            TEST_CHECK(batches->entries[0].data_point_count == 0);
+            TEST_CHECK(cfl_sds_len(batches->entries[0].payload) == 0);
+        }
+        cmt_encode_opentelemetry_destroy_batches(batches);
+    }
+
+    context = cmt_create();
+    TEST_CHECK(context != NULL);
+    if (context == NULL) {
+        return;
+    }
+
+    batches = cmt_encode_opentelemetry_create_batches(context, 4, &result);
+    TEST_CHECK(result == CMT_ENCODE_OPENTELEMETRY_SUCCESS);
+    TEST_CHECK(batches != NULL);
+    if (batches != NULL) {
+        TEST_CHECK(batches->count <= 1);
+        if (batches->count == 1) {
+            TEST_CHECK(batches->entries[0].data_point_count == 0);
+        }
+        cmt_encode_opentelemetry_destroy_batches(batches);
+    }
+
+    cmt_destroy(context);
+}
+
+static void test_opentelemetry_batches_all_metric_types(void)
+{
+    int result;
+    int type_index;
+    int type_seen[5];
+    int point_seen[5][3];
+    size_t batch_index;
+    size_t metric_index;
+    size_t point_index;
+    size_t data_point_index;
+    size_t payload_size;
+    size_t total_data_points;
+    uint64_t timestamp;
+    cfl_sds_t payload;
+    const char *metric_names[] = {
+        "gauge", "sum", "histogram", "exponential_histogram", "summary"
+    };
+    Opentelemetry__Proto__Metrics__V1__Metric metrics[5];
+    Opentelemetry__Proto__Metrics__V1__Metric *metric_entries[5];
+    Opentelemetry__Proto__Metrics__V1__Gauge gauge;
+    Opentelemetry__Proto__Metrics__V1__Sum sum;
+    Opentelemetry__Proto__Metrics__V1__Histogram histogram;
+    Opentelemetry__Proto__Metrics__V1__ExponentialHistogram exp_histogram;
+    Opentelemetry__Proto__Metrics__V1__Summary summary;
+    Opentelemetry__Proto__Metrics__V1__NumberDataPoint gauge_point_values[3];
+    Opentelemetry__Proto__Metrics__V1__NumberDataPoint sum_point_values[3];
+    Opentelemetry__Proto__Metrics__V1__NumberDataPoint *gauge_points[3];
+    Opentelemetry__Proto__Metrics__V1__NumberDataPoint *sum_points[3];
+    Opentelemetry__Proto__Metrics__V1__HistogramDataPoint histogram_point_values[3];
+    Opentelemetry__Proto__Metrics__V1__HistogramDataPoint *histogram_points[3];
+    Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint
+        exp_histogram_point_values[3];
+    Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint
+        *exp_histogram_points[3];
+    Opentelemetry__Proto__Metrics__V1__SummaryDataPoint summary_point_values[3];
+    Opentelemetry__Proto__Metrics__V1__SummaryDataPoint *summary_points[3];
+    Opentelemetry__Proto__Resource__V1__Resource resource_metadata;
+    Opentelemetry__Proto__Common__V1__InstrumentationScope scope_metadata;
+    Opentelemetry__Proto__Metrics__V1__ScopeMetrics scope;
+    Opentelemetry__Proto__Metrics__V1__ScopeMetrics *scopes[1];
+    Opentelemetry__Proto__Metrics__V1__ResourceMetrics resource;
+    Opentelemetry__Proto__Metrics__V1__ResourceMetrics *resources[1];
+    Opentelemetry__Proto__Metrics__V1__Metric *metric;
+    Opentelemetry__Proto__Metrics__V1__ScopeMetrics *decoded_scope;
+    Opentelemetry__Proto__Metrics__V1__ResourceMetrics *decoded_resource;
+    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest request;
+    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *decoded;
+    struct cmt_opentelemetry_batches *batches;
+
+    memset(type_seen, 0, sizeof(type_seen));
+    memset(point_seen, 0, sizeof(point_seen));
+
+    opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__init(
+        &request);
+    opentelemetry__proto__metrics__v1__resource_metrics__init(&resource);
+    opentelemetry__proto__metrics__v1__scope_metrics__init(&scope);
+    opentelemetry__proto__metrics__v1__gauge__init(&gauge);
+    opentelemetry__proto__metrics__v1__sum__init(&sum);
+    opentelemetry__proto__metrics__v1__histogram__init(&histogram);
+    opentelemetry__proto__metrics__v1__exponential_histogram__init(&exp_histogram);
+    opentelemetry__proto__metrics__v1__summary__init(&summary);
+    opentelemetry__proto__resource__v1__resource__init(&resource_metadata);
+    opentelemetry__proto__common__v1__instrumentation_scope__init(&scope_metadata);
+
+    for (metric_index = 0; metric_index < 5; metric_index++) {
+        opentelemetry__proto__metrics__v1__metric__init(&metrics[metric_index]);
+        metric_entries[metric_index] = &metrics[metric_index];
+        metrics[metric_index].name = (char *) metric_names[metric_index];
+        metrics[metric_index].description = "batch preservation test";
+        metrics[metric_index].unit = "1";
+    }
+
+    for (point_index = 0; point_index < 3; point_index++) {
+        opentelemetry__proto__metrics__v1__number_data_point__init(
+            &gauge_point_values[point_index]);
+        opentelemetry__proto__metrics__v1__number_data_point__init(
+            &sum_point_values[point_index]);
+        opentelemetry__proto__metrics__v1__histogram_data_point__init(
+            &histogram_point_values[point_index]);
+        opentelemetry__proto__metrics__v1__exponential_histogram_data_point__init(
+            &exp_histogram_point_values[point_index]);
+        opentelemetry__proto__metrics__v1__summary_data_point__init(
+            &summary_point_values[point_index]);
+
+        gauge_points[point_index] = &gauge_point_values[point_index];
+        gauge_point_values[point_index].time_unix_nano = 1000 + point_index;
+        gauge_point_values[point_index].value_case =
+            OPENTELEMETRY__PROTO__METRICS__V1__NUMBER_DATA_POINT__VALUE_AS_INT;
+        gauge_point_values[point_index].as_int = 10 + point_index;
+
+        sum_points[point_index] = &sum_point_values[point_index];
+        sum_point_values[point_index].time_unix_nano = 2000 + point_index;
+        sum_point_values[point_index].value_case =
+            OPENTELEMETRY__PROTO__METRICS__V1__NUMBER_DATA_POINT__VALUE_AS_DOUBLE;
+        sum_point_values[point_index].as_double = 20.5 + point_index;
+
+        histogram_points[point_index] = &histogram_point_values[point_index];
+        histogram_point_values[point_index].time_unix_nano = 3000 + point_index;
+        histogram_point_values[point_index].count = 30 + point_index;
+
+        exp_histogram_points[point_index] = &exp_histogram_point_values[point_index];
+        exp_histogram_point_values[point_index].time_unix_nano = 4000 + point_index;
+        exp_histogram_point_values[point_index].count = 40 + point_index;
+        exp_histogram_point_values[point_index].scale = 4 + point_index;
+
+        summary_points[point_index] = &summary_point_values[point_index];
+        summary_point_values[point_index].time_unix_nano = 5000 + point_index;
+        summary_point_values[point_index].count = 50 + point_index;
+        summary_point_values[point_index].sum = 50.5 + point_index;
+    }
+
+    gauge.n_data_points = 3;
+    gauge.data_points = gauge_points;
+    metrics[0].data_case = OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_GAUGE;
+    metrics[0].gauge = &gauge;
+
+    sum.n_data_points = 3;
+    sum.data_points = sum_points;
+    sum.aggregation_temporality =
+        OPENTELEMETRY__PROTO__METRICS__V1__AGGREGATION_TEMPORALITY__AGGREGATION_TEMPORALITY_DELTA;
+    sum.is_monotonic = CMT_TRUE;
+    metrics[1].data_case = OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_SUM;
+    metrics[1].sum = &sum;
+
+    histogram.n_data_points = 3;
+    histogram.data_points = histogram_points;
+    histogram.aggregation_temporality =
+        OPENTELEMETRY__PROTO__METRICS__V1__AGGREGATION_TEMPORALITY__AGGREGATION_TEMPORALITY_CUMULATIVE;
+    metrics[2].data_case = OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_HISTOGRAM;
+    metrics[2].histogram = &histogram;
+
+    exp_histogram.n_data_points = 3;
+    exp_histogram.data_points = exp_histogram_points;
+    exp_histogram.aggregation_temporality =
+        OPENTELEMETRY__PROTO__METRICS__V1__AGGREGATION_TEMPORALITY__AGGREGATION_TEMPORALITY_DELTA;
+    metrics[3].data_case =
+        OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_EXPONENTIAL_HISTOGRAM;
+    metrics[3].exponential_histogram = &exp_histogram;
+
+    summary.n_data_points = 3;
+    summary.data_points = summary_points;
+    metrics[4].data_case = OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_SUMMARY;
+    metrics[4].summary = &summary;
+
+    scope_metadata.name = "splitter scope";
+    scope_metadata.version = "2.0.0";
+    scope_metadata.dropped_attributes_count = 9;
+    scope.scope = &scope_metadata;
+    scope.schema_url = "https://example.com/scope/2.0.0";
+    scope.n_metrics = 5;
+    scope.metrics = metric_entries;
+    scopes[0] = &scope;
+
+    resource_metadata.dropped_attributes_count = 7;
+    resource.resource = &resource_metadata;
+    resource.schema_url = "https://example.com/resource/1.0.0";
+    resource.n_scope_metrics = 1;
+    resource.scope_metrics = scopes;
+    resources[0] = &resource;
+    request.n_resource_metrics = 1;
+    request.resource_metrics = resources;
+
+    payload_size =
+        opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__get_packed_size(
+            &request);
+    payload = cfl_sds_create_size(payload_size);
+    TEST_CHECK(payload != NULL);
+    if (payload == NULL) {
+        return;
+    }
+
+    opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__pack(
+        &request,
+        (uint8_t *) payload);
+    cfl_sds_len_set(payload, payload_size);
+
+    batches = cmt_encode_opentelemetry_split_payload(payload,
+                                                     payload_size,
+                                                     2,
+                                                     &result);
+    cfl_sds_destroy(payload);
+    TEST_CHECK(result == CMT_ENCODE_OPENTELEMETRY_SUCCESS);
+    TEST_CHECK(batches != NULL);
+    if (batches == NULL) {
+        return;
+    }
+
+    TEST_CHECK(batches->count == 8);
+    total_data_points = 0;
+
+    for (batch_index = 0; batch_index < batches->count; batch_index++) {
+        TEST_CHECK(batches->entries[batch_index].data_point_count ==
+                   (batch_index < 7 ? 2 : 1));
+
+        decoded =
+            opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(
+                NULL,
+                cfl_sds_len(batches->entries[batch_index].payload),
+                (uint8_t *) batches->entries[batch_index].payload);
+        TEST_CHECK(decoded != NULL);
+        if (decoded == NULL) {
+            continue;
+        }
+
+        TEST_CHECK(decoded->n_resource_metrics == 1);
+        decoded_resource = decoded->resource_metrics[0];
+        TEST_CHECK(decoded_resource->resource != NULL);
+        TEST_CHECK(decoded_resource->schema_url != NULL);
+        if (decoded_resource->resource != NULL) {
+            TEST_CHECK(decoded_resource->resource->dropped_attributes_count == 7);
+        }
+        if (decoded_resource->schema_url != NULL) {
+            TEST_CHECK(strcmp(decoded_resource->schema_url,
+                              "https://example.com/resource/1.0.0") == 0);
+        }
+
+        TEST_CHECK(decoded_resource->n_scope_metrics == 1);
+        decoded_scope = decoded_resource->scope_metrics[0];
+        TEST_CHECK(decoded_scope->scope != NULL);
+        TEST_CHECK(decoded_scope->schema_url != NULL);
+        if (decoded_scope->scope != NULL) {
+            TEST_CHECK(strcmp(decoded_scope->scope->name, "splitter scope") == 0);
+            TEST_CHECK(strcmp(decoded_scope->scope->version, "2.0.0") == 0);
+            TEST_CHECK(decoded_scope->scope->dropped_attributes_count == 9);
+        }
+        if (decoded_scope->schema_url != NULL) {
+            TEST_CHECK(strcmp(decoded_scope->schema_url,
+                              "https://example.com/scope/2.0.0") == 0);
+        }
+
+        for (metric_index = 0;
+             metric_index < decoded_scope->n_metrics;
+             metric_index++) {
+            metric = decoded_scope->metrics[metric_index];
+            type_index = -1;
+
+            if (metric->data_case ==
+                OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_GAUGE) {
+                type_index = 0;
+                for (point_index = 0;
+                     point_index < metric->gauge->n_data_points;
+                     point_index++) {
+                    timestamp = metric->gauge->data_points[point_index]->time_unix_nano;
+                    TEST_CHECK(metric->gauge->data_points[point_index]->value_case ==
+                               OPENTELEMETRY__PROTO__METRICS__V1__NUMBER_DATA_POINT__VALUE_AS_INT);
+                    data_point_index = timestamp - 1000;
+                    TEST_CHECK(data_point_index < 3);
+                    if (data_point_index < 3) {
+                        point_seen[type_index][data_point_index]++;
+                    }
+                }
+                total_data_points += metric->gauge->n_data_points;
+            }
+            else if (metric->data_case ==
+                     OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_SUM) {
+                type_index = 1;
+                TEST_CHECK(metric->sum->aggregation_temporality == sum.aggregation_temporality);
+                TEST_CHECK(metric->sum->is_monotonic == sum.is_monotonic);
+                for (point_index = 0;
+                     point_index < metric->sum->n_data_points;
+                     point_index++) {
+                    timestamp = metric->sum->data_points[point_index]->time_unix_nano;
+                    data_point_index = timestamp - 2000;
+                    TEST_CHECK(data_point_index < 3);
+                    if (data_point_index < 3) {
+                        point_seen[type_index][data_point_index]++;
+                    }
+                }
+                total_data_points += metric->sum->n_data_points;
+            }
+            else if (metric->data_case ==
+                     OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_HISTOGRAM) {
+                type_index = 2;
+                TEST_CHECK(metric->histogram->aggregation_temporality ==
+                           histogram.aggregation_temporality);
+                for (point_index = 0;
+                     point_index < metric->histogram->n_data_points;
+                     point_index++) {
+                    timestamp = metric->histogram->data_points[point_index]->time_unix_nano;
+                    data_point_index = timestamp - 3000;
+                    TEST_CHECK(data_point_index < 3);
+                    if (data_point_index < 3) {
+                        point_seen[type_index][data_point_index]++;
+                    }
+                }
+                total_data_points += metric->histogram->n_data_points;
+            }
+            else if (metric->data_case ==
+                     OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_EXPONENTIAL_HISTOGRAM) {
+                type_index = 3;
+                TEST_CHECK(metric->exponential_histogram->aggregation_temporality ==
+                           exp_histogram.aggregation_temporality);
+                for (point_index = 0;
+                     point_index < metric->exponential_histogram->n_data_points;
+                     point_index++) {
+                    timestamp = metric->exponential_histogram->data_points[point_index]->time_unix_nano;
+                    data_point_index = timestamp - 4000;
+                    TEST_CHECK(data_point_index < 3);
+                    if (data_point_index < 3) {
+                        point_seen[type_index][data_point_index]++;
+                    }
+                }
+                total_data_points += metric->exponential_histogram->n_data_points;
+            }
+            else if (metric->data_case ==
+                     OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_SUMMARY) {
+                type_index = 4;
+                for (point_index = 0;
+                     point_index < metric->summary->n_data_points;
+                     point_index++) {
+                    timestamp = metric->summary->data_points[point_index]->time_unix_nano;
+                    data_point_index = timestamp - 5000;
+                    TEST_CHECK(data_point_index < 3);
+                    if (data_point_index < 3) {
+                        point_seen[type_index][data_point_index]++;
+                    }
+                }
+                total_data_points += metric->summary->n_data_points;
+            }
+
+            TEST_CHECK(type_index >= 0);
+            if (type_index >= 0) {
+                type_seen[type_index]++;
+                TEST_CHECK(strcmp(metric->name, metric_names[type_index]) == 0);
+                TEST_CHECK(strcmp(metric->description, "batch preservation test") == 0);
+                TEST_CHECK(strcmp(metric->unit, "1") == 0);
+            }
+        }
+
+        opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__free_unpacked(
+            decoded,
+            NULL);
+    }
+
+    TEST_CHECK(total_data_points == 15);
+    for (type_index = 0; type_index < 5; type_index++) {
+        TEST_CHECK(type_seen[type_index] == 2);
+        for (point_index = 0; point_index < 3; point_index++) {
+            TEST_CHECK(point_seen[type_index][point_index] == 1);
+        }
+    }
+
+    cmt_encode_opentelemetry_destroy_batches(batches);
+}
+
 TEST_LIST = {
     {"opentelemetry_api_full_roundtrip_with_msgpack", test_opentelemetry_api_full_roundtrip_with_msgpack},
     {"opentelemetry_encode_multi_resource_scope_containers", test_opentelemetry_encode_multi_resource_scope_containers},
@@ -2009,5 +2592,8 @@ TEST_LIST = {
     {"opentelemetry_missing_metric_name_rejected",     test_opentelemetry_missing_metric_name_rejected},
     {"opentelemetry_missing_metric_data_rejected",     test_opentelemetry_missing_metric_data_rejected},
     {"opentelemetry_omitted_null_key_label_encoded",   test_opentelemetry_omitted_null_key_label_encoded},
+    {"opentelemetry_data_point_batches",               test_opentelemetry_data_point_batches},
+    {"opentelemetry_batches_empty_context",            test_opentelemetry_batches_empty_context},
+    {"opentelemetry_batches_all_metric_types",         test_opentelemetry_batches_all_metric_types},
     { 0 }
 };
