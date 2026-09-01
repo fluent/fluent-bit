@@ -17,7 +17,9 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <fluent-bit-minimal.h>
 
 int main()
 {
