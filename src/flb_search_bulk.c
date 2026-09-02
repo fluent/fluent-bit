@@ -16,7 +16,13 @@
 #include <fluent-bit/flb_search_bulk.h>
 
 #include <msgpack.h>
+#include <limits.h>
 #include <string.h>
+
+#define FLB_SEARCH_BULK_ITEM_INVALID        -1
+#define FLB_SEARCH_BULK_ITEM_ACKNOWLEDGED    0
+#define FLB_SEARCH_BULK_ITEM_RETRYABLE       1
+#define FLB_SEARCH_BULK_ITEM_UNRECOVERABLE   2
 
 static int object_key_equals(msgpack_object key, const char *value, size_t length)
 {
@@ -318,8 +324,79 @@ static int top_level_errors_is_false(const char *json, size_t size)
     return FLB_FALSE;
 }
 
-static int item_is_acknowledged(msgpack_object item,
-                                int acknowledge_all_conflicts)
+static void copy_error_text(char *destination, size_t destination_size,
+                            msgpack_object value)
+{
+    unsigned char character;
+    size_t index;
+    size_t copy_size;
+
+    if (destination_size == 0 || value.type != MSGPACK_OBJECT_STR) {
+        return;
+    }
+
+    copy_size = value.via.str.size;
+    if (copy_size >= destination_size) {
+        copy_size = destination_size - 1;
+    }
+
+    for (index = 0; index < copy_size; index++) {
+        character = value.via.str.ptr[index];
+        if (character < 0x20 || character == 0x7f) {
+            destination[index] = ' ';
+        }
+        else {
+            destination[index] = character;
+        }
+    }
+    destination[copy_size] = '\0';
+}
+
+static void capture_first_error(struct flb_search_bulk_stats *stats,
+                                int status, msgpack_object operation)
+{
+    int index;
+    int error_index;
+    msgpack_object error;
+    msgpack_object value;
+
+    if (stats == NULL || stats->failed_items != 0) {
+        return;
+    }
+
+    stats->first_error_status = status;
+    for (index = 0; index < operation.via.map.size; index++) {
+        if (object_key_equals(operation.via.map.ptr[index].key,
+                              "error", 5) == FLB_FALSE) {
+            continue;
+        }
+
+        error = operation.via.map.ptr[index].val;
+        if (error.type != MSGPACK_OBJECT_MAP) {
+            return;
+        }
+
+        for (error_index = 0; error_index < error.via.map.size; error_index++) {
+            value = error.via.map.ptr[error_index].val;
+            if (object_key_equals(error.via.map.ptr[error_index].key,
+                                  "type", 4) == FLB_TRUE) {
+                copy_error_text(stats->first_error_type,
+                                sizeof(stats->first_error_type), value);
+            }
+            else if (object_key_equals(error.via.map.ptr[error_index].key,
+                                       "reason", 6) == FLB_TRUE) {
+                copy_error_text(stats->first_error_reason,
+                                sizeof(stats->first_error_reason), value);
+            }
+        }
+        return;
+    }
+}
+
+static int classify_item(msgpack_object item,
+                         int acknowledge_all_conflicts,
+                         int *out_status,
+                         msgpack_object *out_operation)
 {
     int index;
     int status;
@@ -328,13 +405,13 @@ static int item_is_acknowledged(msgpack_object item,
     msgpack_object value;
 
     if (item.type != MSGPACK_OBJECT_MAP || item.via.map.size != 1) {
-        return -1;
+        return FLB_SEARCH_BULK_ITEM_INVALID;
     }
 
     key = item.via.map.ptr[0].key;
     operation = item.via.map.ptr[0].val;
     if (key.type != MSGPACK_OBJECT_STR || operation.type != MSGPACK_OBJECT_MAP) {
-        return -1;
+        return FLB_SEARCH_BULK_ITEM_INVALID;
     }
 
     status = -1;
@@ -343,27 +420,39 @@ static int item_is_acknowledged(msgpack_object item,
         if (object_key_equals(operation.via.map.ptr[index].key,
                               "status", 6) == FLB_TRUE) {
             if (value.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                return -1;
+                return FLB_SEARCH_BULK_ITEM_INVALID;
             }
-            status = value.via.u64;
+            if (value.via.u64 > INT_MAX) {
+                return FLB_SEARCH_BULK_ITEM_INVALID;
+            }
+            status = (int) value.via.u64;
             break;
         }
     }
 
     if (status < 0) {
-        return -1;
+        return FLB_SEARCH_BULK_ITEM_INVALID;
     }
+
+    *out_status = status;
+    *out_operation = operation;
+
     if (status >= 200 && status < 300) {
-        return FLB_TRUE;
+        return FLB_SEARCH_BULK_ITEM_ACKNOWLEDGED;
     }
     if (status == 409) {
         if (acknowledge_all_conflicts == FLB_TRUE ||
             object_key_equals(key, "create", 6) == FLB_TRUE) {
-            return FLB_TRUE;
+            return FLB_SEARCH_BULK_ITEM_ACKNOWLEDGED;
         }
+
+        return FLB_SEARCH_BULK_ITEM_RETRYABLE;
+    }
+    if (status >= 400 && status < 500 && status != 408 && status != 429) {
+        return FLB_SEARCH_BULK_ITEM_UNRECOVERABLE;
     }
 
-    return FLB_FALSE;
+    return FLB_SEARCH_BULK_ITEM_RETRYABLE;
 }
 
 static int next_entry(const char *payload, size_t payload_size,
@@ -414,6 +503,8 @@ int flb_search_bulk_process_response(const char *response,
                                      const char *payload,
                                      size_t payload_size,
                                      int acknowledge_all_conflicts,
+                                     int drop_unrecoverable_records,
+                                     struct flb_search_bulk_stats *stats,
                                      struct flb_search_bulk_retry **out_retry)
 {
     int index;
@@ -421,7 +512,8 @@ int flb_search_bulk_process_response(const char *response,
     int root_type;
     int errors_found;
     int has_errors;
-    int acknowledged;
+    int item_result;
+    int status;
     char *packed_response;
     size_t packed_size;
     size_t unpack_offset;
@@ -433,9 +525,13 @@ int flb_search_bulk_process_response(const char *response,
     msgpack_object items;
     msgpack_object key;
     msgpack_object value;
+    msgpack_object operation;
     struct flb_search_bulk_retry *retry;
 
     *out_retry = NULL;
+    if (stats != NULL) {
+        memset(stats, 0, sizeof(struct flb_search_bulk_stats));
+    }
     packed_response = NULL;
     retry = NULL;
     items.type = MSGPACK_OBJECT_NIL;
@@ -525,13 +621,38 @@ int flb_search_bulk_process_response(const char *response,
             goto done;
         }
 
-        acknowledged = item_is_acknowledged(items.via.array.ptr[index],
-                                            acknowledge_all_conflicts);
-        if (acknowledged < 0) {
+        item_result = classify_item(items.via.array.ptr[index],
+                                    acknowledge_all_conflicts,
+                                    &status, &operation);
+        if (item_result == FLB_SEARCH_BULK_ITEM_INVALID) {
             result = FLB_SEARCH_BULK_INVALID;
             goto done;
         }
-        if (acknowledged == FLB_FALSE) {
+
+        if (stats != NULL) {
+            stats->total_items++;
+            if (item_result == FLB_SEARCH_BULK_ITEM_ACKNOWLEDGED) {
+                stats->successful_items++;
+                stats->successful_bytes += entry_size;
+            }
+        }
+        if (item_result != FLB_SEARCH_BULK_ITEM_ACKNOWLEDGED) {
+            capture_first_error(stats, status, operation);
+            if (stats != NULL) {
+                stats->failed_items++;
+                if (item_result == FLB_SEARCH_BULK_ITEM_UNRECOVERABLE) {
+                    stats->unrecoverable_items++;
+                    stats->unrecoverable_bytes += entry_size;
+                }
+                else {
+                    stats->retryable_items++;
+                }
+            }
+        }
+
+        if (item_result == FLB_SEARCH_BULK_ITEM_RETRYABLE ||
+            (item_result == FLB_SEARCH_BULK_ITEM_UNRECOVERABLE &&
+             drop_unrecoverable_records == FLB_FALSE)) {
             memcpy(retry->payload + retry->size,
                    payload + entry_start, entry_size);
             retry->size += entry_size;
