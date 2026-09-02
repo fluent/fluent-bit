@@ -279,6 +279,138 @@ void flb_test_gcs_rejects_parquet_without_support(void)
 }
 #endif
 
+void flb_test_gcs_identity_federation_upload(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    char *call_count_str;
+    int call_count;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-wif-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "enable_identity_federation", "true", NULL);
+    flb_output_set(ctx, out_ffd, "project_number", "123456789", NULL);
+    flb_output_set(ctx, out_ffd, "pool_id", "my-pool", NULL);
+    flb_output_set(ctx, out_ffd, "provider_id", "my-provider", NULL);
+    flb_output_set(ctx, out_ffd, "identity_token_file", TEST_PRIVATE_KEY, NULL);
+    flb_output_set(ctx, out_ffd, "google_service_account",
+                   "logger@my-proj.iam.gserviceaccount.com", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "3s", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "gcs_key_format", "logs/$TAG", NULL);
+    flb_output_set(ctx, out_ffd, "static_file_path", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+    sleep(5);
+
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 1,
+                "Expected 1 UploadObject call, got %d", call_count);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_rejects_incomplete_federation(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-wif-incomplete-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "enable_identity_federation", "true", NULL);
+    flb_output_set(ctx, out_ffd, "project_number", "123456789", NULL);
+    /* pool_id/provider_id/identity_token_file intentionally missing */
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_rejects_conflicting_credentials(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-wif-conflict-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "enable_identity_federation", "true", NULL);
+    flb_output_set(ctx, out_ffd, "project_number", "123456789", NULL);
+    flb_output_set(ctx, out_ffd, "pool_id", "my-pool", NULL);
+    flb_output_set(ctx, out_ffd, "provider_id", "my-provider", NULL);
+    flb_output_set(ctx, out_ffd, "identity_token_file", TEST_PRIVATE_KEY, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
+    flb_free(store_dir);
+}
+
 void flb_test_gcs_rejects_invalid_configuration(void)
 {
     int ret;
@@ -873,6 +1005,9 @@ TEST_LIST = {
 #else
     {"rejects_parquet_without_support", flb_test_gcs_rejects_parquet_without_support},
 #endif
+    {"identity_federation_upload", flb_test_gcs_identity_federation_upload},
+    {"rejects_incomplete_federation", flb_test_gcs_rejects_incomplete_federation},
+    {"rejects_conflicting_credentials", flb_test_gcs_rejects_conflicting_credentials},
     {"rejects_invalid_configuration", flb_test_gcs_rejects_invalid_configuration},
     {"rejects_invalid_compression", flb_test_gcs_rejects_invalid_compression},
     {"accepts_extra_credential_fields", flb_test_gcs_accepts_extra_credential_fields},
