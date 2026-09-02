@@ -44,6 +44,17 @@ struct flb_search_bulk_retry {
     int records;
 };
 
+/*
+ * Process a Search bulk API response and build a payload containing records
+ * that remain eligible for retry.
+ *
+ * drop_unrecoverable_records should default to FLB_FALSE. When FLB_TRUE,
+ * failed items with 4xx statuses other than 408 and 429 are classified as
+ * unrecoverable and omitted from the retry payload. Status 409 continues to
+ * follow acknowledge_all_conflicts, while 408, 429, and 5xx statuses remain
+ * retryable. Enabling this option can discard rejected records and cause data
+ * loss, so callers must expose it as an explicit opt-in behavior.
+ */
 int flb_search_bulk_process_response(const char *response,
                                      size_t response_size,
                                      const char *payload,
