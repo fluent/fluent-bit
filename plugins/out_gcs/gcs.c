@@ -775,6 +775,321 @@ static int gcs_get_oauth2_token(struct flb_gcs *ctx)
     return 0;
 }
 
+/* The platform rotates this file (e.g. kubelet projected token); read fresh, never cache. */
+static int gcs_read_identity_token(struct flb_gcs *ctx, flb_sds_t *out_token)
+{
+    char *buf;
+    size_t len;
+    flb_sds_t token;
+
+    buf = mk_file_to_buffer(ctx->identity_token_file);
+    if (!buf) {
+        flb_plg_error(ctx->ins, "could not read identity token file: %s",
+                      ctx->identity_token_file);
+        return -1;
+    }
+
+    len = strlen(buf);
+    while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r' ||
+                       buf[len - 1] == ' ' || buf[len - 1] == '\t')) {
+        len--;
+    }
+
+    if (len == 0) {
+        flb_plg_error(ctx->ins, "identity token file is empty: %s",
+                      ctx->identity_token_file);
+        flb_free(buf);
+        return -1;
+    }
+
+    token = flb_sds_create_len(buf, len);
+    flb_free(buf);
+    if (!token) {
+        return -1;
+    }
+
+    *out_token = token;
+    return 0;
+}
+
+/* Escapes content only; the caller supplies the surrounding quotes. */
+static flb_sds_t gcs_json_escape(const char *str, size_t len)
+{
+    flb_sds_t out;
+    flb_sds_t ret;
+
+    out = flb_sds_create_size(len + 16);
+    if (!out) {
+        return NULL;
+    }
+
+    ret = flb_sds_cat_utf8(&out, str, (int) len);
+    if (!ret) {
+        flb_sds_destroy(out);
+        return NULL;
+    }
+
+    return ret;
+}
+
+/* Days-from-civil (Howard Hinnant): portable UTC broken-down time to epoch,
+ * avoiding non-portable timegm()/strptime() (out_gcs also builds on Windows). */
+static time_t gcs_utc_to_epoch(int year, int mon, int mday,
+                               int hour, int min, int sec)
+{
+    long y = year;
+    long era;
+    long yoe;
+    long doy;
+    long doe;
+    long days;
+
+    y -= (mon <= 2);
+    era = (y >= 0 ? y : y - 399) / 400;
+    yoe = y - era * 400;
+    doy = (153 * (mon + (mon > 2 ? -3 : 9)) + 2) / 5 + mday - 1;
+    doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    days = era * 146097 + doe - 719468;
+
+    return (time_t) days * 86400 + hour * 3600 + min * 60 + sec;
+}
+
+/* Derive expiry from the server-stated lifetime (STS "expires_in" / IAM
+ * "expireTime") minus a safety margin; fall back to FLB_GCS_TOKEN_REFRESH. */
+static time_t gcs_federation_token_expiry(struct flb_gcs *ctx,
+                                          struct flb_http_client *sts_c,
+                                          struct flb_http_client *iam_c)
+{
+    time_t now = time(NULL);
+    time_t expiry = 0;
+    flb_sds_t val;
+    int y, mo, d, h, mi, s;
+
+    if (ctx->google_service_account && iam_c) {
+        val = flb_json_get_val(iam_c->resp.payload, iam_c->resp.payload_size,
+                               "expireTime");
+        if (val) {
+            if (sscanf(val, "%d-%d-%dT%d:%d:%d", &y, &mo, &d, &h, &mi, &s) == 6) {
+                expiry = gcs_utc_to_epoch(y, mo, d, h, mi, s);
+            }
+            flb_sds_destroy(val);
+        }
+    }
+    else if (sts_c) {
+        val = flb_json_get_val(sts_c->resp.payload, sts_c->resp.payload_size,
+                               "expires_in");
+        if (val) {
+            long secs = atol(val);
+            if (secs > 0) {
+                expiry = now + (time_t) secs;
+            }
+            flb_sds_destroy(val);
+        }
+    }
+
+    if (expiry <= now) {
+        return now + FLB_GCS_TOKEN_REFRESH;
+    }
+
+    expiry -= FLB_GCS_TOKEN_EXPIRY_SAFETY;
+    if (expiry <= now) {
+        expiry = now + 1;
+    }
+
+    return expiry;
+}
+
+/* Exchange the OIDC subject token at Google STS, optionally impersonating a
+ * service account via IAM Credentials.
+ * https://cloud.google.com/iam/docs/workload-identity-federation */
+static int gcs_exchange_identity_federation_token(struct flb_gcs *ctx)
+{
+    int ret = -1;
+    int http_ret;
+    size_t b_sent;
+    flb_sds_t subject_token = NULL;
+    flb_sds_t sts_body = NULL;
+    flb_sds_t federated_token = NULL;
+    flb_sds_t iam_url = NULL;
+    flb_sds_t iam_body = NULL;
+    flb_sds_t auth_header = NULL;
+    flb_sds_t new_token = NULL;
+    flb_sds_t audience_esc = NULL;
+    flb_sds_t token_type_esc = NULL;
+    flb_sds_t subject_token_esc = NULL;
+    struct flb_connection *sts_conn = NULL;
+    struct flb_connection *iam_conn = NULL;
+    struct flb_http_client *sts_c = NULL;
+    struct flb_http_client *iam_c = NULL;
+
+    if (gcs_read_identity_token(ctx, &subject_token) != 0) {
+        return -1;
+    }
+
+    /* JSON-escape user-controlled values before embedding them in the request */
+    audience_esc = gcs_json_escape(ctx->sts_audience,
+                                   flb_sds_len(ctx->sts_audience));
+    token_type_esc = gcs_json_escape(ctx->subject_token_type,
+                                     flb_sds_len(ctx->subject_token_type));
+    subject_token_esc = gcs_json_escape(subject_token,
+                                        flb_sds_len(subject_token));
+    if (!audience_esc || !token_type_esc || !subject_token_esc) {
+        goto cleanup;
+    }
+
+    sts_body = flb_sds_create_size(flb_sds_len(subject_token_esc) + 512);
+    if (!sts_body) {
+        goto cleanup;
+    }
+    if (!flb_sds_printf(&sts_body,
+                        "{\"audience\":\"%s\","
+                        "\"grantType\":\"%s\","
+                        "\"requestedTokenType\":\"%s\","
+                        "\"scope\":\"%s\","
+                        "\"subjectTokenType\":\"%s\","
+                        "\"subjectToken\":\"%s\"}",
+                        audience_esc,
+                        FLB_GCS_STS_GRANT_TYPE,
+                        FLB_GCS_STS_REQUESTED_TOKEN_TYPE,
+                        FLB_GCS_STS_SCOPE,
+                        token_type_esc,
+                        subject_token_esc)) {
+        goto cleanup;
+    }
+
+    sts_conn = flb_upstream_conn_get(ctx->sts_u);
+    if (!sts_conn) {
+        flb_plg_error(ctx->ins, "failed to connect to Google STS");
+        goto cleanup;
+    }
+
+    sts_c = flb_http_client(sts_conn, FLB_HTTP_POST, FLB_GCS_STS_TOKEN_ENDPOINT,
+                            sts_body, flb_sds_len(sts_body), NULL, 0, NULL, 0);
+    if (!sts_c) {
+        goto cleanup;
+    }
+    flb_http_add_header(sts_c, "Content-Type", 12, "application/json", 16);
+
+    http_ret = flb_http_do(sts_c, &b_sent);
+    if (http_ret != 0 || sts_c->resp.status != 200) {
+        flb_plg_error(ctx->ins,
+                      "Google STS token exchange failed (http_do=%i status=%i): %s",
+                      http_ret, sts_c->resp.status,
+                      sts_c->resp.payload ? sts_c->resp.payload : "");
+        goto cleanup;
+    }
+
+    federated_token = flb_json_get_val(sts_c->resp.payload,
+                                       sts_c->resp.payload_size,
+                                       "access_token");
+    if (!federated_token) {
+        flb_plg_error(ctx->ins,
+                      "could not extract federated access token from STS response");
+        goto cleanup;
+    }
+
+    if (!ctx->google_service_account) {
+        new_token = flb_sds_create(federated_token);
+        if (!new_token) {
+            goto cleanup;
+        }
+    }
+    else {
+        /* Impersonate the target service account via IAM Credentials */
+        iam_url = flb_sds_create_size(256);
+        if (!iam_url) {
+            goto cleanup;
+        }
+        if (!flb_sds_printf(&iam_url, FLB_GCS_GEN_ACCESS_TOKEN_ENDPOINT,
+                            ctx->google_service_account)) {
+            goto cleanup;
+        }
+
+        auth_header = flb_sds_create_size(flb_sds_len(federated_token) +
+                                          sizeof("Bearer "));
+        if (!auth_header) {
+            goto cleanup;
+        }
+        if (!flb_sds_printf(&auth_header, "Bearer %s", federated_token)) {
+            goto cleanup;
+        }
+
+        iam_body = flb_sds_create(FLB_GCS_GEN_ACCESS_TOKEN_BODY);
+        if (!iam_body) {
+            goto cleanup;
+        }
+
+        iam_conn = flb_upstream_conn_get(ctx->iam_u);
+        if (!iam_conn) {
+            flb_plg_error(ctx->ins, "failed to connect to Google IAM Credentials");
+            goto cleanup;
+        }
+
+        iam_c = flb_http_client(iam_conn, FLB_HTTP_POST, iam_url,
+                                iam_body, flb_sds_len(iam_body), NULL, 0, NULL, 0);
+        if (!iam_c) {
+            goto cleanup;
+        }
+        flb_http_add_header(iam_c, "Authorization", 13,
+                            auth_header, flb_sds_len(auth_header));
+        flb_http_add_header(iam_c, "Content-Type", 12, "application/json", 16);
+
+        http_ret = flb_http_do(iam_c, &b_sent);
+        if (http_ret != 0 || iam_c->resp.status != 200) {
+            flb_plg_error(ctx->ins,
+                          "IAM generateAccessToken failed (http_do=%i status=%i): %s",
+                          http_ret, iam_c->resp.status,
+                          iam_c->resp.payload ? iam_c->resp.payload : "");
+            goto cleanup;
+        }
+
+        new_token = flb_json_get_val(iam_c->resp.payload,
+                                     iam_c->resp.payload_size,
+                                     "accessToken");
+        if (!new_token) {
+            flb_plg_error(ctx->ins,
+                          "could not extract accessToken from IAM response");
+            goto cleanup;
+        }
+    }
+
+    if (ctx->federation_token) {
+        flb_sds_destroy(ctx->federation_token);
+    }
+    ctx->federation_token = new_token;
+    new_token = NULL;
+    ctx->federation_token_expiry = gcs_federation_token_expiry(ctx, sts_c, iam_c);
+    ret = 0;
+
+    flb_plg_info(ctx->ins,
+                 "retrieved Google access token via Workload Identity Federation");
+
+cleanup:
+    flb_sds_destroy(subject_token);
+    flb_sds_destroy(audience_esc);
+    flb_sds_destroy(token_type_esc);
+    flb_sds_destroy(subject_token_esc);
+    flb_sds_destroy(sts_body);
+    flb_sds_destroy(federated_token);
+    flb_sds_destroy(iam_url);
+    flb_sds_destroy(iam_body);
+    flb_sds_destroy(auth_header);
+    flb_sds_destroy(new_token);
+    if (sts_c) {
+        flb_http_client_destroy(sts_c);
+    }
+    if (iam_c) {
+        flb_http_client_destroy(iam_c);
+    }
+    if (sts_conn) {
+        flb_upstream_conn_release(sts_conn);
+    }
+    if (iam_conn) {
+        flb_upstream_conn_release(iam_conn);
+    }
+    return ret;
+}
+
 static flb_sds_t get_google_token(struct flb_gcs *ctx)
 {
     int ret = 0;
@@ -785,25 +1100,48 @@ static flb_sds_t get_google_token(struct flb_gcs *ctx)
         return NULL;
     }
 
-    if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
-        ret = gcs_get_oauth2_token(ctx);
-    }
+    if (ctx->has_identity_federation) {
+        if (!ctx->federation_token ||
+            ctx->federation_token_expiry <= time(NULL)) {
+            ret = gcs_exchange_identity_federation_token(ctx);
+        }
 
-    if (ret == 0) {
-        output = flb_sds_create(ctx->o->token_type);
-        if (output) {
-            tmp = flb_sds_printf(&output, " %s", ctx->o->access_token);
-            if (!tmp) {
-                flb_sds_destroy(output);
-                output = NULL;
-            }
-            else {
-                output = tmp;
+        if (ret == 0 && ctx->federation_token) {
+            output = flb_sds_create_size(flb_sds_len(ctx->federation_token) +
+                                         sizeof("Bearer "));
+            if (output) {
+                tmp = flb_sds_printf(&output, "Bearer %s", ctx->federation_token);
+                if (!tmp) {
+                    flb_sds_destroy(output);
+                    output = NULL;
+                }
+                else {
+                    output = tmp;
+                }
             }
         }
     }
-    pthread_mutex_unlock(&ctx->token_mutex);
+    else {
+        if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
+            ret = gcs_get_oauth2_token(ctx);
+        }
 
+        if (ret == 0) {
+            output = flb_sds_create(ctx->o->token_type);
+            if (output) {
+                tmp = flb_sds_printf(&output, " %s", ctx->o->access_token);
+                if (!tmp) {
+                    flb_sds_destroy(output);
+                    output = NULL;
+                }
+                else {
+                    output = tmp;
+                }
+            }
+        }
+    }
+
+    pthread_mutex_unlock(&ctx->token_mutex);
     return output;
 }
 
@@ -1401,6 +1739,95 @@ static int flush_init(struct flb_gcs *ctx)
     return 0;
 }
 
+static int gcs_init_identity_federation(struct flb_gcs *ctx, struct flb_config *config)
+{
+    int io_flags = FLB_IO_TLS;
+    struct flb_output_instance *ins = ctx->ins;
+
+    if (ins->host.ipv6 == FLB_TRUE) {
+        io_flags |= FLB_IO_IPV6;
+    }
+
+    if (!ctx->project_number) {
+        flb_plg_error(ins, "'project_number' is required when "
+                      "'enable_identity_federation' is true");
+        return -1;
+    }
+    if (!ctx->pool_id) {
+        flb_plg_error(ins, "'pool_id' is required when "
+                      "'enable_identity_federation' is true");
+        return -1;
+    }
+    if (!ctx->provider_id) {
+        flb_plg_error(ins, "'provider_id' is required when "
+                      "'enable_identity_federation' is true");
+        return -1;
+    }
+    if (!ctx->identity_token_file) {
+        flb_plg_error(ins, "'identity_token_file' is required when "
+                      "'enable_identity_federation' is true");
+        return -1;
+    }
+
+    /* Build the STS audience (workload identity pool provider resource name) */
+    ctx->sts_audience = flb_sds_create_size(256);
+    if (!ctx->sts_audience) {
+        return -1;
+    }
+    if (!flb_sds_printf(&ctx->sts_audience, FLB_GCS_TARGET_RESOURCE_TEMPLATE,
+                        ctx->project_number, ctx->pool_id, ctx->provider_id)) {
+        return -1;
+    }
+
+    /* Google STS upstream (token exchange) */
+    ctx->sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE, ins->tls_verify,
+                                  ins->tls_debug, ins->tls_vhost,
+                                  ins->tls_ca_path, ins->tls_ca_file,
+                                  ins->tls_crt_file, ins->tls_key_file,
+                                  ins->tls_key_passwd);
+    if (!ctx->sts_tls) {
+        flb_plg_error(ins, "failed to create Google STS TLS context");
+        return -1;
+    }
+    flb_tls_set_verify_hostname(ctx->sts_tls, ins->tls_verify_hostname);
+
+    ctx->sts_u = flb_upstream_create_url(config, FLB_GCS_GOOGLE_STS_URL,
+                                         io_flags, ctx->sts_tls);
+    if (!ctx->sts_u) {
+        flb_plg_error(ins, "failed to create Google STS upstream");
+        return -1;
+    }
+    flb_stream_disable_async_mode(&ctx->sts_u->base);
+
+    /* Google IAM Credentials upstream (only needed for impersonation) */
+    if (ctx->google_service_account) {
+        ctx->iam_tls = flb_tls_create(FLB_TLS_CLIENT_MODE, ins->tls_verify,
+                                      ins->tls_debug, ins->tls_vhost,
+                                      ins->tls_ca_path, ins->tls_ca_file,
+                                      ins->tls_crt_file, ins->tls_key_file,
+                                      ins->tls_key_passwd);
+        if (!ctx->iam_tls) {
+            flb_plg_error(ins, "failed to create Google IAM TLS context");
+            return -1;
+        }
+        flb_tls_set_verify_hostname(ctx->iam_tls, ins->tls_verify_hostname);
+
+        ctx->iam_u = flb_upstream_create_url(config, FLB_GCS_GOOGLE_IAM_URL,
+                                             io_flags, ctx->iam_tls);
+        if (!ctx->iam_u) {
+            flb_plg_error(ins, "failed to create Google IAM upstream");
+            return -1;
+        }
+        flb_stream_disable_async_mode(&ctx->iam_u->base);
+    }
+
+    flb_plg_info(ins,
+                 "Workload Identity Federation enabled (audience=%s, impersonation=%s)",
+                 ctx->sts_audience,
+                 ctx->google_service_account ? ctx->google_service_account : "none");
+    return 0;
+}
+
 /* init/flush/exit */
 static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *config, void *data)
 {
@@ -1465,51 +1892,66 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
         goto error;
     }
 
-    tmp = getenv("GOOGLE_APPLICATION_CREDENTIALS");
-    legacy_credentials = getenv("GOOGLE_SERVICE_CREDENTIALS");
-    if (!ctx->credentials_file && tmp && legacy_credentials) {
-        flb_plg_warn(ins, "GOOGLE_APPLICATION_CREDENTIALS and "
-                     "GOOGLE_SERVICE_CREDENTIALS are both set; using "
-                     "GOOGLE_APPLICATION_CREDENTIALS");
-    }
-    if (!ctx->credentials_file && !tmp) {
-        tmp = legacy_credentials;
-    }
-    if (!ctx->credentials_file && tmp) {
-        ctx->credentials_file = flb_sds_create(tmp);
-        if (!ctx->credentials_file) {
-            goto error;
-        }
-        ctx->credentials_file_owned = FLB_TRUE;
-    }
-
-    if (ctx->credentials_file) {
-        ctx->oauth_credentials = flb_calloc(1, sizeof(struct flb_gcs_oauth_credentials));
-        if (!ctx->oauth_credentials) {
-            flb_errno();
-            goto error;
-        }
-
-        if (flb_gcs_read_credentials_file(ctx, ctx->credentials_file,
-                                          ctx->oauth_credentials) == -1) {
-            goto error;
-        }
-    }
-    else {
-        ctx->metadata_server_auth = FLB_TRUE;
-        flb_plg_info(ins, "using GCE/GKE metadata server authentication");
-    }
-
-    ctx->o = flb_oauth2_create(config, FLB_GCS_AUTH_URL, FLB_GCS_TOKEN_REFRESH);
-    if (!ctx->o) {
-        goto error;
-    }
     if (pthread_mutex_init(&ctx->token_mutex, NULL) == 0) {
         ctx->token_mutex_initialized = FLB_TRUE;
     }
     else {
         goto error;
     }
+
+    if (ctx->has_identity_federation) {
+        if (ctx->credentials_file) {
+            flb_plg_error(ins, "'google_service_credentials' and "
+                          "'enable_identity_federation' are mutually exclusive");
+            goto error;
+        }
+
+        if (gcs_init_identity_federation(ctx, config) == -1) {
+            goto error;
+        }
+    }
+    else {
+        tmp = getenv("GOOGLE_APPLICATION_CREDENTIALS");
+        legacy_credentials = getenv("GOOGLE_SERVICE_CREDENTIALS");
+        if (!ctx->credentials_file && tmp && legacy_credentials) {
+            flb_plg_warn(ins, "GOOGLE_APPLICATION_CREDENTIALS and "
+                         "GOOGLE_SERVICE_CREDENTIALS are both set; using "
+                         "GOOGLE_APPLICATION_CREDENTIALS");
+        }
+        if (!ctx->credentials_file && !tmp) {
+            tmp = legacy_credentials;
+        }
+        if (!ctx->credentials_file && tmp) {
+            ctx->credentials_file = flb_sds_create(tmp);
+            if (!ctx->credentials_file) {
+                goto error;
+            }
+            ctx->credentials_file_owned = FLB_TRUE;
+        }
+
+        if (ctx->credentials_file) {
+            ctx->oauth_credentials = flb_calloc(1, sizeof(struct flb_gcs_oauth_credentials));
+            if (!ctx->oauth_credentials) {
+                flb_errno();
+                goto error;
+            }
+
+            if (flb_gcs_read_credentials_file(ctx, ctx->credentials_file,
+                                              ctx->oauth_credentials) == -1) {
+                goto error;
+            }
+        }
+        else {
+            ctx->metadata_server_auth = FLB_TRUE;
+            flb_plg_info(ins, "using GCE/GKE metadata server authentication");
+        }
+
+        ctx->o = flb_oauth2_create(config, FLB_GCS_AUTH_URL, FLB_GCS_TOKEN_REFRESH);
+        if (!ctx->o) {
+            goto error;
+        }
+    }
+
     ctx->u = flb_upstream_create(config, FLB_GCS_DEFAULT_HOST, FLB_GCS_DEFAULT_PORT,
                                  FLB_IO_TLS, ins->tls);
     if (!ctx->u) {
@@ -1719,6 +2161,30 @@ static int gcs_ctx_destroy(void *data, struct flb_config *config)
         flb_oauth2_destroy(ctx->o);
     }
 
+    if (ctx->sts_u) {
+        flb_upstream_destroy(ctx->sts_u);
+    }
+
+    if (ctx->iam_u) {
+        flb_upstream_destroy(ctx->iam_u);
+    }
+
+    if (ctx->sts_tls) {
+        flb_tls_destroy(ctx->sts_tls);
+    }
+
+    if (ctx->iam_tls) {
+        flb_tls_destroy(ctx->iam_tls);
+    }
+
+    if (ctx->sts_audience) {
+        flb_sds_destroy(ctx->sts_audience);
+    }
+
+    if (ctx->federation_token) {
+        flb_sds_destroy(ctx->federation_token);
+    }
+
     flb_gcs_credentials_destroy(ctx->oauth_credentials);
 
     if (ctx->credentials_file_owned == FLB_TRUE) {
@@ -1816,6 +2282,44 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "metadata_server", FLB_GCS_METADATA_SERVER,
      0, FLB_TRUE, offsetof(struct flb_gcs, metadata_server),
      "GCE/GKE metadata server used when no credentials file is configured."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "enable_identity_federation", "false",
+     0, FLB_TRUE, offsetof(struct flb_gcs, has_identity_federation),
+     "Enable Workload Identity Federation (external account) instead of a "
+     "static service account key."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "project_number", NULL,
+     0, FLB_TRUE, offsetof(struct flb_gcs, project_number),
+     "GCP project number owning the workload identity pool (identity federation)."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "pool_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_gcs, pool_id),
+     "Workload identity pool id (identity federation)."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "provider_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_gcs, provider_id),
+     "Workload identity pool provider id (identity federation)."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "identity_token_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_gcs, identity_token_file),
+     "Path to the OIDC subject token file used as the federation credential "
+     "source (identity federation)."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "google_service_account", NULL,
+     0, FLB_TRUE, offsetof(struct flb_gcs, google_service_account),
+     "Service account to impersonate. If unset, the federated token is used "
+     "directly against GCS (direct resource access)."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "subject_token_type", FLB_GCS_STS_SUBJECT_TOKEN_TYPE,
+     0, FLB_TRUE, offsetof(struct flb_gcs, subject_token_type),
+     "OIDC subject token type for identity federation."
     },
     {
      FLB_CONFIG_MAP_STR, "store_dir", "/tmp/fluent-bit/gcs",
