@@ -23,6 +23,21 @@
 #define FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS  0
 #define FLB_SEARCH_BULK_ACK_ALL_CONFLICTS     1
 
+#define FLB_SEARCH_BULK_REASON_SIZE 256
+
+struct flb_search_bulk_stats {
+    size_t total_items;
+    size_t successful_items;
+    size_t successful_bytes;
+    size_t failed_items;
+    size_t retryable_items;
+    size_t unrecoverable_items;
+    size_t unrecoverable_bytes;
+    int first_error_status;
+    char first_error_type[FLB_SEARCH_BULK_REASON_SIZE];
+    char first_error_reason[FLB_SEARCH_BULK_REASON_SIZE];
+};
+
 struct flb_search_bulk_retry {
     char *payload;
     size_t size;
@@ -34,6 +49,8 @@ int flb_search_bulk_process_response(const char *response,
                                      const char *payload,
                                      size_t payload_size,
                                      int acknowledge_all_conflicts,
+                                     int drop_unrecoverable_records,
+                                     struct flb_search_bulk_stats *stats,
                                      struct flb_search_bulk_retry **retry);
 void flb_search_bulk_retry_destroy(void *data);
 
