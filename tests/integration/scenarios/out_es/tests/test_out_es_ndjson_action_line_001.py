@@ -371,7 +371,6 @@ def test_unrecoverable_bulk_errors_are_logged_and_not_retried(config_file):
         service.start()
         requests_seen = service.wait_for_requests(1)
         log_text = service.wait_for_log_text("dropped 1 unrecoverable record(s)")
-        log_text = service.wait_for_log_text("error caused by: Input part 2/2")
         log_text = service.wait_for_log_text("error: Output part 2/2")
         accounting = service.wait_for_bulk_accounting(output_name)
         time.sleep(3)
@@ -385,6 +384,11 @@ def test_unrecoverable_bulk_errors_are_logged_and_not_retried(config_file):
     assert "bulk response reported errors: 1/1 items failed" in log_text
     assert "status=400 type='mapper_parsing_exception'" in log_text
     assert "retrying 0 record(s), dropped 1 unrecoverable record(s)" in log_text
+    assert "error caused by: Input" not in log_text
+    assert any(
+        "[error]" in line and "error: Output part 2/2" in line
+        for line in log_text.splitlines()
+    )
     assert accounting["processed_records"] == 0.0
     assert accounting["processed_bytes"] == 0.0
     assert accounting["dropped_records"] == 1.0
