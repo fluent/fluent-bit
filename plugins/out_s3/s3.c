@@ -75,7 +75,7 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
 static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_log_time,
                          char *body, size_t body_size);
 
-static int put_all_chunks(struct flb_s3 *ctx);
+static int put_all_chunks(struct flb_s3 *ctx, int cleanup_empty_streams);
 
 static void cb_s3_upload(struct flb_config *ctx, void *data);
 
@@ -419,6 +419,26 @@ static void mock_s3_call_increment_counter(char *api)
     count++;
     snprintf(buf, sizeof(buf), "%d", count);
     setenv(env_var, buf, 1);
+}
+
+static void mock_s3_call_record_uri(char *api, char *uri)
+{
+    char count_env_var[64];
+    char uri_env_var[64];
+    char *count;
+
+    if (getenv("TEST_RECORD_S3_URIS") == NULL) {
+        return;
+    }
+
+    snprintf(count_env_var, sizeof(count_env_var), "TEST_%s_CALL_COUNT", api);
+    count = getenv(count_env_var);
+    if (count == NULL) {
+        return;
+    }
+
+    snprintf(uri_env_var, sizeof(uri_env_var), "TEST_%s_URI_%s", api, count);
+    setenv(uri_env_var, uri, 1);
 }
 
 struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
@@ -1400,7 +1420,7 @@ skip_size_validation:
                      "executions to S3; buffer=%s",
                      ctx->fs->root_path);
         ctx->has_old_buffers = FLB_FALSE;
-        ret = put_all_chunks(ctx);
+        ret = put_all_chunks(ctx, FLB_TRUE);
         if (ret < 0) {
             ctx->has_old_buffers = FLB_TRUE;
             flb_plg_error(ctx->ins,
@@ -1722,9 +1742,11 @@ multipart:
  * Used on shut down to try to send all buffered data
  * Used on start up to try to send any leftover buffers from previous executions
  */
-static int put_all_chunks(struct flb_s3 *ctx)
+static int put_all_chunks(struct flb_s3 *ctx, int cleanup_empty_streams)
 {
+    int result = 0;
     struct s3_file *chunk;
+    struct mk_list *stream_tmp;
     struct mk_list *tmp;
     struct mk_list *head;
     struct mk_list *f_head;
@@ -1736,7 +1758,7 @@ static int put_all_chunks(struct flb_s3 *ctx)
     size_t buffer_size;
     int ret;
 
-    mk_list_foreach(head, &ctx->fs->streams) {
+    mk_list_foreach_safe(head, stream_tmp, &ctx->fs->streams) {
         /* skip multi upload stream */
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
         if (fs_stream == ctx->stream_upload) {
@@ -1773,7 +1795,12 @@ static int put_all_chunks(struct flb_s3 *ctx)
                 flb_plg_error(ctx->ins,
                               "Could not construct request buffer for %s",
                               chunk->file_path);
-                return -1;
+                result = -1;
+                if (ctx->preserve_data_ordering == FLB_TRUE ||
+                    ctx->key_fmt_has_seq_index == FLB_TRUE) {
+                    return result;
+                }
+                continue;
             }
 
 #ifdef FLB_HAVE_ARROW
@@ -1824,15 +1851,26 @@ static int put_all_chunks(struct flb_s3 *ctx)
             if (ret < 0) {
                 s3_store_file_unlock(chunk);
                 chunk->failures += 1;
-                return -1;
+                result = -1;
+                if (ctx->preserve_data_ordering == FLB_TRUE ||
+                    ctx->key_fmt_has_seq_index == FLB_TRUE) {
+                    return result;
+                }
+                continue;
             }
 
             /* data was sent successfully- delete the local buffer */
             s3_store_file_delete(ctx, chunk);
         }
+
+        if (cleanup_empty_streams == FLB_TRUE &&
+            fs_stream != ctx->stream_active &&
+            mk_list_is_empty(&fs_stream->files) == 0) {
+            flb_fstore_stream_destroy(fs_stream, FLB_TRUE);
+        }
     }
 
-    return 0;
+    return result;
 }
 
 /*
@@ -1985,6 +2023,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
+        mock_s3_call_record_uri("PutObject", uri);
     }
     else {
         ret = create_headers(ctx, final_body_md5, &headers, &num_headers, FLB_FALSE);
@@ -2214,8 +2253,12 @@ static int upload_queue_valid(struct upload_queue *upload_contents, time_t now,
         return -1;
     }
     if (s3_store_file_size_get(upload_contents->upload_file) == 0) {
-        flb_plg_debug(ctx->ins, "Encountered empty chunk file in upload_queue. "
-                      "Deleting empty chunk file");
+        flb_plg_debug(ctx->ins,
+                      "Encountered empty chunk file '%s' for tag '%s' in "
+                      "upload_queue. Deleting empty chunk file",
+                      upload_contents->upload_file->fsf->name,
+                      upload_contents->tag);
+        s3_store_file_delete(ctx, upload_contents->upload_file);
         remove_from_queue(upload_contents);
         return -1;
     }
@@ -4001,7 +4044,7 @@ static void flush_init(void *out_context)
                      "executions to S3; buffer=%s",
                      ctx->fs->root_path);
         ctx->has_old_buffers = FLB_FALSE;
-        ret = put_all_chunks(ctx);
+        ret = put_all_chunks(ctx, FLB_TRUE);
         if (ret < 0) {
             ctx->has_old_buffers = FLB_TRUE;
             flb_plg_error(ctx->ins,
@@ -4408,7 +4451,7 @@ static int cb_s3_exit(void *data, struct flb_config *config)
 
     if (s3_store_has_data(ctx) == FLB_TRUE) {
         flb_plg_info(ctx->ins, "Sending all locally buffered data to S3");
-        ret = put_all_chunks(ctx);
+        ret = put_all_chunks(ctx, FLB_FALSE);
         if (ret < 0) {
             flb_plg_error(ctx->ins, "Could not send all chunks on exit");
         }
