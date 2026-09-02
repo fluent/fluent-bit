@@ -47,7 +47,8 @@ static int os_pack_array_content(msgpack_packer *tmp_pck,
 
 static void log_payload_chunks(struct flb_opensearch *ctx,
                                const char *label,
-                               const char *payload, size_t payload_size)
+                               const char *payload, size_t payload_size,
+                               int log_level)
 {
     size_t offset;
     size_t part;
@@ -62,9 +63,36 @@ static void log_payload_chunks(struct flb_opensearch *ctx,
             part_size = FLB_OS_TRACE_CHUNK_SIZE;
         }
 
-        flb_plg_error(ctx->ins, "%s part %zu/%zu: %.*s",
-                      label, part, part_count, (int) part_size,
-                      payload + offset);
+        switch (log_level) {
+        case FLB_LOG_ERROR:
+            flb_plg_error(ctx->ins, "%s part %zu/%zu: %.*s",
+                          label, part, part_count, (int) part_size,
+                          payload + offset);
+            break;
+        case FLB_LOG_WARN:
+            flb_plg_warn(ctx->ins, "%s part %zu/%zu: %.*s",
+                         label, part, part_count, (int) part_size,
+                         payload + offset);
+            break;
+        case FLB_LOG_INFO:
+            flb_plg_info(ctx->ins, "%s part %zu/%zu: %.*s",
+                         label, part, part_count, (int) part_size,
+                         payload + offset);
+            break;
+        case FLB_LOG_DEBUG:
+            flb_plg_debug(ctx->ins, "%s part %zu/%zu: %.*s",
+                          label, part, part_count, (int) part_size,
+                          payload + offset);
+            break;
+        case FLB_LOG_TRACE:
+            flb_plg_trace(ctx->ins, "%s part %zu/%zu: %.*s",
+                          label, part, part_count, (int) part_size,
+                          payload + offset);
+            break;
+        case FLB_LOG_OFF:
+        default:
+            break;
+        }
         offset += part_size;
     }
 }
@@ -1281,9 +1309,10 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
 
             if (ctx->trace_error == FLB_TRUE &&
                 (ret != FLB_SEARCH_BULK_COMPLETE || bulk_stats.failed_items > 0)) {
-                log_payload_chunks(ctx, "error caused by: Input", pack, pack_size);
+                log_payload_chunks(ctx, "error caused by: Input", pack, pack_size,
+                                   FLB_LOG_DEBUG);
                 log_payload_chunks(ctx, "error: Output", c->resp.payload,
-                                   c->resp.payload_size);
+                                   c->resp.payload_size, FLB_LOG_ERROR);
             }
 
             if (ret != FLB_SEARCH_BULK_COMPLETE) {
@@ -1537,7 +1566,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "drop_unrecoverable_records", "false",
      0, FLB_TRUE, offsetof(struct flb_opensearch, drop_unrecoverable_records),
-     "Drop records rejected by the bulk API with unrecoverable 4xx errors"
+     "Drop records rejected by non-retryable bulk 4xx errors; may cause data loss"
     },
     {
      FLB_CONFIG_MAP_STR, "id_key", NULL,
@@ -1565,7 +1594,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "trace_error", "false",
      0, FLB_TRUE, offsetof(struct flb_opensearch, trace_error),
-     "When enabled log the OpenSearch exception through the normal logging stream"
+     "Log failed requests at debug and OpenSearch responses at error level"
     },
 
     /* HTTP Compression */
