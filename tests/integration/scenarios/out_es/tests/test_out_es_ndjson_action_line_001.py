@@ -1,7 +1,9 @@
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 import threading
+import time
 
 import pytest
 
@@ -55,7 +57,7 @@ class _BulkCaptureServer(ThreadingHTTPServer):
 
 
 class Service:
-    def __init__(self, config_file, response_factory=None):
+    def __init__(self, config_file, response_factory=None, extra_env=None):
         self.config_file = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../config", config_file)
         )
@@ -64,6 +66,7 @@ class Service:
         self.response_factory = response_factory
         self.service = FluentBitTestService(
             self.config_file,
+            extra_env=extra_env,
             pre_start=self._start_receiver,
             post_stop=self._stop_receiver,
         )
@@ -122,6 +125,25 @@ class Service:
             description=f"{minimum_count} Elasticsearch bulk action lines",
         )
 
+    def wait_for_log_text(self, text, timeout=10):
+        if memory_check_enabled():
+            timeout = max(timeout * 3, 30)
+
+        def matching_log():
+            log_path = Path(self.service.flb.log_file)
+            if not log_path.exists():
+                return None
+
+            log_text = log_path.read_text(encoding="utf-8", errors="replace")
+            return log_text if text in log_text else None
+
+        return self.service.wait_for_condition(
+            matching_log,
+            timeout=timeout,
+            interval=0.5,
+            description=f"Fluent Bit log text {text!r}",
+        )
+
 
 def _bulk_action_lines(body):
     actions = []
@@ -172,12 +194,30 @@ def _partial_bulk_response(request_number, request):
         return (
             b'{"errors":true,"items":['
             b'{"create":{"status":201}},'
-            b'{"create":{"status":429}},'
+            b'{"create":{"status":429,"error":{'
+            b'"type":"es_rejected_execution_exception",'
+            b'"reason":"bulk queue is full"}}},'
             b'{"create":{"status":409}}]}'
         )
 
     assert action_count == 1
     return b'{"errors":false,"items":[{"create":{"status":201}}]}'
+
+
+def _unrecoverable_bulk_response(request_number, request):
+    action_count = len(_bulk_action_lines(request["body"]))
+    reason = "strict mapping conflict " + ("x" * 5000)
+    item = {
+        "create": {
+            "status": 400,
+            "error": {
+                "type": "mapper_parsing_exception",
+                "reason": reason,
+            },
+        }
+    }
+
+    return json.dumps({"errors": True, "items": [item] * action_count}).encode()
 
 
 @pytest.mark.parametrize(
@@ -241,8 +281,47 @@ def test_partial_bulk_retry_sends_only_unresolved_records(config_file):
     try:
         service.start()
         requests_seen = service.wait_for_requests(2)
+        log_text = service.wait_for_log_text(
+            "reason='bulk queue is full'; retrying 1 record(s)"
+        )
     finally:
         service.stop()
 
     assert len(_bulk_action_lines(requests_seen[0]["body"])) == 3
     assert len(_bulk_action_lines(requests_seen[1]["body"])) == 1
+    assert "bulk response reported errors: 1/3 items failed" in log_text
+    assert "status=429 type='es_rejected_execution_exception'" in log_text
+    assert "reason='bulk queue is full'; retrying 1 record(s)" in log_text
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "out_es_drop_unrecoverable_records.yaml",
+        "out_opensearch_drop_unrecoverable_records.yaml",
+    ],
+)
+def test_unrecoverable_bulk_errors_are_logged_and_not_retried(config_file):
+    service = Service(
+        config_file,
+        response_factory=_unrecoverable_bulk_response,
+        extra_env={"BULK_TEST_MESSAGE": "y" * 5000},
+    )
+
+    try:
+        service.start()
+        requests_seen = service.wait_for_requests(1)
+        log_text = service.wait_for_log_text("dropped 1 unrecoverable record(s)")
+        log_text = service.wait_for_log_text("error caused by: Input part 2/2")
+        log_text = service.wait_for_log_text("error: Output part 2/2")
+        time.sleep(3)
+        request_count = len(service.bulk_server.requests)
+    finally:
+        service.stop()
+
+    assert len(_bulk_action_lines(requests_seen[0]["body"])) == 1
+    assert len(requests_seen[0]["body"]) > 4000
+    assert request_count == 1
+    assert "bulk response reported errors: 1/1 items failed" in log_text
+    assert "status=400 type='mapper_parsing_exception'" in log_text
+    assert "retrying 0 record(s), dropped 1 unrecoverable record(s)" in log_text
