@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_http_client.h>
@@ -41,11 +42,108 @@
 #include "es_bulk.h"
 #include "murmur3.h"
 
+#define FLB_ES_TRACE_CHUNK_SIZE 3000
+#define FLB_ES_RESPONSE_PREVIEW_SIZE 512
+
 struct flb_output_plugin out_es_plugin;
 
 static int es_pack_array_content(msgpack_packer *tmp_pck,
                                  msgpack_object array,
                                  int replace_dots);
+
+static void log_payload_chunks(struct flb_elasticsearch *ctx,
+                               const char *label,
+                               const char *payload, size_t payload_size)
+{
+    size_t offset;
+    size_t part;
+    size_t part_count;
+    size_t part_size;
+
+    part_count = (payload_size + FLB_ES_TRACE_CHUNK_SIZE - 1) /
+                 FLB_ES_TRACE_CHUNK_SIZE;
+    for (offset = 0, part = 1; offset < payload_size; part++) {
+        part_size = payload_size - offset;
+        if (part_size > FLB_ES_TRACE_CHUNK_SIZE) {
+            part_size = FLB_ES_TRACE_CHUNK_SIZE;
+        }
+
+        flb_plg_error(ctx->ins, "%s part %zu/%zu: %.*s",
+                      label, part, part_count, (int) part_size,
+                      payload + offset);
+        offset += part_size;
+    }
+}
+
+static void log_invalid_bulk_response(struct flb_elasticsearch *ctx,
+                                      const char *payload,
+                                      size_t payload_size)
+{
+    char character;
+    char preview[(FLB_ES_RESPONSE_PREVIEW_SIZE * 2) + 1];
+    size_t input_index;
+    size_t input_size;
+    size_t output_index;
+
+    input_size = payload_size;
+    if (input_size > FLB_ES_RESPONSE_PREVIEW_SIZE) {
+        input_size = FLB_ES_RESPONSE_PREVIEW_SIZE;
+    }
+
+    output_index = 0;
+    for (input_index = 0; input_index < input_size; input_index++) {
+        character = payload[input_index];
+        if (character == '\n' || character == '\r' || character == '\t') {
+            preview[output_index++] = '\\';
+            if (character == '\n') {
+                preview[output_index++] = 'n';
+            }
+            else if (character == '\r') {
+                preview[output_index++] = 'r';
+            }
+            else {
+                preview[output_index++] = 't';
+            }
+        }
+        else if ((unsigned char) character < 0x20 || character == 0x7f) {
+            preview[output_index++] = '.';
+        }
+        else {
+            preview[output_index++] = character;
+        }
+    }
+    preview[output_index] = '\0';
+
+    flb_plg_error(ctx->ins,
+                  "invalid Elasticsearch bulk response (first %zu/%zu bytes): %s",
+                  input_size, payload_size, preview);
+}
+
+static void log_bulk_failure_summary(struct flb_elasticsearch *ctx,
+                                     struct flb_search_bulk_stats *stats,
+                                     size_t retry_records,
+                                     size_t dropped_records)
+{
+    if (dropped_records > 0) {
+        flb_plg_error(ctx->ins,
+                      "bulk response reported errors: %zu/%zu items failed, "
+                      "first error: status=%d type='%s' reason='%s'; "
+                      "retrying %zu record(s), dropped %zu unrecoverable record(s)",
+                      stats->failed_items, stats->total_items,
+                      stats->first_error_status, stats->first_error_type,
+                      stats->first_error_reason, retry_records,
+                      dropped_records);
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "bulk response reported errors: %zu/%zu items failed, "
+                      "first error: status=%d type='%s' reason='%s'; "
+                      "retrying %zu record(s)",
+                      stats->failed_items, stats->total_items,
+                      stats->first_error_status, stats->first_error_type,
+                      stats->first_error_reason, retry_records);
+    }
+}
 
 static const char *es_get_property(const char *property,
                                    struct flb_upstream_node *node,
@@ -1228,6 +1326,13 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     const char *http_user;
     const char *http_passwd;
     const char *http_api_key;
+    struct flb_search_bulk_stats bulk_stats;
+    size_t retry_records;
+    size_t dropped_records;
+    size_t dropped_bytes;
+    size_t successful_bytes;
+    int successful_records;
+    int retry_context_result;
 #ifdef FLB_HAVE_AWS
     struct flb_aws_provider *aws_provider;
     const char *aws_region;
@@ -1444,52 +1549,106 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
                                                    c->resp.payload_size,
                                                    pack, pack_size,
                                                    FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
+                                                   ctx->drop_unrecoverable_records,
+                                                   &bulk_stats,
                                                    &next_retry_payload);
+            retry_records = 0;
+            if (next_retry_payload != NULL) {
+                retry_records = next_retry_payload->records;
+            }
+            dropped_records = 0;
+            dropped_bytes = 0;
+
+            if (ret == FLB_SEARCH_BULK_RETRY) {
+                retry_context_result = flb_output_set_retry_context(
+                                           out_flush, next_retry_payload,
+                                           flb_search_bulk_retry_destroy,
+                                           next_retry_payload->records,
+                                           next_retry_payload->size);
+                if (retry_context_result != 0) {
+                    flb_search_bulk_retry_destroy(next_retry_payload);
+                    next_retry_payload = NULL;
+                    retry_records = bulk_stats.total_items;
+                    flb_plg_error(ctx->ins,
+                                  "could not preserve filtered bulk retry payload; "
+                                  "retrying the full batch");
+                }
+                else {
+                    next_retry_payload = NULL;
+                    if (ctx->drop_unrecoverable_records == FLB_TRUE) {
+                        dropped_records = bulk_stats.unrecoverable_items;
+                        dropped_bytes = bulk_stats.unrecoverable_bytes;
+                    }
+                }
+            }
+            else if (ret == FLB_SEARCH_BULK_COMPLETE &&
+                     ctx->drop_unrecoverable_records == FLB_TRUE) {
+                dropped_records = bulk_stats.unrecoverable_items;
+                dropped_bytes = bulk_stats.unrecoverable_bytes;
+            }
+
+            if ((ret == FLB_SEARCH_BULK_COMPLETE ||
+                 ret == FLB_SEARCH_BULK_RETRY) &&
+                bulk_stats.failed_items > 0) {
+                log_bulk_failure_summary(ctx, &bulk_stats, retry_records,
+                                         dropped_records);
+#ifdef FLB_HAVE_METRICS
+                if (dropped_records > 0) {
+                    cmt_counter_add(ctx->ins->cmt_dropped_records,
+                                    cfl_time_now(),
+                                    dropped_records,
+                                    1, (char *[]) {
+                                        (char *) flb_output_name(ctx->ins)
+                                    });
+
+                    if (out_flush->config->router != NULL &&
+                        event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+                        cmt_counter_add(out_flush->config->router->logs_drop_records_total,
+                                        cfl_time_now(), dropped_records,
+                                        2, (char *[]) {
+                                            (char *) flb_input_name(out_flush->task->i_ins),
+                                            (char *) flb_output_name(ctx->ins)
+                                        });
+                        cmt_counter_add(out_flush->config->router->logs_drop_bytes_total,
+                                        cfl_time_now(), dropped_bytes,
+                                        2, (char *[]) {
+                                            (char *) flb_input_name(out_flush->task->i_ins),
+                                            (char *) flb_output_name(ctx->ins)
+                                        });
+                    }
+                }
+#endif
+            }
+
+            if (ctx->trace_error == FLB_TRUE &&
+                (ret != FLB_SEARCH_BULK_COMPLETE || bulk_stats.failed_items > 0)) {
+                log_payload_chunks(ctx, "error caused by: Input", pack, pack_size);
+                log_payload_chunks(ctx, "error: Output", c->resp.payload,
+                                   c->resp.payload_size);
+            }
+
             if (ret == FLB_SEARCH_BULK_COMPLETE) {
+                if (bulk_stats.total_items > 0 &&
+                    (dropped_records > 0 || retry_payload != NULL)) {
+                    successful_records = (int) bulk_stats.successful_items;
+                    successful_bytes = bulk_stats.successful_bytes;
+                    flb_output_set_successful_route_data(out_flush,
+                                                         successful_records,
+                                                         successful_bytes);
+                }
+                else if (retry_payload != NULL) {
+                    flb_output_set_successful_route_data(out_flush,
+                                                         retry_payload->records,
+                                                         retry_payload->size);
+                }
                 flb_output_clear_retry_context(out_flush);
                 flb_plg_debug(ctx->ins, "Elasticsearch response\n%s",
                               c->resp.payload);
             }
             else {
-                if (ret == FLB_SEARCH_BULK_RETRY) {
-                    ret = flb_output_set_retry_context(
-                              out_flush, next_retry_payload,
-                              flb_search_bulk_retry_destroy,
-                              next_retry_payload->records,
-                              next_retry_payload->size);
-                    if (ret != 0) {
-                        flb_search_bulk_retry_destroy(next_retry_payload);
-                    }
-                    else {
-                        next_retry_payload = NULL;
-                    }
-                }
-                else {
-                    flb_plg_error(ctx->ins,
-                                  "invalid Elasticsearch bulk response");
-                }
-
-                if (ctx->trace_error) {
-                    /*
-                     * If trace_error is set, trace the actual
-                     * response from Elasticsearch explaining the problem.
-                     * Trace_Output can be used to see the request.
-                     */
-                    if (pack_size < 4000) {
-                        flb_plg_debug(ctx->ins, "error caused by: Input\n%.*s\n",
-                                      (int) pack_size, pack);
-                    }
-                    if (c->resp.payload_size < 4000) {
-                        flb_plg_error(ctx->ins, "error: Output\n%s",
-                                      c->resp.payload);
-                    } else {
-                        /*
-                        * We must use fwrite since the flb_log functions
-                        * will truncate data at 4KB
-                        */
-                        fwrite(c->resp.payload, 1, c->resp.payload_size, stderr);
-                        fflush(stderr);
-                    }
+                if (ret != FLB_SEARCH_BULK_RETRY) {
+                    log_invalid_bulk_response(ctx, c->resp.payload,
+                                              c->resp.payload_size);
                 }
                 goto retry;
             }
@@ -1812,6 +1971,11 @@ static struct flb_config_map config_map[] = {
      "Operation to use to write in bulk requests"
     },
     {
+     FLB_CONFIG_MAP_BOOL, "drop_unrecoverable_records", "false",
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, drop_unrecoverable_records),
+     "Drop records rejected by the bulk API with unrecoverable 4xx errors"
+    },
+    {
      FLB_CONFIG_MAP_STR, "id_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, id_key),
      "If set, _id will be the value of the key from incoming record."
@@ -1838,7 +2002,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "trace_error", "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, trace_error),
-     "When enabled print the Elasticsearch exception to stderr (for diag only)"
+     "When enabled log the Elasticsearch exception through the normal logging stream"
     },
     /* EOF */
     {0}
