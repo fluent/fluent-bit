@@ -6,6 +6,7 @@ import threading
 import time
 
 import pytest
+import requests
 
 from utils.memory_check import memory_check_enabled
 from utils.test_service import FluentBitTestService
@@ -142,6 +143,63 @@ class Service:
             timeout=timeout,
             interval=0.5,
             description=f"Fluent Bit log text {text!r}",
+        )
+
+    def wait_for_bulk_accounting(self, output_name, timeout=10):
+        if memory_check_enabled():
+            timeout = max(timeout * 3, 30)
+
+        metrics_url = (
+            f"http://127.0.0.1:{self.service.flb.http_monitoring_port}"
+            "/api/v2/metrics/prometheus"
+        )
+
+        def metric_value(metrics, name, labels):
+            for line in metrics.splitlines():
+                if not line.startswith(f"{name}{{"):
+                    continue
+                if all(f'{key}="{value}"' in line for key, value in labels.items()):
+                    return float(line.rsplit(" ", 1)[-1])
+            return None
+
+        def accounting_snapshot():
+            response = requests.get(metrics_url, timeout=2)
+            response.raise_for_status()
+            metrics = response.text
+            output_labels = {"name": output_name}
+            route_labels = {"input": "dummy.0", "output": output_name}
+            snapshot = {
+                "processed_records": metric_value(
+                    metrics, "fluentbit_output_proc_records_total", output_labels
+                ),
+                "processed_bytes": metric_value(
+                    metrics, "fluentbit_output_proc_bytes_total", output_labels
+                ),
+                "dropped_records": metric_value(
+                    metrics, "fluentbit_output_dropped_records_total", output_labels
+                ),
+                "routed_records": metric_value(
+                    metrics, "fluentbit_routing_logs_records_total", route_labels
+                ),
+                "routed_bytes": metric_value(
+                    metrics, "fluentbit_routing_logs_bytes_total", route_labels
+                ),
+                "dropped_route_records": metric_value(
+                    metrics, "fluentbit_routing_logs_drop_records_total", route_labels
+                ),
+                "dropped_route_bytes": metric_value(
+                    metrics, "fluentbit_routing_logs_drop_bytes_total", route_labels
+                ),
+            }
+            if snapshot["dropped_records"] == 1.0:
+                return snapshot
+            return None
+
+        return self.service.wait_for_condition(
+            accounting_snapshot,
+            timeout=timeout,
+            interval=0.5,
+            description=f"successful and dropped route accounting for {output_name}",
         )
 
 
@@ -302,6 +360,7 @@ def test_partial_bulk_retry_sends_only_unresolved_records(config_file):
     ],
 )
 def test_unrecoverable_bulk_errors_are_logged_and_not_retried(config_file):
+    output_name = "opensearch.0" if "opensearch" in config_file else "es.0"
     service = Service(
         config_file,
         response_factory=_unrecoverable_bulk_response,
@@ -314,6 +373,7 @@ def test_unrecoverable_bulk_errors_are_logged_and_not_retried(config_file):
         log_text = service.wait_for_log_text("dropped 1 unrecoverable record(s)")
         log_text = service.wait_for_log_text("error caused by: Input part 2/2")
         log_text = service.wait_for_log_text("error: Output part 2/2")
+        accounting = service.wait_for_bulk_accounting(output_name)
         time.sleep(3)
         request_count = len(service.bulk_server.requests)
     finally:
@@ -325,3 +385,10 @@ def test_unrecoverable_bulk_errors_are_logged_and_not_retried(config_file):
     assert "bulk response reported errors: 1/1 items failed" in log_text
     assert "status=400 type='mapper_parsing_exception'" in log_text
     assert "retrying 0 record(s), dropped 1 unrecoverable record(s)" in log_text
+    assert accounting["processed_records"] == 0.0
+    assert accounting["processed_bytes"] == 0.0
+    assert accounting["dropped_records"] == 1.0
+    assert accounting["routed_records"] == 0.0
+    assert accounting["routed_bytes"] == 0.0
+    assert accounting["dropped_route_records"] == 1.0
+    assert accounting["dropped_route_bytes"] > 4000
