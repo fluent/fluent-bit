@@ -123,7 +123,8 @@ static int get_s3_call_count(const char *api)
     return value ? atoi(value) : 0;
 }
 
-static void wait_for_s3_call_count(const char *api, int expected)
+static void wait_for_s3_call_count_with_timeout(const char *api, int expected,
+                                                uint64_t timeout_ms)
 {
     uint64_t elapsed_ms;
     struct flb_time start_time;
@@ -134,12 +135,18 @@ static void wait_for_s3_call_count(const char *api, int expected)
     flb_time_get(&start_time);
 
     while (get_s3_call_count(api) < expected &&
-           elapsed_ms < S3_TEST_WAIT_TIMEOUT_MS) {
+           elapsed_ms < timeout_ms) {
         flb_time_msleep(S3_TEST_WAIT_STEP_MS);
         flb_time_get(&end_time);
         flb_time_diff(&end_time, &start_time, &diff_time);
         elapsed_ms = flb_time_to_nanosec(&diff_time) / 1000000;
     }
+}
+
+static void wait_for_s3_call_count(const char *api, int expected)
+{
+    wait_for_s3_call_count_with_timeout(api, expected,
+                                        S3_TEST_WAIT_TIMEOUT_MS);
 }
 
 static void wait_for_file_count(const char *path, int expected)
@@ -539,6 +546,7 @@ void flb_test_s3_complete_upload_error(void)
     char *call_count_str;
     int call_count;
     char *store_dir;
+    struct flb_s3 *s3_ctx;
 
     store_dir = create_test_store_directory("/flb-s3-test-upload-err-XXXXXX");
     TEST_CHECK(store_dir != NULL);
@@ -568,6 +576,9 @@ void flb_test_s3_complete_upload_error(void)
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
+    s3_ctx = get_s3_context(ctx);
+    TEST_CHECK(s3_ctx != NULL);
+
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
 
     wait_for_s3_call_count("CompleteMultipartUpload", 2);
@@ -578,6 +589,10 @@ void flb_test_s3_complete_upload_error(void)
                 "Expected >= 2 CompleteMultipartUpload calls (retried), got %d",
                 call_count);
 
+    wait_for_file_count_at_most(s3_ctx->stream_upload->path, 0);
+    TEST_CHECK_(count_files_recursive(s3_ctx->stream_upload->path) == 0,
+                "Expected terminal multipart metadata to be deleted");
+
     flb_stop(ctx);
     flb_destroy(ctx);
     unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
@@ -586,6 +601,178 @@ void flb_test_s3_complete_upload_error(void)
     unsetenv("TEST_UploadPart_CALL_COUNT");
     unsetenv("TEST_CompleteMultipartUpload_CALL_COUNT");
     unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_free(store_dir);
+}
+
+void flb_test_s3_ordered_retry_uses_backoff_deadline(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+    char *store_dir;
+    struct flb_s3 *s3_ctx;
+    struct s3_file *s3_file;
+
+    store_dir = create_test_store_directory("/flb-s3-test-retry-deadline-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
+
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    setenv("TEST_UPLOAD_PART_ERROR", ERROR_ACCESS_DENIED, 1);
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "retry-deadline", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "use_put_object", "false", NULL);
+    flb_output_set(ctx, out_ffd, "compression", "gzip", NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "100M", NULL);
+    flb_output_set(ctx, out_ffd, "upload_chunk_size", "50M", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "60s", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "retry_limit", "1", NULL);
+    flb_output_set(ctx, out_ffd, "retry_exhausted_action", "delete", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
+                       (int) sizeof(JSON_TD) - 1);
+    TEST_CHECK(ret >= 0);
+    s3_ctx = get_s3_context(ctx);
+    TEST_CHECK(s3_ctx != NULL);
+    wait_for_file_count(s3_ctx->stream_active->path, 1);
+
+    s3_file = s3_store_file_get(s3_ctx, "retry-deadline", 14);
+    TEST_CHECK(s3_file != NULL);
+    s3_file->create_time = time(NULL) - 61;
+
+    ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
+                       (int) sizeof(JSON_TD) - 1);
+    TEST_CHECK(ret >= 0);
+    wait_for_s3_call_count("UploadPart", 1);
+    wait_for_file_count_at_most(s3_ctx->stream_active->path, 0);
+
+    TEST_CHECK_(get_s3_call_count("UploadPart") == 2,
+                "Expected initial attempt and one retry at its deadline, got %d",
+                get_s3_call_count("UploadPart"));
+    TEST_CHECK_(count_files_recursive(s3_ctx->stream_active->path) == 0,
+                "Expected retry-exhausted chunk to be deleted before periodic timer");
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_UPLOAD_PART_ERROR");
+    unsetenv("TEST_CreateMultipartUpload_CALL_COUNT");
+    unsetenv("TEST_UploadPart_CALL_COUNT");
+    flb_free(store_dir);
+}
+
+void flb_test_s3_ordered_timer_preserves_chunk_order(void)
+{
+    int ret;
+    int index;
+    int out_ffd;
+    int input_fds[2];
+    char *uri;
+    flb_ctx_t *ctx;
+    char *store_dir;
+    struct flb_s3 *s3_ctx;
+    struct s3_file *oldest_file;
+    struct s3_file *later_file;
+
+    store_dir = create_test_store_directory("/flb-s3-test-timer-order-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
+
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    setenv("TEST_RECORD_S3_URIS", "true", 1);
+
+    ctx = flb_create();
+    for (index = 0; index < 2; index++) {
+        input_fds[index] = flb_input(ctx, (char *) "lib", NULL);
+        TEST_CHECK(input_fds[index] >= 0);
+    }
+    flb_input_set(ctx, input_fds[0], "tag", "oldest", NULL);
+    flb_input_set(ctx, input_fds[1], "tag", "later", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "use_put_object", "true", NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "10s", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "s3_key_format", "/queue/$TAG", NULL);
+    flb_output_set(ctx, out_ffd, "static_file_path", "true", NULL);
+    flb_output_set(ctx, out_ffd, "retry_limit", "1", NULL);
+    flb_output_set(ctx, out_ffd, "retry_exhausted_action", "delete", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    for (index = 0; index < 2; index++) {
+        ret = flb_lib_push(ctx, input_fds[index], (char *) JSON_TD,
+                           (int) sizeof(JSON_TD) - 1);
+        TEST_CHECK(ret >= 0);
+    }
+
+    s3_ctx = get_s3_context(ctx);
+    TEST_CHECK(s3_ctx != NULL);
+    wait_for_file_count(s3_ctx->stream_active->path, 2);
+    oldest_file = s3_store_file_get(s3_ctx, "oldest", 6);
+    later_file = s3_store_file_get(s3_ctx, "later", 5);
+    TEST_CHECK(oldest_file != NULL);
+    TEST_CHECK(later_file != NULL);
+    oldest_file->create_time = time(NULL) - 20;
+    later_file->create_time = time(NULL) - 11;
+
+    setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
+    wait_for_s3_call_count("PutObject", 1);
+    flb_time_msleep(500);
+
+    TEST_CHECK_(get_s3_call_count("PutObject") == 1,
+                "Expected later timed-out chunk to wait behind first failure, got %d calls",
+                get_s3_call_count("PutObject"));
+    uri = getenv("TEST_PutObject_URI_1");
+    TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/oldest") == 0,
+                "Expected oldest timed-out chunk first, got %s",
+                uri ? uri : "(null)");
+
+    unsetenv("TEST_PUT_OBJECT_ERROR");
+    wait_for_s3_call_count("PutObject", 3);
+    uri = getenv("TEST_PutObject_URI_2");
+    TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/oldest") == 0,
+                "Expected oldest chunk retry before later chunk, got %s",
+                uri ? uri : "(null)");
+    uri = getenv("TEST_PutObject_URI_3");
+    TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/later") == 0,
+                "Expected later chunk after oldest retry, got %s",
+                uri ? uri : "(null)");
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_PUT_OBJECT_ERROR");
+    unsetenv("TEST_RECORD_S3_URIS");
+    unsetenv("TEST_PutObject_CALL_COUNT");
+    unsetenv("TEST_PutObject_URI_1");
+    unsetenv("TEST_PutObject_URI_2");
+    unsetenv("TEST_PutObject_URI_3");
     flb_free(store_dir);
 }
 
@@ -1043,7 +1230,7 @@ void flb_test_s3_default_retry_limit(void)
 
     /* Wait for the initial attempt and all five default retries. */
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
-    wait_for_s3_call_count("PutObject", 6);
+    wait_for_s3_call_count_with_timeout("PutObject", 6, 40000);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -1586,6 +1773,8 @@ TEST_LIST = {
     {"create_upload_error", flb_test_s3_create_upload_error },
     {"upload_part_error", flb_test_s3_upload_part_error },
     {"complete_upload_error", flb_test_s3_complete_upload_error },
+    {"ordered_retry_uses_backoff_deadline", flb_test_s3_ordered_retry_uses_backoff_deadline },
+    {"ordered_timer_preserves_chunk_order", flb_test_s3_ordered_timer_preserves_chunk_order },
     {"compression_gzip", flb_test_s3_compression_gzip },
     {"compression_gzip_putobject", flb_test_s3_compression_gzip_putobject },
     {"compression_zstd", flb_test_s3_compression_zstd },
