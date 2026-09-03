@@ -206,6 +206,8 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
     struct flb_fstore_file *fsf = NULL;
     struct s3_file *s3_file;
 
+    pthread_mutex_lock(&ctx->files_mutex);
+
     /*
      * Based in the current ctx->stream_name, locate a candidate file to
      * store the incoming data using as a lookup pattern the content Tag.
@@ -217,6 +219,8 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
         if (fsf->data == NULL) {
             flb_plg_warn(ctx->ins, "BAD: found flb_fstore_file with NULL data reference, tag=%s, file=%s, will try to delete", tag, fsf->name);
             flb_fstore_file_delete(ctx->fs, fsf);
+            fsf = NULL;
+            continue;
         }
 
         if (fsf->meta_size != tag_len) {
@@ -241,10 +245,14 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
     }
 
     if (!fsf) {
+        pthread_mutex_unlock(&ctx->files_mutex);
         return NULL;
     }
 
-    return fsf->data;
+    s3_file = fsf->data;
+    pthread_mutex_unlock(&ctx->files_mutex);
+
+    return s3_file;
 }
 
 /* Append data to a new or existing fstore file */
@@ -254,10 +262,14 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                         time_t file_first_log_time)
 {
     int ret;
+    int result;
     flb_sds_t name;
     struct flb_fstore_file *fsf;
     uint64_t current_buffer_size;
     uint64_t new_buffer_size;
+
+    result = -1;
+    pthread_mutex_lock(&ctx->files_mutex);
 
     ret = buffer_size_reserve(ctx, bytes, &current_buffer_size,
                               &new_buffer_size);
@@ -266,7 +278,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                       "Buffer is full: current_buffer_size=%" PRIu64
                       ", new_data=%zu, store_dir_limit_size=%zu bytes",
                       current_buffer_size, bytes, ctx->store_dir_limit_size);
-        return -1;
+        goto done;
     }
 
     /* If no target file was found, create a new one */
@@ -275,7 +287,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
         if (!name) {
             flb_plg_error(ctx->ins, "could not generate chunk file name");
             buffer_size_release(ctx, bytes);
-            return -1;
+            goto done;
         }
 
         /* Create the file */
@@ -285,7 +297,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                           name);
             flb_sds_destroy(name);
             buffer_size_release(ctx, bytes);
-            return -1;
+            goto done;
         }
         flb_sds_destroy(name);
 
@@ -296,7 +308,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
             flb_plg_warn(ctx->ins, "Deleting buffer file because metadata could not be written");
             flb_fstore_file_delete(ctx->fs, fsf);
             buffer_size_release(ctx, bytes);
-            return -1;
+            goto done;
         }
 
         /* Allocate local context */
@@ -307,7 +319,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
             flb_plg_warn(ctx->ins, "Deleting buffer file because S3 context creation failed");
             flb_fstore_file_delete(ctx->fs, fsf);
             buffer_size_release(ctx, bytes);
-            return -1;
+            goto done;
         }
         s3_file->fsf = fsf;
         s3_file->first_log_time = file_first_log_time;
@@ -325,7 +337,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
     if (ret != 0) {
         flb_plg_error(ctx->ins, "error writing data to local s3 file");
         buffer_size_release(ctx, bytes);
-        return -1;
+        goto done;
     }
     ret = counter_add(&s3_file->size, (uint64_t) bytes, NULL);
     if (ret < 0) {
@@ -342,7 +354,11 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                      new_buffer_size, ctx->store_dir_limit_size);
     }
 
-    return 0;
+    result = 0;
+
+done:
+    pthread_mutex_unlock(&ctx->files_mutex);
+    return result;
 }
 
 static ssize_t restored_file_size_get(struct flb_s3 *ctx,

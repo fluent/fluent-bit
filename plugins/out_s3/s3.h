@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_blob_db.h>
+#include <fluent-bit/flb_pthread.h>
 
 /* S3 output format types */
 #define FLB_S3_FORMAT_JSON_LINES  0
@@ -179,6 +180,8 @@ struct flb_s3 {
     struct flb_fstore_stream *stream_upload;  /* multipart upload stream */
     struct flb_fstore_stream *stream_quarantine; /* retry-exhausted stream */
     struct flb_fstore_stream *stream_metadata; /* s3 metadata stream */
+    pthread_mutex_t files_mutex;
+    int files_mutex_initialized;
 
     /*
      * used to track that unset buffers were found on startup that have not
