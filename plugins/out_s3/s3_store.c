@@ -345,6 +345,40 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
     return 0;
 }
 
+static ssize_t restored_file_size_get(struct flb_s3 *ctx,
+                                      struct flb_fstore_file *fsf)
+{
+    int ret;
+    int restore_down;
+    ssize_t file_size;
+
+    restore_down = FLB_FALSE;
+
+    if (cio_chunk_is_up(fsf->chunk) == CIO_FALSE) {
+        ret = cio_chunk_up_force(fsf->chunk);
+        if (ret != CIO_OK) {
+            flb_plg_error(ctx->ins,
+                          "cannot load restored S3 chunk '%s' to determine its size",
+                          fsf->name);
+            return -1;
+        }
+        restore_down = FLB_TRUE;
+    }
+
+    file_size = cio_chunk_get_content_size(fsf->chunk);
+
+    if (restore_down == FLB_TRUE) {
+        ret = cio_chunk_down(fsf->chunk);
+        if (ret != CIO_OK) {
+            flb_plg_warn(ctx->ins,
+                         "cannot return restored S3 chunk '%s' to the down state",
+                         fsf->name);
+        }
+    }
+
+    return file_size;
+}
+
 static int set_files_context(struct flb_s3 *ctx)
 {
     struct mk_list *head;
@@ -379,7 +413,7 @@ static int set_files_context(struct flb_s3 *ctx)
             s3_file->first_log_time = time(NULL);
             s3_file->create_time = time(NULL);
 
-            file_size = cio_chunk_get_content_size(fsf->chunk);
+            file_size = restored_file_size_get(ctx, fsf);
             if (file_size > 0) {
                 cfl_atomic_store(&s3_file->size, (uint64_t) file_size);
 
