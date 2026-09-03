@@ -94,7 +94,8 @@ static int s3_get_retry_exhausted_action(const char *value);
 static void s3_upload_queue(struct flb_config *config, void *out_context);
 static void s3_upload_queue_retry_cancel(struct flb_s3 *ctx);
 static void s3_upload_queue_release(struct flb_s3 *ctx);
-static int enqueue_oldest_timed_out_chunk(struct flb_s3 *ctx, time_t now);
+static int enqueue_oldest_timed_out_chunk(struct flb_s3 *ctx, time_t now,
+                                          int skip_held_tags);
 static void complete_pending_uploads(struct flb_s3 *ctx);
 static void complete_pending_uploads_once(struct flb_s3 *ctx, int *checked);
 
@@ -535,6 +536,23 @@ struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
     return c;
 }
 
+static struct flb_http_client *mock_s3_call_for_tag(char *error_env_var,
+                                                    char *error_tag_env_var,
+                                                    char *api,
+                                                    const char *tag,
+                                                    int tag_len)
+{
+    char *error_tag;
+
+    error_tag = getenv(error_tag_env_var);
+    if (error_tag != NULL &&
+        (strlen(error_tag) != tag_len || memcmp(error_tag, tag, tag_len) != 0)) {
+        return mock_s3_call("TEST_S3_OTHER_TAG_ERROR", api);
+    }
+
+    return mock_s3_call(error_env_var, api);
+}
+
 static flb_sds_t concat_path(char *p1, char *p2)
 {
     flb_sds_t dir;
@@ -816,6 +834,10 @@ static void s3_context_destroy(struct flb_s3 *ctx)
         remove_from_queue(upload_contents);
     }
 
+    if (ctx->files_mutex_initialized == FLB_TRUE) {
+        pthread_mutex_destroy(&ctx->files_mutex);
+    }
+
     flb_free(ctx);
 }
 
@@ -844,6 +866,14 @@ static int cb_s3_init(struct flb_output_instance *ins,
         return -1;
     }
     ctx->ins = ins;
+
+    ret = pthread_mutex_init(&ctx->files_mutex, NULL);
+    if (ret != 0) {
+        flb_free(ctx);
+        return -1;
+    }
+    ctx->files_mutex_initialized = FLB_TRUE;
+
     mk_list_init(&ctx->uploads);
     mk_list_init(&ctx->upload_queue);
 
@@ -2035,7 +2065,9 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
 
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
-        c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
+        c = mock_s3_call_for_tag("TEST_PUT_OBJECT_ERROR",
+                                 "TEST_PUT_OBJECT_ERROR_TAG",
+                                 "PutObject", tag, (int) strlen(tag));
         mock_s3_call_record_uri("PutObject", uri);
     }
     else {
@@ -2453,6 +2485,43 @@ static int s3_upload_queue_retry_schedule(struct flb_s3 *ctx, time_t retry_time)
     return 0;
 }
 
+static int upload_queue_tag_is_blocked(struct flb_s3 *ctx,
+                                       struct upload_queue *entry)
+{
+    struct mk_list *head;
+    struct upload_queue *queued_entry;
+
+    mk_list_foreach(head, &ctx->upload_queue) {
+        queued_entry = mk_list_entry(head, struct upload_queue, _head);
+        if (queued_entry == entry) {
+            return FLB_FALSE;
+        }
+        if (queued_entry->tag_len == entry->tag_len &&
+            memcmp(queued_entry->tag, entry->tag, entry->tag_len) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static int upload_queue_tag_is_held(struct flb_s3 *ctx, const char *tag,
+                                    int tag_len, time_t now)
+{
+    struct mk_list *head;
+    struct upload_queue *queued_entry;
+
+    mk_list_foreach(head, &ctx->upload_queue) {
+        queued_entry = mk_list_entry(head, struct upload_queue, _head);
+        if (queued_entry->tag_len == tag_len &&
+            memcmp(queued_entry->tag, tag, tag_len) == 0) {
+            return now < queued_entry->upload_time;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 /* Uploads all chunk files in queue synchronously */
 static void s3_upload_queue(struct flb_config *config, void *out_context)
 {
@@ -2460,13 +2529,16 @@ static void s3_upload_queue(struct flb_config *config, void *out_context)
     int entry_removed;
     int completions_checked;
     time_t now;
+    time_t earliest_retry_time;
     struct upload_queue *upload_contents;
+    struct s3_file *upload_file;
     struct flb_s3 *ctx = out_context;
     struct mk_list *tmp;
     struct mk_list *head;
 
     (void) config;
     completions_checked = FLB_FALSE;
+    earliest_retry_time = 0;
 
     flb_plg_debug(ctx->ins, "Running upload timer callback (upload_queue)..");
 
@@ -2476,7 +2548,7 @@ scan:
     if (mk_list_size(&ctx->upload_queue) == 0) {
         flb_plg_debug(ctx->ins, "No files found in upload_queue. Scanning for timed "
                       "out chunks");
-        ret = enqueue_oldest_timed_out_chunk(ctx, time(NULL));
+        ret = enqueue_oldest_timed_out_chunk(ctx, time(NULL), FLB_FALSE);
         if (ret < 0) {
             flb_plg_error(ctx->ins,
                           "Could not add timed out chunk to upload queue");
@@ -2491,14 +2563,25 @@ scan:
     mk_list_foreach_safe(head, tmp, &ctx->upload_queue) {
         upload_contents = mk_list_entry(head, struct upload_queue, _head);
 
+        if (upload_queue_tag_is_blocked(ctx, upload_contents) == FLB_TRUE) {
+            continue;
+        }
+
         now = time(NULL);
 
         if (now < upload_contents->upload_time) {
             flb_plg_debug(ctx->ins,
-                          "Found valid chunk file but not ready to upload");
-            s3_upload_queue_retry_schedule(ctx, upload_contents->upload_time);
-            complete_pending_uploads_once(ctx, &completions_checked);
-            goto exit;
+                          "Found tag queue head but it is not ready to upload");
+            if (ctx->key_fmt_has_seq_index == FLB_TRUE) {
+                s3_upload_queue_retry_schedule(ctx, upload_contents->upload_time);
+                complete_pending_uploads_once(ctx, &completions_checked);
+                goto exit;
+            }
+            if (earliest_retry_time == 0 ||
+                upload_contents->upload_time < earliest_retry_time) {
+                earliest_retry_time = upload_contents->upload_time;
+            }
+            continue;
         }
 
         /* Checks if upload_contents is valid */
@@ -2534,12 +2617,13 @@ scan:
             if (upload_contents->retry_counter > ctx->ins->retry_limit) {
                 flb_plg_warn(ctx->ins, "Chunk file failed to send %d times, will not "
                              "retry", upload_contents->retry_counter);
-                s3_chunk_retry_exhausted_cleanup(ctx, upload_contents->upload_file);
+                upload_file = upload_contents->upload_file;
                 /*
                  * Multipart uploads are shared by tag and may contain parts
                  * already accepted by S3. Leave their persisted state intact.
                  */
                 remove_from_queue(upload_contents);
+                s3_chunk_retry_exhausted_cleanup(ctx, upload_file);
                 s3_upload_queue_retry_cancel(ctx);
                 ctx->retry_time = 0;
                 complete_pending_uploads_once(ctx, &completions_checked);
@@ -2549,17 +2633,47 @@ scan:
             /* Retry in N seconds */
             upload_contents->upload_time = now + 2 * upload_contents->retry_counter;
             ctx->retry_time += 2 * upload_contents->retry_counter;
-            s3_upload_queue_retry_schedule(ctx, upload_contents->upload_time);
+            if (ctx->key_fmt_has_seq_index == FLB_TRUE) {
+                s3_upload_queue_retry_schedule(ctx, upload_contents->upload_time);
+                flb_plg_debug(ctx->ins,
+                              "Failed to upload file in upload_queue. Will not "
+                              "retry for %d seconds",
+                              2 * upload_contents->retry_counter);
+                complete_pending_uploads_once(ctx, &completions_checked);
+                break;
+            }
+            if (earliest_retry_time == 0 ||
+                upload_contents->upload_time < earliest_retry_time) {
+                earliest_retry_time = upload_contents->upload_time;
+            }
             flb_plg_debug(ctx->ins, "Failed to upload file in upload_queue. Will not "
-                          "retry for %d seconds", 2 * upload_contents->retry_counter);
+                          "retry for %d seconds",
+                          2 * upload_contents->retry_counter);
             complete_pending_uploads_once(ctx, &completions_checked);
-            break;
         }
     }
 
-    if (mk_list_size(&ctx->upload_queue) == 0) {
+    if (ctx->key_fmt_has_seq_index == FLB_TRUE) {
+        if (mk_list_size(&ctx->upload_queue) == 0) {
+            goto scan;
+        }
+        goto exit;
+    }
+
+    ret = enqueue_oldest_timed_out_chunk(ctx, time(NULL), FLB_TRUE);
+    if (ret > 0) {
         goto scan;
     }
+    if (ret < 0) {
+        flb_plg_error(ctx->ins, "Could not add timed out chunk to upload queue");
+    }
+
+    s3_upload_queue_retry_cancel(ctx);
+    if (earliest_retry_time != 0) {
+        s3_upload_queue_retry_schedule(ctx, earliest_retry_time);
+    }
+
+    complete_pending_uploads_once(ctx, &completions_checked);
 
 exit:
     return;
@@ -3896,7 +4010,8 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
 
 
 
-static int enqueue_oldest_timed_out_chunk(struct flb_s3 *ctx, time_t now)
+static int enqueue_oldest_timed_out_chunk(struct flb_s3 *ctx, time_t now,
+                                          int skip_held_tags)
 {
     int ret;
     struct s3_file *chunk;
@@ -3928,6 +4043,12 @@ static int enqueue_oldest_timed_out_chunk(struct flb_s3 *ctx, time_t now)
         }
 
         if (now < (chunk->create_time + ctx->upload_timeout + ctx->retry_time)) {
+            continue;
+        }
+
+        if (skip_held_tags == FLB_TRUE &&
+            upload_queue_tag_is_held(ctx, (const char *) fsf->meta_buf,
+                                     fsf->meta_size, now) == FLB_TRUE) {
             continue;
         }
 
@@ -4040,7 +4161,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
     now = time(NULL);
 
     if (ctx->preserve_data_ordering == FLB_TRUE) {
-        ret = enqueue_oldest_timed_out_chunk(ctx, now);
+        ret = enqueue_oldest_timed_out_chunk(ctx, now, FLB_FALSE);
         if (ret < 0) {
             flb_plg_error(ctx->ins,
                           "Could not add timed out chunk to upload queue");
