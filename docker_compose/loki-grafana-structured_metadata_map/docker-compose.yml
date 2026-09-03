@@ -6,7 +6,8 @@ services:
 #      context: ../../
 #      dockerfile: dockerfiles/Dockerfile
     depends_on:
-      - loki
+      loki:
+        condition: service_healthy
     container_name: fluentbit
     command: /fluent-bit/bin/fluent-bit -c /etc/fluent-bit_loki_out-structured_metadata_map.yaml
     ports:
@@ -17,7 +18,8 @@ services:
       - ./config/fluent-bit_loki_out-structured_metadata_map.yaml:/etc/fluent-bit_loki_out-structured_metadata_map.yaml
 
   grafana:
-    image: grafana/grafana:11.4.0
+    image: grafana/grafana:11.5.2
+    attach: false
     depends_on:
       - loki
       - fluentbit
@@ -28,11 +30,21 @@ services:
     networks:
       - loki-network
     environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_SECURITY_ADMIN=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
 
   loki:
-    image: grafana/loki:2.9.2
+    image: grafana/loki:3.4.2
+    attach: false
     command: -config.file=/etc/loki/loki-config.yaml
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3100/ready" ]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+      timeout: 10s
     networks:
       - loki-network
     ports:
