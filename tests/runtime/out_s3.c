@@ -22,7 +22,7 @@
 #define S3_TEST_UPLOAD_TIMEOUT  "1s"
 #define S3_TEST_WAIT_STEP_MS      10
 #define S3_TEST_WAIT_TIMEOUT_MS 5000
-#define S3_TEST_STARTUP_FILE_COUNT 3
+#define S3_TEST_STARTUP_FILE_COUNT (CIO_MAX_CHUNKS_UP + 2)
 
 /* not a real error code, but tests that the code can respond to any error */
 #define ERROR_ACCESS_DENIED "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
@@ -110,6 +110,40 @@ static int count_files_recursive(const char *path)
     closedir(dir);
     return total;
 #endif
+}
+
+static int count_sized_down_s3_files(struct flb_s3 *ctx)
+{
+    int count;
+    struct s3_file *s3_file;
+    struct flb_fstore_file *fsf;
+    struct flb_fstore_stream *fs_stream;
+    struct mk_list *file_head;
+    struct mk_list *stream_head;
+
+    count = 0;
+
+    mk_list_foreach(stream_head, &ctx->fs->streams) {
+        fs_stream = mk_list_entry(stream_head, struct flb_fstore_stream, _head);
+        if (fs_stream == ctx->stream_upload) {
+            continue;
+        }
+
+        mk_list_foreach(file_head, &fs_stream->files) {
+            fsf = mk_list_entry(file_head, struct flb_fstore_file, _head);
+            if (fsf->chunk == NULL || fsf->data == NULL ||
+                cio_chunk_is_up(fsf->chunk) == CIO_TRUE) {
+                continue;
+            }
+
+            s3_file = fsf->data;
+            if (cfl_atomic_load(&s3_file->size) > 0) {
+                count++;
+            }
+        }
+    }
+
+    return count;
 }
 
 static int get_s3_call_count(const char *api)
@@ -952,6 +986,8 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
     int out_ffd;
     flb_ctx_t *ctx;
     char *store_dir;
+    char first_file_name[128];
+    char second_file_name[128];
     struct flb_s3 *s3_ctx;
     struct s3_file *s3_file;
 
@@ -994,6 +1030,8 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
     wait_for_file_count(s3_ctx->stream_active->path, 1);
     s3_file = s3_store_file_get(s3_ctx, "shared-upload", 13);
     TEST_CHECK(s3_file != NULL);
+    snprintf(first_file_name, sizeof(first_file_name), "%s",
+             s3_file->fsf->name);
     s3_file->create_time = time(NULL) - 61;
 
     ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
@@ -1007,19 +1045,29 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
     wait_for_file_count(s3_ctx->stream_active->path, 2);
     s3_file = s3_store_file_get(s3_ctx, "shared-upload", 13);
     TEST_CHECK(s3_file != NULL);
+    snprintf(second_file_name, sizeof(second_file_name), "%s",
+             s3_file->fsf->name);
+    TEST_CHECK_(strcmp(first_file_name, second_file_name) != 0,
+                "Expected two distinct shared-upload chunks");
     s3_file->create_time = time(NULL) - 61;
 
+    wait_for_s3_call_count("UploadPart", 3);
     ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
     TEST_CHECK(ret >= 0);
+    wait_for_file_count(s3_ctx->stream_active->path, 2);
     wait_for_s3_call_count("UploadPart", 4);
-    wait_for_file_count_at_most(s3_ctx->stream_active->path, 0);
+    wait_for_file_count_at_most(s3_ctx->stream_active->path, 1);
 
     TEST_CHECK_(get_s3_call_count("UploadPart") == 4,
                 "Expected both shared-upload chunks to exhaust safely, got %d attempts",
                 get_s3_call_count("UploadPart"));
-    TEST_CHECK_(count_files_recursive(s3_ctx->stream_active->path) == 0,
-                "Expected both retry-exhausted chunks to be deleted");
+    TEST_CHECK_(flb_fstore_file_get(s3_ctx->fs, s3_ctx->stream_active,
+                                    first_file_name, strlen(first_file_name)) == NULL,
+                "Expected first retry-exhausted chunk to be deleted");
+    TEST_CHECK_(flb_fstore_file_get(s3_ctx->fs, s3_ctx->stream_active,
+                                    second_file_name, strlen(second_file_name)) == NULL,
+                "Expected second retry-exhausted chunk to be deleted");
     TEST_CHECK_(mk_list_is_empty(&s3_ctx->upload_queue) == 0,
                 "Expected shared-upload queue to be empty");
 
@@ -1863,6 +1911,7 @@ void flb_test_s3_startup_buffer_size_accounting(void)
     int in_ffd;
     int out_ffd;
     int call_count;
+    int sized_down_file_count;
     int file_count;
     int input_fds[S3_TEST_STARTUP_FILE_COUNT];
     char tag[32];
@@ -1962,6 +2011,10 @@ void flb_test_s3_startup_buffer_size_accounting(void)
 
     s3_ctx = get_s3_context(ctx);
     TEST_CHECK(s3_ctx != NULL);
+    sized_down_file_count = count_sized_down_s3_files(s3_ctx);
+    TEST_CHECK_(sized_down_file_count >= 2,
+                "Expected at least two restored down chunks with accounted bytes, got %d",
+                sized_down_file_count);
     restored_buffer_size = cfl_atomic_load(&s3_ctx->current_buffer_size);
     TEST_CHECK_(restored_buffer_size == live_buffer_size,
                 "Expected restored payload bytes=%" PRIu64 ", got %" PRIu64,
