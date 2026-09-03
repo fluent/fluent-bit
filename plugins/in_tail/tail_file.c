@@ -258,14 +258,16 @@ int flb_tail_file_reset_on_truncate(struct flb_tail_file *file,
     int64_t offset;
     struct flb_tail_config *ctx = file->config;
 #ifdef FLB_HAVE_METRICS
+    int64_t old_size;
     int64_t unread_before_trunc;
     off_t prev_db_offset;
 #endif
 
 #ifdef FLB_HAVE_METRICS
     prev_db_offset = flb_tail_file_db_offset(file);
-    if (file->size > prev_db_offset) {
-        unread_before_trunc = file->size - prev_db_offset;
+    old_size = file->size - size_delta;
+    if (old_size > (int64_t) prev_db_offset) {
+        unread_before_trunc = old_size - (int64_t) prev_db_offset;
         if (unread_before_trunc > 0) {
             cmt_counter_add(ctx->cmt_files_abandoned_bytes, cfl_time_now(),
                             (double) unread_before_trunc, 1,
