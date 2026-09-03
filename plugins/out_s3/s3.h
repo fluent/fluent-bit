@@ -192,6 +192,7 @@ struct flb_s3 {
     int preserve_data_ordering;
     int upload_queue_success;
     struct mk_list upload_queue;
+    struct flb_sched_timer *upload_queue_retry_timer;
 
     size_t file_size;
     size_t upload_chunk_size;
@@ -226,6 +227,8 @@ int abort_multipart_upload(struct flb_s3 *ctx,
                            char *pre_signed_url);
 
 void multipart_read_uploads_from_fs(struct flb_s3 *ctx);
+int multipart_upload_remove_from_fs(struct flb_s3 *ctx,
+                                    struct multipart_upload *m_upload);
 
 void multipart_upload_destroy(struct multipart_upload *m_upload);
 
