@@ -53,6 +53,7 @@ DEFINE_OPTION(FLB_IN_SERIAL                   "Enable Serial input plugin"      
 DEFINE_OPTION(FLB_IN_SPLUNK                   "Enable Splunk HTTP HEC input plugin"          ON)
 DEFINE_OPTION(FLB_IN_STATSD                   "Enable StatsD input plugin"                   ON)
 DEFINE_OPTION(FLB_IN_STDIN                    "Enable Standard input plugin"                 ON)
+DEFINE_OPTION(FLB_IN_ZIPKIN                   "Enable Zipkin v2 input plugin"                ON)
 DEFINE_OPTION(FLB_IN_STORAGE_BACKLOG          "Enable storage backlog input plugin"          ON)
 DEFINE_OPTION(FLB_IN_SYSLOG                   "Enable Syslog input plugin"                   ON)
 DEFINE_OPTION(FLB_IN_SYSTEMD                  "Enable Systemd input plugin"                  ON)
