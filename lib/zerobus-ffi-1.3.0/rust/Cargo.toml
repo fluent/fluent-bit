@@ -1,0 +1,62 @@
+[workspace]
+members = [
+    "sdk",
+    "ffi",
+]
+resolver = "2"
+
+[workspace.dependencies]
+# Protobuf / gRPC
+prost = "0.14"
+prost-types = "0.14"
+prost-reflect = "0.16"
+tonic = "0.14"
+tonic-prost = "0.14"
+tonic-prost-build = "0.14"
+protoc-bin-vendored = "3.0.0"
+
+# Async runtime
+async-trait = "0.1"
+tokio = "1.52"
+tokio-stream = "0.1.18"
+tokio-retry = "0.3"
+tokio-util = "0.7.18"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# HTTP / networking
+reqwest = { version = "0.12", features = ["json", "rustls-tls-native-roots", "rustls-tls-webpki-roots"], default-features = false }
+hyper-http-proxy = { version = "1.1", default-features = false, features = ["rustls-tls-native-roots"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "tokio"] }
+
+# Error handling
+thiserror = "1.0"
+
+# Observability
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Arrow
+arrow-flight = { version = "58.2", default-features = false }
+arrow-array = { version = "58.2", default-features = false }
+arrow-schema = { version = "58.2", default-features = false }
+arrow-ipc = { version = "58.2", default-features = false }
+
+# Misc
+futures = "0.3"
+chrono = "0.4"
+sha2 = "0.10"
+once_cell = "1.21"
+bytes = "1.11"
+smallvec = "1.15.1"
+libc = "0.2"
+cbindgen = "0.27"
+
+# Tools
+anyhow = "1"
+clap = { version = "4.6", features = ["derive"] }
+urlencoding = "2.1"
+tempfile = "3.27"
+jni = "0.21"

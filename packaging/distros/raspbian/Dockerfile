@@ -3,15 +3,18 @@
 # Set this to the base image to use in each case, so if we want to build for ubuntu/20.04
 # we would set BASE_BUILDER=ubuntu-20.04-base.
 ARG BASE_BUILDER
+ARG RUST_VERSION="1.91"
 # Lookup the name to use below but should follow the '<distro>-base' convention with slashes replaced.
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
 FROM balenalib/rpi-raspbian:buster AS raspbian-buster-base
 ENV DEBIAN_FRONTEND noninteractive
+ENV CARGO_HOME="/opt/cargo"
+ARG RUST_VERSION
 
 # Builder image so dependencies can be latest, recommended and no need to wipe
 # We pin cmake to a working version (latest 3.16 triggers cmake failures for GNU C compiler detection)
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y cmake=3.13.4-1 cmake-data=3.13.4-1 \
     curl ca-certificates build-essential \
@@ -21,11 +24,18 @@ RUN apt-get update && \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
+# hadolint ignore=DL4006
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
+
 # raspbian/bullseye base image
 FROM balenalib/rpi-raspbian:bullseye AS raspbian-bullseye-base
 ENV DEBIAN_FRONTEND noninteractive
+ENV CARGO_HOME="/opt/cargo"
+ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential \
     cmake make bash sudo wget unzip dh-make \
@@ -34,11 +44,18 @@ RUN apt-get update && \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
+# hadolint ignore=DL4006
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
+
 # raspbian/bookworm base image
 FROM balenalib/rpi-raspbian:bookworm AS raspbian-bookworm-base
 ENV DEBIAN_FRONTEND noninteractive
+ENV CARGO_HOME="/opt/cargo"
+ARG RUST_VERSION
 
-# hadolint ignore=DL3008,DL3015
+# hadolint ignore=DL3008,DL3015,DL4001,DL4006
 RUN apt-get update && \
     apt-get install -y curl ca-certificates build-essential \
     cmake make bash sudo wget unzip dh-make \
@@ -47,12 +64,19 @@ RUN apt-get update && \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
+# hadolint ignore=DL4006
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"
+
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
+
 # Common build for all distributions now
 # hadolint ignore=DL3006
 FROM $BASE_BUILDER AS builder
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
+ENV CARGO_HOME="/opt/cargo" \
+    PATH="/opt/cargo/bin:${PATH}"
 
 # Docker context must be the base of the repo
 WORKDIR /tmp/fluent-bit/
@@ -70,6 +94,7 @@ ARG FLB_SQLDB=On
 ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
+ARG FLB_OUT_ZEROBUS=On
 ARG FLB_JEMALLOC=On
 ARG FLB_CHUNK_TRACE=On
 #Tell raspbian packages should be using armv7.
@@ -85,6 +110,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_HTTP_SERVER="$FLB_HTTP_SERVER" \
     -DFLB_OUT_KAFKA="$FLB_OUT_KAFKA" \
     -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
+    -DFLB_OUT_ZEROBUS="${FLB_OUT_ZEROBUS}" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
