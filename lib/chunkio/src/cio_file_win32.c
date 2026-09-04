@@ -18,6 +18,7 @@
  */
 
 #include <inttypes.h>
+#include <limits.h>
 #include <stdio.h>
 
 #include <chunkio/chunkio_compat.h>
@@ -76,6 +77,8 @@ int cio_file_native_map(struct cio_file *cf, size_t map_size)
     DWORD desired_access;
     size_t file_size;
     size_t actual_map_size;
+    DWORD actual_map_size_high;
+    DWORD actual_map_size_low;
     int ret;
 
     if (cf == NULL) {
@@ -131,10 +134,18 @@ int cio_file_native_map(struct cio_file *cf, size_t map_size)
 
     /* CreateFileMappingA requires size as two DWORDs (high and low) */
     /* Use actual_map_size to ensure consistency */
+#if SIZE_MAX > MAXDWORD
+    actual_map_size_high = (DWORD)((actual_map_size >> (sizeof(DWORD) * CHAR_BIT))
+                                   & 0xFFFFFFFFUL);
+    actual_map_size_low = (DWORD)(actual_map_size & 0xFFFFFFFFUL);
+#else
+    actual_map_size_high = 0;
+    actual_map_size_low = (DWORD)actual_map_size;
+#endif
     cf->backing_mapping = CreateFileMappingA(cf->backing_file, NULL,
                                              desired_protection,
-                                             (DWORD)(actual_map_size >> 32),
-                                             (DWORD)(actual_map_size & 0xFFFFFFFFUL),
+                                             actual_map_size_high,
+                                             actual_map_size_low,
                                              NULL);
 
     if (cf->backing_mapping == NULL) {
