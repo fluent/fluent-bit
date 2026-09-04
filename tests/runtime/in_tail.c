@@ -23,12 +23,16 @@ Approach for this tests is basing on filter_kubernetes tests
 */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_compat.h>
 #ifdef FLB_HAVE_UNICODE_ENCODER
 #include <fluent-bit/flb_unicode.h>
 #endif
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_encode_prometheus.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -315,6 +319,58 @@ static ssize_t write_msg(struct test_tail_ctx *ctx, char *msg, size_t msg_len)
         flb_time_msleep(100);
     }
     return w_byte;
+}
+
+static struct cmt_counter *find_input_counter(flb_ctx_t *flb,
+                                              const char *metric_name,
+                                              struct flb_input_instance **out_ins)
+{
+    struct mk_list *head;
+    struct cfl_list *inner_head;
+    struct flb_input_instance *i_ins;
+    struct cmt_counter *counter;
+
+    mk_list_foreach(head, &flb->config->inputs) {
+        i_ins = mk_list_entry(head, struct flb_input_instance, _head);
+        if (i_ins->cmt == NULL) {
+            continue;
+        }
+        cfl_list_foreach(inner_head, &i_ins->cmt->counters) {
+            counter = cfl_list_entry(inner_head, struct cmt_counter, _head);
+            if (strcmp(metric_name, counter->opts.name) == 0) {
+                *out_ins = i_ins;
+                return counter;
+            }
+        }
+    }
+
+    return NULL;
+}
+
+static double get_input_counter_val(flb_ctx_t *flb, const char *metric_name)
+{
+    int ret;
+    double val;
+    char *label;
+    struct flb_input_instance *i_ins;
+    struct cmt_counter *counter;
+
+    val = 0;
+    i_ins = NULL;
+
+    counter = find_input_counter(flb, metric_name, &i_ins);
+    if (!TEST_CHECK(counter != NULL)) {
+        TEST_MSG("metric %s is not registered", metric_name);
+        return -1;
+    }
+
+    label = (char *) flb_input_name(i_ins);
+    ret = cmt_counter_get_val(counter, 1, (char *[]) {label}, &val);
+    if (ret != 0) {
+        return -1;
+    }
+
+    return val;
 }
 
 
@@ -3065,9 +3121,214 @@ void flb_test_db_compare_filename()
 }
 #endif /* FLB_HAVE_SQLDB */
 
+void flb_test_in_tail_byte_metrics(void)
+{
+    int ret;
+    int i;
+    ssize_t w_byte;
+    double files_processed_bytes;
+    double files_abandoned_bytes;
+    char *file = "byte_metrics.log";
+    char *line1 = "{\"msg\":\"line 1\"}" NEW_LINE;
+    char *line2 = "{\"msg\":\"line 2 - longer\"}" NEW_LINE;
+    size_t expected_bytes;
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    int unused;
+
+    expected_bytes = strlen(line1) + strlen(line2);
+    unlink(file);
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file, 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file,
+                        "read_from_head", "true",
+                        "refresh_interval", "1",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Verify eager initialization before writes */
+    files_processed_bytes = get_input_counter_val(ctx->flb, "files_processed_bytes_total");
+    files_abandoned_bytes = get_input_counter_val(ctx->flb, "files_abandoned_bytes_total");
+    if (!TEST_CHECK(files_processed_bytes == 0.0)) {
+        TEST_MSG("files_processed_bytes_total=%f, expected 0", files_processed_bytes);
+    }
+    if (!TEST_CHECK(files_abandoned_bytes == 0.0)) {
+        TEST_MSG("files_abandoned_bytes_total=%f, expected 0", files_abandoned_bytes);
+    }
+
+    /* Write line 1 */
+    w_byte = write(ctx->fds[0], line1, strlen(line1));
+    TEST_CHECK(w_byte > 0);
+    fsync(ctx->fds[0]);
+
+    /* Write line 2 */
+    w_byte = write(ctx->fds[0], line2, strlen(line2));
+    TEST_CHECK(w_byte > 0);
+    fsync(ctx->fds[0]);
+
+    /* Wait for tail to process */
+    for (i = 0; i < 100; i++) {
+        if (get_output_num() >= 2) {
+            break;
+        }
+        flb_time_msleep(100);
+    }
+
+    if (!TEST_CHECK(get_output_num() == 2)) {
+        TEST_MSG("output error: expect=2 got=%d", get_output_num());
+    }
+
+    files_processed_bytes = get_input_counter_val(ctx->flb, "files_processed_bytes_total");
+    files_abandoned_bytes = get_input_counter_val(ctx->flb, "files_abandoned_bytes_total");
+
+    if (!TEST_CHECK(files_processed_bytes == (double) expected_bytes)) {
+        TEST_MSG("files_processed_bytes_total=%f, expected %zu",
+                 files_processed_bytes, expected_bytes);
+    }
+    if (!TEST_CHECK(files_abandoned_bytes == 0.0)) {
+        TEST_MSG("files_abandoned_bytes_total=%f, expected 0", files_abandoned_bytes);
+    }
+
+    test_tail_ctx_destroy(ctx);
+    unlink(file);
+}
+
+#ifndef _WIN32
+#define ABANDONED_BURST (4 * 1024 * 1024)
+
+void flb_test_in_tail_abandoned_bytes(void)
+{
+    int ret;
+    int i;
+    ssize_t w_byte;
+    double bytes_abandoned;
+    double bytes_processed;
+    char *file = "abandoned.log";
+    char *rotated = "abandoned.log.1";
+    char *line = "{\"key\":\"0123456789012345678901234567890123456789\"}" NEW_LINE;
+    size_t line_len;
+    cfl_sds_t prom;
+    struct flb_input_instance *tail_ins;
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    int unused;
+
+    line_len = strlen(line);
+    unlink(file);
+    unlink(rotated);
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file, 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file,
+                        "read_from_head", "true",
+                        "refresh_interval", "1",
+                        "rotate_wait", "1",
+                        "mem_buf_limit", "2k",
+                        "buffer_chunk_size", "2k",
+                        "buffer_max_size", "2k",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(1500);
+
+    w_byte = write(ctx->fds[0], line, line_len);
+    TEST_CHECK(w_byte > 0);
+    flb_time_msleep(500);
+
+    ret = rename(file, rotated);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("rename failed. errno=%d", errno);
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+    flb_time_msleep(300);
+
+    for (i = 0; i < ABANDONED_BURST / (int) line_len; i++) {
+        w_byte = write(ctx->fds[0], line, line_len);
+        if (w_byte <= 0) {
+            break;
+        }
+    }
+    TEST_CHECK(i > 0);
+    fsync(ctx->fds[0]);
+
+    bytes_abandoned = 0;
+    for (i = 0; i < 100; i++) {
+        bytes_abandoned = get_input_counter_val(ctx->flb, "files_abandoned_bytes_total");
+        if (bytes_abandoned > 0) {
+            break;
+        }
+        flb_time_msleep(100);
+    }
+
+    bytes_processed = get_input_counter_val(ctx->flb, "files_processed_bytes_total");
+
+    if (!TEST_CHECK(bytes_processed > 0)) {
+        TEST_MSG("files_processed_bytes_total=%f, expected > 0", bytes_processed);
+    }
+    if (!TEST_CHECK(bytes_abandoned > 0)) {
+        TEST_MSG("files_abandoned_bytes_total=%f, expected > 0", bytes_abandoned);
+    }
+
+    tail_ins = NULL;
+    find_input_counter(ctx->flb, "files_abandoned_bytes_total", &tail_ins);
+    prom = NULL;
+    if (TEST_CHECK(tail_ins != NULL)) {
+        prom = cmt_encode_prometheus_create(tail_ins->cmt, CMT_FALSE);
+    }
+    if (TEST_CHECK(prom != NULL)) {
+        if (!TEST_CHECK(strstr(prom, "fluentbit_input_files_processed_bytes_total") != NULL)) {
+            TEST_MSG("files_processed_bytes_total missing from prometheus output");
+        }
+        if (!TEST_CHECK(strstr(prom, "fluentbit_input_files_abandoned_bytes_total") != NULL)) {
+            TEST_MSG("files_abandoned_bytes_total missing from prometheus output");
+        }
+        cmt_encode_prometheus_destroy(prom);
+    }
+
+    test_tail_ctx_destroy(ctx);
+    unlink(rotated);
+}
+#endif /* _WIN32 */
+
 /* Test list */
 TEST_LIST = {
     {"issue_3943", flb_test_in_tail_issue_3943},
+    {"byte_metrics", flb_test_in_tail_byte_metrics},
+#ifndef _WIN32
+    {"abandoned_bytes", flb_test_in_tail_abandoned_bytes},
+#endif
     /* Properties */
     {"skip_long_lines", flb_test_in_tail_skip_long_lines},
     {"truncate_long_lines",          flb_test_in_tail_truncate_long_lines},
