@@ -342,6 +342,68 @@ def _assert_forward_signal_message(message, *, expected_tag, expected_signal):
     assert len(message["records"]) >= 1
 
 
+def _forward_metric_names(messages):
+    names = set()
+
+    for message in messages:
+        if message["options"].get("fluent_signal") != 1:
+            continue
+
+        for record in message["records"]:
+            payload = record.get("raw")
+            if not isinstance(payload, dict):
+                continue
+
+            for metric in payload.get("metrics", []):
+                names.add(metric["meta"]["opts"]["name"])
+
+    return names
+
+
+def _otel_metrics_request(metric_name):
+    base_path = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "../../in_opentelemetry/tests/data_files",
+        )
+    )
+    request = ExportMetricsServiceRequest()
+    json_payload = read_json_file(os.path.join(base_path, "test_metrics_001.in.json"))
+
+    json_format.Parse(json.dumps(json_payload), request)
+    request.resource_metrics[0].scope_metrics[0].metrics[0].name = metric_name
+
+    return request
+
+
+def _forward_metric_contexts(metric_names):
+    timeout = 30 if memory_check_enabled() else 10
+    source = ForwardReceiverService(
+        "in_opentelemetry_to_forward_receiver_single_worker.yaml"
+    )
+
+    source.start()
+    try:
+        for metric_name in metric_names:
+            source.send_request("/v1/metrics", _otel_metrics_request(metric_name))
+            source.service.wait_for_condition(
+                lambda: forward_data_storage["messages"]
+                if metric_name in _forward_metric_names(forward_data_storage["messages"])
+                else None,
+                timeout=timeout,
+                interval=0.2,
+                description=f"source cmetrics context {metric_name}",
+            )
+
+        return [
+            message["raw"][1]
+            for message in forward_data_storage["messages"]
+            if message["options"].get("fluent_signal") == 1
+        ]
+    finally:
+        source.stop()
+
+
 def _pack_uint(value):
     if value < 0x80:
         return bytes([value])
@@ -1962,6 +2024,130 @@ def test_out_forward_metrics_signal_e2e_with_forward_receiver():
     assert record_payload["metrics"][0]["meta"]["opts"]["name"] == "requests_total"
     assert record_payload["metrics"][0]["values"][0]["labels"] == ["checkout"]
     assert record_payload["metrics"][0]["values"][0]["value_int64"] == 42
+
+
+def test_in_forward_ingests_all_metrics_contexts_from_single_payload():
+    expected_names = {"forward_metric_a", "forward_metric_b"}
+    timeout = 30 if memory_check_enabled() else 10
+    metrics_payload = b"".join(_forward_metric_contexts(expected_names))
+
+    receiver_config = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "../config/in_forward_multi_metrics_stdout.yaml",
+        )
+    )
+    payload = _pack_obj(["test", metrics_payload, {"fluent_signal": 1}])
+
+    for input_workers in (1, 2):
+        receiver = FluentBitTestService(
+            receiver_config,
+            extra_env={"FORWARD_INPUT_WORKERS": input_workers},
+        )
+        receiver.start()
+        try:
+            with socket.create_connection(
+                ("127.0.0.1", receiver.flb_listener_port), timeout=5
+            ) as sock:
+                sock.sendall(payload)
+
+            output = receiver.wait_for_condition(
+                lambda: read_file(receiver.flb.log_file)
+                if all(
+                    metric_name in read_file(receiver.flb.log_file)
+                    for metric_name in expected_names
+                )
+                else None,
+                timeout=timeout,
+                interval=0.2,
+                description=(
+                    f"both forwarded cmetrics contexts with {input_workers} workers"
+                ),
+            )
+        finally:
+            receiver.stop()
+
+        assert all(metric_name in output for metric_name in expected_names)
+
+
+def test_in_forward_metrics_payload_append_is_atomic():
+    metric_names = ("forward_atomic_a", "forward_atomic_b")
+    contexts = _forward_metric_contexts(metric_names)
+    chunk_id = "atomic-metrics-payload"
+    timeout = 30 if memory_check_enabled() else 10
+
+    assert len(contexts) == 2
+    invalid_context = contexts[1].replace(
+        b"opentelemetry", b"invalid-value", 1
+    )
+    assert invalid_context != contexts[1]
+
+    invalid_payload = _pack_obj([
+        "test",
+        contexts[0] + invalid_context,
+        {"fluent_signal": 1, "chunk": chunk_id},
+    ])
+    valid_payload = _pack_obj([
+        "test",
+        b"".join(contexts),
+        {"fluent_signal": 1, "chunk": chunk_id},
+    ])
+    receiver_config = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "../config/in_forward_atomic_metrics_stdout.yaml",
+        )
+    )
+    receiver = FluentBitTestService(receiver_config)
+
+    receiver.start()
+    try:
+        with socket.create_connection(
+            ("127.0.0.1", receiver.flb_listener_port), timeout=5
+        ) as sock:
+            sock.settimeout(2)
+            sock.sendall(invalid_payload)
+            try:
+                response = sock.recv(4096)
+            except socket.timeout:
+                response = b""
+
+        assert response == b""
+        receiver.wait_for_condition(
+            lambda: read_file(receiver.flb.log_file)
+            if "could not append metrics" in read_file(receiver.flb.log_file)
+            else None,
+            timeout=timeout,
+            interval=0.2,
+            description="rejected atomic metrics payload",
+        )
+        time.sleep(2)
+        assert not any(
+            metric_name in read_file(receiver.flb.log_file)
+            for metric_name in metric_names
+        )
+
+        with socket.create_connection(
+            ("127.0.0.1", receiver.flb_listener_port), timeout=5
+        ) as sock:
+            sock.sendall(valid_payload)
+            assert _recv_msgpack_value(sock) == {"ack": chunk_id}
+
+        output = receiver.wait_for_condition(
+            lambda: read_file(receiver.flb.log_file)
+            if all(
+                metric_name in read_file(receiver.flb.log_file)
+                for metric_name in metric_names
+            )
+            else None,
+            timeout=timeout,
+            interval=0.2,
+            description="retried atomic metrics payload",
+        )
+    finally:
+        receiver.stop()
+
+    assert all(metric_name in output for metric_name in metric_names)
 
 
 def test_out_forward_traces_signal_e2e_with_forward_receiver():
