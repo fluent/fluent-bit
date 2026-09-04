@@ -24,10 +24,14 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_downstream.h>
+#ifdef FLB_HAVE_SQLDB
+#include <fluent-bit/flb_sqldb.h>
+#endif
 #include <monkey/mk_core.h>
 #include <monkey/mk_lib.h>
 
 #include "flb_tests_runtime.h"
+#include "../include/flb_tests_tmpdir.h"
 
 #define JSON_CONTENT_TYPE "application/json"
 
@@ -312,7 +316,8 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
 static struct test_ctx *test_ctx_create_with_config(struct flb_lib_out_cb *data,
                                                     const char *db_sync,
                                                     const char *db_locking,
-                                                    const char *db_journal_mode)
+                                                    const char *db_journal_mode,
+                                                    const char *db_path)
 {
     int i_ffd;
     int o_ffd;
@@ -362,6 +367,10 @@ static struct test_ctx *test_ctx_create_with_config(struct flb_lib_out_cb *data,
     }
     if (db_journal_mode) {
         ret = flb_input_set(ctx->flb, i_ffd, "db.journal_mode", db_journal_mode, NULL);
+        TEST_CHECK(ret == 0);
+    }
+    if (db_path) {
+        ret = flb_input_set(ctx->flb, i_ffd, "db", db_path, NULL);
         TEST_CHECK(ret == 0);
     }
 
@@ -520,6 +529,168 @@ void flb_test_events_with_chunkedrecv()
 }
 
 #ifdef FLB_HAVE_SQLDB
+static int database_contains_index(sqlite3 *database, const char *index_name)
+{
+    int ret;
+    int result;
+    sqlite3_stmt *statement;
+    const char *query;
+
+    result = FLB_FALSE;
+    statement = NULL;
+    query = "SELECT 1 FROM sqlite_master "
+            "WHERE type='index' AND tbl_name='in_kubernetes_events' AND name=?1;";
+
+    ret = sqlite3_prepare_v2(database, query, -1, &statement, NULL);
+    if (ret != SQLITE_OK) {
+        TEST_MSG("could not prepare index lookup: %s", sqlite3_errmsg(database));
+        return FLB_FALSE;
+    }
+
+    ret = sqlite3_bind_text(statement, 1, index_name, -1, SQLITE_STATIC);
+    if (ret == SQLITE_OK && sqlite3_step(statement) == SQLITE_ROW) {
+        result = FLB_TRUE;
+    }
+
+    sqlite3_finalize(statement);
+    return result;
+}
+
+static int create_legacy_database(const char *path)
+{
+    int ret;
+    char *error_message;
+    sqlite3 *database;
+    const char *schema;
+
+    database = NULL;
+    error_message = NULL;
+    schema = "CREATE TABLE in_kubernetes_events ("
+             "id INTEGER PRIMARY KEY,"
+             "uid TEXT NOT NULL,"
+             "resourceVersion INTEGER NOT NULL,"
+             "created INTEGER NOT NULL);"
+             "INSERT INTO in_kubernetes_events (uid, resourceVersion, created) "
+             "VALUES ('duplicate', 1, 1), ('duplicate', 2, 2);";
+
+    ret = sqlite3_open(path, &database);
+    if (ret != SQLITE_OK) {
+        if (database != NULL) {
+            TEST_MSG("could not create legacy database: %s", sqlite3_errmsg(database));
+        }
+        else {
+            TEST_MSG("could not create legacy database");
+        }
+        sqlite3_close(database);
+        return -1;
+    }
+
+    ret = sqlite3_exec(database, schema, NULL, NULL, &error_message);
+    if (ret != SQLITE_OK) {
+        TEST_MSG("could not create legacy schema: %s", error_message);
+        sqlite3_free(error_message);
+        sqlite3_close(database);
+        return -1;
+    }
+
+    sqlite3_close(database);
+    return 0;
+}
+
+static void test_database_indexes(int legacy_database)
+{
+    int ret;
+    int path_length;
+    char db_path[PATH_MAX];
+    char *temp_directory;
+    sqlite3 *database;
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+
+    database = NULL;
+    ctx = NULL;
+    temp_directory = flb_test_tmpdir_cat("/flb-kubernetes-events-XXXXXX");
+    if (!TEST_CHECK(temp_directory != NULL)) {
+        return;
+    }
+
+    if (!TEST_CHECK(mkdtemp(temp_directory) != NULL)) {
+        flb_free(temp_directory);
+        return;
+    }
+
+    path_length = snprintf(db_path, sizeof(db_path), "%s/events.db", temp_directory);
+    if (!TEST_CHECK(path_length > 0 && (size_t) path_length < sizeof(db_path))) {
+        flb_test_rmdir(temp_directory);
+        flb_free(temp_directory);
+        return;
+    }
+
+    if (legacy_database == FLB_TRUE && !TEST_CHECK(create_legacy_database(db_path) == 0)) {
+        remove(db_path);
+        flb_test_rmdir(temp_directory);
+        flb_free(temp_directory);
+        return;
+    }
+
+    cb_data.cb = NULL;
+    cb_data.data = NULL;
+    ctx = test_ctx_create_with_config(&cb_data,
+                                      NULL,      /* db.sync */
+                                      NULL,      /* db.locking */
+                                      "DELETE",  /* db.journal_mode */
+                                      db_path);  /* db */
+    if (!TEST_CHECK(ctx != NULL)) {
+        remove(db_path);
+        flb_test_rmdir(temp_directory);
+        flb_free(temp_directory);
+        return;
+    }
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        flb_destroy(ctx->flb);
+        flb_free(ctx);
+        remove(db_path);
+        flb_test_rmdir(temp_directory);
+        flb_free(temp_directory);
+        return;
+    }
+    test_ctx_destroy(ctx);
+
+    ret = sqlite3_open_v2(db_path, &database, SQLITE_OPEN_READONLY, NULL);
+    if (ret != SQLITE_OK) {
+        if (database != NULL) {
+            TEST_CHECK_(ret == SQLITE_OK, "could not open database: %s",
+                        sqlite3_errmsg(database));
+        }
+        else {
+            TEST_CHECK_(ret == SQLITE_OK, "could not open database");
+        }
+    }
+    else {
+        TEST_CHECK(database_contains_index(database,
+                                           "idx_in_kubernetes_events_uid") == FLB_TRUE);
+        TEST_CHECK(database_contains_index(database,
+                                           "idx_in_kubernetes_events_created") == FLB_TRUE);
+    }
+
+    sqlite3_close(database);
+    remove(db_path);
+    flb_test_rmdir(temp_directory);
+    flb_free(temp_directory);
+}
+
+void flb_test_database_indexes_created()
+{
+    test_database_indexes(FLB_FALSE);
+}
+
+void flb_test_database_indexes_migrated()
+{
+    test_database_indexes(FLB_TRUE);
+}
+
 /* Test valid db.sync values */
 void flb_test_config_db_sync_values()
 {
@@ -536,7 +707,8 @@ void flb_test_config_db_sync_values()
         ctx = test_ctx_create_with_config(&cb_data,
                                           sync_values[i],  /* db.sync */
                                           NULL,            /* db.locking */
-                                          NULL);           /* db.journal_mode */
+                                          NULL,            /* db.journal_mode */
+                                          NULL);           /* db */
         if (!TEST_CHECK(ctx != NULL)) {
             TEST_MSG("test_ctx_create_with_config failed for db.sync=%s", sync_values[i]);
             continue;
@@ -570,7 +742,8 @@ void flb_test_config_db_journal_mode_values()
         ctx = test_ctx_create_with_config(&cb_data,
                                           NULL,              /* db.sync */
                                           NULL,              /* db.locking */
-                                          journal_modes[i]); /* db.journal_mode */
+                                          journal_modes[i],  /* db.journal_mode */
+                                          NULL);             /* db */
         if (!TEST_CHECK(ctx != NULL)) {
             TEST_MSG("test_ctx_create_with_config failed for db.journal_mode=%s", journal_modes[i]);
             continue;
@@ -604,7 +777,8 @@ void flb_test_config_db_locking_values()
         ctx = test_ctx_create_with_config(&cb_data,
                                           NULL,              /* db.sync */
                                           locking_values[i], /* db.locking */
-                                          NULL);             /* db.journal_mode */
+                                          NULL,              /* db.journal_mode */
+                                          NULL);             /* db */
         if (!TEST_CHECK(ctx != NULL)) {
             TEST_MSG("test_ctx_create_with_config failed for db.locking=%s", locking_values[i]);
             continue;
@@ -628,10 +802,11 @@ TEST_LIST = {
     {"events_v1_with_creationTimestamp", flb_test_events_v1_with_creationTimestamp},
     //{"events_v1_with_chunkedrecv", flb_test_events_with_chunkedrecv},
 #ifdef FLB_HAVE_SQLDB
+    {"database_indexes_created", flb_test_database_indexes_created},
+    {"database_indexes_migrated", flb_test_database_indexes_migrated},
     {"config_db_sync_values", flb_test_config_db_sync_values},
     {"config_db_journal_mode_values", flb_test_config_db_journal_mode_values},
     {"config_db_locking_values", flb_test_config_db_locking_values},
 #endif
     {NULL, NULL}
 };
-
