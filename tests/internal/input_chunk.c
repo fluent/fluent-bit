@@ -20,6 +20,8 @@
 #define MAX_LINES        32
 
 int64_t result_time;
+static int mmap_read_error_count;
+
 struct tail_test_result {
     const char *target;
     int   nMatched;
@@ -487,6 +489,10 @@ static int log_cb(struct cio_ctx *data, int level, const char *file, int line,
                   char *str)
 {
     if (level == CIO_LOG_ERROR) {
+        if (strstr(str, "cannot mmap/read chunk") != NULL) {
+            mmap_read_error_count++;
+        }
+
         flb_error("[fstore] %s", str);
     }
     else if (level == CIO_LOG_WARN) {
@@ -500,6 +506,148 @@ static int log_cb(struct cio_ctx *data, int level, const char *file, int line,
     }
 
     return 0;
+}
+
+/*
+ * Verify that calculating the projected size of a newly created DOWN chunk
+ * does not try to map the chunk before it is brought UP.
+ */
+void flb_test_input_chunk_projected_size_for_down_chunk(void)
+{
+    int ret;
+    char *payload;
+    char *root_path;
+    char temp_path[128];
+    size_t payload_size;
+    struct flb_config *cfg;
+    struct cio_ctx *cio;
+    struct mk_event_loop *evl;
+    struct flb_input_chunk *ic;
+    struct flb_input_instance *i_ins;
+    struct flb_output_instance *o_ins;
+    struct flb_task *task;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct cio_options opts = {0};
+
+    payload = NULL;
+    payload_size = 0;
+
+    snprintf(temp_path, sizeof(temp_path) - 1,
+             "/input-chunk-down-projected-size-%i/", getpid());
+    temp_path[sizeof(temp_path) - 1] = '\0';
+
+    root_path = flb_test_tmpdir_cat(temp_path);
+    TEST_CHECK(root_path != NULL);
+    if (root_path == NULL) {
+        return;
+    }
+
+    ret = build_grouped_log_payload(&payload, &payload_size);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_free(root_path);
+        return;
+    }
+
+    flb_init_env();
+    cfg = flb_config_init();
+    evl = mk_event_loop_create(256);
+
+    TEST_CHECK(evl != NULL);
+    if (evl == NULL) {
+        flb_config_exit(cfg);
+        flb_free(payload);
+        flb_free(root_path);
+        return;
+    }
+
+    cfg->evl = evl;
+    flb_log_create(cfg, FLB_LOG_STDERR, FLB_LOG_DEBUG, NULL);
+
+    i_ins = flb_input_new(cfg, "dummy", NULL, FLB_TRUE);
+    TEST_CHECK(i_ins != NULL);
+    if (i_ins == NULL) {
+        flb_config_exit(cfg);
+        flb_free(payload);
+        flb_free(root_path);
+        return;
+    }
+    i_ins->storage_type = CIO_STORE_FS;
+
+    cio_options_init(&opts);
+    opts.root_path = root_path;
+    opts.log_cb = log_cb;
+    opts.log_level = CIO_LOG_DEBUG;
+    opts.flags = CIO_OPEN;
+
+    cio = cio_create(&opts);
+    TEST_CHECK(cio != NULL);
+    if (cio == NULL) {
+        flb_input_exit_all(cfg);
+        flb_output_exit(cfg);
+        flb_config_exit(cfg);
+        flb_free(payload);
+        flb_free(root_path);
+        return;
+    }
+
+    cio_set_max_chunks_up(cio, 1);
+    flb_storage_input_create(cio, i_ins);
+    flb_input_init_all(cfg);
+
+    o_ins = flb_output_new(cfg, "http", NULL, FLB_TRUE);
+    TEST_CHECK(o_ins != NULL);
+    if (o_ins == NULL) {
+        cio_destroy(cio);
+        flb_input_exit_all(cfg);
+        flb_output_exit(cfg);
+        flb_config_exit(cfg);
+        flb_free(payload);
+        flb_free(root_path);
+        return;
+    }
+
+    flb_output_set_property(o_ins, "match", "down.*");
+    flb_output_set_property(o_ins, "storage.total_limit_size", "10M");
+
+    TEST_CHECK_(flb_router_io_set(cfg) != -1, "unable to router");
+
+    mmap_read_error_count = 0;
+
+    ret = flb_input_chunk_append_raw(i_ins, FLB_INPUT_LOGS, 0,
+                                     "down.one", 8,
+                                     payload, payload_size);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(cio->total_chunks_up == 1);
+
+    ret = flb_input_chunk_append_raw(i_ins, FLB_INPUT_LOGS, 0,
+                                     "down.two", 8,
+                                     payload, payload_size);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(mk_list_size(&i_ins->chunks) == 2);
+
+    ic = mk_list_entry_last(&i_ins->chunks, struct flb_input_chunk, _head);
+    TEST_CHECK(cio_chunk_is_up(ic->chunk) == CIO_FALSE);
+    TEST_CHECK(mmap_read_error_count == 0);
+
+    mk_list_foreach_safe(head, tmp, &i_ins->tasks) {
+        task = mk_list_entry(head, struct flb_task, _head);
+        flb_task_destroy(task, FLB_TRUE);
+    }
+
+    mk_list_foreach_safe(head, tmp, &i_ins->chunks) {
+        ic = mk_list_entry(head, struct flb_input_chunk, _head);
+        flb_input_chunk_destroy(ic, FLB_TRUE);
+    }
+
+    cio_destroy(cio);
+    flb_router_exit(cfg);
+    flb_input_exit_all(cfg);
+    flb_output_exit(cfg);
+    flb_config_exit(cfg);
+    flb_free(payload);
+    flb_free(root_path);
 }
 
 static int get_counter_value_1(struct cmt_counter *counter,
@@ -1305,5 +1453,7 @@ TEST_LIST = {
      flb_test_input_chunk_prefers_deletable_files_on_limit},
     {"input_chunk_limit_with_many_outputs",
      flb_test_input_chunk_limit_with_many_outputs},
+    {"input_chunk_projected_size_for_down_chunk",
+     flb_test_input_chunk_projected_size_for_down_chunk},
     {NULL, NULL}
 };
