@@ -87,6 +87,22 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    if (ctx->http_bearer_token_file) {
+        if (ctx->http_user) {
+            flb_plg_error(ctx->ins, "http_bearer_token_file cannot be used together with "
+                          "http_user/http_passwd (Basic Auth); configure exactly one "
+                          "authentication mechanism");
+            flb_free(ctx);
+            return NULL;
+        }
+        if (ctx->oauth2_config.enabled == FLB_TRUE) {
+            flb_plg_error(ctx->ins, "http_bearer_token_file cannot be used together with "
+                          "oauth2.enable; configure exactly one authentication mechanism");
+            flb_free(ctx);
+            return NULL;
+        }
+    }
+
     if (ctx->headers_key && !ctx->body_key) {
         flb_plg_error(ctx->ins, "when setting headers_key, body_key is also required");
         flb_free(ctx);

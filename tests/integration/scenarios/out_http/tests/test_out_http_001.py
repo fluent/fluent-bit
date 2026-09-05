@@ -53,7 +53,7 @@ def _wait_for_http_server_port(timeout=5):
 
 
 class Service:
-    def __init__(self, config_file, *, response_setup=None, use_tls=False):
+    def __init__(self, config_file, *, response_setup=None, use_tls=False, extra_env=None):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
         test_path = os.path.dirname(os.path.abspath(__file__))
         cert_dir = os.path.abspath(os.path.join(test_path, "../../in_splunk/certificate"))
@@ -61,14 +61,17 @@ class Service:
         self.tls_key_file = os.path.join(cert_dir, "private_key.pem")
         self.response_setup = response_setup
         self.use_tls = use_tls
+        env = {
+            "CERTIFICATE_TEST": self.tls_crt_file,
+            "PRIVATE_KEY_TEST": self.tls_key_file,
+        }
+        if extra_env:
+            env.update(extra_env)
         self.service = FluentBitTestService(
             self.config_file,
             data_storage=data_storage,
             data_keys=["payloads", "requests"],
-            extra_env={
-                "CERTIFICATE_TEST": self.tls_crt_file,
-                "PRIVATE_KEY_TEST": self.tls_key_file,
-            },
+            extra_env=env,
             pre_start=self._start_receiver,
             post_stop=self._stop_receiver,
         )
@@ -234,6 +237,100 @@ def test_out_http_oauth2_private_key_jwt_adds_bearer_token():
     assert "client_assertion=" in token_request["raw_data"]
     assert "client_id=client1" in token_request["raw_data"]
     assert data_request["headers"].get("Authorization") == "Bearer oauth-access-token"
+
+
+def test_out_http_bearer_token_file_adds_bearer_header(tmp_path):
+    """Verify http_bearer_token_file sets the Authorization header from the file contents."""
+    token_path = tmp_path / "bearer_token_file_test.token"
+    token_path.write_text("test-token-value\n", encoding="utf-8")
+
+    service = Service(
+        "out_http_bearer_token_file.yaml",
+        extra_env={"BEARER_TOKEN_FILE_TEST": str(token_path)},
+    )
+    service.start()
+    try:
+        configure_http_response(status_code=200, body={"status": "received"})
+        requests_seen = service.wait_for_requests(1)
+    finally:
+        service.stop()
+
+    data_request = requests_seen[0]
+    assert data_request["headers"].get("Authorization") == "Bearer test-token-value"
+
+
+def test_out_http_bearer_token_file_picks_up_rotation(tmp_path):
+    """Verify a token rotated on disk is picked up on the next request without a restart."""
+    token_path = tmp_path / "bearer_token_file_rotation.token"
+    token_path.write_text("token-v1", encoding="utf-8")
+
+    service = Service(
+        "out_http_bearer_token_file.yaml",
+        extra_env={"BEARER_TOKEN_FILE_TEST": str(token_path)},
+    )
+    service.start()
+    configure_http_response(status_code=200, body={"status": "received"})
+
+    try:
+        service.wait_for_requests(1)
+        assert any(
+            req["headers"].get("Authorization") == "Bearer token-v1"
+            for req in data_storage["requests"]
+        )
+
+        token_path.write_text("token-v2", encoding="utf-8")
+
+        service.service.wait_for_condition(
+            lambda: True if any(
+                req["headers"].get("Authorization") == "Bearer token-v2"
+                for req in data_storage["requests"]
+            ) else None,
+            timeout=15,
+            interval=0.5,
+            description="a request using the rotated bearer token",
+        )
+    finally:
+        service.stop()
+
+
+def test_out_http_bearer_token_file_missing_retries(tmp_path):
+    """Verify a missing http_bearer_token_file logs an error and retries without leaking a token."""
+    missing_token_path = tmp_path / "bearer_token_file_missing.token"
+
+    service = Service(
+        "out_http_bearer_token_file.yaml",
+        extra_env={"BEARER_TOKEN_FILE_TEST": str(missing_token_path)},
+    )
+    service.start()
+
+    try:
+        log_text = service.wait_for_log_message("could not read http_bearer_token_file", timeout=15)
+    finally:
+        service.stop()
+
+    assert str(missing_token_path) in log_text
+    assert "test-token-value" not in log_text
+    assert not data_storage["requests"]
+
+
+def test_out_http_bearer_token_file_empty_retries(tmp_path):
+    """Verify an empty (post-trim) http_bearer_token_file logs an error and retries."""
+    empty_token_path = tmp_path / "bearer_token_file_empty.token"
+    empty_token_path.write_text("\n", encoding="utf-8")
+
+    service = Service(
+        "out_http_bearer_token_file.yaml",
+        extra_env={"BEARER_TOKEN_FILE_TEST": str(empty_token_path)},
+    )
+    service.start()
+
+    try:
+        log_text = service.wait_for_log_message("is empty after trimming", timeout=15)
+    finally:
+        service.stop()
+
+    assert str(empty_token_path) in log_text
+    assert not data_storage["requests"]
 
 
 def test_out_http_oauth2_timeout_retries_hung_token_endpoint():
