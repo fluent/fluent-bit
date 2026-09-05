@@ -1163,9 +1163,21 @@ int flb_msgpack_to_json(char *json_str, size_t json_size,
         return -1;
     }
 
+    /* a zero-capacity buffer would wrap 'json_size - 1' to SIZE_MAX below */
+    if (json_size == 0) {
+        return -1;
+    }
+
     ret = msgpack2json(json_str, &off, json_size - 1, obj, escape_unicode);
     json_str[off] = '\0';
-    return ret ? off: ret;
+
+    /*
+     * msgpack2json() returns FLB_FALSE (0) when the output did not fit in the
+     * buffer. Report that as a negative value so fixed-buffer callers can
+     * distinguish truncation from a successful zero-length write, matching the
+     * documented contract above.
+     */
+    return ret ? off : -1;
 }
 
 flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size, int escape_unicode)
