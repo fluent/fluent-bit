@@ -1089,6 +1089,9 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
     char buf[64];
     flb_sds_t str_val;
     struct cfl_variant *val;
+    struct cfl_variant string_value;
+    struct flb_config_map *map;
+    struct flb_processor_instance *processor_instance;
 
     /* Handle the "condition" property for processor units */
     if (strcasecmp(k, "condition") == 0) {
@@ -1139,9 +1142,70 @@ int flb_processor_unit_set_property(struct flb_processor_unit *pu, const char *k
         }
     }
 
+    processor_instance = (struct flb_processor_instance *) pu->ctx;
+    map = NULL;
+
+    if (processor_instance->config_map != NULL) {
+        map = flb_config_map_find(processor_instance->config_map, k);
+    }
+    else if (processor_instance->p->config_map != NULL) {
+        map = processor_instance->p->config_map;
+
+        while (map->name != NULL) {
+            if (strcasecmp(map->name, k) == 0) {
+                break;
+            }
+            map++;
+        }
+
+        if (map->name == NULL) {
+            map = NULL;
+        }
+    }
+
+    if (v->type == CFL_VARIANT_ARRAY && map != NULL &&
+        map->type != FLB_CONFIG_MAP_VARIANT &&
+        (map->flags & FLB_CONFIG_MAP_MULT) != 0) {
+        for (i = 0; i < v->data.as_array->entry_count; i++) {
+            val = v->data.as_array->entries[i];
+
+            if (val->type == CFL_VARIANT_STRING) {
+                ret = flb_processor_instance_set_property(processor_instance, k, val);
+            }
+            else if (val->type == CFL_VARIANT_INT) {
+                snprintf(buf, sizeof(buf), "%" PRId64, val->data.as_int64);
+                string_value.type = CFL_VARIANT_STRING;
+                string_value.data.as_string = buf;
+                ret = flb_processor_instance_set_property(processor_instance, k, &string_value);
+            }
+            else if (val->type == CFL_VARIANT_UINT) {
+                snprintf(buf, sizeof(buf), "%" PRIu64, val->data.as_uint64);
+                string_value.type = CFL_VARIANT_STRING;
+                string_value.data.as_string = buf;
+                ret = flb_processor_instance_set_property(processor_instance, k, &string_value);
+            }
+            else if (val->type == CFL_VARIANT_DOUBLE) {
+                snprintf(buf, sizeof(buf), "%g", val->data.as_double);
+                string_value.type = CFL_VARIANT_STRING;
+                string_value.data.as_string = buf;
+                ret = flb_processor_instance_set_property(processor_instance, k, &string_value);
+            }
+            else {
+                flb_error("[processor] property '%s': array element type %d not supported",
+                          k, val->type);
+                return -1;
+            }
+
+            if (ret == -1) {
+                return ret;
+            }
+        }
+
+        return 0;
+    }
+
     return flb_processor_instance_set_property(
-            (struct flb_processor_instance *) pu->ctx,
-            k, v);
+            processor_instance, k, v);
 }
 
 int flb_processor_unit_set_property_str(struct flb_processor_unit *pu, const char *k, const char *v)
