@@ -1846,6 +1846,7 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     int ret;
     int crlf = 2;
     int new_size;
+    int saved_errno;
     size_t bytes_header = 0;
     size_t bytes_body = 0;
     char *tmp;
@@ -1887,26 +1888,105 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     }
 #endif
 
-    /* Write the header */
-    ret = flb_io_net_write(c->u_conn,
-                           c->header_buf, c->header_len,
-                           &bytes_header);
-    if (ret == -1) {
-        /* errno might be changed from the original call */
-        if (errno != 0) {
-            flb_errno();
-        }
-        return FLB_HTTP_ERROR;
-    }
-
     if (c->body_len > 0) {
-        ret = flb_io_net_write(c->u_conn,
-                               c->body_buf, c->body_len,
-                               &bytes_body);
+        struct flb_iovec io_vector[2];
+
+        io_vector[0].iov_base = c->header_buf;
+        io_vector[0].iov_len = c->header_len;
+        io_vector[1].iov_base = c->body_buf;
+        io_vector[1].iov_len = c->body_len;
+
+        ret = flb_io_net_writev(c->u_conn,
+                                io_vector,
+                                2,
+                                &bytes_header);
         if (ret == -1) {
-            flb_errno();
+            saved_errno = errno;
+
+            if (saved_errno == ENOMEM && bytes_header == 0) {
+                ret = flb_io_net_write(c->u_conn,
+                                       c->header_buf, c->header_len,
+                                       &bytes_header);
+                if (ret == -1) {
+                    saved_errno = errno;
+
+                    if (bytes_header > 0) {
+                        flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+                    }
+
+                    if (saved_errno != 0) {
+                        errno = saved_errno;
+                        flb_errno();
+                    }
+                    return FLB_HTTP_ERROR;
+                }
+
+                ret = flb_io_net_write(c->u_conn,
+                                       c->body_buf, c->body_len,
+                                       &bytes_body);
+                if (ret == -1) {
+                    saved_errno = errno;
+                    flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+
+                    if (saved_errno != 0) {
+                        errno = saved_errno;
+                        flb_errno();
+                    }
+                    return FLB_HTTP_ERROR;
+                }
+            }
+            else {
+                if (bytes_header > 0) {
+                    flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+                }
+
+                if (saved_errno != 0) {
+                    errno = saved_errno;
+                    flb_errno();
+                }
+                return FLB_HTTP_ERROR;
+            }
+        }
+        else {
+            if (bytes_header < (size_t) c->header_len) {
+                flb_error("[http_client] invalid write accounting: total=%zu header=%d",
+                          bytes_header, c->header_len);
+                flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+
+                return FLB_HTTP_ERROR;
+            }
+
+            bytes_body = bytes_header - c->header_len;
+            bytes_header = c->header_len;
+        }
+    }
+    else {
+        /* Write the header */
+        ret = flb_io_net_write(c->u_conn,
+                               c->header_buf, c->header_len,
+                               &bytes_header);
+        if (ret == -1) {
+            saved_errno = errno;
+
+            if (bytes_header > 0) {
+                flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+            }
+
+            if (saved_errno != 0) {
+                errno = saved_errno;
+                flb_errno();
+            }
             return FLB_HTTP_ERROR;
         }
+    }
+
+    if (bytes_header != (size_t) c->header_len ||
+        bytes_body != (size_t) c->body_len) {
+        flb_error("[http_client] short request write: header=%zu/%d body=%zu/%d",
+                  bytes_header, c->header_len, bytes_body, c->body_len);
+        flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+
+        return FLB_HTTP_ERROR;
     }
 
     /* number of sent bytes */

@@ -44,7 +44,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <limits.h>
+#include <string.h>
+#include <errno.h>
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
@@ -61,6 +62,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_http_client.h>
+
 
 int flb_io_net_accept(struct flb_connection *connection,
                        struct flb_coro *coro)
@@ -351,6 +353,8 @@ static int fd_io_write(int fd, struct sockaddr_storage *address,
 
                 continue;
             }
+
+            *out_len = total;
 
             return -1;
         }
@@ -769,6 +773,133 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
     return ret;
 }
 
+
+int flb_io_net_writev(struct flb_connection *connection,
+                      const struct flb_iovec *iov,
+                      int iovcnt,
+                      size_t *out_len)
+{
+    int result;
+    int index;
+    int saved_errno;
+    size_t partial_length;
+    size_t total;
+    size_t total_length;
+    char *temporary_buffer;
+
+    if (out_len == NULL) {
+        errno = EINVAL;
+
+        return -1;
+    }
+
+    *out_len = 0;
+
+    if (connection == NULL || iov == NULL || iovcnt <= 0) {
+        errno = EINVAL;
+
+        return -1;
+    }
+
+    total_length = 0;
+
+    for (index = 0 ; index < iovcnt ; index++) {
+        /* Overflow guard */
+        if (iov[index].iov_len > SIZE_MAX - total_length) {
+            errno = EOVERFLOW;
+
+            return -1;
+        }
+
+        if (iov[index].iov_len > 0 && iov[index].iov_base == NULL) {
+            errno = EINVAL;
+
+            return -1;
+        }
+
+        total_length += iov[index].iov_len;
+    }
+
+    if (total_length == 0) {
+        return 0;
+    }
+
+    if (total_length > FLB_IO_WRITEV_COALESCE_MAX) {
+        total = 0;
+
+        for (index = 0; index < iovcnt; index++) {
+            if (iov[index].iov_len == 0) {
+                continue;
+            }
+
+            partial_length = 0;
+            errno = 0;
+            result = flb_io_net_write(connection,
+                                      iov[index].iov_base,
+                                      iov[index].iov_len,
+                                      &partial_length);
+            saved_errno = errno;
+            total += partial_length;
+            *out_len = total;
+
+            if (result == -1) {
+                if (saved_errno == 0) {
+                    saved_errno = EIO;
+                }
+
+                errno = saved_errno;
+
+                return -1;
+            }
+
+            if (partial_length != iov[index].iov_len) {
+                errno = EIO;
+
+                return -1;
+            }
+        }
+
+        return (int) total;
+    }
+
+    temporary_buffer = flb_malloc(total_length);
+
+    if (temporary_buffer == NULL) {
+        errno = ENOMEM;
+
+        return -1;
+    }
+
+    total = 0;
+
+    for (index = 0 ; index < iovcnt ; index++) {
+        if (iov[index].iov_len > 0) {
+            memcpy(&temporary_buffer[total], iov[index].iov_base, iov[index].iov_len);
+        }
+        total += iov[index].iov_len;
+    }
+
+    errno = 0;
+    result = flb_io_net_write(connection, temporary_buffer, total_length, out_len);
+    saved_errno = errno;
+
+    if (result >= 0 && *out_len != total_length) {
+        result = -1;
+        saved_errno = EIO;
+    }
+    else if (result == -1 && saved_errno == 0) {
+        saved_errno = EIO;
+    }
+
+    flb_free(temporary_buffer);
+
+    if (result == -1) {
+        errno = saved_errno;
+    }
+
+    return result;
+}
+
 /* Write data to fd. For unix socket. */
 int flb_io_fd_write(int fd, const void *data, size_t len, size_t *out_len)
 {
@@ -781,6 +912,7 @@ int flb_io_net_write(struct flb_connection *connection, const void *data,
                      size_t len, size_t *out_len)
 {
     int              flags;
+    int              saved_errno;
     struct flb_coro *coro;
     int              ret;
 
@@ -813,12 +945,18 @@ int flb_io_net_write(struct flb_connection *connection, const void *data,
     }
 #endif
 
+    saved_errno = errno;
+
     if (ret > 0) {
         flb_connection_reset_io_timeout(connection);
     }
 
     flb_trace("[io coro=%p] [net_write] ret=%i total=%lu/%lu",
               coro, ret, *out_len, len);
+
+    if (ret == -1) {
+        errno = saved_errno;
+    }
 
     return ret;
 }
