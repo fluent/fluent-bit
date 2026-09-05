@@ -126,6 +126,18 @@ struct flb_aws_provider {
      */
     pthread_mutex_t lock;
 
+    /*
+     * Protects the credentials cached by the provider implementation.
+     *
+     * The lock above is a trylock because it is held across the network call
+     * that fetches new credentials; a reader cannot take it without risking a
+     * deadlock between two coroutines running on the same thread. This lock is
+     * only ever held for the pointer swap that publishes new credentials and
+     * for the copy that readers make, so it never spans a yield point and can
+     * be taken with a blocking lock.
+     */
+    pthread_mutex_t cache_lock;
+
     struct flb_aws_provider_vtable *provider_vtable;
 
     void *implementation;
@@ -338,18 +350,47 @@ int exec_credential_process(char* process, struct flb_aws_credentials** creds,
 #endif /* FLB_HAVE_AWS_CREDENTIAL_PROCESS */
 
 /*
- * Fluent Bit is single-threaded but asynchonous. Only one co-routine will
- * be running at a time, and they only pause/resume for IO.
+ * A provider is shared by every flush thread of an output with `workers` set,
+ * so the cached credentials are read and replaced concurrently by real threads.
  *
- * Thus, while synchronization is needed (to prevent multiple co-routines
- * from duplicating effort and performing the same work), it can be obtained
- * using a simple integer flag on the provider.
+ * The provider lock deduplicates refreshes: only the coroutine that wins it
+ * calls out to the credentials endpoint. It is a trylock because it is held
+ * across that network call, which yields the coroutine.
+ *
+ * The cache lock protects the cached credentials themselves. Use the
+ * flb_aws_cache_* helpers below instead of touching the cached pointer
+ * directly; they hold the cache lock for the copy and for the swap, so a
+ * reader can never end up with a pointer that the refresh path has freed.
  */
 
 /* Like a traditional try lock- it does not block if the lock is not obtained */
 int try_lock_provider(struct flb_aws_provider *provider);
 
 void unlock_provider(struct flb_aws_provider *provider);
+
+/*
+ * Returns a copy of the credentials in *cache, or NULL if the cache is empty
+ * or the copy could not be allocated. The caller owns the returned copy.
+ */
+struct flb_aws_credentials *flb_aws_cache_get_credentials(struct flb_aws_provider
+                                                          *provider,
+                                                          struct flb_aws_credentials
+                                                          **cache);
+
+/* Returns the refresh deadline stored in *next_refresh */
+time_t flb_aws_cache_get_refresh_time(struct flb_aws_provider *provider,
+                                      time_t *next_refresh);
+
+/*
+ * Publishes creds as the new contents of *cache and refresh_time as the new
+ * contents of *next_refresh. Takes ownership of creds and frees whatever was
+ * cached before.
+ */
+void flb_aws_cache_set_credentials(struct flb_aws_provider *provider,
+                                   struct flb_aws_credentials **cache,
+                                   struct flb_aws_credentials *creds,
+                                   time_t *next_refresh,
+                                   time_t refresh_time);
 
 
 /*
