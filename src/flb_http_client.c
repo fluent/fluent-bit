@@ -141,8 +141,30 @@ static int header_lookup(struct flb_http_client *c,
         return FLB_HTTP_MORE;
     }
 
-    /* Lookup the beginning of the header */
-    p = strcasestr(c->resp.data, header);
+    /*
+     * Lookup the beginning of the header: only accept a match placed at
+     * the beginning of a line, otherwise a header name that embeds the
+     * name of another header is matched by mistake, e.g. searching for
+     * 'Content-Length: ' matches the tail of the GCS response header
+     * 'x-goog-stored-content-length: '.
+     */
+    p = c->resp.data;
+    while ((p = strcasestr(p, header)) != NULL) {
+        if (p == c->resp.data || *(p - 1) == '\n') {
+            break;
+        }
+
+        /*
+         * Rejected match: no line-start match can exist before the next
+         * newline, skip the rest of the current line to avoid rescanning
+         * it (a large body could repeat the pattern many times).
+         */
+        p = strchr(p, '\n');
+        if (p == NULL) {
+            break;
+        }
+        p++;
+    }
     end = strstr(c->resp.data, "\r\n\r\n");
     if (!p) {
         if (end) {
