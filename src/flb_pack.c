@@ -399,7 +399,7 @@ static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer
     msgpack_packer pck;
     char *start, *end, *insitu_buf;
 
-    if (!js || !buffer || !size) {
+    if (!js || !buffer || !size || len == 0) {
         return -1;
     }
 
