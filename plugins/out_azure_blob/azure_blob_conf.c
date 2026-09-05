@@ -21,10 +21,14 @@
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_compression.h>
+#include <fluent-bit/flb_utils.h>
 
 #include "azure_blob.h"
 #include "azure_blob_conf.h"
+
+#ifdef FLB_HAVE_SQLDB
 #include "azure_blob_db.h"
+#endif
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -779,6 +783,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         flb_sds_printf(&ctx->shared_key_prefix, "SharedKey %s:", ctx->account_name);
     }
 
+#ifdef FLB_HAVE_SQLDB
     /* database file for blob signal handling */
     if (ctx->database_file) {
         ctx->db = azb_db_open(ctx, ctx->database_file);
@@ -788,6 +793,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     }
 
     pthread_mutex_init(&ctx->file_upload_commit_file_parts, NULL);
+#endif
 
     flb_plg_info(ctx->ins,
                  "account_name=%s, container_name=%s, blob_type=%s, emulator_mode=%s, endpoint=%s, auth_type=%s",
@@ -844,7 +850,9 @@ void flb_azure_blob_conf_destroy(struct flb_azure_blob *ctx)
         flb_upstream_destroy(ctx->u);
     }
 
-
+#ifdef FLB_HAVE_SQLDB
     azb_db_close(ctx);
+#endif
+
     flb_free(ctx);
 }

@@ -12,10 +12,13 @@ if(WIN32)
   if(POWERSHELL_EXECUTABLE)
     set(UNIT_TESTS_PS
       in_dummy_expect.ps1
-      in_tail_expect.ps1
       in_syslog_tcp_plaintext_expect.ps1
       in_syslog_udp_plaintext_expect.ps1
       )
+
+    if(FLB_SQLDB)
+      list(APPEND UNIT_TESTS_PS in_tail_expect.ps1)
+    endif()
 
     if(FLB_TLS)
       list(APPEND UNIT_TESTS_PS
@@ -74,7 +77,6 @@ else()
     custom_calyptia.sh
     dry_run_invalid_property.sh
     in_dummy_expect.sh
-    in_tail_expect.sh
     in_http_tls_expect.sh
     in_syslog_tcp_tls_expect.sh
     in_syslog_tcp_plaintext_expect.sh
@@ -84,6 +86,10 @@ else()
     processor_conditional.sh
     processor_invalid.sh
     )
+
+  if(FLB_SQLDB)
+    list(APPEND UNIT_TESTS_SH in_tail_expect.sh)
+  endif()
 
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv64)")

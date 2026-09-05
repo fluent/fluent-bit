@@ -348,6 +348,7 @@ void flb_test_ignore_case(void)
     test_ctx_destroy(ctx);
 }
 
+#ifdef FLB_HAVE_SQLDB
 void flb_test_mode_partial(void)
 {
     int ret;
@@ -394,12 +395,15 @@ void flb_test_mode_partial(void)
 
     test_ctx_destroy(ctx);
 }
+#endif
 
 TEST_LIST = {
     {"lookup_key", flb_test_lookup_key},
     {"lookup_keys", flb_test_lookup_keys},
     {"records", flb_test_records},
     {"ignore_case", flb_test_ignore_case},
+#ifdef FLB_HAVE_SQLDB
     {"mode_partial", flb_test_mode_partial},
+#endif
     {NULL, NULL}
 };
