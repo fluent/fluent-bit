@@ -1907,6 +1907,11 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
     char                   *tmp;
     int                     ret;
     int                     lines;
+#ifdef __linux__
+    int64_t                 advise_end;
+    long                    page_size;
+    int                     advise_ret;
+#endif
     struct flb_tail_config *ctx;
 
     /* Check if we the engine issued a pause */
@@ -2001,9 +2006,40 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 
     #ifdef __linux__
     if (ctx->file_cache_advise) {
-        if (posix_fadvise(file->fd, 0, 0, POSIX_FADV_DONTNEED) == -1) {
-            flb_errno();
-            flb_plg_error(ctx->ins, "error during posix_fadvise");
+        /*
+         * Advise only the page-aligned byte range that has already been
+         * consumed (up to file->offset).
+         *
+         * Advising the whole file would also hit the last page, which the
+         * writer is still appending to: POSIX_FADV_DONTNEED starts
+         * writeback of dirty pages, so the same tail page would be flushed
+         * to disk over and over (write amplification). It would also evict
+         * pages that other readers of the file (e.g. log rotation
+         * compressors) have not consumed yet, turning their cache hits
+         * into physical reads.
+         *
+         * The advice is repeated over the whole consumed range on every
+         * cycle on purpose: the kernel cannot drop pages that are still
+         * dirty when advised, it only starts their writeback, so they can
+         * only be evicted by a later call once they are clean. Consumed
+         * pages are never re-dirtied (the writer only appends), so each
+         * page is still written back at most once, and re-advising a
+         * mostly evicted range is cheap.
+         */
+        page_size = sysconf(_SC_PAGESIZE);
+        if (page_size > 0) {
+            advise_end = file->offset & ~((int64_t) page_size - 1);
+            if (advise_end > 0) {
+                advise_ret = posix_fadvise(file->fd, 0, (off_t) advise_end,
+                                           POSIX_FADV_DONTNEED);
+                if (advise_ret != 0) {
+                    /* posix_fadvise() returns the error number, it does
+                     * not set errno */
+                    flb_plg_error(ctx->ins,
+                                  "posix_fadvise error=%i file=%s",
+                                  advise_ret, file->name);
+                }
+            }
         }
     }
     #endif
