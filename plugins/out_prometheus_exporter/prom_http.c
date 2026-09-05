@@ -128,7 +128,9 @@ struct prom_http *prom_http_server_create(struct prom_exporter *ctx,
     if (ins->http_server_config != NULL) {
         options.idle_timeout = ins->http_server_config->idle_timeout;
         options.buffer_max_size = ins->http_server_config->buffer_max_size;
+        options.buffer_chunk_size = ins->http_server_config->buffer_chunk_size;
         options.max_connections = ins->http_server_config->max_connections;
+        options.workers = ins->http_server_config->workers;
     }
 
     ret = flb_http_server_init_with_options(&ph->server, &options);
