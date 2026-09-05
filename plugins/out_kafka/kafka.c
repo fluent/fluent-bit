@@ -39,6 +39,7 @@
 #define FLB_OTEL_LOGS_SCHEMA_KEY "schema"
 #define FLB_OTEL_LOGS_SCHEMA_OTLP "otlp"
 #define FLB_KAFKA_PARTIAL_QUEUE_FULL_RETRIES 10
+#define FLB_KAFKA_HEADER_DATA_MAX ((size_t) INT32_MAX)
 
 struct otlp_logs_resource_partition {
     int64_t resource_id;
@@ -122,15 +123,114 @@ static int cb_kafka_init(struct flb_output_instance *ins,
     return 0;
 }
 
+static int build_kafka_headers(msgpack_object *headers_map,
+                               rd_kafka_headers_t **headers,
+                               struct flb_output_instance *ins)
+{
+    size_t i;
+    size_t entry_data_size;
+    size_t header_data_size = 0;
+    size_t key_size;
+    rd_kafka_resp_err_t err;
+    msgpack_object key;
+    msgpack_object val;
+    const char *value_data;
+    size_t value_size;
+
+    if (headers_map->via.map.size > INT32_MAX) {
+        flb_plg_error(ins, "Kafka header count exceeds the protocol limit");
+        return -1;
+    }
+
+    /* The limit above makes librdkafka's internal size_t-to-int conversion safe. */
+    *headers = rd_kafka_headers_new(headers_map->via.map.size);
+    if (*headers == NULL) {
+        flb_plg_error(ins, "failed to allocate Kafka headers");
+        return -1;
+    }
+
+    for (i = 0; i < headers_map->via.map.size; i++) {
+        key = headers_map->via.map.ptr[i].key;
+        val = headers_map->via.map.ptr[i].val;
+        value_data = NULL;
+        value_size = 0;
+
+        if (key.type != MSGPACK_OBJECT_STR) {
+            flb_plg_warn(ins, "skipping Kafka header with a non-string name");
+            continue;
+        }
+
+        key_size = key.via.str.size;
+
+        if (key_size > FLB_KAFKA_HEADER_DATA_MAX) {
+            flb_plg_error(ins, "Kafka header name exceeds the protocol size limit");
+            goto error;
+        }
+
+        if (val.type == MSGPACK_OBJECT_STR) {
+            value_data = val.via.str.ptr;
+            value_size = val.via.str.size;
+        }
+        else if (val.type == MSGPACK_OBJECT_BIN) {
+            value_data = val.via.bin.ptr;
+            value_size = val.via.bin.size;
+        }
+        else if (val.type != MSGPACK_OBJECT_NIL) {
+            flb_plg_warn(ins, "skipping Kafka header: value must be a string, binary, or null");
+            continue;
+        }
+
+        if (value_size > FLB_KAFKA_HEADER_DATA_MAX) {
+            flb_plg_error(ins, "Kafka header value exceeds the protocol size limit");
+            goto error;
+        }
+
+        if (key_size > FLB_KAFKA_HEADER_DATA_MAX - value_size) {
+            flb_plg_error(ins, "Kafka header data exceeds the protocol size limit");
+            goto error;
+        }
+
+        entry_data_size = key_size + value_size;
+
+        if (header_data_size > FLB_KAFKA_HEADER_DATA_MAX - entry_data_size) {
+            flb_plg_error(ins, "Kafka header data exceeds the protocol size limit");
+            goto error;
+        }
+
+        header_data_size += entry_data_size;
+
+        err = rd_kafka_header_add(*headers,
+                                  key.via.str.ptr, key_size,
+                                  value_data, value_size);
+        if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+            flb_plg_error(ins,
+                          "failed to add Kafka header with name length %zu: %s",
+                          key_size,
+                          rd_kafka_err2str(err));
+            goto error;
+        }
+    }
+
+    return 0;
+
+error:
+    rd_kafka_headers_destroy(*headers);
+    *headers = NULL;
+    return -1;
+}
+
 int produce_message(struct flb_time *tm, msgpack_object *map,
                     struct flb_out_kafka *ctx, struct flb_config *config)
 {
-    int i;
+    size_t i;
+    int has_headers_key = 0;
+    int omit_headers_key = 0;
     int ret;
-    int size;
+    size_t size;
     int queue_full_retries = 0;
-    char *out_buf;
-    size_t out_size;
+    rd_kafka_resp_err_t kafka_err = RD_KAFKA_RESP_ERR_NO_ERROR;
+    char *out_buf = NULL;
+    size_t out_size = 0;
     struct mk_list *head;
     struct mk_list *topics;
     struct flb_split_entry *entry;
@@ -144,6 +244,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_object key;
     msgpack_object val;
     flb_sds_t s = NULL;
+    rd_kafka_headers_t *kafka_headers = NULL;
+    msgpack_object *headers_map = NULL;
 
 #ifdef FLB_HAVE_AVRO_ENCODER
     // used to flag when a buffer needs to be freed for avro
@@ -184,9 +286,41 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
+    /* Locate a valid header map before packing the payload map header. */
+    if (ctx->headers_key_len > 0) {
+        for (i = 0; i < map->via.map.size; i++) {
+            key = map->via.map.ptr[i].key;
+            val = map->via.map.ptr[i].val;
+
+            if (key.type == MSGPACK_OBJECT_STR && val.type == MSGPACK_OBJECT_MAP) {
+                if (key.via.str.size == ctx->headers_key_len &&
+                    strncmp(key.via.str.ptr, ctx->headers_key, ctx->headers_key_len) == 0) {
+                    has_headers_key = 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (has_headers_key && ctx->preserve_headers_key == FLB_FALSE) {
+        omit_headers_key = 1;
+    }
+
     if (ctx->format == FLB_KAFKA_FMT_JSON || ctx->format == FLB_KAFKA_FMT_MSGP) {
-        /* Make room for the timestamp */
-        size = map->via.map.size + 1;
+        /* Make room for the timestamp and optionally omit the selected header map. */
+        size = map->via.map.size;
+
+        if (omit_headers_key == 0) {
+            if (size == UINT32_MAX) {
+                flb_plg_error(ctx->ins,
+                              "record map is too large to add the timestamp field");
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                return FLB_ERROR;
+            }
+
+            size++;
+        }
+
         msgpack_pack_map(&mp_pck, size);
 
         /* Pack timestamp */
@@ -230,12 +364,36 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
     else {
         size = map->via.map.size;
+
+        if (omit_headers_key) {
+            size--;
+        }
+
         msgpack_pack_map(&mp_pck, size);
     }
 
     for (i = 0; i < map->via.map.size; i++) {
         key = map->via.map.ptr[i].key;
         val = map->via.map.ptr[i].val;
+
+        if (ctx->headers_key_len > 0 && key.type == MSGPACK_OBJECT_STR &&
+            val.type == MSGPACK_OBJECT_MAP) {
+            if (key.via.str.size == ctx->headers_key_len &&
+                strncmp(key.via.str.ptr, ctx->headers_key, ctx->headers_key_len) == 0) {
+                if (headers_map == NULL) {
+                    headers_map = &map->via.map.ptr[i].val;
+
+                    if (ctx->preserve_headers_key == FLB_FALSE) {
+                        continue;
+                    }
+                }
+                else {
+                    flb_plg_warn(ctx->ins,
+                                 "multiple map-valued fields match headers_key; "
+                                 "using the first one");
+                }
+            }
+        }
 
         msgpack_pack_object(&mp_pck, key);
         msgpack_pack_object(&mp_pck, val);
@@ -457,24 +615,70 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         return FLB_RETRY;
     }
 
-    ret = rd_kafka_produce(topic->tp,
-                           RD_KAFKA_PARTITION_UA,
-                           RD_KAFKA_MSG_F_COPY,
-                           out_buf, out_size,
-                           message_key, message_key_len,
-                           ctx);
+    if (headers_map) {
+        if (build_kafka_headers(headers_map, &kafka_headers, ctx->ins) != 0) {
+            if (ctx->format == FLB_KAFKA_FMT_JSON ||
+                ctx->format == FLB_KAFKA_FMT_GELF) {
+                flb_sds_destroy(s);
+            }
+            msgpack_sbuffer_destroy(&mp_sbuf);
+#ifdef FLB_HAVE_AVRO_ENCODER
+            if (ctx->format == FLB_KAFKA_FMT_AVRO) {
+                AVRO_FREE(avro_fast_buffer, out_buf)
+            }
+#endif
+            flb_sds_destroy(raw_key);
+            return FLB_ERROR;
+        }
+    }
+
+    if (kafka_headers) {
+        kafka_err = rd_kafka_producev(
+            ctx->kafka.rk,
+            RD_KAFKA_V_RKT(topic->tp),
+            RD_KAFKA_V_PARTITION(RD_KAFKA_PARTITION_UA),
+            RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY),
+            RD_KAFKA_V_VALUE(out_buf, out_size),
+            RD_KAFKA_V_KEY(message_key, message_key_len),
+            RD_KAFKA_V_HEADERS(kafka_headers),
+            RD_KAFKA_V_OPAQUE(ctx),
+            RD_KAFKA_V_END);
+
+        if (kafka_err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+            ret = -1;
+            /* producev does not take ownership on failure. */
+            rd_kafka_headers_destroy(kafka_headers);
+            kafka_headers = NULL;
+        }
+        else {
+            ret = 0;
+            /* The produced message owns the header list. */
+            kafka_headers = NULL;
+        }
+    }
+    else {
+        ret = rd_kafka_produce(topic->tp,
+                               RD_KAFKA_PARTITION_UA,
+                               RD_KAFKA_MSG_F_COPY,
+                               out_buf, out_size,
+                               message_key, message_key_len,
+                               ctx);
+        if (ret == -1) {
+            kafka_err = rd_kafka_last_error();
+        }
+    }
 
     if (ret == -1) {
         flb_error(
                 "%% Failed to produce to topic %s: %s\n",
                 rd_kafka_topic_name(topic->tp),
-                rd_kafka_err2str(rd_kafka_last_error()));
+                rd_kafka_err2str(kafka_err));
 
         /*
          * rdkafka queue is full, keep trying 'locally' for a few seconds,
          * otherwise let the caller to issue a main retry againt the engine.
          */
-        if (rd_kafka_last_error() == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
+        if (kafka_err == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
             flb_plg_warn(ctx->ins,
                          "internal queue is full, retrying in one second");
 
@@ -1615,6 +1819,23 @@ static struct flb_config_map config_map[] = {
     "If you specify a key name with this option, then only the value of "
     "that key will be sent to Kafka."
    },
+    {
+        FLB_CONFIG_MAP_STR, "headers_key", NULL,
+        0, FLB_TRUE, offsetof(struct flb_out_kafka, headers_key),
+        "Specify which record key contains a map of key-value pairs to be "
+        "used as Kafka message headers. The value must be a msgpack map; string, "
+        "binary, and null values are supported. By default, the selected field is "
+        "omitted from the payload. An empty or whitespace-only value disables this "
+        "option. Nonblank values are matched exactly. This option is supported for "
+        "standard log formats, but not OTLP formats."
+    },
+    {
+        FLB_CONFIG_MAP_BOOL, "preserve_headers_key", "false",
+        0, FLB_TRUE, offsetof(struct flb_out_kafka, preserve_headers_key),
+        "Keep the map selected by headers_key in the record passed to the normal "
+        "payload formatter. By default, a valid selected map is omitted from the "
+        "payload after its entries are converted to Kafka message headers."
+    },
 
 #ifdef FLB_HAVE_AWS_MSK_IAM
    {

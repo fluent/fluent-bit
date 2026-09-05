@@ -1,0 +1,23 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: out_kafka
+      dummy: '{"message":"raw value","headers":{"x-format":"raw"}}'
+      samples: 1
+
+  outputs:
+    - name: kafka
+      match: out_kafka
+      brokers: 127.0.0.1:${TEST_SUITE_KAFKA_PORT}
+      topics: test
+      format: raw
+      raw_log_key: message
+      headers_key: headers
+      queue_full_retries: 1
+      rdkafka.api.version.request: true
