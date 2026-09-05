@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include <monkey/mk_core.h>
+#include <cfl/cfl_atomic.h>
 #include <fluent-bit/flb_bucket_queue.h>
 #include <fluent-bit/flb_event_loop.h>
 #include <fluent-bit/flb_time.h>
@@ -919,6 +920,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
     uint32_t type;
     uint32_t key;
     uint64_t val;
+    uint64_t seq;
 
     /* read the event */
     bytes = flb_pipe_r(fd, &val, sizeof(val));
@@ -947,6 +949,20 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
             flb_trace("[engine] flush enqueued data");
             flb_engine_flush(config, NULL);
             return FLB_ENGINE_STOP;
+        }
+        else if (key == FLB_ENGINE_FLUSH_NOW ||
+                 key == FLB_ENGINE_FLUSH_NOW_RETRY) {
+            flb_trace("[engine] on-demand flush requested");
+            seq = cfl_atomic_load(&config->flush_now_count);
+
+            if (key == FLB_ENGINE_FLUSH_NOW_RETRY) {
+                flb_engine_reschedule_retries(config);
+            }
+
+            flb_input_chunk_ring_buffer_collector(config, NULL);
+            flb_engine_flush(config, NULL);
+            cfl_atomic_store(&config->flush_now_acked, seq);
+            return 0;
         }
     }
 
@@ -1696,6 +1712,18 @@ int flb_engine_exit(struct flb_config *config)
     uint64_t val;
 
     val = FLB_ENGINE_EV_STOP;
+    ret = flb_pipe_w(config->ch_manager[1], &val, sizeof(uint64_t));
+    return ret;
+}
+
+int flb_engine_flush_request(struct flb_config *config, int reschedule_retries)
+{
+    int ret;
+    uint64_t val;
+
+    val = reschedule_retries == FLB_TRUE ? FLB_ENGINE_EV_FLUSH_NOW_RETRY :
+                                           FLB_ENGINE_EV_FLUSH_NOW;
+
     ret = flb_pipe_w(config->ch_manager[1], &val, sizeof(uint64_t));
     return ret;
 }

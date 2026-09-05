@@ -17,37 +17,12 @@
  *  limitations under the License.
  */
 
+#ifndef FLB_HS_API_V2_FLUSH_H
+#define FLB_HS_API_V2_FLUSH_H
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_http_server.h>
 
-#include "health.h"
-#include "metrics.h"
-#include "reload.h"
-#include "flush.h"
+int api_v2_flush(struct flb_hs *hs);
 
-int api_v2_registration(struct flb_hs *hs)
-{
-    int ret;
-
-    ret = api_v2_reload(hs);
-    if (ret != 0) {
-        return ret;
-    }
-
-    ret = api_v2_metrics(hs);
-    if (ret != 0) {
-        return ret;
-    }
-
-    ret = api_v2_health(hs);
-    if (ret != 0) {
-        return ret;
-    }
-
-    ret = api_v2_flush(hs);
-    if (ret != 0) {
-        return ret;
-    }
-
-    return 0;
-}
+#endif
