@@ -1,0 +1,13 @@
+service:
+  flush: 1
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: test
+
+  outputs:
+    - name: stdout
+      match: '*'
+      oauth2.enable: true

@@ -125,47 +125,6 @@ static void oauth2_jwks_key_destroy(struct flb_oauth2_jwks_key *key)
     flb_free(key);
 }
 
-static int oauth2_jwks_cache_clear(struct flb_oauth2_jwks_cache *cache)
-{
-    int i;
-    struct mk_list *head;
-    struct mk_list *tmp;
-    struct flb_hash_table_entry *entry;
-    struct flb_hash_table_chain *table;
-    int refresh_interval;
-
-    if (!cache || !cache->entries) {
-        return 0;
-    }
-
-    /* Save refresh interval before destroying */
-    refresh_interval = cache->refresh_interval;
-
-    /* Iterate through all hash table chains and destroy keys */
-    for (i = 0; i < cache->entries->size; i++) {
-        table = &cache->entries->table[i];
-        mk_list_foreach_safe(head, tmp, &table->chains) {
-            entry = mk_list_entry(head, struct flb_hash_table_entry, _head);
-            if (entry->val) {
-                oauth2_jwks_key_destroy((struct flb_oauth2_jwks_key *)entry->val);
-                entry->val = NULL; /* Prevent double-free */
-            }
-        }
-    }
-
-    /* Destroy and recreate the hash table to clear all entries */
-    flb_hash_table_destroy(cache->entries);
-    cache->entries = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 64, 0);
-    if (!cache->entries) {
-        flb_error("[oauth2_jwt] failed to recreate JWKS cache after clear");
-        return -1;
-    }
-
-    /* Restore refresh interval */
-    cache->refresh_interval = refresh_interval;
-    return 0;
-}
-
 static void oauth2_jwks_cache_destroy(struct flb_oauth2_jwks_cache *cache)
 {
     int i;
@@ -904,10 +863,24 @@ static int oauth2_jwks_parse_json(flb_sds_t jwks_json, struct flb_oauth2_jwks_ca
 
                 ret = oauth2_jwks_parse_key(key_obj, &jwks_key);
                 if (ret == 0 && jwks_key) {
+                    if (flb_hash_table_get_ptr(cache->entries, jwks_key->kid,
+                                               flb_sds_len(jwks_key->kid))) {
+                        flb_error("[oauth2_jwt] duplicate key ID in JWKS: %s",
+                                  jwks_key->kid);
+                        oauth2_jwks_key_destroy(jwks_key);
+                        keys_found = -1;
+                        break;
+                    }
+
                     /* Store key in cache using kid as hash key */
-                    flb_hash_table_add(cache->entries, jwks_key->kid,
-                                      flb_sds_len(jwks_key->kid),
-                                      jwks_key, 0);
+                    ret = flb_hash_table_add(cache->entries, jwks_key->kid,
+                                             flb_sds_len(jwks_key->kid),
+                                             jwks_key, 0);
+                    if (ret < 0) {
+                        oauth2_jwks_key_destroy(jwks_key);
+                        keys_found = -1;
+                        break;
+                    }
                     keys_found++;
                 }
             }
@@ -917,6 +890,11 @@ static int oauth2_jwks_parse_json(flb_sds_t jwks_json, struct flb_oauth2_jwks_ca
 
     flb_free(mp_buf);
     msgpack_unpacked_destroy(&result);
+
+    if (keys_found < 0) {
+        flb_error("[oauth2_jwt] failed to build JWKS cache");
+        return -1;
+    }
 
     if (keys_found == 0) {
         flb_error("[oauth2_jwt] No valid keys found in JWKS");
@@ -994,7 +972,9 @@ static int oauth2_jwks_fetch_keys(struct flb_oauth2_jwt_ctx *ctx)
     struct flb_connection *u_conn = NULL;
     struct flb_http_client *c = NULL;
     struct flb_tls *tls = NULL;
+    struct flb_oauth2_jwks_cache new_cache = {0};
     flb_sds_t jwks_json = NULL;
+    int new_cache_initialized = FLB_FALSE;
 
     if (!ctx || !ctx->cfg.jwks_url || !ctx->config) {
         return -1;
@@ -1092,26 +1072,31 @@ static int oauth2_jwks_fetch_keys(struct flb_oauth2_jwt_ctx *ctx)
         goto cleanup;
     }
 
-    /* Clear existing cache entries before refreshing to ensure revoked/rotated keys are removed */
-    ret = oauth2_jwks_cache_clear(&ctx->jwks_cache);
+    ret = oauth2_jwks_cache_init(&new_cache, ctx->jwks_cache.refresh_interval);
     if (ret != 0) {
-        flb_error("[oauth2_jwt] failed to clear JWKS cache");
+        flb_error("[oauth2_jwt] failed to initialize refreshed JWKS cache");
+        goto cleanup;
+    }
+    new_cache_initialized = FLB_TRUE;
+
+    /* Build the replacement cache completely before discarding valid keys. */
+    ret = oauth2_jwks_parse_json(jwks_json, &new_cache);
+    if (ret != 0) {
+        flb_error("[oauth2_jwt] failed to parse JWKS JSON");
         goto cleanup;
     }
 
-    /* Parse JWKS JSON and store keys in cache */
-    ret = oauth2_jwks_parse_json(jwks_json, &ctx->jwks_cache);
-    if (ret != 0) {
-        flb_error("[oauth2_jwt] failed to parse JWKS JSON");
-        flb_sds_destroy(jwks_json);
-        jwks_json = NULL;
-    }
-    else {
-        ctx->jwks_cache.last_refresh = time(NULL);
-        ret_code = 0;
-    }
+    new_cache.last_refresh = time(NULL);
+    oauth2_jwks_cache_destroy(&ctx->jwks_cache);
+    ctx->jwks_cache = new_cache;
+    memset(&new_cache, 0, sizeof(new_cache));
+    new_cache_initialized = FLB_FALSE;
+    ret_code = 0;
 
 cleanup:
+    if (new_cache_initialized == FLB_TRUE) {
+        oauth2_jwks_cache_destroy(&new_cache);
+    }
     if (jwks_json) {
         flb_sds_destroy(jwks_json);
     }
@@ -1392,8 +1377,12 @@ int flb_oauth2_jwt_validate(struct flb_oauth2_jwt_ctx *ctx,
             ret = oauth2_jwks_fetch_keys(ctx);
             if (ret != 0) {
                 flb_debug("[oauth2_jwt] Failed to fetch JWKS: %d", ret);
-                status = FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
-                goto jwt_end;
+                if (ctx->jwks_cache.last_refresh == 0) {
+                    status = FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
+                    goto jwt_end;
+                }
+
+                flb_warn("[oauth2_jwt] using cached keys after JWKS refresh failure");
             }
         }
 

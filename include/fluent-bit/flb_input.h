@@ -74,6 +74,7 @@
                                      * private key and certificate are required.
                                      */
 #define FLB_INPUT_HTTP_SERVER 4096  /* input uses the generic HTTP server     */
+#define FLB_INPUT_OAUTH2_JWT  8192  /* input supports OAuth2 JWT validation  */
 
 /* Input status */
 #define FLB_INPUT_RUNNING     1

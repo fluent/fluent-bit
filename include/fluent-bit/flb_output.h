@@ -85,6 +85,7 @@ int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_inst
 #define FLB_OUTPUT_PRIVATE      1024
 #define FLB_OUTPUT_SYNCHRONOUS  2048  /* run one task at a time, no flush cycle limit */
 #define FLB_OUTPUT_HTTP_SERVER  4096  /* output uses the generic HTTP server  */
+#define FLB_OUTPUT_OAUTH2_CLIENT 8192 /* output supports OAuth2 authentication */
 
 
 /*
