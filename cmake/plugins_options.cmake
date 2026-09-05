@@ -3,14 +3,63 @@ macro(DEFINE_OPTION option_name description default_value)
     if(FLB_MINIMAL)
         set(temp_value OFF)
     endif()
+    string(TOLOWER "${FLB_GROUP_OVERRIDE}" group_override)
+    if(NOT group_override STREQUAL "inherit")
+        set(temp_value ${FLB_GROUP_OVERRIDE})
+    endif()
+
+    if(temp_value)
+        set(temp_value ON)
+    else()
+        set(temp_value OFF)
+    endif()
+
+    get_property(option_type CACHE ${option_name} PROPERTY TYPE)
+    if(option_type STREQUAL "UNINITIALIZED")
+        set(_FLB_PINNED_${option_name} ON CACHE INTERNAL "")
+    endif()
+
     option(${option_name} "${description}" ${temp_value})
+
+    if(NOT DEFINED _FLB_INHERITED_${option_name})
+        set(_FLB_INHERITED_${option_name} "${${option_name}}" CACHE INTERNAL "")
+    else()
+        if(NOT _FLB_PINNED_${option_name} AND
+           NOT "${${option_name}}" STREQUAL "${_FLB_INHERITED_${option_name}}")
+            set(_FLB_PINNED_${option_name} ON CACHE INTERNAL "")
+        endif()
+        if(NOT _FLB_PINNED_${option_name} AND "${${option_name}}" STREQUAL "${_FLB_INHERITED_${option_name}}")
+            set(${option_name} ${temp_value} CACHE BOOL "${description}" FORCE)
+        endif()
+        set(_FLB_INHERITED_${option_name} ${temp_value} CACHE INTERNAL "")
+    endif()
 endmacro()
 
 # Add the FLB_MINIMAL option
 option(FLB_MINIMAL "Enable minimal build configuration" No)
 
+# Add options to enable/disable plugins at a group granularity
+set(FLB_ALL_INPUTS     "Inherit" CACHE STRING "Enable/Disable all Input plugins (On, Off, Inherit)")
+set(FLB_ALL_PROCESSORS "Inherit" CACHE STRING "Enable/Disable all Processor plugins (On, Off, Inherit)")
+set(FLB_ALL_FILTERS    "Inherit" CACHE STRING "Enable/Disable all Filter plugins (On, Off, Inherit)")
+set(FLB_ALL_OUTPUTS    "Inherit" CACHE STRING "Enable/Disable all Output plugins (On, Off, Inherit)")
+set_property(CACHE FLB_ALL_INPUTS     PROPERTY STRINGS "On;Off;Inherit")
+set_property(CACHE FLB_ALL_PROCESSORS PROPERTY STRINGS "On;Off;Inherit")
+set_property(CACHE FLB_ALL_FILTERS    PROPERTY STRINGS "On;Off;Inherit")
+set_property(CACHE FLB_ALL_OUTPUTS    PROPERTY STRINGS "On;Off;Inherit")
+
+foreach(group_option FLB_ALL_INPUTS FLB_ALL_PROCESSORS FLB_ALL_FILTERS FLB_ALL_OUTPUTS)
+    string(TOLOWER "${${group_option}}" group_value)
+    if(NOT group_value MATCHES "^(on|off|inherit)$")
+        message(FATAL_ERROR
+            "${group_option} must be one of On, Off or Inherit "
+            "(got '${${group_option}}')")
+    endif()
+endforeach()
+
 # Inputs (sources, data collectors)
 # =================================
+set(FLB_GROUP_OVERRIDE ${FLB_ALL_INPUTS})
 DEFINE_OPTION(FLB_IN_BLOB                     "Enable Blob input plugin"                     ON)
 DEFINE_OPTION(FLB_IN_CALYPTIA_FLEET           "Enable Calyptia Fleet input plugin"           ON)
 DEFINE_OPTION(FLB_IN_COLLECTD                 "Enable Collectd input plugin"                 ON)
@@ -70,6 +119,7 @@ DEFINE_OPTION(FLB_IN_EBPF                     "Enable Linux eBPF input plugin"  
 
 # Processors
 # ==========
+set(FLB_GROUP_OVERRIDE ${FLB_ALL_PROCESSORS})
 DEFINE_OPTION(FLB_PROCESSOR_CONTENT_MODIFIER  "Enable content modifier processor"            ON)
 DEFINE_OPTION(FLB_PROCESSOR_CUMULATIVE_TO_DELTA "Enable cumulative to delta metrics processor" ON)
 DEFINE_OPTION(FLB_PROCESSOR_LABELS            "Enable metrics label manipulation processor"  ON)
@@ -81,6 +131,7 @@ DEFINE_OPTION(FLB_PROCESSOR_TDA               "Enable TDA processor"            
 
 # Filters
 # =======
+set(FLB_GROUP_OVERRIDE ${FLB_ALL_FILTERS})
 DEFINE_OPTION(FLB_FILTER_ALTER_SIZE           "Enable alter_size filter"                     ON)
 DEFINE_OPTION(FLB_FILTER_AWS                  "Enable aws filter"                            ON)
 DEFINE_OPTION(FLB_FILTER_CHECKLIST            "Enable checklist filter"                      ON)
@@ -108,6 +159,7 @@ DEFINE_OPTION(FLB_FILTER_WASM                 "Enable WASM filter"              
 
 # Outputs (destinations)
 # ======================
+set(FLB_GROUP_OVERRIDE ${FLB_ALL_OUTPUTS})
 DEFINE_OPTION(FLB_OUT_AZURE                   "Enable Azure output plugin"                   ON)
 DEFINE_OPTION(FLB_OUT_AZURE_BLOB              "Enable Azure output plugin"                   ON)
 DEFINE_OPTION(FLB_OUT_AZURE_KUSTO             "Enable Azure Kusto output plugin"             ON)
@@ -157,3 +209,5 @@ DEFINE_OPTION(FLB_OUT_TCP                     "Enable TCP output plugin"        
 DEFINE_OPTION(FLB_OUT_UDP                     "Enable UDP output plugin"                     ON)
 DEFINE_OPTION(FLB_OUT_VIVO_EXPORTER           "Enable Vivo exporter output plugin"           ON)
 DEFINE_OPTION(FLB_OUT_WEBSOCKET               "Enable Websocket output plugin"               ON)
+
+unset(FLB_GROUP_OVERRIDE)
