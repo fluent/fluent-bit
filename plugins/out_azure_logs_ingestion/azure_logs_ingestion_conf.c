@@ -17,6 +17,8 @@
  *  limitations under the License.
  */
 
+#include <ctype.h>
+
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_utils.h>
@@ -25,6 +27,108 @@
 
 #include "azure_logs_ingestion.h"
 #include "azure_logs_ingestion_conf.h"
+#include "azure_logs_ingestion_batch.h"
+
+#ifdef FLB_HAVE_METRICS
+/* Keep the 200 KiB boundary explicit for the small-request percentage. */
+static const double payload_size_buckets[] = {
+    16384.0,
+    32768.0,
+    65536.0,
+    131072.0,
+    204800.0,
+    262144.0,
+    524288.0,
+    786432.0,
+    900000.0,
+    1048576.0,
+    2097152.0,
+    4194304.0,
+    8388608.0,
+    16777216.0
+};
+
+static int initialize_payload_size_metrics(struct flb_az_li *ctx)
+{
+    size_t bucket_count;
+    struct cmt_histogram_buckets *buckets;
+
+    bucket_count = sizeof(payload_size_buckets) / sizeof(payload_size_buckets[0]);
+    buckets = cmt_histogram_buckets_create_size(
+                    (double *) payload_size_buckets, bucket_count);
+    if (buckets == NULL) {
+        flb_plg_error(ctx->ins, "could not create uncompressed payload size buckets");
+        return -1;
+    }
+
+    ctx->cmt_uncompressed_payload_size = cmt_histogram_create(
+                    ctx->ins->cmt,
+                    "fluentbit",
+                    "azure_logs_ingestion",
+                    "uncompressed_payload_size_bytes",
+                    "Uncompressed request payload size in bytes.",
+                    buckets,
+                    2, (char *[]) {"name", "dcr_id"});
+    if (ctx->cmt_uncompressed_payload_size == NULL) {
+        flb_plg_error(ctx->ins, "could not create uncompressed payload size histogram");
+        return -1;
+    }
+
+    buckets = cmt_histogram_buckets_create_size(
+                    (double *) payload_size_buckets, bucket_count);
+    if (buckets == NULL) {
+        flb_plg_error(ctx->ins, "could not create HTTP payload size buckets");
+        return -1;
+    }
+
+    ctx->cmt_http_payload_size = cmt_histogram_create(
+                    ctx->ins->cmt,
+                    "fluentbit",
+                    "azure_logs_ingestion",
+                    "http_payload_size_bytes",
+                    "HTTP request payload size in bytes.",
+                    buckets,
+                    2, (char *[]) {"name", "dcr_id"});
+    if (ctx->cmt_http_payload_size == NULL) {
+        flb_plg_error(ctx->ins, "could not create HTTP payload size histogram");
+        return -1;
+    }
+
+    ctx->cmt_http_payload_size_min = cmt_gauge_create(
+                    ctx->ins->cmt,
+                    "fluentbit",
+                    "azure_logs_ingestion",
+                    "http_payload_size_min_bytes",
+                    "Minimum HTTP request payload size observed since process start.",
+                    2, (char *[]) {"name", "dcr_id"});
+    if (ctx->cmt_http_payload_size_min == NULL) {
+        flb_plg_error(ctx->ins, "could not create HTTP payload minimum gauge");
+        return -1;
+    }
+
+    ctx->http_payload_size_min = SIZE_MAX;
+    return 0;
+}
+#endif
+
+static int validate_buffer_key(const char *key)
+{
+    const unsigned char *cursor;
+
+    if (key == NULL || key[0] == '\0' ||
+        strcmp(key, ".") == 0 || strcmp(key, "..") == 0) {
+        return -1;
+    }
+
+    cursor = (const unsigned char *) key;
+    while (*cursor != '\0') {
+        if (!isalnum(*cursor) && *cursor != '-' && *cursor != '_' && *cursor != '.') {
+            return -1;
+        }
+        cursor++;
+    }
+    return 0;
+}
 
 static int validate_auth_url_override(struct flb_output_instance *ins,
                                       flb_sds_t auth_url_override)
@@ -145,6 +249,71 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+    if (ctx->buffering_enabled == FLB_TRUE) {
+#ifdef _WIN32
+        flb_plg_error(ins, "buffering_enabled is not supported on Windows because "
+                           "cross-process spool locking is unavailable");
+        flb_az_li_ctx_destroy(ctx);
+        return NULL;
+#endif
+        if (ctx->compress_enabled != FLB_TRUE) {
+            flb_plg_error(ins, "buffering_enabled requires compress=true");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+        if (ctx->batch_target_size == 0 ||
+            ctx->batch_target_size > FLB_AZ_LI_MAX_REQUEST_SIZE) {
+            flb_plg_error(ins,
+                          "batch_target_size must be between 1 and %d bytes",
+                          FLB_AZ_LI_MAX_REQUEST_SIZE);
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+        if (ctx->batch_timeout <= 0 || ctx->batch_max_uncompressed_size == 0) {
+            flb_plg_error(ins, "batch timeout and uncompressed size must be positive");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+        if (ctx->buffer_dir_limit_size == 0) {
+            flb_plg_error(ins,
+                          "buffer_dir_limit_size is required when buffering is enabled");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+        if (ctx->buffer_dir_limit_size < FLB_AZ_LI_MIN_BUFFER_SIZE) {
+            flb_plg_error(ins,
+                          "buffer_dir_limit_size must be at least %d bytes to leave "
+                          "request construction headroom",
+                          FLB_AZ_LI_MIN_BUFFER_SIZE);
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+        if (ctx->upload_retry_limit < 0 || ctx->upload_retry_base <= 0 ||
+            ctx->buffer_receipt_ttl < 0 || ctx->http_timeout <= 0) {
+            flb_plg_error(ins, "retry, receipt TTL and HTTP timeout values are invalid");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+        if (ctx->buffer_key == NULL) {
+            ctx->buffer_key = flb_sds_create_size(flb_sds_len(ctx->dcr_id) +
+                                                  flb_sds_len(ctx->table_name) + 2);
+            if (ctx->buffer_key == NULL) {
+                flb_az_li_ctx_destroy(ctx);
+                return NULL;
+            }
+            flb_sds_snprintf(&ctx->buffer_key, flb_sds_alloc(ctx->buffer_key),
+                             "%s-%s", ctx->dcr_id, ctx->table_name);
+            ctx->buffer_key_owned = FLB_TRUE;
+        }
+        if (validate_buffer_key(ctx->buffer_key) == -1) {
+            flb_plg_error(ins,
+                          "buffer_key must be a non-special path component containing "
+                          "only letters, digits, '.', '_' and '-'");
+            flb_az_li_ctx_destroy(ctx);
+            return NULL;
+        }
+    }
+
     if (ctx->auth_url_override) {
         ret = validate_auth_url_override(ins, ctx->auth_url_override);
         if (ret == -1) {
@@ -186,8 +355,29 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
                     FLB_AZ_LI_DCE_URL_TMPLT, ctx->dce_url, 
                     ctx->dcr_id, ctx->table_name);
 
+#ifdef FLB_HAVE_METRICS
+    ret = pthread_mutex_init(&ctx->payload_metrics_mutex, NULL);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not initialize payload metrics mutex");
+        flb_az_li_ctx_destroy(ctx);
+        return NULL;
+    }
+    ctx->payload_metrics_mutex_initialized = FLB_TRUE;
+    ret = initialize_payload_size_metrics(ctx);
+    if (ret == -1) {
+        flb_az_li_ctx_destroy(ctx);
+        return NULL;
+    }
+#endif
+
     /* Initialize the auth mutex */
-    pthread_mutex_init(&ctx->token_mutex, NULL);
+    ret = pthread_mutex_init(&ctx->token_mutex, NULL);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not initialize token mutex");
+        flb_az_li_ctx_destroy(ctx);
+        return NULL;
+    }
+    ctx->token_mutex_initialized = FLB_TRUE;
 
     /* Create oauth2 context */
     ctx->u_auth = flb_oauth2_create(config, ctx->auth_url,
@@ -221,6 +411,10 @@ int flb_az_li_ctx_destroy(struct flb_az_li *ctx)
         return -1;
     }
 
+    if (ctx->batch) {
+        az_li_batch_destroy(ctx);
+    }
+
     if (ctx->auth_url) {
         flb_sds_destroy(ctx->auth_url);
     }
@@ -236,6 +430,17 @@ int flb_az_li_ctx_destroy(struct flb_az_li *ctx)
     if (ctx->u_dce) {
         flb_upstream_destroy(ctx->u_dce);
     }
+    if (ctx->token_mutex_initialized == FLB_TRUE) {
+        pthread_mutex_destroy(&ctx->token_mutex);
+    }
+    if (ctx->buffer_key && ctx->buffer_key_owned == FLB_TRUE) {
+        flb_sds_destroy(ctx->buffer_key);
+    }
+#ifdef FLB_HAVE_METRICS
+    if (ctx->payload_metrics_mutex_initialized == FLB_TRUE) {
+        pthread_mutex_destroy(&ctx->payload_metrics_mutex);
+    }
+#endif
     flb_free(ctx);
 
     return 0;

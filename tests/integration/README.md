@@ -454,6 +454,13 @@ Covers:
 
 - Azure Logs Ingestion delivery with OAuth2
 - token and data-plane request validation
+- uncompressed and HTTP request payload-size histograms
+- opt-in immutable chunk spooling and batching across engine flushes
+- exact persisted gzip artifacts, record-span rollover, and timeout flushing
+- byte-identical retry across SIGKILL, durable terminal quarantine, and recovery
+- aggregate disk quota enforcement and cross-process spool ownership exclusion
+- queued, repeated, suspended-upload, and high-volume hot-reload handoff
+- 100,000-record high-volume delivery and bounded suspended-upload shutdown
 
 ### `out_kafka`
 

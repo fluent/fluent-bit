@@ -14,9 +14,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+import gzip
+import hashlib
 import json
 import logging
-import gzip
 import threading
 import time
 
@@ -230,6 +231,7 @@ def _record_request():
             "method": request.method,
             "headers": dict(request.headers),
             "raw_data": raw_data,
+            "raw_sha256": hashlib.sha256(raw_payload).hexdigest(),
             "decoded_data": decoded_data,
             "json": data,
         }
