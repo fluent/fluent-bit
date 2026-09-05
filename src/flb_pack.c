@@ -981,6 +981,63 @@ static inline int key_exists_in_map(msgpack_object key, msgpack_object map, int 
     return FLB_FALSE;
 }
 
+int flb_pack_double_to_str(double val, char *out_buf, size_t buf_size)
+{
+    int len;
+
+    if (out_buf == NULL || buf_size == 0) {
+        return -1;
+    }
+
+#ifdef FLB_HAVE_YYJSON
+    if (isfinite(val)) {
+        /* yyjson_write_number() requires at least 40 bytes for a double */
+        char tmp[64];
+        char *end;
+        /*
+         * Build a transient yyjson real value on the stack and let yyjson's
+         * dtoa produce the shortest representation that round-trips back to
+         * the same double (e.g. 0.072 -> "0.072"). The value is zero
+         * initialized because yyjson_set_real() inspects the existing tag
+         * before overwriting it.
+         */
+        yyjson_val num = { 0 };
+
+        yyjson_set_real(&num, val);
+        end = yyjson_write_number(&num, tmp);
+        if (end != NULL) {
+            len = (int) (end - tmp);
+            if (len >= 0 && (size_t) len < buf_size) {
+                memcpy(out_buf, tmp, len);
+                out_buf[len] = '\0';
+                return len;
+            }
+        }
+    }
+#endif
+
+    /*
+     * Non-finite (nan/inf), unexpected yyjson failure, or a build without the
+     * yyjson backend. Integer-valued doubles keep a trailing ".0" (matching
+     * the yyjson output and the pre-existing behavior); other values use a
+     * round-trip-safe precision. floor()/fabs() avoid the undefined behavior
+     * of casting an out-of-range double to a long long.
+     */
+    if (isfinite(val) && val == floor(val) && fabs(val) < 1e15) {
+        len = snprintf(out_buf, buf_size, "%.1f", val);
+    }
+    else {
+        len = snprintf(out_buf, buf_size, "%.17g", val);
+    }
+    if (len < 0) {
+        return -1;
+    }
+    if ((size_t) len >= buf_size) {
+        len = (int) (buf_size - 1);
+    }
+    return len;
+}
+
 static int msgpack2json(char *buf, int *off, size_t left,
                         const msgpack_object *o, int escape_unicode)
 {
@@ -1019,15 +1076,15 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_FLOAT32:
     case MSGPACK_OBJECT_FLOAT64:
         {
-            char temp[512] = {0};
-            if (o->via.f64 == (double)(long long int)o->via.f64) {
-                i = snprintf(temp, sizeof(temp)-1, "%.1f", o->via.f64);
-            }
-            else if (convert_nan_to_null && isnan(o->via.f64) ) {
+            char temp[64] = {0};
+            if (convert_nan_to_null && isnan(o->via.f64) ) {
                 i = snprintf(temp, sizeof(temp)-1, "null");
             }
             else {
-                i = snprintf(temp, sizeof(temp)-1, "%.16g", o->via.f64);
+                i = flb_pack_double_to_str(o->via.f64, temp, sizeof(temp));
+                if (i < 0) {
+                    goto msg2json_end;
+                }
             }
             ret = try_to_write(buf, off, left, temp, i);
         }
