@@ -478,6 +478,136 @@ void test_tls_reload_does_not_hide_concurrent_file_change(void)
     flb_free(dst_key);
 }
 
+void test_tls_reload_reapplies_crl_file(void)
+{
+    char src_crt[4096];
+    char src_key[4096];
+    char *dst_crt;
+    char *dst_key;
+    struct flb_tls *tls;
+
+    snprintf(src_crt, sizeof(src_crt), "%sdata/tls/certificate.pem",
+             FLB_TESTS_DATA_PATH);
+    snprintf(src_key, sizeof(src_key), "%sdata/tls/private_key.pem",
+             FLB_TESTS_DATA_PATH);
+
+    dst_crt = flb_test_tmpdir_cat("/flb_tls_crl_reload_certificate.pem");
+    dst_key = flb_test_tmpdir_cat("/flb_tls_crl_reload_private_key.pem");
+    TEST_CHECK(dst_crt != NULL);
+    TEST_CHECK(dst_key != NULL);
+
+    TEST_CHECK(copy_file(src_crt, dst_crt) == 0);
+    TEST_CHECK(copy_file(src_key, dst_key) == 0);
+
+    tls = flb_tls_create(FLB_TLS_SERVER_MODE,
+                         FLB_TRUE,
+                         0,
+                         NULL,
+                         NULL,
+                         NULL,
+                         dst_crt,
+                         dst_key,
+                         NULL);
+    TEST_CHECK(tls != NULL);
+
+    /*
+     * A missing stored CRL makes reapplication observable: the reload must
+     * fail instead of silently replacing the context without CRL checking.
+     */
+    tls->crl_file = flb_strdup("/nonexistent/fluent-bit-crl.pem");
+    TEST_CHECK(tls->crl_file != NULL);
+
+    TEST_CHECK(append_file(dst_key, "\n") == 0);
+    TEST_CHECK(flb_tls_reload_if_needed(tls) == -1);
+
+    flb_tls_destroy(tls);
+    remove(dst_crt);
+    remove(dst_key);
+    flb_free(dst_crt);
+    flb_free(dst_key);
+}
+
+/*
+ * CRL (tls.crl_file) dispatch. These use a mock TLS backend (same approach as
+ * the session tests above) to exercise the flb_tls_set_crl_file() wrapper
+ * without any real OpenSSL context, certificates or network I/O.
+ */
+struct crl_mock_ctx {
+    int calls;
+    int ret;          /* value the mock returns */
+};
+
+static const char *crl_mock_last_path;
+
+static int crl_mock_set_crl_file(void *ctx_backend, const char *crl_file)
+{
+    struct crl_mock_ctx *m = ctx_backend;
+
+    m->calls++;
+    crl_mock_last_path = crl_file;   /* wrapper forwards the pointer as-is */
+
+    return m->ret;
+}
+
+/* A NULL tls context must be rejected */
+void test_crl_set_null_tls(void)
+{
+    TEST_CHECK(flb_tls_set_crl_file(NULL, "x.pem") == -1);
+}
+
+/* The wrapper forwards ctx + path to the backend and propagates success */
+void test_crl_dispatch_success(void)
+{
+    struct crl_mock_ctx mock = {0};
+    struct flb_tls_backend api = {0};
+    struct flb_tls tls = {0};
+    const char *path = "/etc/crl.pem";
+
+    mock.ret = 0;
+    api.context_set_crl_file = crl_mock_set_crl_file;
+    tls.api = &api;
+    tls.ctx = &mock;
+    crl_mock_last_path = NULL;
+
+    TEST_CHECK(flb_tls_set_crl_file(&tls, path) == 0);
+    TEST_CHECK(mock.calls == 1);
+    TEST_CHECK(crl_mock_last_path == path);
+    TEST_CHECK(tls.crl_file != NULL);
+    TEST_CHECK(tls.crl_file != path);
+    TEST_CHECK(strcmp(tls.crl_file, path) == 0);
+
+    flb_free(tls.crl_file);
+}
+
+/* The wrapper propagates a backend failure */
+void test_crl_dispatch_error(void)
+{
+    struct crl_mock_ctx mock = {0};
+    struct flb_tls_backend api = {0};
+    struct flb_tls tls = {0};
+
+    mock.ret = -1;
+    api.context_set_crl_file = crl_mock_set_crl_file;
+    tls.api = &api;
+    tls.ctx = &mock;
+
+    TEST_CHECK(flb_tls_set_crl_file(&tls, "/bad.pem") == -1);
+    TEST_CHECK(mock.calls == 1);
+}
+
+/* A backend without CRL support is a graceful no-op (backend not called) */
+void test_crl_dispatch_unsupported(void)
+{
+    struct crl_mock_ctx mock = {0};
+    struct flb_tls_backend api = {0};   /* context_set_crl_file stays NULL */
+    struct flb_tls tls = {0};
+
+    tls.api = &api;
+    tls.ctx = &mock;
+
+    TEST_CHECK(flb_tls_set_crl_file(&tls, "/whatever.pem") == 0);
+    TEST_CHECK(mock.calls == 0);
+}
 /*
  * Verify that flb_upstream_proxy_tls_setup() is a safe no-op when the
  * upstream has no HTTPS proxy in effect (proxy_tls_context == NULL).
@@ -1206,6 +1336,11 @@ TEST_LIST = {
 #endif
     {"tls_reload_does_not_hide_concurrent_file_change",
      test_tls_reload_does_not_hide_concurrent_file_change},
+    {"tls_reload_reapplies_crl_file", test_tls_reload_reapplies_crl_file},
+    {"crl_set_null_tls", test_crl_set_null_tls},
+    {"crl_dispatch_success", test_crl_dispatch_success},
+    {"crl_dispatch_error", test_crl_dispatch_error},
+    {"crl_dispatch_unsupported", test_crl_dispatch_unsupported},
     {"upstream_proxy_tls_setup_noop_without_proxy", test_upstream_proxy_tls_setup_noop_without_proxy},
     {"upstream_proxy_tls_setup_configures_ca", test_upstream_proxy_tls_setup_configures_ca},
     {"output_proxy_tls_ca_check", test_output_proxy_tls_ca_check},
