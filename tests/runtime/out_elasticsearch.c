@@ -11,6 +11,19 @@
 #include "data/es/json_es.h" /* JSON_ES */
 #include "../../plugins/out_es/es.h"
 
+static void *cb_check_drop_unrecoverable_records(
+                        struct flb_config *config,
+                        struct flb_input_instance *ins,
+                        void *plugin_context, void *flush_ctx)
+{
+    struct flb_elasticsearch *ctx = plugin_context;
+
+    (void) config;
+    (void) ins;
+
+    TEST_CHECK(ctx->drop_unrecoverable_records == FLB_TRUE);
+    return flush_ctx;
+}
 
 static void cb_check_http_api_key(void *ctx, int ffd,
                                 int res_ret, void *res_data,
@@ -1513,6 +1526,40 @@ void flb_test_upstream_id_key()
     unlink(upstream_file);
 }
 
+void flb_test_drop_unrecoverable_records_config()
+{
+    int ret;
+    int size = sizeof(JSON_ES) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "drop_unrecoverable_records", "on",
+                   NULL);
+
+    ret = flb_output_set_test_with_ctx_callback(
+              ctx, out_ffd, "formatter", cb_check_write_op_create,
+              NULL, NULL, cb_check_drop_unrecoverable_records);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"long_index"            , flb_test_long_index },
@@ -1539,5 +1586,7 @@ TEST_LIST = {
     {"upstream_logstash_format"  , flb_test_upstream_logstash_format },
     {"upstream_replace_dots"     , flb_test_upstream_replace_dots },
     {"upstream_id_key"           , flb_test_upstream_id_key },
+    {"drop_unrecoverable_records_config",
+     flb_test_drop_unrecoverable_records_config},
     {NULL, NULL}
 };

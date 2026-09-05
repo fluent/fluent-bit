@@ -92,6 +92,7 @@ struct flb_opensearch {
 
     int trace_output;
     int trace_error;
+    int drop_unrecoverable_records;
 
     /*
      * Logstash compatibility options
