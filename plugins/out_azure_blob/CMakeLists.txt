@@ -7,6 +7,7 @@ set(src
   azure_blob_appendblob.c
   azure_blob_blockblob.c
   azure_blob_store.c
+  azure_blob_msiauth.c
   )
 
 FLB_PLUGIN(out_azure_blob "${src}" "")
