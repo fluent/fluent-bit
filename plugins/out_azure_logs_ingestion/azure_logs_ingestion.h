@@ -33,10 +33,25 @@
 #define FLB_AZ_LI_TLS_MODE          FLB_IO_TLS
 /* refresh token every 60 minutes */
 #define FLB_AZ_LI_TOKEN_TIMEOUT 3600
+/* Azure Logs Ingestion API maximum HTTP body size. With Content-Encoding:
+ * gzip this applies to the compressed wire representation. */
+#define FLB_AZ_LI_MAX_REQUEST_SIZE (1024 * 1024)
+/* One maximum-size request artifact, SQLite rows for 256 source spans, and
+ * filesystem metadata must remain constructible when admission is full. */
+#define FLB_AZ_LI_MIN_BUFFER_SIZE (FLB_AZ_LI_MAX_REQUEST_SIZE + 73728)
+
+#include <time.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
+
+#ifdef FLB_HAVE_METRICS
+#include <cmetrics/cmt_gauge.h>
+#include <cmetrics/cmt_histogram.h>
+#endif
+
+struct flb_az_li_batch;
 
 /* Context structure for Azure Logs Ingestion API */
 struct flb_az_li {
@@ -56,20 +71,49 @@ struct flb_az_li {
     /* compress payload */
     int compress_enabled;
 
+    /* optional disk-backed request batching */
+    int buffering_enabled;
+    flb_sds_t buffer_dir;
+    flb_sds_t buffer_key;
+    int buffer_key_owned;
+    size_t batch_target_size;
+    time_t batch_timeout;
+    size_t batch_max_uncompressed_size;
+    size_t buffer_dir_limit_size;
+    int upload_retry_limit;
+    int upload_retry_base;
+    time_t buffer_receipt_ttl;
+    time_t http_timeout;
+    struct flb_az_li_batch *batch;
+
     /* mangement auth */
     flb_sds_t auth_url_override;
     flb_sds_t auth_url;
     struct flb_oauth2 *u_auth;
     /* mutex for acquiring tokens */
     pthread_mutex_t token_mutex;
+    int token_mutex_initialized;
 
     /* upstream connection to the data collection endpoint */
     struct flb_upstream *u_dce;
     flb_sds_t dce_u_url;
 
+#ifdef FLB_HAVE_METRICS
+    struct cmt_histogram *cmt_uncompressed_payload_size;
+    struct cmt_histogram *cmt_http_payload_size;
+    struct cmt_gauge *cmt_http_payload_size_min;
+    pthread_mutex_t payload_metrics_mutex;
+    size_t http_payload_size_min;
+    int payload_metrics_mutex_initialized;
+#endif
+
     /* plugin output and config instance reference */
     struct flb_output_instance *ins;
     struct flb_config *config;
 };
+
+int az_li_send_payload(struct flb_az_li *ctx, const void *payload,
+                       size_t payload_size, size_t uncompressed_size,
+                       int compressed, int *http_status);
 
 #endif
