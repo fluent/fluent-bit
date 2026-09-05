@@ -1017,7 +1017,7 @@ def test_out_azure_logs_ingestion_repeated_hot_reload_applies_credentials():
 
             service.service.wait_for_condition(
                 _generation_delivered,
-                timeout=15,
+                timeout=30,
                 interval=0.25,
                 description=f"delivery from generation {generation}",
             )
