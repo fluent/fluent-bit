@@ -1,0 +1,40 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: http
+      tag: azure_logs_ingestion
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      http2: off
+      tls: off
+
+  outputs:
+    - name: azure_logs_ingestion
+      match: azure_logs_ingestion
+      log_level: debug
+      tenant_id: suite-tenant
+      client_id: suite-client
+      client_secret: suite-secret
+      auth_url: http://127.0.0.1:${TEST_SUITE_OAUTH_PORT}/oauth/token
+      dce_url: https://localhost:${TEST_SUITE_HTTP_PORT}
+      dcr_id: dcr-suite
+      table_name: suite_CL
+      compress: on
+      buffering_enabled: on
+      buffer_dir: ${AZURE_LOGS_INGESTION_BUFFER_DIR}
+      buffer_key: ${AZURE_LOGS_INGESTION_BUFFER_KEY}
+      batch_target_size: 3000
+      batch_timeout: 5s
+      batch_max_uncompressed_size: 64K
+      buffer_dir_limit_size: ${AZURE_LOGS_INGESTION_BUFFER_LIMIT}
+      upload_retry_limit: 5
+      upload_retry_base: 1
+      http_timeout: 3s
+      tls.verify: on
+      tls.verify_hostname: on
+      tls.vhost: localhost
+      tls.ca_file: ${CERTIFICATE_TEST}
