@@ -1077,6 +1077,160 @@ void test_json_pack_bug5336()
 }
 
 /* Ensure empty arrays inside nested objects are handled */
+/*
+ * Must mirror FLB_PACK_JSON_MAX_DEPTH in src/flb_pack.c (not exposed via a
+ * public header since it is an internal implementation detail of
+ * msgpack2json()).
+ */
+#define TEST_PACK_MAX_DEPTH 512
+
+/*
+ * Regression test: a non-empty msgpack map whose key/value pairs would be
+ * evaluated exactly one level past FLB_PACK_JSON_MAX_DEPTH must still be
+ * rendered as valid JSON. The whole map is expected to collapse to a JSON
+ * null literal instead of emitting a bare, unquoted null in place of a map
+ * key (which would produce invalid JSON such as {null:"v"}).
+ */
+void test_json_pack_deep_map_boundary()
+{
+    int i;
+    char *out;
+    char *p;
+    msgpack_object *chain;
+    msgpack_object_kv kv;
+    size_t out_len;
+    size_t expected_len;
+
+    /*
+     * Build TEST_PACK_MAX_DEPTH nested single-element arrays with a
+     * non-empty map ({"k":"v"}) as the innermost element, constructed
+     * directly in memory. chain[0] is evaluated at depth 0, chain[i] at
+     * depth i, so the map at chain[TEST_PACK_MAX_DEPTH] is evaluated at
+     * depth == TEST_PACK_MAX_DEPTH: its own guard passes, but its key/value
+     * pair would be one level past the limit.
+     */
+    chain = flb_malloc(sizeof(msgpack_object) * (TEST_PACK_MAX_DEPTH + 1));
+    if (!TEST_CHECK(chain != NULL)) {
+        TEST_MSG("could not allocate test msgpack_object chain");
+        return;
+    }
+
+    for (i = 0; i < TEST_PACK_MAX_DEPTH; i++) {
+        chain[i].type = MSGPACK_OBJECT_ARRAY;
+        chain[i].via.array.size = 1;
+        chain[i].via.array.ptr = &chain[i + 1];
+    }
+
+    kv.key.type = MSGPACK_OBJECT_STR;
+    kv.key.via.str.size = 1;
+    kv.key.via.str.ptr = "k";
+    kv.val.type = MSGPACK_OBJECT_STR;
+    kv.val.via.str.size = 1;
+    kv.val.via.str.ptr = "v";
+
+    chain[TEST_PACK_MAX_DEPTH].type = MSGPACK_OBJECT_MAP;
+    chain[TEST_PACK_MAX_DEPTH].via.map.size = 1;
+    chain[TEST_PACK_MAX_DEPTH].via.map.ptr = &kv;
+
+    out = flb_msgpack_to_json_str(1024, &chain[0], FLB_FALSE);
+    flb_free(chain);
+
+    if (!TEST_CHECK(out != NULL)) {
+        TEST_MSG("flb_msgpack_to_json_str returned NULL");
+        return;
+    }
+
+    /* a map key must never be truncated to an unquoted null */
+    p = strstr(out, "null:");
+    if (!TEST_CHECK(p == NULL)) {
+        TEST_MSG("map key was rendered as an unquoted null: %s", out);
+    }
+
+    /*
+     * Exact shape check: TEST_PACK_MAX_DEPTH opening brackets, then the
+     * truncated map as a bare "null", then TEST_PACK_MAX_DEPTH closing
+     * brackets. Verify both the total length and that the null literal
+     * begins exactly at offset TEST_PACK_MAX_DEPTH, rather than accepting
+     * "null" anywhere in the output.
+     */
+    {
+        out_len = strlen(out);
+        expected_len = (size_t) TEST_PACK_MAX_DEPTH * 2 + 4;
+
+        if (!TEST_CHECK(out_len == expected_len)) {
+            TEST_MSG("unexpected output length: expected=%zu got=%zu out=%s",
+                     expected_len, out_len, out);
+        }
+
+        if (!TEST_CHECK(out_len > (size_t) TEST_PACK_MAX_DEPTH + 4 &&
+                         strncmp(out + TEST_PACK_MAX_DEPTH, "null", 4) == 0)) {
+            TEST_MSG("expected a null literal at offset %d: %s",
+                     TEST_PACK_MAX_DEPTH, out);
+        }
+    }
+
+    /* the original key/value content must not appear: it was truncated */
+    p = strstr(out, "\"k\":\"v\"");
+    if (!TEST_CHECK(p == NULL)) {
+        TEST_MSG("map content should have been truncated: %s", out);
+    }
+
+    flb_free(out);
+}
+
+/*
+ * Companion check: the same map shape placed comfortably below the depth
+ * limit must still serialize its real content (i.e. the pre-check added for
+ * the boundary case above must not fire early for valid, shallower input).
+ */
+void test_json_pack_deep_map_below_boundary()
+{
+    int i;
+    int shallow_depth = TEST_PACK_MAX_DEPTH - 5;
+    char *out;
+    char *p;
+    msgpack_object *chain;
+    msgpack_object_kv kv;
+
+    chain = flb_malloc(sizeof(msgpack_object) * (shallow_depth + 1));
+    if (!TEST_CHECK(chain != NULL)) {
+        TEST_MSG("could not allocate test msgpack_object chain");
+        return;
+    }
+
+    for (i = 0; i < shallow_depth; i++) {
+        chain[i].type = MSGPACK_OBJECT_ARRAY;
+        chain[i].via.array.size = 1;
+        chain[i].via.array.ptr = &chain[i + 1];
+    }
+
+    kv.key.type = MSGPACK_OBJECT_STR;
+    kv.key.via.str.size = 1;
+    kv.key.via.str.ptr = "k";
+    kv.val.type = MSGPACK_OBJECT_STR;
+    kv.val.via.str.size = 1;
+    kv.val.via.str.ptr = "v";
+
+    chain[shallow_depth].type = MSGPACK_OBJECT_MAP;
+    chain[shallow_depth].via.map.size = 1;
+    chain[shallow_depth].via.map.ptr = &kv;
+
+    out = flb_msgpack_to_json_str(1024, &chain[0], FLB_FALSE);
+    flb_free(chain);
+
+    if (!TEST_CHECK(out != NULL)) {
+        TEST_MSG("flb_msgpack_to_json_str returned NULL");
+        return;
+    }
+
+    p = strstr(out, "\"k\":\"v\"");
+    if (!TEST_CHECK(p != NULL)) {
+        TEST_MSG("map content below the depth limit should be preserved: %s", out);
+    }
+
+    flb_free(out);
+}
+
 void test_json_pack_empty_array()
 {
     int ret;
@@ -1305,6 +1459,8 @@ TEST_LIST = {
     { "json_pack_nan"      , test_json_pack_nan},
     { "json_pack_bug5336"  , test_json_pack_bug5336},
     { "json_pack_empty_array", test_json_pack_empty_array},
+    { "json_pack_deep_map_boundary", test_json_pack_deep_map_boundary},
+    { "json_pack_deep_map_below_boundary", test_json_pack_deep_map_below_boundary},
     { "json_date_iso8601" , test_json_date_iso8601},
     { "json_date_double" , test_json_date_double},
     { "json_date_java_sql" , test_json_date_java_sql},
