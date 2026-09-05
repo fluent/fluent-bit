@@ -32,15 +32,80 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 
+#include <cfl/cfl_atomic.h>
+
 #include "ml.h"
 #include "ml_concat.h"
 
 static struct ml_stream *get_by_id(struct ml_ctx *ctx, uint64_t stream_id);
+static void flush_pending_partial_messages(struct ml_ctx *ctx);
+
+static void active_callback_leave(struct ml_ctx *ctx)
+{
+    uint64_t active;
+
+    do {
+        active = cfl_atomic_load(&ctx->active_callbacks);
+    } while (cfl_atomic_compare_exchange(&ctx->active_callbacks,
+                                         active, active - 1) == 0);
+}
+
+static int active_callback_enter(struct ml_ctx *ctx)
+{
+    uint64_t active;
+
+    while (cfl_atomic_load(&ctx->shutdown_flush_requested) == FLB_FALSE) {
+        active = cfl_atomic_load(&ctx->active_callbacks);
+        if (cfl_atomic_compare_exchange(&ctx->active_callbacks,
+                                        active, active + 1) == 0) {
+            continue;
+        }
+
+        if (cfl_atomic_load(&ctx->shutdown_flush_requested) == FLB_FALSE) {
+            return FLB_TRUE;
+        }
+
+        active_callback_leave(ctx);
+        break;
+    }
+
+    return FLB_FALSE;
+}
+
+static void cb_emitter_pause(void *data, struct flb_config *config)
+{
+    struct ml_ctx *ctx = data;
+
+    if (ctx == NULL) {
+        return;
+    }
+
+    /*
+     * Close the parser path before flushing. Normal ingestion remains
+     * lock-free; only shutdown waits for callbacks already concatenating.
+     * A callback that arrives after the gate returns NOTOUCH and keeps its
+     * original record instead of racing the final multiline flush.
+     */
+    cfl_atomic_store(&ctx->shutdown_flush_requested, FLB_TRUE);
+    while (cfl_atomic_load(&ctx->active_callbacks) > 0) {
+        flb_time_msleep(1);
+    }
+
+    if (ctx->partial_mode == FLB_TRUE) {
+        flb_plg_debug(ctx->ins, "flushing pending partial-message records on shutdown");
+        flush_pending_partial_messages(ctx);
+    }
+    else if (ctx->m != NULL) {
+        flb_plg_debug(ctx->ins, "flushing pending multiline records on shutdown");
+        flb_ml_flush_pending_now(ctx->m);
+    }
+}
 
 /* Create an emitter input instance */
 static int emitter_create(struct ml_ctx *ctx)
 {
     int ret;
+    void *emitter_data;
     struct flb_input_instance *ins;
 
     ret = flb_input_name_exists(ctx->emitter_name, ctx->config);
@@ -50,7 +115,11 @@ static int emitter_create(struct ml_ctx *ctx)
         return -1;
     }
 
-    ins = flb_input_new(ctx->config, "emitter", NULL, FLB_FALSE);
+    ctx->emitter_callbacks.pause = cb_emitter_pause;
+    ctx->emitter_callbacks.data = ctx;
+    emitter_data = &ctx->emitter_callbacks;
+
+    ins = flb_input_new(ctx->config, "emitter", emitter_data, FLB_FALSE);
     if (!ins) {
         flb_plg_error(ctx->ins, "cannot create emitter instance");
         return -1;
@@ -179,6 +248,59 @@ static int ingest_inline(struct ml_ctx *ctx,
     }
 
     return FLB_FALSE;
+}
+
+static void flush_split_message_packer(struct ml_ctx *ctx,
+                                       struct split_message_packer *packer)
+{
+    int ret;
+
+    mk_list_del(&packer->_head);
+    ml_split_message_packer_complete(packer);
+
+    /* Re-emit the completed record with its original tag. */
+    if (packer->log_encoder.output_buffer != NULL &&
+        packer->log_encoder.output_length > 0) {
+        flb_plg_trace(ctx->ins, "emitting from %s to %s",
+                      packer->input_name, packer->tag);
+
+        ret = ingest_inline(ctx, packer->tag,
+                            packer->log_encoder.output_buffer,
+                            packer->log_encoder.output_length);
+        if (ret == FLB_FALSE) {
+            ret = in_emitter_add_record(packer->tag,
+                                        flb_sds_len(packer->tag),
+                                        packer->log_encoder.output_buffer,
+                                        packer->log_encoder.output_length,
+                                        ctx->ins_emitter,
+                                        ctx->i_ins);
+        }
+        else {
+            ret = 0;
+        }
+
+        if (ret < 0) {
+            flb_plg_warn(ctx->ins,
+                         "could not send concatenated record of size %zu "
+                         "bytes to in_emitter %s",
+                         packer->log_encoder.output_length,
+                         ctx->ins_emitter->name);
+        }
+    }
+
+    ml_split_message_packer_destroy(packer);
+}
+
+static void flush_pending_partial_messages(struct ml_ctx *ctx)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct split_message_packer *packer;
+
+    mk_list_foreach_safe(head, tmp, &ctx->split_message_packers) {
+        packer = mk_list_entry(head, struct split_message_packer, _head);
+        flush_split_message_packer(ctx, packer);
+    }
 }
 
 static int flush_callback(struct flb_ml_parser *parser,
@@ -356,13 +478,6 @@ static int cb_ml_init(struct flb_filter_instance *ins,
             return -1;
         }
 
-        /* Create the emitter context */
-        ret = emitter_create(ctx);
-        if (ret == -1) {
-            flb_free(ctx);
-            return -1;
-        }
-
         /* Register a metric to count the number of emitted records */
 #ifdef FLB_HAVE_METRICS
         ctx->cmt_emitted = cmt_counter_create(ins->cmt,
@@ -439,6 +554,17 @@ static int cb_ml_init(struct flb_filter_instance *ins,
                 return -1;
             }
             ctx->stream_id = stream_id;
+        }
+    }
+
+    /*
+     * Create the emitter only after the owner context is fully initialized.
+     * The emitter keeps a callback reference to this context in parser mode.
+     */
+    if (ctx->use_buffer == FLB_TRUE) {
+        ret = emitter_create(ctx);
+        if (ret == -1) {
+            return -1;
         }
     }
 
@@ -569,7 +695,6 @@ static void partial_timer_cb(struct flb_config *config, void *data)
     struct split_message_packer *packer;
     unsigned long long now;
     unsigned long long diff;
-    int ret;
 
     now = ml_current_timestamp();
 
@@ -581,36 +706,7 @@ static void partial_timer_cb(struct flb_config *config, void *data)
             continue;
         }
 
-        mk_list_del(&packer->_head);
-        ml_split_message_packer_complete(packer);
-        /* re-emit record with original tag */
-        if (packer->log_encoder.output_buffer != NULL &&
-            packer->log_encoder.output_length > 0) {
-
-            flb_plg_trace(ctx->ins, "emitting from %s to %s", packer->input_name, packer->tag);
-
-            ret = ingest_inline(ctx, packer->tag, packer->log_encoder.output_buffer,
-                            packer->log_encoder.output_length);
-            if (!ret) {
-                ret = in_emitter_add_record(packer->tag, flb_sds_len(packer->tag),
-                                        packer->log_encoder.output_buffer,
-                                        packer->log_encoder.output_length,
-                                        ctx->ins_emitter,
-                                        ctx->i_ins);
-            }
-            else {
-                ret = 0;
-            }
-            if (ret < 0) {
-                /* this shouldn't happen in normal execution */
-                flb_plg_warn(ctx->ins,
-                             "Couldn't send concatenated record of size %zu "
-                             "bytes to in_emitter %s",
-                             packer->log_encoder.output_length,
-                             ctx->ins_emitter->name);
-            }
-        }
-        ml_split_message_packer_destroy(packer);
+        flush_split_message_packer(ctx, packer);
     }
 }
 
@@ -803,6 +899,7 @@ static int cb_ml_filter(const void *data, size_t bytes,
     struct ml_stream            *stream;
     struct flb_log_event         event;
     int                          ret;
+    int                          callback_active;
     struct ml_ctx               *ctx;
 #ifdef FLB_HAVE_METRICS
     uint64_t ts;
@@ -813,10 +910,18 @@ static int cb_ml_filter(const void *data, size_t bytes,
     (void) config;
 
     ctx = (struct ml_ctx *) filter_context;
+    callback_active = FLB_FALSE;
 
     if (i_ins == ctx->ins_emitter) {
         flb_plg_trace(ctx->ins, "not processing records from the emitter");
         return FLB_FILTER_NOTOUCH;
+    }
+
+    if (ctx->use_buffer == FLB_TRUE) {
+        callback_active = active_callback_enter(ctx);
+        if (callback_active == FLB_FALSE) {
+            return FLB_FILTER_NOTOUCH;
+        }
     }
 
     if (ctx->i_ins == NULL){
@@ -830,10 +935,14 @@ static int cb_ml_filter(const void *data, size_t bytes,
 
     /* 'partial_message' mode */
     if (ctx->partial_mode == FLB_TRUE) {
-        return ml_filter_partial(data, bytes, tag, tag_len,
-                                 out_buf, out_bytes,
-                                 f_ins, i_ins,
-                                 filter_context, config);
+        ret = ml_filter_partial(data, bytes, tag, tag_len,
+                                out_buf, out_bytes,
+                                f_ins, i_ins,
+                                filter_context, config);
+        if (callback_active == FLB_TRUE) {
+            active_callback_leave(ctx);
+        }
+        return ret;
     }
 
     /* 'parser' mode */
@@ -913,6 +1022,7 @@ static int cb_ml_filter(const void *data, size_t bytes,
 
         if (!stream) {
             flb_plg_error(ctx->ins, "Could not find or create ML stream for %s", tag);
+            active_callback_leave(ctx);
             return FLB_FILTER_NOTOUCH;
         }
 
@@ -953,6 +1063,8 @@ static int cb_ml_filter(const void *data, size_t bytes,
 
         flb_log_event_decoder_destroy(&decoder);
 
+        active_callback_leave(ctx);
+
         /*
          * always returned modified, which will be 0 records, since the emitter takes
          * all records.
@@ -974,6 +1086,10 @@ static int cb_ml_exit(void *data, struct flb_config *config)
 
     if (ctx->m) {
         flb_ml_destroy(ctx->m);
+    }
+
+    if (ctx->partial_mode == FLB_TRUE) {
+        flush_pending_partial_messages(ctx);
     }
 
     mk_list_foreach_safe(head, tmp, &ctx->ml_streams) {

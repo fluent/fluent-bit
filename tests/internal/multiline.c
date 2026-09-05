@@ -839,6 +839,10 @@ static void test_parser_java()
         msgpack_sbuffer_destroy(&mp_sbuf);
     }
 
+    flb_ml_flush_pending_now(ml);
+    flb_ml_flush_pending_now(ml);
+    TEST_CHECK(res.current_record == 2);
+
     if (ml) {
         flb_ml_destroy(ml);
     }
