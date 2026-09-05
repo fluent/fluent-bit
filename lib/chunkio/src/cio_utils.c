@@ -25,7 +25,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
-#ifndef _MSC_VER
+#ifndef _WIN32
 #include <fts.h>
 #endif
 
@@ -34,7 +34,7 @@
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_log.h>
 
-#ifndef _MSC_VER
+#ifndef _WIN32
 /*
  * Taken from StackOverflow:
  *

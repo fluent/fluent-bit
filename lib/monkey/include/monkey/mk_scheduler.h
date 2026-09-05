@@ -38,10 +38,12 @@
 #define MK_SCHED_SIGNAL_EVENT_LOOP_BREAK 0xEEFFAACC
 
 #ifdef _WIN32
+#ifndef __MINGW32__
     /* The pid field in the mk_sched_worker structure is ignored in platforms other than
      * linux and mac os so it can be safely plugged in this meaningless way
      */
     typedef uint64_t pid_t;
+#endif
 #endif
 
 /*

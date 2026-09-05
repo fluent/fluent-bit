@@ -8,7 +8,17 @@
 #endif
 
 #if defined(__clang__) || defined(__GNUC__)
-  #if defined(__i386__)
+  #if defined(_WIN32)
+    /*
+     * Check Windows before the architecture: on x86_64 MinGW both __amd64__
+     * and _WIN32 are defined, so amd64.c would win, but its co_swap executes
+     * a machine-code blob held in a read-only array and faults under DEP on
+     * the first coroutine switch (the same reason the MSVC branch below
+     * disables amd64.c "due to SIGSEGV bug"). Use the fiber backend, which is
+     * what MSVC already selects on Windows.
+     */
+    #include "fiber.c"
+  #elif defined(__i386__)
     #include "x86.c"
   #elif defined(__amd64__)
     #include "amd64.c"
@@ -20,8 +30,6 @@
     #include "ppc64le.c"
   #elif defined(_ARCH_PPC) && !defined(__LITTLE_ENDIAN__)
     #include "ppc.c"
-  #elif defined(_WIN32)
-    #include "fiber.c"
   #else
     #include "sjlj.c"
   #endif

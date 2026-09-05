@@ -28,7 +28,7 @@
 #include <chunkio/chunkio_compat.h>
 
 #ifdef _WIN32
-#include <Shlobj.h>
+#include <shlobj.h>
 #endif
 
 /* Check if a path is a directory */

@@ -44,7 +44,7 @@
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
 /* should be in some equivalent to <sys/types.h> */
-#if _MSC_VER >= 1600   /* MSVC 2010 or higher */
+#if defined(__MINGW32__) || _MSC_VER >= 1600   /* MSVC 2010 or higher */
 #include <stdint.h>
 #else
 typedef __int8            int8_t;

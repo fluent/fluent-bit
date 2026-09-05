@@ -155,3 +155,49 @@ jobs:
           cmake -DFLB_PREFER_SYSTEM_LIB_ZSTD=ON -DFLB_PREFER_SYSTEM_LIB_KAFKA=ON ../
           make -j $nparallel
         working-directory: build
+
+  # Sanity check for Windows cross-compilation from Linux with the
+  # MinGW-w64 UCRT64 toolchain (no MSVC or Windows runner involved).
+  # See "Cross-compiling for Windows with MinGW" in DEVELOPER_GUIDE.md.
+  pr-compile-mingw-cross:
+    runs-on: ubuntu-latest
+    container: fedora:44
+    timeout-minutes: 60
+    steps:
+      - name: Install toolchain and build dependencies
+        run: |
+          dnf install -y bison file flex gcc git make ninja-build \
+              ucrt64-gcc ucrt64-gcc-c++ ucrt64-openssl ucrt64-zlib
+
+      - name: Install cmake
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
+        with:
+          cmake-version: "3.31.6"
+
+      - name: Checkout Fluent Bit code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Cross-compile a static libyaml
+        run: |
+          mkdir -p /tmp/libyaml-src
+          curl -sfL https://github.com/yaml/libyaml/releases/download/0.2.5/yaml-0.2.5.tar.gz \
+            | tar xz --strip-components 1 -C /tmp/libyaml-src
+          cd /tmp/libyaml-src
+          ./configure --host=x86_64-w64-mingw32ucrt --prefix=/opt/libyaml \
+              --enable-static --disable-shared CFLAGS="-DYAML_DECLARE_STATIC"
+          make -j 8 -C src
+          make -C src install
+          make -C include install
+
+      # No plugin selection here: the build takes the standard Windows
+      # defaults from cmake/windows-setup.cmake, the same profile the MSVC
+      # Windows CI builds.
+      - name: Cross-compile Fluent Bit for Windows
+        run: |
+          cmake -G Ninja \
+              -DCMAKE_TOOLCHAIN_FILE=/usr/share/mingw/toolchain-ucrt64.cmake \
+              -DFLB_LIBYAML_DIR=/opt/libyaml \
+              ../
+          ninja
+          file bin/fluent-bit.exe
+        working-directory: build

@@ -42,6 +42,8 @@ int we_wmi_cleanup(struct flb_we *ctx);
 int we_wmi_exit(struct flb_we *ctx);
 
 /* Abstract APIs */
+struct wmi_query_specs;
+
 int we_wmi_query(struct flb_we *ctx, struct wmi_query_specs *spec);
 int we_wmi_query_fixed_val(struct flb_we *ctx, struct wmi_query_specs *spec);
 int we_wmi_query_namespace(struct flb_we *ctx, struct wmi_query_specs *spec, char *namepsace);
