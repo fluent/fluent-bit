@@ -1236,57 +1236,98 @@ static void set_entity_field(char **field, struct flb_ra_value *val,
     }
 }
 
+/*
+ * Paths for the entity record accessors, indexed by the ENTITY_RA_* slots.
+ * Keep in sync with the field map in parse_entity().
+ */
+static const char *entity_ra_paths[ENTITY_RA_MAX] = {
+    [ENTITY_RA_SERVICE_NAME] = "$kubernetes['aws_entity_service_name']",
+    [ENTITY_RA_ENVIRONMENT]  = "$kubernetes['aws_entity_environment']",
+    [ENTITY_RA_NAMESPACE]    = "$kubernetes['namespace_name']",
+    [ENTITY_RA_NODE]         = "$kubernetes['host']",
+    [ENTITY_RA_CLUSTER]      = "$kubernetes['aws_entity_cluster']",
+    [ENTITY_RA_WORKLOAD]     = "$kubernetes['aws_entity_workload']",
+    [ENTITY_RA_NAME_SOURCE]  = "$kubernetes['aws_entity_name_source']",
+    [ENTITY_RA_PLATFORM]     = "$kubernetes['aws_entity_platform']",
+    [ENTITY_RA_INSTANCE_ID]  = "$aws_entity_ec2_instance_id",
+    [ENTITY_RA_ACCOUNT_ID]   = "$aws_entity_account_id"
+};
+
+void entity_ra_destroy(struct flb_cloudwatch *ctx)
+{
+    int i;
+
+    for (i = 0; i < ENTITY_RA_MAX; i++) {
+        if (ctx->entity_ra[i]) {
+            flb_ra_destroy(ctx->entity_ra[i]);
+            ctx->entity_ra[i] = NULL;
+        }
+    }
+}
+
+int entity_ra_init(struct flb_cloudwatch *ctx)
+{
+    int i;
+
+    for (i = 0; i < ENTITY_RA_MAX; i++) {
+        ctx->entity_ra[i] = flb_ra_create((char *) entity_ra_paths[i],
+                                          FLB_FALSE);
+        if (ctx->entity_ra[i] == NULL) {
+            flb_plg_error(ctx->ins, "Could not parse entity record accessor %s",
+                          entity_ra_paths[i]);
+            entity_ra_destroy(ctx);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 void parse_entity(struct flb_cloudwatch *ctx, entity *entity,
                   msgpack_object map, int map_size)
 {
-    struct flb_record_accessor *ra;
     struct flb_ra_value *val;
     int i;
 
     struct {
-        const char *path;
         char **field;
         int *filter_count;
         int *found_flag;
-    } field_map[] = {
-        {"$kubernetes['aws_entity_service_name']", &entity->key_attributes->name,
+    } field_map[ENTITY_RA_MAX] = {
+        [ENTITY_RA_SERVICE_NAME] = {&entity->key_attributes->name,
          &entity->filter_count, &entity->service_name_found},
-        {"$kubernetes['aws_entity_environment']", &entity->key_attributes->environment,
+        [ENTITY_RA_ENVIRONMENT]  = {&entity->key_attributes->environment,
          &entity->filter_count, &entity->environment_found},
-        {"$kubernetes['namespace_name']", &entity->attributes->namespace,
+        [ENTITY_RA_NAMESPACE]    = {&entity->attributes->namespace,
          NULL, NULL},
-        {"$kubernetes['host']", &entity->attributes->node, NULL, NULL},
-        {"$kubernetes['aws_entity_cluster']", &entity->attributes->cluster_name,
+        [ENTITY_RA_NODE]         = {&entity->attributes->node, NULL, NULL},
+        [ENTITY_RA_CLUSTER]      = {&entity->attributes->cluster_name,
          &entity->filter_count, NULL},
-        {"$kubernetes['aws_entity_workload']", &entity->attributes->workload,
+        [ENTITY_RA_WORKLOAD]     = {&entity->attributes->workload,
          &entity->filter_count, NULL},
-        {"$kubernetes['aws_entity_name_source']", &entity->attributes->name_source,
+        [ENTITY_RA_NAME_SOURCE]  = {&entity->attributes->name_source,
          &entity->filter_count, &entity->name_source_found},
-        {"$kubernetes['aws_entity_platform']", &entity->attributes->platform_type,
+        [ENTITY_RA_PLATFORM]     = {&entity->attributes->platform_type,
          &entity->filter_count, NULL},
-        {"$aws_entity_ec2_instance_id", &entity->attributes->instance_id,
+        [ENTITY_RA_INSTANCE_ID]  = {&entity->attributes->instance_id,
          &entity->root_filter_count, NULL},
-        {"$aws_entity_account_id", &entity->key_attributes->account_id,
-         &entity->root_filter_count, NULL},
-        {NULL, NULL, NULL, NULL}
+        [ENTITY_RA_ACCOUNT_ID]   = {&entity->key_attributes->account_id,
+         &entity->root_filter_count, NULL}
     };
-    
-    for (i = 0; field_map[i].path; i++) {
-        ra = flb_ra_create((char *) field_map[i].path, FLB_FALSE);
-        if (!ra) {
+
+    for (i = 0; i < ENTITY_RA_MAX; i++) {
+        if (ctx->entity_ra[i] == NULL) {
             continue;
         }
-        
-        val = flb_ra_get_value_object(ra, map);
+
+        val = flb_ra_get_value_object(ctx->entity_ra[i], map);
         if (val) {
             set_entity_field(field_map[i].field, val, field_map[i].filter_count,
                            field_map[i].found_flag);
             flb_ra_key_value_destroy(val);
         }
-        
-        flb_ra_destroy(ra);
     }
-    
+
     if (entity->key_attributes->name == NULL &&
         entity->attributes->name_source == NULL &&
         entity->attributes->workload != NULL) {

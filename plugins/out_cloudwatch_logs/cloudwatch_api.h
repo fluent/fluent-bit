@@ -78,6 +78,8 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                    struct log_stream *stream,
                    size_t payload_size);
 int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream);
+int entity_ra_init(struct flb_cloudwatch *ctx);
+void entity_ra_destroy(struct flb_cloudwatch *ctx);
 int compare_events(const void *a_arg, const void *b_arg);
 void reset_flush_buf(struct flb_cloudwatch *ctx, struct cw_flush *buf);
 void cloudwatch_mock_call_count_reset(void);

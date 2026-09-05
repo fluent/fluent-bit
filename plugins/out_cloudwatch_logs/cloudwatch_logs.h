@@ -146,6 +146,25 @@ struct log_stream {
     struct mk_list _head;
 };
 
+/*
+ * Slots for the record accessors used to extract entity fields. The paths are
+ * constant, so the accessors are compiled once at init time and reused for
+ * every record instead of being rebuilt per record.
+ */
+enum {
+    ENTITY_RA_SERVICE_NAME = 0,
+    ENTITY_RA_ENVIRONMENT,
+    ENTITY_RA_NAMESPACE,
+    ENTITY_RA_NODE,
+    ENTITY_RA_CLUSTER,
+    ENTITY_RA_WORKLOAD,
+    ENTITY_RA_NAME_SOURCE,
+    ENTITY_RA_PLATFORM,
+    ENTITY_RA_INSTANCE_ID,
+    ENTITY_RA_ACCOUNT_ID,
+    ENTITY_RA_MAX
+};
+
 struct flb_cloudwatch {
     /*
      * TLS instances can not be re-used. So we have one for:
@@ -217,6 +236,9 @@ struct flb_cloudwatch {
     int kubernete_metadata_enabled;
 
     int add_entity;
+
+    /* record accessors for entity fields, compiled once at init time */
+    struct flb_record_accessor *entity_ra[ENTITY_RA_MAX];
 };
 
 void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx);
