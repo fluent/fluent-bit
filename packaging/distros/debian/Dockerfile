@@ -29,6 +29,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -37,6 +38,8 @@ RUN apt-get -qq update && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # debian/buster.arm64v8 base image
 FROM arm64v8/debian:buster-slim AS debian-buster.arm64v8-base
@@ -60,6 +63,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -68,6 +72,8 @@ RUN apt-get -qq update && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # debian/bullseye base image
 FROM debian:bullseye-slim AS debian-bullseye-base
@@ -92,6 +98,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -100,6 +107,8 @@ RUN apt-get -qq update && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # debian/bullseye.arm64v8 base image
 FROM arm64v8/debian:bullseye-slim AS debian-bullseye.arm64v8-base
@@ -126,6 +135,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -134,6 +144,8 @@ RUN apt-get -qq update && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # debian/bookworm base image
 FROM debian:bookworm-slim AS debian-bookworm-base
@@ -150,6 +162,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -158,6 +171,8 @@ RUN apt-get -qq update && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ARG FLB_IN_AMQP=Off
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # debian/bookworm.arm64v8 base image
 FROM arm64v8/debian:bookworm-slim AS debian-bookworm.arm64v8-base
@@ -176,6 +191,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -184,6 +200,8 @@ RUN apt-get -qq update && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ARG FLB_IN_AMQP=Off
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # debian/trixie base image
 FROM debian:trixie-slim AS debian-trixie-base
@@ -200,6 +218,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -208,6 +227,8 @@ RUN apt-get -qq update && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # debian/trixie.arm64v8 base image
 FROM arm64v8/debian:trixie-slim AS debian-trixie.arm64v8-base
@@ -226,6 +247,7 @@ RUN apt-get -qq update && \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config \
+    librabbitmq-dev \
     tar gzip && \
     apt-get install -y --reinstall lsb-base lsb-release && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -234,6 +256,8 @@ RUN apt-get -qq update && \
     curl -jksSL "${cmake_download_url}" | tar -xzf - -C "${CMAKE_HOME}" --strip-components 1
 
 ENV PATH="${CMAKE_HOME}/bin:${PATH}"
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
@@ -274,6 +298,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
+    -DFLB_IN_AMQP="${FLB_IN_AMQP}" \
     ../
 
 VOLUME [ "/output" ]
