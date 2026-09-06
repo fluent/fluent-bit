@@ -826,7 +826,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_CLIST, "multiline.parser", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_tail_config, multiline_parsers),
-     "specify one or multiple multiline parsers: docker, cri, go, java, etc."
+     "specify one or multiple multiline parsers: docker, cri, go, java, json, etc."
     },
 #endif
 

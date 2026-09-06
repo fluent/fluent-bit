@@ -303,7 +303,8 @@ static int save_upload(struct flb_s3 *ctx, struct multipart_upload *m_upload,
     return ret;
 }
 
-static int remove_upload_from_fs(struct flb_s3 *ctx, struct multipart_upload *m_upload)
+static int remove_upload_from_fs(struct flb_s3 *ctx,
+                                 struct multipart_upload *m_upload)
 {
     flb_sds_t key;
     struct flb_fstore_file *fsf;

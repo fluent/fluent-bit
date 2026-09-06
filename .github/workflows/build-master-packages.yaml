@@ -31,7 +31,10 @@ jobs:
       - id: set-matrix
         run: |
           matrix=$((
-            echo '{ "distro" : [ "debian/bullseye", "ubuntu/20.04", "ubuntu/22.04", "centos/7" ]}'
+            echo '{ "distro" : ['
+            echo '"debian/bullseye", "debian/trixie",'
+            echo '"ubuntu/20.04", "ubuntu/22.04", "centos/7"'
+            echo ']}'
           ) | jq -c .)
           if [ -n "${{ github.event.inputs.target || '' }}" ]; then
             echo "Overriding matrix to build: ${{ github.event.inputs.target }}"

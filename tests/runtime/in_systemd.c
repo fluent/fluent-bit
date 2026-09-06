@@ -107,8 +107,86 @@ void flb_test_duplicated_keys()
     flb_destroy(ctx);
 }
 
+void flb_test_namespace()
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+
+    ctx = flb_create();
+    TEST_ASSERT(ctx != NULL);
+
+    TEST_CHECK(flb_service_set(ctx,
+                               "flush", "2",
+                               "grace", "1",
+                               "log_level", "error",
+                               NULL) == 0);
+
+    in_ffd = flb_input(ctx, (char *) "systemd", NULL);
+    TEST_ASSERT(in_ffd >= 0);
+    TEST_CHECK(flb_input_set(ctx, in_ffd,
+                             "tag", "test",
+                             "namespace", "fluent-bit-test-nonexistent",
+                             "read_from_tail", "on",
+                             NULL) == 0);
+
+    out_ffd = flb_output(ctx, (char *) "null", NULL);
+    TEST_ASSERT(out_ffd >= 0);
+    TEST_CHECK(flb_output_set(ctx, out_ffd,
+                              "match", "test",
+                              NULL) == 0);
+
+    ret = flb_start(ctx);
+#ifdef FLB_HAVE_SYSTEMD_JOURNAL_NAMESPACE
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
+#else
+    TEST_CHECK(ret == -1);
+#endif
+
+    flb_destroy(ctx);
+}
+
+void flb_test_namespace_path_conflict()
+{
+    int in_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+
+    ctx = flb_create();
+    TEST_ASSERT(ctx != NULL);
+
+    TEST_CHECK(flb_service_set(ctx,
+                               "flush", "2",
+                               "grace", "1",
+                               "log_level", "error",
+                               NULL) == 0);
+
+    in_ffd = flb_input(ctx, (char *) "systemd", NULL);
+    TEST_ASSERT(in_ffd >= 0);
+    TEST_CHECK(flb_input_set(ctx, in_ffd,
+                             "tag", "test",
+                             "path", "/",
+                             "namespace", "fluent-bit-test",
+                             NULL) == 0);
+
+    out_ffd = flb_output(ctx, (char *) "null", NULL);
+    TEST_ASSERT(out_ffd >= 0);
+    TEST_CHECK(flb_output_set(ctx, out_ffd,
+                              "match", "test",
+                              NULL) == 0);
+
+    TEST_CHECK(flb_start(ctx) == -1);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     { "duplicated_keys", flb_test_duplicated_keys },
+    { "namespace", flb_test_namespace },
+    { "namespace_path_conflict", flb_test_namespace_path_conflict },
     { NULL, NULL}
 };

@@ -225,7 +225,17 @@ static void sb_remove_chunk_from_segregated_backlog(struct cio_chunk    *target_
         if (chunk->chunk == target_chunk) {
             mk_list_del(&chunk->_head);
 
-            backlog->ins->fs_backlog_chunks_size -= cio_chunk_get_real_size(target_chunk);
+            if (chunk->size > backlog->ins->fs_backlog_chunks_size) {
+                flb_warn("[storage backlog] filesystem chunk accounting underflow for "
+                         "output %s: current=%zu, subtract=%zu; resetting to zero",
+                         flb_output_name(backlog->ins),
+                         backlog->ins->fs_backlog_chunks_size,
+                         chunk->size);
+                backlog->ins->fs_backlog_chunks_size = 0;
+            }
+            else {
+                backlog->ins->fs_backlog_chunks_size -= chunk->size;
+            }
 
             if (destroy) {
                 sb_destroy_chunk(chunk);
@@ -264,7 +274,17 @@ static int sb_append_chunk_to_segregated_backlog(struct cio_chunk    *target_chu
 
     mk_list_add(&chunk->_head, &backlog->chunks);
 
-    backlog->ins->fs_backlog_chunks_size += target_chunk_size;
+    if (target_chunk_size > SIZE_MAX - backlog->ins->fs_backlog_chunks_size) {
+        flb_warn("[storage backlog] filesystem chunk accounting overflow for output %s: "
+                 "current=%zu, add=%zu; saturating at maximum",
+                 flb_output_name(backlog->ins),
+                 backlog->ins->fs_backlog_chunks_size,
+                 target_chunk_size);
+        backlog->ins->fs_backlog_chunks_size = SIZE_MAX;
+    }
+    else {
+        backlog->ins->fs_backlog_chunks_size += target_chunk_size;
+    }
 
     return 0;
 }

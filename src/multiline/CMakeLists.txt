@@ -6,6 +6,7 @@ set(src_multiline
   multiline/flb_ml_parser_java.c
   multiline/flb_ml_parser_go.c
   multiline/flb_ml_parser_ruby.c
+  multiline/flb_ml_parser_json.c
   # core
   multiline/flb_ml_stream.c
   multiline/flb_ml_parser.c

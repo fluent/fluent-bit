@@ -982,88 +982,91 @@ int azb_db_file_oldest_ready(struct flb_azure_blob *ctx,
 {
     int ret;
     char *tmp = NULL;
+    uint64_t local_file_id;
+    cfl_sds_t local_path = NULL;
+    cfl_sds_t local_part_ids = NULL;
+    cfl_sds_t local_source = NULL;
+    cfl_sds_t local_path_prefix = NULL;
 
-    azb_db_lock(ctx);
+    *file_id = 0;
+    *path = NULL;
+    *part_ids = NULL;
+    *source = NULL;
+    *path_prefix = NULL;
+
+    if (azb_db_lock(ctx) != 0) {
+        return -1;
+    }
 
     /* Run the query */
     ret = sqlite3_step(ctx->stmt_get_oldest_file_with_parts);
     if (ret == SQLITE_ROW) {
         /* file_id */
-        *file_id = sqlite3_column_int64(ctx->stmt_get_oldest_file_with_parts, 0);
+        local_file_id = sqlite3_column_int64(ctx->stmt_get_oldest_file_with_parts, 0);
         tmp = (char *) sqlite3_column_text(ctx->stmt_get_oldest_file_with_parts, 1);
 
         /* path */
-        *path = cfl_sds_create(tmp);
-        if (!*path) {
-            sqlite3_clear_bindings(ctx->stmt_get_oldest_file_with_parts);
-            sqlite3_reset(ctx->stmt_get_oldest_file_with_parts);
-            azb_db_unlock(ctx);
-            return -1;
+        local_path = cfl_sds_create(tmp);
+        if (!local_path) {
+            ret = -1;
+            goto cleanup;
         }
 
         /* part_ids */
         tmp = (char *) sqlite3_column_text(ctx->stmt_get_oldest_file_with_parts, 2);
-        *part_ids = cfl_sds_create(tmp);
-        if (!*part_ids) {
-            cfl_sds_destroy(*path);
-            sqlite3_clear_bindings(ctx->stmt_get_oldest_file_with_parts);
-            sqlite3_reset(ctx->stmt_get_oldest_file_with_parts);
-            azb_db_unlock(ctx);
-            return -1;
+        local_part_ids = cfl_sds_create(tmp);
+        if (!local_part_ids) {
+            ret = -1;
+            goto cleanup;
         }
 
         /* source */
         tmp = (char *) sqlite3_column_text(ctx->stmt_get_oldest_file_with_parts, 3);
-        *source = cfl_sds_create(tmp);
-        if (!*source) {
-            cfl_sds_destroy(*part_ids);
-            cfl_sds_destroy(*path);
-            sqlite3_clear_bindings(ctx->stmt_get_oldest_file_with_parts);
-            sqlite3_reset(ctx->stmt_get_oldest_file_with_parts);
-            azb_db_unlock(ctx);
-            return -1;
+        local_source = cfl_sds_create(tmp);
+        if (!local_source) {
+            ret = -1;
+            goto cleanup;
         }
 
         /* path prefix */
         tmp = (char *) sqlite3_column_text(ctx->stmt_get_oldest_file_with_parts, 4);
         if (tmp) {
-            *path_prefix = cfl_sds_create(tmp);
-            if (!*path_prefix) {
-                cfl_sds_destroy(*source);
-                cfl_sds_destroy(*part_ids);
-                cfl_sds_destroy(*path);
-                sqlite3_clear_bindings(ctx->stmt_get_oldest_file_with_parts);
-                sqlite3_reset(ctx->stmt_get_oldest_file_with_parts);
-                azb_db_unlock(ctx);
-                return -1;
+            local_path_prefix = cfl_sds_create(tmp);
+            if (!local_path_prefix) {
+                ret = -1;
+                goto cleanup;
             }
         }
-        else {
-            *path_prefix = NULL;
-        }
+
+        *file_id = local_file_id;
+        *path = local_path;
+        *part_ids = local_part_ids;
+        *source = local_source;
+        *path_prefix = local_path_prefix;
+        ret = 1;
     }
     else if (ret == SQLITE_DONE) {
         /* no records */
-        sqlite3_clear_bindings(ctx->stmt_get_oldest_file_with_parts);
-        sqlite3_reset(ctx->stmt_get_oldest_file_with_parts);
-        azb_db_unlock(ctx);
-        *path = NULL;
-        *part_ids = NULL;
-        *source = NULL;
-        *path_prefix = NULL;
-        return 0;
+        ret = 0;
     }
     else {
-        azb_db_unlock(ctx);
-        *path = NULL;
-        *part_ids = NULL;
-        *source = NULL;
-        *path_prefix = NULL;
-        return -1;
+        ret = -1;
+    }
+
+cleanup:
+    sqlite3_clear_bindings(ctx->stmt_get_oldest_file_with_parts);
+    sqlite3_reset(ctx->stmt_get_oldest_file_with_parts);
+
+    if (ret == -1) {
+        cfl_sds_destroy(local_path_prefix);
+        cfl_sds_destroy(local_source);
+        cfl_sds_destroy(local_part_ids);
+        cfl_sds_destroy(local_path);
     }
 
     azb_db_unlock(ctx);
-    return 1;
+
+    return ret;
 }
 
 #endif

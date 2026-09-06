@@ -39,6 +39,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_time.h>
 
 struct flb_splunk_field {
     flb_sds_t key_name;
@@ -87,6 +88,14 @@ struct flb_splunk {
     /* Event sourcetype record key */
     flb_sds_t event_index_key;
     struct flb_record_accessor *ra_event_index_key;
+
+    /* Event time: record key that holds the timestamp to report to Splunk */
+    flb_sds_t time_key;
+    struct flb_record_accessor *ra_time_key;
+
+    /* strptime(3) format used when the 'time_key' value is a string */
+    flb_sds_t time_key_format;
+    struct flb_time_fmt time_key_fmt;
 
     /* Event fields */
     struct mk_list *event_fields;

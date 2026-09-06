@@ -26,6 +26,7 @@
 #include <cmetrics/cmt_encode_prometheus.h>
 #include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_mpack_utils.h>
+#include <cmetrics/cmt_variant_utils.h>
 #include <mpack/mpack.h>
 
 #include "cmt_tests.h"
@@ -178,6 +179,70 @@ void test_truncated_msgpack_string()
     TEST_CHECK(output == NULL);
 }
 
+static void check_variant_nesting_limit(int use_maps, size_t nesting_depth,
+                                        int expected_result)
+{
+    char *buffer;
+    size_t size;
+    size_t index;
+    int result;
+    mpack_writer_t writer;
+    mpack_reader_t reader;
+    struct cfl_variant *variant;
+
+    buffer = NULL;
+    size = 0;
+    variant = NULL;
+
+    mpack_writer_init_growable(&writer, &buffer, &size);
+
+    for (index = 0; index < nesting_depth; index++) {
+        if (use_maps) {
+            mpack_start_map(&writer, 1);
+            mpack_write_cstr(&writer, "key");
+        }
+        else {
+            mpack_start_array(&writer, 1);
+        }
+    }
+
+    mpack_write_i64(&writer, 1);
+
+    for (index = 0; index < nesting_depth; index++) {
+        if (use_maps) {
+            mpack_finish_map(&writer);
+        }
+        else {
+            mpack_finish_array(&writer);
+        }
+    }
+
+    TEST_ASSERT(mpack_writer_destroy(&writer) == mpack_ok);
+
+    mpack_reader_init_data(&reader, buffer, size);
+    result = unpack_cfl_variant(&reader, &variant);
+    TEST_CHECK((result == 0) == (expected_result == 0));
+
+    if (variant != NULL) {
+        cfl_variant_destroy(variant);
+    }
+
+    mpack_reader_destroy(&reader);
+    free(buffer);
+}
+
+void test_msgpack_variant_nesting_limit()
+{
+    check_variant_nesting_limit(CFL_FALSE,
+                                CFL_VARIANT_UTILS_MAXIMUM_NESTING_DEPTH, 0);
+    check_variant_nesting_limit(CFL_FALSE,
+                                CFL_VARIANT_UTILS_MAXIMUM_NESTING_DEPTH + 1, -1);
+    check_variant_nesting_limit(CFL_TRUE,
+                                CFL_VARIANT_UTILS_MAXIMUM_NESTING_DEPTH, 0);
+    check_variant_nesting_limit(CFL_TRUE,
+                                CFL_VARIANT_UTILS_MAXIMUM_NESTING_DEPTH + 1, -1);
+}
+
 #ifdef CMT_HAVE_PROMETHEUS_TEXT_DECODER
 
 /* issue: https://github.com/fluent/fluent-bit/issues/10761 */
@@ -212,6 +277,7 @@ TEST_LIST = {
     {"issue_54", test_issue_54},
     {"long_msgpack_labels", test_long_msgpack_labels},
     {"truncated_msgpack_string", test_truncated_msgpack_string},
+    {"msgpack_variant_nesting_limit", test_msgpack_variant_nesting_limit},
 #ifdef CMT_HAVE_PROMETHEUS_TEXT_DECODER
     {"prometheus_metric_no_subsystem", test_prometheus_metric_no_subsystem},
 #endif

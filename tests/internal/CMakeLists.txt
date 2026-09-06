@@ -24,6 +24,7 @@ set(UNIT_TESTS_FILES
   zstd.c
   random.c
   thread_storage.c
+  config_service.c
   config_map.c
   mp.c
   mp_chunk_cobj.c
@@ -65,6 +66,7 @@ set(UNIT_TESTS_FILES
   storage_dlq.c
   engine_adaptive_flush.c
   engine_dispatch.c
+  search_bulk.c
 )
 
 if(FLB_OUT_AZURE_BLOB)
@@ -87,6 +89,7 @@ endif()
 # Config format
 set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
+    config.c
     config_format.c
     config_format_fluentbit.c
 )

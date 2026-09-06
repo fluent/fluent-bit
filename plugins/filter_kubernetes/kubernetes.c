@@ -136,6 +136,15 @@ static int get_stream(msgpack_object_map map)
     return FLB_KUBE_PROP_NO_STREAM;
 }
 
+static int should_exclude(int pod_property, int namespace_property)
+{
+    if (pod_property != FLB_KUBE_PROP_UNDEF) {
+        return pod_property == FLB_KUBE_PROP_TRUE;
+    }
+
+    return namespace_property == FLB_KUBE_PROP_TRUE;
+}
+
 static int value_trim_size(msgpack_object o)
 {
     int i;
@@ -665,6 +674,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
     struct flb_kube_meta meta = {0};
     struct flb_kube_props props = {0};
     struct flb_kube_meta namespace_meta = {0};
+    struct flb_kube_props namespace_props = {0};
     struct flb_log_event_encoder log_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
@@ -685,7 +695,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
                                           &namespace_cache_buf,
                                           &namespace_cache_size,
                                           &meta, &props,
-                                          &namespace_meta);
+                                          &namespace_meta, &namespace_props);
         }
         else {
             /* Check if we have some cached metadata for the incoming events */
@@ -695,7 +705,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
                                     &cache_buf, &cache_size,
                                     &namespace_cache_buf, &namespace_cache_size,
                                     &meta, &props,
-                                    &namespace_meta);
+                                    &namespace_meta, &namespace_props);
         }
         if (ret == -1) {
             return FLB_FILTER_NOTOUCH;
@@ -711,6 +721,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         flb_kube_meta_release(&meta);
         flb_kube_prop_destroy(&props);
         flb_kube_meta_release(&namespace_meta);
+        flb_kube_prop_destroy(&namespace_props);
 
         return FLB_FILTER_NOTOUCH;
     }
@@ -726,6 +737,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         flb_kube_meta_release(&meta);
         flb_kube_prop_destroy(&props);
         flb_kube_meta_release(&namespace_meta);
+        flb_kube_prop_destroy(&namespace_props);
 
         return FLB_FILTER_NOTOUCH;
     }
@@ -748,7 +760,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
                                     &cache_buf, &cache_size,
                                     &namespace_cache_buf, &namespace_cache_size,
                                     &meta, &props,
-                                    &namespace_meta);
+                                    &namespace_meta, &namespace_props);
             if (ret == -1) {
                 continue;
             }
@@ -761,12 +773,14 @@ static int cb_kube_filter(const void *data, size_t bytes,
         switch (get_stream(log_event.body->via.map)) {
         case FLB_KUBE_PROP_STREAM_STDOUT:
             {
-                if (props.stdout_exclude == FLB_TRUE) {
+                if (should_exclude(props.stdout_exclude,
+                                   namespace_props.stdout_exclude)) {
                     /* Skip this record */
                     if (ctx->use_journal == FLB_TRUE) {
                         flb_kube_meta_release(&meta);
                         flb_kube_prop_destroy(&props);
                         flb_kube_meta_release(&namespace_meta);
+                        flb_kube_prop_destroy(&namespace_props);
                     }
                     continue;
                 }
@@ -777,12 +791,14 @@ static int cb_kube_filter(const void *data, size_t bytes,
             break;
         case FLB_KUBE_PROP_STREAM_STDERR:
             {
-                if (props.stderr_exclude == FLB_TRUE) {
+                if (should_exclude(props.stderr_exclude,
+                                   namespace_props.stderr_exclude)) {
                     /* Skip this record */
                     if (ctx->use_journal == FLB_TRUE) {
                         flb_kube_meta_release(&meta);
                         flb_kube_prop_destroy(&props);
                         flb_kube_meta_release(&namespace_meta);
+                        flb_kube_prop_destroy(&namespace_props);
                     }
                     continue;
                 }
@@ -793,8 +809,16 @@ static int cb_kube_filter(const void *data, size_t bytes,
             break;
         default:
             {
-                if (props.stdout_exclude == props.stderr_exclude &&
-                    props.stderr_exclude == FLB_TRUE) {
+                if (should_exclude(props.stdout_exclude,
+                                   namespace_props.stdout_exclude) &&
+                    should_exclude(props.stderr_exclude,
+                                   namespace_props.stderr_exclude)) {
+                    if (ctx->use_journal == FLB_TRUE) {
+                        flb_kube_meta_release(&meta);
+                        flb_kube_prop_destroy(&props);
+                        flb_kube_meta_release(&namespace_meta);
+                        flb_kube_prop_destroy(&namespace_props);
+                    }
                     continue;
                 }
                 if (props.stdout_parser == props.stderr_parser &&
@@ -811,7 +835,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         ret = flb_log_event_encoder_begin_record(&log_encoder);
 
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-            break;
+            goto record_cleanup;
         }
 
         ret = pack_map_content(&log_encoder,
@@ -830,6 +854,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
             flb_kube_meta_release(&meta);
             flb_kube_prop_destroy(&props);
             flb_kube_meta_release(&namespace_meta);
+            flb_kube_prop_destroy(&namespace_props);
 
             return FLB_FILTER_NOTOUCH;
         }
@@ -838,14 +863,18 @@ static int cb_kube_filter(const void *data, size_t bytes,
 
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
             flb_log_event_encoder_rollback_record(&log_encoder);
-
-            break;
         }
 
+record_cleanup:
         if (ctx->use_journal == FLB_TRUE) {
             flb_kube_meta_release(&meta);
             flb_kube_prop_destroy(&props);
             flb_kube_meta_release(&namespace_meta);
+            flb_kube_prop_destroy(&namespace_props);
+        }
+
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            break;
         }
     }
 
@@ -854,6 +883,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         flb_kube_meta_release(&meta);
         flb_kube_prop_destroy(&props);
         flb_kube_meta_release(&namespace_meta);
+        flb_kube_prop_destroy(&namespace_props);
     }
 
     if (ctx->dummy_meta == FLB_TRUE) {
@@ -1069,6 +1099,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "namespace_annotations", "false",
      0, FLB_TRUE, offsetof(struct flb_kube, namespace_annotations),
      "include Kubernetes namespace annotations on every record"
+    },
+    /* Allow Kubernetes Namespaces to exclude their Pods' logs ? */
+    {
+     FLB_CONFIG_MAP_BOOL, "namespace_exclude", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, namespace_exclude),
+     "allow namespaces to exclude their pods' logs via the fluentbit.io/exclude "
+     "annotation (requires access to the namespaces API)"
     },
     /* Ignore pod metadata entirely, useful for fetching only namespace meta */
     {

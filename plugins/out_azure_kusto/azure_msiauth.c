@@ -77,7 +77,9 @@ char *flb_azure_msiauth_token_get(struct flb_oauth2 *ctx)
          flb_info("[azure msi auth] HTTP Status=%i", c->resp.status);
          if (c->resp.payload_size > 0) {
              if (c->resp.status == 200) {
-                 flb_debug("[azure msi auth] payload:\n%s", c->resp.payload);
+                 /* the payload carries the access token, never log its content */
+                 flb_debug("[azure msi auth] token response received (%zu bytes)",
+                           c->resp.payload_size);
              }
              else {
                  flb_info("[azure msi auth] payload:\n%s", c->resp.payload);
@@ -162,7 +164,9 @@ int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *to
         return -1;
     }
 
-    flb_info("[azure workload identity] after read token from file %s", federated_token);
+    /* the federated token is a credential, only log its size */
+    flb_debug("[azure workload identity] federated token read from %s (%zu bytes)",
+              token_file, flb_sds_len(federated_token));
 
     /* Build the form data for token exchange *before* creating the client */
     body = flb_sds_create_size(4096);
@@ -249,8 +253,9 @@ int flb_azure_workload_identity_token_get(struct flb_oauth2 *ctx, const char *to
     /* c->body_buf = body; */
     /* c->body_len = flb_sds_len(body); */
 
-    /* Add a debug log to verify the body content just before sending */
-    flb_debug("[azure workload identity] Sending request body (len=%zu): %s", flb_sds_len(body), body);
+    /* the body embeds the client assertion, never log its content */
+    flb_debug("[azure workload identity] sending token exchange request (body len=%zu)",
+              flb_sds_len(body));
 
     /* Issue request */
     ret = flb_http_do(c, &b_sent);

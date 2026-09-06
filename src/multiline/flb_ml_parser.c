@@ -188,6 +188,13 @@ int flb_ml_parser_builtin_create(struct flb_config *config)
         goto error;
     }
 
+    /* JSON */
+    mlp = flb_ml_parser_json(config, NULL);
+    if (!mlp) {
+        flb_error("[multiline] could not init 'json' built-in parser");
+        goto error;
+    }
+
     ret = 0;
     return ret;
 

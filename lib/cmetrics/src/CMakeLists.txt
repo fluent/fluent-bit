@@ -26,6 +26,7 @@ set(src
   cmt_filter.c
   cmetrics.c
   cmt_encode_opentelemetry.c
+  cmt_encode_opentelemetry_batch.c
   cmt_decode_opentelemetry.c
   cmt_encode_prometheus.c
   cmt_encode_prometheus_remote_write.c

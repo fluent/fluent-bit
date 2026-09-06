@@ -369,6 +369,7 @@ struct flb_config {
 struct flb_config *flb_config_init();
 void flb_config_exit(struct flb_config *config);
 const char *flb_config_prop_get(const char *key, struct mk_list *list);
+int flb_config_service_property_is_valid(const char *k);
 int flb_config_set_property(struct flb_config *config,
                             const char *k, const char *v);
 int flb_config_set_program_name(struct flb_config *config, char *name);

@@ -18,6 +18,14 @@ struct test_ctx {
     struct mk_event_loop  *evl;
 };
 
+static int retry_context_destroy_count;
+
+static void retry_context_destroy(void *data)
+{
+    retry_context_destroy_count++;
+    flb_free(data);
+}
+
 struct test_ctx* test_ctx_create()
 {
     struct test_ctx *ret_ctx = NULL;
@@ -126,6 +134,8 @@ void test_task_route_data_preserved_across_retry()
     struct flb_task_route *route_a;
     struct flb_task_route *route_b;
     struct flb_task_retry *retry;
+    void *retry_context_a;
+    void *retry_context_b;
 
     ctx = test_ctx_create();
     if (!TEST_CHECK(ctx != NULL)) {
@@ -169,6 +179,18 @@ void test_task_route_data_preserved_across_retry()
     mk_list_add(&route_a->_head, &task->routes);
     mk_list_add(&route_b->_head, &task->routes);
 
+    retry_context_destroy_count = 0;
+    retry_context_a = flb_malloc(1);
+    retry_context_b = flb_malloc(1);
+    TEST_CHECK(retry_context_a != NULL);
+    TEST_CHECK(retry_context_b != NULL);
+    flb_task_set_route_retry_context(task, &out_a,
+                                     retry_context_a,
+                                     retry_context_destroy, 1, 111);
+    flb_task_set_route_retry_context(task, &out_b,
+                                     retry_context_b,
+                                     retry_context_destroy, 2, 222);
+
     flb_task_set_route_data(task, &out_a, 1, 111);
     ret = flb_task_get_route_data(task, &out_a, &records, &bytes);
     TEST_CHECK(ret == 0);
@@ -193,7 +215,13 @@ void test_task_route_data_preserved_across_retry()
     TEST_CHECK(bytes == 111);
 
     flb_task_retry_clean(task, &out_a);
+    TEST_CHECK(retry_context_destroy_count == 1);
+    TEST_CHECK(flb_task_get_route_retry_context(task, &out_a,
+                                                NULL, NULL) == NULL);
+    TEST_CHECK(flb_task_get_route_retry_context(task, &out_b,
+                                                NULL, NULL) == retry_context_b);
     flb_task_destroy(task, FLB_TRUE);
+    TEST_CHECK(retry_context_destroy_count == 2);
     test_ctx_destroy(ctx);
 }
 

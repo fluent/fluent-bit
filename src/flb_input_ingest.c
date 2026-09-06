@@ -331,16 +331,12 @@ static int flb_input_ingress_collector(struct flb_input_instance *ins,
                                        struct flb_config *config,
                                        void *context)
 {
-    int append_result;
     int result;
     size_t pending_events;
     size_t pending_bytes;
     struct mk_list *head;
     struct mk_list *tmp;
     struct mk_list queue;
-    struct cfl_list *iterator;
-    struct cfl_list *list_tmp;
-    struct cmt *metrics_context;
     struct flb_input_ingress_event *event;
 
     (void) config;
@@ -401,20 +397,11 @@ static int flb_input_ingress_collector(struct flb_input_instance *ins,
                 }
             }
             else if (event->type == FLB_INPUT_INGRESS_METRICS) {
-                result = 0;
-                cfl_list_foreach_safe(iterator, list_tmp, &event->metrics) {
-                    metrics_context = cfl_list_entry(iterator, struct cmt, _head);
-                    cfl_list_del(&metrics_context->_head);
-                    append_result = flb_input_metrics_append(
-                                        ins,
-                                        event->tag,
-                                        event->tag != NULL ? flb_sds_len(event->tag) : 0,
-                                        metrics_context);
-                    cmt_destroy(metrics_context);
-                    if (append_result != 0) {
-                        result = append_result;
-                    }
-                }
+                result = flb_input_metrics_append_list(
+                             ins,
+                             event->tag,
+                             event->tag != NULL ? flb_sds_len(event->tag) : 0,
+                             &event->metrics);
             }
             else if (event->type == FLB_INPUT_INGRESS_TRACES) {
                 result = flb_input_trace_append(ins,
