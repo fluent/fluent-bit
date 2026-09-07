@@ -48,6 +48,7 @@ class _S3RequestHandler(BaseHTTPRequestHandler):
             "path": self.path,
             "headers": dict(self.headers),
             "body": body,
+            "started": time.monotonic(),
         }
         data_storage["requests"].append(request)
         return request
@@ -59,6 +60,7 @@ class _S3RequestHandler(BaseHTTPRequestHandler):
         body = b""
         if status == 403:
             body = b"<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>"
+        request["finished"] = time.monotonic()
         self.send_response(status)
         self.send_header("ETag", '"fake-s3-etag"')
         self.send_header("Content-Length", str(len(body)))
@@ -68,10 +70,18 @@ class _S3RequestHandler(BaseHTTPRequestHandler):
         request["status"] = status
 
     def do_POST(self):
-        self._record_request()
+        request = self._record_request()
+        time.sleep(data_storage["put_delay"])
+        body = b""
+        if "uploads=" in self.path:
+            body = b"<InitiateMultipartUploadResult><UploadId>test-upload</UploadId></InitiateMultipartUploadResult>"
+        request["finished"] = time.monotonic()
         self.send_response(200)
-        self.send_header("Content-Length", "0")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
+        if body:
+            self.wfile.write(body)
+        request["status"] = 200
 
     def do_GET(self):
         if self.path == "/ping":

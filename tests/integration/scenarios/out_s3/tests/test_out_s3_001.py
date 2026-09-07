@@ -382,6 +382,79 @@ def test_out_s3_multiworker_retry_exhaustion_survives_and_recovers(tmp_path, act
     assert all(path.read_bytes() == content for path, content in quarantined.items())
 
 
+@pytest.mark.parametrize("mode", ["put_unordered", "put_ordered", "put_index", "multipart"])
+def test_out_s3_workers_upload_independent_tags_concurrently(tmp_path, mode):
+    multipart = mode == "multipart"
+    tags = ["first", "second"]
+    config = {
+        "service": {
+            "flush": 0.1,
+            "grace": 2,
+            "log_level": "info",
+            "http_server": "on",
+            "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}",
+        },
+        "pipeline": {
+            "inputs": [
+                {"name": "dummy", "tag": tag, "rate": 10,
+                 "samples": 2 if multipart else 0,
+                 "dummy": json.dumps({"source": tag, "message": "x" * (3000000 if multipart else 100)})}
+                for tag in tags
+            ],
+            "outputs": [{
+                "name": "s3",
+                "match": "*",
+                "workers": 4,
+                "bucket": "concurrent-bucket",
+                "region": "us-east-1",
+                "endpoint": "http://127.0.0.1:${TEST_SUITE_HTTP_PORT}",
+                "use_put_object": not multipart,
+                "preserve_data_ordering": mode != "put_unordered",
+                "total_file_size": "10M" if multipart else "1M",
+                "upload_chunk_size": "5M" if multipart else "512K",
+                "upload_timeout": "120s" if multipart else "1s",
+                "compression": "none" if multipart else "gzip",
+                "s3_key_format": "/$TAG/$INDEX-$UUID" if mode == "put_index" else "/$TAG/$UUID",
+                "store_dir": str(tmp_path / "store"),
+            }],
+        },
+    }
+    config_file = tmp_path / "concurrent_uploads.yaml"
+    config_file.write_text(yaml.safe_dump(config))
+    service = Service(str(config_file), put_delay=0.4)
+    service.start()
+
+    def uploads_complete():
+        assert service.service.flb.process.poll() is None
+        uploads = [request for request in data_storage["requests"]
+                   if request["method"] == "PUT" and request.get("status") == 200]
+        expected = 1 if multipart else 2
+        if all(sum(f"/{tag}/" in request["path"] for request in uploads) >= expected for tag in tags):
+            return uploads
+        return None
+
+    uploads = service.service.wait_for_condition(
+        uploads_complete, timeout=60, interval=0.1, description="uploads from both tags",
+    )
+    process = service.service.flb.process
+    service.stop()
+    assert process.returncode == 0
+
+    overlaps = [(first, second) for index, first in enumerate(uploads)
+                for second in uploads[index + 1:]
+                if max(first["started"], second["started"]) < min(first["finished"], second["finished"])]
+    if mode == "put_index":
+        assert not overlaps, "$INDEX uploads must preserve global ordering"
+    else:
+        assert overlaps, "Independent tags were serialized despite four output workers"
+        for first, second in overlaps:
+            assert first["path"].split("/")[2] != second["path"].split("/")[2]
+    if multipart:
+        assert all("partNumber=" in request["path"] for request in uploads)
+        assert sum(request["method"] == "POST" and "uploadId=" in request["path"]
+                   for request in data_storage["requests"]) == len(tags)
+
+
 def test_out_s3_format_arrow_uploads_feather_with_zstd():
     service = Service("out_s3_arrow.yaml")
     _start_or_skip_unsupported_columnar_format(service, "requires arrow-glib")
