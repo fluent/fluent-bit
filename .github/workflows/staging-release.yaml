@@ -298,15 +298,40 @@ jobs:
       fail-fast: false
     steps:
     - name: Sync packages from buckets on S3
+      # Repository generation moves existing packages to the bucket root, but
+      # Windows/macOS uploads that finish later remain in the versioned prefix.
       run: |
         mkdir -p "packaging/releases/$DISTRO"
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/${{ github.event.inputs.version }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
         DISTRO: ${{ matrix.distro }}
+      shell: bash
+
+    - name: Validate Windows release packages
+      if: matrix.distro == 'windows'
+      run: |
+        cd packaging/releases/windows
+        architectures=(win32 win64)
+        if compgen -G "fluent-bit-${RELEASE_VERSION}-winarm64.*" > /dev/null; then
+          architectures+=(winarm64)
+        fi
+        for arch in "${architectures[@]}"; do
+          for extension in exe zip; do
+            package="fluent-bit-${RELEASE_VERSION}-${arch}.${extension}"
+            if [[ ! -s "$package" || ! -s "$package.sha256" ]]; then
+              echo "::error::Missing Windows release artifact: $package or $package.sha256. Complete the Windows staging build/upload before releasing."
+              exit 1
+            fi
+            sha256sum --check --strict "$package.sha256"
+          done
+        done
+      env:
+        RELEASE_VERSION: ${{ inputs.version }}
       shell: bash
 
     - name: Sync to release bucket on S3
@@ -1003,36 +1028,40 @@ jobs:
     steps:
       - name: Sync release Windows directory to get checksums
         run:
-          aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/windows" ./ --exclude "*" --include "*.sha256"
+          aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/windows" ./ --exclude "*" --include "fluent-bit-${RELEASE_VERSION}-*.sha256"
         shell: bash
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: "us-east-1"
+          RELEASE_VERSION: ${{ inputs.version }}
 
       - name: Provide output for documentation PR
         id: hashes
-        # do not fail the build for this
-        continue-on-error: true
         run: |
-          ls -l
-          export WIN_32_EXE_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win32.exe.sha256"|awk '{print $1}')
-          export WIN_32_ZIP_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win32.zip.sha256"|awk '{print $1}')
-          export WIN_64_EXE_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win64.exe.sha256"|awk '{print $1}')
-          export WIN_64_ZIP_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win64.zip.sha256"|awk '{print $1}')
-          if [[ -f "./fluent-bit-${{ inputs.version }}-winarm64.exe.sha256" ]]; then
-            export WIN_64_ARM_EXE_HASH=$(cat "./fluent-bit-${{ inputs.version }}-winarm64.exe.sha256"|awk '{print $1}')
+          write_hash()
+          {
+            local output_name="$1"
+            local filename="fluent-bit-${RELEASE_VERSION}-$2.sha256"
+            local hash
+            hash=$(awk '{print $1}' "$filename")
+            if [[ ! "$hash" =~ ^[[:xdigit:]]{64}$ ]]; then
+              echo "::error::Invalid SHA-256 checksum in $filename"
+              exit 1
+            fi
+            echo "$output_name=$hash" >> "$GITHUB_OUTPUT"
+          }
+
+          write_hash WIN_32_EXE_HASH win32.exe
+          write_hash WIN_32_ZIP_HASH win32.zip
+          write_hash WIN_64_EXE_HASH win64.exe
+          write_hash WIN_64_ZIP_HASH win64.zip
+          if compgen -G "fluent-bit-${RELEASE_VERSION}-winarm64.*.sha256" > /dev/null; then
+            write_hash WIN_64_ARM_EXE_HASH winarm64.exe
+            write_hash WIN_64_ARM_ZIP_HASH winarm64.zip
           fi
-          if [[ -f "./fluent-bit-${{ inputs.version }}-winarm64.zip.sha256" ]]; then
-            export WIN_64_ARM_ZIP_HASH=$(cat "./fluent-bit-${{ inputs.version }}-winarm64.zip.sha256"|awk '{print $1}')
-          fi
-          set | grep WIN_
-          echo WIN_32_EXE_HASH="$WIN_32_EXE_HASH" >> $GITHUB_OUTPUT
-          echo WIN_32_ZIP_HASH="$WIN_32_ZIP_HASH" >> $GITHUB_OUTPUT
-          echo WIN_64_EXE_HASH="$WIN_64_EXE_HASH" >> $GITHUB_OUTPUT
-          echo WIN_64_ZIP_HASH="$WIN_64_ZIP_HASH" >> $GITHUB_OUTPUT
-          echo WIN_64_ARM_EXE_HASH="$WIN_64_ARM_EXE_HASH" >> $GITHUB_OUTPUT
-          echo WIN_64_ARM_ZIP_HASH="$WIN_64_ARM_ZIP_HASH" >> $GITHUB_OUTPUT
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
         shell: bash
 
   staging-release-create-docs-pr:
