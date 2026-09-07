@@ -2180,8 +2180,151 @@ void flb_test_s3_startup_buffer_size_accounting(void)
     flb_free(store_dir);
 }
 
+/* Detect overlapping cache reads/refreshes while requests remain concurrent. */
+struct s3_credentials_test {
+    pthread_mutex_t mutex;
+    int requests_entered;
+    int active;
+    int max_active;
+    int gets;
+    int refreshes;
+    int request_wait_failed;
+};
+
+static struct s3_credentials_test credentials_test;
+
+static void s3_test_provider_access(int refresh)
+{
+    pthread_mutex_lock(&credentials_test.mutex);
+    credentials_test.active++;
+    if (credentials_test.active > credentials_test.max_active) {
+        credentials_test.max_active = credentials_test.active;
+    }
+    if (refresh) {
+        credentials_test.refreshes++;
+    }
+    else {
+        credentials_test.gets++;
+    }
+    pthread_mutex_unlock(&credentials_test.mutex);
+
+    flb_time_msleep(5);
+
+    pthread_mutex_lock(&credentials_test.mutex);
+    credentials_test.active--;
+    pthread_mutex_unlock(&credentials_test.mutex);
+}
+
+static struct flb_aws_credentials *s3_test_get_credentials(struct flb_aws_provider *provider)
+{
+    s3_test_provider_access(FLB_FALSE);
+    return flb_calloc(1, sizeof(struct flb_aws_credentials));
+}
+
+static int s3_test_refresh_credentials(struct flb_aws_provider *provider)
+{
+    s3_test_provider_access(FLB_TRUE);
+    return 0;
+}
+
+static struct flb_http_client *s3_test_concurrent_request(struct flb_aws_client *client,
+                                                         int method, const char *uri,
+                                                         const char *body, size_t body_size,
+                                                         struct flb_aws_header *headers,
+                                                         size_t headers_count)
+{
+    struct flb_aws_credentials *credentials;
+    int i;
+    int ready = FLB_FALSE;
+
+    pthread_mutex_lock(&credentials_test.mutex);
+    credentials_test.requests_entered++;
+    pthread_mutex_unlock(&credentials_test.mutex);
+
+    /* A bounded rendezvous also catches accidentally serializing entire requests. */
+    for (i = 0; i < 500; i++) {
+        pthread_mutex_lock(&credentials_test.mutex);
+        ready = credentials_test.requests_entered == 2;
+        pthread_mutex_unlock(&credentials_test.mutex);
+        if (ready) {
+            break;
+        }
+        flb_time_msleep(10);
+    }
+    if (!ready) {
+        pthread_mutex_lock(&credentials_test.mutex);
+        credentials_test.request_wait_failed = FLB_TRUE;
+        pthread_mutex_unlock(&credentials_test.mutex);
+    }
+
+    for (i = 0; i < 20; i++) {
+        credentials = client->provider->provider_vtable->get_credentials(client->provider);
+        flb_aws_credentials_destroy(credentials);
+        client->provider->provider_vtable->refresh(client->provider);
+    }
+    return NULL;
+}
+
+static void *s3_test_request_worker(void *data)
+{
+    struct flb_s3 *ctx = data;
+
+    pthread_mutex_lock(&ctx->files_mutex);
+    s3_request(ctx, FLB_HTTP_PUT, "/test", NULL, 0, NULL, 0);
+    pthread_mutex_unlock(&ctx->files_mutex);
+    return NULL;
+}
+
+static void flb_test_s3_credentials_serialized(void)
+{
+    struct flb_s3 ctx = {0};
+    struct flb_aws_provider provider = {0};
+    struct flb_aws_client client = {0};
+    struct flb_aws_provider_vtable provider_vtable = {
+        .get_credentials = s3_test_get_credentials,
+        .refresh = s3_test_refresh_credentials
+    };
+    struct flb_aws_client_vtable client_vtable = {
+        .request = s3_test_concurrent_request
+    };
+    pthread_t workers[2];
+    int created = 0;
+    int ret;
+    int i;
+
+    memset(&credentials_test, 0, sizeof(credentials_test));
+    pthread_mutex_init(&credentials_test.mutex, NULL);
+    pthread_mutex_init(&ctx.files_mutex, NULL);
+    provider.provider_vtable = &provider_vtable;
+    client.client_vtable = &client_vtable;
+    client.provider = &provider;
+    ctx.provider = &provider;
+    ctx.s3_client = &client;
+
+    for (i = 0; i < 2; i++) {
+        ret = pthread_create(&workers[i], NULL, s3_test_request_worker, &ctx);
+        TEST_CHECK(ret == 0);
+        if (ret != 0) {
+            break;
+        }
+        created++;
+    }
+    for (i = 0; i < created; i++) {
+        pthread_join(workers[i], NULL);
+    }
+
+    TEST_CHECK(credentials_test.request_wait_failed == FLB_FALSE);
+    TEST_CHECK(credentials_test.requests_entered == 2);
+    TEST_CHECK(credentials_test.max_active == 1);
+    TEST_CHECK(credentials_test.gets == 40);
+    TEST_CHECK(credentials_test.refreshes == 40);
+    pthread_mutex_destroy(&ctx.files_mutex);
+    pthread_mutex_destroy(&credentials_test.mutex);
+}
+
 /* Test list */
 TEST_LIST = {
+    {"credentials_serialized", flb_test_s3_credentials_serialized },
     {"multipart_success", flb_test_s3_multipart_success },
     {"putobject_success", flb_test_s3_putobject_success },
     {"putobject_error", flb_test_s3_putobject_error },
