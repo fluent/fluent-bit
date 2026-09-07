@@ -316,6 +316,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
             goto done;
         }
         s3_file->fsf = fsf;
+        s3_file->upload_scan_id = ctx->upload_scan_id;
         s3_file->first_log_time = file_first_log_time;
         s3_file->create_time = time(NULL);
 
