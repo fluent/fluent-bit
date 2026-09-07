@@ -16,6 +16,7 @@
 
 import logging
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -31,6 +32,8 @@ server_instance = None
 
 def reset_s3_server_state():
     data_storage["requests"] = []
+    data_storage["put_status"] = 200
+    data_storage["put_delay"] = 0
 
 
 class _S3RequestHandler(BaseHTTPRequestHandler):
@@ -40,21 +43,29 @@ class _S3RequestHandler(BaseHTTPRequestHandler):
     def _record_request(self):
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length) if length > 0 else b""
-        data_storage["requests"].append(
-            {
-                "method": self.command,
-                "path": self.path,
-                "headers": dict(self.headers),
-                "body": body,
-            }
-        )
+        request = {
+            "method": self.command,
+            "path": self.path,
+            "headers": dict(self.headers),
+            "body": body,
+        }
+        data_storage["requests"].append(request)
+        return request
 
     def do_PUT(self):
-        self._record_request()
-        self.send_response(200)
+        request = self._record_request()
+        status = data_storage["put_status"]
+        time.sleep(data_storage["put_delay"])
+        body = b""
+        if status == 403:
+            body = b"<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>"
+        self.send_response(status)
         self.send_header("ETag", '"fake-s3-etag"')
-        self.send_header("Content-Length", "0")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
+        if body:
+            self.wfile.write(body)
+        request["status"] = status
 
     def do_POST(self):
         self._record_request()
