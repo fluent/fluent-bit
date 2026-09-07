@@ -4,9 +4,11 @@ import os
 import glob
 import time
 import shutil
+from pathlib import Path
 
 import requests
 import pytest
+import yaml
 from google.protobuf import json_format
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
@@ -19,7 +21,9 @@ from utils.test_service import FluentBitTestService
 
 
 class Service:
-    def __init__(self, config_file):
+    def __init__(self, config_file, *, put_status=200, put_delay=0):
+        self.put_status = put_status
+        self.put_delay = put_delay
         self.config_file = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../config", config_file)
         )
@@ -39,6 +43,8 @@ class Service:
     def _start_receiver(self, service):
         self.s3_port = service.allocate_port_env("TEST_SUITE_HTTP_PORT")
         s3_server_run(self.s3_port)
+        data_storage["put_status"] = self.put_status
+        data_storage["put_delay"] = self.put_delay
 
     def _stop_receiver(self, service):
         s3_server_stop()
@@ -257,6 +263,123 @@ def test_out_s3_default_retry_exhausted_action_quarantines_file():
     service.stop()
 
     assert len(files) > 0
+
+
+@pytest.mark.parametrize("action", ["quarantine", "delete", "quarantine_full"])
+@pytest.mark.parametrize("preserve_ordering", [True, False])
+def test_out_s3_multiworker_retry_exhaustion_survives_and_recovers(tmp_path, action, preserve_ordering):
+    config = {
+        "service": {
+            "flush": 0.1,
+            "grace": 1,
+            "log_level": "info",
+            "http_server": "on",
+            "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}",
+            "storage.path": str(tmp_path / "engine"),
+        },
+        "pipeline": {
+            "inputs": [
+                {"name": "dummy", "tag": tag, "rate": 20,
+                 "storage.type": "filesystem",
+                 "dummy": json.dumps({"message": "retry exhaustion", "source": tag})}
+                for tag in ["journal", "app"]
+            ],
+            "outputs": [
+                {
+                    "name": "s3",
+                    "match": "*",
+                    "workers": 4,
+                    "bucket": bucket,
+                    "region": "us-east-1",
+                    "endpoint": "http://127.0.0.1:${TEST_SUITE_HTTP_PORT}",
+                    "use_put_object": True,
+                    "preserve_data_ordering": preserve_ordering,
+                    "retry_limit": 1,
+                    "retry_exhausted_action": "delete" if action == "delete" else "quarantine",
+                    "quarantine_dir_limit_size": "1" if action == "quarantine_full" else "0",
+                    "total_file_size": "1M",
+                    "upload_timeout": "1s",
+                    "compression": "gzip",
+                    "s3_key_format": "/$TAG/$UUID.gz",
+                    "store_dir": str(tmp_path / bucket),
+                    "store_dir_limit_size": "20M",
+                }
+                for bucket in ["first-bucket", "second-bucket"]
+            ],
+        },
+    }
+    config_file = tmp_path / "retry_exhaustion.yaml"
+
+    if not preserve_ordering:
+        # Leave active buffers behind to exercise put_all_chunks during restart.
+        for input_config in config["pipeline"]["inputs"]:
+            input_config["samples"] = 1
+        for output_config in config["pipeline"]["outputs"]:
+            output_config["upload_timeout"] = "60s"
+        config_file.write_text(yaml.safe_dump(config))
+        service = Service(str(config_file), put_status=403)
+        service.start()
+        service.service.wait_for_condition(
+            lambda: all(len(list((tmp_path / bucket).glob("**/20*/*"))) >= 2
+                        for bucket in ["first-bucket", "second-bucket"]),
+            timeout=30, description="buffers for restart",
+        )
+        process = service.service.flb.process
+        service.stop()
+        assert process.returncode == 0
+        for input_config in config["pipeline"]["inputs"]:
+            del input_config["samples"]
+        for output_config in config["pipeline"]["outputs"]:
+            output_config["upload_timeout"] = "1s"
+
+    config_file.write_text(yaml.safe_dump(config))
+    service = Service(str(config_file), put_status=403, put_delay=0.1)
+    service.start()
+
+    def cleanup_completed():
+        assert service.service.flb.process.poll() is None, "Fluent Bit crashed during retry exhaustion"
+        logs = Path(service.service.flb.log_file).read_text()
+        if action == "quarantine":
+            return all(len(list((tmp_path / bucket).glob("**/quarantine/*"))) >= 2
+                       for bucket in ["first-bucket", "second-bucket"])
+        if action == "quarantine_full":
+            marker = "quarantine limit reached, deleting retry-exhausted chunk"
+        else:
+            marker = "will not retry"
+        return all(sum(f"[output:s3:s3.{index}]" in line and marker in line
+                       for line in logs.splitlines()) >= 2 for index in [0, 1])
+
+    service.service.wait_for_condition(
+        cleanup_completed, timeout=60, interval=0.1, description="retry-exhausted chunks in both outputs"
+    )
+    # A successful upload after exhaustion proves workers can still use the store.
+    data_storage["put_status"] = 200
+    request_count = len(data_storage["requests"])
+
+    def recovered():
+        assert service.service.flb.process.poll() is None, "Fluent Bit crashed after retry exhaustion"
+        return all(any(request["path"].startswith(f"/{bucket}/") and request.get("status") == 200
+                       for request in data_storage["requests"][request_count:])
+                   for bucket in ["first-bucket", "second-bucket"])
+
+    service.service.wait_for_condition(
+        recovered,
+        timeout=30, description="uploads after permissions recover",
+    )
+    process = service.service.flb.process
+    service.stop()
+    assert process.returncode == 0
+    # Read only after shutdown so no quarantine file is still being written.
+    quarantined = {path: path.read_bytes() for path in tmp_path.glob("**/quarantine/*") if path.is_file()}
+
+    # Restart using the same buffers, including quarantined files.
+    service = Service(str(config_file))
+    service.start()
+    service.wait_for_request()
+    process = service.service.flb.process
+    service.stop()
+    assert process.returncode == 0
+    assert all(path.read_bytes() == content for path, content in quarantined.items())
 
 
 def test_out_s3_format_arrow_uploads_feather_with_zstd():
