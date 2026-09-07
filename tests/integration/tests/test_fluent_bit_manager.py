@@ -162,10 +162,11 @@ def test_send_sighup_forwards_signal_to_process():
     manager.process.send_signal.assert_called_once_with(signal.SIGHUP)
 
 
-def test_stop_uses_configured_shutdown_timeout(monkeypatch):
+@pytest.mark.parametrize("configured,expected", [(None, 10), (30, 30), (240, 240)])
+def test_stop_uses_configured_shutdown_timeout(monkeypatch, configured, expected):
     monkeypatch.delenv("VALGRIND", raising=False)
     monkeypatch.delenv("LEAKS", raising=False)
-    manager = FluentBitManager("/tmp/fluent-bit.yaml", shutdown_timeout=30)
+    manager = FluentBitManager("/tmp/fluent-bit.yaml", shutdown_timeout=configured)
     process = Mock()
     process.poll.return_value = None
     manager.process = process
@@ -173,7 +174,7 @@ def test_stop_uses_configured_shutdown_timeout(monkeypatch):
     manager.stop()
 
     process.send_signal.assert_called_once_with(signal.SIGTERM)
-    process.wait.assert_called_once_with(timeout=30)
+    process.wait.assert_called_once_with(timeout=expected)
 
 
 def test_trigger_http_reload_posts_to_reload_endpoint(monkeypatch):

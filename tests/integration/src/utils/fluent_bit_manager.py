@@ -267,6 +267,8 @@ class FluentBitManager:
                 timeout = self.shutdown_timeout
                 if timeout is None:
                     timeout = LEAKS_EXIT_TIMEOUT if leaks_enabled() else 10
+                elif leaks_enabled():
+                    timeout = max(timeout, LEAKS_EXIT_TIMEOUT)
                 return_code = self.process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 self._force_stop()
