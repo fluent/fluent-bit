@@ -35,6 +35,10 @@ struct s3_file {
 
 #define S3_STORE_QUARANTINE_FULL -2
 
+/*
+ * Runtime callers must hold ctx->files_mutex across store operations and use
+ * of returned pointers. Initialization and exit run without competing workers.
+ */
 int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                         const char *tag, int tag_len,
                         char *data, size_t bytes,
