@@ -51,6 +51,17 @@
 
 #define try_to_write_str  flb_utils_write_str
 
+/*
+ * Maximum recursion depth allowed while converting a msgpack object into a
+ * JSON string (see msgpack2json() below). Msgpack arrays and maps can be
+ * nested arbitrarily deep, and msgpack2json() recurses once per nesting
+ * level. Without a bound, a deeply nested (malformed, corrupted or
+ * maliciously crafted) record can recurse deep enough to overflow the
+ * thread stack and crash the process. 512 levels is far beyond any
+ * reasonably structured log record while keeping stack usage negligible.
+ */
+#define FLB_PACK_JSON_MAX_DEPTH  512
+
 static int convert_nan_to_null = FLB_FALSE;
 
 static int flb_pack_set_null_as_nan(int b) {
@@ -981,14 +992,42 @@ static inline int key_exists_in_map(msgpack_object key, msgpack_object map, int 
     return FLB_FALSE;
 }
 
+/*
+ * Log the maximum-nesting-depth truncation warning at most once per
+ * top-level msgpack2json() conversion, regardless of how many separate
+ * branches in the structure end up being truncated.
+ */
+static void msgpack2json_depth_warn(int *warned)
+{
+    if (warned != NULL && *warned == FLB_FALSE) {
+        flb_warn("[pack] msgpack to JSON conversion exceeded the maximum "
+                 "nesting depth (%d), truncating remaining structure",
+                 FLB_PACK_JSON_MAX_DEPTH);
+        *warned = FLB_TRUE;
+    }
+}
+
 static int msgpack2json(char *buf, int *off, size_t left,
-                        const msgpack_object *o, int escape_unicode)
+                        const msgpack_object *o, int escape_unicode,
+                        int depth, int *warned)
 {
     int i;
     int dup;
     int ret = FLB_FALSE;
     int loop;
     int packed;
+    msgpack_object *p;
+
+    /*
+     * Stop descending once the maximum nesting depth is reached and encode
+     * the remaining structure as a JSON null instead of recursing further.
+     * This keeps the conversion bounded and avoids a stack overflow on
+     * pathologically nested input, see FLB_PACK_JSON_MAX_DEPTH above.
+     */
+    if (depth > FLB_PACK_JSON_MAX_DEPTH) {
+        msgpack2json_depth_warn(warned);
+        return try_to_write(buf, off, left, "null", 4);
+    }
 
     switch(o->type) {
     case MSGPACK_OBJECT_NIL:
@@ -1078,17 +1117,30 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_ARRAY:
         loop = o->via.array.size;
 
+        if (loop != 0 && depth + 1 > FLB_PACK_JSON_MAX_DEPTH) {
+            /*
+             * The array is non-empty but its elements would exceed the
+             * maximum nesting depth. Render the whole array as null
+             * instead of opening it and only then truncating an element,
+             * keeping the output symmetric with the MSGPACK_OBJECT_MAP
+             * case below.
+             */
+            msgpack2json_depth_warn(warned);
+            ret = try_to_write(buf, off, left, "null", 4);
+            break;
+        }
+
         if (!try_to_write(buf, off, left, "[", 1)) {
             goto msg2json_end;
         }
         if (loop != 0) {
-            msgpack_object* p = o->via.array.ptr;
-            if (!msgpack2json(buf, off, left, p, escape_unicode)) {
+            p = o->via.array.ptr;
+            if (!msgpack2json(buf, off, left, p, escape_unicode, depth + 1, warned)) {
                 goto msg2json_end;
             }
             for (i=1; i<loop; i++) {
                 if (!try_to_write(buf, off, left, ",", 1) ||
-                    !msgpack2json(buf, off, left, p+i, escape_unicode)) {
+                    !msgpack2json(buf, off, left, p+i, escape_unicode, depth + 1, warned)) {
                     goto msg2json_end;
                 }
             }
@@ -1099,6 +1151,21 @@ static int msgpack2json(char *buf, int *off, size_t left,
 
     case MSGPACK_OBJECT_MAP:
         loop = o->via.map.size;
+
+        if (loop != 0 && depth + 1 > FLB_PACK_JSON_MAX_DEPTH) {
+            /*
+             * The map is non-empty but its keys/values would exceed the
+             * maximum nesting depth. A JSON object key must always be a
+             * quoted string; truncating an individual key to a bare
+             * "null" (as the generic depth guard above would do) produces
+             * invalid JSON such as {null:...}. Render the whole map as
+             * null instead of opening it.
+             */
+            msgpack2json_depth_warn(warned);
+            ret = try_to_write(buf, off, left, "null", 4);
+            break;
+        }
+
         if (!try_to_write(buf, off, left, "{", 1)) {
             goto msg2json_end;
         }
@@ -1124,9 +1191,9 @@ static int msgpack2json(char *buf, int *off, size_t left,
                 }
 
                 if (
-                        !msgpack2json(buf, off, left, &(p+i)->key, escape_unicode) ||
+                        !msgpack2json(buf, off, left, &(p+i)->key, escape_unicode, depth + 1, warned) ||
                     !try_to_write(buf, off, left, ":", 1)  ||
-                        !msgpack2json(buf, off, left, &(p+i)->val, escape_unicode) ) {
+                        !msgpack2json(buf, off, left, &(p+i)->val, escape_unicode, depth + 1, warned) ) {
                     goto msg2json_end;
                 }
                 packed++;
@@ -1158,12 +1225,13 @@ int flb_msgpack_to_json(char *json_str, size_t json_size,
 {
     int ret = -1;
     int off = 0;
+    int warned = FLB_FALSE;
 
     if (json_str == NULL || obj == NULL) {
         return -1;
     }
 
-    ret = msgpack2json(json_str, &off, json_size - 1, obj, escape_unicode);
+    ret = msgpack2json(json_str, &off, json_size - 1, obj, escape_unicode, 0, &warned);
     json_str[off] = '\0';
     return ret ? off: ret;
 }
