@@ -162,6 +162,20 @@ def test_send_sighup_forwards_signal_to_process():
     manager.process.send_signal.assert_called_once_with(signal.SIGHUP)
 
 
+def test_stop_uses_configured_shutdown_timeout(monkeypatch):
+    monkeypatch.delenv("VALGRIND", raising=False)
+    monkeypatch.delenv("LEAKS", raising=False)
+    manager = FluentBitManager("/tmp/fluent-bit.yaml", shutdown_timeout=30)
+    process = Mock()
+    process.poll.return_value = None
+    manager.process = process
+
+    manager.stop()
+
+    process.send_signal.assert_called_once_with(signal.SIGTERM)
+    process.wait.assert_called_once_with(timeout=30)
+
+
 def test_trigger_http_reload_posts_to_reload_endpoint(monkeypatch):
     response = Mock()
     response.json.return_value = {"reload": "done"}

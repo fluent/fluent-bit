@@ -156,9 +156,10 @@ def fluent_bit_input_supports_config_property(plugin_name, property_name, binary
 
 
 class FluentBitManager:
-    def __init__(self, config_path=None, binary_path=None):
+    def __init__(self, config_path=None, binary_path=None, *, shutdown_timeout=None):
         logger.info(f"config path {config_path}")
         self.config_path = config_path
+        self.shutdown_timeout = shutdown_timeout
         self.binary_path = binary_path or os.environ.get(ENV_FLB_BINARY_PATH) or _default_binary_path()
         self.binary_absolute_path = _resolve_binary_path(self.binary_path)
         self.process = None
@@ -263,7 +264,9 @@ class FluentBitManager:
 
         if supervisor_running:
             try:
-                timeout = LEAKS_EXIT_TIMEOUT if leaks_enabled() else 10
+                timeout = self.shutdown_timeout
+                if timeout is None:
+                    timeout = LEAKS_EXIT_TIMEOUT if leaks_enabled() else 10
                 return_code = self.process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 self._force_stop()
