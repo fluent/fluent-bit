@@ -79,9 +79,17 @@ struct upload_queue {
 
     int retry_counter;
     time_t upload_time;
+    uint64_t scan_id;
+    int in_flight;
 
     struct mk_list _head;
 };
+
+struct flb_s3;
+
+typedef struct flb_http_client *s3_request_fn(struct flb_s3 *ctx, int method,
+                                            const char *uri, const char *body, size_t body_size,
+                                            struct flb_aws_header *headers, size_t headers_count);
 
 struct multipart_upload {
     flb_sds_t s3_key;
@@ -111,6 +119,9 @@ struct multipart_upload {
     /* see note for retry_limit configuration */
     int upload_errors;
     int complete_errors;
+    uint64_t completion_scan_id;
+    /* Requests preserve the caller's store-lock ownership on return. */
+    s3_request_fn *request;
 };
 
 struct flb_s3 {
@@ -180,15 +191,18 @@ struct flb_s3 {
     struct flb_fstore_stream *stream_upload;  /* multipart upload stream */
     struct flb_fstore_stream *stream_quarantine; /* retry-exhausted stream */
     struct flb_fstore_stream *stream_metadata; /* s3 metadata stream */
-    /* Serializes synchronous log flushes and timers, including chunk deletion. */
+    /* Protects store and upload state; owned requests run outside this mutex. */
     pthread_mutex_t files_mutex;
     int files_mutex_initialized;
+    struct mk_list upload_claims;
+    uint64_t upload_scan_id;
 
     /*
      * used to track that unset buffers were found on startup that have not
      * been sent
      */
     int has_old_buffers;
+    int draining_backlog;
     /* old multipart uploads read on start up */
     int has_old_uploads;
 
@@ -215,6 +229,11 @@ struct flb_s3 {
 
     struct flb_output_instance *ins;
 };
+
+struct flb_http_client *s3_request(struct flb_s3 *ctx,
+                                  int method, const char *uri,
+                                  const char *body, size_t body_size,
+                                  struct flb_aws_header *headers, size_t headers_count);
 
 int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
                 char *body, size_t body_size, char *pre_signed_url);

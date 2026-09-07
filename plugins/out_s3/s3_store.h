@@ -26,6 +26,7 @@
 struct s3_file {
     int locked;                      /* locked chunk is busy, cannot write to it */
     int failures;                    /* delivery failures */
+    uint64_t upload_scan_id;
     uint64_t size;                   /* file size */
     time_t create_time;              /* creation time */
     time_t first_log_time;           /* first log time */
@@ -37,7 +38,8 @@ struct s3_file {
 
 /*
  * Runtime callers must hold ctx->files_mutex across store operations and use
- * of returned pointers. Initialization and exit run without competing workers.
+ * of returned pointers, except owned chunks while uploading an independent
+ * payload. Initialization and exit run without competing workers.
  */
 int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                         const char *tag, int tag_len,
