@@ -120,7 +120,7 @@ struct multipart_upload {
     int upload_errors;
     int complete_errors;
     uint64_t completion_scan_id;
-    /* Requests preserve the caller's store-lock ownership on return. */
+    /* Multipart helpers own files_mutex; requests release/reacquire it for I/O. */
     s3_request_fn *request;
 };
 
@@ -196,6 +196,7 @@ struct flb_s3 {
     int files_mutex_initialized;
     struct mk_list upload_claims;
     uint64_t upload_scan_id;
+    int blob_upload_in_progress;
 
     /*
      * used to track that unset buffers were found on startup that have not
