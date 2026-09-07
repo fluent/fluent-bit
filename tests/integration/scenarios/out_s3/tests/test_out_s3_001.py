@@ -410,8 +410,9 @@ def test_out_s3_workers_upload_independent_tags_concurrently(tmp_path, mode):
                 "endpoint": "http://127.0.0.1:${TEST_SUITE_HTTP_PORT}",
                 "use_put_object": not multipart,
                 "preserve_data_ordering": mode != "put_unordered",
-                "total_file_size": "10M" if multipart else "1M",
-                "upload_chunk_size": "5M" if multipart else "512K",
+                # Use exact bytes: S3's multipart minimum is 5 MiB, not 5 MB.
+                "total_file_size": "10485760" if multipart else "1048576",
+                "upload_chunk_size": "5242880" if multipart else "524288",
                 "upload_timeout": "120s" if multipart else "1s",
                 "compression": "none" if multipart else "gzip",
                 "s3_key_format": "/$TAG/$INDEX-$UUID" if mode == "put_index" else "/$TAG/$UUID",
