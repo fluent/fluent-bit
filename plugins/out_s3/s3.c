@@ -136,6 +136,36 @@ static void s3_claim_end(struct s3_upload_claim *claim)
     mk_list_del(&claim->_head);
 }
 
+/* Providers return owned credentials, but copying their cache must not race refresh. */
+static struct flb_aws_credentials *s3_get_credentials(struct flb_aws_provider *provider)
+{
+    struct flb_s3 *ctx = provider->implementation;
+    struct flb_aws_credentials *credentials;
+
+    pthread_mutex_lock(&ctx->files_mutex);
+    credentials = ctx->provider->provider_vtable->get_credentials(ctx->provider);
+    pthread_mutex_unlock(&ctx->files_mutex);
+
+    return credentials;
+}
+
+static int s3_refresh_credentials(struct flb_aws_provider *provider)
+{
+    struct flb_s3 *ctx = provider->implementation;
+    int ret;
+
+    pthread_mutex_lock(&ctx->files_mutex);
+    ret = ctx->provider->provider_vtable->refresh(ctx->provider);
+    pthread_mutex_unlock(&ctx->files_mutex);
+
+    return ret;
+}
+
+static struct flb_aws_provider_vtable s3_request_provider_vtable = {
+    .get_credentials = s3_get_credentials,
+    .refresh = s3_refresh_credentials
+};
+
 /* Snapshot mutable client state while allowing independent network requests. */
 struct flb_http_client *s3_request(struct flb_s3 *ctx,
                                   int method, const char *uri,
@@ -143,9 +173,14 @@ struct flb_http_client *s3_request(struct flb_s3 *ctx,
                                   struct flb_aws_header *headers, size_t headers_count)
 {
     struct flb_aws_client client;
+    struct flb_aws_provider provider = {0};
     struct flb_http_client *response;
 
+    /* Only credential acquisition/refresh use the shared synchronous provider. */
+    provider.provider_vtable = &s3_request_provider_vtable;
+    provider.implementation = ctx;
     client = *ctx->s3_client;
+    client.provider = &provider;
     pthread_mutex_unlock(&ctx->files_mutex);
     response = client.client_vtable->request(&client, method, uri, body, body_size,
                                              headers, headers_count);
@@ -168,6 +203,7 @@ static struct flb_http_client *s3_blob_request(struct flb_s3 *ctx, int method,
 {
     struct flb_http_client *response;
 
+    /* Blob PutObject enters without files_mutex; multipart callers already own it. */
     pthread_mutex_lock(&ctx->files_mutex);
     response = s3_request(ctx, method, uri, body, body_size, headers, headers_count);
     pthread_mutex_unlock(&ctx->files_mutex);
@@ -3340,7 +3376,7 @@ static struct multipart_upload *create_blob_upload(struct flb_s3 *ctx, const cha
         flb_free(m_upload);
         return NULL;
     }
-    m_upload->request = s3_blob_request;
+    m_upload->request = s3_request;
     m_upload->s3_key = s3_key;
     tmp_sds = flb_sds_create_len(tag, tag_len);
     if (!tmp_sds) {
@@ -3353,17 +3389,19 @@ static struct multipart_upload *create_blob_upload(struct flb_s3 *ctx, const cha
     m_upload->upload_state = MULTIPART_UPLOAD_STATE_NOT_CREATED;
     m_upload->part_number = 1;
     m_upload->init_time = time(NULL);
-    mk_list_add(&m_upload->_head, &ctx->uploads);
+
+    /* Blob uploads are owned by their caller; ctx->uploads is for log uploads. */
 
     /* Update file and increment index value right before request */
     if (ctx->key_fmt_has_seq_index) {
+        pthread_mutex_lock(&ctx->files_mutex);
         ctx->seq_index++;
 
         ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
         if (ret < 0) {
             ctx->seq_index--;
 
-            mk_list_del(&m_upload->_head);
+            pthread_mutex_unlock(&ctx->files_mutex);
 
             flb_sds_destroy(tmp_sds);
             flb_sds_destroy(s3_key);
@@ -3374,6 +3412,7 @@ static struct multipart_upload *create_blob_upload(struct flb_s3 *ctx, const cha
 
             return NULL;
         }
+        pthread_mutex_unlock(&ctx->files_mutex);
     }
 
     return m_upload;
@@ -3386,7 +3425,6 @@ static int put_blob_object(struct flb_s3 *ctx,
 {
     flb_sds_t s3_key = NULL;
     struct flb_http_client *c = NULL;
-    struct flb_aws_client *s3_client;
     struct flb_aws_header *headers = NULL;
     int len;
     int ret;
@@ -3444,7 +3482,6 @@ static int put_blob_object(struct flb_s3 *ctx,
         }
     }
 
-    s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
     }
@@ -3456,9 +3493,8 @@ static int put_blob_object(struct flb_s3 *ctx,
             return -1;
         }
 
-        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
-                                              uri, body, body_size,
-                                              headers, num_headers);
+        c = s3_blob_request(ctx, FLB_HTTP_PUT, uri, body, body_size,
+                              headers, num_headers);
         flb_free(headers);
     }
     if (c) {
@@ -3506,8 +3542,6 @@ static int abort_blob_upload(struct flb_s3 *ctx,
         return -1;
     }
 
-    mk_list_del(&m_upload->_head);
-
     m_upload->upload_id = flb_sds_create(file_remote_id);
 
     if (m_upload->upload_id == NULL) {
@@ -3540,7 +3574,9 @@ static int abort_blob_upload(struct flb_s3 *ctx,
         pre_signed_url = NULL;
     }
 
+    pthread_mutex_lock(&ctx->files_mutex);
     ret = abort_multipart_upload(ctx, m_upload, pre_signed_url);
+    pthread_mutex_unlock(&ctx->files_mutex);
 
     if (pre_signed_url != NULL) {
         flb_sds_destroy(pre_signed_url);
@@ -3748,8 +3784,6 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
                 return -1;
             }
 
-            mk_list_del(&m_upload->_head);
-
             m_upload->upload_id = flb_sds_create(file_remote_id);
 
             if (m_upload->upload_id == NULL) {
@@ -3802,7 +3836,9 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
                 pre_signed_url = NULL;
             }
 
+            pthread_mutex_lock(&ctx->files_mutex);
             ret = complete_multipart_upload(ctx, m_upload, pre_signed_url);
+            pthread_mutex_unlock(&ctx->files_mutex);
 
             if (pre_signed_url != NULL) {
                 flb_sds_destroy(pre_signed_url);
@@ -4014,8 +4050,6 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
             return -1;
         }
 
-        mk_list_del(&m_upload->_head);
-
         if (part_id == 0) {
             if (ctx->authorization_endpoint_url != NULL) {
                 ret = blob_fetch_create_multipart_upload_pre_signed_url(ctx,
@@ -4042,7 +4076,9 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
                 pre_signed_url = NULL;
             }
 
+            pthread_mutex_lock(&ctx->files_mutex);
             ret = create_multipart_upload(ctx, m_upload, pre_signed_url);
+            pthread_mutex_unlock(&ctx->files_mutex);
 
             if (pre_signed_url != NULL) {
                 flb_sds_destroy(pre_signed_url);
@@ -4134,7 +4170,9 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
             pre_signed_url = NULL;
         }
 
+        pthread_mutex_lock(&ctx->files_mutex);
         ret = upload_part(ctx, m_upload, out_buf, out_size, pre_signed_url);
+        pthread_mutex_unlock(&ctx->files_mutex);
 
         if (pre_signed_url != NULL) {
             flb_sds_destroy(pre_signed_url);
@@ -4749,7 +4787,26 @@ static int process_blob_chunk(struct flb_s3 *ctx, struct flb_event_chunk *event_
 
 static void cb_s3_blob_file_upload(struct flb_config *config, void *out_context)
 {
+    struct flb_s3 *ctx = out_context;
+    struct worker_info *info = FLB_TLS_GET(s3_worker_info);
+
+    /* Blob database selection and completion span several separate operations. */
+    pthread_mutex_lock(&ctx->files_mutex);
+    if (ctx->blob_upload_in_progress) {
+        pthread_mutex_unlock(&ctx->files_mutex);
+        flb_sched_timer_cb_coro_return();
+        return;
+    }
+    ctx->blob_upload_in_progress = FLB_TRUE;
+    pthread_mutex_unlock(&ctx->files_mutex);
+
     cb_s3_upload_blob(config, out_context);
+
+    /* Release ownership on every return path, including failed blob requests. */
+    info->active_upload = FLB_FALSE;
+    pthread_mutex_lock(&ctx->files_mutex);
+    ctx->blob_upload_in_progress = FLB_FALSE;
+    pthread_mutex_unlock(&ctx->files_mutex);
 
     flb_sched_timer_cb_coro_return();
 }
