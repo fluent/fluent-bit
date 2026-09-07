@@ -127,13 +127,15 @@ static struct flb_config_map config_map[] = {
     {
         FLB_CONFIG_MAP_STR, "action", NULL,
         0, FLB_TRUE, offsetof(struct content_modifier_ctx, action_str),
-        "Action to perform over the content: insert, upsert, delete, rename or hash."
+        "Action to perform over the content: insert, upsert, delete, rename, hash, "
+        "extract or convert."
     },
 
     {
         FLB_CONFIG_MAP_STR, "key", NULL,
-        0, FLB_TRUE, offsetof(struct content_modifier_ctx, key),
-        "Key to apply the action."
+        FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct content_modifier_ctx, keys),
+        "Key or list of keys to apply the action. Lists are supported by insert, "
+        "upsert, delete, hash and convert."
     },
 
     {

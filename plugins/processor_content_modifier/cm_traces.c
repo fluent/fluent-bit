@@ -28,6 +28,26 @@
 
 typedef int (*attribute_transformer) (void *, struct cfl_variant *value);
 
+static struct cfl_kvpair *span_get_attribute(struct ctrace_span *span,
+                                             char *name)
+{
+    struct cfl_list *iterator;
+    struct cfl_kvpair *kvpair;
+
+    if (span->attr == NULL) {
+        return NULL;
+    }
+
+    cfl_list_foreach(iterator, &span->attr->kv->list) {
+        kvpair = cfl_list_entry(iterator, struct cfl_kvpair, _head);
+        if (strcmp(kvpair->key, name) == 0) {
+            return kvpair;
+        }
+    }
+
+    return NULL;
+}
+
 static int span_contains_attribute(struct ctrace_span *span,
                                    char *name)
 {
@@ -97,44 +117,6 @@ static int span_transform_attribute(struct ctrace_span *span,
     }
 
     return transformer(NULL, attribute);
-}
-
-static int span_convert_attribute(struct ctrace_span *span,
-                                  cfl_sds_t key, int new_type)
-{
-    int ret;
-    struct cfl_variant *attribute;
-    struct cfl_variant *converted_attribute;
-
-    if (span->attr == NULL) {
-        return FLB_FALSE;
-    }
-
-    attribute = cfl_kvlist_fetch(span->attr->kv, key);
-    if (attribute == NULL) {
-        return FLB_FALSE;
-    }
-
-    ret = cm_utils_variant_convert(attribute,
-                                   &converted_attribute,
-                                   new_type);
-
-    if (ret != FLB_TRUE) {
-        return FLB_FALSE;
-    }
-
-    ret = cfl_kvlist_remove(span->attr->kv, key);
-    if (ret != FLB_TRUE) {
-        return FLB_FALSE;
-    }
-
-
-    ret = cfl_kvlist_insert(span->attr->kv, key, converted_attribute);
-    if (ret != 0) {
-        return FLB_FALSE;
-    }
-
-    return FLB_TRUE;
 }
 
 static int span_rename_attribute(struct ctrace_span *span,
@@ -397,24 +379,81 @@ static int traces_context_rename_attributes(struct ctrace *traces_context,
     return FLB_FALSE;
 }
 
-static int traces_context_convert_attribute(struct ctrace *traces_context,
-                                            char *key, int new_type)
+static int traces_context_convert_attributes(struct content_modifier_ctx *ctx,
+                                             struct ctrace *traces_context)
 {
-    struct cfl_list    *iterator;
+    int ret;
+    size_t index;
+    size_t key_index;
+    size_t key_count;
+    size_t span_count;
+    size_t value_count;
+    cfl_sds_t key;
+    struct cfl_list *iterator;
     struct ctrace_span *span;
+    struct cfl_variant *old_value;
+    struct cfl_variant **converted_values;
+    struct cfl_kvpair *kvpair;
+    struct cfl_kvpair **kvpairs;
 
-    cfl_list_foreach(iterator, &traces_context->span_list) {
-        span = cfl_list_entry(iterator,
-                              struct ctrace_span, _head_global);
+    key_count = cm_key_count(ctx);
+    span_count = cfl_list_size(&traces_context->span_list);
+    value_count = key_count * span_count;
+    if (value_count == 0) {
+        return FLB_TRUE;
+    }
 
-        if (span_contains_attribute(span, key) == FLB_TRUE) {
-            if (span_convert_attribute(span, key, new_type) != FLB_TRUE) {
-                return FLB_FALSE;
+    converted_values = flb_calloc(value_count, sizeof(struct cfl_variant *));
+    kvpairs = flb_calloc(value_count, sizeof(struct cfl_kvpair *));
+    if (converted_values == NULL || kvpairs == NULL) {
+        flb_free(converted_values);
+        flb_free(kvpairs);
+        return FLB_FALSE;
+    }
+
+    /* Validate and stage every conversion before changing any span. */
+    index = 0;
+    for (key_index = 0; key_index < key_count; key_index++) {
+        key = cm_key_at(ctx, key_index);
+
+        cfl_list_foreach(iterator, &traces_context->span_list) {
+            span = cfl_list_entry(iterator, struct ctrace_span, _head_global);
+            kvpair = span_get_attribute(span, key);
+            if (kvpair == NULL) {
+                continue;
             }
+
+            kvpairs[index] = kvpair;
+            ret = cm_utils_variant_convert(kvpair->val,
+                                           &converted_values[index],
+                                           ctx->converted_type);
+            if (ret != FLB_TRUE) {
+                ret = FLB_FALSE;
+                goto cleanup;
+            }
+            index++;
         }
     }
 
-    return FLB_TRUE;
+    value_count = index;
+    for (index = 0; index < value_count; index++) {
+        old_value = kvpairs[index]->val;
+        kvpairs[index]->val = converted_values[index];
+        converted_values[index] = NULL;
+        cfl_variant_destroy(old_value);
+    }
+    ret = FLB_TRUE;
+
+cleanup:
+    for (index = 0; index < value_count; index++) {
+        if (converted_values[index] != NULL) {
+            cfl_variant_destroy(converted_values[index]);
+        }
+    }
+    flb_free(converted_values);
+    flb_free(kvpairs);
+
+    return ret;
 }
 
 static int traces_context_extract_attribute(struct ctrace *traces_context,
@@ -461,12 +500,12 @@ int traces_update_attributes(struct ctrace *traces_context, struct cfl_list *att
 
 
 
-static int traces_convert_attributes(struct content_modifier_ctx *ctx, struct ctrace *traces_context,
-                                     cfl_sds_t key, int converted_type)
+static int traces_convert_attributes(struct content_modifier_ctx *ctx,
+                                     struct ctrace *traces_context)
 {
     int ret;
 
-    ret = traces_context_convert_attribute(traces_context, key, converted_type);
+    ret = traces_context_convert_attributes(ctx, traces_context);
     if (ret == FLB_FALSE) {
         return FLB_PROCESSOR_FAILURE;
     }
@@ -564,35 +603,47 @@ int cm_traces_process(struct flb_processor_instance *ins,
                       const char *tag, int tag_len)
 {
     int ret = -1;
+    size_t key_index;
+    cfl_sds_t key;
 
-    /* process the action */
-    if (ctx->action_type == CM_ACTION_INSERT) {
-        ret = traces_insert_attributes(ctx, traces_context, ctx->key, ctx->value);
+    if (ctx->action_type == CM_ACTION_CONVERT) {
+        ret = traces_convert_attributes(ctx, traces_context);
+        if (ret != FLB_PROCESSOR_SUCCESS) {
+            return FLB_PROCESSOR_FAILURE;
+        }
+
+        *out_traces_context = traces_context;
+        return FLB_PROCESSOR_SUCCESS;
     }
-    else if (ctx->action_type == CM_ACTION_UPSERT) {
-        ret = traces_upsert_attributes(ctx, traces_context, ctx->key, ctx->value);
-    }
-    else if (ctx->action_type == CM_ACTION_DELETE) {
-        ret = traces_delete_attributes(ctx, traces_context, ctx->key);
-    }
-    else if (ctx->action_type == CM_ACTION_RENAME) {
-        ret = traces_rename_attributes(ctx, traces_context, ctx->key, ctx->value);
-    }
-    else if (ctx->action_type == CM_ACTION_HASH) {
-        ret = traces_hash_attributes(ctx, traces_context, ctx->key);
-    }
-    else if (ctx->action_type == CM_ACTION_EXTRACT) {
-        ret = traces_extract_attributes(ctx, traces_context, ctx->key, ctx->regex);
-    }
-    else if (ctx->action_type == CM_ACTION_CONVERT) {
-        ret = traces_convert_attributes(ctx, traces_context, ctx->key, ctx->converted_type);
+
+    for (key_index = 0; key_index < cm_key_count(ctx); key_index++) {
+        key = cm_key_at(ctx, key_index);
+
+        /* process the action */
+        if (ctx->action_type == CM_ACTION_INSERT) {
+            ret = traces_insert_attributes(ctx, traces_context, key, ctx->value);
+        }
+        else if (ctx->action_type == CM_ACTION_UPSERT) {
+            ret = traces_upsert_attributes(ctx, traces_context, key, ctx->value);
+        }
+        else if (ctx->action_type == CM_ACTION_DELETE) {
+            ret = traces_delete_attributes(ctx, traces_context, key);
+        }
+        else if (ctx->action_type == CM_ACTION_RENAME) {
+            ret = traces_rename_attributes(ctx, traces_context, key, ctx->value);
+        }
+        else if (ctx->action_type == CM_ACTION_HASH) {
+            ret = traces_hash_attributes(ctx, traces_context, key);
+        }
+        else if (ctx->action_type == CM_ACTION_EXTRACT) {
+            ret = traces_extract_attributes(ctx, traces_context, key, ctx->regex);
+        }
+        if (ret != 0) {
+            return FLB_PROCESSOR_FAILURE;
+        }
     }
 
     *out_traces_context = traces_context;
-
-    if (ret != 0) {
-        return FLB_PROCESSOR_FAILURE;
-    }
 
     return FLB_PROCESSOR_SUCCESS;
 }
