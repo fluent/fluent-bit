@@ -327,6 +327,17 @@ jobs:
               echo "::error::Missing Windows release artifact: $package or $package.sha256. Complete the Windows staging build/upload before releasing."
               exit 1
             fi
+            if ! awk -v package="$package" '
+              {
+                valid = (length($1) == 64 && $1 ~ /^[[:xdigit:]]+$/ &&
+                         (substr($0, 65, 2) == "  " || substr($0, 65, 2) == " *") &&
+                         substr($0, 67) == package)
+              }
+              END { exit !(NR == 1 && valid) }
+            ' "$package.sha256"; then
+              echo "::error::Expected exactly one SHA-256 record for $package in $package.sha256"
+              exit 1
+            fi
             sha256sum --check --strict "$package.sha256"
           done
         done
@@ -1042,11 +1053,23 @@ jobs:
           write_hash()
           {
             local output_name="$1"
-            local filename="fluent-bit-${RELEASE_VERSION}-$2.sha256"
+            local package="fluent-bit-${RELEASE_VERSION}-$2"
+            local filename="$package.sha256"
             local hash
-            hash=$(awk '{print $1}' "$filename")
-            if [[ ! "$hash" =~ ^[[:xdigit:]]{64}$ ]]; then
-              echo "::error::Invalid SHA-256 checksum in $filename"
+            if ! hash=$(awk -v package="$package" '
+              {
+                valid = (length($1) == 64 && $1 ~ /^[[:xdigit:]]+$/ &&
+                         (substr($0, 65, 2) == "  " || substr($0, 65, 2) == " *") &&
+                         substr($0, 67) == package)
+              }
+              END {
+                if (NR != 1 || !valid) {
+                  exit 1
+                }
+                print $1
+              }
+            ' "$filename"); then
+              echo "::error::Expected exactly one SHA-256 record for $package in $filename"
               exit 1
             fi
             echo "$output_name=$hash" >> "$GITHUB_OUTPUT"
