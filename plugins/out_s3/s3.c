@@ -92,6 +92,7 @@ static void s3_chunk_retry_exhausted_cleanup(struct flb_s3 *ctx,
                                              struct s3_file *chunk_file);
 static int s3_get_retry_exhausted_action(const char *value);
 static void s3_upload_queue(struct flb_config *config, void *out_context);
+static void cb_s3_upload_queue(struct flb_config *config, void *out_context);
 static void s3_upload_queue_retry_cancel(struct flb_s3 *ctx);
 static void s3_upload_queue_release(struct flb_s3 *ctx);
 static int enqueue_oldest_timed_out_chunk(struct flb_s3 *ctx, time_t now,
@@ -951,6 +952,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
                 return -1;
             }
             if (enable_parquet_format(ctx) == -1) {
+                s3_context_destroy(ctx);
+                flb_output_set_context(ins, NULL);
                 return -1;
             }
         }
@@ -962,6 +965,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
                 return -1;
             }
             if (enable_arrow_format(ctx) == -1) {
+                s3_context_destroy(ctx);
+                flb_output_set_context(ins, NULL);
                 return -1;
             }
         }
@@ -1429,10 +1434,9 @@ skip_size_validation:
     }
 
     /*
-     * S3 must ALWAYS use sync mode
-     * In the timer thread we do a mk_list_foreach_safe on the queue of uplaods and chunks
-     * Iterating over those lists is not concurrent safe. If a flush call ran at the same time
-     * And deleted an item from the list, this could cause a crash/corruption.
+     * Log uploads must use synchronous I/O: flush and timer callbacks hold
+     * files_mutex until all borrowed chunk and upload references are released.
+     * Yielding while holding it could deadlock another callback on this worker.
      */
     flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
 
@@ -1539,6 +1543,11 @@ static int cb_s3_worker_exit(void *data, struct flb_config *config)
     }
 
     flb_plg_info(ctx->ins, "terminating worker");
+
+    /* Do not leave a shared pointer into this worker's retiring scheduler. */
+    pthread_mutex_lock(&ctx->files_mutex);
+    s3_upload_queue_retry_cancel(ctx);
+    pthread_mutex_unlock(&ctx->files_mutex);
 
     info = FLB_TLS_GET(s3_worker_info);
     if (info != NULL) {
@@ -2417,6 +2426,11 @@ static void s3_upload_queue_retry_cancel(struct flb_s3 *ctx)
         return;
     }
 
+    /* Scheduler lists belong to their worker. Let a foreign timer fire. */
+    if (ctx->upload_queue_retry_timer->sched != flb_sched_ctx_get()) {
+        return;
+    }
+
     flb_sched_timer_invalidate(ctx->upload_queue_retry_timer);
     ctx->upload_queue_retry_timer = NULL;
 }
@@ -2445,8 +2459,19 @@ static void s3_upload_queue_retry(struct flb_config *config, void *out_context)
 {
     struct flb_s3 *ctx = out_context;
 
+    pthread_mutex_lock(&ctx->files_mutex);
     ctx->upload_queue_retry_timer = NULL;
     s3_upload_queue(config, out_context);
+    pthread_mutex_unlock(&ctx->files_mutex);
+}
+
+static void cb_s3_upload_queue(struct flb_config *config, void *out_context)
+{
+    struct flb_s3 *ctx = out_context;
+
+    pthread_mutex_lock(&ctx->files_mutex);
+    s3_upload_queue(config, out_context);
+    pthread_mutex_unlock(&ctx->files_mutex);
 }
 
 static int s3_upload_queue_retry_schedule(struct flb_s3 *ctx, time_t retry_time)
@@ -4141,7 +4166,7 @@ static void complete_pending_uploads_once(struct flb_s3 *ctx, int *checked)
     *checked = FLB_TRUE;
 }
 
-static void cb_s3_upload(struct flb_config *config, void *data)
+static void s3_upload(struct flb_config *config, void *data)
 {
     struct flb_s3 *ctx = data;
     struct s3_file *chunk = NULL;
@@ -4215,6 +4240,15 @@ static void cb_s3_upload(struct flb_config *config, void *data)
 
     complete_pending_uploads(ctx);
 
+}
+
+static void cb_s3_upload(struct flb_config *config, void *data)
+{
+    struct flb_s3 *ctx = data;
+
+    pthread_mutex_lock(&ctx->files_mutex);
+    s3_upload(config, data);
+    pthread_mutex_unlock(&ctx->files_mutex);
 }
 
 static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char *data,
@@ -4373,7 +4407,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     return out_buf;
 }
 
-static void flush_init(void *out_context)
+static int flush_init(void *out_context)
 {
     int ret;
     struct flb_s3 *ctx = out_context;
@@ -4393,7 +4427,7 @@ static void flush_init(void *out_context)
                           "Failed to send locally buffered data left over "
                           "from previous executions; will retry. Buffer=%s",
                           ctx->fs->root_path);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
+            return -1;
         }
     }
 
@@ -4411,7 +4445,7 @@ static void flush_init(void *out_context)
 
         if (ctx->preserve_data_ordering) {
             ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
-                                            ctx->timer_ms, s3_upload_queue, ctx, NULL);
+                                            ctx->timer_ms, cb_s3_upload_queue, ctx, NULL);
         }
         else {
             ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
@@ -4419,10 +4453,12 @@ static void flush_init(void *out_context)
         }
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create upload timer");
-            FLB_OUTPUT_RETURN(FLB_RETRY);
+            return -1;
         }
         ctx->timer_created = FLB_TRUE;
     }
+
+    return 0;
 }
 
 static int blob_chunk_register_parts(struct flb_s3 *ctx, uint64_t file_id, size_t total_size)
@@ -4615,11 +4651,8 @@ static flb_sds_t s3_format_event_chunk(struct flb_s3 *ctx,
                                            config->json_escape_unicode);
 }
 
-static void cb_s3_flush(struct flb_event_chunk *event_chunk,
-                        struct flb_output_flush *out_flush,
-                        struct flb_input_instance *i_ins,
-                        void *out_context,
-                        struct flb_config *config)
+static int s3_flush_logs(struct flb_event_chunk *event_chunk,
+                         struct flb_s3 *ctx, struct flb_config *config)
 {
     int ret;
     int chunk_size;
@@ -4627,33 +4660,22 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     int total_file_size_check = FLB_FALSE;
     flb_sds_t chunk = NULL;
     struct s3_file *upload_file = NULL;
-    struct flb_s3 *ctx = out_context;
     struct multipart_upload *m_upload_file = NULL;
     time_t file_first_log_time = 0;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
 
-    if (event_chunk->type == FLB_EVENT_TYPE_BLOBS) {
-        /*
-         * For Blob types, we use the flush callback to enqueue the file, then cb_azb_blob_file_upload()
-         * takes care of the rest like reading the file and uploading it to S3.
-         */
-        ret = process_blob_chunk(ctx, event_chunk);
-        if (ret == -1) {
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }
-
-        FLB_OUTPUT_RETURN(FLB_OK);
+    /* Cleanup old buffers and initialize upload timer. */
+    ret = flush_init(ctx);
+    if (ret < 0) {
+        return FLB_RETRY;
     }
-
-    /* Cleanup old buffers and initialize upload timer */
-    flush_init(ctx);
 
     /* Process chunk */
     chunk = s3_format_event_chunk(ctx, event_chunk, config);
     if (chunk == NULL) {
         flb_plg_error(ctx->ins, "Could not marshal msgpack to output string");
-        FLB_OUTPUT_RETURN(FLB_ERROR);
+        return FLB_ERROR;
     }
     chunk_size = flb_sds_len(chunk);
 
@@ -4673,7 +4695,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
 
             flb_sds_destroy(chunk);
 
-            FLB_OUTPUT_RETURN(FLB_ERROR);
+            return FLB_ERROR;
         }
 
         while ((ret = flb_log_event_decoder_next(
@@ -4737,7 +4759,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                                file_first_log_time);
 
             if (ret < 0) {
-                FLB_OUTPUT_RETURN(FLB_RETRY);
+                return FLB_RETRY;
             }
             s3_store_file_lock(upload_file);
 
@@ -4745,16 +4767,16 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
             ret = add_to_queue(ctx, upload_file, m_upload_file,
                                event_chunk->tag, flb_sds_len(event_chunk->tag));
             if (ret < 0) {
-                FLB_OUTPUT_RETURN(FLB_ERROR);
+                return FLB_ERROR;
             }
 
             /* Go through upload queue and return error if something went wrong */
             s3_upload_queue(config, ctx);
             if (ctx->upload_queue_success == FLB_FALSE) {
                 ctx->upload_queue_success = FLB_TRUE;
-                FLB_OUTPUT_RETURN(FLB_ERROR);
+                return FLB_ERROR;
             }
-            FLB_OUTPUT_RETURN(FLB_OK);
+            return FLB_OK;
         }
         else {
             /* Send upload directly without upload queue */
@@ -4762,9 +4784,9 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                                       event_chunk->tag,
                                       flb_sds_len(event_chunk->tag));
             if (ret < 0) {
-                FLB_OUTPUT_RETURN(FLB_ERROR);
+                return FLB_ERROR;
             }
-            FLB_OUTPUT_RETURN(ret);
+            return ret;
         }
     }
 
@@ -4774,9 +4796,38 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                        file_first_log_time);
 
     if (ret < 0) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+        return FLB_RETRY;
     }
-    FLB_OUTPUT_RETURN(FLB_OK);
+    return FLB_OK;
+}
+
+static void cb_s3_flush(struct flb_event_chunk *event_chunk,
+                        struct flb_output_flush *out_flush,
+                        struct flb_input_instance *i_ins,
+                        void *out_context,
+                        struct flb_config *config)
+{
+    int ret;
+    struct flb_s3 *ctx = out_context;
+
+    if (event_chunk->type == FLB_EVENT_TYPE_BLOBS) {
+        ret = process_blob_chunk(ctx, event_chunk);
+        if (ret == -1) {
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
+
+    /*
+     * Keep the store, upload queue and multipart state owned by one callback
+     * until synchronous I/O and cleanup finish. Locking only the lookup or
+     * append leaves returned pointers exposed to another worker's deletion.
+     */
+    pthread_mutex_lock(&ctx->files_mutex);
+    ret = s3_flush_logs(event_chunk, ctx, config);
+    pthread_mutex_unlock(&ctx->files_mutex);
+
+    FLB_OUTPUT_RETURN(ret);
 }
 
 static int cb_s3_exit(void *data, struct flb_config *config)

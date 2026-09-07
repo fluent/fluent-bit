@@ -180,6 +180,7 @@ struct flb_s3 {
     struct flb_fstore_stream *stream_upload;  /* multipart upload stream */
     struct flb_fstore_stream *stream_quarantine; /* retry-exhausted stream */
     struct flb_fstore_stream *stream_metadata; /* s3 metadata stream */
+    /* Serializes synchronous log flushes and timers, including chunk deletion. */
     pthread_mutex_t files_mutex;
     int files_mutex_initialized;
 
