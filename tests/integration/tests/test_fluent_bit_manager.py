@@ -234,6 +234,34 @@ def test_start_uses_unique_valgrind_log_path(monkeypatch, tmp_path):
     ]]
 
 
+@pytest.mark.parametrize("error", [requests.ConnectionError, requests.ReadTimeout])
+def test_startup_health_check_retries_transient_errors(monkeypatch, error):
+    manager = FluentBitManager("/tmp/fluent-bit.yaml")
+    manager.http_monitoring_port = "2020"
+    response = Mock(status_code=200)
+    response.json.return_value = {"uptime_sec": 2}
+    get = Mock(side_effect=[error("not ready"), response])
+    monkeypatch.setattr(manager_module.requests, "get", get)
+    monkeypatch.setattr(manager_module.time, "sleep", lambda _: None)
+
+    assert manager.wait_for_fluent_bit(timeout=5) is True
+    assert get.call_count == 2
+
+
+def test_startup_health_check_timeouts_respect_deadline(monkeypatch):
+    manager = FluentBitManager("/tmp/fluent-bit.yaml")
+    manager.http_monitoring_port = "2020"
+    timestamps = iter([0.0, 0.1, 0.2, 0.3])
+    monkeypatch.setattr(manager_module.time, "time", lambda: next(timestamps))
+    monkeypatch.setattr(manager_module.time, "sleep", lambda _: None)
+    monkeypatch.setattr(
+        manager_module.requests, "get", Mock(side_effect=requests.ReadTimeout("not ready"))
+    )
+
+    with pytest.raises(manager_module.FluentBitStartupError, match="did not start within"):
+        manager.wait_for_fluent_bit(timeout=0.25)
+
+
 def test_wait_for_hot_reload_count_returns_when_expected_count_is_reached(monkeypatch):
     manager = FluentBitManager("/tmp/fluent-bit.yaml")
     manager.http_monitoring_port = "2020"
