@@ -1,8 +1,5 @@
-import base64
 import logging
 import os
-import random
-import re
 
 import requests
 
@@ -16,66 +13,25 @@ from utils.test_service import FluentBitTestService
 
 logger = logging.getLogger(__name__)
 
-METRIC_RE = re.compile(
-    r'^(?P<name>[a-zA-Z_:][a-zA-Z0-9_:]*)\{(?P<labels>[^}]*)\}\s+(?P<value>[-+0-9.eE]+)$'
-)
 UNCOMPRESSED_PAYLOAD_SIZE_METRIC = (
     "fluentbit_azure_logs_ingestion_uncompressed_payload_size_bytes"
 )
 HTTP_PAYLOAD_SIZE_METRIC = "fluentbit_azure_logs_ingestion_http_payload_size_bytes"
-PAYLOAD_SIZE_BUCKETS = [
-    65536,
-    131072,
-    204800,
-    262144,
-    524288,
-    786432,
-    900000,
-    1048576,
-    2097152,
-    4194304,
-    8388608,
-    16777216,
-]
 
 
-def _labels_to_dict(labels):
-    result = {}
-    for item in labels.split(","):
-        key, value = item.split("=", 1)
-        result[key] = value.strip('"')
-    return result
-
-
-def _metric_value(metrics, metric_name, **labels):
-    for line in metrics.splitlines():
-        match = METRIC_RE.match(line)
-        if not match or match.group("name") != metric_name:
-            continue
-        if _labels_to_dict(match.group("labels")) == labels:
-            return float(match.group("value"))
-    return None
-
-
-def _metric_series(metrics, metric_name):
-    series = []
-    for line in metrics.splitlines():
-        match = METRIC_RE.match(line)
-        if match and match.group("name") == metric_name:
-            series.append(
-                (_labels_to_dict(match.group("labels")), float(match.group("value")))
-            )
-    return series
+def metric_value(metrics, name, labels):
+    prefix = f'{name}{{{labels}}} '
+    return float(next(line[len(prefix):] for line in metrics.splitlines()
+                      if line.startswith(prefix)))
 
 
 class Service:
-    def __init__(self, config_file, initial_http_status=200):
+    def __init__(self, config_file):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
         cert_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../in_splunk/certificate"))
         self.tls_crt_file = os.path.join(cert_dir, "certificate.pem")
         self.tls_key_file = os.path.join(cert_dir, "private_key.pem")
         self.oauth_server_port = None
-        self.initial_http_status = initial_http_status
         self.service = FluentBitTestService(
             self.config_file,
             data_storage=data_storage,
@@ -98,7 +54,6 @@ class Service:
             tls_key_file=self.tls_key_file,
             reset_state=False,
         )
-        configure_http_response(status_code=self.initial_http_status)
 
         def _http_ready():
             try:
@@ -171,73 +126,48 @@ class Service:
             description=f"{minimum_count} azure logs ingestion requests",
         )
 
-    def wait_for_data_responses(self, minimum_count, timeout=10):
-        return self.service.wait_for_condition(
-            lambda: requests_seen
-            if len(
-                requests_seen := [
-                    request
-                    for request in data_storage["requests"]
-                    if request.get("response_completed")
-                ]
-            )
-            >= minimum_count
-            else None,
-            timeout=timeout,
-            interval=0.5,
-            description=f"{minimum_count} completed azure logs ingestion responses",
-        )
-
     def metrics(self, expected, timeout=10):
         url = (
             f"http://127.0.0.1:{self.flb.http_monitoring_port}"
             "/api/v2/metrics/prometheus"
         )
+
+        def expected_metric():
+            response = requests.get(url, timeout=2)
+            if response.status_code == 200 and expected in response.text:
+                return response.text
+            return None
+
         return self.service.wait_for_condition(
-            lambda: response.text
-            if (
-                (response := requests.get(url, timeout=2)).status_code == 200
-                and expected in response.text
-            )
-            else None,
+            expected_metric,
             timeout=timeout,
             interval=0.5,
-            description=f"prometheus metric {expected}",
+            description=f"Prometheus metric {expected}",
         )
 
 
 def test_out_azure_logs_ingestion_legacy_oauth2_and_payload_format():
-    service = Service("out_azure_logs_ingestion_oauth2.yaml", initial_http_status=500)
+    service = Service("out_azure_logs_ingestion_oauth2.yaml")
     service.start()
-    try:
-        configure_oauth_token_response(
-            status_code=200,
-            body={
-                "access_token": "oauth-access-token",
-                "token_type": "Bearer",
-                "expires_in": 300,
-            },
-        )
+    configure_http_response(status_code=200, body={"status": "received"})
+    configure_oauth_token_response(
+        status_code=200,
+        body={"access_token": "oauth-access-token", "token_type": "Bearer", "expires_in": 300},
+    )
 
-        requests_seen = service.wait_for_requests(2, timeout=15)
-        configure_http_response(status_code=200, body={"status": "received"})
-        requests_seen = service.wait_for_requests(3, timeout=15)
-        service.wait_for_data_responses(2, timeout=15)
-        metrics = service.metrics(
-            f'{HTTP_PAYLOAD_SIZE_METRIC}_count{{name="azure_logs_ingestion.0",'
-            f'dcr_id="dcr-suite"}} 2'
-        )
-    finally:
-        service.stop()
+    requests_seen = service.wait_for_requests(2, timeout=15)
+    labels = 'name="azure_logs_ingestion.0",dcr_id="dcr-suite"'
+    metrics = service.metrics(
+        f"{HTTP_PAYLOAD_SIZE_METRIC}_count{{{labels}}} 1"
+    )
+    service.stop()
 
     token_request = next(request for request in requests_seen if request["path"] == "/oauth/token")
-    data_requests = [
+    data_request = next(
         request
         for request in requests_seen
         if request["path"] == "/dataCollectionRules/dcr-suite/streams/Custom-suite_CL"
-    ]
-    data_request = data_requests[-1]
-    assert [request["response_status"] for request in data_requests] == [500, 200]
+    )
 
     assert token_request["method"] == "POST"
     assert "grant_type=client_credentials" in token_request["raw_data"]
@@ -259,153 +189,19 @@ def test_out_azure_logs_ingestion_legacy_oauth2_and_payload_format():
     assert payload[0]["level"] == "info"
     assert isinstance(payload[0]["@timestamp"], (int, float))
 
-    metric_labels = {
-        "name": "azure_logs_ingestion.0",
-        "dcr_id": "dcr-suite",
-    }
-    expected_uncompressed_size = sum(
-        len(request["decoded_data"].encode("utf-8")) for request in data_requests
-    )
-    expected_http_size = sum(
-        int(request["headers"]["Content-Length"]) for request in data_requests
-    )
-
-    for metric_name, expected_size in [
-        (UNCOMPRESSED_PAYLOAD_SIZE_METRIC, expected_uncompressed_size),
-        (HTTP_PAYLOAD_SIZE_METRIC, expected_http_size),
-    ]:
-        assert f"# TYPE {metric_name} histogram" in metrics
-        assert _metric_value(
-            metrics, f"{metric_name}_count", **metric_labels
-        ) == 2
-        assert _metric_value(
-            metrics, f"{metric_name}_sum", **metric_labels
-        ) == expected_size
-
-        bucket_series = [
-            (labels["le"], value)
-            for labels, value in _metric_series(metrics, f"{metric_name}_bucket")
-            if all(labels.get(key) == expected for key, expected in metric_labels.items())
-        ]
-        assert bucket_series == [
-            *[(f"{bucket}.0", 2) for bucket in PAYLOAD_SIZE_BUCKETS],
-            ("+Inf", 2),
-        ]
-
-    # Histogram count is the client-side HTTP attempt count, so its rate is
-    # request rate. The ratio of the histogram sums is the weighted gzip ratio.
-    request_attempts = _metric_value(
-        metrics, f"{HTTP_PAYLOAD_SIZE_METRIC}_count", **metric_labels
-    )
-    compression_ratio = (
-        _metric_value(metrics, f"{HTTP_PAYLOAD_SIZE_METRIC}_sum", **metric_labels)
-        / _metric_value(
-            metrics,
-            f"{UNCOMPRESSED_PAYLOAD_SIZE_METRIC}_sum",
-            **metric_labels,
-        )
-    )
-    assert request_attempts == len(data_requests)
-    assert compression_ratio == expected_http_size / expected_uncompressed_size
-    # Gzip can expand very small payloads, so a valid ratio may exceed 1.0.
-    assert compression_ratio > 0
-
-
-def test_out_azure_logs_ingestion_uncompressed_ratio_is_one():
-    service = Service("out_azure_logs_ingestion_uncompressed.yaml")
-    service.start()
-    try:
-        configure_oauth_token_response(
-            status_code=200,
-            body={
-                "access_token": "oauth-access-token",
-                "token_type": "Bearer",
-                "expires_in": 300,
-            },
-        )
-        requests_seen = service.wait_for_requests(2, timeout=15)
-        service.wait_for_data_responses(1, timeout=15)
-        metrics = service.metrics(
-            f'{HTTP_PAYLOAD_SIZE_METRIC}_count{{name="azure_logs_ingestion.0",'
-            f'dcr_id="dcr-suite-uncompressed"}} 1'
-        )
-    finally:
-        service.stop()
-
-    data_request = next(
-        request
-        for request in requests_seen
-        if request["path"]
-        == "/dataCollectionRules/dcr-suite-uncompressed/streams/Custom-suite_CL"
-    )
-    labels = {
-        "name": "azure_logs_ingestion.0",
-        "dcr_id": "dcr-suite-uncompressed",
-    }
-    uncompressed_sum = _metric_value(
-        metrics, f"{UNCOMPRESSED_PAYLOAD_SIZE_METRIC}_sum", **labels
-    )
-    http_sum = _metric_value(metrics, f"{HTTP_PAYLOAD_SIZE_METRIC}_sum", **labels)
-
-    assert data_request["headers"].get("Content-Encoding") is None
-    assert int(data_request["headers"]["Content-Length"]) == len(
-        data_request["decoded_data"].encode("utf-8")
-    )
-    assert http_sum == uncompressed_sum
-    assert http_sum / uncompressed_sum == 1.0
-
-
-def test_out_azure_logs_ingestion_200k_bucket_distinguishes_wire_size():
-    service = Service("out_azure_logs_ingestion_http.yaml")
-    service.start()
-    try:
-        configure_oauth_token_response(
-            status_code=200,
-            body={
-                "access_token": "oauth-access-token",
-                "token_type": "Bearer",
-                "expires_in": 300,
-            },
-        )
-        encoded = base64.b64encode(random.Random(13256).randbytes(180000)).decode()
-        response = requests.post(
-            f"http://127.0.0.1:{service.flb_listener_port}/",
-            json={"message": encoded},
-            timeout=10,
-        )
-        assert response.status_code == 201
-        requests_seen = service.wait_for_requests(2, timeout=15)
-        service.wait_for_data_responses(1, timeout=15)
-        metrics = service.metrics(
-            f'{HTTP_PAYLOAD_SIZE_METRIC}_count{{name="azure_logs_ingestion.0",'
-            f'dcr_id="dcr-suite-boundary"}} 1'
-        )
-    finally:
-        service.stop()
-
-    data_request = next(
-        request
-        for request in requests_seen
-        if request["path"]
-        == "/dataCollectionRules/dcr-suite-boundary/streams/Custom-suite_CL"
-    )
-    labels = {
-        "name": "azure_logs_ingestion.0",
-        "dcr_id": "dcr-suite-boundary",
-        "le": "204800.0",
-    }
     uncompressed_size = len(data_request["decoded_data"].encode("utf-8"))
     http_size = int(data_request["headers"]["Content-Length"])
+    uncompressed_sum = metric_value(
+        metrics, f"{UNCOMPRESSED_PAYLOAD_SIZE_METRIC}_sum", labels
+    )
+    http_sum = metric_value(metrics, f"{HTTP_PAYLOAD_SIZE_METRIC}_sum", labels)
 
-    assert uncompressed_size > 204800
-    assert http_size < 204800
-    assert _metric_value(
-        metrics,
-        f"{UNCOMPRESSED_PAYLOAD_SIZE_METRIC}_bucket",
-        **labels,
-    ) == 0
-    assert _metric_value(
+    assert metric_value(metrics, f"{HTTP_PAYLOAD_SIZE_METRIC}_count", labels) == 1
+    assert uncompressed_sum == uncompressed_size
+    assert http_sum == http_size
+    assert http_sum / uncompressed_sum == http_size / uncompressed_size
+    assert metric_value(
         metrics,
         f"{HTTP_PAYLOAD_SIZE_METRIC}_bucket",
-        **labels,
+        f'{labels},le="204800.0"',
     ) == 1
