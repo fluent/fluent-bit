@@ -661,7 +661,7 @@ void test_format_split_on_metadata_change()
 
     sleep(1);
 
-    stop_and_check(ctx, 1);
+    stop_and_check(ctx, 2);
 }
 
 
