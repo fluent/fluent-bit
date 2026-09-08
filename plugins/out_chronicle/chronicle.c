@@ -968,6 +968,8 @@ static int chronicle_format(const void *data, size_t bytes,
             log_text = flb_pack_msgpack_extract_log_key(ctx, bytes, log_event, config);
             if (log_text == NULL) {
                 flb_plg_error(ctx->ins, "log_key extraction failed, skipping record");
+                /* A skipped record must not be retried in the next payload. */
+                last_off = off;
                 continue;
             }
             log_text_size = flb_sds_len(log_text);
@@ -1218,7 +1220,9 @@ static int cb_chronicle_format_test(struct flb_config *config,
 {
     struct flb_chronicle *ctx = plugin_context;
     struct flb_log_event_decoder log_decoder;
+    struct flb_test_out_formatter *formatter = &ctx->ins->test_formatter;
     int ret;
+    size_t offset = 0;
     size_t out_offset;
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
@@ -1227,10 +1231,41 @@ static int cb_chronicle_format_test(struct flb_config *config,
         return -1;
     }
 
-    ret = chronicle_format(data, bytes, tag, tag_len,
-                           (char **)out_data, out_size,
-                           0, bytes, &out_offset,
-                           &log_decoder, ctx, config);
+    do {
+        ret = chronicle_format(data, bytes, tag, tag_len,
+                               (char **)out_data, out_size,
+                               offset, bytes, &out_offset,
+                               &log_decoder, ctx, config);
+        if (ret != 0) {
+            break;
+        }
+
+        if (out_offset <= offset || out_offset > bytes) {
+            flb_plg_error(ctx->ins, "formatter returned an invalid continuation offset");
+            flb_sds_destroy(*out_data);
+            *out_data = NULL;
+            *out_size = 0;
+            ret = -1;
+            break;
+        }
+
+        /* The engine delivers the final payload to the runtime checker. */
+        if (out_offset == bytes) {
+            break;
+        }
+
+        /* Deliver intermediate payloads before formatting the remainder. */
+        if (formatter->rt_out_callback) {
+            formatter->rt_out_callback(formatter->rt_ctx, formatter->rt_ffd,
+                                       ret, *out_data, *out_size, formatter->rt_data);
+        }
+        else {
+            flb_sds_destroy(*out_data);
+        }
+        *out_data = NULL;
+        *out_size = 0;
+        offset = out_offset;
+    } while (offset < bytes);
 
     flb_log_event_decoder_destroy(&log_decoder);
     return ret;
