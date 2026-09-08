@@ -459,8 +459,8 @@ void test_format_multiple_records()
 {
     flb_ctx_t *ctx;
     int in_ffd, out_ffd;
-    char record1[1024];
-    char record2[1024];
+    int ret;
+    char records[2048];
     time_t now = time(NULL);
 
     ctx = flb_create();
@@ -482,11 +482,14 @@ void test_format_multiple_records()
     flb_start(ctx);
     clear_output_invoked();
 
-    snprintf(record1, sizeof(record1) - 1, "[%ld, {\"message\": \"record one\"}]", (long) now);
-    snprintf(record2, sizeof(record2) - 1, "[%ld, {\"message\": \"record two\"}]", (long) now + 1);
+    snprintf(records, sizeof(records),
+             "[%ld, {\"message\": \"record one\"}]"
+             "[%ld, {\"message\": \"record two\"}]",
+             (long) now, (long) now + 1);
 
-    flb_lib_push(ctx, in_ffd, record1, strlen(record1));
-    flb_lib_push(ctx, in_ffd, record2, strlen(record2));
+    /* Submit one batch so a flush cannot run between the records. */
+    ret = flb_lib_push(ctx, in_ffd, records, strlen(records));
+    TEST_CHECK(ret == strlen(records));
 
     sleep(1);
 
@@ -497,8 +500,8 @@ void test_format_partially_suceeded_records()
 {
     flb_ctx_t *ctx;
     int in_ffd, out_ffd;
-    char record1[1024];
-    char record2[1024];
+    int ret;
+    char records[2048];
     time_t now = time(NULL);
 
     ctx = flb_create();
@@ -521,11 +524,14 @@ void test_format_partially_suceeded_records()
     flb_start(ctx);
     clear_output_invoked();
 
-    snprintf(record1, sizeof(record1) - 1, "[%ld, {\"message\": \"record one\"}]", (long) now);
-    snprintf(record2, sizeof(record2) - 1, "[%ld, {\"test\": \"record two\"}]", (long) now + 1);
+    snprintf(records, sizeof(records),
+             "[%ld, {\"message\": \"record one\"}]"
+             "[%ld, {\"test\": \"record two\"}]",
+             (long) now, (long) now + 1);
 
-    flb_lib_push(ctx, in_ffd, record1, strlen(record1));
-    flb_lib_push(ctx, in_ffd, record2, strlen(record2));
+    /* Keep the valid and invalid records in the same formatter input. */
+    ret = flb_lib_push(ctx, in_ffd, records, strlen(records));
+    TEST_CHECK(ret == strlen(records));
 
     sleep(1);
 
@@ -616,8 +622,8 @@ void test_format_split_on_metadata_change()
 {
     flb_ctx_t *ctx;
     int in_ffd, out_ffd;
-    char record1[1024];
-    char record2[1024];
+    int ret;
+    char records[2048];
     time_t now = time(NULL);
 
     ctx = flb_create();
@@ -642,17 +648,16 @@ void test_format_split_on_metadata_change()
     flb_start(ctx);
     clear_output_invoked();
 
-    snprintf(record1, sizeof(record1) - 1,
+    snprintf(records, sizeof(records),
              "[%ld, {\"message\": \"record one\", \"tenant_namespace\": \"tenant-a\", "
-             "\"cluster\": {\"name\": \"blue\"}}]",
-             (long) now);
-    snprintf(record2, sizeof(record2) - 1,
+             "\"cluster\": {\"name\": \"blue\"}}]"
              "[%ld, {\"message\": \"record two\", \"tenant_namespace\": \"tenant-b\", "
              "\"cluster\": {\"name\": \"green\"}}]",
-             (long) now + 1);
+             (long) now, (long) now + 1);
 
-    flb_lib_push(ctx, in_ffd, record1, strlen(record1));
-    flb_lib_push(ctx, in_ffd, record2, strlen(record2));
+    /* Exercise metadata splitting within one formatter input. */
+    ret = flb_lib_push(ctx, in_ffd, records, strlen(records));
+    TEST_CHECK(ret == strlen(records));
 
     sleep(1);
 
