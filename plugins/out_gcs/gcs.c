@@ -1265,6 +1265,11 @@ static int construct_request_buffer(struct flb_gcs *ctx,
 {
     int ret;
 
+    if (gcs_under_test_mode() == FLB_TRUE &&
+        getenv("TEST_GCS_CONSTRUCT_REQUEST_BUFFER_ERROR") != NULL) {
+        return -1;
+    }
+
     ret = gcs_store_file_read(ctx, entry->upload_file, out_buffer, out_size);
     if (ret == -1) {
         return -1;
@@ -1579,9 +1584,8 @@ static int process_upload_queue(struct flb_gcs *ctx)
     time_t now;
 
     /*
-     * Uploads can yield while waiting for network I/O. Do not let the periodic
-     * timer re-enter this function and process the same queue entry while an
-     * output flush is still handling it.
+     * Queue processing runs during initialization or with upload_lock held.
+     * Keep the re-entry guard so an entry cannot be processed twice.
      */
     if (ctx->upload_queue_processing == FLB_TRUE) {
         return 0;
@@ -1603,7 +1607,8 @@ static int process_upload_queue(struct flb_gcs *ctx)
         if (ret == -1) {
             gcs_store_file_unlock(entry->upload_file);
             entry->retry_counter++;
-            continue;
+            entry->upload_time = now + (2 * entry->retry_counter);
+            break;
         }
 
         ret = upload_data(ctx, entry, buffer, buffer_size);
@@ -1619,10 +1624,8 @@ static int process_upload_queue(struct flb_gcs *ctx)
             entry->retry_counter++;
             entry->upload_time = now + (2 * entry->retry_counter);
             /*
-             * Stop the pass at the first failure in both modes: uploads run
-             * in sync mode, so every additional attempt against a failing
-             * endpoint blocks the calling thread for another connect
-             * timeout. Remaining entries are retried on the next pass.
+             * Stop after a failed upload so the next pass can retry it
+             * without blocking this thread on more network requests.
              */
             break;
         }
@@ -1662,6 +1665,8 @@ static int attach_recovered_chunk(struct flb_gcs *ctx, struct flb_fstore_file *f
 
     chunk->fsf = fsf;
     chunk->size = size;
+    /* Recovered files are pending uploads, not buffers for new records. */
+    gcs_store_file_seal(chunk);
 
     if (ctx->upload_timeout > 0) {
         chunk->create_time = time(NULL) - ctx->upload_timeout;
@@ -2149,7 +2154,12 @@ static int gcs_flush_payload(struct flb_gcs *ctx,
         return FLB_RETRY;
     }
 
-    ret = add_to_queue(ctx, chunk, tag_name, tag_name_len);
+    if (ctx->total_file_size > 0 && chunk->size >= ctx->total_file_size) {
+        ret = seal_and_queue_for_upload(ctx, chunk, tag_name, tag_name_len);
+    }
+    else {
+        ret = add_to_queue(ctx, chunk, tag_name, tag_name_len);
+    }
     if (ret == -1) {
         return FLB_RETRY;
     }
@@ -2206,10 +2216,8 @@ static int gcs_ctx_destroy(void *data, struct flb_config *config)
     }
 
     /*
-     * Uploads require an output worker coroutine. The exit callback runs after
-     * the workers have stopped, so attempting an upload here can switch to an
-     * invalid coroutine/fiber context. Leave pending chunks in the file store;
-     * they are recovered and uploaded on the next startup.
+     * Leave pending chunks in the file store for recovery on the next startup.
+     * Synchronous network requests here would delay shutdown.
      */
     clear_upload_queue(ctx);
 
@@ -2321,9 +2329,9 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_SIZE, "total_file_size", "100M",
      0, FLB_TRUE, offsetof(struct flb_gcs, total_file_size),
-     "Maximum size of buffered data per tag before it is uploaded as an "
-     "object, even if upload_timeout has not elapsed yet. Minimum 1M, "
-     "0 disables the size trigger."
+     "Buffered data size per tag that triggers an upload before upload_timeout. "
+     "Batches are not split, so objects can exceed this size. Minimum 1M, "
+     "0 disables the size trigger. Ordered uploads still wait for older files."
     },
     {
      FLB_CONFIG_MAP_BOOL, "send_content_md5", "false",
