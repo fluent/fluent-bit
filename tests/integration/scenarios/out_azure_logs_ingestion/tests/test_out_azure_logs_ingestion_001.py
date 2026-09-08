@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 
 import requests
 
@@ -17,12 +18,20 @@ UNCOMPRESSED_PAYLOAD_SIZE_METRIC = (
     "fluentbit_azure_logs_ingestion_uncompressed_payload_size_bytes"
 )
 HTTP_PAYLOAD_SIZE_METRIC = "fluentbit_azure_logs_ingestion_http_payload_size_bytes"
+METRIC_RE = re.compile(r'^(?P<name>[^\{]+)\{(?P<labels>[^}]*)\} (?P<value>.+)$')
 
 
-def metric_value(metrics, name, labels):
-    prefix = f'{name}{{{labels}}} '
-    return float(next(line[len(prefix):] for line in metrics.splitlines()
-                      if line.startswith(prefix)))
+def metric_value(metrics, metric_name, **expected_labels):
+    for line in metrics.splitlines():
+        match = METRIC_RE.match(line)
+        if match is None or match.group("name") != metric_name:
+            continue
+        labels = dict(
+            item.split("=", 1) for item in match.group("labels").replace('"', '').split(",")
+        )
+        if labels == expected_labels:
+            return float(match.group("value"))
+    raise AssertionError(f"metric not found: {metric_name} {expected_labels}")
 
 
 class Service:
@@ -156,9 +165,10 @@ def test_out_azure_logs_ingestion_legacy_oauth2_and_payload_format():
     )
 
     requests_seen = service.wait_for_requests(2, timeout=15)
-    labels = 'name="azure_logs_ingestion.0",dcr_id="dcr-suite"'
+    labels = {"name": "azure_logs_ingestion.0", "dcr_id": "dcr-suite"}
     metrics = service.metrics(
-        f"{HTTP_PAYLOAD_SIZE_METRIC}_count{{{labels}}} 1"
+        f'{HTTP_PAYLOAD_SIZE_METRIC}_count{{name="azure_logs_ingestion.0",'
+        f'dcr_id="dcr-suite"}} 1'
     )
     service.stop()
 
@@ -192,16 +202,17 @@ def test_out_azure_logs_ingestion_legacy_oauth2_and_payload_format():
     uncompressed_size = len(data_request["decoded_data"].encode("utf-8"))
     http_size = int(data_request["headers"]["Content-Length"])
     uncompressed_sum = metric_value(
-        metrics, f"{UNCOMPRESSED_PAYLOAD_SIZE_METRIC}_sum", labels
+        metrics, f"{UNCOMPRESSED_PAYLOAD_SIZE_METRIC}_sum", **labels
     )
-    http_sum = metric_value(metrics, f"{HTTP_PAYLOAD_SIZE_METRIC}_sum", labels)
+    http_sum = metric_value(metrics, f"{HTTP_PAYLOAD_SIZE_METRIC}_sum", **labels)
 
-    assert metric_value(metrics, f"{HTTP_PAYLOAD_SIZE_METRIC}_count", labels) == 1
+    assert metric_value(metrics, f"{HTTP_PAYLOAD_SIZE_METRIC}_count", **labels) == 1
     assert uncompressed_sum == uncompressed_size
     assert http_sum == http_size
     assert http_sum / uncompressed_sum == http_size / uncompressed_size
     assert metric_value(
         metrics,
         f"{HTTP_PAYLOAD_SIZE_METRIC}_bucket",
-        f'{labels},le="204800.0"',
+        **labels,
+        le="204800.0",
     ) == 1
