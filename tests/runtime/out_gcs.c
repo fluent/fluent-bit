@@ -1345,6 +1345,179 @@ void flb_test_gcs_workers_upload_all_tags(void)
     flb_free(store_dir);
 }
 
+/*
+ * Data left in store_dir by a previous run must be recovered and uploaded
+ * shortly after startup (the recovery path runs from init and from the
+ * upload timer, both outside of any flush coroutine).
+ */
+void flb_test_gcs_recovers_backlog_on_restart(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    int call_count;
+    char *call_count_str;
+    char *store_dir;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-backlog-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    /* first instance: buffer data but never reach upload_timeout */
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "10m", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+        flb_free(store_dir);
+        return;
+    }
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 0,
+                "Expected no upload before shutdown, got %d", call_count);
+
+    /* second instance on the same store_dir: backlog must be uploaded */
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "10m", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        sleep(3);
+        call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+        call_count = call_count_str ? atoi(call_count_str) : 0;
+        TEST_CHECK_(call_count == 1,
+                    "Expected recovered backlog to be uploaded once, got %d",
+                    call_count);
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
+/* total_file_size must also apply to the shared file used by unify_tag */
+void flb_test_gcs_total_file_size_with_unify_tag(void)
+{
+    int i;
+    int ret;
+    int in_ffd[2];
+    int out_ffd;
+    int call_count;
+    char tag[16];
+    char *call_count_str;
+    char *store_dir;
+    char *record;
+    size_t record_len;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-unify-size-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    record = build_large_record(600 * 1024, &record_len);
+    TEST_CHECK(record != NULL);
+    if (!record) {
+        flb_free(store_dir);
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    ctx = flb_create();
+    for (i = 0; i < 2; i++) {
+        snprintf(tag, sizeof(tag), "test.%d", i);
+        in_ffd[i] = flb_input(ctx, (char *) "lib", NULL);
+        TEST_CHECK(in_ffd[i] >= 0);
+        flb_input_set(ctx, in_ffd[i], "tag", tag, NULL);
+    }
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "10m", NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "1M", NULL);
+    flb_output_set(ctx, out_ffd, "unify_tag", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+        flb_free(record);
+        flb_free(store_dir);
+        return;
+    }
+
+    /* records from different tags land in the same unified buffer file */
+    flb_lib_push(ctx, in_ffd[0], record, (int) record_len);
+    sleep(2);
+    flb_lib_push(ctx, in_ffd[1], record, (int) record_len);
+    sleep(3);
+
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 1,
+                "Expected 1 upload after the unified file reached "
+                "total_file_size, got %d", call_count);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(record);
+    flb_free(store_dir);
+}
+
 TEST_LIST = {
     {"jwt_signing", flb_test_gcs_jwt_signing},
     {"net_settings_applied_to_upstream", flb_test_gcs_net_settings_applied_to_upstream},
@@ -1354,6 +1527,8 @@ TEST_LIST = {
     {"rejects_total_file_size_below_minimum",
      flb_test_gcs_rejects_total_file_size_below_minimum},
     {"workers_upload_all_tags", flb_test_gcs_workers_upload_all_tags},
+    {"recovers_backlog_on_restart", flb_test_gcs_recovers_backlog_on_restart},
+    {"total_file_size_with_unify_tag", flb_test_gcs_total_file_size_with_unify_tag},
     {"uri_encode_object_name", flb_test_gcs_uri_encode_object_name},
     {"upload_success", flb_test_gcs_upload_success},
 #ifdef FLB_HAVE_ARROW_PARQUET
