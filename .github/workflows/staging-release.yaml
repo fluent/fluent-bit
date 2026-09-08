@@ -289,7 +289,7 @@ jobs:
     needs:
       - staging-release-version-check
     permissions:
-      contents: none
+      contents: read
     strategy:
       matrix:
         distro:
@@ -297,6 +297,12 @@ jobs:
           - windows
       fail-fast: false
     steps:
+    - name: Checkout repository
+      if: matrix.distro == 'windows'
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
     - name: Sync packages from buckets on S3
       # Repository generation moves existing packages to the bucket root, but
       # Windows/macOS uploads that finish later remain in the versioned prefix.
@@ -315,32 +321,7 @@ jobs:
     - name: Validate Windows release packages
       if: matrix.distro == 'windows'
       run: |
-        cd packaging/releases/windows
-        architectures=(win32 win64)
-        if compgen -G "fluent-bit-${RELEASE_VERSION}-winarm64.*" > /dev/null; then
-          architectures+=(winarm64)
-        fi
-        for arch in "${architectures[@]}"; do
-          for extension in exe zip; do
-            package="fluent-bit-${RELEASE_VERSION}-${arch}.${extension}"
-            if [[ ! -s "$package" || ! -s "$package.sha256" ]]; then
-              echo "::error::Missing Windows release artifact: $package or $package.sha256. Complete the Windows staging build/upload before releasing."
-              exit 1
-            fi
-            if ! awk -v package="$package" '
-              {
-                valid = (length($1) == 64 && $1 ~ /^[[:xdigit:]]+$/ &&
-                         (substr($0, 65, 2) == "  " || substr($0, 65, 2) == " *") &&
-                         substr($0, 67) == package)
-              }
-              END { exit !(NR == 1 && valid) }
-            ' "$package.sha256"; then
-              echo "::error::Expected exactly one SHA-256 record for $package in $package.sha256"
-              exit 1
-            fi
-            sha256sum --check --strict "$package.sha256"
-          done
-        done
+        bash packaging/validate-windows-release-packages.sh "$RELEASE_VERSION" packaging/releases/windows
       env:
         RELEASE_VERSION: ${{ inputs.version }}
       shell: bash
@@ -1028,7 +1009,7 @@ jobs:
     needs:
       - staging-release-update-non-linux-s3
     permissions:
-      contents: none
+      contents: read
     outputs:
       windows-exe32-hash: ${{ steps.hashes.outputs.WIN_32_EXE_HASH }}
       windows-zip32-hash: ${{ steps.hashes.outputs.WIN_32_ZIP_HASH }}
@@ -1037,6 +1018,11 @@ jobs:
       windows-arm-exe64-hash: ${{ steps.hashes.outputs.WIN_64_ARM_EXE_HASH }}
       windows-arm-zip64-hash: ${{ steps.hashes.outputs.WIN_64_ARM_ZIP_HASH }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Sync release Windows directory to get checksums
         run:
           aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/windows" ./ --exclude "*" --include "fluent-bit-${RELEASE_VERSION}-*.sha256"
@@ -1050,39 +1036,7 @@ jobs:
       - name: Provide output for documentation PR
         id: hashes
         run: |
-          write_hash()
-          {
-            local output_name="$1"
-            local package="fluent-bit-${RELEASE_VERSION}-$2"
-            local filename="$package.sha256"
-            local hash
-            if ! hash=$(awk -v package="$package" '
-              {
-                valid = (length($1) == 64 && $1 ~ /^[[:xdigit:]]+$/ &&
-                         (substr($0, 65, 2) == "  " || substr($0, 65, 2) == " *") &&
-                         substr($0, 67) == package)
-              }
-              END {
-                if (NR != 1 || !valid) {
-                  exit 1
-                }
-                print $1
-              }
-            ' "$filename"); then
-              echo "::error::Expected exactly one SHA-256 record for $package in $filename"
-              exit 1
-            fi
-            echo "$output_name=$hash" >> "$GITHUB_OUTPUT"
-          }
-
-          write_hash WIN_32_EXE_HASH win32.exe
-          write_hash WIN_32_ZIP_HASH win32.zip
-          write_hash WIN_64_EXE_HASH win64.exe
-          write_hash WIN_64_ZIP_HASH win64.zip
-          if compgen -G "fluent-bit-${RELEASE_VERSION}-winarm64.*.sha256" > /dev/null; then
-            write_hash WIN_64_ARM_EXE_HASH winarm64.exe
-            write_hash WIN_64_ARM_ZIP_HASH winarm64.zip
-          fi
+          bash packaging/windows-release-hashes.sh "$RELEASE_VERSION" . >> "$GITHUB_OUTPUT"
         env:
           RELEASE_VERSION: ${{ inputs.version }}
         shell: bash
