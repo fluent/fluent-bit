@@ -46,12 +46,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#ifndef FLB_SYSTEM_WINDOWS
-#include <sys/uio.h>
-#endif
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/tls/flb_tls.h>
@@ -279,8 +277,7 @@ static void net_io_propagate_critical_error(
     }
 }
 
-/* POSIX guarantees at least 16 vectors. Bound both stack use and write size. */
-#define FLB_IO_NATIVE_IOV_MAX 16
+/* Bound the size of each native write. */
 #define FLB_IO_NATIVE_WRITE_MAX 524288
 
 struct net_io_vector {
@@ -298,32 +295,21 @@ static ssize_t net_io_vector_send(flb_sockfd_t fd, struct net_io_vector *vector)
     size_t length;
     size_t remaining;
     ssize_t bytes;
-#ifdef FLB_SYSTEM_WINDOWS
-    WSABUF buffers[FLB_IO_NATIVE_IOV_MAX];
-    DWORD written;
-    int error;
-#else
-    struct iovec buffers[FLB_IO_NATIVE_IOV_MAX];
-#endif
+    struct mk_iovec buffers[FLB_IOV_MAX];
 
     index = vector->index;
     offset = vector->offset;
     count = 0;
     remaining = FLB_IO_NATIVE_WRITE_MAX;
 
-    while (index < vector->count && count < FLB_IO_NATIVE_IOV_MAX && remaining > 0) {
+    while (index < vector->count && count < FLB_IOV_MAX && remaining > 0) {
         length = vector->iov[index].iov_len - offset;
         if (length > remaining) {
             length = remaining;
         }
         if (length > 0) {
-#ifdef FLB_SYSTEM_WINDOWS
-            buffers[count].buf = (char *) vector->iov[index].iov_base + offset;
-            buffers[count].len = (ULONG) length;
-#else
             buffers[count].iov_base = (char *) vector->iov[index].iov_base + offset;
             buffers[count].iov_len = length;
-#endif
             count++;
             remaining -= length;
         }
@@ -331,37 +317,7 @@ static ssize_t net_io_vector_send(flb_sockfd_t fd, struct net_io_vector *vector)
         offset = 0;
     }
 
-#ifdef FLB_SYSTEM_WINDOWS
-    if (WSASend(fd, buffers, count, &written, 0, NULL, NULL) == SOCKET_ERROR) {
-        error = WSAGetLastError();
-        switch (error) {
-        case WSAEINTR:
-            errno = EINTR;
-            break;
-        case WSAEWOULDBLOCK:
-            errno = EAGAIN;
-            break;
-        case WSAECONNRESET:
-        case WSAECONNABORTED:
-        case WSAESHUTDOWN:
-            errno = ECONNRESET;
-            break;
-        case WSAENOTCONN:
-            errno = ENOTCONN;
-            break;
-        case WSAENOTSOCK:
-            errno = EBADF;
-            break;
-        default:
-            errno = EIO;
-        }
-        WSASetLastError(error);
-        return -1;
-    }
-    bytes = written;
-#else
-    bytes = writev(fd, buffers, count);
-#endif
+    bytes = flb_writev(fd, buffers, count);
 
     if (bytes > 0) {
         remaining = bytes;
