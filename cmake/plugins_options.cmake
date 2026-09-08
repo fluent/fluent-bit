@@ -75,6 +75,7 @@ DEFINE_OPTION(FLB_PROCESSOR_CUMULATIVE_TO_DELTA "Enable cumulative to delta metr
 DEFINE_OPTION(FLB_PROCESSOR_LABELS            "Enable metrics label manipulation processor"  ON)
 DEFINE_OPTION(FLB_PROCESSOR_METRICS_SELECTOR  "Enable metrics selector processor"            ON)
 DEFINE_OPTION(FLB_PROCESSOR_OPENTELEMETRY_ENVELOPE "Enable OpenTelemetry envelope processor" ON)
+DEFINE_OPTION(FLB_PROCESSOR_JOURNALD_OTEL "Enable journald OpenTelemetry processor" ON)
 DEFINE_OPTION(FLB_PROCESSOR_SQL               "Enable SQL processor"                         ON)
 DEFINE_OPTION(FLB_PROCESSOR_SAMPLING          "Enable sampling processor"                    ON)
 DEFINE_OPTION(FLB_PROCESSOR_TDA               "Enable TDA processor"                         ON)
