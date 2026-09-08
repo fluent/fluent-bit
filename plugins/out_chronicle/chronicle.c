@@ -515,9 +515,16 @@ static int cb_chronicle_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t bytes,
-                                                  struct flb_log_event log_event,
-                                                  struct flb_config *config)
+enum chronicle_log_key_result {
+    CHRONICLE_LOG_KEY_ERROR = -1,
+    CHRONICLE_LOG_KEY_OK = 0,
+    CHRONICLE_LOG_KEY_MISSING = 1
+};
+
+static int flb_pack_msgpack_extract_log_key(void *out_context, uint64_t bytes,
+                                           struct flb_log_event log_event,
+                                           struct flb_config *config,
+                                           flb_sds_t *out_log_text)
 {
     int i;
     int map_size;
@@ -535,13 +542,15 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
     msgpack_object key;
     msgpack_object val;
 
+    *out_log_text = NULL;
+
     /* Allocate buffer to store log_key contents */
     val_buf = flb_calloc(1, msgpack_size);
     if (val_buf == NULL) {
         flb_plg_error(ctx->ins, "Could not allocate enough "
                       "memory to read record");
         flb_errno();
-        return NULL;
+        return CHRONICLE_LOG_KEY_ERROR;
     }
 
     /* Get the record/map */
@@ -549,7 +558,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
 
     if (map.type != MSGPACK_OBJECT_MAP) {
         flb_free(val_buf);
-        return NULL;
+        return CHRONICLE_LOG_KEY_ERROR;
     }
 
     map_size = map.via.map.size;
@@ -595,8 +604,10 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
                     ret = flb_msgpack_to_json(val_buf + val_offset,
                                               msgpack_size - val_offset, &val,
                                               config->json_escape_unicode);
-                    if (ret < 0) {
-                        break;
+                    if (ret <= 0) {
+                        flb_plg_error(ctx->ins, "Could not convert log_key value to JSON");
+                        flb_free(val_buf);
+                        return CHRONICLE_LOG_KEY_ERROR;
                     }
                     val_offset += ret;
                     val_buf[val_offset] = '\0';
@@ -613,13 +624,13 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
         flb_plg_error(ctx->ins, "Could not find log_key '%s' in record",
                       ctx->log_key);
         flb_free(val_buf);
-        return NULL;
+        return CHRONICLE_LOG_KEY_MISSING;
     }
 
     /* If nothing was read, destroy buffer */
     if (val_offset == 0) {
         flb_free(val_buf);
-        return NULL;
+        return CHRONICLE_LOG_KEY_ERROR;
     }
     val_buf[val_offset] = '\0';
 
@@ -631,7 +642,12 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
     }
     flb_free(val_buf);
 
-    return out_buf;
+    if (out_buf == NULL) {
+        return CHRONICLE_LOG_KEY_ERROR;
+    }
+
+    *out_log_text = out_buf;
+    return CHRONICLE_LOG_KEY_OK;
 }
 
 static int count_mp_with_threshold(size_t last_offset, size_t threshold,
@@ -965,12 +981,19 @@ static int chronicle_format(const void *data, size_t bytes,
         alloc_size = (off - record_start) + 128; /* JSON is larger than msgpack */
 
         if (ctx->log_key != NULL) {
-            log_text = flb_pack_msgpack_extract_log_key(ctx, bytes, log_event, config);
-            if (log_text == NULL) {
-                flb_plg_error(ctx->ins, "log_key extraction failed, skipping record");
+            ret = flb_pack_msgpack_extract_log_key(ctx, bytes, log_event, config, &log_text);
+            if (ret == CHRONICLE_LOG_KEY_MISSING) {
+                flb_plg_error(ctx->ins, "log_key is missing, skipping record");
                 /* A skipped record must not be retried in the next payload. */
                 last_off = off;
                 continue;
+            }
+            if (ret != CHRONICLE_LOG_KEY_OK) {
+                flb_plg_error(ctx->ins, "log_key extraction failed");
+                chronicle_resolved_labels_destroy(&resolved_labels);
+                flb_sds_destroy(namespace);
+                chronicle_entries_destroy(&entry_list);
+                return -1;
             }
             log_text_size = flb_sds_len(log_text);
         }
