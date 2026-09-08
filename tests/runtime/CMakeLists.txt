@@ -314,6 +314,8 @@ if (FLB_PROCESSOR_LABELS)
   FLB_RT_TEST(FLB_PROCESSOR_LABELS "processor_labels.c")
 endif()
 
+FLB_RT_TEST(FLB_PROCESSOR_JOURNALD_OTEL "processor_journald_otel.c")
+
 if (FLB_PROCESSOR_CONTENT_MODIFIER)
   FLB_RT_TEST(FLB_PROCESSOR_CONTENT_MODIFIER "processor_content_modifier.c")
 endif()
@@ -393,6 +395,10 @@ foreach(source_file ${CHECK_PROGRAMS})
     set_property(TARGET ${source_file_we} APPEND_STRING PROPERTY COMPILE_FLAGS "-D${o_source_file_we}")
   endif()
 endforeach()
+
+if(TARGET flb-rt-processor_journald_otel AND FLB_PROCESSOR_OPENTELEMETRY_ENVELOPE)
+  target_compile_definitions(flb-rt-processor_journald_otel PRIVATE JOURNALD_TEST_ENVELOPE)
+endif()
 
 function(flb_runtime_lock_tests resource_name)
   foreach(test_name ${ARGN})
