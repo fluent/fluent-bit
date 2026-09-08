@@ -221,13 +221,94 @@ static void test_writev_transport_error(void)
     errno = 0;
     result = flb_io_net_writev(&connection, vector, 1, &out_length);
     TEST_CHECK(result == -1);
-#ifndef FLB_SYSTEM_WINDOWS
     TEST_CHECK(errno == EBADF);
-#else
-    TEST_CHECK(errno != 0);
+#ifdef FLB_SYSTEM_WINDOWS
+    TEST_CHECK(WSAGetLastError() == WSAENOTSOCK);
 #endif
     TEST_CHECK(out_length == 0);
 }
+
+static void test_writev_compat(void)
+{
+    flb_pipefd_t pair[2];
+    struct mk_iovec iov[3];
+    char first[] = "hello";
+    char second[] = " world";
+    char output[11];
+    ssize_t result;
+
+    if (!TEST_CHECK(create_socket_pair(pair) == 0)) {
+        return;
+    }
+
+    iov[0].iov_base = first;
+    iov[0].iov_len = sizeof(first) - 1;
+    iov[1].iov_base = NULL;
+    iov[1].iov_len = 0;
+    iov[2].iov_base = second;
+    iov[2].iov_len = sizeof(second) - 1;
+
+    result = flb_writev(pair[0], iov, 3);
+    if (TEST_CHECK(result == sizeof(output))) {
+        result = flb_pipe_read_all(pair[1], output, sizeof(output));
+        TEST_CHECK(result == sizeof(output));
+        TEST_CHECK(memcmp(output, "hello world", sizeof(output)) == 0);
+    }
+
+    result = flb_writev(pair[0], &iov[1], 1);
+    TEST_CHECK(result == 0);
+
+    result = flb_writev(FLB_INVALID_SOCKET, iov, 3);
+    TEST_CHECK(result == -1);
+    TEST_CHECK(errno == EBADF);
+#ifdef FLB_SYSTEM_WINDOWS
+    TEST_CHECK(WSAGetLastError() == WSAENOTSOCK);
+#endif
+
+    flb_socket_close(pair[0]);
+    flb_socket_close(pair[1]);
+}
+
+#ifdef FLB_SYSTEM_WINDOWS
+static void test_writev_compat_limits(void)
+{
+    struct mk_iovec iov[2];
+    ssize_t result;
+    char byte;
+
+    TEST_CHECK(flb_writev(INVALID_SOCKET, NULL, 0) == 0);
+
+    result = flb_writev(INVALID_SOCKET, NULL, 1);
+    TEST_CHECK(result == -1);
+    TEST_CHECK(errno == EINVAL);
+    TEST_CHECK(WSAGetLastError() == WSAEINVAL);
+
+    result = flb_writev(INVALID_SOCKET, iov, -1);
+    TEST_CHECK(result == -1);
+    TEST_CHECK(errno == EINVAL);
+    TEST_CHECK(WSAGetLastError() == WSAEINVAL);
+
+    result = flb_writev(INVALID_SOCKET, iov, FLB_IOV_MAX + 1);
+    TEST_CHECK(result == -1);
+    TEST_CHECK(errno == EINVAL);
+    TEST_CHECK(WSAGetLastError() == WSAEINVAL);
+
+    iov[0].iov_base = &byte;
+    iov[0].iov_len = (size_t) INT_MAX + 1;
+    result = flb_writev(INVALID_SOCKET, iov, 1);
+    TEST_CHECK(result == -1);
+    TEST_CHECK(errno == EINVAL);
+    TEST_CHECK(WSAGetLastError() == WSAEINVAL);
+
+    iov[0].iov_len = INT_MAX;
+    iov[1].iov_base = &byte;
+    iov[1].iov_len = 1;
+    result = flb_writev(INVALID_SOCKET, iov, 2);
+    TEST_CHECK(result == -1);
+    TEST_CHECK(errno == EINVAL);
+    TEST_CHECK(WSAGetLastError() == WSAEINVAL);
+}
+#endif
 
 static void test_writev_vector_shapes(void)
 {
@@ -589,6 +670,10 @@ TEST_LIST = {
     { "writev_preconditions", test_writev_preconditions },
     { "writev_empty_vectors", test_writev_empty_vectors },
     { "writev_transport_error", test_writev_transport_error },
+    { "writev_compat", test_writev_compat },
+#ifdef FLB_SYSTEM_WINDOWS
+    { "writev_compat_limits", test_writev_compat_limits },
+#endif
     { "writev_vector_shapes", test_writev_vector_shapes },
     { "writev_coalesce_boundary", test_writev_coalesce_boundary },
     { "writev_async_partial", test_writev_async_partial },
