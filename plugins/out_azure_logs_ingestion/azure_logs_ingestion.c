@@ -326,16 +326,19 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
     flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX);
 
 #ifdef FLB_HAVE_METRICS
-    metrics_timestamp = cfl_time_now();
-    output_name = (char *) flb_output_name(ctx->ins);
-    cmt_histogram_observe(ctx->cmt_uncompressed_payload_size,
-                          metrics_timestamp,
-                          (double) json_payload_size,
-                          1, (char *[]) {output_name});
-    cmt_histogram_observe(ctx->cmt_http_payload_size,
-                          metrics_timestamp,
-                          (double) final_payload_size,
-                          1, (char *[]) {output_name});
+    if (ctx->cmt_uncompressed_payload_size != NULL &&
+        ctx->cmt_http_payload_size != NULL) {
+        metrics_timestamp = cfl_time_now();
+        output_name = (char *) flb_output_name(ctx->ins);
+        cmt_histogram_observe(ctx->cmt_uncompressed_payload_size,
+                              metrics_timestamp,
+                              (double) json_payload_size,
+                              2, (char *[]) {output_name, ctx->dcr_id});
+        cmt_histogram_observe(ctx->cmt_http_payload_size,
+                              metrics_timestamp,
+                              (double) final_payload_size,
+                              2, (char *[]) {output_name, ctx->dcr_id});
+    }
 #endif
 
     /* Execute rest call */
