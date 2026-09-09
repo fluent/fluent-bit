@@ -1,0 +1,19 @@
+service:
+  flush: 10
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: zipkin
+      listen: 127.0.0.1
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      http2: off
+      http_server.workers: 4
+      mem_buf_limit: 32KB
+
+  outputs:
+    - name: null
+      match: '*'
