@@ -294,18 +294,32 @@ static int package_content(struct flb_ml_stream *mst,
             /* Prepare concatenation */
             breakline_prepare(parser_i, stream_group);
 
-            /* Concatenate value */
+            /* Concatenate value, while honoring the buffer limit. */
             if (val_content) {
-                flb_sds_cat_safe(&stream_group->buf,
-                                 val_content->via.str.ptr,
-                                 val_content->via.str.size);
+                ret = flb_ml_group_cat(stream_group,
+                                       val_content->via.str.ptr,
+                                       val_content->via.str.size);
             }
             else {
-                flb_sds_cat_safe(&stream_group->buf, buf_data, buf_size);
+                ret = flb_ml_group_cat(stream_group, buf_data, buf_size);
+            }
+            if (ret == -1) {
+                return -1;
             }
 
-            /* on ENDSWITH mode, a rule match means flush the content */
-            if (rule_match) {
+            if (ret == FLB_MULTILINE_TRUNCATED) {
+                /* Buffer limit reached. Flush now to emit the truncated record. */
+                truncated = FLB_TRUE;
+                if (metadata != NULL) {
+                    flb_ml_stream_group_add_metadata(stream_group, metadata);
+                }
+                ret = flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
+                if (ret == -1) {
+                    return -1;
+                }
+            }
+            else if (rule_match) {
+                /* On ENDSWITH mode, a rule match means flush the content. */
                 flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
             }
             processed = FLB_TRUE;
@@ -328,18 +342,32 @@ static int package_content(struct flb_ml_stream *mst,
         /* Prepare concatenation */
         breakline_prepare(parser_i, stream_group);
 
-        /* Concatenate value */
+        /* Concatenate value, while honoring the buffer limit. */
         if (val_content) {
-            flb_sds_cat_safe(&stream_group->buf,
-                             val_content->via.str.ptr,
-                             val_content->via.str.size);
+            ret = flb_ml_group_cat(stream_group,
+                                   val_content->via.str.ptr,
+                                   val_content->via.str.size);
         }
         else {
-            flb_sds_cat_safe(&stream_group->buf, buf_data, buf_size);
+            ret = flb_ml_group_cat(stream_group, buf_data, buf_size);
+        }
+        if (ret == -1) {
+            return -1;
         }
 
-        /* on ENDSWITH mode, a rule match means flush the content */
-        if (rule_match) {
+        if (ret == FLB_MULTILINE_TRUNCATED) {
+            /* Buffer limit reached. Flush now to emit the truncated record. */
+            truncated = FLB_TRUE;
+            if (metadata != NULL) {
+                flb_ml_stream_group_add_metadata(stream_group, metadata);
+            }
+            ret = flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
+            if (ret == -1) {
+                return -1;
+            }
+        }
+        else if (rule_match) {
+            /* On EQ mode, a rule match means flush the content. */
             flb_ml_flush_stream_group(parser, mst, stream_group, FLB_FALSE);
         }
         processed = FLB_TRUE;
