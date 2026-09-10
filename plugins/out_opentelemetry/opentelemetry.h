@@ -221,5 +221,6 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                        const void *body, size_t body_len,
                        const char *tag, int tag_len,
                        const char *http_uri,
-                       const char *grpc_uri);
+                       const char *grpc_uri,
+                       struct flb_output_flush *out_flush);
 #endif

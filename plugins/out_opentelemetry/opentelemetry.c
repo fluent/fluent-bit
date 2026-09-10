@@ -34,6 +34,8 @@
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_hash_table.h>
+#include <fluent-bit/flb_http_retry_after.h>
+#include <fluent-bit/flb_base64.h>
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
@@ -53,6 +55,16 @@
 #include "opentelemetry.h"
 #include "opentelemetry_conf.h"
 #include "opentelemetry_utils.h"
+
+#define OTLP_GRPC_STATUS_CANCELLED           1
+#define OTLP_GRPC_STATUS_DEADLINE_EXCEEDED   4
+#define OTLP_GRPC_STATUS_RESOURCE_EXHAUSTED  8
+#define OTLP_GRPC_STATUS_ABORTED            10
+#define OTLP_GRPC_STATUS_OUT_OF_RANGE       11
+#define OTLP_GRPC_STATUS_UNAVAILABLE        14
+#define OTLP_GRPC_STATUS_DATA_LOSS          15
+#define OTLP_GRPC_STATUS_UNAUTHENTICATED    16
+#define OTLP_GRPC_STATUS_DETAILS_MAX     65536
 
 static int is_http_status_code_retrayable(int http_code)
 {
@@ -77,16 +89,295 @@ static int is_http_status_code_retrayable(int http_code)
 
 static int opentelemetry_is_grpc_status_retryable(int status_code)
 {
-    if (status_code == 1  || /* CANCELLED */
-        status_code == 4  || /* DEADLINE_EXCEEDED */
-        status_code == 8  || /* RESOURCE_EXHAUSTED */
-        status_code == 10 || /* ABORTED */
-        status_code == 13 || /* INTERNAL */
-        status_code == 14) { /* UNAVAILABLE */
+    if (status_code == OTLP_GRPC_STATUS_CANCELLED ||
+        status_code == OTLP_GRPC_STATUS_DEADLINE_EXCEEDED ||
+        status_code == OTLP_GRPC_STATUS_ABORTED ||
+        status_code == OTLP_GRPC_STATUS_OUT_OF_RANGE ||
+        status_code == OTLP_GRPC_STATUS_UNAVAILABLE ||
+        status_code == OTLP_GRPC_STATUS_DATA_LOSS) {
         return FLB_TRUE;
     }
 
     return FLB_FALSE;
+}
+
+static int protobuf_read_varint(const unsigned char *buffer, size_t size,
+                                size_t *offset, uint64_t *value)
+{
+    int shift;
+    unsigned char byte;
+    uint64_t result;
+
+    shift = 0;
+    result = 0;
+    while (*offset < size && shift < 64) {
+        byte = buffer[*offset];
+        (*offset)++;
+        if (shift == 63 && (byte & 0xfe) != 0) {
+            return -1;
+        }
+        result |= ((uint64_t) (byte & 0x7f)) << shift;
+        if ((byte & 0x80) == 0) {
+            *value = result;
+            return 0;
+        }
+        shift += 7;
+    }
+
+    return -1;
+}
+
+static int protobuf_next_field(const unsigned char *buffer, size_t size,
+                               size_t *offset, uint64_t *field_number,
+                               uint64_t *wire_type, const unsigned char **value,
+                               size_t *value_size, uint64_t *varint_value)
+{
+    uint64_t key;
+    uint64_t length;
+
+    *value = NULL;
+    *value_size = 0;
+    *varint_value = 0;
+    if (protobuf_read_varint(buffer, size, offset, &key) != 0) {
+        return -1;
+    }
+    *field_number = key >> 3;
+    *wire_type = key & 7;
+    if (*field_number == 0) {
+        return -1;
+    }
+
+    if (*wire_type == 0) {
+        return protobuf_read_varint(buffer, size, offset, varint_value);
+    }
+    if (*wire_type == 1) {
+        if (size - *offset < 8) {
+            return -1;
+        }
+        *offset += 8;
+        return 0;
+    }
+    if (*wire_type == 2) {
+        if (protobuf_read_varint(buffer, size, offset, &length) != 0 ||
+            length > size - *offset) {
+            return -1;
+        }
+        *value = buffer + *offset;
+        *value_size = (size_t) length;
+        *offset += (size_t) length;
+        return 0;
+    }
+    if (*wire_type == 5) {
+        if (size - *offset < 4) {
+            return -1;
+        }
+        *offset += 4;
+        return 0;
+    }
+
+    return -1;
+}
+
+static int protobuf_retry_duration(const unsigned char *buffer, size_t size,
+                                   uint64_t *delay_ms)
+{
+    int seconds_found;
+    int nanos_found;
+    size_t offset;
+    size_t value_size;
+    uint64_t field_number;
+    uint64_t wire_type;
+    uint64_t value;
+    uint64_t seconds;
+    uint64_t nanos;
+    const unsigned char *bytes;
+
+    offset = 0;
+    seconds = 0;
+    nanos = 0;
+    seconds_found = FLB_FALSE;
+    nanos_found = FLB_FALSE;
+    while (offset < size) {
+        if (protobuf_next_field(buffer, size, &offset, &field_number,
+                                &wire_type, &bytes, &value_size, &value) != 0) {
+            return FLB_RETRY_AFTER_INVALID;
+        }
+        if (field_number == 1 && wire_type == 0) {
+            seconds = value;
+            seconds_found = FLB_TRUE;
+        }
+        else if (field_number == 2 && wire_type == 0) {
+            nanos = value;
+            nanos_found = FLB_TRUE;
+        }
+    }
+
+    if (seconds_found == FLB_FALSE && nanos_found == FLB_FALSE) {
+        *delay_ms = 0;
+        return FLB_RETRY_AFTER_VALID;
+    }
+    if (seconds > INT64_MAX || nanos > 999999999) {
+        return FLB_RETRY_AFTER_INVALID;
+    }
+    if (seconds > (UINT64_MAX - 999) / 1000) {
+        *delay_ms = UINT64_MAX;
+        return FLB_RETRY_AFTER_SATURATED;
+    }
+
+    *delay_ms = seconds * 1000 + (nanos + 999999) / 1000000;
+    return FLB_RETRY_AFTER_VALID;
+}
+
+static int protobuf_retry_info(const unsigned char *buffer, size_t size,
+                               uint64_t *delay_ms)
+{
+    size_t offset;
+    size_t value_size;
+    uint64_t field_number;
+    uint64_t wire_type;
+    uint64_t value;
+    const unsigned char *bytes;
+
+    offset = 0;
+    while (offset < size) {
+        if (protobuf_next_field(buffer, size, &offset, &field_number,
+                                &wire_type, &bytes, &value_size, &value) != 0) {
+            return FLB_RETRY_AFTER_INVALID;
+        }
+        if (field_number == 1 && wire_type == 2) {
+            return protobuf_retry_duration(bytes, value_size, delay_ms);
+        }
+    }
+
+    return FLB_RETRY_AFTER_INVALID;
+}
+
+static int protobuf_type_is_retry_info(const unsigned char *value, size_t size)
+{
+    static const char suffix[] = "/google.rpc.RetryInfo";
+
+    if (size < sizeof(suffix) - 1) {
+        return FLB_FALSE;
+    }
+
+    return memcmp(value + size - (sizeof(suffix) - 1),
+                  suffix, sizeof(suffix) - 1) == 0;
+}
+
+static int protobuf_any_retry_info(const unsigned char *buffer, size_t size,
+                                   uint64_t *delay_ms)
+{
+    int retry_info_type;
+    size_t offset;
+    size_t value_size;
+    size_t retry_info_size;
+    uint64_t field_number;
+    uint64_t wire_type;
+    uint64_t value;
+    const unsigned char *bytes;
+    const unsigned char *retry_info;
+
+    offset = 0;
+    retry_info = NULL;
+    retry_info_size = 0;
+    retry_info_type = FLB_FALSE;
+    while (offset < size) {
+        if (protobuf_next_field(buffer, size, &offset, &field_number,
+                                &wire_type, &bytes, &value_size, &value) != 0) {
+            return FLB_RETRY_AFTER_INVALID;
+        }
+        if (field_number == 1 && wire_type == 2) {
+            retry_info_type = protobuf_type_is_retry_info(bytes, value_size);
+        }
+        else if (field_number == 2 && wire_type == 2) {
+            retry_info = bytes;
+            retry_info_size = value_size;
+        }
+    }
+
+    if (retry_info_type == FLB_TRUE && retry_info != NULL) {
+        return protobuf_retry_info(retry_info, retry_info_size, delay_ms);
+    }
+
+    return FLB_RETRY_AFTER_ABSENT;
+}
+
+static int protobuf_status_retry_info(const unsigned char *buffer, size_t size,
+                                      uint64_t *delay_ms)
+{
+    int status;
+    size_t offset;
+    size_t value_size;
+    uint64_t field_number;
+    uint64_t wire_type;
+    uint64_t value;
+    const unsigned char *bytes;
+
+    status = FLB_RETRY_AFTER_ABSENT;
+    offset = 0;
+    while (offset < size) {
+        if (protobuf_next_field(buffer, size, &offset, &field_number,
+                                &wire_type, &bytes, &value_size, &value) != 0) {
+            return FLB_RETRY_AFTER_INVALID;
+        }
+        if (field_number == 3 && wire_type == 2) {
+            status = protobuf_any_retry_info(bytes, value_size, delay_ms);
+            if (status != FLB_RETRY_AFTER_ABSENT) {
+                return status;
+            }
+        }
+    }
+
+    return status;
+}
+
+static int opentelemetry_parse_grpc_retry_info(cfl_sds_t encoded,
+                                               uint64_t *delay_ms)
+{
+    int result;
+    size_t encoded_size;
+    size_t padded_size;
+    size_t padding_size;
+    size_t decoded_size;
+    unsigned char *padded;
+    unsigned char *decoded;
+
+    if (encoded == NULL) {
+        return FLB_RETRY_AFTER_INVALID;
+    }
+
+    encoded_size = cfl_sds_len(encoded);
+    if (encoded_size == 0 || encoded_size > OTLP_GRPC_STATUS_DETAILS_MAX ||
+        encoded_size % 4 == 1) {
+        return FLB_RETRY_AFTER_INVALID;
+    }
+
+    padding_size = (4 - encoded_size % 4) % 4;
+    padded_size = encoded_size + padding_size;
+    padded = flb_malloc(padded_size);
+    if (padded == NULL) {
+        return FLB_RETRY_AFTER_INVALID;
+    }
+    memcpy(padded, encoded, encoded_size);
+    memset(padded + encoded_size, '=', padding_size);
+
+    decoded = flb_malloc(padded_size);
+    if (decoded == NULL) {
+        flb_free(padded);
+        return FLB_RETRY_AFTER_INVALID;
+    }
+    result = flb_base64_decode(decoded, padded_size, &decoded_size,
+                               padded, padded_size);
+    flb_free(padded);
+    if (result == 0) {
+        result = protobuf_status_retry_info(decoded, decoded_size, delay_ms);
+    }
+    else {
+        result = FLB_RETRY_AFTER_INVALID;
+    }
+    flb_free(decoded);
+
+    return result;
 }
 
 static int opentelemetry_lookup_header_value(struct flb_hash_table *table,
@@ -120,18 +411,172 @@ static int opentelemetry_lookup_header_value(struct flb_hash_table *table,
     return FLB_TRUE;
 }
 
+static int64_t opentelemetry_wall_time_ms(void)
+{
+    time_t wall_time;
+
+    wall_time = time(NULL);
+    if (wall_time < 0 || (uint64_t) wall_time > (uint64_t) INT64_MAX / 1000) {
+        return 0;
+    }
+
+    return (int64_t) wall_time * 1000;
+}
+
+static int opentelemetry_parse_retry_after_value(cfl_sds_t value,
+                                                 int64_t wall_time_ms,
+                                                 uint64_t *delay_ms)
+{
+    if (value == NULL) {
+        return FLB_RETRY_AFTER_ABSENT;
+    }
+
+    return flb_http_retry_after_parse(value, cfl_sds_len(value),
+                                      wall_time_ms, delay_ms);
+}
+
+static int opentelemetry_apply_retry_after_response(
+               struct flb_http_response *response,
+               struct flb_output_flush *out_flush)
+{
+    int status;
+    int trailer_status;
+    int64_t wall_time_ms;
+    uint64_t delay_ms;
+    uint64_t trailer_delay_ms;
+    cfl_sds_t value;
+
+    wall_time_ms = opentelemetry_wall_time_ms();
+    delay_ms = 0;
+    trailer_delay_ms = 0;
+    value = NULL;
+    status = FLB_RETRY_AFTER_ABSENT;
+    if (opentelemetry_lookup_header_value(response->headers,
+                                          "retry-after", &value) == FLB_TRUE) {
+        status = opentelemetry_parse_retry_after_value(value, wall_time_ms,
+                                                       &delay_ms);
+        cfl_sds_destroy(value);
+    }
+
+    value = NULL;
+    trailer_status = FLB_RETRY_AFTER_ABSENT;
+    if (opentelemetry_lookup_header_value(response->trailer_headers,
+                                          "retry-after", &value) == FLB_TRUE) {
+        trailer_status = opentelemetry_parse_retry_after_value(
+                             value, wall_time_ms, &trailer_delay_ms);
+        cfl_sds_destroy(value);
+    }
+    if ((trailer_status == FLB_RETRY_AFTER_VALID ||
+         trailer_status == FLB_RETRY_AFTER_SATURATED) &&
+        ((status != FLB_RETRY_AFTER_VALID &&
+          status != FLB_RETRY_AFTER_SATURATED) ||
+         trailer_delay_ms > delay_ms)) {
+        status = trailer_status;
+        delay_ms = trailer_delay_ms;
+    }
+
+    if (status == FLB_RETRY_AFTER_VALID || status == FLB_RETRY_AFTER_SATURATED) {
+        flb_output_set_retry_after(out_flush, delay_ms);
+    }
+
+    return status;
+}
+
+static int opentelemetry_apply_legacy_retry_after(
+               struct flb_http_client *client,
+               struct flb_output_flush *out_flush)
+{
+    int status;
+    int trailer_status;
+    uint64_t delay_ms;
+    uint64_t trailer_delay_ms;
+    size_t invalid_count;
+    size_t trailer_invalid_count;
+    int64_t wall_time_ms;
+
+    status = FLB_RETRY_AFTER_ABSENT;
+    delay_ms = 0;
+    invalid_count = 0;
+    wall_time_ms = opentelemetry_wall_time_ms();
+    if (client->resp.data != NULL && client->resp.headers_end != NULL) {
+        status = flb_http_retry_after_parse_headers(
+                     client->resp.data,
+                     (size_t) (client->resp.headers_end - client->resp.data),
+                     wall_time_ms, &delay_ms, &invalid_count);
+    }
+
+    if (client->resp.trailer_buf != NULL && client->resp.trailer_size > 0) {
+        trailer_delay_ms = 0;
+        trailer_invalid_count = 0;
+        trailer_status = flb_http_retry_after_parse_headers(
+                             client->resp.trailer_buf,
+                             client->resp.trailer_size,
+                             wall_time_ms, &trailer_delay_ms,
+                             &trailer_invalid_count);
+        if ((trailer_status == FLB_RETRY_AFTER_VALID ||
+             trailer_status == FLB_RETRY_AFTER_SATURATED) &&
+            ((status != FLB_RETRY_AFTER_VALID &&
+              status != FLB_RETRY_AFTER_SATURATED) ||
+             trailer_delay_ms > delay_ms)) {
+            status = trailer_status;
+            delay_ms = trailer_delay_ms;
+        }
+    }
+
+    if (status == FLB_RETRY_AFTER_VALID || status == FLB_RETRY_AFTER_SATURATED) {
+        flb_output_set_retry_after(out_flush, delay_ms);
+    }
+
+    return status;
+}
+
+static int opentelemetry_apply_grpc_retry_info(
+               struct flb_http_response *response,
+               struct flb_output_flush *out_flush)
+{
+    int status;
+    uint64_t delay_ms;
+    cfl_sds_t value;
+
+    value = NULL;
+    if (opentelemetry_lookup_header_value(response->trailer_headers,
+                                          "grpc-status-details-bin",
+                                          &value) == FLB_FALSE) {
+        opentelemetry_lookup_header_value(response->headers,
+                                          "grpc-status-details-bin",
+                                          &value);
+    }
+    if (value == NULL) {
+        return FLB_RETRY_AFTER_ABSENT;
+    }
+
+    delay_ms = 0;
+    status = opentelemetry_parse_grpc_retry_info(value, &delay_ms);
+    cfl_sds_destroy(value);
+    if (status == FLB_RETRY_AFTER_VALID || status == FLB_RETRY_AFTER_SATURATED) {
+        flb_output_set_retry_after(out_flush, delay_ms);
+    }
+
+    return status;
+}
+
 static int opentelemetry_check_grpc_status(struct opentelemetry_context *ctx,
-                                           struct flb_http_response *response)
+                                           struct flb_http_response *response,
+                                           struct flb_output_flush *out_flush)
 {
     cfl_sds_t grpc_message;
     cfl_sds_t grpc_status_text;
+    char     *grpc_status_end;
+    long      parsed_grpc_status;
     int      grpc_status;
     int       result;
+    int       retry_info_status;
 
     grpc_message = NULL;
     grpc_status_text = NULL;
     grpc_status = 0;
     result = FLB_OK;
+    retry_info_status = FLB_RETRY_AFTER_ABSENT;
 
     /* ref: https://grpc.io/docs/guides/status-codes/ */
     if (opentelemetry_lookup_header_value(response->trailer_headers,
@@ -144,7 +589,14 @@ static int opentelemetry_check_grpc_status(struct opentelemetry_context *ctx,
         return FLB_OK;
     }
 
-    grpc_status = strtol(grpc_status_text, NULL, 10);
+    grpc_status_end = NULL;
+    parsed_grpc_status = strtol(grpc_status_text, &grpc_status_end, 10);
+    if (grpc_status_end == grpc_status_text || *grpc_status_end != '\0' ||
+        parsed_grpc_status < 0 || parsed_grpc_status > 16) {
+        cfl_sds_destroy(grpc_status_text);
+        return FLB_ERROR;
+    }
+    grpc_status = (int) parsed_grpc_status;
 
     if (opentelemetry_lookup_header_value(response->trailer_headers,
                                           "grpc-message",
@@ -165,9 +617,25 @@ static int opentelemetry_check_grpc_status(struct opentelemetry_context *ctx,
             flb_plg_error(ctx->ins, "grpc-status=%d", grpc_status);
         }
 
-        if (grpc_status == 16 && ctx->oauth2_ctx != NULL) {
+        if (grpc_status == OTLP_GRPC_STATUS_UNAUTHENTICATED &&
+            ctx->oauth2_ctx != NULL) {
             flb_oauth2_invalidate_token(ctx->oauth2_ctx);
             result = FLB_RETRY;
+        }
+        else if (grpc_status == OTLP_GRPC_STATUS_RESOURCE_EXHAUSTED ||
+                 grpc_status == OTLP_GRPC_STATUS_UNAVAILABLE) {
+            retry_info_status = opentelemetry_apply_grpc_retry_info(response,
+                                                                    out_flush);
+            if (retry_info_status == FLB_RETRY_AFTER_VALID ||
+                retry_info_status == FLB_RETRY_AFTER_SATURATED) {
+                result = FLB_THROTTLE;
+            }
+            else if (grpc_status == OTLP_GRPC_STATUS_RESOURCE_EXHAUSTED) {
+                result = FLB_ERROR;
+            }
+            else {
+                result = FLB_RETRY;
+            }
         }
         else if (opentelemetry_is_grpc_status_retryable(grpc_status)) {
             result = FLB_RETRY;
@@ -191,7 +659,8 @@ static int opentelemetry_check_grpc_status(struct opentelemetry_context *ctx,
 int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
                               const void *body, size_t body_len,
                               const char *tag, int tag_len,
-                              const char *uri)
+                              const char *uri,
+                              struct flb_output_flush *out_flush)
 {
     size_t                     final_body_len;
     void                      *final_body;
@@ -206,6 +675,7 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
     struct flb_config_map_val *mv;
     struct flb_http_client    *c;
     flb_sds_t                 signature = NULL;
+    int                       retry_after_status;
 
     compressed = FLB_FALSE;
 
@@ -368,7 +838,18 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
             }
 
             /* Retryable status codes according to OTLP spec */
-            if (is_http_status_code_retrayable(c->resp.status) == FLB_TRUE) {
+            retry_after_status = FLB_RETRY_AFTER_ABSENT;
+            if (c->resp.status == 429 || c->resp.status == 503) {
+                retry_after_status = opentelemetry_apply_legacy_retry_after(
+                                         c, out_flush);
+            }
+            if (c->resp.status == 429 ||
+                (c->resp.status == 503 &&
+                 (retry_after_status == FLB_RETRY_AFTER_VALID ||
+                  retry_after_status == FLB_RETRY_AFTER_SATURATED))) {
+                out_ret = FLB_THROTTLE;
+            }
+            else if (is_http_status_code_retrayable(c->resp.status) == FLB_TRUE) {
                 out_ret = FLB_RETRY;
             }
             else {
@@ -417,7 +898,8 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                        const void *body, size_t body_len,
                        const char *tag, int tag_len,
                        const char *http_uri,
-                       const char *grpc_uri)
+                       const char *grpc_uri,
+                       struct flb_output_flush *out_flush)
 {
     flb_sds_t                 oauth2_token;
     const char               *compression_algorithm;
@@ -429,6 +911,7 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
     struct flb_http_request  *request;
     int                       out_ret = FLB_RETRY;
     int                       result;
+    int                       retry_after_status;
 
     oauth2_token = NULL;
 
@@ -436,7 +919,7 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         return opentelemetry_legacy_post(ctx,
                                          body, body_len,
                                          tag, tag_len,
-                                         http_uri);
+                                         http_uri, out_flush);
     }
 
     compression_algorithm = NULL;
@@ -649,14 +1132,27 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                           response->status);
         }
 
-        if (out_ret == FLB_RETRY) {
+        if (ctx->oauth2_ctx != NULL && response->status == 401) {
             /* OAuth2-authenticated 401s should be retried with a fresh token. */
         }
-        else if (is_http_status_code_retrayable(response->status) == FLB_TRUE) {
-            out_ret = FLB_RETRY;
-        }
         else {
-            out_ret = FLB_ERROR;
+            retry_after_status = FLB_RETRY_AFTER_ABSENT;
+            if (response->status == 429 || response->status == 503) {
+                retry_after_status = opentelemetry_apply_retry_after_response(
+                                         response, out_flush);
+            }
+            if (response->status == 429 ||
+                (response->status == 503 &&
+                 (retry_after_status == FLB_RETRY_AFTER_VALID ||
+                  retry_after_status == FLB_RETRY_AFTER_SATURATED))) {
+                out_ret = FLB_THROTTLE;
+            }
+            else if (is_http_status_code_retrayable(response->status) == FLB_TRUE) {
+                out_ret = FLB_RETRY;
+            }
+            else {
+                out_ret = FLB_ERROR;
+            }
         }
     }
     else {
@@ -677,7 +1173,7 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
     }
 
     if (ctx->enable_grpc_flag && request->protocol_version == HTTP_PROTOCOL_VERSION_20 && out_ret == FLB_OK) {
-        result = opentelemetry_check_grpc_status(ctx, response);
+        result = opentelemetry_check_grpc_status(ctx, response, out_flush);
         if (result != FLB_OK) {
             out_ret = result;
         }
@@ -730,7 +1226,8 @@ static int opentelemetry_format_test(struct flb_config *config,
 
 static int post_metrics_payload(struct opentelemetry_context *ctx,
                                 struct flb_event_chunk *event_chunk,
-                                flb_sds_t payload)
+                                flb_sds_t payload,
+                                struct flb_output_flush *out_flush)
 {
     int result;
     int split_result;
@@ -744,7 +1241,8 @@ static int post_metrics_payload(struct opentelemetry_context *ctx,
                                   event_chunk->tag,
                                   flb_sds_len(event_chunk->tag),
                                   ctx->metrics_uri_sanitized,
-                                  ctx->grpc_metrics_uri);
+                                  ctx->grpc_metrics_uri,
+                                  out_flush);
     }
 
     batches = cmt_encode_opentelemetry_split_payload(
@@ -770,9 +1268,10 @@ static int post_metrics_payload(struct opentelemetry_context *ctx,
                                     event_chunk->tag,
                                     flb_sds_len(event_chunk->tag),
                                     ctx->metrics_uri_sanitized,
-                                    ctx->grpc_metrics_uri);
+                                    ctx->grpc_metrics_uri,
+                                    out_flush);
         if (result != FLB_OK) {
-            if (result == FLB_RETRY && index > 0) {
+            if ((result == FLB_RETRY || result == FLB_THROTTLE) && index > 0) {
                 flb_plg_warn(ctx->ins,
                              "metric payload partially succeeded (%zu/%zu batches); "
                              "skipping retry to avoid resending accepted data",
@@ -855,7 +1354,7 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
         flb_plg_debug(ctx->ins, "final payload size: %lu", flb_sds_len(buf));
         if (buf && flb_sds_len(buf) > 0) {
             /* Send HTTP request */
-            result = post_metrics_payload(ctx, event_chunk, buf);
+            result = post_metrics_payload(ctx, event_chunk, buf, out1_flush);
 
             /* Debug http_post() result statuses */
             if (result == FLB_OK) {
@@ -946,7 +1445,8 @@ static int process_traces(struct flb_event_chunk *event_chunk,
                                     event_chunk->tag,
                                     flb_sds_len(event_chunk->tag),
                                     ctx->traces_uri_sanitized,
-                                    ctx->grpc_traces_uri);
+                                    ctx->grpc_traces_uri,
+                                    out_flush);
 
         /* Debug http_post() result statuses */
         if (result == FLB_OK) {
@@ -1028,7 +1528,8 @@ static int process_profiles(struct flb_event_chunk *event_chunk,
                                     event_chunk->tag,
                                     flb_sds_len(event_chunk->tag),
                                     ctx->profiles_uri_sanitized,
-                                    ctx->grpc_profiles_uri);
+                                    ctx->grpc_profiles_uri,
+                                    out_flush);
 
         /* Debug http_post() result statuses */
         if (result == FLB_OK) {
