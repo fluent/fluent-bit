@@ -36,6 +36,7 @@ set(src
   flb_input_thread.c
   flb_filter.c
   flb_output.c
+  flb_output_throttle.c
   flb_output_thread.c
   flb_config.c
   flb_fips.c
