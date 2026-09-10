@@ -18,9 +18,14 @@
     "{\"create\":{\"_index\":\"logs\",\"_id\":\"two\"}}\n"       \
     "{\"message\":\"two\"}\n"
 
+#define THIRD_ENTRY                                                     \
+    "{\"create\":{\"_index\":\"logs\",\"_id\":\"three\"}}\n"     \
+    "{\"message\":\"three\"}\n"
+
 static void test_mixed_response_keeps_only_unresolved(void)
 {
     int result;
+    int throttled;
     const char *response;
     struct flb_search_bulk_retry *retry;
 
@@ -33,8 +38,10 @@ static void test_mixed_response_keeps_only_unresolved(void)
                                               BULK_PAYLOAD,
                                               strlen(BULK_PAYLOAD),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
+                                              &throttled,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_RETRY);
+    TEST_CHECK(throttled == FLB_TRUE);
     TEST_CHECK(retry != NULL);
     TEST_CHECK(retry->records == 1);
     TEST_CHECK(retry->size == strlen(SECOND_ENTRY));
@@ -45,6 +52,7 @@ static void test_mixed_response_keeps_only_unresolved(void)
 static void test_create_conflicts_are_complete(void)
 {
     int result;
+    int throttled;
     const char *response;
     struct flb_search_bulk_retry *retry;
 
@@ -57,14 +65,46 @@ static void test_create_conflicts_are_complete(void)
                                               BULK_PAYLOAD,
                                               strlen(BULK_PAYLOAD),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
+                                              &throttled,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_COMPLETE);
+    TEST_CHECK(throttled == FLB_FALSE);
     TEST_CHECK(retry == NULL);
+}
+
+static void test_mixed_failures_preserve_existing_retry_subset(void)
+{
+    int result;
+    int throttled;
+    const char *response;
+    struct flb_search_bulk_retry *retry;
+
+    response = "{\"errors\":true,\"items\":["
+               "{\"create\":{\"status\":201}},"
+               "{\"create\":{\"status\":400}},"
+               "{\"create\":{\"status\":503}}]}";
+
+    result = flb_search_bulk_process_response(response, strlen(response),
+                                              BULK_PAYLOAD,
+                                              strlen(BULK_PAYLOAD),
+                                              FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
+                                              &throttled,
+                                              &retry);
+    TEST_CHECK(result == FLB_SEARCH_BULK_RETRY);
+    TEST_CHECK(throttled == FLB_FALSE);
+    TEST_CHECK(retry != NULL);
+    TEST_CHECK(retry->records == 2);
+    TEST_CHECK(retry->size == strlen(SECOND_ENTRY) + strlen(THIRD_ENTRY));
+    TEST_CHECK(memcmp(retry->payload, SECOND_ENTRY, strlen(SECOND_ENTRY)) == 0);
+    TEST_CHECK(memcmp(retry->payload + strlen(SECOND_ENTRY),
+                      THIRD_ENTRY, strlen(THIRD_ENTRY)) == 0);
+    flb_search_bulk_retry_destroy(retry);
 }
 
 static void test_update_conflict_is_retried(void)
 {
     int result;
+    int throttled;
     const char *payload;
     const char *response;
     struct flb_search_bulk_retry *retry;
@@ -77,8 +117,10 @@ static void test_update_conflict_is_retried(void)
     result = flb_search_bulk_process_response(response, strlen(response),
                                               payload, strlen(payload),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
+                                              &throttled,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_RETRY);
+    TEST_CHECK(throttled == FLB_FALSE);
     TEST_CHECK(retry != NULL);
     TEST_CHECK(retry->records == 1);
     TEST_CHECK(retry->size == strlen(payload));
@@ -88,6 +130,7 @@ static void test_update_conflict_is_retried(void)
 static void test_update_conflict_is_complete_when_all_conflicts_are_acknowledged(void)
 {
     int result;
+    int throttled;
     const char *payload;
     const char *response;
     struct flb_search_bulk_retry *retry;
@@ -100,14 +143,17 @@ static void test_update_conflict_is_complete_when_all_conflicts_are_acknowledged
     result = flb_search_bulk_process_response(response, strlen(response),
                                               payload, strlen(payload),
                                               FLB_SEARCH_BULK_ACK_ALL_CONFLICTS,
+                                              &throttled,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_COMPLETE);
+    TEST_CHECK(throttled == FLB_FALSE);
     TEST_CHECK(retry == NULL);
 }
 
 static void test_truncated_success_response_is_complete(void)
 {
     int result;
+    int throttled;
     const char *response;
     struct flb_search_bulk_retry *retry;
 
@@ -118,14 +164,17 @@ static void test_truncated_success_response_is_complete(void)
                                               BULK_PAYLOAD,
                                               strlen(BULK_PAYLOAD),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
+                                              &throttled,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_COMPLETE);
+    TEST_CHECK(throttled == FLB_FALSE);
     TEST_CHECK(retry == NULL);
 }
 
 static void test_nested_success_marker_with_top_level_errors_is_invalid(void)
 {
     int result;
+    int throttled;
     const char *response;
     struct flb_search_bulk_retry *retry;
 
@@ -136,14 +185,17 @@ static void test_nested_success_marker_with_top_level_errors_is_invalid(void)
                                               BULK_PAYLOAD,
                                               strlen(BULK_PAYLOAD),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
+                                              &throttled,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_INVALID);
+    TEST_CHECK(throttled == FLB_FALSE);
     TEST_CHECK(retry == NULL);
 }
 
 static void test_item_count_mismatch_is_invalid(void)
 {
     int result;
+    int throttled;
     const char *response;
     struct flb_search_bulk_retry *retry;
 
@@ -154,13 +206,17 @@ static void test_item_count_mismatch_is_invalid(void)
                                               BULK_PAYLOAD,
                                               strlen(BULK_PAYLOAD),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
+                                              &throttled,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_INVALID);
+    TEST_CHECK(throttled == FLB_FALSE);
     TEST_CHECK(retry == NULL);
 }
 
 TEST_LIST = {
     {"mixed_response_keeps_only_unresolved", test_mixed_response_keeps_only_unresolved},
+    {"mixed_failures_preserve_existing_retry_subset",
+     test_mixed_failures_preserve_existing_retry_subset},
     {"create_conflicts_are_complete", test_create_conflicts_are_complete},
     {"update_conflict_is_retried", test_update_conflict_is_retried},
     {"update_conflict_is_complete_when_all_conflicts_are_acknowledged",
