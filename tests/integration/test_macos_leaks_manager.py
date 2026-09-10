@@ -1,4 +1,5 @@
 import signal
+import subprocess
 
 import pytest
 
@@ -130,6 +131,44 @@ def test_leaks_strict_fails_when_leaks_reports_leak(monkeypatch, tmp_path):
 
     with pytest.raises(AssertionError, match="memory leaks were detected"):
         manager.stop()
+
+
+@pytest.mark.parametrize("configured,expected", [
+    (None, manager_module.LEAKS_EXIT_TIMEOUT),
+    (30, manager_module.LEAKS_EXIT_TIMEOUT),
+    (manager_module.LEAKS_EXIT_TIMEOUT, manager_module.LEAKS_EXIT_TIMEOUT),
+    (240, 240),
+])
+def test_leaks_shutdown_timeout_preserves_supervisor_allowance(monkeypatch, configured, expected):
+    process = FakeProcess()
+    delivered_signals = []
+    wait_timeouts = []
+    monkeypatch.delenv("VALGRIND", raising=False)
+    monkeypatch.setenv("LEAKS", "1")
+    monkeypatch.setenv("LEAKS_STRICT", "1")
+    monkeypatch.setattr(
+        manager_module.os, "kill",
+        lambda pid, signal_number: delivered_signals.append((pid, signal_number)),
+    )
+
+    def slow_supervisor_wait(timeout=None):
+        wait_timeouts.append(timeout)
+        if timeout < 90:
+            raise subprocess.TimeoutExpired("leaks", timeout)
+        process.returncode = 0
+        return 0
+
+    process.wait = slow_supervisor_wait
+    manager = FluentBitManager("/tmp/fluent-bit.yaml", shutdown_timeout=configured)
+    manager.process = process
+    manager.target_pid = 4321
+
+    manager.stop()
+
+    assert wait_timeouts == [expected]
+    assert delivered_signals == [(4321, signal.SIGTERM)]
+    assert process.killed is False
+    assert process.returncode == 0
 
 
 def test_leaks_supervisor_failure_still_terminates_target(monkeypatch):

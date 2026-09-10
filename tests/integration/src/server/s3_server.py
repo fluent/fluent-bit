@@ -15,8 +15,13 @@
 #  limitations under the License.
 
 import logging
+import json
+from datetime import datetime, timedelta, timezone
 import threading
+import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 
 logger = logging.getLogger(__name__)
@@ -29,8 +34,36 @@ server_thread = None
 server_instance = None
 
 
+class TaggedUploadBarrier:
+    """Hold the first PUT for each tag until all expected tags are in flight."""
+
+    def __init__(self, tags, timeout=15):
+        self.tags = set(tags)
+        self.seen = set()
+        self.lock = threading.Lock()
+        self.barrier = threading.Barrier(len(self.tags), timeout=timeout)
+
+    def wait(self, tag):
+        with self.lock:
+            if tag not in self.tags or tag in self.seen:
+                return None
+            self.seen.add(tag)
+        try:
+            self.barrier.wait()
+            return True
+        except threading.BrokenBarrierError:
+            return False
+
+
 def reset_s3_server_state():
     data_storage["requests"] = []
+    data_storage["put_status"] = 200
+    data_storage["put_delay"] = 0
+    data_storage["upload_barrier"] = None
+    data_storage["credential_mode"] = None
+    data_storage["credential_requests"] = 0
+    data_storage["auth_failures"] = set()
+    data_storage["state_lock"] = threading.Lock()
 
 
 class _S3RequestHandler(BaseHTTPRequestHandler):
@@ -38,31 +71,82 @@ class _S3RequestHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def _record_request(self):
+        started = time.monotonic()
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length) if length > 0 else b""
-        data_storage["requests"].append(
-            {
-                "method": self.command,
-                "path": self.path,
-                "headers": dict(self.headers),
-                "body": body,
-            }
-        )
+        request = {
+            "method": self.command,
+            "path": self.path,
+            "headers": dict(self.headers),
+            "body": body,
+            "started": started,
+        }
+        data_storage["requests"].append(request)
+        return request
 
     def do_PUT(self):
-        self._record_request()
-        self.send_response(200)
+        request = self._record_request()
+        status = data_storage["put_status"]
+        tag = urlsplit(self.path).path.split("/")[2]
+        with data_storage["state_lock"]:
+            if data_storage["credential_mode"] == "refresh" and tag not in data_storage["auth_failures"]:
+                data_storage["auth_failures"].add(tag)
+                status = 403
+        barrier = data_storage["upload_barrier"]
+        if barrier is not None and status == 200:
+            request["barrier_passed"] = barrier.wait(tag)
+        time.sleep(data_storage["put_delay"])
+        body = b""
+        if status == 403:
+            body = b"<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>"
+        request["finished"] = time.monotonic()
+        self.send_response(status)
         self.send_header("ETag", '"fake-s3-etag"')
-        self.send_header("Content-Length", "0")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
+        if body:
+            self.wfile.write(body)
+        request["status"] = status
 
     def do_POST(self):
-        self._record_request()
+        request = self._record_request()
+        time.sleep(data_storage["put_delay"])
+        body = b""
+        if "uploads" in parse_qs(urlsplit(self.path).query, keep_blank_values=True):
+            request["upload_id"] = uuid.uuid4().hex
+            body = ("<InitiateMultipartUploadResult><UploadId>"
+                    f"{request['upload_id']}"
+                    "</UploadId></InitiateMultipartUploadResult>").encode()
+        request["finished"] = time.monotonic()
         self.send_response(200)
-        self.send_header("Content-Length", "0")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
+        if body:
+            self.wfile.write(body)
+        request["status"] = 200
 
     def do_GET(self):
+        if self.path == "/credentials":
+            with data_storage["state_lock"]:
+                data_storage["credential_requests"] += 1
+                generation = data_storage["credential_requests"]
+            # A 30-second lifetime falls inside the provider's refresh window.
+            lifetime = 30 if data_storage["credential_mode"] == "expiring" else 3600
+            expiration = datetime.now(timezone.utc) + timedelta(seconds=lifetime)
+            body = json.dumps({
+                "AccessKeyId": f"test-access-{generation}",
+                "SecretAccessKey": f"test-secret-{generation}",
+                "Token": f"test-token-{generation}",
+                "Expiration": expiration.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }).encode()
+            time.sleep(0.1)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if self.path == "/ping":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
