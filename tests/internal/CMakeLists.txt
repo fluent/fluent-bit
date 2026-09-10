@@ -66,6 +66,7 @@ set(UNIT_TESTS_FILES
   storage_dlq.c
   engine_adaptive_flush.c
   engine_dispatch.c
+  output_throttle.c
   search_bulk.c
 )
 
