@@ -175,6 +175,21 @@ static void cb_check_format_multiple_records(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+static void cb_check_format_log_key_error(void *ctx, int ffd,
+                                          int res_ret, void *res_data,
+                                          size_t res_size, void *data)
+{
+    if (res_ret == 0) {
+        set_callback_error("log_key conversion failure was not propagated");
+    }
+    if (res_data != NULL || res_size != 0) {
+        set_callback_error("failed extraction returned a partial payload");
+    }
+
+    increment_output_invoked();
+    flb_sds_destroy(res_data);
+}
+
 static void cb_check_format_partially_succeeded_records(void *ctx, int ffd,
                                                         int res_ret, void *res_data,
                                                         size_t res_size, void *data)
@@ -459,8 +474,8 @@ void test_format_multiple_records()
 {
     flb_ctx_t *ctx;
     int in_ffd, out_ffd;
-    char record1[1024];
-    char record2[1024];
+    int ret;
+    char records[2048];
     time_t now = time(NULL);
 
     ctx = flb_create();
@@ -482,11 +497,63 @@ void test_format_multiple_records()
     flb_start(ctx);
     clear_output_invoked();
 
-    snprintf(record1, sizeof(record1) - 1, "[%ld, {\"message\": \"record one\"}]", (long) now);
-    snprintf(record2, sizeof(record2) - 1, "[%ld, {\"message\": \"record two\"}]", (long) now + 1);
+    snprintf(records, sizeof(records),
+             "[%ld, {\"message\": \"record one\"}]"
+             "[%ld, {\"message\": \"record two\"}]",
+             (long) now, (long) now + 1);
 
-    flb_lib_push(ctx, in_ffd, record1, strlen(record1));
-    flb_lib_push(ctx, in_ffd, record2, strlen(record2));
+    /* Submit one batch so a flush cannot run between the records. */
+    ret = flb_lib_push(ctx, in_ffd, records, strlen(records));
+    TEST_CHECK(ret == strlen(records));
+
+    sleep(1);
+
+    stop_and_check(ctx, 1);
+}
+
+void test_format_with_log_key_conversion_error()
+{
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd;
+    int ret;
+    int i;
+    size_t offset;
+    char records[4096];
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", "log_level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "chronicle", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "customer_id", "test-customer",
+                   "project_id", "TESTING_FORMAT",
+                   "log_type", "TEST_LOG",
+                   "log_key", "message",
+                   "namespace", "tenant-a",
+                   "label", "env production",
+                   NULL);
+    flb_output_set_test(ctx, out_ffd, "formatter", cb_check_format_log_key_error, NULL, NULL);
+
+    flb_start(ctx);
+    clear_output_invoked();
+
+    /* JSON escaping exceeds the extraction buffer sized from MessagePack. */
+    offset = snprintf(records, sizeof(records),
+                      "[1, {\"message\": \"record one\"}][2, {\"message\": [\"");
+    for (i = 0; i < 256; i++) {
+        memcpy(records + offset, "\\u0001", 6);
+        offset += 6;
+    }
+    snprintf(records + offset, sizeof(records) - offset,
+             "\"]}][3, {\"message\": \"record three\"}]");
+
+    /* The failing middle record must abort the batch, preserving it for retry. */
+    ret = flb_lib_push(ctx, in_ffd, records, strlen(records));
+    TEST_CHECK(ret == strlen(records));
 
     sleep(1);
 
@@ -497,8 +564,8 @@ void test_format_partially_suceeded_records()
 {
     flb_ctx_t *ctx;
     int in_ffd, out_ffd;
-    char record1[1024];
-    char record2[1024];
+    int ret;
+    char records[2048];
     time_t now = time(NULL);
 
     ctx = flb_create();
@@ -521,11 +588,14 @@ void test_format_partially_suceeded_records()
     flb_start(ctx);
     clear_output_invoked();
 
-    snprintf(record1, sizeof(record1) - 1, "[%ld, {\"message\": \"record one\"}]", (long) now);
-    snprintf(record2, sizeof(record2) - 1, "[%ld, {\"test\": \"record two\"}]", (long) now + 1);
+    snprintf(records, sizeof(records),
+             "[%ld, {\"message\": \"record one\"}]"
+             "[%ld, {\"test\": \"record two\"}]",
+             (long) now, (long) now + 1);
 
-    flb_lib_push(ctx, in_ffd, record1, strlen(record1));
-    flb_lib_push(ctx, in_ffd, record2, strlen(record2));
+    /* Keep the valid and invalid records in the same formatter input. */
+    ret = flb_lib_push(ctx, in_ffd, records, strlen(records));
+    TEST_CHECK(ret == strlen(records));
 
     sleep(1);
 
@@ -616,8 +686,8 @@ void test_format_split_on_metadata_change()
 {
     flb_ctx_t *ctx;
     int in_ffd, out_ffd;
-    char record1[1024];
-    char record2[1024];
+    int ret;
+    char records[2048];
     time_t now = time(NULL);
 
     ctx = flb_create();
@@ -642,21 +712,20 @@ void test_format_split_on_metadata_change()
     flb_start(ctx);
     clear_output_invoked();
 
-    snprintf(record1, sizeof(record1) - 1,
+    snprintf(records, sizeof(records),
              "[%ld, {\"message\": \"record one\", \"tenant_namespace\": \"tenant-a\", "
-             "\"cluster\": {\"name\": \"blue\"}}]",
-             (long) now);
-    snprintf(record2, sizeof(record2) - 1,
+             "\"cluster\": {\"name\": \"blue\"}}]"
              "[%ld, {\"message\": \"record two\", \"tenant_namespace\": \"tenant-b\", "
              "\"cluster\": {\"name\": \"green\"}}]",
-             (long) now + 1);
+             (long) now, (long) now + 1);
 
-    flb_lib_push(ctx, in_ffd, record1, strlen(record1));
-    flb_lib_push(ctx, in_ffd, record2, strlen(record2));
+    /* Exercise metadata splitting within one formatter input. */
+    ret = flb_lib_push(ctx, in_ffd, records, strlen(records));
+    TEST_CHECK(ret == strlen(records));
 
     sleep(1);
 
-    stop_and_check(ctx, 1);
+    stop_and_check(ctx, 2);
 }
 
 
@@ -664,6 +733,7 @@ TEST_LIST = {
     { "format_no_log_key",           test_format_no_log_key },
     { "format_with_log_key_found",   test_format_with_log_key_found },
     { "format_with_log_key_not_found", test_format_with_log_key_not_found },
+    { "format_with_log_key_conversion_error", test_format_with_log_key_conversion_error },
     { "format_multiple_records",     test_format_multiple_records },
     { "format_partially_suceeded_records", test_format_partially_suceeded_records },
     { "format_namespace_and_labels", test_format_namespace_and_labels },
