@@ -1196,6 +1196,36 @@ static void remove_from_queue(struct upload_queue *entry)
     flb_free(entry);
 }
 
+/*
+ * Seal a buffered file that reached total_file_size: no more data is
+ * appended to it and its queue entry becomes due immediately.
+ */
+static int seal_and_queue_for_upload(struct flb_gcs *ctx, struct gcs_file *chunk,
+                                     const char *tag, int tag_len)
+{
+    struct mk_list *head;
+    struct upload_queue *entry;
+
+    if (add_to_queue(ctx, chunk, tag, tag_len) == -1) {
+        return -1;
+    }
+
+    gcs_store_file_seal(chunk);
+
+    mk_list_foreach(head, &ctx->upload_queue) {
+        entry = mk_list_entry(head, struct upload_queue, _head);
+        if (entry->upload_file == chunk) {
+            entry->upload_time = time(NULL);
+            break;
+        }
+    }
+
+    flb_plg_debug(ctx->ins,
+                  "total_file_size reached for tag %.*s (%zu bytes), "
+                  "scheduling upload", tag_len, tag, chunk->size);
+    return 0;
+}
+
 
 static void clear_upload_queue(struct flb_gcs *ctx)
 {
@@ -1234,6 +1264,11 @@ static int construct_request_buffer(struct flb_gcs *ctx,
                                     size_t *out_size)
 {
     int ret;
+
+    if (gcs_under_test_mode() == FLB_TRUE &&
+        getenv("TEST_GCS_CONSTRUCT_REQUEST_BUFFER_ERROR") != NULL) {
+        return -1;
+    }
 
     ret = gcs_store_file_read(ctx, entry->upload_file, out_buffer, out_size);
     if (ret == -1) {
@@ -1549,9 +1584,8 @@ static int process_upload_queue(struct flb_gcs *ctx)
     time_t now;
 
     /*
-     * Uploads can yield while waiting for network I/O. Do not let the periodic
-     * timer re-enter this function and process the same queue entry while an
-     * output flush is still handling it.
+     * Queue processing runs during initialization or with upload_lock held.
+     * Keep the re-entry guard so an entry cannot be processed twice.
      */
     if (ctx->upload_queue_processing == FLB_TRUE) {
         return 0;
@@ -1573,7 +1607,8 @@ static int process_upload_queue(struct flb_gcs *ctx)
         if (ret == -1) {
             gcs_store_file_unlock(entry->upload_file);
             entry->retry_counter++;
-            continue;
+            entry->upload_time = now + (2 * entry->retry_counter);
+            break;
         }
 
         ret = upload_data(ctx, entry, buffer, buffer_size);
@@ -1582,18 +1617,17 @@ static int process_upload_queue(struct flb_gcs *ctx)
             gcs_store_file_delete(ctx, entry->upload_file);
             flb_free(buffer);
             remove_from_queue(entry);
-            if (ctx->preserve_data_ordering == FLB_TRUE) {
-                break;
-            }
         }
         else {
             flb_free(buffer);
             gcs_store_file_unlock(entry->upload_file);
             entry->retry_counter++;
             entry->upload_time = now + (2 * entry->retry_counter);
-            if (ctx->preserve_data_ordering == FLB_TRUE) {
-                break;
-            }
+            /*
+             * Stop after a failed upload so the next pass can retry it
+             * without blocking this thread on more network requests.
+             */
+            break;
         }
     }
 
@@ -1631,6 +1665,8 @@ static int attach_recovered_chunk(struct flb_gcs *ctx, struct flb_fstore_file *f
 
     chunk->fsf = fsf;
     chunk->size = size;
+    /* Recovered files are pending uploads, not buffers for new records. */
+    gcs_store_file_seal(chunk);
 
     if (ctx->upload_timeout > 0) {
         chunk->create_time = time(NULL) - ctx->upload_timeout;
@@ -1681,33 +1717,11 @@ static void cb_gcs_upload(struct flb_config *config, void *data)
         return;
     }
 
+    pthread_mutex_lock(&ctx->upload_lock);
     process_upload_queue(ctx);
+    pthread_mutex_unlock(&ctx->upload_lock);
 }
 
-
-static void gcs_upload_queue(struct flb_config *config, void *data)
-{
-    int async_flags;
-    struct flb_gcs *ctx = data;
-
-    (void) config;
-
-    if (!ctx) {
-        return;
-    }
-
-    if (mk_list_size(&ctx->upload_queue) == 0) {
-        cb_gcs_upload(config, data);
-        return;
-    }
-
-    async_flags = flb_stream_get_flags(&ctx->u->base);
-    flb_stream_disable_async_mode(&ctx->u->base);
-
-    process_upload_queue(ctx);
-
-    flb_stream_set_flags(&ctx->u->base, async_flags);
-}
 
 static int flush_init(struct flb_gcs *ctx)
 {
@@ -1723,14 +1737,8 @@ static int flush_init(struct flb_gcs *ctx)
         return -1;
     }
 
-    if (ctx->preserve_data_ordering == FLB_TRUE) {
-        ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
-                                        ctx->timer_ms, gcs_upload_queue, ctx, NULL);
-    }
-    else {
-        ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
-                                        ctx->timer_ms, cb_gcs_upload, ctx, NULL);
-    }
+    ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
+                                    ctx->timer_ms, cb_gcs_upload, ctx, NULL);
     if (ret == -1) {
         return -1;
     }
@@ -1845,6 +1853,12 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
     }
     ctx->ins = ins; ctx->config = config;
     mk_list_init(&ctx->upload_queue);
+    if (pthread_mutex_init(&ctx->upload_lock, NULL) != 0) {
+        flb_errno();
+        flb_free(ctx);
+        return -1;
+    }
+    ctx->upload_lock_initialized = FLB_TRUE;
     ctx->retry_time = 0;
     ctx->upload_queue_success = FLB_FALSE;
     ctx->timer_created = FLB_FALSE;
@@ -1867,6 +1881,13 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
 
     if (ctx->canned_acl && !get_predefined_acl(ctx->canned_acl)) {
         flb_plg_error(ins, "unsupported canned ACL '%s'", ctx->canned_acl);
+        goto error;
+    }
+
+    if (ctx->total_file_size != 0 &&
+        ctx->total_file_size < FLB_GCS_MIN_TOTAL_FILE_SIZE) {
+        flb_plg_error(ins, "'total_file_size' must be at least 1M "
+                      "(or 0 to disable the size trigger)");
         goto error;
     }
 
@@ -1957,6 +1978,23 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
     if (!ctx->u) {
         goto error;
     }
+    /* apply net.* properties (keepalive, timeouts, ...) to the upstream */
+    flb_output_upstream_set(ctx->u, ins);
+
+    /*
+     * The upstream must ALWAYS run in sync mode: uploads are also triggered
+     * from the scheduler timer callback (and from init when a backlog is
+     * recovered), which run outside of any coroutine. An async write from
+     * there would try to yield a NULL coroutine and crash.
+     */
+    flb_stream_disable_async_mode(&ctx->u->base);
+
+    if (ins->tp_workers < 1) {
+        flb_plg_warn(ins, "uploads use synchronous network I/O; running "
+                     "with 'workers 0' will block the main event loop, "
+                     "configure 'workers 1' or higher");
+    }
+
     if (ctx->metadata_server_auth == FLB_TRUE) {
         ctx->metadata_u = flb_upstream_create_url(config, ctx->metadata_server,
                                                   FLB_IO_TCP, NULL);
@@ -2067,27 +2105,22 @@ error:
     return -1;
 }
 
-static void cb_gcs_flush(struct flb_event_chunk *event_chunk, struct flb_output_flush *out_flush,
-                         struct flb_input_instance *i_ins, void *out_context, struct flb_config *config)
+/*
+ * Buffer the payload in the local store and process the upload queue.
+ * Must be called with ctx->upload_lock held; returns an FLB_OUTPUT_RETURN
+ * status code.
+ */
+static int gcs_flush_payload(struct flb_gcs *ctx,
+                             struct flb_event_chunk *event_chunk,
+                             flb_sds_t payload)
 {
-    struct flb_gcs *ctx = out_context;
-    flb_sds_t payload;
     flb_sds_t tag_name = NULL;
     int tag_name_len;
     int ret;
     struct gcs_file *chunk;
 
     if (flush_init(ctx) == -1) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-    (void) out_flush;
-    (void) i_ins;
-
-    payload = flb_pack_msgpack_to_json_format(event_chunk->data, event_chunk->size,
-                                              ctx->out_format, ctx->json_date_format,
-                                              ctx->json_date_key, config->json_escape_unicode);
-    if (!payload) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+        return FLB_RETRY;
     }
 
     if (ctx->unify_tag == FLB_TRUE) {
@@ -2100,34 +2133,79 @@ static void cb_gcs_flush(struct flb_event_chunk *event_chunk, struct flb_output_
     }
 
     chunk = gcs_store_file_get(ctx, tag_name, tag_name_len);
+
+    /* total_file_size reached: upload the current file, start a new one */
+    if (chunk && ctx->total_file_size > 0 &&
+        chunk->size + flb_sds_len(payload) > ctx->total_file_size) {
+        ret = seal_and_queue_for_upload(ctx, chunk, tag_name, tag_name_len);
+        if (ret == -1) {
+            return FLB_RETRY;
+        }
+        chunk = NULL;
+    }
+
     if (gcs_store_buffer_put(ctx, chunk, tag_name, tag_name_len,
                              payload, flb_sds_len(payload)) == -1) {
-        flb_sds_destroy(payload);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+        return FLB_RETRY;
     }
-    flb_sds_destroy(payload);
 
     chunk = gcs_store_file_get(ctx, tag_name, tag_name_len);
     if (!chunk) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+        return FLB_RETRY;
     }
 
-    ret = add_to_queue(ctx, chunk, tag_name, tag_name_len);
+    if (ctx->total_file_size > 0 && chunk->size >= ctx->total_file_size) {
+        ret = seal_and_queue_for_upload(ctx, chunk, tag_name, tag_name_len);
+    }
+    else {
+        ret = add_to_queue(ctx, chunk, tag_name, tag_name_len);
+    }
     if (ret == -1) {
+        return FLB_RETRY;
+    }
+
+    /*
+     * Non-order-preserving mode: try to flush every due queue entry.
+     * Preserve-order mode: flush due entries strictly in FIFO order and
+     * stop at the first failure.
+     */
+    ret = process_upload_queue(ctx);
+    if (ret == -1) {
+        return FLB_ERROR;
+    }
+
+    return FLB_OK;
+}
+
+static void cb_gcs_flush(struct flb_event_chunk *event_chunk, struct flb_output_flush *out_flush,
+                         struct flb_input_instance *i_ins, void *out_context, struct flb_config *config)
+{
+    struct flb_gcs *ctx = out_context;
+    flb_sds_t payload;
+    int ret;
+
+    (void) out_flush;
+    (void) i_ins;
+
+    payload = flb_pack_msgpack_to_json_format(event_chunk->data, event_chunk->size,
+                                              ctx->out_format, ctx->json_date_format,
+                                              ctx->json_date_key, config->json_escape_unicode);
+    if (!payload) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     /*
-     * Non-order-preserving mode: try to flush as many queued entries as possible.
-     * Preserve-order mode: process at most one queue entry per flush to keep
-     * strict FIFO progression.
+     * Flushes may run concurrently from several workers, and the upload
+     * timer runs in one of them: serialize all access to the upload queue,
+     * the local file store and the sequence index. The upstream is in sync
+     * mode, so no coroutine switch happens while the lock is held.
      */
-    ret = process_upload_queue(ctx);
-    if (ret == -1) {
-        FLB_OUTPUT_RETURN(FLB_ERROR);
-    }
+    pthread_mutex_lock(&ctx->upload_lock);
+    ret = gcs_flush_payload(ctx, event_chunk, payload);
+    pthread_mutex_unlock(&ctx->upload_lock);
 
-    FLB_OUTPUT_RETURN(FLB_OK);
+    flb_sds_destroy(payload);
+    FLB_OUTPUT_RETURN(ret);
 }
 
 static int gcs_ctx_destroy(void *data, struct flb_config *config)
@@ -2138,10 +2216,8 @@ static int gcs_ctx_destroy(void *data, struct flb_config *config)
     }
 
     /*
-     * Uploads require an output worker coroutine. The exit callback runs after
-     * the workers have stopped, so attempting an upload here can switch to an
-     * invalid coroutine/fiber context. Leave pending chunks in the file store;
-     * they are recovered and uploaded on the next startup.
+     * Leave pending chunks in the file store for recovery on the next startup.
+     * Synchronous network requests here would delay shutdown.
      */
     clear_upload_queue(ctx);
 
@@ -2198,6 +2274,9 @@ static int gcs_ctx_destroy(void *data, struct flb_config *config)
     if (ctx->token_mutex_initialized == FLB_TRUE) {
         pthread_mutex_destroy(&ctx->token_mutex);
     }
+    if (ctx->upload_lock_initialized == FLB_TRUE) {
+        pthread_mutex_destroy(&ctx->upload_lock);
+    }
     flb_free(ctx);
 
     return 0;
@@ -2246,6 +2325,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_TIME, "upload_timeout", "10m",
      0, FLB_TRUE, offsetof(struct flb_gcs, upload_timeout),
      "Upload timeout before chunk is flushed."
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "total_file_size", "100M",
+     0, FLB_TRUE, offsetof(struct flb_gcs, total_file_size),
+     "Buffered data size per tag that triggers an upload before upload_timeout. "
+     "Batches are not split, so objects can exceed this size. Minimum 1M, "
+     "0 disables the size trigger. Ordered uploads still wait for older files."
     },
     {
      FLB_CONFIG_MAP_BOOL, "send_content_md5", "false",
