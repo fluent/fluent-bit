@@ -923,8 +923,25 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     return task;
 }
 
+static int task_output_is_registered(struct flb_task *task,
+                                     struct flb_output_instance *output)
+{
+    struct mk_list *head;
+    struct flb_output_instance *instance;
+
+    mk_list_foreach(head, &task->config->outputs) {
+        instance = mk_list_entry(head, struct flb_output_instance, _head);
+        if (instance == output) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 void flb_task_destroy(struct flb_task *task, int del)
 {
+    int output_is_registered;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_task_route *route;
@@ -939,13 +956,19 @@ void flb_task_destroy(struct flb_task *task, int del)
     mk_list_foreach_safe(head, tmp, &task->routes) {
         route = mk_list_entry(head, struct flb_task_route, _head);
         if (route->dispatch_state == FLB_TASK_ROUTE_DISPATCH_DEFERRED) {
-            mk_list_del(&route->_deferred_head);
-            route->out->throttle_deferred_count--;
+            output_is_registered = task_output_is_registered(task, route->out);
+            if (output_is_registered == FLB_TRUE) {
+                mk_list_del(&route->_deferred_head);
+                route->out->throttle_deferred_count--;
+            }
             task->deferred_routes--;
         }
         else if (route->dispatch_state == FLB_TASK_ROUTE_DISPATCH_QUEUED ||
                  route->dispatch_state == FLB_TASK_ROUTE_DISPATCH_COMPLETING) {
-            route->out->dispatches_inflight--;
+            output_is_registered = task_output_is_registered(task, route->out);
+            if (output_is_registered == FLB_TRUE) {
+                route->out->dispatches_inflight--;
+            }
         }
         if (route->retry_context != NULL &&
             route->retry_context_destroy != NULL) {
