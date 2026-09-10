@@ -39,6 +39,9 @@ struct ev_map {
 
     struct event *event;
     struct mk_event_ctx *ctx;
+
+    /* libevent timer that feeds pipe[1] (timeouts only, NULL otherwise) */
+    struct event *timer;
 };
 
 static int mk_event_libevent_socketpair(evutil_socket_t fd[2])
@@ -118,16 +121,54 @@ static inline void _mk_event_loop_destroy(struct mk_event_ctx *ctx)
     mk_mem_free(ctx);
 }
 
+/*
+ * Append an entry to the 'fired' array. The array is allocated once with
+ * 'queue_size' entries but the number of events registered in libevent is
+ * unbounded, so more than 'queue_size' events can become ready in a single
+ * event_base_loop() pass. Grow the array on demand instead of writing past
+ * its end.
+ *
+ * Growing here is safe: nothing keeps a pointer into ctx->fired across
+ * callbacks, libevent never references it, and consumers index it through
+ * ctx->fired only after event_base_loop() returns.
+ */
+static inline int mk_event_fired_push(struct mk_event_ctx *ctx,
+                                      int fd, uint32_t mask,
+                                      struct mk_event *event)
+{
+    size_t new_size;
+    struct mk_event *fired;
+
+    if ((size_t) ctx->fired_count >= ctx->queue_size) {
+        new_size = (ctx->queue_size > 0) ? ctx->queue_size * 2 : 256;
+        fired = mk_mem_realloc(ctx->fired, sizeof(struct mk_event) * new_size);
+        if (fired == NULL) {
+            /*
+             * Out of memory: drop this notification rather than overflow.
+             * Registered events are level triggered and persistent, so a
+             * still-ready descriptor is reported again on the next pass.
+             */
+            return -1;
+        }
+        ctx->fired = fired;
+        ctx->queue_size = new_size;
+    }
+
+    fired = &ctx->fired[ctx->fired_count];
+    fired->fd   = fd;
+    fired->mask = mask;
+    fired->data = event;
+
+    ctx->fired_count++;
+
+    return 0;
+}
+
 static void cb_event(evutil_socket_t fd, short flags, void *data)
 {
-    int i;
-    int mask = 0;
+    uint32_t mask = 0;
     struct mk_event *event = data;
-    struct mk_event *fired;
-    struct mk_event_ctx *ctx;
     struct ev_map *map = event->data;
-
-    ctx = map->ctx;
 
     /* Compose mask */
     if (flags & EV_READ) {
@@ -138,13 +179,7 @@ static void cb_event(evutil_socket_t fd, short flags, void *data)
     }
 
     /* Register the event in the fired array */
-    i = ctx->fired_count;
-    fired = &ctx->fired[i];
-    fired->fd   = event->fd;
-    fired->mask = mask;
-    fired->data = event;
-
-    ctx->fired_count++;
+    mk_event_fired_push(map->ctx, event->fd, mask, event);
 }
 
 /*
@@ -278,6 +313,20 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
 
     mk_bug(ev_map == NULL);
 
+    /* Stop the timer first so cb_timeout() can never run against a freed map */
+    if (ev_map->timer != NULL) {
+        event_del(ev_map->timer);
+        event_free(ev_map->timer);
+        ev_map->timer = NULL;
+    }
+
+    /*
+     * Unregister from libevent before closing the descriptors: on Windows a
+     * closed socket handle can be reused by another thread right away.
+     */
+    ret = event_del(ev_map->event);
+    event_free(ev_map->event);
+
     if (ev_map->pipe[0] > 0) {
         evutil_closesocket(ev_map->pipe[0]);
         ev_map->pipe[0] = -1;
@@ -287,8 +336,6 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
         ev_map->pipe[1] = -1;
     }
 
-    ret = event_del(ev_map->event);
-    event_free(ev_map->event);
     mk_mem_free(ev_map);
 
     event->data = NULL;
@@ -304,8 +351,9 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
 }
 
 /*
- * Timeout worker, it writes a byte every certain amount of seconds, it finish
- * once the other end of the pipe closes the fd[0].
+ * Timeout worker, it writes a byte every certain amount of seconds. It only
+ * signals: the lifetime of the timer, the socket pair and the ev_map is owned
+ * by _mk_event_del(), which stops this timer before releasing any of them.
  */
 static void cb_timeout(evutil_socket_t fd, short flags, void *data)
 {
@@ -314,15 +362,10 @@ static void cb_timeout(evutil_socket_t fd, short flags, void *data)
     struct ev_map *ev_map = data;
 
     ret = send(ev_map->pipe[1], (char *) &val, sizeof(uint64_t), 0);
-
     if (ret == -1) {
-        if (evutil_socket_geterror(fd) != ERR(ECONNABORTED)) {
+        if (evutil_socket_geterror(ev_map->pipe[1]) != ERR(ECONNABORTED)) {
             perror("write");
         }
-        evutil_closesocket(ev_map->pipe[1]);
-        event_del(ev_map->event);
-        event_free(ev_map->event);
-        mk_mem_free(ev_map);
     }
 }
 
@@ -351,52 +394,57 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
     event = (struct mk_event *) data;
 
-    ev_map = mk_mem_alloc_z(sizeof(struct ev_map));
-    if (!ev_map) {
-        perror("malloc");
-        return -1;
-    }
-
-    ev_map->pipe[0] = fd[0];
-    ev_map->pipe[1] = fd[1];
-    ev_map->ctx = ctx;
-
-    libev = event_new(ctx->base, -1,
-                      EV_TIMEOUT | EV_PERSIST,
-                      cb_timeout, ev_map);
-    ev_map->event = libev;
-
-    event_add(libev, &timev);
-
     event->fd = fd[0];
     event->type = MK_EVENT_NOTIFICATION;
     event->mask = MK_EVENT_EMPTY;
 
-    _mk_event_add(ctx, fd[0], MK_EVENT_NOTIFICATION, MK_EVENT_READ, data);
+    /* Register the read end; this allocates the ev_map stored in event->data */
+    ret = _mk_event_add(ctx, fd[0], MK_EVENT_NOTIFICATION, MK_EVENT_READ, data);
+    if (ret != 0) {
+        evutil_closesocket(fd[0]);
+        evutil_closesocket(fd[1]);
+        return -1;
+    }
     event->mask = MK_EVENT_READ;
+
+    /*
+     * The same ev_map owns the socket pair and the timer, so _mk_event_del()
+     * releases everything in one place.
+     */
+    ev_map = event->data;
+    ev_map->pipe[0] = fd[0];
+    ev_map->pipe[1] = fd[1];
+
+    libev = event_new(ctx->base, -1,
+                      EV_TIMEOUT | EV_PERSIST,
+                      cb_timeout, ev_map);
+    if (libev == NULL) {
+        _mk_event_del(ctx, event);
+        return -1;
+    }
+    ev_map->timer = libev;
+
+    ret = event_add(libev, &timev);
+    if (ret != 0) {
+        _mk_event_del(ctx, event);
+        return -1;
+    }
 
     return fd[0];
 }
 
 static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data)
 {
-    struct mk_event *event;
-
     if (data == NULL) {
         return 0;
     }
 
-    /* In the case that the timeout is being destroyed manually, we need to close the
-     * read end of the socket to ensure that cb_timeout will eventually fail to send
-     * data and clean itself up (including the write end of the socket and the event's
-     * data).
+    /*
+     * _mk_event_del() is the single owner of the timer, the socket pair and
+     * the ev_map: it stops the timer, unregisters the reader and closes both
+     * ends exactly once. Do not close event->fd here, it aliases pipe[0].
      */
-    event = (struct mk_event*)data; 
-    if (event->fd > 0) {
-        evutil_closesocket(event->fd);
-    }
-
-    return _mk_event_del(ctx, data);
+    return _mk_event_del(ctx, (struct mk_event *) data);
 }
 
 static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
@@ -475,11 +523,9 @@ static inline int _mk_event_inject(struct mk_event_loop *loop,
 
     event->mask = mask;
 
-    ctx->fired[ctx->fired_count].fd = event->fd;
-    ctx->fired[ctx->fired_count].mask = mask;
-    ctx->fired[ctx->fired_count].data = event;
-
-    ctx->fired_count++;
+    if (mk_event_fired_push(ctx, event->fd, mask, event) != 0) {
+        return -1;
+    }
     loop->n_events++;
 
     return 0;
