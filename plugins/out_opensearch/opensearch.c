@@ -31,9 +31,12 @@
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_search_bulk.h>
+#include <fluent-bit/flb_http_retry_after.h>
 #include <msgpack.h>
 
 #include <cfl/cfl.h>
+#include <stdint.h>
+#include <time.h>
 
 #include "opensearch.h"
 #include "os_conf.h"
@@ -164,6 +167,65 @@ static void log_bulk_failure_summary(struct flb_opensearch *ctx,
                       stats->failed_items, stats->total_items,
                       stats->first_error_status, stats->first_error_type,
                       stats->first_error_reason, retry_records);
+    }
+}
+
+static void opensearch_apply_retry_after(struct flb_opensearch *ctx,
+                                         struct flb_http_client *client,
+                                         struct flb_output_flush *out_flush)
+{
+    int status;
+    int trailer_status;
+    time_t wall_time;
+    int64_t wall_time_ms;
+    uint64_t delay_ms;
+    uint64_t trailer_delay_ms;
+    size_t invalid_count;
+    size_t trailer_invalid_count;
+
+    status = FLB_RETRY_AFTER_ABSENT;
+    delay_ms = 0;
+    invalid_count = 0;
+    wall_time = time(NULL);
+    if (wall_time < 0 || (uint64_t) wall_time > (uint64_t) INT64_MAX / 1000) {
+        wall_time_ms = 0;
+    }
+    else {
+        wall_time_ms = (int64_t) wall_time * 1000;
+    }
+
+    if (client->resp.data != NULL && client->resp.headers_end != NULL) {
+        status = flb_http_retry_after_parse_headers(
+                     client->resp.data,
+                     (size_t) (client->resp.headers_end - client->resp.data),
+                     wall_time_ms, &delay_ms, &invalid_count);
+    }
+
+    if (client->resp.trailer_buf != NULL && client->resp.trailer_size > 0) {
+        trailer_delay_ms = 0;
+        trailer_invalid_count = 0;
+        trailer_status = flb_http_retry_after_parse_headers(
+                             client->resp.trailer_buf,
+                             client->resp.trailer_size,
+                             wall_time_ms, &trailer_delay_ms,
+                             &trailer_invalid_count);
+        invalid_count += trailer_invalid_count;
+        if ((trailer_status == FLB_RETRY_AFTER_VALID ||
+             trailer_status == FLB_RETRY_AFTER_SATURATED) &&
+            ((status != FLB_RETRY_AFTER_VALID &&
+              status != FLB_RETRY_AFTER_SATURATED) ||
+             trailer_delay_ms > delay_ms)) {
+            status = trailer_status;
+            delay_ms = trailer_delay_ms;
+        }
+    }
+
+    if (invalid_count > 0) {
+        flb_plg_debug(ctx->ins, "ignored %zu malformed Retry-After field(s)",
+                      invalid_count);
+    }
+    if (status == FLB_RETRY_AFTER_VALID || status == FLB_RETRY_AFTER_SATURATED) {
+        flb_output_set_retry_after(out_flush, delay_ms);
     }
 }
 
@@ -1080,6 +1142,7 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     size_t successful_bytes;
     int successful_records;
     int retry_context_result;
+    int throttle_detected;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -1088,6 +1151,7 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     }
 
     retry_payload = flb_output_get_retry_context(out_flush, NULL, NULL);
+    throttle_detected = FLB_FALSE;
     if (retry_payload != NULL) {
         pack = flb_sds_create_len(retry_payload->payload,
                                   retry_payload->size);
@@ -1218,6 +1282,10 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
                 flb_sds_destroy(signature);
                 signature = NULL;
             }
+            if (c->resp.status == 429) {
+                opensearch_apply_retry_after(ctx, c, out_flush);
+                goto throttle;
+            }
             goto retry;
         }
 
@@ -1230,7 +1298,8 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
                                                        pack, pack_size,
                                                        FLB_SEARCH_BULK_ACK_ALL_CONFLICTS,
                                                        ctx->drop_unrecoverable_records,
-                                                       &bulk_stats, NULL,
+                                                       &bulk_stats,
+                                                       &throttle_detected,
                                                        &next_retry_payload);
             }
             else if (opensearch_error_check(ctx, c) == FLB_TRUE) {
@@ -1324,6 +1393,10 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
                     flb_sds_destroy(signature);
                     signature = NULL;
                 }
+                if (throttle_detected == FLB_TRUE) {
+                    opensearch_apply_retry_after(ctx, c, out_flush);
+                    goto throttle;
+                }
                 goto retry;
             }
             else {
@@ -1370,8 +1443,15 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     }
     FLB_OUTPUT_RETURN(FLB_OK);
 
+ throttle:
+    ret = FLB_THROTTLE;
+    goto failure;
+
     /* Issue a retry */
  retry:
+    ret = FLB_RETRY;
+
+ failure:
     if (c != NULL) {
         flb_http_client_destroy(c);
     }
@@ -1382,7 +1462,7 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     }
 
     flb_upstream_conn_release(u_conn);
-    FLB_OUTPUT_RETURN(FLB_RETRY);
+    FLB_OUTPUT_RETURN(ret);
 }
 
 static int cb_opensearch_exit(void *data, struct flb_config *config)
