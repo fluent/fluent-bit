@@ -135,8 +135,14 @@ static int test_output_init(struct flb_output_instance *output, const char *name
     memset(output, 0, sizeof(struct flb_output_instance));
     strncpy(output->name, name, sizeof(output->name) - 1);
 
+    if (flb_output_throttle_init(&output->throttle,
+                                 FLB_FALSE, 1000, 60000) != 0) {
+        return -1;
+    }
+
     output->cmt = cmt_create();
     if (output->cmt == NULL) {
+        flb_output_throttle_destroy(&output->throttle);
         return -1;
     }
 
@@ -158,6 +164,7 @@ static int test_output_init(struct flb_output_instance *output, const char *name
         output->cmt_dropped_records == NULL) {
         cmt_destroy(output->cmt);
         output->cmt = NULL;
+        flb_output_throttle_destroy(&output->throttle);
         return -1;
     }
 
@@ -174,6 +181,7 @@ static int test_output_init(struct flb_output_instance *output, const char *name
         }
         cmt_destroy(output->cmt);
         output->cmt = NULL;
+        flb_output_throttle_destroy(&output->throttle);
         return -1;
     }
 #endif
@@ -183,6 +191,8 @@ static int test_output_init(struct flb_output_instance *output, const char *name
 
 static void test_output_destroy(struct flb_output_instance *output)
 {
+    flb_output_throttle_destroy(&output->throttle);
+
 #ifdef FLB_HAVE_METRICS
     if (output->metrics != NULL) {
         flb_metrics_destroy(output->metrics);
@@ -291,9 +301,11 @@ static struct flb_task_retry *create_retry_dispatch_task(
         return NULL;
     }
     route->out = output;
+    route->task = task;
     route->status = FLB_TASK_ROUTE_INACTIVE;
     route->records = TEST_ROUTE_RECORDS;
     route->bytes = TEST_ROUTE_BYTES;
+    mk_list_init(&route->_deferred_head);
     mk_list_add(&route->_head, &task->routes);
 
     retry = flb_calloc(1, sizeof(struct flb_task_retry));
@@ -482,7 +494,9 @@ static void test_retry_flush_failure_preserves_pending_retry(void)
     }
 
     route->out = &output_b;
+    route->task = task;
     route->status = FLB_TASK_ROUTE_INACTIVE;
+    mk_list_init(&route->_deferred_head);
     mk_list_add(&route->_head, &task->routes);
 
     remaining_retry->attempts = 1;
@@ -590,6 +604,73 @@ static void test_retry_flush_failure_reschedules_within_retry_limit(void)
     test_ctx_destroy(ctx);
 }
 
+static void test_delayed_singleplex_failure_releases_task(void)
+{
+    int ret;
+    int task_id;
+    char *chunk_buffer;
+    struct cio_memfs *memfs;
+    struct test_ctx *ctx;
+    struct flb_input_chunk *chunk;
+    struct flb_task *task;
+    struct flb_task_enqueued blocker;
+    struct flb_task_queue queue;
+    struct flb_task_retry *retry;
+    struct flb_output_instance output;
+
+    ctx = test_ctx_create();
+    TEST_CHECK(ctx != NULL);
+    if (ctx == NULL) {
+        return;
+    }
+
+    ret = test_output_init(&output, "output_a");
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        test_ctx_destroy(ctx);
+        return;
+    }
+
+    retry = create_retry_dispatch_task(ctx, &output, &task_id, &chunk_buffer);
+    TEST_CHECK(retry != NULL);
+    if (retry == NULL) {
+        test_output_destroy(&output);
+        test_ctx_destroy(ctx);
+        return;
+    }
+    task = retry->parent;
+    chunk = task->ic;
+    memfs = ((struct cio_chunk *) chunk->chunk)->backend;
+    memfs->buf_data = chunk_buffer;
+    flb_task_retry_destroy(retry);
+
+    mk_list_init(&queue.pending);
+    mk_list_init(&queue.in_progress);
+    memset(&blocker, 0, sizeof(blocker));
+    mk_list_add(&blocker._head, &queue.in_progress);
+    output.flags = FLB_OUTPUT_SYNCHRONOUS;
+    output.singleplex_queue = &queue;
+
+    ret = flb_output_task_singleplex_enqueue(&queue, NULL, task, &output,
+                                             ctx->config);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(task->users == 1);
+    TEST_CHECK(mk_list_size(&queue.pending) == 1);
+
+    mk_list_del(&blocker._head);
+    ctx->config->ch_self_events[1] = -1;
+    ret = flb_output_task_singleplex_flush_next(&queue);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(ctx->config->task_map[task_id].task == NULL);
+    TEST_CHECK(mk_list_size(&ctx->input->tasks) == 0);
+    TEST_CHECK(mk_list_size(&ctx->input->chunks) == 0);
+    TEST_CHECK(mk_list_size(&queue.pending) == 0);
+    TEST_CHECK(mk_list_size(&queue.in_progress) == 0);
+
+    test_output_destroy(&output);
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     { "retry_flush_failure_releases_last_task_owner",
       test_retry_flush_failure_releases_last_task_owner },
@@ -599,5 +680,7 @@ TEST_LIST = {
       test_retry_flush_failure_preserves_active_task_owner },
     { "retry_flush_failure_preserves_pending_retry",
       test_retry_flush_failure_preserves_pending_retry },
+    { "delayed_singleplex_failure_releases_task",
+      test_delayed_singleplex_failure_releases_task },
     { 0 }
 };
