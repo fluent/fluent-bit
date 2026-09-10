@@ -1572,6 +1572,11 @@ start_resource:
             free_log_records(log_records, log_record_count);
             log_record_count = 0;
             scope_log->n_log_records = 0;
+
+            /* Do not let a later batch overwrite this failure. */
+            if (ret != FLB_OK) {
+                break;
+            }
         }
     }
 
