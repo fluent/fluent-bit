@@ -192,6 +192,152 @@ def test_out_http_receiver_error_is_observable():
     assert len(requests_seen) >= 1
 
 
+def test_out_http_429_uses_largest_retry_after_field():
+    service = Service(
+        "out_http_throttle.yaml",
+        response_setup=lambda: configure_http_response(
+            status_code=429,
+            headers=[
+                ("Retry-After", "1"),
+                ("retry-after", "invalid"),
+                ("RETRY-AFTER", "2"),
+            ],
+        ),
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=10)
+    log_text = service.wait_for_log_message("ignored 1 malformed Retry-After field(s)")
+    service.stop()
+
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 1.8
+    assert "ignored 1 malformed Retry-After field(s)" in log_text
+
+
+def test_out_http_429_without_hint_uses_local_throttle_delay():
+    service = Service(
+        "out_http_throttle.yaml",
+        response_setup=lambda: configure_http_response(status_code=429),
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=8)
+    service.stop()
+
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 0.8
+
+
+def test_out_http_503_with_retry_after_throttles():
+    service = Service(
+        "out_http_throttle.yaml",
+        response_setup=lambda: configure_http_response(
+            status_code=503,
+            headers=[("Retry-After", "2")],
+        ),
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=10)
+    service.stop()
+
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 1.8
+
+
+def test_out_http_503_without_valid_hint_preserves_retry_behavior():
+    service = Service(
+        "out_http_throttle.yaml",
+        response_setup=lambda: configure_http_response(
+            status_code=503,
+            headers=[("Retry-After", "not-a-delay")],
+        ),
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=8)
+    service.stop()
+
+    assert len(requests_seen) == 2
+
+
+def test_out_http_408_preserves_retry_behavior():
+    service = Service(
+        "out_http_throttle.yaml",
+        response_setup=lambda: configure_http_response(status_code=408),
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=15)
+    service.stop()
+
+    assert len(requests_seen) == 2
+
+
+def test_out_http_permanent_4xx_is_not_retried():
+    service = Service(
+        "out_http_throttle.yaml",
+        response_setup=lambda: configure_http_response(status_code=400),
+    )
+    service.start()
+
+    service.wait_for_requests(1)
+    time.sleep(2)
+    requests_seen = list(data_storage["requests"])
+    service.stop()
+
+    assert len(requests_seen) == 1
+
+
+def test_out_http_accepts_205_without_retry():
+    service = Service(
+        "out_http_throttle.yaml",
+        response_setup=lambda: configure_http_response(status_code=205),
+    )
+    service.start()
+
+    service.wait_for_requests(1)
+    time.sleep(2)
+    requests_seen = list(data_storage["requests"])
+    service.stop()
+
+    assert len(requests_seen) == 1
+
+
+def test_out_http_disabled_throttle_ignores_retry_after_cooldown():
+    service = Service(
+        "out_http_throttle_disabled.yaml",
+        response_setup=lambda: configure_http_response(
+            status_code=429,
+            headers=[("Retry-After", "15")],
+        ),
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=12)
+    service.stop()
+
+    if not memory_check_enabled():
+        assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] < 12
+
+
+def test_out_http_body_key_stops_after_throttle():
+    service = Service(
+        "out_http_throttle_body_key.yaml",
+        response_setup=lambda: configure_http_response(
+            status_code=429,
+            headers=[("Retry-After", "4")],
+        ),
+    )
+    service.start()
+
+    service.wait_for_requests(2, timeout=12)
+    time.sleep(1)
+    requests_seen = list(data_storage["requests"])
+    service.stop()
+
+    assert len(requests_seen) == 2
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 3.8
+
+
 def test_out_http_oauth2_basic_adds_bearer_token():
     service = Service("out_http_oauth2_basic.yaml")
     service.start()
