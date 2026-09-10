@@ -26,13 +26,92 @@
 #include <fluent-bit/flb_output_thread.h>
 #include <fluent-bit/flb_thread_pool.h>
 #include <fluent-bit/flb_notification.h>
+#include <cfl/cfl_atomic.h>
 
 static pthread_once_t local_thread_instance_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct flb_out_thread_instance, local_thread_instance);
+static pthread_mutex_t result_fallback_mutex;
+static struct mk_list result_fallbacks;
+
+int flb_output_thread_post_dispatch_result(
+                                struct flb_out_thread_instance *th_ins,
+                                struct flb_output_dispatch *dispatch,
+                                int result)
+{
+    int ret;
+
+    pthread_once(&local_thread_instance_init, flb_output_thread_instance_init);
+
+    ret = flb_output_dispatch_post_result(dispatch, result,
+                                          th_ins->ch_thread_events[1]);
+    if (ret == 0) {
+        return 0;
+    }
+
+    flb_plg_warn(th_ins->ins, "could not post dispatch result through worker pipe; "
+                 "using parent pipe");
+    ret = flb_output_dispatch_post_result(dispatch, result,
+                                          th_ins->ins->ch_events[1]);
+    if (ret == 0) {
+        return 0;
+    }
+
+    flb_plg_warn(th_ins->ins, "could not post dispatch result through parent pipe; "
+                 "queueing engine-thread recovery");
+    dispatch->result = result;
+    pthread_mutex_lock(&result_fallback_mutex);
+    mk_list_add(&dispatch->_head, &result_fallbacks);
+    pthread_mutex_unlock(&result_fallback_mutex);
+    return 1;
+}
 
 void flb_output_thread_instance_init()
 {
     FLB_TLS_INIT(local_thread_instance);
+    pthread_mutex_init(&result_fallback_mutex, NULL);
+    mk_list_init(&result_fallbacks);
+}
+
+struct flb_output_dispatch *flb_output_thread_result_fallback_pop(
+                                struct flb_config *config)
+{
+    struct mk_list *head;
+    struct flb_output_dispatch *dispatch;
+
+    pthread_once(&local_thread_instance_init, flb_output_thread_instance_init);
+    dispatch = NULL;
+
+    pthread_mutex_lock(&result_fallback_mutex);
+    mk_list_foreach(head, &result_fallbacks) {
+        dispatch = mk_list_entry(head, struct flb_output_dispatch, _head);
+        if (dispatch->config == config) {
+            mk_list_del(&dispatch->_head);
+            break;
+        }
+        dispatch = NULL;
+    }
+    pthread_mutex_unlock(&result_fallback_mutex);
+
+    return dispatch;
+}
+
+void flb_output_thread_result_fallback_remove(struct flb_output_instance *ins)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_output_dispatch *dispatch;
+
+    pthread_once(&local_thread_instance_init, flb_output_thread_instance_init);
+
+    pthread_mutex_lock(&result_fallback_mutex);
+    mk_list_foreach_safe(head, tmp, &result_fallbacks) {
+        dispatch = mk_list_entry(head, struct flb_output_dispatch, _head);
+        if (dispatch->out == ins) {
+            mk_list_del(&dispatch->_head);
+            flb_output_dispatch_destroy(dispatch);
+        }
+    }
+    pthread_mutex_unlock(&result_fallback_mutex);
 }
 
 struct flb_out_thread_instance *flb_output_thread_instance_get()
@@ -69,8 +148,8 @@ static inline int handle_output_event(struct flb_config *config,
     uint32_t key;
     uint64_t val;
 
-    bytes = flb_pipe_r(fd, &val, sizeof(val));
-    if (bytes == -1) {
+    bytes = flb_pipe_read_all(fd, &val, sizeof(val));
+    if (bytes != sizeof(val)) {
         flb_pipe_error();
         return -1;
     }
@@ -88,15 +167,17 @@ static inline int handle_output_event(struct flb_config *config,
     ret     = FLB_TASK_RET(key);
     out_id  = FLB_TASK_OUT(key);
 
-    /* Destroy the output co-routine context */
-    flb_output_flush_finished(config, out_id);
+    /* DEFERRED has no flush/coroutine context to destroy. */
+    if (ret != FLB_OUTPUT_DEFERRED) {
+        flb_output_flush_finished(config, out_id);
+    }
 
     /*
      * Notify the parent event loop the return status, just forward the same
      * 64 bits value.
      */
-    ret = flb_pipe_w(ch_parent, &val, sizeof(val));
-    if (ret == -1) {
+    ret = flb_pipe_write_all(ch_parent, &val, sizeof(val));
+    if (ret != sizeof(val)) {
         flb_pipe_error();
         return -1;
     }
@@ -158,6 +239,41 @@ static void upstream_thread_destroy(struct flb_out_thread_instance *th_ins)
     }
 }
 
+static int output_thread_dispatch_read(struct flb_out_thread_instance *th_ins,
+                                       flb_pipefd_t fd,
+                                       struct flb_output_dispatch **dispatch)
+{
+    int bytes;
+    size_t remaining;
+
+    remaining = sizeof(struct flb_output_dispatch *) - th_ins->parent_event_bytes;
+    bytes = flb_pipe_r(fd,
+                       &th_ins->parent_event_buffer[th_ins->parent_event_bytes],
+                       remaining);
+    if (bytes == -1) {
+        if (FLB_PIPE_WOULDBLOCK()) {
+            return 0;
+        }
+        flb_pipe_error();
+        return -1;
+    }
+    else if (bytes == 0) {
+        flb_pipe_error();
+        return -1;
+    }
+
+    th_ins->parent_event_bytes += bytes;
+    if (th_ins->parent_event_bytes < sizeof(struct flb_output_dispatch *)) {
+        return 0;
+    }
+
+    memcpy(dispatch, th_ins->parent_event_buffer,
+           sizeof(struct flb_output_dispatch *));
+    th_ins->parent_event_bytes = 0;
+
+    return 1;
+}
+
 /*
  * This is the worker function that creates an event loop and synchronize
  * messages from the engine like 'flush' requests. Note that the running
@@ -176,7 +292,9 @@ static void output_thread(void *data)
     struct mk_event event_local;
     struct mk_event *event;
     struct flb_sched *sched;
-    struct flb_task *task;
+    uint64_t generation;
+    size_t route_status;
+    struct flb_output_dispatch *dispatch;
     struct flb_connection *u_conn;
     struct flb_output_instance *ins;
     struct flb_output_flush *out_flush;
@@ -254,6 +372,10 @@ static void output_thread(void *data)
 
     /* Thread event loop */
     while (running) {
+        if (cfl_atomic_load(&th_ins->shutdown_requested) == FLB_TRUE) {
+            stopping = FLB_TRUE;
+        }
+
         mk_event_wait(th_ins->evl);
         flb_event_priority_live_foreach(event, th_ins->evl_bktq, th_ins->evl,
                                          FLB_ENGINE_LOOP_MAX_ITER) {
@@ -286,31 +408,69 @@ static void output_thread(void *data)
 
             }
             else if (event->type == FLB_ENGINE_EV_THREAD_OUTPUT) {
-                /* Read the task reference */
-                n = flb_pipe_r(event->fd, &task, sizeof(struct flb_task *));
+                /* Read the tagged dispatch reference. */
+                n = output_thread_dispatch_read(th_ins, event->fd, &dispatch);
                 if (n <= 0) {
-                    flb_pipe_error();
                     continue;
                 }
                 /*
                  * If the address receives 0xdeadbeef, means the thread must
                  * be terminated.
                  */
-                if (task == (struct flb_task *) 0xdeadbeef) {
+                if (dispatch == (struct flb_output_dispatch *) 0xdeadbeef) {
                     stopping = FLB_TRUE;
                     flb_plg_info(th_ins->ins, "thread worker #%i stopping...",
                                  thread_id);
                     continue;
                 }
                 else {
-                    /* Start the co-routine with the flush callback */
-                    out_flush = flb_output_flush_create(task,
-                                                        task->i_ins,
-                                                        th_ins->ins,
-                                                        th_ins->config);
-                    if (!out_flush) {
+                    if (dispatch->magic != FLB_OUTPUT_DISPATCH_MAGIC ||
+                        dispatch->type != FLB_OUTPUT_DISPATCH_TASK ||
+                        dispatch->out != th_ins->ins) {
+                        flb_plg_error(th_ins->ins, "invalid output dispatch envelope");
+                        flb_output_dispatch_destroy(dispatch);
                         continue;
                     }
+
+                    flb_task_acquire_lock(dispatch->task);
+                    route_status = flb_task_get_route_status(dispatch->task,
+                                                             dispatch->out);
+                    flb_task_release_lock(dispatch->task);
+                    if (route_status == FLB_TASK_ROUTE_DROPPED) {
+                        ret = flb_output_thread_post_dispatch_result(
+                                  th_ins, dispatch, FLB_ERROR);
+                        if (ret == 0) {
+                            flb_output_dispatch_destroy(dispatch);
+                        }
+                        continue;
+                    }
+
+                    if (flb_output_throttle_admit(&dispatch->out->throttle,
+                                                  flb_output_throttle_now_ms(),
+                                                  &generation) == FLB_FALSE) {
+                        ret = flb_output_thread_post_dispatch_result(
+                                  th_ins, dispatch, FLB_OUTPUT_DEFERRED);
+                        if (ret == 0) {
+                            flb_output_dispatch_destroy(dispatch);
+                        }
+                        continue;
+                    }
+
+                    /* Start the co-routine with the flush callback */
+                    out_flush = flb_output_flush_create(dispatch->task,
+                                                        dispatch->task->i_ins,
+                                                        dispatch->out,
+                                                        dispatch->config);
+                    if (!out_flush) {
+                        ret = flb_output_thread_post_dispatch_result(
+                                  th_ins, dispatch, FLB_ERROR);
+                        if (ret == 0) {
+                            flb_output_dispatch_destroy(dispatch);
+                        }
+                        continue;
+                    }
+                    out_flush->admission_generation = generation;
+                    flb_output_dispatch_destroy(dispatch);
                     flb_coro_resume(out_flush->coro);
                 }
             }
@@ -359,6 +519,10 @@ static void output_thread(void *data)
         flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
 
         flb_sched_timer_cleanup(sched);
+
+        if (cfl_atomic_load(&th_ins->shutdown_requested) == FLB_TRUE) {
+            stopping = FLB_TRUE;
+        }
 
         /* Check if we should stop the event loop */
         if (stopping == FLB_TRUE && mk_list_size(&th_ins->flush_list) == 0) {
@@ -428,28 +592,27 @@ static void output_thread(void *data)
     flb_plg_info(ins, "thread worker #%i stopped", thread_id);
 }
 
-int flb_output_thread_pool_flush(struct flb_task *task,
-                                 struct flb_output_instance *out_ins,
-                                 struct flb_config *config)
+int flb_output_thread_pool_flush(struct flb_output_dispatch *dispatch)
 {
     int n;
     struct flb_tp_thread *th;
     struct flb_out_thread_instance *th_ins;
 
     /* Choose the worker that will handle the Task (round-robin) */
-    th = flb_tp_thread_get_rr(out_ins->tp);
+    th = flb_tp_thread_get_rr(dispatch->out->tp);
     if (!th) {
         return -1;
     }
 
     th_ins = th->params.data;
 
-    flb_plg_debug(out_ins, "task_id=%i assigned to thread #%i",
-                  task->id, th->id);
+    flb_plg_debug(dispatch->out, "task_id=%i assigned to thread #%i",
+                  dispatch->task->id, th->id);
 
-    n = flb_pipe_w(th_ins->ch_parent_events[1], &task, sizeof(struct flb_task*));
+    n = flb_pipe_write_all(th_ins->ch_parent_events[1], &dispatch,
+                           sizeof(struct flb_output_dispatch *));
 
-    if (n == -1) {
+    if (n != sizeof(struct flb_output_dispatch *)) {
         flb_pipe_error();
         return -1;
     }
@@ -535,6 +698,22 @@ int flb_output_thread_pool_create(struct flb_config *config,
             flb_plg_error(th_ins->ins, "could not create thread channel");
             mk_event_loop_destroy(th_ins->evl);
             flb_bucket_queue_destroy(th_ins->evl_bktq);
+            upstream_thread_destroy(th_ins);
+            pthread_mutex_destroy(&th_ins->flush_mutex);
+            flb_free(th_ins);
+            continue;
+        }
+        ret = flb_pipe_set_nonblocking(th_ins->ch_parent_events[0]);
+        if (ret == -1) {
+            flb_plg_error(th_ins->ins, "could not configure thread channel");
+            mk_event_channel_destroy(th_ins->evl,
+                                     th_ins->ch_parent_events[0],
+                                     th_ins->ch_parent_events[1],
+                                     th_ins);
+            mk_event_loop_destroy(th_ins->evl);
+            flb_bucket_queue_destroy(th_ins->evl_bktq);
+            upstream_thread_destroy(th_ins);
+            pthread_mutex_destroy(&th_ins->flush_mutex);
             flb_free(th_ins);
             continue;
         }
@@ -611,7 +790,8 @@ int flb_output_thread_pool_coros_size(struct flb_output_instance *ins)
 void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
 {
     int n;
-    struct flb_task *stop = (struct flb_task *) 0xdeadbeef;
+    struct flb_output_dispatch *stop =
+        (struct flb_output_dispatch *) 0xdeadbeef;
     struct flb_tp *tp = ins->tp;
     struct mk_list *head;
     struct flb_out_thread_instance *th_ins;
@@ -621,7 +801,7 @@ void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
         return;
     }
 
-    /* Signal each worker thread that needs to stop doing work */
+    /* Wake every worker before joining so shutdown latency is not cumulative. */
     mk_list_foreach(head, &tp->list_threads) {
         th = mk_list_entry(head, struct flb_tp_thread, _head);
         if (th->status != FLB_THREAD_POOL_RUNNING) {
@@ -629,16 +809,30 @@ void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
         }
 
         th_ins = th->params.data;
-        n = flb_pipe_w(th_ins->ch_parent_events[1], &stop, sizeof(stop));
-        if (n < 0) {
+        n = flb_pipe_write_all(th_ins->ch_parent_events[1], &stop, sizeof(stop));
+        if (n != sizeof(stop)) {
             flb_pipe_error();
-            flb_plg_error(th_ins->ins, "could not signal worker thread");
-            flb_free(th_ins);
+            flb_plg_warn(th_ins->ins, "could not wake worker thread during shutdown");
+            cfl_atomic_store(&th_ins->shutdown_requested, FLB_TRUE);
+        }
+    }
+
+    /* Workers also observe shutdown from their periodic scheduler wakeup. */
+    mk_list_foreach(head, &tp->list_threads) {
+        th = mk_list_entry(head, struct flb_tp_thread, _head);
+        if (th->status != FLB_THREAD_POOL_RUNNING) {
             continue;
         }
+
+        th_ins = th->params.data;
         pthread_join(th->tid, NULL);
+        th->status = FLB_THREAD_POOL_STOPPED;
+        pthread_mutex_destroy(&th_ins->flush_mutex);
         flb_free(th_ins);
     }
+
+    /* Task teardown owns queued routes once worker processing has stopped. */
+    flb_output_thread_result_fallback_remove(ins);
 
     flb_tp_destroy(ins->tp);
     ins->tp = NULL;
