@@ -172,9 +172,10 @@ class FluentBitManager:
         self.output_handle = None
 
     def set_http_monitoring_port(self, env_var_name, starting_port=0):
-        port = find_available_port(starting_port)
-        os.environ[env_var_name] = str(port)
-        self.http_monitoring_port = str(port)
+        if self.http_monitoring_port is None:
+            self.http_monitoring_port = str(find_available_port(starting_port))
+
+        os.environ[env_var_name] = self.http_monitoring_port
 
     def start(self):
         if not self.config_path or not os.path.exists(self.config_path):
