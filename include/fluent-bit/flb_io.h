@@ -20,6 +20,7 @@
 #ifndef FLB_IO_H
 #define FLB_IO_H
 
+#include <stddef.h>
 #include <monkey/mk_core.h>
 
 #include <fluent-bit/flb_info.h>
@@ -48,7 +49,14 @@
                                 * flb_connection.flags, never on the
                                 * shared stream/upstream flags.          */
 
+/* Maximum temporary buffer size for TLS stream write batching. */
+#define FLB_IO_WRITEV_COALESCE_MAX (64 * 1024)
+
 struct flb_connection;
+struct flb_iovec {
+    const void *iov_base;
+    size_t      iov_len;
+};
 
 int flb_io_net_accept(struct flb_connection *connection,
                        struct flb_coro *th);
@@ -58,6 +66,18 @@ int flb_io_net_connect(struct flb_connection *u_conn,
 
 int flb_io_net_write(struct flb_connection *connection, const void *data,
                      size_t len, size_t *out_len);
+
+/*
+ * Write vectors in order, using native scatter/gather for plain streams and
+ * bounded coalescing through the TLS writer for encrypted streams. The vectors
+ * and their data must remain valid until this call returns (including yields).
+ * Returns nonnegative on success or -1 on failure; out_len always reports the
+ * number of bytes consumed, including partial progress on failure.
+ */
+int flb_io_net_writev(struct flb_connection *connection,
+                      const struct flb_iovec *iov,
+                      int iovcnt,
+                      size_t *out_len);
 
 ssize_t flb_io_net_read(struct flb_connection *connection, void *buf, size_t len);
 
