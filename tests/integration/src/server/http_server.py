@@ -44,6 +44,7 @@ response_config = {
     "fragment_delay_seconds": 0,
     "hang_before_response": False,
     "hang_after_fragment_index": None,
+    "headers": [],
 }
 oauth_token_response = {
     "status_code": 200,
@@ -96,6 +97,7 @@ def reset_http_server_state():
             "fragment_delay_seconds": 0,
             "hang_before_response": False,
             "hang_after_fragment_index": None,
+            "headers": [],
         }
     )
     oauth_token_response.update(
@@ -120,7 +122,7 @@ def configure_http_response(*, status_code=UNSET, body=UNSET, content_type=UNSET
                             delay_seconds=UNSET, stream_fragments=UNSET,
                             fragment_delay_seconds=UNSET,
                             hang_before_response=UNSET,
-                            hang_after_fragment_index=UNSET):
+                            hang_after_fragment_index=UNSET, headers=UNSET):
     if status_code is not UNSET:
         response_config["status_code"] = status_code
     if body is not UNSET:
@@ -137,6 +139,8 @@ def configure_http_response(*, status_code=UNSET, body=UNSET, content_type=UNSET
         response_config["hang_before_response"] = hang_before_response
     if hang_after_fragment_index is not UNSET:
         response_config["hang_after_fragment_index"] = hang_after_fragment_index
+    if headers is not UNSET:
+        response_config["headers"] = list(headers)
 
 
 def configure_oauth_token_response(*, status_code=UNSET, body=UNSET,
@@ -185,12 +189,16 @@ def _stream_fragments(config):
 
 
 def _build_streaming_response(config):
-    return Response(
+    response = Response(
         _stream_fragments(config),
         status=config["status_code"],
         content_type=config["content_type"],
         direct_passthrough=True,
     )
+    for name, value in config.get("headers", []):
+        response.headers.add(name, value)
+
+    return response
 
 
 def _build_response():
@@ -206,13 +214,19 @@ def _build_response():
 
     body = response_config["body"]
     if isinstance(body, (dict, list)):
-        return jsonify(body), response_config["status_code"]
+        response = jsonify(body)
+        response.status_code = response_config["status_code"]
+    else:
+        response = Response(
+            body,
+            status=response_config["status_code"],
+            content_type=response_config["content_type"],
+        )
 
-    return Response(
-        body,
-        status=response_config["status_code"],
-        content_type=response_config["content_type"],
-    )
+    for name, value in response_config.get("headers", []):
+        response.headers.add(name, value)
+
+    return response
 
 
 def _record_request():
@@ -225,6 +239,7 @@ def _record_request():
     data_storage["payloads"].append(data)
     data_storage["requests"].append(
         {
+            "received_at": time.monotonic(),
             "path": request.path,
             "query_string": request.query_string.decode("utf-8", errors="replace"),
             "method": request.method,
