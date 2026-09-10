@@ -1080,6 +1080,25 @@ void test_size_to_binary_bytes()
     }
 }
 
+void test_time_to_seconds_strict()
+{
+    int seconds;
+
+    TEST_CHECK(flb_utils_time_to_seconds_strict("1", &seconds) == 0);
+    TEST_CHECK(seconds == 1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("60", &seconds) == 0);
+    TEST_CHECK(seconds == 60);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("0", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("-1", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("+1", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("1s", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("1.5", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("1foo", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("999999999999999999999", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("1", NULL) == -1);
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "url_split", test_url_split },
@@ -1101,5 +1120,6 @@ TEST_LIST = {
     { "test_flb_utils_get_machine_id", test_flb_utils_get_machine_id },
     { "test_size_to_bytes", test_size_to_bytes },
     { "test_size_to_bianry_bytes", test_size_to_binary_bytes },
+    { "test_time_to_seconds_strict", test_time_to_seconds_strict },
     { 0 }
 };
