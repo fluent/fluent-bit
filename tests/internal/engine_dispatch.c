@@ -671,6 +671,95 @@ static void test_delayed_singleplex_failure_releases_task(void)
     test_ctx_destroy(ctx);
 }
 
+static void test_task_destroy_after_output_destroy(void)
+{
+    int ret;
+    int task_id;
+    char *chunk_buffer;
+    struct cio_memfs *memfs;
+    struct test_ctx *ctx;
+    struct flb_input_chunk *chunk;
+    struct flb_task *task;
+    struct flb_task_retry *retry;
+    struct flb_output_instance *output;
+
+    ctx = test_ctx_create();
+    TEST_CHECK(ctx != NULL);
+    if (ctx == NULL) {
+        return;
+    }
+
+    output = flb_calloc(1, sizeof(struct flb_output_instance));
+    TEST_CHECK(output != NULL);
+    if (output == NULL) {
+        test_ctx_destroy(ctx);
+        return;
+    }
+
+    ret = test_output_init(output, "output_a");
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_free(output);
+        test_ctx_destroy(ctx);
+        return;
+    }
+    mk_list_add(&output->_head, &ctx->config->outputs);
+
+    retry = create_retry_dispatch_task(ctx, output, &task_id, &chunk_buffer);
+    TEST_CHECK(retry != NULL);
+    if (retry == NULL) {
+        mk_list_del(&output->_head);
+        test_output_destroy(output);
+        flb_free(output);
+        test_ctx_destroy(ctx);
+        return;
+    }
+
+    task = retry->parent;
+    chunk = task->ic;
+    memfs = ((struct cio_chunk *) chunk->chunk)->backend;
+    memfs->buf_data = chunk_buffer;
+    flb_task_retry_destroy(retry);
+
+    TEST_CHECK(flb_task_route_queue(task, output) == 0);
+    TEST_CHECK(output->dispatches_inflight == 1);
+
+    /* A live output still receives normal route accounting. */
+    flb_task_destroy(task, FLB_TRUE);
+    TEST_CHECK(ctx->config->task_map[task_id].task == NULL);
+    TEST_CHECK(output->dispatches_inflight == 0);
+
+    retry = create_retry_dispatch_task(ctx, output, &task_id, &chunk_buffer);
+    TEST_CHECK(retry != NULL);
+    if (retry == NULL) {
+        mk_list_del(&output->_head);
+        test_output_destroy(output);
+        flb_free(output);
+        test_ctx_destroy(ctx);
+        return;
+    }
+
+    task = retry->parent;
+    chunk = task->ic;
+    memfs = ((struct cio_chunk *) chunk->chunk)->backend;
+    memfs->buf_data = chunk_buffer;
+    flb_task_retry_destroy(retry);
+
+    TEST_CHECK(flb_task_route_queue(task, output) == 0);
+    TEST_CHECK(output->dispatches_inflight == 1);
+
+    /* Shutdown destroys output instances before their input-owned tasks. */
+    mk_list_del(&output->_head);
+    test_output_destroy(output);
+    flb_free(output);
+
+    flb_task_destroy(task, FLB_TRUE);
+    TEST_CHECK(ctx->config->task_map[task_id].task == NULL);
+    TEST_CHECK(mk_list_size(&ctx->input->tasks) == 0);
+
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     { "retry_flush_failure_releases_last_task_owner",
       test_retry_flush_failure_releases_last_task_owner },
@@ -682,5 +771,7 @@ TEST_LIST = {
       test_retry_flush_failure_preserves_pending_retry },
     { "delayed_singleplex_failure_releases_task",
       test_delayed_singleplex_failure_releases_task },
+    { "task_destroy_after_output_destroy",
+      test_task_destroy_after_output_destroy },
     { 0 }
 };
