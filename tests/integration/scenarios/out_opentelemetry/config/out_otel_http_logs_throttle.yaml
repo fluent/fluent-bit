@@ -1,0 +1,24 @@
+service:
+  flush: 1
+  grace: 1
+  scheduler.base: 1
+  scheduler.cap: 1
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      samples: 1
+      dummy: '{"message":"HTTP throttle"}'
+
+  outputs:
+    - name: opentelemetry
+      match: "*"
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      logs_uri: /v1/logs
+      retry_limit: 2
+      throttle: on
+      throttle.base: 1
+      throttle.cap: 1
