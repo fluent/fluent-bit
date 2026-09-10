@@ -72,8 +72,9 @@ struct flb_out_thread_instance {
     struct flb_config *config;
     struct flb_tp_thread *th;
     uint64_t shutdown_requested;
-    size_t parent_event_bytes;
-    unsigned char parent_event_buffer[sizeof(struct flb_output_dispatch *)];
+    int dispatch_shutdown;
+    pthread_mutex_t dispatch_mutex;
+    struct mk_list dispatch_queue;
     struct mk_list _head;
 
     /*
