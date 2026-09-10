@@ -36,8 +36,8 @@
 /* Azure Logs Ingestion API maximum HTTP body size. With Content-Encoding:
  * gzip this applies to the compressed wire representation. */
 #define FLB_AZ_LI_MAX_REQUEST_SIZE (1024 * 1024)
-/* One maximum-size request artifact, SQLite rows for 256 source spans, and
- * filesystem metadata must remain constructible when admission is full. */
+/* One maximum-size request BLOB, SQLite membership for eight complete
+ * source chunks, and transition metadata must remain constructible. */
 #define FLB_AZ_LI_MIN_BUFFER_SIZE (FLB_AZ_LI_MAX_REQUEST_SIZE + 73728)
 
 #include <time.h>
@@ -47,6 +47,7 @@
 #include <fluent-bit/flb_sds.h>
 
 #ifdef FLB_HAVE_METRICS
+#include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_histogram.h>
 #endif
@@ -77,13 +78,13 @@ struct flb_az_li {
     flb_sds_t buffer_key;
     int buffer_key_owned;
     size_t batch_target_size;
-    time_t batch_timeout;
+    int batch_timeout;
     size_t batch_max_uncompressed_size;
     size_t buffer_dir_limit_size;
     int upload_retry_limit;
     int upload_retry_base;
-    time_t buffer_receipt_ttl;
-    time_t http_timeout;
+    int buffer_receipt_ttl;
+    int http_timeout;
     struct flb_az_li_batch *batch;
 
     /* mangement auth */
@@ -101,9 +102,29 @@ struct flb_az_li {
 #ifdef FLB_HAVE_METRICS
     struct cmt_histogram *cmt_uncompressed_payload_size;
     struct cmt_histogram *cmt_http_payload_size;
-    struct cmt_gauge *cmt_http_payload_size_min;
+    struct cmt_counter *cmt_admitted_chunks;
+    struct cmt_counter *cmt_admitted_records;
+    struct cmt_counter *cmt_admitted_bytes;
+    struct cmt_counter *cmt_delivered_chunks;
+    struct cmt_counter *cmt_delivered_records;
+    struct cmt_counter *cmt_delivered_bytes;
+    struct cmt_counter *cmt_quarantined_chunks;
+    struct cmt_counter *cmt_quarantined_records;
+    struct cmt_counter *cmt_quota_rejections;
+    struct cmt_counter *cmt_persistence_failures;
+    struct cmt_counter *cmt_degraded_recoveries;
+    struct cmt_gauge *cmt_queued_chunks;
+    struct cmt_gauge *cmt_queued_records;
+    struct cmt_gauge *cmt_queued_bytes;
+    struct cmt_gauge *cmt_quarantined_chunks_current;
+    struct cmt_gauge *cmt_quarantined_bytes;
+    struct cmt_gauge *cmt_quota_used_bytes;
+    struct cmt_gauge *cmt_quota_limit_bytes;
+    struct cmt_gauge *cmt_oldest_queued_age;
+    struct cmt_gauge *cmt_uploader_up;
+    struct cmt_gauge *cmt_uploader_consecutive_failures;
+    struct cmt_gauge *cmt_uploader_last_success;
     pthread_mutex_t payload_metrics_mutex;
-    size_t http_payload_size_min;
     int payload_metrics_mutex_initialized;
 #endif
 

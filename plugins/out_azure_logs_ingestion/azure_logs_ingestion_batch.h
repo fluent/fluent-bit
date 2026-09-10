@@ -24,15 +24,17 @@
 #include <fluent-bit/flb_sds.h>
 
 struct flb_az_li;
-struct flb_event_chunk;
 struct flb_output_flush;
 
+#ifdef FLB_HAVE_SQLDB
 int az_li_batch_init(struct flb_az_li *ctx);
 int az_li_batch_start_uploader(struct flb_az_li *ctx);
+void az_li_batch_stop_uploader(struct flb_az_li *ctx);
 void az_li_batch_destroy(struct flb_az_li *ctx);
 int az_li_batch_admit_chunk(struct flb_az_li *ctx,
                             struct flb_output_flush *out_flush,
-                            struct flb_event_chunk *event_chunk,
-                            flb_sds_t *records, size_t record_count);
+                            const void *json, size_t json_size,
+                            size_t record_count);
+#endif
 
 #endif
