@@ -17,3 +17,9 @@ target_link_libraries(flb-bench-processor_sampling
   fluent-bit-static
   ${CMAKE_THREAD_LIBS_INIT}
 )
+
+add_executable(flb-bench-output_throttle flb-bench-output_throttle.c)
+target_link_libraries(flb-bench-output_throttle
+  fluent-bit-static
+  ${CMAKE_THREAD_LIBS_INIT}
+)
