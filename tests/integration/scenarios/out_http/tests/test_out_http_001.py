@@ -319,7 +319,7 @@ def test_out_http_disabled_throttle_ignores_retry_after_cooldown():
         assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] < 12
 
 
-def test_out_http_body_key_stops_after_throttle():
+def test_out_http_body_key_stops_each_attempt_after_throttle():
     service = Service(
         "out_http_throttle_body_key.yaml",
         response_setup=lambda: configure_http_response(
@@ -329,13 +329,13 @@ def test_out_http_body_key_stops_after_throttle():
     )
     service.start()
 
-    service.wait_for_requests(2, timeout=12)
-    time.sleep(1)
-    requests_seen = list(data_storage["requests"])
-    service.stop()
+    try:
+        requests_seen = service.wait_for_requests(3, timeout=18)
+    finally:
+        service.stop()
 
-    assert len(requests_seen) == 2
-    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 3.8
+    request_times = [request["received_at"] for request in requests_seen[:3]]
+    assert all(later - earlier >= 3.8 for earlier, later in zip(request_times, request_times[1:]))
 
 
 def test_out_http_oauth2_basic_adds_bearer_token():
