@@ -69,6 +69,12 @@ static struct flb_config_map config_map[] = {
      "Path to podman config file"
     },
     {
+     FLB_CONFIG_MAP_STR, "exclude_name_regex", NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_metrics, exclude_name_regex_text),
+     "Exclude containers whose name matches this regular expression, e.g. "
+     "'-(infra|service)$' to skip pod infra and service containers"
+    },
+    {
      FLB_CONFIG_MAP_STR, "path.sysfs", SYSFS_PATH,
      0, FLB_TRUE, offsetof(struct flb_in_metrics, sysfs_path),
      "Path to sysfs subsystem directory"
