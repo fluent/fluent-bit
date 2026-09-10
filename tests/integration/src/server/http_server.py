@@ -232,6 +232,7 @@ def _record_request():
             "headers": dict(request.headers),
             "raw_data": raw_data,
             "raw_sha256": hashlib.sha256(raw_payload).hexdigest(),
+            "received_monotonic": time.monotonic(),
             "decoded_data": decoded_data,
             "json": data,
         }

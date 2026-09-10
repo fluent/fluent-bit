@@ -33,6 +33,7 @@ pipeline:
       buffer_dir_limit_size: ${AZURE_LOGS_INGESTION_BUFFER_LIMIT}
       upload_retry_limit: 5
       upload_retry_base: 1
+      retry_limit: no_limits
       tls.verify: on
       tls.verify_hostname: on
       tls.vhost: localhost
