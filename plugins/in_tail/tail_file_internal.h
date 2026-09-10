@@ -132,6 +132,8 @@ struct flb_tail_file {
     struct flb_log_event_encoder *sl_log_event_encoder;
 
     /* reference */
+    int64_t last_accounted_offset;
+    int abandoned_accounted;
     int tail_mode;
     struct flb_tail_config *config;
     struct mk_list _head;
