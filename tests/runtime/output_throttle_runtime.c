@@ -16,6 +16,25 @@
 #define TEST_TIMEOUT_MS 5000
 #define TEST_COOLDOWN_MS 1200
 
+static int stop_engine(flb_ctx_t *ctx)
+{
+    uint64_t deadline;
+    int ret;
+
+    /* On macOS flb_stop() cancels an active pipeline before its TLS cleanup. */
+    ret = flb_engine_exit(ctx->config);
+    TEST_CHECK_(ret >= 0, "requesting graceful engine shutdown");
+
+    deadline = flb_output_throttle_now_ms() + TEST_TIMEOUT_MS;
+    while (ctx->status == FLB_LIB_OK && flb_output_throttle_now_ms() < deadline) {
+        flb_time_msleep(10);
+    }
+    TEST_CHECK_(ctx->status != FLB_LIB_OK,
+                "engine did not stop within %d ms", TEST_TIMEOUT_MS);
+
+    return flb_stop(ctx);
+}
+
 struct scripted_output {
     pthread_mutex_t lock;
     pthread_cond_t condition;
@@ -350,7 +369,7 @@ static void run_fanout_case(int workers, int flags)
                                  flb_output_name(output_a)) == 0.0);
     }
 
-    flb_stop(ctx);
+    stop_engine(ctx);
     flb_destroy(ctx);
     scripted_output_destroy(&output_a_script);
     scripted_output_destroy(&output_b_script);
@@ -411,7 +430,7 @@ static void test_inflight_before_publication(void)
     TEST_CHECK(scripted_timestamp(&script, 2) >=
                scripted_timestamp(&script, 0) + TEST_COOLDOWN_MS);
 
-    flb_stop(ctx);
+    stop_engine(ctx);
     flb_destroy(ctx);
     scripted_output_destroy(&script);
 }
@@ -478,7 +497,7 @@ static void test_extended_deadline_rechecks_old_timer(void)
     TEST_CHECK(wait_for_calls(&script, 3, TEST_TIMEOUT_MS) == 0);
     TEST_CHECK(scripted_timestamp(&script, 2) >= second_release + script.hints[1]);
 
-    flb_stop(ctx);
+    stop_engine(ctx);
     flb_destroy(ctx);
     scripted_output_destroy(&script);
 }
@@ -543,7 +562,7 @@ static void test_repeated_throttle_does_not_spend_retry_limit(void)
                                  flb_output_name(output)) == 0.0);
     }
 
-    flb_stop(ctx);
+    stop_engine(ctx);
     flb_destroy(ctx);
     scripted_output_destroy(&script);
 }
@@ -607,7 +626,7 @@ static void test_throttle_preserves_existing_retry_attempt(void)
                                  flb_output_name(output)) == 0.0);
     }
 
-    flb_stop(ctx);
+    stop_engine(ctx);
     flb_destroy(ctx);
     scripted_output_destroy(&script);
 }
@@ -676,7 +695,7 @@ static void run_deferred_wakeup_serialization_case(int flags)
     release_call(&script, 1);
     TEST_CHECK(wait_for_calls(&script, 3, TEST_TIMEOUT_MS) == 0);
 
-    flb_stop(ctx);
+    stop_engine(ctx);
     flb_destroy(ctx);
     scripted_output_destroy(&script);
 }
@@ -765,7 +784,7 @@ static void test_no_multiplex_prioritizes_deferred_routes(void)
         TEST_CHECK(wait_for_deferred_routes(output, 2, TEST_TIMEOUT_MS) == 0);
     }
 
-    flb_stop(ctx);
+    stop_engine(ctx);
     flb_destroy(ctx);
     scripted_output_destroy(&script);
     scripted_output_destroy(&healthy_script);
@@ -852,7 +871,7 @@ static void run_no_retry_case(const char *storage_type)
                                  flb_output_name(output)) == 0.0);
     }
 
-    flb_stop(ctx);
+    stop_engine(ctx);
     flb_destroy(ctx);
     if (storage_path != NULL) {
         cio_utils_recursive_delete(storage_path);
@@ -917,7 +936,7 @@ static void test_shutdown_cancels_long_cooldown(void)
     }
 
     stop_started = flb_output_throttle_now_ms();
-    flb_stop(ctx);
+    stop_engine(ctx);
     TEST_CHECK(flb_output_throttle_now_ms() - stop_started < 5000);
     TEST_CHECK(scripted_calls(&script) == 1);
     flb_destroy(ctx);
@@ -972,7 +991,7 @@ static void test_disabled_mode_is_not_gated(void)
                                flb_output_name(output)) == 0.0);
     }
 
-    flb_stop(ctx);
+    stop_engine(ctx);
     flb_destroy(ctx);
     scripted_output_destroy(&script);
 }
