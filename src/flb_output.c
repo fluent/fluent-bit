@@ -138,7 +138,8 @@ static void output_throttle_wakeup_callback(struct flb_config *config, void *dat
 
         if ((ins->flags & FLB_OUTPUT_NO_MULTIPLEX) &&
             ins->dispatches_inflight > 0) {
-            break;
+            /* The completing dispatch will resume the next deferred route. */
+            return;
         }
 
         route = mk_list_entry(head, struct flb_task_route, _deferred_head);
