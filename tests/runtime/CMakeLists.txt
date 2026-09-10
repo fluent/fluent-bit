@@ -254,6 +254,7 @@ endif()
 
 # Output Plugins
 if(FLB_IN_LIB)
+  FLB_RT_TEST(1                        "output_throttle_runtime.c")
   FLB_RT_TEST(FLB_OUT_LIB              "core_engine.c")
   FLB_RT_TEST(FLB_OUT_LIB              "core_log.c")
   FLB_RT_TEST(FLB_OUT_LIB              "core_routes.c")
