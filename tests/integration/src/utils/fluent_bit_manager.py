@@ -200,11 +200,13 @@ class FluentBitManager:
         self.output_handle = None
 
     def set_http_monitoring_port(self, env_var_name, starting_port=0):
-        port = find_available_port(starting_port)
-        while port in self.excluded_ports:
-            port = find_available_port()
-        os.environ[env_var_name] = str(port)
-        self.http_monitoring_port = str(port)
+        if self.http_monitoring_port is None:
+            port = find_available_port(starting_port)
+            while port in self.excluded_ports:
+                port = find_available_port()
+            self.http_monitoring_port = str(port)
+
+        os.environ[env_var_name] = self.http_monitoring_port
 
     def start(self, *, wait_for_ready=True):
         """Launch with the selected checker; optionally wait for HTTP readiness."""
