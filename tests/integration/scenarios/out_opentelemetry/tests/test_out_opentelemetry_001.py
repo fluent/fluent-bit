@@ -692,6 +692,18 @@ def _build_batched_metrics_payload():
     }
 
 
+def _build_single_resource_batched_metrics_payload():
+    payload = _build_batched_metrics_payload()
+    resource_metrics = payload["resource_metrics"]
+    gauge_points = resource_metrics[0]["scope_metrics"][0]["metrics"][0]["gauge"]
+    gauge_points["data_points"].extend(
+        resource_metrics[1]["scope_metrics"][0]["metrics"][0]["sum"]["data_points"]
+    )
+    payload["resource_metrics"] = [resource_metrics[0]]
+
+    return payload
+
+
 def iter_metric_points_with_resource(output):
     data_keys = ("gauge", "sum", "histogram", "exponentialHistogram", "summary")
 
@@ -1142,13 +1154,7 @@ def test_out_opentelemetry_metrics_max_datapoints(
 
 
 def test_out_opentelemetry_metrics_partial_success_is_not_retried():
-    payload = _build_batched_metrics_payload()
-    resource_metrics = payload["resource_metrics"]
-    gauge_points = resource_metrics[0]["scope_metrics"][0]["metrics"][0]["gauge"]
-    gauge_points["data_points"].extend(
-        resource_metrics[1]["scope_metrics"][0]["metrics"][0]["sum"]["data_points"]
-    )
-    payload["resource_metrics"] = [resource_metrics[0]]
+    payload = _build_single_resource_batched_metrics_payload()
 
     service = Service("out_otel_http_metrics_max_datapoints.conf")
     service.start()
@@ -1163,6 +1169,7 @@ def test_out_opentelemetry_metrics_partial_success_is_not_retried():
 
     assert len(metrics_seen) == 2
     assert len(requests_seen) == 2
+    assert len(data_storage["requests"]) == 2
 
     batch_series = []
     for export_request in metrics_seen:
@@ -1179,6 +1186,60 @@ def test_out_opentelemetry_metrics_partial_success_is_not_retried():
     assert batch_series[0] == {0, 1, 2, 3}
     assert batch_series[1] == {4, 5, 6, 7}
     assert {8, 9, 10}.isdisjoint(set().union(*batch_series))
+
+
+@pytest.mark.parametrize(
+    "receiver_mode,status_code",
+    [
+        ("http", 429),
+        ("http", 503),
+        ("grpc", grpc.StatusCode.RESOURCE_EXHAUSTED),
+        ("grpc", grpc.StatusCode.UNAVAILABLE),
+    ],
+    ids=["http-429", "http-503", "grpc-resource-exhausted", "grpc-unavailable"],
+)
+def test_out_opentelemetry_later_metrics_batch_throttle_is_retried(
+    receiver_mode,
+    status_code,
+):
+    if receiver_mode == "grpc":
+        config_file = "out_otel_grpc_metrics_max_datapoints.conf"
+        request_path = "/batched.metrics.v1.Metrics/Export"
+        grpc_methods = {"metrics": request_path}
+    else:
+        config_file = "out_otel_http_metrics_max_datapoints.conf"
+        request_path = "/batched/metrics"
+        grpc_methods = None
+
+    service = Service(
+        config_file,
+        receiver_mode=receiver_mode,
+        grpc_methods=grpc_methods,
+    )
+    service.start()
+    try:
+        if receiver_mode == "grpc":
+            configure_otlp_grpc_responses(
+                [
+                    None,
+                    {"status": status_code, "retry_delay": 2},
+                ]
+            )
+        else:
+            configure_otlp_response(
+                status_codes=[200, status_code, 200],
+                headers=[("Retry-After", "2")],
+            )
+
+        service.send_payload_dict(_build_single_resource_batched_metrics_payload(), "metrics")
+        requests_seen = service.wait_for_requests(5, timeout=15)
+        _wait_for_log_message(service, "throttled flush")
+    finally:
+        service.stop()
+
+    assert len(data_storage["requests"]) == 5
+    assert {request["path"] for request in requests_seen} == {request_path}
+    assert requests_seen[2]["received_at"] - requests_seen[1]["received_at"] >= 1.8
 
 
 def test_out_opentelemetry_traces_uri():
@@ -1497,6 +1558,8 @@ def test_out_opentelemetry_grpc_resource_exhausted_requires_retry_info(retry_del
     finally:
         service.stop()
 
+    assert len(data_storage["requests"]) == 1
+
 
 def test_out_opentelemetry_populated_partial_success_is_not_retried():
     response = ExportLogsServiceResponse()
@@ -1517,6 +1580,8 @@ def test_out_opentelemetry_populated_partial_success_is_not_retried():
         service.assert_no_additional_requests(1)
     finally:
         service.stop()
+
+    assert len(data_storage["requests"]) == 1
 
 
 @pytest.mark.parametrize("late_request", [False, True])
