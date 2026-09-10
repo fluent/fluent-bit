@@ -485,11 +485,16 @@ static int in_metrics_init(struct flb_input_instance *in, struct flb_config *con
     if (ctx->scrape_interval >= 2 && ctx->scrape_on_start) {
         flb_plg_info(ctx->ins, "Generating podman metrics (initial scrape)");
         if (scrape_metrics(config, ctx) == -1) {
-            flb_plg_error(ctx->ins, "Could not start collector for podman metrics plugin");
-            flb_sds_destroy(ctx->config);
-            destroy_container_list(ctx);
-            flb_free(ctx);
-            return -1;
+            /*
+             * A failed initial scrape is not a reason to abort startup: the
+             * usual cause is that the podman config file does not exist yet
+             * (podman has not run, or its storage is not mounted), which is a
+             * transient condition. The interval collector retries and the same
+             * failure is only a warning there, so keep the plugin alive rather
+             * than failing init, which would take down the whole engine.
+             */
+            flb_plg_warn(ctx->ins, "Initial scrape failed, retrying in %i seconds",
+                         ctx->scrape_interval);
         }
     }
 
