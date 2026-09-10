@@ -268,10 +268,16 @@ static void test_dispatch_result_fallback_queue(void)
     if (dispatch == NULL) {
         return;
     }
+    TEST_CHECK(flb_task_route_queue(&task, &output) == 0);
+    TEST_CHECK(task.users == 1);
+    TEST_CHECK(output.dispatches_inflight == 1);
     TEST_CHECK(flb_output_thread_post_dispatch_result(
                    &thread, dispatch, FLB_ERROR) == 1);
     flb_output_thread_result_fallback_remove(&output);
     TEST_CHECK(flb_output_thread_result_fallback_pop(&config) == NULL);
+    TEST_CHECK(task.users == 0);
+    TEST_CHECK(output.dispatches_inflight == 0);
+    TEST_CHECK(route.dispatch_state == FLB_TASK_ROUTE_DISPATCH_UNQUEUED);
 }
 
 static void test_advisory_dispatch_deferral(void)
