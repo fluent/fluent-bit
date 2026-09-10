@@ -83,6 +83,9 @@ static int cb_azure_logs_ingestion_worker_init(void *data,
     struct flb_az_li *ctx = data;
 
     (void) config;
+    if (ctx == NULL) {
+        return 0;
+    }
     if (ctx->buffering_enabled == FLB_FALSE) {
         return 0;
     }
@@ -103,7 +106,9 @@ static int cb_azure_logs_ingestion_worker_exit(void *data,
     struct flb_az_li *ctx = data;
 
     (void) config;
-    (void) ctx;
+    if (ctx == NULL) {
+        return 0;
+    }
 #ifdef FLB_HAVE_SQLDB
     if (ctx->buffering_enabled == FLB_TRUE) {
         az_li_batch_stop_uploader(ctx);
