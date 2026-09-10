@@ -252,7 +252,7 @@ int azure_blob_store_init(struct flb_azure_blob *ctx)
 {
     int type;
     time_t now;
-    char tmp[64];
+    char tmp[1024];
     struct tm *tm;
     struct flb_fstore *fs;
     struct flb_fstore_stream *fs_stream;
