@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_queue.h>
 
+struct flb_output_dispatch;
+
 /*
  * For every 'upstream' registered in the output plugin initialization, we create
  * a local entry so we can manage the connections queues locally, on this way we
@@ -69,6 +71,9 @@ struct flb_out_thread_instance {
     struct flb_output_instance *ins;     /* output plugin instance */
     struct flb_config *config;
     struct flb_tp_thread *th;
+    uint64_t shutdown_requested;
+    size_t parent_event_bytes;
+    unsigned char parent_event_buffer[sizeof(struct flb_output_dispatch *)];
     struct mk_list _head;
 
     /*
@@ -100,9 +105,15 @@ int flb_output_thread_pool_create(struct flb_config *config,
 int flb_output_thread_pool_coros_size(struct flb_output_instance *ins);
 void flb_output_thread_pool_destroy(struct flb_output_instance *ins);
 int flb_output_thread_pool_start(struct flb_output_instance *ins);
-int flb_output_thread_pool_flush(struct flb_task *task,
-                                 struct flb_output_instance *out_ins,
-                                 struct flb_config *config);
+int flb_output_thread_pool_flush(struct flb_output_dispatch *dispatch);
+int flb_output_thread_post_dispatch_result(
+                                struct flb_out_thread_instance *th_ins,
+                                struct flb_output_dispatch *dispatch,
+                                int result);
+struct flb_output_dispatch *flb_output_thread_result_fallback_pop(
+                                struct flb_config *config);
+void flb_output_thread_result_fallback_remove(
+                                struct flb_output_instance *ins);
 
 
 void flb_output_thread_instance_init();
