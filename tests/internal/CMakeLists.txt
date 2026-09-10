@@ -20,6 +20,7 @@ set(UNIT_TESTS_FILES
   unit_sizes.c
   hashtable.c
   http_client.c
+  http_retry_after.c
   utils.c
   gzip.c
   compression.c
