@@ -10,14 +10,22 @@ import threading
 import time
 from collections import Counter
 
+import grpc
 import requests
 import pytest
 import yaml
 from google.protobuf import json_format
+from google.protobuf.any_pb2 import Any
+from google.protobuf.duration_pb2 import Duration
+from google.rpc.error_details_pb2 import RetryInfo
+from google.rpc.status_pb2 import Status
 from h2.config import H2Configuration
 from h2.connection import H2Connection
 from h2.events import DataReceived, RequestReceived, StreamEnded
-from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
+from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
+    ExportLogsServiceRequest,
+    ExportLogsServiceResponse,
+)
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 
@@ -28,6 +36,7 @@ from server.http_server import (
 )
 from server.otlp_server import (
     configure_otlp_grpc_methods,
+    configure_otlp_grpc_responses,
     configure_otlp_response,
     data_storage,
     otlp_server_run,
@@ -37,6 +46,36 @@ from utils.data_utils import read_json_file
 from utils.test_service import FluentBitTestService
 
 logger = logging.getLogger(__name__)
+
+
+def _configure_http_throttle(status_code, retry_after):
+    headers = []
+    if retry_after is not None:
+        headers.append(("Retry-After", retry_after))
+    configure_otlp_response(
+        status_codes=[status_code, 200],
+        headers=headers,
+    )
+
+
+def _configure_grpc_throttle(status_code, retry_delay):
+    configure_otlp_grpc_responses(
+        [
+            {"status": status_code, "retry_delay": retry_delay},
+        ]
+    )
+
+
+def _grpc_retry_status_details(status_code, retry_delay, message):
+    retry_info = RetryInfo(retry_delay=Duration(seconds=retry_delay))
+    detail = Any()
+    detail.Pack(retry_info)
+    status = Status(
+        code=status_code,
+        message=message,
+        details=[detail],
+    )
+    return base64.b64encode(status.SerializeToString()).decode("ascii")
 
 
 def _repo_relative(*parts):
@@ -89,6 +128,7 @@ class Service:
         use_oauth_server=False,
         response_timeout=10,
         response_options=None,
+        response_setup=None,
     ):
         self.config_file = _repo_relative("../config", config_file)
         cert_dir = _repo_relative("../../in_splunk/certificate")
@@ -99,6 +139,7 @@ class Service:
         self.grpc_methods = grpc_methods or {}
         self.use_oauth_server = use_oauth_server
         self.response_options = response_options
+        self.response_setup = response_setup
         self.oauth_server_port = None
         self.service = FluentBitTestService(
             self.config_file,
@@ -146,6 +187,8 @@ class Service:
         )
         if self.response_options is not None:
             configure_otlp_response(**self.response_options)
+        if self.response_setup is not None:
+            self.response_setup()
 
         if self.receiver_mode == "grpc":
             self._wait_for_tcp_port(service.test_suite_http_port)
@@ -196,6 +239,24 @@ class Service:
             interval=0.5,
             description=f"{minimum_count} OTLP requests",
         )
+
+    def assert_no_additional_requests(self, expected_count, timeout=2):
+        deadline = time.monotonic() + timeout
+
+        while time.monotonic() < deadline:
+            actual_count = len(data_storage["requests"])
+            if actual_count != expected_count:
+                raise AssertionError(
+                    f"expected {expected_count} OTLP requests, "
+                    f"saw {actual_count}"
+                )
+            time.sleep(0.1)
+
+        actual_count = len(data_storage["requests"])
+        if actual_count != expected_count:
+            raise AssertionError(
+                f"expected {expected_count} OTLP requests, saw {actual_count}"
+            )
 
     def wait_for_oauth_requests(self, minimum_count, timeout=10):
         return self.service.wait_for_condition(
@@ -276,21 +337,24 @@ class Service:
 
 
 class IPv6Http2OtlpReceiver:
-    def __init__(self, port, oversized_headers=False, oversized_body=False,
-                 fragmented_body=False):
+    def __init__(self, port, responses=None, host="::1", oversized_headers=False,
+                 oversized_body=False, fragmented_body=False):
         self.port = port
+        self.host = host
         self.oversized_headers = oversized_headers
         self.oversized_body = oversized_body
         self.fragmented_body = fragmented_body
         self.server_socket = None
         self.thread = None
         self.requests = []
+        self.responses = list(responses or [])
         self.stop_event = threading.Event()
 
     def start(self):
-        self.server_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        family = socket.AF_INET6 if ":" in self.host else socket.AF_INET
+        self.server_socket = socket.socket(family, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_socket.bind(("::1", self.port))
+        self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(5)
         self.server_socket.settimeout(0.5)
         self.thread = threading.Thread(target=self._serve, daemon=True)
@@ -353,6 +417,7 @@ class IPv6Http2OtlpReceiver:
                         event.stream_id,
                     )
                 elif isinstance(event, StreamEnded):
+                    request["received_at"] = time.monotonic()
                     self.requests.append(request)
                     self._send_response(connection, event.stream_id)
                     client_socket.sendall(connection.data_to_send())
@@ -369,38 +434,54 @@ class IPv6Http2OtlpReceiver:
             body = b"x" * 8192
         else:
             body = b"{}"
+        status = "200"
+        headers = []
+        trailers = []
+        content_type = "application/json"
 
-        headers = [
-            (":status", "200"),
-            ("content-type", "application/json"),
-        ]
-        if not self.fragmented_body:
-            headers.append(("content-length", str(len(body))))
+        if self.responses:
+            response = self.responses.pop(0)
+            status = str(response["status"])
+            headers = response.get("headers", [])
+            trailers = response.get("trailers", [])
+            body = response.get("body", body)
+            content_type = response.get("content_type", content_type)
+
+        response_headers = [
+            (":status", status),
+            ("content-type", content_type),
+        ] + headers
+        if not trailers and not self.fragmented_body:
+            response_headers.append(("content-length", str(len(body))))
         if self.oversized_headers:
-            headers.extend((f"x-extra-{index}", "a" * 1024) for index in range(70))
-
-        connection.send_headers(stream_id, headers)
+            response_headers.extend((f"x-extra-{index}", "a" * 1024) for index in range(70))
+        connection.send_headers(stream_id, response_headers)
         if self.oversized_body:
             connection.send_data(stream_id, body[:16384])
-            connection.send_data(stream_id, body[16384:], end_stream=True)
+            connection.send_data(stream_id, body[16384:])
         elif self.fragmented_body:
             for offset in range(len(body)):
-                connection.send_data(stream_id, body[offset:offset + 1],
-                                     end_stream=offset + 1 == len(body))
+                connection.send_data(stream_id, body[offset:offset + 1])
+        elif body:
+            connection.send_data(stream_id, body)
+        if trailers:
+            connection.send_headers(stream_id, trailers, end_stream=True)
         else:
-            connection.send_data(stream_id, body, end_stream=True)
+            connection.end_stream(stream_id)
 
 
 class Http2IPv6Service:
-    def __init__(self, oversized_headers=False, oversized_body=False,
-                 fragmented_body=False):
-        config_name = (
+    def __init__(self, config_file=None, responses=None, host="::1",
+                 oversized_headers=False, oversized_body=False, fragmented_body=False):
+        config_name = config_file or (
             "out_otel_http2_ipv6_response_limit.yaml"
             if oversized_body or fragmented_body else "out_otel_http2_ipv6_logs.yaml"
         )
         self.config_file = _repo_relative("../config", config_name)
         self.receiver = None
         self.test_suite_http_port = None
+        self.responses = responses
+        self.host = host
         self.oversized_headers = oversized_headers
         self.oversized_body = oversized_body
         self.fragmented_body = fragmented_body
@@ -413,8 +494,9 @@ class Http2IPv6Service:
     def _start_receiver(self, service):
         self.test_suite_http_port = service.test_suite_http_port
         self.receiver = IPv6Http2OtlpReceiver(
-            service.test_suite_http_port, self.oversized_headers,
-            self.oversized_body, self.fragmented_body
+            service.test_suite_http_port, responses=self.responses, host=self.host,
+            oversized_headers=self.oversized_headers, oversized_body=self.oversized_body,
+            fragmented_body=self.fragmented_body
         )
         self.receiver.start()
 
@@ -437,7 +519,7 @@ class Http2IPv6Service:
             else None,
             timeout=timeout,
             interval=0.5,
-            description=f"{minimum_count} IPv6 HTTP/2 OTLP requests",
+            description=f"{minimum_count} HTTP/2 OTLP requests",
         )
 
 
@@ -987,10 +1069,13 @@ def test_out_opentelemetry_http2_ipv6_authority_header():
 
 
 def test_out_opentelemetry_http1_oversized_response_is_rejected():
-    service = Service("out_otel_http2_http1_response_limit.yaml", use_tls=True)
+    service = Service(
+        "out_otel_http2_http1_response_limit.yaml",
+        use_tls=True,
+        response_options={"body": "x" * (128 * 1024)},
+    )
     service.start()
     try:
-        configure_otlp_response(body="x" * (128 * 1024))
         service.wait_for_requests(1)
         _wait_for_log_message(service, "HTTP response exceeded configured client limit")
     finally:
@@ -1023,10 +1108,13 @@ def test_out_opentelemetry_http1_header_count_limit(extra_header_count, rejected
 
 
 def test_out_opentelemetry_http1_chunk_framing_does_not_count_as_body():
-    service = Service("out_otel_http2_http1_response_limit.yaml", use_tls=True)
+    service = Service(
+        "out_otel_http2_http1_response_limit.yaml",
+        use_tls=True,
+        response_options={"body": (b"x" for _ in range(8192))},
+    )
     service.start()
     try:
-        configure_otlp_response(body=(b"x" for _ in range(8192)))
         service.wait_for_requests(1)
         _wait_for_log_message(service, "HTTP status=200")
     finally:
@@ -1037,11 +1125,14 @@ def test_out_opentelemetry_http1_chunk_framing_does_not_count_as_body():
 
 
 def test_out_opentelemetry_http1_response_deadline():
-    service = Service("out_otel_http2_http1_response_limit.yaml", use_tls=True,
-                      response_timeout=1)
+    service = Service(
+        "out_otel_http2_http1_response_limit.yaml",
+        use_tls=True,
+        response_timeout=1,
+        response_options={"delay_seconds": 3},
+    )
     service.start()
     try:
-        configure_otlp_response(delay_seconds=3)
         service.wait_for_requests(1)
         _wait_for_log_message(service, "timed out after 1 seconds (IO timeout)", timeout=8)
     finally:
@@ -1134,6 +1225,26 @@ def test_out_opentelemetry_http2_frame_overhead_does_not_count_as_body():
 
     with open(service.flb.log_file, encoding="utf-8") as log_file:
         assert "HTTP response exceeded configured client limit" not in log_file.read()
+
+
+def test_out_opentelemetry_http2_429_honors_retry_after():
+    if not ipv6_loopback_available():
+        pytest.skip("IPv6 loopback is not available")
+
+    service = Http2IPv6Service(
+        "out_otel_http2_ipv6_throttle.yaml",
+        responses=[
+            {"status": 429, "headers": [("retry-after", "2")]},
+            {"status": 200},
+        ],
+    )
+    try:
+        service.start()
+        requests_seen = service.wait_for_requests(2, timeout=30)
+    finally:
+        service.stop()
+
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 1.8
 
 
 @pytest.mark.parametrize(
@@ -1760,6 +1871,133 @@ def test_out_opentelemetry_chunk_ending_with_empty_group_exports_its_records():
         service.stop()
 
 
+def test_out_opentelemetry_http_429_honors_retry_after():
+    service = Service(
+        "out_otel_http_logs_throttle.yaml",
+        response_setup=lambda: _configure_http_throttle(429, "2"),
+    )
+
+    try:
+        service.start()
+        requests_seen = service.wait_for_requests(2, timeout=10)
+    finally:
+        service.stop()
+
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 1.8
+
+
+@pytest.mark.parametrize("status_code", [502, 504])
+def test_out_opentelemetry_gateway_retry_is_not_throttle(status_code):
+    service = Service(
+        "out_otel_http_logs_throttle_long_base.yaml",
+        response_setup=lambda: _configure_http_throttle(status_code, "5"),
+    )
+
+    try:
+        service.start()
+        requests_seen = service.wait_for_requests(2, timeout=8)
+    finally:
+        service.stop()
+
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] < 3
+
+
+def test_out_opentelemetry_http_503_with_invalid_hint_is_not_throttle():
+    service = Service(
+        "out_otel_http_logs_throttle_long_base.yaml",
+        response_setup=lambda: _configure_http_throttle(503, "invalid"),
+    )
+
+    try:
+        service.start()
+        requests_seen = service.wait_for_requests(2, timeout=8)
+    finally:
+        service.stop()
+
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] < 3
+
+
+def test_out_opentelemetry_grpc_unavailable_honors_retry_info():
+    service = Service(
+        "out_otel_grpc_logs_throttle.yaml",
+        receiver_mode="grpc",
+        response_setup=lambda: _configure_grpc_throttle(
+            grpc.StatusCode.UNAVAILABLE, 2
+        ),
+    )
+
+    try:
+        service.start()
+        requests_seen = service.wait_for_requests(2, timeout=10)
+    finally:
+        service.stop()
+
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 1.8
+
+
+@pytest.mark.parametrize("grpc_status", [8, 14])
+@pytest.mark.parametrize(
+    "message,expected_remainder",
+    [
+        ("scripted OTLP response", 2),
+        ("scripted OTLP response!", 3),
+    ],
+)
+def test_out_opentelemetry_grpc_honors_unpadded_retry_info(
+    grpc_status, message, expected_remainder
+):
+    status_details = _grpc_retry_status_details(grpc_status, 2, message).rstrip("=")
+    assert len(status_details) % 4 == expected_remainder
+
+    service = Http2IPv6Service(
+        "out_otel_grpc_logs_throttle.yaml",
+        host="127.0.0.1",
+        responses=[
+            {
+                "status": 200,
+                "content_type": "application/grpc",
+                "body": b"",
+                "trailers": [
+                    ("grpc-status", str(grpc_status)),
+                    ("grpc-status-details-bin", status_details),
+                ],
+            },
+            {
+                "status": 200,
+                "content_type": "application/grpc",
+                "body": b"",
+                "trailers": [("grpc-status", "0")],
+            },
+        ],
+    )
+
+    try:
+        service.start()
+        requests_seen = service.wait_for_requests(2, timeout=10)
+    finally:
+        service.stop()
+
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 1.8
+
+
+@pytest.mark.parametrize("retry_delay", [None, "invalid"])
+def test_out_opentelemetry_grpc_resource_exhausted_requires_retry_info(retry_delay):
+    service = Service(
+        "out_otel_grpc_logs_throttle.yaml",
+        receiver_mode="grpc",
+        response_setup=lambda: _configure_grpc_throttle(
+            grpc.StatusCode.RESOURCE_EXHAUSTED, retry_delay
+        ),
+    )
+
+    try:
+        service.start()
+        service.wait_for_requests(1)
+        service.assert_no_additional_requests(1)
+    finally:
+        service.stop()
+
+
 def test_out_opentelemetry_batch_size_exports_each_record_once():
     """Records of earlier scopes are not sent again by a later batch."""
     service = Service("out_otel_http_logs_forward_batch_size.yaml")
@@ -1895,3 +2133,44 @@ def test_out_opentelemetry_journald_mapping(placement, tmp_path):
         "journald.PRIORITY": "bad", "journald._PID": "42x", "journald.CODE_LINE": "-1"
     }
     assert records[3][2] == {"host.name": "host-a", "process.pid": "42"}
+
+
+def test_out_opentelemetry_populated_partial_success_is_not_retried():
+    response = ExportLogsServiceResponse()
+    response.partial_success.rejected_log_records = 1
+    response.partial_success.error_message = "scripted partial acceptance"
+    service = Service(
+        "out_otel_http_logs_throttle.yaml",
+        response_setup=lambda: configure_otlp_response(
+            status_code=200,
+            body=response.SerializeToString(),
+            content_type="application/x-protobuf",
+        ),
+    )
+
+    try:
+        service.start()
+        service.wait_for_requests(1)
+        service.assert_no_additional_requests(1)
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("late_request", [False, True])
+def test_no_additional_requests_checks_deadline(monkeypatch, late_request):
+    clock = iter([0.0, 0.0, 1.0])
+    requests_seen = []
+    monkeypatch.setitem(data_storage, "requests", requests_seen)
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock))
+
+    def finish_interval(_seconds):
+        if late_request:
+            requests_seen.append({"received_at": 0.99})
+
+    monkeypatch.setattr(time, "sleep", finish_interval)
+    service = Service.__new__(Service)
+    if late_request:
+        with pytest.raises(AssertionError, match="expected 0 OTLP requests, saw 1"):
+            service.assert_no_additional_requests(0, timeout=1)
+    else:
+        service.assert_no_additional_requests(0, timeout=1)
