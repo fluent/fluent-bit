@@ -87,12 +87,35 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
                               struct flb_config *config)
 {
     int ret;
+    int transfer_queued_owner;
+    uint64_t generation;
     char *buf_data;
     size_t buf_size;
     struct flb_task *task;
+    struct flb_task_route *route;
     struct flb_output_instance *ins;
 
     task = retry->parent;
+    ins = retry->o_ins;
+    route = flb_task_route_get(task, ins);
+    if (route == NULL) {
+        return -1;
+    }
+
+    transfer_queued_owner =
+        route->dispatch_state == FLB_TASK_ROUTE_DISPATCH_QUEUED;
+
+    /* A due ordinary retry must still pass the output deadline gate. */
+    if (flb_output_throttle_admit(&ins->throttle,
+                                  flb_output_throttle_now_ms(),
+                                  &generation) == FLB_FALSE) {
+        ret = flb_task_route_defer(task, ins, transfer_queued_owner);
+        if (ret == -1) {
+            return -1;
+        }
+        flb_output_throttle_wakeup_schedule(ins);
+        return 0;
+    }
 
     /* Set file up/down based on restrictions */
     ret = flb_input_chunk_set_up(task->ic);
@@ -105,6 +128,10 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
          * enough like errors on delivering data. So if we cannot put the chunk in memory
          * it cannot be retried.
          */
+        if (transfer_queued_owner == FLB_TRUE) {
+            flb_task_route_unqueue(task, ins);
+            flb_task_users_dec(task, FLB_FALSE);
+        }
         ret = flb_task_retry_reschedule(retry, config);
         if (ret == -1) {
             return -1;
@@ -125,13 +152,15 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
          * Destroying the retry without releasing the task would leave the task
          * with no users and no retries, a state nothing reaps.
          */
-        ins = retry->o_ins;
-
         if (retry->attempts >= ins->retry_limit && ins->retry_limit >= 0) {
             flb_error("[engine_dispatch] could not retrieve chunk content, "
                       "task_id=%i reached retry-attempts limit %i/%i, dropping",
                       task->id, retry->attempts, ins->retry_limit);
             record_retry_failure_metrics(task, ins, config);
+            if (transfer_queued_owner == FLB_TRUE) {
+                flb_task_route_unqueue(task, ins);
+                flb_task_users_dec(task, FLB_FALSE);
+            }
             flb_task_retry_destroy(retry);
             flb_task_users_release(task);
             return -1;
@@ -142,6 +171,10 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
                  "re-scheduling task_id=%i attempts=%i",
                  task->id, retry->attempts);
 
+        if (transfer_queued_owner == FLB_TRUE) {
+            flb_task_route_unqueue(task, ins);
+            flb_task_users_dec(task, FLB_FALSE);
+        }
         ret = flb_task_retry_reschedule(retry, config);
         if (ret == -1) {
             return -1;
@@ -163,6 +196,12 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
         ret = flb_output_task_singleplex_enqueue(retry->o_ins->singleplex_queue, retry,
                                                  task, retry->o_ins, config);
         if (ret == -1) {
+            if (transfer_queued_owner == FLB_TRUE &&
+                route->dispatch_state == FLB_TASK_ROUTE_DISPATCH_QUEUED) {
+                flb_task_route_unqueue(task, ins);
+                flb_task_users_dec(task, FLB_FALSE);
+            }
+            flb_task_users_release(task);
             return -1;
         }
     }
@@ -170,6 +209,7 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
         ret = flb_output_task_flush(task, retry->o_ins, config);
         if (ret == -1) {
             flb_task_retry_destroy(retry);
+            flb_task_users_release(task);
             return -1;
         }
     }
@@ -224,6 +264,7 @@ static void test_run_formatter(struct flb_config *config,
 static int tasks_start(struct flb_input_instance *in,
                        struct flb_config *config)
 {
+    int ret;
     int hits = 0;
     int retry = 0;
     struct mk_list *tmp;
@@ -274,7 +315,19 @@ static int tasks_start(struct flb_input_instance *in,
              * running something.
              */
             if (out->flags & FLB_OUTPUT_NO_MULTIPLEX) {
-                if (flb_output_coros_size(route->out) > 0 || retry > 0) {
+                if (out->throttle_deferred_count > 0) {
+                    /* Preserve deferred FIFO priority and task ownership. */
+                    ret = flb_task_route_defer(task, out, FLB_FALSE);
+                    if (ret == 0) {
+                        hits++;
+                        flb_output_throttle_wakeup_schedule(out);
+                        flb_output_throttle_metrics_update(
+                            out, flb_output_throttle_now_ms());
+                    }
+                    continue;
+                }
+
+                if (out->dispatches_inflight > 0 || retry > 0) {
                     continue;
                 }
             }
