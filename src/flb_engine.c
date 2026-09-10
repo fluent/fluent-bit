@@ -19,6 +19,7 @@
 
 #include <math.h>
 #include <float.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -147,6 +148,7 @@ void flb_engine_reschedule_retries(struct flb_config *config)
     struct mk_list *tmp_task;
     struct mk_list *tmp_retry_task;
     struct flb_task *task;
+    struct flb_task_route *route;
     struct flb_input_instance *ins;
     struct flb_task_retry *retry;
 
@@ -166,6 +168,12 @@ void flb_engine_reschedule_retries(struct flb_config *config)
 
             mk_list_foreach_safe(rt_head, tmp_retry_task, &task->retries) {
                 retry = mk_list_entry(rt_head, struct flb_task_retry, _head);
+                route = flb_task_route_get(task, retry->o_ins);
+                if (route != NULL &&
+                    route->dispatch_state == FLB_TASK_ROUTE_DISPATCH_DEFERRED) {
+                    flb_output_throttle_wakeup_schedule(retry->o_ins);
+                    continue;
+                }
                 flb_sched_request_invalidate(config, retry);
                 ret = flb_sched_retry_now(config, retry);
                 if (ret == -1) {
@@ -552,6 +560,8 @@ static inline int handle_output_event(uint64_t ts,
     int effective_records = 0;
     int retries;
     int retry_seconds;
+    uint64_t now_ms;
+    uint64_t remaining_ms;
     uint32_t type;
     uint32_t key;
     double latency_seconds;
@@ -561,6 +571,7 @@ static inline int handle_output_event(uint64_t ts,
     struct flb_task *task;
     struct flb_task_retry *retry;
     struct flb_output_instance *ins;
+    struct flb_output_throttle_snapshot throttle_snapshot;
 
     /* Get type and key */
     type = FLB_BITS_U64_HIGH(val);
@@ -592,6 +603,12 @@ static inline int handle_output_event(uint64_t ts,
     else if (ret == FLB_RETRY) {
         trace_st = "RETRY";
     }
+    else if (ret == FLB_THROTTLE) {
+        trace_st = "THROTTLE";
+    }
+    else if (ret == FLB_OUTPUT_DEFERRED) {
+        trace_st = "DEFERRED";
+    }
 
     flb_trace("%s[engine] [task event]%s task_id=%i out_id=%i return=%s",
               ANSI_YELLOW, ANSI_RESET,
@@ -600,11 +617,34 @@ static inline int handle_output_event(uint64_t ts,
 
     task = config->task_map[task_id].task;
     ins  = flb_output_get_instance(config, out_id);
+    if (task == NULL || ins == NULL) {
+        flb_error("[engine] stale output event task_id=%i out_id=%i",
+                  task_id, out_id);
+        return -1;
+    }
+
+    if (ret == FLB_OUTPUT_DEFERRED) {
+        if (flb_task_route_defer(task, ins, FLB_TRUE) == -1) {
+            flb_error("[engine] could not transfer task_id=%i output=%s "
+                      "to deferred ownership", task_id, flb_output_name(ins));
+            return -1;
+        }
+
+        if (ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
+            flb_output_task_singleplex_complete(ins->singleplex_queue);
+            flb_output_task_singleplex_flush_next(ins->singleplex_queue);
+        }
+        flb_output_throttle_wakeup_schedule(ins);
+        flb_output_throttle_metrics_update(ins, flb_output_throttle_now_ms());
+        return 0;
+    }
+
     if (flb_output_is_threaded(ins) == FLB_FALSE) {
         flb_output_flush_finished(config, out_id);
     }
     in_name = (char *) flb_input_name(task->i_ins);
     out_name = (char *) flb_output_name(ins);
+    flb_output_throttle_metrics_update(ins, flb_output_throttle_now_ms());
     flb_task_acquire_lock(task);
     if (flb_task_get_route_data(task, ins,
                                 &effective_records,
@@ -614,9 +654,18 @@ static inline int handle_output_event(uint64_t ts,
     }
     flb_task_release_lock(task);
 
+    flb_task_acquire_lock(task);
+    if (flb_task_route_unqueue(task, ins) == -1) {
+        flb_warn("[engine] task_id=%i output=%s completed from an unexpected "
+                 "dispatch state", task_id, flb_output_name(ins));
+    }
+    flb_task_release_lock(task);
+
     /* If we are in synchronous mode, flush the next waiting task */
     if (ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
-        if (ret == FLB_OK || ret == FLB_RETRY || ret == FLB_ERROR) {
+        if (ret == FLB_OK || ret == FLB_RETRY || ret == FLB_ERROR ||
+            ret == FLB_THROTTLE) {
+            flb_output_task_singleplex_complete(ins->singleplex_queue);
             flb_output_task_singleplex_flush_next(ins->singleplex_queue);
         }
     }
@@ -686,7 +735,7 @@ static inline int handle_output_event(uint64_t ts,
         flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
     }
-    else if (ret == FLB_RETRY) {
+    else if (ret == FLB_RETRY || ret == FLB_THROTTLE) {
         if (ins->retry_limit == FLB_OUT_RETRY_NONE) {
             handle_dlq_if_available(config, task, ins, 0);
 
@@ -723,6 +772,42 @@ static inline int handle_output_event(uint64_t ts,
             flb_task_retry_clean(task, ins);
             flb_task_users_dec(task, FLB_TRUE);
 
+            return 0;
+        }
+
+        if (ret == FLB_THROTTLE) {
+            if (flb_task_route_defer(task, ins, FLB_FALSE) == -1) {
+                flb_task_users_dec(task, FLB_TRUE);
+                return -1;
+            }
+
+            /* Transfer callback ownership to the output deadline queue. */
+            flb_task_users_dec(task, FLB_FALSE);
+            flb_output_throttle_snapshot(&ins->throttle,
+                                         &throttle_snapshot);
+            now_ms = flb_output_throttle_now_ms();
+            if (throttle_snapshot.until_ms > now_ms) {
+                remaining_ms = throttle_snapshot.until_ms - now_ms;
+            }
+            else {
+                remaining_ms = 1;
+            }
+
+            if (remaining_ms > (uint64_t) INT_MAX * 1000) {
+                retry_seconds = INT_MAX;
+            }
+            else {
+                retry_seconds = (int) ((remaining_ms + 999) / 1000);
+            }
+            flb_output_throttle_wakeup_schedule(ins);
+
+            flb_warn("[engine] throttled flush for chunk '%s', resume in %i seconds: "
+                     "task_id=%i, input=%s > output=%s (out_id=%i)",
+                     flb_input_chunk_get_name(task->ic),
+                     retry_seconds,
+                     task->id,
+                     flb_input_name(task->i_ins),
+                     flb_output_name(ins), out_id);
             return 0;
         }
 
@@ -867,6 +952,34 @@ static inline int handle_output_event(uint64_t ts,
     return 0;
 }
 
+static inline void handle_dispatch_result_fallback(
+                                       struct flb_output_dispatch *dispatch,
+                                       int result,
+                                       struct flb_config *config)
+{
+    uint32_t set;
+    uint64_t value;
+
+    set = FLB_TASK_SET(result, dispatch->task->id, dispatch->out->id);
+    value = FLB_BITS_U64_SET(FLB_ENGINE_TASK, set);
+    flb_output_dispatch_destroy(dispatch);
+    handle_output_event(cfl_time_now(), config, value);
+}
+
+static inline void handle_dispatch_result_fallbacks(struct flb_config *config)
+{
+    struct flb_output_dispatch *dispatch;
+
+    while (1) {
+        dispatch = flb_output_thread_result_fallback_pop(config);
+        if (dispatch == NULL) {
+            break;
+        }
+
+        handle_dispatch_result_fallback(dispatch, dispatch->result, config);
+    }
+}
+
 static inline int handle_output_events(flb_pipefd_t fd,
                                        struct flb_config *config)
 {
@@ -879,7 +992,11 @@ static inline int handle_output_events(flb_pipefd_t fd,
 
     memset(&values, 0, sizeof(values));
 
+#ifdef _WIN32
+    bytes = flb_pipe_read_all(fd, &values[0], sizeof(values[0]));
+#else
     bytes = flb_pipe_r(fd, &values, sizeof(values));
+#endif
 
     if (bytes == -1) {
         flb_pipe_error();
@@ -1538,14 +1655,83 @@ int flb_engine_start(struct flb_config *config)
                 flb_sched_event_handler(config, event);
             }
             else if (event->type == FLB_ENGINE_EV_THREAD_ENGINE) {
+                uint64_t generation;
+                size_t route_status;
                 struct flb_output_flush *output_flush;
+                struct flb_output_dispatch *dispatch;
 
-                /* Read the coroutine reference */
-                ret = flb_pipe_r(event->fd, &output_flush, sizeof(struct flb_output_flush *));
-                if (ret <= 0 || output_flush == 0) {
+                ret = flb_pipe_read_all(event->fd, &dispatch,
+                                        sizeof(struct flb_output_dispatch *));
+                if (ret != sizeof(struct flb_output_dispatch *) ||
+                    dispatch == NULL) {
                     flb_pipe_error();
                     continue;
                 }
+
+                if (dispatch->magic != FLB_OUTPUT_DISPATCH_MAGIC ||
+                    dispatch->config != config) {
+                    flb_error("[engine] invalid output dispatch envelope");
+                    flb_output_dispatch_destroy(dispatch);
+                    continue;
+                }
+
+                if (dispatch->type != FLB_OUTPUT_DISPATCH_TASK) {
+                    flb_error("[engine] invalid output dispatch envelope type");
+                    flb_output_dispatch_destroy(dispatch);
+                    continue;
+                }
+
+                flb_task_acquire_lock(dispatch->task);
+                route_status = flb_task_get_route_status(dispatch->task,
+                                                         dispatch->out);
+                flb_task_release_lock(dispatch->task);
+                if (route_status == FLB_TASK_ROUTE_DROPPED) {
+                    ret = flb_output_dispatch_post_result(
+                              dispatch, FLB_ERROR,
+                              dispatch->out->ch_events[1]);
+                    if (ret == -1) {
+                        handle_dispatch_result_fallback(
+                            dispatch, FLB_ERROR, config);
+                        continue;
+                    }
+                    flb_output_dispatch_destroy(dispatch);
+                    continue;
+                }
+
+                if (flb_output_throttle_admit(&dispatch->out->throttle,
+                                              flb_output_throttle_now_ms(),
+                                              &generation) == FLB_FALSE) {
+                    ret = flb_output_dispatch_post_result(
+                              dispatch, FLB_OUTPUT_DEFERRED,
+                              dispatch->out->ch_events[1]);
+                    if (ret == -1) {
+                        handle_dispatch_result_fallback(
+                            dispatch, FLB_OUTPUT_DEFERRED, config);
+                        continue;
+                    }
+                    flb_output_dispatch_destroy(dispatch);
+                    continue;
+                }
+
+                output_flush = flb_output_flush_create(dispatch->task,
+                                                       dispatch->task->i_ins,
+                                                       dispatch->out,
+                                                       dispatch->config);
+                if (output_flush == NULL) {
+                    ret = flb_output_dispatch_post_result(
+                              dispatch, FLB_ERROR,
+                              dispatch->out->ch_events[1]);
+                    if (ret == -1) {
+                        handle_dispatch_result_fallback(
+                            dispatch, FLB_ERROR, config);
+                        continue;
+                    }
+                    flb_output_dispatch_destroy(dispatch);
+                    continue;
+                }
+
+                output_flush->admission_generation = generation;
+                flb_output_dispatch_destroy(dispatch);
 
                 /* Init coroutine */
                 flb_coro_resume(output_flush->coro);
@@ -1605,8 +1791,11 @@ int flb_engine_start(struct flb_config *config)
             flb_input_chunk_ring_buffer_collector(config, NULL);
         }
 
+        handle_dispatch_result_fallbacks(config);
+
         /* Cleanup functions associated to events and timers */
         if (config->is_running == FLB_TRUE) {
+            flb_output_throttle_wakeup_scan(config);
             flb_net_dns_lookup_context_cleanup(&dns_ctx);
             flb_sched_timer_cleanup(config->sched);
             flb_upstream_conn_pending_destroy_list(&config->upstreams);
