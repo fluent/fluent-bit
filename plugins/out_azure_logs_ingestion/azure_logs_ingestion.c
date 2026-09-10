@@ -33,14 +33,24 @@
 
 #include "azure_logs_ingestion.h"
 #include "azure_logs_ingestion_conf.h"
+#include "azure_logs_ingestion_batch.h"
 
 static int cb_azure_logs_ingestion_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
 {
+    const char *buffering;
     struct flb_az_li *ctx;
     (void) config;
-    (void) ins;
     (void) data;
+
+    buffering = flb_output_get_property("buffering_enabled", ins);
+    if (buffering != NULL && flb_utils_bool(buffering) == FLB_TRUE) {
+        if (ins->tp_workers > 1) {
+            flb_plg_error(ins, "buffering supports exactly one output worker");
+            return -1;
+        }
+        ins->tp_workers = 1;
+    }
 
     /* Allocate and initialize a context from configuration */
     ctx = flb_az_li_ctx_create(ins, config);
@@ -49,6 +59,61 @@ static int cb_azure_logs_ingestion_init(struct flb_output_instance *ins,
         return -1;
     }
 
+#ifdef FLB_HAVE_SQLDB
+    if (ctx->buffering_enabled == FLB_TRUE) {
+        /* OAuth creates its upstream independently of the output helper. Add
+         * it to the single output worker's upstream map explicitly. */
+        flb_upstream_thread_safe(ctx->u_auth->u);
+        mk_list_add(&ctx->u_auth->u->base._head, &ins->upstreams);
+
+        if (az_li_batch_init(ctx) == -1) {
+            flb_plg_error(ins, "could not initialize disk-backed batching");
+            flb_az_li_ctx_destroy(ctx);
+            return -1;
+        }
+    }
+#endif
+
+    return 0;
+}
+
+static int cb_azure_logs_ingestion_worker_init(void *data,
+                                                struct flb_config *config)
+{
+    struct flb_az_li *ctx = data;
+
+    (void) config;
+    if (ctx == NULL) {
+        return 0;
+    }
+    if (ctx->buffering_enabled == FLB_FALSE) {
+        return 0;
+    }
+#ifdef FLB_HAVE_SQLDB
+    if (az_li_batch_start_uploader(ctx) == -1) {
+        flb_plg_error(ctx->ins, "could not start disk-backed batching uploader");
+        return -1;
+    }
+    return 0;
+#else
+    return -1;
+#endif
+}
+
+static int cb_azure_logs_ingestion_worker_exit(void *data,
+                                                struct flb_config *config)
+{
+    struct flb_az_li *ctx = data;
+
+    (void) config;
+    if (ctx == NULL) {
+        return 0;
+    }
+#ifdef FLB_HAVE_SQLDB
+    if (ctx->buffering_enabled == FLB_TRUE) {
+        az_li_batch_stop_uploader(ctx);
+    }
+#endif
     return 0;
 }
 
@@ -56,6 +121,7 @@ static int cb_azure_logs_ingestion_init(struct flb_output_instance *ins,
     allocates sds string */
 static int az_li_format(const void *in_buf, size_t in_bytes,
                         char **out_buf, size_t *out_size,
+                        size_t *out_record_count,
                         struct flb_az_li *ctx,
                         struct flb_config *config)
 {
@@ -159,6 +225,7 @@ static int az_li_format(const void *in_buf, size_t in_bytes,
 
     *out_buf = record;
     *out_size = flb_sds_len(record);
+    *out_record_count = (size_t) array_size;
 
     return 0;
 }
@@ -242,6 +309,97 @@ token_cleanup:
     return token_return;
 }
 
+int az_li_send_payload(struct flb_az_li *ctx, const void *payload,
+                       size_t payload_size, size_t uncompressed_size,
+                       int compressed, int *http_status)
+{
+    int ret;
+    size_t bytes_sent;
+    flb_sds_t token;
+#ifdef FLB_HAVE_METRICS
+    uint64_t metrics_timestamp;
+    char *output_name;
+#endif
+    struct flb_connection *connection;
+    struct flb_http_client *client;
+
+    token = NULL;
+    client = NULL;
+    connection = flb_upstream_conn_get(ctx->u_dce);
+    if (connection == NULL) {
+        return -1;
+    }
+
+    token = get_az_li_token(ctx);
+    if (token == NULL) {
+        flb_upstream_conn_release(connection);
+        return -1;
+    }
+
+    client = flb_http_client(connection, FLB_HTTP_POST, ctx->dce_u_url,
+                             payload, payload_size, NULL, 0, NULL, 0);
+    if (client == NULL) {
+        flb_sds_destroy(token);
+        flb_upstream_conn_release(connection);
+        return -1;
+    }
+
+    flb_http_add_header(client, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(client, "Content-Type", 12, "application/json", 16);
+    if (compressed == FLB_TRUE) {
+        flb_http_add_header(client, "Content-Encoding", 16, "gzip", 4);
+    }
+    flb_http_add_header(client, "Authorization", 13, token, flb_sds_len(token));
+    flb_http_buffer_size(client, FLB_HTTP_DATA_SIZE_MAX);
+    if (ctx->buffering_enabled == FLB_TRUE) {
+        flb_http_set_response_timeout(client, ctx->http_timeout);
+        flb_http_set_read_idle_timeout(client, ctx->http_timeout);
+    }
+
+#ifdef FLB_HAVE_METRICS
+    if (ctx->payload_metrics_mutex_initialized == FLB_TRUE) {
+        metrics_timestamp = cfl_time_now();
+        output_name = (char *) flb_output_name(ctx->ins);
+        pthread_mutex_lock(&ctx->payload_metrics_mutex);
+        if (ctx->cmt_uncompressed_payload_size != NULL) {
+            cmt_histogram_observe(ctx->cmt_uncompressed_payload_size,
+                                  metrics_timestamp,
+                                  (double) uncompressed_size,
+                                  2, (char *[]) {output_name, ctx->dcr_id});
+        }
+        if (ctx->cmt_http_payload_size != NULL) {
+            cmt_histogram_observe(ctx->cmt_http_payload_size,
+                                  metrics_timestamp,
+                                  (double) payload_size,
+                                  2, (char *[]) {output_name, ctx->dcr_id});
+        }
+        pthread_mutex_unlock(&ctx->payload_metrics_mutex);
+    }
+#endif
+
+    ret = flb_http_do(client, &bytes_sent);
+    if (ret == 0) {
+        *http_status = client->resp.status;
+        if (client->resp.status < 200 || client->resp.status > 299) {
+            if (client->resp.payload_size > 0) {
+                flb_plg_warn(ctx->ins, "http_status=%i: %s",
+                             client->resp.status, client->resp.payload);
+            }
+            else {
+                flb_plg_warn(ctx->ins, "http_status=%i", client->resp.status);
+            }
+        }
+    }
+    else {
+        flb_plg_warn(ctx->ins, "http_do=%i", ret);
+    }
+
+    flb_http_client_destroy(client);
+    flb_sds_destroy(token);
+    flb_upstream_conn_release(connection);
+    return ret;
+}
+
 static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
                            struct flb_output_flush *out_flush,
                            struct flb_input_instance *i_ins,
@@ -249,129 +407,89 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
                            struct flb_config *config)
 {
     int ret;
-    int flush_status;
-    size_t b_sent;
+    int status;
     size_t json_payload_size;
-    void* final_payload;
+    size_t record_count;
+    void *final_payload;
     size_t final_payload_size;
-    flb_sds_t token;
-    struct flb_connection *u_conn;
-    struct flb_http_client *c = NULL;
-    int is_compressed = FLB_FALSE;
-    flb_sds_t json_payload = NULL;
-    struct flb_az_li *ctx = out_context;
-    (void) i_ins;
-    (void) config;
+    int is_compressed;
+    flb_sds_t json_payload;
+    struct flb_az_li *ctx;
 
-    /* Get upstream connection */
-    u_conn = flb_upstream_conn_get(ctx->u_dce);
-    if (!u_conn) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+    (void) i_ins;
+    ctx = out_context;
+    json_payload = NULL;
+    record_count = 0;
+    final_payload = NULL;
+    is_compressed = FLB_FALSE;
+
+    if (ctx->buffering_enabled == FLB_TRUE) {
+#ifdef FLB_HAVE_SQLDB
+        /* cb_worker_init failures are not propagated by the output thread
+         * framework. Retry timer creation here and never accept durable
+         * ownership unless the uploader is active. */
+        if (az_li_batch_start_uploader(ctx) == -1) {
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        ret = az_li_format(event_chunk->data, event_chunk->size,
+                           &json_payload, &json_payload_size, &record_count,
+                           ctx, config);
+        if (ret == -1) {
+            /* The plugin has not taken ownership yet. Preserve the engine chunk
+             * for retry on transient decoder, allocation, or formatting errors. */
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        ret = az_li_batch_admit_chunk(ctx, out_flush,
+                                      json_payload, json_payload_size,
+                                      record_count);
+        flb_sds_destroy(json_payload);
+        if (ret != 0) {
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        FLB_OUTPUT_RETURN(FLB_OK);
+#else
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+#endif
     }
 
-    /* Convert binary logs into a JSON payload */
     ret = az_li_format(event_chunk->data, event_chunk->size,
-                       &json_payload, &json_payload_size, ctx,
-                       config);
+                       &json_payload, &json_payload_size, &record_count,
+                       ctx, config);
     if (ret == -1) {
-        flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
-    /* Get OAuth2 token */
-    token = get_az_li_token(ctx);
-    if (!token) {
-        flush_status = FLB_RETRY;
-        goto cleanup;
-    }
-
-    /* Map buffer */
     final_payload = json_payload;
     final_payload_size = json_payload_size;
     if (ctx->compress_enabled == FLB_TRUE) {
-        ret = flb_gzip_compress((void *) json_payload, json_payload_size,
+        ret = flb_gzip_compress(json_payload, json_payload_size,
                                 &final_payload, &final_payload_size);
         if (ret == -1) {
-            flb_plg_error(ctx->ins,
-                          "cannot gzip payload, disabling compression");
+            flb_plg_error(ctx->ins, "cannot gzip payload, disabling compression");
+            final_payload = json_payload;
+            final_payload_size = json_payload_size;
         }
         else {
             is_compressed = FLB_TRUE;
-            flb_plg_debug(ctx->ins, "enabled payload gzip compression");
-            /* JSON buffer will be cleared at cleanup: */
         }
     }
 
-    /* Compose HTTP Client request */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->dce_u_url,
-                        final_payload, final_payload_size, NULL, 0, NULL, 0);
-
-    if (!c) {
-        flb_plg_warn(ctx->ins, "retrying payload bytes=%lu", final_payload_size);
-        flush_status = FLB_RETRY;
-        goto cleanup;
-    }
-
-    /* Append headers */
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-    flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
-    if (is_compressed) {
-        flb_http_add_header(c, "Content-Encoding", 16, "gzip", 4);
-    }
-    flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
-    flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX);
-
-    /* Execute rest call */
-    ret = flb_http_do(c, &b_sent);
-    if (ret != 0) {
-        flb_plg_warn(ctx->ins, "http_do=%i", ret);
-        flush_status = FLB_RETRY;
-        goto cleanup;
-    }
-    else {
-        if (c->resp.status >= 200 && c->resp.status <= 299) {
-            flb_plg_info(ctx->ins, "http_status=%i, dcr_id=%s, table=%s",
-                         c->resp.status, ctx->dcr_id, ctx->table_name);
-            flush_status = FLB_OK;
-            goto cleanup;
-        }
-        else {
-            if (c->resp.payload_size > 0) {
-                flb_plg_warn(ctx->ins, "http_status=%i:\n%s",
-                             c->resp.status, c->resp.payload);
-            }
-            else {
-                flb_plg_warn(ctx->ins, "http_status=%i", c->resp.status);
-            }
-            flb_plg_debug(ctx->ins, "retrying payload bytes=%lu", final_payload_size);
-            flush_status = FLB_RETRY;
-            goto cleanup;
-        }
-    }
-
-cleanup:
-    /* cleanup */
-    if (json_payload) {
-        flb_sds_destroy(json_payload);
-    }
-
-    /* release compressed payload */
+    status = 0;
+    ret = az_li_send_payload(ctx, final_payload, final_payload_size,
+                             json_payload_size, is_compressed, &status);
     if (is_compressed == FLB_TRUE) {
         flb_free(final_payload);
     }
+    flb_sds_destroy(json_payload);
 
-    if (c) {
-        flb_http_client_destroy(c);
-    }
-    if (u_conn) {
-        flb_upstream_conn_release(u_conn);
+    if (ret != 0 || status < 200 || status > 299) {
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    /* destory token at last after HTTP call has finished */
-    if (token) {
-        flb_sds_destroy(token);
-    }
-    FLB_OUTPUT_RETURN(flush_status);
+    flb_plg_info(ctx->ins,
+                 "http_status=%i, dcr_id=%s, table=%s, request_bytes=%zu",
+                 status, ctx->dcr_id, ctx->table_name, final_payload_size);
+    FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 static int cb_azure_logs_ingestion_exit(void *data, struct flb_config *config)
@@ -442,6 +560,70 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE,  offsetof(struct flb_az_li, compress_enabled),
      "Enable HTTP payload compression (gzip)."
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "buffering_enabled", "false",
+     0, FLB_TRUE, offsetof(struct flb_az_li, buffering_enabled),
+     "Persist and batch complete engine chunks locally before ingestion. In this "
+     "mode retry_limit must be no_limits, and generic output processed and latency "
+     "metrics end at durable local admission; use plugin delivery and queue metrics "
+     "for Azure delivery health."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "buffer_dir", "/tmp/fluent-bit/azure-logs-ingestion",
+     0, FLB_TRUE, offsetof(struct flb_az_li, buffer_dir),
+     "Dedicated directory for the SQLite spool and its sidecars."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "buffer_key", (char *) NULL,
+     0, FLB_TRUE, offsetof(struct flb_az_li, buffer_key),
+     "Stable storage key for this output instance."
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "batch_target_size", "900000",
+     0, FLB_TRUE, offsetof(struct flb_az_li, batch_target_size),
+     "Soft compressed-size trigger for requests of complete source chunks."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "batch_timeout", "5s",
+     0, FLB_TRUE, offsetof(struct flb_az_li, batch_timeout),
+     "Maximum age of an active local batch."
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "batch_max_uncompressed_size", "16M",
+     0, FLB_TRUE, offsetof(struct flb_az_li, batch_max_uncompressed_size),
+     "Hard uncompressed JSON limit for a source chunk or combined request. The "
+     "planner snapshots at most this many source bytes and may temporarily hold "
+     "source copies, assembled JSON and gzip workspace (roughly three times the limit)."
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "buffer_dir_limit_size", "0",
+     0, FLB_TRUE, offsetof(struct flb_az_li, buffer_dir_limit_size),
+     "Aggregate logical owned-data limit with SQLite main-database and WAL "
+     "headroom for outputs sharing buffer_dir. Use a dedicated filesystem quota or "
+     "ephemeral-storage limit as the physical hard bound."
+    },
+    {
+     FLB_CONFIG_MAP_INT, "upload_retry_limit", "0",
+     0, FLB_TRUE, offsetof(struct flb_az_li, upload_retry_limit),
+     "Maximum transient retries before quarantine. Zero preserves strict FIFO and "
+     "retries outage data indefinitely; alert on queue age, uploader health and "
+     "quarantine usage."
+    },
+    {
+     FLB_CONFIG_MAP_INT, "upload_retry_base", "1",
+     0, FLB_TRUE, offsetof(struct flb_az_li, upload_retry_base),
+     "Base retry delay in seconds."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "buffer_receipt_ttl", "24h",
+     0, FLB_TRUE, offsetof(struct flb_az_li, buffer_receipt_ttl),
+     "Positive retention window for completed chunk deduplication receipts."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "http_timeout", "30s",
+     0, FLB_TRUE, offsetof(struct flb_az_li, http_timeout),
+     "Maximum connect, response and read-idle time for buffered OAuth and ingestion requests."
+    },
     /* EOF */
     {0}
 };
@@ -450,8 +632,10 @@ struct flb_output_plugin out_azure_logs_ingestion_plugin = {
     .name         = "azure_logs_ingestion",
     .description  = "Send logs to Log Analytics with Log Ingestion API",
     .cb_init      = cb_azure_logs_ingestion_init,
-    .cb_flush     = cb_azure_logs_ingestion_flush,
-    .cb_exit      = cb_azure_logs_ingestion_exit,
+    .cb_flush       = cb_azure_logs_ingestion_flush,
+    .cb_exit        = cb_azure_logs_ingestion_exit,
+    .cb_worker_init = cb_azure_logs_ingestion_worker_init,
+    .cb_worker_exit = cb_azure_logs_ingestion_worker_exit,
 
     /* Configuration */
     .config_map     = config_map,
