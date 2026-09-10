@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_search_bulk.h>
+#include <fluent-bit/flb_http_retry_after.h>
 #include <msgpack.h>
 
 #include <time.h>
@@ -42,6 +43,65 @@
 #include "murmur3.h"
 
 struct flb_output_plugin out_es_plugin;
+
+static void es_apply_retry_after(struct flb_elasticsearch *ctx,
+                                 struct flb_http_client *client,
+                                 struct flb_output_flush *out_flush)
+{
+    int status;
+    int trailer_status;
+    time_t wall_time;
+    int64_t wall_time_ms;
+    uint64_t delay_ms;
+    uint64_t trailer_delay_ms;
+    size_t invalid_count;
+    size_t trailer_invalid_count;
+
+    status = FLB_RETRY_AFTER_ABSENT;
+    delay_ms = 0;
+    invalid_count = 0;
+    wall_time = time(NULL);
+    if (wall_time < 0 || (uint64_t) wall_time > (uint64_t) INT64_MAX / 1000) {
+        wall_time_ms = 0;
+    }
+    else {
+        wall_time_ms = (int64_t) wall_time * 1000;
+    }
+
+    if (client->resp.data != NULL && client->resp.headers_end != NULL) {
+        status = flb_http_retry_after_parse_headers(
+                     client->resp.data,
+                     (size_t) (client->resp.headers_end - client->resp.data),
+                     wall_time_ms, &delay_ms, &invalid_count);
+    }
+
+    if (client->resp.trailer_buf != NULL && client->resp.trailer_size > 0) {
+        trailer_delay_ms = 0;
+        trailer_invalid_count = 0;
+        trailer_status = flb_http_retry_after_parse_headers(
+                             client->resp.trailer_buf,
+                             client->resp.trailer_size,
+                             wall_time_ms, &trailer_delay_ms,
+                             &trailer_invalid_count);
+        invalid_count += trailer_invalid_count;
+        if ((trailer_status == FLB_RETRY_AFTER_VALID ||
+             trailer_status == FLB_RETRY_AFTER_SATURATED) &&
+            ((status != FLB_RETRY_AFTER_VALID &&
+              status != FLB_RETRY_AFTER_SATURATED) ||
+             trailer_delay_ms > delay_ms)) {
+            status = trailer_status;
+            delay_ms = trailer_delay_ms;
+        }
+    }
+
+    if (invalid_count > 0) {
+        flb_plg_debug(ctx->ins, "ignored %zu malformed Retry-After field(s)",
+                      invalid_count);
+    }
+    if (status == FLB_RETRY_AFTER_VALID || status == FLB_RETRY_AFTER_SATURATED) {
+        flb_output_set_retry_after(out_flush, delay_ms);
+    }
+}
 
 static int es_pack_array_content(msgpack_packer *tmp_pck,
                                  msgpack_object array,
@@ -1222,6 +1282,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     struct flb_search_bulk_retry *retry_payload;
     struct flb_search_bulk_retry *next_retry_payload;
     int compress_gzip;
+    int throttle_detected;
     size_t buffer_size;
     flb_sds_t header_line = NULL;
     flb_sds_t tmp_sds = NULL;
@@ -1240,6 +1301,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     final_payload_buf = NULL;
     final_payload_size = 0;
     next_retry_payload = NULL;
+    throttle_detected = FLB_FALSE;
 
     node_ctx = NULL;
     if (ctx->ha_mode == FLB_TRUE) {
@@ -1435,6 +1497,10 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
                 flb_plg_error(ctx->ins, "HTTP status=%i URI=%s",
                               c->resp.status, uri);
             }
+            if (c->resp.status == 429) {
+                es_apply_retry_after(ctx, c, out_flush);
+                goto throttle;
+            }
             goto retry;
         }
 
@@ -1444,6 +1510,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
                                                    c->resp.payload_size,
                                                    pack, pack_size,
                                                    FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
+                                                   &throttle_detected,
                                                    &next_retry_payload);
             if (ret == FLB_SEARCH_BULK_COMPLETE) {
                 flb_output_clear_retry_context(out_flush);
@@ -1491,6 +1558,10 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
                         fflush(stderr);
                     }
                 }
+                if (throttle_detected == FLB_TRUE) {
+                    es_apply_retry_after(ctx, c, out_flush);
+                    goto throttle;
+                }
                 goto retry;
             }
         }
@@ -1514,8 +1585,15 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     flb_sds_destroy(uri);
     FLB_OUTPUT_RETURN(FLB_OK);
 
+ throttle:
+    ret = FLB_THROTTLE;
+    goto failure;
+
     /* Issue a retry */
  retry:
+    ret = FLB_RETRY;
+
+ failure:
     if (c != NULL) {
         flb_http_client_destroy(c);
     }
@@ -1529,7 +1607,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
 
     flb_sds_destroy(uri);
     flb_upstream_conn_release(u_conn);
-    FLB_OUTPUT_RETURN(FLB_RETRY);
+    FLB_OUTPUT_RETURN(ret);
 }
 
 static int elasticsearch_response_test(struct flb_config *config,
