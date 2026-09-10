@@ -80,6 +80,7 @@ set(src
   flb_http_client_http1.c
   flb_http_client_http2.c
   flb_http_client.c
+  flb_http_retry_after.c
   flb_callback.c
   flb_strptime.c
   flb_fstore.c
