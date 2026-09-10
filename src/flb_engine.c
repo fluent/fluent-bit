@@ -661,6 +661,11 @@ static inline int handle_output_event(uint64_t ts,
     }
     flb_task_release_lock(task);
 
+    if ((ins->flags & FLB_OUTPUT_NO_MULTIPLEX) &&
+        ins->throttle_deferred_count > 0) {
+        flb_output_throttle_wakeup_schedule(ins);
+    }
+
     /* If we are in synchronous mode, flush the next waiting task */
     if (ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
         if (ret == FLB_OK || ret == FLB_RETRY || ret == FLB_ERROR ||
