@@ -1271,7 +1271,7 @@ static int post_metrics_payload(struct opentelemetry_context *ctx,
                                     ctx->grpc_metrics_uri,
                                     out_flush);
         if (result != FLB_OK) {
-            if ((result == FLB_RETRY || result == FLB_THROTTLE) && index > 0) {
+            if (result == FLB_RETRY && index > 0) {
                 flb_plg_warn(ctx->ins,
                              "metric payload partially succeeded (%zu/%zu batches); "
                              "skipping retry to avoid resending accepted data",
