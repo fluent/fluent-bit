@@ -435,6 +435,10 @@ if(TARGET flb-rt-processor_journald_otel AND FLB_PROCESSOR_OPENTELEMETRY_ENVELOP
   target_compile_definitions(flb-rt-processor_journald_otel PRIVATE JOURNALD_TEST_ENVELOPE)
 endif()
 
+if(TEST flb-rt-output_throttle_runtime)
+  set_tests_properties(flb-rt-output_throttle_runtime PROPERTIES TIMEOUT 120)
+endif()
+
 function(flb_runtime_lock_tests resource_name)
   foreach(test_name ${ARGN})
     if (TEST ${test_name})
