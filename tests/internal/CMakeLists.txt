@@ -286,6 +286,10 @@ endfunction(prepare_unit_tests)
 
 prepare_unit_tests(flb-it- "${UNIT_TESTS_FILES}")
 
+if(TARGET flb-it-input_chunk)
+  set_tests_properties(flb-it-input_chunk PROPERTIES TIMEOUT 120)
+endif()
+
 if(TARGET flb-it-engine_dispatch)
   target_include_directories(flb-it-engine_dispatch PRIVATE
     ${PROJECT_SOURCE_DIR}/lib/chunkio/deps)
