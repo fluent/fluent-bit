@@ -189,11 +189,23 @@ jobs:
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
           brew update
           brew install bison flex openssl || true
+          export FLB_CTEST_REAL_PATH="$(command -v ctest)"
+          export PATH="$GITHUB_WORKSPACE/.github/scripts/ctest-wrapper:$PATH"
           ci/scripts/run-unit-tests.sh
         env:
           CC: gcc
           CXX: g++
           FLB_OPT: ${{ matrix.flb_option }}
+
+      - name: Upload CTest failure diagnostics
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-ctest-logs-${{ matrix.flb_option }}
+          path: |
+            build/Testing/Temporary/LastTest.log
+            build/Testing/Temporary/LastTest.log.tmp
+          if-no-files-found: warn
 
   run-aarch64-unit-tests:
     runs-on: ${{(github.repository == 'fluent/fluent-bit') && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
