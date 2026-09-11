@@ -1,0 +1,27 @@
+#!/bin/bash
+
+set -u
+
+if [ -z "${FLB_CTEST_REAL_PATH:-}" ]; then
+    echo "FLB_CTEST_REAL_PATH must name the real ctest executable" >&2
+    exit 2
+fi
+
+wrapper_path="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
+ctest_path="$(cd "$(dirname "$FLB_CTEST_REAL_PATH")" && pwd -P)/$(basename "$FLB_CTEST_REAL_PATH")"
+
+if [ "$ctest_path" = "$wrapper_path" ]; then
+    echo "FLB_CTEST_REAL_PATH resolves to the ctest timeout wrapper" >&2
+    exit 2
+fi
+
+timeout_seconds="${FLB_CTEST_DEFAULT_TIMEOUT_SECONDS:-300}"
+
+case "$timeout_seconds" in
+    ''|*[!0-9]*|0)
+        echo "FLB_CTEST_DEFAULT_TIMEOUT_SECONDS must be a positive integer" >&2
+        exit 2
+        ;;
+esac
+
+exec "$FLB_CTEST_REAL_PATH" "$@" --timeout "$timeout_seconds"

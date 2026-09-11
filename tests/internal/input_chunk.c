@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fluent-bit/flb_input_chunk.h>
+#include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_time.h>
@@ -18,6 +19,7 @@
 
 #define DPATH FLB_TESTS_DATA_PATH "data/input_chunk/"
 #define MAX_LINES        32
+#define STOP_TIMEOUT_SEC 10
 
 int64_t result_time;
 struct tail_test_result {
@@ -34,6 +36,28 @@ static inline int64_t set_result(int64_t v)
 {
     int64_t old = __sync_lock_test_and_set(&result_time, v);
     return old;
+}
+
+static int stop_engine(flb_ctx_t *ctx)
+{
+#if defined(FLB_SYSTEM_MACOS)
+    int ret;
+    double deadline;
+
+    ret = flb_engine_exit(ctx->config);
+    TEST_CHECK_(ret >= 0, "requesting graceful engine shutdown");
+
+    deadline = flb_time_now() + STOP_TIMEOUT_SEC;
+    while (ctx->status == FLB_LIB_OK && flb_time_now() < deadline) {
+        flb_time_msleep(10);
+    }
+    TEST_CHECK_(ctx->status != FLB_LIB_OK,
+                "engine did not stop within %d seconds", STOP_TIMEOUT_SEC);
+
+    return flb_stop(ctx);
+#else
+    return flb_stop(ctx);
+#endif
 }
 
 static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
@@ -274,7 +298,7 @@ void do_test(char *system, const char *target, ...)
 
     sleep(1);
 
-    ret = flb_stop(ctx);
+    ret = stop_engine(ctx);
     TEST_CHECK_(ret == 0, "stopping engine");
 
     if (ctx) {
@@ -368,7 +392,7 @@ void flb_test_input_chunk_dropping_chunks()
     }
 
     flb_time_msleep(2100);
-    flb_stop(ctx);
+    stop_engine(ctx);
     flb_destroy(ctx);
     flb_free(storage_path);
 }
@@ -793,7 +817,7 @@ void flb_test_input_chunk_grouped_auto_records(void)
                                 _head);
     TEST_CHECK(i_ins != NULL);
     if (!i_ins) {
-        flb_stop(ctx);
+        stop_engine(ctx);
         flb_destroy(ctx);
         flb_free(payload);
         return;
@@ -821,7 +845,7 @@ void flb_test_input_chunk_grouped_auto_records(void)
         TEST_CHECK(ic->total_records == 1);
     }
 
-    flb_stop(ctx);
+    stop_engine(ctx);
     flb_destroy(ctx);
     flb_free(payload);
 }
@@ -908,7 +932,7 @@ void flb_test_input_chunk_grouped_release_space_drop_counters(void)
                                 _head);
     TEST_CHECK(i_ins != NULL);
     if (!i_ins) {
-        flb_stop(ctx);
+        stop_engine(ctx);
         flb_destroy(ctx);
         flb_free(payload);
         flb_free(storage_path);
@@ -920,7 +944,7 @@ void flb_test_input_chunk_grouped_release_space_drop_counters(void)
                                 _head);
     TEST_CHECK(o_ins != NULL);
     if (!o_ins) {
-        flb_stop(ctx);
+        stop_engine(ctx);
         flb_destroy(ctx);
         flb_free(payload);
         flb_free(storage_path);
@@ -960,7 +984,7 @@ void flb_test_input_chunk_grouped_release_space_drop_counters(void)
     TEST_CHECK(router_dropped_records <= append_count);
     TEST_CHECK(output_dropped_records == router_dropped_records);
 
-    flb_stop(ctx);
+    stop_engine(ctx);
     flb_destroy(ctx);
     flb_free(payload);
     flb_free(storage_path);

@@ -19,6 +19,7 @@ set(UNIT_TESTS_FILES
   unit_sizes.c
   hashtable.c
   http_client.c
+  http_retry_after.c
   utils.c
   gzip.c
   zstd.c
@@ -66,6 +67,8 @@ set(UNIT_TESTS_FILES
   storage_dlq.c
   engine_adaptive_flush.c
   engine_dispatch.c
+  output_thread.c
+  output_throttle.c
   search_bulk.c
 )
 
@@ -282,6 +285,10 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
 endfunction(prepare_unit_tests)
 
 prepare_unit_tests(flb-it- "${UNIT_TESTS_FILES}")
+
+if(TARGET flb-it-input_chunk)
+  set_tests_properties(flb-it-input_chunk PROPERTIES TIMEOUT 120)
+endif()
 
 if(TARGET flb-it-engine_dispatch)
   target_include_directories(flb-it-engine_dispatch PRIVATE

@@ -2,6 +2,7 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
+import time
 
 import pytest
 
@@ -28,20 +29,54 @@ class _BulkCaptureHandler(BaseHTTPRequestHandler):
                 "path": self.path,
                 "headers": dict(self.headers),
                 "body": body.decode("utf-8", errors="replace"),
+                "received_at": time.monotonic(),
             }
         )
 
         if self.server.response_factory is None:
             response = b'{"errors":false,"items":[{"create":{"status":201}}]}'
         else:
-            response = self.server.response_factory(
+            response_result = self.server.response_factory(
                 len(self.server.requests), self.server.requests[-1]
             )
-        self.send_response(200)
+            if isinstance(response_result, tuple):
+                if len(response_result) == 4:
+                    (
+                        status_code,
+                        response,
+                        response_headers,
+                        response_trailers,
+                    ) = response_result
+                else:
+                    status_code, response, response_headers = response_result
+                    response_trailers = []
+            else:
+                status_code = 200
+                response = response_result
+                response_headers = []
+                response_trailers = []
+        if self.server.response_factory is None:
+            status_code = 200
+            response_headers = []
+            response_trailers = []
+        self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(response)))
+        for name, value in response_headers:
+            self.send_header(name, value)
+        if response_trailers:
+            self.send_header("Transfer-Encoding", "chunked")
+            self.send_header("Trailer", ", ".join(name for name, _ in response_trailers))
+        else:
+            self.send_header("Content-Length", str(len(response)))
         self.end_headers()
-        self.wfile.write(response)
+        if response_trailers:
+            self.wfile.write(f"{len(response):x}\r\n".encode("ascii"))
+            self.wfile.write(response + b"\r\n0\r\n")
+            for name, value in response_trailers:
+                self.wfile.write(f"{name}: {value}\r\n".encode("ascii"))
+            self.wfile.write(b"\r\n")
+        else:
+            self.wfile.write(response)
 
 
 class _BulkCaptureServer(ThreadingHTTPServer):
@@ -180,6 +215,39 @@ def _partial_bulk_response(request_number, request):
     return b'{"errors":false,"items":[{"create":{"status":201}}]}'
 
 
+def _top_level_throttle_response(request_number, request):
+    if request_number == 1:
+        return 429, b'{"status":429}', [("Retry-After", "2")]
+
+    action_count = len(_bulk_action_lines(request["body"]))
+    items = b",".join(
+        b'{"create":{"status":201}}' for _ in range(action_count)
+    )
+    return b'{"errors":false,"items":[' + items + b"]}"
+
+
+def _item_throttle_response(retry_after_source):
+    def _response(request_number, request):
+        action_count = len(_bulk_action_lines(request["body"]))
+
+        if request_number == 1:
+            assert action_count == 3
+            response = (
+                b'{"errors":true,"items":['
+                b'{"create":{"status":201}},'
+                b'{"create":{"status":429}},'
+                b'{"create":{"status":409}}]}'
+            )
+            if retry_after_source == "header":
+                return 200, response, [("Retry-After", "2")]
+            return 200, response, [], [("Retry-After", "2")]
+
+        assert action_count == 1
+        return b'{"errors":false,"items":[{"create":{"status":201}}]}'
+
+    return _response
+
+
 @pytest.mark.parametrize(
     "config_file",
     [
@@ -246,3 +314,50 @@ def test_partial_bulk_retry_sends_only_unresolved_records(config_file):
 
     assert len(_bulk_action_lines(requests_seen[0]["body"])) == 3
     assert len(_bulk_action_lines(requests_seen[1]["body"])) == 1
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 0.8
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "out_es_partial_bulk_retry.yaml",
+        "out_opensearch_partial_bulk_retry.yaml",
+    ],
+)
+def test_top_level_throttle_retries_complete_bulk_after_hint(config_file):
+    service = Service(config_file, response_factory=_top_level_throttle_response)
+
+    try:
+        service.start()
+        requests_seen = service.wait_for_requests(2)
+    finally:
+        service.stop()
+
+    assert len(_bulk_action_lines(requests_seen[0]["body"])) == 3
+    assert len(_bulk_action_lines(requests_seen[1]["body"])) == 3
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 1.8
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "out_es_partial_bulk_retry.yaml",
+        "out_opensearch_partial_bulk_retry.yaml",
+    ],
+)
+@pytest.mark.parametrize("retry_after_source", ["header", "trailer"])
+def test_item_throttle_honors_retry_after(config_file, retry_after_source):
+    service = Service(
+        config_file,
+        response_factory=_item_throttle_response(retry_after_source),
+    )
+
+    try:
+        service.start()
+        requests_seen = service.wait_for_requests(2)
+    finally:
+        service.stop()
+
+    assert len(_bulk_action_lines(requests_seen[0]["body"])) == 3
+    assert len(_bulk_action_lines(requests_seen[1]["body"])) == 1
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 1.8

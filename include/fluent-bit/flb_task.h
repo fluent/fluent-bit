@@ -28,6 +28,9 @@
 #define FLB_TASK_NEW      0
 #define FLB_TASK_RUNNING  1
 
+/* Core-only result: no output callback or processor was invoked. */
+#define FLB_OUTPUT_DEFERRED 4
+
 /*
  * Macro helpers to determinate return value, task_id and coro_id. When an
  * output plugin returns, it must call FLB_OUTPUT_RETURN(val) where val is
@@ -55,8 +58,17 @@
 #define FLB_TASK_ROUTE_ACTIVE   1
 #define FLB_TASK_ROUTE_DROPPED  2
 
+/* Engine-owned route scheduling state (independent from delivery status). */
+#define FLB_TASK_ROUTE_DISPATCH_UNQUEUED   0
+#define FLB_TASK_ROUTE_DISPATCH_QUEUED     1
+#define FLB_TASK_ROUTE_DISPATCH_DEFERRED   2
+#define FLB_TASK_ROUTE_DISPATCH_COMPLETING 3
+
+struct flb_task;
+
 struct flb_task_route {
     int status;
+    int dispatch_state;
     int records;
     size_t bytes;
     void *retry_context;
@@ -64,7 +76,9 @@ struct flb_task_route {
     int retry_records;
     size_t retry_bytes;
     struct flb_output_instance *out;
+    struct flb_task *task;
     struct mk_list _head;
+    struct mk_list _deferred_head;
 };
 
 /*
@@ -88,6 +102,7 @@ struct flb_task {
     uint64_t ref_id;                     /* external reference id     */
     uint8_t status;                      /* new task or running ?     */
     int users;                           /* number of users (threads) */
+    int deferred_routes;                 /* routes retained by throttle scheduling */
     struct flb_event_chunk *event_chunk; /* event chunk context       */
     void *ic;                            /* input chunk context       */
 #ifdef FLB_HAVE_METRICS
@@ -152,12 +167,30 @@ struct flb_task_queue* flb_task_queue_create();
 void flb_task_queue_destroy(struct flb_task_queue *queue);
 struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
                                              struct flb_output_instance *ins);
+struct flb_task_retry *flb_task_retry_get(struct flb_task *task,
+                                          struct flb_output_instance *ins);
 
 void flb_task_retry_destroy(struct flb_task_retry *retry);
 int flb_task_retry_reschedule(struct flb_task_retry *retry, struct flb_config *config);
 int flb_task_from_fs_storage(struct flb_task *task);
 int flb_task_retry_count(struct flb_task *task, void *data);
 int flb_task_retry_clean(struct flb_task *task, struct flb_output_instance *ins);
+struct flb_task_route *flb_task_route_get(struct flb_task *task,
+                                          struct flb_output_instance *ins);
+int flb_task_route_defer(struct flb_task *task,
+                         struct flb_output_instance *ins,
+                         int transfer_queued_owner);
+int flb_task_route_resume(struct flb_task *task,
+                          struct flb_output_instance *ins);
+int flb_task_route_cancel_deferred(struct flb_task *task,
+                                   struct flb_output_instance *ins);
+int flb_task_route_queue(struct flb_task *task,
+                         struct flb_output_instance *ins);
+int flb_task_route_complete(struct flb_task *task,
+                            struct flb_output_instance *ins);
+int flb_task_route_unqueue(struct flb_task *task,
+                           struct flb_output_instance *ins);
+void flb_output_deferred_cancel_all(struct flb_output_instance *ins);
 
 
 struct flb_task *flb_task_chunk_create(uint64_t ref_id,
@@ -168,9 +201,15 @@ struct flb_task *flb_task_chunk_create(uint64_t ref_id,
                                        const char *tag_buf, int tag_len,
                                        struct flb_config *config);
 
+static inline int flb_task_is_releasable(struct flb_task *task)
+{
+    return task->users == 0 && task->deferred_routes == 0 &&
+           mk_list_size(&task->retries) == 0;
+}
+
 static inline void flb_task_users_release(struct flb_task *task)
 {
-    if (task->users == 0 && mk_list_size(&task->retries) == 0) {
+    if (flb_task_is_releasable(task) == FLB_TRUE) {
         flb_task_destroy(task, FLB_TRUE);
     }
 }
