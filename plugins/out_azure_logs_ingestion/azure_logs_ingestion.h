@@ -42,6 +42,8 @@
 #include <cmetrics/cmt_histogram.h>
 #endif
 
+struct flb_az_li_batch;
+
 /* Context structure for Azure Logs Ingestion API */
 struct flb_az_li {
     /* log ingestion account setup */
@@ -59,6 +61,11 @@ struct flb_az_li {
 
     /* compress payload */
     int compress_enabled;
+
+    /* optional deferred whole-chunk batching */
+    int batch_chunk_count;
+    int batch_timeout;
+    struct flb_az_li_batch *batch;
 
     /* mangement auth */
     flb_sds_t auth_url_override;
@@ -80,5 +87,8 @@ struct flb_az_li {
     struct flb_output_instance *ins;
     struct flb_config *config;
 };
+
+int az_li_send_payload(struct flb_az_li *ctx, const void *payload,
+                       size_t payload_size, struct flb_config *config);
 
 #endif
