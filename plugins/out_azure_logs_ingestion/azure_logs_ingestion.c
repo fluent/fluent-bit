@@ -17,6 +17,8 @@
  *  limitations under the License.
  */
 
+#include <limits.h>
+
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_oauth2.h>
@@ -32,20 +34,64 @@
 #include <msgpack.h>
 
 #include "azure_logs_ingestion.h"
+#include "azure_logs_ingestion_batch.h"
 #include "azure_logs_ingestion_conf.h"
+
+static int validate_batch_config(struct flb_output_instance *ins,
+                                 struct flb_config *config,
+                                 struct flb_az_li *ctx)
+{
+    if (ctx->batch_chunk_count < 1 || ctx->batch_chunk_count > 8) {
+        flb_plg_error(ins, "batch_chunk_count must be between 1 and 8");
+        return -1;
+    }
+    if (ctx->batch_chunk_count == 1) {
+        return 0;
+    }
+    if (ctx->batch_timeout <= 0 || ctx->batch_timeout > INT_MAX / 1000) {
+        flb_plg_error(ins, "batch_timeout must be greater than zero");
+        return -1;
+    }
+    if (config->grace >= 0 && ctx->batch_timeout >= config->grace) {
+        flb_plg_error(ins,
+                      "batch_timeout must be shorter than the engine grace period");
+        return -1;
+    }
+    if (ins->tp_workers > 0) {
+        flb_plg_error(ins, "deferred batching does not support output workers");
+        return -1;
+    }
+    if (config->enable_hot_reload == FLB_TRUE &&
+        config->ensure_thread_safety_on_hot_reloading == FLB_FALSE) {
+        flb_plg_error(ins,
+                      "deferred batching requires thread-safe hot reload");
+        return -1;
+    }
+    return 0;
+}
 
 static int cb_azure_logs_ingestion_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
 {
     struct flb_az_li *ctx;
-    (void) config;
-    (void) ins;
+
     (void) data;
 
     /* Allocate and initialize a context from configuration */
     ctx = flb_az_li_ctx_create(ins, config);
     if (!ctx) {
         flb_plg_error(ins, "configuration failed");
+        return -1;
+    }
+    if (validate_batch_config(ins, config, ctx) == -1) {
+        flb_az_li_ctx_destroy(ctx);
+        return -1;
+    }
+    flb_plg_debug(ins, "batch_chunk_count=%i batch_timeout=%i",
+                  ctx->batch_chunk_count, ctx->batch_timeout);
+    if (ctx->batch_chunk_count > 1 && az_li_batch_init(ctx) == -1) {
+        flb_plg_error(ins, "could not initialize deferred batching");
+        flb_az_li_ctx_destroy(ctx);
         return -1;
     }
 
@@ -242,77 +288,79 @@ token_cleanup:
     return token_return;
 }
 
-static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
-                           struct flb_output_flush *out_flush,
-                           struct flb_input_instance *i_ins,
-                           void *out_context,
-                           struct flb_config *config)
+int az_li_send_payload(struct flb_az_li *ctx, const void *payload,
+                       size_t payload_size, struct flb_config *config)
 {
     int ret;
     int flush_status;
+    int is_compressed;
     size_t b_sent;
     size_t json_payload_size;
-    void* final_payload;
+    void *final_payload;
     size_t final_payload_size;
     flb_sds_t token;
+    flb_sds_t json_payload;
     struct flb_connection *u_conn;
-    struct flb_http_client *c = NULL;
-    int is_compressed = FLB_FALSE;
-    flb_sds_t json_payload = NULL;
-    struct flb_az_li *ctx = out_context;
-    (void) i_ins;
-    (void) config;
+    struct flb_http_client *c;
+#ifdef FLB_HAVE_METRICS
+    uint64_t metrics_timestamp;
+    char *output_name;
+#endif
 
-    /* Get upstream connection */
+    c = NULL;
+    token = NULL;
+    json_payload = NULL;
+    is_compressed = FLB_FALSE;
+    flush_status = FLB_RETRY;
+
     u_conn = flb_upstream_conn_get(ctx->u_dce);
-    if (!u_conn) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+    if (u_conn == NULL) {
+        return FLB_RETRY;
     }
 
-    /* Convert binary logs into a JSON payload */
-    ret = az_li_format(event_chunk->data, event_chunk->size,
-                       &json_payload, &json_payload_size, ctx,
-                       config);
+    ret = az_li_format(payload, payload_size,
+                       &json_payload, &json_payload_size, ctx, config);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
-        FLB_OUTPUT_RETURN(FLB_ERROR);
+        return FLB_ERROR;
     }
 
-    /* Get OAuth2 token */
     token = get_az_li_token(ctx);
-    if (!token) {
-        flush_status = FLB_RETRY;
+    if (token == NULL) {
         goto cleanup;
     }
 
-    /* Map buffer */
     final_payload = json_payload;
     final_payload_size = json_payload_size;
     if (ctx->compress_enabled == FLB_TRUE) {
         ret = flb_gzip_compress((void *) json_payload, json_payload_size,
                                 &final_payload, &final_payload_size);
         if (ret == -1) {
-            flb_plg_error(ctx->ins,
-                          "cannot gzip payload, disabling compression");
+            flb_plg_error(ctx->ins, "cannot gzip payload, disabling compression");
+            if (ctx->batch_chunk_count > 1) {
+                goto cleanup;
+            }
         }
         else {
             is_compressed = FLB_TRUE;
             flb_plg_debug(ctx->ins, "enabled payload gzip compression");
-            /* JSON buffer will be cleared at cleanup: */
         }
     }
 
-    /* Compose HTTP Client request */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->dce_u_url,
-                        final_payload, final_payload_size, NULL, 0, NULL, 0);
-
-    if (!c) {
-        flb_plg_warn(ctx->ins, "retrying payload bytes=%lu", final_payload_size);
-        flush_status = FLB_RETRY;
+    if (ctx->batch_chunk_count > 1 && final_payload_size > 1048576) {
+        flb_plg_warn(ctx->ins,
+                     "deferred batch exceeds Azure request limit bytes=%zu",
+                     final_payload_size);
         goto cleanup;
     }
 
-    /* Append headers */
+    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->dce_u_url,
+                        final_payload, final_payload_size, NULL, 0, NULL, 0);
+    if (c == NULL) {
+        flb_plg_warn(ctx->ins, "retrying payload bytes=%zu", final_payload_size);
+        goto cleanup;
+    }
+
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
     if (is_compressed) {
@@ -320,69 +368,101 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
     }
     flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
     flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX);
+    if (ctx->batch_chunk_count > 1 && ctx->ins->net_setup.io_timeout > 0) {
+        flb_http_set_response_timeout(c, ctx->ins->net_setup.io_timeout);
+        flb_http_set_read_idle_timeout(c, ctx->ins->net_setup.io_timeout);
+    }
 
-    /* Execute rest call */
+#ifdef FLB_HAVE_METRICS
+    if (ctx->cmt_uncompressed_payload_size != NULL &&
+        ctx->cmt_http_payload_size != NULL) {
+        metrics_timestamp = cfl_time_now();
+        output_name = (char *) flb_output_name(ctx->ins);
+        cmt_histogram_observe(ctx->cmt_uncompressed_payload_size,
+                              metrics_timestamp,
+                              (double) json_payload_size,
+                              2, (char *[]) {output_name, ctx->dcr_id});
+        cmt_histogram_observe(ctx->cmt_http_payload_size,
+                              metrics_timestamp,
+                              (double) final_payload_size,
+                              2, (char *[]) {output_name, ctx->dcr_id});
+    }
+#endif
+
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
         flb_plg_warn(ctx->ins, "http_do=%i", ret);
-        flush_status = FLB_RETRY;
         goto cleanup;
     }
+    if (c->resp.status >= 200 && c->resp.status <= 299) {
+        flb_plg_info(ctx->ins, "http_status=%i, dcr_id=%s, table=%s",
+                     c->resp.status, ctx->dcr_id, ctx->table_name);
+        flush_status = FLB_OK;
+    }
     else {
-        if (c->resp.status >= 200 && c->resp.status <= 299) {
-            flb_plg_info(ctx->ins, "http_status=%i, dcr_id=%s, table=%s",
-                         c->resp.status, ctx->dcr_id, ctx->table_name);
-            flush_status = FLB_OK;
-            goto cleanup;
+        if (c->resp.payload_size > 0) {
+            flb_plg_warn(ctx->ins, "http_status=%i:\n%s",
+                         c->resp.status, c->resp.payload);
         }
         else {
-            if (c->resp.payload_size > 0) {
-                flb_plg_warn(ctx->ins, "http_status=%i:\n%s",
-                             c->resp.status, c->resp.payload);
-            }
-            else {
-                flb_plg_warn(ctx->ins, "http_status=%i", c->resp.status);
-            }
-            flb_plg_debug(ctx->ins, "retrying payload bytes=%lu", final_payload_size);
-            flush_status = FLB_RETRY;
-            goto cleanup;
+            flb_plg_warn(ctx->ins, "http_status=%i", c->resp.status);
         }
+        flb_plg_debug(ctx->ins, "retrying payload bytes=%zu", final_payload_size);
     }
 
 cleanup:
-    /* cleanup */
-    if (json_payload) {
+    if (json_payload != NULL) {
         flb_sds_destroy(json_payload);
     }
-
-    /* release compressed payload */
     if (is_compressed == FLB_TRUE) {
         flb_free(final_payload);
     }
-
-    if (c) {
+    if (c != NULL) {
         flb_http_client_destroy(c);
     }
-    if (u_conn) {
-        flb_upstream_conn_release(u_conn);
-    }
-
-    /* destory token at last after HTTP call has finished */
-    if (token) {
+    flb_upstream_conn_release(u_conn);
+    if (token != NULL) {
         flb_sds_destroy(token);
     }
-    FLB_OUTPUT_RETURN(flush_status);
+    return flush_status;
+}
+
+static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
+                           struct flb_output_flush *out_flush,
+                           struct flb_input_instance *i_ins,
+                           void *out_context,
+                           struct flb_config *config)
+{
+    int result;
+    struct flb_az_li *ctx;
+
+    (void) out_flush;
+    (void) i_ins;
+    ctx = out_context;
+
+    if (ctx->batch_chunk_count > 1) {
+        result = az_li_batch_flush(ctx, event_chunk, config);
+    }
+    else {
+        result = az_li_send_payload(ctx, event_chunk->data,
+                                    event_chunk->size, config);
+    }
+    FLB_OUTPUT_RETURN(result);
 }
 
 static int cb_azure_logs_ingestion_exit(void *data, struct flb_config *config)
 {
     struct flb_az_li *ctx = data;
 
+    (void) config;
     if (!ctx) {
         return 0;
     }
 
     flb_plg_debug(ctx->ins, "exiting logs ingestion plugin");
+    if (ctx->batch != NULL) {
+        az_li_batch_destroy(ctx);
+    }
     flb_az_li_ctx_destroy(ctx);
     return 0;
 }
@@ -441,6 +521,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "compress", "false",
      0, FLB_TRUE,  offsetof(struct flb_az_li, compress_enabled),
      "Enable HTTP payload compression (gzip)."
+    },
+    {
+     FLB_CONFIG_MAP_INT, "batch_chunk_count", "1",
+     0, FLB_TRUE, offsetof(struct flb_az_li, batch_chunk_count),
+     "Number of complete engine chunks combined into one request (1 disables batching)."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "batch_timeout", "3s",
+     0, FLB_TRUE, offsetof(struct flb_az_li, batch_timeout),
+     "Maximum wait for an underfilled deferred batch."
     },
     /* EOF */
     {0}
