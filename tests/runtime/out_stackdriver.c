@@ -50,6 +50,7 @@
 
 #define STACKDRIVER_TEST_WAIT_STEP_MS  10
 #define STACKDRIVER_TEST_TIMEOUT_MS  2000
+#define STACKDRIVER_TEST_STOP_TIMEOUT_MS  10000
 
 typedef void (*stackdriver_test_callback)(void *, int, int, void *, size_t, void *);
 
@@ -121,7 +122,33 @@ static void stackdriver_wait_for_formatter(void)
     }
 }
 
+#if defined(FLB_SYSTEM_MACOS)
+static int stackdriver_stop_engine(flb_ctx_t *ctx)
+{
+    int ret;
+    int trys;
+
+    ret = flb_engine_exit(ctx->config);
+    TEST_CHECK_(ret >= 0, "requesting graceful engine shutdown");
+
+    for (trys = 0;
+         trys < STACKDRIVER_TEST_STOP_TIMEOUT_MS / STACKDRIVER_TEST_WAIT_STEP_MS &&
+         ctx->status == FLB_LIB_OK;
+         trys++) {
+        flb_time_msleep(STACKDRIVER_TEST_WAIT_STEP_MS);
+    }
+
+    TEST_CHECK_(ctx->status != FLB_LIB_OK, "engine did not stop within %d ms",
+                STACKDRIVER_TEST_STOP_TIMEOUT_MS);
+
+    return flb_stop(ctx);
+}
+#endif
+
 #define flb_output_set_test stackdriver_output_set_test
+#if defined(FLB_SYSTEM_MACOS)
+#define flb_stop stackdriver_stop_engine
+#endif
 
 /*
  * Fluent Bit Stackdriver plugin, always set as payload a JSON strings contained in a
