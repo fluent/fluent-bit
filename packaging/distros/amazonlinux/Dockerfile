@@ -23,7 +23,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs glibc-devel \
-    libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
+    libyaml-devel net-snmp-devel zlib-devel libcurl-devel pkgconf-pkg-config \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -48,7 +48,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
+    libyaml-devel net-snmp-devel zlib-devel libcurl-devel pkgconf-pkg-config \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -73,7 +73,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
+    libyaml-devel net-snmp-devel zlib-devel libcurl-devel pkgconf-pkg-config \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -100,7 +100,7 @@ RUN yum -y update && \
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel \
     postgresql-devel postgresql-libs \
-    libyaml-devel zlib-devel libcurl-devel pkgconf-pkg-config \
+    libyaml-devel net-snmp-devel zlib-devel libcurl-devel pkgconf-pkg-config \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
