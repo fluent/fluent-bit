@@ -802,6 +802,7 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
     flb_sds_t buf = NULL;
     size_t diff = 0;
     size_t off = 0;
+    uint64_t expiration;
     struct cmt *cmt;
     struct opentelemetry_context *ctx = out_context;
 
@@ -809,6 +810,14 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
     ctx = out_context;
     ok = CMT_DECODE_MSGPACK_SUCCESS;
     result = FLB_OK;
+
+    if (ctx->cutoff_threshold > 0) {
+        expiration = cfl_time_now() -
+                     ((uint64_t) ctx->cutoff_threshold * 1000000000ULL);
+    }
+    else {
+        expiration = 0;
+    }
 
     /* Buffer to concatenate multiple metrics contexts */
     buf = flb_sds_create_size(event_chunk->size);
@@ -825,6 +834,11 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
     while ((ret = cmt_decode_msgpack_create(&cmt,
                                             (char *) event_chunk->data,
                                             event_chunk->size, &off)) == ok) {
+        /* Exclude samples older than the configured cut-off. */
+        if (expiration > 0) {
+            cmt_expire(cmt, expiration);
+        }
+
         /* append labels set by config */
         append_labels(ctx, cmt);
 
@@ -832,7 +846,7 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
         encoded_chunk = cmt_encode_opentelemetry_create(cmt);
         if (encoded_chunk == NULL) {
             flb_plg_error(ctx->ins,
-                          "Error encoding context as opentelemetry");
+                          "Error encoding metrics as opentelemetry");
             result = FLB_ERROR;
             cmt_destroy(cmt);
             goto exit;
@@ -1339,6 +1353,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "logs_severity_number_message_key", "$SeverityNumber",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_severity_number_message_key),
      "Specify a Severity Number key"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "cut_off_time", "0",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, cutoff_threshold),
+     "Specify an optional filter on metric age. Default 0s"
     },
 
 
