@@ -37,6 +37,7 @@
 #elif defined (_WIN32)
 #include <winsock2.h>
 
+#ifndef __MINGW32__
 #ifndef localtime_r
     struct tm *localtime_r(time_t *_clock, struct tm *_result)
     {
@@ -70,6 +71,7 @@
 
         return 0;
     }
+#endif /* !__MINGW32__ */
 
 #endif
 

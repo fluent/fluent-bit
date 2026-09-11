@@ -18,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <math.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_config_map.h>
