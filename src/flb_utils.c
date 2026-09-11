@@ -89,6 +89,9 @@ void flb_utils_error(int err)
     case FLB_ERR_CFG_FLUSH_REGISTER:
         msg = "could not register timer for flushing";
         break;
+    case FLB_ERR_EVENT_LOOP_CREATE:
+        msg = "could not create event loop";
+        break;
     case FLB_ERR_INPUT_INVALID:
         msg = "invalid input type";
         break;
