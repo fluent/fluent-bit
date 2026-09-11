@@ -1,5 +1,6 @@
 import json
 import os
+import socket
 import struct
 import time
 from copy import deepcopy
@@ -29,20 +30,33 @@ EMPTY_MAP_RECORD_ID = "97789a11215b54828d2c3f50b864afed42543ff8"
 
 
 class Service:
-    def __init__(self, config_file, *, use_schema_registry=False):
+    def __init__(
+        self,
+        config_file,
+        *,
+        extra_env=None,
+        use_schema_registry=False,
+        kafka_response_delay=0,
+    ):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
         self.use_schema_registry = use_schema_registry
+        self.kafka_response_delay = kafka_response_delay
         self.service = FluentBitTestService(
             self.config_file,
             data_storage=data_storage,
             data_keys=["connections", "requests", "messages"],
+            extra_env=extra_env,
             pre_start=self._start_receiver,
             post_stop=self._stop_receiver,
         )
 
     def _start_receiver(self, service):
         self.kafka_port = service.allocate_port_env("TEST_SUITE_KAFKA_PORT")
-        kafka_server_run(self.kafka_port)
+        self.forward_port = service.allocate_port_env("TEST_SUITE_FORWARD_PORT")
+        kafka_server_run(
+            self.kafka_port,
+            response_delay=self.kafka_response_delay,
+        )
         if self.use_schema_registry:
             self.schema_registry_port = service.allocate_port_env("TEST_SUITE_SCHEMA_REGISTRY_PORT")
             schema_registry_server_run(self.schema_registry_port)
@@ -67,6 +81,10 @@ class Service:
             interval=0.5,
             description=f"{minimum_count} Kafka messages",
         )
+
+    def send_forward_record(self, payload):
+        with socket.create_connection(("127.0.0.1", self.forward_port), timeout=5) as sock:
+            sock.sendall(payload)
 
     def send_json_logs_payload(self, json_file):
         payload = self._build_signal_payload(json_file, "logs")
@@ -219,6 +237,126 @@ def _decode_avro_string(data, offset=0):
         raise ValueError("Invalid Avro string")
 
     return data[offset:end].decode("utf-8"), end
+
+
+def _encode_msgpack_string(value):
+    encoded = value.encode("utf-8")
+    size = len(encoded)
+
+    if size < 32:
+        return bytes([0xA0 | size]) + encoded
+    if size <= 0xFF:
+        return b"\xd9" + bytes([size]) + encoded
+    if size <= 0xFFFF:
+        return b"\xda" + size.to_bytes(2, "big") + encoded
+    if size <= 0xFFFFFFFF:
+        return b"\xdb" + size.to_bytes(4, "big") + encoded
+
+    raise ValueError("Test MessagePack string exceeds uint32")
+
+
+def _encode_msgpack_binary(value):
+    size = len(value)
+
+    if size <= 0xFF:
+        return b"\xc4" + bytes([size]) + value
+    if size <= 0xFFFF:
+        return b"\xc5" + size.to_bytes(2, "big") + value
+    if size <= 0xFFFFFFFF:
+        return b"\xc6" + size.to_bytes(4, "big") + value
+
+    raise ValueError("Test MessagePack binary value exceeds uint32")
+
+
+def _encode_msgpack_map(entries):
+    if len(entries) >= 16:
+        raise ValueError("Test MessagePack maps must fit in fixmap")
+
+    return bytes([0x80 | len(entries)]) + b"".join(
+        encoded_key + encoded_value for encoded_key, encoded_value in entries
+    )
+
+
+def _encode_forward_record_entries(entries, timestamp=1):
+    record = _encode_msgpack_map(entries)
+    return (
+        b"\x93"
+        + _encode_msgpack_string("out_kafka")
+        + bytes([timestamp])
+        + record
+    )
+
+
+def _encode_forward_record_with_binary_headers():
+    headers = b"".join(
+        [
+            b"\x85",
+            _encode_msgpack_string("x-binary"),
+            b"\xc4\x03\x00\xffA",
+            _encode_msgpack_string("x-repeat"),
+            _encode_msgpack_string("first"),
+            _encode_msgpack_string("x-repeat"),
+            _encode_msgpack_string("second"),
+            b"\x01",
+            _encode_msgpack_string("invalid-name"),
+            _encode_msgpack_string("x-invalid"),
+            b"\x2a",
+        ]
+    )
+    record = b"".join(
+        [
+            b"\x82",
+            _encode_msgpack_string("message"),
+            _encode_msgpack_string("binary headers"),
+            _encode_msgpack_string("headers"),
+            headers,
+        ]
+    )
+    return b"\x93" + _encode_msgpack_string("out_kafka") + b"\x01" + record
+
+
+def _encode_forward_record_with_binary_header(value, name="x-large"):
+    headers = _encode_msgpack_map(
+        [
+            (_encode_msgpack_string(name), _encode_msgpack_binary(value)),
+        ]
+    )
+    return _encode_forward_record_entries(
+        [
+            (_encode_msgpack_string("message"), _encode_msgpack_string("large header")),
+            (_encode_msgpack_string("headers"), headers),
+        ]
+    )
+
+
+def _encode_forward_records_with_headers():
+    entries = []
+
+    for timestamp, message in [(1, "batch one"), (2, "batch two")]:
+        headers = (
+            b"\x81"
+            + _encode_msgpack_string("x-batch")
+            + _encode_msgpack_string("value")
+        )
+        record = b"".join(
+            [
+                b"\x82",
+                _encode_msgpack_string("message"),
+                _encode_msgpack_string(message),
+                _encode_msgpack_string("headers"),
+                headers,
+            ]
+        )
+        entries.append(b"\x92" + bytes([timestamp]) + record)
+
+    return b"".join(
+        [
+            b"\x92",
+            _encode_msgpack_string("out_kafka"),
+            b"\x92",
+            *entries,
+        ]
+    )
 
 
 def _decode_otlp_proto(data, signal_type):
@@ -674,6 +812,488 @@ def test_out_kafka_message_key_field_sets_kafka_key():
     payload = json.loads(message["value"].decode("utf-8"))
     assert payload["message"] == "hello with key"
     assert payload["message_key"] == "key-123"
+
+
+def test_out_kafka_dynamic_headers_sets_kafka_headers_and_excludes_field():
+    service = Service("out_kafka_dynamic_headers.yaml")
+    service.start()
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    message = messages[0]
+    assert message["topic"] == "test"
+    assert message["headers"] == [
+        ("x-test", b"value"),
+        ("x-empty", b""),
+        ("x-null", None),
+    ]
+
+    payload = json.loads(message["value"].decode("utf-8"))
+    assert payload["message"] == "hello with headers"
+    assert "headers" not in payload
+
+
+@pytest.mark.parametrize("headers_key", ["", "   "])
+def test_out_kafka_dynamic_headers_blank_key_disables_feature(headers_key):
+    service = Service(
+        "out_kafka_dynamic_headers_blank.yaml",
+        extra_env={"TEST_HEADERS_KEY": headers_key},
+    )
+    service.start()
+
+    messages = service.wait_for_messages(1)
+
+    if headers_key:
+        log_text = _wait_for_log_text(
+            service.service.flb.log_file,
+            "headers_key is blank; record-derived Kafka headers are disabled",
+        )
+
+    service.stop()
+
+    message = messages[0]
+    assert message["headers"] == []
+
+    if headers_key:
+        assert "record-derived Kafka headers are disabled" in log_text
+
+    payload = json.loads(message["value"].decode("utf-8"))
+    assert payload["message"] == "blank headers key"
+    assert payload["headers"] == {"x-test": "value"}
+
+
+def test_out_kafka_dynamic_headers_blank_key_allows_otlp_format():
+    service = Service(
+        "out_kafka_dynamic_headers_blank_otlp_json.yaml",
+        extra_env={"TEST_HEADERS_KEY": "\t \r"},
+    )
+    service.start()
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    assert messages[0]["headers"] == []
+
+
+def test_out_kafka_dynamic_headers_preserves_source_map_when_enabled():
+    service = Service("out_kafka_dynamic_headers_preserve.yaml")
+    service.start()
+
+    messages = service.wait_for_messages(1)
+    log_text = _wait_for_log_text(
+        service.service.flb.log_file,
+        "value must be a string, binary, or null",
+    )
+    service.stop()
+
+    message = messages[0]
+    assert message["headers"] == [
+        ("x-test", b"value"),
+        ("x-empty", b""),
+        ("x-null", None),
+    ]
+    assert "value must be a string, binary, or null" in log_text
+
+    payload = json.loads(message["value"].decode("utf-8"))
+    assert payload["message"] == "preserved headers"
+    assert payload["headers"] == {
+        "x-test": "value",
+        "x-empty": "",
+        "x-null": None,
+        "x-invalid": 42,
+    }
+
+
+def test_out_kafka_dynamic_headers_preserves_source_map_in_msgpack():
+    service = Service("out_kafka_dynamic_headers_preserve_msgpack.yaml")
+    service.start()
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    message = messages[0]
+    assert message["headers"] == [
+        ("x-test", b"value"),
+        ("x-empty", b""),
+        ("x-null", None),
+    ]
+
+    payload, offset = _decode_simple_msgpack(message["value"])
+    assert offset == len(message["value"])
+    assert payload["message"] == "preserved msgpack headers"
+    assert payload["headers"] == {
+        "x-test": "value",
+        "x-empty": "",
+        "x-null": None,
+    }
+
+
+def test_out_kafka_dynamic_headers_preserves_empty_source_map():
+    service = Service("out_kafka_dynamic_headers_preserve_empty.yaml")
+    service.start()
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    message = messages[0]
+    assert message["headers"] == []
+
+    payload = json.loads(message["value"].decode("utf-8"))
+    assert payload["message"] == "preserved empty headers"
+    assert payload["headers"] == {}
+
+
+def test_out_kafka_dynamic_headers_keeps_non_map_field_in_payload():
+    service = Service("out_kafka_dynamic_headers_non_map.yaml")
+    service.start()
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    message = messages[0]
+    assert message["topic"] == "test"
+    assert message["headers"] == []
+
+    payload = json.loads(message["value"].decode("utf-8"))
+    assert payload["message"] == "hello without a header map"
+    assert payload["headers"] == "not-a-map"
+
+
+def test_out_kafka_dynamic_headers_msgpack_excludes_field():
+    service = Service("out_kafka_dynamic_headers_msgpack.yaml")
+    service.start()
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    message = messages[0]
+    assert message["headers"] == [
+        ("x-test", b"value"),
+        ("x-empty", b""),
+        ("x-null", None),
+    ]
+
+    payload, offset = _decode_simple_msgpack(message["value"])
+    assert offset == len(message["value"])
+    assert payload["message"] == "hello msgpack headers"
+    assert "headers" not in payload
+
+
+def test_out_kafka_dynamic_headers_supports_binary_and_duplicate_values():
+    service = Service("out_kafka_dynamic_headers_forward.yaml")
+    service.start()
+    service.send_forward_record(_encode_forward_record_with_binary_headers())
+
+    messages = service.wait_for_messages(1)
+    name_log_text = _wait_for_log_text(
+        service.service.flb.log_file,
+        "skipping Kafka header with a non-string name",
+    )
+    value_log_text = _wait_for_log_text(
+        service.service.flb.log_file,
+        "value must be a string, binary, or null",
+    )
+    service.stop()
+
+    message = messages[0]
+    assert message["headers"] == [
+        ("x-binary", b"\x00\xffA"),
+        ("x-repeat", b"first"),
+        ("x-repeat", b"second"),
+    ]
+
+    payload = json.loads(message["value"].decode("utf-8"))
+    assert payload["message"] == "binary headers"
+    assert "headers" not in payload
+    assert "skipping Kafka header with a non-string name" in name_log_text
+    assert "value must be a string, binary, or null" in value_log_text
+
+
+def test_out_kafka_dynamic_headers_supports_large_binary_value():
+    service = Service("out_kafka_dynamic_headers_forward.yaml")
+    service.start()
+    value = b"x" * 65536
+    service.send_forward_record(_encode_forward_record_with_binary_header(value))
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    assert messages[0]["headers"] == [("x-large", value)]
+
+
+def test_out_kafka_dynamic_headers_supports_large_name():
+    service = Service("out_kafka_dynamic_headers_forward.yaml")
+    service.start()
+    name = "x" * 65536
+    service.send_forward_record(_encode_forward_record_with_binary_header(b"value", name))
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    assert messages[0]["headers"] == [(name, b"value")]
+
+
+def test_out_kafka_dynamic_headers_rejects_message_over_client_limit():
+    service = Service("out_kafka_dynamic_headers_too_large.yaml")
+    service.start()
+    value = b"x" * 2048
+    service.send_forward_record(_encode_forward_record_with_binary_header(value))
+
+    log_text = _wait_for_log_text(
+        service.service.flb.log_file,
+        "Message size too large",
+    )
+    service.stop()
+
+    assert data_storage["messages"] == []
+    assert "Message size too large" in log_text
+
+
+def test_out_kafka_dynamic_headers_preserves_non_map_value_types():
+    service = Service("out_kafka_dynamic_headers_forward.yaml")
+    service.start()
+
+    records = [
+        ("string", _encode_msgpack_string("not-a-map"), "not-a-map"),
+        ("null", b"\xc0", None),
+        ("boolean", b"\xc3", True),
+        ("array", b"\x91" + _encode_msgpack_string("value"), ["value"]),
+    ]
+
+    for timestamp, (name, encoded_value, _) in enumerate(records, start=1):
+        service.send_forward_record(
+            _encode_forward_record_entries(
+                [
+                    (_encode_msgpack_string("message"), _encode_msgpack_string(name)),
+                    (_encode_msgpack_string("headers"), encoded_value),
+                ],
+                timestamp=timestamp,
+            )
+        )
+
+    messages = service.wait_for_messages(len(records))
+    service.stop()
+
+    payloads = {
+        payload["message"]: payload
+        for payload in (
+            json.loads(message["value"].decode("utf-8")) for message in messages
+        )
+    }
+
+    for name, _, expected_value in records:
+        assert payloads[name]["headers"] == expected_value
+
+    assert all(message["headers"] == [] for message in messages)
+
+
+def test_out_kafka_dynamic_headers_all_invalid_map_is_removed():
+    service = Service("out_kafka_dynamic_headers_forward.yaml")
+    service.start()
+
+    headers = _encode_msgpack_map(
+        [
+            (b"\x01", _encode_msgpack_string("invalid-name")),
+            (_encode_msgpack_string("x-array"), b"\x91\x01"),
+            (_encode_msgpack_string("x-map"), b"\x81\xa1k\xa1v"),
+        ]
+    )
+    service.send_forward_record(
+        _encode_forward_record_entries(
+            [
+                (_encode_msgpack_string("message"), _encode_msgpack_string("invalid map")),
+                (_encode_msgpack_string("headers"), headers),
+            ]
+        )
+    )
+
+    messages = service.wait_for_messages(1)
+    name_log_text = _wait_for_log_text(
+        service.service.flb.log_file,
+        "skipping Kafka header with a non-string name",
+    )
+    value_log_text = _wait_for_log_text(
+        service.service.flb.log_file,
+        "value must be a string, binary, or null",
+    )
+    service.stop()
+
+    message = messages[0]
+    assert message["headers"] == []
+    assert "skipping Kafka header with a non-string name" in name_log_text
+    assert "value must be a string, binary, or null" in value_log_text
+
+    payload = json.loads(message["value"].decode("utf-8"))
+    assert payload["message"] == "invalid map"
+    assert "headers" not in payload
+
+
+def test_out_kafka_dynamic_headers_uses_first_duplicate_source_field():
+    service = Service("out_kafka_dynamic_headers_forward.yaml")
+    service.start()
+
+    first_headers = _encode_msgpack_map(
+        [
+            (_encode_msgpack_string(""), _encode_msgpack_string("empty name")),
+            (_encode_msgpack_string("x-first"), _encode_msgpack_string("first")),
+        ]
+    )
+    second_headers = _encode_msgpack_map(
+        [
+            (_encode_msgpack_string("x-second"), _encode_msgpack_string("second")),
+        ]
+    )
+    service.send_forward_record(
+        _encode_forward_record_entries(
+            [
+                (_encode_msgpack_string("message"), _encode_msgpack_string("duplicates")),
+                (_encode_msgpack_string("headers"), first_headers),
+                (_encode_msgpack_string("headers"), second_headers),
+            ]
+        )
+    )
+
+    messages = service.wait_for_messages(1)
+    log_text = _wait_for_log_text(
+        service.service.flb.log_file,
+        "multiple map-valued fields match headers_key; using the first one",
+    )
+    service.stop()
+
+    message = messages[0]
+    assert message["headers"] == [
+        ("", b"empty name"),
+        ("x-first", b"first"),
+    ]
+    assert "using the first one" in log_text
+
+    payload = json.loads(message["value"].decode("utf-8"))
+    assert payload["headers"] == {"x-second": "second"}
+
+
+def test_out_kafka_dynamic_headers_batches_multiple_records():
+    service = Service("out_kafka_dynamic_headers_batch.yaml")
+    service.start()
+    service.send_forward_record(_encode_forward_records_with_headers())
+
+    messages = service.wait_for_messages(2)
+    service.stop()
+
+    assert len(messages) == 2
+    assert all(message["headers"] == [("x-batch", b"value")] for message in messages)
+    assert messages[0]["produce_correlation_id"] == messages[1]["produce_correlation_id"]
+    assert messages[0]["batch_index"] == messages[1]["batch_index"]
+
+    for message in messages:
+        payload = json.loads(message["value"].decode("utf-8"))
+        assert payload["message"] in {"batch one", "batch two"}
+        assert "headers" not in payload
+
+
+def test_out_kafka_dynamic_headers_survive_queue_full_retry():
+    service = Service(
+        "out_kafka_dynamic_headers_queue_full.yaml",
+        kafka_response_delay=0.5,
+    )
+    service.start()
+    service.send_forward_record(_encode_forward_records_with_headers())
+
+    messages = service.wait_for_messages(2)
+    log_text = _wait_for_log_text(
+        service.service.flb.log_file,
+        "internal queue is full, retrying in one second",
+    )
+    service.stop()
+
+    assert len(messages) == 2
+    assert all(message["headers"] == [("x-batch", b"value")] for message in messages)
+    assert "internal queue is full, retrying in one second" in log_text
+
+
+def test_out_kafka_dynamic_headers_supports_raw_format():
+    service = Service("out_kafka_dynamic_headers_raw.yaml")
+    service.start()
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    message = messages[0]
+    assert message["headers"] == [("x-format", b"raw")]
+    assert message["value"] == b"raw value"
+
+
+def test_out_kafka_dynamic_headers_supports_gelf_format():
+    service = Service("out_kafka_dynamic_headers_gelf.yaml")
+    service.start()
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    message = messages[0]
+    assert message["headers"] == [("x-format", b"gelf")]
+
+    payload = json.loads(message["value"].decode("utf-8"))
+    assert payload["short_message"] == "hello gelf"
+    assert payload["_source"] == "dummy"
+    assert "_headers" not in payload
+
+
+def test_out_kafka_dynamic_headers_supports_avro_format():
+    service = Service(
+        "out_kafka_dynamic_headers_avro.yaml",
+        use_schema_registry=True,
+    )
+    _start_or_skip_without_avro_encoder(service)
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    message = messages[0]
+    value = message["value"]
+
+    assert message["headers"] == [("x-format", b"avro")]
+    assert value[0] == 0
+    assert int.from_bytes(value[1:5], "big") == SCHEMA_ID
+    assert len(value) > 5
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "out_kafka_dynamic_headers_missing.yaml",
+        "out_kafka_dynamic_headers_empty.yaml",
+    ],
+)
+def test_out_kafka_dynamic_headers_handles_missing_and_empty_maps(config_file):
+    service = Service(config_file)
+    service.start()
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    message = messages[0]
+    assert message["headers"] == []
+
+    payload = json.loads(message["value"].decode("utf-8"))
+    assert payload["message"] in {"missing headers", "empty headers"}
+    assert "headers" not in payload
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "out_kafka_dynamic_headers_otlp_json_invalid.yaml",
+        "out_kafka_dynamic_headers_otlp_proto_invalid.yaml",
+    ],
+)
+def test_out_kafka_dynamic_headers_rejects_otlp_formats(config_file):
+    service = Service(config_file)
+
+    with pytest.raises(FluentBitStartupError):
+        service.start()
+
+    service.stop()
 
 
 def test_out_kafka_dynamic_topic_routes_to_record_topic():

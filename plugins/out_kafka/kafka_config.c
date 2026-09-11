@@ -17,6 +17,8 @@
  *  limitations under the License.
  */
 
+#include <stdint.h>
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_mem.h>
@@ -28,6 +30,31 @@
 #include "kafka_topic.h"
 #include "kafka_callbacks.h"
 
+
+static int config_value_is_blank(flb_sds_t value)
+{
+    size_t index;
+    size_t length;
+    unsigned char character;
+
+    if (value == NULL) {
+        return FLB_TRUE;
+    }
+
+    length = flb_sds_len(value);
+
+    for (index = 0; index < length; index++) {
+        character = (unsigned char) value[index];
+
+        if (character != ' ' && character != '\t' &&
+            character != '\r' && character != '\n' &&
+            character != '\v' && character != '\f') {
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
 
 struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
                                            struct flb_config *config)
@@ -143,6 +170,35 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     }
     else {
         ctx->format = FLB_KAFKA_FMT_JSON;
+    }
+
+    /* Config: Headers_Key */
+    if (ctx->headers_key && config_value_is_blank(ctx->headers_key) == FLB_FALSE) {
+        ctx->headers_key_len = flb_sds_len(ctx->headers_key);
+
+        if (ctx->headers_key_len > (size_t) UINT32_MAX) {
+            flb_plg_error(ctx->ins,
+                          "headers_key is too long to match a MessagePack record key");
+            flb_out_kafka_destroy(ctx);
+            return NULL;
+        }
+    }
+    else {
+        ctx->headers_key_len = 0;
+
+        if (ctx->headers_key) {
+            flb_plg_debug(ins,
+                          "headers_key is blank; record-derived Kafka headers are disabled");
+        }
+    }
+
+    if (ctx->headers_key_len > 0 &&
+        (ctx->format == FLB_KAFKA_FMT_OTLP_JSON ||
+         ctx->format == FLB_KAFKA_FMT_OTLP_PROTO)) {
+        flb_plg_error(ctx->ins,
+                      "headers_key is not supported with OTLP output formats");
+        flb_out_kafka_destroy(ctx);
+        return NULL;
     }
 
     ins->event_type = FLB_OUTPUT_LOGS;
