@@ -980,9 +980,6 @@ int static do_start(flb_ctx_t *ctx)
         }
         else if (val == FLB_ENGINE_FAILED) {
             flb_debug("[lib] backend failed");
-#if defined(FLB_SYSTEM_MACOS)
-            pthread_cancel(tid);
-#endif
             pthread_join(tid, NULL);
             ctx->status = FLB_LIB_ERROR;
             return -1;
