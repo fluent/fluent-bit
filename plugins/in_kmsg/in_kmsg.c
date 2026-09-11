@@ -36,7 +36,6 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <inttypes.h>
-#include <time.h>
 
 #include "in_kmsg.h"
 
@@ -114,7 +113,6 @@ static inline int process_line(const char *line,
     struct timeval tv;       /* time value                  */
     int line_len;
     uint64_t val;
-    long pri_val;
     const char *p = line;
     char *end = NULL;
     struct flb_time ts;
@@ -124,14 +122,20 @@ static inline int process_line(const char *line,
     ctx->buffer_id++;
 
     errno = 0;
-    pri_val = strtol(p, &end, 10);
-    if ((errno == ERANGE && (pri_val == INT_MAX || pri_val == INT_MIN))
-        || (errno != 0 && pri_val == 0)) {
+    val = strtoul(p, &end, 10);
+    if ((errno == ERANGE && val == ULONG_MAX)
+        || (errno != 0 && val == 0)) {
+        goto fail;
+    }
+
+    /* ensure something was consumed */
+    /* after facility/priority, the next char must be ',' */
+    if (end == p || *end != ',') {
         goto fail;
     }
 
     /* Priority */
-    priority = FLB_KLOG_PRI(pri_val);
+    priority = FLB_KLOG_PRI(val);
 
     if (priority > ctx->prio_level) {
         /* Drop line */
@@ -139,16 +143,17 @@ static inline int process_line(const char *line,
     }
 
     /* Sequence */
-    p = strchr(p, ',');
-    if (!p) {
-        goto fail;
-    }
-    p++;
+    p = ++end;
 
-    errno = 0;
     val = strtoull(p, &end, 10);
     if ((errno == ERANGE && val == ULLONG_MAX)
         || (errno != 0 && val == 0)) {
+        goto fail;
+    }
+
+    /* make sure strtoull consumed something */
+    /* after the sequence number, the next char must be ',' */
+    if (end == p || *end != ',') {
         goto fail;
     }
 
@@ -162,13 +167,19 @@ static inline int process_line(const char *line,
         goto fail;
     }
 
-    tv.tv_sec  = val/1000000;
-    tv.tv_usec = val - (tv.tv_sec * 1000000);
+    /* ensure something was consumed */
+    /* after the timestamp, the next char must be ',' */
+    if (end == p || *end != ',') {
+        goto fail;
+    }
+
+    tv.tv_sec  = val / KMSG_USEC_PER_SEC;
+    tv.tv_usec = val % KMSG_USEC_PER_SEC;
 
     flb_time_set(&ts, ctx->boot_time.tv_sec + tv.tv_sec, tv.tv_usec * 1000);
 
     /* Now process the human readable message */
-    p = strchr(p, ';');
+    p = strchr(end, ';');
     if (!p) {
         goto fail;
     }
