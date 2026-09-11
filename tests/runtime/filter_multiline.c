@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
 #include "flb_tests_runtime.h"
@@ -17,6 +18,30 @@ struct filter_test_result {
     int expected_records;       /* expected number of outputted records */
     int actual_records;         /* actual number of outputted records */
 };
+
+struct shutdown_flush_result {
+    int records;
+    int complete_records;
+    int dangling_records;
+    int invalid_records;
+};
+
+struct backpressure_result {
+    int initial_records;
+    int resumed_records;
+    int premature_records;
+    int invalid_records;
+};
+
+struct partial_shutdown_result {
+    int records;
+    int pending_records;
+    int barrier_records;
+    int invalid_records;
+};
+
+pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
+int num_output = 0;
 
 /* Callback to check expected results */
 static int cb_check_result(void *record, size_t size, void *data)
@@ -49,9 +74,115 @@ static int cb_check_result(void *record, size_t size, void *data)
     return 0;
 }
 
+static int cb_check_shutdown_flush(void *record, size_t size, void *data)
+{
+    char *result;
+    int has_complete;
+    int has_dangling;
+    int has_stack_frame;
+    struct shutdown_flush_result *expected;
 
-pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
-int num_output = 0;
+    result = record;
+    expected = data;
+    has_complete = strstr(result, "first-complete-marker") != NULL;
+    has_dangling = strstr(result, "dangling-shutdown-marker") != NULL;
+    has_stack_frame = strstr(result, "first-stack-frame") != NULL;
+
+    pthread_mutex_lock(&result_mutex);
+    expected->records++;
+    if (has_complete && has_stack_frame && !has_dangling) {
+        expected->complete_records++;
+    }
+    else if (has_dangling && !has_complete && !has_stack_frame) {
+        expected->dangling_records++;
+    }
+    else {
+        expected->invalid_records++;
+    }
+    num_output++;
+    pthread_mutex_unlock(&result_mutex);
+
+    flb_free(record);
+    return 0;
+}
+
+static int cb_check_backpressure(void *record, size_t size, void *data)
+{
+    char *result;
+    int has_initial;
+    int has_pending;
+    int has_continuation;
+    struct backpressure_result *expected;
+
+    result = record;
+    expected = data;
+    has_initial = strstr(result, "backpressure-initial-marker") != NULL;
+    has_pending = strstr(result, "backpressure-pending-marker") != NULL;
+    has_continuation = strstr(result, "backpressure-resume-frame") != NULL;
+
+    pthread_mutex_lock(&result_mutex);
+    if (has_initial && !has_pending) {
+        expected->initial_records++;
+    }
+    else if (has_pending && has_continuation && !has_initial) {
+        expected->resumed_records++;
+    }
+    else if (has_pending) {
+        expected->premature_records++;
+    }
+    else {
+        expected->invalid_records++;
+    }
+    num_output++;
+    pthread_mutex_unlock(&result_mutex);
+
+    flb_free(record);
+    return 0;
+}
+
+static int cb_check_partial_shutdown(void *record, size_t size, void *data)
+{
+    char *result;
+    int has_pending;
+    int has_barrier;
+    struct partial_shutdown_result *expected;
+
+    result = record;
+    expected = data;
+    has_pending = strstr(result, "partial-shutdown-one..two") != NULL;
+    has_barrier = strstr(result, "partial-shutdown-barrier") != NULL;
+
+    pthread_mutex_lock(&result_mutex);
+    expected->records++;
+    if (has_pending && !has_barrier) {
+        expected->pending_records++;
+    }
+    else if (has_barrier && !has_pending) {
+        expected->barrier_records++;
+    }
+    else {
+        expected->invalid_records++;
+    }
+    num_output++;
+    pthread_mutex_unlock(&result_mutex);
+
+    flb_free(record);
+    return 0;
+}
+
+static struct backpressure_result get_backpressure_result(
+    struct backpressure_result *expected)
+{
+    struct backpressure_result result;
+
+    pthread_mutex_lock(&result_mutex);
+    result = *expected;
+    pthread_mutex_unlock(&result_mutex);
+
+    return result;
+}
+
+
 static int get_output_num()
 {
     int ret;
@@ -145,6 +276,35 @@ void wait_with_timeout(uint32_t timeout_ms, int *output_num, int expected)
         if (elapsed_time_flb > timeout_ms) {
             flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
             // Reached timeout.
+            break;
+        }
+    }
+}
+
+static void wait_with_timeout_at_least(uint32_t timeout_ms, int *output_num,
+                                       int expected)
+{
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    uint64_t elapsed_time_flb = 0;
+
+    flb_time_get(&start_time);
+
+    while (true) {
+        *output_num = get_output_num();
+
+        if (*output_num >= expected) {
+            break;
+        }
+
+        flb_time_msleep(100);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
+
+        if (elapsed_time_flb > timeout_ms) {
+            flb_warn("[timeout] elapsed_time: %ld", elapsed_time_flb);
             break;
         }
     }
@@ -342,6 +502,121 @@ static void flb_test_multiline_buffered_one_output_record()
     filter_test_destroy(ctx);
 }
 
+static void run_multiline_flush_pending_on_shutdown(int emitter_prepaused)
+{
+    int len;
+    int ret;
+    int bytes;
+    int num;
+    char *record;
+    struct mk_list *head;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    struct flb_input_instance *emitter;
+    struct flb_input_instance *instance;
+    struct shutdown_flush_result expected = {0};
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_shutdown_flush;
+    cb_data.data = &expected;
+
+    ctx = filter_test_create(&cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_service_set(ctx->flb,
+                          "Flush", "0.100000000",
+                          "Grace", "2",
+                          NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "multiline.key_content", "log",
+                         "multiline.parser", "java",
+                         "buffer", "on",
+                         "flush_ms", "60000",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    record = "[0, {\"log\":\"Exception in thread main "
+             "java.lang.IllegalStateException: first-complete-marker\"}]";
+    len = strlen(record);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, record, len);
+    TEST_CHECK(bytes == len);
+
+    record = "[1, {\"log\":\"     at com.example.first-stack-frame\"}]";
+    len = strlen(record);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, record, len);
+    TEST_CHECK(bytes == len);
+
+    record = "[2, {\"log\":\"Exception in thread main "
+             "java.lang.RuntimeException: dangling-shutdown-marker\"}]";
+    len = strlen(record);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, record, len);
+    TEST_CHECK(bytes == len);
+
+    /* The second start line proves that all three source records were processed. */
+    wait_with_timeout(5000, &num, 1);
+    TEST_CHECK(num == 1);
+
+    if (emitter_prepaused == FLB_TRUE) {
+        emitter = NULL;
+        mk_list_foreach(head, &ctx->flb->config->inputs) {
+            instance = mk_list_entry(head, struct flb_input_instance, _head);
+            if (strcmp(instance->p->name, "emitter") == 0) {
+                emitter = instance;
+                break;
+            }
+        }
+
+        TEST_CHECK(emitter != NULL);
+        if (emitter != NULL) {
+            /* Simulate an emitter already paused by flb_input_chunk_protect(). */
+            emitter->mem_buf_status = FLB_INPUT_PAUSED;
+        }
+    }
+
+    /*
+     * Send the shutdown notification separately so the test can observe the
+     * shutdown flush before flb_stop() performs platform-specific cleanup.
+     * On macOS flb_stop() cancels the engine worker immediately after sending
+     * this notification, which can preempt the shutdown pause callback.
+     */
+    ret = flb_engine_exit(ctx->flb->config);
+    TEST_CHECK(ret >= 0);
+
+    wait_with_timeout(5000, &num, 2);
+    TEST_CHECK(num == 2);
+
+    ret = flb_stop(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* The pending group is emitted once by the shutdown pause hook. */
+    TEST_CHECK(get_output_num() == 2);
+    TEST_CHECK(expected.records == 2);
+    TEST_CHECK(expected.complete_records == 1);
+    TEST_CHECK(expected.dangling_records == 1);
+    TEST_CHECK(expected.invalid_records == 0);
+
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+
+static void flb_test_multiline_flush_pending_on_shutdown()
+{
+    run_multiline_flush_pending_on_shutdown(FLB_FALSE);
+}
+
+static void flb_test_multiline_flush_pending_on_shutdown_when_prepaused()
+{
+    run_multiline_flush_pending_on_shutdown(FLB_TRUE);
+}
+
 static void flb_test_multiline_unbuffered()
 {
     int len;
@@ -465,6 +740,80 @@ static void flb_test_multiline_partial_message_concat()
     sleep(2);
     TEST_CHECK(expected.actual_records == expected.expected_records);
     filter_test_destroy(ctx);
+}
+
+static void flb_test_multiline_partial_message_flush_pending_on_shutdown()
+{
+    int len;
+    int ret;
+    int bytes;
+    int num;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    struct partial_shutdown_result expected = {0};
+
+    clear_output_num();
+    cb_data.cb = cb_check_partial_shutdown;
+    cb_data.data = &expected;
+
+    ctx = filter_test_create(&cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "multiline.key_content", "log",
+                         "mode", "partial_message",
+                         "buffer", "on",
+                         "flush_ms", "60000",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    p = "[0, {\"log\":\"partial-shutdown-one..\", "
+        "\"partial_message\":\"true\", \"partial_id\":\"shutdown\", "
+        "\"partial_ordinal\":\"1\", \"partial_last\":\"false\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    p = "[0, {\"log\":\"two\", \"partial_message\":\"true\", "
+        "\"partial_id\":\"shutdown\", \"partial_ordinal\":\"2\", "
+        "\"partial_last\":\"false\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    /* This output proves the preceding partial fragments were processed. */
+    p = "[0, {\"log\":\"partial-shutdown-barrier\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    wait_with_timeout(5000, &num, 1);
+    TEST_CHECK(num == 1);
+    TEST_CHECK(expected.barrier_records == 1);
+    TEST_CHECK(expected.pending_records == 0);
+
+    ret = flb_engine_exit(ctx->flb->config);
+    TEST_CHECK(ret >= 0);
+
+    wait_with_timeout(5000, &num, 2);
+    TEST_CHECK(num == 2);
+
+    ret = flb_stop(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    TEST_CHECK(expected.records == 2);
+    TEST_CHECK(expected.pending_records == 1);
+    TEST_CHECK(expected.barrier_records == 1);
+    TEST_CHECK(expected.invalid_records == 0);
+
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
 }
 
 static void flb_test_multiline_partial_message_concat_two_ids()
@@ -710,6 +1059,135 @@ static void flb_test_ml_buffered_16_streams()
     filter_test_destroy(ctx);
 }
 
+/*
+ * Exercise a regular emitter memory-limit pause. The second Java exception
+ * remains pending while the emitter drains the first one. It must not be
+ * flushed by the shutdown-only pause hook, and it must concatenate normally
+ * once the emitter has resumed.
+ */
+static void flb_test_multiline_buffered_backpressure_does_not_flush()
+{
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    struct backpressure_result expected = {0};
+    struct backpressure_result result;
+    int i_ffds[16] = {0};
+    int ffd_num = sizeof(i_ffds) / sizeof(int);
+    int bytes;
+    int i;
+    int len;
+    int num;
+    int ret;
+    char padding[257];
+    char record[1024];
+    char tag[32];
+
+    clear_output_num();
+    cb_data.cb = cb_check_backpressure;
+    cb_data.data = &expected;
+
+    ctx = filter_test_create(&cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_service_set(ctx->flb,
+                          "Flush", "0.100000000",
+                          "Grace", "2",
+                          NULL);
+    TEST_CHECK(ret == 0);
+
+    i_ffds[0] = ctx->i_ffd;
+    for (i = 1; i < ffd_num; i++) {
+        i_ffds[i] = flb_input(ctx->flb, (char *) "lib", NULL);
+        TEST_CHECK(i_ffds[i] >= 0);
+        snprintf(tag, sizeof(tag), "testbackpressure%d", i);
+        flb_input_set(ctx->flb, i_ffds[i], "tag", tag, NULL);
+    }
+
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "multiline.key_content", "log",
+                         "multiline.parser", "java",
+                         "buffer", "on",
+                         "flush_ms", "60000",
+                         "emitter_mem_buf_limit", "1k",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    memset(padding, 'x', sizeof(padding) - 1);
+    padding[sizeof(padding) - 1] = '\0';
+
+    for (i = 0; i < ffd_num; i++) {
+        snprintf(record, sizeof(record),
+                 "[%d, {\"log\":\"Exception in thread main "
+                 "java.lang.IllegalStateException: "
+                 "backpressure-initial-marker-%d-%s\"}]",
+                 i, i, padding);
+        len = strlen(record);
+        bytes = flb_lib_push(ctx->flb, i_ffds[i], record, len);
+        TEST_CHECK(bytes == len);
+
+        snprintf(record, sizeof(record),
+                 "[%d, {\"log\":\"     at "
+                 "com.example.initial.Frame%d\"}]",
+                 i, i);
+        len = strlen(record);
+        bytes = flb_lib_push(ctx->flb, i_ffds[i], record, len);
+        TEST_CHECK(bytes == len);
+
+        snprintf(record, sizeof(record),
+                 "[%d, {\"log\":\"Exception in thread main "
+                 "java.lang.RuntimeException: backpressure-pending-marker-%d\"}]",
+                 i, i);
+        len = strlen(record);
+        bytes = flb_lib_push(ctx->flb, i_ffds[i], record, len);
+        TEST_CHECK(bytes == len);
+    }
+
+    /* The 16 emitted first groups exceed the 1 KiB emitter limit and pause it. */
+    wait_with_timeout_at_least(10000, &num, ffd_num);
+    TEST_CHECK(num >= ffd_num);
+
+    /* Allow the successful output flush to resume the emitter and its senders. */
+    flb_time_msleep(500);
+    result = get_backpressure_result(&expected);
+    TEST_CHECK(result.initial_records == ffd_num);
+    TEST_CHECK(result.premature_records == 0);
+    TEST_CHECK(result.invalid_records == 0);
+
+    for (i = 0; i < ffd_num; i++) {
+        snprintf(record, sizeof(record),
+                 "[%d, {\"log\":\"     at "
+                 "com.example.backpressure-resume-frame%d\"}]",
+                 i, i);
+        len = strlen(record);
+        bytes = flb_lib_push(ctx->flb, i_ffds[i], record, len);
+        TEST_CHECK(bytes == len);
+
+        snprintf(record, sizeof(record),
+                 "[%d, {\"log\":\"Exception in thread main "
+                 "java.lang.RuntimeException: backpressure-next-marker-%d\"}]",
+                 i, i);
+        len = strlen(record);
+        bytes = flb_lib_push(ctx->flb, i_ffds[i], record, len);
+        TEST_CHECK(bytes == len);
+    }
+
+    wait_with_timeout_at_least(10000, &num, ffd_num * 2);
+    TEST_CHECK(num >= ffd_num * 2);
+
+    result = get_backpressure_result(&expected);
+    TEST_CHECK(result.initial_records == ffd_num);
+    TEST_CHECK(result.resumed_records == ffd_num);
+    TEST_CHECK(result.premature_records == 0);
+    TEST_CHECK(result.invalid_records == 0);
+
+    filter_test_destroy(ctx);
+}
+
 /* This test will test the pausing of in_emitter */
 static void flb_test_ml_buffered_16_streams_pausing()
 {
@@ -813,11 +1291,18 @@ TEST_LIST = {
 
     {"multiline_buffered_one_record"                      , flb_test_multiline_buffered_one_output_record },
     {"multiline_buffered_two_record"                      , flb_test_multiline_buffered_two_output_record },
+    {"multiline_flush_pending_on_shutdown"                , flb_test_multiline_flush_pending_on_shutdown },
+    {"multiline_flush_pending_on_shutdown_when_prepaused",
+     flb_test_multiline_flush_pending_on_shutdown_when_prepaused},
     {"flb_test_multiline_unbuffered"                      , flb_test_multiline_unbuffered },
 
     {"flb_test_multiline_partial_message_concat"          , flb_test_multiline_partial_message_concat },
+    {"multiline_partial_message_flush_pending_on_shutdown",
+     flb_test_multiline_partial_message_flush_pending_on_shutdown},
     {"flb_test_multiline_partial_message_concat_two_ids"  , flb_test_multiline_partial_message_concat_two_ids },
 
+    {"multiline_buffered_backpressure_does_not_flush",
+     flb_test_multiline_buffered_backpressure_does_not_flush},
     {"ml_buffered_16_streams_pausing" , flb_test_ml_buffered_16_streams_pausing },
     {NULL, NULL}
 };

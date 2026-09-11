@@ -21,6 +21,7 @@
 #define FLB_FILTER_MULTILINE_H
 
 #include <fluent-bit/flb_filter_plugin.h>
+#include <fluent-bit/flb_emitter.h>
 #include "ml_concat.h"
 
 #define FLB_MULTILINE_MEM_BUF_LIMIT_DEFAULT  "10M"
@@ -67,6 +68,12 @@ struct ml_ctx {
     struct mk_list split_message_packers;
 
     struct flb_filter_instance *ins;
+
+    struct flb_emitter_callbacks emitter_callbacks;
+
+    /* Shutdown-only gate for concurrent buffered parser callbacks. */
+    uint64_t active_callbacks;
+    uint64_t shutdown_flush_requested;
 
     /* emitter */
     flb_sds_t emitter_name;                 /* emitter input plugin name */
