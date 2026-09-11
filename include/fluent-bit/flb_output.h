@@ -597,8 +597,29 @@ struct flb_output_flush {
      */
     struct flb_event_chunk *processed_event_chunk;
 
+    /* Route-effective totals reported by an output on successful completion. */
+    int successful_route_data_set;
+    int successful_records;
+    size_t successful_bytes;
+
     struct mk_list _head;              /* Link to flb_task->threads */
 };
+
+static FLB_INLINE int flb_output_set_successful_route_data(
+                        struct flb_output_flush *out_flush,
+                        int records,
+                        size_t bytes)
+{
+    if (out_flush == NULL || records < 0) {
+        return -1;
+    }
+
+    out_flush->successful_records = records;
+    out_flush->successful_bytes = bytes;
+    out_flush->successful_route_data_set = FLB_TRUE;
+
+    return 0;
+}
 
 static FLB_INLINE void *flb_output_get_retry_context(
                         struct flb_output_flush *out_flush,
@@ -1313,7 +1334,11 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     bytes = counted_event_chunk->size;
 
     flb_task_acquire_lock(task);
-    if (ret != FLB_OK &&
+    if (ret == FLB_OK && out_flush->successful_route_data_set == FLB_TRUE) {
+        records = out_flush->successful_records;
+        bytes = out_flush->successful_bytes;
+    }
+    else if (ret != FLB_OK &&
         flb_task_get_route_retry_context(task, o_ins,
                                          &records, &bytes) == NULL) {
         records = counted_event_chunk->total_events;
