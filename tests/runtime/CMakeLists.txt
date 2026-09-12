@@ -32,6 +32,9 @@ if(NOT FLB_SYSTEM_WINDOWS)
   FLB_RT_CORE_TEST(FLB_CORE_SHUTDOWN_SPIN   "core_shutdown_spin.c")
 endif()
 FLB_RT_CORE_TEST(1 "http_client_chunked.c")
+if(FLB_IN_LIB AND FLB_OUT_LIB)
+  FLB_RT_TEST(1 "core_engine_flush_now.c")
+endif()
 
 FLB_RT_TEST(FLB_CHUNK_TRACE "core_chunk_trace.c")
 
@@ -405,6 +408,7 @@ endfunction()
 # Most runtime tests can run concurrently under `ctest -j`.
 # Only serialize executables that bind the same well-known port.
 flb_runtime_lock_tests("runtime-port-2020"
+  flb-rt-core_engine_flush_now
   flb-rt-core_internal_logger
   flb-rt-filter_wasm)
 

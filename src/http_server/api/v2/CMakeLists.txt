@@ -3,6 +3,7 @@ set(src
   health.c
   metrics.c
   reload.c
+  flush.c
   register.c
   )
 
