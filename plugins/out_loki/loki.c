@@ -1254,6 +1254,8 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
         if (ctx->http_user || ctx->http_passwd || ctx->bearer_token) {
             flb_plg_error(ctx->ins,
                           "cannot use oauth2 with http_user/http_passwd or bearer_token");
+            loki_config_destroy(ctx);
+            flb_output_set_context(ins, NULL);
             return NULL;
         }
 
@@ -1272,11 +1274,15 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
         }
         else {
             flb_plg_error(ctx->ins, "invalid oauth2.auth_method '%s'", tmp_str);
+            loki_config_destroy(ctx);
+            flb_output_set_context(ins, NULL);
             return NULL;
         }
 
         if (!ctx->oauth2_config.token_url || !ctx->oauth2_config.client_id) {
             flb_plg_error(ctx->ins, "oauth2 requires token_url and client_id");
+            loki_config_destroy(ctx);
+            flb_output_set_context(ins, NULL);
             return NULL;
         }
 
@@ -1285,17 +1291,23 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
                 !ctx->oauth2_config.jwt_cert_file) {
                 flb_plg_error(ctx->ins, "oauth2 private_key_jwt requires "
                               "jwt_key_file and jwt_cert_file");
+                loki_config_destroy(ctx);
+                flb_output_set_context(ins, NULL);
                 return NULL;
             }
         }
         else if (!ctx->oauth2_config.client_secret) {
             flb_plg_error(ctx->ins, "oauth2 basic/post require client_secret");
+            loki_config_destroy(ctx);
+            flb_output_set_context(ins, NULL);
             return NULL;
         }
 
         ctx->oauth2_ctx = flb_oauth2_create_from_config(config, &ctx->oauth2_config);
         if (!ctx->oauth2_ctx) {
             flb_plg_error(ctx->ins, "failed to initialize oauth2 context");
+            loki_config_destroy(ctx);
+            flb_output_set_context(ins, NULL);
             return NULL;
         }
     }
