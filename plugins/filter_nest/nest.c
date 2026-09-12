@@ -41,6 +41,7 @@ static void teardown(struct filter_nest_ctx *ctx)
     struct mk_list *head;
 
     struct filter_nest_wildcard *wildcard;
+    struct filter_nest_wildcard *wildcard_excludes;
 
     flb_free(ctx->prefix);
     flb_free(ctx->key);
@@ -50,6 +51,12 @@ static void teardown(struct filter_nest_ctx *ctx)
         flb_free(wildcard->key);
         mk_list_del(&wildcard->_head);
         flb_free(wildcard);
+    }
+    mk_list_foreach_safe(head, tmp, &ctx->wildcard_excludes) {
+        wildcard_excludes = mk_list_entry(head, struct filter_nest_wildcard, _head);
+        flb_free(wildcard_excludes->key);
+        mk_list_del(&wildcard_excludes->_head);
+        flb_free(wildcard_excludes);
     }
 
 }
@@ -62,6 +69,7 @@ static int configure(struct filter_nest_ctx *ctx,
     struct mk_list *head;
     struct flb_kv *kv;
     struct filter_nest_wildcard *wildcard;
+    struct filter_nest_wildcard *wildcard_exclude;
 
     char *operation_nest = "nest";
     char *operation_lift = "lift";
@@ -122,6 +130,35 @@ static int configure(struct filter_nest_ctx *ctx,
 
             mk_list_add(&wildcard->_head, &ctx->wildcards);
             ctx->wildcards_cnt++;
+
+        }
+        else if (strcasecmp(kv->key, "wildcard_exclude") == 0) {
+            wildcard_exclude = flb_malloc(sizeof(struct filter_nest_wildcard));
+            if (!wildcard_exclude) {
+                flb_plg_error(ctx->ins, "Unable to allocate memory for "
+                              "wildcard_exclude");
+                flb_free(wildcard_exclude);
+                return -1;
+            }
+
+            wildcard_exclude->key = flb_strndup(kv->val, flb_sds_len(kv->val));
+            if (wildcard_exclude->key == NULL) {
+                flb_errno();
+                flb_free(wildcard_exclude);
+                return -1;
+            }
+            wildcard_exclude->key_len = flb_sds_len(kv->val);
+
+            if (wildcard_exclude->key[wildcard_exclude->key_len - 1] == '*') {
+                wildcard_exclude->key_is_dynamic = true;
+                wildcard_exclude->key_len--;
+            }
+            else {
+                wildcard_exclude->key_is_dynamic = false;
+            }
+
+            mk_list_add(&wildcard_exclude->_head, &ctx->wildcard_excludes);
+            ctx->wildcard_excludes_cnt++;
 
         }
         else if (strcasecmp(kv->key, "nest_under") == 0) {
@@ -307,6 +344,7 @@ static inline bool is_kv_to_nest(msgpack_object_kv * kv,
     struct mk_list *tmp;
     struct mk_list *head;
     struct filter_nest_wildcard *wildcard;
+    struct filter_nest_wildcard *wildcard_exclude;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
         key = obj->via.bin.ptr;
@@ -321,6 +359,24 @@ static inline bool is_kv_to_nest(msgpack_object_kv * kv,
         return false;
     }
 
+    mk_list_foreach_safe(head, tmp, &ctx->wildcard_excludes) {
+        wildcard_exclude = mk_list_entry(head, struct filter_nest_wildcard, _head);
+
+        if (wildcard_exclude->key_is_dynamic) {
+            /* This will negatively match "ABC123" with prefix "ABC*" */
+            if (strncmp(key, wildcard_exclude->key, wildcard_exclude->key_len) == 0) {
+                return false;
+            }
+        }
+        else {
+            /* This will negatively match "ABC" with prefix "ABC" */
+            if ((wildcard_exclude->key_len == klen) &&
+                    (strncmp(key, wildcard_exclude->key, klen) == 0)
+              ) {
+                return false;
+              }
+        }
+    }
     mk_list_foreach_safe(head, tmp, &ctx->wildcards) {
         wildcard = mk_list_entry(head, struct filter_nest_wildcard, _head);
 
@@ -615,9 +671,11 @@ static int cb_nest_init(struct flb_filter_instance *f_ins,
         flb_errno();
         return -1;
     }
-    mk_list_init(&ctx->wildcards);
     ctx->ins = f_ins;
+    mk_list_init(&ctx->wildcards);
     ctx->wildcards_cnt = 0;
+    mk_list_init(&ctx->wildcard_excludes);
+    ctx->wildcard_excludes_cnt = 0;
 
     if (configure(ctx, f_ins, config) < 0) {
         flb_free(ctx);
@@ -736,6 +794,11 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_STR, "Wildcard", NULL,
     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
     "Nest records which field matches the wildcard"
+   },
+   {
+    FLB_CONFIG_MAP_STR, "Wildcard_exclude", NULL,
+    FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+    "Nest records which field doesn't matches the wildcard"
    },
    {
     FLB_CONFIG_MAP_STR, "Nest_under", NULL,
