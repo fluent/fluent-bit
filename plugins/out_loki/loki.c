@@ -29,7 +29,8 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_gzip.h>
-
+#include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_oauth2.h>
 #include <ctype.h>
 #include <sys/stat.h>
 
@@ -1084,6 +1085,10 @@ static void loki_config_destroy(struct flb_loki *ctx)
         flb_ra_destroy(ctx->ra_tenant_id_key);
     }
 
+    if (ctx->oauth2_ctx) {
+        flb_oauth2_destroy(ctx->oauth2_ctx);
+    }
+
     if (ctx->remove_mpa) {
         flb_mp_accessor_destroy(ctx->remove_mpa);
     }
@@ -1103,6 +1108,7 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
     struct flb_upstream *upstream;
     char *compress;
     char *drop_single_key;
+    const char *tmp_str;
 
     /* Create context */
     ctx = flb_calloc(1, sizeof(struct flb_loki));
@@ -1121,10 +1127,35 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
     /* Set networking defaults */
     flb_output_net_default(FLB_LOKI_HOST, FLB_LOKI_PORT, ins);
 
+    /* Initialize OAuth2 default config */
+    ctx->oauth2_config.enabled = FLB_FALSE;
+    ctx->oauth2_config.auth_method = FLB_OAUTH2_AUTH_METHOD_BASIC;
+    ctx->oauth2_config.refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
+    ctx->oauth2_ctx = NULL;
+    ctx->oauth2_auth_method = NULL;
+
     /* Load config map */
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
         return NULL;
+    }
+
+    /* Apply OAuth2 config map properties if any */
+    if (ins->oauth2_config_map && mk_list_size(&ins->oauth2_properties) > 0) {
+        ret = flb_config_map_set(ins->config,
+                                 &ins->oauth2_properties,
+                                 ins->oauth2_config_map,
+                                 &ctx->oauth2_config);
+        if (ret == -1) {
+            flb_free(ctx);
+            return NULL;
+        }
+
+        /* Handle oauth2.auth_method separately since it's stored in a different field */
+        tmp_str = flb_kv_get_key_value("oauth2.auth_method", &ins->oauth2_properties);
+        if (tmp_str) {
+            ctx->oauth2_auth_method = tmp_str;
+        }
     }
 
     /* Initialize final remove_keys list */
@@ -1210,6 +1241,56 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
                       "invalid 'tenant_id_key_error_handling' value: %s",
                       ctx->tenant_id_key_error_handling);
         return NULL;
+    }
+
+    if (ctx->oauth2_config.connect_timeout <= 0 &&
+        ins->net_setup.connect_timeout > 0) {
+        ctx->oauth2_config.connect_timeout = ins->net_setup.connect_timeout;
+    }
+
+    /* OAuth2 initialization */
+    if (ctx->oauth2_config.enabled == FLB_TRUE) {
+        tmp_str = ctx->oauth2_auth_method ? ctx->oauth2_auth_method :
+            flb_output_get_property("oauth2.auth_method", ins);
+
+        if (tmp_str == NULL || strcasecmp(tmp_str, "basic") == 0) {
+            ctx->oauth2_config.auth_method = FLB_OAUTH2_AUTH_METHOD_BASIC;
+        }
+        else if (strcasecmp(tmp_str, "post") == 0) {
+            ctx->oauth2_config.auth_method = FLB_OAUTH2_AUTH_METHOD_POST;
+        }
+        else if (strcasecmp(tmp_str, "private_key_jwt") == 0) {
+            ctx->oauth2_config.auth_method =
+                FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid oauth2.auth_method '%s'", tmp_str);
+            return NULL;
+        }
+
+        if (!ctx->oauth2_config.token_url || !ctx->oauth2_config.client_id) {
+            flb_plg_error(ctx->ins, "oauth2 requires token_url and client_id");
+            return NULL;
+        }
+
+        if (ctx->oauth2_config.auth_method == FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT) {
+            if (!ctx->oauth2_config.jwt_key_file ||
+                !ctx->oauth2_config.jwt_cert_file) {
+                flb_plg_error(ctx->ins, "oauth2 private_key_jwt requires "
+                              "jwt_key_file and jwt_cert_file");
+                return NULL;
+            }
+        }
+        else if (!ctx->oauth2_config.client_secret) {
+            flb_plg_error(ctx->ins, "oauth2 basic/post require client_secret");
+            return NULL;
+        }
+
+        ctx->oauth2_ctx = flb_oauth2_create_from_config(config, &ctx->oauth2_config);
+        if (!ctx->oauth2_ctx) {
+            flb_plg_error(ctx->ins, "failed to initialize oauth2 context");
+            return NULL;
+        }
     }
 
     /* use TLS ? */
@@ -1995,11 +2076,24 @@ static int send_loki_payload(struct flb_loki *ctx,
     }
 
     /* Send HTTP request */
-    ret = flb_http_do(c, &b_sent);
+    if (ctx->oauth2_ctx) {
+        ret = flb_http_do_with_oauth2(c, &b_sent, ctx->oauth2_ctx);
+    }
+    else {
+        ret = flb_http_do(c, &b_sent);
+    }
     payload_release(out_buf, compressed);
 
     /* Validate HTTP client return status */
     if (ret == 0) {
+        /* OAuth2-authenticated 401s should be retried with a fresh token. */
+        if (ctx->oauth2_ctx != NULL && c->resp.status == 401) {
+            flb_oauth2_invalidate_token(ctx->oauth2_ctx);
+            flb_http_client_destroy(c);
+            flb_upstream_conn_release(u_conn);
+            return FLB_RETRY;
+        }
+
         /*
          * Only allow the following HTTP status:
          *
@@ -2366,6 +2460,93 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_loki, http_passwd),
      "Set HTTP auth password"
+    },
+
+    /* OAuth2 client credentials */
+    {
+     FLB_CONFIG_MAP_BOOL, "oauth2.enable", "false",
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.enabled),
+     "Enable OAuth2 client credentials for outgoing requests"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.token_url", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.token_url),
+     "OAuth2 token endpoint URL"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.client_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.client_id),
+     "OAuth2 client_id"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.client_secret", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.client_secret),
+     "OAuth2 client_secret"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.user_agent", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.user_agent),
+     "Optional User-Agent header for OAuth2 token requests"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.scope", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.scope),
+     "Optional OAuth2 scope"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.audience", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.audience),
+     "Optional OAuth2 audience parameter"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.resource", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.resource),
+     "Optional OAuth2 resource parameter"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.auth_method", "basic",
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_auth_method),
+     "OAuth2 client authentication method: basic, post or private_key_jwt"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_key_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.jwt_key_file),
+     "Path to the private key file for private_key_jwt authentication"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_cert_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.jwt_cert_file),
+     "Path to the certificate file for private_key_jwt authentication"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_aud", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.jwt_aud),
+     "Audience for private_key_jwt assertion (defaults to oauth2.token_url)"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.jwt_header", "kid",
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.jwt_header),
+     "Header field for private_key_jwt assertion"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "oauth2.jwt_ttl_seconds", "300",
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.jwt_ttl),
+     "TTL for private_key_jwt assertion"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "oauth2.refresh_skew_seconds", "60",
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.refresh_skew),
+     "Seconds before expiry to refresh the access token"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "oauth2.timeout", "0s",
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.timeout),
+     "Timeout for OAuth2 token requests (defaults to response_timeout when unset)"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "oauth2.connect_timeout", "0s",
+     0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.connect_timeout),
+     "Connect timeout for OAuth2 token requests"
     },
 
     {
