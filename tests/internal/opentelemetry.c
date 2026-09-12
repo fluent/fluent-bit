@@ -43,6 +43,7 @@
 #include <ctraces/ctr_encode_opentelemetry.h>
 #include <fluent-otel-proto/fluent-otel.h>
 #include <msgpack.h>
+#include <limits.h>
 #include <string.h>
 #include <fluent-bit/flb_json.h>
 
@@ -3410,6 +3411,63 @@ void test_opentelemetry_traces_otlp_proto_roundtrip()
     ctr_destroy(trace_context);
 }
 
+/* Declaration of the cutoff helper from the out_opentelemetry plugin */
+extern void otel_metrics_apply_cutoff(struct cmt *cmt, int threshold_seconds);
+
+/*
+ * Test the metric age cut-off feature in the out_opentelemetry plugin.
+ * Calls the plugin's own flb_otel_metric_expire() — the same function
+ * used by process_metrics() — and verifies that:
+ *   1. Stale data points are dropped with a normal threshold.
+ *   2. The underflow guard (threshold_ns > now → no expire) prevents
+ *      data loss when the threshold would exceed current Unix time.
+ */
+void test_opentelemetry_metrics_cutoff()
+{
+    struct cmt       *cmt;
+    struct cmt_gauge *g;
+    uint64_t          now;
+
+    cmt_initialize();
+
+    /* --- normal cutoff: 200-second-old sample expires, 1-second-old survives --- */
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+
+    g = cmt_gauge_create(cmt, "test", "otel", "cutoff", "cutoff test", 1,
+                         (char *[]) {"host"});
+    TEST_CHECK(g != NULL);
+
+    now = cfl_time_now();
+    cmt_gauge_set(g, now - 1000000000ULL,   1.0, 1, (char *[]) {"fresh"});
+    cmt_gauge_set(g, now - 200000000000ULL, 2.0, 1, (char *[]) {"stale"});
+
+    TEST_CHECK(cfl_list_size(&g->map->metrics) == 2);
+
+    /* plugin function: cutoff_threshold = 100 s → stale sample dropped */
+    otel_metrics_apply_cutoff(cmt, 100);
+
+    TEST_CHECK(cfl_list_size(&g->map->metrics) == 1);
+    cmt_destroy(cmt);
+
+    /* --- underflow guard: INT_MAX seconds in ns > current Unix time → nothing dropped --- */
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+
+    g = cmt_gauge_create(cmt, "test", "otel", "cutoff2", "cutoff boundary", 1,
+                         (char *[]) {"host"});
+    TEST_CHECK(g != NULL);
+
+    now = cfl_time_now();
+    cmt_gauge_set(g, now - 1000000000ULL, 1.0, 1, (char *[]) {"a"});
+
+    /* plugin function clamps expiration to 0 → cmt_expire never called */
+    otel_metrics_apply_cutoff(cmt, INT_MAX);
+
+    TEST_CHECK(cfl_list_size(&g->map->metrics) == 1);
+    cmt_destroy(cmt);
+}
+
 /* Test list */
 TEST_LIST = {
     { "hex_to_id", test_hex_to_id },
@@ -3447,5 +3505,7 @@ TEST_LIST = {
       test_opentelemetry_metrics_otlp_proto_batches_all_metric_types },
     { "opentelemetry_metrics_otlp_proto_batches_empty_context",
       test_opentelemetry_metrics_otlp_proto_batches_empty_context },
+    { "opentelemetry_metrics_cutoff",
+      test_opentelemetry_metrics_cutoff },
     { 0 }
 };
