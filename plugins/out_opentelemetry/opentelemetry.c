@@ -569,22 +569,26 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                                                   NULL));
 
         if(compression_algorithm != NULL) {
-            flb_http_request_set_header(request,
-                                        "grpc-encoding",
-                                        0,
-                                        compression_algorithm,
-                                        0);
-            flb_http_request_set_header(request,
-                                        "grpc-accept-encoding",
-                                        0,
-                                        compression_algorithm,
-                                        0);
+            if (result == 0) {
+                result = flb_http_request_set_header(request,
+                                                     "grpc-encoding",
+                                                     0,
+                                                     compression_algorithm,
+                                                     0);
+            }
+            if (result == 0) {
+                flb_http_request_set_header(request,
+                                            "grpc-accept-encoding",
+                                            0,
+                                            compression_algorithm,
+                                            0);
+            }
             flb_free(final_body);
         }
 
         cfl_sds_destroy(grpc_body);
 
-        if (result  != 0) {
+        if (result != 0) {
             flb_http_client_request_destroy(request, FLB_TRUE);
 
             return FLB_RETRY;
