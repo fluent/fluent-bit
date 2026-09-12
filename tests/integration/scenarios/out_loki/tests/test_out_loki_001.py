@@ -3,9 +3,14 @@ import os
 from pathlib import Path
 import tempfile
 
+import pytest
 import requests
 
-from server.http_server import data_storage, http_server_run
+from server.http_server import (
+    configure_oauth_token_response,
+    data_storage,
+    http_server_run,
+)
 from utils.memory_check import memory_check_enabled
 from utils.test_service import FluentBitTestService
 
@@ -131,3 +136,91 @@ def test_out_loki_preserves_long_unicode_json_strings():
     assert len(records) == RECORD_COUNT
     assert all(set(record) == {"msg"} for record in records)
     assert sorted(record["msg"] for record in records) == sorted(expected_messages)
+
+
+class OAuthService:
+    def __init__(self, config_file):
+        test_directory = Path(__file__).resolve().parent
+        config_directory = test_directory.parent / "config"
+        cert_dir = test_directory.parent.parent / "in_splunk" / "certificate"
+        self.tls_crt_file = str(cert_dir / "certificate.pem")
+        self.tls_key_file = str(cert_dir / "private_key.pem")
+        self.service = FluentBitTestService(
+            str(config_directory / config_file),
+            data_storage=data_storage,
+            data_keys=["payloads", "requests"],
+            extra_env={
+                "CERTIFICATE_TEST": self.tls_crt_file,
+                "PRIVATE_KEY_TEST": self.tls_key_file,
+            },
+            pre_start=self._start_receiver,
+            post_stop=self._stop_receiver,
+        )
+
+    def _start_receiver(self, service):
+        http_server_run(service.test_suite_http_port)
+        self.service.wait_for_http_endpoint(
+            f"http://127.0.0.1:{service.test_suite_http_port}/ping",
+            timeout=10,
+            interval=0.5,
+        )
+
+    def _stop_receiver(self, service):
+        try:
+            requests.post(
+                f"http://127.0.0.1:{service.test_suite_http_port}/shutdown",
+                timeout=2,
+            )
+        except requests.RequestException:
+            pass
+
+    def start(self):
+        self.service.start()
+
+    def stop(self):
+        self.service.stop()
+
+    def wait_for_requests(self, minimum_count, timeout=10):
+        timeout = 60 if memory_check_enabled() else timeout
+        return self.service.wait_for_condition(
+            lambda: data_storage["requests"] if len(data_storage["requests"]) >= minimum_count else None,
+            timeout=timeout,
+            interval=0.5,
+            description=f"{minimum_count} requests",
+        )
+
+
+@pytest.mark.parametrize(
+    "config_file,auth_mode",
+    [
+        ("out_loki_oauth2_basic.yaml", "basic"),
+        ("out_loki_oauth2_private_key_jwt.yaml", "private_key_jwt"),
+    ],
+    ids=["oauth2_basic", "oauth2_private_key_jwt"],
+)
+def test_out_loki_oauth2_auth_matrix(config_file, auth_mode):
+    service = OAuthService(config_file)
+    service.start()
+    configure_oauth_token_response(
+        status_code=200,
+        body={"access_token": "oauth-access-token", "token_type": "Bearer", "expires_in": 300},
+    )
+
+    requests_seen = service.wait_for_requests(2)
+    service.stop()
+
+    token_request = next(request for request in requests_seen if request["path"] == "/oauth/token")
+    data_request = next(request for request in requests_seen if request["path"] == "/loki/api/v1/push")
+
+    assert token_request["method"] == "POST"
+    assert "grant_type=client_credentials" in token_request["raw_data"]
+    assert data_request["headers"].get("Authorization") == "Bearer oauth-access-token"
+
+    if auth_mode == "basic":
+        assert "Basic " in token_request["headers"].get("Authorization", "")
+        assert "scope=logs.write" in token_request["raw_data"]
+        return
+
+    assert "client_assertion_type=" in token_request["raw_data"]
+    assert "client_assertion=" in token_request["raw_data"]
+    assert "client_id=client1" in token_request["raw_data"]
