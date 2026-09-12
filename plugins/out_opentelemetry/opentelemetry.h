@@ -225,4 +225,6 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                        const char *tag, int tag_len,
                        const char *http_uri,
                        const char *grpc_uri);
+
+void otel_metrics_apply_cutoff(struct cmt *cmt, int threshold_seconds);
 #endif

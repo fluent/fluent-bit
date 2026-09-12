@@ -789,6 +789,23 @@ static int post_metrics_payload(struct opentelemetry_context *ctx,
     return result;
 }
 
+void otel_metrics_apply_cutoff(struct cmt *cmt, int threshold_seconds)
+{
+    uint64_t threshold_ns;
+    uint64_t now;
+    uint64_t expiration;
+
+    if (threshold_seconds <= 0) {
+        return;
+    }
+    threshold_ns = (uint64_t) threshold_seconds * 1000000000ULL;
+    now = cfl_time_now();
+    expiration = (threshold_ns < now) ? (now - threshold_ns) : 0;
+    if (expiration > 0) {
+        cmt_expire(cmt, expiration);
+    }
+}
+
 static int process_metrics(struct flb_event_chunk *event_chunk,
                            struct flb_output_flush *out1_flush,
                            struct flb_input_instance *ins, void *out_context,
@@ -802,7 +819,6 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
     flb_sds_t buf = NULL;
     size_t diff = 0;
     size_t off = 0;
-    uint64_t expiration;
     struct cmt *cmt;
     struct opentelemetry_context *ctx = out_context;
 
@@ -810,14 +826,6 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
     ctx = out_context;
     ok = CMT_DECODE_MSGPACK_SUCCESS;
     result = FLB_OK;
-
-    if (ctx->cutoff_threshold > 0) {
-        expiration = cfl_time_now() -
-                     ((uint64_t) ctx->cutoff_threshold * 1000000000ULL);
-    }
-    else {
-        expiration = 0;
-    }
 
     /* Buffer to concatenate multiple metrics contexts */
     buf = flb_sds_create_size(event_chunk->size);
@@ -835,9 +843,7 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
                                             (char *) event_chunk->data,
                                             event_chunk->size, &off)) == ok) {
         /* Exclude samples older than the configured cut-off. */
-        if (expiration > 0) {
-            cmt_expire(cmt, expiration);
-        }
+        otel_metrics_apply_cutoff(cmt, ctx->cutoff_threshold);
 
         /* append labels set by config */
         append_labels(ctx, cmt);
