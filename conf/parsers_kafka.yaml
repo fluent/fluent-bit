@@ -1,0 +1,14 @@
+parsers:
+  - name: confluent-schema-registry
+    # Confluent Schema Registry 7.1.1 default format
+    format: regex
+    time_key: time
+    time_format: '%Y-%m-%d %H:%M:%S,%L'
+    regex: '^\[(?<time>\d{4}-\d{1,2}-\d{1,2} \d{2}:\d{2}:\d{2},\d{1,4})] (?<level>[A-Z]{1,8}) (?<src>[\d.]+) - - \[(?<date>.*)] \"(?<method>[A-Z]+) (?<path>\/[\S]+|\/) (?<http_version>HTTP\/[\d]\.[\d])\" (?<code>[\d]{1,3}) (?<size>[\d]+) \"-\" \"(?<agent>.*)\" (?<extra_info>.*)'
+
+  - name: confluent-schema-registry-prefixed
+    # Confluent Schema Registry 7.1.1 default format - with _sr_ prefix to allow `nest`
+    format: regex
+    time_key: _sr_time
+    time_format: '%Y-%m-%d %H:%M:%S,%L'
+    regex: '^\[(?<_sr_time>\d{4}-\d{1,2}-\d{1,2} \d{2}:\d{2}:\d{2},\d{1,4})] (?<_sr_level>[A-Z]{1,8}) (?<_sr_src>[\d.]+) - - \[(?<_sr_date>.*)] \"(?<_sr_method>[A-Z]+) (?<_sr_path>\/[\S]+|\/) (?<_sr_http_version>HTTP\/[\d]\.[\d])\" (?<_sr_code>[\d]{1,3}) (?<_sr_size>[\d]+) \"-\" \"(?<_sr_agent>.*)\" (?<_sr_extra_info>.*)'

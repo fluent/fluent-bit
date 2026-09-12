@@ -1,0 +1,12 @@
+multiline_parsers:
+  - name: exception_test
+    type: regex
+    flush_timeout: 1000
+    rules:
+      - state: start_state
+        regex: '/(Dec \d+ \d+\:\d+\:\d+)(.*)/'
+        next_state: cont
+
+      - state: cont
+        regex: /^\s+at.*/
+        next_state: cont

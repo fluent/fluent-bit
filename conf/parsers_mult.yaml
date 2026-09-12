@@ -1,0 +1,22 @@
+parsers:
+  - name: mult_first
+    format: regex
+    regex: Started (?<method>[^ ]+) "(?<path>[^"]+)" for (?<host>[^ ]+) at (?<time>[^ ]+ [^ ]+ [^ ]+)
+    time_key: time
+    time_format: '%Y-%m-%d %H:%M:%S %z'
+
+  - name: mult_1
+    format: regex
+    regex: /Processing by (?<controller>[^\u0023]+)\u0023(?<controller_method>[^ ]+) as (?<format>[^ ]+?)$/
+
+  - name: mult_2
+    format: regex
+    regex: '(  Parameters: (?<parameters>[^ ]+))?'
+
+  - name: mult_3
+    format: regex
+    regex: /  Rendered (?<template>[^ ]+) within (?<layout>.+) \([\d\.]+ms\)/
+
+  - name: mult_4
+    format: regex
+    regex: 'Completed (?<code>[^ ]+) [^ ]+ in (?<runtime>[\d\.]+)ms \(Views: (?<view_runtime>[\d\.]+)ms \| ActiveRecord: (?<ar_runtime>[\d\.]+)ms\)'
