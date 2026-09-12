@@ -1147,7 +1147,8 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
                                  ins->oauth2_config_map,
                                  &ctx->oauth2_config);
         if (ret == -1) {
-            flb_free(ctx);
+            loki_config_destroy(ctx);
+            flb_output_set_context(ins, NULL);
             return NULL;
         }
 
@@ -1250,6 +1251,12 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
 
     /* OAuth2 initialization */
     if (ctx->oauth2_config.enabled == FLB_TRUE) {
+        if (ctx->http_user || ctx->http_passwd || ctx->bearer_token) {
+            flb_plg_error(ctx->ins,
+                          "cannot use oauth2 with http_user/http_passwd or bearer_token");
+            return NULL;
+        }
+
         tmp_str = ctx->oauth2_auth_method ? ctx->oauth2_auth_method :
             flb_output_get_property("oauth2.auth_method", ins);
 
@@ -2078,6 +2085,10 @@ static int send_loki_payload(struct flb_loki *ctx,
     /* Send HTTP request */
     if (ctx->oauth2_ctx) {
         ret = flb_http_do_with_oauth2(c, &b_sent, ctx->oauth2_ctx);
+        /* on ouath retry orignal connection can be released and new connection is cleaned up later by u_conn */
+        if (c->u_conn) {
+            u_conn = c->u_conn;
+        }
     }
     else {
         ret = flb_http_do(c, &b_sent);
