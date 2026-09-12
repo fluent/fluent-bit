@@ -154,6 +154,9 @@ struct flb_out_kafka {
 
 #ifdef FLB_HAVE_AWS_MSK_IAM
     flb_sds_t aws_msk_iam_cluster_arn;
+    flb_sds_t aws_msk_iam_role_arn;
+    flb_sds_t aws_msk_iam_sts_endpoint;
+    flb_sds_t aws_msk_iam_external_id;
     struct flb_aws_msk_iam *msk_iam;
 #endif
 

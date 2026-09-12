@@ -1627,6 +1627,23 @@ static struct flb_config_map config_map[] = {
     0, FLB_TRUE, offsetof(struct flb_out_kafka, aws_msk_iam),
     "Enable AWS MSK IAM authentication"
    },
+   {
+    FLB_CONFIG_MAP_STR, "aws_msk_iam_role_arn", NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, aws_msk_iam_role_arn),
+    "ARN of an IAM role to assume for MSK IAM authentication "
+    "(e.g. for cross-account access)"
+   },
+   {
+    FLB_CONFIG_MAP_STR, "aws_msk_iam_sts_endpoint", NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, aws_msk_iam_sts_endpoint),
+    "Custom endpoint for the AWS STS API, used with aws_msk_iam_role_arn"
+   },
+   {
+    FLB_CONFIG_MAP_STR, "aws_msk_iam_external_id", NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, aws_msk_iam_external_id),
+    "External ID for the STS AssumeRole API, used with aws_msk_iam_role_arn "
+    "when the target role requires an external ID"
+   },
 #endif
 
    /* EOF */
