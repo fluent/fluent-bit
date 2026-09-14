@@ -2885,6 +2885,20 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
             return NULL;
         }
         ic->event_type = event_type;
+
+        /*
+         * Creation restores down chunks after writing their header. Bring the
+         * chunk up for both size projection and the pending append, just as we
+         * do for reused chunks, and restore it after the write.
+         */
+        if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
+            ret = cio_chunk_up_force(ic->chunk);
+            if (ret != CIO_OK) {
+                flb_input_chunk_destroy(ic, FLB_TRUE);
+                return NULL;
+            }
+            *set_down = FLB_TRUE;
+        }
     }
 
     /*
@@ -2893,6 +2907,17 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
      * (based in creation time) to get enough space for the incoming chunk.
      */
     placement_size = flb_input_chunk_get_projected_write_size(ic, chunk_size);
+    if (placement_size == SIZE_MAX) {
+        /* A failed projection must not evict already buffered records. */
+        flb_error("[input chunk] cannot calculate projected write size");
+        if (new_chunk == FLB_TRUE) {
+            flb_input_chunk_destroy(ic, FLB_TRUE);
+        }
+        else if (*set_down == FLB_TRUE) {
+            cio_chunk_down(ic->chunk);
+        }
+        return NULL;
+    }
 
     if (!flb_routes_mask_is_empty(ic->routes_mask, ic->in->config->router)
         && flb_input_chunk_place_new_chunk(ic, placement_size) == 0) {
@@ -2905,6 +2930,9 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
         if (new_chunk ||
             flb_routes_mask_is_empty(ic->routes_mask, ic->in->config->router) == FLB_TRUE) {
             flb_input_chunk_destroy(ic, FLB_TRUE);
+        }
+        else if (*set_down == FLB_TRUE) {
+            cio_chunk_down(ic->chunk);
         }
         return NULL;
     }
@@ -3426,6 +3454,9 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         flb_error("[input chunk] error writing data from %s instance",
                   flb_input_name(in));
         cio_chunk_tx_rollback(ic->chunk);
+        if (set_down == FLB_TRUE) {
+            cio_chunk_down(ic->chunk);
+        }
 
         return -1;
     }
