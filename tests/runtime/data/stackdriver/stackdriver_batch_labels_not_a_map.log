@@ -1,0 +1,3 @@
+{"message":"valid record with labels", "logging.googleapis.com/labels": {"testA": "valA", "testB": "valB"}}
+{"message":"bad labels - not a map", "logging.googleapis.com/labels": "not_a_map"}
+{"message":"valid record without labels"}
