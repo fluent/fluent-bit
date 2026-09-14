@@ -884,6 +884,14 @@ static flb_sds_t syslog_format(struct flb_syslog *ctx, msgpack_object *o,
         if (msg.msgid == NULL && ctx->msgid_preset) {
             msg.msgid = flb_sds_create(ctx->msgid_preset);
         }
+        if (ctx->parsed_format == FLB_SYSLOG_RFC5424 &&
+            msg.sd == NULL && ctx->sd_preset) {
+            msg.sd = flb_sds_create(ctx->sd_preset);
+            if (msg.sd == NULL) {
+                ret_sds = NULL;
+                goto clean;
+            }
+        }
 
         if (ctx->parsed_format == FLB_SYSLOG_RFC3164) {
             tmp = syslog_rfc3164(s, tm, &msg);
@@ -1320,6 +1328,14 @@ static struct flb_config_map config_map[] = {
      "Specify the key name from the original record that contains the "
      "Structured Data (SD) content. If set, the value of the key must be a map."
      "This option can be set multiple times."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "syslog_sd_preset", NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, sd_preset),
+     "Specify a literal RFC 5424 structured-data field ('-' or adjacent "
+     "[SD-ID PARAM-NAME=\"PARAM-VALUE\"] elements) to use when no structured "
+     "data is extracted from the record. Ignored with rfc3164."
     },
 
     {

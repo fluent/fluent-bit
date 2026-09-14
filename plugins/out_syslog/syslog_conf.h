@@ -61,6 +61,7 @@ struct flb_syslog {
     flb_sds_t appname_preset;
     flb_sds_t procid_preset;
     flb_sds_t msgid_preset;
+    flb_sds_t sd_preset;
 
     /* Internal */
     int parsed_mode;
