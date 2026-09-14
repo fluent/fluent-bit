@@ -42,6 +42,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_fips.h>
+#include <fluent-bit/flb_atomic.h>
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_engine_dispatch.h>
 #include <fluent-bit/flb_network.h>
@@ -1405,11 +1406,16 @@ int flb_engine_start(struct flb_config *config)
         return -2;
     }
 
+    /*
+     * Publish the supervisor grace window before signaling startup: the start
+     * notification is the happens-before edge the main thread synchronizes on,
+     * so storing grace_input afterwards could let it observe a stale value.
+     */
+    flb_atomic_store(&config->grace_input, config->grace / 2);
+    flb_info("[engine] Shutdown Grace Period=%d, Shutdown Input Grace Period=%d", config->grace, config->grace_input);
+
     /* Signal that we have started */
     flb_engine_started(config);
-
-    config->grace_input  = config->grace / 2;
-    flb_info("[engine] Shutdown Grace Period=%d, Shutdown Input Grace Period=%d", config->grace, config->grace_input);
 
     while (1) {
         rb_flush_flag = FLB_FALSE;
