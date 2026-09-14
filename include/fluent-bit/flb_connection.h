@@ -142,6 +142,9 @@ struct flb_connection {
     /* IO activity tracker used to enforce net.io_timeout */
     time_t ts_io_timeout;
 
+    /* Log an expired IO timeout as an error instead of a debug message. */
+    int io_timeout_log_error;
+
     /* Connect */
     time_t ts_connect_start;
     time_t ts_connect_timeout;
