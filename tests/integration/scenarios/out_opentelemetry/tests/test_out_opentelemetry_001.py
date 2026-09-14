@@ -1262,3 +1262,116 @@ def test_out_opentelemetry_logs_max_scopes_enforcement():
     output = json.loads(json_format.MessageToJson(logs_seen[0]))
     assert len(output["resourceLogs"]) == 4
     assert all(len(resource_log["scopeLogs"]) == 1 for resource_log in output["resourceLogs"])
+
+
+@pytest.mark.parametrize("placement", ["input", "output"])
+def test_out_opentelemetry_journald_mapping(placement, tmp_path):
+    import yaml
+
+    config_path = _repo_relative("../config", "out_otel_journald.yaml")
+    with open(config_path) as config_file:
+        config = yaml.safe_load(config_file)
+    if placement == "output":
+        config["pipeline"]["outputs"][0]["processors"] = (
+            config["pipeline"]["inputs"][0].pop("processors")
+        )
+        config["pipeline"]["outputs"].append({
+            "name": "opentelemetry",
+            "match": "*",
+            "host": "127.0.0.1",
+            "port": "${TEST_SUITE_HTTP_PORT}",
+            "logs_uri": "/raw/logs",
+        })
+    generated_config = tmp_path / "journald.yaml"
+    generated_config.write_text(yaml.safe_dump(config))
+    service = Service(str(generated_config))
+    service.start()
+    payload = [
+        {
+            "MESSAGE": "first",
+            "PRIORITY": "3",
+            "__REALTIME_TIMESTAMP": "1700000000123456",
+            "_HOSTNAME": "host-a",
+            "_PID": "42",
+            "_COMM": "app",
+            "_EXE": "/bin/app",
+            "_CMDLINE": "app -v",
+            "CODE_FILE": "app.c",
+            "CODE_LINE": "7",
+            "CODE_FUNC": "main",
+            "SYSLOG_IDENTIFIER": "untrusted-name",
+            "SYSLOG_PID": "99",
+            "SYSLOG_FACILITY": "3",
+            "SYSLOG_TIMESTAMP": "Sep 8 10:00:00",
+            "_SYSTEMD_UNIT": "app.service",
+            "EXTRA": ["one", "two"],
+        },
+        {"MESSAGE": "second", "PRIORITY": "7", "_HOSTNAME": "host-b", "_PID": "43"},
+        {"MESSAGE": "third", "PRIORITY": "bad", "_PID": "42x", "CODE_LINE": "-1"},
+        {"MESSAGE": "fourth", "_PID": "42", "_HOSTNAME": "host-a"},
+    ]
+    response = requests.post(
+        f"http://127.0.0.1:{service.flb_listener_port}/journal",
+        json=payload,
+        timeout=5,
+    )
+    response.raise_for_status()
+
+    def received_records(path="/v1/logs"):
+        records = []
+        for request_seen in data_storage["requests"]:
+            if request_seen["path"] != path:
+                continue
+            export = ExportLogsServiceRequest()
+            export.ParseFromString(request_seen["raw_payload"])
+            records.extend(iter_log_records(json.loads(json_format.MessageToJson(export))))
+        return records if len(records) >= len(payload) else None
+
+    records = service.service.wait_for_condition(
+        received_records, timeout=20, interval=0.25, description="mapped journal logs"
+    )
+    if placement == "output":
+        raw_records = service.service.wait_for_condition(
+            lambda: received_records("/raw/logs"), timeout=20, interval=0.25,
+            description="unmodified journal logs on the second output",
+        )
+        assert len(raw_records) == len(payload)
+        for (record, _, _), original in zip(raw_records, payload):
+            raw_body = _attributes_to_dict(record["body"]["kvlistValue"]["values"])
+            assert raw_body["MESSAGE"] == original["MESSAGE"]
+            assert raw_body["_PID"] == original["_PID"]
+    service.stop()
+    assert len(records) == 4
+    assert [record["body"]["stringValue"] for record, _, _ in records] == [
+        "first", "second", "third", "fourth"
+    ]
+    first, attrs, res = records[0]
+    assert first["timeUnixNano"] == "1700000000123456000"
+    assert first["severityNumber"] == "SEVERITY_NUMBER_ERROR"
+    assert first["severityText"] == "err"
+    assert res == {
+        "host.name": "host-a",
+        "process.pid": "42",
+        "process.executable.name": "app",
+        "process.executable.path": "/bin/app",
+        "process.command_line": "app -v",
+    }
+    assert attrs == {
+        "code.file.path": "app.c",
+        "code.line.number": "7",
+        "code.function.name": "main",
+        "syslog.identifier": "untrusted-name",
+        "syslog.pid": "99",
+        "syslog.facility.code": "3",
+        "syslog.timestamp": "Sep 8 10:00:00",
+        "journald._SYSTEMD_UNIT": "app.service",
+        "journald.EXTRA": {"values": [{"stringValue": "one"}, {"stringValue": "two"}]},
+    }
+    assert records[1][2] == {"host.name": "host-b", "process.pid": "43"}
+    assert records[1][0]["severityNumber"] == "SEVERITY_NUMBER_DEBUG"
+    assert records[2][2] == {}
+    assert "severityNumber" not in records[2][0]
+    assert records[2][1] == {
+        "journald.PRIORITY": "bad", "journald._PID": "42x", "journald.CODE_LINE": "-1"
+    }
+    assert records[3][2] == {"host.name": "host-a", "process.pid": "42"}
