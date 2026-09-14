@@ -82,6 +82,37 @@ struct record_check cri_output[] = {
   {"4b. non multiline 2"}
 };
 
+/* CRI, empty payload dropped via drop_empty_content */
+struct record_check issue_6703_input[] = {
+  {"2025-01-01T00:00:00.000000000Z stdout F hello world"},
+  {"2025-01-01T00:00:00.000000001Z stdout F "},
+  {"2025-01-01T00:00:00.000000002Z stdout F goodbye world"}
+};
+
+struct record_check issue_6703_output[] = {
+  {"hello world"},
+  {"goodbye world"}
+};
+
+/* Same input, drop_empty_content left off (default): behavior is unchanged */
+struct record_check issue_6703_disabled_output[] = {
+  {"hello world"},
+  {""},
+  {"goodbye world"}
+};
+
+/* CRI, every line in isolation is an empty payload */
+struct record_check issue_6703_all_empty_input[] = {
+  {"2025-01-01T00:00:00.000000000Z stdout F "},
+  {"2025-01-01T00:00:00.000000001Z stdout F "},
+  {"2025-01-01T00:00:00.000000002Z stdout F "}
+};
+
+/* Sink for issue_6703_all_empty: only read if the fix regresses */
+struct record_check issue_6703_all_empty_output[] = {
+  {""}, {""}, {""}
+};
+
 /* ENDSWITH */
 struct record_check endswith_input[] = {
   {"1a. some multiline log \\"},
@@ -631,6 +662,150 @@ static void test_parser_cri()
         /* Package as msgpack */
         flb_ml_append_text(ml, stream_id, &tm, r->buf, len);
     }
+
+    if (ml) {
+        flb_ml_destroy(ml);
+    }
+
+    flb_config_exit(config);
+}
+
+static void test_issue_6703()
+{
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id;
+    struct record_check *r;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+
+    res.key = "log";
+    res.out_records = issue_6703_output;
+
+    config = flb_config_init();
+
+    ml = flb_ml_create(config, "cri-drop-empty-test");
+    TEST_CHECK(ml != NULL);
+
+    mlp_i = flb_ml_parser_instance_create(ml, "cri");
+    TEST_CHECK(mlp_i != NULL);
+    mlp_i->drop_empty_content = FLB_TRUE;
+
+    ret = flb_ml_stream_create(ml, "cri-drop-empty", -1, flush_callback,
+                               (void *) &res, &stream_id);
+    TEST_CHECK(ret == 0);
+
+    entries = sizeof(issue_6703_input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        r = &issue_6703_input[i];
+        len = strlen(r->buf);
+        flb_time_get(&tm);
+        ret = flb_ml_append_text(ml, stream_id, &tm, r->buf, len);
+        TEST_CHECK(ret == FLB_MULTILINE_OK);
+    }
+
+    TEST_CHECK(res.current_record == 2);
+
+    if (ml) {
+        flb_ml_destroy(ml);
+    }
+
+    flb_config_exit(config);
+}
+
+static void test_issue_6703_disabled()
+{
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id;
+    struct record_check *r;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+
+    res.key = "log";
+    res.out_records = issue_6703_disabled_output;
+
+    config = flb_config_init();
+
+    ml = flb_ml_create(config, "cri-drop-empty-disabled-test");
+    TEST_CHECK(ml != NULL);
+
+    mlp_i = flb_ml_parser_instance_create(ml, "cri");
+    TEST_CHECK(mlp_i != NULL);
+    TEST_CHECK(mlp_i->drop_empty_content == FLB_FALSE);
+
+    ret = flb_ml_stream_create(ml, "cri-drop-empty-disabled", -1, flush_callback,
+                               (void *) &res, &stream_id);
+    TEST_CHECK(ret == 0);
+
+    entries = sizeof(issue_6703_input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        r = &issue_6703_input[i];
+        len = strlen(r->buf);
+        flb_time_get(&tm);
+        ret = flb_ml_append_text(ml, stream_id, &tm, r->buf, len);
+        TEST_CHECK(ret == FLB_MULTILINE_OK);
+    }
+
+    TEST_CHECK(res.current_record == 3);
+
+    if (ml) {
+        flb_ml_destroy(ml);
+    }
+
+    flb_config_exit(config);
+}
+
+static void test_issue_6703_all_empty()
+{
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id;
+    struct record_check *r;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+
+    res.key = "log";
+    res.out_records = issue_6703_all_empty_output;
+
+    config = flb_config_init();
+
+    ml = flb_ml_create(config, "cri-drop-empty-all-empty-test");
+    TEST_CHECK(ml != NULL);
+
+    mlp_i = flb_ml_parser_instance_create(ml, "cri");
+    TEST_CHECK(mlp_i != NULL);
+    mlp_i->drop_empty_content = FLB_TRUE;
+
+    ret = flb_ml_stream_create(ml, "cri-drop-empty-all-empty", -1, flush_callback,
+                               (void *) &res, &stream_id);
+    TEST_CHECK(ret == 0);
+
+    entries = sizeof(issue_6703_all_empty_input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        r = &issue_6703_all_empty_input[i];
+        len = strlen(r->buf);
+        flb_time_get(&tm);
+        ret = flb_ml_append_text(ml, stream_id, &tm, r->buf, len);
+        TEST_CHECK(ret == FLB_MULTILINE_OK);
+    }
+
+    TEST_CHECK(res.current_record == 0);
 
     if (ml) {
         flb_ml_destroy(ml);
@@ -2253,5 +2428,8 @@ TEST_LIST = {
     { "issue_5504"    , test_issue_5504},
     { "issue_10576"   , test_issue_10576},
     { "issue_truncation_10576", test_issue_truncation_10576 },
+    { "issue_6703"    , test_issue_6703},
+    { "issue_6703_disabled", test_issue_6703_disabled},
+    { "issue_6703_all_empty", test_issue_6703_all_empty},
     { 0 }
 };
