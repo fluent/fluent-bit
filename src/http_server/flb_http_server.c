@@ -247,6 +247,9 @@ static int flb_http_server_session_read(struct flb_http_server_session *session)
         return -1;
     }
 
+    /* A timeout is an error until the newly received request is fully drained. */
+    session->connection->io_timeout_log_error = FLB_TRUE;
+
     result = (ssize_t) flb_http_server_session_ingest(session,
                                                       session->read_buffer,
                                                       result);
@@ -390,6 +393,22 @@ static int flb_http_server_request_callback_dispatch(void *data)
                                              context->response);
 }
 
+static int flb_http_server_session_is_idle(struct flb_http_server_session *session)
+{
+    if (!cfl_list_is_empty(&session->request_queue) ||
+        cfl_sds_len(session->outgoing_data) > 0) {
+        return FLB_FALSE;
+    }
+
+    if (session->version == HTTP_PROTOCOL_VERSION_AUTODETECT ||
+        session->version <= HTTP_PROTOCOL_VERSION_11) {
+        return cfl_sds_len(session->incoming_data) == 0;
+    }
+
+    /* The HTTP/2 parser can retain an incomplete frame outside these buffers. */
+    return FLB_FALSE;
+}
+
 static int flb_http_server_client_activity_event_handler(void *data)
 {
     int                             close_connection;
@@ -500,6 +519,9 @@ static int flb_http_server_client_activity_event_handler(void *data)
     if (close_connection) {
         flb_http_server_session_destroy(session);
     }
+    else if (flb_http_server_session_is_idle(session)) {
+        connection->io_timeout_log_error = FLB_FALSE;
+    }
 
     return 0;
 }
@@ -549,6 +571,11 @@ static int flb_http_server_client_connection_initialize(
         flb_http_server_session_destroy(session);
 
         return -4;
+    }
+
+    if (session->version == HTTP_PROTOCOL_VERSION_AUTODETECT ||
+        session->version <= HTTP_PROTOCOL_VERSION_11) {
+        connection->io_timeout_log_error = FLB_FALSE;
     }
 
     return 0;
