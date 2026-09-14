@@ -7,6 +7,8 @@
 #include <fluent-bit/flb_http_client.h>
 
 #include <monkey/mk_core.h>
+#include <pthread.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -221,6 +223,83 @@ struct flb_http_client *request_eks_test1(struct flb_aws_client *aws_client,
     return c;
 }
 
+/*
+ * Mock for the concurrency test. Every call hands back a different set of
+ * credentials, with the same generation number embedded in all three fields.
+ * That lets a reader tell whether it copied a single, coherent set or mixed
+ * fields from two different refreshes.
+ *
+ * Only the writer thread ever reaches this function, so the counter does not
+ * need to be atomic.
+ */
+static int g_concurrency_generation;
+
+static char *build_eks_response_for_generation(int generation, size_t *out_len)
+{
+    time_t exp = time(NULL) + 3600;
+    struct tm gm;
+    char expbuf[32];
+    const char *tmpl;
+    size_t need;
+    char *buf;
+
+    gmtime_r(&exp, &gm);
+    strftime(expbuf, sizeof(expbuf), "%Y-%m-%dT%H:%M:%SZ", &gm);
+
+    tmpl =
+        "<AssumeRoleWithWebIdentityResponse "
+        "xmlns=\"https://sts.amazonaws.com/doc/2011-06-15/\">\n"
+        "  <AssumeRoleWithWebIdentityResult>\n"
+        "    <Credentials>\n"
+        "      <SessionToken>token_%d</SessionToken>\n"
+        "      <SecretAccessKey>skid_%d</SecretAccessKey>\n"
+        "      <Expiration>%s</Expiration>\n"
+        "      <AccessKeyId>akid_%d</AccessKeyId>\n"
+        "    </Credentials>\n"
+        "  </AssumeRoleWithWebIdentityResult>\n"
+        "</AssumeRoleWithWebIdentityResponse>";
+
+    need = (size_t) snprintf(NULL, 0, tmpl, generation, generation, expbuf,
+                             generation) + 1;
+    buf = flb_calloc(1, need);
+    if (!buf) {
+        flb_errno();
+        return NULL;
+    }
+    snprintf(buf, need, tmpl, generation, generation, expbuf, generation);
+
+    if (out_len) {
+        *out_len = need - 1;
+    }
+    return buf;
+}
+
+struct flb_http_client *request_eks_concurrency(struct flb_aws_client *aws_client,
+                                                int method, const char *uri)
+{
+    struct flb_http_client *c;
+    char *payload = NULL;
+    size_t payload_len = 0;
+
+    c = flb_calloc(1, sizeof(struct flb_http_client));
+    if (!c) {
+        flb_errno();
+        return NULL;
+    }
+    mk_list_init(&c->headers);
+
+    payload = build_eks_response_for_generation(++g_concurrency_generation,
+                                                &payload_len);
+    if (!payload) {
+        flb_free(c);
+        return NULL;
+    }
+
+    http_test_attach_owned_payload(c, payload, payload_len);
+
+    return c;
+}
+
 struct flb_http_client *request_eks_flb_sts_session_name(struct flb_aws_client
                                                          *aws_client,
                                                          int method,
@@ -363,6 +442,8 @@ struct flb_http_client *test_http_client_request(struct flb_aws_client *aws_clie
          */
         if (strstr(uri, "test1") != NULL) {
             return request_eks_test1(aws_client, method, uri);
+        } else if (strstr(uri, "concurrency") != NULL) {
+            return request_eks_concurrency(aws_client, method, uri);
         } else if (strstr(uri, "randomsession") != NULL) {
             return request_eks_flb_sts_session_name(aws_client, method, uri);
         } else if (strstr(uri, "apierror") != NULL) {
@@ -566,6 +647,203 @@ static void test_eks_provider() {
      * - One for the call to refresh
      */
      TEST_CHECK(g_request_count == 2);
+
+    flb_aws_provider_destroy(provider);
+    unsetenv_eks();
+    flb_config_exit(config);
+}
+
+/*
+ * Regression test for https://github.com/fluent/fluent-bit/issues/12206
+ *
+ * With `workers N` an output runs its flushes on N real threads that all share
+ * one credential provider. get_credentials() used to copy the cached
+ * credentials without holding the provider lock while the refresh path freed
+ * and replaced them under it, so a reader could copy freed memory, see the
+ * NULL the refresh left behind mid-swap, or end up with an access key and a
+ * secret key from two different refreshes.
+ *
+ * Here one thread refreshes in a loop while several read in a loop. The mock
+ * STS response tags all three credential fields with the same generation
+ * number, so a torn read is detectable. Run under ASan or TSan to also catch
+ * the use-after-free itself.
+ */
+
+#define CONCURRENCY_READERS  6
+#define CONCURRENCY_REFRESHES 3000
+
+struct concurrency_ctx {
+    struct flb_aws_provider *provider;
+    int stop;
+
+    /* results, one slot per reader so they need no synchronization */
+    int null_creds[CONCURRENCY_READERS];
+    int torn_creds[CONCURRENCY_READERS];
+    int reads[CONCURRENCY_READERS];
+};
+
+struct concurrency_reader_arg {
+    struct concurrency_ctx *ctx;
+    int id;
+};
+
+/* Returns the generation number in a "<prefix>_<n>" credential field */
+static int credential_generation(const char *value, const char *prefix)
+{
+    size_t prefix_len = strlen(prefix);
+
+    if (!value || strncmp(value, prefix, prefix_len) != 0) {
+        return -1;
+    }
+
+    return atoi(value + prefix_len);
+}
+
+static void *concurrency_reader(void *arg)
+{
+    struct concurrency_reader_arg *reader = arg;
+    struct concurrency_ctx *ctx = reader->ctx;
+    struct flb_aws_provider *provider = ctx->provider;
+    struct flb_aws_credentials *creds;
+    int akid;
+    int skid;
+    int token;
+
+    while (ctx->stop == FLB_FALSE) {
+        creds = provider->provider_vtable->get_credentials(provider);
+        if (!creds) {
+            ctx->null_creds[reader->id]++;
+            continue;
+        }
+
+        akid = credential_generation(creds->access_key_id, "akid_");
+        skid = credential_generation(creds->secret_access_key, "skid_");
+        token = credential_generation(creds->session_token, "token_");
+
+        if (akid < 0 || akid != skid || akid != token) {
+            ctx->torn_creds[reader->id]++;
+        }
+
+        ctx->reads[reader->id]++;
+        flb_aws_credentials_destroy(creds);
+    }
+
+    return NULL;
+}
+
+static void *concurrency_writer(void *arg)
+{
+    struct concurrency_ctx *ctx = arg;
+    struct flb_aws_provider *provider = ctx->provider;
+    int i;
+
+    for (i = 0; i < CONCURRENCY_REFRESHES; i++) {
+        provider->provider_vtable->refresh(provider);
+    }
+
+    ctx->stop = FLB_TRUE;
+    return NULL;
+}
+
+static void test_eks_provider_concurrent_refresh()
+{
+    struct flb_config *config;
+    struct flb_aws_provider *provider;
+    struct flb_aws_credentials *creds;
+    struct concurrency_ctx ctx;
+    struct concurrency_reader_arg args[CONCURRENCY_READERS];
+    pthread_t readers[CONCURRENCY_READERS];
+    pthread_t writer;
+    int total_null = 0;
+    int total_torn = 0;
+    int total_reads = 0;
+    int ret;
+    int i;
+
+    g_request_count = 0;
+    g_concurrency_generation = 0;
+
+    config = flb_config_init();
+    if (config == NULL) {
+        return;
+    }
+
+    ret = setenv(ROLE_ARN_ENV_VAR,
+                 "arn:aws:iam::123456789012:role/concurrency", 1);
+    if (ret < 0) {
+        flb_errno();
+        flb_config_exit(config);
+        return;
+    }
+    ret = setenv(SESSION_NAME_ENV_VAR, "session_name", 1);
+    if (ret < 0) {
+        flb_errno();
+        flb_config_exit(config);
+        return;
+    }
+    ret = setenv(TOKEN_FILE_ENV_VAR, WEB_TOKEN_FILE, 1);
+    if (ret < 0) {
+        flb_errno();
+        flb_config_exit(config);
+        return;
+    }
+
+    provider = flb_eks_provider_create(config, NULL, "us-west-2",
+                                       "https://sts.us-west-2.amazonaws.com",
+                                       NULL, generator_in_test());
+    if (!TEST_CHECK(provider != NULL)) {
+        unsetenv_eks();
+        flb_config_exit(config);
+        return;
+    }
+
+    /* prime the cache so the readers never have to refresh themselves */
+    creds = provider->provider_vtable->get_credentials(provider);
+    if (!TEST_CHECK(creds != NULL)) {
+        flb_aws_provider_destroy(provider);
+        unsetenv_eks();
+        flb_config_exit(config);
+        return;
+    }
+    flb_aws_credentials_destroy(creds);
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.provider = provider;
+    ctx.stop = FLB_FALSE;
+
+    for (i = 0; i < CONCURRENCY_READERS; i++) {
+        args[i].ctx = &ctx;
+        args[i].id = i;
+        ret = pthread_create(&readers[i], NULL, concurrency_reader, &args[i]);
+        TEST_CHECK(ret == 0);
+    }
+
+    ret = pthread_create(&writer, NULL, concurrency_writer, &ctx);
+    TEST_CHECK(ret == 0);
+
+    pthread_join(writer, NULL);
+    for (i = 0; i < CONCURRENCY_READERS; i++) {
+        pthread_join(readers[i], NULL);
+
+        total_null += ctx.null_creds[i];
+        total_torn += ctx.torn_creds[i];
+        total_reads += ctx.reads[i];
+    }
+
+    /* the readers should have actually run */
+    TEST_CHECK(total_reads > 0);
+    TEST_MSG("reads=%d", total_reads);
+
+    /*
+     * The cache is primed and the credentials are valid for an hour, so a
+     * reader has no reason to ever come back empty handed or with a set of
+     * credentials that was stitched together from two refreshes.
+     */
+    TEST_CHECK(total_null == 0);
+    TEST_MSG("get_credentials returned NULL %d times", total_null);
+
+    TEST_CHECK(total_torn == 0);
+    TEST_MSG("got %d torn credential sets", total_torn);
 
     flb_aws_provider_destroy(provider);
     unsetenv_eks();
@@ -1019,6 +1297,8 @@ TEST_LIST = {
     { "test_sts_uri" , test_sts_uri},
     { "process_sts_response" , test_process_sts_response},
     { "eks_credential_provider" , test_eks_provider},
+    { "eks_credential_provider_concurrent_refresh" ,
+      test_eks_provider_concurrent_refresh},
     { "eks_credential_provider_random_session_name" ,
       test_eks_provider_random_session_name},
     { "test_eks_provider_unexpected_api_response" ,
