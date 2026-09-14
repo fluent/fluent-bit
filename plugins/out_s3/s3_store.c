@@ -206,8 +206,6 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
     struct flb_fstore_file *fsf = NULL;
     struct s3_file *s3_file;
 
-    pthread_mutex_lock(&ctx->files_mutex);
-
     /*
      * Based in the current ctx->stream_name, locate a candidate file to
      * store the incoming data using as a lookup pattern the content Tag.
@@ -245,12 +243,10 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
     }
 
     if (!fsf) {
-        pthread_mutex_unlock(&ctx->files_mutex);
         return NULL;
     }
 
     s3_file = fsf->data;
-    pthread_mutex_unlock(&ctx->files_mutex);
 
     return s3_file;
 }
@@ -269,8 +265,6 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
     uint64_t new_buffer_size;
 
     result = -1;
-    pthread_mutex_lock(&ctx->files_mutex);
-
     ret = buffer_size_reserve(ctx, bytes, &current_buffer_size,
                               &new_buffer_size);
     if (ret < 0) {
@@ -322,6 +316,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
             goto done;
         }
         s3_file->fsf = fsf;
+        s3_file->upload_scan_id = ctx->upload_scan_id;
         s3_file->first_log_time = file_first_log_time;
         s3_file->create_time = time(NULL);
 
@@ -357,7 +352,6 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
     result = 0;
 
 done:
-    pthread_mutex_unlock(&ctx->files_mutex);
     return result;
 }
 
