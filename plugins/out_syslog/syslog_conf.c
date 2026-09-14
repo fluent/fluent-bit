@@ -60,6 +60,118 @@ static int is_valid_facility(struct flb_output_instance *ins, int val, int forma
     return 0;
 }
 
+static int is_valid_sd_name_character(unsigned char value)
+{
+    if (value < 33 || value > 126) {
+        return FLB_FALSE;
+    }
+
+    if (value == '=' || value == ']' || value == '"') {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
+static int validate_sd_name(const char **cursor, int allow_longer_sd_id,
+                            char delimiter)
+{
+    int length;
+    const char *position;
+
+    length = 0;
+    position = *cursor;
+
+    while (*position != '\0' && *position != delimiter &&
+           !(delimiter == ']' && *position == ' ')) {
+        if (!is_valid_sd_name_character((unsigned char) *position)) {
+            return -1;
+        }
+
+        length++;
+        position++;
+    }
+
+    if (length == 0 ||
+        (*position != delimiter && !(delimiter == ']' && *position == ' '))) {
+        return -1;
+    }
+
+    if (allow_longer_sd_id != FLB_TRUE && length > 32) {
+        return -1;
+    }
+
+    *cursor = position;
+
+    return 0;
+}
+
+static int validate_sd_preset(const char *preset, int allow_longer_sd_id)
+{
+    const char *cursor;
+
+    if (strcmp(preset, "-") == 0) {
+        return 0;
+    }
+
+    cursor = preset;
+
+    while (*cursor != '\0') {
+        if (*cursor != '[') {
+            return -1;
+        }
+        cursor++;
+
+        if (validate_sd_name(&cursor, allow_longer_sd_id, ']') != 0) {
+            return -1;
+        }
+
+        while (*cursor == ' ') {
+            cursor++;
+
+            if (validate_sd_name(&cursor, allow_longer_sd_id, '=') != 0) {
+                return -1;
+            }
+            cursor++;
+
+            if (*cursor != '"') {
+                return -1;
+            }
+            cursor++;
+
+            while (*cursor != '\0' && *cursor != '"') {
+                if (*cursor == '\\') {
+                    cursor++;
+                    if (*cursor != '"' && *cursor != '\\' && *cursor != ']') {
+                        return -1;
+                    }
+                }
+                else if (*cursor == ']' ||
+                         (unsigned char) *cursor < 32 || *cursor == 127) {
+                    return -1;
+                }
+                cursor++;
+            }
+
+            if (*cursor != '"') {
+                return -1;
+            }
+            cursor++;
+
+            if (*cursor != ' ' && *cursor != ']') {
+                return -1;
+            }
+        }
+
+        if (*cursor != ']') {
+            return -1;
+        }
+        cursor++;
+    }
+
+    return cursor != preset ? 0 : -1;
+}
+
 
 struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
                                             struct flb_config *config)
@@ -77,6 +189,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
     ctx->ins = ins;
     ctx->parsed_mode = FLB_SYSLOG_UDP;
     ctx->parsed_format = FLB_SYSLOG_RFC5424;
+    ctx->parsed_framing = FLB_SYSLOG_FRAMING_NEWLINE;
     ctx->maxsize = -1;
 
     /* Populate context with config map defaults and incoming properties */
@@ -117,6 +230,31 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+    /* syslog_framing */
+    tmp = flb_output_get_property("syslog_framing", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "newline") == 0) {
+            ctx->parsed_framing = FLB_SYSLOG_FRAMING_NEWLINE;
+        }
+        else if (strcasecmp(tmp, "octet_counting") == 0) {
+            ctx->parsed_framing = FLB_SYSLOG_FRAMING_OCTET_COUNTING;
+        }
+        else {
+            flb_plg_error(ctx->ins, "unknown syslog framing %s", tmp);
+            flb_syslog_config_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    if (ctx->parsed_framing == FLB_SYSLOG_FRAMING_OCTET_COUNTING &&
+        ctx->parsed_mode != FLB_SYSLOG_TCP && ctx->parsed_mode != FLB_SYSLOG_TLS) {
+        flb_plg_error(ctx->ins,
+                      "invalid configuration: syslog_framing=octet_counting "
+                      "requires mode=tcp or mode=tls");
+        flb_syslog_config_destroy(ctx);
+        return NULL;
+    }
+
     /* syslog_format */
     tmp = flb_output_get_property("syslog_format", ins);
     if (tmp) {
@@ -135,6 +273,13 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
 
     if (ctx->parsed_format == FLB_SYSLOG_RFC5424 && ctx->allow_longer_sd_id == FLB_TRUE) {
         flb_plg_warn(ctx->ins, "Allow longer SD-ID. It may violate RFC5424.");
+    }
+
+    if (ctx->parsed_format == FLB_SYSLOG_RFC5424 && ctx->sd_preset != NULL &&
+        validate_sd_preset(ctx->sd_preset, ctx->allow_longer_sd_id) != 0) {
+        flb_plg_error(ctx->ins, "invalid syslog_sd_preset");
+        flb_syslog_config_destroy(ctx);
+        return NULL;
     }
 
     /* validate preset values */

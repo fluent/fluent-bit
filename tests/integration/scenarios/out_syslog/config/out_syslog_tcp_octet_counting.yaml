@@ -8,15 +8,16 @@ pipeline:
   inputs:
     - name: dummy
       tag: out_syslog
-      dummy: '{"message":"hello from out_syslog"}'
-      rate: 1
+      dummy: '{"message":"multiline first\nsecond line 日本語"}'
+      copies: 2
+      samples: 1
 
   outputs:
     - name: syslog
       match: out_syslog
       host: 127.0.0.1
       port: ${SYSLOG_RECEIVER_PORT}
-      mode: tls
-      tls.verify: off
+      mode: tcp
+      syslog_format: rfc3164
       syslog_message_key: message
-      syslog_framing: newline
+      syslog_framing: octet_counting
