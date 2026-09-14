@@ -1,0 +1,18 @@
+service:
+  flush: 0.2
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: manticore_retry
+      dummy: '{"id":"43","message":"retry-item"}'
+      samples: 1
+
+  outputs:
+    - name: manticore
+      match: '*'
+      host: 127.0.0.1
+      port: ${MANTICORE_PORT}
+      table: wire_logs
+      action: create

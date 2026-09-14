@@ -1,0 +1,24 @@
+service:
+  flush: 0.2
+  log_level: info
+  parsers_file: ${MANTICORE_PARSERS_FILE}
+
+pipeline:
+  inputs:
+    - name: tail
+      tag: manticore_session
+      path: ${MANTICORE_INPUT_PATH}
+      read_from_head: true
+      exit_on_eof: true
+      parser: session_json
+
+  outputs:
+    - name: manticore
+      match: '*'
+      host: 127.0.0.1
+      port: ${MANTICORE_PORT}
+      table: session_logs
+      workers: 1
+      single_chunk: true
+      spool_path: ${MANTICORE_SPOOL_PATH}
+      stream_chunk_size: 64K
