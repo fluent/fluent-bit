@@ -254,6 +254,7 @@ endif()
 
 # Output Plugins
 if(FLB_IN_LIB)
+  FLB_RT_TEST(1                        "output_throttle_runtime.c")
   FLB_RT_TEST(FLB_OUT_LIB              "core_engine.c")
   FLB_RT_TEST(FLB_OUT_LIB              "core_log.c")
   FLB_RT_TEST(FLB_OUT_LIB              "core_routes.c")
@@ -393,6 +394,10 @@ foreach(source_file ${CHECK_PROGRAMS})
     set_property(TARGET ${source_file_we} APPEND_STRING PROPERTY COMPILE_FLAGS "-D${o_source_file_we}")
   endif()
 endforeach()
+
+if(TEST flb-rt-output_throttle_runtime)
+  set_tests_properties(flb-rt-output_throttle_runtime PROPERTIES TIMEOUT 120)
+endif()
 
 function(flb_runtime_lock_tests resource_name)
   foreach(test_name ${ARGN})

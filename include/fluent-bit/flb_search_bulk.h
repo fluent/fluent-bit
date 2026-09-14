@@ -34,6 +34,7 @@ int flb_search_bulk_process_response(const char *response,
                                      const char *payload,
                                      size_t payload_size,
                                      int acknowledge_all_conflicts,
+                                     int *throttled,
                                      struct flb_search_bulk_retry **retry);
 void flb_search_bulk_retry_destroy(void *data);
 

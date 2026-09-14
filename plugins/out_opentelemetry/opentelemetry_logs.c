@@ -916,7 +916,9 @@ static void free_resource_logs(Opentelemetry__Proto__Logs__V1__ResourceLogs **re
     flb_free(resource_logs);
 }
 
-static int logs_flush_to_otel(struct opentelemetry_context *ctx, struct flb_event_chunk *event_chunk,
+static int logs_flush_to_otel(struct opentelemetry_context *ctx,
+                              struct flb_event_chunk *event_chunk,
+                              struct flb_output_flush *out_flush,
                               Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest *export_logs)
 {
     int ret;
@@ -941,7 +943,8 @@ static int logs_flush_to_otel(struct opentelemetry_context *ctx, struct flb_even
                              event_chunk->tag,
                              flb_sds_len(event_chunk->tag),
                              ctx->logs_uri_sanitized,
-                             ctx->grpc_logs_uri);
+                             ctx->grpc_logs_uri,
+                             out_flush);
     flb_free(body);
 
     return ret;
@@ -1568,7 +1571,7 @@ start_resource:
         scope_log->n_log_records = log_record_count;
 
         if (log_record_count >= ctx->batch_size) {
-            ret = logs_flush_to_otel(ctx, event_chunk, &export_logs);
+            ret = logs_flush_to_otel(ctx, event_chunk, out_flush, &export_logs);
             free_log_records(log_records, log_record_count);
             log_record_count = 0;
             scope_log->n_log_records = 0;
@@ -1578,7 +1581,7 @@ start_resource:
     flb_log_event_decoder_destroy(decoder);
 
     if (log_record_count > 0 && ret == FLB_OK) {
-        ret = logs_flush_to_otel(ctx, event_chunk, &export_logs);
+        ret = logs_flush_to_otel(ctx, event_chunk, out_flush, &export_logs);
     }
 
     /* release all protobuf resources */

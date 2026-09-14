@@ -22,6 +22,8 @@
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -752,6 +754,41 @@ int flb_utils_time_to_seconds(const char *time)
     }
 
     return val;
+}
+
+int flb_utils_time_to_seconds_strict(const char *time, int *seconds)
+{
+    int result;
+    char *end;
+    long checked_value;
+    const unsigned char *cursor;
+
+    if (time == NULL || seconds == NULL || time[0] == '\0') {
+        return -1;
+    }
+
+    cursor = (const unsigned char *) time;
+    while (*cursor != '\0') {
+        if (isdigit(*cursor) == 0) {
+            return -1;
+        }
+        cursor++;
+    }
+
+    errno = 0;
+    checked_value = strtol(time, &end, 10);
+    if (errno == ERANGE || end == time || *end != '\0' ||
+        checked_value <= 0 || checked_value > INT_MAX) {
+        return -1;
+    }
+
+    result = flb_utils_time_to_seconds(time);
+    if (result <= 0 || result != checked_value) {
+        return -1;
+    }
+
+    *seconds = result;
+    return 0;
 }
 
 int flb_utils_bool(const char *val)

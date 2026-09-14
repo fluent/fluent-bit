@@ -44,6 +44,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/flb_output_thread.h>
+#include <fluent-bit/flb_output_throttle.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_event.h>
@@ -109,6 +110,20 @@ int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_inst
 
 struct flb_output_flush;
 struct flb_http_server_config;
+struct flb_sched_timer;
+
+#define FLB_OUTPUT_DISPATCH_MAGIC 0x4f445350u
+#define FLB_OUTPUT_DISPATCH_TASK  1
+
+struct flb_output_dispatch {
+    uint32_t magic;
+    uint32_t type;
+    int result;
+    struct flb_task *task;
+    struct flb_output_instance *out;
+    struct flb_config *config;
+    struct mk_list _head;
+};
 
 /*
  * Tests callbacks
@@ -371,6 +386,13 @@ struct flb_output_instance {
     /* Plugin properties */
     int retry_limit;                     /* max of retries allowed       */
     int retry_limit_is_set;              /* explicitly set by user?      */
+    struct flb_output_throttle throttle; /* destination cooldown gate    */
+    struct mk_list throttle_deferred_routes; /* engine-owned route index */
+    size_t throttle_deferred_count;
+    size_t dispatches_inflight;          /* queued, active, or completing */
+    struct flb_sched_timer *throttle_wakeup;
+    int throttle_wakeup_pending;
+    uint64_t throttle_duration_accounted_ms;
     int use_tls;                         /* bool, try to use TLS for I/O */
     char *match;                         /* match rule for tag/routing   */
 #ifdef FLB_HAVE_REGEX
@@ -497,6 +519,11 @@ struct flb_output_instance {
     struct cmt_histogram *cmt_latency;
     /* m: output_backpressure_wait_seconds */
     struct cmt_histogram *cmt_backpressure_wait;
+    struct cmt_counter *cmt_throttle_events;
+    struct cmt_gauge *cmt_throttle_active;
+    struct cmt_gauge *cmt_throttle_remaining;
+    struct cmt_gauge *cmt_throttle_deferred_routes;
+    struct cmt_counter *cmt_throttle_duration;
 
     /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
@@ -589,6 +616,9 @@ struct flb_output_flush {
     struct flb_config *config;         /* FLB context        */
     struct flb_output_instance *o_ins; /* output instance    */
     struct flb_coro *coro;             /* parent coro addr   */
+    uint64_t admission_generation;     /* throttle permit generation */
+    uint64_t retry_after_ms;           /* flush-local destination hint */
+    int retry_after_present;
 
     /*
      * if the original event_chunk has been processed, a new
@@ -599,6 +629,13 @@ struct flb_output_flush {
 
     struct mk_list _head;              /* Link to flb_task->threads */
 };
+
+static FLB_INLINE void flb_output_set_retry_after(struct flb_output_flush *out_flush,
+                                                  uint64_t delay_ms)
+{
+    out_flush->retry_after_ms = delay_ms;
+    out_flush->retry_after_present = FLB_TRUE;
+}
 
 static FLB_INLINE void *flb_output_get_retry_context(
                         struct flb_output_flush *out_flush,
@@ -1274,6 +1311,20 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
     return out_flush;
 }
 
+struct flb_output_dispatch *flb_output_dispatch_create(
+                                struct flb_task *task,
+                                struct flb_output_instance *out,
+                                struct flb_config *config);
+void flb_output_dispatch_destroy(struct flb_output_dispatch *dispatch);
+int flb_output_dispatch_post_result(struct flb_output_dispatch *dispatch,
+                                    int result, flb_pipefd_t pipe_fd);
+int flb_output_throttle_complete(struct flb_output_flush *out_flush, int result);
+int flb_output_throttle_wakeup_schedule(struct flb_output_instance *ins);
+void flb_output_throttle_wakeup_cancel(struct flb_output_instance *ins);
+void flb_output_throttle_wakeup_scan(struct flb_config *config);
+void flb_output_throttle_metrics_update(struct flb_output_instance *ins,
+                                        uint64_t now_ms);
+
 /*
  * This function is used by the output plugins to return. It's mandatory
  * as it will take care to signal the event loop letting know the flush
@@ -1298,6 +1349,7 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     out_flush = (struct flb_output_flush *) co->data;
     o_ins = out_flush->o_ins;
     task = out_flush->task;
+    ret = flb_output_throttle_complete(out_flush, ret);
 
     if (out_flush->processed_event_chunk) {
         counted_event_chunk = out_flush->processed_event_chunk;
@@ -1321,6 +1373,7 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     }
     flb_task_set_route_data(task, o_ins, records, bytes);
     flb_task_deactivate_route(task, o_ins);
+    flb_task_route_complete(task, o_ins);
     flb_task_release_lock(task);
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -1469,6 +1522,7 @@ int flb_output_task_singleplex_enqueue(struct flb_task_queue *queue,
                                        struct flb_task *task,
                                        struct flb_output_instance *out_ins,
                                        struct flb_config *config);
+void flb_output_task_singleplex_complete(struct flb_task_queue *queue);
 int flb_output_task_singleplex_flush_next(struct flb_task_queue *queue);
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            const char *output, void *data,

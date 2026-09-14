@@ -319,7 +319,8 @@ static int top_level_errors_is_false(const char *json, size_t size)
 }
 
 static int item_is_acknowledged(msgpack_object item,
-                                int acknowledge_all_conflicts)
+                                int acknowledge_all_conflicts,
+                                int *status_code)
 {
     int index;
     int status;
@@ -353,6 +354,7 @@ static int item_is_acknowledged(msgpack_object item,
     if (status < 0) {
         return -1;
     }
+    *status_code = status;
     if (status >= 200 && status < 300) {
         return FLB_TRUE;
     }
@@ -414,6 +416,7 @@ int flb_search_bulk_process_response(const char *response,
                                      const char *payload,
                                      size_t payload_size,
                                      int acknowledge_all_conflicts,
+                                     int *out_throttled,
                                      struct flb_search_bulk_retry **out_retry)
 {
     int index;
@@ -422,6 +425,7 @@ int flb_search_bulk_process_response(const char *response,
     int errors_found;
     int has_errors;
     int acknowledged;
+    int status_code;
     char *packed_response;
     size_t packed_size;
     size_t unpack_offset;
@@ -436,6 +440,7 @@ int flb_search_bulk_process_response(const char *response,
     struct flb_search_bulk_retry *retry;
 
     *out_retry = NULL;
+    *out_throttled = FLB_FALSE;
     packed_response = NULL;
     retry = NULL;
     items.type = MSGPACK_OBJECT_NIL;
@@ -526,12 +531,16 @@ int flb_search_bulk_process_response(const char *response,
         }
 
         acknowledged = item_is_acknowledged(items.via.array.ptr[index],
-                                            acknowledge_all_conflicts);
+                                            acknowledge_all_conflicts,
+                                            &status_code);
         if (acknowledged < 0) {
             result = FLB_SEARCH_BULK_INVALID;
             goto done;
         }
         if (acknowledged == FLB_FALSE) {
+            if (status_code == 429) {
+                *out_throttled = FLB_TRUE;
+            }
             memcpy(retry->payload + retry->size,
                    payload + entry_start, entry_size);
             retry->size += entry_size;
@@ -553,6 +562,9 @@ int flb_search_bulk_process_response(const char *response,
     result = FLB_SEARCH_BULK_RETRY;
 
  done:
+    if (result != FLB_SEARCH_BULK_RETRY) {
+        *out_throttled = FLB_FALSE;
+    }
     flb_search_bulk_retry_destroy(retry);
     msgpack_unpacked_destroy(&unpacked);
     flb_free(packed_response);

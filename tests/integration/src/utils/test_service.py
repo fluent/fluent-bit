@@ -79,6 +79,7 @@ class FluentBitTestService:
         self.flb = FluentBitManager(self.config_path)
         self.flb_listener_port = self._allocate_port()
         self.test_suite_http_port = self._allocate_port()
+        self.flb.http_monitoring_port = str(self._allocate_port())
         self._set_env("FLUENT_BIT_TEST_LISTENER_PORT", str(self.flb_listener_port))
         self._set_env("TEST_SUITE_HTTP_PORT", str(self.test_suite_http_port))
 
