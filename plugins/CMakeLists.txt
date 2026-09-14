@@ -372,6 +372,7 @@ REGISTER_OUT_PLUGIN("out_file")
 REGISTER_OUT_PLUGIN("out_forward")
 REGISTER_OUT_PLUGIN("out_http")
 REGISTER_OUT_PLUGIN("out_influxdb")
+REGISTER_OUT_PLUGIN("out_manticore")
 REGISTER_OUT_PLUGIN("out_logdna")
 REGISTER_OUT_PLUGIN("out_loki")
 
