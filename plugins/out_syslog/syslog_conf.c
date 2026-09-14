@@ -77,6 +77,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
     ctx->ins = ins;
     ctx->parsed_mode = FLB_SYSLOG_UDP;
     ctx->parsed_format = FLB_SYSLOG_RFC5424;
+    ctx->parsed_framing = FLB_SYSLOG_FRAMING_NEWLINE;
     ctx->maxsize = -1;
 
     /* Populate context with config map defaults and incoming properties */
@@ -113,6 +114,31 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins,
                       "invalid configuration: mode=udp with tls=on is unsupported; "
                       "use mode=dtls for secure datagram transport");
+        flb_syslog_config_destroy(ctx);
+        return NULL;
+    }
+
+    /* syslog_framing */
+    tmp = flb_output_get_property("syslog_framing", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "newline") == 0) {
+            ctx->parsed_framing = FLB_SYSLOG_FRAMING_NEWLINE;
+        }
+        else if (strcasecmp(tmp, "octet_counting") == 0) {
+            ctx->parsed_framing = FLB_SYSLOG_FRAMING_OCTET_COUNTING;
+        }
+        else {
+            flb_plg_error(ctx->ins, "unknown syslog framing %s", tmp);
+            flb_syslog_config_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    if (ctx->parsed_framing == FLB_SYSLOG_FRAMING_OCTET_COUNTING &&
+        ctx->parsed_mode != FLB_SYSLOG_TCP && ctx->parsed_mode != FLB_SYSLOG_TLS) {
+        flb_plg_error(ctx->ins,
+                      "invalid configuration: syslog_framing=octet_counting "
+                      "requires mode=tcp or mode=tls");
         flb_syslog_config_destroy(ctx);
         return NULL;
     }

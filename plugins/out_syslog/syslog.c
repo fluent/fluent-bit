@@ -465,6 +465,48 @@ static flb_sds_t syslog_rfc3164 (flb_sds_t *s, struct flb_time *tms,
     return *s;
 }
 
+static flb_sds_t syslog_apply_framing(struct flb_syslog *ctx, flb_sds_t *s)
+{
+    int prefix_size;
+    size_t payload_size;
+    char prefix[32];
+    flb_sds_t tmp;
+
+    if (ctx->parsed_framing == FLB_SYSLOG_FRAMING_OCTET_COUNTING) {
+        payload_size = flb_sds_len(*s);
+        prefix_size = snprintf(prefix, sizeof(prefix), "%zu ", payload_size);
+        if (prefix_size < 0 || (size_t) prefix_size >= sizeof(prefix)) {
+            return NULL;
+        }
+
+        if (flb_sds_avail(*s) < (size_t) prefix_size) {
+            tmp = flb_sds_increase(*s,
+                                   (size_t) prefix_size - flb_sds_avail(*s));
+            if (tmp == NULL) {
+                return NULL;
+            }
+            *s = tmp;
+        }
+
+        memmove(*s + prefix_size, *s, payload_size);
+        memcpy(*s, prefix, prefix_size);
+        flb_sds_len_set(*s, payload_size + prefix_size);
+        (*s)[payload_size + prefix_size] = '\0';
+
+        return *s;
+    }
+
+    if (ctx->parsed_mode != FLB_SYSLOG_UDP) {
+        tmp = flb_sds_cat(*s, "\n", 1);
+        if (tmp == NULL) {
+            return NULL;
+        }
+        *s = tmp;
+    }
+
+    return *s;
+}
+
 static flb_sds_t msgpack_to_sd(struct flb_syslog *ctx,
                                flb_sds_t *s, const char *sd, int sd_len,
                                msgpack_object *o)
@@ -860,14 +902,12 @@ static flb_sds_t syslog_format(struct flb_syslog *ctx, msgpack_object *o,
             flb_sds_len_set(*s, ctx->maxsize);
         }
 
-        if (ctx->parsed_mode != FLB_SYSLOG_UDP) {
-            tmp = flb_sds_cat(*s, "\n", 1);
-            if (!tmp) {
-                ret_sds = NULL;
-                goto clean;
-            }
-            *s = tmp;
+        tmp = syslog_apply_framing(ctx, s);
+        if (tmp == NULL) {
+            ret_sds = NULL;
+            goto clean;
         }
+        *s = tmp;
     }
     else {
         ret_sds = NULL;
@@ -1173,6 +1213,15 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_syslog, format),
      "Specify the Syslog protocol format to use, the available options are rfc3164 "
      "and rfc5424."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "syslog_framing", "newline",
+     0, FLB_TRUE, offsetof(struct flb_syslog, framing),
+     "Specify the framing method for stream transports. The available options "
+     "are newline and octet_counting. Octet counting is supported with tcp and "
+     "tls modes and prefixes the final message with its byte length and a space, "
+     "without appending a newline. The prefix is not part of syslog_maxsize."
     },
 
     {
