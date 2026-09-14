@@ -1,5 +1,6 @@
 import gzip
 import os
+import re
 import shutil
 import sqlite3
 import sys
@@ -136,6 +137,37 @@ class Service:
             records = flatten_records(data_storage["payloads"])
             assert len(records) == expected_count
             time.sleep(0.5)
+
+    def prometheus_metrics(self):
+        url = (
+            f"http://127.0.0.1:{self.flb.http_monitoring_port}"
+            "/api/v2/metrics/prometheus"
+        )
+        response = requests.get(url, timeout=2)
+        response.raise_for_status()
+        return response.text
+
+    def metric_value(self, metric_name, **labels):
+        metrics = self.prometheus_metrics()
+        pattern = re.compile(
+            rf"^{re.escape(metric_name)}\{{(?P<labels>[^}}]*)\}}\s+"
+            r"(?P<value>[-+0-9.eE]+)$"
+        )
+
+        for line in metrics.splitlines():
+            match = pattern.match(line)
+            if not match:
+                continue
+
+            actual_labels = {}
+            for item in match.group("labels").split(","):
+                key, value = item.split("=", 1)
+                actual_labels[key] = value.strip('"')
+
+            if actual_labels == labels:
+                return float(match.group("value"))
+
+        return None
 
 
 class StorageFailureService:
@@ -871,6 +903,123 @@ def test_in_tail_rotate_wait_keeps_old_inode_then_purges_it(workspace):
     finally:
         writer_old.close()
         service.stop()
+
+
+@skip_on_windows
+def test_in_tail_processed_bytes_metric(workspace):
+    active_log = workspace / "processed-bytes.log"
+    db_path = workspace / "tail.db"
+    line1 = '{"msg":"first line"}'
+    line2 = '{"msg":"second line with extra data"}'
+    expected_bytes = len(f"{line1}\n".encode("utf-8")) + len(f"{line2}\n".encode("utf-8"))
+
+    writer = PersistentWriter(active_log)
+    writer.write_line(line1)
+    writer.write_line(line2)
+
+    service = Service("tail_stat.yaml", tail_path=active_log, db_path=db_path)
+
+    try:
+        service.start()
+        service.wait_for_records(2)
+
+        processed = service.metric_value(
+            "fluentbit_input_files_processed_bytes_total",
+            name="tail.0",
+        )
+        abandoned = service.metric_value(
+            "fluentbit_input_files_abandoned_bytes_total",
+            name="tail.0",
+        )
+    finally:
+        writer.close()
+        service.stop()
+
+    assert processed == float(expected_bytes)
+    assert abandoned == 0.0
+
+
+@skip_on_windows
+def test_in_tail_rotate_wait_reports_abandoned_metrics(workspace):
+    active_log = workspace / "abandoned-rotate.log"
+    db_path = workspace / "tail.db"
+    line = '{"message":"abandoned"}'
+    line_bytes = len(line.encode("utf-8")) + 1
+    abandoned_lines = 16
+
+    writer_old = PersistentWriter(active_log)
+    writer_old.write_line("before-rotate")
+
+    service = Service("tail_rotate_wait_short.yaml", tail_path=active_log, db_path=db_path)
+
+    try:
+        service.start()
+        service.wait_for_records(1)
+
+        rotated_log = workspace / "abandoned-rotate.log.1"
+        os.rename(active_log, rotated_log)
+
+        for _ in range(abandoned_lines):
+            writer_old.write_line(line)
+
+        # Allow rotate_wait (2s) to expire so the rotated file is purged
+        time.sleep(5)
+
+        processed_bytes = service.metric_value(
+            "fluentbit_input_files_processed_bytes_total",
+            name="tail.0",
+        )
+        bytes_abandoned = service.metric_value(
+            "fluentbit_input_files_abandoned_bytes_total",
+            name="tail.0",
+        )
+    finally:
+        writer_old.close()
+        service.stop()
+
+    assert processed_bytes > 0
+    assert bytes_abandoned is not None
+
+
+@skip_on_windows
+def test_in_tail_stat_delete_reports_abandoned_metrics(workspace):
+    active_log = workspace / "abandoned-delete.log"
+    db_path = workspace / "tail.db"
+    line = '{"message":"deleted"}'
+    line_bytes = len(line.encode("utf-8")) + 1
+    abandoned_lines = 4
+
+    writer_old = PersistentWriter(active_log)
+    writer_old.write_line("before-delete")
+
+    service = Service("tail_stat.yaml", tail_path=active_log, db_path=db_path)
+
+    try:
+        service.start()
+        service.wait_for_records(1)
+
+        for _ in range(abandoned_lines):
+            writer_old.write_line(line)
+
+        os.unlink(active_log)
+
+        # Allow stat check timer to detect deletion and purge file
+        time.sleep(5)
+
+        processed_bytes = service.metric_value(
+            "fluentbit_input_files_processed_bytes_total",
+            name="tail.0",
+        )
+        bytes_abandoned = service.metric_value(
+            "fluentbit_input_files_abandoned_bytes_total",
+            name="tail.0",
+        )
+    finally:
+        writer_old.close()
+        service.stop()
+
+    assert processed_bytes > 0
+    assert bytes_abandoned is not None
 
 
 @skip_on_windows

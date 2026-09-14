@@ -180,6 +180,8 @@ struct flb_tail_config {
     struct cmt_counter *cmt_files_opened;
     struct cmt_counter *cmt_files_closed;
     struct cmt_counter *cmt_files_rotated;
+    struct cmt_counter *cmt_files_processed_bytes;
+    struct cmt_counter *cmt_files_abandoned_bytes;
     struct cmt_counter *cmt_multiline_truncated;
     struct cmt_counter *cmt_long_line_truncated;
     struct cmt_counter *cmt_long_line_skipped;

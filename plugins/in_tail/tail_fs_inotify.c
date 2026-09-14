@@ -225,6 +225,7 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
             flb_tail_db_file_delete(file, ctx);
         }
 #endif
+        flb_tail_file_abandoned(file, &st);
         flb_tail_file_remove(file);
         return -1;
     }
