@@ -1627,6 +1627,58 @@ static insert_id_status validate_insert_id(msgpack_object * insert_id_value,
     return ret;
 }
 
+/*
+ * should_skip_record
+ * Check whether a record must be dropped because one of its fields is invalid.
+ * Returns FLB_TRUE if the record has to be skipped, FLB_FALSE otherwise.
+ *
+ * A single record with an invalid insertId or with non-map payload labels must
+ * not invalidate the whole batch: the entries array is packed with a dynamic
+ * header, so skipping the offending record keeps the rest of the batch.
+ *
+ * The insertId and the payload labels are looked up here; the results are
+ * handed back through in_status_out, insert_id_obj_out and
+ * payload_labels_ptr_out so that the caller does not have to traverse the
+ * record again. They are only written when the record is not skipped.
+ */
+static int should_skip_record(struct flb_stackdriver *ctx,
+                              msgpack_object *obj,
+                              insert_id_status *in_status_out,
+                              msgpack_object *insert_id_obj_out,
+                              msgpack_object **payload_labels_ptr_out)
+{
+    insert_id_status in_status;
+    msgpack_object insert_id_obj;
+    msgpack_object *payload_labels_ptr;
+
+    memset(&insert_id_obj, 0, sizeof(insert_id_obj));
+
+    /* Check insertId */
+    in_status = validate_insert_id(&insert_id_obj, obj);
+    if (in_status == INSERTID_INVALID) {
+        flb_plg_error(ctx->ins,
+                      "Incorrect insertId received. "
+                      "InsertId should be non-empty string, dropping record.");
+        return FLB_TRUE;
+    }
+
+    /* Check the type of the payload labels */
+    payload_labels_ptr = get_payload_labels(ctx, obj);
+    if (payload_labels_ptr != NULL &&
+        payload_labels_ptr->type != MSGPACK_OBJECT_MAP) {
+        flb_plg_error(ctx->ins,
+                      "the type of payload labels should be map, "
+                      "dropping record");
+        return FLB_TRUE;
+    }
+
+    *in_status_out = in_status;
+    *insert_id_obj_out = insert_id_obj;
+    *payload_labels_ptr_out = payload_labels_ptr;
+
+    return FLB_FALSE;
+}
+
 static int pack_payload(int insert_id_extracted,
                         int operation_extracted,
                         int operation_extra_size,
@@ -1868,7 +1920,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     int log_name_extracted;
     int severity_extracted;
     severity_t severity;
-    int in_status;
+    insert_id_status in_status;
     int insert_id_extracted;
     int operation_extracted;
     int operation_first;
@@ -2334,6 +2386,17 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         obj = log_event.body;
+
+        /*
+         * Drop records carrying invalid fields instead of failing the whole
+         * batch. The insertId and the payload labels validated here are
+         * returned so that they are not looked up a second time below.
+         */
+        if (should_skip_record(ctx, obj, &in_status, &insert_id_obj,
+                               &payload_labels_ptr) == FLB_TRUE) {
+            continue;
+        }
+
         tms_status = extract_timestamp(obj, &log_event.timestamp);
 
         /*
@@ -2398,33 +2461,16 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             log_name_extracted = FLB_TRUE;
         }
 
-        /* Extract insertId */
-        in_status = validate_insert_id(&insert_id_obj, obj);
+        /*
+         * insertId was already validated and extracted by should_skip_record(),
+         * which drops the record when it is invalid; reuse that result.
+         */
         if (in_status == INSERTID_VALID) {
             insert_id_extracted = FLB_TRUE;
             entry_size += 1;
         }
-        else if (in_status == INSERTID_NOT_PRESENT) {
-            insert_id_extracted = FLB_FALSE;
-        }
         else {
-            if (trace_extracted == FLB_TRUE) {
-                flb_sds_destroy(trace);
-            }
-
-            if (span_id_extracted == FLB_TRUE) {
-                flb_sds_destroy(span_id);
-            }
-
-            if (project_id_extracted == FLB_TRUE) {
-                flb_sds_destroy(project_id_key);
-            }
-
-            if (log_name_extracted == FLB_TRUE) {
-                flb_sds_destroy(log_name);
-            }
-
-            continue;
+            insert_id_extracted = FLB_FALSE;
         }
 
         /* Extract operation */
@@ -2466,37 +2512,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             entry_size += 1;
         }
 
-        /* Extract payload labels */
-        payload_labels_ptr = get_payload_labels(ctx, obj);
-        if (payload_labels_ptr != NULL &&
-            payload_labels_ptr->type != MSGPACK_OBJECT_MAP) {
-            flb_plg_error(ctx->ins, "the type of payload labels should be map");
-            flb_sds_destroy(operation_id);
-            flb_sds_destroy(operation_producer);
-            flb_sds_destroy(source_location_file);
-            flb_sds_destroy(source_location_function);
-
-            if (trace_extracted == FLB_TRUE) {
-                flb_sds_destroy(trace);
-            }
-
-            if (span_id_extracted == FLB_TRUE) {
-                flb_sds_destroy(span_id);
-            }
-
-            if (project_id_extracted == FLB_TRUE) {
-                flb_sds_destroy(project_id_key);
-            }
-
-            if (log_name_extracted == FLB_TRUE) {
-                flb_sds_destroy(log_name);
-            }
-
-            destroy_http_request(&http_request);
-
-            out_buf = NULL;
-            goto cleanup;
-        }
+        /*
+         * The payload labels were already extracted by should_skip_record(),
+         * which drops the record when they are not a map; reuse that result.
+         */
 
         /* Number of parsed labels */
         labels_size = mk_list_size(&ctx->config_labels);
@@ -2679,6 +2698,12 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     flb_mp_array_header_end(&entries_mh);
 
     if (records_count == 0) {
+        flb_plg_warn(ctx->ins,
+                     "all %d entries skipped due to invalid insertId or "
+                     "labels, dropping batch", total_records);
+        if (formatted_records != NULL) {
+            *formatted_records = 0;
+        }
         out_buf = NULL;
         goto cleanup;
     }
@@ -2989,7 +3014,8 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     int code;
     int ret_partial_success;
     int ret_code = FLB_RETRY;
-    int formatted_records = 0;
+    int formatted_records = -1;
+    int skipped_records = 0;
     int grpc_status_counts[GRPC_STATUS_CODES_SIZE] = {0};
     size_t b_sent;
     flb_sds_t token;
@@ -3016,6 +3042,19 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
                                      config,
                                      &formatted_records);
     if (!payload_buf) {
+        /*
+         * Every record of the chunk was rejected locally: retrying would never
+         * succeed, so account the chunk as dropped and move on.
+         */
+        if (formatted_records == 0) {
+#ifdef FLB_HAVE_METRICS
+            cmt_counter_add(ctx->ins->cmt_dropped_records, ts,
+                            (double) event_chunk->total_events,
+                            1, (char *[]) {name});
+#endif
+            FLB_OUTPUT_RETURN(FLB_OK);
+        }
+
 #ifdef FLB_HAVE_METRICS
         cmt_counter_inc(ctx->cmt_failed_requests,
                         ts, 1, (char *[]) {name});
@@ -3024,6 +3063,11 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
 #endif
         FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    skipped_records = (int) event_chunk->total_events - formatted_records;
+    if (skipped_records < 0) {
+        skipped_records = 0;
     }
 
     if (ctx->test_log_entry_format) {
@@ -3187,6 +3231,15 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
+    }
+
+    /*
+     * Records rejected by the formatter are never sent and never retried, so
+     * account them as dropped once the chunk leaves this flush for good.
+     */
+    if (ret_code != FLB_RETRY && skipped_records > 0) {
+        cmt_counter_add(ctx->ins->cmt_dropped_records, ts,
+                        (double) skipped_records, 1, (char *[]) {name});
     }
 
     if (ret_code == FLB_RETRY) {
