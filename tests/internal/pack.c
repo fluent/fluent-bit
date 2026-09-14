@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <math.h> /* for NAN */
+#include <stdlib.h> /* for strtod */
 
 
 #include "flb_tests_internal.h"
@@ -928,6 +929,130 @@ void test_json_pack_nan()
     flb_pack_init(&config);
 }
 
+/*
+ * https://github.com/fluent/fluent-bit/issues/6447
+ * Floating point values must be serialized using their shortest
+ * representation that round-trips back to the same double, so that e.g.
+ * 0.072 is emitted as "0.072" and not "0.07199999999999999".
+ */
+void test_json_pack_float()
+{
+    int i;
+    int ret;
+    char json_str[256];
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    msgpack_object obj;
+    msgpack_zone mempool;
+    struct float_case {
+        double val;
+        const char *expected;
+    };
+    struct float_case cases[] = {
+        { 0.072,  "0.072"   },
+        { 0.1,    "0.1"     },
+        { 3.14,   "3.14"    },
+        { 1.005,  "1.005"   },
+        { 5.0,    "5.0"     },
+        { -0.0,   "-0.0"    },
+    };
+
+    for (i = 0; i < (int) (sizeof(cases) / sizeof(cases[0])); i++) {
+        memset(json_str, 0, sizeof(json_str));
+
+        msgpack_sbuffer_init(&mp_sbuf);
+        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+        msgpack_pack_double(&mp_pck, cases[i].val);
+        msgpack_zone_init(&mempool, 2048);
+        msgpack_unpack(mp_sbuf.data, mp_sbuf.size, NULL, &mempool, &obj);
+
+        ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj,
+                                  FLB_TRUE);
+        TEST_CHECK(ret >= 0);
+
+        /* the serialized token must always parse back to the same value */
+        if (!TEST_CHECK(strtod(json_str, NULL) == cases[i].val)) {
+            TEST_MSG("value %.17g did not round-trip, got \"%s\"",
+                     cases[i].val, json_str);
+        }
+#ifdef FLB_HAVE_YYJSON
+        /* with the yyjson backend the shortest number token is emitted */
+        if (!TEST_CHECK(strcmp(json_str, cases[i].expected) == 0)) {
+            TEST_MSG("expected \"%s\", got \"%s\"",
+                     cases[i].expected, json_str);
+        }
+#endif
+
+        msgpack_zone_destroy(&mempool);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+    }
+}
+
+/*
+ * Direct coverage of flb_pack_double_to_str(), including the non-finite
+ * fallback path, negatives, exponent and subnormal formatting, and the
+ * undersized-buffer boundary.
+ */
+void test_pack_double_to_str()
+{
+    int i;
+    int len;
+    char buf[64];
+    double vals[] = {
+        0.072, -0.072, 0.1, 3.14, 1.005, 5.0, 100.0, 0.0, -0.0,
+        1e-7, 1e20, 1e-300, 1e300,
+        2.2250738585072014e-308, /* DBL_MIN */
+        4.9e-324                 /* smallest subnormal */
+    };
+
+    /* every finite value must round-trip back to the same double */
+    for (i = 0; i < (int) (sizeof(vals) / sizeof(vals[0])); i++) {
+        len = flb_pack_double_to_str(vals[i], buf, sizeof(buf));
+        TEST_CHECK(len > 0);
+        TEST_CHECK((int) strlen(buf) == len);
+        if (!TEST_CHECK(strtod(buf, NULL) == vals[i])) {
+            TEST_MSG("value %.17g rendered as \"%s\" did not round-trip",
+                     vals[i], buf);
+        }
+    }
+
+#ifdef FLB_HAVE_YYJSON
+    /* known shortest representations (only with the yyjson backend) */
+    flb_pack_double_to_str(0.072, buf, sizeof(buf));
+    TEST_CHECK(strcmp(buf, "0.072") == 0);
+    flb_pack_double_to_str(5.0, buf, sizeof(buf));
+    TEST_CHECK(strcmp(buf, "5.0") == 0);
+    flb_pack_double_to_str(-0.0, buf, sizeof(buf));
+    TEST_CHECK(strcmp(buf, "-0.0") == 0);
+#else
+    /* without yyjson, integer-valued doubles still keep the float marker */
+    flb_pack_double_to_str(5.0, buf, sizeof(buf));
+    TEST_CHECK(strcmp(buf, "5.0") == 0);
+    flb_pack_double_to_str(-0.0, buf, sizeof(buf));
+    TEST_CHECK(strcmp(buf, "-0.0") == 0);
+#endif
+
+    /* non-finite values fall back to legacy formatting */
+    flb_pack_double_to_str(NAN, buf, sizeof(buf));
+    TEST_CHECK(strcmp(buf, "nan") == 0);
+    flb_pack_double_to_str(INFINITY, buf, sizeof(buf));
+    TEST_CHECK(strcmp(buf, "inf") == 0);
+    flb_pack_double_to_str(-INFINITY, buf, sizeof(buf));
+    TEST_CHECK(strcmp(buf, "-inf") == 0);
+
+    /* an undersized buffer must truncate safely, never overflow */
+    {
+        char small[4];
+        len = flb_pack_double_to_str(3.14159, small, sizeof(small));
+        TEST_CHECK(len >= 0 && len < (int) sizeof(small));
+        TEST_CHECK((int) strlen(small) == len);
+    }
+
+    /* invalid arguments must be rejected without touching memory */
+    TEST_CHECK(flb_pack_double_to_str(3.14, NULL, sizeof(buf)) == -1);
+    TEST_CHECK(flb_pack_double_to_str(3.14, buf, 0) == -1);
+}
+
 static int check_msgpack_val(msgpack_object obj, int expected_type, char *expected_val)
 {
     int len;
@@ -1303,6 +1428,8 @@ TEST_LIST = {
     { "json_pack_bug342"   , test_json_pack_bug342},
     { "json_pack_bug1278"  , test_json_pack_bug1278},
     { "json_pack_nan"      , test_json_pack_nan},
+    { "json_pack_float"    , test_json_pack_float},
+    { "pack_double_to_str" , test_pack_double_to_str},
     { "json_pack_bug5336"  , test_json_pack_bug5336},
     { "json_pack_empty_array", test_json_pack_empty_array},
     { "json_date_iso8601" , test_json_date_iso8601},
