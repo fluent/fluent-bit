@@ -260,6 +260,10 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
     int is_compressed = FLB_FALSE;
     flb_sds_t json_payload = NULL;
     struct flb_az_li *ctx = out_context;
+#ifdef FLB_HAVE_METRICS
+    uint64_t metrics_timestamp;
+    char *output_name;
+#endif
     (void) i_ins;
     (void) config;
 
@@ -320,6 +324,19 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
     }
     flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
     flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX);
+
+#ifdef FLB_HAVE_METRICS
+    metrics_timestamp = cfl_time_now();
+    output_name = (char *) flb_output_name(ctx->ins);
+    cmt_histogram_observe(ctx->cmt_uncompressed_payload_size,
+                          metrics_timestamp,
+                          (double) json_payload_size,
+                          1, (char *[]) {output_name});
+    cmt_histogram_observe(ctx->cmt_http_payload_size,
+                          metrics_timestamp,
+                          (double) final_payload_size,
+                          1, (char *[]) {output_name});
+#endif
 
     /* Execute rest call */
     ret = flb_http_do(c, &b_sent);
