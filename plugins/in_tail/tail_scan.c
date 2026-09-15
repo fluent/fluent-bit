@@ -110,12 +110,12 @@ int flb_tail_scan(struct mk_list *path_list, struct flb_tail_config *ctx)
     mk_list_foreach(head, path_list) {
         pattern = mk_list_entry(head, struct flb_slist_entry, _head);
         ret = tail_scan_path(pattern->str, ctx);
-        if (ret == -1) {
-            flb_plg_warn(ctx->ins, "error scanning path: %s", pattern->str);
-        }
-        else {
+        if (ret != -1) {
             flb_plg_debug(ctx->ins, "%i new files found on path '%s'",
                           ret, pattern->str);
+        }
+        else if (!ctx->ignore_unavailable) {
+            flb_plg_warn(ctx->ins, "error scanning path: %s", pattern->str);
         }
     }
 
