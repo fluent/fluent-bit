@@ -268,16 +268,9 @@ int syslog_prot_process(struct syslog_conn *conn)
 
         /* No data ? */
         if (len == 0) {
-            consume_bytes(conn->buf_data, 1, conn->buf_len);
-            conn->buf_len--;
-            conn->buf_parsed = 0;
-            conn->buf_data[conn->buf_len] = '\0';
-            end = conn->buf_data + conn->buf_len;
-
-            if (conn->buf_len == 0) {
-                break;
-            }
-
+            /* skip the ending byte */
+            conn->buf_parsed += 1;
+            eof = conn->buf_data + conn->buf_parsed;
             continue;
         }
 
