@@ -212,6 +212,7 @@ option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"                    Yes)
 set(FLB_SIMD "Auto" CACHE STRING "Enable SIMD support (On, Off, Auto)")
 set_property(CACHE FLB_SIMD PROPERTY STRINGS "On;Off;Auto")
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
+option(FLB_PROTOBUF_ENCODER    "Build Kafka runtime Protobuf encoding support" No)
 option(FLB_AVRO_ENCODER        "Build with Avro encoding support"            No)
 option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support"      No)
 option(FLB_ARROW               "Build with Apache Arrow support"             No)
@@ -741,15 +742,17 @@ if(FLB_YYJSON)
   endif()
 endif()
 
-# Avro
-if(FLB_AVRO_ENCODER)
+# Schema Registry JSON support
+if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER)
   # jansson
   option(JANSSON_BUILD_DOCS         OFF)
   option(JANSSON_EXAMPLES           OFF)
   option(JANSSON_BUILD_SHARED_LIBS  OFF)
   set(JANSSON_WITHOUT_TESTS ON CACHE BOOL "" FORCE)
   add_subdirectory(${FLB_PATH_LIB_JANSSON})
+endif()
 
+if(FLB_AVRO_ENCODER)
   #avro
   add_subdirectory(${FLB_PATH_LIB_AVRO} EXCLUDE_FROM_ALL)
 endif()
@@ -1366,6 +1369,19 @@ endif()
 # =====================
 if(FLB_UTF8_ENCODER)
   FLB_DEFINITION(FLB_HAVE_UTF8_ENCODER)
+endif()
+
+# Kafka runtime schema serializers
+if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER)
+  FLB_DEFINITION(FLB_HAVE_KAFKA_SCHEMA_REGISTRY)
+endif()
+if(FLB_PROTOBUF_ENCODER)
+  enable_language(CXX)
+  find_package(Protobuf 3.12 REQUIRED)
+  if(NOT TARGET protobuf::libprotoc)
+    message(FATAL_ERROR "FLB_PROTOBUF_ENCODER requires libprotoc development libraries")
+  endif()
+  FLB_DEFINITION(FLB_HAVE_PROTOBUF_ENCODER)
 endif()
 
 # avro-c (Avro Encoding)
