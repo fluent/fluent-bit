@@ -3056,7 +3056,9 @@ int flb_input_plugin_resume(struct flb_input_instance *ins)
 int flb_input_pause(struct flb_input_instance *ins)
 {
     /* if the instance is already paused, just return */
-    if (flb_input_buf_paused(ins)) {
+    if (flb_input_buf_paused(ins) &&
+        (ins->config == NULL || ins->config->is_shutting_down == FLB_FALSE ||
+         (ins->flags & FLB_INPUT_SHUTDOWN_FLUSH) == 0)) {
         return -1;
     }
 
