@@ -60,6 +60,7 @@
 
 # Output Plugins
 # --------------
+/plugins/out_azure_kusto @tanmaya-panda1
 /plugins/out_datadog     @nokute78 @edsiper
 /plugins/out_es          @pettitwesley @edsiper
 /plugins/out_pgsql       @sxd
