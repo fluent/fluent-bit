@@ -2564,7 +2564,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_TIME, "oauth2.timeout", "0s",
      0, FLB_TRUE, offsetof(struct flb_loki, oauth2_config.timeout),
-     "Timeout for OAuth2 token requests (defaults to response_timeout when unset)"
+     "Timeout for OAuth2 token requests"
     },
     {
      FLB_CONFIG_MAP_TIME, "oauth2.connect_timeout", "0s",
