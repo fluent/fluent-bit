@@ -232,6 +232,14 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
     struct flb_aws_provider_ec2 *implementation;
     struct flb_aws_provider *provider;
     struct flb_upstream *upstream;
+    char *endpoint;
+    flb_sds_t host = NULL;
+    flb_sds_t port_str = NULL;
+    flb_sds_t protocol = NULL;
+    flb_sds_t path = NULL;
+    const char *use_host;
+    int use_port;
+    int ret;
 
     provider = flb_calloc(1, sizeof(struct flb_aws_provider));
 
@@ -253,17 +261,57 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
     provider->provider_vtable = &ec2_provider_vtable;
     provider->implementation = implementation;
 
-    upstream = flb_upstream_create(config, FLB_AWS_IMDS_HOST, FLB_AWS_IMDS_PORT,
-                                   FLB_IO_TCP, NULL);
+    /* Check for custom IMDS endpoint */
+    use_host = FLB_AWS_IMDS_HOST;
+    use_port = FLB_AWS_IMDS_PORT;
+    int use_custom_endpoint = FLB_FALSE;
+    
+    endpoint = getenv(AWS_EC2_METADATA_SERVICE_ENDPOINT_ENV);
+    if (endpoint && strlen(endpoint) > 0) {
+        ret = flb_utils_url_split_sds(endpoint, &protocol, &host, &port_str, &path);
+        if (ret >= 0 && host) {
+            use_host = host;
+            use_custom_endpoint = FLB_TRUE;
+            if (port_str) {
+                use_port = atoi(port_str);
+                if (use_port <= 0 || use_port > 65535) {
+                    use_port = FLB_AWS_IMDS_PORT;
+                }
+            }
+            flb_info("[aws_credentials] Using custom IMDS endpoint: %s:%d", 
+                     use_host, use_port);
+        }
+        flb_sds_destroy(protocol);
+        flb_sds_destroy(port_str);
+        flb_sds_destroy(path);
+    }
+
+    upstream = flb_upstream_create(config, use_host, use_port, FLB_IO_TCP, NULL);
+    
+    if (host) {
+        flb_sds_destroy(host);
+    }
+    
     if (!upstream) {
         flb_aws_provider_destroy(provider);
         flb_debug("[aws_credentials] unable to connect to EC2 IMDS.");
         return NULL;
     }
 
-    /* IMDSv2 token request will timeout if hops = 1 and running within container */
-    upstream->base.net.connect_timeout = FLB_AWS_IMDS_TIMEOUT;
-    upstream->base.net.io_timeout = FLB_AWS_IMDS_TIMEOUT;
+    /* 
+     * Set timeout based on endpoint type:
+     * - Standard AWS IMDS: 1 second (fast local endpoint)
+     * - Custom IMDS endpoints (e.g., IAM Roles Anywhere): 10 seconds (certificate auth takes longer)
+     */
+    if (use_custom_endpoint) {
+        upstream->base.net.connect_timeout = FLB_AWS_IMDS_TIMEOUT_CUSTOM;
+        upstream->base.net.io_timeout = FLB_AWS_IMDS_TIMEOUT_CUSTOM;
+        flb_info("[aws_credentials] Using extended timeout (%d seconds) for custom IMDS endpoint", 
+                 FLB_AWS_IMDS_TIMEOUT_CUSTOM);
+    } else {
+        upstream->base.net.connect_timeout = FLB_AWS_IMDS_TIMEOUT;
+        upstream->base.net.io_timeout = FLB_AWS_IMDS_TIMEOUT;
+    }
     upstream->base.net.keepalive = FLB_FALSE; /* On timeout, the connection is broken */
 
     implementation->client = generator->create();
@@ -278,7 +326,7 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
     implementation->client->provider = NULL;
     implementation->client->region = NULL;
     implementation->client->service = NULL;
-    implementation->client->port = 80;
+    implementation->client->port = use_port;
     implementation->client->flags = 0;
     implementation->client->proxy = NULL;
     implementation->client->upstream = upstream;
