@@ -1803,6 +1803,85 @@ void flb_test_structured_metadata_map_invalid_ra_key() {
         "[\"12345678000000000\",\"This is an interesting log message!\",{}]");
 }
 
+void flb_test_oauth2_auth_conflicts()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* 1. oauth2 + http_user/http_passwd conflict */
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    out_ffd = flb_output(ctx, (char *) "loki", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "*",
+                         "host", "127.0.0.1",
+                         "port", "3100",
+                         "http_user", "user",
+                         "http_passwd", "pass",
+                         "oauth2.enable", "true",
+                         "oauth2.token_url", "http://127.0.0.1:3100/token",
+                         "oauth2.client_id", "client",
+                         "oauth2.client_secret", "secret",
+                         NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
+
+    /* 2. oauth2 + bearer_token conflict */
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    out_ffd = flb_output(ctx, (char *) "loki", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "*",
+                         "host", "127.0.0.1",
+                         "port", "3100",
+                         "bearer_token", "token123",
+                         "oauth2.enable", "true",
+                         "oauth2.token_url", "http://127.0.0.1:3100/token",
+                         "oauth2.client_id", "client",
+                         "oauth2.client_secret", "secret",
+                         NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
+}
+
+void flb_test_oauth2_invalid_config()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* oauth2 without token_url or client_id */
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    out_ffd = flb_output(ctx, (char *) "loki", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "*",
+                         "host", "127.0.0.1",
+                         "port", "3100",
+                         "oauth2.enable", "true",
+                         NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"remove_keys_remove_map" , flb_test_remove_map},
@@ -1843,5 +1922,7 @@ TEST_LIST = {
         flb_test_structured_metadata_map_single_missing_map},
     {"structured_metadata_map_invalid_ra_key",
         flb_test_structured_metadata_map_invalid_ra_key},
+    {"oauth2_auth_conflicts", flb_test_oauth2_auth_conflicts},
+    {"oauth2_invalid_config", flb_test_oauth2_invalid_config},
     {NULL, NULL}
 };
