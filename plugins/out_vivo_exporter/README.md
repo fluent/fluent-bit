@@ -22,6 +22,10 @@ rejected, including the shared `workers` alias.
 
 ## Deployment
 
+The default listener changes from `0.0.0.0:2025` to `127.0.0.1:2025`. Deployments
+that previously relied on the all-interface default must explicitly set `host`
+for remote access or route connections through a local reverse proxy.
+
 The plugin serves telemetry over HTTP. `host` and `port` configure the listener,
 not an outbound destination. The listener has no authentication or TLS. For remote
 access, place it behind an authenticated HTTPS reverse proxy and restrict access
@@ -73,7 +77,12 @@ to the signal. It follows the [OTLP JSON encoding rules](https://opentelemetry.i
 * Native unsigned log integers above INT64_MAX cannot fit OTLP's signed `intValue`.
   They use a `kvlistValue` with `fluentbit.type` = `"uint64"` and
   `fluentbit.value` = the exact decimal string. Nil becomes an empty AnyValue.
-  Maps require string keys; MessagePack extension values have no implicit mapping.
+  Maps require string keys.
+* MessagePack extension values use a `kvlistValue` with `fluentbit.type` =
+  `"msgpack.ext"`, `fluentbit.ext_type` = the signed extension code as an
+  `intValue`, and `fluentbit.value` = the payload as a `bytesValue`. In v1 these
+  fields form a JSON object with a numeric extension code and base64 payload.
+  Top-level Forward EventTime values remain record timestamps.
 * Metrics follow the existing CMetrics OTLP mapping. Unsigned numeric data-point
   values above INT64_MAX become doubles and can round; unsigned OTLP fields such
   as histogram counts still use exact decimal strings. Conversion cannot recover
@@ -95,7 +104,8 @@ retains its native CMetrics shape.
 
 `GET /api/v2/health` advertises the versions, framing, OTLP JSON payload and gzip
 capabilities without reading telemetry. HEAD and OPTIONS have no payload and never
-consume telemetry. Unsupported methods return 405. Responses include
+consume telemetry. HEAD uses the same routing, validation, negotiation and stream
+metadata as GET while suppressing the response body. Unsupported methods return 405. Responses include
 `Cache-Control: no-store` and configured CORS headers. Authorization is allowed in
 CORS preflight for deployments where the proxy supplies authentication.
 
