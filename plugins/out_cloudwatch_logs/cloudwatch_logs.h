@@ -194,8 +194,12 @@ struct flb_cloudwatch {
     struct flb_record_accessor *ra_group;
     struct flb_record_accessor *ra_stream;
 
-    /* stores log streams we're putting to */
+    /* Stream cache for non-threaded output instances. */
     struct mk_list streams;
+
+    /* Each output worker owns its stream cache, including expiry and entity state. */
+    struct mk_list *worker_streams;
+    int stream_worker_count;
 
     /* The namespace to use for the metric */
     flb_sds_t metric_namespace;
