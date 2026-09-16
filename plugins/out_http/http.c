@@ -943,6 +943,6 @@ struct flb_output_plugin out_http_plugin = {
     /* for testing */
     .test_formatter.callback = cb_http_format_test,
 
-    .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
+    .flags       = FLB_OUTPUT_NET | FLB_OUTPUT_OAUTH2_CLIENT | FLB_IO_OPT_TLS,
     .workers     = 2
 };
