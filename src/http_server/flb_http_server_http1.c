@@ -130,6 +130,15 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
         return -1;
     }
 
+    if (session->inner_request.query_string.len > 0) {
+        session->stream.request.query_string =
+            cfl_sds_create_len(session->inner_request.query_string.data,
+                               session->inner_request.query_string.len);
+        if (session->stream.request.query_string == NULL) {
+            return -1;
+        }
+    }
+
     result = flb_http_request_normalize(&session->stream.request);
     if (result != 0) {
         return -1;
