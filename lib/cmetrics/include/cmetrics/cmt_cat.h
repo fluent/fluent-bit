@@ -37,6 +37,14 @@ int cmt_cat_untyped(struct cmt *cmt, struct cmt_untyped *untyped, struct cmt_map
 int cmt_cat_histogram(struct cmt *cmt, struct cmt_histogram *histogram, struct cmt_map *filtered_map);
 int cmt_cat_exp_histogram(struct cmt *cmt, struct cmt_exp_histogram *exp_histogram, struct cmt_map *filtered_map);
 int cmt_cat_summary(struct cmt *cmt, struct cmt_summary *summary, struct cmt_map *filtered_map);
+/*
+ * Append metric families and merge context-level static labels. Static labels
+ * apply to all metrics in dst, including metrics already present. Existing
+ * destination labels retain their order; new labels are deep-copied in source
+ * order. Identical key/value pairs are not duplicated. Keys are case-sensitive.
+ * Conflicting static label values return -1 without modifying dst. Other copy
+ * failures can leave partially appended metric families in dst.
+ */
 int cmt_cat(struct cmt *dst, struct cmt *src);
 
 #endif

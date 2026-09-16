@@ -1090,8 +1090,132 @@ static int append_context(struct cmt *dst, struct cmt *src)
     return 0;
 }
 
+static struct cmt_label *find_static_label(struct cmt_labels *labels, char *key)
+{
+    struct cfl_list *head;
+    struct cmt_label *label;
+
+    cfl_list_foreach(head, &labels->list) {
+        label = cfl_list_entry(head, struct cmt_label, _head);
+        if (strcmp(label->key, key) == 0) {
+            return label;
+        }
+    }
+
+    return NULL;
+}
+
+static int map_has_label_key(struct cmt_map *map, char *key)
+{
+    struct cfl_list *head;
+    struct cmt_map_label *label;
+
+    cfl_list_foreach(head, &map->label_keys) {
+        label = cfl_list_entry(head, struct cmt_map_label, _head);
+        if (strcmp(label->name, key) == 0) {
+            return CMT_TRUE;
+        }
+    }
+
+    return CMT_FALSE;
+}
+
+static int context_has_label_key(struct cmt *cmt, char *key)
+{
+    struct cfl_list *head;
+    struct cmt_counter *counter;
+    struct cmt_gauge *gauge;
+    struct cmt_untyped *untyped;
+    struct cmt_histogram *histogram;
+    struct cmt_exp_histogram *exp_histogram;
+    struct cmt_summary *summary;
+
+    cfl_list_foreach(head, &cmt->counters) {
+        counter = cfl_list_entry(head, struct cmt_counter, _head);
+        if (map_has_label_key(counter->map, key)) {
+            return CMT_TRUE;
+        }
+    }
+
+    cfl_list_foreach(head, &cmt->gauges) {
+        gauge = cfl_list_entry(head, struct cmt_gauge, _head);
+        if (map_has_label_key(gauge->map, key)) {
+            return CMT_TRUE;
+        }
+    }
+
+    cfl_list_foreach(head, &cmt->untypeds) {
+        untyped = cfl_list_entry(head, struct cmt_untyped, _head);
+        if (map_has_label_key(untyped->map, key)) {
+            return CMT_TRUE;
+        }
+    }
+
+    cfl_list_foreach(head, &cmt->histograms) {
+        histogram = cfl_list_entry(head, struct cmt_histogram, _head);
+        if (map_has_label_key(histogram->map, key)) {
+            return CMT_TRUE;
+        }
+    }
+
+    cfl_list_foreach(head, &cmt->exp_histograms) {
+        exp_histogram = cfl_list_entry(head, struct cmt_exp_histogram, _head);
+        if (map_has_label_key(exp_histogram->map, key)) {
+            return CMT_TRUE;
+        }
+    }
+
+    cfl_list_foreach(head, &cmt->summaries) {
+        summary = cfl_list_entry(head, struct cmt_summary, _head);
+        if (map_has_label_key(summary->map, key)) {
+            return CMT_TRUE;
+        }
+    }
+
+    return CMT_FALSE;
+}
+
+static int copy_static_labels(struct cmt *dst, struct cmt *src,
+                              struct cmt_labels *pending)
+{
+    struct cfl_list *head;
+    struct cmt_label *label;
+    struct cmt_label *existing;
+
+    cfl_list_foreach(head, &src->static_labels->list) {
+        label = cfl_list_entry(head, struct cmt_label, _head);
+        existing = find_static_label(dst->static_labels, label->key);
+        if (existing == NULL) {
+            existing = find_static_label(pending, label->key);
+        }
+
+        if (existing != NULL) {
+            if (strcmp(existing->val, label->val) != 0) {
+                return -1;
+            }
+        }
+        else {
+            /* Static labels apply to every destination metric, including
+             * schemas that have no samples yet. Reject before appending. */
+            if (context_has_label_key(dst, label->key)) {
+                return -1;
+            }
+            if (cmt_labels_add_kv(pending, label->key, label->val) != 0) {
+                return -1;
+            }
+        }
+    }
+
+    return 0;
+}
+
 int cmt_cat(struct cmt *dst, struct cmt *src)
 {
+    int ret;
+    struct cmt_labels *pending;
+    struct cfl_list *head;
+    struct cfl_list *tmp;
+
     if (!dst) {
         return -1;
     }
@@ -1100,5 +1224,29 @@ int cmt_cat(struct cmt *dst, struct cmt *src)
         return -1;
     }
 
-    return append_context(dst, src);
+    if (cfl_list_size(&src->static_labels->list) == 0) {
+        return append_context(dst, src);
+    }
+
+    /* Resolve label conflicts and allocation failures before copying metrics. */
+    pending = cmt_labels_create();
+    if (pending == NULL) {
+        return -1;
+    }
+    ret = copy_static_labels(dst, src, pending);
+    if (ret != 0) {
+        cmt_labels_destroy(pending);
+        return -1;
+    }
+
+    ret = append_context(dst, src);
+    if (ret == 0) {
+        cfl_list_foreach_safe(head, tmp, &pending->list) {
+            cfl_list_del(head);
+            cfl_list_add(head, &dst->static_labels->list);
+        }
+    }
+    cmt_labels_destroy(pending);
+
+    return ret;
 }
