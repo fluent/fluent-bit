@@ -6,6 +6,7 @@ import json
 import math
 import os
 import socket
+import struct
 
 import pytest
 import requests
@@ -14,7 +15,7 @@ from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsSer
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 
-from test_out_vivo_exporter_audit import exporter, pack_forward, poll
+from test_out_vivo_exporter_audit import MessagePackExtension, exporter, headers, pack_forward, poll
 from utils.http_matrix import curl_supports_http2, run_curl_request
 
 
@@ -225,7 +226,7 @@ def test_browser_compression_and_v2_pages(exporter, mode):
         response = requests.request(method, base + "/api/v2/logs", timeout=5)
         assert response.status_code == status
         assert response.content == b""
-        assert "Content-Encoding" not in response.headers
+        assert response.headers.get("Content-Encoding") == ("gzip" if method == "HEAD" else None)
 
 
 @pytest.mark.parametrize("exporter", [{"compress": False}], indirect=True)
@@ -259,3 +260,79 @@ def test_forward_log_anyvalue_uint64_and_bytes(exporter):
     assert values["unicode"].string_value == '雪\n"\\\x00'
     tagged = {pair.key: pair.value.string_value for pair in values["uint64"].kvlist_value.values}
     assert tagged == {"fluentbit.type": "uint64", "fluentbit.value": "18446744073709551615"}
+
+
+@pytest.mark.parametrize("otlp", [{"attributes": {"nested": "keep"}}, "ordinary metadata"])
+def test_native_metadata_named_otlp(exporter, otlp):
+    service, urls = exporter
+    metadata = {"otlp": otlp, "other": "retained"}
+    packet = pack_forward(["native", [[[1789516800, metadata], {"log": "keep body map"}]], {}])
+    with socket.create_connection(("127.0.0.1", int(os.environ["AUDIT_FORWARD_PORT"])), timeout=5) as conn:
+        conn.sendall(packet)
+    page = poll(service, urls["EXPORTER"] + "/api/v2/logs", lambda r: bool(r.json()["entries"])).json()
+    record = decode_otlp(page["entries"][0]["payload"], ExportLogsServiceRequest).resource_logs[0].scope_logs[0].log_records[0]
+    assert record.body.kvlist_value.values[0].key == "log"
+    assert record.body.kvlist_value.values[0].value.string_value == "keep body map"
+    attributes = {pair.key: pair.value for pair in record.attributes}
+    assert attributes["other"].string_value == "retained"
+    if isinstance(otlp, str):
+        assert attributes["otlp"].string_value == otlp
+    else:
+        assert attributes["otlp"].kvlist_value.values[0].key == "attributes"
+
+
+def test_nested_msgpack_extensions(exporter):
+    service, urls = exporter
+    payload = b"\x00\xff\x80\x22\x5c"
+    records = [[MessagePackExtension(0, struct.pack(">II", 1789516800, 123456789)),
+                {"nested": [MessagePackExtension(-5, payload), MessagePackExtension(7, b"")]}],
+               [1789516800, {"message": "following record"}]]
+    packet = pack_forward(["extensions", records, {}])
+    with socket.create_connection(("127.0.0.1", int(os.environ["AUDIT_FORWARD_PORT"])), timeout=5) as conn:
+        conn.sendall(packet)
+    page = poll(service, urls["EXPORTER"] + "/api/v2/logs", lambda r: "following record" in r.text).json()
+    records = [record for entry in page["entries"]
+               for resource in decode_otlp(entry["payload"], ExportLogsServiceRequest).resource_logs
+               for scope in resource.scope_logs for record in scope.log_records]
+    assert len(records) == 2
+    assert records[0].time_unix_nano == NANOSECONDS
+    values = records[0].body.kvlist_value.values[0].value.array_value.values
+    for value, code, data in zip(values, [-5, 7], [payload, b""]):
+        fields = {pair.key: pair.value for pair in value.kvlist_value.values}
+        assert fields["fluentbit.type"].string_value == "msgpack.ext"
+        assert fields["fluentbit.ext_type"].int_value == code
+        assert fields["fluentbit.value"].bytes_value == data
+    legacy = requests.get(urls["EXPORTER"] + "/api/v1/logs", timeout=5)
+    records = [record for line in legacy.text.splitlines() for record in json.loads(line)["records"]]
+    assert records[0][1]["nested"][0] == {"fluentbit.type": "msgpack.ext", "fluentbit.ext_type": -5,
+                                         "fluentbit.value": base64.b64encode(payload).decode()}
+    assert records[1][1]["message"] == "following record"
+
+
+@pytest.mark.parametrize("mode", ["http1.1", "http2-prior-knowledge"])
+def test_head_matches_get_headers(exporter, mode):
+    if mode.startswith("http2") and not curl_supports_http2():
+        pytest.skip("curl lacks HTTP/2")
+    service, urls = exporter
+    assert requests.post(urls["INPUT"] + "/head", json={"message": "head parity"}, timeout=5).ok
+    poll(service, urls["EXPORTER"] + "/api/v2/logs", lambda r: "head parity" in r.text)
+    for path in ("/api/v1/logs?limit=1", "/api/v2/logs?limit=1", "/api/v2/logs?from=999",
+                 "/api/v1/logs?limit=0", "/api/v2/logs?from=abc", "/api/v2/metrics",
+                 "/api/v2/traces", "/api/v2/internal/metrics", "/api/v2/health", "/", "/missing"):
+        for encoding in ("identity", "gzip", "gzip;q=0,identity;q=0"):
+            get = run_curl_request(urls["EXPORTER"] + path, method="GET", http_mode=mode,
+                                   include_headers=True, headers=[f"Accept-Encoding: {encoding}"],
+                                   extra_args=["--compressed"])
+            head = run_curl_request(urls["EXPORTER"] + path, method="HEAD", http_mode=mode,
+                                    include_headers=True, headers=[f"Accept-Encoding: {encoding}"],
+                                    extra_args=["--head"])
+            assert head["status_code"] == get["status_code"]
+            # curl --head writes headers to stdout, without a payload.
+            assert head["body"].replace("\r\n", "\n") == head["headers_raw"]
+            get_headers, head_headers = headers(get), headers(head)
+            for key in get_headers:
+                if key.startswith("vivo-stream-") or key in ("content-type", "content-encoding", "vary"):
+                    assert head_headers[key] == get_headers[key]
+            if "/internal/" not in path:
+                assert head_headers.get("content-length") == get_headers.get("content-length")
+    assert "head parity" in requests.get(urls["EXPORTER"] + "/api/v2/logs", timeout=5).text
