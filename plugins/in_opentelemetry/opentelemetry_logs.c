@@ -121,7 +121,7 @@ static int otel_pack_bool(msgpack_packer *mp_pck, bool val)
     }
 }
 
-static int otel_pack_int(msgpack_packer *mp_pck, int val)
+static int otel_pack_int(msgpack_packer *mp_pck, int64_t val)
 {
     return msgpack_pack_int64(mp_pck, val);
 }
