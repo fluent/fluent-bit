@@ -691,6 +691,35 @@ def test_opentelemetry_to_opentelemetry_basic_log():
         assert item["record_attributes"]["example_key"] == "example_value"
 
 
+def test_in_opentelemetry_protobuf_log_body_int64():
+    service = Service("001-fluent-bit.yaml")
+    payload = ExportLogsServiceRequest()
+    scope = payload.resource_logs.add().scope_logs.add()
+    expected = [-(2**63), -(2**31) - 1, 2**31, 2**53 + 1, 2**63 - 1]
+    for value in expected:
+        scope.log_records.add(time_unix_nano=1789516800123456789).body.int_value = value
+
+    service.start()
+    try:
+        before = len(data_storage["logs"])
+        response = service.send_raw_request("/v1/logs", payload.SerializeToString())
+        assert response.status_code == 201
+
+        def received():
+            values = [record.body.int_value
+                      for request in data_storage["logs"][before:]
+                      for resource in request.resource_logs
+                      for scope in resource.scope_logs
+                      for record in scope.log_records]
+            return values if len(values) >= len(expected) else None
+
+        actual = service.service.wait_for_condition(received, timeout=20, interval=0.25,
+                                                    description="64-bit log body values")
+        assert actual == expected
+    finally:
+        service.stop()
+
+
 def test_in_opentelemetry_large_protobuf_logs():
     service = Service("001-fluent-bit.yaml")
     source = ExportLogsServiceRequest()
