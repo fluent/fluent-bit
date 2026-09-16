@@ -1290,6 +1290,97 @@ def test_in_opentelemetry_stdout_otlp_json_traces():
     assert span_entry["resource_attributes"]["service.name"] == "checkout"
 
 
+@pytest.mark.parametrize("config_file", [
+    "003-stdout-otlp-json.yaml", "004-stdout-otlp-json-pretty.yaml",
+])
+@pytest.mark.parametrize("encoding", ["json", "protobuf", "legacy", "canonical"])
+def test_in_opentelemetry_trace_status_codes(config_file, encoding):
+    service = Service(config_file)
+    service.start()
+    codes = [0, 1, 2]
+    if encoding in ("json", "protobuf"):
+        codes += [-2147483648, -1, 3, 2147483647]
+    spans = []
+    for index, code in enumerate(codes):
+        wire_code = code
+        if encoding == "legacy":
+            wire_code = ["UNSET", "OK", "ERROR"][code]
+        elif encoding == "canonical":
+            wire_code = ["STATUS_CODE_UNSET", "STATUS_CODE_OK", "STATUS_CODE_ERROR"][code]
+        spans.append({
+            "traceId": "0123456789abcdef0123456789abcdef",
+            "spanId": f"{index + 1:016x}",
+            "name": f"status-{code}",
+            "startTimeUnixNano": "1700000000000000000",
+            "endTimeUnixNano": "1700000000000000001",
+            "status": {"code": wire_code, "message": f"message-{code}"},
+        })
+    payload = {"resourceSpans": [{"scopeSpans": [{"spans": spans}]}]}
+    if encoding == "protobuf":
+        request = ExportTraceServiceRequest()
+        resource = request.resource_spans.add()
+        resource.resource.SetInParent()
+        scope = resource.scope_spans.add()
+        for source in spans:
+            span = scope.spans.add()
+            span.trace_id = bytes.fromhex(source["traceId"])
+            span.span_id = bytes.fromhex(source["spanId"])
+            span.name = source["name"]
+            span.start_time_unix_nano = int(source["startTimeUnixNano"])
+            span.end_time_unix_nano = int(source["endTimeUnixNano"])
+            span.status.code = source["status"]["code"]
+            span.status.message = source["status"]["message"]
+        body = request.SerializeToString()
+        content_type = "application/x-protobuf"
+    else:
+        body = json.dumps(payload).encode()
+        content_type = "application/json"
+    response = service.send_raw_request("/v1/traces", body, content_type)
+    assert 200 <= response.status_code < 300, response.text
+    output = read_stdout_otlp_json(service, "resourceSpans")
+    service.stop()
+    received = {entry["span"]["name"]: entry["span"] for entry in iter_spans(output)}
+    assert len(received) == len(codes)
+    for code in codes:
+        status = received[f"status-{code}"]["status"]
+        assert type(status["code"]) is int
+        assert status["code"] == code
+        assert status["message"] == f"message-{code}"
+
+
+def test_in_opentelemetry_trace_status_invalid_codes():
+    service = Service("003-stdout-otlp-json.yaml")
+    service.start()
+    for code in [True, 1.5, [], {}, "INVALID", 2147483648, -2147483649]:
+        payload = {"resourceSpans": [{"scopeSpans": [{"spans": [{
+            "name": "invalid-status", "status": {"code": code},
+        }]}]}]}
+        response = service.send_raw_request(
+            "/v1/traces", json.dumps(payload).encode(), "application/json")
+        assert response.status_code == 400, (code, response.text)
+    service.stop()
+
+
+def test_in_opentelemetry_trace_status_default_code():
+    service = Service("003-stdout-otlp-json.yaml")
+    service.start()
+    payload = {"resourceSpans": [{"scopeSpans": [{"spans": [
+        {"name": "empty-status", "status": {}},
+        {"name": "message-only", "status": {"message": "unset"}},
+        {"name": "absent-status"},
+    ]}]}]}
+    response = service.send_raw_request(
+        "/v1/traces", json.dumps(payload).encode(), "application/json")
+    assert 200 <= response.status_code < 300, response.text
+    output = read_stdout_otlp_json(service, "resourceSpans")
+    service.stop()
+    received = {entry["span"]["name"]: entry["span"] for entry in iter_spans(output)}
+    assert len(received) == 3
+    assert received["message-only"]["status"] == {"code": 0, "message": "unset"}
+    for name in ["empty-status", "absent-status"]:
+        assert received[name].get("status", {}).get("code", 0) == 0
+
+
 def test_in_opentelemetry_stdout_otlp_json_pretty_logs():
     service = Service("004-stdout-otlp-json-pretty.yaml")
     service.start()
