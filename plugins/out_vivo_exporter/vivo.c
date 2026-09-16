@@ -23,8 +23,9 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
-#include <string.h>
 #include <fluent-bit/flb_random.h>
+
+#include <string.h>
 
 #include "vivo.h"
 #include "vivo_http.h"

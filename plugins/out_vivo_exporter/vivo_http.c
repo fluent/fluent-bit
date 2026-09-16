@@ -22,9 +22,10 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_gzip.h>
-#include <ctype.h>
 #include <fluent-bit/flb_metrics_exporter.h>
 #include <fluent-bit/http_server/flb_hs_utils.h>
+
+#include <ctype.h>
 
 #include <cmetrics/cmt_encode_msgpack.h>
 
@@ -517,28 +518,11 @@ static int vivo_http_request_handler(struct flb_http_request *request,
     }
     if (strcmp(request->path, "/api/v1/health") == 0 ||
         strcmp(request->path, "/api/v2/health") == 0) {
-        if (request->method == HTTP_METHOD_HEAD) {
-            flb_http_response_set_status(response, 200);
-            return flb_http_response_commit(response);
-        }
         return flb_hs_response_send_string(response, 200, FLB_HS_CONTENT_TYPE_JSON,
             "{\"service\":\"vivo_exporter\",\"versions\":[1,2],"
             "\"v1Framing\":\"ndjson\",\"v2Framing\":\"json\",\"delivery\":\"best_effort\","
             "\"v2Payload\":\"otlp-json\",\"compression\":[\"gzip\",\"identity\"],"
             "\"non_finite\":[\"NaN\",\"Infinity\",\"-Infinity\"]}");
-    }
-    if (request->method == HTTP_METHOD_HEAD) {
-        flb_http_response_set_status(response,
-            strcmp(request->path, "/") == 0 ||
-            (strcmp(request->path, "/api/v1/logs") == 0 ||
-             strcmp(request->path, "/api/v2/logs") == 0) ||
-            (strcmp(request->path, "/api/v1/metrics") == 0 ||
-             strcmp(request->path, "/api/v2/metrics") == 0) ||
-            (strcmp(request->path, "/api/v1/traces") == 0 ||
-             strcmp(request->path, "/api/v2/traces") == 0) ||
-            (strcmp(request->path, "/api/v1/internal/metrics") == 0 ||
-             strcmp(request->path, "/api/v2/internal/metrics") == 0) ? 200 : 404);
-        return flb_http_response_commit(response);
     }
 
     if ((strcmp(request->path, "/api/v1/logs") == 0 ||
