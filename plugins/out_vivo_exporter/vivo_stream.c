@@ -46,30 +46,18 @@ struct vivo_stream *vivo_stream_create(struct vivo_exporter *ctx)
     }
     vs->parent = ctx;
     vs->entries_added = 0;
-    pthread_mutex_init(&vs->stream_mutex, NULL);
+    if (pthread_mutex_init(&vs->stream_mutex, NULL) != 0) {
+        flb_free(vs);
+        return NULL;
+    }
     mk_list_init(&vs->entries);
     mk_list_init(&vs->purge);
 
     return vs;
 }
 
-static uint64_t vivo_stream_get_new_id(struct vivo_stream *vs)
-{
-    uint64_t id = 0;
-
-    stream_lock(vs);
-
-    /* to get the next id, we simply use the value of the counter 'entries' added */
-    id = vs->entries_added;
-
-    stream_unlock(vs);
-
-    return id;
-}
-
-
 struct vivo_stream_entry *vivo_stream_entry_create(struct vivo_stream *vs,
-                                                   void *data, size_t size)
+                                                   void *data, size_t size, flb_sds_t otlp)
 {
     struct vivo_stream_entry *e;
 
@@ -82,7 +70,6 @@ struct vivo_stream_entry *vivo_stream_entry_create(struct vivo_stream *vs,
         flb_errno();
         return NULL;
     }
-    e->id = vivo_stream_get_new_id(vs);
 
     e->data = flb_sds_create_len(data, size);
     if (!e->data) {
@@ -90,6 +77,13 @@ struct vivo_stream_entry *vivo_stream_entry_create(struct vivo_stream *vs,
         return NULL;
     }
 
+    e->otlp = flb_sds_create_len(otlp, flb_sds_len(otlp));
+    if (!e->otlp) {
+        flb_sds_destroy(e->data);
+        flb_free(e);
+        return NULL;
+    }
+    e->size = size + flb_sds_len(otlp);
     return e;
 }
 
@@ -100,22 +94,11 @@ struct vivo_stream_entry *vivo_stream_entry_create(struct vivo_stream *vs,
 static void vivo_stream_entry_destroy(struct vivo_stream *vs, struct vivo_stream_entry *e)
 {
     mk_list_del(&e->_head);
-    vs->current_bytes_size -= flb_sds_len(e->data);
+    vs->current_bytes_size -= e->size;
+    vs->snapshot.retained_entries--;
     flb_sds_destroy(e->data);
+    flb_sds_destroy(e->otlp);
     flb_free(e);
-}
-
-/* NOTE: this function must run inside a stream_lock()/stream_unlock() protection */
-static void vivo_stream_cleanup(struct vivo_stream *vs)
-{
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct vivo_stream_entry *e;
-
-    mk_list_foreach_safe(head, tmp, &vs->entries) {
-        e = mk_list_entry(head, struct vivo_stream_entry, _head);
-        vivo_stream_entry_destroy(vs, e);
-    }
 }
 
 void vivo_stream_destroy(struct vivo_stream *vs)
@@ -124,6 +107,10 @@ void vivo_stream_destroy(struct vivo_stream *vs)
     struct mk_list *head;
     struct vivo_stream_entry *e;
 
+    if (!vs) {
+        return;
+    }
+
     stream_lock(vs);
     mk_list_foreach_safe(head, tmp, &vs->entries) {
         e = mk_list_entry(head, struct vivo_stream_entry, _head);
@@ -131,26 +118,40 @@ void vivo_stream_destroy(struct vivo_stream *vs)
     }
     stream_unlock(vs);
 
+    pthread_mutex_destroy(&vs->stream_mutex);
     flb_free(vs);
 }
 
-flb_sds_t vivo_stream_get_content(struct vivo_stream *vs, int64_t from, int64_t to,
+flb_sds_t vivo_stream_get_content(struct vivo_stream *vs, int version, int64_t from, int64_t to,
                                   int64_t limit,
                                   int64_t *stream_start_id, int64_t *stream_end_id,
-                                  int64_t *stream_next_id)
+                                  int64_t *stream_next_id, struct vivo_stream_snapshot *snapshot)
 {
     int64_t count = 0;
+    size_t length;
+    size_t budget;
+    int prefix_length;
+    char prefix[40];
     flb_sds_t buf;
     struct mk_list *head;
     struct vivo_stream_entry *e;
     struct vivo_exporter *ctx = vs->parent;
 
-    buf = flb_sds_create_size(vs->current_bytes_size);
+    buf = flb_sds_create_size(1024);
     if (!buf) {
         return NULL;
     }
 
     stream_lock(vs);
+
+    *snapshot = vs->snapshot;
+    snapshot->retained_bytes = vs->current_bytes_size;
+    snapshot->next = vs->entries_added;
+    snapshot->oldest = vs->entries_added;
+    if (mk_list_is_empty(&vs->entries) != 0) {
+        e = mk_list_entry(vs->entries.next, struct vivo_stream_entry, _head);
+        snapshot->oldest = e->id;
+    }
 
     if (stream_start_id) {
         *stream_start_id = -1;
@@ -164,6 +165,8 @@ flb_sds_t vivo_stream_get_content(struct vivo_stream *vs, int64_t from, int64_t 
         *stream_next_id = vs->entries_added;
     }
 
+    budget = version == 2 ? ctx->stream_page_size - 512 : ctx->stream_page_size;
+
     mk_list_foreach(head, &vs->entries) {
         e = mk_list_entry(head, struct vivo_stream_entry, _head);
 
@@ -171,7 +174,18 @@ flb_sds_t vivo_stream_get_content(struct vivo_stream *vs, int64_t from, int64_t 
             continue;
         }
 
-        if (e->id > to && to != -1 && to != 0) {
+        if (e->id > to && to != -1) {
+            break;
+        }
+
+        prefix_length = 0;
+        length = flb_sds_len(e->data);
+        if (version == 2) {
+            prefix_length = snprintf(prefix, sizeof(prefix), "%s{\"id\":\"%" PRId64 "\",",
+                                     count ? "," : "", e->id);
+            length = prefix_length + flb_sds_len(e->otlp) - 1;
+        }
+        if (length > budget - flb_sds_len(buf)) {
             break;
         }
 
@@ -179,7 +193,16 @@ flb_sds_t vivo_stream_get_content(struct vivo_stream *vs, int64_t from, int64_t 
             *stream_start_id = e->id;
         }
 
-        flb_sds_cat_safe(&buf, e->data, flb_sds_len(e->data));
+        if ((version == 1 && flb_sds_cat_safe(&buf, e->data, length) < 0) ||
+            (version == 2 && (flb_sds_cat_safe(&buf, prefix, prefix_length) < 0 ||
+                             flb_sds_cat_safe(&buf, e->otlp + 1, flb_sds_len(e->otlp) - 1) < 0))) {
+            stream_unlock(vs);
+            flb_sds_destroy(buf);
+            return NULL;
+        }
+        if (stream_next_id) {
+            *stream_next_id = e->id + 1;
+        }
 
         if (stream_end_id) {
             *stream_end_id = e->id;
@@ -189,10 +212,6 @@ flb_sds_t vivo_stream_get_content(struct vivo_stream *vs, int64_t from, int64_t 
         if (limit > 0 && count >= limit) {
             break;
         }
-    }
-
-    if (ctx->empty_stream_on_read) {
-        vivo_stream_cleanup(vs);
     }
 
     stream_unlock(vs);
@@ -210,7 +229,9 @@ static void vivo_stream_make_room(struct vivo_stream *vs, size_t size)
 
     mk_list_foreach_safe(head, tmp, &vs->entries) {
         e = mk_list_entry(head, struct vivo_stream_entry, _head);
-        deleted += flb_sds_len(e->data);
+        deleted += e->size;
+        vs->snapshot.evicted_entries++;
+        vs->snapshot.evicted_bytes += e->size;
         vivo_stream_entry_destroy(vs, e);
         if (deleted >= size) {
             break;
@@ -218,37 +239,45 @@ static void vivo_stream_make_room(struct vivo_stream *vs, size_t size)
     }
 }
 
-struct vivo_stream_entry *vivo_stream_append(struct vivo_stream *vs, void *data, size_t size)
+int vivo_stream_append(struct vivo_stream *vs, void *data, size_t size, flb_sds_t otlp)
 {
     struct vivo_stream_entry *e;
+    size_t retained_size;
     struct vivo_exporter *ctx = vs->parent;
 
-    e = vivo_stream_entry_create(vs, data, size);
-    if (!e) {
-        return NULL;
+    if (flb_sds_len(otlp) > ctx->stream_queue_size ||
+        size > ctx->stream_queue_size - flb_sds_len(otlp) || size > ctx->stream_page_size ||
+        flb_sds_len(otlp) > ctx->stream_page_size - 552) {
+        stream_lock(vs);
+        vs->snapshot.rejected_entries++;
+        stream_unlock(vs);
+        flb_plg_error(ctx->ins, "entry sizes v1=%zu v2=%zu exceed queue/page limits %zu/%zu",
+                      size, flb_sds_len(otlp), ctx->stream_queue_size, ctx->stream_page_size);
+        return -2;
     }
 
+    e = vivo_stream_entry_create(vs, data, size, otlp);
+    if (!e) {
+        return -1;
+    }
+
+    retained_size = e->size;
     stream_lock(vs);
 
-    /* check queue space */
-    if (vs->current_bytes_size + size > ctx->stream_queue_size) {
-        /* free up some space */
-        if (mk_list_size(&vs->entries) == 0) {
-            /* do nothing, the user size setup is smaller that the incoming size, let it pass */
-        }
-        else {
-            /* release at least 'size' bytes */
-            vivo_stream_make_room(vs, size);
-        }
+    /* Subtraction avoids overflow and evicts only the actual excess. */
+    if (vs->current_bytes_size > ctx->stream_queue_size - retained_size) {
+        vivo_stream_make_room(vs, vs->current_bytes_size - (ctx->stream_queue_size - retained_size));
     }
+    e->id = vs->entries_added;
 
     /* add entry to the end of the list */
     mk_list_add(&e->_head, &vs->entries);
 
     vs->entries_added++;
-    vs->current_bytes_size += size;
+    vs->snapshot.retained_entries++;
+    vs->current_bytes_size += retained_size;
 
     stream_unlock(vs);
 
-    return e;
+    return 0;
 }
