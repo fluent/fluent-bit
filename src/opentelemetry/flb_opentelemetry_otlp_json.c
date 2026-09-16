@@ -3478,7 +3478,6 @@ static int add_trace_id_field(struct flb_json_mut_doc *doc,
 static struct flb_json_mut_val *create_trace_status_json(struct flb_json_mut_doc *doc,
                                                 struct ctrace_span_status *status)
 {
-    const char     *code_string;
     struct flb_json_mut_val *json;
 
     if (status == NULL) {
@@ -3495,17 +3494,7 @@ static struct flb_json_mut_val *create_trace_status_json(struct flb_json_mut_doc
         return NULL;
     }
 
-    if (status->code == CTRACE_SPAN_STATUS_CODE_OK) {
-        code_string = "OK";
-    }
-    else if (status->code == CTRACE_SPAN_STATUS_CODE_ERROR) {
-        code_string = "ERROR";
-    }
-    else {
-        code_string = "UNSET";
-    }
-
-    if (!flb_json_mut_obj_add_str(doc, json, "code", code_string)) {
+    if (!flb_json_mut_obj_add_int(doc, json, "code", status->code)) {
         return NULL;
     }
 

@@ -590,44 +590,48 @@ static int process_span_status(struct ctrace *ctr,
     int code = 0;
     cfl_sds_t tmp = NULL;
     char *message = NULL;
+    msgpack_object *value;
 
     if (status->type != MSGPACK_OBJECT_MAP) {
         flb_error("unexpected type for status");
         return -1;
     }
 
-    /* code */
-    ret = flb_otel_utils_find_map_entry_by_key(&status->via.map, "code", 0, FLB_TRUE);
-    if (ret >= 0 && status->via.map.ptr[ret].val.type == MSGPACK_OBJECT_STR) {
-        tmp = cfl_sds_create_len(status->via.map.ptr[ret].val.via.str.ptr,
-                                 status->via.map.ptr[ret].val.via.str.size);
-        if (!tmp) {
-            return -1;
+    /* Missing code defaults to UNSET, as in the Protobuf representation. */
+    ret = flb_otel_utils_find_map_entry_by_key(&status->via.map, "code", 0, FLB_FALSE);
+    if (ret >= 0) {
+        value = &status->via.map.ptr[ret].val;
+        if (value->type == MSGPACK_OBJECT_POSITIVE_INTEGER && value->via.u64 <= INT32_MAX) {
+            code = (int) value->via.u64;
         }
+        else if (value->type == MSGPACK_OBJECT_NEGATIVE_INTEGER && value->via.i64 >= INT32_MIN) {
+            code = (int) value->via.i64;
+        }
+        else if (value->type == MSGPACK_OBJECT_STR) {
+            /* Retain legacy short names and accept canonical Protobuf enum names. */
+            tmp = cfl_sds_create_len(value->via.str.ptr, value->via.str.size);
+            if (!tmp) {
+                return -1;
+            }
 
-        if (strcasecmp(tmp, "UNSET") == 0) {
-            code = CTRACE_SPAN_STATUS_CODE_UNSET;
-        }
-        else if (strcasecmp(tmp, "OK") == 0) {
-            code = CTRACE_SPAN_STATUS_CODE_OK;
-        }
-        else if (strcasecmp(tmp, "ERROR") == 0) {
-            code = CTRACE_SPAN_STATUS_CODE_ERROR;
+            if (strcasecmp(tmp, "UNSET") == 0 || strcasecmp(tmp, "STATUS_CODE_UNSET") == 0) {
+                code = CTRACE_SPAN_STATUS_CODE_UNSET;
+            }
+            else if (strcasecmp(tmp, "OK") == 0 || strcasecmp(tmp, "STATUS_CODE_OK") == 0) {
+                code = CTRACE_SPAN_STATUS_CODE_OK;
+            }
+            else if (strcasecmp(tmp, "ERROR") == 0 || strcasecmp(tmp, "STATUS_CODE_ERROR") == 0) {
+                code = CTRACE_SPAN_STATUS_CODE_ERROR;
+            }
+            else {
+                cfl_sds_destroy(tmp);
+                goto invalid_code;
+            }
+            cfl_sds_destroy(tmp);
         }
         else {
-            cfl_sds_destroy(tmp);
-            if (error_status) {
-                *error_status = FLB_OTEL_TRACES_ERR_STATUS_FAILURE;
-            }
-            return -1;
+            goto invalid_code;
         }
-        cfl_sds_destroy(tmp);
-    }
-    else {
-        if (error_status) {
-            *error_status = FLB_OTEL_TRACES_ERR_STATUS_FAILURE;
-        }
-        return -1;
     }
 
     /* message */
@@ -643,6 +647,12 @@ static int process_span_status(struct ctrace *ctr,
     }
 
     return 0;
+
+invalid_code:
+    if (error_status) {
+        *error_status = FLB_OTEL_TRACES_ERR_STATUS_FAILURE;
+    }
+    return -1;
 }
 
 static int process_spans(struct ctrace *ctr,
