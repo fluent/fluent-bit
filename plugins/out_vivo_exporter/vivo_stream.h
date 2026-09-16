@@ -28,11 +28,24 @@
 struct vivo_stream_entry {
     int64_t id;
     flb_sds_t data;
+    flb_sds_t otlp;
+    size_t size;
     struct mk_list _head;
+};
+
+struct vivo_stream_snapshot {
+    uint64_t oldest;
+    uint64_t next;
+    uint64_t retained_bytes;
+    uint64_t retained_entries;
+    uint64_t evicted_entries;
+    uint64_t evicted_bytes;
+    uint64_t rejected_entries;
 };
 
 struct vivo_stream {
     size_t entries_added;
+    struct vivo_stream_snapshot snapshot;
 
     size_t current_bytes_size;
 
@@ -50,12 +63,11 @@ struct vivo_stream {
 struct vivo_stream *vivo_stream_create(struct vivo_exporter *ctx);
 void vivo_stream_destroy(struct vivo_stream *vs);
 struct vivo_stream_entry *vivo_stream_entry_create(struct vivo_stream *vs,
-                                                   void *data, size_t size);
-struct vivo_stream_entry *vivo_stream_append(struct vivo_stream *vs, void *data,
-                                             size_t size);
-flb_sds_t vivo_stream_get_content(struct vivo_stream *vs, int64_t from, int64_t to,
+                                                   void *data, size_t size, flb_sds_t otlp);
+int vivo_stream_append(struct vivo_stream *vs, void *data, size_t size, flb_sds_t otlp);
+flb_sds_t vivo_stream_get_content(struct vivo_stream *vs, int version, int64_t from, int64_t to,
                                   int64_t limit,
                                   int64_t *stream_start_id, int64_t *stream_end_id,
-                                  int64_t *stream_next_id);
+                                  int64_t *stream_next_id, struct vivo_stream_snapshot *snapshot);
 
 #endif
