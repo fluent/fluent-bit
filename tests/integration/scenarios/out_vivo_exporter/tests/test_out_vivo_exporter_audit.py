@@ -1,4 +1,5 @@
 """Producer/consumer regressions for the September 2026 VIVO audit."""
+from collections import namedtuple
 import json
 import os
 import socket
@@ -72,7 +73,8 @@ def test_pagination_methods_and_recovery(exporter, mode):
 
     def read(query="", method="GET"):
         return run_curl_request(url + query, payload="" if method == "POST" else None,
-                                method=method, http_mode=mode, include_headers=True)
+                                method=method, http_mode=mode, include_headers=True,
+                                extra_args=["--head"] if method == "HEAD" else [])
 
     first = read("?from=0&limit=1")
     meta = headers(first)
@@ -90,7 +92,8 @@ def test_pagination_methods_and_recovery(exporter, mode):
     for method, status in (("HEAD", 200), ("OPTIONS", 204), ("POST", 405)):
         response = read(method=method)
         assert response["status_code"] == status
-        assert response["body"] == ""
+        expected = response["headers_raw"] if method == "HEAD" else ""
+        assert response["body"].replace("\r\n", "\n") == expected
     assert len(read()["body"].splitlines()) == 3
     empty = read("?from=999")
     assert empty["body"] == ""
@@ -311,8 +314,13 @@ def test_forward_bulk_metrics_contexts(exporter):
 
 
 
+MessagePackExtension = namedtuple("MessagePackExtension", "code data")
+
+
 def pack_forward(value):
     """Encode the primitive MessagePack types used by these Forward fixtures."""
+    if isinstance(value, MessagePackExtension):
+        return b"\xc7" + struct.pack(">Bb", len(value.data), value.code) + value.data
     if value is None:
         return b"\xc0"
     if isinstance(value, bool):
