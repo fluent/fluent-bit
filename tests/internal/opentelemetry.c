@@ -2424,7 +2424,7 @@ void test_opentelemetry_traces_otlp_json_roundtrip()
         "\"spanId\":\"0011223344556677\",\"name\":\"op-a\",\"kind\":2,"
         "\"startTimeUnixNano\":\"1704067200000000000\",\"endTimeUnixNano\":\"1704067201000000000\","
         "\"attributes\":[{\"key\":\"http.method\",\"value\":{\"stringValue\":\"GET\"}}],"
-        "\"status\":{\"code\":\"OK\"}}]}]}]}";
+        "\"status\":{\"code\":1}}]}]}]}";
 
     trace_context = flb_opentelemetry_json_traces_to_ctrace(expected,
                                                             strlen(expected),
