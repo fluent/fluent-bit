@@ -21,6 +21,8 @@
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_gzip.h>
+#include <ctype.h>
 #include <fluent-bit/flb_metrics_exporter.h>
 #include <fluent-bit/http_server/flb_hs_utils.h>
 
@@ -29,50 +31,75 @@
 #include "vivo.h"
 #include "vivo_http.h"
 #include "vivo_stream.h"
+#include "vivo_otlp.h"
 
 #define VIVO_ACCESS_CONTROL_ALLOW_HEADERS_VALUE \
-    "Origin, X-Requested-With, Content-Type, Accept"
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
 #define VIVO_ACCESS_CONTROL_EXPOSE_HEADERS_VALUE \
-    "vivo-stream-start-id, vivo-stream-end-id, vivo-stream-next-id"
+    "vivo-stream-start-id, vivo-stream-end-id, vivo-stream-next-id, " \
+    "vivo-stream-generation, vivo-stream-oldest-id, vivo-stream-tail-id, vivo-stream-gap, " \
+    "vivo-stream-retained-bytes, vivo-stream-retained-entries, vivo-stream-evicted-entries, " \
+    "vivo-stream-evicted-bytes, vivo-stream-rejected-entries"
 
 static int stream_get_query_properties(struct flb_http_request *request,
                                        int64_t *from,
                                        int64_t *to,
                                        int64_t *limit)
 {
-    char *ptr;
-    flb_sds_t buf;
+    const char *cursor;
+    const char *end;
+    const char *equal;
+    const char *digit;
+    int64_t value;
+    int64_t *target;
+    size_t key_len;
 
     *from = -1;
     *to = -1;
     *limit = -1;
-
-    if (request->query_string == NULL) {
-        return 0;
+    cursor = request->query_string;
+    while (cursor && *cursor) {
+        end = strchr(cursor, '&');
+        if (!end) {
+            end = cursor + strlen(cursor);
+        }
+        equal = memchr(cursor, '=', end - cursor);
+        if (!equal || equal + 1 == end) {
+            return -1;
+        }
+        key_len = equal - cursor;
+        if (key_len == 4 && memcmp(cursor, "from", 4) == 0) {
+            target = from;
+        }
+        else if (key_len == 2 && memcmp(cursor, "to", 2) == 0) {
+            target = to;
+        }
+        else if (key_len == 5 && memcmp(cursor, "limit", 5) == 0) {
+            target = limit;
+        }
+        else {
+            return -1;
+        }
+        if (*target != -1) {
+            return -1;
+        }
+        value = 0;
+        for (digit = equal + 1; digit < end; digit++) {
+            if (*digit < '0' || *digit > '9' ||
+                value > (INT64_MAX - (*digit - '0')) / 10) {
+                return -1;
+            }
+            value = value * 10 + (*digit - '0');
+        }
+        *target = value;
+        cursor = *end ? end + 1 : end;
+        if (*end && !*cursor) {
+            return -1;
+        }
     }
-
-    buf = flb_sds_create_len(request->query_string, cfl_sds_len(request->query_string));
-    if (!buf) {
+    if (*limit == 0 || (*from >= 0 && *to >= 0 && *from > *to)) {
         return -1;
     }
-
-    ptr = strstr(buf, "from=");
-    if (ptr) {
-        *from = atol(ptr + 5);
-    }
-
-    ptr = strstr(buf, "to=");
-    if (ptr) {
-        *to = atol(ptr + 3);
-    }
-
-    ptr = strstr(buf, "limit=");
-    if (ptr) {
-        *limit = atol(ptr + 6);
-    }
-
-    flb_sds_destroy(buf);
-
     return 0;
 }
 
@@ -80,6 +107,9 @@ static int headers_set_common(struct flb_http_response *response,
                               struct vivo_exporter *ctx)
 {
     flb_hs_response_set_content_type(response, FLB_HS_CONTENT_TYPE_JSON);
+    flb_http_response_set_header(response, "Cache-Control", 13, "no-store", 8);
+    flb_http_response_set_header(response, "Access-Control-Allow-Methods", 28,
+                                 "GET, HEAD, OPTIONS", 18);
 
     if (ctx->http_cors_allow_origin != NULL) {
         flb_http_response_set_header(
@@ -106,6 +136,7 @@ static int headers_set(struct flb_http_response *response, struct vivo_stream *v
 
     ctx = vs->parent;
     headers_set_common(response, ctx);
+    flb_http_response_set_header(response, "Content-Type", 12, "application/x-ndjson", 20);
 
     if (ctx->http_cors_allow_origin != NULL) {
         flb_http_response_set_header(
@@ -119,10 +150,183 @@ static int headers_set(struct flb_http_response *response, struct vivo_stream *v
     return 0;
 }
 
+static void header_number(struct flb_http_response *response, const char *name, uint64_t value)
+{
+    char text[32];
+    int length;
+
+    length = snprintf(text, sizeof(text), "%" PRIu64, value);
+    flb_http_response_set_header(response, (char *) name, strlen(name), text, length);
+}
+
+/* Parse an HTTP qvalue without accepting junk, exponents or out-of-range values. */
+static int encoding_quality(const char *start, const char *end)
+{
+    int quality;
+    int factor = 100;
+
+    if (start == end || (*start != '0' && *start != '1')) {
+        return 0;
+    }
+    quality = (*start++ - '0') * 1000;
+    if (start != end) {
+        if (*start++ != '.') {
+            return 0;
+        }
+        while (start < end) {
+            if (*start < '0' || *start > '9' || factor == 0 ||
+                (quality >= 1000 && *start != '0')) {
+                return 0;
+            }
+            quality += (*start++ - '0') * factor;
+            factor /= 10;
+        }
+    }
+    return quality;
+}
+
+/* Return 1 for gzip, 0 for identity and -1 when neither representation is acceptable. */
+static int response_encoding(struct flb_http_request *request, struct vivo_exporter *ctx)
+{
+    const char *cursor;
+    const char *end;
+    const char *token_end;
+    const char *parameter;
+    int quality;
+    int gzip_quality = -1;
+    int wildcard_quality = -1;
+    int identity_quality = -1;
+    size_t length;
+
+    cursor = flb_http_request_get_header(request, "accept-encoding");
+    while (cursor && *cursor) {
+        while (*cursor == ' ' || *cursor == '\t' || *cursor == ',') {
+            cursor++;
+        }
+        end = strchr(cursor, ',');
+        if (!end) {
+            end = cursor + strlen(cursor);
+        }
+        token_end = cursor;
+        while (token_end < end && *token_end != ';' && !isspace((unsigned char) *token_end)) {
+            token_end++;
+        }
+        length = token_end - cursor;
+        quality = 1000;
+        parameter = token_end;
+        while (parameter < end && isspace((unsigned char) *parameter)) {
+            parameter++;
+        }
+        if (parameter < end) {
+            if (*parameter++ != ';') {
+                quality = 0;
+            }
+            else {
+                while (parameter < end && isspace((unsigned char) *parameter)) {
+                    parameter++;
+                }
+                if (end - parameter < 2 || tolower((unsigned char) parameter[0]) != 'q' ||
+                    parameter[1] != '=') {
+                    quality = 0;
+                }
+                else {
+                    parameter += 2;
+                    while (end > parameter && isspace((unsigned char) end[-1])) {
+                        end--;
+                    }
+                    quality = encoding_quality(parameter, end);
+                }
+            }
+        }
+        if (length == 4 && strncasecmp(cursor, "gzip", 4) == 0) {
+            gzip_quality = quality;
+        }
+        else if (length == 8 && strncasecmp(cursor, "identity", 8) == 0) {
+            identity_quality = quality;
+        }
+        else if (length == 1 && *cursor == '*') {
+            wildcard_quality = quality;
+        }
+        cursor = strchr(cursor, ',');
+        if (cursor) {
+            cursor++;
+        }
+    }
+    if (gzip_quality < 0) {
+        gzip_quality = wildcard_quality;
+    }
+    if (ctx->compress && gzip_quality > 0 && gzip_quality >= identity_quality) {
+        return 1;
+    }
+    if (identity_quality == 0 || (identity_quality < 0 && wildcard_quality == 0)) {
+        return -1;
+    }
+    return 0;
+}
+
+static int send_payload(struct flb_http_request *request, struct flb_http_response *response,
+                         struct vivo_exporter *ctx, const char *payload, size_t size)
+{
+    int encoding;
+    int result;
+    void *compressed = NULL;
+    size_t compressed_size;
+
+    flb_http_response_set_header(response, "Vary", 4, "Accept-Encoding", 15);
+    encoding = response_encoding(request, ctx);
+    if (encoding < 0) {
+        flb_http_response_set_status(response, 406);
+        return flb_http_response_commit(response);
+    }
+    if (encoding == 1 && size > 0) {
+        if (flb_gzip_compress((void *) payload, size, &compressed, &compressed_size) != 0) {
+            flb_http_response_set_status(response, 500);
+            return flb_http_response_commit(response);
+        }
+        result = flb_http_response_set_body(response, compressed, compressed_size);
+        flb_free(compressed);
+        if (result == 0) {
+            flb_http_response_set_header(response, "Content-Encoding", 16, "gzip", 4);
+        }
+    }
+    else {
+        result = flb_http_response_set_body(response, (unsigned char *) payload, size);
+    }
+    if (result != 0) {
+        flb_http_response_set_status(response, 500);
+    }
+    return flb_http_response_commit(response);
+}
+
+static flb_sds_t page_envelope(struct vivo_exporter *ctx, const char *signal, flb_sds_t entries,
+                               int64_t from, int64_t next, struct vivo_stream_snapshot *snapshot)
+{
+    flb_sds_t page;
+    const char *gap;
+
+    gap = from >= 0 && (from < snapshot->oldest || from > snapshot->next) ? "true" : "false";
+    page = flb_sds_create_size(flb_sds_len(entries) + 512);
+    if (!page) {
+        return NULL;
+    }
+    if (!flb_sds_printf(&page,
+        "{\"schemaVersion\":2,\"signal\":\"%s\",\"generation\":\"%s\","
+        "\"nextCursor\":\"%" PRId64 "\",\"oldestCursor\":\"%" PRIu64 "\","
+        "\"tailCursor\":\"%" PRIu64 "\",\"gap\":%s,\"entries\":[%s]}",
+        signal, ctx->generation, next, snapshot->oldest, snapshot->next, gap, entries)) {
+        flb_sds_destroy(page);
+        return NULL;
+    }
+    return page;
+}
+
 static int vivo_http_serve_content(struct flb_http_request *request,
                                    struct flb_http_response *response,
                                    struct vivo_stream *vs)
 {
+    int result;
+    int version;
+    const char *signal;
     int64_t from;
     int64_t to;
     int64_t limit;
@@ -130,25 +334,55 @@ static int vivo_http_serve_content(struct flb_http_request *request,
     int64_t stream_end_id;
     int64_t stream_next_id;
     flb_sds_t payload;
+    flb_sds_t converted;
     flb_sds_t str_start;
     flb_sds_t str_end;
     flb_sds_t str_next;
+    struct vivo_stream_snapshot snapshot;
+    struct vivo_exporter *ctx = vs->parent;
 
     if (stream_get_query_properties(request, &from, &to, &limit) != 0) {
-        flb_http_response_set_status(response, 500);
+        flb_http_response_set_status(response, 400);
         return flb_http_response_commit(response);
     }
 
-    payload = vivo_stream_get_content(vs, from, to, limit,
+    version = strncmp(request->path, "/api/v2/", 8) == 0 ? 2 : 1;
+    signal = vs == ctx->stream_logs ? "logs" : (vs == ctx->stream_metrics ? "metrics" : "traces");
+    payload = vivo_stream_get_content(vs, version, from, to, limit,
                                       &stream_start_id, &stream_end_id,
-                                      &stream_next_id);
+                                      &stream_next_id, &snapshot);
     if (!payload) {
         flb_http_response_set_status(response, 500);
         return flb_http_response_commit(response);
     }
 
+    if (version == 2) {
+        converted = page_envelope(ctx, signal, payload, from, stream_next_id, &snapshot);
+        flb_sds_destroy(payload);
+        payload = converted;
+        if (!payload) {
+            flb_http_response_set_status(response, 500);
+            return flb_http_response_commit(response);
+        }
+    }
+
     flb_http_response_set_status(response, 200);
     headers_set(response, vs);
+    if (version == 2) {
+        flb_hs_response_set_content_type(response, FLB_HS_CONTENT_TYPE_JSON);
+    }
+
+    flb_http_response_set_header(response, "vivo-stream-generation", 22, ctx->generation, 36);
+    header_number(response, "vivo-stream-oldest-id", snapshot.oldest);
+    header_number(response, "vivo-stream-tail-id", snapshot.next);
+    header_number(response, "vivo-stream-retained-bytes", snapshot.retained_bytes);
+    header_number(response, "vivo-stream-retained-entries", snapshot.retained_entries);
+    header_number(response, "vivo-stream-evicted-entries", snapshot.evicted_entries);
+    header_number(response, "vivo-stream-evicted-bytes", snapshot.evicted_bytes);
+    header_number(response, "vivo-stream-rejected-entries", snapshot.rejected_entries);
+    flb_http_response_set_header(response, "vivo-stream-gap", 15,
+        from >= 0 && (from < snapshot.oldest || from > snapshot.next) ? "true" : "false",
+        from >= 0 && (from < snapshot.oldest || from > snapshot.next) ? 4 : 5);
 
     str_next = flb_sds_create_size(32);
     if (str_next == NULL) {
@@ -164,11 +398,11 @@ static int vivo_http_serve_content(struct flb_http_request *request,
                                  str_next,
                                  flb_sds_len(str_next));
 
-    if (flb_sds_len(payload) == 0) {
+    if (stream_start_id < 0) {
+        result = send_payload(request, response, ctx, payload, flb_sds_len(payload));
         flb_sds_destroy(payload);
         flb_sds_destroy(str_next);
-        flb_http_response_set_body(response, NULL, 0);
-        return flb_http_response_commit(response);
+        return result;
     }
 
     str_start = flb_sds_create_size(32);
@@ -205,19 +439,18 @@ static int vivo_http_serve_content(struct flb_http_request *request,
                                  str_end,
                                  flb_sds_len(str_end));
 
-    flb_http_response_set_body(response,
-                               (unsigned char *) payload,
-                               flb_sds_len(payload));
+    result = send_payload(request, response, ctx, payload, flb_sds_len(payload));
 
     flb_sds_destroy(payload);
     flb_sds_destroy(str_start);
     flb_sds_destroy(str_end);
     flb_sds_destroy(str_next);
 
-    return flb_http_response_commit(response);
+    return result;
 }
 
-static int cb_internal_metrics(struct flb_http_response *response,
+static int cb_internal_metrics(struct flb_http_request *request,
+                               struct flb_http_response *response,
                                struct vivo_exporter *ctx)
 {
     int ret;
@@ -236,17 +469,16 @@ static int cb_internal_metrics(struct flb_http_response *response,
         return flb_http_response_commit(response);
     }
 
-    ret = cmt_encode_msgpack_create(cmt, &mp_buf, &mp_size);
-    if (ret != 0) {
-        cmt_destroy(cmt);
-        flb_http_response_set_status(response, 500);
-        return flb_http_response_commit(response);
+    if (strncmp(request->path, "/api/v2/", 8) == 0) {
+        json = vivo_otlp_metrics(cmt);
     }
-
-    json = flb_msgpack_raw_to_json_sds(mp_buf, mp_size,
-                                       ctx->config->json_escape_unicode);
-
-    cmt_encode_msgpack_destroy(mp_buf);
+    else {
+        ret = cmt_encode_msgpack_create(cmt, &mp_buf, &mp_size);
+        if (ret == 0) {
+            json = vivo_json(mp_buf, mp_size, ctx->config->json_escape_unicode);
+            cmt_encode_msgpack_destroy(mp_buf);
+        }
+    }
     cmt_destroy(cmt);
 
     if (!json) {
@@ -256,12 +488,10 @@ static int cb_internal_metrics(struct flb_http_response *response,
 
     flb_http_response_set_status(response, 200);
     headers_set_common(response, ctx);
-    flb_http_response_set_body(response,
-                               (unsigned char *) json,
-                               flb_sds_len(json));
+    ret = send_payload(request, response, ctx, json, flb_sds_len(json));
     flb_sds_destroy(json);
 
-    return flb_http_response_commit(response);
+    return ret;
 }
 
 static int vivo_http_request_handler(struct flb_http_request *request,
@@ -275,20 +505,60 @@ static int vivo_http_request_handler(struct flb_http_request *request,
         return flb_http_response_commit(response);
     }
 
-    if (strcmp(request->path, "/api/v1/logs") == 0) {
+    headers_set_common(response, ctx);
+    if (request->method == HTTP_METHOD_OPTIONS) {
+        flb_http_response_set_status(response, 204);
+        return flb_http_response_commit(response);
+    }
+    if (request->method != HTTP_METHOD_GET && request->method != HTTP_METHOD_HEAD) {
+        flb_http_response_set_header(response, "Allow", 5, "GET, HEAD, OPTIONS", 18);
+        flb_http_response_set_status(response, 405);
+        return flb_http_response_commit(response);
+    }
+    if (strcmp(request->path, "/api/v1/health") == 0 ||
+        strcmp(request->path, "/api/v2/health") == 0) {
+        if (request->method == HTTP_METHOD_HEAD) {
+            flb_http_response_set_status(response, 200);
+            return flb_http_response_commit(response);
+        }
+        return flb_hs_response_send_string(response, 200, FLB_HS_CONTENT_TYPE_JSON,
+            "{\"service\":\"vivo_exporter\",\"versions\":[1,2],"
+            "\"v1Framing\":\"ndjson\",\"v2Framing\":\"json\",\"delivery\":\"best_effort\","
+            "\"v2Payload\":\"otlp-json\",\"compression\":[\"gzip\",\"identity\"],"
+            "\"non_finite\":[\"NaN\",\"Infinity\",\"-Infinity\"]}");
+    }
+    if (request->method == HTTP_METHOD_HEAD) {
+        flb_http_response_set_status(response,
+            strcmp(request->path, "/") == 0 ||
+            (strcmp(request->path, "/api/v1/logs") == 0 ||
+             strcmp(request->path, "/api/v2/logs") == 0) ||
+            (strcmp(request->path, "/api/v1/metrics") == 0 ||
+             strcmp(request->path, "/api/v2/metrics") == 0) ||
+            (strcmp(request->path, "/api/v1/traces") == 0 ||
+             strcmp(request->path, "/api/v2/traces") == 0) ||
+            (strcmp(request->path, "/api/v1/internal/metrics") == 0 ||
+             strcmp(request->path, "/api/v2/internal/metrics") == 0) ? 200 : 404);
+        return flb_http_response_commit(response);
+    }
+
+    if ((strcmp(request->path, "/api/v1/logs") == 0 ||
+             strcmp(request->path, "/api/v2/logs") == 0)) {
         return vivo_http_serve_content(request, response, ctx->stream_logs);
     }
 
-    if (strcmp(request->path, "/api/v1/metrics") == 0) {
+    if ((strcmp(request->path, "/api/v1/metrics") == 0 ||
+             strcmp(request->path, "/api/v2/metrics") == 0)) {
         return vivo_http_serve_content(request, response, ctx->stream_metrics);
     }
 
-    if (strcmp(request->path, "/api/v1/traces") == 0) {
+    if ((strcmp(request->path, "/api/v1/traces") == 0 ||
+             strcmp(request->path, "/api/v2/traces") == 0)) {
         return vivo_http_serve_content(request, response, ctx->stream_traces);
     }
 
-    if (strcmp(request->path, "/api/v1/internal/metrics") == 0) {
-        return cb_internal_metrics(response, ctx);
+    if ((strcmp(request->path, "/api/v1/internal/metrics") == 0 ||
+             strcmp(request->path, "/api/v2/internal/metrics") == 0)) {
+        return cb_internal_metrics(request, response, ctx);
     }
 
     if (strcmp(request->path, "/") == 0) {
