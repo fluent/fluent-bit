@@ -432,7 +432,7 @@ int flb_http1_response_commit(struct flb_http_response *response)
 
     response_buffer = sds_result;
 
-    if (response->body != NULL) {
+    if (response->body != NULL && response->stream->request.method != HTTP_METHOD_HEAD) {
         sds_result = cfl_sds_cat(response_buffer,
                                  response->body,
                                  cfl_sds_len(response->body));
