@@ -1,5 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 #include <fluent-bit.h>
+#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_thread_pool.h>
 #include "flb_tests_runtime.h"
 
 /* Test data */
@@ -671,8 +673,172 @@ void flb_test_cloudwatch_event_truncation_with_backslash(void)
     }
 }
 
+/* Create a real output context, but leave its workers idle while inspecting caches. */
+static flb_ctx_t *create_stream_cache_test_context(const char *workers, int *out_id)
+{
+    flb_ctx_t *ctx;
+    int in_id;
+    int ret;
+
+    setenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_CREATE_LOG_STREAM_ERROR");
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+    if (!ctx) {
+        return NULL;
+    }
+    in_id = flb_input(ctx, "lib", NULL);
+    TEST_CHECK(in_id >= 0);
+    *out_id = flb_output(ctx, "cloudwatch_logs", NULL);
+    TEST_CHECK(*out_id >= 0);
+    flb_service_set(ctx, "Grace", "1", NULL);
+    flb_output_set(ctx, *out_id, "match", "*", "region", "us-east-1",
+                   "log_group_name", "cache-test", "log_stream_prefix", "prefix-",
+                   "workers", workers, NULL);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        return NULL;
+    }
+    return ctx;
+}
+
+static void check_stream_cache_mode(const char *workers, int threaded)
+{
+    flb_ctx_t *ctx;
+    struct flb_output_instance *ins;
+    struct flb_cloudwatch *cw;
+    struct flb_out_thread_instance worker;
+    struct flb_out_thread_instance *saved_worker;
+    struct flb_tp_thread thread;
+    struct log_stream *stream;
+    struct mk_list *cache;
+    msgpack_object map;
+    flb_sds_t tag;
+    int out_id;
+
+    ctx = create_stream_cache_test_context(workers, &out_id);
+    if (!ctx) {
+        return;
+    }
+    ins = flb_output_get_instance(ctx->config, out_id);
+    cw = ins->context;
+    memset(&worker, 0, sizeof(worker));
+    memset(&thread, 0, sizeof(thread));
+    memset(&map, 0, sizeof(map));
+    map.type = MSGPACK_OBJECT_MAP;
+    saved_worker = NULL;
+    if (threaded) {
+        saved_worker = flb_output_thread_instance_get();
+        worker.ins = ins;
+        worker.th = &thread;
+        flb_output_thread_instance_set(&worker);
+        cache = &cw->worker_streams[0];
+    }
+    else {
+        cache = &cw->streams;
+    }
+    tag = flb_sds_create("mode");
+    stream = get_log_stream(cw, tag, map);
+    TEST_CHECK(stream != NULL);
+    if (stream) {
+        TEST_CHECK(get_log_stream(cw, tag, map) == stream);
+        TEST_CHECK(mk_list_size(cache) == 1);
+        stream->expiration = 0;
+        stream = get_log_stream(cw, tag, map);
+        TEST_CHECK(stream != NULL);
+        TEST_CHECK(mk_list_size(cache) == 1);
+    }
+    if (threaded) {
+        TEST_CHECK(mk_list_size(&cw->streams) == 0);
+        flb_output_thread_instance_set(saved_worker);
+    }
+    flb_sds_destroy(tag);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_cloudwatch_stream_cache_no_workers(void)
+{
+    check_stream_cache_mode("0", FLB_FALSE);
+}
+
+void flb_test_cloudwatch_stream_cache_one_worker(void)
+{
+    check_stream_cache_mode("1", FLB_TRUE);
+}
+
+void flb_test_cloudwatch_stream_cache_worker_expiry(void)
+{
+    flb_ctx_t *ctx;
+    struct flb_output_instance *ins;
+    struct flb_cloudwatch *cw;
+    struct flb_out_thread_instance worker;
+    struct flb_out_thread_instance *saved_worker;
+    struct flb_tp_thread thread;
+    struct log_stream *first;
+    struct log_stream *second;
+    msgpack_object map;
+    flb_sds_t tag;
+    int out_id;
+    int i;
+
+    ctx = create_stream_cache_test_context("2", &out_id);
+    if (!ctx) {
+        return;
+    }
+    ins = flb_output_get_instance(ctx->config, out_id);
+    cw = ins->context;
+    memset(&worker, 0, sizeof(worker));
+    memset(&thread, 0, sizeof(thread));
+    memset(&map, 0, sizeof(map));
+    map.type = MSGPACK_OBJECT_MAP;
+    worker.ins = ins;
+    worker.th = &thread;
+    saved_worker = flb_output_thread_instance_get();
+    flb_output_thread_instance_set(&worker);
+    tag = flb_sds_create("shared-name");
+
+    first = get_log_stream(cw, tag, map);
+    thread.id = 1;
+    second = get_log_stream(cw, tag, map);
+    TEST_CHECK(first != NULL && second != NULL);
+    TEST_CHECK(first != second);
+    if (!first || !second || first == second) {
+        goto cleanup;
+    }
+
+    /* Expiry on one worker must not invalidate another worker's stream. */
+    for (i = 0; i < 32; i++) {
+        thread.id = 0;
+        first->expiration = 0;
+        first = get_log_stream(cw, tag, map);
+        TEST_CHECK(first != NULL);
+        if (!first) {
+            goto cleanup;
+        }
+        thread.id = 1;
+        TEST_CHECK(get_log_stream(cw, tag, map) == second);
+        TEST_CHECK(strcmp(second->name, "prefix-shared-name") == 0);
+        TEST_CHECK(strcmp(second->group, "cache-test") == 0);
+    }
+    TEST_CHECK(mk_list_size(&cw->streams) == 0);
+    TEST_CHECK(mk_list_size(&cw->worker_streams[0]) == 1);
+    TEST_CHECK(mk_list_size(&cw->worker_streams[1]) == 1);
+
+cleanup:
+    flb_output_thread_instance_set(saved_worker);
+    flb_sds_destroy(tag);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
+    {"stream_cache_no_workers", flb_test_cloudwatch_stream_cache_no_workers},
+    {"stream_cache_one_worker", flb_test_cloudwatch_stream_cache_one_worker},
+    {"stream_cache_worker_expiry", flb_test_cloudwatch_stream_cache_worker_expiry},
     {"success", flb_test_cloudwatch_success },
     {"success_with_metrics", flb_test_cloudwatch_success_with_metrics},
     {"group_already_exists", flb_test_cloudwatch_already_exists_create_group },
