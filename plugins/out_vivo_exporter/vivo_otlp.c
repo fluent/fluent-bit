@@ -442,6 +442,16 @@ static void write_any(struct json_writer *writer, msgpack_object *value, int dep
             write_text(writer, "\"bytesValue\":");
             write_binary(writer, (const unsigned char *) value->via.bin.ptr, value->via.bin.size, FLB_FALSE);
             break;
+        case MSGPACK_OBJECT_EXT:
+            write_text(writer, "\"kvlistValue\":{\"values\":[{\"key\":\"fluentbit.type\","
+                               "\"value\":{\"stringValue\":\"msgpack.ext\"}},"
+                               "{\"key\":\"fluentbit.ext_type\",\"value\":{\"intValue\":");
+            write_int64(writer, value->via.ext.type, FLB_TRUE);
+            write_text(writer, "}},{\"key\":\"fluentbit.value\",\"value\":{\"bytesValue\":");
+            write_binary(writer, (const unsigned char *) value->via.ext.ptr,
+                         value->via.ext.size, FLB_FALSE);
+            write_text(writer, "}}]}");
+            break;
         case MSGPACK_OBJECT_ARRAY:
             write_text(writer, "\"arrayValue\":{\"values\":[");
             for (index = 0; index < value->via.array.size; index++) {
@@ -512,10 +522,19 @@ static void write_log(struct json_writer *writer, struct flb_log_event *event, c
     msgpack_object *metadata;
     msgpack_object *body;
     msgpack_object *wrapped;
+    msgpack_object *schema;
 
     resource = map_get(event->group_attributes, "resource");
     scope = map_get(event->group_attributes, "scope");
-    metadata = map_get(event->metadata, "otlp");
+    metadata = NULL;
+    schema = map_get(event->group_metadata, "schema");
+    if (schema && schema->type == MSGPACK_OBJECT_STR && schema->via.str.size == 4 &&
+        memcmp(schema->via.str.ptr, "otlp", 4) == 0) {
+        metadata = map_get(event->metadata, "otlp");
+        if (metadata && metadata->type != MSGPACK_OBJECT_MAP) {
+            metadata = NULL;
+        }
+    }
     body = event->body;
     wrapped = map_get(body, body_key);
     if (metadata && wrapped && body->via.map.size == 1) {

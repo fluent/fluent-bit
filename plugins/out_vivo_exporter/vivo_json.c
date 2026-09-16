@@ -1,9 +1,40 @@
 /* Fluent Bit - Copyright (C) 2015-2026 The Fluent Bit Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <math.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_base64.h>
+
+#include <math.h>
+
 #include "vivo.h"
+
+/* Preserve extension type and bytes without the generic encoder's invalid \x escapes. */
+static int pack_extension(msgpack_packer *packer, msgpack_object *value)
+{
+    unsigned char *encoded;
+    size_t capacity;
+    size_t length;
+    int result;
+
+    capacity = ((size_t) value->via.ext.size + 2) / 3 * 4 + 1;
+    encoded = flb_malloc(capacity);
+    if (!encoded) {
+        return -1;
+    }
+    result = flb_base64_encode(encoded, capacity, &length,
+                               (const unsigned char *) value->via.ext.ptr, value->via.ext.size);
+    if (result == 0) {
+        result = msgpack_pack_map(packer, 3) ||
+                 msgpack_pack_str_with_body(packer, "fluentbit.type", sizeof("fluentbit.type") - 1) ||
+                 msgpack_pack_str_with_body(packer, "msgpack.ext", sizeof("msgpack.ext") - 1) ||
+                 msgpack_pack_str_with_body(packer, "fluentbit.ext_type", sizeof("fluentbit.ext_type") - 1) ||
+                 msgpack_pack_int(packer, value->via.ext.type) ||
+                 msgpack_pack_str_with_body(packer, "fluentbit.value", sizeof("fluentbit.value") - 1) ||
+                 msgpack_pack_str_with_body(packer, encoded, length);
+    }
+    flb_free(encoded);
+    return result;
+}
 
 /* Repack recursively so numeric text lives in the owned output buffer. */
 static int pack_value(msgpack_packer *packer, msgpack_object *value)
@@ -44,6 +75,9 @@ static int pack_value(msgpack_packer *packer, msgpack_object *value)
             return -1;
         }
         return msgpack_pack_str_body(packer, special, length);
+    }
+    if (value->type == MSGPACK_OBJECT_EXT) {
+        return pack_extension(packer, value);
     }
     return msgpack_pack_object(packer, *value);
 }
