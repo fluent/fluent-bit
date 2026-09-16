@@ -671,6 +671,126 @@ void flb_test_cloudwatch_event_truncation_with_backslash(void)
     }
 }
 
+/* Exercise per-record entity allocations under a memory checker. */
+static void run_cloudwatch_entity_records(const char *log_key, int add_entity, int root_entity)
+{
+    flb_ctx_t *ctx;
+    struct flb_output_instance *out;
+    struct flb_cloudwatch *cloudwatch;
+    const char *root_fields;
+    char record[512];
+    int in_ffd;
+    int out_ffd;
+    int record_len;
+    int ret;
+    int i;
+
+    root_fields = root_entity ? "\"aws_entity_account_id\":\"000000000000\","
+                               "\"aws_entity_ec2_instance_id\":\"i-test\"," : "";
+    setenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_CREATE_LOG_GROUP_ERROR");
+    unsetenv("TEST_CREATE_LOG_STREAM_ERROR");
+    unsetenv("TEST_PUT_LOG_EVENTS_ERROR");
+    cloudwatch_mock_call_count_reset();
+
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+    if (ctx == NULL) {
+        goto cleanup;
+    }
+
+    flb_service_set(ctx, "Flush", "0.1", "Grace", "1", "Log_Level", "error", NULL);
+    in_ffd = flb_input(ctx, "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, "cloudwatch_logs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "region", "us-west-2",
+                   "log_group_name", "fluent",
+                   "log_stream_name", "entity-records",
+                   "add_entity", add_entity ? "true" : "false",
+                   "workers", "1",
+                   "Retry_Limit", "False", NULL);
+    if (log_key != NULL) {
+        flb_output_set(ctx, out_ffd, "log_key", log_key, NULL);
+    }
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        goto cleanup;
+    }
+
+    out = flb_output_get_instance(ctx->config, out_ffd);
+    cloudwatch = out ? out->context : NULL;
+    TEST_CHECK(cloudwatch != NULL);
+    if (cloudwatch != NULL) {
+        /* The fixture supplies metadata normally produced by the Kubernetes filter. */
+        cloudwatch->kubernete_metadata_enabled = FLB_TRUE;
+
+        record_len = snprintf(record, sizeof(record),
+                              "[%lld,{\"log\":\"entity cleanup regression\",%s"
+                              "\"kubernetes\":{\"namespace_name\":\"test\","
+                              "\"aws_entity_service_name\":\"test-service\"}}]",
+                              (long long) time(NULL), root_fields);
+        TEST_CHECK(record_len > 0 && record_len < sizeof(record));
+        if (record_len > 0 && record_len < sizeof(record)) {
+            for (i = 0; i < 16; i++) {
+                ret = flb_lib_push(ctx, in_ffd, record, record_len);
+                TEST_CHECK(ret == record_len);
+            }
+        }
+        sleep(2);
+    }
+
+    flb_stop(ctx);
+    if (log_key != NULL && strcmp(log_key, "missing") == 0) {
+        TEST_CHECK(cloudwatch_mock_call_count_get("PutLogEvents") == 0);
+    }
+    else {
+        /* The existing mock lacks the request-id header required for acknowledgement. */
+        TEST_CHECK(cloudwatch_mock_call_count_get("PutLogEvents") > 0);
+    }
+    flb_destroy(ctx);
+
+cleanup:
+    unsetenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST");
+}
+
+void flb_test_cloudwatch_entity_log_key(void)
+{
+    run_cloudwatch_entity_records("log", FLB_TRUE, FLB_FALSE);
+}
+
+void flb_test_cloudwatch_entity_missing_log_key(void)
+{
+    run_cloudwatch_entity_records("missing", FLB_TRUE, FLB_FALSE);
+}
+
+void flb_test_cloudwatch_entity_without_log_key(void)
+{
+    run_cloudwatch_entity_records(NULL, FLB_TRUE, FLB_FALSE);
+}
+
+void flb_test_cloudwatch_log_key_without_entity(void)
+{
+    run_cloudwatch_entity_records("log", FLB_FALSE, FLB_TRUE);
+}
+
+void flb_test_cloudwatch_entity_root_log_key(void)
+{
+    run_cloudwatch_entity_records("log", FLB_TRUE, FLB_TRUE);
+}
+
+void flb_test_cloudwatch_entity_root_missing_log_key(void)
+{
+    run_cloudwatch_entity_records("missing", FLB_TRUE, FLB_TRUE);
+}
+
 /* Test list */
 TEST_LIST = {
     {"success", flb_test_cloudwatch_success },
@@ -689,5 +809,11 @@ TEST_LIST = {
     {"event_size_at_limit", flb_test_cloudwatch_event_size_at_limit },
     {"event_size_over_limit", flb_test_cloudwatch_event_size_over_limit },
     {"event_truncation_with_backslash", flb_test_cloudwatch_event_truncation_with_backslash },
+    {"entity_log_key", flb_test_cloudwatch_entity_log_key},
+    {"entity_missing_log_key", flb_test_cloudwatch_entity_missing_log_key},
+    {"entity_without_log_key", flb_test_cloudwatch_entity_without_log_key},
+    {"log_key_without_entity", flb_test_cloudwatch_log_key_without_entity},
+    {"entity_root_log_key", flb_test_cloudwatch_entity_root_log_key},
+    {"entity_root_missing_log_key", flb_test_cloudwatch_entity_root_missing_log_key},
     {NULL, NULL}
 };
