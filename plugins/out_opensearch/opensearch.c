@@ -1230,7 +1230,7 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
                                                        pack, pack_size,
                                                        FLB_SEARCH_BULK_ACK_ALL_CONFLICTS,
                                                        ctx->drop_unrecoverable_records,
-                                                       &bulk_stats,
+                                                       &bulk_stats, NULL,
                                                        &next_retry_payload);
             }
             else if (opensearch_error_check(ctx, c) == FLB_TRUE) {
