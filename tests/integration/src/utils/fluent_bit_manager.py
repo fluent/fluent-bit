@@ -430,8 +430,9 @@ class FluentBitManager:
                     if uptime > 1:
                         logger.info("Fluent Bit is running, health check OK")
                         return True
-            except requests.ConnectionError:
-                # it's ok to fail, we are testing
+            except (requests.ConnectionError, requests.Timeout):
+                # Slow instrumented startup may accept a connection before
+                # answering. Retry within the existing overall deadline.
                 pass
 
             time.sleep(1)
