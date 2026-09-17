@@ -300,6 +300,12 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     char *proxy_password = NULL;
     struct flb_upstream *u;
 
+#ifdef __EMSCRIPTEN__
+    if ((flags & (FLB_IO_UDP | FLB_IO_DTLS)) || config->http_proxy) {
+        flb_error("[upstream] browser transport does not support UDP or proxies");
+        return NULL;
+    }
+#endif
     u = flb_calloc(1, sizeof(struct flb_upstream));
     if (!u) {
         flb_errno();
@@ -709,7 +715,13 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
     flb_connection_reset_connection_timeout(conn);
 
     /* Start connection */
+#ifdef __EMSCRIPTEN__
+    /* A browser connection is a request context, never a socket. */
+    ret = 0;
+    conn->recycle = FLB_FALSE;
+#else
     ret = flb_io_net_connect(conn, coro);
+#endif
     if (ret == -1) {
         flb_connection_unset_connection_timeout(conn);
 
@@ -1049,6 +1061,10 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
     struct flb_upstream_queue *uq;
     int elapsed_time;
 
+#ifdef __EMSCRIPTEN__
+    /* Fetch enforces request deadlines; these contexts have no socket events. */
+    return 0;
+#endif
     now = time(NULL);
 
     /* Iterate all upstream contexts */
