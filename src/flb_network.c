@@ -1852,6 +1852,7 @@ flb_sockfd_t flb_net_server_unix(const char *listen_path,
             flb_warn("Cannot bind to or listen on %s", listen_path);
 
             flb_socket_close(fd);
+            return -1;
         }
     }
     else {
