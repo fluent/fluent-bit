@@ -822,24 +822,6 @@ void flb_http_server_options_init(struct flb_http_server_options *options)
     options->reuse_port = FLB_FALSE;
 }
 
-void flb_http_server_config_init(struct flb_http_server_config *config)
-{
-    if (config == NULL) {
-        return;
-    }
-
-    memset(config, 0, sizeof(struct flb_http_server_config));
-
-    config->http2 = FLB_TRUE;
-    config->idle_timeout = HTTP_SERVER_DEFAULT_IDLE_TIMEOUT;
-    config->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
-    config->buffer_chunk_size = HTTP_SERVER_INITIAL_BUFFER_SIZE;
-    config->max_connections = 0;
-    config->workers = 1;
-    config->ingress_queue_event_limit = FLB_HTTP_SERVER_INGRESS_QUEUE_EVENT_LIMIT;
-    config->ingress_queue_byte_limit = FLB_HTTP_SERVER_INGRESS_QUEUE_BYTE_LIMIT;
-}
-
 int flb_http_server_options_init_from_input(struct flb_http_server_options *options,
                                             struct flb_input_instance *input_instance,
                                             int protocol_version,
