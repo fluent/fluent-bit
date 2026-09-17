@@ -41,6 +41,7 @@ struct type_converter_ctx {
     struct mk_list *uint_keys;
     struct mk_list *float_keys;
     struct mk_list *str_keys;
+    struct mk_list *map_keys;
 };
 
 #endif
