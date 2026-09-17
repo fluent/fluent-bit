@@ -23,7 +23,7 @@
 #include <stddef.h>
 
 #include <fluent-bit/flb_config_map.h>
-#include <fluent-bit/http_server/flb_http_server.h>
+#include <fluent-bit/http_server/flb_http_server_config.h>
 
 extern struct flb_config_map flb_http_server_config_map[];
 
