@@ -75,10 +75,7 @@ set(src
   flb_snappy.c
   flb_zstd.c
   flb_compression.c
-  flb_http_common.c
-  flb_http_client_http1.c
-  flb_http_client_http2.c
-  flb_http_client.c
+  http_server/flb_http_server_config_map.c
   flb_callback.c
   flb_strptime.c
   flb_fstore.c
@@ -106,6 +103,14 @@ set(src
   )
 
 # Config format
+if(NOT FLB_WASM_BROWSER)
+  # Browser HTTP needs a Fetch transport; native socket clients cannot be used.
+  list(APPEND src flb_http_common.c flb_http_client_http1.c
+    flb_http_client_http2.c flb_http_client.c)
+else()
+  list(APPEND src flb_http_common.c flb_http_client.c wasm/http.c wasm/http_client.c)
+endif()
+
 set(src
   ${src}
   config_format/flb_config_format.c
@@ -216,7 +221,7 @@ if (FLB_AWS_ERROR_REPORTER)
     )
 endif()
 
-if(FLB_LUAJIT)
+if(FLB_LUAJIT OR FLB_WASM_LUA)
   set(src
     ${src}
     "flb_lua.c"
@@ -256,7 +261,7 @@ if(FLB_REGEX)
     )
 endif()
 
-if(FLB_LUAJIT)
+if(FLB_LUAJIT OR FLB_WASM_LUA)
   set(extra_libs
     ${extra_libs}
     ${LUAJIT_LIBRARIES})
@@ -560,6 +565,12 @@ endif()
 add_library(fluent-bit-static STATIC ${src})
 add_sanitizers(fluent-bit-static)
 target_link_libraries(fluent-bit-static ${FLB_DEPS})
+if(FLB_WASM_BROWSER)
+  target_link_libraries(fluent-bit-static flb-wasm-crypto flb-wasm-filesystem)
+  target_link_libraries(fluent-bit-static "--pre-js=${PROJECT_SOURCE_DIR}/src/wasm/http.js")
+  set_property(TARGET fluent-bit-static APPEND PROPERTY INTERFACE_LINK_DEPENDS
+    "${PROJECT_SOURCE_DIR}/src/wasm/http.js")
+endif()
 
 if(MSVC)
   # Rename the output for Windows environment to avoid naming issues
