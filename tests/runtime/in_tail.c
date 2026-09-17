@@ -30,6 +30,7 @@ Approach for this tests is basing on filter_kubernetes tests
 #include <fluent-bit/flb_unicode.h>
 #endif
 #include <stdlib.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <fcntl.h>
@@ -1632,6 +1633,79 @@ void flb_test_exclude_path()
 }
 
 #ifdef _WIN32
+static void test_windows_open_descriptor_exhaustion(int (*open_file)(const char *, int))
+{
+    int *fds;
+    int count;
+    int fd;
+    int i;
+    int saved_errno;
+    char buf;
+    DWORD handles_before;
+    DWORD handles_after;
+
+    /* Leave room to detect exhaustion without depending on the exact CRT limit. */
+    fds = flb_malloc(16384 * sizeof(int));
+    if (!TEST_CHECK(fds != NULL)) {
+        return;
+    }
+
+    for (count = 0; count < 16384; count++) {
+        fd = _open("NUL", _O_RDONLY);
+        if (fd == -1) {
+            break;
+        }
+        fds[count] = fd;
+    }
+    saved_errno = errno;
+    if (!TEST_CHECK(count > 0 && count < 16384)) {
+        goto cleanup;
+    }
+    TEST_CHECK(saved_errno == EMFILE);
+
+    if (!TEST_CHECK(GetProcessHandleCount(GetCurrentProcess(), &handles_before))) {
+        goto cleanup;
+    }
+    for (i = 0; i < 32; i++) {
+        errno = 0;
+        fd = open_file("NUL", O_RDONLY);
+        saved_errno = errno;
+        TEST_CHECK(fd == -1);
+        TEST_CHECK(saved_errno == EMFILE);
+        if (fd != -1) {
+            _close(fd);
+        }
+    }
+    if (TEST_CHECK(GetProcessHandleCount(GetCurrentProcess(), &handles_after))) {
+        TEST_CHECK(handles_after == handles_before);
+        TEST_MSG("handle count before=%lu after=%lu", handles_before, handles_after);
+    }
+
+    /* Releasing one descriptor must allow a usable open and normal cleanup. */
+    _close(fds[--count]);
+    fd = open_file("NUL", O_RDONLY);
+    if (TEST_CHECK(fd != -1)) {
+        TEST_CHECK(_read(fd, &buf, 1) == 0);
+        TEST_CHECK(_close(fd) == 0);
+    }
+
+cleanup:
+    for (i = 0; i < count; i++) {
+        _close(fds[i]);
+    }
+    flb_free(fds);
+}
+
+void flb_test_windows_open_descriptor_exhaustion(void)
+{
+    test_windows_open_descriptor_exhaustion(win32_open);
+}
+
+void flb_test_windows_open_utf8_descriptor_exhaustion(void)
+{
+    test_windows_open_descriptor_exhaustion(win32_open_utf8);
+}
+
 void flb_test_windows_extended_path_prefixes(void)
 {
     size_t length;
@@ -3076,6 +3150,8 @@ TEST_LIST = {
     {"path_key", flb_test_path_key},
     {"exclude_path", flb_test_exclude_path},
 #ifdef _WIN32
+    {"windows_open_descriptor_exhaustion", flb_test_windows_open_descriptor_exhaustion},
+    {"windows_open_utf8_descriptor_exhaustion", flb_test_windows_open_utf8_descriptor_exhaustion},
     {"windows_extended_path_prefixes", flb_test_windows_extended_path_prefixes},
 #endif
     {"offset_key", flb_test_offset_key},
