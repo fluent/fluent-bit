@@ -25,16 +25,46 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
-#ifndef _MSC_VER
+#include <chunkio/cio_info.h>
+#if defined(CIO_HAVE_BACKEND_FILESYSTEM) && defined(__EMSCRIPTEN__)
+#include <ftw.h>
+#elif defined(CIO_HAVE_BACKEND_FILESYSTEM) && !defined(_MSC_VER)
 #include <fts.h>
 #endif
 
-#include <chunkio/cio_info.h>
 #include <chunkio/chunkio_compat.h>
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_log.h>
 
-#ifndef _MSC_VER
+#ifndef CIO_HAVE_BACKEND_FILESYSTEM
+int cio_utils_recursive_delete(const char *dir)
+{
+    (void) dir;
+    errno = ENOSYS;
+    return CIO_ERROR;
+}
+#elif defined(__EMSCRIPTEN__)
+static int cio_utils_remove_entry(const char *path, const struct stat *st,
+                                  int type, struct FTW *walk)
+{
+    (void) st;
+    (void) walk;
+    if (type == FTW_DNR || type == FTW_NS) {
+        errno = EIO;
+        return CIO_ERROR;
+    }
+    return remove(path);
+}
+
+int cio_utils_recursive_delete(const char *dir)
+{
+    /* Unlike the native fts walk, nftw stops at the first removal failure.
+     * FTW_MOUNT cannot isolate virtual mounts that report the same st_dev
+     * (including MEMFS and IDBFS); callers must supply an owned subtree.
+     */
+    return nftw(dir, cio_utils_remove_entry, 32, FTW_DEPTH | FTW_PHYS | FTW_MOUNT);
+}
+#elif !defined(_MSC_VER)
 /*
  * Taken from StackOverflow:
  *
