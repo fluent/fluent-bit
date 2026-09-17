@@ -828,7 +828,7 @@ static struct cio_stream *get_or_create_rejected_stream(struct flb_config *ctx)
     ctx->storage_rejected_stream = st;
     return st;
 #else
-    FLB_UNUSED(ctx);
+    (void) ctx;
     return NULL;
 #endif
 }
@@ -968,11 +968,11 @@ int flb_storage_quarantine_chunk(struct flb_config *ctx,
 
     return flb_storage_chunk_restore_state(src, was_up, 0);
 #else
-    FLB_UNUSED(ctx);
-    FLB_UNUSED(src);
-    FLB_UNUSED(tag);
-    FLB_UNUSED(status_code);
-    FLB_UNUSED(out_name);
+    (void) ctx;
+    (void) src;
+    (void) tag;
+    (void) status_code;
+    (void) out_name;
 
     return -1;
 #endif
