@@ -431,8 +431,7 @@ class FluentBitManager:
                         logger.info("Fluent Bit is running, health check OK")
                         return True
             except (requests.ConnectionError, requests.Timeout):
-                # Slow instrumented startup may accept a connection before
-                # answering. Retry within the existing overall deadline.
+                # Startup can temporarily delay responses, especially under Valgrind.
                 pass
 
             time.sleep(1)
