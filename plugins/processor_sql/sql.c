@@ -403,6 +403,7 @@ static int sql_key_to_value(char *name, struct flb_mp_chunk_record *record, stru
     struct cfl_kvpair *kvpair;
 
     kvlist = record->cobj_record->variant->data.as_kvlist;
+    var = NULL;
 
     cfl_list_foreach_safe(head, tmp, &kvlist->list) {
         kvpair = cfl_list_entry(head, struct cfl_kvpair, _head);
@@ -427,7 +428,11 @@ static int sql_key_to_value(char *name, struct flb_mp_chunk_record *record, stru
 
     if (var->type == CFL_VARIANT_STRING) {
         val->type = SQL_EXP_STRING;
-        val->val.string = cfl_sds_create(kvpair->val->data.as_string);
+        /* MessagePack-backed variants need not be NUL-terminated. */
+        val->val.string = cfl_sds_create_len(var->data.as_string, cfl_variant_size_get(var));
+        if (!val->val.string) {
+            return -1;
+        }
     }
     else if (var->type == CFL_VARIANT_INT) {
         val->type = SQL_EXP_INT;
@@ -698,4 +703,3 @@ struct flb_processor_plugin processor_sql_plugin = {
     .config_map         = config_map,
     .flags              = 0
 };
-
