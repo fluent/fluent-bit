@@ -42,6 +42,7 @@
 #include <monkey/mk_core.h>
 #include <string.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <limits.h>
 
 
@@ -747,10 +748,11 @@ static void generate_chunk_name(struct flb_input_instance *in,
     (void) in;
 
     flb_time_get(&tm);
+    /* time_t can be wider than long on 32-bit targets such as Emscripten. */
     snprintf(out_buf, buf_size - 1,
-             "%i-%lu.%4lu.flb",
+             "%i-%" PRIu64 ".%04" PRIu64 ".flb",
              getpid(),
-             tm.tm.tv_sec, tm.tm.tv_nsec);
+             (uint64_t) tm.tm.tv_sec, (uint64_t) tm.tm.tv_nsec);
 }
 
 ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic)
