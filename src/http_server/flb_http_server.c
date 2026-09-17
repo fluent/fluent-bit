@@ -1039,9 +1039,6 @@ int flb_http_server_start(struct flb_http_server *session)
     const char *address;
     int transport;
     int result;
-#ifdef FLB_HAVE_UNIX_SOCKET
-    struct stat file_data;
-#endif
 
     if (!flb_http_server_running_on_caller_context(session)) {
         return flb_http_server_runtime_start(session);
@@ -1064,22 +1061,6 @@ int flb_http_server_start(struct flb_http_server *session)
 
 #ifdef FLB_HAVE_UNIX_SOCKET
     if (session->unix_path != NULL) {
-        result = lstat(session->unix_path, &file_data);
-        if (result == 0) {
-            if (!S_ISSOCK(file_data.st_mode)) {
-                flb_error("[http_server] %s exists and is not a Unix socket", session->unix_path);
-                return -1;
-            }
-            if (unlink(session->unix_path) != 0) {
-                flb_errno();
-                return -1;
-            }
-        }
-        else if (errno != ENOENT) {
-            flb_errno();
-            return -1;
-        }
-
         transport = FLB_TRANSPORT_UNIX_STREAM;
         address = session->unix_path;
     }
@@ -1278,11 +1259,6 @@ int flb_http_server_destroy(struct flb_http_server *server)
         flb_downstream_destroy(server->downstream);
 
         server->downstream = NULL;
-#ifdef FLB_HAVE_UNIX_SOCKET
-        if (server->unix_path != NULL) {
-            unlink(server->unix_path);
-        }
-#endif
     }
 
     return 0;
