@@ -1,0 +1,75 @@
+name: Browser WebAssembly
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.emscripten-version'
+      - '.github/workflows/wasm-browser.yaml'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'include/**'
+      - 'src/**'
+      - 'lib/**'
+      - 'plugins/**'
+      - 'sdk/browser/**'
+      - 'tests/wasm/**'
+
+permissions:
+  contents: read
+
+jobs:
+  wasm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [none, address]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y cmake make flex bison perl pkg-config
+      - name: Install pinned Emscripten SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init "$RUNNER_TEMP/flb-emsdk"
+          git -C "$RUNNER_TEMP/flb-emsdk" remote add origin https://github.com/emscripten-core/emsdk.git
+          git -C "$RUNNER_TEMP/flb-emsdk" fetch --depth=1 origin 5eb0bde7585670252e8ba05e9d361627bffd08b5
+          git -C "$RUNNER_TEMP/flb-emsdk" checkout --detach FETCH_HEAD
+          read -r flb_sdk_version < .emscripten-version
+          "$RUNNER_TEMP/flb-emsdk/emsdk" install "$flb_sdk_version"
+          "$RUNNER_TEMP/flb-emsdk/emsdk" activate "$flb_sdk_version"
+      - name: Build and test
+        shell: bash
+        env:
+          FLB_SANITIZER: ${{ matrix.sanitizer }}
+        run: |
+          source "$RUNNER_TEMP/flb-emsdk/emsdk_env.sh"
+          set -euo pipefail
+          flb_cmake_flags=()
+          if [[ "$FLB_SANITIZER" == address ]]; then
+            flb_cmake_flags+=(-DLIBCO_TESTS_ASAN=ON -DCMAKE_C_FLAGS=-fsanitize=address
+              '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address -sALLOW_MEMORY_GROWTH=1')
+          fi
+          emcmake cmake -S . -B build-wasm -DFLB_WASM_BROWSER=ON \
+            -DFLB_DEBUG=OFF -DFLB_RELEASE=OFF -DCMAKE_BUILD_TYPE=MinSizeRel "${flb_cmake_flags[@]}"
+          cmake --build build-wasm -j8
+          ctest --test-dir build-wasm --output-on-failure
+          node --test tests/wasm/sdk_unit_test.mjs tests/wasm/sdk_worker_unit_test.mjs
+      - name: Test browser lifecycle and startup failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/flb-browser-tests"
+          "$RUNNER_TEMP/flb-browser-tests/bin/python" -m pip install playwright==1.62.0
+          "$RUNNER_TEMP/flb-browser-tests/bin/python" -m playwright install --with-deps chromium
+          flb_browser=$("$RUNNER_TEMP/flb-browser-tests/bin/python" -c \
+            'from playwright.sync_api import sync_playwright; p = sync_playwright().start(); print(p.chromium.executable_path); p.stop()')
+          "$RUNNER_TEMP/flb-browser-tests/bin/python" tests/wasm/sdk_test.py \
+            --build-dir build-wasm --browser "$flb_browser"
+          "$RUNNER_TEMP/flb-browser-tests/bin/python" tests/wasm/sdk_test.py \
+            --build-dir build-wasm --browser "$flb_browser" --pthread-only
+          "$RUNNER_TEMP/flb-browser-tests/bin/python" tests/wasm/browser_page_test.py \
+            --build-dir build-wasm --browser "$flb_browser"
