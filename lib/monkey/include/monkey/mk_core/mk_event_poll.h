@@ -27,6 +27,9 @@ struct mk_event_ctx {
     struct mk_event **events;
     struct mk_event *fired;    /* used to create iteration array    */
     struct pollfd *pfds;
+#ifdef __EMSCRIPTEN__
+    struct fd_timer *timers;
+#endif
 };
 
 #define mk_event_foreach(event, evl)                                                \
@@ -44,5 +47,4 @@ struct mk_event_ctx {
     )
 
 #endif
-
 
