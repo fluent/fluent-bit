@@ -24,6 +24,10 @@
 #include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_downstream_worker.h>
 #include <string.h>
+#ifdef FLB_HAVE_UNIX_SOCKET
+#include <sys/stat.h>
+#include <sys/un.h>
+#endif
 
 #include <fluent-bit/http_server/flb_http_server.h>
 #include <fluent-bit/http_server/flb_http_server_config_map.h>
@@ -177,6 +181,8 @@ static int flb_http_server_apply_options(struct flb_http_server *session,
 
     session->address = options->address;
     session->port = options->port;
+    session->unix_path = options->unix_path;
+    session->unix_perm = options->unix_perm;
     session->tls_provider = options->tls_provider;
     session->networking_flags = options->networking_flags;
     session->networking_setup = options->networking_setup;
@@ -674,6 +680,8 @@ static int flb_http_server_worker_initialize(struct flb_downstream_worker *worke
     options.user_data = parent->user_data;
     options.address = parent->address;
     options.port = parent->port;
+    options.unix_path = parent->unix_path;
+    options.unix_perm = parent->unix_perm;
     options.tls_provider = parent->tls_provider;
     options.networking_flags = parent->networking_flags;
     options.networking_setup = &context->net_setup;
@@ -951,6 +959,8 @@ int flb_input_http_server_options_init(struct flb_http_server_options *options,
         }
         options->max_connections = server_config->max_connections;
         options->workers = server_config->workers;
+        options->unix_path = server_config->unix_path;
+        options->unix_perm = server_config->unix_perm;
     }
 
     return 0;
@@ -963,6 +973,38 @@ int flb_http_server_init_with_options(
     if (session == NULL || options == NULL) {
         return -1;
     }
+
+#ifdef FLB_HAVE_UNIX_SOCKET
+    if (options->unix_perm != NULL) {
+        if (options->unix_path == NULL || options->unix_perm[0] == '\0' ||
+            strspn(options->unix_perm, "01234567") != strlen(options->unix_perm) ||
+            strlen(options->unix_perm) > 4 ||
+            strtol(options->unix_perm, NULL, 8) > 0777) {
+            flb_error("[http_server] unix_perm requires unix_path and an octal mode up to 0777");
+            return -1;
+        }
+    }
+
+    if (options->unix_path != NULL) {
+        if (options->unix_path[0] == '\0' ||
+            strlen(options->unix_path) >= sizeof(((struct sockaddr_un *) 0)->sun_path)) {
+            flb_error("[http_server] invalid Unix socket path length");
+            return -1;
+        }
+
+        if (options->workers > 1 || options->reuse_port == FLB_TRUE ||
+            (options->networking_setup != NULL &&
+             options->networking_setup->share_port == FLB_TRUE)) {
+            flb_error("[http_server] Unix sockets do not support multiple workers or port sharing");
+            return -1;
+        }
+    }
+#else
+    if (options->unix_path != NULL || options->unix_perm != NULL) {
+        flb_error("[http_server] Unix sockets are not supported on this platform");
+        return -1;
+    }
+#endif
 
     if (options->buffer_max_size == 0) {
         options->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
@@ -994,7 +1036,12 @@ int flb_http_server_init_with_options(
 int flb_http_server_start(struct flb_http_server *session)
 {
     const char *alpn;
+    const char *address;
+    int transport;
     int result;
+#ifdef FLB_HAVE_UNIX_SOCKET
+    struct stat file_data;
+#endif
 
     if (!flb_http_server_running_on_caller_context(session)) {
         return flb_http_server_runtime_start(session);
@@ -1012,9 +1059,35 @@ int flb_http_server_start(struct flb_http_server *session)
         session->tls_alpn_configured = FLB_TRUE;
     }
 
-    session->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
+    transport = FLB_TRANSPORT_TCP;
+    address = session->address;
+
+#ifdef FLB_HAVE_UNIX_SOCKET
+    if (session->unix_path != NULL) {
+        result = lstat(session->unix_path, &file_data);
+        if (result == 0) {
+            if (!S_ISSOCK(file_data.st_mode)) {
+                flb_error("[http_server] %s exists and is not a Unix socket", session->unix_path);
+                return -1;
+            }
+            if (unlink(session->unix_path) != 0) {
+                flb_errno();
+                return -1;
+            }
+        }
+        else if (errno != ENOENT) {
+            flb_errno();
+            return -1;
+        }
+
+        transport = FLB_TRANSPORT_UNIX_STREAM;
+        address = session->unix_path;
+    }
+#endif
+
+    session->downstream = flb_downstream_create(transport,
                                                 session->networking_flags,
-                                                session->address,
+                                                address,
                                                 session->port,
                                                 session->tls_provider,
                                                 session->system_context,
@@ -1023,6 +1096,15 @@ int flb_http_server_start(struct flb_http_server *session)
     if (session->downstream == NULL) {
         return -1;
     }
+
+#ifdef FLB_HAVE_UNIX_SOCKET
+    if (session->unix_path != NULL && session->unix_perm != NULL &&
+        chmod(session->unix_path, strtol(session->unix_perm, NULL, 8)) != 0) {
+        flb_errno();
+        flb_http_server_destroy(session);
+        return -1;
+    }
+#endif
 
     flb_stream_enable_async_mode(&session->downstream->base);
 
@@ -1196,6 +1278,11 @@ int flb_http_server_destroy(struct flb_http_server *server)
         flb_downstream_destroy(server->downstream);
 
         server->downstream = NULL;
+#ifdef FLB_HAVE_UNIX_SOCKET
+        if (server->unix_path != NULL) {
+            unlink(server->unix_path);
+        }
+#endif
     }
 
     return 0;
