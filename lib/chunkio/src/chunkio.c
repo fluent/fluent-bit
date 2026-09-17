@@ -110,7 +110,7 @@ struct cio_ctx *cio_create(struct cio_options *options)
         return NULL;
     }
 #ifndef CIO_HAVE_BACKEND_FILESYSTEM
-    if (root_path) {
+    if (options->root_path) {
         fprintf(stderr, "[cio] file system backend not supported\n");
         return NULL;
     }
