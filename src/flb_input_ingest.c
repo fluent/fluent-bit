@@ -31,7 +31,7 @@
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_ring_buffer.h>
 #include <fluent-bit/flb_sds.h>
-#include <fluent-bit/http_server/flb_http_server.h>
+#include <fluent-bit/http_server/flb_http_server_config.h>
 
 #include <cprofiles/cprof_encode_msgpack.h>
 
