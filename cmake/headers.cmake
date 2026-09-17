@@ -45,6 +45,11 @@ include_directories(
   ${FLB_PATH_ROOT_BINARY_DIR}/lib/monkey/include/monkey/
   )
 
+if(NOT FLB_HTTP_SERVER)
+  # mk_core is configured directly under the Fluent Bit project in this mode.
+  include_directories(${FLB_PATH_ROOT_BINARY_DIR}/include/monkey)
+endif()
+
 if(FLB_YYJSON)
   include_directories(${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_YYJSON}/src)
 endif()
