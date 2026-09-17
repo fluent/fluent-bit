@@ -40,7 +40,10 @@
 
 int win32_open(const char *path, int flags)
 {
+    int fd;
+    int saved_errno;
     HANDLE h;
+
     h = CreateFileA(path,
                     GENERIC_READ,
                     FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
@@ -51,12 +54,20 @@ int win32_open(const char *path, int flags)
     if (h == INVALID_HANDLE_VALUE) {
         return -1;
     }
-    return _open_osfhandle((intptr_t) h, _O_RDONLY);
+    fd = _open_osfhandle((intptr_t) h, _O_RDONLY);
+    if (fd == -1) {
+        saved_errno = errno;
+        CloseHandle(h);
+        errno = saved_errno;
+    }
+
+    return fd;
 }
 
 int win32_open_utf8(const char *path, int flags)
 {
     int fd;
+    int saved_errno;
     HANDLE h;
     wchar_t *wide_path;
 
@@ -83,7 +94,9 @@ int win32_open_utf8(const char *path, int flags)
     flb_free(wide_path);
     fd = _open_osfhandle((intptr_t) h, _O_RDONLY);
     if (fd == -1) {
+        saved_errno = errno;
         CloseHandle(h);
+        errno = saved_errno;
     }
 
     return fd;
