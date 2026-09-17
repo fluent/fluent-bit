@@ -311,7 +311,75 @@ static void test_lua_arraylength_for_array_contains_nil()
 }
 
 
+static void test_lua_sparse_arraylength(void)
+{
+    lua_State *l;
+    int top;
+
+    l = luaL_newstate();
+    if (!TEST_CHECK(l != NULL)) {
+        return;
+    }
+    luaL_openlibs(l);
+    TEST_CHECK(luaL_dostring(l, "return {[1] = 'first', [3] = 'third'}") == 0);
+    lua_pushinteger(l, 42);
+    top = lua_gettop(l);
+    TEST_CHECK(flb_lua_arraylength(l, -2) == 3);
+    TEST_CHECK(lua_gettop(l) == top);
+    lua_pop(l, 2);
+    TEST_CHECK(luaL_dostring(l, "return {[3] = 'third'}") == 0);
+    TEST_CHECK(flb_lua_arraylength(l, -1) == 3);
+    TEST_CHECK(lua_gettop(l) == 1);
+    lua_close(l);
+}
+
+#if LUA_VERSION_NUM >= 503
+static void test_lua_integer_precision(void)
+{
+    lua_State *l;
+    msgpack_object object;
+    mpack_reader_t reader;
+    const char encoded_uint64[] = "\xcf\xff\xff\xff\xff\xff\xff\xff\xff";
+
+    l = luaL_newstate();
+    if (!TEST_CHECK(l != NULL)) {
+        return;
+    }
+    object.type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+    object.via.u64 = INT64_MAX;
+    flb_lua_pushmsgpack(l, &object);
+    TEST_CHECK(lua_isinteger(l, -1));
+    TEST_CHECK(lua_tointeger(l, -1) == INT64_MAX);
+    lua_pop(l, 1);
+
+    object.type = MSGPACK_OBJECT_NEGATIVE_INTEGER;
+    object.via.i64 = -INT64_C(9007199254740993);
+    flb_lua_pushmsgpack(l, &object);
+    TEST_CHECK(lua_isinteger(l, -1));
+    TEST_CHECK(lua_tointeger(l, -1) == object.via.i64);
+    lua_pop(l, 1);
+
+    object.type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+    object.via.u64 = UINT64_MAX;
+    flb_lua_pushmsgpack(l, &object);
+    TEST_CHECK(lua_isnumber(l, -1));
+    TEST_CHECK(lua_tonumber(l, -1) > 0);
+    lua_pop(l, 1);
+
+    mpack_reader_init_data(&reader, encoded_uint64, sizeof(encoded_uint64) - 1);
+    TEST_CHECK(flb_lua_pushmpack(l, &reader) == 0);
+    TEST_CHECK(lua_isnumber(l, -1));
+    TEST_CHECK(lua_tonumber(l, -1) > 0);
+    TEST_CHECK(mpack_reader_destroy(&reader) == mpack_ok);
+    lua_close(l);
+}
+#endif
+
 TEST_LIST = {
+    { "lua_sparse_arraylength", test_lua_sparse_arraylength },
+#if LUA_VERSION_NUM >= 503
+    { "lua_integer_precision", test_lua_integer_precision },
+#endif
     { "lua_is_valid_func" , test_is_valid_func},
     { "lua_pushtimetable" , test_pushtimetable},
     { "lua_pushmsgpack" , test_pushmsgpack },
