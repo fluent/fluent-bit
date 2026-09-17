@@ -325,6 +325,7 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
         flb_config_map_destroy(config_map);
     }
 
+#ifdef FLB_HAVE_TLS
     if (ins->p->flags & (FLB_IO_TLS | FLB_IO_OPT_TLS)) {
         flb_mp_map_header_append(&mh);
         pack_str(&mp_pck, "network_tls");
@@ -347,6 +348,7 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
         flb_config_map_destroy(config_map);
     }
 
+#endif
     flb_mp_map_header_end(&mh);
 
     *out_buf = mp_sbuf.data;
@@ -556,10 +558,12 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
             options_size += mk_list_size(http_config_map);
             flb_config_map_destroy(http_config_map);
         }
+#ifdef FLB_HAVE_TLS
         if (ins->flags & FLB_IO_OPT_TLS) {
             tls_config_map = flb_tls_get_config_map(ins->config);
             options_size += mk_list_size(tls_config_map);
         }
+#endif
 
         msgpack_pack_array(&mp_pck, options_size);
 
@@ -575,6 +579,7 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
             }
             flb_config_map_destroy(http_config_map);
         }
+#ifdef FLB_HAVE_TLS
         if (ins->flags & FLB_IO_OPT_TLS) {
             mk_list_foreach(head, tls_config_map) {
                 m = mk_list_entry(head, struct flb_config_map, _head);
@@ -582,6 +587,7 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
             }
             flb_config_map_destroy(tls_config_map);
         }
+#endif
 
         mk_list_foreach(head, config_map) {
             m = mk_list_entry(head, struct flb_config_map, _head);
@@ -603,6 +609,7 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
         flb_config_map_destroy(config_map);
     }
 
+#ifdef FLB_HAVE_TLS
     if (ins->p->flags & (FLB_IO_TLS | FLB_IO_OPT_TLS)) {
         flb_mp_map_header_append(&mh);
         pack_str(&mp_pck, "network_tls");
@@ -624,6 +631,7 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
         }
         flb_config_map_destroy(config_map);
     }
+#endif
     flb_mp_map_header_end(&mh);
 
     *out_buf = mp_sbuf.data;
