@@ -48,7 +48,7 @@ static void test_mixed_response_keeps_only_unresolved(void)
                                               BULK_PAYLOAD,
                                               strlen(BULK_PAYLOAD),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
-                                              FLB_FALSE, NULL,
+                                              FLB_FALSE, NULL, NULL,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_RETRY);
     TEST_CHECK(retry != NULL);
@@ -73,7 +73,7 @@ static void test_create_conflicts_are_complete(void)
                                               BULK_PAYLOAD,
                                               strlen(BULK_PAYLOAD),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
-                                              FLB_FALSE, NULL,
+                                              FLB_FALSE, NULL, NULL,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_COMPLETE);
     TEST_CHECK(retry == NULL);
@@ -94,7 +94,7 @@ static void test_update_conflict_is_retried(void)
     result = flb_search_bulk_process_response(response, strlen(response),
                                               payload, strlen(payload),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
-                                              FLB_FALSE, NULL,
+                                              FLB_FALSE, NULL, NULL,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_RETRY);
     TEST_CHECK(retry != NULL);
@@ -118,7 +118,7 @@ static void test_update_conflict_is_complete_when_all_conflicts_are_acknowledged
     result = flb_search_bulk_process_response(response, strlen(response),
                                               payload, strlen(payload),
                                               FLB_SEARCH_BULK_ACK_ALL_CONFLICTS,
-                                              FLB_FALSE, NULL,
+                                              FLB_FALSE, NULL, NULL,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_COMPLETE);
     TEST_CHECK(retry == NULL);
@@ -137,7 +137,7 @@ static void test_truncated_success_response_is_complete(void)
                                               BULK_PAYLOAD,
                                               strlen(BULK_PAYLOAD),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
-                                              FLB_FALSE, NULL,
+                                              FLB_FALSE, NULL, NULL,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_COMPLETE);
     TEST_CHECK(retry == NULL);
@@ -156,7 +156,7 @@ static void test_nested_success_marker_with_top_level_errors_is_invalid(void)
                                               BULK_PAYLOAD,
                                               strlen(BULK_PAYLOAD),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
-                                              FLB_FALSE, NULL,
+                                              FLB_FALSE, NULL, NULL,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_INVALID);
     TEST_CHECK(retry == NULL);
@@ -175,7 +175,7 @@ static void test_item_count_mismatch_is_invalid(void)
                                               BULK_PAYLOAD,
                                               strlen(BULK_PAYLOAD),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
-                                              FLB_FALSE, NULL,
+                                              FLB_FALSE, NULL, NULL,
                                               &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_INVALID);
     TEST_CHECK(retry == NULL);
@@ -202,7 +202,7 @@ static void test_mixed_response_populates_stats(void)
                                               FOUR_ENTRY_BULK_PAYLOAD,
                                               strlen(FOUR_ENTRY_BULK_PAYLOAD),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
-                                              FLB_FALSE, &stats, &retry);
+                                              FLB_FALSE, &stats, NULL, &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_RETRY);
     TEST_CHECK(retry != NULL);
     TEST_CHECK(retry->records == 2);
@@ -236,7 +236,7 @@ static void test_drop_unrecoverable_upsert_records(void)
                                               UPSERT_PAYLOAD,
                                               strlen(UPSERT_PAYLOAD),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
-                                              FLB_TRUE, &stats, &retry);
+                                              FLB_TRUE, &stats, NULL, &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_RETRY);
     TEST_CHECK(retry != NULL);
     TEST_CHECK(retry->records == 1);
@@ -250,7 +250,7 @@ static void test_drop_unrecoverable_upsert_records(void)
                                               UPSERT_PAYLOAD,
                                               strlen(UPSERT_PAYLOAD),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
-                                              FLB_FALSE, &stats, &retry);
+                                              FLB_FALSE, &stats, NULL, &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_RETRY);
     TEST_CHECK(retry != NULL);
     TEST_CHECK(retry->records == 2);
@@ -274,7 +274,7 @@ static void test_only_unrecoverable_records_complete_when_dropped(void)
                                               UPSERT_PAYLOAD,
                                               strlen(UPSERT_PAYLOAD),
                                               FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
-                                              FLB_TRUE, &stats, &retry);
+                                              FLB_TRUE, &stats, NULL, &retry);
     TEST_CHECK(result == FLB_SEARCH_BULK_COMPLETE);
     TEST_CHECK(retry == NULL);
     TEST_CHECK(stats.failed_items == 2);
