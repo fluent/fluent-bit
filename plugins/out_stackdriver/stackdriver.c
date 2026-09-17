@@ -127,6 +127,10 @@ static void oauth2_cache_cleanup(void)
             oauth2_cache_exit(pthread_getspecific(oauth2_type));
             oauth2_cache_exit(pthread_getspecific(oauth2_token));
             oauth2_cache_free_expiration(pthread_getspecific(oauth2_token_expires));
+            /* Windows key deletion leaves the current thread's TLS values intact. */
+            pthread_setspecific(oauth2_type, NULL);
+            pthread_setspecific(oauth2_token, NULL);
+            pthread_setspecific(oauth2_token_expires, NULL);
             pthread_key_delete(oauth2_type);
             pthread_key_delete(oauth2_token);
             pthread_key_delete(oauth2_token_expires);
