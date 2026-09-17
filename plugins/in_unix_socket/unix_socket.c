@@ -69,36 +69,6 @@ static int in_unix_socket_collect(struct flb_input_instance *in,
     return 0;
 }
 
-static int remove_existing_socket_file(char *socket_path)
-{
-    struct stat file_data;
-    int         result;
-
-    result = stat(socket_path, &file_data);
-
-    if (result == -1) {
-        if (errno == ENOENT) {
-            return 0;
-        }
-
-        flb_errno();
-
-        return -1;
-    }
-
-    if (S_ISSOCK(file_data.st_mode) == 0) {
-        return -2;
-    }
-
-    result = unlink(socket_path);
-
-    if (result != 0) {
-        return -3;
-    }
-
-    return 0;
-}
-
 /* Initialize plugin */
 static int in_unix_socket_init(struct flb_input_instance *in,
                       struct flb_config *config, void *data)
@@ -124,25 +94,6 @@ static int in_unix_socket_init(struct flb_input_instance *in,
 
     /* Set the context */
     flb_input_set_context(in, ctx);
-
-    ret = remove_existing_socket_file(ctx->listen);
-
-    if (ret != 0) {
-        if (ret == -2) {
-            flb_plg_error(ctx->ins,
-                          "%s exists and it is not a unix socket. Aborting",
-                          ctx->listen);
-        }
-        else {
-            flb_plg_error(ctx->ins,
-                          "could not remove existing unix socket %s. Aborting",
-                          ctx->listen);
-        }
-
-        unix_socket_config_destroy(ctx);
-
-        return -1;
-    }
 
     mode = FLB_TRANSPORT_UNIX_STREAM;
 
