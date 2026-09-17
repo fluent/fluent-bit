@@ -1578,7 +1578,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
                                                    pack, pack_size,
                                                    FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS,
                                                    ctx->drop_unrecoverable_records,
-                                                   &bulk_stats,
+                                                   &bulk_stats, NULL,
                                                    &next_retry_payload);
             retry_records = 0;
             if (next_retry_payload != NULL) {
