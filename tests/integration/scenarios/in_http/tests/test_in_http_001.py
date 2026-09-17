@@ -5,6 +5,8 @@ import logging
 from pathlib import Path
 import re
 import socket
+import stat
+import tempfile
 import time
 
 import pytest
@@ -22,6 +24,7 @@ from utils.input_pause_resume import (
     open_stalled_tcp_connection,
 )
 from utils.test_service import FluentBitTestService
+from utils.fluent_bit_manager import FluentBitStartupError
 
 logger = logging.getLogger(__name__)
 MOCK_VALID_JWT = (
@@ -751,6 +754,58 @@ def test_in_http_oauth2_accepts_valid_jwt():
     assert result["status_code"] == 201
     assert len(forwarded_payloads) == 1
     assert forwarded_payloads[0][0]["message"] == "Este es un mensaje de prueba"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Unix listener requires Unix socket support")
+@pytest.mark.parametrize("http_mode", ["http1.1", "http2-prior-knowledge"])
+@pytest.mark.parametrize("use_tls", [False, True])
+def test_in_http_unix_socket(http_mode, use_tls):
+    with tempfile.TemporaryDirectory(prefix="flb-http-") as directory:
+        socket_path = Path(directory) / "http.sock"
+        # Recover a socket left behind by an unclean shutdown.
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stale_socket:
+            stale_socket.bind(str(socket_path))
+
+        service = Service("in_http_unix.yaml", extra_env={
+            "HTTP_UNIX_PATH": socket_path,
+            "HTTP_UNIX_TLS": "on" if use_tls else "off",
+        })
+        service.start()
+        assert stat.S_IMODE(socket_path.stat().st_mode) == 0o660
+        result = run_curl_request(
+            "https://localhost/" if use_tls else "http://localhost/",
+            create_payload("sample_data.json"),
+            headers=["Content-Type: application/json"],
+            http_mode=http_mode,
+            ca_cert_path=service.tls_crt_file if use_tls else None,
+            extra_args=["--unix-socket", str(socket_path)],
+        )
+        assert result["status_code"] == 201
+        assert result["http_version"] == ("1.1" if http_mode == "http1.1" else "2")
+        assert service.read_forwarded_payloads()[0][0]["message"] == "Este es un mensaje de prueba"
+        service.stop()
+        assert not socket_path.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Unix listener requires Unix socket support")
+@pytest.mark.parametrize("use_symlink", [False, True])
+def test_in_http_unix_socket_preserves_existing_file(use_symlink):
+    with tempfile.TemporaryDirectory(prefix="flb-http-") as directory:
+        socket_path = Path(directory) / "http.sock"
+        existing_file = socket_path.with_suffix(".txt") if use_symlink else socket_path
+        existing_file.write_text("do not remove")
+        if use_symlink:
+            socket_path.symlink_to(existing_file)
+        service = Service("in_http_unix.yaml", extra_env={
+            "HTTP_UNIX_PATH": socket_path,
+            "HTTP_UNIX_TLS": "off",
+        })
+        with pytest.raises(FluentBitStartupError):
+            service.start()
+        assert existing_file.read_text() == "do not remove"
+        if use_symlink:
+            assert socket_path.is_symlink()
+        assert "exists and is not a Unix socket" in Path(service.service.flb.log_file).read_text()
 
 
 class Service:
