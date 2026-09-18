@@ -131,3 +131,29 @@ def test_out_loki_preserves_long_unicode_json_strings():
     assert len(records) == RECORD_COUNT
     assert all(set(record) == {"msg"} for record in records)
     assert sorted(record["msg"] for record in records) == sorted(expected_messages)
+
+
+def test_out_loki_preserves_nested_records_on_small_stack():
+    nested = {"leaf": "preserved"}
+    # Stay below the MessagePack decoder limit while exceeding the old
+    # recursive converter's capacity on a 24 KiB coroutine stack.
+    for _ in range(24):
+        nested = {"child": [nested]}
+
+    with tempfile.TemporaryDirectory(prefix="flb-out-loki-depth-") as temp_directory:
+        input_path = Path(temp_directory) / "input.log"
+        with input_path.open("w", encoding="utf-8") as input_file:
+            for sequence in range(RECORD_COUNT):
+                json.dump({"seq": sequence, "msg": nested}, input_file)
+                input_file.write("\n")
+        service = Service(input_path)
+        try:
+            service.start()
+            service.wait_for_records()
+        finally:
+            service.stop()
+        records = collect_loki_records()
+
+    assert len(records) == RECORD_COUNT
+    for record in records:
+        assert record == {"msg": nested}
