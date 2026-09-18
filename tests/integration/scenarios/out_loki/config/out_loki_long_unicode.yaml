@@ -1,4 +1,5 @@
 service:
+  coro_stack_size: 24576
   flush: 1
   grace: 1
   log_level: info
