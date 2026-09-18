@@ -179,8 +179,6 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
              * the old file and must not be applied to the replacement file. */
             flb_tail_scan_unregister_ignored_file_size(ctx, path, strlen(path));
         }
-
-        flb_tail_scan_unregister_aged_out_inode(ctx, path, strlen(path));
     }
 
     if (ctx->ignore_older > 0) {
@@ -189,11 +187,6 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
                                 path,
                                 strlen(path));
 
-        flb_tail_scan_unregister_ignored_file_size(
-            ctx,
-            path,
-            strlen(path));
-
         /* Discard stale offset if the file was truncated in place. */
         if (ignored_file_size > (ssize_t) st.st_size) {
             ignored_file_size = -1;
@@ -201,6 +194,10 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
     }
 
     ret = flb_tail_file_append(path, &st, FLB_TAIL_STATIC, ignored_file_size, ctx);
+    if (ret == 0) {
+        flb_tail_scan_unregister_ignored_file_size(ctx, path, strlen(path));
+        flb_tail_scan_unregister_aged_out_inode(ctx, path, strlen(path));
+    }
 
  out:
     if (path != legacy_path) {

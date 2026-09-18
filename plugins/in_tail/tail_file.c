@@ -41,6 +41,7 @@
 
 #include "tail.h"
 #include "tail_file.h"
+#include "tail_file_budget.h"
 #include "tail_config.h"
 #include "tail_db.h"
 #include "tail_signal.h"
@@ -1414,9 +1415,14 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     }
     #endif
 
+    if (!flb_tail_file_budget_reserve(ctx)) {
+        return -1;
+    }
+
     fd = tail_file_open(ctx, path, O_RDONLY);
     if (fd == -1) {
         flb_errno();
+        flb_tail_file_budget_release(ctx);
         flb_plg_error(ctx->ins, "cannot open %s", path);
         return -1;
     }
@@ -1752,6 +1758,7 @@ err_free_file:
     flb_free(file);
 err_close_fd:
     close(fd);
+    flb_tail_file_budget_release(ctx);
     return -1;
 }
 
@@ -1811,6 +1818,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     /* avoid deleting file with -1 fd */
     if (file->fd != -1) {
         close(file->fd);
+        flb_tail_file_budget_release(ctx);
     }
     if (file->tag_buf) {
         flb_free(file->tag_buf);
