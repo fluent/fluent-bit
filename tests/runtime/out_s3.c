@@ -263,7 +263,8 @@ static void wait_for_file_count_at_most(const char *path, int expected)
 }
 
 static int wait_for_s3_file_create_time(struct flb_s3 *ctx, const char *tag,
-                                        int tag_len, time_t create_time)
+                                        int tag_len, time_t create_time,
+                                        char *file_name, size_t file_name_size)
 {
     uint64_t elapsed_ms;
     struct s3_file *s3_file;
@@ -279,6 +280,9 @@ static int wait_for_s3_file_create_time(struct flb_s3 *ctx, const char *tag,
         pthread_mutex_lock(&ctx->files_mutex);
         s3_file = s3_store_file_get(ctx, tag, tag_len);
         if (s3_file != NULL) {
+            if (file_name != NULL) {
+                snprintf(file_name, file_name_size, "%s", s3_file->fsf->name);
+            }
             s3_file->create_time = create_time;
             pthread_mutex_unlock(&ctx->files_mutex);
             return 0;
@@ -803,7 +807,7 @@ void flb_test_s3_ordered_retry_uses_backoff_deadline(void)
     s3_ctx = get_s3_context(ctx);
     TEST_CHECK(s3_ctx != NULL);
     ret = wait_for_s3_file_create_time(s3_ctx, "retry-deadline", 14,
-                                       time(NULL) - 61);
+                                       time(NULL) - 61, NULL, 0);
     TEST_CHECK_(ret == 0, "Expected retry-deadline chunk to be created");
     if (ret != 0) {
         flb_stop(ctx);
@@ -952,7 +956,6 @@ void flb_test_s3_ordered_construct_error_exhausts_chunk(void)
     flb_ctx_t *ctx;
     char *store_dir;
     struct flb_s3 *s3_ctx;
-    struct s3_file *s3_file;
 
     store_dir = create_test_store_directory("/flb-s3-test-construct-error-XXXXXX");
     TEST_CHECK(store_dir != NULL);
@@ -987,12 +990,13 @@ void flb_test_s3_ordered_construct_error_exhausts_chunk(void)
     TEST_CHECK(ret >= 0);
     s3_ctx = get_s3_context(ctx);
     TEST_CHECK(s3_ctx != NULL);
-    wait_for_file_count(s3_ctx->stream_active->path, 1);
-
-    s3_file = s3_store_file_get(s3_ctx, "construct-error", 15);
-    TEST_CHECK(s3_file != NULL);
-    s3_file->create_time = time(NULL) - 61;
     setenv("TEST_CONSTRUCT_REQUEST_BUFFER_ERROR", "true", 1);
+    ret = wait_for_s3_file_create_time(s3_ctx, "construct-error", 15,
+                                       time(NULL) - 61, NULL, 0);
+    TEST_CHECK_(ret == 0, "Expected construct-error chunk to be created");
+    if (ret != 0) {
+        goto cleanup;
+    }
 
     ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
@@ -1007,6 +1011,7 @@ void flb_test_s3_ordered_construct_error_exhausts_chunk(void)
     TEST_CHECK_(s3_ctx->retry_time == 0,
                 "Expected retry delay to reset after terminal cleanup");
 
+cleanup:
     unsetenv("TEST_CONSTRUCT_REQUEST_BUFFER_ERROR");
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -1120,7 +1125,6 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
     char first_file_name[128];
     char second_file_name[128];
     struct flb_s3 *s3_ctx;
-    struct s3_file *s3_file;
 
     store_dir = create_test_store_directory("/flb-s3-test-shared-upload-XXXXXX");
     TEST_CHECK(store_dir != NULL);
@@ -1158,12 +1162,13 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
     ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
     TEST_CHECK(ret >= 0);
-    wait_for_file_count(s3_ctx->stream_active->path, 1);
-    s3_file = s3_store_file_get(s3_ctx, "shared-upload", 13);
-    TEST_CHECK(s3_file != NULL);
-    snprintf(first_file_name, sizeof(first_file_name), "%s",
-             s3_file->fsf->name);
-    s3_file->create_time = time(NULL) - 61;
+    ret = wait_for_s3_file_create_time(s3_ctx, "shared-upload", 13,
+                                       time(NULL) - 61,
+                                       first_file_name, sizeof(first_file_name));
+    TEST_CHECK_(ret == 0, "Expected first shared-upload chunk to be created");
+    if (ret != 0) {
+        goto cleanup;
+    }
 
     ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
@@ -1173,14 +1178,15 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
     ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
     TEST_CHECK(ret >= 0);
-    wait_for_file_count(s3_ctx->stream_active->path, 2);
-    s3_file = s3_store_file_get(s3_ctx, "shared-upload", 13);
-    TEST_CHECK(s3_file != NULL);
-    snprintf(second_file_name, sizeof(second_file_name), "%s",
-             s3_file->fsf->name);
+    ret = wait_for_s3_file_create_time(s3_ctx, "shared-upload", 13,
+                                       time(NULL) - 61,
+                                       second_file_name, sizeof(second_file_name));
+    TEST_CHECK_(ret == 0, "Expected second shared-upload chunk to be created");
+    if (ret != 0) {
+        goto cleanup;
+    }
     TEST_CHECK_(strcmp(first_file_name, second_file_name) != 0,
                 "Expected two distinct shared-upload chunks");
-    s3_file->create_time = time(NULL) - 61;
 
     wait_for_s3_call_count("UploadPart", 3);
     ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
@@ -1202,6 +1208,7 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
     TEST_CHECK_(mk_list_is_empty(&s3_ctx->upload_queue) == 0,
                 "Expected shared-upload queue to be empty");
 
+cleanup:
     flb_stop(ctx);
     flb_destroy(ctx);
 
