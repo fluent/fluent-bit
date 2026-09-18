@@ -50,7 +50,7 @@ uint64_t cfl_time_now()
     tm.tv_sec = mts.tv_sec;
     tm.tv_nsec = mts.tv_nsec;
     mach_port_deallocate(mach_task_self(), cclock);
-#elif defined CFL_HAVE_TIMESPEC_GET
+#elif defined(CFL_HAVE_TIMESPEC_GET) && defined(TIME_UTC)
     /* C11 supported */
     timespec_get(&tm, TIME_UTC);
 
