@@ -52,13 +52,8 @@
 #define try_to_write_str  flb_utils_write_str
 
 /*
- * Maximum recursion depth allowed while converting a msgpack object into a
- * JSON string (see msgpack2json() below). Msgpack arrays and maps can be
- * nested arbitrarily deep, and msgpack2json() recurses once per nesting
- * level. Without a bound, a deeply nested (malformed, corrupted or
- * maliciously crafted) record can recurse deep enough to overflow the
- * thread stack and crash the process. 512 levels is far beyond any
- * reasonably structured log record while keeping stack usage negligible.
+ * Keep traversal state on the heap: output coroutines have small stacks.
+ * Preserve the nesting limit and truncate deeper containers to JSON null.
  */
 #define FLB_PACK_JSON_MAX_DEPTH  512
 
@@ -984,7 +979,9 @@ static inline int key_exists_in_map(msgpack_object key, msgpack_object map, int 
             continue;
         }
 
-        if (memcmp(key.via.str.ptr, p.via.str.ptr, p.via.str.size) == 0) {
+        if (p.via.str.size == 0 ||
+            (p.via.str.ptr != NULL &&
+             memcmp(key.via.str.ptr, p.via.str.ptr, p.via.str.size) == 0)) {
             return FLB_TRUE;
         }
     }
@@ -1007,27 +1004,12 @@ static void msgpack2json_depth_warn(int *warned)
     }
 }
 
-static int msgpack2json(char *buf, int *off, size_t left,
-                        const msgpack_object *o, int escape_unicode,
-                        int depth, int *warned)
+static int msgpack2json_scalar(char *buf, int *off, size_t left,
+                              const msgpack_object *o, int escape_unicode)
 {
     int i;
-    int dup;
     int ret = FLB_FALSE;
     int loop;
-    int packed;
-    msgpack_object *p;
-
-    /*
-     * Stop descending once the maximum nesting depth is reached and encode
-     * the remaining structure as a JSON null instead of recursing further.
-     * This keeps the conversion bounded and avoids a stack overflow on
-     * pathologically nested input, see FLB_PACK_JSON_MAX_DEPTH above.
-     */
-    if (depth > FLB_PACK_JSON_MAX_DEPTH) {
-        msgpack2json_depth_warn(warned);
-        return try_to_write(buf, off, left, "null", 4);
-    }
 
     switch(o->type) {
     case MSGPACK_OBJECT_NIL:
@@ -1073,6 +1055,10 @@ static int msgpack2json(char *buf, int *off, size_t left,
         break;
 
     case MSGPACK_OBJECT_STR:
+        if (o->via.str.size != 0 && o->via.str.ptr == NULL) {
+            errno = EINVAL;
+            return -1;
+        }
         if (try_to_write(buf, off, left, "\"", 1) &&
             (o->via.str.size > 0 ?
              try_to_write_str(buf, off, left, o->via.str.ptr, o->via.str.size, escape_unicode)
@@ -1083,6 +1069,10 @@ static int msgpack2json(char *buf, int *off, size_t left,
         break;
 
     case MSGPACK_OBJECT_BIN:
+        if (o->via.bin.size != 0 && o->via.bin.ptr == NULL) {
+            errno = EINVAL;
+            return -1;
+        }
         if (try_to_write(buf, off, left, "\"", 1) &&
             (o->via.bin.size > 0 ?
              try_to_write_str(buf, off, left, o->via.bin.ptr, o->via.bin.size, escape_unicode)
@@ -1093,6 +1083,11 @@ static int msgpack2json(char *buf, int *off, size_t left,
         break;
 
     case MSGPACK_OBJECT_EXT:
+        if (o->via.ext.size > INT_MAX ||
+            (o->via.ext.size != 0 && o->via.ext.ptr == NULL)) {
+            errno = EINVAL;
+            return -1;
+        }
         if (!try_to_write(buf, off, left, "\"", 1)) {
             goto msg2json_end;
         }
@@ -1114,100 +1109,149 @@ static int msgpack2json(char *buf, int *off, size_t left,
         ret = FLB_TRUE;
         break;
 
-    case MSGPACK_OBJECT_ARRAY:
-        loop = o->via.array.size;
-
-        if (loop != 0 && depth + 1 > FLB_PACK_JSON_MAX_DEPTH) {
-            /*
-             * The array is non-empty but its elements would exceed the
-             * maximum nesting depth. Render the whole array as null
-             * instead of opening it and only then truncating an element,
-             * keeping the output symmetric with the MSGPACK_OBJECT_MAP
-             * case below.
-             */
-            msgpack2json_depth_warn(warned);
-            ret = try_to_write(buf, off, left, "null", 4);
-            break;
-        }
-
-        if (!try_to_write(buf, off, left, "[", 1)) {
-            goto msg2json_end;
-        }
-        if (loop != 0) {
-            p = o->via.array.ptr;
-            if (!msgpack2json(buf, off, left, p, escape_unicode, depth + 1, warned)) {
-                goto msg2json_end;
-            }
-            for (i=1; i<loop; i++) {
-                if (!try_to_write(buf, off, left, ",", 1) ||
-                    !msgpack2json(buf, off, left, p+i, escape_unicode, depth + 1, warned)) {
-                    goto msg2json_end;
-                }
-            }
-        }
-
-        ret = try_to_write(buf, off, left, "]", 1);
-        break;
-
-    case MSGPACK_OBJECT_MAP:
-        loop = o->via.map.size;
-
-        if (loop != 0 && depth + 1 > FLB_PACK_JSON_MAX_DEPTH) {
-            /*
-             * The map is non-empty but its keys/values would exceed the
-             * maximum nesting depth. A JSON object key must always be a
-             * quoted string; truncating an individual key to a bare
-             * "null" (as the generic depth guard above would do) produces
-             * invalid JSON such as {null:...}. Render the whole map as
-             * null instead of opening it.
-             */
-            msgpack2json_depth_warn(warned);
-            ret = try_to_write(buf, off, left, "null", 4);
-            break;
-        }
-
-        if (!try_to_write(buf, off, left, "{", 1)) {
-            goto msg2json_end;
-        }
-        if (loop != 0) {
-            msgpack_object k;
-            msgpack_object_kv *p = o->via.map.ptr;
-
-            packed = 0;
-            dup = FLB_FALSE;
-
-            k = o->via.map.ptr[0].key;
-            for (i = 0; i < loop; i++) {
-                k = o->via.map.ptr[i].key;
-                dup = key_exists_in_map(k, *o, i + 1);
-                if (dup == FLB_TRUE) {
-                    continue;
-                }
-
-                if (packed > 0) {
-                    if (!try_to_write(buf, off, left, ",", 1)) {
-                        goto msg2json_end;
-                    }
-                }
-
-                if (
-                        !msgpack2json(buf, off, left, &(p+i)->key, escape_unicode, depth + 1, warned) ||
-                    !try_to_write(buf, off, left, ":", 1)  ||
-                        !msgpack2json(buf, off, left, &(p+i)->val, escape_unicode, depth + 1, warned) ) {
-                    goto msg2json_end;
-                }
-                packed++;
-            }
-        }
-
-        ret = try_to_write(buf, off, left, "}", 1);
-        break;
-
     default:
         flb_warn("[%s] unknown msgpack type %i", __FUNCTION__, o->type);
+        errno = EINVAL;
+        return -1;
     }
 
  msg2json_end:
+    return ret;
+}
+
+struct msgpack_json_frame {
+    const msgpack_object *object;
+    uint32_t index;
+    int packed;
+    int value;
+};
+
+/* 1: complete, 0: output buffer too small, -1: terminal conversion error. */
+static int msgpack2json(char *buf, int *off, size_t left,
+                       const msgpack_object *o, int escape_unicode)
+{
+    struct msgpack_json_frame *frames;
+    struct msgpack_json_frame *frame;
+    const msgpack_object *container;
+    const msgpack_object *key;
+    uint32_t count;
+    int depth = 0;
+    int warned = FLB_FALSE;
+    int ret;
+
+    if (o->type != MSGPACK_OBJECT_ARRAY && o->type != MSGPACK_OBJECT_MAP) {
+        return msgpack2json_scalar(buf, off, left, o, escape_unicode);
+    }
+
+    frames = flb_calloc(FLB_PACK_JSON_MAX_DEPTH, sizeof(*frames));
+    if (frames == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    while (1) {
+        if (o->type == MSGPACK_OBJECT_ARRAY || o->type == MSGPACK_OBJECT_MAP) {
+            count = o->type == MSGPACK_OBJECT_ARRAY ? o->via.array.size : o->via.map.size;
+            if (count > INT_MAX ||
+                (count != 0 && o->type == MSGPACK_OBJECT_ARRAY && o->via.array.ptr == NULL) ||
+                (count != 0 && o->type == MSGPACK_OBJECT_MAP && o->via.map.ptr == NULL)) {
+                errno = EINVAL;
+                ret = -1;
+                break;
+            }
+            if (count != 0 && depth == FLB_PACK_JSON_MAX_DEPTH) {
+                msgpack2json_depth_warn(&warned);
+                ret = try_to_write(buf, off, left, "null", 4);
+            }
+            else {
+                ret = try_to_write(buf, off, left,
+                                   o->type == MSGPACK_OBJECT_ARRAY ? "[" : "{", 1);
+                if (ret == 0) {
+                    break;
+                }
+                if (count != 0) {
+                    frame = &frames[depth++];
+                    frame->object = o;
+                    frame->index = 0;
+                    frame->packed = 0;
+                    frame->value = FLB_FALSE;
+                    goto next_child;
+                }
+                ret = try_to_write(buf, off, left,
+                                   o->type == MSGPACK_OBJECT_ARRAY ? "]" : "}", 1);
+            }
+        }
+        else {
+            ret = msgpack2json_scalar(buf, off, left, o, escape_unicode);
+        }
+        if (ret <= 0) {
+            break;
+        }
+
+        /* Resume the parent without consuming another C stack frame. */
+        while (depth > 0) {
+            frame = &frames[depth - 1];
+            if (frame->object->type == MSGPACK_OBJECT_MAP && !frame->value) {
+                ret = try_to_write(buf, off, left, ":", 1);
+                if (ret == 0) {
+                    goto done;
+                }
+                frame->value = FLB_TRUE;
+                o = &frame->object->via.map.ptr[frame->index].val;
+                goto visit;
+            }
+            frame->index++;
+            frame->packed++;
+            frame->value = FLB_FALSE;
+
+next_child:
+            container = frame->object;
+            count = container->type == MSGPACK_OBJECT_ARRAY ?
+                    container->via.array.size : container->via.map.size;
+            if (container->type == MSGPACK_OBJECT_MAP) {
+                while (frame->index < count) {
+                    key = &container->via.map.ptr[frame->index].key;
+                    if (key->type != MSGPACK_OBJECT_STR && key->type != MSGPACK_OBJECT_BIN &&
+                        key->type != MSGPACK_OBJECT_EXT) {
+                        errno = EINVAL;
+                        ret = -1;
+                        goto done;
+                    }
+                    if (key->type == MSGPACK_OBJECT_STR && key->via.str.size != 0 &&
+                        key->via.str.ptr == NULL) {
+                        errno = EINVAL;
+                        ret = -1;
+                        goto done;
+                    }
+                    if (!key_exists_in_map(*key, *container, frame->index + 1)) {
+                        break;
+                    }
+                    frame->index++;
+                }
+            }
+            if (frame->index < count) {
+                if (frame->packed > 0 && !try_to_write(buf, off, left, ",", 1)) {
+                    ret = 0;
+                    goto done;
+                }
+                o = container->type == MSGPACK_OBJECT_ARRAY ?
+                    &container->via.array.ptr[frame->index] :
+                    &container->via.map.ptr[frame->index].key;
+                goto visit;
+            }
+            ret = try_to_write(buf, off, left,
+                               container->type == MSGPACK_OBJECT_ARRAY ? "]" : "}", 1);
+            if (ret == 0) {
+                goto done;
+            }
+            depth--;
+        }
+        break;
+visit:
+        continue;
+    }
+done:
+    flb_free(frames);
     return ret;
 }
 
@@ -1218,22 +1262,23 @@ static int msgpack2json(char *buf, int *off, size_t left,
  *  @param  json_str  The buffer to fill JSON string.
  *  @param  json_size The size of json_str.
  *  @param  data      The msgpack_unpacked data.
- *  @return success   ? a number characters filled : negative value
+ *  @return characters written on success, zero if the buffer is too small,
+ *          or a negative value for a terminal conversion error.
  */
 int flb_msgpack_to_json(char *json_str, size_t json_size,
                         const msgpack_object *obj, int escape_unicode)
 {
     int ret = -1;
     int off = 0;
-    int warned = FLB_FALSE;
 
-    if (json_str == NULL || obj == NULL) {
+    if (json_str == NULL || obj == NULL || json_size == 0 || json_size > INT_MAX) {
+        errno = EINVAL;
         return -1;
     }
 
-    ret = msgpack2json(json_str, &off, json_size - 1, obj, escape_unicode, 0, &warned);
+    ret = msgpack2json(json_str, &off, json_size - 1, obj, escape_unicode);
     json_str[off] = '\0';
-    return ret ? off: ret;
+    return ret > 0 ? off : ret;
 }
 
 flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size, int escape_unicode)
@@ -1272,7 +1317,12 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size, int es
     root = &result.data;
     while (1) {
         ret = flb_msgpack_to_json(out_buf, out_size, root, escape_unicode);
-        if (ret <= 0) {
+        if (ret < 0) {
+            flb_sds_destroy(out_buf);
+            msgpack_unpacked_destroy(&result);
+            return NULL;
+        }
+        if (ret == 0) {
             realloc_size *= 2;
             tmp_buf = flb_sds_increase(out_buf, realloc_size);
             if (tmp_buf) {
@@ -1697,7 +1747,11 @@ char *flb_msgpack_to_json_str(size_t size, const msgpack_object *obj, int escape
 
     while (1) {
         ret = flb_msgpack_to_json(buf, size, obj, escape_unicode);
-        if (ret <= 0) {
+        if (ret < 0) {
+            flb_free(buf);
+            return NULL;
+        }
+        if (ret == 0) {
             /* buffer is small. retry.*/
             size *= 2;
             tmp = flb_realloc(buf, size);
