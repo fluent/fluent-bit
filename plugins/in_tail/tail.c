@@ -382,7 +382,11 @@ static int in_tail_init(struct flb_input_instance *in,
 
 #ifdef FLB_HAVE_SQLDB
     /* Delete stale files that are not monitored from the database */
-    ret = flb_tail_db_stale_file_delete(in, config, ctx);
+    /* Deferred files can still have valid saved offsets. */
+    ret = 0;
+    if (!ctx->files_deferred) {
+        ret = flb_tail_db_stale_file_delete(in, config, ctx);
+    }
     if (ret == -1) {
         flb_tail_config_destroy(ctx);
         return -1;
@@ -679,6 +683,14 @@ static struct flb_config_map config_map[] = {
      "needs to be increased (e.g: very long lines), this value is used to "
      "restrict how much the memory buffer can grow. If reading a file exceed "
      "this limit, the file is removed from the monitored file list."
+    },
+    {
+     FLB_CONFIG_MAP_INT, "max_open_files", "0",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, max_open_files),
+     "maximum number of monitored files open across all Tail inputs, including rotated files. "
+     "0 inherits the shared limit, or means unlimited if no positive limit is configured. "
+     "Positive limits must agree. Excess files are retried at refresh_interval. "
+     "EOF retains a slot. Warns at 75% shared usage. Other process handles are not limited."
     },
     {
      FLB_CONFIG_MAP_SIZE, "static_batch_size", FLB_TAIL_STATIC_BATCH_SIZE,

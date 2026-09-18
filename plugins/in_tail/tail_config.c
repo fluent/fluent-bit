@@ -26,6 +26,8 @@
 #include <fcntl.h>
 
 #include "tail_fs.h"
+#include "tail_file.h"
+#include "tail_file_budget.h"
 #include "tail_db.h"
 #include "tail_config.h"
 #include "tail_scan.h"
@@ -120,6 +122,12 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
+        flb_free(ctx);
+        return NULL;
+    }
+
+    if (ctx->max_open_files < 0) {
+        flb_plg_error(ins, "max_open_files must be >= 0");
         flb_free(ctx);
         return NULL;
     }
@@ -551,11 +559,22 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
                     "long_line_skipped", ctx->ins->metrics);
 #endif
 
+    ctx->file_budget = flb_tail_file_budget_create(ctx);
+    if (!ctx->file_budget) {
+        flb_tail_config_destroy(ctx);
+        return NULL;
+    }
+
     return ctx;
 }
 
 int flb_tail_config_destroy(struct flb_tail_config *config)
 {
+    /* Also return reservations on initialization failure after the first scan. */
+    if (config->file_budget) {
+        flb_tail_file_remove_all(config);
+        flb_tail_file_budget_destroy(config->file_budget);
+    }
 
 #ifdef FLB_HAVE_PARSER
     flb_tail_mult_destroy(config);
