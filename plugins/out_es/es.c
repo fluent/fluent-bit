@@ -595,11 +595,16 @@ static int compose_index_header(int es_index_custom_len,
     if (es_index_custom_len > 0) {
         p = logstash_index + es_index_custom_len;
     } else {
-        p = logstash_index + strlen(logstash_prefix);
+        /* the prefix copy is capped to the buffer, cap the offset as well */
+        s = strlen(logstash_prefix);
+        if (s > logstash_index_size - 1) {
+            s = logstash_index_size - 1;
+        }
+        p = logstash_index + s;
     }
     len = p - logstash_index;
     ret = snprintf(p, logstash_index_size - len, "%s", separator);
-    if (ret > logstash_index_size - len) {
+    if (ret >= logstash_index_size - len) {
         /* exceed limit */
         return -1;
     }
