@@ -583,10 +583,102 @@ void event_loop_stress_priority_add_delete()
 #endif
 }
 
+/*
+ * Regression test: more events become ready in a single wait than the loop
+ * was created for. The libevent backend collected fired events in an array
+ * sized once at loop creation and wrote past its end in this situation
+ * (heap corruption / crash on Windows under heavy retry load).
+ */
+#define EVENT_LOOP_OVERFLOW_EVENTS (EVENT_LOOP_MAX_EVENTS * 4)
+
+void test_more_ready_events_than_loop_size()
+{
+    int i;
+    int ret;
+    int seen;
+    int passes;
+    uint64_t val = 1;
+    struct mk_event *event;
+    struct mk_event *events;
+    struct mk_event_loop *evl;
+    flb_pipefd_t (*fds)[2];
+
+#ifdef _WIN32
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
+
+    evl = mk_event_loop_create(EVENT_LOOP_MAX_EVENTS);
+    TEST_CHECK(evl != NULL);
+
+    events = flb_calloc(EVENT_LOOP_OVERFLOW_EVENTS, sizeof(struct mk_event));
+    fds = flb_calloc(EVENT_LOOP_OVERFLOW_EVENTS, sizeof(*fds));
+    TEST_CHECK(events != NULL && fds != NULL);
+
+    /* Register every read end and make all of them readable at once */
+    for (i = 0; i < EVENT_LOOP_OVERFLOW_EVENTS; i++) {
+        ret = flb_pipe_create(fds[i]);
+        TEST_CHECK(ret == 0);
+
+        MK_EVENT_NEW(&events[i]);
+        ret = mk_event_add(evl, fds[i][0], MK_EVENT_NOTIFICATION,
+                           MK_EVENT_READ, &events[i]);
+        TEST_CHECK(ret == 0);
+
+        ret = flb_pipe_w(fds[i][1], &val, sizeof(val));
+        TEST_CHECK(ret == sizeof(val));
+    }
+
+    /*
+     * Drain the loop. Backends with a kernel side cap (epoll) report at most
+     * the loop size per pass; the libevent backend reports everything in one
+     * pass, which is the overflowing case. Each event must be reported once.
+     */
+    seen = 0;
+    passes = 0;
+    while (seen < EVENT_LOOP_OVERFLOW_EVENTS &&
+           passes < EVENT_LOOP_OVERFLOW_EVENTS) {
+        ret = mk_event_wait_2(evl, 1000);
+        TEST_CHECK(ret > 0);
+        if (ret <= 0) {
+            break;
+        }
+        passes++;
+
+        mk_event_foreach(event, evl) {
+            i = (int) (event - events);
+            TEST_CHECK(i >= 0 && i < EVENT_LOOP_OVERFLOW_EVENTS);
+
+            ret = flb_pipe_r(event->fd, &val, sizeof(val));
+            TEST_CHECK(ret == sizeof(val));
+
+            mk_event_del(evl, event);
+            seen++;
+        }
+    }
+
+    TEST_CHECK(seen == EVENT_LOOP_OVERFLOW_EVENTS);
+    TEST_MSG("expected %d events, got %d in %d passes",
+             EVENT_LOOP_OVERFLOW_EVENTS, seen, passes);
+
+    for (i = 0; i < EVENT_LOOP_OVERFLOW_EVENTS; i++) {
+        flb_pipe_close(fds[i][0]);
+        flb_pipe_close(fds[i][1]);
+    }
+    flb_free(fds);
+    flb_free(events);
+    mk_event_loop_destroy(evl);
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
+}
+
 TEST_LIST = {
     {"test_simple_timeout_1000ms", test_simple_timeout_1000ms},
     {"test_non_blocking_and_blocking_timeout", test_non_blocking_and_blocking_timeout},
     {"test_infinite_wait", test_infinite_wait},
     {"event_loop_stress_priority_add_delete", event_loop_stress_priority_add_delete},
+    {"test_more_ready_events_than_loop_size", test_more_ready_events_than_loop_size},
     { 0 }
 };
