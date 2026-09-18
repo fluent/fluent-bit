@@ -2255,6 +2255,10 @@ static int flb_kubelet_network_init(struct flb_kube *ctx, struct flb_config *con
     /* Remove async flag from upstream */
     flb_stream_disable_async_mode(&ctx->kubelet_upstream->base);
 
+    if (ctx->kube_meta_io_timeout > 0) {
+        ctx->kubelet_upstream->base.net.io_timeout = ctx->kube_meta_io_timeout;
+    }
+
     return 0;
 }
 
@@ -2309,6 +2313,12 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
 
     /* Remove async flag from upstream */
     flb_stream_disable_async_mode(&ctx->kube_api_upstream->base);
+
+    /* Bound the (synchronous) metadata read so a stalled connection cannot
+     * block the pipeline thread -- and in_tail -- forever (0 = legacy). */
+    if (ctx->kube_meta_io_timeout > 0) {
+        ctx->kube_api_upstream->base.net.io_timeout = ctx->kube_meta_io_timeout;
+    }
 
     /* Continue the filter kubernetes plugin functionality if the pod_association fails */
     if (ctx->aws_use_pod_association) {
@@ -2458,10 +2468,44 @@ static inline int lookup_pod_meta(struct flb_kube *ctx,
                              meta->cache_key, meta->cache_key_len,
                              (void *) &hash_meta_buf, &hash_meta_size);
     if (ret == -1) {
+        /*
+         * Skip the blocking request if this pod's metadata lookup failed
+         * recently, so records for an unseen pod do not each re-issue a
+         * synchronous request while the control plane is unreachable.
+         */
+        if (ctx->neg_hash_table) {
+            const char *neg_buf;
+            size_t neg_size;
+            if (flb_hash_table_get(ctx->neg_hash_table,
+                                   meta->cache_key, meta->cache_key_len,
+                                   (void *) &neg_buf, &neg_size) != -1) {
+                flb_plg_debug(ctx->ins,
+                              "negative cache hit for %.*s, skipping metadata "
+                              "lookup (record left un-enriched)",
+                              (int) meta->cache_key_len, meta->cache_key);
+                *out_buf = NULL;
+                *out_size = 0;
+                return 0;
+            }
+        }
+
         /* Retrieve API server meta and merge with local meta */
         ret = get_and_merge_pod_meta(ctx, meta,
                                  &tmp_hash_meta_buf, &hash_meta_size);
         if (ret == -1) {
+            /*
+             * Only negatively-cache network lookup failures. With
+             * use_tag_for_meta the metadata is derived from the tag (no
+             * request), so a failure there must not suppress future work.
+             */
+            if (ctx->neg_hash_table && !ctx->use_tag_for_meta) {
+                flb_plg_debug(ctx->ins,
+                              "metadata lookup failed for %.*s, negative-caching",
+                              (int) meta->cache_key_len, meta->cache_key);
+                flb_hash_table_add(ctx->neg_hash_table,
+                                   meta->cache_key, meta->cache_key_len,
+                                   "1", 1);
+            }
             *out_buf = NULL;
             *out_size = 0;
             return 0;
