@@ -265,12 +265,17 @@ static int compose_index_header(struct flb_elasticsearch *ctx,
     if (es_index_custom_len > 0) {
         p = logstash_index + es_index_custom_len;
     } else {
-        p = logstash_index + flb_sds_len(ctx->logstash_prefix);
+        /* the prefix copy is capped to the buffer, cap the offset as well */
+        s = flb_sds_len(ctx->logstash_prefix);
+        if (s > logstash_index_size - 1) {
+            s = logstash_index_size - 1;
+        }
+        p = logstash_index + s;
     }
     len = p - logstash_index;
     ret = snprintf(p, logstash_index_size - len, "%s",
                    separator_str);
-    if (ret > logstash_index_size - len) {
+    if (ret >= logstash_index_size - len) {
         /* exceed limit */
         return -1;
     }
