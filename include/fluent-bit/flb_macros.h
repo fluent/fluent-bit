@@ -30,6 +30,7 @@
 #define FLB_ERROR   0
 #define FLB_OK      1
 #define FLB_RETRY   2
+#define FLB_THROTTLE 3
 
 /* ala-printf format check */
 #if defined(__GNUC__) || defined(__clang__)

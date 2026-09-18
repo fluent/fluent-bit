@@ -1,0 +1,55 @@
+plugin: opentelemetry
+baseline_commit: b0f5266d4f9d9271bf532a5c0c6ecbe4598eb6f4
+callback_and_send_functions:
+  - cb_opentelemetry_flush
+  - otel_process_logs
+  - process_metrics
+  - process_traces
+  - process_profiles
+  - opentelemetry_legacy_post
+  - opentelemetry_post
+execution_model: multi_request_flush
+success_means: mixed
+throttle_signals:
+  - status_or_error_code: OTLP/HTTP 429
+    scope: output_instance
+    primary_source: https://opentelemetry.io/docs/specs/otlp/#otlphttp-throttling
+  - status_or_error_code: OTLP/HTTP 503 with valid Retry-After
+    scope: output_instance
+    primary_source: https://opentelemetry.io/docs/specs/otlp/#otlphttp-throttling
+  - status_or_error_code: OTLP/gRPC UNAVAILABLE with valid google.rpc.RetryInfo
+    scope: output_instance
+    primary_source: https://opentelemetry.io/docs/specs/otlp/#failures-1
+  - status_or_error_code: OTLP/gRPC RESOURCE_EXHAUSTED with valid google.rpc.RetryInfo
+    scope: output_instance
+    primary_source: https://opentelemetry.io/docs/specs/otlp/#failures-1
+retry_after_sources:
+  - HTTP Retry-After response header or trailer
+  - google.rpc.RetryInfo in grpc-status-details-bin metadata
+local_retries_or_sleeps:
+  - split metric batches stop after the first failed batch
+partial_acceptance_model: known_subset
+retry_payload_owner: core_chunk
+cleanup_paths:
+  - legacy HTTP destroys the HTTP client and releases the upstream connection
+  - unified HTTP and gRPC destroy the request and its response stream
+  - split metric batches destroy every encoded batch after success, retry, or throttle
+changed_classification_cases:
+  - HTTP 429 returns FLB_THROTTLE
+  - HTTP 503 with valid Retry-After returns FLB_THROTTLE
+  - gRPC UNAVAILABLE with valid RetryInfo returns FLB_THROTTLE
+  - gRPC RESOURCE_EXHAUSTED is retryable only with valid RetryInfo
+unchanged_classification_cases:
+  - HTTP 502 and 504 return FLB_RETRY without closing the throttle gate
+  - HTTP 503 without a valid hint returns FLB_RETRY
+  - populated OTLP partial-success responses are acknowledged without retry
+  - a failure after an accepted split batch is not retried to avoid duplication
+new_tests:
+  - HTTP/1 and HTTP/2 429 with Retry-After
+  - HTTP 502, 504, and 503 with invalid Retry-After remain ordinary retries
+  - gRPC UNAVAILABLE with valid RetryInfo
+  - gRPC RESOURCE_EXHAUSTED with absent and invalid RetryInfo
+  - populated log partial-success response is not retried
+unsupported_cases:
+  - profiles are implemented but the integration fixture has no profiles service
+  - a throttle after an accepted split metric batch is acknowledged to preserve the no-replay contract
