@@ -609,6 +609,8 @@ static int process_payload_ng(struct flb_http_request *request,
                               flb_sds_t tag,
                               flb_sds_t *bulk_statuses)
 {
+    int ret;
+
     if (request->content_type == NULL) {
         send_response_ng(response, 400, NULL, "error: header 'Content-Type' is not set\n");
 
@@ -627,8 +629,13 @@ static int process_payload_ng(struct flb_http_request *request,
         return -1;
     }
 
-    return parse_payload_ndjson(context, tag, request->body,
-                                cfl_sds_len(request->body), bulk_statuses);
+    ret = parse_payload_ndjson(context, tag, request->body,
+                               cfl_sds_len(request->body), bulk_statuses);
+    if (ret != 0 && ret != FLB_INPUT_INGRESS_BUSY) {
+        send_response_ng(response, 400, NULL, "error: invalid bulk payload\n");
+    }
+
+    return ret;
 }
 
 int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
