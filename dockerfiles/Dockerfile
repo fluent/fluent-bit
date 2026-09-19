@@ -54,6 +54,7 @@ RUN apt-get update && \
     flex \
     bison \
     libyaml-dev \
+    libsnmp-dev \
     && apt-get satisfy -y cmake "cmake (<< 4.0)" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
