@@ -19,18 +19,20 @@ This remains an experimental browser port, not cross-browser production certific
 - The libco lifecycle, pthread return/reuse, and ASan stack-transition shims
   remain necessary in 6.0.9. They were not removed just to relax the version pin.
 - ChunkIO keeps its `mremap` fallback and physical `nftw` deletion. The bundled
-  tree includes the upstream draft's memory-only scan-signature and fixture fixes.
+  tree includes the upstream memory-only scan-signature and fixture fixes.
 - Demo and test defaults select `build-wasm-6.0.9-release`. Versioned build trees
   preserve the older SDK/artifacts and avoid mixing incompatible object files.
 - `.github/workflows/wasm-browser.yaml` adds optimized and ASan build/CTest jobs,
-  using the version pin and a fixed emsdk bootstrap revision. Its YAML and shell
-  syntax were checked locally; this new Fluent Bit workflow has not run remotely.
+  using the version pin and a fixed emsdk bootstrap revision. Fresh-checkout CI
+  exposed a Lua harness header previously supplied by a native build; the WASM
+  test target now generates that header in its own build directory.
 
-Upstream dependency drafts remain separate, with DCO-signed follow-up commits:
+The required upstream dependency changes were merged as of 2026-09-19:
 [ChunkIO #116](https://github.com/fluent/chunkio/pull/116),
 [Monkey #448](https://github.com/monkey/monkey/pull/448), and
 [flb_libco #14](https://github.com/edsiper/flb_libco/pull/14).
-Fluent Bit's integration changes have not been committed or submitted as a PR.
+Their bundled updates remain separate from Fluent Bit's core, build, and SDK
+commits in [draft PR #12429](https://github.com/fluent/fluent-bit/pull/12429).
 
 ## Feature choices
 
@@ -43,6 +45,10 @@ explicit quiescent checkpoints retain their existing failure/retry semantics.
 Node-only raw sockets do not apply to the browser profile; HTTP still uses Fetch.
 
 ## Verification
+
+The following table records the original migration run, not the current test
+count. Later regressions bring full-engine CTest to 17 optimized and 19 ASan
+tests. Current validation and hosted CI status are recorded in the draft PR.
 
 | Check | Result |
 | --- | --- |
