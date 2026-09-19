@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include "cmt_protobuf.h"
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_map.h>
@@ -2107,7 +2108,21 @@ int cmt_decode_opentelemetry_create(struct cfl_list *result_context_list,
 
     result = CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
 
+    if (result_context_list == NULL) {
+        return CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+    }
+
     cfl_list_init(result_context_list);
+
+    if (in_buf == NULL || offset == NULL || *offset > in_size) {
+        return CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+    }
+
+    if (cmt_protobuf_validate(
+            &opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__descriptor,
+            &in_buf[*offset], in_size - *offset) != 0) {
+        return CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+    }
 
     service_request = opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(NULL, in_size - *offset,
                                                                                                            (unsigned char *) &in_buf[*offset]);
