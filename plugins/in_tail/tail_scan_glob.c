@@ -267,11 +267,6 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
                         globbuf.gl_pathv[i],
                         strlen(globbuf.gl_pathv[i]));
                 }
-
-                flb_tail_scan_unregister_aged_out_inode(
-                    ctx,
-                    globbuf.gl_pathv[i],
-                    strlen(globbuf.gl_pathv[i]));
             }
 
             if (ctx->ignore_older > 0) {
@@ -298,11 +293,6 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
                                         globbuf.gl_pathv[i],
                                         strlen(globbuf.gl_pathv[i]));
 
-                flb_tail_scan_unregister_ignored_file_size(
-                    ctx,
-                    globbuf.gl_pathv[i],
-                    strlen(globbuf.gl_pathv[i]));
-
                 /* Discard stale offset if the file was truncated in place. */
                 if (ignored_file_size > (ssize_t) st.st_size) {
                     ignored_file_size = -1;
@@ -316,6 +306,10 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
                                        ctx);
 
             if (ret == 0) {
+                flb_tail_scan_unregister_ignored_file_size(ctx, globbuf.gl_pathv[i],
+                                                          strlen(globbuf.gl_pathv[i]));
+                flb_tail_scan_unregister_aged_out_inode(ctx, globbuf.gl_pathv[i],
+                                                       strlen(globbuf.gl_pathv[i]));
                 flb_plg_debug(ctx->ins, "scan_glob add(): %s, inode %" PRIu64,
                               globbuf.gl_pathv[i], (uint64_t) st.st_ino);
                 count++;

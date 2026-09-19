@@ -1,5 +1,6 @@
 set(src
   tail_file.c
+  tail_file_budget.c
   tail_dockermode.c
   tail_scan.c
   tail_config.c
