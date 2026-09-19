@@ -210,6 +210,10 @@ if(FLB_RIPSER)
     )
 endif()
 
+if(FLB_IN_OPENTELEMETRY)
+  list(APPEND UNIT_TESTS_FILES opentelemetry_protobuf.c)
+endif()
+
 set(UNIT_TESTS_DATA
   data/fips/disabled.cnf
   data/tls/certificate.pem
