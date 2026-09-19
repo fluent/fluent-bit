@@ -43,6 +43,7 @@
 #include <cmetrics/cmt_encode_text.h>
 
 #include <msgpack.h>
+#include <msgpack/unpack_define.h>
 #include <math.h>
 #include <jsmn/jsmn.h>
 #ifdef FLB_HAVE_YYJSON
@@ -314,61 +315,65 @@ static inline int pack_string_token(struct flb_pack_state *state,
 
 /* Convert a yyjson value to msgpack */
 #ifdef FLB_HAVE_YYJSON
-static void yyjson_val_to_msgpack(yyjson_val *val, msgpack_packer *pck)
+static int yyjson_val_to_msgpack(yyjson_val *val, msgpack_packer *pck, size_t depth)
 {
-    size_t idx, max;
+    size_t idx;
+    size_t max;
     yyjson_val *key;
     yyjson_val *tmp;
     const char *k;
     size_t klen;
 
+    /* Bound recursion before entering a container, as the unpacker does. */
+    if (yyjson_is_ctn(val) && depth >= MSGPACK_EMBED_STACK_SIZE) {
+        return -1;
+    }
+
     switch (yyjson_get_type(val)) {
     case YYJSON_TYPE_OBJ:
-        msgpack_pack_map(pck, yyjson_obj_size(val));
+        if (msgpack_pack_map(pck, yyjson_obj_size(val)) != 0) {
+            return -1;
+        }
         yyjson_obj_foreach(val, idx, max, key, tmp) {
             k = yyjson_get_str(key);
             klen = yyjson_get_len(key);
-            msgpack_pack_str(pck, klen);
-            msgpack_pack_str_body(pck, k, klen);
-            yyjson_val_to_msgpack(tmp, pck);
+            if (msgpack_pack_str(pck, klen) != 0 ||
+                msgpack_pack_str_body(pck, k, klen) != 0 ||
+                yyjson_val_to_msgpack(tmp, pck, depth + 1) != 0) {
+                return -1;
+            }
         }
-        break;
+        return 0;
     case YYJSON_TYPE_ARR:
-        msgpack_pack_array(pck, yyjson_arr_size(val));
-        yyjson_arr_foreach(val, idx, max, tmp) {
-            yyjson_val_to_msgpack(tmp, pck);
+        if (msgpack_pack_array(pck, yyjson_arr_size(val)) != 0) {
+            return -1;
         }
-        break;
+        yyjson_arr_foreach(val, idx, max, tmp) {
+            if (yyjson_val_to_msgpack(tmp, pck, depth + 1) != 0) {
+                return -1;
+            }
+        }
+        return 0;
     case YYJSON_TYPE_STR:
-        msgpack_pack_str(pck, yyjson_get_len(val));
-        msgpack_pack_str_body(pck, yyjson_get_str(val), yyjson_get_len(val));
-        break;
+        if (msgpack_pack_str(pck, yyjson_get_len(val)) != 0) {
+            return -1;
+        }
+        return msgpack_pack_str_body(pck, yyjson_get_str(val), yyjson_get_len(val));
     case YYJSON_TYPE_BOOL:
         if (yyjson_get_bool(val)) {
-            msgpack_pack_true(pck);
+            return msgpack_pack_true(pck);
         }
-        else {
-            msgpack_pack_false(pck);
-        }
-        break;
-    case YYJSON_TYPE_NULL:
-        msgpack_pack_nil(pck);
-        break;
+        return msgpack_pack_false(pck);
     case YYJSON_TYPE_NUM:
         if (yyjson_is_int(val)) {
             if (yyjson_is_sint(val)) {
-                msgpack_pack_int64(pck, yyjson_get_sint(val));
+                return msgpack_pack_int64(pck, yyjson_get_sint(val));
             }
-            else {
-                msgpack_pack_uint64(pck, yyjson_get_uint(val));
-            }
+            return msgpack_pack_uint64(pck, yyjson_get_uint(val));
         }
-        else {
-            msgpack_pack_double(pck, yyjson_get_real(val));
-        }
-        break;
+        return msgpack_pack_double(pck, yyjson_get_real(val));
     default:
-        msgpack_pack_nil(pck);
+        return msgpack_pack_nil(pck);
     }
 }
 
@@ -399,7 +404,7 @@ static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer
     msgpack_packer pck;
     char *start, *end, *insitu_buf;
 
-    if (!js || !buffer || !size) {
+    if (!js || !buffer || !size || len > SIZE_MAX - YYJSON_PADDING_SIZE) {
         return -1;
     }
 
@@ -478,7 +483,12 @@ static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer
             return -1;
         }
 
-        yyjson_val_to_msgpack(root, &pck);
+        if (yyjson_val_to_msgpack(root, &pck, 0) != 0) {
+            yyjson_doc_free(doc);
+            msgpack_sbuffer_destroy(&sbuf);
+            flb_free(insitu_buf);
+            return -1;
+        }
 
         if (root_type && count_records == 0) {
             *root_type = yyjson_root_type(root);
