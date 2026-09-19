@@ -40,6 +40,10 @@ struct ctrace_attributes *ctr_attributes_create()
 
 void ctr_attributes_destroy(struct ctrace_attributes *attr)
 {
+    if (attr == NULL) {
+        return;
+    }
+
     if (attr->kv) {
         cfl_kvlist_destroy(attr->kv);
     }

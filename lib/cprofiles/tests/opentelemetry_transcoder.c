@@ -298,9 +298,12 @@ static struct cprof *create_cprof_with_dictionary_tables(void)
     struct cprof_location         *loc;
     struct cprof_line             *line;
     struct cprof_link             *link;
+    struct cprof_attribute_unit   *attribute_unit;
     struct cfl_kvlist             *attrs;
     size_t                         id_bin;
     size_t                         id_foo;
+    size_t                         id_attribute_key;
+    size_t                         id_unit;
     int                            ret;
 
     cprof = cprof_create();
@@ -352,17 +355,53 @@ static struct cprof *create_cprof_with_dictionary_tables(void)
     }
     profile->time_nanos = 2000000000ULL;
     profile->duration_nanos = 200000000ULL;
-
-    cprof_sample_type_str_create(profile, "count", "", CPROF_AGGREGATION_TEMPORALITY_CUMULATIVE);
-    id_bin = cprof_profile_string_add(profile, "/bin/app", -1);
-    id_foo = cprof_profile_string_add(profile, "foo", -1);
-    if (id_bin == 0 || id_foo == 0) {
+    profile->profile_id[0] = 0x42;
+    profile->profile_id[15] = 0x24;
+    profile->dropped_attributes_count = 3;
+    profile->original_payload_format = cfl_sds_create("pprof");
+    profile->original_payload = cfl_sds_create_len("payload", 7);
+    if (profile->original_payload_format == NULL || profile->original_payload == NULL) {
         cprof_profile_destroy(profile);
         cprof_scope_profiles_destroy(scope_profiles);
         cprof_resource_profiles_destroy(resource_profiles);
         cprof_destroy(cprof);
         return NULL;
     }
+
+    cprof_sample_type_str_create(profile, "count", "", CPROF_AGGREGATION_TEMPORALITY_CUMULATIVE);
+    id_bin = cprof_profile_string_add(profile, "/bin/app", -1);
+    id_foo = cprof_profile_string_add(profile, "foo", -1);
+    id_attribute_key = cprof_profile_string_add(profile, "table.key", -1);
+    id_unit = cprof_profile_string_add(profile, "bytes", -1);
+    if (id_bin == 0 || id_foo == 0 || id_attribute_key == 0 || id_unit == 0) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+
+    if (cfl_kvlist_insert_string(profile->attribute_table,
+                                 "table.key", "table.value") != 0 ||
+        cfl_kvlist_insert_string(profile->attributes,
+                                 "profile.key", "profile.value") != 0) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+
+    attribute_unit = cprof_attribute_unit_create(profile);
+    if (attribute_unit == NULL) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+    attribute_unit->attribute_key = (int64_t) id_attribute_key;
+    attribute_unit->unit = (int64_t) id_unit;
 
     /* One mapping (dict mapping_table will have zero + this). */
     mapping = cprof_mapping_create(profile);
@@ -377,6 +416,13 @@ static struct cprof *create_cprof_with_dictionary_tables(void)
     mapping->memory_limit = 0x2000ULL;
     mapping->file_offset = 0;
     mapping->filename = (int64_t)id_bin;
+    if (cprof_mapping_add_attribute(mapping, 0) != 0) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
 
     /* One function (dict function_table will have zero + this). */
     func = cprof_function_create(profile);
@@ -403,6 +449,13 @@ static struct cprof *create_cprof_with_dictionary_tables(void)
     }
     loc->mapping_index = 0;
     loc->address = 0x1000ULL;
+    if (cprof_location_add_attribute(loc, 0) != 0) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
     line = cprof_line_create(loc);
     if (line == NULL) {
         cprof_profile_destroy(profile);
@@ -447,6 +500,14 @@ static struct cprof *create_cprof_with_dictionary_tables(void)
         return NULL;
     }
     ret = cprof_sample_add_value(sample, 42);
+    if (ret != 0) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+    ret = cprof_sample_add_attribute(sample, 0);
     if (ret != 0) {
         cprof_profile_destroy(profile);
         cprof_scope_profiles_destroy(scope_profiles);
@@ -566,6 +627,32 @@ static void test_encoder_dictionary_tables()
     cprof_destroy(context);
 }
 
+static void test_encoder_empty_context()
+{
+    cfl_sds_t     otlp_result;
+    struct cprof *context;
+    int           result;
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *request;
+
+    context = cprof_create();
+    TEST_ASSERT(context != NULL);
+
+    result = cprof_encode_opentelemetry_create(&otlp_result, context);
+    cprof_destroy(context);
+
+    TEST_CHECK(result == CPROF_ENCODE_OPENTELEMETRY_SUCCESS);
+    TEST_ASSERT(otlp_result != NULL);
+
+    request = opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__unpack(
+        NULL, cfl_sds_len(otlp_result), (const unsigned char *) otlp_result);
+    TEST_ASSERT(request != NULL);
+    TEST_CHECK(request->n_resource_profiles == 0);
+
+    opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+        request, NULL);
+    cprof_encode_opentelemetry_destroy(otlp_result);
+}
+
 /*
  * Verify decoded cprof matches the structure produced by create_cprof_with_dictionary_tables.
  * Decoder may emit dictionary sentinel at index 0 plus our entry, so we require at least 1
@@ -582,6 +669,7 @@ static void verify_decoded_cprof_dictionary_tables(struct cprof *decoded)
     struct cprof_line                 *line;
     struct cprof_link                 *link;
     struct cprof_sample               *sample;
+    struct cfl_variant                *profile_attribute;
     struct cfl_list                   *rp_iter;
     struct cfl_list                   *sp_iter;
     struct cfl_list                   *prof_iter;
@@ -629,6 +717,24 @@ static void verify_decoded_cprof_dictionary_tables(struct cprof *decoded)
     /* Profile metadata */
     TEST_CHECK(profile->time_nanos == 2000000000ULL);
     TEST_CHECK(profile->duration_nanos == 200000000ULL);
+    TEST_CHECK(profile->profile_id[0] == 0x42);
+    TEST_CHECK(profile->profile_id[15] == 0x24);
+    TEST_CHECK(profile->dropped_attributes_count == 3);
+    TEST_CHECK(profile->original_payload_format != NULL);
+    TEST_CHECK(profile->original_payload != NULL);
+    if (profile->original_payload_format != NULL) {
+        TEST_CHECK(strcmp(profile->original_payload_format, "pprof") == 0);
+    }
+    if (profile->original_payload != NULL) {
+        TEST_CHECK(cfl_sds_len(profile->original_payload) == 7);
+        TEST_CHECK(memcmp(profile->original_payload, "payload", 7) == 0);
+    }
+    profile_attribute = cfl_kvlist_fetch(profile->attributes, "profile.key");
+    TEST_CHECK(profile_attribute != NULL);
+    if (profile_attribute != NULL) {
+        TEST_CHECK(profile_attribute->type == CFL_VARIANT_STRING);
+        TEST_CHECK(strcmp(profile_attribute->data.as_string, "profile.value") == 0);
+    }
 
     /* At least one mapping; find one with memory_start=0x1000, filename "/bin/app" */
     TEST_CHECK(cfl_list_size(&profile->mappings) >= 1);
@@ -637,6 +743,10 @@ static void verify_decoded_cprof_dictionary_tables(struct cprof *decoded)
         mapping = cfl_list_entry(map_iter, struct cprof_mapping, _head);
         if (mapping->memory_start == 0x1000ULL && mapping->memory_limit == 0x2000ULL &&
             mapping->file_offset == 0) {
+            TEST_CHECK(mapping->attributes_count == 1);
+            if (mapping->attributes_count == 1) {
+                TEST_CHECK(mapping->attributes[0] > 0);
+            }
             if (mapping->filename >= 0 && (size_t)mapping->filename < profile->string_table_count &&
                 profile->string_table[mapping->filename] != NULL &&
                 strcmp(profile->string_table[mapping->filename], "/bin/app") == 0) {
@@ -669,6 +779,10 @@ static void verify_decoded_cprof_dictionary_tables(struct cprof *decoded)
     for (loc_iter = profile->locations.next; loc_iter != &profile->locations; loc_iter = loc_iter->next) {
         loc = cfl_list_entry(loc_iter, struct cprof_location, _head);
         if (loc->address == 0x1000ULL && cfl_list_size(&loc->lines) >= 1) {
+            TEST_CHECK(loc->attributes_count == 1);
+            if (loc->attributes_count == 1) {
+                TEST_CHECK(loc->attributes[0] > 0);
+            }
             line_iter = loc->lines.next;
             line = cfl_list_entry(line_iter, struct cprof_line, _head);
             if (line->line == 10) {
@@ -703,6 +817,11 @@ static void verify_decoded_cprof_dictionary_tables(struct cprof *decoded)
         TEST_CHECK(sample->value_count == 1);
         if (sample->value_count >= 1 && sample->values != NULL) {
             TEST_CHECK(sample->values[0] == 42);
+        }
+        TEST_CHECK(sample->attributes_count == 1);
+        if (sample->attributes_count == 1) {
+            TEST_CHECK(sample->attributes[0] > 0);
+            TEST_CHECK(sample->attributes[0] < cfl_kvlist_count(profile->attribute_table));
         }
         TEST_CHECK(sample->location_index_count >= 1 && "sample must have at least one location_index");
         if (sample->location_index_count >= 1 && sample->location_index != NULL) {
@@ -797,6 +916,28 @@ static void test_wire_format_dictionary_present()
             TEST_CHECK(req->dictionary->n_location_table >= 1 && "dictionary must have at least one location");
             TEST_CHECK(req->dictionary->n_link_table >= 1 && "dictionary must have at least one link");
             TEST_CHECK(req->dictionary->n_stack_table >= 1 && "dictionary must have at least one stack");
+            TEST_CHECK(req->dictionary->n_attribute_table >= 2 &&
+                       "dictionary must contain the sentinel and profile attributes");
+        }
+        if (req->n_resource_profiles == 1 &&
+            req->resource_profiles[0]->n_scope_profiles == 1 &&
+            req->resource_profiles[0]->scope_profiles[0]->n_profiles == 1) {
+            Opentelemetry__Proto__Profiles__V1development__Profile *wire_profile;
+
+            wire_profile = req->resource_profiles[0]->scope_profiles[0]->profiles[0];
+            TEST_CHECK(wire_profile->profile_id.len == 16);
+            TEST_CHECK(wire_profile->profile_id.data[0] == 0x42);
+            TEST_CHECK(wire_profile->profile_id.data[15] == 0x24);
+            TEST_CHECK(wire_profile->dropped_attributes_count == 3);
+            TEST_CHECK(strcmp(wire_profile->original_payload_format, "pprof") == 0);
+            TEST_CHECK(wire_profile->original_payload.len == 7);
+            TEST_CHECK(wire_profile->n_attribute_indices == 1);
+            TEST_CHECK(wire_profile->samples[0]->n_attribute_indices == 1);
+            TEST_CHECK(wire_profile->samples[0]->attribute_indices[0] > 0);
+            TEST_CHECK(req->dictionary->mapping_table[1]->n_attribute_indices == 1);
+            TEST_CHECK(req->dictionary->mapping_table[1]->attribute_indices[0] > 0);
+            TEST_CHECK(req->dictionary->location_table[1]->n_attribute_indices == 1);
+            TEST_CHECK(req->dictionary->location_table[1]->attribute_indices[0] > 0);
         }
         opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(req, NULL);
     }
@@ -1537,6 +1678,7 @@ TEST_LIST = {
     {"encoder", test_encoder},
     {"decoder", test_decoder},
     {"encoder_dictionary_tables", test_encoder_dictionary_tables},
+    {"encoder_empty_context", test_encoder_empty_context},
     {"wire_format_dictionary_present", test_wire_format_dictionary_present},
     {"decoder_dictionary_tables", test_decoder_dictionary_tables},
     {"decoder_dictionary_string_references", test_decoder_dictionary_string_references},

@@ -1030,6 +1030,39 @@ static Prometheus__WriteRequest *decode_remote_write_payload(cfl_sds_t payload)
                                              (uint8_t *) payload);
 }
 
+void test_prometheus_remote_write_labels_are_sorted()
+{
+    cfl_sds_t                 payload;
+    struct cmt                *cmt;
+    Prometheus__WriteRequest  *request;
+    size_t                     series_index;
+    size_t                     label_index;
+
+    cmt_initialize();
+
+    cmt = generate_encoder_test_data_with_timestamp(cfl_time_now());
+    TEST_ASSERT(cmt != NULL);
+
+    payload = cmt_encode_prometheus_remote_write_create(cmt);
+    TEST_ASSERT(payload != NULL);
+
+    request = decode_remote_write_payload(payload);
+    TEST_ASSERT(request != NULL);
+
+    for (series_index = 0; series_index < request->n_timeseries; series_index++) {
+        Prometheus__TimeSeries *series = request->timeseries[series_index];
+
+        for (label_index = 1; label_index < series->n_labels; label_index++) {
+            TEST_CHECK(strcmp(series->labels[label_index - 1]->name,
+                              series->labels[label_index]->name) < 0);
+        }
+    }
+
+    prometheus__write_request__free_unpacked(request, NULL);
+    cmt_encode_prometheus_remote_write_destroy(payload);
+    cmt_destroy(cmt);
+}
+
 void test_prometheus_remote_write_skips_only_stale_samples()
 {
     uint64_t                  now;
@@ -1809,6 +1842,7 @@ TEST_LIST = {
     {"cmt_msgpack_null_label_roundtrip", test_cmt_msgpack_null_label_roundtrip},
     {"cmt_msgpack_partial_processing", test_cmt_msgpack_partial_processing},
     {"prometheus_remote_write",        test_prometheus_remote_write},
+    {"prometheus_remote_write_labels_are_sorted", test_prometheus_remote_write_labels_are_sorted},
     {"prometheus_remote_write_old_cmt",test_prometheus_remote_write_with_outdated_timestamps},
     {"prometheus_remote_write_skips_only_stale_samples", test_prometheus_remote_write_skips_only_stale_samples},
     {"prometheus_remote_write_continues_after_stale_family", test_prometheus_remote_write_continues_after_stale_family},
