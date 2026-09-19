@@ -941,7 +941,7 @@ static inline int try_to_write(char *buf, int *off, size_t left,
     if (str_len <= 0){
         str_len = strlen(str);
     }
-    if (left <= *off+str_len) {
+    if (left < *off + str_len) {
         return FLB_FALSE;
     }
     memcpy(buf+*off, str, str_len);
@@ -1151,7 +1151,8 @@ static int msgpack2json(char *buf, int *off, size_t left,
  *  @param  json_str  The buffer to fill JSON string.
  *  @param  json_size The size of json_str.
  *  @param  data      The msgpack_unpacked data.
- *  @return success   ? a number characters filled : negative value
+ *  @return characters written on success, zero if the buffer is too small,
+ *          or a negative value for invalid arguments.
  */
 int flb_msgpack_to_json(char *json_str, size_t json_size,
                         const msgpack_object *obj, int escape_unicode)
@@ -1159,10 +1160,11 @@ int flb_msgpack_to_json(char *json_str, size_t json_size,
     int ret = -1;
     int off = 0;
 
-    if (json_str == NULL || obj == NULL) {
+    if (json_str == NULL || obj == NULL || json_size == 0) {
         return -1;
     }
 
+    /* Reserve the terminator once; writers may use all remaining bytes. */
     ret = msgpack2json(json_str, &off, json_size - 1, obj, escape_unicode);
     json_str[off] = '\0';
     return ret ? off: ret;
