@@ -473,7 +473,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->sqldb_list);
 #endif
 
-#ifdef FLB_HAVE_LUAJIT
+#ifdef FLB_HAVE_LUA
     mk_list_init(&config->luajit_list);
 #endif
 

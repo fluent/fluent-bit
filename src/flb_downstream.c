@@ -461,9 +461,11 @@ static int destroy_conn(struct flb_connection *connection, int force)
         connection->coroutine = NULL;
     }
 
+#ifdef FLB_HAVE_TLS
     if (connection->tls_session != NULL) {
         flb_tls_session_destroy(connection->tls_session);
     }
+#endif
 
     mk_list_del(&connection->_head);
 

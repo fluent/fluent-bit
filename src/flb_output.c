@@ -42,6 +42,9 @@
 #include <fluent-bit/http_server/flb_http_server_config_map.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_pack.h>
+#ifdef __EMSCRIPTEN__
+#include <fluent-bit/wasm/flb_wasm_http.h>
+#endif
 
 FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
 
@@ -481,6 +484,9 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
     flb_sds_destroy(ins->host.address);
     flb_sds_destroy(ins->host.listen);
     flb_sds_destroy(ins->match);
+#ifdef __EMSCRIPTEN__
+    flb_sds_destroy(ins->browser_url);
+#endif
 
 #ifdef FLB_HAVE_REGEX
         if (ins->match_regex) {
@@ -772,6 +778,10 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->test_mode = FLB_FALSE;
     instance->is_threaded = FLB_FALSE;
     instance->tp_workers = plugin->workers;
+#ifdef __EMSCRIPTEN__
+    /* The browser engine worker executes output coroutines cooperatively. */
+    instance->tp_workers = 0;
+#endif
 
     /* Retrieve an instance id for the output instance */
     instance->id = instance_id(config);
@@ -842,6 +852,11 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->flags |= FLB_IO_TLS;
     }
 
+#ifdef __EMSCRIPTEN__
+    if (instance->flags & FLB_OUTPUT_NET) {
+        instance->use_tls = FLB_TRUE;
+    }
+#endif
 #ifdef FLB_HAVE_TLS
     instance->tls                   = NULL;
     instance->tls_debug             = -1;
@@ -1079,6 +1094,20 @@ int flb_output_set_property(struct flb_output_instance *ins,
         }
     }
 #endif
+#ifdef __EMSCRIPTEN__
+    else if (prop_key_check("browser.url", k, len) == 0) {
+        flb_utils_set_plugin_string_property("browser.url", &ins->browser_url, tmp);
+    }
+    else if (prop_key_check("tls", k, len) == 0 && tmp) {
+        ret = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+        if (ret != FLB_TRUE || !(ins->flags & FLB_OUTPUT_NET)) {
+            flb_error("[output] browser HTTP requires TLS");
+            return -1;
+        }
+        ins->use_tls = FLB_TRUE;
+    }
+#endif
 #ifdef FLB_HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0 && tmp) {
         ins->use_tls = flb_utils_bool(tmp);
@@ -1299,6 +1328,7 @@ int flb_output_net_property_check(struct flb_output_instance *ins,
 int flb_output_oauth2_property_check(struct flb_output_instance *ins,
                                       struct flb_config *config)
 {
+#ifdef FLB_HAVE_TLS
     int ret = 0;
 
     /* Get OAuth2 configmap */
@@ -1325,6 +1355,10 @@ int flb_output_oauth2_property_check(struct flb_output_instance *ins,
     }
 
     return 0;
+#else
+    flb_error("OAuth2 requires TLS support");
+    return -1;
+#endif
 }
 
 static int flb_output_http_server_property_check(struct flb_output_instance *ins,
@@ -1811,6 +1845,25 @@ int flb_output_init_all(struct flb_config *config)
             }
         }
 
+#ifdef __EMSCRIPTEN__
+        if (flb_output_get_property("grpc", ins) &&
+            flb_utils_bool(flb_output_get_property("grpc", ins)) == FLB_TRUE) {
+            flb_error("[output] browser Fetch does not support native gRPC; use OTLP/HTTP");
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+        if (ins->browser_url && flb_wasm_http_validate(ins->browser_url) != 0) {
+            flb_error("[output] browser.url must be an absolute HTTPS URL without credentials or fragments");
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+        if (ins->tp_workers != 0 || mk_list_size(&ins->oauth2_properties) > 0 ||
+            flb_output_get_property("proxy", ins)) {
+            flb_error("[output] browser transport requires workers=0; proxy and OAuth2 are unsupported");
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+#endif
         /* Initialize plugin through it 'init callback' */
         ret = p->cb_init(ins, config, ins->data);
         if (ret == -1) {
@@ -1889,6 +1942,9 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     if (!u) {
         return -1;
     }
+#ifdef __EMSCRIPTEN__
+    u->browser_url = ins->browser_url;
+#endif
 
     /* TLS */
 #ifdef FLB_HAVE_TLS

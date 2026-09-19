@@ -61,6 +61,9 @@
 #include <fluent-bit/flb_ring_buffer.h>
 #include <fluent-bit/flb_notification.h>
 #include <fluent-bit/flb_simd.h>
+#ifdef __EMSCRIPTEN__
+#include <fluent-bit/wasm/flb_wasm_http.h>
+#endif
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -1629,9 +1632,23 @@ int flb_engine_start(struct flb_config *config)
 int flb_engine_shutdown(struct flb_config *config)
 {
     struct flb_sched_timer_coro_cb_params *sched_params;
+#ifdef __EMSCRIPTEN__
+    struct mk_list *head;
+    struct flb_output_instance *output;
+#endif
 
     config->is_running = FLB_FALSE;
     config->is_ingestion_active = FLB_FALSE;
+#ifdef __EMSCRIPTEN__
+    /* Resume cancelled HTTP flushes before destroying their plugin contexts. */
+    config->is_shutting_down = FLB_TRUE;
+    flb_wasm_http_shutdown(config);
+    /* The event loop has stopped, so it cannot reap the completed flushes. */
+    mk_list_foreach(head, &config->outputs) {
+        output = mk_list_entry(head, struct flb_output_instance, _head);
+        flb_output_flush_finished(config, output->id);
+    }
+#endif
     flb_input_pause_all(config);
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR

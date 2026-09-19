@@ -452,7 +452,7 @@ if(FLB_METRICS)
   REGISTER_FILTER_PLUGIN("filter_log_to_metrics")
 endif()
 
-if(FLB_LUAJIT)
+if(FLB_LUAJIT OR FLB_WASM_LUA)
   REGISTER_FILTER_PLUGIN("filter_lua")
 endif()
 

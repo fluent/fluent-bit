@@ -1505,6 +1505,7 @@ int flb_input_plugin_property_check(struct flb_input_instance *ins,
 int flb_input_oauth2_jwt_property_check(struct flb_input_instance *ins,
                                         struct flb_config *config)
 {
+#ifdef FLB_HAVE_TLS
     int ret = 0;
 
     /* Get OAuth2 JWT configmap */
@@ -1532,6 +1533,10 @@ int flb_input_oauth2_jwt_property_check(struct flb_input_instance *ins,
     }
 
     return 0;
+#else
+    flb_error("OAuth2 JWT requires TLS support");
+    return -1;
+#endif
 }
 
 static int flb_input_http_server_property_check(struct flb_input_instance *ins,
@@ -1966,6 +1971,14 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         return -1;
     }
 
+#ifdef __EMSCRIPTEN__
+    /* Dedicated input threads are not supported by the browser runtime. */
+    if (flb_input_is_threaded(ins)) {
+        flb_plg_error(ins, "threaded inputs are unsupported in the browser; set threaded: false");
+        return -1;
+    }
+#endif
+
     /* Initialize the input */
     if (p->cb_init) {
         flb_plg_info(ins, "initializing");
@@ -2027,6 +2040,10 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             if (ret == -1) {
                 flb_error("failed initialize processors for input %s",
                           ins->name);
+                /* cb_init succeeded; release plugin-owned resources before
+                 * the caller destroys the input instance on this failure. */
+                flb_input_instance_exit(ins, config);
+                ins->context = NULL;
                 return -1;
             }
         }
@@ -2082,6 +2099,7 @@ int flb_input_init_all(struct flb_config *config)
             return -1;
         }
 
+#ifdef FLB_HAVE_TLS
         if (ins->tls_min_version != NULL || ins->tls_max_version != NULL) {
             ret = flb_tls_set_minmax_proto(ins->tls, ins->tls_min_version, ins->tls_max_version);
             if (ret != 0) {
@@ -2101,6 +2119,7 @@ int flb_input_init_all(struct flb_config *config)
                 return -1;
             }
         }
+#endif
     }
 
     return 0;

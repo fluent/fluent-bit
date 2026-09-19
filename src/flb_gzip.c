@@ -1026,6 +1026,7 @@ void flb_gzip_decompression_context_destroy(void *context)
     flb_free(inner_context);
 }
 
+#ifdef FLB_HAVE_HTTP_SERVER
 int flb_is_http_session_gzip_compressed(struct mk_http_session *session)
 {
     int gzip_compressed = FLB_FALSE;
@@ -1051,3 +1052,4 @@ int flb_is_http_session_gzip_compressed(struct mk_http_session *session)
 
     return gzip_compressed;
 }
+#endif

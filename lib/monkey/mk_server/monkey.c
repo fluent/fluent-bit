@@ -185,6 +185,12 @@ struct mk_server *mk_server_create()
     return server;
 }
 
+/* Preserve the pthread-style clock entry point behind a void worker callback. */
+static void mk_server_clock_worker(void *data)
+{
+    mk_clock_worker_init(data);
+}
+
 int mk_server_setup(struct mk_server *server)
 {
     int ret;
@@ -213,7 +219,7 @@ int mk_server_setup(struct mk_server *server)
     mk_plugin_load_all(server);
 
     /* Workers: logger and clock */
-    ret = mk_utils_worker_spawn((void *) mk_clock_worker_init, server, &tid);
+    ret = mk_utils_worker_spawn(mk_server_clock_worker, server, &tid);
     if (ret != 0) {
         return -1;
     }
