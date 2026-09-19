@@ -23,7 +23,14 @@ if(FLB_CONFIG_YAML AND FLB_IN_DUMMY AND FLB_OUT_STDOUT AND
 endif()
 
 if(FLB_WASM_LUA)
+  # Native internal tests are disabled in this profile. Generate their shared
+  # harness in the build tree so a clean checkout can compile the Lua tests.
+  set(FLB_TESTS_DATA_PATH "${PROJECT_SOURCE_DIR}/tests/internal/")
+  configure_file("${PROJECT_SOURCE_DIR}/tests/internal/flb_tests_internal.h.in"
+                 "${CMAKE_CURRENT_BINARY_DIR}/flb_tests_internal.h" @ONLY)
   add_executable(flb-wasm-lua "${PROJECT_SOURCE_DIR}/tests/internal/lua.c")
+  target_include_directories(flb-wasm-lua PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}" "${PROJECT_SOURCE_DIR}/tests/internal")
   target_compile_definitions(flb-wasm-lua PRIVATE FLB_TEST_INIT_NOP FLB_TEST_FINI_NOP)
   target_link_libraries(flb-wasm-lua fluent-bit-static)
   set_target_properties(flb-wasm-lua PROPERTIES LINK_FLAGS
