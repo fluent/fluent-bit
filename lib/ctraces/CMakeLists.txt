@@ -27,15 +27,11 @@ endif()
 # CTraces Version
 set(CTR_VERSION_MAJOR  0)
 set(CTR_VERSION_MINOR  7)
-set(CTR_VERSION_PATCH  1)
+set(CTR_VERSION_PATCH  2)
 set(CTR_VERSION_STR "${CTR_VERSION_MAJOR}.${CTR_VERSION_MINOR}.${CTR_VERSION_PATCH}")
 
-# Define __FILENAME__ consistently across Operating Systems
-if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$$(subst ${CMAKE_SOURCE_DIR}/,,$$(abspath $$<))\"'")
-else()
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
-endif()
+# Define __CTR_FILENAME__
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__CTR_FILENAME__=__FILE__")
 
 # Configuration options
 option(CTR_DEV             "Enable development mode"                   No)
@@ -115,7 +111,7 @@ check_c_source_compiles("
   #include <sys/random.h>
   int main() {
       unsigned int tmp;
-      getrandom(tmp, sizeof(tmp), GRND_NONBLOCK);
+      getrandom(&tmp, sizeof(tmp), GRND_NONBLOCK);
       return 0;
   }" CTR_HAVE_GETRANDOM)
 if(CTR_HAVE_GETRANDOM)

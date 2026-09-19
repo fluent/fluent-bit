@@ -32,6 +32,7 @@ struct ctrace_resource_span {
     struct cfl_list scope_spans;
     cfl_sds_t schema_url;
     struct cfl_list _head;               /* link to ctraces->resource_span list */
+    struct ctrace *ctx;                   /* owning trace context */
 };
 
 /* resource */
