@@ -1287,7 +1287,75 @@ void test_json_pack_token_count_overflow()
     flb_pack_state_reset(&state);
 }
 
+#ifdef FLB_HAVE_YYJSON
+static void test_json_pack_depth_limit(void)
+{
+    int kind;
+    int depth;
+    int index;
+    int ret;
+    int root_type;
+    int records;
+    int prefix;
+    size_t offset;
+    size_t size;
+    char *buffer;
+    flb_sds_t json;
+    msgpack_unpacked unpacked;
+
+    /* Exercise maps, arrays, mixed nesting, and cleanup after a valid record. */
+    for (kind = 0; kind < 3; kind++) {
+        for (prefix = 0; prefix < 2; prefix++) {
+            for (depth = MSGPACK_EMBED_STACK_SIZE - 1;
+                 depth <= MSGPACK_EMBED_STACK_SIZE + 1; depth++) {
+                json = flb_sds_create(prefix ? "{} " : "");
+                TEST_ASSERT(json != NULL);
+                for (index = 0; index < depth; index++) {
+                    json = flb_sds_cat(json, kind == 0 || (kind == 2 && index % 2) ?
+                                      "{\"k\":" : "[",
+                                      kind == 0 || (kind == 2 && index % 2) ? 5 : 1);
+                    TEST_ASSERT(json != NULL);
+                }
+                json = flb_sds_cat(json, "0", 1);
+                TEST_ASSERT(json != NULL);
+                for (index = depth - 1; index >= 0; index--) {
+                    json = flb_sds_cat(json, kind == 0 || (kind == 2 && index % 2) ?
+                                      "}" : "]", 1);
+                    TEST_ASSERT(json != NULL);
+                }
+                buffer = NULL;
+                size = 0;
+                ret = flb_pack_json_recs(json, flb_sds_len(json), &buffer, &size,
+                                         &root_type, &records, NULL);
+                if (depth > MSGPACK_EMBED_STACK_SIZE) {
+                    TEST_CHECK(ret != 0);
+                    TEST_CHECK(buffer == NULL);
+                    TEST_CHECK(size == 0);
+                }
+                else {
+                    TEST_ASSERT(ret == 0);
+                    TEST_CHECK(records == prefix + 1);
+                    offset = 0;
+                    msgpack_unpacked_init(&unpacked);
+                    for (index = 0; index < records; index++) {
+                        TEST_CHECK(msgpack_unpack_next(&unpacked, buffer, size, &offset) ==
+                                   MSGPACK_UNPACK_SUCCESS);
+                    }
+                    TEST_CHECK(offset == size);
+                    msgpack_unpacked_destroy(&unpacked);
+                }
+                flb_free(buffer);
+                flb_sds_destroy(json);
+            }
+        }
+    }
+}
+#endif
+
 TEST_LIST = {
+#ifdef FLB_HAVE_YYJSON
+    { "json_pack_depth_limit", test_json_pack_depth_limit },
+#endif
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
     { "json_pack_ext_default_backend", test_json_pack_ext_default_backend },
