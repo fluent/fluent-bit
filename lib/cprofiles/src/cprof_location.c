@@ -79,6 +79,10 @@ void cprof_location_destroy(struct cprof_location *instance)
     struct cfl_list   *iterator_backup;
 
     if (instance != NULL) {
+        if (cfl_list_entry_is_orphan(&instance->_head) == CFL_FALSE) {
+            cfl_list_del(&instance->_head);
+        }
+
         if (instance->attributes != NULL) {
             free(instance->attributes);
 
