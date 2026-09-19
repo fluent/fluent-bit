@@ -281,6 +281,9 @@ int syslog_prot_process(struct syslog_conn *conn)
             continue;
         }
 
+        /* Parsers without a time key leave the output timestamp untouched. */
+        flb_time_zero(&out_time);
+
         /* Process the string */
         ret = flb_parser_do(ctx->parser, p, len,
                             &out_buf, &out_size, &out_time);
