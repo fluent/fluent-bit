@@ -136,6 +136,8 @@ static void flb_help(int rc, struct flb_config *config)
     print_opt("    --supervisor", "run under a supervising parent process");
 #endif
     print_opt("-D, --dry-run", "dry run");
+    print_opt("-G, --generate-config",
+              "generate YAML configuration from command-line options");
     print_opt_i("-f, --flush=SECONDS", "flush timeout in seconds",
                 FLB_CONFIG_FLUSH_SECS);
     print_opt("-C, --custom=CUSTOM", "enable a custom plugin");
@@ -993,10 +995,250 @@ static int parse_trace_pipeline(flb_ctx_t *ctx, const char *pipeline, char **tra
 }
 #endif
 
+static void yaml_write_indent(FILE *stream, int indentation)
+{
+    int index;
+
+    for (index = 0; index < indentation; index++) {
+        fputc(' ', stream);
+    }
+}
+
+static void yaml_write_quoted_string(FILE *stream, const char *value)
+{
+    unsigned char character;
+
+    fputc('"', stream);
+
+    while (*value != '\0') {
+        character = (unsigned char) *value;
+
+        switch (character) {
+        case '\\':
+            fputs("\\\\", stream);
+            break;
+        case '"':
+            fputs("\\\"", stream);
+            break;
+        case '\n':
+            fputs("\\n", stream);
+            break;
+        case '\r':
+            fputs("\\r", stream);
+            break;
+        case '\t':
+            fputs("\\t", stream);
+            break;
+        case '\b':
+            fputs("\\b", stream);
+            break;
+        case '\f':
+            fputs("\\f", stream);
+            break;
+        default:
+            if (character < 0x20 || character == 0x7f) {
+                fprintf(stream, "\\x%02x", character);
+            }
+            else {
+                fputc(character, stream);
+            }
+        }
+
+        value++;
+    }
+
+    fputc('"', stream);
+}
+
+static int yaml_write_properties(FILE *stream, struct cfl_kvlist *properties,
+                                 int indentation, int sequence_entry)
+{
+    int first = FLB_TRUE;
+    struct cfl_list *head;
+    struct cfl_kvpair *property;
+
+    if (cfl_list_size(&properties->list) == 0) {
+        yaml_write_indent(stream, indentation);
+        fputs("- {}\n", stream);
+        return 0;
+    }
+
+    cfl_list_foreach(head, &properties->list) {
+        property = cfl_list_entry(head, struct cfl_kvpair, _head);
+        if (property->val->type != CFL_VARIANT_STRING) {
+            return -1;
+        }
+
+        yaml_write_indent(stream, indentation);
+        if (sequence_entry == FLB_TRUE && first == FLB_TRUE) {
+            fputs("- ", stream);
+        }
+        else if (sequence_entry == FLB_TRUE) {
+            fputs("  ", stream);
+        }
+
+        yaml_write_quoted_string(stream, property->key);
+        fputs(": ", stream);
+        yaml_write_quoted_string(stream, property->val->data.as_string);
+        fputc('\n', stream);
+        first = FLB_FALSE;
+    }
+
+    return 0;
+}
+
+static int yaml_write_section_list(FILE *stream, const char *name,
+                                   struct mk_list *sections, int indentation)
+{
+    int result;
+    struct mk_list *head;
+    struct flb_cf_section *section;
+
+    if (mk_list_size(sections) == 0) {
+        return 0;
+    }
+
+    yaml_write_indent(stream, indentation);
+    fprintf(stream, "%s:\n", name);
+
+    mk_list_foreach(head, sections) {
+        section = mk_list_entry(head, struct flb_cf_section, _head_section);
+        result = yaml_write_properties(stream, section->properties,
+                                       indentation + 2, FLB_TRUE);
+        if (result != 0) {
+            return result;
+        }
+    }
+
+    return 0;
+}
+
+static int yaml_write_string_list(FILE *stream, const char *name,
+                                  struct mk_list *entries)
+{
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
+
+    if (mk_list_size(entries) == 0) {
+        return 0;
+    }
+
+    fprintf(stream, "%s:\n", name);
+    mk_list_foreach(head, entries) {
+        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+        fputs("  - ", stream);
+        yaml_write_quoted_string(stream, entry->str);
+        fputc('\n', stream);
+    }
+
+    return 0;
+}
+
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+static int yaml_write_stream_processor_tasks(FILE *stream, struct mk_list *tasks)
+{
+    int index = 0;
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
+
+    if (mk_list_size(tasks) == 0) {
+        return 0;
+    }
+
+    fputs("stream_processor:\n", stream);
+    mk_list_foreach(head, tasks) {
+        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+        fprintf(stream, "  - name: \"flb-console:%d\"\n", index++);
+        fputs("    exec: ", stream);
+        yaml_write_quoted_string(stream, entry->str);
+        fputc('\n', stream);
+    }
+
+    return 0;
+}
+#endif
+
+static int generate_yaml_config(FILE *stream, struct flb_cf *cf,
+                                struct flb_config *config)
+{
+    int result;
+    int has_pipeline;
+    int has_content;
+
+    has_content = FLB_FALSE;
+
+    if (mk_list_size(&config->external_plugins) > 0) {
+        result = yaml_write_string_list(stream, "plugins", &config->external_plugins);
+        if (result != 0) {
+            return result;
+        }
+        has_content = FLB_TRUE;
+    }
+
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    if (mk_list_size(&config->stream_processor_tasks) > 0) {
+        result = yaml_write_stream_processor_tasks(stream,
+                                                   &config->stream_processor_tasks);
+        if (result != 0) {
+            return result;
+        }
+        has_content = FLB_TRUE;
+    }
+#endif
+
+    if (cfl_list_size(&cf->service->properties->list) > 0) {
+        fputs("service:\n", stream);
+        result = yaml_write_properties(stream, cf->service->properties, 2, FLB_FALSE);
+        if (result != 0) {
+            return result;
+        }
+        has_content = FLB_TRUE;
+    }
+
+    if (mk_list_size(&cf->customs) > 0) {
+        result = yaml_write_section_list(stream, "customs", &cf->customs, 0);
+        if (result != 0) {
+            return result;
+        }
+        has_content = FLB_TRUE;
+    }
+
+    has_pipeline = mk_list_size(&cf->inputs) > 0 ||
+                   mk_list_size(&cf->filters) > 0 ||
+                   mk_list_size(&cf->outputs) > 0;
+    if (has_pipeline == FLB_TRUE) {
+        fputs("pipeline:\n", stream);
+        has_content = FLB_TRUE;
+
+        result = yaml_write_section_list(stream, "inputs", &cf->inputs, 2);
+        if (result != 0) {
+            return result;
+        }
+
+        result = yaml_write_section_list(stream, "filters", &cf->filters, 2);
+        if (result != 0) {
+            return result;
+        }
+
+        result = yaml_write_section_list(stream, "outputs", &cf->outputs, 2);
+        if (result != 0) {
+            return result;
+        }
+    }
+
+    if (has_content == FLB_FALSE) {
+        fputs("{}\n", stream);
+    }
+
+    return ferror(stream) ? -1 : 0;
+}
+
 static int flb_main_run(int argc, char **argv)
 {
     int opt;
     int ret;
+    int generate_config = FLB_FALSE;
+    int log_level_set = FLB_FALSE;
     flb_sds_t json;
 
     /* handle plugin properties:  -1 = none, 0 = input, 1 = output */
@@ -1035,6 +1277,7 @@ static int flb_main_run(int argc, char **argv)
     char *trace_input = NULL;
     char *trace_output = NULL;
     struct mk_list *trace_props = NULL;
+    int trace_config_set = FLB_FALSE;
 #endif
 
     /* Setup long-options */
@@ -1045,6 +1288,7 @@ static int flb_main_run(int argc, char **argv)
         { "daemon",          no_argument      , NULL, 'd' },
 #endif
         { "dry-run",         no_argument      , NULL, 'D' },
+        { "generate-config", no_argument      , NULL, 'G' },
         { "flush",           required_argument, NULL, 'f' },
         { "http",            no_argument      , NULL, 'H' },
 #ifndef FLB_SYSTEM_WINDOWS
@@ -1130,7 +1374,7 @@ static int flb_main_run(int argc, char **argv)
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
                               "b:c:dDf:C:i:m:M:o:R:r:F:p:e:"
-                              "t:T:l:vw:qVhJL:HP:s:SWYZ",
+                              "t:T:l:vw:qVhJGL:HP:s:SWYZ",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -1150,6 +1394,9 @@ static int flb_main_run(int argc, char **argv)
 #endif
         case 'D':
             config->dry_run = FLB_TRUE;
+            break;
+        case 'G':
+            generate_config = FLB_TRUE;
             break;
         case 'e':
             ret = flb_plugin_load_router(optarg, config);
@@ -1288,12 +1535,14 @@ static int flb_main_run(int argc, char **argv)
             exit(EXIT_SUCCESS);
         case 'v':
             config->verbose++;
+            log_level_set = FLB_TRUE;
             break;
         case 'w':
             config->workdir =  flb_strdup(optarg);
             break;
         case 'q':
             config->verbose = FLB_LOG_OFF;
+            log_level_set = FLB_TRUE;
             break;
         case 's':
             flb_cf_section_property_add(cf_opts, service->properties, FLB_CONF_STR_CORO_STACK_SIZE, 0, optarg, 0);
@@ -1317,21 +1566,25 @@ static int flb_main_run(int argc, char **argv)
             flb_cf_section_property_add(cf_opts, service->properties, FLB_CONF_STR_ENABLE_CHUNK_TRACE, 0, "on", 0);
             break;
         case FLB_LONG_TRACE:
+            trace_config_set = FLB_TRUE;
             parse_trace_pipeline(ctx, optarg, &trace_input, &trace_output, &trace_props);
             break;
         case FLB_LONG_TRACE_INPUT:
+            trace_config_set = FLB_TRUE;
             if (trace_input != NULL) {
                 flb_free(trace_input);
             }
             trace_input = flb_strdup(optarg);
             break;
         case FLB_LONG_TRACE_OUTPUT:
+            trace_config_set = FLB_TRUE;
             if (trace_output != NULL) {
                 flb_free(trace_output);
             }
             trace_output = flb_strdup(optarg);
             break;
         case FLB_LONG_TRACE_OUTPUT_PROPERTY:
+            trace_config_set = FLB_TRUE;
             if (trace_props == NULL) {
                 trace_props = flb_calloc(1, sizeof(struct mk_list));
                 flb_kv_init(trace_props);
@@ -1347,6 +1600,82 @@ static int flb_main_run(int argc, char **argv)
         }
     }
 #endif /* !FLB_HAVE_STATIC_CONF */
+
+    if (generate_config == FLB_TRUE) {
+        ret = 0;
+
+        if (cfg_file != NULL) {
+            fprintf(stderr, "--generate-config cannot be used with --config\n");
+            ret = -1;
+        }
+        else if (config->workdir != NULL) {
+            fprintf(stderr, "--generate-config cannot preserve --workdir\n");
+            ret = -1;
+        }
+#ifdef FLB_HAVE_CHUNK_TRACE
+        else if (trace_config_set == FLB_TRUE) {
+            fprintf(stderr,
+                    "--generate-config cannot preserve startup trace options\n");
+            ret = -1;
+        }
+#endif
+        else if (log_level_set == FLB_TRUE) {
+            if (config->verbose == FLB_LOG_OFF) {
+                flb_cf_section_property_add(cf_opts, service->properties,
+                                            FLB_CONF_STR_LOGLEVEL, 0, "off", 0);
+            }
+            else if (config->verbose == FLB_LOG_ERROR) {
+                flb_cf_section_property_add(cf_opts, service->properties,
+                                            FLB_CONF_STR_LOGLEVEL, 0, "error", 0);
+            }
+            else if (config->verbose == FLB_LOG_WARN) {
+                flb_cf_section_property_add(cf_opts, service->properties,
+                                            FLB_CONF_STR_LOGLEVEL, 0, "warn", 0);
+            }
+            else if (config->verbose == FLB_LOG_INFO) {
+                flb_cf_section_property_add(cf_opts, service->properties,
+                                            FLB_CONF_STR_LOGLEVEL, 0, "info", 0);
+            }
+            else if (config->verbose == FLB_LOG_DEBUG) {
+                flb_cf_section_property_add(cf_opts, service->properties,
+                                            FLB_CONF_STR_LOGLEVEL, 0, "debug", 0);
+            }
+            else {
+                flb_cf_section_property_add(cf_opts, service->properties,
+                                            FLB_CONF_STR_LOGLEVEL, 0, "trace", 0);
+            }
+        }
+
+        if (ret == 0) {
+            ret = generate_yaml_config(stdout, cf_opts, config);
+            if (ret != 0) {
+                fprintf(stderr, "failed to generate YAML configuration\n");
+            }
+        }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+        if (trace_input != NULL) {
+            flb_free(trace_input);
+        }
+        if (trace_output != NULL) {
+            flb_free(trace_output);
+        }
+        if (trace_props != NULL) {
+            flb_kv_release(trace_props);
+            flb_free(trace_props);
+        }
+#endif
+
+        flb_free(cfg_file);
+        flb_cf_destroy(cf_opts);
+        flb_destroy(ctx);
+
+        if (ret != 0) {
+            return EXIT_FAILURE;
+        }
+
+        return EXIT_SUCCESS;
+    }
 
     set_log_level_from_env(config);
 
