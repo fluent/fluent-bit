@@ -1,0 +1,39 @@
+name: PR - MacOS checks
+
+#
+# Test PRs on MacOS
+#
+# This won't run automatically on PRs from untrusted repos, it must be approved
+# manually. If PR authors want to run it themselves, they should enable running
+# actions on their fork, then invoke it on their branch via their forked repo's
+# Actions tab.
+#
+
+on:
+  # Enable invocation via Github repo Actions tab. Having this in the repo
+  # allows people with github forks to run this job on their own branches to
+  # build MacOS branches conveniently. See DEVELOPER_GUIDE.md.
+  workflow_dispatch:
+
+  pull_request:
+    # Limit to just those changes that 'might' affect MacOS for automated builds
+    # We can always do a manual build for a branch
+    paths:
+      - '**.h'
+      - '**.c'
+      - './conf/**'
+      - './cmake/**'
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+jobs:
+  pr-macos-build:
+    uses: ./.github/workflows/call-build-macos.yaml
+    with:
+      version: ${{ github.sha }}
+      ref: ${{ github.sha }}
+      environment: pr
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
