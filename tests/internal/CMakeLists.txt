@@ -194,6 +194,10 @@ if(FLB_RIPSER)
     )
 endif()
 
+if(FLB_IN_OPENTELEMETRY)
+  list(APPEND UNIT_TESTS_FILES opentelemetry_protobuf.c)
+endif()
+
 set(UNIT_TESTS_DATA
   data/tls/certificate.pem
   data/tls/private_key.pem
