@@ -1328,7 +1328,95 @@ void test_json_pack_token_count_overflow()
     flb_pack_state_reset(&state);
 }
 
+
+void test_json_pack_buffer_capacity(void)
+{
+    struct {
+        const char *packed;
+        size_t packed_size;
+        const char *raw;
+        const char *escaped;
+    } cases[] = {
+        {"\xc0", 1, "null", "null"},
+        {"\xc3", 1, "true", "true"},
+        {"\xc2", 1, "false", "false"},
+        {"\x2a", 1, "42", "42"},
+        {"\xd0\xd6", 2, "-42", "-42"},
+        {"\xcb\x3f\xf8\x00\x00\x00\x00\x00\x00", 9, "1.5", "1.5"},
+        {"\xa0", 1, "\"\"", "\"\""},
+        {"\xa4" "abcd", 5, "\"abcd\"", "\"abcd\""},
+        {"\xa6" "a\n\"\\\xc3\xa9", 7,
+         "\"a\\n\\\"\\\\\xc3\xa9\"", "\"a\\n\\\"\\\\\\u00e9\""},
+        {"\xa4\xf0\x9f\x98\x80", 5,
+         "\"\xf0\x9f\x98\x80\"", "\"\\ud83d\\ude00\""},
+        {"\xd9\x20" "0123456789abcdef0123456789abcdef", 34,
+         "\"0123456789abcdef0123456789abcdef\"",
+         "\"0123456789abcdef0123456789abcdef\""},
+        {"\xc4\x04" "abcd", 6, "\"abcd\"", "\"abcd\""},
+        {"\xd4\x01" "a", 3, "\"\\x61\"", "\"\\x61\""},
+        {"\x90", 1, "[]", "[]"},
+        {"\x80", 1, "{}", "{}"},
+        {"\x81\xa1" "a" "\x93\xc0\x81\xa1" "b" "\xa4" "abcd" "\x90", 14,
+         "{\"a\":[null,{\"b\":\"abcd\"},[]]}",
+         "{\"a\":[null,{\"b\":\"abcd\"},[]]}"},
+    };
+    size_t i;
+    size_t capacity;
+    size_t expected_size;
+    size_t offset;
+    int escape_unicode;
+    int ret;
+    char *allocation;
+    char *buffer;
+    const char *expected;
+    msgpack_unpacked unpacked;
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        offset = 0;
+        msgpack_unpacked_init(&unpacked);
+        ret = msgpack_unpack_next(&unpacked, cases[i].packed,
+                                  cases[i].packed_size, &offset);
+        TEST_ASSERT(ret == MSGPACK_UNPACK_SUCCESS);
+        TEST_CHECK(offset == cases[i].packed_size);
+
+        for (escape_unicode = FLB_FALSE; escape_unicode <= FLB_TRUE; escape_unicode++) {
+            expected = escape_unicode ? cases[i].escaped : cases[i].raw;
+            expected_size = strlen(expected);
+
+            for (capacity = 0; capacity <= expected_size + 2; capacity++) {
+                allocation = flb_malloc(capacity + 2);
+                TEST_ASSERT(allocation != NULL);
+                memset(allocation, 'X', capacity + 2);
+                buffer = allocation + 1;
+
+                ret = flb_msgpack_to_json(buffer, capacity, &unpacked.data,
+                                         escape_unicode);
+                TEST_CHECK(allocation[0] == 'X');
+                TEST_CHECK(buffer[capacity] == 'X');
+                TEST_MSG("case=%zu capacity=%zu escape_unicode=%d",
+                         i, capacity, escape_unicode);
+                if (capacity == 0) {
+                    TEST_CHECK(ret == -1);
+                }
+                else if (capacity <= expected_size) {
+                    TEST_CHECK(ret < 0);
+                    TEST_CHECK(memchr(buffer, '\0', capacity) != NULL);
+                }
+                else {
+                    TEST_CHECK(ret == expected_size);
+                    TEST_MSG("case=%zu capacity=%zu escape_unicode=%d ret=%d",
+                             i, capacity, escape_unicode, ret);
+                    TEST_CHECK(memcmp(buffer, expected, expected_size + 1) == 0);
+                }
+                flb_free(allocation);
+            }
+        }
+        msgpack_unpacked_destroy(&unpacked);
+    }
+}
+
 TEST_LIST = {
+    { "json_pack_buffer_capacity", test_json_pack_buffer_capacity },
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
     { "json_pack_ext_default_backend", test_json_pack_ext_default_backend },
