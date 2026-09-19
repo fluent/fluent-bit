@@ -28,6 +28,9 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_stream.h>
+#ifdef FLB_HAVE_UNIX_SOCKET
+#include <sys/stat.h>
+#endif
 
 struct flb_connection;
 
@@ -42,6 +45,9 @@ struct flb_downstream {
     unsigned short int     port;
     flb_sockfd_t           server_fd;
     struct flb_connection *dgram_connection;
+#ifdef FLB_HAVE_UNIX_SOCKET
+    struct stat            unix_socket;
+#endif
 
     struct mk_list         busy_queue;
     struct mk_list         destroy_queue;

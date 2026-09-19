@@ -19,6 +19,9 @@ import json
 import logging
 import time
 import base64
+import socket
+import tempfile
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import grpc
 import requests
@@ -463,7 +466,7 @@ def build_histogram_json_payload(explicit_bounds, name="histogram_bounds"):
 
 
 class Service:
-    def __init__(self, config_file, *, use_auth_server=False):
+    def __init__(self, config_file, *, use_auth_server=False, extra_env=None):
         # Compose the absolute path for the Fluent Bit configuration file
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), '../config/', config_file))
         test_path = os.path.dirname(os.path.abspath(__file__))
@@ -479,6 +482,7 @@ class Service:
             extra_env={
                 "CERTIFICATE_TEST": self.tls_crt_file,
                 "PRIVATE_KEY_TEST": self.tls_key_file,
+                **(extra_env or {}),
             },
             pre_start=self._start_receiver,
             post_stop=self._stop_receiver,
@@ -1585,6 +1589,27 @@ def test_in_opentelemetry_protocol_matrix(case, signal_type, json_input, endpoin
     assert result["status_code"] == 201
     assert result["http_version"] == case["expected_http_version"]
     assert len(response_payload) > 0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Unix listener requires Unix socket support")
+@pytest.mark.parametrize("signal_type,resource_key,grpc_service", [
+    ("logs", "resourceLogs", "logs.v1.LogsService"),
+    ("metrics", "resourceMetrics", "metrics.v1.MetricsService"),
+    ("traces", "resourceSpans", "trace.v1.TraceService"),
+])
+def test_in_opentelemetry_unix_socket(signal_type, resource_key, grpc_service):
+    with tempfile.TemporaryDirectory(prefix="flb-otlp-") as directory:
+        socket_path = Path(directory) / "otlp.sock"
+        service = Service("otlp_unix.yaml", extra_env={"OTLP_UNIX_PATH": socket_path})
+        service.start()
+        payload = service.build_otel_payload(f"test_{signal_type}_001.in.json", signal_type)
+        with grpc.insecure_channel(f"unix://{socket_path}") as channel:
+            export = channel.unary_unary(f"/opentelemetry.proto.collector.{grpc_service}/Export")
+            assert export(payload, timeout=10) == b""
+        assert service.read_response(signal_type)[resource_key]
+        with socket.socket() as tcp_socket:
+            assert tcp_socket.connect_ex(("127.0.0.1", service.flb_listener_port)) != 0
+        service.stop()
 
 
 def test_in_opentelemetry_http2_invalid_endpoint_returns_404():

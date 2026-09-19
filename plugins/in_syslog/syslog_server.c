@@ -36,40 +36,9 @@
 
 #include "syslog.h"
 
-static int remove_existing_socket_file(char *socket_path)
-{
-    struct stat file_data;
-    int         result;
-
-    result = stat(socket_path, &file_data);
-
-    if (result == -1) {
-        if (errno == ENOENT) {
-            return 0;
-        }
-
-        flb_errno();
-
-        return -1;
-    }
-
-    if (S_ISSOCK(file_data.st_mode) == 0) {
-        return -2;
-    }
-
-    result = unlink(socket_path);
-
-    if (result != 0) {
-        return -3;
-    }
-
-    return 0;
-}
-
 #if !defined(FLB_SYSTEM_WINDOWS)
 static int syslog_server_unix_create(struct flb_syslog *ctx)
 {
-    int             result;
     int             mode;
     struct flb_tls *tls;
 
@@ -84,23 +53,6 @@ static int syslog_server_unix_create(struct flb_syslog *ctx)
         tls = NULL;
     }
     else {
-        return -1;
-    }
-
-    result = remove_existing_socket_file(ctx->unix_path);
-
-    if (result != 0) {
-        if (result == -2) {
-            flb_plg_error(ctx->ins,
-                          "%s exists and it is not a unix socket. Aborting",
-                          ctx->unix_path);
-        }
-        else {
-            flb_plg_error(ctx->ins,
-                          "could not remove existing unix socket %s. Aborting",
-                          ctx->unix_path);
-        }
-
         return -1;
     }
 
@@ -222,14 +174,7 @@ int syslog_server_destroy(struct flb_syslog *ctx)
         ctx->downstream = NULL;
     }
 
-    if (ctx->mode == FLB_SYSLOG_UNIX_TCP || ctx->mode == FLB_SYSLOG_UNIX_UDP) {
-        if (ctx->unix_path) {
-            unlink(ctx->unix_path);
-        }
-    }
-    else {
-        flb_free(ctx->port);
-    }
+    flb_free(ctx->port);
 
     return 0;
 }

@@ -23,6 +23,16 @@
 
 struct flb_config_map flb_http_server_config_map[] = {
     {
+     FLB_CONFIG_MAP_STR, "http_server.unix_path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_http_server_config, unix_path),
+     "Listen on a Unix domain socket instead of a TCP address and port"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "http_server.unix_perm", NULL,
+     0, FLB_TRUE, offsetof(struct flb_http_server_config, unix_perm),
+     "Set Unix socket file permissions in octal; requires http_server.unix_path"
+    },
+    {
      FLB_CONFIG_MAP_BOOL, "http_server.http2", "true",
      0, FLB_TRUE, offsetof(struct flb_http_server_config, http2),
      "Enable HTTP/2 support for the HTTP server"

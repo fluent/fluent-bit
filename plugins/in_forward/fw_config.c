@@ -164,12 +164,7 @@ int fw_config_destroy(struct flb_in_fw_config *config)
         flb_downstream_destroy(config->downstream);
     }
 
-    if (config->unix_path) {
-        unlink(config->unix_path);
-    }
-    else {
-        flb_free(config->tcp_port);
-    }
+    flb_free(config->tcp_port);
 
     fw_destroy_shared_key(config);
     flb_sds_destroy(config->self_hostname);
