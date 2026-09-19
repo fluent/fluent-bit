@@ -14,6 +14,24 @@ features, current startup measurements, and remaining release gates.
 `FLB_WASM_BROWSER=ON` selects this profile. The existing `FLB_WASM` option
 embeds WAMR inside native Fluent Bit and is disabled here.
 
+## Required dependency updates
+
+The browser build requires the following upstream changes, all merged as of
+2026-09-19. Their bundled copies are included in separate library commits in
+[Fluent Bit's draft browser PR](https://github.com/fluent/fluent-bit/pull/12429):
+
+- [flb_libco #14](https://github.com/edsiper/flb_libco/pull/14): Emscripten
+  fibers, exception cleanup, pthread reuse, and sanitizer stack transitions.
+- [Monkey #448](https://github.com/monkey/monkey/pull/448): standalone HTTP
+  identifiers, typed worker callbacks, browser polling, and timer ownership.
+- [ChunkIO #116](https://github.com/fluent/chunkio/pull/116): memory-only build
+  fixes, browser-compatible file growth, and physical recursive deletion.
+
+Do not apply only the Fluent Bit core/SDK commits without these library
+updates. No Emscripten SDK files are patched. The browser profile also builds
+SHA-256-pinned OpenSSL 3.5.8, libyaml 0.2.5, and portable Lua 5.4.9 for the same
+Emscripten 6.0.9 toolchain; it does not use host libraries or provide LuaJIT/FFI.
+
 ## Embeddable JavaScript SDK
 
 Build `fluent-bit-runtime` using the optimized configuration below. Deploy the
@@ -60,7 +78,7 @@ isolated instances, exclusive storage ownership, persisted backlog recovery,
 missing runtime assets and worker cleanup. Contract tests cover queue limits,
 cancellation, deadlines, callback failures and malformed worker responses.
 The consumer type check passes with TypeScript 5.9.3, including negative cases.
-Emscripten 6.0.9 Release CTest passes 15 tests; ASan CTest passes 17 tests. Both browser suites
+Emscripten 6.0.9 Release CTest passes 17 tests; ASan CTest passes 19 tests. Both browser suites
 pass in optimized and ASan builds, including graceful runtime exit for leak checks.
 
 Native stdout/HTTP regression checks also pass all 34 cases normally and under
@@ -88,6 +106,12 @@ Use new build directories when upgrading: Emscripten does not guarantee ABI
 compatibility across releases. Rebuild OpenSSL, libyaml, Lua and all bundled
 libraries with the new SDK; do not reuse 5.0.7 object files or CMake caches.
 CMake, Make, Perl, Flex, Bison and Node are also needed.
+
+Use a clean source checkout for build verification. The browser Lua test
+generates its harness in the WASM build directory and must not depend on a
+header left over from native internal tests. For simultaneous native and WASM
+builds, use separate source worktrees: other generated headers are still
+written into the source tree.
 
 ```sh
 emcmake cmake -S . -B build-wasm -DFLB_WASM_BROWSER=ON
