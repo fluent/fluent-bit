@@ -185,5 +185,6 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
                                          size_t chunk_size);
 void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic,
                                              ssize_t chunk_size);
+size_t flb_input_chunk_get_total_ring_buffer_size(const struct flb_config *config);
 
 #endif

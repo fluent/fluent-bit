@@ -36,6 +36,7 @@
 #include <fluent-bit/flb_custom.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_chunk.h>
+#include <fluent-bit/flb_input_thread.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
@@ -1101,12 +1102,44 @@ int sb_segregate_chunks(struct flb_config *config)
 }
 #endif
 
+/* Check if all threaded inputs have completed pause */
+static int all_threaded_inputs_paused(struct flb_config *config)
+{
+    struct mk_list *head;
+    struct flb_input_instance *in;
+
+    mk_list_foreach(head, &config->inputs) {
+        in = mk_list_entry(head, struct flb_input_instance, _head);
+
+        if (in->is_threaded && in->thi) {
+            /*
+             * Skip inputs that cannot acknowledge pause:
+             * - No pause/resume callbacks defined, considering both the
+             *   legacy callbacks and the 'checked' variants
+             * - No context (plugin initialization failed)
+             */
+            if ((in->p->cb_pause == NULL && in->p->cb_pause_checked == NULL) ||
+                (in->p->cb_resume == NULL && in->p->cb_resume_checked == NULL) ||
+                in->context == NULL) {
+                continue;
+            }
+
+            if (in->thi->is_paused == FLB_FALSE) {
+                return FLB_FALSE;
+            }
+        }
+    }
+
+    return FLB_TRUE;
+}
+
 int flb_engine_start(struct flb_config *config)
 {
     int ret;
     int tasks = 0;
     int fs_chunks = 0;
     int mem_chunks = 0;
+    size_t rb_size = 0;
     uint64_t ts;
     char tmp[16];
     int rb_flush_flag;
@@ -1500,6 +1533,26 @@ int flb_engine_start(struct flb_config *config)
                     }
 
                     ret = tasks + mem_chunks + fs_chunks;
+
+                    /*
+                     * Ring buffer flush and pause waiting are only performed
+                     * when ensure_threaded_flush_on_shutdown option is enabled.
+                     */
+                    if (config->ensure_threaded_flush_on_shutdown == FLB_TRUE) {
+                        rb_size = flb_input_chunk_get_total_ring_buffer_size(config);
+                        if (rb_size > 0) {
+                            ret++;
+                            flb_debug("[engine] ring buffer pending: %zu bytes", rb_size);
+                            flb_input_chunk_ring_buffer_collector(config, NULL);
+                        }
+
+                        /* Check thread pause only when all other work is done */
+                        if (ret == 0 && !all_threaded_inputs_paused(config)) {
+                            ret++;
+                            flb_debug("[engine] waiting for threaded inputs to complete pause");
+                        }
+                    }
+
                     if (ret > 0 && (config->grace_count < config->grace || config->grace == -1)) {
                         if (config->grace_count == 1) {
                             /*
