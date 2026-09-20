@@ -23,7 +23,11 @@ from concurrent import futures
 
 import grpc
 from flask import Flask, Response, jsonify, request
+from google.protobuf.any_pb2 import Any
+from google.protobuf.duration_pb2 import Duration
 from google.protobuf.message import DecodeError
+from google.rpc.error_details_pb2 import RetryInfo
+from google.rpc.status_pb2 import Status
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
     ExportLogsServiceRequest,
     ExportLogsServiceResponse,
@@ -46,7 +50,9 @@ response_config = {
     "body": {"status": "received"},
     "content_type": "application/json",
     "delay_seconds": 0,
+    "headers": [],
 }
+grpc_response_config = {"responses": []}
 grpc_method_paths = {
     "logs": "/opentelemetry.proto.collector.logs.v1.LogsService/Export",
     "metrics": "/opentelemetry.proto.collector.metrics.v1.MetricsService/Export",
@@ -70,8 +76,10 @@ def reset_otlp_server_state():
             "body": {"status": "received"},
             "content_type": "application/json",
             "delay_seconds": 0,
+            "headers": [],
         }
     )
+    grpc_response_config["responses"] = []
     grpc_method_paths.update(
         {
             "logs": "/opentelemetry.proto.collector.logs.v1.LogsService/Export",
@@ -89,6 +97,7 @@ def configure_otlp_response(
     body=None,
     content_type=None,
     delay_seconds=None,
+    headers=None,
 ):
     if status_code is not None:
         response_config["status_code"] = status_code
@@ -100,6 +109,12 @@ def configure_otlp_response(
         response_config["content_type"] = content_type
     if delay_seconds is not None:
         response_config["delay_seconds"] = delay_seconds
+    if headers is not None:
+        response_config["headers"] = list(headers)
+
+
+def configure_otlp_grpc_responses(responses):
+    grpc_response_config["responses"] = list(responses)
 
 
 def configure_otlp_grpc_methods(*, logs=None, metrics=None, traces=None):
@@ -122,13 +137,18 @@ def _build_response():
 
     body = response_config["body"]
     if isinstance(body, (dict, list)):
-        return jsonify(body), status_code
+        response = jsonify(body)
+        response.status_code = status_code
+    else:
+        response = Response(
+            body,
+            status=status_code,
+            content_type=response_config["content_type"],
+        )
+    for name, value in response_config["headers"]:
+        response.headers.add(name, value)
 
-    return Response(
-        body,
-        status=status_code,
-        content_type=response_config["content_type"],
-    )
+    return response
 
 
 def _record_request(*, path, headers, raw_payload, transport):
@@ -139,6 +159,7 @@ def _record_request(*, path, headers, raw_payload, transport):
             "raw_size": len(raw_payload),
             "raw_payload": raw_payload,
             "transport": transport,
+            "received_at": time.monotonic(),
         }
     )
 
@@ -236,6 +257,8 @@ def run_server(port=4317, *, use_tls=False, tls_crt_file=None, tls_key_file=None
 
 def _build_grpc_handler(signal_name, message_type, response_type):
     def _handler(request_message, context):
+        response_spec = None
+
         data_storage[signal_name].append(request_message)
         _record_request(
             path=context._rpc_event.call_details.method.decode(),
@@ -243,6 +266,30 @@ def _build_grpc_handler(signal_name, message_type, response_type):
             raw_payload=request_message.SerializeToString(),
             transport="grpc",
         )
+        if grpc_response_config["responses"]:
+            response_spec = grpc_response_config["responses"].pop(0)
+        if response_spec is not None:
+            status_code = response_spec["status"]
+            retry_delay = response_spec.get("retry_delay")
+            if retry_delay == "invalid":
+                context.set_trailing_metadata(
+                    (("grpc-status-details-bin", b"invalid-status-details"),)
+                )
+            elif retry_delay is not None:
+                retry_info = RetryInfo(
+                    retry_delay=Duration(seconds=retry_delay)
+                )
+                detail = Any()
+                detail.Pack(retry_info)
+                status = Status(
+                    code=status_code.value[0],
+                    message="scripted OTLP response",
+                    details=[detail],
+                )
+                context.set_trailing_metadata(
+                    (("grpc-status-details-bin", status.SerializeToString()),)
+                )
+            context.abort(status_code, "scripted OTLP response")
         return response_type()
 
     return grpc.unary_unary_rpc_method_handler(

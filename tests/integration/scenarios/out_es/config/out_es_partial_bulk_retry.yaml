@@ -23,3 +23,6 @@ pipeline:
       index: fluent-bit
       suppress_type_name: on
       retry_limit: 2
+      throttle: on
+      throttle.base: 1
+      throttle.cap: 1
