@@ -40,6 +40,9 @@ Approach for this tests is basing on filter_kubernetes tests
 #include "../../plugins/in_tail/win32/interface.h"
 #endif
 #include <fluent-bit/flb_gzip.h>
+#ifdef FLB_HAVE_SQLDB
+#include <fluent-bit/flb_sqldb.h>
+#endif
 #include "flb_tests_runtime.h"
 
 #ifdef _WIN32
@@ -353,6 +356,11 @@ static ssize_t write_raw(struct test_tail_ctx *ctx, char *msg, size_t msg_len,
 #define DPATH            FLB_TESTS_DATA_PATH "/data/tail"
 #define MAX_LINES        32
 
+/* fixture for the single gzip member resume test */
+#define GZIP_SEQ_LINES      1000
+#define GZIP_SEQ_LINE_LEN   100     /* 8 digits + 91 padding + newline */
+#define GZIP_SEQ_SKIP_LINES 500     /* already emitted before the restart */
+
 /* Gzip helpers */
 static int create_gzip_file(const char *path, const char *data, size_t len)
 {
@@ -582,6 +590,13 @@ struct tail_test_result {
 struct tail_file_lines {
   char *lines[MAX_LINES];
   int lines_c;
+};
+
+struct gzip_seq_ctx {
+    int count;
+    int first;
+    int last;
+    int broken;                  /* a record arrived out of order */
 };
 
 void wait_with_timeout(uint32_t timeout_ms, struct tail_test_result *result, int nExpected)
@@ -3870,6 +3885,314 @@ void flb_test_db_gzip_multi_resume()
     unlink(db_file);
 }
 
+/* Single gzip member resume test */
+static int gzip_seq_get(struct gzip_seq_ctx *ctx, int *first, int *last,
+                        int *broken)
+{
+    int count;
+
+    pthread_mutex_lock(&result_mutex);
+    count = ctx->count;
+    *first = ctx->first;
+    *last = ctx->last;
+    *broken = ctx->broken;
+    pthread_mutex_unlock(&result_mutex);
+
+    return count;
+}
+
+static void gzip_seq_reset(struct gzip_seq_ctx *ctx)
+{
+    pthread_mutex_lock(&result_mutex);
+    ctx->count = 0;
+    ctx->first = 0;
+    ctx->last = 0;
+    ctx->broken = 0;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static int cb_check_gzip_sequence(void *record, size_t size, void *data)
+{
+    struct gzip_seq_ctx *ctx = data;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object key;
+    msgpack_object val;
+    msgpack_object v;
+    size_t off = 0;
+    char num[9];
+    int line_no;
+    int i;
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, record, size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        root = result.data;
+        if (root.type != MSGPACK_OBJECT_ARRAY || root.via.array.size != 2) {
+            continue;
+        }
+
+        line_no = -1;
+        val = root.via.array.ptr[1];
+        if (val.type == MSGPACK_OBJECT_MAP) {
+            for (i = 0; i < val.via.map.size; i++) {
+                key = val.via.map.ptr[i].key;
+                v = val.via.map.ptr[i].val;
+                if (key.type == MSGPACK_OBJECT_STR &&
+                    key.via.str.size == 3 &&
+                    memcmp(key.via.str.ptr, "log", 3) == 0 &&
+                    v.type == MSGPACK_OBJECT_STR && v.via.str.size >= 8) {
+                    memcpy(num, v.via.str.ptr, 8);
+                    num[8] = '\0';
+                    line_no = atoi(num);
+                }
+            }
+        }
+
+        if (line_no < 0) {
+            continue;
+        }
+
+        pthread_mutex_lock(&result_mutex);
+        if (ctx->count == 0) {
+            ctx->first = line_no;
+        }
+        else if (line_no != ctx->last + 1) {
+            ctx->broken = 1;
+        }
+        ctx->last = line_no;
+        ctx->count++;
+        pthread_mutex_unlock(&result_mutex);
+    }
+    msgpack_unpacked_destroy(&result);
+
+    flb_free(record);
+    return 0;
+}
+
+static int wait_seq_count(struct gzip_seq_ctx *ctx, int expected,
+                          uint32_t timeout_ms)
+{
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    uint64_t elapsed_time_flb = 0;
+    int first;
+    int last;
+    int broken;
+    int count;
+
+    flb_time_get(&start_time);
+
+    while (1) {
+        count = gzip_seq_get(ctx, &first, &last, &broken);
+        if (count >= expected) {
+            return count;
+        }
+
+        flb_time_msleep(20);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
+
+        if (elapsed_time_flb > timeout_ms) {
+            break;
+        }
+    }
+
+    return gzip_seq_get(ctx, &first, &last, &broken);
+}
+
+/*
+ * Mark 'skip_bytes' of the member as already emitted. The raw offset is cleared
+ * so the offset-marker check does not reject the fingerprint taken at the end
+ * of the first run; set_file_position() seeks to the anchor anyway while a skip
+ * is pending.
+ */
+static int gzip_seq_rewind_db(const char *db_path, uint64_t skip_bytes)
+{
+    sqlite3 *db;
+    sqlite3_stmt *stmt;
+    int changes;
+    int ret;
+    const char *sql_update =
+        "UPDATE in_tail_files "
+        "  SET offset = 0, anchor = 0, skip = ?, stream = ?;";
+
+    if (sqlite3_open_v2(db_path, &db, SQLITE_OPEN_READWRITE, NULL) != SQLITE_OK) {
+        return -1;
+    }
+
+    if (sqlite3_prepare_v2(db, sql_update, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+
+    sqlite3_bind_int64(stmt, 1, (sqlite3_int64) skip_bytes);
+    sqlite3_bind_int64(stmt, 2, (sqlite3_int64) skip_bytes);
+
+    ret = sqlite3_step(stmt);
+    changes = sqlite3_changes(db);
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+
+    /* the first run must have left exactly one row behind */
+    if (ret != SQLITE_DONE || changes != 1) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static flb_ctx_t *gzip_seq_start(struct flb_lib_out_cb *cb,
+                                 const char *log_file, const char *db_file)
+{
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    ctx = flb_create();
+    if (ctx == NULL) {
+        return NULL;
+    }
+
+    flb_service_set(ctx, "Flush", "0.2", "Grace", "1", NULL);
+
+    in_ffd = flb_input(ctx, "tail", NULL);
+    flb_input_set(ctx, in_ffd,
+                  "path", log_file,
+                  "read_from_head", "true",
+                  "db", db_file,
+                  "db.sync", "full",
+                  "buffer_chunk_size", "1k",
+                  "buffer_max_size", "2k",
+                  NULL);
+
+    out_ffd = flb_output(ctx, "lib", cb);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+
+    if (flb_start(ctx) != 0) {
+        flb_destroy(ctx);
+        return NULL;
+    }
+
+    return ctx;
+}
+
+/*
+ * Resume inside a single gzip member. The other gzip tests stop once a member
+ * has been consumed, so the anchor has already moved on and only a short skip
+ * remains. Here the whole file is one member: the anchor stays at zero and the
+ * restart has to discard every byte it already emitted, over many rounds.
+ *
+ * The first run reads the file end to end, which also lets in_tail create the
+ * database, so this test carries no copy of the schema. The row is then rewound
+ * into the middle of the member. Stopping a live run instead would not be
+ * reproducible, because in_tail ingests ahead of the output.
+ */
+void flb_test_db_gzip_single_member_resume()
+{
+    flb_ctx_t *ctx;
+    struct gzip_seq_ctx t_ctx = {0};
+    struct flb_lib_out_cb cb;
+    char *log_file = "test_gzip_single_member.log.gz";
+    char *db_file = "test_gzip_single_member.db";
+    char *payload;
+    size_t payload_size;
+    uint64_t skip_bytes;
+    int expected;
+    int count;
+    int first;
+    int last;
+    int broken;
+    int i;
+
+    payload_size = (size_t) GZIP_SEQ_LINES * GZIP_SEQ_LINE_LEN;
+    skip_bytes = (uint64_t) GZIP_SEQ_SKIP_LINES * GZIP_SEQ_LINE_LEN;
+    expected = GZIP_SEQ_LINES - GZIP_SEQ_SKIP_LINES;
+
+    payload = flb_malloc(payload_size + 1);
+    if (!TEST_CHECK(payload != NULL)) {
+        return;
+    }
+
+    for (i = 0; i < GZIP_SEQ_LINES; i++) {
+        snprintf(&payload[(size_t) i * GZIP_SEQ_LINE_LEN], GZIP_SEQ_LINE_LEN + 1,
+                 "%08d%091d\n", i + 1, 0);
+    }
+
+    unlink(log_file);
+    unlink(db_file);
+
+    /* every line lives in a single gzip member */
+    TEST_CHECK(create_gzip_file(log_file, payload, payload_size) == 0);
+    flb_free(payload);
+
+    cb.cb = cb_check_gzip_sequence;
+    cb.data = &t_ctx;
+
+    /* first run: read the member end to end */
+    ctx = gzip_seq_start(&cb, log_file, db_file);
+    if (!TEST_CHECK(ctx != NULL)) {
+        unlink(log_file);
+        unlink(db_file);
+        return;
+    }
+
+    wait_seq_count(&t_ctx, GZIP_SEQ_LINES, 30000);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    count = gzip_seq_get(&t_ctx, &first, &last, &broken);
+    if (!TEST_CHECK(count == GZIP_SEQ_LINES)) {
+        TEST_MSG("first run emitted %d lines, expected %d",
+                 count, GZIP_SEQ_LINES);
+        unlink(log_file);
+        unlink(db_file);
+        return;
+    }
+
+    /* pretend the first run was interrupted halfway through the member */
+    if (!TEST_CHECK(gzip_seq_rewind_db(db_file, skip_bytes) == 0)) {
+        TEST_MSG("could not rewind the resume state");
+        unlink(log_file);
+        unlink(db_file);
+        return;
+    }
+
+    gzip_seq_reset(&t_ctx);
+
+    /* second run: everything before the rewind point must be discarded */
+    ctx = gzip_seq_start(&cb, log_file, db_file);
+    if (!TEST_CHECK(ctx != NULL)) {
+        unlink(log_file);
+        unlink(db_file);
+        return;
+    }
+
+    wait_seq_count(&t_ctx, expected, 30000);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    count = gzip_seq_get(&t_ctx, &first, &last, &broken);
+
+    TEST_CHECK(broken == 0);
+    if (!TEST_CHECK(first == GZIP_SEQ_SKIP_LINES + 1)) {
+        TEST_MSG("resume emitted line %d first, expected %d",
+                 first, GZIP_SEQ_SKIP_LINES + 1);
+    }
+    if (!TEST_CHECK(last == GZIP_SEQ_LINES)) {
+        TEST_MSG("last line was %d, expected %d", last, GZIP_SEQ_LINES);
+    }
+    if (!TEST_CHECK(count == expected)) {
+        TEST_MSG("%d lines emitted, expected %d", count, expected);
+    }
+
+    unlink(log_file);
+    unlink(db_file);
+}
+
 #endif /* FLB_HAVE_SQLDB */
 
 /* Test list */
@@ -3913,6 +4236,7 @@ TEST_LIST = {
     {"db_gzip_inotify_append", flb_test_db_gzip_inotify_append },
     {"db_gzip_rotation", flb_test_db_gzip_rotation },
     {"db_gzip_multi_resume", flb_test_db_gzip_multi_resume },
+    {"db_gzip_single_member_resume", flb_test_db_gzip_single_member_resume },
 #endif
 
 #ifdef FLB_HAVE_UNICODE_ENCODER
