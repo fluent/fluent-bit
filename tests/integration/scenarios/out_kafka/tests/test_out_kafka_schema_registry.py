@@ -152,7 +152,10 @@ def test_protobuf_schema_registry_record_headers(tmp_path):
         tmp_path,
         event=event,
         samples=1,
-        output_options={"headers_key": "kafka_headers"},
+        output_options={
+            "headers_key": "kafka_headers",
+            "rdkafka.api.version.request": True,
+        },
     )
     service.start()
     try:
