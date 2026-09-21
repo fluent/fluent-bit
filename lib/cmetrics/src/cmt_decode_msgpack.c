@@ -1714,9 +1714,18 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
 
 static int unpack_basic_type_values(mpack_reader_t *reader, size_t index, void *context)
 {
+    struct cmt_msgpack_decode_context *decode_context;
+
     if (NULL == reader ||
         NULL == context) {
         return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    decode_context = context;
+
+    /* The metadata fixes the storage layout before samples are allocated. */
+    if (decode_context->map->parent == NULL) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
     }
 
     return cmt_mpack_unpack_array(reader,
