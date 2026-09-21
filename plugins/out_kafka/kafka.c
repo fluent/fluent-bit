@@ -656,7 +656,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     if (headers_map) {
         if (build_kafka_headers(headers_map, &kafka_headers, ctx->ins) != 0) {
             if (ctx->format == FLB_KAFKA_FMT_JSON ||
-                ctx->format == FLB_KAFKA_FMT_GELF) {
+                ctx->format == FLB_KAFKA_FMT_GELF ||
+                ctx->format == FLB_KAFKA_FMT_PROTOBUF) {
                 flb_sds_destroy(s);
             }
             msgpack_sbuffer_destroy(&mp_sbuf);
