@@ -141,6 +141,10 @@ if(FLB_METRICS)
     )
 endif()
 
+if(FLB_PROCESSOR_SQL)
+  list(APPEND UNIT_TESTS_FILES processor_sql.c)
+endif()
+
 if(FLB_HTTP_SERVER)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}

@@ -1,0 +1,14 @@
+{
+  "name": "@fluent-bit/browser",
+  "version": "0.1.0-experimental",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "types": "./fluent-bit.d.ts",
+  "exports": {
+    ".": {"types": "./fluent-bit.d.ts", "import": "./fluent-bit.js"},
+    "./assets/*": "./*"
+  },
+  "files": ["*.js", "*.wasm", "*.d.ts", "LICENSE", "README.md"],
+  "sideEffects": false
+}

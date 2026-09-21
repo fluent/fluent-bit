@@ -22,7 +22,9 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
+#ifdef FLB_HAVE_HTTP_SERVER
 #include <monkey/mk_http.h>
+#endif
 
 struct flb_decompression_context;
 
@@ -44,6 +46,8 @@ void flb_gzip_decompression_context_destroy(void *context);
 int flb_gzip_decompressor_dispatch(struct flb_decompression_context *context,
                                    void *out_data, size_t *out_size);
 
+#ifdef FLB_HAVE_HTTP_SERVER
 int flb_is_http_session_gzip_compressed(struct mk_http_session *session);
+#endif
 
 #endif

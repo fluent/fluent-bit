@@ -20,6 +20,7 @@
 #ifndef MK_HTTP_H
 #define MK_HTTP_H
 
+#include <monkey/mk_http_protocol.h>
 #include <monkey/mk_scheduler.h>
 #include <monkey/mk_core.h>
 #include <monkey/mk_http_parser.h>
@@ -72,15 +73,6 @@
     MK_HTTP_METHOD_HEAD_STR "," MK_HTTP_METHOD_PUT_STR "," \
     MK_HTTP_METHOD_DELETE_STR "," MK_HTTP_METHOD_OPTIONS_STR  \
     MK_CRLF
-
-#define MK_HTTP_PROTOCOL_UNKNOWN (-1)
-#define MK_HTTP_PROTOCOL_09 (9)
-#define MK_HTTP_PROTOCOL_10 (10)
-#define MK_HTTP_PROTOCOL_11 (11)
-
-#define MK_HTTP_PROTOCOL_09_STR "HTTP/0.9"
-#define MK_HTTP_PROTOCOL_10_STR "HTTP/1.0"
-#define MK_HTTP_PROTOCOL_11_STR "HTTP/1.1"
 
 extern const mk_ptr_t mk_http_method_get_p;
 extern const mk_ptr_t mk_http_method_post_p;

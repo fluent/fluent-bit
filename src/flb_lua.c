@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_lua.h>
 #include <stdint.h>
+#include <limits.h>
 
 int flb_lua_enable_flb_null(lua_State *l)
 {
@@ -106,7 +107,16 @@ int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
             lua_pushinteger(l, mpack_tag_int_value(&tag));
             break;
         case mpack_type_uint:
+#if LUA_VERSION_NUM >= 503
+            if (mpack_tag_uint_value(&tag) > LUA_MAXINTEGER) {
+                lua_pushnumber(l, (lua_Number) mpack_tag_uint_value(&tag));
+            }
+            else {
+                lua_pushinteger(l, (lua_Integer) mpack_tag_uint_value(&tag));
+            }
+#else
             lua_pushinteger(l, mpack_tag_uint_value(&tag));
+#endif
             break;
         case mpack_type_float:
             lua_pushnumber(l, mpack_tag_float_value(&tag));
@@ -184,11 +194,24 @@ void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o)
             break;
 
         case MSGPACK_OBJECT_POSITIVE_INTEGER:
+#if LUA_VERSION_NUM >= 503
+            if (o->via.u64 > LUA_MAXINTEGER) {
+                lua_pushnumber(l, (lua_Number) o->via.u64);
+            }
+            else {
+                lua_pushinteger(l, (lua_Integer) o->via.u64);
+            }
+#else
             lua_pushinteger(l, (double) o->via.u64);
+#endif
             break;
 
         case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+#if LUA_VERSION_NUM >= 503
+            lua_pushinteger(l, (lua_Integer) o->via.i64);
+#else
             lua_pushinteger(l, (double) o->via.i64);
+#endif
             break;
 
         case MSGPACK_OBJECT_FLOAT32:
@@ -245,6 +268,7 @@ void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o)
     }
 }
 
+#if LUA_VERSION_NUM < 503
 static int lua_isinteger(lua_State *L, int index)
 {
     lua_Number n;
@@ -260,16 +284,18 @@ static int lua_isinteger(lua_State *L, int index)
     }
     return 0;
 }
+#endif
+
+#if LUA_VERSION_NUM >= 502
+#define lua_objlen lua_rawlen
+#endif
 
 /*
- * This function is to call lua function table.maxn.
- * CAUTION: table.maxn is removed from Lua 5.2.
- * If we update luajit which is based Lua 5.2+,
- * this function should be removed.
-*/
+ * Preserve table.maxn semantics on newer interpreters, including sparse tables.
+ */
 static int lua_table_maxn(lua_State *l, int index)
 {
-#if defined(LUA_VERSION_NUM) && LUA_VERSION_NUM < 520
+#if defined(LUA_VERSION_NUM) && LUA_VERSION_NUM < 502
     int ret = -1;
     if (lua_type(l, index) != LUA_TTABLE) {
         return -1;
@@ -297,7 +323,27 @@ static int lua_table_maxn(lua_State *l, int index)
 
     return ret;
 #else
-    return (int)lua_rawlen(l, index);
+    lua_Number maximum = 0;
+    lua_Number key;
+
+    if (lua_type(l, index) != LUA_TTABLE) {
+        return -1;
+    }
+    index = flb_lua_absindex(l, index);
+    lua_pushnil(l);
+    while (lua_next(l, index) != 0) {
+        if (lua_type(l, -2) == LUA_TNUMBER) {
+            key = lua_tonumber(l, -2);
+            if (key > maximum) {
+                maximum = key;
+            }
+        }
+        lua_pop(l, 1);
+    }
+    if (maximum > INT_MAX || maximum != (int) maximum) {
+        return -1;
+    }
+    return (int) maximum;
 #endif
 }
 
