@@ -275,13 +275,52 @@ int mk_utils_worker_rename(const char *title)
 #endif
 }
 
+struct mk_worker_start {
+    void (*callback)(void *);
+    void *argument;
+};
+
+static void *mk_utils_worker_entry(void *data)
+{
+    struct mk_worker_start *start;
+    void (*callback)(void *);
+    void *argument;
+
+    start = data;
+    callback = start->callback;
+    argument = start->argument;
+    free(start);
+    callback(argument);
+    return NULL;
+}
+
 int mk_utils_worker_spawn(void (*func) (void *), void *arg, pthread_t *tid)
 {
+    int ret;
+    struct mk_worker_start *start;
     pthread_attr_t thread_attr;
 
-    pthread_attr_init(&thread_attr);
-    pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_JOINABLE);
-    if (pthread_create(tid, &thread_attr, (void *) func, arg) < 0) {
+    start = malloc(sizeof(*start));
+    if (start == NULL) {
+        return -1;
+    }
+    start->callback = func;
+    start->argument = arg;
+
+    ret = pthread_attr_init(&thread_attr);
+    if (ret != 0) {
+        free(start);
+        errno = ret;
+        return -1;
+    }
+    ret = pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_JOINABLE);
+    if (ret == 0) {
+        ret = pthread_create(tid, &thread_attr, mk_utils_worker_entry, start);
+    }
+    pthread_attr_destroy(&thread_attr);
+    if (ret != 0) {
+        free(start);
+        errno = ret;
         mk_libc_error("pthread_create");
         return -1;
     }

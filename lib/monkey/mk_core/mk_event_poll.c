@@ -20,11 +20,23 @@
 #include <poll.h>
 #include <mk_core/mk_event.h>
 #include <time.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/threading.h>
+#include <limits.h>
+#endif
 
 struct fd_timer {
     int    fd;
     time_t sec;
     long   nsec;
+#ifdef __EMSCRIPTEN__
+    int read_fd;
+    int registered;
+    double interval;
+    double deadline;
+    struct fd_timer *next;
+#endif
 };
 
 static inline int _mk_event_init()
@@ -73,6 +85,17 @@ static inline void *_mk_event_loop_create(int size)
 /* Close handlers and memory */
 static inline void _mk_event_loop_destroy(struct mk_event_ctx *ctx)
 {
+#ifdef __EMSCRIPTEN__
+    struct fd_timer *timer;
+
+    while (ctx->timers != NULL) {
+        timer = ctx->timers;
+        ctx->timers = timer->next;
+        close(timer->read_fd);
+        close(timer->fd);
+        mk_mem_free(timer);
+    }
+#endif
     mk_mem_free(ctx->fired);
     mk_mem_free(ctx->events);
     mk_mem_free(ctx->pfds);
@@ -86,6 +109,9 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
     int i;
     int found = MK_FALSE;
     struct mk_event *event;
+#ifdef __EMSCRIPTEN__
+    struct fd_timer *timer;
+#endif
 
     mk_bug(ctx == NULL);
     mk_bug(data == NULL);
@@ -140,6 +166,15 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
         event->type = type;
     }
 
+#ifdef __EMSCRIPTEN__
+    for (timer = ctx->timers; timer != NULL; timer = timer->next) {
+        if (timer->read_fd == fd) {
+            timer->registered = MK_TRUE;
+            break;
+        }
+    }
+#endif
+
     return 0;
 }
 
@@ -147,6 +182,9 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
 static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event)
 {
     int i;
+#ifdef __EMSCRIPTEN__
+    struct fd_timer *timer;
+#endif
 
     mk_bug(ctx == NULL);
     mk_bug(event == NULL);
@@ -172,6 +210,15 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
         mk_list_del(&event->_priority_head);
     }
 
+#ifdef __EMSCRIPTEN__
+    for (timer = ctx->timers; timer != NULL; timer = timer->next) {
+        if (timer->read_fd == event->fd) {
+            timer->registered = MK_FALSE;
+            break;
+        }
+    }
+#endif
+
     MK_EVENT_NEW(event);
     return 0;
 }
@@ -180,6 +227,7 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
  * Timeout worker, it writes a byte every certain amount of seconds, it finish
  * once the other end of the pipe closes the fd[0].
  */
+#ifndef __EMSCRIPTEN__
 void _timeout_worker(void *arg)
 {
     int ret;
@@ -214,6 +262,7 @@ void _timeout_worker(void *arg)
 
     pthread_exit(0);
 }
+#endif
 
 /*
  * This routine creates a timer, since timerfd_create(2) is not available (as
@@ -227,10 +276,18 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     int fd[2];
     struct mk_event *event;
     struct fd_timer *timer;
+#ifndef __EMSCRIPTEN__
     pthread_t tid;
+#endif
 
     mk_bug(data == NULL);
 
+#ifdef __EMSCRIPTEN__
+    if (sec < 0 || nsec < 0 || nsec >= 1000000000L || (sec == 0 && nsec == 0)) {
+        errno = EINVAL;
+        return -1;
+    }
+#endif
     timer = mk_mem_alloc(sizeof(struct fd_timer));
     if (!timer) {
         return -1;
@@ -249,7 +306,13 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     event->mask = MK_EVENT_EMPTY;
     mk_list_entry_init(&event->_priority_head);
 
-    _mk_event_add(ctx, fd[0], MK_EVENT_NOTIFICATION, MK_EVENT_READ, data);
+    ret = _mk_event_add(ctx, fd[0], MK_EVENT_NOTIFICATION, MK_EVENT_READ, data);
+    if (ret != 0) {
+        close(fd[0]);
+        close(fd[1]);
+        mk_mem_free(timer);
+        return -1;
+    }
     event->mask = MK_EVENT_READ;
 
     /* Compose the timer context, this is released inside the worker thread */
@@ -257,14 +320,25 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     timer->sec  = sec;
     timer->nsec = nsec;
 
+#ifdef __EMSCRIPTEN__
+    timer->read_fd = fd[0];
+    timer->registered = MK_TRUE;
+    timer->interval = sec * 1000.0 + nsec / 1000000.0;
+    timer->deadline = emscripten_get_now() + timer->interval;
+    timer->next = ctx->timers;
+    ctx->timers = timer;
+#else
     /* Now the dirty workaround, create a thread */
     ret = mk_utils_worker_spawn(_timeout_worker, timer, &tid);
     if (ret < 0) {
+        _mk_event_del(ctx, event);
         close(fd[0]);
         close(fd[1]);
         mk_mem_free(timer);
         return -1;
     }
+    pthread_detach(tid);
+#endif
 
     return fd[0];
 }
@@ -273,6 +347,10 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data)
 {
     struct mk_event *event;
+#ifdef __EMSCRIPTEN__
+    struct fd_timer **link;
+    struct fd_timer *timer;
+#endif
 
     if (data == NULL) {
         return 0;
@@ -281,6 +359,17 @@ static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data
     event = (struct mk_event *) data;
     _mk_event_del(ctx, event);
 
+#ifdef __EMSCRIPTEN__
+    for (link = &ctx->timers; *link != NULL; link = &(*link)->next) {
+        timer = *link;
+        if (timer->read_fd == event->fd) {
+            *link = timer->next;
+            close(timer->fd);
+            mk_mem_free(timer);
+            break;
+        }
+    }
+#endif
     /* trigger an EPIPE */
     close(event->fd);
     return 0;
@@ -368,6 +457,84 @@ static inline int _mk_event_inject(struct mk_event_loop *loop,
     return 0;
 }
 
+#ifdef __EMSCRIPTEN__
+/* Emscripten 6.0.9 routes zero-timeout poll through a non-suspending syscall.
+ * This is safe inside Asyncify fibers and avoids depending on FS internals.
+ */
+static int mk_event_poll_now(struct pollfd *fds, int count)
+{
+    return poll(fds, count, 0);
+}
+
+static int mk_event_poll_wait(struct mk_event_ctx *ctx, struct pollfd *fds,
+                              int count, int timeout)
+{
+    struct fd_timer *timer;
+    struct pollfd timer_fd;
+    uint64_t expirations;
+    double now;
+    double end;
+    double delay;
+    int ret;
+    int wait_ms;
+
+    if (emscripten_is_main_browser_thread()) {
+        errno = ENOTSUP;
+        return -1;
+    }
+    end = emscripten_get_now() + timeout;
+    while (1) {
+        now = emscripten_get_now();
+        if (timeout > 0 && now >= end) {
+            return 0;
+        }
+        delay = timeout < 0 ? INT_MAX : (end - now);
+        for (timer = ctx->timers; timer != NULL; timer = timer->next) {
+            if (!timer->registered) {
+                continue;
+            }
+            if (now >= timer->deadline) {
+                expirations = 1 + (uint64_t) ((now - timer->deadline) / timer->interval);
+                timer->deadline += expirations * timer->interval;
+                timer_fd.fd = timer->read_fd;
+                timer_fd.events = POLLIN;
+                /* Coalesce unread notifications instead of growing the pipe. */
+                if (mk_event_poll_now(&timer_fd, 1) == 0) {
+                    ret = write(timer->fd, &expirations, sizeof(expirations));
+                    if (ret != sizeof(expirations)) {
+                        return -1;
+                    }
+                }
+            }
+            if (timer->deadline - now < delay) {
+                delay = timer->deadline - now;
+            }
+        }
+        ret = mk_event_poll_now(fds, count);
+        if (ret != 0 || timeout == 0) {
+            return ret;
+        }
+        if (timeout > 0) {
+            now = emscripten_get_now();
+            if (now >= end) {
+                return 0;
+            }
+            if (end - now < delay) {
+                delay = end - now;
+            }
+        }
+        /* Wait on Emscripten's readiness queue until I/O or the next timer.
+         * Round up fractional milliseconds to avoid spinning before a deadline.
+         */
+        wait_ms = delay <= 0 ? 0 : delay >= INT_MAX ? INT_MAX : (int) delay + 1;
+        ret = poll(fds, count, wait_ms);
+        if (ret != 0) {
+            return ret;
+        }
+    }
+}
+#endif
+
 static inline int _mk_event_wait_2(struct mk_event_loop *loop, int timeout)
 {
     int i;
@@ -398,7 +565,11 @@ static inline int _mk_event_wait_2(struct mk_event_loop *loop, int timeout)
     }
 
     /* wait for events */
+#ifdef __EMSCRIPTEN__
+    ret = mk_event_poll_wait(ctx, pfds, n, timeout);
+#else
     ret = poll(pfds, n, timeout);
+#endif
     if (ret <= 0) {
         loop->n_events = 0;
         return ret;  // Timeout or error
