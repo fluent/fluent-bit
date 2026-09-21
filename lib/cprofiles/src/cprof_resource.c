@@ -48,6 +48,10 @@ struct cprof_resource *cprof_resource_create(struct cfl_kvlist *attributes)
 
 void cprof_resource_destroy(struct cprof_resource *resource)
 {
+    if (resource == NULL) {
+        return;
+    }
+
     if (resource->attributes != NULL) {
         cfl_kvlist_destroy(resource->attributes);
     }
