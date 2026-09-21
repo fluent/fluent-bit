@@ -16,6 +16,10 @@
     #include "arm.c"
   #elif defined(__aarch64__)
     #include "aarch64.c"
+  #elif defined(__riscv) && defined(__riscv_xlen) && \
+        __riscv_xlen == 64 && !defined(__riscv_abi_rve) && \
+        !defined(__riscv_float_abi_quad)
+    #include "riscv64.c"
   #elif defined(_ARCH_PPC)
     #include "ppc.c"
   #elif defined(_WIN32)
