@@ -3951,7 +3951,8 @@ flb_sds_t flb_opentelemetry_traces_msgpack_to_otlp_json(const void *data,
         return NULL;
     }
 
-    while ((ret = ctr_decode_msgpack_create(&context, (char *) data, size, &offset)) ==
+    while (offset < size &&
+           (ret = ctr_decode_msgpack_create(&context, (char *) data, size, &offset)) ==
            CTR_DECODE_MSGPACK_SUCCESS) {
         rendered = flb_opentelemetry_traces_to_otlp_json(context, result);
         ctr_destroy(context);
@@ -3974,8 +3975,7 @@ flb_sds_t flb_opentelemetry_traces_msgpack_to_otlp_json(const void *data,
         flb_sds_destroy(rendered);
     }
 
-    if (ret != CTR_DECODE_MSGPACK_SUCCESS &&
-        !(ret == CTR_MPACK_ENGINE_ERROR && offset >= size)) {
+    if (ret != CTR_DECODE_MSGPACK_SUCCESS) {
         flb_sds_destroy(output);
         set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_ARGUMENT, EINVAL);
         return NULL;
@@ -4019,7 +4019,8 @@ flb_sds_t flb_opentelemetry_traces_msgpack_to_otlp_json_pretty(const void *data,
         return NULL;
     }
 
-    while ((ret = ctr_decode_msgpack_create(&context, (char *) data, size, &offset)) ==
+    while (offset < size &&
+           (ret = ctr_decode_msgpack_create(&context, (char *) data, size, &offset)) ==
            CTR_DECODE_MSGPACK_SUCCESS) {
         rendered = flb_opentelemetry_traces_to_otlp_json_render(context, FLB_TRUE, result);
         ctr_destroy(context);
@@ -4042,8 +4043,7 @@ flb_sds_t flb_opentelemetry_traces_msgpack_to_otlp_json_pretty(const void *data,
         flb_sds_destroy(rendered);
     }
 
-    if (ret != CTR_DECODE_MSGPACK_SUCCESS &&
-        !(ret == CTR_MPACK_ENGINE_ERROR && offset >= size)) {
+    if (ret != CTR_DECODE_MSGPACK_SUCCESS) {
         flb_sds_destroy(output);
         set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_ARGUMENT, EINVAL);
         return NULL;
