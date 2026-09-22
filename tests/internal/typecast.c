@@ -347,6 +347,96 @@ void float_to_str()
     msgpack_unpacked_destroy(&result);
 }
 
+/* https://github.com/fluent/fluent-bit/issues/8632 */
+void convert_string_0()
+{
+    char *input = "0";
+
+    msgpack_sbuffer sbuf;
+    msgpack_packer  pck;
+    msgpack_unpacked result;
+    size_t off = 0;
+
+    struct flb_typecast_rule *rule = NULL;
+    struct flb_typecast_value *val = NULL;
+
+    /* create input object */
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_str(&pck, strlen(input));
+    msgpack_pack_str_body(&pck, input, strlen(input));
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, sbuf.data, sbuf.size, &off);
+
+    /* create rule */
+    rule = flb_typecast_rule_create("string", 6, "int", 3);
+    if (!TEST_CHECK(rule != NULL)) {
+        TEST_MSG("failed to create rule");
+        exit(EXIT_FAILURE);
+    }
+
+    val = flb_typecast_value_create(result.data, rule);
+    if(!TEST_CHECK(val != NULL)){
+        TEST_MSG("failed to create value");
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(val->type == FLB_TYPECAST_TYPE_INT);
+    if(!TEST_CHECK(val->val.i_num == 0)) {
+        TEST_MSG("got %ld. expect 0", val->val.i_num);
+    }
+
+    flb_typecast_rule_destroy(rule);
+    flb_typecast_value_destroy(val);
+
+    msgpack_sbuffer_destroy(&sbuf);
+    msgpack_unpacked_destroy(&result);
+}
+
+void convert_invalid_str()
+{
+    char *input = "invalid";
+
+    msgpack_sbuffer sbuf;
+    msgpack_packer  pck;
+    msgpack_unpacked result;
+    size_t off = 0;
+
+    struct flb_typecast_rule *rule = NULL;
+    struct flb_typecast_value *val = NULL;
+
+    /* create input object */
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_str(&pck, strlen(input));
+    msgpack_pack_str_body(&pck, input, strlen(input));
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, sbuf.data, sbuf.size, &off);
+
+    /* create rule */
+    rule = flb_typecast_rule_create("string", 6, "int", 3);
+    if (!TEST_CHECK(rule != NULL)) {
+        TEST_MSG("failed to create rule");
+        exit(EXIT_FAILURE);
+    }
+
+    val = flb_typecast_value_create(result.data, rule);
+    if(!TEST_CHECK(val == NULL)){
+        TEST_MSG("flb_typecast_value_create should be failed");
+        exit(EXIT_FAILURE);
+    }
+
+    flb_typecast_rule_destroy(rule);
+    flb_typecast_value_destroy(val);
+
+    msgpack_sbuffer_destroy(&sbuf);
+    msgpack_unpacked_destroy(&result);
+}
+
 TEST_LIST = {
     {"str_to_int",     str_to_int},
     {"int_to_str",     int_to_str},
@@ -355,5 +445,7 @@ TEST_LIST = {
     {"bool_to_str",    bool_to_str},
     {"str_to_bool",    str_to_bool},
     {"str_to_hex",     str_to_hex},
+    {"convert_string_0", convert_string_0},
+    {"convert_invalid_str", convert_invalid_str},
     {NULL, NULL}
 };
