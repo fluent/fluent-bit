@@ -2466,6 +2466,70 @@ void test_opentelemetry_traces_otlp_json_roundtrip()
     ctr_destroy(trace_context);
 }
 
+/* Check complete streams and a truncated second context in both JSON formats. */
+void test_opentelemetry_traces_otlp_json_stream_boundaries(void)
+{
+    int ret;
+    int result;
+    int format;
+    int test_case;
+    char *msgpack_buffer;
+    char *stream;
+    size_t msgpack_size;
+    size_t sizes[3];
+    flb_sds_t actual;
+    struct ctrace *context;
+    const char *input = "{\"resourceSpans\":[{\"scopeSpans\":[{\"spans\":[]}]}]}";
+    flb_sds_t (*converters[2])(const void *, size_t, int *) = {
+        flb_opentelemetry_traces_msgpack_to_otlp_json,
+        flb_opentelemetry_traces_msgpack_to_otlp_json_pretty
+    };
+
+    context = flb_opentelemetry_json_traces_to_ctrace(input, strlen(input), &result);
+    TEST_CHECK(context != NULL);
+    if (context == NULL) {
+        return;
+    }
+
+    ret = ctr_encode_msgpack_create(context, &msgpack_buffer, &msgpack_size);
+    ctr_destroy(context);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        return;
+    }
+
+    stream = flb_malloc(msgpack_size * 2);
+    TEST_CHECK(stream != NULL);
+    if (stream == NULL) {
+        flb_free(msgpack_buffer);
+        return;
+    }
+    memcpy(stream, msgpack_buffer, msgpack_size);
+    memcpy(stream + msgpack_size, msgpack_buffer, msgpack_size);
+    flb_free(msgpack_buffer);
+
+    sizes[0] = msgpack_size;
+    sizes[1] = msgpack_size * 2;
+    sizes[2] = msgpack_size * 2 - 1;
+
+    for (format = 0; format < 2; format++) {
+        for (test_case = 0; test_case < 3; test_case++) {
+            actual = converters[format](stream, sizes[test_case], &result);
+            if (test_case < 2) {
+                TEST_CHECK(actual != NULL);
+                TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+            }
+            else {
+                TEST_CHECK(actual == NULL);
+                TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_INVALID_ARGUMENT);
+            }
+            flb_sds_destroy(actual);
+        }
+    }
+
+    flb_free(stream);
+}
+
 void test_opentelemetry_logs_otlp_proto_from_plain_logs()
 {
     int ret;
@@ -3487,6 +3551,8 @@ TEST_LIST = {
     { "opentelemetry_logs_otlp_proto_from_plain_logs",
       test_opentelemetry_logs_otlp_proto_from_plain_logs },
     { "opentelemetry_traces_cases", test_opentelemetry_traces_cases },
+    { "opentelemetry_traces_otlp_json_stream_boundaries",
+      test_opentelemetry_traces_otlp_json_stream_boundaries },
     { "opentelemetry_traces_otlp_json_roundtrip",
       test_opentelemetry_traces_otlp_json_roundtrip },
     { "opentelemetry_traces_otlp_proto_roundtrip",
