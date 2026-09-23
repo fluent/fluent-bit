@@ -468,6 +468,7 @@ static ssize_t parse_payload_ndjson(struct flb_in_elasticsearch *ctx, flb_sds_t 
 {
     int ret;
     int out_size;
+    size_t offset;
     char *pack;
     struct flb_pack_state pack_state;
 
@@ -480,6 +481,17 @@ static ssize_t parse_payload_ndjson(struct flb_in_elasticsearch *ctx, flb_sds_t 
     /* Pack JSON as msgpack */
     ret = flb_pack_json_state(payload, size,
                               &pack, &out_size, &pack_state);
+    if (ret == 0) {
+        /* The packer can succeed with a complete prefix of an incomplete request. */
+        for (offset = pack_state.last_byte; offset < size; offset++) {
+            if (payload[offset] != ' ' && payload[offset] != '\t' &&
+                payload[offset] != '\r' && payload[offset] != '\n') {
+                flb_free(pack);
+                ret = FLB_ERR_JSON_INVAL;
+                break;
+            }
+        }
+    }
     flb_pack_state_reset(&pack_state);
 
     /* Handle exceptions */
