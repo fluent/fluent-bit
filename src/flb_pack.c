@@ -1255,18 +1255,13 @@ done:
     return ret;
 }
 
-/**
- *  convert msgpack to JSON string.
- *  This API is similar to snprintf.
- *
- *  @param  json_str  The buffer to fill JSON string.
- *  @param  json_size The size of json_str.
- *  @param  data      The msgpack_unpacked data.
- *  @return characters written on success, zero if the buffer is too small,
- *          or a negative value for a terminal conversion error.
+/*
+ * Internal variant used by the growing-buffer wrappers: characters written
+ * on success, zero if the buffer is too small, or a negative value for a
+ * terminal conversion error.
  */
-int flb_msgpack_to_json(char *json_str, size_t json_size,
-                        const msgpack_object *obj, int escape_unicode)
+static int msgpack_to_json_buf(char *json_str, size_t json_size,
+                               const msgpack_object *obj, int escape_unicode)
 {
     int ret = -1;
     int off = 0;
@@ -1279,6 +1274,25 @@ int flb_msgpack_to_json(char *json_str, size_t json_size,
     ret = msgpack2json(json_str, &off, json_size - 1, obj, escape_unicode);
     json_str[off] = '\0';
     return ret > 0 ? off : ret;
+}
+
+/**
+ *  convert msgpack to JSON string.
+ *  This API is similar to snprintf.
+ *
+ *  @param  json_str  The buffer to fill JSON string.
+ *  @param  json_size The size of json_str.
+ *  @param  data      The msgpack_unpacked data.
+ *  @return success   ? a number characters filled : negative value
+ *          (including when the buffer is too small)
+ */
+int flb_msgpack_to_json(char *json_str, size_t json_size,
+                        const msgpack_object *obj, int escape_unicode)
+{
+    int ret;
+
+    ret = msgpack_to_json_buf(json_str, json_size, obj, escape_unicode);
+    return ret > 0 ? ret : -1;
 }
 
 flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size, int escape_unicode)
@@ -1316,7 +1330,7 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size, int es
 
     root = &result.data;
     while (1) {
-        ret = flb_msgpack_to_json(out_buf, out_size, root, escape_unicode);
+        ret = msgpack_to_json_buf(out_buf, out_size, root, escape_unicode);
         if (ret < 0) {
             flb_sds_destroy(out_buf);
             msgpack_unpacked_destroy(&result);
@@ -1746,7 +1760,7 @@ char *flb_msgpack_to_json_str(size_t size, const msgpack_object *obj, int escape
     }
 
     while (1) {
-        ret = flb_msgpack_to_json(buf, size, obj, escape_unicode);
+        ret = msgpack_to_json_buf(buf, size, obj, escape_unicode);
         if (ret < 0) {
             flb_free(buf);
             return NULL;
