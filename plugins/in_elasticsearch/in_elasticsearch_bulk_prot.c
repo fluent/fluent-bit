@@ -256,10 +256,10 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                     ret = flb_log_event_encoder_begin_record(encoder);
 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-                        flb_sds_destroy(write_op);
                         flb_plg_error(ctx->ins, "event encoder error : %d", ret);
                         error_op = FLB_TRUE;
-
+                        ingest_result = -1;
+                        flb_sds_destroy(write_op);
                         break;
                     }
 
@@ -268,10 +268,10 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                             &tm);
 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-                        flb_sds_destroy(write_op);
                         flb_plg_error(ctx->ins, "event encoder error : %d", ret);
                         error_op = FLB_TRUE;
-
+                        ingest_result = -1;
+                        flb_sds_destroy(write_op);
                         break;
                     }
 
@@ -283,10 +283,10 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                     }
 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-                        flb_sds_destroy(write_op);
                         flb_plg_error(ctx->ins, "event encoder error : %d", ret);
                         error_op = FLB_TRUE;
-
+                        ingest_result = -1;
+                        flb_sds_destroy(write_op);
                         break;
                     }
                 }
@@ -310,7 +310,8 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                         flb_plg_error(ctx->ins, "event encoder error : %d", ret);
                         error_op = FLB_TRUE;
-
+                        ingest_result = -1;
+                        flb_sds_destroy(write_op);
                         break;
                     }
 
@@ -319,7 +320,8 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                         flb_plg_error(ctx->ins, "event encoder error : %d", ret);
                         error_op = FLB_TRUE;
-
+                        ingest_result = -1;
+                        flb_sds_destroy(write_op);
                         break;
                     }
 
@@ -418,12 +420,21 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
         else {
             flb_plg_error(ctx->ins, "skip record from invalid type: %i",
                          result.data.type);
+            flb_sds_destroy(write_op);
             msgpack_unpacked_destroy(&result);
             if (destroy_local_encoder == FLB_TRUE) {
                 flb_log_event_encoder_destroy(encoder);
             }
-            return -1;
+            return FLB_ERR_JSON_INVAL;
         }
+    }
+
+    if (ingest_result != 0) {
+        msgpack_unpacked_destroy(&result);
+        if (destroy_local_encoder == FLB_TRUE) {
+            flb_log_event_encoder_destroy(encoder);
+        }
+        return ingest_result;
     }
 
     if (idx % 2 != 0) {
@@ -440,18 +451,10 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
             flb_log_event_encoder_destroy(encoder);
         }
 
-        return -1;
+        return FLB_ERR_JSON_INVAL;
     }
 
     msgpack_unpacked_destroy(&result);
-
-    if (ingest_result != 0) {
-        if (destroy_local_encoder == FLB_TRUE) {
-            flb_log_event_encoder_destroy(encoder);
-        }
-
-        return ingest_result;
-    }
 
     if (destroy_local_encoder == FLB_TRUE) {
         flb_log_event_encoder_destroy(encoder);
@@ -469,7 +472,10 @@ static ssize_t parse_payload_ndjson(struct flb_in_elasticsearch *ctx, flb_sds_t 
     struct flb_pack_state pack_state;
 
     /* Initialize packer */
-    flb_pack_state_init(&pack_state);
+    ret = flb_pack_state_init(&pack_state);
+    if (ret != 0) {
+        return -1;
+    }
 
     /* Pack JSON as msgpack */
     ret = flb_pack_json_state(payload, size,
@@ -479,11 +485,11 @@ static ssize_t parse_payload_ndjson(struct flb_in_elasticsearch *ctx, flb_sds_t 
     /* Handle exceptions */
     if (ret == FLB_ERR_JSON_PART) {
         flb_plg_warn(ctx->ins, "JSON data is incomplete, skipping");
-        return -1;
+        return FLB_ERR_JSON_INVAL;
     }
     else if (ret == FLB_ERR_JSON_INVAL) {
         flb_plg_warn(ctx->ins, "invalid JSON message, skipping");
-        return -1;
+        return FLB_ERR_JSON_INVAL;
     }
     else if (ret == -1) {
         return -1;
@@ -631,8 +637,11 @@ static int process_payload_ng(struct flb_http_request *request,
 
     ret = parse_payload_ndjson(context, tag, request->body,
                                cfl_sds_len(request->body), bulk_statuses);
-    if (ret != 0 && ret != FLB_INPUT_INGRESS_BUSY) {
+    if (ret == FLB_ERR_JSON_INVAL) {
         send_response_ng(response, 400, NULL, "error: invalid bulk payload\n");
+    }
+    else if (ret != 0 && ret != FLB_INPUT_INGRESS_BUSY) {
+        send_response_ng(response, 500, NULL, "error: could not ingest bulk payload\n");
     }
 
     return ret;
