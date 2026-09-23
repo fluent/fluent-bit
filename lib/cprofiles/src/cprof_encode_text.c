@@ -1168,8 +1168,8 @@ static int encode_cfl_array(
                                 "%s",
                                 suffix);
 
-    if (sds_result != NULL) {
-        return result;
+    if (sds_result == NULL) {
+        return CPROF_ENCODE_TEXT_ALLOCATION_ERROR;
     }
 
     return CPROF_ENCODE_TEXT_SUCCESS;

@@ -179,6 +179,9 @@ int cmt_mpack_unpack_map(mpack_reader_t *reader,
                          void *context)
 {
     struct cmt_mpack_map_entry_callback_t *callback_entry;
+    struct cmt_mpack_map_entry_callback_t *seen[CMT_MPACK_MAX_MAP_ENTRY_COUNT];
+    uint32_t                               seen_count;
+    uint32_t                               seen_index;
     uint32_t                               entry_index;
     uint32_t                               entry_count;
     cfl_sds_t                              key_name;
@@ -209,6 +212,7 @@ int cmt_mpack_unpack_map(mpack_reader_t *reader,
     }
 
     result = 0;
+    seen_count = 0;
 
     for (entry_index = 0 ; 0 == result && entry_index < entry_count ; entry_index++) {
         result = cmt_mpack_consume_string_tag(reader, &key_name);
@@ -221,7 +225,18 @@ int cmt_mpack_unpack_map(mpack_reader_t *reader,
                    NULL != callback_entry->identifier) {
 
                 if (0 == strcmp(callback_entry->identifier, key_name)) {
-                    result = callback_entry->handler(reader, entry_index, context);
+                    /* Schema fields may only occur once in each map. */
+                    for (seen_index = 0; seen_index < seen_count; seen_index++) {
+                        if (seen[seen_index] == callback_entry) {
+                            result = CMT_MPACK_CORRUPT_INPUT_DATA_ERROR;
+                            break;
+                        }
+                    }
+
+                    if (result == CMT_MPACK_UNEXPECTED_KEY_ERROR) {
+                        seen[seen_count++] = callback_entry;
+                        result = callback_entry->handler(reader, entry_index, context);
+                    }
                 }
 
                 callback_entry++;

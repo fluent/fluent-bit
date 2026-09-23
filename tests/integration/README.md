@@ -490,6 +490,7 @@ Covers:
 - metadata and message key mapping
 - `add_label`
 - `batch_size`
+- `metrics_max_datapoints`
 - `logs_max_resources`
 - `logs_max_scopes`
 

@@ -25,6 +25,10 @@ struct ctrace_link *ctr_link_create(struct ctrace_span *span,
 {
     struct ctrace_link *link;
 
+    if (span == NULL) {
+        return NULL;
+    }
+
     link = calloc(1, sizeof(struct ctrace_link));
     if (!link) {
         ctr_errno();
@@ -78,14 +82,21 @@ struct ctrace_link *ctr_link_create_with_cid(struct ctrace_span *span,
 
 int ctr_link_set_trace_state(struct ctrace_link *link, char *trace_state)
 {
+    cfl_sds_t new_trace_state;
+
     if (!link || !trace_state) {
         return -1;
     }
 
-    link->trace_state = cfl_sds_create(trace_state);
-    if (!link->trace_state) {
+    new_trace_state = cfl_sds_create(trace_state);
+    if (!new_trace_state) {
         return -1;
     }
+
+    if (link->trace_state != NULL) {
+        cfl_sds_destroy(link->trace_state);
+    }
+    link->trace_state = new_trace_state;
 
     return 0;
 }
@@ -96,7 +107,12 @@ int ctr_link_set_attributes(struct ctrace_link *link, struct ctrace_attributes *
         return -1;
     }
 
-    link->attr = attr;
+    if (link->attr != attr) {
+        if (link->attr != NULL) {
+            ctr_attributes_destroy(link->attr);
+        }
+        link->attr = attr;
+    }
     return 0;
 }
 
@@ -131,9 +147,6 @@ void ctr_link_destroy(struct ctrace_link *link)
     cfl_list_del(&link->_head);
     free(link);
 }
-
-
-
 
 
 

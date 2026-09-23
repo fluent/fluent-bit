@@ -1,4 +1,5 @@
 set(UNIT_TESTS_FILES
+  protobuf.c
   basic.c
   gauge.c
   counter.c
@@ -14,6 +15,7 @@ set(UNIT_TESTS_FILES
   null_label.c
   filter.c
   exp_histogram.c
+  msgpack_security.c
   msgpack_abi.c
   msgpack_temporality.c
   format_conversion.c

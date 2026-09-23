@@ -20,6 +20,8 @@
 #ifndef FLB_STRPTIME_H
 #define FLB_STRPTIME_H
 
+#include <fluent-bit/flb_time.h>
+
 char *flb_strptime(const char *s, const char *format, struct flb_tm *tm);
 
 #endif

@@ -1,27 +1,28 @@
 #include <cprofiles/cprof_decode_opentelemetry.h>
 #include <cfl/cfl_variant.h>
+#include <cprofiles/cprof_variant_utils.h>
 
 static int clone_variant(struct cfl_variant **result_instance,
                          Opentelemetry__Proto__Common__V1__AnyValue *source,
                          char **string_table,
-                         size_t string_table_len);
+                         size_t string_table_len, size_t depth);
 
 static int clone_array(struct cfl_array *target,
                        Opentelemetry__Proto__Common__V1__ArrayValue *source,
                        char **string_table,
-                       size_t string_table_len);
+                       size_t string_table_len, size_t depth);
 static int clone_array_entry(struct cfl_array *target,
                              Opentelemetry__Proto__Common__V1__AnyValue *source,
                              char **string_table,
-                             size_t string_table_len);
+                             size_t string_table_len, size_t depth);
 static int clone_kvlist(struct cfl_kvlist *target,
                                 Opentelemetry__Proto__Common__V1__KeyValueList *source,
                                 char **string_table,
-                                size_t string_table_len);
+                                size_t string_table_len, size_t depth);
 static int clone_kvlist_entry(struct cfl_kvlist *target,
                            Opentelemetry__Proto__Common__V1__KeyValue *source,
                            char **string_table,
-                           size_t string_table_len);
+                           size_t string_table_len, size_t depth);
 static int convert_kvarray_to_kvlist(struct cfl_kvlist *target,
                                      Opentelemetry__Proto__Common__V1__KeyValue **source,
                                      size_t source_length,
@@ -38,7 +39,7 @@ static int convert_keyvalueandunit_array_to_kvlist(struct cfl_kvlist *target,
 static int clone_variant(struct cfl_variant **result_instance,
                          Opentelemetry__Proto__Common__V1__AnyValue *source,
                          char **string_table,
-                         size_t string_table_len)
+                         size_t string_table_len, size_t depth)
 {
     struct cfl_kvlist  *new_child_kvlist;
     struct cfl_array   *new_child_array;
@@ -46,6 +47,12 @@ static int clone_variant(struct cfl_variant **result_instance,
     int                 result;
 
     *result_instance = NULL;
+
+    if (source != NULL && depth >= CFL_VARIANT_UTILS_MAXIMUM_NESTING_DEPTH &&
+        (source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_KVLIST_VALUE ||
+         source->value_case == OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_ARRAY_VALUE)) {
+        return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+    }
 
     if (source == NULL) {
         *result_instance = cfl_variant_create_from_string("");
@@ -102,7 +109,7 @@ static int clone_variant(struct cfl_variant **result_instance,
         result = clone_kvlist(new_child_kvlist,
                               source->kvlist_value,
                               string_table,
-                              string_table_len);
+                              string_table_len, depth);
         if (result != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
             cfl_variant_destroy(*result_instance);
             *result_instance = NULL;
@@ -135,7 +142,7 @@ static int clone_variant(struct cfl_variant **result_instance,
         result = clone_array(new_child_array,
                              source->array_value,
                              string_table,
-                             string_table_len);
+                             string_table_len, depth);
         if (result != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
             cfl_variant_destroy(*result_instance);
             *result_instance = NULL;
@@ -159,7 +166,7 @@ static int clone_variant(struct cfl_variant **result_instance,
 static int clone_array(struct cfl_array *target,
                        Opentelemetry__Proto__Common__V1__ArrayValue *source,
                        char **string_table,
-                       size_t string_table_len)
+                       size_t string_table_len, size_t depth)
 {
     int    result;
     size_t index;
@@ -173,7 +180,7 @@ static int clone_array(struct cfl_array *target,
         result = clone_array_entry(target,
                                    source->values[index],
                                    string_table,
-                                   string_table_len);
+                                   string_table_len, depth + 1);
     }
 
     return result;
@@ -182,12 +189,12 @@ static int clone_array(struct cfl_array *target,
 static int clone_array_entry(struct cfl_array *target,
                              Opentelemetry__Proto__Common__V1__AnyValue *source,
                              char **string_table,
-                             size_t string_table_len)
+                             size_t string_table_len, size_t depth)
 {
     struct cfl_variant *new_child_instance;
     int                 result;
 
-    result = clone_variant(&new_child_instance, source, string_table, string_table_len);
+    result = clone_variant(&new_child_instance, source, string_table, string_table_len, depth);
     if (result != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
         return result;
     }
@@ -204,7 +211,7 @@ static int clone_array_entry(struct cfl_array *target,
 static int clone_kvlist(struct cfl_kvlist *target,
                         Opentelemetry__Proto__Common__V1__KeyValueList *source,
                         char **string_table,
-                        size_t string_table_len)
+                        size_t string_table_len, size_t depth)
 {
     int    result;
     size_t index;
@@ -218,7 +225,7 @@ static int clone_kvlist(struct cfl_kvlist *target,
         result = clone_kvlist_entry(target,
                                     source->values[index],
                                     string_table,
-                                    string_table_len);
+                                    string_table_len, depth + 1);
     }
 
     return result;
@@ -242,7 +249,7 @@ static int convert_kvarray_to_kvlist(struct cfl_kvlist *target,
         result = clone_kvlist_entry(target,
                                     source[index],
                                     string_table,
-                                    string_table_len);
+                                    string_table_len, 1);
     }
 
     return result;
@@ -251,7 +258,7 @@ static int convert_kvarray_to_kvlist(struct cfl_kvlist *target,
 static int clone_kvlist_entry(struct cfl_kvlist *target,
                               Opentelemetry__Proto__Common__V1__KeyValue *source,
                               char **string_table,
-                              size_t string_table_len)
+                              size_t string_table_len, size_t depth)
 {
     struct cfl_variant *new_child_instance;
     int                 result;
@@ -280,7 +287,7 @@ static int clone_kvlist_entry(struct cfl_kvlist *target,
 
     key = (char *) resolved_key;
 
-    result = clone_variant(&new_child_instance, source->value, string_table, string_table_len);
+    result = clone_variant(&new_child_instance, source->value, string_table, string_table_len, depth);
     if (result != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
         return result;
     }
@@ -337,7 +344,7 @@ static int convert_keyvalueandunit_array_to_kvlist(struct cfl_kvlist *target,
             }
         }
         else {
-            result = clone_variant(&val, entry->value, string_table, string_table_len);
+            result = clone_variant(&val, entry->value, string_table, string_table_len, 1);
             if (result != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
                 return result;
             }

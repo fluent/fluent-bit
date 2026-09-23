@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_compat.h>
 
 #include "flb_tests_runtime.h"
+#include "../../plugins/out_stackdriver/stackdriver.h"
 
 /* Local 'test' credentials file */
 #define SERVICE_CREDENTIALS \
@@ -6734,8 +6735,56 @@ void flb_test_non_scalar_payload_with_residual_fields()
     flb_destroy(ctx);
 }
 
+/* Authentication pools must follow the same worker ownership as logging. */
+static void flb_test_auth_upstream_workers(void)
+{
+    int i;
+    int ret;
+    int out_ffd;
+    int expected_thread_safety;
+    char *workers[] = {"0", "1", "2"};
+    flb_ctx_t *ctx;
+    struct flb_output_instance *ins;
+    struct flb_stackdriver *stackdriver;
+
+    for (i = 0; i < 3; i++) {
+        ctx = flb_create();
+        TEST_ASSERT(ctx != NULL);
+        flb_service_set(ctx, "grace", "1", NULL);
+        out_ffd = flb_output(ctx, "stackdriver", NULL);
+        TEST_ASSERT(out_ffd >= 0);
+        flb_output_set(ctx, out_ffd,
+                       "match", "*",
+                       "workers", workers[i],
+                       "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+        ins = flb_output_get_instance(ctx->config, out_ffd);
+        TEST_ASSERT(ins != NULL);
+        ins->test_mode = FLB_TRUE;
+
+        ret = flb_start(ctx);
+        TEST_CHECK(ret == 0);
+        if (ret == 0) {
+            stackdriver = ins->context;
+            TEST_ASSERT(stackdriver != NULL);
+            expected_thread_safety = i > 0 ? FLB_TRUE : FLB_FALSE;
+            TEST_CHECK(flb_stream_is_thread_safe(&stackdriver->metadata_u->base) ==
+                       expected_thread_safety);
+            TEST_CHECK(flb_stream_is_thread_safe(&stackdriver->o->u->base) ==
+                       expected_thread_safety);
+            TEST_CHECK(mk_list_size(&ins->upstreams) == (i > 0 ? 3 : 0));
+            TEST_CHECK(flb_stream_is_async(&stackdriver->metadata_u->base) == FLB_FALSE);
+            TEST_CHECK(flb_stream_is_async(&stackdriver->o->u->base) == FLB_FALSE);
+            TEST_CHECK((stackdriver->metadata_u->base.flags & FLB_IO_TLS) == 0);
+            TEST_CHECK((stackdriver->o->u->base.flags & FLB_IO_TLS) != 0);
+            flb_stop(ctx);
+        }
+        flb_destroy(ctx);
+    }
+}
+
 /* Test list */
 TEST_LIST = {
+    {"auth_upstream_workers", flb_test_auth_upstream_workers},
     {"severity_multi_entries", flb_test_multi_entries_severity },
     {"resource_global", flb_test_resource_global },
     {"resource_global_custom_prefix", flb_test_resource_global_custom_prefix },

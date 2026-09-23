@@ -28,6 +28,7 @@
 
 #include <cfl/cfl_arena.h>
 
+#include "opentelemetry_protobuf.h"
 #include "opentelemetry.h"
 #include "opentelemetry_utils.h"
 
@@ -88,6 +89,11 @@ static struct cfl_arena *protobuf_arena_create(void)
 static Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest *
 protobuf_logs_unpack(ProtobufCAllocator *allocator, size_t size, const uint8_t *data)
 {
+    if (opentelemetry_protobuf_validate(
+            &opentelemetry__proto__collector__logs__v1__export_logs_service_request__descriptor,
+            data, size) != 0) {
+        return NULL;
+    }
     return opentelemetry__proto__collector__logs__v1__export_logs_service_request__unpack(
         allocator, size, data);
 }
@@ -121,7 +127,7 @@ static int otel_pack_bool(msgpack_packer *mp_pck, bool val)
     }
 }
 
-static int otel_pack_int(msgpack_packer *mp_pck, int val)
+static int otel_pack_int(msgpack_packer *mp_pck, int64_t val)
 {
     return msgpack_pack_int64(mp_pck, val);
 }

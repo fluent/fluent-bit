@@ -37,8 +37,14 @@ FLB_RT_TEST(FLB_CHUNK_TRACE "core_chunk_trace.c")
 
 # Input Plugins
 FLB_RT_TEST(FLB_IN_EVENT_TEST   "in_event_test.c")
+# FLB_IN_WINEVTLOG is only enabled on Windows builds
+FLB_RT_TEST(FLB_IN_WINEVTLOG    "in_winevtlog.c")
 
 if(FLB_OUT_LIB)
+  if(${CMAKE_SYSTEM_NAME} MATCHES "Linux" OR ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    FLB_RT_TEST(FLB_IN_NODE_EXPORTER_METRICS "in_node_exporter_metrics.c")
+  endif()
+
   # These plugins works only on Linux
   if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     FLB_RT_TEST(FLB_IN_CPU            "in_cpu.c")
@@ -255,6 +261,7 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_COUNTER          "out_counter.c")
   FLB_RT_TEST(FLB_OUT_AZURE_BLOB       "out_azure_blob_compression.c")
   FLB_RT_TEST(FLB_OUT_AZURE_KUSTO      "out_azure_kusto.c")
+  FLB_RT_TEST(FLB_OUT_ARVANCLOUD_CLOUDLOGS "out_arvancloud_cloudlogs.c")
   FLB_RT_TEST(FLB_OUT_DATADOG          "out_datadog.c")
   FLB_RT_TEST(FLB_OUT_SKYWALKING       "out_skywalking.c")
   FLB_RT_TEST(FLB_OUT_ES               "out_elasticsearch.c")

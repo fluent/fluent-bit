@@ -89,5 +89,6 @@ struct flb_ml_parser *flb_ml_parser_java(struct flb_config *config, char *key);
 struct flb_ml_parser *flb_ml_parser_go(struct flb_config *config, char *key);
 struct flb_ml_parser *flb_ml_parser_ruby(struct flb_config *config, char *key);
 struct flb_ml_parser *flb_ml_parser_python(struct flb_config *config, char *key);
+struct flb_ml_parser *flb_ml_parser_json(struct flb_config *config, char *key);
 
 #endif

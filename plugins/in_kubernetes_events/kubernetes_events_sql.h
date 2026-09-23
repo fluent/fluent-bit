@@ -36,6 +36,12 @@
     "  created         INTEGER NOT NULL"                                \
     ");"
 
+#define SQL_CREATE_KUBERNETES_EVENTS_INDEXES                            \
+    "CREATE INDEX IF NOT EXISTS idx_in_kubernetes_events_uid "          \
+    "    ON in_kubernetes_events(uid);"                                 \
+    "CREATE INDEX IF NOT EXISTS idx_in_kubernetes_events_created "      \
+    "    ON in_kubernetes_events(created);"
+
 #define SQL_KUBERNETES_EVENT_EXISTS_BY_UID                              \
     "SELECT COUNT(id) "                                                 \
     "    FROM in_kubernetes_events "                                    \

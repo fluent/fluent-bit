@@ -1,0 +1,8 @@
+{
+    "metadata": {
+        "annotations": {
+            "fluentbit.io/exclude": "true"
+        },
+        "name": "namespace-exclude-true"
+    }
+}

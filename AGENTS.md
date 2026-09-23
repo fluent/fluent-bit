@@ -144,7 +144,9 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
   - `in_opentelemetry: profiles: fix ingestion path`
 - Keep subject/body lines <= 80 chars.
 - Keep each commit scoped to one component/prefix; avoid mixed-area commits.
-- Sign commits with DCO: `git commit -s`.
+- When creating commits, sign them with DCO using `git commit -s`.
+- During code review, do not report missing `Signed-off-by:` trailers.
+  Commit metadata is validated by `.github/workflows/commit-lint.yaml`.
 - PRs should include: problem statement, scope, test evidence (`ctest` output), and compatibility notes.
 - If behavior changes user output/config, include a short before/after example.
 - Target `master` for next major by default; open backport PRs to release branches (`1.x`) when needed.

@@ -752,6 +752,21 @@ static void test_chunk_restore_alias_plugin_match_multiple()
                                        http_out.id,
                                        config.router) == 0);
 
+    /* A saturated counter must remain over the configured storage limit. */
+    stdout_one.total_limit_size = 1024;
+    stdout_one.fs_chunks_size = SIZE_MAX - 1;
+    stdout_two.total_limit_size = (size_t) -1;
+    http_out.total_limit_size = (size_t) -1;
+
+    flb_input_chunk_update_output_instances(ic, 2);
+
+    TEST_CHECK(stdout_one.fs_chunks_size == SIZE_MAX);
+    TEST_CHECK(flb_input_chunk_has_overlimit_routes(ic, 1) == FLB_TRUE);
+    TEST_CHECK(flb_input_chunk_find_space_new_data(ic, 1) == 1);
+
+    stdout_one.fs_chunks_size = 0;
+    ic->fs_counted = FLB_FALSE;
+
 cleanup:
     cleanup_test_routing_scenario(ic, &stdout_one, &stdout_two, &http_out,
                                   &in, &config, chunk, ctx, config_ready,
@@ -1058,10 +1073,63 @@ cleanup:
     flb_free(stream_path);
 }
 
+static void test_chunk_accounting_underflow_guard(void)
+{
+    struct flb_config config;
+    struct flb_router router;
+    struct flb_input_instance input;
+    struct flb_input_chunk chunk;
+    struct flb_output_instance output;
+    flb_route_mask_element routes_mask[1];
+
+    memset(&config, 0, sizeof(config));
+    memset(&router, 0, sizeof(router));
+    memset(&input, 0, sizeof(input));
+    memset(&chunk, 0, sizeof(chunk));
+    memset(&output, 0, sizeof(output));
+    memset(routes_mask, 0, sizeof(routes_mask));
+
+    mk_list_init(&config.outputs);
+    config.router = &router;
+    router.route_mask_size = 1;
+    router.route_mask_slots = FLB_ROUTES_MASK_ELEMENT_BITS;
+
+    input.config = &config;
+    chunk.in = &input;
+    chunk.routes_mask = routes_mask;
+
+    output.id = 0;
+    output.config = &config;
+    output.total_limit_size = 1024;
+    snprintf(output.name, sizeof(output.name), "null.0");
+    mk_list_init(&output._head);
+    mk_list_add(&output._head, &config.outputs);
+
+    flb_routes_mask_set_bit(routes_mask, output.id, &router);
+
+    flb_input_chunk_update_output_instances(&chunk, 32);
+    TEST_CHECK(output.fs_chunks_size == 32);
+    TEST_CHECK(chunk.fs_counted == FLB_TRUE);
+
+    flb_input_chunk_update_output_instances(&chunk, -64);
+    TEST_CHECK(output.fs_chunks_size == 0);
+
+    output.fs_chunks_size = 16;
+    flb_input_chunk_output_size_subtract(&output, 32);
+    TEST_CHECK(output.fs_chunks_size == 0);
+
+    output.fs_chunks_size = SIZE_MAX - 16;
+    flb_input_chunk_update_output_instances(&chunk, 32);
+    TEST_CHECK(output.fs_chunks_size == SIZE_MAX);
+
+    mk_list_del(&output._head);
+}
+
 TEST_LIST = {
     { "chunk_metadata_direct_routes", test_chunk_metadata_direct_routes },
     { "chunk_restore_alias_plugin_match_multiple", test_chunk_restore_alias_plugin_match_multiple },
     { "chunk_restore_alias_plugin_null_matches_all", test_chunk_restore_alias_plugin_null_matches_all },
     { "chunk_map_grouped_logs_total_records", test_chunk_map_grouped_logs_total_records },
+    { "chunk_accounting_underflow_guard", test_chunk_accounting_underflow_guard },
     { 0 }
 };

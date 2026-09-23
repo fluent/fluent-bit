@@ -21,6 +21,9 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_input_plugin.h>
 
+#include <cmetrics/cmt_gauge.h>
+#include <cmetrics/cmt_map.h>
+
 #include "ne.h"
 #include "ne_utils.h"
 
@@ -128,6 +131,7 @@ static int netdev_update(struct flb_ne *ctx)
     int ret;
     int i;
     int if_count;
+    size_t metric_index;
     size_t clen = sizeof(if_count);
     int cmib[] = { CTL_NET, PF_LINK, NETLINK_GENERIC, IFMIB_SYSTEM, IFMIB_IFCOUNT };
     int mib[6];
@@ -135,6 +139,19 @@ static int netdev_update(struct flb_ne *ctx)
     size_t ifmd_len = sizeof(ifmd);
     char ifname[IF_NAMESIZE];
     uint64_t ts;
+    struct cmt_gauge *metrics[] = {
+        ctx->darwin_receive_packets,
+        ctx->darwin_transmit_packets,
+        ctx->darwin_receive_bytes,
+        ctx->darwin_transmit_bytes,
+        ctx->darwin_receive_errors,
+        ctx->darwin_transmit_errors,
+        ctx->darwin_receive_dropped,
+        ctx->darwin_receive_multicast,
+        ctx->darwin_transmit_multicast,
+        ctx->darwin_collisions,
+        ctx->darwin_noproto
+    };
 
     ts = cfl_time_now();
 
@@ -198,6 +215,13 @@ static int netdev_update(struct flb_ne *ctx)
         cmt_gauge_set(ctx->darwin_noproto, ts,
                       (double)ifmd.ifmd_data.ifi_noproto, 1, (char *[]) { ifname });
 
+    }
+
+    /* Remove label sets for network devices not observed during this scan. */
+    for (metric_index = 0;
+         metric_index < sizeof(metrics) / sizeof(metrics[0]);
+         metric_index++) {
+        cmt_map_metrics_expire(metrics[metric_index]->map, ts);
     }
 
     return 0;

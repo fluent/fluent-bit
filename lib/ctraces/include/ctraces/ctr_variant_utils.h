@@ -21,10 +21,14 @@
 #define CTR_VARIANT_UTILS_H
 
 #include <mpack/mpack.h>
+#include <limits.h>
 
 #define CFL_VARIANT_UTILS_MAXIMUM_FIXED_ARRAY_SIZE    100
 #define CFL_VARIANT_UTILS_INITIAL_ARRAY_SIZE          100
 #define CFL_VARIANT_UTILS_SERIALIZED_ARRAY_SIZE_LIMIT 100000
+#define CFL_VARIANT_UTILS_SERIALIZED_MAP_SIZE_LIMIT   100000
+#define CFL_VARIANT_UTILS_MAXIMUM_NESTING_DEPTH       32
+#define CFL_VARIANT_UTILS_MAXIMUM_KEY_LENGTH           (1024 * 1000)
 
 /* These are the only functions meant for general use,
  * the reason why the kvlist packing and unpacking
@@ -50,6 +54,10 @@ static inline int pack_cfl_variant_kvlist(mpack_writer_t *writer,
 
 static inline int unpack_cfl_variant(mpack_reader_t *reader,
                                      struct cfl_variant **value);
+
+static inline int unpack_cfl_variant_depth(mpack_reader_t *reader,
+                                           struct cfl_variant **value,
+                                           size_t depth);
 
 static inline int unpack_cfl_kvlist(mpack_reader_t *reader,
                                     struct cfl_kvlist **result_kvlist);
@@ -84,6 +92,14 @@ static inline int pack_cfl_variant_int64(mpack_writer_t *writer,
                                          int64_t value)
 {
     mpack_write_int(writer, value);
+
+    return 0;
+}
+
+static inline int pack_cfl_variant_uint64(mpack_writer_t *writer,
+                                          uint64_t value)
+{
+    mpack_write_u64(writer, value);
 
     return 0;
 }
@@ -169,6 +185,9 @@ static inline int pack_cfl_variant(mpack_writer_t *writer,
     else if (value->type == CFL_VARIANT_INT) {
         result = pack_cfl_variant_int64(writer, value->data.as_int64);
     }
+    else if (value->type == CFL_VARIANT_UINT) {
+        result = pack_cfl_variant_uint64(writer, value->data.as_uint64);
+    }
     else if (value->type == CFL_VARIANT_DOUBLE) {
         result = pack_cfl_variant_double(writer, value->data.as_double);
     }
@@ -183,8 +202,12 @@ static inline int pack_cfl_variant(mpack_writer_t *writer,
                                          value->data.as_bytes,
                                          cfl_sds_len(value->data.as_bytes));
     }
+    else if (value->type == CFL_VARIANT_NULL) {
+        mpack_write_nil(writer);
+        result = 0;
+    }
     else if (value->type == CFL_VARIANT_REFERENCE) {
-        result = pack_cfl_variant_string(writer, value->data.as_string);
+        result = -1;
     }
     else {
         result = -1;
@@ -212,8 +235,9 @@ static inline int unpack_cfl_variant_read_tag(mpack_reader_t *reader,
     return 0;
 }
 
-static inline int unpack_cfl_array(mpack_reader_t *reader,
-                                   struct cfl_array **result_array)
+static inline int unpack_cfl_array_depth(mpack_reader_t *reader,
+                                         struct cfl_array **result_array,
+                                         size_t depth)
 {
     struct cfl_array   *internal_array;
     size_t              entry_count;
@@ -221,6 +245,10 @@ static inline int unpack_cfl_array(mpack_reader_t *reader,
     int                 result;
     size_t              index;
     mpack_tag_t         tag;
+
+    if (depth >= CFL_VARIANT_UTILS_MAXIMUM_NESTING_DEPTH) {
+        return -2;
+    }
 
     result = unpack_cfl_variant_read_tag(reader, &tag, mpack_type_array);
 
@@ -250,7 +278,7 @@ static inline int unpack_cfl_array(mpack_reader_t *reader,
     }
 
     for (index = 0 ; index < entry_count ; index++) {
-        result = unpack_cfl_variant(reader, &entry_value);
+        result = unpack_cfl_variant_depth(reader, &entry_value, depth + 1);
 
         if (result != 0) {
             cfl_array_destroy(internal_array);
@@ -280,11 +308,12 @@ static inline int unpack_cfl_array(mpack_reader_t *reader,
     return 0;
 }
 
-static inline int unpack_cfl_kvlist(mpack_reader_t *reader,
-                                    struct cfl_kvlist **result_kvlist)
+static inline int unpack_cfl_kvlist_depth(mpack_reader_t *reader,
+                                          struct cfl_kvlist **result_kvlist,
+                                          size_t depth)
 {
     struct cfl_kvlist   *internal_kvlist;
-    char                 key_name[256];
+    char                *key_name;
     size_t               entry_count;
     size_t               key_length;
     struct cfl_variant  *key_value;
@@ -292,6 +321,10 @@ static inline int unpack_cfl_kvlist(mpack_reader_t *reader,
     int                  result;
     size_t               index;
     mpack_tag_t          tag;
+
+    if (depth >= CFL_VARIANT_UTILS_MAXIMUM_NESTING_DEPTH) {
+        return -2;
+    }
 
     result = unpack_cfl_variant_read_tag(reader, &tag, mpack_type_map);
 
@@ -301,6 +334,10 @@ static inline int unpack_cfl_kvlist(mpack_reader_t *reader,
 
     entry_count = mpack_tag_map_count(&tag);
 
+    if (entry_count >= CFL_VARIANT_UTILS_SERIALIZED_MAP_SIZE_LIMIT) {
+        return -2;
+    }
+
     internal_kvlist = cfl_kvlist_create();
 
     if (internal_kvlist == NULL) {
@@ -309,6 +346,7 @@ static inline int unpack_cfl_kvlist(mpack_reader_t *reader,
 
     result = 0;
     key_value = NULL;
+    key_name = NULL;
 
     for (index = 0 ; index < entry_count ; index++) {
         result = unpack_cfl_variant_read_tag(reader, &key_tag, mpack_type_str);
@@ -321,13 +359,19 @@ static inline int unpack_cfl_kvlist(mpack_reader_t *reader,
 
         key_length = mpack_tag_str_length(&key_tag);
 
-        if (key_length >= sizeof(key_name)) {
+        if (key_length > CFL_VARIANT_UTILS_MAXIMUM_KEY_LENGTH) {
             result = -5;
 
             break;
         }
 
-        mpack_read_cstr(reader, key_name, sizeof(key_name), key_length);
+        key_name = malloc(key_length + 1);
+        if (key_name == NULL) {
+            result = -3;
+            break;
+        }
+
+        mpack_read_cstr(reader, key_name, key_length + 1, key_length);
 
         key_name[key_length] = '\0';
 
@@ -339,7 +383,7 @@ static inline int unpack_cfl_kvlist(mpack_reader_t *reader,
             break;
         }
 
-        result = unpack_cfl_variant(reader, &key_value);
+        result = unpack_cfl_variant_depth(reader, &key_value, depth + 1);
 
         if (result != 0) {
             printf("VARIANT UNPACK ERROR : [%s] = %d\n", key_name, result);
@@ -349,6 +393,9 @@ static inline int unpack_cfl_kvlist(mpack_reader_t *reader,
         }
 
         result = cfl_kvlist_insert(internal_kvlist, key_name, key_value);
+
+        free(key_name);
+        key_name = NULL;
 
         if (result != 0) {
             result = -8;
@@ -366,6 +413,7 @@ static inline int unpack_cfl_kvlist(mpack_reader_t *reader,
     }
 
     if (result != 0) {
+        free(key_name);
         cfl_kvlist_destroy(internal_kvlist);
 
         if (key_value != NULL) {
@@ -416,6 +464,7 @@ static inline int unpack_cfl_variant_string(mpack_reader_t *reader,
     *value = cfl_variant_create_from_reference(value_data);
 
     if (*value == NULL) {
+        cfl_sds_destroy(value_data);
         return -5;
     }
 
@@ -462,6 +511,7 @@ static inline int unpack_cfl_variant_binary(mpack_reader_t *reader,
     *value = cfl_variant_create_from_reference(value_data);
 
     if (*value == NULL) {
+        cfl_sds_destroy(value_data);
         return -5;
     }
 
@@ -504,7 +554,7 @@ static inline int unpack_cfl_variant_uint64(mpack_reader_t *reader,
         return result;
     }
 
-    *value = cfl_variant_create_from_int64((int64_t) mpack_tag_uint_value(&tag));
+    *value = cfl_variant_create_from_uint64(mpack_tag_uint_value(&tag));
 
     if (*value == NULL) {
         return -3;
@@ -555,13 +605,33 @@ static inline int unpack_cfl_variant_double(mpack_reader_t *reader,
     return 0;
 }
 
-static inline int unpack_cfl_variant_array(mpack_reader_t *reader,
-                                           struct cfl_variant **value)
+static inline int unpack_cfl_variant_null(mpack_reader_t *reader,
+                                          struct cfl_variant **value)
+{
+    int result;
+    mpack_tag_t tag;
+
+    result = unpack_cfl_variant_read_tag(reader, &tag, mpack_type_nil);
+    if (result != 0) {
+        return result;
+    }
+
+    *value = cfl_variant_create_from_null();
+    if (*value == NULL) {
+        return -3;
+    }
+
+    return 0;
+}
+
+static inline int unpack_cfl_variant_array_depth(mpack_reader_t *reader,
+                                                 struct cfl_variant **value,
+                                                 size_t depth)
 {
     struct cfl_array *unpacked_array;
     int               result;
 
-    result = unpack_cfl_array(reader, &unpacked_array);
+    result = unpack_cfl_array_depth(reader, &unpacked_array, depth);
 
     if (result != 0) {
         return result;
@@ -570,19 +640,21 @@ static inline int unpack_cfl_variant_array(mpack_reader_t *reader,
     *value = cfl_variant_create_from_array(unpacked_array);
 
     if (*value == NULL) {
+        cfl_array_destroy(unpacked_array);
         return -3;
     }
 
     return 0;
 }
 
-static inline int unpack_cfl_variant_kvlist(mpack_reader_t *reader,
-                                            struct cfl_variant **value)
+static inline int unpack_cfl_variant_kvlist_depth(mpack_reader_t *reader,
+                                                  struct cfl_variant **value,
+                                                  size_t depth)
 {
     struct cfl_kvlist *unpacked_kvlist;
     int                result;
 
-    result = unpack_cfl_kvlist(reader, &unpacked_kvlist);
+    result = unpack_cfl_kvlist_depth(reader, &unpacked_kvlist, depth);
 
     if (result != 0) {
         return result;
@@ -591,14 +663,16 @@ static inline int unpack_cfl_variant_kvlist(mpack_reader_t *reader,
     *value = cfl_variant_create_from_kvlist(unpacked_kvlist);
 
     if (*value == NULL) {
+        cfl_kvlist_destroy(unpacked_kvlist);
         return -3;
     }
 
     return 0;
 }
 
-static inline int unpack_cfl_variant(mpack_reader_t *reader,
-                                     struct cfl_variant **value)
+static inline int unpack_cfl_variant_depth(mpack_reader_t *reader,
+                                           struct cfl_variant **value,
+                                           size_t depth)
 {
     mpack_type_t value_type;
     int          result;
@@ -628,19 +702,40 @@ static inline int unpack_cfl_variant(mpack_reader_t *reader,
         result = unpack_cfl_variant_double(reader, value);
     }
     else if (value_type == mpack_type_array) {
-        result = unpack_cfl_variant_array(reader, value);
+        result = unpack_cfl_variant_array_depth(reader, value, depth);
     }
     else if (value_type == mpack_type_map) {
-        result = unpack_cfl_variant_kvlist(reader, value);
+        result = unpack_cfl_variant_kvlist_depth(reader, value, depth);
     }
     else if (value_type == mpack_type_bin) {
         result = unpack_cfl_variant_binary(reader, value);
+    }
+    else if (value_type == mpack_type_nil) {
+        result = unpack_cfl_variant_null(reader, value);
     }
     else {
         result = -1;
     }
 
     return result;
+}
+
+static inline int unpack_cfl_array(mpack_reader_t *reader,
+                                   struct cfl_array **result_array)
+{
+    return unpack_cfl_array_depth(reader, result_array, 0);
+}
+
+static inline int unpack_cfl_kvlist(mpack_reader_t *reader,
+                                    struct cfl_kvlist **result_kvlist)
+{
+    return unpack_cfl_kvlist_depth(reader, result_kvlist, 0);
+}
+
+static inline int unpack_cfl_variant(mpack_reader_t *reader,
+                                     struct cfl_variant **value)
+{
+    return unpack_cfl_variant_depth(reader, value, 0);
 }
 
 #endif

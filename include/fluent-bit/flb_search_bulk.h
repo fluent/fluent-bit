@@ -1,0 +1,68 @@
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2015-2026 The Fluent Bit Authors
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ */
+
+#ifndef FLB_SEARCH_BULK_H
+#define FLB_SEARCH_BULK_H
+
+#include <stddef.h>
+
+#define FLB_SEARCH_BULK_COMPLETE  0
+#define FLB_SEARCH_BULK_RETRY     1
+#define FLB_SEARCH_BULK_INVALID  -1
+
+#define FLB_SEARCH_BULK_ACK_CREATE_CONFLICTS  0
+#define FLB_SEARCH_BULK_ACK_ALL_CONFLICTS     1
+
+#define FLB_SEARCH_BULK_REASON_SIZE 256
+
+struct flb_search_bulk_stats {
+    size_t total_items;
+    size_t successful_items;
+    size_t successful_bytes;
+    size_t failed_items;
+    size_t retryable_items;
+    size_t unrecoverable_items;
+    size_t unrecoverable_bytes;
+    int first_error_status;
+    char first_error_type[FLB_SEARCH_BULK_REASON_SIZE];
+    char first_error_reason[FLB_SEARCH_BULK_REASON_SIZE];
+};
+
+struct flb_search_bulk_retry {
+    char *payload;
+    size_t size;
+    int records;
+};
+
+/*
+ * Process a Search bulk API response and build a payload containing records
+ * that remain eligible for retry.
+ *
+ * drop_unrecoverable_records should default to FLB_FALSE. When FLB_TRUE,
+ * failed items with 4xx statuses other than 408 and 429 are classified as
+ * unrecoverable and omitted from the retry payload. Status 409 continues to
+ * follow acknowledge_all_conflicts, while 408, 429, and 5xx statuses remain
+ * retryable. Enabling this option can discard rejected records and cause data
+ * loss, so callers must expose it as an explicit opt-in behavior.
+ */
+int flb_search_bulk_process_response(const char *response,
+                                     size_t response_size,
+                                     const char *payload,
+                                     size_t payload_size,
+                                     int acknowledge_all_conflicts,
+                                     int drop_unrecoverable_records,
+                                     struct flb_search_bulk_stats *stats,
+                                     struct flb_search_bulk_retry **retry);
+void flb_search_bulk_retry_destroy(void *data);
+
+#endif

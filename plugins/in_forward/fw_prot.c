@@ -1248,13 +1248,85 @@ static int receiver_to_unpacker(struct fw_conn *conn, size_t request_size,
     return 0;
 }
 
+static void destroy_metrics_contexts(struct cfl_list *contexts)
+{
+    struct cmt *cmt;
+    struct cfl_list *head;
+    struct cfl_list *tmp;
+
+    cfl_list_foreach_safe(head, tmp, contexts) {
+        cmt = cfl_list_entry(head, struct cmt, _head);
+        cfl_list_del(&cmt->_head);
+        cmt_decode_msgpack_destroy(cmt);
+    }
+}
+
+static int append_metrics(struct flb_input_instance *ins, struct fw_conn *conn,
+                          flb_sds_t out_tag, const void *data, size_t len)
+{
+    int ret;
+    size_t off;
+    size_t previous_off;
+    struct cmt *cmt;
+    struct cfl_list contexts;
+
+    off = 0;
+    cfl_list_init(&contexts);
+
+    while (off < len) {
+        previous_off = off;
+        ret = cmt_decode_msgpack_create(&cmt, (char *) data, len, &off);
+        if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
+            flb_plg_error(ins, "cmt_decode_msgpack_create failed. ret=%d", ret);
+            destroy_metrics_contexts(&contexts);
+            return -1;
+        }
+
+        if (off <= previous_off) {
+            flb_plg_error(ins, "cmt_decode_msgpack_create consumed no data");
+            cmt_decode_msgpack_destroy(cmt);
+            destroy_metrics_contexts(&contexts);
+            return -1;
+        }
+
+        cfl_list_add(&cmt->_head, &contexts);
+    }
+
+    if (cfl_list_is_empty(&contexts)) {
+        flb_plg_error(ins, "empty metrics payload");
+        return -1;
+    }
+
+    if (conn->ctx->use_ingress_queue == FLB_TRUE) {
+        ret = flb_input_ingress_queue_metrics_list(conn->ctx->ins,
+                                                   out_tag, flb_sds_len(out_tag),
+                                                   &contexts, len);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not append metrics. ret=%d", ret);
+            return -1;
+        }
+
+        return 0;
+    }
+
+    ret = flb_input_metrics_append_list(conn->ctx->ins,
+                                        out_tag, flb_sds_len(out_tag),
+                                        &contexts);
+    destroy_metrics_contexts(&contexts);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not append metrics. ret=%d", ret);
+        return -1;
+    }
+
+    return 0;
+}
+
 static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
                       int event_type,
                       flb_sds_t out_tag, const void *data, size_t len)
 {
     int ret;
     size_t off = 0;
-    struct cmt *cmt;
     struct ctrace *ctr;
 
     if (event_type == FLB_EVENT_TYPE_LOGS) {
@@ -1269,26 +1341,7 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
         return 0;
     }
     else if (event_type == FLB_EVENT_TYPE_METRICS) {
-        ret = cmt_decode_msgpack_create(&cmt, (char *) data, len, &off);
-        if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
-            flb_plg_error(ins, "cmt_decode_msgpack_create failed. ret=%d", ret);
-            return -1;
-        }
-
-        ret = fw_ingest_metrics(conn->ctx,
-                                out_tag, flb_sds_len(out_tag),
-                                cmt, len);
-        if (ret != 0) {
-            flb_plg_error(ins, "could not append metrics. ret=%d", ret);
-            if (conn->ctx->use_ingress_queue == FLB_FALSE) {
-                cmt_decode_msgpack_destroy(cmt);
-            }
-            return -1;
-        }
-
-        if (conn->ctx->use_ingress_queue == FLB_FALSE) {
-            cmt_decode_msgpack_destroy(cmt);
-        }
+        return append_metrics(ins, conn, out_tag, data, len);
     }
     else if (event_type == FLB_EVENT_TYPE_TRACES) {
         off = 0;

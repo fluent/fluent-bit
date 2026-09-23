@@ -387,6 +387,7 @@ struct flb_output_instance {
     char *tls_crt_file;                  /* Certificate                  */
     char *tls_key_file;                  /* Cert Key                     */
     char *tls_key_passwd;                /* Cert Key Password            */
+    char *tls_crl_file;                  /* Certificate Revocation List  */
     char *tls_min_version;               /* Minimum protocol version of TLS */
     char *tls_max_version;               /* Maximum protocol version of TLS */
     char *tls_ciphers;                   /* TLS ciphers */
@@ -597,8 +598,70 @@ struct flb_output_flush {
      */
     struct flb_event_chunk *processed_event_chunk;
 
+    /* Route-effective totals reported by an output on successful completion. */
+    int successful_route_data_set;
+    int successful_records;
+    size_t successful_bytes;
+
     struct mk_list _head;              /* Link to flb_task->threads */
 };
+
+static FLB_INLINE int flb_output_set_successful_route_data(
+                        struct flb_output_flush *out_flush,
+                        int records,
+                        size_t bytes)
+{
+    if (out_flush == NULL || records < 0) {
+        return -1;
+    }
+
+    out_flush->successful_records = records;
+    out_flush->successful_bytes = bytes;
+    out_flush->successful_route_data_set = FLB_TRUE;
+
+    return 0;
+}
+
+static FLB_INLINE void *flb_output_get_retry_context(
+                        struct flb_output_flush *out_flush,
+                        int *records,
+                        size_t *bytes)
+{
+    void *context;
+
+    flb_task_acquire_lock(out_flush->task);
+    context = flb_task_get_route_retry_context(out_flush->task,
+                                               out_flush->o_ins,
+                                               records, bytes);
+    flb_task_release_lock(out_flush->task);
+
+    return context;
+}
+
+static FLB_INLINE int flb_output_set_retry_context(
+                        struct flb_output_flush *out_flush,
+                        void *context,
+                        void (*destroy)(void *),
+                        int records,
+                        size_t bytes)
+{
+    int result;
+
+    flb_task_acquire_lock(out_flush->task);
+    result = flb_task_set_route_retry_context(out_flush->task,
+                                              out_flush->o_ins,
+                                              context, destroy,
+                                              records, bytes);
+    flb_task_release_lock(out_flush->task);
+
+    return result;
+}
+
+static FLB_INLINE int flb_output_clear_retry_context(
+                        struct flb_output_flush *out_flush)
+{
+    return flb_output_set_retry_context(out_flush, NULL, NULL, 0, 0);
+}
 
 static FLB_INLINE int flb_output_is_threaded(struct flb_output_instance *ins)
 {
@@ -1272,6 +1335,16 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     bytes = counted_event_chunk->size;
 
     flb_task_acquire_lock(task);
+    if (ret == FLB_OK && out_flush->successful_route_data_set == FLB_TRUE) {
+        records = out_flush->successful_records;
+        bytes = out_flush->successful_bytes;
+    }
+    else if (ret != FLB_OK &&
+        flb_task_get_route_retry_context(task, o_ins,
+                                         &records, &bytes) == NULL) {
+        records = counted_event_chunk->total_events;
+        bytes = counted_event_chunk->size;
+    }
     flb_task_set_route_data(task, o_ins, records, bytes);
     flb_task_deactivate_route(task, o_ins);
     flb_task_release_lock(task);

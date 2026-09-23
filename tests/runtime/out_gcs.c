@@ -109,7 +109,7 @@ void flb_test_gcs_upload_success(void)
     flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
     flb_output_set(ctx, out_ffd, "gcs_key_format", "logs/$TAG", NULL);
     flb_output_set(ctx, out_ffd, "static_file_path", "true", NULL);
-    flb_output_set(ctx, out_ffd, "compression", "gzip", NULL);
+    flb_output_set(ctx, out_ffd, "compression", "GZIP", NULL);
     flb_output_set(ctx, out_ffd, "canned_acl", "public-read", NULL);
 
     ret = flb_start(ctx);
@@ -143,6 +143,271 @@ void flb_test_gcs_upload_success(void)
     unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
     unsetenv("TEST_GCS_LAST_URI");
     unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    unsetenv("TEST_GCS_LAST_BODY_PARQUET");
+    unsetenv("TEST_GCS_LAST_CONTENT_TYPE");
+    flb_free(store_dir);
+}
+
+#ifdef FLB_HAVE_ARROW_PARQUET
+static void test_gcs_upload_parquet(const char *compression,
+                                    const char *store_directory_postfix)
+{
+    int ret;
+    int call_count;
+    int in_ffd;
+    int out_ffd;
+    char *call_count_str;
+    char *store_dir;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory(store_directory_postfix);
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "3s", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "gcs_key_format", "logs/$TAG", NULL);
+    flb_output_set(ctx, out_ffd, "static_file_path", "true", NULL);
+    flb_output_set(ctx, out_ffd, "format", "parquet", NULL);
+    flb_output_set(ctx, out_ffd, "compression", compression, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+    sleep(5);
+
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 1,
+                "Expected 1 UploadObject call, got %d", call_count);
+    TEST_CHECK_(getenv("TEST_GCS_LAST_URI") != NULL,
+                "Expected the mock upload URI to be captured");
+    if (getenv("TEST_GCS_LAST_URI")) {
+        TEST_CHECK(strcmp(getenv("TEST_GCS_LAST_URI"),
+                          "/upload/storage/v1/b/fluent/o?uploadType=media&"
+                          "name=logs%2Ftest") == 0);
+    }
+    TEST_CHECK_(getenv("TEST_GCS_LAST_BODY_PARQUET") != NULL,
+                "Expected the mock upload body format to be captured");
+    if (getenv("TEST_GCS_LAST_BODY_PARQUET")) {
+        TEST_CHECK(strcmp(getenv("TEST_GCS_LAST_BODY_PARQUET"), "true") == 0);
+    }
+    TEST_CHECK_(getenv("TEST_GCS_LAST_BODY_GZIP") != NULL,
+                "Expected the mock upload body encoding to be captured");
+    if (getenv("TEST_GCS_LAST_BODY_GZIP")) {
+        TEST_CHECK(strcmp(getenv("TEST_GCS_LAST_BODY_GZIP"), "false") == 0);
+    }
+    TEST_CHECK_(getenv("TEST_GCS_LAST_CONTENT_TYPE") != NULL,
+                "Expected the mock upload content type to be captured");
+    if (getenv("TEST_GCS_LAST_CONTENT_TYPE")) {
+        TEST_CHECK(strcmp(getenv("TEST_GCS_LAST_CONTENT_TYPE"),
+                          "application/vnd.apache.parquet") == 0);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    unsetenv("TEST_GCS_LAST_BODY_PARQUET");
+    unsetenv("TEST_GCS_LAST_CONTENT_TYPE");
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_upload_parquet_zstd(void)
+{
+    test_gcs_upload_parquet("ZSTD", "/flb-gcs-test-parquet-zstd-XXXXXX");
+}
+
+void flb_test_gcs_upload_parquet_snappy(void)
+{
+    test_gcs_upload_parquet("SNAPPY", "/flb-gcs-test-parquet-snappy-XXXXXX");
+}
+#endif
+
+#ifndef FLB_HAVE_ARROW_PARQUET
+void flb_test_gcs_rejects_parquet_without_support(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    char *store_dir;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-no-parquet-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "format", "parquet", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+
+    flb_destroy(ctx);
+    flb_free(store_dir);
+}
+#endif
+
+void flb_test_gcs_identity_federation_upload(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    char *call_count_str;
+    int call_count;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-wif-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "enable_identity_federation", "true", NULL);
+    flb_output_set(ctx, out_ffd, "project_number", "123456789", NULL);
+    flb_output_set(ctx, out_ffd, "pool_id", "my-pool", NULL);
+    flb_output_set(ctx, out_ffd, "provider_id", "my-provider", NULL);
+    flb_output_set(ctx, out_ffd, "identity_token_file", TEST_PRIVATE_KEY, NULL);
+    flb_output_set(ctx, out_ffd, "google_service_account",
+                   "logger@my-proj.iam.gserviceaccount.com", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "3s", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "gcs_key_format", "logs/$TAG", NULL);
+    flb_output_set(ctx, out_ffd, "static_file_path", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+    sleep(5);
+
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 1,
+                "Expected 1 UploadObject call, got %d", call_count);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_rejects_incomplete_federation(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-wif-incomplete-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "enable_identity_federation", "true", NULL);
+    flb_output_set(ctx, out_ffd, "project_number", "123456789", NULL);
+    /* pool_id/provider_id/identity_token_file intentionally missing */
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_rejects_conflicting_credentials(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-wif-conflict-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "enable_identity_federation", "true", NULL);
+    flb_output_set(ctx, out_ffd, "project_number", "123456789", NULL);
+    flb_output_set(ctx, out_ffd, "pool_id", "my-pool", NULL);
+    flb_output_set(ctx, out_ffd, "provider_id", "my-provider", NULL);
+    flb_output_set(ctx, out_ffd, "identity_token_file", TEST_PRIVATE_KEY, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
     flb_free(store_dir);
 }
 
@@ -248,6 +513,181 @@ void flb_test_gcs_accepts_extra_credential_fields(void)
     flb_free(store_dir);
 }
 
+void flb_test_gcs_application_default_credentials_env(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    char *store_dir;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-adc-env-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("GOOGLE_APPLICATION_CREDENTIALS", SERVICE_CREDENTIALS, 1);
+    setenv("GOOGLE_SERVICE_CREDENTIALS", "/does/not/exist", 1);
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+
+    unsetenv("GOOGLE_APPLICATION_CREDENTIALS");
+    unsetenv("GOOGLE_SERVICE_CREDENTIALS");
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_metadata_server_authentication(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    int metadata_calls;
+    int upload_calls;
+    char *store_dir;
+    char *value;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-metadata-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    unsetenv("GOOGLE_APPLICATION_CREDENTIALS");
+    unsetenv("GOOGLE_SERVICE_CREDENTIALS");
+    unsetenv("TEST_GCS_MetadataToken_CALL_COUNT");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    setenv("TEST_GCS_METADATA_RESPONSE",
+           "{\"access_token\":\"metadata-token\",\"expires_in\":3600,"
+           "\"token_type\":\"Bearer\"}", 1);
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "1s", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+        sleep(3);
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+
+    value = getenv("TEST_GCS_MetadataToken_CALL_COUNT");
+    metadata_calls = value ? atoi(value) : 0;
+    TEST_CHECK_(metadata_calls == 1,
+                "Expected 1 metadata token call, got %d", metadata_calls);
+    value = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    upload_calls = value ? atoi(value) : 0;
+    TEST_CHECK_(upload_calls == 1,
+                "Expected 1 UploadObject call, got %d", upload_calls);
+    value = getenv("TEST_GCS_LAST_METADATA_URI");
+    TEST_CHECK_(value != NULL, "Expected the metadata URI to be captured");
+    if (value) {
+        TEST_CHECK(strcmp(value, FLB_GCS_METADATA_TOKEN_URI) == 0);
+    }
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_METADATA_RESPONSE");
+    unsetenv("TEST_GCS_MetadataToken_CALL_COUNT");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_METADATA_URI");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_rejects_invalid_metadata_response(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    int metadata_calls;
+    int upload_calls;
+    char *store_dir;
+    char *value;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-metadata-invalid-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    unsetenv("GOOGLE_APPLICATION_CREDENTIALS");
+    unsetenv("GOOGLE_SERVICE_CREDENTIALS");
+    unsetenv("TEST_GCS_MetadataToken_CALL_COUNT");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    setenv("TEST_GCS_METADATA_RESPONSE", "{\"invalid\":true}", 1);
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "1s", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+        sleep(3);
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+
+    value = getenv("TEST_GCS_MetadataToken_CALL_COUNT");
+    metadata_calls = value ? atoi(value) : 0;
+    TEST_CHECK_(metadata_calls >= 1,
+                "Expected at least 1 metadata token call, got %d", metadata_calls);
+    value = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    upload_calls = value ? atoi(value) : 0;
+    TEST_CHECK_(upload_calls == 0,
+                "Expected no UploadObject calls, got %d", upload_calls);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_METADATA_RESPONSE");
+    unsetenv("TEST_GCS_MetadataToken_CALL_COUNT");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_METADATA_URI");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
 void flb_test_gcs_upload_error(void)
 {
     int ret;
@@ -297,9 +737,12 @@ void flb_test_gcs_upload_error(void)
 
     unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
     unsetenv("TEST_GCS_UPLOAD_ERROR");
+    unsetenv("TEST_GCS_CONSTRUCT_REQUEST_BUFFER_ERROR");
     unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
     unsetenv("TEST_GCS_LAST_URI");
     unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    unsetenv("TEST_GCS_LAST_BODY_PARQUET");
+    unsetenv("TEST_GCS_LAST_CONTENT_TYPE");
     flb_free(store_dir);
 }
 
@@ -387,17 +830,1083 @@ void flb_test_gcs_shutdown_preserves_pending_upload(void)
     unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
     unsetenv("TEST_GCS_LAST_URI");
     unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    unsetenv("TEST_GCS_LAST_BODY_PARQUET");
+    unsetenv("TEST_GCS_LAST_CONTENT_TYPE");
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_unify_tag_buffers_multiple_tags(void)
+{
+    int ret;
+    int i;
+    flb_ctx_t *ctx;
+    int in_a;
+    int in_b;
+    int out_ffd;
+    char *store_dir;
+    char *buf;
+    size_t buf_size;
+    flb_sds_t content;
+    struct flb_output_instance *out_ins;
+    struct flb_gcs *gcs_ctx;
+    struct gcs_file *chunk_unify;
+    int found_a = FLB_FALSE;
+    int found_b = FLB_FALSE;
+    const char *unify_tag = "unified-test-key";
+    const char *rec_a = "[1448403340, {\"src\": \"unify-marker-a\"}]";
+    const char *rec_b = "[1448403340, {\"src\": \"unify-marker-b\"}]";
+
+    store_dir = create_test_store_directory("/flb-gcs-test-unify-tag-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_a = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_a >= 0);
+    flb_input_set(ctx, in_a, "tag", "kube.a", NULL);
+
+    in_b = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_b >= 0);
+    flb_input_set(ctx, in_b, "tag", "kube.b", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "unify_tag", "true", NULL);
+    flb_output_set(ctx, out_ffd, "unify_tag_name", "unified-test-key", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    /* keep chunks buffered so the merged result can be inspected */
+    flb_output_set(ctx, out_ffd, "upload_timeout", "60m", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    out_ins = flb_output_get_instance(ctx->config, out_ffd);
+    TEST_CHECK(out_ins != NULL);
+    gcs_ctx = out_ins ? out_ins->context : NULL;
+    TEST_CHECK(gcs_ctx != NULL);
+
+    flb_lib_push(ctx, in_a, (char *) rec_a, (int) strlen(rec_a));
+    flb_lib_push(ctx, in_b, (char *) rec_b, (int) strlen(rec_b));
+
+    /*
+     * Wait (bounded) until both records are present in the single unified
+     * buffer chunk. Distinct markers prove both inputs were processed and
+     * merged, rather than a single record satisfying the check.
+     */
+    for (i = 0; gcs_ctx && i < 10 && !(found_a && found_b); i++) {
+        sleep(1);
+        chunk_unify = gcs_store_file_get(gcs_ctx, (char *) unify_tag,
+                                         strlen(unify_tag));
+        if (!chunk_unify) {
+            continue;
+        }
+        buf = NULL;
+        buf_size = 0;
+        if (gcs_store_file_read(gcs_ctx, chunk_unify, &buf, &buf_size) != 0 || !buf) {
+            continue;
+        }
+        content = flb_sds_create_len(buf, buf_size);
+        if (content) {
+            found_a = strstr(content, "unify-marker-a") != NULL;
+            found_b = strstr(content, "unify-marker-b") != NULL;
+            flb_sds_destroy(content);
+        }
+        flb_free(buf);
+    }
+
+    if (gcs_ctx) {
+        TEST_CHECK(gcs_ctx->unify_tag == FLB_TRUE);
+
+        TEST_CHECK_(gcs_store_file_get(gcs_ctx, "kube.a", 6) == NULL,
+                    "expected no per-tag chunk for kube.a");
+        TEST_CHECK_(gcs_store_file_get(gcs_ctx, "kube.b", 6) == NULL,
+                    "expected no per-tag chunk for kube.b");
+        TEST_CHECK_(found_a, "record from kube.a missing from unified buffer");
+        TEST_CHECK_(found_b, "record from kube.b missing from unified buffer");
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_unify_tag_disabled_by_default(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    char *store_dir;
+    struct flb_output_instance *out_ins;
+    struct flb_gcs *gcs_ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-no-unify-tag-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    out_ins = flb_output_get_instance(ctx->config, out_ffd);
+    TEST_CHECK(out_ins != NULL);
+    gcs_ctx = out_ins ? out_ins->context : NULL;
+    TEST_CHECK(gcs_ctx != NULL);
+
+    if (gcs_ctx) {
+        TEST_CHECK(gcs_ctx->unify_tag == FLB_FALSE);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_net_settings_applied_to_upstream(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    char *store_dir;
+    flb_ctx_t *ctx;
+    struct flb_gcs *gcs_ctx;
+    struct flb_output_instance *out_ins;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-net-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "net.connect_timeout", "7", NULL);
+    flb_output_set(ctx, out_ffd, "net.keepalive_idle_timeout", "17", NULL);
+    flb_output_set(ctx, out_ffd, "net.keepalive_max_recycle", "5", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        flb_free(store_dir);
+        return;
+    }
+
+    out_ins = flb_output_get_instance(ctx->config, out_ffd);
+    TEST_CHECK(out_ins != NULL);
+    gcs_ctx = out_ins ? out_ins->context : NULL;
+    TEST_CHECK(gcs_ctx != NULL);
+
+    if (gcs_ctx && gcs_ctx->u) {
+        TEST_CHECK_(gcs_ctx->u->base.net.connect_timeout == 7,
+                    "Expected net.connect_timeout=7 on upstream, got %d",
+                    gcs_ctx->u->base.net.connect_timeout);
+        TEST_CHECK_(gcs_ctx->u->base.net.keepalive_idle_timeout == 17,
+                    "Expected net.keepalive_idle_timeout=17 on upstream, got %d",
+                    gcs_ctx->u->base.net.keepalive_idle_timeout);
+        TEST_CHECK_(gcs_ctx->u->base.net.keepalive_max_recycle == 5,
+                    "Expected net.keepalive_max_recycle=5 on upstream, got %d",
+                    gcs_ctx->u->base.net.keepalive_max_recycle);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    flb_free(store_dir);
+}
+
+/*
+ * The upload timer callback runs outside of any coroutine. If the upstream
+ * were left in async mode, the first network write from the timer would
+ * try to yield a NULL coroutine and crash. The plugin must therefore keep
+ * the upstream in sync mode and still deliver timer-driven uploads when
+ * preserve_data_ordering is disabled.
+ */
+void flb_test_gcs_timer_upload_without_ordering_uses_sync_upstream(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    int call_count;
+    char *call_count_str;
+    char *store_dir;
+    flb_ctx_t *ctx;
+    struct flb_gcs *gcs_ctx;
+    struct flb_output_instance *out_ins;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-unordered-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "3s", NULL);
+    flb_output_set(ctx, out_ffd, "preserve_data_ordering", "false", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+        flb_free(store_dir);
+        return;
+    }
+
+    out_ins = flb_output_get_instance(ctx->config, out_ffd);
+    TEST_CHECK(out_ins != NULL);
+    gcs_ctx = out_ins ? out_ins->context : NULL;
+    TEST_CHECK(gcs_ctx != NULL);
+    if (gcs_ctx && gcs_ctx->u) {
+        TEST_CHECK_(flb_stream_is_async(&gcs_ctx->u->base) == FLB_FALSE,
+                    "Expected the GCS upstream to run in sync mode");
+    }
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+    sleep(6);
+
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 1,
+                "Expected 1 timer-driven UploadObject call, got %d", call_count);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
+/* Build a single ~size-byte JSON record for in_lib */
+static char *build_large_record(size_t size, size_t *out_len)
+{
+    char *buf;
+    size_t prefix_len;
+    const char *prefix = "[0, {\"message\": \"";
+    const char *suffix = "\"}]";
+
+    prefix_len = strlen(prefix);
+    buf = flb_malloc(size + prefix_len + strlen(suffix) + 1);
+    if (!buf) {
+        return NULL;
+    }
+    memcpy(buf, prefix, prefix_len);
+    memset(buf + prefix_len, 'a', size);
+    memcpy(buf + prefix_len + size, suffix, strlen(suffix) + 1);
+    *out_len = prefix_len + size + strlen(suffix);
+    return buf;
+}
+
+void flb_test_gcs_total_file_size_triggers_upload(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    int call_count;
+    char *call_count_str;
+    char *store_dir;
+    char *record;
+    size_t record_len;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-total-size-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    record = build_large_record(600 * 1024, &record_len);
+    TEST_CHECK(record != NULL);
+    if (!record) {
+        flb_free(store_dir);
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    /* long timeout: only total_file_size can trigger an upload in this test */
+    flb_output_set(ctx, out_ffd, "upload_timeout", "10m", NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "1M", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+        flb_free(record);
+        flb_free(store_dir);
+        return;
+    }
+
+    /* first record (~600KB) is buffered, no upload yet */
+    flb_lib_push(ctx, in_ffd, record, (int) record_len);
+    sleep(3);
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 0,
+                "Expected no upload below total_file_size, got %d", call_count);
+
+    /* second record would exceed 1M: the buffered file must be uploaded */
+    flb_lib_push(ctx, in_ffd, record, (int) record_len);
+    sleep(3);
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 1,
+                "Expected 1 upload after reaching total_file_size, got %d",
+                call_count);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(record);
+    flb_free(store_dir);
+}
+
+/* Each serialized JSON line contains the message plus its JSON wrapper. */
+static void check_total_file_size_boundary(size_t file_size, int record_count)
+{
+    int ret;
+    int i;
+    int in_ffd;
+    int out_ffd;
+    int call_count;
+    char *call_count_str;
+    char *store_dir;
+    char *record;
+    size_t record_len;
+    size_t wrapper_size;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-size-boundary-XXXXXX");
+    if (!TEST_CHECK(store_dir != NULL)) {
+        return;
+    }
+
+    wrapper_size = sizeof("{\"message\":\"\"}\n") - 1;
+    record = build_large_record(file_size / record_count - wrapper_size, &record_len);
+    if (!TEST_CHECK(record != NULL)) {
+        flb_free(store_dir);
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "bucket", "fluent",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "store_dir", store_dir,
+                   "upload_timeout", "10m",
+                   "total_file_size", "1M", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        for (i = 0; i < record_count; i++) {
+            ret = flb_lib_push(ctx, in_ffd, record, (int) record_len);
+            TEST_CHECK(ret == (int) record_len);
+            /* Separate flushes exercise appending to an existing file. */
+            sleep(3);
+        }
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+
+    /* Read the mock result after workers stop, without racing their writes. */
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 1,
+                "Expected one size-triggered upload for %zu bytes in %d records, got %d",
+                file_size, record_count, call_count);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(record);
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_total_file_size_exact_first_payload(void)
+{
+    check_total_file_size_boundary(1000000, 1);
+}
+
+void flb_test_gcs_total_file_size_oversized_first_payload(void)
+{
+    check_total_file_size_boundary(1200000, 1);
+}
+
+void flb_test_gcs_total_file_size_exact_append(void)
+{
+    check_total_file_size_boundary(1000000, 2);
+}
+
+/* Check size-triggered files alongside an older buffered or failed file. */
+static void check_total_file_size_queue(int preserve_ordering, int fail_upload, int fail_read)
+{
+    int ret;
+    int i;
+    int in_ffd[2];
+    int out_ffd;
+    int call_count;
+    char *call_count_str;
+    char *store_dir;
+    char *record[2];
+    size_t record_len[2];
+    size_t wrapper_size;
+    struct flb_output_instance *out_ins;
+    struct flb_gcs *gcs_ctx;
+    struct upload_queue *entry;
+    struct mk_list *head;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-size-queue-XXXXXX");
+    if (!TEST_CHECK(store_dir != NULL)) {
+        return;
+    }
+    wrapper_size = sizeof("{\"message\":\"\"}\n") - 1;
+    record[0] = build_large_record((fail_upload ? 1000000 : 500000) - wrapper_size,
+                                   &record_len[0]);
+    record[1] = build_large_record((fail_upload ? 500000 : 1000000) - wrapper_size,
+                                   &record_len[1]);
+    if (!TEST_CHECK(record[0] != NULL && record[1] != NULL)) {
+        flb_free(record[0]);
+        flb_free(record[1]);
+        flb_free(store_dir);
+        return;
+    }
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    if (fail_upload) {
+        setenv("TEST_GCS_UPLOAD_ERROR", "true", 1);
+    }
+
+    ctx = flb_create();
+    for (i = 0; i < 2; i++) {
+        in_ffd[i] = flb_input(ctx, (char *) "lib", NULL);
+        TEST_CHECK(in_ffd[i] >= 0);
+        flb_input_set(ctx, in_ffd[i], "tag", fail_upload || i == 0 ? "first" : "second", NULL);
+    }
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "*",
+                   "bucket", "fluent",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "store_dir", store_dir,
+                   "upload_timeout", "10m",
+                   "total_file_size", "1M",
+                   "preserve_data_ordering", preserve_ordering ? "true" : "false", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        for (i = 0; i < 2; i++) {
+            ret = flb_lib_push(ctx, in_ffd[i], record[i], (int) record_len[i]);
+            TEST_CHECK(ret == (int) record_len[i]);
+            sleep(3);
+            if (fail_read && i == 0) {
+                out_ins = flb_output_get_instance(ctx->config, out_ffd);
+                gcs_ctx = out_ins->context;
+                pthread_mutex_lock(&gcs_ctx->upload_lock);
+                if (TEST_CHECK(mk_list_size(&gcs_ctx->upload_queue) == 1)) {
+                    entry = mk_list_entry(gcs_ctx->upload_queue.next, struct upload_queue, _head);
+                    setenv("TEST_GCS_CONSTRUCT_REQUEST_BUFFER_ERROR", "true", 1);
+                    entry->upload_time = 0;
+                    gcs_store_file_seal(entry->upload_file);
+                }
+                pthread_mutex_unlock(&gcs_ctx->upload_lock);
+            }
+        }
+
+        out_ins = flb_output_get_instance(ctx->config, out_ffd);
+        gcs_ctx = out_ins->context;
+        pthread_mutex_lock(&gcs_ctx->upload_lock);
+        if (fail_upload) {
+            TEST_CHECK(mk_list_size(&gcs_ctx->upload_queue) == 2);
+            mk_list_foreach(head, &gcs_ctx->upload_queue) {
+                entry = mk_list_entry(head, struct upload_queue, _head);
+                if (head == gcs_ctx->upload_queue.next) {
+                    TEST_CHECK(entry->upload_file->sealed == FLB_TRUE);
+                    TEST_CHECK(entry->upload_file->size == 1000000);
+                    TEST_CHECK(entry->retry_counter > 0);
+                }
+                else {
+                    TEST_CHECK(entry->upload_file->sealed == FLB_FALSE);
+                    TEST_CHECK(entry->upload_file->size == 500000);
+                }
+            }
+        }
+        else {
+            TEST_CHECK(mk_list_size(&gcs_ctx->upload_queue) == (preserve_ordering ? 2 : 1));
+        }
+        if (fail_read) {
+            mk_list_foreach(head, &gcs_ctx->upload_queue) {
+                entry = mk_list_entry(head, struct upload_queue, _head);
+                if (head == gcs_ctx->upload_queue.next) {
+                    TEST_CHECK(entry->retry_counter > 0);
+                }
+                else {
+                    TEST_CHECK(entry->retry_counter == 0);
+                }
+            }
+        }
+        pthread_mutex_unlock(&gcs_ctx->upload_lock);
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    if (fail_upload) {
+        TEST_CHECK(call_count > 0);
+    }
+    else {
+        TEST_CHECK(call_count == (preserve_ordering ? 0 : 1));
+    }
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UPLOAD_ERROR");
+    unsetenv("TEST_GCS_CONSTRUCT_REQUEST_BUFFER_ERROR");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(record[0]);
+    flb_free(record[1]);
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_total_file_size_preserves_ordering(void)
+{
+    check_total_file_size_queue(FLB_TRUE, FLB_FALSE, FLB_FALSE);
+}
+
+void flb_test_gcs_total_file_size_without_ordering(void)
+{
+    check_total_file_size_queue(FLB_FALSE, FLB_FALSE, FLB_FALSE);
+}
+
+void flb_test_gcs_total_file_size_failed_upload_stays_sealed(void)
+{
+    check_total_file_size_queue(FLB_TRUE, FLB_TRUE, FLB_FALSE);
+}
+
+void flb_test_gcs_total_file_size_ordered_read_failure(void)
+{
+    check_total_file_size_queue(FLB_TRUE, FLB_FALSE, FLB_TRUE);
+}
+
+void flb_test_gcs_rejects_total_file_size_below_minimum(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-small-total-size-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "512K", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret != 0, "Expected total_file_size below 1M to be rejected");
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+    flb_free(store_dir);
+}
+
+/*
+ * Multiple output workers flush concurrently and share the upload queue,
+ * the local file store and the sequence index. Every tag must still be
+ * uploaded exactly once and the process must not crash or corrupt state.
+ */
+void flb_test_gcs_workers_upload_all_tags(void)
+{
+    int i;
+    int ret;
+    int in_ffd[4];
+    int out_ffd;
+    int call_count;
+    char tag[16];
+    char *call_count_str;
+    char *store_dir;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-workers-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    ctx = flb_create();
+    for (i = 0; i < 4; i++) {
+        snprintf(tag, sizeof(tag), "test.%d", i);
+        in_ffd[i] = flb_input(ctx, (char *) "lib", NULL);
+        TEST_CHECK(in_ffd[i] >= 0);
+        flb_input_set(ctx, in_ffd[i], "tag", tag, NULL);
+    }
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "3s", NULL);
+    flb_output_set(ctx, out_ffd, "preserve_data_ordering", "true", NULL);
+    flb_output_set(ctx, out_ffd, "gcs_key_format", "logs/$TAG/$INDEX", NULL);
+    flb_output_set(ctx, out_ffd, "workers", "4", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+        flb_free(store_dir);
+        return;
+    }
+
+    for (i = 0; i < 4; i++) {
+        flb_lib_push(ctx, in_ffd[i], (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+    }
+    sleep(6);
+
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 4,
+                "Expected 4 UploadObject calls (one per tag), got %d", call_count);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
+/*
+ * Data left in store_dir by a previous run must be recovered and uploaded
+ * shortly after startup (the recovery path runs from init and from the
+ * upload timer, both outside of any flush coroutine).
+ */
+static void check_backlog_recovery(int fail_upload)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    int call_count;
+    char *call_count_str;
+    char *store_dir;
+    flb_ctx_t *ctx;
+    struct flb_output_instance *out_ins;
+    struct flb_gcs *gcs_ctx;
+    struct upload_queue *entry;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-backlog-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    /* first instance: buffer data but never reach upload_timeout */
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "10m", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+        flb_free(store_dir);
+        return;
+    }
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 0,
+                "Expected no upload before shutdown, got %d", call_count);
+
+    /* second instance on the same store_dir: backlog must be uploaded */
+    if (fail_upload) {
+        setenv("TEST_GCS_UPLOAD_ERROR", "true", 1);
+    }
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "10m", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        sleep(3);
+        call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+        call_count = call_count_str ? atoi(call_count_str) : 0;
+        TEST_CHECK_(call_count == 1,
+                    "Expected recovered backlog to be uploaded once, got %d",
+                    call_count);
+        if (fail_upload) {
+            out_ins = flb_output_get_instance(ctx->config, out_ffd);
+            gcs_ctx = out_ins->context;
+            pthread_mutex_lock(&gcs_ctx->upload_lock);
+            if (TEST_CHECK(mk_list_size(&gcs_ctx->upload_queue) == 1)) {
+                entry = mk_list_entry(gcs_ctx->upload_queue.next, struct upload_queue, _head);
+                TEST_CHECK(entry->upload_file->sealed == FLB_TRUE);
+                TEST_CHECK(gcs_store_file_get(gcs_ctx, "test", 4) == NULL);
+            }
+            pthread_mutex_unlock(&gcs_ctx->upload_lock);
+        }
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UPLOAD_ERROR");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_recovers_backlog_on_restart(void)
+{
+    check_backlog_recovery(FLB_FALSE);
+}
+
+void flb_test_gcs_recovered_upload_failure_stays_sealed(void)
+{
+    check_backlog_recovery(FLB_TRUE);
+}
+
+/* total_file_size must also apply to the shared file used by unify_tag */
+void flb_test_gcs_total_file_size_with_unify_tag(void)
+{
+    int i;
+    int ret;
+    int in_ffd[2];
+    int out_ffd;
+    int call_count;
+    char tag[16];
+    char *call_count_str;
+    char *store_dir;
+    char *record;
+    size_t record_len;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-unify-size-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    record = build_large_record(600 * 1024, &record_len);
+    TEST_CHECK(record != NULL);
+    if (!record) {
+        flb_free(store_dir);
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    ctx = flb_create();
+    for (i = 0; i < 2; i++) {
+        snprintf(tag, sizeof(tag), "test.%d", i);
+        in_ffd[i] = flb_input(ctx, (char *) "lib", NULL);
+        TEST_CHECK(in_ffd[i] >= 0);
+        flb_input_set(ctx, in_ffd[i], "tag", tag, NULL);
+    }
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "10m", NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "1M", NULL);
+    flb_output_set(ctx, out_ffd, "unify_tag", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+        flb_free(record);
+        flb_free(store_dir);
+        return;
+    }
+
+    /* records from different tags land in the same unified buffer file */
+    flb_lib_push(ctx, in_ffd[0], record, (int) record_len);
+    sleep(2);
+    flb_lib_push(ctx, in_ffd[1], record, (int) record_len);
+    sleep(3);
+
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 1,
+                "Expected 1 upload after the unified file reached "
+                "total_file_size, got %d", call_count);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(record);
+    flb_free(store_dir);
+}
+
+/* total_file_size 0 disables the size trigger: only upload_timeout applies */
+void flb_test_gcs_total_file_size_zero_disables_size_trigger(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    int call_count;
+    char *call_count_str;
+    char *store_dir;
+    char *record;
+    size_t record_len;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-size-off-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    record = build_large_record(600 * 1024, &record_len);
+    TEST_CHECK(record != NULL);
+    if (!record) {
+        flb_free(store_dir);
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "10m", NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "0", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret == 0, "Expected total_file_size=0 to be accepted");
+    if (ret != 0) {
+        flb_destroy(ctx);
+        unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+        flb_free(record);
+        flb_free(store_dir);
+        return;
+    }
+
+    /* more than 1M of buffered data must NOT trigger an upload */
+    flb_lib_push(ctx, in_ffd, record, (int) record_len);
+    sleep(2);
+    flb_lib_push(ctx, in_ffd, record, (int) record_len);
+    sleep(3);
+
+    call_count_str = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    call_count = call_count_str ? atoi(call_count_str) : 0;
+    TEST_CHECK_(call_count == 0,
+                "Expected no size-triggered upload with total_file_size=0, "
+                "got %d", call_count);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    flb_free(record);
     flb_free(store_dir);
 }
 
 TEST_LIST = {
     {"jwt_signing", flb_test_gcs_jwt_signing},
+    {"net_settings_applied_to_upstream", flb_test_gcs_net_settings_applied_to_upstream},
+    {"timer_upload_without_ordering_uses_sync_upstream",
+     flb_test_gcs_timer_upload_without_ordering_uses_sync_upstream},
+    {"total_file_size_triggers_upload", flb_test_gcs_total_file_size_triggers_upload},
+    {"total_file_size_exact_first_payload", flb_test_gcs_total_file_size_exact_first_payload},
+    {"total_file_size_oversized_first_payload", flb_test_gcs_total_file_size_oversized_first_payload},
+    {"total_file_size_exact_append", flb_test_gcs_total_file_size_exact_append},
+    {"total_file_size_ordered_read_failure", flb_test_gcs_total_file_size_ordered_read_failure},
+    {"total_file_size_preserves_ordering", flb_test_gcs_total_file_size_preserves_ordering},
+    {"total_file_size_without_ordering", flb_test_gcs_total_file_size_without_ordering},
+    {"total_file_size_failed_upload_stays_sealed",
+     flb_test_gcs_total_file_size_failed_upload_stays_sealed},
+    {"total_file_size_zero_disables_size_trigger",
+     flb_test_gcs_total_file_size_zero_disables_size_trigger},
+    {"rejects_total_file_size_below_minimum",
+     flb_test_gcs_rejects_total_file_size_below_minimum},
+    {"workers_upload_all_tags", flb_test_gcs_workers_upload_all_tags},
+    {"recovers_backlog_on_restart", flb_test_gcs_recovers_backlog_on_restart},
+    {"recovered_upload_failure_stays_sealed", flb_test_gcs_recovered_upload_failure_stays_sealed},
+    {"total_file_size_with_unify_tag", flb_test_gcs_total_file_size_with_unify_tag},
     {"uri_encode_object_name", flb_test_gcs_uri_encode_object_name},
     {"upload_success", flb_test_gcs_upload_success},
+#ifdef FLB_HAVE_ARROW_PARQUET
+    {"upload_parquet_zstd", flb_test_gcs_upload_parquet_zstd},
+    {"upload_parquet_snappy", flb_test_gcs_upload_parquet_snappy},
+#else
+    {"rejects_parquet_without_support", flb_test_gcs_rejects_parquet_without_support},
+#endif
+    {"identity_federation_upload", flb_test_gcs_identity_federation_upload},
+    {"rejects_incomplete_federation", flb_test_gcs_rejects_incomplete_federation},
+    {"rejects_conflicting_credentials", flb_test_gcs_rejects_conflicting_credentials},
     {"rejects_invalid_configuration", flb_test_gcs_rejects_invalid_configuration},
     {"rejects_invalid_compression", flb_test_gcs_rejects_invalid_compression},
     {"accepts_extra_credential_fields", flb_test_gcs_accepts_extra_credential_fields},
+    {"application_default_credentials_env", flb_test_gcs_application_default_credentials_env},
+    {"metadata_server_authentication", flb_test_gcs_metadata_server_authentication},
+    {"rejects_invalid_metadata_response", flb_test_gcs_rejects_invalid_metadata_response},
     {"upload_error", flb_test_gcs_upload_error},
     {"shutdown_preserves_pending_upload", flb_test_gcs_shutdown_preserves_pending_upload},
+    {"unify_tag_buffers_multiple_tags", flb_test_gcs_unify_tag_buffers_multiple_tags},
+    {"unify_tag_disabled_by_default", flb_test_gcs_unify_tag_disabled_by_default},
     {NULL, NULL}
 };

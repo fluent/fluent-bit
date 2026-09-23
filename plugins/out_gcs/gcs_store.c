@@ -163,7 +163,7 @@ struct gcs_file *gcs_store_file_get(struct flb_gcs *ctx, const char *tag, int ta
         }
 
         chunk = fsf->data;
-        if (!chunk || chunk->locked == FLB_TRUE) {
+        if (!chunk || chunk->locked == FLB_TRUE || chunk->sealed == FLB_TRUE) {
             continue;
         }
         if (strncmp(fsf->meta_buf, tag, tag_len) == 0) {
@@ -262,6 +262,11 @@ void gcs_store_file_lock(struct gcs_file *chunk)
 void gcs_store_file_unlock(struct gcs_file *chunk)
 {
     chunk->locked = FLB_FALSE;
+}
+
+void gcs_store_file_seal(struct gcs_file *chunk)
+{
+    chunk->sealed = FLB_TRUE;
 }
 
 int gcs_store_file_delete(struct flb_gcs *ctx, struct gcs_file *chunk)

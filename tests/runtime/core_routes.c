@@ -74,6 +74,9 @@ void flb_test_basic_functionality_test(void)
         if (olimit < 2) {
             olimit = 2;
         }
+        else if (olimit > sizeof(output_instances) / sizeof(output_instances[0])) {
+            olimit = sizeof(output_instances) / sizeof(output_instances[0]);
+        }
     }
 #endif
 

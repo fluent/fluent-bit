@@ -1,25 +1,35 @@
 import gzip
+import hashlib
+import hmac
 import json
 import os
 import glob
 import time
 import shutil
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import requests
 import pytest
+import yaml
 from google.protobuf import json_format
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 
-from server.s3_server import data_storage, s3_server_run, s3_server_stop
+from server.s3_server import TaggedUploadBarrier, data_storage, s3_server_run, s3_server_stop
 from utils.data_utils import read_json_file
 from utils.fluent_bit_manager import FluentBitStartupError
 from utils.test_service import FluentBitTestService
 
 
 class Service:
-    def __init__(self, config_file):
+    def __init__(self, config_file, *, put_status=200, put_delay=0,
+                 upload_barrier=None, shutdown_timeout=None, credential_mode=None):
+        self.put_status = put_status
+        self.put_delay = put_delay
+        self.upload_barrier = upload_barrier
+        self.credential_mode = credential_mode
         self.config_file = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../config", config_file)
         )
@@ -28,17 +38,28 @@ class Service:
             data_storage=data_storage,
             data_keys=["requests"],
             extra_env={
-                "AWS_ACCESS_KEY_ID": "test-access-key",
-                "AWS_SECRET_ACCESS_KEY": "test-secret-key",
+                "AWS_ACCESS_KEY_ID": "" if credential_mode else "test-access-key",
+                "AWS_SECRET_ACCESS_KEY": "" if credential_mode else "test-secret-key",
                 "AWS_EC2_METADATA_DISABLED": "true",
             },
             pre_start=self._start_receiver,
             post_stop=self._stop_receiver,
+            shutdown_timeout=shutdown_timeout,
         )
 
     def _start_receiver(self, service):
         self.s3_port = service.allocate_port_env("TEST_SUITE_HTTP_PORT")
         s3_server_run(self.s3_port)
+        data_storage["put_status"] = self.put_status
+        data_storage["put_delay"] = self.put_delay
+        data_storage["upload_barrier"] = self.upload_barrier
+        data_storage["credential_mode"] = self.credential_mode
+        if self.credential_mode:
+            service._set_env("AWS_CONTAINER_CREDENTIALS_FULL_URI", f"http://127.0.0.1:{self.s3_port}/credentials")
+            service._set_env("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "")
+            service._set_env("AWS_CONFIG_FILE", os.devnull)
+            service._set_env("AWS_SHARED_CREDENTIALS_FILE", os.devnull)
+            service._set_env("AWS_WEB_IDENTITY_TOKEN_FILE", "")
 
     def _stop_receiver(self, service):
         s3_server_stop()
@@ -257,6 +278,320 @@ def test_out_s3_default_retry_exhausted_action_quarantines_file():
     service.stop()
 
     assert len(files) > 0
+
+
+@pytest.mark.parametrize("action", ["quarantine", "delete", "quarantine_full"])
+@pytest.mark.parametrize("preserve_ordering", [True, False])
+def test_out_s3_multiworker_retry_exhaustion_survives_and_recovers(tmp_path, action, preserve_ordering):
+    config = {
+        "service": {
+            "flush": 0.1,
+            "grace": 1,
+            "log_level": "info",
+            "http_server": "on",
+            "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}",
+            "storage.path": str(tmp_path / "engine"),
+        },
+        "pipeline": {
+            "inputs": [
+                {"name": "dummy", "tag": tag, "rate": 20,
+                 "storage.type": "filesystem",
+                 "dummy": json.dumps({"message": "retry exhaustion", "source": tag})}
+                for tag in ["journal", "app"]
+            ],
+            "outputs": [
+                {
+                    "name": "s3",
+                    "match": "*",
+                    "workers": 4,
+                    "bucket": bucket,
+                    "region": "us-east-1",
+                    "endpoint": "http://127.0.0.1:${TEST_SUITE_HTTP_PORT}",
+                    "use_put_object": True,
+                    "preserve_data_ordering": preserve_ordering,
+                    "retry_limit": 1,
+                    "retry_exhausted_action": "delete" if action == "delete" else "quarantine",
+                    "quarantine_dir_limit_size": "1" if action == "quarantine_full" else "0",
+                    "total_file_size": "1M",
+                    "upload_timeout": "1s",
+                    "compression": "gzip",
+                    "s3_key_format": "/$TAG/$UUID.gz",
+                    "store_dir": str(tmp_path / bucket),
+                    "store_dir_limit_size": "20M",
+                }
+                for bucket in ["first-bucket", "second-bucket"]
+            ],
+        },
+    }
+    config_file = tmp_path / "retry_exhaustion.yaml"
+
+    if not preserve_ordering:
+        # Leave active buffers behind to exercise put_all_chunks during restart.
+        for input_config in config["pipeline"]["inputs"]:
+            input_config["samples"] = 1
+        for output_config in config["pipeline"]["outputs"]:
+            output_config["upload_timeout"] = "60s"
+        config_file.write_text(yaml.safe_dump(config))
+        service = Service(str(config_file), put_status=403)
+        service.start()
+        service.service.wait_for_condition(
+            lambda: all(len(list((tmp_path / bucket).glob("**/20*/*"))) >= 2
+                        for bucket in ["first-bucket", "second-bucket"]),
+            timeout=30, description="buffers for restart",
+        )
+        process = service.service.flb.process
+        service.stop()
+        assert process.returncode == 0
+        for input_config in config["pipeline"]["inputs"]:
+            del input_config["samples"]
+        for output_config in config["pipeline"]["outputs"]:
+            output_config["upload_timeout"] = "1s"
+
+    config_file.write_text(yaml.safe_dump(config))
+    service = Service(str(config_file), put_status=403, put_delay=0.1)
+    service.start()
+
+    def cleanup_completed():
+        assert service.service.flb.process.poll() is None, "Fluent Bit crashed during retry exhaustion"
+        logs = Path(service.service.flb.log_file).read_text()
+        if action == "quarantine":
+            return all(len(list((tmp_path / bucket).glob("**/quarantine/*"))) >= 2
+                       for bucket in ["first-bucket", "second-bucket"])
+        if action == "quarantine_full":
+            marker = "quarantine limit reached, deleting retry-exhausted chunk"
+        else:
+            marker = "will not retry"
+        return all(sum(f"[output:s3:s3.{index}]" in line and marker in line
+                       for line in logs.splitlines()) >= 2 for index in [0, 1])
+
+    service.service.wait_for_condition(
+        cleanup_completed, timeout=60, interval=0.1, description="retry-exhausted chunks in both outputs"
+    )
+    # A successful upload after exhaustion proves workers can still use the store.
+    data_storage["put_status"] = 200
+    request_count = len(data_storage["requests"])
+
+    def recovered():
+        assert service.service.flb.process.poll() is None, "Fluent Bit crashed after retry exhaustion"
+        return all(any(request["path"].startswith(f"/{bucket}/") and request.get("status") == 200
+                       for request in data_storage["requests"][request_count:])
+                   for bucket in ["first-bucket", "second-bucket"])
+
+    service.service.wait_for_condition(
+        recovered,
+        timeout=30, description="uploads after permissions recover",
+    )
+    process = service.service.flb.process
+    service.stop()
+    assert process.returncode == 0
+    # Read only after shutdown so no quarantine file is still being written.
+    quarantined = {path: path.read_bytes() for path in tmp_path.glob("**/quarantine/*") if path.is_file()}
+
+    # Restart using the same buffers, including quarantined files.
+    service = Service(str(config_file))
+    service.start()
+    service.wait_for_request()
+    process = service.service.flb.process
+    service.stop()
+    assert process.returncode == 0
+    assert all(path.read_bytes() == content for path, content in quarantined.items())
+
+
+@pytest.mark.parametrize("mode", ["put_unordered", "put_ordered", "put_index", "multipart",
+                                  "put_refresh", "put_expiring"])
+def test_out_s3_workers_upload_independent_tags_concurrently(tmp_path, mode):
+    multipart = mode == "multipart"
+    tags = ["first", "second"]
+    config = {
+        "service": {
+            "flush": 0.1,
+            "grace": 5,
+            "log_level": "info",
+            "http_server": "on",
+            "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}",
+        },
+        "pipeline": {
+            "inputs": [
+                {"name": "dummy", "tag": tag, "rate": 10,
+                 "samples": 2 if multipart else 0,
+                 "dummy": json.dumps({"source": tag, "message": "x" * (3000000 if multipart else 100)})}
+                for tag in tags
+            ],
+            "outputs": [{
+                "name": "s3",
+                "match": "*",
+                "workers": 4,
+                "bucket": "concurrent-bucket",
+                "region": "us-east-1",
+                "endpoint": "http://127.0.0.1:${TEST_SUITE_HTTP_PORT}",
+                "use_put_object": not multipart,
+                "preserve_data_ordering": mode != "put_unordered",
+                # Use exact bytes: S3's multipart minimum is 5 MiB, not 5 MB.
+                "total_file_size": "10485760" if multipart else "1048576",
+                "upload_chunk_size": "5242880" if multipart else "524288",
+                "upload_timeout": "120s" if multipart else "1s",
+                "compression": "none" if multipart else "gzip",
+                "s3_key_format": "/$TAG/$INDEX-$UUID" if mode == "put_index" else "/$TAG/$UUID",
+                "store_dir": str(tmp_path / "store"),
+            }],
+        },
+    }
+    config_file = tmp_path / "concurrent_uploads.yaml"
+    config_file.write_text(yaml.safe_dump(config))
+    barrier = None if mode == "put_index" else TaggedUploadBarrier(tags)
+    credential_mode = {"put_refresh": "refresh", "put_expiring": "expiring"}.get(mode)
+    service = Service(str(config_file), put_delay=0.4, upload_barrier=barrier,
+                      shutdown_timeout=30, credential_mode=credential_mode)
+    service.start()
+
+    def uploads_complete():
+        assert service.service.flb.process.poll() is None
+        uploads = [request for request in data_storage["requests"]
+                   if request["method"] == "PUT" and request.get("status") == 200]
+        expected = 1 if multipart else 2
+        if all(sum(f"/{tag}/" in request["path"] for request in uploads) >= expected for tag in tags):
+            return uploads
+        return None
+
+    uploads = service.service.wait_for_condition(
+        uploads_complete, timeout=60, interval=0.1, description="uploads from both tags",
+    )
+    process = service.service.flb.process
+    service.stop()
+    assert process.returncode == 0
+
+    overlaps = [(first, second) for index, first in enumerate(uploads)
+                for second in uploads[index + 1:]
+                if max(first["started"], second["started"]) < min(first["finished"], second["finished"])]
+    if mode == "put_index":
+        assert not overlaps, "$INDEX uploads must preserve global ordering"
+    else:
+        paired = [request for request in uploads if request.get("barrier_passed") is not None]
+        assert len(paired) == len(tags)
+        assert all(request["barrier_passed"] for request in paired), "Tagged uploads did not meet at barrier"
+        assert overlaps, "Independent tags were serialized despite four output workers"
+        for first, second in overlaps:
+            assert first["path"].split("/")[2] != second["path"].split("/")[2]
+    if multipart:
+        initiations = [request for request in data_storage["requests"] if "upload_id" in request]
+        assert len(initiations) == len(tags)
+        upload_ids = {urlsplit(request["path"]).path: request["upload_id"] for request in initiations}
+        assert len(set(upload_ids.values())) == len(tags)
+        completions = []
+        for request in data_storage["requests"]:
+            parsed = urlsplit(request["path"])
+            query = parse_qs(parsed.query)
+            if request["method"] == "PUT" or "uploadId" in query:
+                assert request["status"] == 200
+                assert query["uploadId"] == [upload_ids[parsed.path]]
+                if request["method"] == "PUT":
+                    assert "partNumber" in query
+                    tag = parsed.path.split("/")[2]
+                    assert all(json.loads(line)["source"] == tag for line in request["body"].splitlines())
+                else:
+                    completions.append(parsed.path)
+        assert sorted(completions) == sorted(upload_ids)
+    if credential_mode:
+        assert data_storage["credential_requests"] > 1
+        for request in data_storage["requests"]:
+            _assert_rotating_credentials_signature(request)
+        if credential_mode == "refresh":
+            assert data_storage["auth_failures"] == set(tags)
+            assert sum(request["status"] == 403 for request in data_storage["requests"]) == len(tags)
+
+
+def _assert_rotating_credentials_signature(request):
+    headers = {key.lower(): value for key, value in request["headers"].items()}
+    algorithm, fields = headers["authorization"].split(" ", 1)
+    fields = dict(field.strip().split("=", 1) for field in fields.split(","))
+    access_key, scope = fields["Credential"].split("/", 1)
+    generation = access_key.removeprefix("test-access-")
+    assert headers["x-amz-security-token"] == f"test-token-{generation}"
+    signed_headers = fields["SignedHeaders"]
+    canonical_headers = "".join(f"{key}:{' '.join(headers[key].split())}\n"
+                                for key in signed_headers.split(";"))
+    parsed = urlsplit(request["path"])
+    assert not parsed.query
+    payload_hash = hashlib.sha256(request["body"]).hexdigest()
+    canonical = "\n".join([request["method"], parsed.path, "", canonical_headers,
+                            signed_headers, payload_hash])
+    string_to_sign = "\n".join([algorithm, headers["x-amz-date"], scope,
+                                 hashlib.sha256(canonical.encode()).hexdigest()])
+    key = f"AWS4test-secret-{generation}".encode()
+    for component in scope.split("/"):
+        key = hmac.new(key, component.encode(), hashlib.sha256).digest()
+    assert fields["Signature"] == hmac.new(key, string_to_sign.encode(), hashlib.sha256).hexdigest()
+
+
+def test_out_s3_blob_and_log_uploads_keep_separate_ownership(tmp_path):
+    small_blob = tmp_path / "small.bin"
+    large_blob = tmp_path / "large.bin"
+    small_blob.write_bytes(b"small blob")
+    large_blob.write_bytes(b"b" * 6000000)
+    config = {
+        "service": {
+            "flush": 0.1, "grace": 5, "log_level": "info",
+            "http_server": "on", "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}",
+        },
+        "pipeline": {
+            "inputs": [
+                {"name": "dummy", "tag": "logs", "rate": 10,
+                 "dummy": '{"message":"concurrent log"}'},
+                {"name": "blob", "tag": "blobs", "path": str(tmp_path / "*.bin"),
+                 "database_file": str(tmp_path / "input.db"), "scan_refresh_interval": "1s"},
+            ],
+            "outputs": [{
+                "name": "s3", "match": "*", "workers": 4,
+                "bucket": "mixed-bucket", "region": "us-east-1",
+                "endpoint": "http://127.0.0.1:${TEST_SUITE_HTTP_PORT}",
+                "use_put_object": True, "total_file_size": "1048576",
+                "upload_timeout": "1s", "s3_key_format": "/$TAG/$UUID",
+                "store_dir": str(tmp_path / "store"),
+                "blob_database_file": str(tmp_path / "output.db"),
+                "part_size": "5242880", "upload_parts_timeout": "1s",
+            }],
+        },
+    }
+    config_file = tmp_path / "mixed_uploads.yaml"
+    config_file.write_text(yaml.safe_dump(config))
+    service = Service(str(config_file), put_delay=0.2, shutdown_timeout=30)
+    service.start()
+
+    def uploads_complete():
+        assert service.service.flb.process.poll() is None
+        requests_seen = data_storage["requests"]
+        return (any(request["method"] == "POST" and "uploadId=" in request["path"]
+                    and request.get("status") == 200 for request in requests_seen)
+                and any(request["method"] == "PUT" and request["body"] == b"small blob"
+                        and request.get("status") == 200 for request in requests_seen)
+                and any("/logs/" in request["path"] and request.get("status") == 200
+                        for request in requests_seen))
+
+    service.service.wait_for_condition(uploads_complete, timeout=60,
+                                       description="blob multipart completion alongside log uploads")
+    process = service.service.flb.process
+    service.stop()
+    assert process.returncode == 0
+    initiations = [request for request in data_storage["requests"] if "upload_id" in request]
+    assert len(initiations) == 1
+    upload_id = initiations[0]["upload_id"]
+    parts = [request for request in data_storage["requests"] if "partNumber=" in request["path"]]
+    assert len(parts) == 2
+    part_bodies = {}
+    for request in parts:
+        part_number = int(parse_qs(urlsplit(request["path"]).query)["partNumber"][0])
+        assert part_number not in part_bodies
+        part_bodies[part_number] = request["body"]
+    assert sorted(part_bodies) == [1, 2]
+    assert b"".join(part_bodies[number] for number in sorted(part_bodies)) == large_blob.read_bytes()
+    completions = [request for request in data_storage["requests"]
+                   if request["method"] == "POST" and "uploadId=" in request["path"]]
+    assert len(completions) == 1
+    for request in data_storage["requests"]:
+        query = parse_qs(urlsplit(request["path"]).query)
+        if "uploadId" in query:
+            assert query["uploadId"] == [upload_id]
+            assert request["status"] == 200
 
 
 def test_out_s3_format_arrow_uploads_feather_with_zstd():

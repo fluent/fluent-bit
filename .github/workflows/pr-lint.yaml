@@ -20,7 +20,7 @@ jobs:
           persist-credentials: false
 
       - name: Run hadolint
-        uses: reviewdog/action-hadolint@2d0eb7c86a0ddd94eb625485f4cc2730e105edd8 # v1.53.0
+        uses: reviewdog/action-hadolint@1df92335c6c70880e301926d46148aeb27de1912 # v1.55.0
         with:
           github_token: ${{ secrets.github_token }}
           fail_level: "warning"
@@ -41,7 +41,7 @@ jobs:
           persist-credentials: false
 
       - name: Run shellcheck
-        uses: reviewdog/action-shellcheck@0722bbdb0d47f04c1b53b8734d2422ac63a45ec6 # v1.32.1
+        uses: reviewdog/action-shellcheck@0a90156c6e0553996a217f0a9e09be6b0f6bee4c # v1.34.0
         with:
           github_token: ${{ secrets.github_token }}
           fail_level: "warning"
@@ -66,7 +66,7 @@ jobs:
           persist-credentials: false
 
       - name: Run actionlint
-        uses: reviewdog/action-actionlint@dbe5299849118fd6f099ba563d263d770955a64a # v1.73.2
+        uses: reviewdog/action-actionlint@320fcdd9c860767cf17fab3b20e22e739d5d02b8 # v1.76.0
         with:
           # Disable shellcheck as done elsewhere and speeds up process
           actionlint_flags: -shellcheck=

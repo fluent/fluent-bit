@@ -277,6 +277,8 @@ void flb_task_retry_destroy(struct flb_task_retry *retry)
                   retry);
     }
 
+    flb_task_clear_route_retry_context(retry->parent, retry->o_ins);
+
     mk_list_del(&retry->_head);
     flb_free(retry);
 }
@@ -428,6 +430,8 @@ int flb_task_retry_clean(struct flb_task *task, struct flb_output_instance *ins)
             return 0;
         }
     }
+
+    flb_task_clear_route_retry_context(task, ins);
 
     return -1;
 }
@@ -907,6 +911,10 @@ void flb_task_destroy(struct flb_task *task, int del)
     /* Remove routes */
     mk_list_foreach_safe(head, tmp, &task->routes) {
         route = mk_list_entry(head, struct flb_task_route, _head);
+        if (route->retry_context != NULL &&
+            route->retry_context_destroy != NULL) {
+            route->retry_context_destroy(route->retry_context);
+        }
         mk_list_del(&route->_head);
         flb_free(route);
     }

@@ -187,40 +187,56 @@ int flb_cf_set_origin_format(struct flb_cf *cf, int format)
     return 0;
 }
 
+static int section_name_check(char *name, int len, const char *expected)
+{
+    size_t expected_length;
+
+    expected_length = strlen(expected);
+    if (len < 0 || (size_t) len != expected_length) {
+        return FLB_FALSE;
+    }
+
+    if (strncasecmp(name, expected, expected_length) == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 static enum section_type get_section_type(char *name, int len)
 {
-    if (strncasecmp(name, "service", len) == 0) {
+    if (section_name_check(name, len, "service") == FLB_TRUE) {
         return FLB_CF_SERVICE;
     }
-    else if (strncasecmp(name, "parser", len) == 0) {
+    else if (section_name_check(name, len, "parser") == FLB_TRUE) {
         return FLB_CF_PARSER;
     }
-    else if (strncasecmp(name, "multiline_parser", len) == 0) {
+    else if (section_name_check(name, len, "multiline_parser") == FLB_TRUE) {
         return FLB_CF_MULTILINE_PARSER;
     }
-    else if (strncasecmp(name, "stream_processor", len) == 0) {
+    else if (section_name_check(name, len, "stream_processor") == FLB_TRUE) {
         return FLB_CF_STREAM_PROCESSOR;
     }
-    else if (strncasecmp(name, "plugins", len) == 0) {
+    else if (section_name_check(name, len, "plugins") == FLB_TRUE) {
         return FLB_CF_PLUGINS;
     }
-    else if (strncasecmp(name, "upstream_servers", len) == 0) {
+    else if (section_name_check(name, len, "upstream_servers") == FLB_TRUE) {
         return FLB_CF_UPSTREAM_SERVERS;
     }
-    else if (strncasecmp(name, "custom", len) == 0 ||
-             strncasecmp(name, "customs", len) == 0) {
+    else if (section_name_check(name, len, "custom") == FLB_TRUE ||
+             section_name_check(name, len, "customs") == FLB_TRUE) {
         return FLB_CF_CUSTOM;
     }
-    else if (strncasecmp(name, "input", len) == 0 ||
-             strncasecmp(name, "inputs", len) == 0) {
+    else if (section_name_check(name, len, "input") == FLB_TRUE ||
+             section_name_check(name, len, "inputs") == FLB_TRUE) {
         return FLB_CF_INPUT;
     }
-    else if (strncasecmp(name, "filter", len) == 0 ||
-             strncasecmp(name, "filters", len) == 0) {
+    else if (section_name_check(name, len, "filter") == FLB_TRUE ||
+             section_name_check(name, len, "filters") == FLB_TRUE) {
         return FLB_CF_FILTER;
     }
-    else if (strncasecmp(name, "output", len) == 0 ||
-             strncasecmp(name, "outputs", len) == 0) {
+    else if (section_name_check(name, len, "output") == FLB_TRUE ||
+             section_name_check(name, len, "outputs") == FLB_TRUE) {
         return FLB_CF_OUTPUT;
     }
 

@@ -30,6 +30,8 @@ struct gcs_file {
     flb_sds_t file_path;
     size_t size;
     int locked;
+    /* total_file_size reached: no more appends, pending upload */
+    int sealed;
     int failures;
     time_t create_time;
 };
@@ -44,6 +46,7 @@ int gcs_store_file_read(struct flb_gcs *ctx, struct gcs_file *chunk,
                         char **out_buf, size_t *out_size);
 void gcs_store_file_lock(struct gcs_file *chunk);
 void gcs_store_file_unlock(struct gcs_file *chunk);
+void gcs_store_file_seal(struct gcs_file *chunk);
 int gcs_store_file_delete(struct flb_gcs *ctx, struct gcs_file *chunk);
 
 #endif

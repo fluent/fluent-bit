@@ -53,6 +53,20 @@ struct flb_tm {
 #define flb_tm_zone(x) (x)->tm.tm_zone
 #endif
 
+/* Maximum length of a timestamp string accepted by flb_time_from_str() */
+#define FLB_TIME_STR_MAX 64
+
+/*
+ * Prepared strptime(3) format for timestamps that may carry fractional seconds
+ * through the '%L' specifier, which strptime(3) does not implement. The format
+ * is split around '%L' so both halves can be applied separately, before and
+ * after the subsecond digits.
+ */
+struct flb_time_fmt {
+    char *fmt;        /* format up to '%L', or the whole format */
+    char *frac_secs;  /* remainder after '%L', NULL if '%L' is not present */
+};
+
 /*
    to represent eventtime of fluentd
    see also
@@ -153,6 +167,12 @@ int flb_time_diff(struct flb_time *time1,
 int flb_time_append_to_mpack(mpack_writer_t *writer, struct flb_time *tm, int fmt);
 int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt);
 int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj);
+int flb_time_fmt_create(struct flb_time_fmt *tf, const char *format);
+void flb_time_fmt_destroy(struct flb_time_fmt *tf);
+int flb_time_from_str(struct flb_time *tm, const char *str, size_t len,
+                      struct flb_time_fmt *tf);
+int flb_time_from_msgpack_object(struct flb_time *tm, msgpack_object *obj,
+                                 struct flb_time_fmt *tf);
 int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader);
 int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
                               msgpack_object **map);

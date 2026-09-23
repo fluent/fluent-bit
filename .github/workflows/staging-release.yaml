@@ -289,7 +289,7 @@ jobs:
     needs:
       - staging-release-version-check
     permissions:
-      contents: none
+      contents: read
     strategy:
       matrix:
         distro:
@@ -297,16 +297,33 @@ jobs:
           - windows
       fail-fast: false
     steps:
+    - name: Checkout repository
+      if: matrix.distro == 'windows'
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
     - name: Sync packages from buckets on S3
+      # Repository generation moves existing packages to the bucket root, but
+      # Windows/macOS uploads that finish later remain in the versioned prefix.
       run: |
         mkdir -p "packaging/releases/$DISTRO"
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/${{ github.event.inputs.version }}/$DISTRO" "packaging/releases/$DISTRO" --no-progress
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
         DISTRO: ${{ matrix.distro }}
+      shell: bash
+
+    - name: Validate Windows release packages
+      if: matrix.distro == 'windows'
+      run: |
+        bash packaging/validate-windows-release-packages.sh "$RELEASE_VERSION" packaging/releases/windows
+      env:
+        RELEASE_VERSION: ${{ inputs.version }}
       shell: bash
 
     - name: Sync to release bucket on S3
@@ -867,7 +884,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Release 2.0 - not latest
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(inputs.version, '2.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -879,7 +896,7 @@ jobs:
           make_latest: false
 
       - name: Release 2.1 - not latest
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(inputs.version, '2.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -891,7 +908,7 @@ jobs:
           make_latest: false
 
       - name: Release 3.0 - not latest
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(inputs.version, '3.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -903,7 +920,7 @@ jobs:
           make_latest: false
 
       - name: Release 3.1 - not latest
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(inputs.version, '3.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -915,7 +932,7 @@ jobs:
           make_latest: false
 
       - name: Release 3.2 - not latest
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(inputs.version, '3.2')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -927,7 +944,7 @@ jobs:
           make_latest: false
 
       - name: Release 4.0 - not latest
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(inputs.version, '4.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -939,7 +956,7 @@ jobs:
           make_latest: false
 
       - name: Release 4.1 - not latest
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(inputs.version, '4.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -951,7 +968,7 @@ jobs:
           make_latest: false
 
       - name: Release 4.2 - not latest
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(inputs.version, '4.2')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -963,7 +980,7 @@ jobs:
           make_latest: false
           
       - name: Release 5.0 - not latest
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(inputs.version, '5.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -975,7 +992,7 @@ jobs:
           make_latest: false
 
       - name: Release 5.1 and latest
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(inputs.version, '5.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
@@ -992,7 +1009,7 @@ jobs:
     needs:
       - staging-release-update-non-linux-s3
     permissions:
-      contents: none
+      contents: read
     outputs:
       windows-exe32-hash: ${{ steps.hashes.outputs.WIN_32_EXE_HASH }}
       windows-zip32-hash: ${{ steps.hashes.outputs.WIN_32_ZIP_HASH }}
@@ -1001,38 +1018,27 @@ jobs:
       windows-arm-exe64-hash: ${{ steps.hashes.outputs.WIN_64_ARM_EXE_HASH }}
       windows-arm-zip64-hash: ${{ steps.hashes.outputs.WIN_64_ARM_ZIP_HASH }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Sync release Windows directory to get checksums
         run:
-          aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/windows" ./ --exclude "*" --include "*.sha256"
+          aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}/windows" ./ --exclude "*" --include "fluent-bit-${RELEASE_VERSION}-*.sha256"
         shell: bash
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: "us-east-1"
+          RELEASE_VERSION: ${{ inputs.version }}
 
       - name: Provide output for documentation PR
         id: hashes
-        # do not fail the build for this
-        continue-on-error: true
         run: |
-          ls -l
-          export WIN_32_EXE_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win32.exe.sha256"|awk '{print $1}')
-          export WIN_32_ZIP_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win32.zip.sha256"|awk '{print $1}')
-          export WIN_64_EXE_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win64.exe.sha256"|awk '{print $1}')
-          export WIN_64_ZIP_HASH=$(cat "./fluent-bit-${{ inputs.version }}-win64.zip.sha256"|awk '{print $1}')
-          if [[ -f "./fluent-bit-${{ inputs.version }}-winarm64.exe.sha256" ]]; then
-            export WIN_64_ARM_EXE_HASH=$(cat "./fluent-bit-${{ inputs.version }}-winarm64.exe.sha256"|awk '{print $1}')
-          fi
-          if [[ -f "./fluent-bit-${{ inputs.version }}-winarm64.zip.sha256" ]]; then
-            export WIN_64_ARM_ZIP_HASH=$(cat "./fluent-bit-${{ inputs.version }}-winarm64.zip.sha256"|awk '{print $1}')
-          fi
-          set | grep WIN_
-          echo WIN_32_EXE_HASH="$WIN_32_EXE_HASH" >> $GITHUB_OUTPUT
-          echo WIN_32_ZIP_HASH="$WIN_32_ZIP_HASH" >> $GITHUB_OUTPUT
-          echo WIN_64_EXE_HASH="$WIN_64_EXE_HASH" >> $GITHUB_OUTPUT
-          echo WIN_64_ZIP_HASH="$WIN_64_ZIP_HASH" >> $GITHUB_OUTPUT
-          echo WIN_64_ARM_EXE_HASH="$WIN_64_ARM_EXE_HASH" >> $GITHUB_OUTPUT
-          echo WIN_64_ARM_ZIP_HASH="$WIN_64_ARM_ZIP_HASH" >> $GITHUB_OUTPUT
+          bash packaging/windows-release-hashes.sh "$RELEASE_VERSION" . >> "$GITHUB_OUTPUT"
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
         shell: bash
 
   staging-release-create-docs-pr:

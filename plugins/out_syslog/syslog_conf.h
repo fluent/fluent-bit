@@ -33,11 +33,15 @@
 #define FLB_SYSLOG_RFC3164 0
 #define FLB_SYSLOG_RFC5424 1
 
+#define FLB_SYSLOG_FRAMING_NEWLINE        0
+#define FLB_SYSLOG_FRAMING_OCTET_COUNTING 1
+
 struct flb_syslog {
     flb_sockfd_t fd;
     struct flb_upstream *u;
     flb_sds_t mode;
     flb_sds_t format;
+    flb_sds_t framing;
     size_t maxsize;
     flb_sds_t severity_key;
     flb_sds_t facility_key;
@@ -57,10 +61,12 @@ struct flb_syslog {
     flb_sds_t appname_preset;
     flb_sds_t procid_preset;
     flb_sds_t msgid_preset;
+    flb_sds_t sd_preset;
 
     /* Internal */
     int parsed_mode;
     int parsed_format;
+    int parsed_framing;
     struct flb_output_instance *ins;
 };
 

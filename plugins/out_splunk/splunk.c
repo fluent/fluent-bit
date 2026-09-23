@@ -405,6 +405,44 @@ static int pack_map_meta(struct flb_splunk *ctx,
     return 0;
 }
 
+/*
+ * Resolve the value for the top level HEC 'time' field. By default the Fluent
+ * Bit event timestamp is used, but when 'time_key' is set and the record holds
+ * a valid timestamp on that key, the record value takes precedence.
+ */
+static double get_event_time(struct flb_splunk *ctx, struct flb_time *tm,
+                             msgpack_object map)
+{
+    int ret;
+    struct flb_time record_tm;
+    struct flb_ra_value *rval;
+
+    if (ctx->ra_time_key == NULL) {
+        return flb_time_to_double(tm);
+    }
+
+    rval = flb_ra_get_value_object(ctx->ra_time_key, map);
+    if (rval == NULL) {
+        flb_plg_debug(ctx->ins,
+                      "time_key '%s' not found in record, using the event "
+                      "timestamp", ctx->time_key);
+        return flb_time_to_double(tm);
+    }
+
+    ret = flb_time_from_msgpack_object(&record_tm, &rval->o,
+                                       &ctx->time_key_fmt);
+    flb_ra_key_value_destroy(rval);
+
+    if (ret != 0) {
+        flb_plg_warn(ctx->ins,
+                     "could not parse a timestamp from time_key '%s', using "
+                     "the event timestamp", ctx->time_key);
+        return flb_time_to_double(tm);
+    }
+
+    return flb_time_to_double(&record_tm);
+}
+
 static int pack_map(struct flb_splunk *ctx, msgpack_packer *mp_pck,
                     struct flb_time *tm,
                     msgpack_object *group_metadata,
@@ -422,13 +460,14 @@ static int pack_map(struct flb_splunk *ctx, msgpack_packer *mp_pck,
     msgpack_object v;
     struct flb_mp_map_header mh;
 
-    t = flb_time_to_double(tm);
     map_size = map.via.map.size;
 
     if (ctx->splunk_send_raw == FLB_TRUE) {
         msgpack_pack_map(mp_pck, map_size /* all k/v */);
     }
     else {
+        t = get_event_time(ctx, tm, map);
+
         flb_mp_map_header_init(&mh, mp_pck);
 
         if (ctx->auto_extract_timestamp == FLB_FALSE) {
@@ -491,7 +530,6 @@ static inline int pack_event_key(struct flb_splunk *ctx, msgpack_packer *mp_pck,
     struct flb_mp_map_header mh;
     flb_sds_t val;
 
-    t = flb_time_to_double(tm);
     val = flb_ra_translate(ctx->ra_event_key, tag, tag_len, map, NULL);
     if (!val || flb_sds_len(val) == 0) {
         if (val != NULL) {
@@ -502,6 +540,8 @@ static inline int pack_event_key(struct flb_splunk *ctx, msgpack_packer *mp_pck,
     }
 
     if (ctx->splunk_send_raw == FLB_FALSE) {
+        t = get_event_time(ctx, tm, map);
+
         flb_mp_map_header_init(&mh, mp_pck);
 
         if (ctx->auto_extract_timestamp == FLB_FALSE) {
@@ -1148,6 +1188,25 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_splunk, event_index_key),
      "Set a record key that will populate the 'index' field. If the key is found, "
      "it will have precedence over the value set in 'event_index'."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "time_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_splunk, time_key),
+     "Set a record key that will populate the top level 'time' field of the "
+     "HTTP Event Collector payload. A record accessor pattern is allowed, e.g: "
+     "'$aggregator_time'. If the key is not found or its value cannot be "
+     "interpreted as a timestamp, the Fluent Bit event timestamp is used "
+     "instead. This option is ignored when 'splunk_send_raw' is enabled."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "time_key_format", NULL,
+     0, FLB_TRUE, offsetof(struct flb_splunk, time_key_format),
+     "Set the strptime(3) compatible format used to parse the value of "
+     "'time_key' when it holds a string, e.g: '%Y-%m-%dT%H:%M:%S.%LZ'. The "
+     "'%L' specifier can be used for fractional seconds. If unset, string "
+     "values are expected to contain a numeric Unix timestamp."
     },
 
     {

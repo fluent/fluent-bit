@@ -974,9 +974,11 @@ int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream)
     int                    elapsed_time;
     struct flb_connection *connection;
     const char            *reason;
+    const char            *remote_address;
     struct mk_list        *s_head;
     int                    drop;
     int                    inject;
+    int                    log_error;
     struct mk_list        *tmp;
     time_t                 now;
 
@@ -994,6 +996,7 @@ int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream)
         connection = mk_list_entry(s_head, struct flb_connection, _head);
 
         drop = FLB_FALSE;
+        log_error = FLB_TRUE;
 
         /* Connect timeouts */
         if (connection->net->accept_timeout > 0 &&
@@ -1002,6 +1005,7 @@ int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream)
             drop = FLB_TRUE;
             reason = "connection timeout";
             elapsed_time = connection->net->accept_timeout;
+            log_error = connection->net->accept_timeout_log_error;
         }
         else if (connection->net->io_timeout > 0 &&
                  connection->ts_io_timeout > 0 &&
@@ -1009,15 +1013,19 @@ int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream)
             drop = FLB_TRUE;
             reason = "IO timeout";
             elapsed_time = connection->net->io_timeout;
+            log_error = connection->net->accept_timeout_log_error &&
+                        connection->io_timeout_log_error;
         }
 
         if (drop) {
             if (!flb_downstream_is_shutting_down(stream)) {
-                if (connection->net->accept_timeout_log_error) {
+                remote_address = flb_connection_get_remote_address(connection);
+
+                if (log_error) {
                     flb_error("[downstream] connection #%i from %s timed "
                               "out after %i seconds (%s)",
                               connection->fd,
-                              connection->user_friendly_remote_host,
+                              remote_address,
                               elapsed_time,
                               reason);
                 }
@@ -1025,7 +1033,7 @@ int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream)
                     flb_debug("[downstream] connection #%i from %s timed "
                               "out after %i seconds (%s)",
                               connection->fd,
-                              connection->user_friendly_remote_host,
+                              remote_address,
                               elapsed_time,
                               reason);
                 }

@@ -156,9 +156,10 @@ def fluent_bit_input_supports_config_property(plugin_name, property_name, binary
 
 
 class FluentBitManager:
-    def __init__(self, config_path=None, binary_path=None):
+    def __init__(self, config_path=None, binary_path=None, *, shutdown_timeout=None):
         logger.info(f"config path {config_path}")
         self.config_path = config_path
+        self.shutdown_timeout = shutdown_timeout
         self.binary_path = binary_path or os.environ.get(ENV_FLB_BINARY_PATH) or _default_binary_path()
         self.binary_absolute_path = _resolve_binary_path(self.binary_path)
         self.process = None
@@ -263,7 +264,11 @@ class FluentBitManager:
 
         if supervisor_running:
             try:
-                timeout = LEAKS_EXIT_TIMEOUT if leaks_enabled() else 10
+                timeout = self.shutdown_timeout
+                if timeout is None:
+                    timeout = LEAKS_EXIT_TIMEOUT if leaks_enabled() else 10
+                elif leaks_enabled():
+                    timeout = max(timeout, LEAKS_EXIT_TIMEOUT)
                 return_code = self.process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 self._force_stop()
@@ -430,8 +435,8 @@ class FluentBitManager:
                     if uptime > 1:
                         logger.info("Fluent Bit is running, health check OK")
                         return True
-            except requests.ConnectionError:
-                # it's ok to fail, we are testing
+            except (requests.ConnectionError, requests.Timeout):
+                # Startup can temporarily delay responses, especially under Valgrind.
                 pass
 
             time.sleep(1)

@@ -62,8 +62,9 @@ int flb_aws_compression_b64_truncate_compress(int compression_type, size_t max_o
                                              void **out_data, size_t *out_len);
 
 /*
- * Columnar output formats for out_s3_compress_columnar(). Compression is
- * applied on top of the format via a generic FLB_AWS_COMPRESS_* codec.
+ * Columnar output formats for flb_aws_compression_compress_columnar().
+ * Compression is applied on top of the format via a generic
+ * FLB_AWS_COMPRESS_* codec.
  */
 #define FLB_AWS_COMPRESS_FORMAT_ARROW    0
 #define FLB_AWS_COMPRESS_FORMAT_PARQUET  1
@@ -78,6 +79,12 @@ int flb_aws_compression_b64_truncate_compress(int compression_type, size_t max_o
  *
  * Returns 0 on success, -1 on failure.
  */
+int flb_aws_compression_compress_columnar(int columnar_format,
+                                          void *json, size_t size,
+                                          void **out_buf, size_t *out_size,
+                                          int compression_type);
+
+/* Backward-compatible name retained for existing out-of-tree consumers. */
 int out_s3_compress_columnar(int columnar_format, void *json, size_t size,
                              void **out_buf, size_t *out_size,
                              int compression_type);

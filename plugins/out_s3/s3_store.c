@@ -217,6 +217,8 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
         if (fsf->data == NULL) {
             flb_plg_warn(ctx->ins, "BAD: found flb_fstore_file with NULL data reference, tag=%s, file=%s, will try to delete", tag, fsf->name);
             flb_fstore_file_delete(ctx->fs, fsf);
+            fsf = NULL;
+            continue;
         }
 
         if (fsf->meta_size != tag_len) {
@@ -244,7 +246,9 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
         return NULL;
     }
 
-    return fsf->data;
+    s3_file = fsf->data;
+
+    return s3_file;
 }
 
 /* Append data to a new or existing fstore file */
@@ -254,11 +258,13 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                         time_t file_first_log_time)
 {
     int ret;
+    int result;
     flb_sds_t name;
     struct flb_fstore_file *fsf;
     uint64_t current_buffer_size;
     uint64_t new_buffer_size;
 
+    result = -1;
     ret = buffer_size_reserve(ctx, bytes, &current_buffer_size,
                               &new_buffer_size);
     if (ret < 0) {
@@ -266,7 +272,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                       "Buffer is full: current_buffer_size=%" PRIu64
                       ", new_data=%zu, store_dir_limit_size=%zu bytes",
                       current_buffer_size, bytes, ctx->store_dir_limit_size);
-        return -1;
+        goto done;
     }
 
     /* If no target file was found, create a new one */
@@ -275,7 +281,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
         if (!name) {
             flb_plg_error(ctx->ins, "could not generate chunk file name");
             buffer_size_release(ctx, bytes);
-            return -1;
+            goto done;
         }
 
         /* Create the file */
@@ -285,7 +291,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                           name);
             flb_sds_destroy(name);
             buffer_size_release(ctx, bytes);
-            return -1;
+            goto done;
         }
         flb_sds_destroy(name);
 
@@ -296,7 +302,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
             flb_plg_warn(ctx->ins, "Deleting buffer file because metadata could not be written");
             flb_fstore_file_delete(ctx->fs, fsf);
             buffer_size_release(ctx, bytes);
-            return -1;
+            goto done;
         }
 
         /* Allocate local context */
@@ -307,9 +313,10 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
             flb_plg_warn(ctx->ins, "Deleting buffer file because S3 context creation failed");
             flb_fstore_file_delete(ctx->fs, fsf);
             buffer_size_release(ctx, bytes);
-            return -1;
+            goto done;
         }
         s3_file->fsf = fsf;
+        s3_file->upload_scan_id = ctx->upload_scan_id;
         s3_file->first_log_time = file_first_log_time;
         s3_file->create_time = time(NULL);
 
@@ -325,7 +332,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
     if (ret != 0) {
         flb_plg_error(ctx->ins, "error writing data to local s3 file");
         buffer_size_release(ctx, bytes);
-        return -1;
+        goto done;
     }
     ret = counter_add(&s3_file->size, (uint64_t) bytes, NULL);
     if (ret < 0) {
@@ -342,7 +349,44 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                      new_buffer_size, ctx->store_dir_limit_size);
     }
 
-    return 0;
+    result = 0;
+
+done:
+    return result;
+}
+
+static ssize_t restored_file_size_get(struct flb_s3 *ctx,
+                                      struct flb_fstore_file *fsf)
+{
+    int ret;
+    int restore_down;
+    ssize_t file_size;
+
+    restore_down = FLB_FALSE;
+
+    if (cio_chunk_is_up(fsf->chunk) == CIO_FALSE) {
+        ret = cio_chunk_up_force(fsf->chunk);
+        if (ret != CIO_OK) {
+            flb_plg_error(ctx->ins,
+                          "cannot load restored S3 chunk '%s' to determine its size",
+                          fsf->name);
+            return -1;
+        }
+        restore_down = FLB_TRUE;
+    }
+
+    file_size = cio_chunk_get_content_size(fsf->chunk);
+
+    if (restore_down == FLB_TRUE) {
+        ret = cio_chunk_down(fsf->chunk);
+        if (ret != CIO_OK) {
+            flb_plg_warn(ctx->ins,
+                         "cannot return restored S3 chunk '%s' to the down state",
+                         fsf->name);
+        }
+    }
+
+    return file_size;
 }
 
 static int set_files_context(struct flb_s3 *ctx)
@@ -379,7 +423,7 @@ static int set_files_context(struct flb_s3 *ctx)
             s3_file->first_log_time = time(NULL);
             s3_file->create_time = time(NULL);
 
-            file_size = cio_chunk_get_content_size(fsf->chunk);
+            file_size = restored_file_size_get(ctx, fsf);
             if (file_size > 0) {
                 cfl_atomic_store(&s3_file->size, (uint64_t) file_size);
 
