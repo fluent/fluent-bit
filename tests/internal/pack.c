@@ -1605,7 +1605,8 @@ void test_json_pack_iterative_buffer_retry(void)
             TEST_CHECK(strcmp(buffer, expected) == 0);
         }
         else {
-            TEST_CHECK(ret == 0);
+            /* insufficient space must be reported as a negative value */
+            TEST_CHECK(ret < 0);
         }
     }
     json = flb_msgpack_to_json_str(1, &result.data, FLB_FALSE);
