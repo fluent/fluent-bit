@@ -1,16 +1,14 @@
-"""Bounded nesting and recovery checks for network ingestion."""
+"""Reject malformed bulk payloads while keeping ingestion failures retryable."""
 import contextlib
 import http.client
-import os
+import json
 from pathlib import Path
-import signal
 import socket
-import struct
-import subprocess
 import time
 
 import pytest
 
+from utils.fluent_bit_manager import FluentBitManager
 
 
 def wait_for(predicate, timeout=30):
@@ -19,100 +17,51 @@ def wait_for(predicate, timeout=30):
         if predicate():
             return
         time.sleep(0.05)
-    assert predicate(), "Timed out waiting for Fluent Bit"
+    assert predicate(), "Timed out waiting for Fluent Bit output"
 
 
 @contextlib.contextmanager
-def daemon(tmp_path, mode):
+def daemon(tmp_path, mode, input_options=None):
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
-    plugin = mode.split("-")[0]
-    address = str(tmp_path / "input.sock") if plugin == "unix_socket" else ("127.0.0.1", port)
-    parser = tmp_path / "parsers.conf"
-    parser.write_text("[PARSER]\n    Name json\n    Format json\n")
-    command = [os.environ["FLUENT_BIT_BINARY"], "-f", "0.1", "-R", str(parser), "-i", plugin]
-    if plugin == "unix_socket":
-        command += ["-p", f"socket_path={address}"]
-    else:
-        command += ["-p", "listen=127.0.0.1", "-p", f"port={port}"]
-    if mode.endswith("-parser"):
-        command += ["-p", "format=none", "-p", "parser=json"]
-    if plugin == "syslog":
-        command += ["-p", "mode=tcp", "-p", "parser=json"]
-    command += ["-o", "stdout", "-m", "*", "-p", "format=json_lines"]
-    log = tmp_path / "fluent-bit.log"
-    memlog = tmp_path / "valgrind.log"
-    memory = os.environ.get("VALGRIND") == "1"
-    if memory:
-        command = ["valgrind", "--leak-check=full", "--show-leak-kinds=all",
-                   "--errors-for-leak-kinds=definite,indirect", "--error-exitcode=99",
-                   f"--log-file={memlog}"] + command
-    with log.open("w") as output:
-        process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT)
-        def ready():
-            assert process.poll() is None, log.read_text()
-            return "[output:stdout:" in log.read_text()
-        try:
-            wait_for(ready)
-            yield address, process, log
-        finally:
-            if process.poll() is None:
-                process.send_signal(signal.SIGTERM)
-            try:
-                process.wait(timeout=30)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-                pytest.fail("Fluent Bit did not shut down cleanly")
-            assert process.returncode == 0, log.read_text() + (memlog.read_text() if memory else "")
-            if memory:
-                assert "ERROR SUMMARY: 0 errors" in memlog.read_text(), memlog.read_text()
+    input_config = {"name": mode, "listen": "127.0.0.1", "port": port}
+    if input_options:
+        input_config.update(input_options)
+    config = {
+        "service": {
+            "flush": 0.1,
+            "grace": 1,
+            "http_server": "on",
+            "http_listen": "127.0.0.1",
+            "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}",
+        },
+        "pipeline": {
+            "inputs": [input_config],
+            "outputs": [{"name": "stdout", "match": "*", "format": "json_lines"}],
+        },
+    }
+    config_path = tmp_path / "fluent-bit.yaml"
+    config_path.write_text(json.dumps(config))
+    manager = FluentBitManager(str(config_path))
+    try:
+        manager.start()
+        log = Path(manager.log_file)
+        yield ("127.0.0.1", port), manager.process, log
+    finally:
+        manager.stop()
 
 
 def send(mode, address, payload):
-    plugin = mode.split("-")[0]
-    if plugin in ("http", "splunk", "elasticsearch"):
-        conn = http.client.HTTPConnection(*address, timeout=10)
-        try:
-            path = "/test"
-            if plugin == "splunk":
-                path = "/services/collector/event"
-                payload = b'{"event":' + payload + b"}"
-            elif plugin == "elasticsearch":
-                path = "/_bulk"
-                payload = b'{"index":{}}\n' + payload + b"\n"
-            conn.request("POST", path, payload, {"Content-Type": "application/json"})
-            response = conn.getresponse()
-            response.read()
-            return response.status
-        finally:
-            conn.close()
-        return
-    if plugin == "udp":
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.sendto(payload + b"\n", address)
-        return
-    family = socket.AF_UNIX if plugin == "unix_socket" else socket.AF_INET
-    with socket.socket(family, socket.SOCK_STREAM) as sock:
-        sock.settimeout(5)
-        sock.connect(address)
-        if plugin == "mqtt":
-            # A regular MQTT CONNECT followed by a QoS 0 JSON publication.
-            sock.sendall(b"\x10\x10\x00\x04MQTT\x04\x02\x00\x0a\x00\x04test")
-            assert sock.recv(4)[0] == 0x20
-            body = b"\x00\x01a" + payload
-            length = len(body)
-            encoded = bytearray()
-            while True:
-                digit = length % 128
-                length //= 128
-                encoded.append(digit | (0x80 if length else 0))
-                if not length:
-                    break
-            sock.sendall(b"\x30" + bytes(encoded) + body)
-        else:
-            sock.sendall(payload if plugin == "forward" else payload + b"\n")
+    conn = http.client.HTTPConnection(*address, timeout=10)
+    try:
+        payload = b'{"index":{}}\n' + payload + b"\n"
+        conn.request("POST", "/_bulk", payload, {"Content-Type": "application/json"})
+        response = conn.getresponse()
+        response.read()
+        return response.status
+    finally:
+        conn.close()
 
 
 @pytest.mark.parametrize("mode", ["elasticsearch"])
@@ -131,5 +80,22 @@ def test_nested_json_recovery(tmp_path, mode, kind):
         send(mode, address, b'{"marker":"after"}')
         wait_for(lambda: '"marker":"after"' in log.read_text())
         assert process.poll() is None
-        # Parser inputs may preserve rejected JSON as a raw log string.
         assert '"nested":' not in log.read_text()
+
+
+@pytest.mark.parametrize("payload", [b'{"broken":', b'not-json', b'[]', b'42'])
+def test_malformed_bulk_recovery(tmp_path, payload):
+    with daemon(tmp_path, "elasticsearch") as (address, process, log):
+        assert send("elasticsearch", address, payload) == 400
+        assert send("elasticsearch", address, b'{"marker":"after"}') == 200
+        wait_for(lambda: '"marker":"after"' in log.read_text())
+        assert process.poll() is None
+
+
+def test_busy_ingress_is_retryable(tmp_path):
+    options = {"http_server.workers": 2, "http_server.ingress_queue_byte_limit": "128"}
+    with daemon(tmp_path, "elasticsearch", options) as (address, process, log):
+        assert send("elasticsearch", address, json.dumps({"large": "x" * 1024}).encode()) == 503
+        assert send("elasticsearch", address, b'{"marker":"after"}') == 200
+        wait_for(lambda: '"marker":"after"' in log.read_text())
+        assert process.poll() is None
