@@ -99,3 +99,22 @@ def test_busy_ingress_is_retryable(tmp_path):
         assert send("elasticsearch", address, b'{"marker":"after"}') == 200
         wait_for(lambda: '"marker":"after"' in log.read_text())
         assert process.poll() is None
+
+
+@pytest.mark.parametrize("trailer", [b'{"index":', b'[', b'"unfinished', b'garbage'])
+def test_trailing_data_rejected_before_ingestion(tmp_path, trailer):
+    with daemon(tmp_path, "elasticsearch") as (address, process, log):
+        payload = b'{"marker":"rejected"}\n' + trailer
+        assert send("elasticsearch", address, payload) == 400
+        assert send("elasticsearch", address, b'{"marker":"after"}') == 200
+        wait_for(lambda: '"marker":"after"' in log.read_text())
+        assert '"marker":"rejected"' not in log.read_text()
+        assert process.poll() is None
+
+
+@pytest.mark.parametrize("trailer", [b'', b' \t\r\n \t'])
+def test_trailing_whitespace_accepted(tmp_path, trailer):
+    with daemon(tmp_path, "elasticsearch") as (address, process, log):
+        assert send("elasticsearch", address, b'{"marker":"accepted"}' + trailer) == 200
+        wait_for(lambda: '"marker":"accepted"' in log.read_text())
+        assert process.poll() is None
