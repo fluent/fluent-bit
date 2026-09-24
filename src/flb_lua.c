@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_lua.h>
 #include <stdint.h>
+#include <math.h>
 
 int flb_lua_enable_flb_null(lua_State *l)
 {
@@ -83,6 +84,22 @@ static int flb_lua_setmetatable(lua_State *l, struct flb_lua_metadata *meta, int
     lua_setmetatable(l, abs_index);
 
     return 0;
+}
+
+/* check that a key can be used as a table index before lua_settable() */
+static int flb_lua_is_valid_key(lua_State *l, int index)
+{
+    int type;
+
+    type = lua_type(l, index);
+    if (type == LUA_TNIL) {
+        return FLB_FALSE;
+    }
+    if (type == LUA_TNUMBER && isnan(lua_tonumber(l, index))) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
 }
 
 int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
@@ -153,6 +170,11 @@ int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
                 ret = flb_lua_pushmpack(l, reader);
                 if (ret) {
                     return ret;
+                }
+                if (flb_lua_is_valid_key(l, -2) == FLB_FALSE) {
+                    /* drop the entry, the key cannot index a table */
+                    lua_pop(l, 2);
+                    continue;
                 }
                 lua_settable(l, -3);
             }
@@ -236,6 +258,11 @@ void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o)
                 msgpack_object_kv *p = o->via.map.ptr;
                 for (i = 0; i < size; i++) {
                     flb_lua_pushmsgpack(l, &(p+i)->key);
+                    if (flb_lua_is_valid_key(l, -1) == FLB_FALSE) {
+                        /* drop the entry, the key cannot index a table */
+                        lua_pop(l, 1);
+                        continue;
+                    }
                     flb_lua_pushmsgpack(l, &(p+i)->val);
                     lua_settable(l, index);
                 }
