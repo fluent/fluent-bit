@@ -313,6 +313,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
 
     mk_list_init(&ctx->files_static);
     mk_list_init(&ctx->files_event);
+    mk_list_init(&ctx->files_dormant);
     mk_list_init(&ctx->files_rotated);
 
     /* hash table for files lookups */
@@ -625,6 +626,10 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
 
     if (config->event_hash) {
         flb_hash_table_destroy(config->event_hash);
+    }
+
+    if (config->dormant_files != NULL) {
+        flb_tail_file_dormant_clear(config);
     }
 
     if (config->dormant_inodes != NULL) {

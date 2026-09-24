@@ -194,6 +194,8 @@ struct flb_tail_config {
     struct flb_hash_table *static_hash;
     struct flb_hash_table *event_hash;
 
+    struct mk_list files_dormant;
+    int dormant_scan_failed;
     struct flb_hash_table *dormant_files;
     struct flb_hash_table *dormant_inodes;
     struct flb_hash_table *ignored_file_sizes;
