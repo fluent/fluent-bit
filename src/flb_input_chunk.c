@@ -1919,11 +1919,12 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
     }
 
     /*
-     * The tag is NUL terminated in this layout and it must be stored as is:
-     * it has to match the key used to register the chunk in the hash tables.
+     * The tag is NUL terminated in this layout and it must match the key used
+     * to register the chunk in the hash tables, which is cut at the first NUL
+     * byte (see input_chunk_append_raw()).
      */
     if (tag_len > 0 && memchr(tag, '\0', tag_len) != NULL) {
-        return -1;
+        tag_len = strnlen(tag, tag_len);
     }
 
     resolved_lengths = flb_calloc((size_t) route_count, sizeof(uint16_t));
