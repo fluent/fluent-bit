@@ -1,0 +1,8 @@
+parsers:
+  - name: ceph
+    # https://rubular.com/r/IvZVElTgNl
+    format: regex
+    regex: '^(?<log_time>[^ ][-.\d\+:T]+[ ]*[.:\d]*)\s+(?<message>.*)$'
+    time_format: '%Y-%m-%d %H:%M:%S.%L'
+    time_keep: Off
+    time_key: log_time

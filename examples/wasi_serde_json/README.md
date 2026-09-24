@@ -31,14 +31,14 @@ target/wasm32-wasip1/release/wasi_serde_json.wasm
 
 ## How to confirm WASI integration
 
-Create parsers.conf as follows:
+Create parsers.yaml as follows:
 
-```ini
-[PARSER]
-    Name        wasi
-    Format      json
-    Time_Key    time
-    Time_Format %Y-%m-%dT%H:%M:%S.%L %z
+```yaml
+parsers:
+  - name: wasi
+    format: json
+    time_key: time
+    time_format: '%Y-%m-%dT%H:%M:%S.%L %z'
 ```
 
 And Create fluent-bit configuration file as follows:
@@ -47,7 +47,8 @@ And Create fluent-bit configuration file as follows:
 [SERVICE]
     Flush        1
     Daemon       Off
-    Parsers_File parsers.conf
+    #Parsers_File parsers.conf
+    Parsers_File parsers.yaml
     Log_Level    info
     HTTP_Server  Off
     HTTP_Listen  0.0.0.0
