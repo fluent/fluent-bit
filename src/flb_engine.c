@@ -59,6 +59,17 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_ring_buffer.h>
+
+#ifdef __linux__
+#include <fcntl.h>
+
+/* F_GETPIPE_SZ is only exposed with _GNU_SOURCE */
+#ifdef F_GETPIPE_SZ
+#define FLB_ENGINE_F_GETPIPE_SZ F_GETPIPE_SZ
+#else
+#define FLB_ENGINE_F_GETPIPE_SZ 1032
+#endif
+#endif
 #include <fluent-bit/flb_notification.h>
 #include <fluent-bit/flb_simd.h>
 
@@ -1162,6 +1173,26 @@ int flb_engine_start(struct flb_config *config)
         flb_error("[engine] could not create engine thread channel");
         return -1;
     }
+
+#ifdef __linux__
+    /*
+     * Pipes are usually 64KiB but the kernel creates them with a single page
+     * once the user exceeds fs.pipe-user-pages-soft, keep the number of
+     * flush requests in flight below the capacity of the engine channels.
+     */
+    ret = fcntl(config->ch_self_events[1], FLB_ENGINE_F_GETPIPE_SZ);
+    if (ret > 0) {
+        ret = (ret / (int) sizeof(uint64_t)) / 2;
+        if (ret < 1) {
+            ret = 1;
+        }
+        if (ret < config->flush_in_flight_limit) {
+            flb_warn("[engine] engine channel capacity is low, limiting flush "
+                     "requests in flight to %i", ret);
+            config->flush_in_flight_limit = ret;
+        }
+    }
+#endif
     /* Signal type to indicate a "flush" request */
     config->event_thread_init.type = FLB_ENGINE_EV_THREAD_ENGINE;
     config->event_thread_init.priority = FLB_ENGINE_PRIORITY_THREAD;
