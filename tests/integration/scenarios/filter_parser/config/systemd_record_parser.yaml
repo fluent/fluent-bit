@@ -1,6 +1,6 @@
 service:
-  flush: 1
-  grace: 1
+  flush: 0.1
+  grace: 5
   log_level: info
 parsers:
   - name: journal_envelope

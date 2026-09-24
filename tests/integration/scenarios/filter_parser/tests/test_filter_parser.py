@@ -1,14 +1,12 @@
 """Parser selection works in the filter pipeline and input/output processors."""
 import json
-import os
 from pathlib import Path
-import subprocess
 
 import pytest
 import yaml
 
-from utils.fluent_bit_manager import _resolve_binary_path
-from utils.valgrind import assert_valgrind_clean
+from utils.fluent_bit_manager import FluentBitManager
+from utils.memory_check import leaks_enabled
 
 
 PARSERS = """[PARSER]
@@ -49,31 +47,31 @@ def run_pipeline(tmp_path, records, options, placement="input", valid=True,
     }, valid=valid)
 
 
-def run_configuration(tmp_path, configuration, valid=True, env=None):
+def run_configuration(tmp_path, configuration, valid=True):
     if isinstance(configuration, Path):
         config = configuration
     else:
         config = tmp_path / "fluent-bit.yaml"
         config.write_text(yaml.safe_dump(configuration))
-    command = [_resolve_binary_path(), "-c", str(config)]
-    memory = os.environ.get("VALGRIND") == "1"
-    memlog = tmp_path / "valgrind.log"
-    if memory:
-        command = ["valgrind", "--leak-check=full", "--show-leak-kinds=all",
-                   "--error-exitcode=99", f"--log-file={memlog}"] + command
-    result = subprocess.run(command, capture_output=True, text=True, timeout=60, env=env)
-    (tmp_path / "fluent-bit.log").write_text(result.stdout + result.stderr)
-    if memory:
-        assert "ERROR SUMMARY:" in memlog.read_text()
-        assert_valgrind_clean(memlog)
+    manager = FluentBitManager(str(config))
+    try:
+        manager.start(wait_for_ready=False)
+        return_code = manager.process.wait(timeout=120)
+    finally:
+        manager.stop()
+    output = Path(manager.log_file).read_text()
     if not valid:
-        assert result.returncode != 0, result.stdout + result.stderr
-        return result.stderr
-    assert result.returncode == 0, result.stdout + result.stderr
-    return [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
+        # In Leaks mode the supervisor status describes the memory check, not
+        # the expected Fluent Bit initialization failure. stop() validates it.
+        if not leaks_enabled():
+            assert return_code != 0, output
+        assert "[engine] input initialization failed" in output, output
+        return output
+    assert return_code == 0, output
+    return [json.loads(line) for line in output.splitlines() if line.startswith("{")]
 
 
-def test_systemd_record_parser_processor(tmp_path):
+def test_systemd_record_parser_processor(tmp_path, monkeypatch):
     """Replay the systemd PoC with a self-contained input processor configuration."""
     config_file = Path(__file__).resolve().parents[1] / "config" / "systemd_record_parser.yaml"
     message = ('192.168.1.100 - - [21/Nov/2025:20:30:15 +0000] '
@@ -89,8 +87,8 @@ def test_systemd_record_parser_processor(tmp_path):
     source.write_text("".join(json.dumps(record) + "\n" for record in records))
 
     # Replay journal-shaped records without requiring access to a host journal.
-    output = run_configuration(tmp_path, config_file,
-                               env={**os.environ, "PARSER_TEST_RECORDS": str(source)})
+    monkeypatch.setenv("PARSER_TEST_RECORDS", str(source))
+    output = run_configuration(tmp_path, config_file)
     assert len(output) == len(records)
     assert output[0] == {
         **common, "date": 1763757015.0, "remote": "192.168.1.100",
