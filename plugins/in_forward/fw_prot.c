@@ -1002,12 +1002,18 @@ static int fw_ingest_forward_mode_chunk(struct fw_conn *conn,
     ctx = conn->ctx;
     ins = ctx->ins;
 
+    /*
+     * Retry while the ingress queue is full, unless the engine is pausing the
+     * instance: the engine thread drains the queue and blocks until this
+     * worker acknowledges the pause from its event loop.
+     */
     do {
         result = fw_ingest_logs(ctx, tag, tag_len, buffer, length);
     } while (result == FLB_INPUT_INGRESS_BUSY &&
              ins->ingress_queue_enabled == FLB_TRUE &&
              ins->config->is_ingestion_active == FLB_TRUE &&
              ctx->is_paused == FLB_FALSE &&
+             fw_pause_requested(ctx) == FLB_FALSE &&
              (ins->ingress_queue_byte_limit == 0 ||
               length <= ins->ingress_queue_byte_limit));
 
