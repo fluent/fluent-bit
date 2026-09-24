@@ -36,10 +36,12 @@ msgpack_object_kv *ml_get_key(msgpack_object *map, char *check_for_key)
     int i;
     char *key_str = NULL;
     size_t key_str_size = 0;
+    size_t check_for_key_size;
     msgpack_object_kv *kv;
     msgpack_object  key;
     int check_key = FLB_FALSE;
 
+    check_for_key_size = strlen(check_for_key);
     kv = map->via.map.ptr;
 
     for(i=0; i < map->via.map.size; i++) {
@@ -58,7 +60,9 @@ msgpack_object_kv *ml_get_key(msgpack_object *map, char *check_for_key)
         }
 
         if (check_key == FLB_TRUE) {
-            if (strncmp(check_for_key, key_str, key_str_size) == 0) {
+            /* the key must match exactly, not just as a prefix */
+            if (key_str_size == check_for_key_size &&
+                strncmp(check_for_key, key_str, key_str_size) == 0) {
                 return (kv+i);
             }
         }
@@ -66,13 +70,15 @@ msgpack_object_kv *ml_get_key(msgpack_object *map, char *check_for_key)
     return NULL;
 }
 
-int ml_is_partial(msgpack_object *map)
+/* returns FLB_TRUE if the value of 'key' is the string "true" (case insensitive) */
+static int ml_key_is_true(msgpack_object *map, char *key)
 {
     char *val_str = NULL;
+    size_t val_str_size = 0;
     msgpack_object_kv *kv;
     msgpack_object  val;
-    
-    kv = ml_get_key(map, FLB_MULTILINE_PARTIAL_MESSAGE_KEY);
+
+    kv = ml_get_key(map, key);
 
     if (kv == NULL) {
         return FLB_FALSE;
@@ -81,41 +87,31 @@ int ml_is_partial(msgpack_object *map)
     val = kv->val;
     if (val.type == MSGPACK_OBJECT_BIN) {
         val_str  = (char *) val.via.bin.ptr;
+        val_str_size = val.via.bin.size;
     }
-    if (val.type == MSGPACK_OBJECT_STR) {
+    else if (val.type == MSGPACK_OBJECT_STR) {
         val_str  = (char *) val.via.str.ptr;
+        val_str_size = val.via.str.size;
+    }
+    else {
+        /* not a string, it can't be "true" */
+        return FLB_FALSE;
     }
 
-    if (strncasecmp("true", val_str, 4) == 0) {
+    if (val_str_size == 4 && strncasecmp("true", val_str, 4) == 0) {
         return FLB_TRUE;
     }
     return FLB_FALSE;
 }
 
+int ml_is_partial(msgpack_object *map)
+{
+    return ml_key_is_true(map, FLB_MULTILINE_PARTIAL_MESSAGE_KEY);
+}
+
 int ml_is_partial_last(msgpack_object *map)
 {
-    char *val_str = NULL;
-    msgpack_object_kv *kv;
-    msgpack_object  val;
-    
-    kv = ml_get_key(map, FLB_MULTILINE_PARTIAL_LAST_KEY);
-
-    if (kv == NULL) {
-        return FLB_FALSE;
-    }
-
-    val = kv->val;
-    if (val.type == MSGPACK_OBJECT_BIN) {
-        val_str  = (char *) val.via.bin.ptr;
-    }
-    if (val.type == MSGPACK_OBJECT_STR) {
-        val_str  = (char *) val.via.str.ptr;
-    }
-
-    if (strncasecmp("true", val_str, 4) == 0) {
-        return FLB_TRUE;
-    }
-    return FLB_FALSE;
+    return ml_key_is_true(map, FLB_MULTILINE_PARTIAL_LAST_KEY);
 }
 
 int ml_get_partial_id(msgpack_object *map, 
@@ -138,9 +134,13 @@ int ml_get_partial_id(msgpack_object *map,
         val_str  = (char *) val.via.bin.ptr;
         val_str_size  = val.via.bin.size;
     }
-    if (val.type == MSGPACK_OBJECT_STR) {
+    else if (val.type == MSGPACK_OBJECT_STR) {
         val_str  = (char *) val.via.str.ptr;
         val_str_size  = val.via.str.size;
+    }
+    else {
+        /* a partial_id that is not a string is as good as a missing one */
+        return -1;
     }
 
     *partial_id_str = val_str;
@@ -358,10 +358,12 @@ int ml_split_message_packer_write(struct split_message_packer *packer,
     if (val.type == MSGPACK_OBJECT_BIN) {
         val_str  = (char *) val.via.bin.ptr;
         val_str_size = val.via.bin.size;
-    } else if (val.type == MSGPACK_OBJECT_STR) {
+    }
+    else if (val.type == MSGPACK_OBJECT_STR) {
         val_str  = (char *) val.via.str.ptr;
         val_str_size = val.via.str.size;
-    } else {
+    }
+    else {
         return -1;
     }
 
