@@ -450,7 +450,21 @@ static int tls_context_set_verify_client(void *ctx_backend, int verify_client)
 
     if (ctx->mode == FLB_TLS_SERVER_MODE && verify_client == FLB_TRUE) {
         mode = SSL_CTX_get_verify_mode(ctx->ctx);
-        mode |= SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
+
+        /*
+         * SSL_VERIFY_FAIL_IF_NO_PEER_CERT is only honored together with
+         * SSL_VERIFY_PEER: without it the server never sends a certificate
+         * request, so a context created with 'tls.verify off' would silently
+         * accept any client. An explicit 'tls.verify_client_cert on' always
+         * requires and verifies the client certificate.
+         */
+        if ((mode & SSL_VERIFY_PEER) == 0) {
+            flb_warn("[tls] 'tls.verify_client_cert' is enabled, client "
+                     "certificates will be required and verified even "
+                     "though 'tls.verify' is off");
+        }
+
+        mode |= SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
         SSL_CTX_set_verify(ctx->ctx, mode, NULL);
     }
 
