@@ -1918,6 +1918,14 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
         return -1;
     }
 
+    /*
+     * The tag is NUL terminated in this layout and it must be stored as is:
+     * it has to match the key used to register the chunk in the hash tables.
+     */
+    if (tag_len > 0 && memchr(tag, '\0', tag_len) != NULL) {
+        return -1;
+    }
+
     resolved_lengths = flb_calloc((size_t) route_count, sizeof(uint16_t));
     if (!resolved_lengths) {
         flb_errno();
@@ -2019,7 +2027,10 @@ int flb_input_chunk_write_header_v2(struct cio_chunk *chunk,
         max_tag_len = 0;
     }
     if (tag_len > max_tag_len) {
-        tag_len = max_tag_len;
+        /* truncating the tag would break the chunk hash table lookups */
+        flb_free(resolved_lengths);
+        flb_free(resolved_plugin_lengths);
+        return -1;
     }
 
     meta_size = FLB_INPUT_CHUNK_META_HEADER + tag_len + 1 + sizeof(uint16_t) + routing_length;
@@ -3313,10 +3324,22 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     }
 
     /*
-     * Some callers might not set a custom tag, on that case just inherit
-     * the fixed instance tag or instance name.
+     * The tag is used as the key of the chunk hash tables and it's stored in
+     * the chunk metadata, which is read back up to the first NUL byte (see
+     * flb_input_chunk_get_tag()). Cut the tag at the first NUL byte so both
+     * sides match, otherwise the chunk cannot be unregistered from the hash
+     * table when it's destroyed and a dangling reference is left behind.
      */
-    if (!tag) {
+    if (tag && tag_len > 0 && memchr(tag, '\0', tag_len) != NULL) {
+        flb_plg_debug(in, "tag contains a NUL byte, truncating it");
+        tag_len = strnlen(tag, tag_len);
+    }
+
+    /*
+     * Some callers might not set a custom tag (or it became empty above), on
+     * that case just inherit the fixed instance tag or instance name.
+     */
+    if (!tag || tag_len == 0) {
         if (in->tag && in->tag_len > 0) {
             tag = in->tag;
             tag_len = in->tag_len;
