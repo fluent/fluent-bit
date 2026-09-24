@@ -67,7 +67,23 @@ worker. Failed opens, failed initialization, and file removal return their slots
 At 75% shared usage (rounded up to a whole file), Tail warns once and continues
 opening files up to the hard cap. The warning is rearmed when usage falls below
 75%. At the cap, excess files are retried on subsequent `refresh_interval` scans.
-Reaching EOF does not free a slot. There is no fairness guarantee between inputs;
+On each refresh scan, inputs proactively release their own eligible files until
+shared usage is below 75%. Only plain files at clean EOF are eligible: partial
+records, symlinks, retained rotation, compressed files, and multiline/Docker modes
+keep their handles. Dormant identity, offset, and a content marker remain in
+memory; database offsets are retained when configured. Unchanged dormant files
+are skipped. A metadata change triggers a budgeted reopen, with identity and
+content-marker validation before resuming; detected replacement/truncation starts
+at offset zero. Reopening is subject to the refresh interval and available slots.
+Without a database, dormant state does not survive a process restart. The dormant
+map uses memory proportional to the number of retained paths. Dormant files have
+no open handle or watcher: writes followed by deletion/rotation between scans may
+be missed. Changes that preserve size and filesystem timestamps cannot be detected
+reliably, particularly on filesystems with coarse timestamp resolution. Windows compares
+volume serial number and file index, plus write/change timestamps with the 100 ns
+precision supplied by `FILE_BASIC_INFO`. POSIX platforms use device/inode and
+subsecond timestamps where available.
+There is no fairness guarantee between inputs;
 files that disappear before admission may never be read. Existing offset and
 read-from-head settings still determine where an admitted file starts reading.
 Saved database offsets for deferred files are retained during startup cleanup.
