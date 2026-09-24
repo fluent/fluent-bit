@@ -106,6 +106,7 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
     if (ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
         path = win32_fullpath_utf8(target);
         if (path == NULL) {
+            ctx->dormant_scan_failed = FLB_TRUE;
             flb_plg_error(ctx->ins, "cannot get UTF-8 absolute path of %s", target);
             return -1;
         }
@@ -113,6 +114,7 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
     else {
 #endif
         if (_fullpath(path, target, MAX_PATH) == NULL) {
+            ctx->dormant_scan_failed = FLB_TRUE;
             flb_plg_error(ctx->ins, "cannot get absolute path of %s", target);
             return -1;
         }
@@ -131,8 +133,15 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
     ret = stat(path, &st);
 #endif
     if (ret != 0 || !S_ISREG(st.st_mode)) {
+        if (ret != 0 && errno != ENOENT && errno != ENOTDIR) {
+            ctx->dormant_scan_failed = FLB_TRUE;
+        }
         ret = -1;
         goto out;
+    }
+
+    if (tail_is_excluded(path, ctx) != FLB_TRUE) {
+        flb_tail_file_dormant_seen(ctx, path, &st);
     }
 
     if (ctx->ignore_older > 0) {
@@ -294,6 +303,9 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
     h = FindFirstFileA(pattern, &data);
 #endif
     if (h == INVALID_HANDLE_VALUE) {
+        if (GetLastError() != ERROR_FILE_NOT_FOUND && GetLastError() != ERROR_PATH_NOT_FOUND) {
+            ctx->dormant_scan_failed = FLB_TRUE;
+        }
         flb_free(pattern);
         return 0;  /* none matched */
     }
@@ -307,6 +319,7 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
         if (ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
             filename = win32_wide_to_utf8(data_w.cFileName);
             if (filename == NULL) {
+                ctx->dormant_scan_failed = FLB_TRUE;
                 continue;
             }
         }
@@ -327,6 +340,7 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
 
         if (ctx->windows_path_encoding != FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
             if (candidate_len > MAX_PATH - 1) {
+                ctx->dormant_scan_failed = FLB_TRUE;
                 flb_plg_warn(ctx->ins, "'%.*s%s%s' is too long",
                              (int) prefix_len, path, filename, p1);
                 goto next;
@@ -335,6 +349,7 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
 
         buf = flb_malloc(candidate_len + 1);
         if (buf == NULL) {
+            ctx->dormant_scan_failed = FLB_TRUE;
             flb_errno();
             goto next;
         }
@@ -349,6 +364,9 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
             ret = tail_scan_pattern(buf, ctx); /* recursive */
             if (ret >= 0) {
                 n_added += ret;
+            }
+            else {
+                ctx->dormant_scan_failed = FLB_TRUE;
             }
             flb_free(buf);
             goto next;
@@ -374,6 +392,9 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
 #endif
              FindNextFileA(h, &data) != 0);
 
+    if (GetLastError() != ERROR_NO_MORE_FILES) {
+        ctx->dormant_scan_failed = FLB_TRUE;
+    }
     FindClose(h);
     return n_added;
 }

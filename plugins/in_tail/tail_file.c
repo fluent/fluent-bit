@@ -59,12 +59,19 @@
 
 #define FLB_TAIL_DB_OFFSET_MARKER_SIZE 32
 
-/* Resume state is owned by the input thread and copied by the hash table. */
+/* One input-owned record, referenced by both non-owning indexes. */
 struct tail_dormant_file {
     struct stat st;
     int64_t offset;
     uint64_t marker;
     size_t marker_size;
+    flb_sds_t path;
+    flb_sds_t inode_key;
+    uint64_t db_id;
+    int seen_path;
+    int seen_inode;
+    int retired;
+    struct mk_list _head;
 };
 
 static int dormant_file_unchanged(struct tail_dormant_file *dormant, struct stat *st)
@@ -339,6 +346,134 @@ static int stat_to_hash_key(struct flb_tail_config *ctx, struct stat *st,
 
     *key = buf;
     return 0;
+}
+
+static void dormant_detach_path(struct flb_tail_config *ctx, struct tail_dormant_file *file)
+{
+    if (flb_hash_table_get_ptr(ctx->dormant_files, file->path,
+                              flb_sds_len(file->path)) == file) {
+        flb_hash_table_del(ctx->dormant_files, file->path);
+    }
+    file->seen_path = FLB_FALSE;
+}
+
+static void dormant_retire(struct flb_tail_config *ctx, struct tail_dormant_file *file)
+{
+    dormant_detach_path(ctx, file);
+    if (flb_hash_table_get_ptr(ctx->dormant_inodes, file->inode_key,
+                              flb_sds_len(file->inode_key)) == file) {
+        flb_hash_table_del(ctx->dormant_inodes, file->inode_key);
+    }
+    file->retired = FLB_TRUE;
+}
+
+static void dormant_destroy(struct flb_tail_config *ctx, struct tail_dormant_file *file,
+                            int delete_db)
+{
+#ifdef FLB_HAVE_SQLDB
+    struct mk_list *head;
+    struct flb_tail_file *active;
+    struct tail_dormant_file *owner;
+
+    if (delete_db && ctx->db && file->db_id != 0) {
+        /* A row awaiting deletion may have been adopted by a reopened file. */
+        owner = flb_hash_table_get_ptr(ctx->dormant_inodes, file->inode_key,
+                                      flb_sds_len(file->inode_key));
+        if (owner && owner != file && owner->db_id == file->db_id) {
+            file->db_id = 0;
+        }
+        mk_list_foreach(head, &ctx->files_static) {
+            active = mk_list_entry(head, struct flb_tail_file, _head);
+            if (active->db_id == file->db_id) {
+                file->db_id = 0;
+                break;
+            }
+        }
+        mk_list_foreach(head, &ctx->files_event) {
+            active = mk_list_entry(head, struct flb_tail_file, _head);
+            if (active->db_id == file->db_id) {
+                file->db_id = 0;
+                break;
+            }
+        }
+        if (file->db_id != 0 && flb_tail_db_file_delete_id(ctx, file->db_id) != 0) {
+            /* Retain the retired owner and retry on the next scan. */
+            return;
+        }
+    }
+#endif
+    mk_list_del(&file->_head);
+    flb_sds_destroy(file->path);
+    flb_sds_destroy(file->inode_key);
+    flb_free(file);
+}
+
+void flb_tail_file_dormant_scan_begin(struct flb_tail_config *ctx)
+{
+    struct mk_list *head;
+    struct tail_dormant_file *file;
+
+    ctx->dormant_scan_failed = FLB_FALSE;
+    mk_list_foreach(head, &ctx->files_dormant) {
+        file = mk_list_entry(head, struct tail_dormant_file, _head);
+        file->seen_path = FLB_FALSE;
+        file->seen_inode = FLB_FALSE;
+    }
+}
+
+void flb_tail_file_dormant_seen(struct flb_tail_config *ctx, const char *path, struct stat *st)
+{
+    struct tail_dormant_file *file;
+    flb_sds_t key;
+
+    if (mk_list_is_empty(&ctx->files_dormant) == 0) {
+        return;
+    }
+    file = flb_hash_table_get_ptr(ctx->dormant_files, path, strlen(path));
+    if (file) {
+        file->seen_path = FLB_TRUE;
+    }
+    if (stat_to_hash_key(ctx, st, &key) != 0) {
+        ctx->dormant_scan_failed = FLB_TRUE;
+        return;
+    }
+    file = flb_hash_table_get_ptr(ctx->dormant_inodes, key, flb_sds_len(key));
+    if (file) {
+        file->seen_inode = FLB_TRUE;
+    }
+    flb_sds_destroy(key);
+}
+
+void flb_tail_file_dormant_scan_end(struct flb_tail_config *ctx)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct tail_dormant_file *file;
+
+    mk_list_foreach_safe(head, tmp, &ctx->files_dormant) {
+        file = mk_list_entry(head, struct tail_dormant_file, _head);
+        if (file->retired || (!ctx->dormant_scan_failed &&
+                             !file->seen_path && !file->seen_inode)) {
+            flb_plg_debug(ctx->ins, "discarding dormant file: %s", file->path);
+            dormant_retire(ctx, file);
+            dormant_destroy(ctx, file, FLB_TRUE);
+        }
+    }
+    flb_plg_debug(ctx->ins, "dormant files retained=%i", mk_list_size(&ctx->files_dormant));
+}
+
+void flb_tail_file_dormant_clear(struct flb_tail_config *ctx)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct tail_dormant_file *file;
+
+    mk_list_foreach_safe(head, tmp, &ctx->files_dormant) {
+        file = mk_list_entry(head, struct tail_dormant_file, _head);
+        dormant_retire(ctx, file);
+        /* Shutdown must preserve database offsets for restart. */
+        dormant_destroy(ctx, file, FLB_FALSE);
+    }
 }
 
 /* Append custom keys and report the number of records processed */
@@ -1429,6 +1564,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     struct stat opened_st;
     struct tail_dormant_file *dormant;
     struct tail_dormant_file *opened_dormant;
+    struct tail_dormant_file *path_dormant;
     flb_sds_t dormant_key;
     flb_sds_t inode_str;
 
@@ -1446,8 +1582,9 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     /* Identity lookup also preserves offsets across a dormant rename/hard link. */
     dormant = flb_hash_table_get_ptr(ctx->dormant_inodes, dormant_key, flb_sds_len(dormant_key));
     flb_sds_destroy(dormant_key);
+    path_dormant = flb_hash_table_get_ptr(ctx->dormant_files, path, strlen(path));
     if (dormant == NULL) {
-        dormant = flb_hash_table_get_ptr(ctx->dormant_files, path, strlen(path));
+        dormant = path_dormant;
     }
     if (dormant != NULL && dormant_file_unchanged(dormant, st)) {
         return -1;
@@ -1774,9 +1911,21 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     flb_metrics_sum(FLB_TAIL_METRIC_F_OPENED, 1, ctx->ins->metrics);
 #endif
 
-    if (dormant != NULL) {
-        flb_hash_table_del(ctx->dormant_files, path);
-        flb_hash_table_del(ctx->dormant_inodes, file->hash_key);
+    if (path_dormant != NULL) {
+        /* A replacement owns this path now. Keep the old inode until every
+         * pattern has been scanned: its renamed path may be discovered later. */
+        dormant_detach_path(ctx, path_dormant);
+        if (path_dormant->db_id == file->db_id) {
+            path_dormant->db_id = 0;
+        }
+    }
+    if (dormant != NULL && dormant->st.st_dev == st->st_dev &&
+        dormant->st.st_ino == st->st_ino) {
+        if (dormant->db_id == file->db_id) {
+            dormant->db_id = 0;
+        }
+        dormant_retire(ctx, dormant);
+        dormant_destroy(ctx, dormant, FLB_TRUE);
     }
     return 0;
 
@@ -1934,7 +2083,8 @@ void flb_tail_file_reclaim(struct flb_tail_config *ctx)
     struct mk_list *tmp;
     struct flb_tail_file *file;
     struct stat path_st;
-    struct tail_dormant_file dormant;
+    struct tail_dormant_file snapshot = {0};
+    struct tail_dormant_file *dormant;
 
     /* These modes may retain parser state beyond the file's read buffer. */
     if (ctx->multiline || ctx->ml_ctx || ctx->docker_mode) {
@@ -1951,10 +2101,10 @@ void flb_tail_file_reclaim(struct flb_tail_config *ctx)
             file->sl_log_event_encoder->output_length != 0) {
             continue;
         }
-        if (fstat(file->fd, &dormant.st) == -1 ||
+        if (fstat(file->fd, &snapshot.st) == -1 ||
             tail_file_stat(ctx, file->name, &path_st) == -1 ||
-            dormant.st.st_dev != path_st.st_dev || dormant.st.st_ino != path_st.st_ino ||
-            dormant.st.st_size != file->offset ||
+            snapshot.st.st_dev != path_st.st_dev || snapshot.st.st_ino != path_st.st_ino ||
+            snapshot.st.st_size != file->offset ||
             flb_tail_file_is_rotated(ctx, file) != FLB_FALSE ||
             flb_tail_file_offset_marker_matches(file) != FLB_TRUE) {
             continue;
@@ -1963,20 +2113,39 @@ void flb_tail_file_reclaim(struct flb_tail_config *ctx)
             flb_tail_file_update_offset_marker(file) != 0) {
             continue;
         }
-        dormant.offset = file->offset;
-        dormant.marker = file->db_offset_marker;
-        dormant.marker_size = file->db_offset_marker_size;
-        ret = flb_hash_table_add(ctx->dormant_files, file->name, file->name_len,
-                                &dormant, sizeof(dormant));
-        if (ret == -1) {
+        dormant = flb_calloc(1, sizeof(*dormant));
+        if (!dormant) {
             continue;
         }
-        ret = flb_hash_table_add(ctx->dormant_inodes, file->hash_key,
-                                flb_sds_len(file->hash_key), &dormant, sizeof(dormant));
-        if (ret == -1) {
-            flb_hash_table_del(ctx->dormant_files, file->name);
+        dormant->st = snapshot.st;
+        dormant->offset = file->offset;
+        dormant->marker = file->db_offset_marker;
+        dormant->marker_size = file->db_offset_marker_size;
+        dormant->db_id = file->db_id;
+        dormant->path = flb_sds_create(file->name);
+        dormant->inode_key = flb_sds_create(file->hash_key);
+        if (!dormant->path || !dormant->inode_key) {
+            flb_sds_destroy(dormant->path);
+            flb_sds_destroy(dormant->inode_key);
+            flb_free(dormant);
             continue;
         }
+        ret = flb_hash_table_add(ctx->dormant_files, dormant->path,
+                                flb_sds_len(dormant->path), dormant, 0);
+        if (ret != -1) {
+            ret = flb_hash_table_add(ctx->dormant_inodes, dormant->inode_key,
+                                    flb_sds_len(dormant->inode_key), dormant, 0);
+            if (ret == -1) {
+                flb_hash_table_del(ctx->dormant_files, dormant->path);
+            }
+        }
+        if (ret == -1) {
+            flb_sds_destroy(dormant->path);
+            flb_sds_destroy(dormant->inode_key);
+            flb_free(dormant);
+            continue;
+        }
+        mk_list_add(&dormant->_head, &ctx->files_dormant);
         flb_plg_debug(ctx->ins, "releasing dormant file at 75%% budget usage: %s", file->name);
         flb_tail_file_remove(file);
     }
