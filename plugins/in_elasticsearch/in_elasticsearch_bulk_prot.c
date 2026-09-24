@@ -676,7 +676,7 @@ int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
 
     context = (struct flb_in_elasticsearch *) response->stream->user_data;
 
-    if (request->path[0] != '/') {
+    if (request->path == NULL || request->path[0] != '/') {
         send_response_ng(response, 400, NULL, "error: invalid request\n");
         return -1;
     }
