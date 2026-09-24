@@ -79,12 +79,20 @@ static inline int handle_input_event(flb_pipefd_t fd, struct flb_input_instance 
                 if (flb_input_plugin_pause(ins) != 0) {
                     flb_plg_error(ins, "could not pause input instance");
                 }
+                else if (ins->is_threaded && ins->thi) {
+                    /* Mark thread as paused for shutdown synchronization */
+                    ins->thi->is_paused = FLB_TRUE;
+                }
             }
         }
         else if (operation == FLB_INPUT_THREAD_RESUME) {
             if ((ins->p->cb_resume || ins->p->cb_resume_checked) && ins->context) {
                 if (flb_input_plugin_resume(ins) != 0) {
                     flb_plg_error(ins, "could not resume input instance");
+                }
+                else if (ins->is_threaded && ins->thi) {
+                    /* Clear paused flag on resume */
+                    ins->thi->is_paused = FLB_FALSE;
                 }
             }
         }
@@ -243,6 +251,9 @@ static struct flb_input_thread_instance *input_thread_instance_create(struct flb
     /* init status */
     thi->init_status = 0;
     pthread_mutex_init(&thi->init_mutex, NULL);
+
+    /* Initialize pause state flag (not paused initially) */
+    thi->is_paused = FLB_FALSE;
 
     /* init condition */
     pthread_cond_init(&thi->init_condition, NULL);
