@@ -23,6 +23,13 @@
 #include "../../plugins/in_tail/tail_config.h"
 #include "../../plugins/in_tail/tail_file_budget.h"
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include <Windows.h>
+#include <fcntl.h>
+#include <io.h>
+#include "../../plugins/in_tail/win32/interface.h"
+#endif
+
 #define BUDGET_THREADS 4
 
 struct budget_test {
@@ -179,7 +186,95 @@ static void test_shared_file_budget(void)
     flb_destroy(flb);
 }
 
+static void test_file_budget_pressure(void)
+{
+    int i;
+    int input;
+    flb_ctx_t *flb;
+    struct flb_tail_config ctx = {0};
+
+    flb = flb_create();
+    TEST_CHECK(flb != NULL);
+    input = flb_input(flb, "tail", NULL);
+    TEST_CHECK(input >= 0);
+    TEST_CHECK(flb_input_set(flb, input, "max_open_files", "4", NULL) == 0);
+    ctx.config = flb->config;
+    ctx.ins = mk_list_entry(flb->config->inputs.next, struct flb_input_instance, _head);
+    ctx.ins->log_level = FLB_LOG_OFF;
+    ctx.file_budget = flb_tail_file_budget_create(&ctx);
+    TEST_CHECK(ctx.file_budget != NULL);
+    for (i = 0; i < 4; i++) {
+        TEST_CHECK(flb_tail_file_budget_pressure(&ctx) == (i >= 3));
+        TEST_CHECK(flb_tail_file_budget_reserve(&ctx) == FLB_TRUE);
+    }
+    TEST_CHECK(flb_tail_file_budget_reserve(&ctx) == FLB_FALSE);
+    for (i = 4; i > 0; i--) {
+        TEST_CHECK(flb_tail_file_budget_pressure(&ctx) == (i >= 3));
+        flb_tail_file_budget_release(&ctx);
+    }
+    TEST_CHECK(flb_tail_file_budget_pressure(&ctx) == FLB_FALSE);
+    flb_tail_file_budget_destroy(ctx.file_budget);
+    flb_destroy(flb);
+}
+
+#ifdef FLB_SYSTEM_WINDOWS
+static void test_windows_stat_precision(void)
+{
+    char path[MAX_PATH];
+    HANDLE handle;
+    FILETIME timestamp;
+    ULARGE_INTEGER ticks;
+    BY_HANDLE_FILE_INFORMATION info;
+    struct win32_stat first;
+    struct win32_stat second;
+    struct win32_stat opened;
+    int fd;
+
+    snprintf(path, sizeof(path), "flb-tail-budget-stat-%lu.tmp",
+             (unsigned long) GetCurrentProcessId());
+    handle = CreateFileA(path, GENERIC_READ | GENERIC_WRITE,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (!TEST_CHECK(handle != INVALID_HANDLE_VALUE)) {
+        return;
+    }
+    TEST_CHECK(GetFileInformationByHandle(handle, &info));
+    /* Two explicitly set write times in the same second, 100 ns apart. */
+    ticks.QuadPart = UINT64_C(133000000001234567);
+    timestamp.dwHighDateTime = ticks.HighPart;
+    timestamp.dwLowDateTime = ticks.LowPart;
+    TEST_CHECK(SetFileTime(handle, NULL, NULL, &timestamp));
+    TEST_CHECK(win32_stat(path, &first) == 0);
+    TEST_CHECK(first.st_dev == info.dwVolumeSerialNumber);
+    TEST_CHECK(first.st_mtime_nsec == 123456700);
+
+    ticks.QuadPart++;
+    timestamp.dwHighDateTime = ticks.HighPart;
+    timestamp.dwLowDateTime = ticks.LowPart;
+    TEST_CHECK(SetFileTime(handle, NULL, NULL, &timestamp));
+    TEST_CHECK(win32_stat_utf8(path, &second) == 0);
+    TEST_CHECK(second.st_mtime == first.st_mtime);
+    TEST_CHECK(second.st_mtime_nsec == first.st_mtime_nsec + 100);
+    fd = _open(path, _O_RDONLY | _O_BINARY);
+    if (TEST_CHECK(fd >= 0)) {
+        TEST_CHECK(win32_fstat(fd, &opened) == 0);
+        TEST_CHECK(opened.st_ino == second.st_ino);
+        TEST_CHECK(opened.st_dev == second.st_dev);
+        TEST_CHECK(opened.st_mtime_nsec == second.st_mtime_nsec);
+        TEST_CHECK(opened.st_ctime == second.st_ctime);
+        TEST_CHECK(opened.st_ctime_nsec == second.st_ctime_nsec);
+        _close(fd);
+    }
+    CloseHandle(handle);
+    DeleteFileA(path);
+}
+#endif
+
 TEST_LIST = {
+#ifdef FLB_SYSTEM_WINDOWS
+    {"windows_stat_precision", test_windows_stat_precision},
+#endif
+    {"file_budget_pressure", test_file_budget_pressure},
     {"shared_file_budget", test_shared_file_budget},
     {NULL, NULL}
 };
