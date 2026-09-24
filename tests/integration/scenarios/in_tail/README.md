@@ -76,7 +76,12 @@ are skipped. A metadata change triggers a budgeted reopen, with identity and
 content-marker validation before resuming; detected replacement/truncation starts
 at offset zero. Reopening is subject to the refresh interval and available slots.
 Without a database, dormant state does not survive a process restart. The dormant
-map uses memory proportional to the number of retained paths. Dormant files have
+indexes share one owner per file. Reopening consumes both saved index keys. After
+all path patterns have been scanned successfully, unobserved owners and their
+database rows are removed. An inode found at a renamed path preserves resume state
+even if the old path has disappeared or been replaced. Incomplete scans preserve
+owners; failed database deletions are retried. Shutdown retains database offsets
+for restart. Dormant files have
 no open handle or watcher: writes followed by deletion/rotation between scans may
 be missed. Changes that preserve size and filesystem timestamps cannot be detected
 reliably, particularly on filesystems with coarse timestamp resolution. Windows compares
