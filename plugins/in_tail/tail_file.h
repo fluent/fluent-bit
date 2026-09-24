@@ -122,6 +122,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
                          ssize_t offset,
                          struct flb_tail_config *ctx);
 void flb_tail_file_remove(struct flb_tail_file *file);
+void flb_tail_file_reclaim(struct flb_tail_config *ctx);
 int flb_tail_file_remove_all(struct flb_tail_config *ctx);
 char *flb_tail_file_name(struct flb_tail_file *file);
 int flb_tail_file_is_rotated(struct flb_tail_config *ctx,

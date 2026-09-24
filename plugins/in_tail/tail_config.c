@@ -330,6 +330,18 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         return NULL;
     }
 
+    ctx->dormant_files = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 1000, 0);
+    if (ctx->dormant_files == NULL) {
+        flb_tail_config_destroy(ctx);
+        return NULL;
+    }
+
+    ctx->dormant_inodes = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 1000, 0);
+    if (ctx->dormant_inodes == NULL) {
+        flb_tail_config_destroy(ctx);
+        return NULL;
+    }
+
     /* hash table for files lookups */
     ctx->ignored_file_sizes = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 1000, 0);
     if (ctx->ignored_file_sizes == NULL) {
@@ -613,6 +625,14 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
 
     if (config->event_hash) {
         flb_hash_table_destroy(config->event_hash);
+    }
+
+    if (config->dormant_inodes != NULL) {
+        flb_hash_table_destroy(config->dormant_inodes);
+    }
+
+    if (config->dormant_files != NULL) {
+        flb_hash_table_destroy(config->dormant_files);
     }
 
     if (config->ignored_file_sizes != NULL) {

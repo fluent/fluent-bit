@@ -690,7 +690,8 @@ static struct flb_config_map config_map[] = {
      "maximum number of monitored files open across all Tail inputs, including rotated files. "
      "0 inherits the shared limit, or means unlimited if no positive limit is configured. "
      "Positive limits must agree. Excess files are retried at refresh_interval. "
-     "EOF retains a slot. Warns at 75% shared usage. Other process handles are not limited."
+     "Warns and reclaims eligible EOF files at 75% shared usage on refresh scans. "
+     "Other process handles are not limited."
     },
     {
      FLB_CONFIG_MAP_SIZE, "static_batch_size", FLB_TAIL_STATIC_BATCH_SIZE,

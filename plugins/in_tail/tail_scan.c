@@ -133,6 +133,7 @@ int flb_tail_scan_callback(struct flb_input_instance *ins,
     struct flb_tail_config *ctx = context;
     (void) config;
 
+    flb_tail_file_reclaim(ctx);
     ret = flb_tail_scan(ctx->path_list, ctx);
     if (ret > 0) {
         flb_plg_debug(ins, "%i new files found", ret);
