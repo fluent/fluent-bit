@@ -398,22 +398,21 @@ static int sql_key_to_value(char *name, struct flb_mp_chunk_record *record, stru
 
     struct cfl_list *head;
     struct cfl_list *tmp;
-    struct cfl_variant *var;
+    struct cfl_variant *var = NULL;
     struct cfl_kvlist *kvlist;
     struct cfl_kvpair *kvpair;
 
     kvlist = record->cobj_record->variant->data.as_kvlist;
 
+    /* lookup the key in the record; 'var' stays NULL if it is not found */
     cfl_list_foreach_safe(head, tmp, &kvlist->list) {
         kvpair = cfl_list_entry(head, struct cfl_kvpair, _head);
 
         if (cfl_sds_len(kvpair->key) != cfl_sds_len(name)) {
-            var = NULL;
             continue;
         }
 
         if (strcmp(kvpair->key, name) != 0) {
-            var = NULL;
             continue;
         }
 
@@ -427,11 +426,13 @@ static int sql_key_to_value(char *name, struct flb_mp_chunk_record *record, stru
 
     if (var->type == CFL_VARIANT_STRING) {
         val->type = SQL_EXP_STRING;
-        val->val.string = cfl_sds_create(kvpair->val->data.as_string);
+        /* record strings may be referenced, not NUL terminated */
+        val->val.string = cfl_sds_create_len(var->data.as_string,
+                                             cfl_variant_size_get(var));
     }
     else if (var->type == CFL_VARIANT_INT) {
         val->type = SQL_EXP_INT;
-        val->val.i64 = kvpair->val->data.as_int64;
+        val->val.i64 = var->data.as_int64;
     }
     else if (var->type == CFL_VARIANT_UINT) {
         /*
@@ -441,15 +442,15 @@ static int sql_key_to_value(char *name, struct flb_mp_chunk_record *record, stru
          *
          */
         val->type = SQL_EXP_INT;
-        val->val.i64 = kvpair->val->data.as_uint64;
+        val->val.i64 = var->data.as_uint64;
     }
     else if (var->type == CFL_VARIANT_DOUBLE) {
         val->type = SQL_EXP_FLOAT;
-        val->val.f64 = kvpair->val->data.as_double;
+        val->val.f64 = var->data.as_double;
     }
     else if (var->type == CFL_VARIANT_BOOL) {
         val->type = SQL_EXP_BOOL;
-        val->val.boolean = kvpair->val->data.as_bool;
+        val->val.boolean = var->data.as_bool;
     }
     else if (var->type == CFL_VARIANT_NULL) {
         val->type = SQL_EXP_NULL;
