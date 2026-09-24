@@ -194,6 +194,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         if (bulk_statuses_cat(ctx, bulk_statuses,
                                               "{\"index\":", 9) == FLB_FALSE) {
                             flb_sds_destroy(write_op);
+                            write_op = NULL;
                             break;
                         }
                         error_op = FLB_FALSE;
@@ -202,6 +203,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         if (bulk_statuses_cat(ctx, bulk_statuses,
                                               "{\"create\":", 10) == FLB_FALSE) {
                             flb_sds_destroy(write_op);
+                            write_op = NULL;
                             break;
                         }
                         error_op = FLB_FALSE;
@@ -210,6 +212,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         if (bulk_statuses_cat(ctx, bulk_statuses,
                                               "{\"update\":", 10) == FLB_FALSE) {
                             flb_sds_destroy(write_op);
+                            write_op = NULL;
                             break;
                         }
                         error_op = FLB_TRUE;
@@ -219,6 +222,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                                               "{\"delete\":{\"status\":404,\"result\":\"not_found\"}}",
                                               46) == FLB_FALSE) {
                             flb_sds_destroy(write_op);
+                            write_op = NULL;
                             break;
                         }
                         error_op = FLB_TRUE;
@@ -226,6 +230,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                                    * in the end of the loop.
                                    * Due to delete actions include only one line. */
                         flb_sds_destroy(write_op);
+                        write_op = NULL;
 
                         goto proceed;
                     }
@@ -234,16 +239,19 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                                               "{\"unknown\":{\"status\":400,\"result\":\"bad_request\"}}",
                                               49) == FLB_FALSE) {
                             flb_sds_destroy(write_op);
+                            write_op = NULL;
                             break;
                         }
                         error_op = FLB_TRUE;
 
                         flb_sds_destroy(write_op);
+                        write_op = NULL;
 
                         break;
                     }
                 } else {
                     flb_sds_destroy(write_op);
+                    write_op = NULL;
                     flb_plg_error(ctx->ins, "meta information line is missing");
                     error_op = FLB_TRUE;
 
@@ -260,6 +268,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         error_op = FLB_TRUE;
                         ingest_result = -1;
                         flb_sds_destroy(write_op);
+                        write_op = NULL;
                         break;
                     }
 
@@ -272,6 +281,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         error_op = FLB_TRUE;
                         ingest_result = -1;
                         flb_sds_destroy(write_op);
+                        write_op = NULL;
                         break;
                     }
 
@@ -287,6 +297,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         error_op = FLB_TRUE;
                         ingest_result = -1;
                         flb_sds_destroy(write_op);
+                        write_op = NULL;
                         break;
                     }
                 }
@@ -312,6 +323,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         error_op = FLB_TRUE;
                         ingest_result = -1;
                         flb_sds_destroy(write_op);
+                        write_op = NULL;
                         break;
                     }
 
@@ -322,6 +334,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         error_op = FLB_TRUE;
                         ingest_result = -1;
                         flb_sds_destroy(write_op);
+                        write_op = NULL;
                         break;
                     }
 
@@ -367,6 +380,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
 
                         error_op = FLB_TRUE;
                         flb_sds_destroy(write_op);
+                        write_op = NULL;
                         break;
                     }
 
@@ -421,6 +435,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
             flb_plg_error(ctx->ins, "skip record from invalid type: %i",
                          result.data.type);
             flb_sds_destroy(write_op);
+            write_op = NULL;
             msgpack_unpacked_destroy(&result);
             if (destroy_local_encoder == FLB_TRUE) {
                 flb_log_event_encoder_destroy(encoder);
@@ -428,6 +443,10 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
             return FLB_ERR_JSON_INVAL;
         }
     }
+
+    /* Release the pending action name, if any, on every exit path. */
+    flb_sds_destroy(write_op);
+    write_op = NULL;
 
     if (ingest_result != 0) {
         msgpack_unpacked_destroy(&result);
@@ -440,12 +459,6 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
     if (idx % 2 != 0) {
         flb_plg_warn(ctx->ins, "decode payload of Bulk API is failed");
         msgpack_unpacked_destroy(&result);
-        if (error_op == FLB_FALSE && write_op != NULL) {
-            /* On lacking of body case in non-error case, there is no
-             * releasing memory code paths. We should proceed to do
-             * it here. */
-            flb_sds_destroy(write_op);
-        }
 
         if (destroy_local_encoder == FLB_TRUE) {
             flb_log_event_encoder_destroy(encoder);
