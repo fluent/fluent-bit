@@ -483,6 +483,10 @@ int flb_output_task_flush(struct flb_task *task,
                 flb_output_task_singleplex_flush_next(out_ins->singleplex_queue);
             }
         }
+        else {
+            /* released when the engine processes the return status */
+            config->flush_in_flight++;
+        }
     }
     else {
         /* Queue co-routine handling */
@@ -509,6 +513,8 @@ int flb_output_task_flush(struct flb_task *task,
                 return -1;
             }
 
+            /* released when the engine processes the return status */
+            config->flush_in_flight++;
             return 0;
         }
 
@@ -527,6 +533,9 @@ int flb_output_task_flush(struct flb_task *task,
 
             return -1;
         }
+
+        /* released when the engine processes the return status */
+        config->flush_in_flight++;
     }
 
     return 0;
