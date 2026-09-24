@@ -669,11 +669,21 @@ static int http2_frame_recv_callback(nghttp2_session *inner_session,
         case NGHTTP2_CONTINUATION:
         case NGHTTP2_HEADERS:
             if ((frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) != 0) {
-                /* request callbacks expect the path to be set */
+                /*
+                 * request callbacks expect the path to be set, reject the
+                 * stream, http2_stream_close_callback() releases it.
+                 */
                 if (stream->request.path == NULL) {
-                    stream->status = HTTP_STREAM_STATUS_ERROR;
+                    stream->status = HTTP_STREAM_STATUS_RELEASED;
 
-                    return -1;
+                    if (nghttp2_submit_rst_stream(inner_session,
+                                                  NGHTTP2_FLAG_NONE,
+                                                  frame->hd.stream_id,
+                                                  NGHTTP2_PROTOCOL_ERROR) != 0) {
+                        return -1;
+                    }
+
+                    return 0;
                 }
 
                 stream->status = HTTP_STREAM_STATUS_RECEIVING_DATA;
@@ -793,6 +803,11 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
     stream = nghttp2_session_get_stream_user_data(inner_session, stream_id);
 
     if (stream == NULL) {
+        return 0;
+    }
+
+    /* stream already dispatched or rejected, waiting to be closed */
+    if (stream->status == HTTP_STREAM_STATUS_RELEASED) {
         return 0;
     }
 
