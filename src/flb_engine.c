@@ -580,6 +580,11 @@ static inline int handle_output_event(uint64_t ts,
     task_id = FLB_TASK_ID(key);
     out_id  = FLB_TASK_OUT(key);
 
+    /* the flush request is not in flight anymore (flb_output_task_flush()) */
+    if (config->flush_in_flight > 0) {
+        config->flush_in_flight--;
+    }
+
 #ifdef FLB_HAVE_TRACE
     char *trace_st = NULL;
 
