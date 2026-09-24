@@ -561,13 +561,18 @@ static int cfl_to_json(struct cfl_variant *var, flb_sds_t buf)
         break;
     }
     case CFL_VARIANT_STRING:
+        /*
+         * Record values are 'referenced' strings pointing into the msgpack
+         * buffer (no sds header), so the length must come from the variant
+         * itself and not from cfl_sds_len().
+         */
         flb_sds_cat_safe(&buf, "\"", 1);
-        flb_sds_cat_safe(&buf, var->data.as_string, cfl_sds_len(var->data.as_string));
+        flb_sds_cat_safe(&buf, var->data.as_string, cfl_variant_size_get(var));
         flb_sds_cat_safe(&buf, "\"", 1);
         break;
     case CFL_VARIANT_BYTES:
         flb_sds_cat_safe(&buf, "\"", 1);
-        flb_sds_cat_safe(&buf, var->data.as_string, cfl_sds_len(var->data.as_bytes));
+        flb_sds_cat_safe(&buf, var->data.as_bytes, cfl_variant_size_get(var));
         flb_sds_cat_safe(&buf, "\"", 1);
         break;
     case CFL_VARIANT_ARRAY: {
