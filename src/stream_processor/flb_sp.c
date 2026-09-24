@@ -1494,7 +1494,10 @@ int sp_process_data_aggr(const char *buf_data, size_t buf_size,
         }
 
         /* extract timestamp */
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
+        ret = flb_time_pop_from_msgpack(&tms, &result, &obj);
+        if (ret == -1) {
+            continue;
+        }
 
         /* get the map data and it size (number of items) */
         map   = root.via.array.ptr[1];
@@ -1685,7 +1688,11 @@ int sp_process_data(const char *tag, int tag_len,
         }
 
         /* extract timestamp */
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
+        ret = flb_time_pop_from_msgpack(&tms, &result, &obj);
+        if (ret == -1) {
+            off_copy = off;
+            continue;
+        }
 
         /* Store the buffer if the stream is a snapshot */
         if (cmd->type == FLB_SP_CREATE_SNAPSHOT) {
