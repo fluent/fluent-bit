@@ -1671,9 +1671,21 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                 /* if the input plugin instance Tag has been manually set, use it */
                 flb_sds_cat_safe(&out_tag, ins->tag, flb_sds_len(ins->tag));
             }
-            else {
+            else if (stag_len > 0) {
                 /* use the tag from the record */
                 flb_sds_cat_safe(&out_tag, stag, stag_len);
+            }
+            else {
+                /*
+                 * An empty tag cannot be used to look up, dispatch or
+                 * release a chunk: use the instance tag instead.
+                 */
+                if (ins->tag != NULL && ins->tag_len > 0) {
+                    flb_sds_cat_safe(&out_tag, ins->tag, ins->tag_len);
+                }
+                else {
+                    flb_sds_cat_safe(&out_tag, ins->name, strlen(ins->name));
+                }
             }
 
             entry = root.via.array.ptr[1];
